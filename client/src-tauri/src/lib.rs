@@ -1,6 +1,7 @@
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 // Modules
+mod api;
 mod assets;
 mod audio;
 mod audio_peaks;
@@ -1093,6 +1094,7 @@ commands::file_utils::generate_video_thumbnail,
             youtube::get_youtube_channel_info,
             youtube::get_youtube_vods,
             youtube::get_youtube_videos,
+            youtube::get_single_youtube_video,
             youtube::get_youtube_vod_duration,
             youtube::download_youtube_vod,
             youtube::download_youtube_vod_segment,
@@ -1108,6 +1110,7 @@ commands::file_utils::generate_video_thumbnail,
             rumble::check_rumble_livestream,
             rumble::get_rumble_channel_info,
             rumble::get_rumble_vods,
+            rumble::get_single_rumble_video,
             rumble::download_rumble_vod,
             rumble::download_rumble_vod_segment,
             rumble::start_rumble_recording,
@@ -1257,6 +1260,8 @@ commands::file_utils::generate_video_thumbnail,
     hls::cleanup_hls_recordings,
     hls::get_recording_output_dir,
     hls::get_hls_segments,
+    hls::create_vod_playlist,
+    hls::delete_vod_playlist,
 
 // Video Editor Export commands
 video_editor_export::export_video_editor_project_simple,

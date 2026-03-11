@@ -12,13 +12,6 @@ defmodule ClippsterServerWeb.CampaignController do
     user.is_admin or user.campaigns_enabled
   end
 
-  defp can_org_access_campaigns?(org_id) do
-    case Organizations.get_organization(org_id) do
-      nil -> false
-      org -> org.campaigns_enabled
-    end
-  end
-
   # ============================================================================
   # Public Campaign Routes (for marketplace)
   # ============================================================================
@@ -107,6 +100,16 @@ defmodule ClippsterServerWeb.CampaignController do
               conn
               |> put_status(400)
               |> json(%{success: false, error: "Campaign is not active"})
+            
+            {:error, :campaign_not_started} ->
+              conn
+              |> put_status(400)
+              |> json(%{success: false, error: "Campaign has not started yet"})
+            
+            {:error, :campaign_ended} ->
+              conn
+              |> put_status(400)
+              |> json(%{success: false, error: "Campaign has ended"})
 
             {:error, :already_participating} ->
               conn
@@ -263,6 +266,16 @@ defmodule ClippsterServerWeb.CampaignController do
               conn
               |> put_status(400)
               |> json(%{success: false, error: "Campaign is not active"})
+            
+            {:error, :campaign_not_started} ->
+              conn
+              |> put_status(400)
+              |> json(%{success: false, error: "Campaign has not started yet"})
+            
+            {:error, :campaign_ended} ->
+              conn
+              |> put_status(400)
+              |> json(%{success: false, error: "Campaign has ended"})
 
             {:error, :platform_not_allowed} ->
               conn
@@ -378,9 +391,12 @@ defmodule ClippsterServerWeb.CampaignController do
           "description",
           "cover_image_url",
           "creator_profile_id",
+          "branding_profile_id",
           "budget",
           "cpm",
+          "cpm_views",
           "min_views_for_payment",
+          "max_views",
           "join_type",
           "allowed_platforms",
           "payment_methods",
@@ -1037,6 +1053,7 @@ defmodule ClippsterServerWeb.CampaignController do
       id: campaign.id,
       organization_id: campaign.organization_id,
       creator_profile_id: campaign.creator_profile_id,
+      branding_profile_id: campaign.branding_profile_id,
       title: campaign.title,
       description: campaign.description,
       cover_image_url: presign_url(campaign.cover_image_url),
@@ -1103,6 +1120,13 @@ defmodule ClippsterServerWeb.CampaignController do
         if(Ecto.assoc_loaded?(campaign.creator_profiles),
           do: Enum.map(campaign.creator_profiles, &serialize_creator_profile/1),
           else: []
+        ),
+      branding_profile:
+        if(
+          campaign.branding_profile_id && Ecto.assoc_loaded?(campaign.branding_profile) &&
+            campaign.branding_profile,
+          do: serialize_creator_profile(campaign.branding_profile),
+          else: nil
         )
     }
   end
@@ -1158,7 +1182,7 @@ defmodule ClippsterServerWeb.CampaignController do
     %{
       id: profile.id,
       display_name: profile.display_name,
-      avatar_url: profile.avatar_url,
+      avatar_url: ClippsterServer.Storage.presigned_url!(profile.avatar_url),
       slug: profile.slug,
       bio: profile.bio,
       is_verified: profile.is_verified,

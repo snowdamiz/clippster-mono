@@ -129,6 +129,13 @@
               <div class="clips__selection-info">
                 <Check class="clips__selection-icon" />
                 <span>{{ totalSelectedCount }} selected</span>
+                <button
+                  v-if="shouldShowSelectAll"
+                  @click="selectAll"
+                  class="clips__selection-action"
+                >
+                  Select all on page
+                </button>
               </div>
               <div class="clips__selection-actions">
                 <button @click="clearSelection" class="clips__selection-clear">Clear</button>
@@ -1272,7 +1279,7 @@
         const thumbnailUrl = buildThumbnailCache.value.get(filePath) || clipThumbnailUrl;
 
         // Create a fake build object for video editor exports
-        const fakeBuild = {
+        const fakeBuild: ClipBuild = {
           id: clip.id,
           clip_id: clip.id,
           build_number: 1,
@@ -1286,14 +1293,19 @@
           output_format: 'mp4' as const,
           include_subtitles: false,
           progress: 100,
-          error: null,
           error_message: null,
           file_size: clip.built_file_size,
           duration: clip.built_duration || clip.duration,
           started_at: clip.created_at,
           created_at: clip.created_at,
           completed_at: clip.built_at || clip.created_at,
-          updated_at: clip.updated_at,
+          // Branding context fields
+          organization_id: null,
+          organization_name: null,
+          campaign_id: null,
+          campaign_name: null,
+          branding_profile_id: null,
+          branding_type: 'personal',
         };
 
         builds.push({
@@ -1329,6 +1341,8 @@
               const fileSpecificThumbnail = buildThumbnailCache.value.get(filePath);
               const buildThumbnail = buildThumbnailCache.value.get(build.id);
               const thumbnailUrl = fileSpecificThumbnail || buildThumbnail || clipThumbnailUrl;
+
+              console.log(`[Clips] Creating displayable build: ${filePath} | AR: ${aspectRatio} | Build#${build.build_number} | Type: ${build.branding_type} | Campaign: ${build.campaign_name || 'null'} | Org: ${build.organization_name || 'null'}`);
 
               builds.push({
                 // Use build ID + index for unique key when multiple files per build
@@ -2591,6 +2605,29 @@
     return `Delete ${count} Build${count !== 1 ? 's' : ''}`;
   });
 
+  const shouldShowSelectAll = computed(() => {
+    if (viewMode.value === 'folders') {
+      const totalFolders = groupedFolderProjects.value.flatMap(dateGroup => dateGroup.folders).length;
+      return totalFolders > 0 && selectedFolders.value.size < totalFolders;
+    } else {
+      return paginatedBuilds.value.length > 0 && selectedBuilds.value.size < paginatedBuilds.value.length;
+    }
+  });
+
+  function selectAll() {
+    if (viewMode.value === 'folders') {
+      // Select all folders on current page (flatten all date groups)
+      const folderIds = groupedFolderProjects.value.flatMap(dateGroup => 
+        dateGroup.folders.map(folder => folder.id)
+      );
+      selectedFolders.value = new Set(folderIds);
+    } else {
+      // Select all builds on current page
+      const buildIds = paginatedBuilds.value.map(b => b.id);
+      selectedBuilds.value = new Set(buildIds);
+    }
+  }
+
   function clearSelection() {
     selectedBuilds.value.clear();
     selectedBuilds.value = new Set(selectedBuilds.value);
@@ -3312,6 +3349,22 @@
     width: 16px;
     height: 16px;
     color: var(--sidebar-accent);
+  }
+
+  .clips__selection-action {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    margin-left: 0.5rem;
+    transition: opacity 150ms ease;
+  }
+
+  .clips__selection-action:hover {
+    opacity: 0.8;
   }
 
   .clips__selection-actions {

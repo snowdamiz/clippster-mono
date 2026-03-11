@@ -559,14 +559,14 @@
                   </div>
                 </div>
 
-                <!-- Step 5: Creator Profiles -->
+                <!-- Step 5: Campaign Branding -->
                 <div v-if="currentStep === 5" class="campaign-wizard__step">
                   <div class="campaign-wizard__header">
                     <div class="campaign-wizard__icon">
                       <Users :size="28" />
                     </div>
-                    <h2 class="campaign-wizard__title">Select creator profiles</h2>
-                    <p class="campaign-wizard__subtitle">Choose which creator profiles clippers can use</p>
+                    <h2 class="campaign-wizard__title">Campaign Branding</h2>
+                    <p class="campaign-wizard__subtitle">Choose global branding or specific creator profiles</p>
                   </div>
 
                   <div class="campaign-wizard__fields">
@@ -577,13 +577,14 @@
                       <p>No creator profiles available. Create profiles in the Creator Profiles tab first.</p>
                     </div>
                     <div v-else class="campaign-wizard__profiles-list">
-                      <!-- Global Branding Option -->
+                      <!-- Global Branding Option (only if org has global branding setup) -->
                       <button
+                        v-if="hasGlobalBranding"
                         type="button"
-                        @click="toggleCreatorProfile(null)"
+                        @click="selectGlobalBranding"
                         class="campaign-wizard__profile"
                         :class="{
-                          'campaign-wizard__profile--selected': selectedCreatorProfileIds.includes(null),
+                          'campaign-wizard__profile--selected': isGlobalBrandingSelected,
                         }"
                       >
                         <div class="campaign-wizard__profile-avatar">
@@ -596,14 +597,19 @@
                           </span>
                         </div>
                         <div
-                          v-if="selectedCreatorProfileIds.includes(null)"
+                          v-if="isGlobalBrandingSelected"
                           class="campaign-wizard__profile-check"
                         >
                           <Check class="campaign-wizard__profile-check-icon" />
                         </div>
                       </button>
 
-                      <!-- Creator Profiles -->
+                      <!-- Divider if global branding exists -->
+                      <div v-if="hasGlobalBranding" class="campaign-wizard__divider">
+                        <span class="campaign-wizard__divider-text">OR select specific creator profiles</span>
+                      </div>
+
+                      <!-- Creator Profiles (disabled if global branding selected) -->
                       <button
                         v-for="profile in availableCreatorProfiles"
                         :key="profile.id"
@@ -612,7 +618,9 @@
                         class="campaign-wizard__profile"
                         :class="{
                           'campaign-wizard__profile--selected': selectedCreatorProfileIds.includes(profile.id),
+                          'campaign-wizard__profile--disabled': isGlobalBrandingSelected,
                         }"
+                        :disabled="isGlobalBrandingSelected"
                       >
                         <div class="campaign-wizard__profile-avatar">
                           <img v-if="profile.profile_image_url" :src="profile.profile_image_url" />
@@ -633,8 +641,12 @@
                       </button>
                     </div>
                     <p class="campaign-wizard__hint">
-                      {{ selectedCreatorProfileIds.length }} profile(s) selected. Each profile includes their
-                      watermarks, intro/outro videos.
+                      <template v-if="isGlobalBrandingSelected">
+                        Global branding selected. Clippers can use any streamer with your organization's branding.
+                      </template>
+                      <template v-else>
+                        {{ selectedCreatorProfileIds.length }} creator profile(s) selected. Each profile includes their watermarks, intro/outro videos.
+                      </template>
                     </p>
                   </div>
                 </div>
@@ -645,41 +657,11 @@
                     <div class="campaign-wizard__icon">
                       <Film :size="28" />
                     </div>
-                    <h2 class="campaign-wizard__title">Creator & Branding</h2>
-                    <p class="campaign-wizard__subtitle">Select creator profile and optional branding</p>
+                    <h2 class="campaign-wizard__title">Campaign Assets</h2>
+                    <p class="campaign-wizard__subtitle">Add a cover image for your campaign</p>
                   </div>
 
                   <div class="campaign-wizard__fields">
-                    <!-- Creator Profile -->
-                    <div class="campaign-wizard__field">
-                      <label class="campaign-wizard__label">Creator Profile</label>
-                      <CustomDropdown
-                        v-model="campaignForm.creator_profile_id"
-                        :options="creatorProfileOptions"
-                        placeholder="Select creator profile"
-                        class="campaign-wizard__dropdown"
-                        trigger-class="campaign-wizard__dropdown-trigger"
-                      />
-                      <p class="campaign-wizard__hint">
-                        Select a specific creator profile, or choose "Global Branding" to allow clippers to use any streamer
-                      </p>
-                    </div>
-
-                    <!-- Branding Profile -->
-                    <div class="campaign-wizard__field">
-                      <label class="campaign-wizard__label">Branding Profile (Optional)</label>
-                      <CustomDropdown
-                        v-model="campaignForm.branding_profile_id"
-                        :options="brandingProfileOptions"
-                        placeholder="Select branding profile (optional)"
-                        class="campaign-wizard__dropdown"
-                        trigger-class="campaign-wizard__dropdown-trigger"
-                      />
-                      <p class="campaign-wizard__hint">
-                        Select a creator profile to use for global branding (intro, outro, watermarks)
-                      </p>
-                    </div>
-
                     <!-- Cover Image -->
                     <div class="campaign-wizard__field">
                       <label class="campaign-wizard__label">Cover Image</label>
@@ -1152,41 +1134,75 @@
                     </div>
                   </div>
 
-                  <!-- Creator Profiles Section -->
+                  <!-- Campaign Branding Section -->
                   <div class="campaign-edit__section">
-                    <h3 class="campaign-edit__section-title">Creators</h3>
+                    <h3 class="campaign-edit__section-title">Campaign Branding</h3>
                     <div class="campaign-edit__fields">
-                      <div class="campaign-edit__field">
-                        <label class="campaign-edit__label">Creator Profile</label>
-                        <CustomDropdown
-                          v-model="campaignForm.creator_profile_id"
-                          :options="creatorProfileOptions"
-                          placeholder="Select creator profile"
-                          class="campaign-edit__dropdown"
-                          trigger-class="campaign-edit__dropdown-trigger"
-                        />
+                      <!-- Global Branding Toggle (only if org has global branding) -->
+                      <div v-if="hasGlobalBranding" class="campaign-edit__field">
+                        <label class="campaign-edit__label">
+                          <input
+                            type="checkbox"
+                            v-model="isGlobalBrandingSelected"
+                            @change="handleGlobalBrandingToggle"
+                            class="campaign-edit__checkbox"
+                          />
+                          Use Global Branding
+                        </label>
                         <p class="campaign-edit__hint">
-                          Select which creator profile to use for this campaign
+                          Allow clippers to use any streamer with your organization's branding (intro, outro, watermarks)
                         </p>
                       </div>
-                    </div>
-                  </div>
 
-                  <!-- Global Branding Section -->
-                  <div class="campaign-edit__section">
-                    <h3 class="campaign-edit__section-title">Global Branding</h3>
-                    <div class="campaign-edit__fields">
+                      <!-- Creator Profile Selection -->
                       <div class="campaign-edit__field">
-                        <label class="campaign-edit__label">Branding Profile</label>
+                        <label class="campaign-edit__label">
+                          Creator Profile{{ isGlobalBrandingSelected ? '' : 's' }}
+                          <span v-if="isGlobalBrandingSelected" class="campaign-edit__optional">(for global branding assets)</span>
+                        </label>
+                        <!-- Show dropdown when global branding is selected -->
                         <CustomDropdown
+                          v-if="isGlobalBrandingSelected"
                           v-model="campaignForm.branding_profile_id"
-                          :options="brandingProfileOptions"
-                          placeholder="Select branding profile (optional)"
+                          :options="globalBrandingProfileOptions"
+                          placeholder="Select branding profile"
                           class="campaign-edit__dropdown"
                           trigger-class="campaign-edit__dropdown-trigger"
                         />
+                        <!-- Show profile list when global branding is NOT selected -->
+                        <div v-if="!isGlobalBrandingSelected" class="campaign-edit__profiles-list">
+                          <button
+                            v-for="profile in availableCreatorProfiles"
+                            :key="profile.id"
+                            type="button"
+                            @click="toggleCreatorProfile(profile.id)"
+                            class="campaign-edit__profile"
+                            :class="{
+                              'campaign-edit__profile--selected': selectedCreatorProfileIds.includes(profile.id),
+                            }"
+                          >
+                            <div class="campaign-edit__profile-avatar">
+                              <img v-if="profile.profile_image_url" :src="profile.profile_image_url" />
+                              <User v-else class="campaign-edit__profile-avatar-icon" />
+                            </div>
+                            <div class="campaign-edit__profile-info">
+                              <span class="campaign-edit__profile-name">{{ profile.name }}</span>
+                            </div>
+                            <div
+                              v-if="selectedCreatorProfileIds.includes(profile.id)"
+                              class="campaign-edit__profile-check"
+                            >
+                              <Check class="campaign-edit__profile-check-icon" />
+                            </div>
+                          </button>
+                        </div>
                         <p class="campaign-edit__hint">
-                          Select a creator profile to use for global branding (intro, outro, watermarks)
+                          <template v-if="isGlobalBrandingSelected">
+                            Select which creator profile's assets (intro, outro, watermarks) to use for global branding
+                          </template>
+                          <template v-else>
+                            Select one or more creator profiles that clippers can use for this campaign
+                          </template>
                         </p>
                       </div>
                     </div>
@@ -2043,6 +2059,33 @@
   const availableAssets = ref<ServerOrganizationAsset[]>([]);
   const loadingProfiles = ref(false);
   const selectedCreatorProfileIds = ref<(number | null)[]>([]);
+  const isGlobalBrandingSelected = ref(false);
+
+  // Check if organization has global branding setup (has branding assets and at least one creator profile)
+  const hasGlobalBranding = computed(() => {
+    // Don't show global branding option while still loading
+    if (loadingProfiles.value) {
+      return false;
+    }
+    
+    const brandingAssets = availableAssets.value.filter(asset => 
+      ['intro', 'outro', 'watermark'].includes(asset.asset_type)
+    );
+    const hasBrandingAssets = brandingAssets.length > 0;
+    const hasProfiles = availableCreatorProfiles.value.length > 0;
+    
+    console.log('[Campaign Branding] hasGlobalBranding check:', {
+      loading: loadingProfiles.value,
+      totalAssets: availableAssets.value.length,
+      brandingAssets: brandingAssets.map(a => ({ id: a.id, type: a.asset_type, name: a.name })),
+      hasBrandingAssets,
+      profileCount: availableCreatorProfiles.value.length,
+      hasProfiles,
+      result: hasBrandingAssets && hasProfiles
+    });
+    
+    return hasBrandingAssets && hasProfiles;
+  });
 
   // Dropdown options
   const cpmViewsOptions = [
@@ -2081,6 +2124,12 @@
     { label: 'No branding', value: null },
     ...availableCreatorProfiles.value.map((p) => ({ label: p.name, value: p.id })),
   ]);
+
+  // Options for global branding - only show profiles with scope='global'
+  const globalBrandingProfileOptions = computed(() => {
+    const globalProfiles = availableCreatorProfiles.value.filter(p => p.scope === 'global');
+    return globalProfiles.map((p) => ({ label: p.name, value: p.id }));
+  });
 
   const campaignForm = reactive({
     title: '',
@@ -2409,6 +2458,7 @@
       }
       if (assetsRes.success) {
         availableAssets.value = assetsRes.assets;
+        console.log('[Campaign Branding] Loaded assets:', assetsRes.assets.map(a => ({ id: a.id, type: a.asset_type, name: a.name })));
       }
     } catch (error) {
       console.error('Failed to load creator profiles/assets:', error);
@@ -2417,19 +2467,52 @@
     }
   };
 
+  const selectGlobalBranding = () => {
+    isGlobalBrandingSelected.value = true;
+    selectedCreatorProfileIds.value = [];
+    // Clear creator_profile_id for global branding (null means any streamer)
+    campaignForm.creator_profile_id = null;
+    // Auto-select the only global profile if there's exactly one
+    const globalProfiles = availableCreatorProfiles.value.filter(p => p.scope === 'global');
+    if (globalProfiles.length === 1) {
+      campaignForm.branding_profile_id = globalProfiles[0].id;
+    } else {
+      campaignForm.branding_profile_id = globalProfiles[0]?.id || null;
+    }
+  };
+
+  const handleGlobalBrandingToggle = () => {
+    if (isGlobalBrandingSelected.value) {
+      // Global branding enabled - clear specific profile selections
+      selectedCreatorProfileIds.value = [];
+      // Auto-select the only global profile if there's exactly one
+      const globalProfiles = availableCreatorProfiles.value.filter(p => p.scope === 'global');
+      if (globalProfiles.length === 1) {
+        campaignForm.branding_profile_id = globalProfiles[0].id;
+      } else if (globalProfiles.length > 1) {
+        // If multiple global profiles, keep current selection or default to first global
+        const currentIsGlobal = globalProfiles.some(p => p.id === campaignForm.branding_profile_id);
+        if (!currentIsGlobal) {
+          campaignForm.branding_profile_id = globalProfiles[0]?.id || null;
+        }
+      } else {
+        campaignForm.branding_profile_id = null;
+      }
+    } else {
+      // Global branding disabled - clear branding profile
+      campaignForm.branding_profile_id = null;
+    }
+  };
+
   const toggleCreatorProfile = (profileId: number | null) => {
+    // Don't allow toggling if global branding is selected
+    if (isGlobalBrandingSelected.value) return;
+
     const idx = selectedCreatorProfileIds.value.indexOf(profileId);
     if (idx >= 0) {
       selectedCreatorProfileIds.value.splice(idx, 1);
     } else {
-      // If selecting Global Branding (null), clear other selections
-      if (profileId === null) {
-        selectedCreatorProfileIds.value = [null];
-      } else {
-        // If selecting a specific profile, remove Global Branding if present
-        selectedCreatorProfileIds.value = selectedCreatorProfileIds.value.filter(id => id !== null);
-        selectedCreatorProfileIds.value.push(profileId);
-      }
+      selectedCreatorProfileIds.value.push(profileId);
     }
   };
 
@@ -2438,6 +2521,7 @@
     editingCampaign.value = null;
     coverImagePreview.value = '';
     selectedCreatorProfileIds.value = [];
+    isGlobalBrandingSelected.value = false;
     currentStep.value = 1;
     error.value = null;
     Object.assign(campaignForm, {
@@ -2467,6 +2551,8 @@
     editingCampaign.value = campaign;
     coverImagePreview.value = '';
     selectedCreatorProfileIds.value = campaign.creator_profiles?.map((p) => p.id) || [];
+    // Set global branding flag based on whether campaign has creator_profile_id null AND branding_profile_id set
+    isGlobalBrandingSelected.value = campaign.creator_profile_id === null && campaign.branding_profile_id !== null;
     error.value = null;
     Object.assign(campaignForm, {
       title: campaign.title,
@@ -2491,6 +2577,13 @@
     await loadCreatorProfilesAndAssets();
   };
 
+  const convertToISO8601 = (datetimeLocal: string): string | undefined => {
+    if (!datetimeLocal) return undefined;
+    // datetime-local format: "2024-03-06T21:15"
+    // Convert to ISO 8601 with timezone: "2024-03-06T21:15:00Z"
+    return `${datetimeLocal}:00Z`;
+  };
+
   const saveCampaign = async () => {
     saving.value = true;
     error.value = null;
@@ -2506,14 +2599,22 @@
         allowed_platforms: campaignForm.allowed_platforms,
         payment_methods: campaignForm.payment_methods,
         cover_image_url: campaignForm.cover_image_url || undefined,
-        starts_at: campaignForm.starts_at || undefined,
-        ends_at: campaignForm.ends_at || undefined,
+        starts_at: convertToISO8601(campaignForm.starts_at),
+        ends_at: convertToISO8601(campaignForm.ends_at),
         payment_model: campaignForm.payment_model,
         per_clip_amount: campaignForm.payment_model === 'per_clip' ? campaignForm.per_clip_amount : undefined,
         clips_per_profile: campaignForm.payment_model === 'per_clip' ? campaignForm.clips_per_profile : undefined,
-        creator_profile_id: campaignForm.creator_profile_id || undefined,
+        // For global branding, explicitly send null for creator_profile_id
+        creator_profile_id: isGlobalBrandingSelected.value ? null : (campaignForm.creator_profile_id || undefined),
         branding_profile_id: campaignForm.branding_profile_id || undefined,
       };
+
+      console.log('[Campaign Save] About to save with:', {
+        isGlobalBranding: isGlobalBrandingSelected.value,
+        creator_profile_id: data.creator_profile_id,
+        branding_profile_id: data.branding_profile_id,
+        selectedCreatorProfileIds: selectedCreatorProfileIds.value
+      });
 
       let response;
       if (editingCampaign.value) {
@@ -2522,15 +2623,36 @@
         response = await createCampaign(Number(props.organizationId), data);
       }
 
+      console.log('[Campaign Save] API response:', {
+        success: response.success,
+        campaign: response.campaign ? {
+          id: response.campaign.id,
+          creator_profile_id: response.campaign.creator_profile_id,
+          branding_profile_id: response.campaign.branding_profile_id,
+          creator_profiles: response.campaign.creator_profiles
+        } : null
+      });
+
       if (response.success && response.campaign) {
-        // Save creator profiles assignment (filter out null for Global Branding)
-        const profileIds = selectedCreatorProfileIds.value.filter((id): id is number => id !== null);
-        if (profileIds.length > 0) {
+        // Save creator profiles assignment (only if NOT using global branding)
+        if (!isGlobalBrandingSelected.value) {
+          const profileIds = selectedCreatorProfileIds.value.filter((id): id is number => id !== null);
+          if (profileIds.length > 0) {
+            await setCampaignCreatorProfiles(
+              Number(props.organizationId),
+              response.campaign.id,
+              profileIds
+            );
+          }
+        } else {
+          // For global branding, clear any existing creator profile assignments
+          console.log('[Campaign Save] Clearing creator profiles for global branding campaign');
           await setCampaignCreatorProfiles(
             Number(props.organizationId),
             response.campaign.id,
-            profileIds
+            []
           );
+          console.log('[Campaign Save] Creator profiles cleared');
         }
 
         toast({ title: 'Success', description: `Campaign ${editingCampaign.value ? 'updated' : 'created'}` });
@@ -5252,6 +5374,34 @@
     border-color: rgba(6, 182, 212, 0.4);
   }
 
+  .campaign-wizard__profile--disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  .campaign-wizard__divider {
+    display: flex;
+    align-items: center;
+    margin: 1rem 0;
+    text-align: center;
+  }
+
+  .campaign-wizard__divider::before,
+  .campaign-wizard__divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .campaign-wizard__divider-text {
+    padding: 0 1rem;
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
   .campaign-wizard__profile-avatar {
     width: 40px;
     height: 40px;
@@ -6115,6 +6265,103 @@
 
   .campaign-wizard__toggle-switch:hover .campaign-wizard__toggle-slider {
     opacity: 0.9;
+  }
+
+  /* Campaign Edit Checkbox */
+  .campaign-edit__checkbox {
+    margin-right: 0.5rem;
+    cursor: pointer;
+  }
+
+  .campaign-edit__optional {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 400;
+    margin-left: 0.25rem;
+  }
+
+  /* Campaign Edit Profile List */
+  .campaign-edit__profiles-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .campaign-edit__profile {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .campaign-edit__profile:hover {
+    background-color: var(--sidebar-active);
+    border-color: rgba(6, 182, 212, 0.3);
+  }
+
+  .campaign-edit__profile--selected {
+    background-color: rgba(6, 182, 212, 0.1);
+    border-color: rgba(6, 182, 212, 0.4);
+  }
+
+  .campaign-edit__profile-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    overflow: hidden;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .campaign-edit__profile-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .campaign-edit__profile-avatar-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaign-edit__profile-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .campaign-edit__profile-name {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .campaign-edit__profile-check {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: var(--sidebar-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .campaign-edit__profile-check-icon {
+    width: 12px;
+    height: 12px;
+    color: white;
   }
 
   /* Streamer Assignment */

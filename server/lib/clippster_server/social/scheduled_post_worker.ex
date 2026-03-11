@@ -14,7 +14,8 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   require Logger
 
   alias ClippsterServer.Social
-  alias ClippsterServer.Social.{PostSubmission, SocialAccount, Platform, TwitterDuplicateDetector}
+  alias ClippsterServer.Social.{PostSubmission, SocialAccount, Platform}
+  alias ClippsterServer.Social.Providers.PostForMe
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Campaigns.ClipperSocialAccount
 
@@ -150,6 +151,9 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     Appsignal.instrument("ScheduledPostWorker#process", fn ->
       now = DateTime.utc_now()
 
+      # Recover any posts stuck in 'publishing' with stale locks (crashed worker)
+      Social.recover_stale_publishing_posts()
+
       # Find posts that are scheduled and ready to publish
       posts = Social.get_scheduled_posts_ready_to_publish(now, @batch_size)
 
@@ -170,18 +174,24 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   end
 
   defp process_single_post(%PostSubmission{} = post) do
-    # Try to lock the post
-    case Social.lock_post_for_publishing(post) do
-      {:ok, locked_post} ->
-        publish_post(locked_post)
+    # Skip posts whose media hasn't been uploaded to R2 yet (still a local file path)
+    if post.media_url && String.starts_with?(post.media_url, "http") do
+      # Try to lock the post
+      case Social.lock_post_for_publishing(post) do
+        {:ok, locked_post} ->
+          publish_post(locked_post)
 
-      {:error, :already_locked} ->
-        Logger.debug("[ScheduledPostWorker] Post #{post.id} already locked, skipping")
-        :skipped
+        {:error, :already_locked} ->
+          Logger.debug("[ScheduledPostWorker] Post #{post.id} already locked, skipping")
+          :skipped
 
-      {:error, reason} ->
-        Logger.warning("[ScheduledPostWorker] Failed to lock post #{post.id}: #{inspect(reason)}")
-        :failed
+        {:error, reason} ->
+          Logger.warning("[ScheduledPostWorker] Failed to lock post #{post.id}: #{inspect(reason)}")
+          :failed
+      end
+    else
+      Logger.debug("[ScheduledPostWorker] Post #{post.id} media not yet uploaded (#{post.media_url}), skipping until upload completes")
+      :skipped
     end
   end
 
@@ -248,9 +258,9 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     if SocialAccount.token_needs_refresh?(account) do
       Logger.info("[ScheduledPostWorker] Token needs refresh for org account #{account.id}")
 
-      access_token = SocialAccount.get_access_token(account)
+      refresh_token = SocialAccount.get_refresh_token(account)
 
-      case Platform.call(account.platform, :refresh_tokens, [access_token]) do
+      case Platform.call(account.platform, :refresh_tokens, [refresh_token]) do
         {:ok, new_tokens} ->
           expires_at =
             if new_tokens[:expires_in] do
@@ -303,9 +313,9 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     if ClipperSocialAccount.token_needs_refresh?(account) do
       Logger.info("[ScheduledPostWorker] Token needs refresh for user account #{account.id}")
 
-      access_token = ClipperSocialAccount.get_access_token(account)
+      refresh_token = ClipperSocialAccount.get_refresh_token(account)
 
-      case Platform.call(account.platform, :refresh_tokens, [access_token]) do
+      case Platform.call(account.platform, :refresh_tokens, [refresh_token]) do
         {:ok, new_tokens} ->
           expires_at =
             if new_tokens[:expires_in] do
@@ -353,86 +363,60 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     end
   end
 
-  # X/Twitter-specific publish: two-step flow (upload media, then create tweet)
-  defp do_publish(%PostSubmission{platform: platform} = post, account, access_token)
-       when platform in ["twitter", "x"] do
-    Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to X (two-step flow)")
+  # All platforms publish via PostForMe API
+  defp do_publish(%PostSubmission{} = post, account, _access_token) do
+    Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to #{post.platform} via PostForMe")
 
-    # Check for duplicate content before publishing
-    account_id = get_account_id(post)
-    caption = post.caption || ""
+    with {:ok, provider_account_id} <- get_provider_account_id(account),
+         {:ok, media_url} <- ensure_accessible_media_url(post.media_url) do
+      
+      post_params = %{
+        caption: post.caption || "",
+        social_accounts: [provider_account_id],
+        media: [%{url: media_url}],
+        external_id: "scheduled:#{post.id}"
+      }
 
-    case TwitterDuplicateDetector.check_duplicate(account_id, caption, []) do
-      {:ok, _content_hash} ->
-        # No duplicate, proceed with publish
-        publish_opts = %{
-          filename: "video.mp4",
-          ig_user_id: get_platform_user_id(account)
-        }
+      case PostForMe.create_social_post(post_params) do
+        {:ok, pfm_post} ->
+          # Try to fetch post_url and provider_post_id from feed
+          {post_url, provider_post_id} = fetch_post_data_from_feed(provider_account_id, pfm_post.id)
+          
+          result = %{
+            post_id: pfm_post.id || "pfm_#{post.id}",
+            post_url: post_url,
+            provider_post_id: provider_post_id
+          }
+          handle_publish_success(post, result)
 
-        # Step 1: Upload media
-        Logger.info("[ScheduledPostWorker] Twitter: uploading media for post #{post.id}")
-
-        case Platform.call("twitter", :publish_media, [access_token, post.media_url, publish_opts]) do
-          {:ok, %{media_id: media_id}} ->
-            # Step 2: Create tweet with media_id
-            Logger.info("[ScheduledPostWorker] Twitter: creating tweet with media_id #{media_id}")
-
-            case Platform.call("twitter", :create_tweet, [
-                   access_token,
-                   caption,
-                   [media_ids: [media_id]]
-                 ]) do
-              {:ok, result} ->
-                # Store content hash with media_id for accurate future duplicate detection
-                final_content_hash = TwitterDuplicateDetector.generate_hash(caption, [media_id])
-                handle_publish_success(post, result, final_content_hash)
-
-              {:error, reason} ->
-                error_type = classify_error(reason)
-                handle_publish_failure(post, inspect(reason), error_type)
-            end
-
-          {:error, reason} ->
-            error_type = classify_error(reason)
-            handle_publish_failure(post, inspect(reason), error_type)
-        end
-
-      {:error, :duplicate_content, existing_post} ->
-        # Duplicate detected, fail permanently
-        error_msg =
-          "Duplicate content detected (matches post #{existing_post.id} from #{existing_post.inserted_at})"
-
-        handle_publish_failure(post, error_msg, :permanent)
-    end
-  end
-
-  # Default platform publish: single-step flow (Instagram and others)
-  defp do_publish(%PostSubmission{} = post, account, access_token) do
-    Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to #{post.platform}")
-
-    publish_opts = %{
-      caption: post.caption || "",
-      media_type: post.media_type || "reel",
-      ig_user_id: get_platform_user_id(account)
-    }
-
-    case Platform.call(post.platform, :publish_media, [access_token, post.media_url, publish_opts]) do
-      {:ok, result} ->
-        handle_publish_success(post, result)
-
+        {:error, reason} ->
+          error_type = classify_error(reason)
+          handle_publish_failure(post, inspect(reason), error_type)
+      end
+    else
+      {:error, :missing_provider_account_id} ->
+        handle_publish_failure(post, "Account missing PostForMe provider_account_id", :permanent)
+      
       {:error, reason} ->
         error_type = classify_error(reason)
         handle_publish_failure(post, inspect(reason), error_type)
     end
   end
 
-  defp get_platform_user_id(%SocialAccount{platform_user_id: id}), do: id
-  defp get_platform_user_id(%ClipperSocialAccount{platform_user_id: id}), do: id
-  defp get_platform_user_id(_), do: nil
+  defp get_provider_account_id(%SocialAccount{provider_account_id: id}) when is_binary(id) and id != "", do: {:ok, id}
+  defp get_provider_account_id(%ClipperSocialAccount{provider_account_id: id}) when is_binary(id) and id != "", do: {:ok, id}
+  defp get_provider_account_id(_), do: {:error, :missing_provider_account_id}
 
-  defp get_account_id(%PostSubmission{} = post) do
-    post.organization_social_account_id || post.user_social_account_id
+  defp ensure_accessible_media_url(media_url) do
+    # Generate presigned URL for R2 storage
+    if String.contains?(media_url, ".r2.cloudflarestorage.com") do
+      case ClippsterServer.Storage.presigned_url(media_url, expires_in: 7_200) do
+        {:ok, url} -> {:ok, url}
+        {:error, _} -> {:ok, media_url}  # Fallback to original
+      end
+    else
+      {:ok, media_url}
+    end
   end
 
   defp handle_publish_success(%PostSubmission{} = post, result, content_hash \\ nil) do
@@ -445,6 +429,13 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
       post_url: result.post_url,
       posted_at: DateTime.utc_now()
     }
+
+    # Add provider_post_id if available
+    attrs = if Map.has_key?(result, :provider_post_id) && result.provider_post_id do
+      Map.put(attrs, :provider_post_id, result.provider_post_id)
+    else
+      attrs
+    end
 
     attrs = if content_hash, do: Map.put(attrs, :content_hash, content_hash), else: attrs
 
@@ -508,5 +499,60 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     end
   end
 
-  defp classify_error(_), do: :transient
+  defp classify_error(_reason), do: :transient
+
+  # Fetch post_url and provider_post_id after publishing via PostForMe
+  defp fetch_post_data_from_feed(provider_account_id, pfm_post_id) do
+    try do
+      # First try social-post-results endpoint (most reliable)
+      case PostForMe.list_social_post_results(%{"social_post_id" => pfm_post_id}) do
+        {:ok, %{data: results}} when is_list(results) and results != [] ->
+          result = List.first(results)
+          platform_data = result.platform_data || %{}
+          post_url = platform_data["platform_url"] || platform_data["url"]
+          provider_post_id = platform_data["platform_post_id"] || platform_data["id"]
+
+          if post_url || provider_post_id do
+            Logger.info("[ScheduledPostWorker] Found post data from results: url=#{post_url}, provider_id=#{provider_post_id}")
+            {post_url, provider_post_id}
+          else
+            fetch_from_feed_fallback(provider_account_id, pfm_post_id)
+          end
+
+        _ ->
+          fetch_from_feed_fallback(provider_account_id, pfm_post_id)
+      end
+    rescue
+      e ->
+        Logger.warning("[ScheduledPostWorker] Error fetching post data (non-fatal): #{inspect(e)}")
+        {nil, nil}
+    end
+  end
+
+  # Fallback: search account feed for the most recent matching post
+  defp fetch_from_feed_fallback(provider_account_id, pfm_post_id) do
+    case PostForMe.get_social_account_feed(provider_account_id) do
+      {:ok, %{data: feed_items}} when is_list(feed_items) ->
+        # Feed items don't have social_post_id, so just grab the most recent post
+        # (it was just published, so it should be first)
+        case List.first(feed_items) do
+          nil ->
+            Logger.warning("[ScheduledPostWorker] Post #{pfm_post_id} not found in feed")
+            {nil, nil}
+
+          item when is_map(item) ->
+            post_url = item["platform_url"]
+            provider_post_id = item["platform_post_id"]
+            Logger.info("[ScheduledPostWorker] Using most recent feed item: url=#{post_url}, provider_id=#{provider_post_id}")
+            {post_url, provider_post_id}
+
+          _ ->
+            {nil, nil}
+        end
+
+      _ ->
+        Logger.warning("[ScheduledPostWorker] Failed to fetch feed for #{provider_account_id}")
+        {nil, nil}
+    end
+  end
 end

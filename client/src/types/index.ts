@@ -293,6 +293,7 @@ export interface MediaPanelProps {
   // Creator profile default assets (auto-applied when building clips)
   creatorDefaultIntro?: IntroOutroRef | null;
   creatorDefaultOutro?: IntroOutroRef | null;
+  creatorProfile?: any | null;
   creatorProfileServerId?: number | null;
   // Transcription progress
   isTranscribing?: boolean;

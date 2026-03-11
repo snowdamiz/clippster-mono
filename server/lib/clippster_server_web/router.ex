@@ -382,6 +382,16 @@ defmodule ClippsterServerWeb.Router do
 
     post("/invitations/:token/accept", OrganizationController, :accept_invitation)
 
+    # Invite user by user_id (for Clipper Directory)
+    post(
+      "/organizations/:organization_id/invite-user",
+      OrganizationController,
+      :invite_user
+    )
+
+    # List current user's pending invitations
+    get("/me/invitations", OrganizationController, :list_my_invitations)
+
     # Create member account directly (admin creates account for user)
     post(
       "/organizations/:organization_id/create-member",
@@ -669,6 +679,12 @@ defmodule ClippsterServerWeb.Router do
     get("/organizations/:organization_id/posts/:id", PostSubmissionController, :show)
 
     post(
+      "/organizations/:organization_id/posts/presigned-upload",
+      PostSubmissionController,
+      :get_presigned_upload_url
+    )
+
+    post(
       "/organizations/:organization_id/posts/upload-media",
       PostSubmissionController,
       :upload_media
@@ -805,6 +821,7 @@ defmodule ClippsterServerWeb.Router do
     post("/user/posts/sync-analytics", UserPostsController, :sync_user_analytics)
     get("/user/posts/:id", UserPostsController, :show)
     post("/user/posts/:id/sync", UserPostsController, :sync_analytics)
+    post("/user/posts/:id/generate-thumbnail", UserPostsController, :generate_thumbnail)
 
     # ============================================================================
     # Social Media Scheduling
@@ -819,6 +836,8 @@ defmodule ClippsterServerWeb.Router do
     # Get/update/cancel/retry a scheduled post
     get("/social/scheduled/:id", SchedulingController, :show)
     put("/social/scheduled/:id", SchedulingController, :update)
+    delete("/social/scheduled/:id", SchedulingController, :delete)
+    patch("/social/scheduled/update-media", SchedulingController, :update_media)
     post("/social/scheduled/:id/cancel", SchedulingController, :cancel)
     post("/social/scheduled/:id/retry", SchedulingController, :retry)
 
@@ -1275,6 +1294,7 @@ defmodule ClippsterServerWeb.Router do
     post("/admin/waitlist", AdminController, :add_to_waitlist)
     post("/admin/waitlist/invite", AdminController, :invite_waitlist)
     post("/admin/waitlist/:id/invite", AdminController, :invite_waitlist_entry)
+    post("/admin/waitlist/:id/reinvite", AdminController, :reinvite_waitlist_entry)
 
     # Admin affiliate management
     get("/admin/affiliates", AffiliateController, :list_affiliates)

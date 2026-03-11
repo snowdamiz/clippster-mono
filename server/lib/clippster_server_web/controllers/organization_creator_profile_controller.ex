@@ -552,6 +552,8 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
       outro_id: profile.outro_id,
       watermark_id: profile.watermark_id,
       watermark_settings: profile.watermark_settings,
+      intro_ratio_settings: profile.intro_ratio_settings,
+      outro_ratio_settings: profile.outro_ratio_settings,
       layout_overlays: profile.layout_overlays,
       intro: serialize_asset(profile.intro),
       outro: serialize_asset(profile.outro),

@@ -590,16 +590,32 @@ pub async fn export_video_editor_project(
         // CRITICAL: pad must use canvas dimensions (width x height) to ensure concat gets uniform inputs
 
         if (scale - 1.0).abs() > 0.001 {
-            let sw = (width as f64 * scale) as i32;
-
-            let sh = (height as f64 * scale) as i32;
+            // Scale to the zoomed box size, then ensure output is always canvas-sized.
+            // Zoom in (scale>1): content is larger than canvas → pad then crop to canvas.
+            // Zoom out (scale<1): content is smaller than canvas → pad up to canvas.
+            let sw = (((width as f64 * scale) as i32) / 2) * 2; // ensure even
+            let sh = (((height as f64 * scale) as i32) / 2) * 2;
 
             transform_filters.push(format!(
                 "scale={}:{}:force_original_aspect_ratio=decrease",
                 sw, sh
             ));
 
-            transform_filters.push(format!("pad={}:{}:(ow-iw)/2:(oh-ih)/2:black", sw, sh));
+            // Pad to at least canvas dimensions (handles zoom-out where sw < width)
+            let pad_w = sw.max(width);
+            let pad_h = sh.max(height);
+            transform_filters.push(format!(
+                "pad={}:{}:(ow-iw)/2:(oh-ih)/2:black",
+                pad_w, pad_h
+            ));
+
+            // Crop back to exact canvas size (handles zoom-in where sw > width)
+            if pad_w != width || pad_h != height {
+                transform_filters.push(format!(
+                    "crop={}:{}:(iw-{})/2:(ih-{})/2",
+                    width, height, width, height
+                ));
+            }
         } else {
             transform_filters.push(format!(
                 "scale={}:{}:force_original_aspect_ratio=decrease",

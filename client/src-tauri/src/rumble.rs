@@ -299,9 +299,75 @@ fn clean_html_text(text: &str) -> String {
         .to_string()
 }
 
+/// Get a single Rumble video's metadata using yt-dlp
+#[tauri::command]
+pub async fn get_single_rumble_video(video_url: String) -> Result<String, String> {
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    
+    println!("[Rumble] Fetching single video: {}", video_url);
+
+    let mut cmd = tokio::process::Command::new(&ytdlp_path);
+    no_window(&mut cmd);
+
+    cmd.arg("--dump-json")
+        .arg("--skip-download")
+        .arg("--no-warnings")
+        .arg("--impersonate").arg("chrome")
+        .arg(&video_url);
+
+    let output = cmd.output().await
+        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if stdout.trim().is_empty() {
+        return Err(format!("yt-dlp returned no output. stderr: {}", &stderr[..stderr.len().min(500)]));
+    }
+
+    let json: serde_json::Value = serde_json::from_str(stdout.trim())
+        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+
+    let video_id = match json["id"].as_str() {
+        Some(id) if !id.is_empty() => id.to_string(),
+        _ => return Err("No video ID in response".to_string()),
+    };
+
+    let url = json["webpage_url"].as_str()
+        .map(String::from)
+        .unwrap_or_else(|| format!("https://rumble.com/v{}.html", video_id));
+
+    let is_live = json["is_live"].as_bool().unwrap_or(false);
+    let was_live = json["was_live"].as_bool().unwrap_or(false);
+
+    let vod = RumbleVod {
+        video_id,
+        title: json["title"].as_str().map(String::from),
+        duration: json["duration"].as_f64(),
+        view_count: json["view_count"].as_i64(),
+        thumbnail_url: json["thumbnail"].as_str().map(String::from),
+        upload_date: json["upload_date"].as_str().map(String::from),
+        url,
+        is_live: was_live && !is_live, // Only mark as live if it was a past livestream
+    };
+
+    Ok(serde_json::to_string(&vec![vod]).unwrap())
+}
+
 /// Get list of VODs from a Rumble channel using yt-dlp
 #[tauri::command]
 pub async fn get_rumble_vods(channel: String, limit: Option<u32>) -> Result<String, String> {
+    // Check if input is a direct video URL
+    if let Some(video_id) = extract_video_id(&channel) {
+        println!("[Rumble VODs] Detected video URL, fetching single video: {}", video_id);
+        let video_url = if channel.contains("rumble.com") {
+            channel.clone()
+        } else {
+            format!("https://rumble.com/{}.html", video_id)
+        };
+        return get_single_rumble_video(video_url).await;
+    }
+    
     let ytdlp_path = resolve_ytdlp_binary()?;
     
     let limit_str = limit.unwrap_or(10).to_string();
@@ -1178,6 +1244,46 @@ pub async fn get_rumble_channel_info(channel: String) -> Result<String, String> 
 }
 
 // Helper functions
+
+/// Extract Rumble video ID from various URL formats
+/// Returns Some(video_id) if input is a video URL, None if it's a channel URL or other
+/// Rumble video URLs: rumble.com/v[id]-title.html or rumble.com/embed/v[id]
+fn extract_video_id(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    
+    // rumble.com/v[id]-title.html format
+    if let Some(v_part) = trimmed.split("/v").nth(1) {
+        // Extract everything before the first dash or .html
+        let video_id = v_part.split('-').next()
+            .or_else(|| v_part.split('.').next())
+            .unwrap_or("");
+        if !video_id.is_empty() && video_id.chars().all(|c| c.is_alphanumeric()) {
+            return Some(format!("v{}", video_id));
+        }
+    }
+    
+    // rumble.com/embed/v[id] format
+    if trimmed.contains("/embed/v") {
+        if let Some(embed_part) = trimmed.split("/embed/v").nth(1) {
+            let video_id = embed_part.split('/').next()
+                .or_else(|| embed_part.split('?').next())
+                .unwrap_or("");
+            if !video_id.is_empty() && video_id.chars().all(|c| c.is_alphanumeric()) {
+                return Some(format!("v{}", video_id));
+            }
+        }
+    }
+    
+    // Direct video ID (starts with 'v' followed by alphanumeric)
+    if trimmed.starts_with('v') && trimmed.len() > 1 {
+        let id_part = &trimmed[1..];
+        if id_part.chars().all(|c| c.is_alphanumeric()) {
+            return Some(trimmed.to_string());
+        }
+    }
+    
+    None
+}
 
 fn normalize_channel_name(input: &str) -> String {
     let trimmed = input.trim();

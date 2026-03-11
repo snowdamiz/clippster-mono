@@ -116,6 +116,7 @@ export interface Clip {
   built_duration: number | null;
   // Version tracking
   current_version_id: string | null;
+  detection_session_id: string | null;
   // Campaign integration
   campaign_id: number | null;
   created_at: number;
@@ -276,6 +277,13 @@ export interface ClipBuild {
   status: 'building' | 'completed' | 'failed';
   error_message: string | null;
   progress: number;
+  // Branding context
+  organization_id: number | null;
+  organization_name: string | null;
+  campaign_id: number | null;
+  campaign_name: string | null;
+  branding_profile_id: string | null;
+  branding_type: 'org' | 'campaign' | 'personal' | 'none';
   // Timestamps
   started_at: number;
   completed_at: number | null;

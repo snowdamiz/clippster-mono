@@ -5,7 +5,9 @@ defmodule ClippsterServerWeb.AIController do
 
   defp can_access_ai_editor?(user) do
     # Admins always have access, or users explicitly enabled by admin
-    user.is_admin or user.ai_editor_enabled
+    # Basic and Starter tiers do NOT have access to AI Video Creator
+    (user.is_admin or user.ai_editor_enabled) and 
+      user.subscription_tier not in ["basic", "starter"]
   end
 
   # Non-streaming endpoint (backwards-compatible fallback)

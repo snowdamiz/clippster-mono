@@ -53,6 +53,8 @@ export interface ServerOrganizationCreatorProfile {
   watermark_id?: number | null;
   watermark_settings?: Record<string, unknown> | null;
   intro_outro_settings?: Record<string, unknown> | null;
+  intro_ratio_settings?: string | null;
+  outro_ratio_settings?: string | null;
   layout_overlays?: Record<string, unknown>[] | null;
   scope: 'streamer' | 'global';
   disabled: boolean;

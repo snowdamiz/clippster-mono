@@ -1,5 +1,46 @@
 import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { Clip, ClipWithVersion, ClipBuild } from './types';
+import { addColumnIfMissing } from './schema-healing';
+
+// Ensure clip_builds table has branding-related columns
+async function ensureClipBuildsBrandingSchema(db: any): Promise<void> {
+  await addColumnIfMissing(
+    db,
+    'clip_builds',
+    'organization_id',
+    'INTEGER'
+  );
+  await addColumnIfMissing(
+    db,
+    'clip_builds',
+    'organization_name',
+    'TEXT'
+  );
+  await addColumnIfMissing(
+    db,
+    'clip_builds',
+    'campaign_id',
+    'INTEGER'
+  );
+  await addColumnIfMissing(
+    db,
+    'clip_builds',
+    'campaign_name',
+    'TEXT'
+  );
+  await addColumnIfMissing(
+    db,
+    'clip_builds',
+    'branding_profile_id',
+    'TEXT'
+  );
+  await addColumnIfMissing(
+    db,
+    'clip_builds',
+    'branding_type',
+    "TEXT DEFAULT 'personal'"
+  );
+}
 
 // Update clip build status
 export async function updateClipBuildStatus(
@@ -292,6 +333,7 @@ export async function getClipWithBuildStatus(clipId: string): Promise<Clip | nul
       built_duration: row.built_duration,
       current_version_id: row.current_version_id,
       campaign_id: row.campaign_id,
+      detection_session_id: row.detection_session_id || null,
       created_at: row.created_at,
       updated_at: row.updated_at,
     };
@@ -358,10 +400,18 @@ export async function createClipBuild(
     frameRate?: number;
     outputFormat?: string;
     includeSubtitles?: boolean;
+    organizationId?: number | null;
+    organizationName?: string | null;
+    campaignId?: number | null;
+    campaignName?: string | null;
+    brandingProfileId?: string | null;
+    brandingType?: 'org' | 'campaign' | 'personal' | 'none';
   }
 ): Promise<string> {
   try {
     const db = await getDatabase();
+    await ensureClipBuildsBrandingSchema(db);
+    
     const buildId = generateId();
     const now = timestamp();
 
@@ -376,8 +426,10 @@ export async function createClipBuild(
       `INSERT INTO clip_builds (
         id, clip_id, aspect_ratios, quality, frame_rate, output_format, 
         include_subtitles, file_path, build_number, status, progress,
+        organization_id, organization_name, campaign_id, campaign_name,
+        branding_profile_id, branding_type,
         started_at, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, 'building', 0, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, 'building', 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         buildId,
         clipId,
@@ -387,13 +439,21 @@ export async function createClipBuild(
         settings.outputFormat || null,
         settings.includeSubtitles ? 1 : 0,
         nextBuildNumber,
+        settings.organizationId || null,
+        settings.organizationName || null,
+        settings.campaignId || null,
+        settings.campaignName || null,
+        settings.brandingProfileId || null,
+        settings.brandingType || 'personal',
         now,
         now,
       ]
     );
 
     console.log(
-      `[Database] Created clip build ${buildId} for clip ${clipId} (build #${nextBuildNumber})`
+      `[Database] Created clip build ${buildId} for clip ${clipId} (build #${nextBuildNumber})`,
+      settings.organizationId ? `for org ${settings.organizationName}` : '',
+      settings.campaignId ? `for campaign ${settings.campaignName}` : ''
     );
     return buildId;
   } catch (error) {
@@ -414,6 +474,12 @@ export async function updateClipBuild(
     fileSize?: number;
     duration?: number;
     errorMessage?: string;
+    organizationId?: number | null;
+    organizationName?: string | null;
+    campaignId?: number | null;
+    campaignName?: string | null;
+    brandingProfileId?: string | null;
+    brandingType?: 'org' | 'campaign' | 'personal' | 'none';
   }
 ): Promise<void> {
   try {
@@ -467,6 +533,36 @@ export async function updateClipBuild(
       params.push(updates.errorMessage);
     }
 
+    if (updates.organizationId !== undefined) {
+      setClauses.push('organization_id = ?');
+      params.push(updates.organizationId);
+    }
+
+    if (updates.organizationName !== undefined) {
+      setClauses.push('organization_name = ?');
+      params.push(updates.organizationName);
+    }
+
+    if (updates.campaignId !== undefined) {
+      setClauses.push('campaign_id = ?');
+      params.push(updates.campaignId);
+    }
+
+    if (updates.campaignName !== undefined) {
+      setClauses.push('campaign_name = ?');
+      params.push(updates.campaignName);
+    }
+
+    if (updates.brandingProfileId !== undefined) {
+      setClauses.push('branding_profile_id = ?');
+      params.push(updates.brandingProfileId);
+    }
+
+    if (updates.brandingType !== undefined) {
+      setClauses.push('branding_type = ?');
+      params.push(updates.brandingType);
+    }
+
     if (setClauses.length === 0) {
       return;
     }
@@ -486,6 +582,7 @@ export async function updateClipBuild(
 export async function getClipBuilds(clipId: string): Promise<ClipBuild[]> {
   try {
     const db = await getDatabase();
+    await ensureClipBuildsBrandingSchema(db);
 
     const builds = await db.select<ClipBuild[]>(
       `SELECT * FROM clip_builds 
@@ -508,6 +605,7 @@ export async function getClipBuilds(clipId: string): Promise<ClipBuild[]> {
 export async function getClipBuild(buildId: string): Promise<ClipBuild | null> {
   try {
     const db = await getDatabase();
+    await ensureClipBuildsBrandingSchema(db);
 
     const builds = await db.select<ClipBuild[]>('SELECT * FROM clip_builds WHERE id = ?', [
       buildId,

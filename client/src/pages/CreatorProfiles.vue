@@ -144,226 +144,174 @@
           </div>
 
           <!-- Main Content Area -->
-          <div v-else-if="creators.length > 0" class="creators__list-section">
+          <div v-else-if="creators.length > 0 || campaigns.length > 0" class="creators__list-section">
             <!-- Campaign Profiles Section -->
-            <div v-if="campaignProfiles.length > 0" class="creators__section">
+            <div v-if="campaigns.length > 0" class="creators__section">
               <div class="creators__section-header">
                 <div class="creators__section-title-wrapper">
                   <Trophy class="creators__section-icon" />
-                  <h2 class="creators__section-title">Campaign Profiles</h2>
+                  <h2 class="creators__section-title">Campaigns</h2>
                 </div>
                 <div class="creators__item-count">
-                  {{ campaignProfiles.length }} {{ campaignProfiles.length === 1 ? 'profile' : 'profiles' }}
+                  {{ campaigns.length }} {{ campaigns.length === 1 ? 'campaign' : 'campaigns' }}
                 </div>
               </div>
 
               <div class="creators__list">
                 <transition-group name="list" tag="div" class="creators__list-inner">
                   <div 
-                    v-for="creator in campaignProfiles" 
-                    :key="creator.id" 
-                    class="creator-card"
-                    :class="{
-                      'creator-card--monitoring': isCreatorMonitored(creator),
-                      'creator-card--live': !isCreatorMonitored(creator) && isCreatorLive(creator)
-                    }"
+                    v-for="campaign in campaigns" 
+                    :key="campaign.id" 
+                    class="campaign-card"
+                    :class="{ 'campaign-card--expanded': isCampaignExpanded(campaign.id) }"
                   >
-                  <!-- Card Header: Avatar + Info + Menu -->
-                  <div class="creator-card__header">
-                    <div class="creator-card__avatar">
-                      <img
-                        v-if="getCreatorProfileImage(creator)"
-                        :src="getCreatorProfileImage(creator)"
-                        class="creator-card__avatar-img"
-                        @error="handleImageError($event, creator)"
+                    <!-- Campaign Header -->
+                    <div class="campaign-card__header" @click="toggleCampaignExpansion(campaign.id)">
+                      <div class="campaign-card__avatar" :class="{ 'campaign-card__avatar--global': campaign.isGlobalBranding }">
+                        <img
+                          v-if="campaign.cover_image_url"
+                          :src="campaign.cover_image_url"
+                          class="campaign-card__avatar-img"
+                        />
+                        <div v-else-if="campaign.isGlobalBranding" class="campaign-card__avatar-fallback campaign-card__avatar-fallback--global">
+                          <Globe class="campaign-card__avatar-icon" />
+                        </div>
+                        <div v-else class="campaign-card__avatar-fallback">
+                          <Trophy class="campaign-card__avatar-icon" />
+                        </div>
+                      </div>
+                      
+                      <div class="campaign-card__info">
+                        <div class="campaign-card__title">{{ campaign.title }}</div>
+                        <div class="campaign-card__subtitle">{{ campaign.organization_name }}</div>
+                      </div>
+
+                      <ChevronDown 
+                        class="campaign-card__expand-icon" 
+                        :class="{ 'campaign-card__expand-icon--rotated': isCampaignExpanded(campaign.id) }"
                       />
-                      <div v-else class="creator-card__avatar-fallback">
-                        <Users class="creator-card__avatar-icon" />
-                      </div>
-                    </div>
-                    <div class="creator-card__header-info">
-                      <div class="creator-card__name-row">
-                        <span class="creator-card__name">{{ creator.name }}</span>
-                        <span
-                          v-if="creator.campaign_title"
-                          class="creator-card__org-badge creator-card__campaign-badge"
-                          :title="`Campaign: ${creator.campaign_title}`"
-                        >
-                          <Trophy class="creator-card__org-badge-icon" />
-                          {{ creator.campaign_title }}
-                        </span>
-                      </div>
-                      <div class="creator-card__desc">
-                        {{ creator.organization_name || 'Campaign Profile' }}
-                      </div>
-                    </div>
-                    <!-- Menu Button -->
-                    <DropdownMenu>
-                      <DropdownMenuTrigger as-child>
-                        <button class="creator-card__menu-btn" title="More actions">
-                          <MoreVertical class="creator-card__menu-icon" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" :side-offset="4" class="creator-dropdown">
-                        <DropdownMenuItem class="creator-dropdown__item" @click="viewCreatorVods(creator)">
-                          <Video class="creator-dropdown__item-icon" />
-                          View VODs
-                        </DropdownMenuItem>
-                        <DropdownMenuItem class="creator-dropdown__item" @click="openDownloadDialog(creator)">
-                          <Download class="creator-dropdown__item-icon" />
-                          Download VOD
-                        </DropdownMenuItem>
-                        <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
-                          <DropdownMenuSeparator class="creator-dropdown__separator" />
-                          <DropdownMenuItem class="creator-dropdown__item" @click="toggleCreatorAutoDvr(creator)">
-                            <HardDrive class="creator-dropdown__item-icon" />
-                            Auto DVR {{ isCreatorAutoDvrEnabled(creator) ? 'On' : 'Off' }}
-                            <span
-                              class="creator-dropdown__item-badge"
-                              :class="{ 'creator-dropdown__item-badge--active': isCreatorAutoDvrEnabled(creator) }"
-                            >
-                              {{ isCreatorAutoDvrEnabled(creator) ? 'ON' : 'OFF' }}
-                            </span>
-                          </DropdownMenuItem>
-                        </template>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-
-                  <!-- Stats Row: Platforms | Branding | Status -->
-                  <div class="creator-card__stats-row">
-                    <!-- Platform Icons -->
-                    <div class="creator-card__platforms">
-                      <template v-if="creator.platform_links.length > 0">
-                        <div
-                          v-for="link in creator.platform_links.slice(0, 4)"
-                          :key="link.id"
-                          class="creator-card__platform-icon-wrapper"
-                          :title="link.display_name || link.platform_id"
-                        >
-                          <img
-                            :src="getPlatformIcon(link.platform)"
-                            :alt="link.platform"
-                            class="creator-card__platform-icon"
-                            :style="{ filter: getPlatformFilter(link.platform) }"
-                          />
-                        </div>
-                        <span v-if="creator.platform_links.length > 4" class="creator-card__more-badge">
-                          +{{ creator.platform_links.length - 4 }}
-                        </span>
-                      </template>
-                      <span v-else class="creator-card__empty-indicator">
-                        <Link class="creator-card__empty-icon" />
-                      </span>
                     </div>
 
-                    <div class="creator-card__divider"></div>
-
-                    <!-- Branding Icons -->
-                    <div class="creator-card__branding">
-                      <div
-                        class="creator-card__branding-icon"
-                        :class="{ 'creator-card__branding-icon--active': creator.intro_id }"
-                        :title="creator.intro_id ? 'Intro configured' : 'No intro'"
-                      >
-                        <Play />
-                      </div>
-                      <div
-                        class="creator-card__branding-icon"
-                        :class="{ 'creator-card__branding-icon--active': creator.outro_id }"
-                        :title="creator.outro_id ? 'Outro configured' : 'No outro'"
-                      >
-                        <SkipForward />
-                      </div>
-                      <div
-                        class="creator-card__branding-icon"
-                        :class="{ 'creator-card__branding-icon--active': creator.watermark_id }"
-                        :title="creator.watermark_id ? 'Watermark configured' : 'No watermark'"
-                      >
-                        <ImageIcon />
-                      </div>
-                    </div>
-
-                    <div class="creator-card__divider"></div>
-                  </div>
-
-                  <!-- Footer: Status + Actions -->
-                  <div class="creator-card__footer">
-                    <!-- Left: Status -->
-                    <div class="creator-card__status">
-                      <div
-                        v-if="isLiveClipEnabled && isCreatorMonitored(creator)"
-                        class="creator-status creator-status--monitoring"
-                      >
-                        <span class="creator-status__dot"></span>
-                        {{ getCreatorStatusLabel(creator) }}
-                      </div>
-                      <template v-else-if="isLiveClipEnabled && hasMonitorableLink(creator)">
-                        <div v-if="isCreatorCheckingLive(creator)" class="creator-status creator-status--checking">
-                          <Loader2 class="creator-status__spinner" />
-                          Checking...
-                        </div>
-                        <div v-else-if="isCreatorLive(creator)" class="creator-status creator-status--live">
-                          <span class="creator-status__dot"></span>
-                          LIVE
-                        </div>
-                        <div v-else class="creator-status creator-status--offline">
-                          <span class="creator-status__dot"></span>
-                          Offline
-                        </div>
-                      </template>
-                      <span v-else class="creator-card__platform-count">
-                        {{ creator.platform_links.length }} platform{{ creator.platform_links.length !== 1 ? 's' : '' }}
-                      </span>
-                    </div>
-
-                    <!-- Right: Actions -->
-                    <div class="creator-card__actions">
-                      <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
-                        <template v-if="!isCreatorMonitored(creator)">
-                          <div class="creator-action-group">
-                            <button
-                              @click.stop="startCreatorMonitoring(creator, false)"
-                              class="creator-action-group__btn"
-                              title="Record Only"
-                            >
-                              <span class="creator-action-group__rec-dot"></span>
-                              Rec
-                            </button>
-                            <button
-                              @click.stop="startCreatorMonitoring(creator, true)"
-                              class="creator-action-group__btn creator-action-group__btn--primary"
-                              title="Auto-Detect Clips"
-                            >
-                              <Sparkles class="creator-btn__icon" />
-                              Auto
-                            </button>
+                    <!-- Campaign Stats Row -->
+                    <div class="campaign-card__stats">
+                      <!-- Platform Icons -->
+                      <div class="campaign-card__platforms">
+                        <template v-if="campaign.isGlobalBranding">
+                          <div class="campaign-card__global-badge">
+                            <Globe :size="14" />
+                            <span>Any streamer eligible</span>
                           </div>
                         </template>
-                        <template v-else>
-                          <button
-                            @click.stop="stopCreatorMonitoring(creator)"
-                            class="creator-btn creator-btn--stop"
-                            title="Stop Monitoring"
+                        <template v-else-if="campaign.uniquePlatforms.length > 0">
+                          <div
+                            v-for="platform in campaign.uniquePlatforms.slice(0, 4)"
+                            :key="platform"
+                            class="campaign-card__platform-icon-wrapper"
                           >
-                            <Square class="creator-btn__icon" />
-                            Stop
-                          </button>
+                            <img
+                              :src="getPlatformIcon(platform)"
+                              :alt="platform"
+                              class="campaign-card__platform-icon"
+                              :style="{ filter: getPlatformFilter(platform) }"
+                            />
+                          </div>
+                          <span v-if="campaign.uniquePlatforms.length > 4" class="campaign-card__more-badge">
+                            +{{ campaign.uniquePlatforms.length - 4 }}
+                          </span>
                         </template>
-                        <button
-                          @click.stop="watchCreator(creator)"
-                          :disabled="!canWatchCreator(creator)"
-                          class="creator-btn creator-btn--watch"
-                          :class="{ 'creator-btn--watch-disabled': !canWatchCreator(creator) }"
-                          :title="canWatchCreator(creator) ? 'Watch Live' : 'Watch becomes available when live'"
+                      </div>
+
+                      <div class="campaign-card__divider"></div>
+
+                      <!-- Branding Icons -->
+                      <div class="campaign-card__branding">
+                        <div
+                          class="campaign-card__branding-icon"
+                          :class="{ 'campaign-card__branding-icon--active': campaign.hasIntro }"
+                          :title="campaign.hasIntro ? 'Intro configured' : 'No intro'"
                         >
-                          <Eye class="creator-btn__icon" />
-                          Watch
-                        </button>
-                      </template>
+                          <Play :size="16" />
+                        </div>
+                        <div
+                          class="campaign-card__branding-icon"
+                          :class="{ 'campaign-card__branding-icon--active': campaign.hasOutro }"
+                          :title="campaign.hasOutro ? 'Outro configured' : 'No outro'"
+                        >
+                          <SkipForward :size="16" />
+                        </div>
+                        <div
+                          class="campaign-card__branding-icon"
+                          :class="{ 'campaign-card__branding-icon--active': campaign.hasWatermark }"
+                          :title="campaign.hasWatermark ? 'Watermark configured' : 'No watermark'"
+                        >
+                          <ImageIcon :size="16" />
+                        </div>
+                      </div>
+
+                      <div class="campaign-card__divider"></div>
+
+                      <!-- Creator Count -->
+                      <div class="campaign-card__creator-count">
+                        <template v-if="!campaign.isGlobalBranding">
+                          {{ campaign.creators.length }} {{ campaign.creators.length === 1 ? 'creator' : 'creators' }}
+                        </template>
+                      </div>
+                    </div>
+
+                    <!-- Collapsed: Show first 3-4 creator avatars -->
+                    <div v-if="!campaign.isGlobalBranding && !isCampaignExpanded(campaign.id)" class="campaign-card__creators-preview">
+                      <div
+                        v-for="(creator, idx) in campaign.creators.slice(0, 4)"
+                        :key="creator.id"
+                        class="campaign-card__creator-avatar"
+                        :title="creator.name"
+                      >
+                        <img
+                          v-if="getCreatorProfileImage(creator)"
+                          :src="getCreatorProfileImage(creator)"
+                          class="campaign-card__creator-avatar-img"
+                        />
+                        <div v-else class="campaign-card__creator-avatar-fallback">
+                          {{ creator.name.charAt(0) }}
+                        </div>
+                      </div>
+                      <div v-if="campaign.creators.length > 4" class="campaign-card__more-creators">
+                        +{{ campaign.creators.length - 4 }} more
+                      </div>
+                    </div>
+
+                    <!-- Expanded: Show full creator list -->
+                    <div v-if="!campaign.isGlobalBranding && isCampaignExpanded(campaign.id)" class="campaign-card__creators-list">
+                      <div
+                        v-for="creator in campaign.creators"
+                        :key="creator.id"
+                        class="campaign-card__creator-item"
+                      >
+                        <div class="campaign-card__creator-avatar-small">
+                          <img
+                            v-if="getCreatorProfileImage(creator)"
+                            :src="getCreatorProfileImage(creator)"
+                            class="campaign-card__creator-avatar-img"
+                          />
+                          <div v-else class="campaign-card__creator-avatar-fallback">
+                            {{ creator.name.charAt(0) }}
+                          </div>
+                        </div>
+                        <div class="campaign-card__creator-info">
+                          <div class="campaign-card__creator-name">{{ creator.name }}</div>
+                          <div class="campaign-card__creator-platforms">
+                            <img
+                              v-for="link in creator.platform_links.slice(0, 3)"
+                              :key="link.id"
+                              :src="getPlatformIcon(link.platform)"
+                              :alt="link.platform"
+                              class="campaign-card__creator-platform-icon"
+                            />
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
               </transition-group>
             </div>
           </div>
@@ -1034,6 +982,8 @@
     Link,
     Paintbrush,
     Trophy,
+    Globe,
+    ChevronDown,
   } from 'lucide-vue-next';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useLivestreamStore } from '@/stores/livestream';
@@ -1043,6 +993,25 @@
     isOrgProfile?: boolean;
     server_id?: number;
     disabled?: boolean;
+    isGlobalBranding?: boolean;
+  }
+
+  // Grouped campaign display with all creators
+  interface DisplayCampaign {
+    id: number;
+    title: string;
+    organization_id: number;
+    organization_name: string;
+    cover_image_url?: string;
+    isGlobalBranding: boolean;
+    branding_profile_id: number | null;
+    creators: DisplayCreatorProfile[];
+    uniquePlatforms: PlatformId[];
+    hasIntro: boolean;
+    hasOutro: boolean;
+    hasWatermark: boolean;
+    created_at: number;
+    updated_at: number;
   }
 
   function getMonitoredStreamerId(creator: DisplayCreatorProfile): string | null {
@@ -1207,6 +1176,8 @@
   // State
   const loading = ref(true);
   const creators = ref<DisplayCreatorProfile[]>([]);
+  const campaigns = ref<DisplayCampaign[]>([]);
+  const expandedCampaigns = ref<Set<number>>(new Set());
   const searchQuery = ref('');
   const showProfileDialog = ref(false);
   const creatorToEdit = ref<DisplayCreatorProfile | null>(null);
@@ -1271,9 +1242,10 @@
     return sortedCreators.value.filter(c => c.isOrgProfile && !c.campaign_id);
   });
 
-  const campaignProfiles = computed(() => {
-    return sortedCreators.value.filter(c => c.campaign_id != null);
-  });
+  // No longer needed - campaigns are stored separately
+  // const campaignProfiles = computed(() => {
+  //   return sortedCreators.value.filter(c => c.campaign_id != null);
+  // });
 
   const userProfiles = computed(() => {
     return sortedCreators.value.filter(c => !c.isOrgProfile && !c.campaign_id);
@@ -1642,8 +1614,7 @@
         try {
           const campaignsResponse = await listMyCampaigns();
           if (campaignsResponse.success && campaignsResponse.campaigns.length > 0) {
-            const campaignDisplayProfiles = convertCampaignProfilesToDisplay(campaignsResponse.campaigns);
-            displayProfiles.push(...campaignDisplayProfiles);
+            campaigns.value = convertCampaignsToGroupedDisplay(campaignsResponse.campaigns);
           }
         } catch (err) {
           console.warn('[CreatorProfiles] Failed to load campaign profiles:', err);
@@ -1719,57 +1690,112 @@
     }));
   }
 
-  function convertCampaignProfilesToDisplay(campaigns: Campaign[]): DisplayCreatorProfile[] {
-    const profiles: DisplayCreatorProfile[] = [];
+  function convertCampaignsToGroupedDisplay(campaignsList: Campaign[]): DisplayCampaign[] {
+    const displayCampaigns: DisplayCampaign[] = [];
     
-    for (const campaign of campaigns) {
+    for (const campaign of campaignsList) {
+      const isGlobalBrandingCampaign = campaign.creator_profile_id === null && campaign.branding_profile_id !== null;
+      
       const campaignProfiles = campaign.creator_profiles || [];
       if (campaignProfiles.length === 0 && campaign.creator_profile) {
         campaignProfiles.push(campaign.creator_profile);
       }
 
-      for (const cp of campaignProfiles) {
-        profiles.push({
-          id: `campaign-${campaign.id}-${cp.id}`,
-          name: cp.name,
-          description: cp.description ?? null,
-          profile_image_path: cp.profile_image_url ?? null,
-          intro_id: cp.intro?.id ? `org-asset-${cp.intro.id}` : null,
-          outro_id: cp.outro?.id ? `org-asset-${cp.outro.id}` : null,
-          watermark_id: cp.watermark?.id ? `org-asset-${cp.watermark.id}` : null,
-          watermark_settings: cp.watermark_settings ? JSON.stringify(cp.watermark_settings) : null,
-          layout_overlays: null,
-          intro_outro_settings: null,
-          intro_ratio_settings: null,
-          outro_ratio_settings: null,
-          created_at: new Date(campaign.inserted_at).getTime(),
-          updated_at: new Date(campaign.updated_at).getTime(),
-          user_id: null,
-          platform_links: (cp.platform_links || []).map((link) => ({
-            id: `campaign-link-${campaign.id}-${link.id}`,
-            creator_profile_id: `campaign-${campaign.id}-${cp.id}`,
-            platform: link.platform as PlatformId,
-            platform_id: link.platform_id,
-            display_name: link.display_name ?? null,
-            profile_image_url: link.profile_image_url ?? null,
-            is_primary: link.is_primary,
-            created_at: Date.now(),
-            monitored_streamer_id: null,
-          })),
-          scope: 'streamer',
-          isOrgProfile: true,
-          organization_id: campaign.organization_id,
-          organization_name: campaign.organization?.name ?? `Campaign ${campaign.id}`,
-          campaign_id: campaign.id,
-          campaign_title: campaign.title,
-          server_id: cp.id,
-          context_type: 'campaign',
-          disabled: false,
-        });
+      // Convert creator profiles to DisplayCreatorProfile format
+      const creators: DisplayCreatorProfile[] = campaignProfiles.map((cp) => ({
+        id: `campaign-${campaign.id}-${cp.id}`,
+        name: cp.name,
+        description: cp.description ?? null,
+        profile_image_path: cp.profile_image_url ?? null,
+        intro_id: cp.intro?.id ? `org-asset-${cp.intro.id}` : null,
+        outro_id: cp.outro?.id ? `org-asset-${cp.outro.id}` : null,
+        watermark_id: cp.watermark?.id ? `org-asset-${cp.watermark.id}` : null,
+        watermark_settings: cp.watermark_settings ? JSON.stringify(cp.watermark_settings) : null,
+        layout_overlays: null,
+        intro_outro_settings: null,
+        intro_ratio_settings: null,
+        outro_ratio_settings: null,
+        created_at: new Date(campaign.inserted_at).getTime(),
+        updated_at: new Date(campaign.updated_at).getTime(),
+        user_id: null,
+        platform_links: (cp.platform_links || []).map((link) => ({
+          id: `campaign-link-${campaign.id}-${link.id}`,
+          creator_profile_id: `campaign-${campaign.id}-${cp.id}`,
+          platform: link.platform as PlatformId,
+          platform_id: link.platform_id,
+          display_name: link.display_name ?? null,
+          profile_image_url: link.profile_image_url ?? null,
+          is_primary: link.is_primary,
+          created_at: Date.now(),
+          monitored_streamer_id: null,
+        })),
+        scope: 'streamer',
+        isOrgProfile: true,
+        organization_id: campaign.organization_id,
+        organization_name: campaign.organization?.name ?? `Campaign ${campaign.id}`,
+        campaign_id: campaign.id,
+        campaign_title: campaign.title,
+        server_id: cp.id,
+        context_type: 'campaign',
+        disabled: false,
+      }));
+
+      // Get unique platforms across all creators
+      const platformSet = new Set<PlatformId>();
+      creators.forEach(creator => {
+        creator.platform_links.forEach(link => platformSet.add(link.platform));
+      });
+
+      // Check if campaign has branding
+      // For global branding campaigns, assume branding exists if branding_profile_id is set
+      // For regular campaigns, check if any creator has branding
+      let hasIntro = false;
+      let hasOutro = false;
+      let hasWatermark = false;
+
+      if (isGlobalBrandingCampaign && campaign.branding_profile_id) {
+        // Global branding - assume all branding is configured if branding_profile_id exists
+        hasIntro = true;
+        hasOutro = true;
+        hasWatermark = true;
+      } else {
+        // Regular campaign - check individual creators
+        hasIntro = creators.some(c => c.intro_id !== null);
+        hasOutro = creators.some(c => c.outro_id !== null);
+        hasWatermark = creators.some(c => c.watermark_id !== null);
       }
+
+      displayCampaigns.push({
+        id: campaign.id,
+        title: campaign.title,
+        organization_id: campaign.organization_id,
+        organization_name: campaign.organization?.name ?? `Campaign ${campaign.id}`,
+        cover_image_url: campaign.cover_image_url ?? undefined,
+        isGlobalBranding: isGlobalBrandingCampaign,
+        branding_profile_id: campaign.branding_profile_id,
+        creators,
+        uniquePlatforms: Array.from(platformSet),
+        hasIntro,
+        hasOutro,
+        hasWatermark,
+        created_at: new Date(campaign.inserted_at).getTime(),
+        updated_at: new Date(campaign.updated_at).getTime(),
+      });
     }
 
-    return profiles;
+    return displayCampaigns;
+  }
+
+  function toggleCampaignExpansion(campaignId: number) {
+    if (expandedCampaigns.value.has(campaignId)) {
+      expandedCampaigns.value.delete(campaignId);
+    } else {
+      expandedCampaigns.value.add(campaignId);
+    }
+  }
+
+  function isCampaignExpanded(campaignId: number): boolean {
+    return expandedCampaigns.value.has(campaignId);
   }
 
   function getCreatorProfileImage(creator: DisplayCreatorProfile): string | undefined {
@@ -2585,6 +2611,19 @@
     background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, var(--sidebar-hover) 100%);
   }
 
+  .creator-card__avatar-fallback--global {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.25) 0%, rgba(16, 185, 129, 0.15) 100%);
+  }
+
+  .creator-card__avatar--global {
+    border: 2px solid rgba(6, 182, 212, 0.4);
+  }
+
+  .creator-card__avatar-fallback--global .creator-card__avatar-icon {
+    color: var(--sidebar-accent);
+    opacity: 0.9;
+  }
+
   .creator-card__avatar-icon {
     width: 28px;
     height: 28px;
@@ -3194,6 +3233,310 @@
   .list-leave-active {
     position: absolute;
     z-index: 0;
+  }
+
+  /* ===== Campaign Card Styles ===== */
+  .campaign-card {
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 16px;
+    overflow: hidden;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .campaign-card:hover {
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  }
+
+  .campaign-card__header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+
+  .campaign-card__header:hover {
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .campaign-card__avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    border: 2px solid var(--sidebar-border);
+  }
+
+  .campaign-card__avatar--global {
+    border: 2px solid rgba(6, 182, 212, 0.4);
+  }
+
+  .campaign-card__avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .campaign-card__avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, var(--sidebar-hover) 100%);
+  }
+
+  .campaign-card__avatar-fallback--global {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.25) 0%, rgba(16, 185, 129, 0.15) 100%);
+  }
+
+  .campaign-card__avatar-icon {
+    width: 32px;
+    height: 32px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaign-card__avatar-fallback--global .campaign-card__avatar-icon {
+    color: var(--sidebar-accent);
+  }
+
+  .campaign-card__info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .campaign-card__title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .campaign-card__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .campaign-card__expand-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--sidebar-text-muted);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .campaign-card__expand-icon--rotated {
+    transform: rotate(180deg);
+  }
+
+  .campaign-card__stats {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 0.875rem 1.25rem;
+    border-top: 1px solid var(--sidebar-border);
+    background: rgba(0, 0, 0, 0.15);
+  }
+
+  .campaign-card__platforms {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .campaign-card__global-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(16, 185, 129, 0.08) 100%);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-accent);
+  }
+
+  .campaign-card__platform-icon-wrapper {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--sidebar-hover);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .campaign-card__platform-icon {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+  }
+
+  .campaign-card__more-badge {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+  }
+
+  .campaign-card__divider {
+    width: 1px;
+    height: 20px;
+    background: var(--sidebar-border);
+  }
+
+  .campaign-card__branding {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .campaign-card__branding-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--sidebar-text-muted);
+    opacity: 0.4;
+    transition: all 0.2s ease;
+  }
+
+  .campaign-card__branding-icon--active {
+    background: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    opacity: 1;
+  }
+
+  .campaign-card__creator-count {
+    margin-left: auto;
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+  }
+
+  .campaign-card__creators-preview {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .campaign-card__creator-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid var(--sidebar-bg);
+    margin-left: -0.5rem;
+  }
+
+  .campaign-card__creator-avatar:first-child {
+    margin-left: 0;
+  }
+
+  .campaign-card__creator-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .campaign-card__creator-avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, var(--sidebar-hover) 100%);
+    color: var(--sidebar-text);
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+
+  .campaign-card__more-creators {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+    margin-left: 0.5rem;
+  }
+
+  .campaign-card__creators-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .campaign-card__creator-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--sidebar-border);
+    transition: background 0.2s ease;
+  }
+
+  .campaign-card__creator-item:last-child {
+    border-bottom: none;
+  }
+
+  .campaign-card__creator-item:hover {
+    background: var(--sidebar-hover);
+  }
+
+  .campaign-card__creator-avatar-small {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .campaign-card__creator-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .campaign-card__creator-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    margin-bottom: 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .campaign-card__creator-platforms {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .campaign-card__creator-platform-icon {
+    width: 14px;
+    height: 14px;
+    object-fit: contain;
   }
 </style>
 

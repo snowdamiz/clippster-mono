@@ -566,18 +566,25 @@ defmodule ClippsterServer.Organizations do
   @doc """
   Accepts an invitation and adds the user as a member.
   """
-  def accept_invitation(plain_token, %User{} = user) do
-    invitation = get_invitation_by_token(plain_token)
+  def accept_invitation(token, %User{} = user) do
+    invitation =
+      OrganizationInvitation
+      |> where([i], i.token == ^token and i.status == "pending")
+      |> preload([:organization, :invited_by_user])
+      |> Repo.one()
 
     cond do
       is_nil(invitation) ->
         {:error, :invalid_token}
 
-      not OrganizationInvitation.can_accept?(invitation) ->
+      OrganizationInvitation.expired?(invitation) ->
         {:error, :invitation_expired}
 
       invitation.email != user.email ->
         {:error, :email_mismatch}
+
+      user.subscription_tier == "basic" ->
+        {:error, :basic_tier_cannot_join}
 
       is_member?(invitation.organization_id, user.id) ->
         # Already a member, just mark invitation as accepted
@@ -705,6 +712,41 @@ defmodule ClippsterServer.Organizations do
     |> where([i], i.status == "pending")
     |> order_by([i], desc: i.inserted_at)
     |> Repo.all()
+  end
+
+  @doc """
+  Lists pending invitations for a specific user by their email.
+  """
+  def list_user_pending_invitations(email) do
+    now = DateTime.utc_now()
+
+    OrganizationInvitation
+    |> where([i], i.email == ^email)
+    |> where([i], i.status == "pending")
+    |> where([i], i.expires_at > ^now)
+    |> preload([:organization, :invited_by_user])
+    |> order_by([i], desc: i.inserted_at)
+    |> Repo.all()
+  end
+
+  @doc """
+  Invites a user to an organization by user_id (for Clipper Directory).
+  Looks up the user's email and creates an invitation.
+  """
+  def invite_member_by_user_id(organization_id, user_id, role, %User{} = inviter) do
+    with {:ok, _} <- verify_admin(organization_id, inviter.id),
+         {:ok, _} <- ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id),
+         user when not is_nil(user) <- Accounts.get_user(user_id),
+         false <- is_member?(organization_id, user.id),
+         nil <- get_pending_invitation(organization_id, user.email) do
+      invite_member(organization_id, user.email, role, inviter)
+    else
+      nil -> {:error, :user_not_found}
+      true -> {:error, :already_member}
+      %OrganizationInvitation{} -> {:error, :invitation_pending}
+      {:error, :seat_limit_reached} -> {:error, :seat_limit_reached}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # ============================================================================

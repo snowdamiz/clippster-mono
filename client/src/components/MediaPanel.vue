@@ -135,6 +135,7 @@
       :subtitle-settings="props.subtitleSettings"
       :creator-default-intro="props.creatorDefaultIntro"
       :creator-default-outro="props.creatorDefaultOutro"
+      :creator-profile="props.creatorProfile"
       :creator-profile-server-id="props.creatorProfileServerId"
       :hide-header="true"
       :vod-preset-config="props.vodPresetConfig"
@@ -192,6 +193,7 @@
     subtitleSettings: null,
     creatorDefaultIntro: null,
     creatorDefaultOutro: null,
+    creatorProfile: null,
     isTranscribing: false,
     transcribeProgress: 0,
     transcribeStage: '',

@@ -54,6 +54,8 @@ export interface PublishPostData {
   media_type?: 'image' | 'video' | 'reel';
   creator_profile_id?: number;
   campaign_id?: number;
+  clip_id?: string;
+  clip_build_id?: string;
 }
 
 export interface UploadMediaResponse {
@@ -85,6 +87,7 @@ export interface ListPostsResponse {
 export interface PostResponse {
   success: boolean;
   post?: UserPost;
+  thumbnail_url?: string;
   message?: string;
   error?: string;
 }
@@ -397,6 +400,14 @@ export async function syncUserAnalytics(): Promise<{ success: boolean; message?:
       error: error.response?.data?.error || error.message || 'Failed to sync analytics',
     };
   }
+}
+
+/**
+ * Generate thumbnail for a post that's missing one
+ */
+export async function generatePostThumbnail(postId: number): Promise<PostResponse> {
+  const response = await api.post(`/user/posts/${postId}/generate-thumbnail`);
+  return response.data;
 }
 
 export interface UserAnalyticsSummary {

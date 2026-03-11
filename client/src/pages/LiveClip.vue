@@ -444,14 +444,6 @@
           </button>
         </div>
       </Teleport>
-
-      <!-- Campaign Selection Dialog -->
-      <CampaignSelectionDialog
-        :is-open="showCampaignDialog"
-        :campaigns="availableCampaigns"
-        @select="handleCampaignSelect"
-        @cancel="handleCampaignCancel"
-      />
     </PageLayout>
   </div>
 </template>
@@ -480,9 +472,7 @@
   import { Input } from '@/components/ui/input';
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
-  import CampaignSelectionDialog from '@/components/campaigns/CampaignSelectionDialog.vue';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
-  import { getCampaignsByCreatorProfile, type Campaign } from '@/services/campaignApi';
   import { useLivestreamStore } from '@/stores/livestream';
   import { useToast } from '@/composables/useToast';
   import {
@@ -533,12 +523,6 @@
   const searchResults = ref<TokenSearchResult[]>([]);
   const showSearchDialog = ref(false);
   const isSearching = ref(false);
-
-  const showCampaignDialog = ref(false);
-  const availableCampaigns = ref<Campaign[]>([]);
-  const pendingCampaignAction = ref<{ streamer: ExtendedStreamer; detectClips: boolean } | null>(null);
-  const pendingWatchAction = ref<ExtendedStreamer | null>(null);
-  const selectedCampaignForSession = ref<Campaign | null>(null);
 
   // Segment & prompt selection dialog state
   const showSegmentDialog = ref(false);
@@ -899,20 +883,6 @@
 
   async function openWatchDialog(streamer: ExtendedStreamer) {
     if (!streamer.isLive) return;
-
-    if (streamer.creatorProfileId) {
-      try {
-        const response = await getCampaignsByCreatorProfile(streamer.creatorProfileId);
-        if (response.success && response.campaigns.length > 0) {
-          availableCampaigns.value = response.campaigns;
-          pendingWatchAction.value = streamer;
-          showCampaignDialog.value = true;
-          return;
-        }
-      } catch (error) {
-        console.error('[LiveClip] Failed to check campaigns for watch:', error);
-      }
-    }
 
     livestreamStore.openWatchDialog(
       streamer.mintId,
@@ -1456,45 +1426,6 @@
     showSegmentDialog.value = true;
   }
 
-  function handleCampaignSelect(campaign: Campaign | null) {
-    selectedCampaignForSession.value = campaign;
-    showCampaignDialog.value = false;
-
-    if (pendingCampaignAction.value) {
-      const { streamer, detectClips } = pendingCampaignAction.value;
-      pendingCampaignAction.value = null;
-
-      if (campaign) {
-        livestreamStore.setSessionCampaign(streamer.id, campaign);
-      }
-
-      executeStartStreamer(streamer, detectClips);
-      return;
-    }
-
-    if (pendingWatchAction.value) {
-      const streamer = pendingWatchAction.value;
-      pendingWatchAction.value = null;
-
-      if (campaign) {
-        livestreamStore.setSessionCampaign(streamer.id, campaign);
-      }
-
-      livestreamStore.openWatchDialog(
-        streamer.mintId,
-        streamer.id,
-        streamer.displayName,
-        streamer.profileImageUrl,
-        streamer.platform
-      );
-    }
-  }
-
-  function handleCampaignCancel() {
-    showCampaignDialog.value = false;
-    pendingCampaignAction.value = null;
-    pendingWatchAction.value = null;
-  }
 
   function confirmCreditWarning() {
     if (pendingStreamerStart.value) {
@@ -1626,20 +1557,6 @@
         pendingStreamerStart.value = { streamer, detectClips };
         showCreditWarningDialog.value = true;
         return;
-      }
-    }
-
-    if (streamer.creatorProfileId) {
-      try {
-        const response = await getCampaignsByCreatorProfile(streamer.creatorProfileId);
-        if (response.success && response.campaigns.length > 0) {
-          availableCampaigns.value = response.campaigns;
-          pendingCampaignAction.value = { streamer, detectClips };
-          showCampaignDialog.value = true;
-          return;
-        }
-      } catch (error) {
-        console.error('[LiveClip] Failed to check campaigns:', error);
       }
     }
 

@@ -144,12 +144,9 @@
                       </div>
                       <div class="instagram-dialog__field" style="flex: 1">
                         <label for="scheduleTime" class="instagram-dialog__label-sm">Time</label>
-                        <input
-                          id="scheduleTime"
-                          type="time"
+                        <CustomTimePicker
                           v-model="scheduleTime"
                           :disabled="publishing"
-                          class="instagram-dialog__input"
                         />
                       </div>
                     </div>
@@ -201,6 +198,7 @@
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
   import { Instagram, FileVideo, Loader2, ChevronDown, Calendar, X, AlertCircle } from 'lucide-vue-next';
+  import CustomTimePicker from '@/components/CustomTimePicker.vue';
   import { useToast } from '@/composables/useToast';
   import { getMyAssignedAccounts, listSocialAccounts, publishPost, type SocialAccount } from '@/services/socialAccountsApi';
   import { listUserInstagramAccounts, publishToUserInstagram, type UserInstagramAccount } from '@/services/userInstagramApi';

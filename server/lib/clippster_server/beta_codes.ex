@@ -99,6 +99,20 @@ defmodule ClippsterServer.BetaCodes do
   end
 
   @doc """
+  Deletes a specific beta code by ID.
+  Returns {:ok, beta_code} on success or {:error, reason} on failure.
+  """
+  def delete_code(code_id) when is_integer(code_id) do
+    case Repo.get(BetaCode, code_id) do
+      nil ->
+        {:error, :not_found}
+
+      beta_code ->
+        Repo.delete(beta_code)
+    end
+  end
+
+  @doc """
   Generates a single beta code assigned to a specific email.
   Returns {:ok, beta_code} on success or {:error, changeset} on failure.
   """

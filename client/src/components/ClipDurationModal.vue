@@ -454,17 +454,12 @@
 
       // Save clip to database with a default version so workspace can load it
       try {
-        // Get campaign ID from store if this streamer is associated with a campaign
-        const sessionCampaign = props.streamerId ? livestreamStore.getSessionCampaign(props.streamerId) : undefined;
-        const campaignId = sessionCampaign?.id;
-
         const clipId = await createClipRecord(effectiveProjectId, clipFilePath, {
           name: finalClipName,
           duration: selectedDuration.value,
           startTime: clipStartTime,
           endTime: clipEndTime,
           thumbnailPath: thumbnailFilePath || undefined,
-          campaignId,
         });
 
         // Get or create a manual session for this project (needed for FK constraint on clip_versions)
@@ -482,7 +477,7 @@
           },
           'detected'
         );
-        await updateClip(clipId, { current_version_id: versionId });
+        await updateClip(clipId, { current_version_id: versionId, detection_session_id: manualSessionId });
         console.log('[ClipModal] Clip saved to database');
 
         // Update project thumbnail if it doesn't have one yet

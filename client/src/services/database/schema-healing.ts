@@ -19,7 +19,7 @@ async function hasColumn(db: any, table: string, column: string): Promise<boolea
   return cols.some((c) => c.name === column);
 }
 
-async function addColumnIfMissing(
+export async function addColumnIfMissing(
   db: any,
   table: string,
   column: string,
