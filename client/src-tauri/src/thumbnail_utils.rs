@@ -151,13 +151,3 @@ async fn generate_ffmpeg_thumbnail(
     Ok(())
 }
 
-/// Generate thumbnail using FFmpeg only (for local files, livestream segments)
-/// This is a convenience wrapper for cases where yt-dlp should not be attempted
-pub async fn generate_ffmpeg_thumbnail_only(
-    ffmpeg_path: &str,
-    source_path: &str,
-    output_path: &Path,
-    seek_time: &str,
-) -> Result<(), String> {
-    generate_ffmpeg_thumbnail(ffmpeg_path, source_path, output_path, seek_time).await
-}
