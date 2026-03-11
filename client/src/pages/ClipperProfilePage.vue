@@ -487,9 +487,12 @@
                     <component :is="getPlatformIcon(submission.platform)" />
                   </div>
                   <div class="submission-row__content">
-                    <a :href="submission.clip_url" target="_blank" class="submission-row__link">
+                    <a v-if="submission.clip_url" :href="submission.clip_url" target="_blank" class="submission-row__link">
                       {{ truncateUrl(submission.clip_url) }}
                     </a>
+                    <span v-else class="submission-row__link submission-row__link--disabled">
+                      {{ truncateUrl(submission.clip_url) }}
+                    </span>
                     <span class="submission-row__meta">
                       {{ submission.campaign?.title || 'Unknown' }} · {{ submission.view_count.toLocaleString() }} views
                     </span>
@@ -1896,7 +1899,10 @@
     (typeof amount === 'string' ? parseFloat(amount) : amount).toFixed(2);
   const formatCpm = (cpm: string | number) => (typeof cpm === 'string' ? parseFloat(cpm) : cpm).toFixed(2);
   const formatDate = (dateStr: string) => fmtDate(dateStr);
-  const truncateUrl = (url: string) => (url.length > 40 ? url.substring(0, 40) + '...' : url);
+  const truncateUrl = (url: string | null | undefined) => {
+    if (!url) return 'N/A';
+    return url.length > 40 ? url.substring(0, 40) + '...' : url;
+  };
 
   const loadSocialAccounts = async () => {
     loadingSocialAccounts.value = true;
@@ -2233,7 +2239,7 @@
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
-    padding: 1.5rem;
+    padding: 1rem 1.5rem 0 1.5rem;
     max-width: 1400px;
     margin: 0 auto;
     width: 100%;
@@ -2685,6 +2691,7 @@
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
+    padding-bottom: 4rem;
   }
 
   /* ===== Notice ===== */

@@ -1182,7 +1182,7 @@ defmodule ClippsterServerWeb.CampaignController do
     %{
       id: profile.id,
       display_name: profile.display_name,
-      avatar_url: profile.avatar_url,
+      avatar_url: ClippsterServer.Storage.presigned_url!(profile.avatar_url),
       slug: profile.slug,
       bio: profile.bio,
       is_verified: profile.is_verified,

@@ -434,6 +434,15 @@ defmodule ClippsterServer.Social do
   end
 
   @doc """
+  Updates the post_url for a submission (used when URL becomes available from feed).
+  """
+  def update_post_url(%PostSubmission{} = submission, post_url) do
+    submission
+    |> Ecto.Changeset.change(%{post_url: post_url})
+    |> Repo.update()
+  end
+
+  @doc """
   Manually updates post analytics (sets manual_override).
   Admin only.
   """

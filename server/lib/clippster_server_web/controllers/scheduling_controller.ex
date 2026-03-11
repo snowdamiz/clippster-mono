@@ -786,7 +786,7 @@ defmodule ClippsterServerWeb.SchedulingController do
           |> Enum.filter(fn post ->
             has_account = post.organization_social_account != nil
             has_provider_id = has_account && is_binary(post.organization_social_account.provider_account_id)
-            has_post_url = is_binary(post.post_url) && post.post_url != ""
+            has_post_identifier = is_binary(post.provider_post_id) || (is_binary(post.post_url) && post.post_url != "")
             is_supported = post.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
             
             if not has_account do
@@ -795,14 +795,14 @@ defmodule ClippsterServerWeb.SchedulingController do
             if has_account and not has_provider_id do
               Logger.warning("[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) account has no provider_account_id")
             end
-            if not has_post_url do
-              Logger.warning("[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) has no post_url - cannot sync analytics")
+            if not has_post_identifier do
+              Logger.warning("[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) has no provider_post_id or post_url - cannot sync analytics")
             end
             if not is_supported do
               Logger.debug("[sync_org_posts_analytics] Post #{post.id} platform #{post.platform} not supported")
             end
             
-            has_account && has_provider_id && has_post_url && is_supported
+            has_account && has_provider_id && has_post_identifier && is_supported
           end)
         
         Logger.info("[sync_org_posts_analytics] #{length(filtered_posts)} posts after filtering (need account + provider_id + supported platform)")
@@ -820,36 +820,57 @@ defmodule ClippsterServerWeb.SchedulingController do
             {:ok, feed_items} ->
               Logger.info("[sync_org_posts_analytics] Fetched #{length(feed_items)} feed items from PostForMe")
               for post <- account_posts do
-                case extract_post_identifier(post.platform, post.post_url) do
-                  {:ok, post_identifier} ->
-                    Logger.debug("[sync_org_posts_analytics] Post #{post.id}: extracted identifier #{post_identifier} from #{post.post_url}")
-                    
-                    case match_feed_item(post.platform, feed_items, post_identifier) do
-                      nil -> 
-                        Logger.warning("[sync_org_posts_analytics] Post #{post.id}: identifier #{post_identifier} NOT FOUND in feed")
-                        :ok
-                      item ->
-                        Logger.info("[sync_org_posts_analytics] Post #{post.id}: MATCHED feed item")
-                        analytics = extract_feed_analytics(post.platform, item, account)
-                        Logger.info("[sync_org_posts_analytics] Post #{post.id}: extracted analytics: #{inspect(analytics)}")
-                        
-                        # Only sync if at least one metric is non-zero to avoid overwriting real data with zeros
-                        metric_keys = [:view_count, :like_count, :comment_count, :save_count, :reach_count, :impressions_count, :share_count]
-                        has_real_data = Enum.any?(metric_keys, fn k -> (Map.get(analytics, k) || 0) > 0 end)
-                        
-                        if has_real_data do
-                          case Social.sync_post_analytics(post, analytics) do
-                            {:ok, _} -> Logger.info("[sync_org_posts_analytics] Post #{post.id}: analytics synced successfully")
-                            {:error, reason} -> Logger.error("[sync_org_posts_analytics] Post #{post.id}: sync failed: #{inspect(reason)}")
-                          end
-                        else
-                          Logger.debug("[sync_org_posts_analytics] Post #{post.id}: skipping sync - all metrics are zero")
-                        end
+                # Try to match by provider_post_id first (PostForMe social_post_id), then fall back to extracting from URL
+                feed_item = cond do
+                  is_binary(post.provider_post_id) ->
+                    Logger.debug("[sync_org_posts_analytics] Post #{post.id}: matching by provider_post_id #{post.provider_post_id}")
+                    Enum.find(feed_items, fn item -> item["social_post_id"] == post.provider_post_id end)
+                  
+                  is_binary(post.post_url) && post.post_url != "" ->
+                    case extract_post_identifier(post.platform, post.post_url) do
+                      {:ok, post_identifier} ->
+                        Logger.debug("[sync_org_posts_analytics] Post #{post.id}: extracted identifier #{post_identifier} from #{post.post_url}")
+                        match_feed_item(post.platform, feed_items, post_identifier)
+                      {:error, reason} ->
+                        Logger.warning("[sync_org_posts_analytics] Post #{post.id}: failed to extract identifier from #{post.post_url}: #{inspect(reason)}")
+                        nil
                     end
-
-                  {:error, reason} -> 
-                    Logger.warning("[sync_org_posts_analytics] Post #{post.id}: failed to extract identifier from #{post.post_url}: #{inspect(reason)}")
+                  
+                  true ->
+                    nil
+                end
+                
+                case feed_item do
+                  nil -> 
+                    Logger.warning("[sync_org_posts_analytics] Post #{post.id}: NOT FOUND in feed")
                     :ok
+                  item ->
+                    Logger.info("[sync_org_posts_analytics] Post #{post.id}: MATCHED feed item")
+                    analytics = extract_feed_analytics(post.platform, item, account)
+                    Logger.info("[sync_org_posts_analytics] Post #{post.id}: extracted analytics: #{inspect(analytics)}")
+                    
+                    # Update post_url if it's missing
+                    if is_nil(post.post_url) || post.post_url == "" do
+                      if platform_url = item["platform_url"] do
+                        case Social.update_post_url(post, platform_url) do
+                          {:ok, _} -> Logger.info("[sync_org_posts_analytics] Post #{post.id}: updated post_url to #{platform_url}")
+                          {:error, reason} -> Logger.error("[sync_org_posts_analytics] Post #{post.id}: failed to update post_url: #{inspect(reason)}")
+                        end
+                      end
+                    end
+                    
+                    # Only sync if at least one metric is non-zero to avoid overwriting real data with zeros
+                    metric_keys = [:view_count, :like_count, :comment_count, :save_count, :reach_count, :impressions_count, :share_count]
+                    has_real_data = Enum.any?(metric_keys, fn k -> (Map.get(analytics, k) || 0) > 0 end)
+                    
+                    if has_real_data do
+                      case Social.sync_post_analytics(post, analytics) do
+                        {:ok, _} -> Logger.info("[sync_org_posts_analytics] Post #{post.id}: analytics synced successfully")
+                        {:error, reason} -> Logger.error("[sync_org_posts_analytics] Post #{post.id}: sync failed: #{inspect(reason)}")
+                      end
+                    else
+                      Logger.debug("[sync_org_posts_analytics] Post #{post.id}: skipping sync - all metrics are zero")
+                    end
                 end
               end
 
