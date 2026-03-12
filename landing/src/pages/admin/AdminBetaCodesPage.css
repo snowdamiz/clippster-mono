@@ -474,6 +474,18 @@
   color: var(--sidebar-text-muted);
 }
 
+.admin-beta__verified {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-beta__ip {
+  font-size: 0.6875rem;
+  color: var(--sidebar-text-muted);
+  font-family: monospace;
+}
+
 .admin-beta__empty {
   display: flex;
   flex-direction: column;

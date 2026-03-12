@@ -618,8 +618,8 @@ defmodule ClippsterServerWeb.AdminController do
         %{
           id: code.id,
           code: code.code,
-          used: not is_nil(code.used_by_user_id),
-          used_at: code.used_at,
+          used: not is_nil(code.verified_at),
+          used_at: code.verified_at,
           used_by:
             if code.used_by_user do
               %{

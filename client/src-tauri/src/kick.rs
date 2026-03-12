@@ -418,7 +418,7 @@ fn get_target_triple() -> &'static str {
 /// Resolve a sidecar binary path using Tauri's naming convention.
 /// Tauri places sidecars next to the executable with -{target_triple} suffix.
 /// In dev mode, they're in src-tauri/binaries/ with the same naming.
-fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
+pub fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
     let exe_path =
         std::env::current_exe().map_err(|e| format!("Failed to get executable path: {}", e))?;
 

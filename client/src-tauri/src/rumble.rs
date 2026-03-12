@@ -11,6 +11,7 @@ use tokio::sync::oneshot;
 use tauri::Emitter;
 
 use crate::storage;
+use crate::thumbnail_utils::generate_thumbnail_hybrid;
 use tokio::io::AsyncBufReadExt;
 use crate::downloads::{
     DownloadProgress, DownloadResult, ACTIVE_DOWNLOADS, ACTIVE_DOWNLOAD_CANCELLERS, DOWNLOAD_METADATA,
@@ -299,6 +300,85 @@ fn clean_html_text(text: &str) -> String {
         .to_string()
 }
 
+/// Helper functions for binary resolution
+
+fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
+    let exe_path =
+        std::env::current_exe().map_err(|e| format!("Failed to get executable path: {}", e))?;
+
+    let exe_dir = exe_path.parent().ok_or("Failed to get parent directory")?;
+
+    let target_triple = get_target_triple();
+
+    #[cfg(target_os = "windows")]
+    let binary_name = format!("{}-{}.exe", base_name, target_triple);
+
+    #[cfg(not(target_os = "windows"))]
+    let binary_name = format!("{}-{}", base_name, target_triple);
+
+    // Production: sidecar is next to the executable
+    let prod_path = exe_dir.join(&binary_name);
+    if prod_path.exists() {
+        println!("[Rumble] Found {} at (prod): {}", base_name, prod_path.display());
+        return Ok(prod_path.to_string_lossy().to_string());
+    }
+
+    // macOS production bundle: Tauri strips the target triple from sidecar names
+    #[cfg(target_os = "windows")]
+    let bare_name = format!("{}.exe", base_name);
+    #[cfg(not(target_os = "windows"))]
+    let bare_name = base_name.to_string();
+
+    let bare_path = exe_dir.join(&bare_name);
+    if bare_path.exists() {
+        println!("[Rumble] Found {} at (bundle): {}", base_name, bare_path.display());
+        return Ok(bare_path.to_string_lossy().to_string());
+    }
+
+    // Development mode: check src-tauri/binaries/
+    if let Some(target_dir) = exe_dir.parent() {
+        if let Some(target_parent) = target_dir.parent() {
+            let dev_path = target_parent.join("binaries").join(&binary_name);
+            if dev_path.exists() {
+                println!("[Rumble] Found {} at (dev): {}", base_name, dev_path.display());
+                return Ok(dev_path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // Fallback to system PATH
+    #[cfg(target_os = "windows")]
+    let fallback = format!("{}.exe", base_name);
+
+    #[cfg(not(target_os = "windows"))]
+    let fallback = base_name.to_string();
+
+    println!("[Rumble] {} not found in bundle, falling back to PATH: {}", base_name, fallback);
+    Ok(fallback)
+}
+
+fn get_target_triple() -> &'static str {
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    return "x86_64-pc-windows-msvc";
+
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    return "x86_64-apple-darwin";
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    return "aarch64-apple-darwin";
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return "x86_64-unknown-linux-gnu";
+
+    #[cfg(not(any(
+        all(target_os = "windows", target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "linux", target_arch = "x86_64")
+    )))]
+    compile_error!("Unsupported platform - only x86_64 Windows/Linux and x86_64/aarch64 macOS are supported");
+}
+
 /// Get a single Rumble video's metadata using yt-dlp
 #[tauri::command]
 pub async fn get_single_rumble_video(video_url: String) -> Result<String, String> {
@@ -464,6 +544,183 @@ pub async fn get_rumble_vods(channel: String, limit: Option<u32>) -> Result<Stri
     Ok(serde_json::to_string(&vods).unwrap())
 }
 
+/// Get list of regular videos (not live streams) from a Rumble channel using yt-dlp
+#[tauri::command]
+pub async fn get_rumble_videos(channel: String, limit: Option<u32>) -> Result<String, String> {
+    // Check if input is a direct video URL
+    if let Some(video_id) = extract_video_id(&channel) {
+        println!("[Rumble Videos] Detected video URL, fetching single video: {}", video_id);
+        let video_url = if channel.contains("rumble.com") {
+            channel.clone()
+        } else {
+            format!("https://rumble.com/{}.html", video_id)
+        };
+        return get_single_rumble_video(video_url).await;
+    }
+    
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    
+    let limit_str = limit.unwrap_or(10).to_string();
+    
+    // If input is a full URL, use it directly
+    // Otherwise, normalize and construct a channel videos URL
+    let channel_url = if channel.contains("rumble.com/") {
+        channel.trim().to_string()
+    } else {
+        let channel_name = normalize_channel_name(&channel);
+        // Rumble videos are at /c/{channel}/videos
+        format!("https://rumble.com/c/{}/videos", channel_name)
+    };
+    
+    println!("[Rumble Videos] Fetching from: {}", channel_url);
+
+    let mut cmd = tokio::process::Command::new(&ytdlp_path);
+    no_window(&mut cmd);
+
+    cmd.arg("--dump-json")
+        .arg("--skip-download")
+        .arg("--no-warnings")
+        .arg("--ignore-errors")
+        .arg("--impersonate").arg("chrome")
+        .arg("--playlist-end").arg(&limit_str)
+        .arg(&channel_url);
+
+    let output = cmd.output().await
+        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    println!("[Rumble Videos] stdout lines: {}", stdout.lines().count());
+    if !stderr.is_empty() {
+        println!("[Rumble Videos] stderr (first 300): {}", &stderr[..stderr.len().min(300)]);
+    }
+
+    if stdout.trim().is_empty() {
+        return Err(format!("yt-dlp returned no output. stderr: {}", &stderr[..stderr.len().min(500)]));
+    }
+
+    let mut videos = Vec::new();
+
+    for (index, line) in stdout.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        let json: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let video_id = match json["id"].as_str() {
+            Some(id) if !id.is_empty() => id.to_string(),
+            _ => continue,
+        };
+
+        let url = json["webpage_url"].as_str()
+            .map(String::from)
+            .unwrap_or_else(|| format!("https://rumble.com/v{}.html", video_id));
+
+        // Skip currently live streams
+        let is_live = json["is_live"].as_bool().unwrap_or(false);
+        if is_live {
+            if index < 3 {
+                println!("[Rumble Videos] Skipping currently live stream: {:?}", json["title"].as_str());
+            }
+            continue;
+        }
+
+        let title = json["title"].as_str().map(String::from);
+        
+        if index < 3 {
+            println!("[Rumble Videos] Entry {}: title={:?}, url={}", index, title, url);
+        }
+
+        let video = RumbleVod {
+            video_id,
+            title,
+            duration: json["duration"].as_f64(),
+            view_count: json["view_count"].as_i64(),
+            thumbnail_url: json["thumbnail"].as_str().map(String::from),
+            upload_date: json["upload_date"].as_str().map(String::from),
+            url,
+            is_live: false, // Regular videos are not live
+        };
+        videos.push(video);
+    }
+
+    println!("[Rumble Videos] Total videos fetched: {}", videos.len());
+
+    Ok(serde_json::to_string(&videos).unwrap())
+}
+
+/// Get duration for a Rumble VOD using yt-dlp + ffprobe
+/// First extracts the direct stream URL using yt-dlp, then uses ffprobe to get duration
+#[tauri::command]
+pub async fn get_rumble_vod_duration(_app: tauri::AppHandle, vod_url: String) -> Result<f64, String> {
+    println!("[Rumble] Getting duration for URL: {}", vod_url);
+    
+    // Step 1: Use yt-dlp to extract the direct stream URL
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    
+    println!("[Rumble] Extracting stream URL via yt-dlp...");
+    let ytdlp_output = no_window(
+        tokio::process::Command::new(&ytdlp_path)
+            .arg("--get-url")
+            .arg("--no-download")
+            .arg("--no-warnings")
+            .arg("--impersonate").arg("chrome")
+            .arg(&vod_url)
+    )
+    .output()
+    .await
+    .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+    
+    if !ytdlp_output.status.success() {
+        let stderr = String::from_utf8_lossy(&ytdlp_output.stderr);
+        return Err(format!("yt-dlp failed to extract stream URL: {}", stderr.chars().take(300).collect::<String>()));
+    }
+    
+    let stream_url = String::from_utf8_lossy(&ytdlp_output.stdout).trim().to_string();
+    if stream_url.is_empty() {
+        return Err("yt-dlp returned empty stream URL".to_string());
+    }
+    
+    println!("[Rumble] Got stream URL, probing duration with ffprobe...");
+    
+    // Step 2: Use ffprobe on the direct stream URL
+    let ffprobe_path = resolve_sidecar_binary("ffprobe")?;
+    
+    let mut cmd = tokio::process::Command::new(&ffprobe_path);
+    no_window(&mut cmd);
+    
+    let output = cmd
+        .args([
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            &stream_url
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffprobe: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ffprobe failed: {}", stderr));
+    }
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let duration_str = stdout.trim();
+    
+    println!("[Rumble] ffprobe duration output: {}", duration_str);
+    
+    if duration_str.is_empty() || duration_str == "N/A" {
+        return Err("Duration not available".to_string());
+    }
+    
+    duration_str.parse::<f64>()
+        .map_err(|e| format!("Failed to parse duration: {}", e))
+}
+
 /// Download a Rumble VOD using yt-dlp
 #[tauri::command]
 pub async fn download_rumble_vod(
@@ -536,6 +793,33 @@ pub async fn download_rumble_vod(
     }
     
     tokio::spawn(async move {
+        // Get video duration first for progress reporting
+        println!("[Rumble] Fetching video duration...");
+        let duration_output = no_window(
+            tokio::process::Command::new(&ytdlp_path)
+                .arg("--print")
+                .arg("duration")
+                .arg("--impersonate").arg("chrome")
+                .arg(&vod_url),
+        )
+        .output()
+        .await;
+
+        let total_duration = if let Ok(output) = duration_output {
+            if output.status.success() {
+                let duration_str = String::from_utf8_lossy(&output.stdout)
+                    .trim()
+                    .to_string();
+                duration_str.parse::<f64>().ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        println!("[Rumble] Total duration: {:?}", total_duration);
+
         let mut cmd = tokio::process::Command::new(&ytdlp_path);
         no_window(&mut cmd);
         
@@ -549,8 +833,9 @@ pub async fn download_rumble_vod(
             .arg("-o").arg(&output_file_str)
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
-            .arg("--external-downloader").arg("ffmpeg")
-            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
+            .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
+            .arg("--merge-output-format").arg("mp4")
             .arg("--newline")
             .arg("--progress")
             .stdout(std::process::Stdio::piped())
@@ -580,6 +865,7 @@ pub async fn download_rumble_vod(
         
         let app_progress = app_clone.clone();
         let download_id_progress = download_id_clone.clone();
+        let duration_for_progress = total_duration;
         tokio::spawn(async move {
             use tokio::io::{AsyncBufReadExt, BufReader};
             let mut stdout_reader = BufReader::new(stdout).lines();
@@ -595,15 +881,17 @@ pub async fn download_rumble_vod(
                                 if line.contains("[download]") && line.contains("%") {
                                     if let Some(percent_str) = line.split_whitespace()
                                         .find(|s| s.ends_with('%'))
-                                        .and_then(|s| s.trim_end_matches('%').parse::<f64>().ok())
                                     {
-                                        let _ = app_progress.emit("download-progress", DownloadProgress {
-                                            download_id: download_id_progress.clone(),
-                                            progress: percent_str,
-                                            current_time: None,
-                                            total_time: None,
-                                            status: format!("Downloading... {}%", percent_str as u32),
-                                        });
+                                        if let Ok(percent) = percent_str.trim_end_matches('%').parse::<f64>() {
+                                            let current_time = duration_for_progress.map(|dur| (percent / 100.0) * dur);
+                                            let _ = app_progress.emit("download-progress", DownloadProgress {
+                                                download_id: download_id_progress.clone(),
+                                                progress: percent.min(99.0),
+                                                current_time,
+                                                total_time: duration_for_progress,
+                                                status: format!("Downloading: {:.1}%", percent),
+                                            });
+                                        }
                                     }
                                 }
                             }
@@ -636,29 +924,23 @@ pub async fn download_rumble_vod(
                             .ok()
                             .map(|m| m.len());
                         
-                        // Generate thumbnail
+                        // Generate thumbnail using hybrid approach (yt-dlp first, FFmpeg fallback)
                         println!("[Rumble] Generating thumbnail...");
                         let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
-                        let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
-                            .args([
-                                "-hwaccel", "auto",
-                                "-ss", "00:00:05",
-                                "-i", &output_file_str,
-                                "-vframes", "1",
-                                "-vf", "scale=320:-1",
-                                "-y",
-                                thumbnail_path.to_str().unwrap_or(""),
-                            ]))
-                            .output()
-                            .await;
                         
-                        let thumbnail_path_str = match thumbnail_result {
-                            Ok(output) if output.status.success() => {
+                        let thumbnail_path_str = match generate_thumbnail_hybrid(
+                            ytdlp_path.to_str().unwrap_or("yt-dlp"),
+                            ffmpeg_path.to_str().unwrap_or("ffmpeg"),
+                            &vod_url,
+                            &thumbnail_path,
+                            "00:00:05",
+                        ).await {
+                            Ok(()) => {
                                 println!("[Rumble] Thumbnail generated: {}", thumbnail_path.display());
                                 Some(thumbnail_path.to_string_lossy().to_string())
                             }
-                            _ => {
-                                println!("[Rumble] Thumbnail generation failed");
+                            Err(e) => {
+                                println!("[Rumble] Thumbnail generation failed: {}", e);
                                 None
                             }
                         };
@@ -1355,19 +1637,30 @@ fn resolve_ytdlp_binary() -> Result<PathBuf, String> {
     #[cfg(not(target_os = "windows"))]
     let binary_name = "yt-dlp";
     
-    let exe_dir = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable directory: {}", e))?
-        .parent()
-        .ok_or("Failed to get parent directory")?
-        .to_path_buf();
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Failed to get executable path: {}", e))?;
     
-    let ytdlp_path = exe_dir.join(binary_name);
+    let exe_dir = exe_path.parent()
+        .ok_or("Failed to get parent directory")?;
     
-    if ytdlp_path.exists() {
-        Ok(ytdlp_path)
-    } else {
-        Err(format!("yt-dlp binary not found at: {}", ytdlp_path.display()))
+    // Production: sidecar is next to the executable
+    let prod_path = exe_dir.join(binary_name);
+    if prod_path.exists() {
+        return Ok(prod_path);
     }
+    
+    // Development mode: check src-tauri/binaries/
+    if let Some(target_dir) = exe_dir.parent() {
+        if let Some(target_parent) = target_dir.parent() {
+            let dev_path = target_parent.join("binaries").join(binary_name);
+            if dev_path.exists() {
+                return Ok(dev_path);
+            }
+        }
+    }
+    
+    // Fallback to system PATH
+    Ok(PathBuf::from(binary_name))
 }
 
 fn resolve_ffmpeg_binary() -> Result<PathBuf, String> {
@@ -1557,8 +1850,9 @@ pub async fn download_rumble_vod_segment(
             .arg("-o").arg(&video_path_str)
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
-            .arg("--external-downloader").arg("ffmpeg")
-            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
+            .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
+            .arg("--merge-output-format").arg("mp4")
             .arg("--download-sections").arg(&section_arg)
             .arg("--force-keyframes-at-cuts")
             .arg("--no-part")

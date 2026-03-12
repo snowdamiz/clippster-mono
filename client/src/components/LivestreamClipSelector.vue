@@ -205,6 +205,7 @@
   import { updateClip } from '@/services/database/clips';
   import { getOrCreateManualSession } from '@/services/database/clip-detection-sessions';
   import { useLivestreamStore } from '@/stores/livestream';
+  import { useToast } from '@/composables/useToast';
   import Hls from 'hls.js';
   import { TauriHlsLoader, getTauriHlsUrl } from '@/composables/useTauriHlsLoader';
 
@@ -754,6 +755,13 @@
     if (isCreating.value && !force) {
       console.warn('[ClipSelector] Force closing while clip creation in progress');
     }
+    
+    // Show toast notification if clip was successfully created
+    if (clipCreated.value && clipName.value) {
+      const { success } = useToast();
+      success('Clip Saved', `"${clipName.value}" has been saved to VOD Library`, undefined, 'clips');
+    }
+    
     cleanupProgressListener();
     cleanupVodPlayback();
     isCreating.value = false;

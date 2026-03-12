@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="modelValue" class="workspace-dialog__overlay" @click.self="close">
+      <div v-if="modelValue" class="workspace-dialog__overlay">
         <Transition name="dialog" appear>
           <div v-if="modelValue" class="workspace-dialog" role="dialog" aria-modal="true">
             <!-- Header -->

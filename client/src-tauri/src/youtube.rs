@@ -14,6 +14,7 @@ use crate::downloads::{
     DownloadMetadata,
 };
 use crate::storage;
+use crate::thumbnail_utils::generate_thumbnail_hybrid;
 
 #[cfg(target_os = "windows")]
 #[allow(unused_imports)]
@@ -563,7 +564,7 @@ pub async fn download_youtube_vod(
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
-            .arg("--concurrent-fragments").arg("8")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
             .arg("--merge-output-format").arg("mp4")
             .arg("--newline")
             .arg("--progress")
@@ -612,11 +613,14 @@ pub async fn download_youtube_vod(
                                         .find(|s| s.ends_with('%'))
                                         .and_then(|s| s.trim_end_matches('%').parse::<f64>().ok())
                                     {
+                                        // Calculate current_time from percentage and total_duration
+                                        let current_time = total_duration.map(|dur| (percent_str / 100.0) * dur);
+                                        
                                         let _ = app_progress.emit("download-progress", DownloadProgress {
                                             download_id: download_id_progress.clone(),
                                             progress: percent_str,
-                                            current_time: None,
-                                            total_time: None,
+                                            current_time,
+                                            total_time: total_duration,
                                             status: format!("Downloading... {}%", percent_str as u32),
                                         });
                                     }
@@ -680,29 +684,23 @@ pub async fn download_youtube_vod(
                             .ok()
                             .map(|m| m.len());
                         
-                        // Generate thumbnail
+                        // Generate thumbnail using hybrid approach (yt-dlp first, FFmpeg fallback)
                         println!("[YouTube] Generating thumbnail...");
                         let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
-                        let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
-                            .args([
-                                "-hwaccel", "auto",
-                                "-ss", "00:00:05",
-                                "-i", &output_file_str,
-                                "-vframes", "1",
-                                "-vf", "scale=320:-1",
-                                "-y",
-                                thumbnail_path.to_str().unwrap_or(""),
-                            ]))
-                            .output()
-                            .await;
                         
-                        let thumbnail_path_str = match thumbnail_result {
-                            Ok(output) if output.status.success() => {
+                        let thumbnail_path_str = match generate_thumbnail_hybrid(
+                            &ytdlp_path,
+                            &ffmpeg_path,
+                            &vod_url,
+                            &thumbnail_path,
+                            "00:00:05",
+                        ).await {
+                            Ok(()) => {
                                 println!("[YouTube] Thumbnail generated: {}", thumbnail_path.display());
                                 Some(thumbnail_path.to_string_lossy().to_string())
                             }
-                            _ => {
-                                println!("[YouTube] Thumbnail generation failed");
+                            Err(e) => {
+                                println!("[YouTube] Thumbnail generation failed: {}", e);
                                 None
                             }
                         };
@@ -1650,7 +1648,7 @@ pub async fn download_youtube_vod_segment(
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
-            .arg("--concurrent-fragments").arg("8")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
             .arg("--merge-output-format").arg("mp4")
             .arg("--download-sections").arg(&section_arg)
             .arg("--force-keyframes-at-cuts")  // Ensure clean cuts

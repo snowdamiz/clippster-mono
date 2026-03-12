@@ -8,6 +8,10 @@ use crate::ffmpeg_utils::{
     detect_hardware_encoder, extract_duration_from_ffmpeg_output, get_video_info, parse_ffmpeg_time,
 };
 use crate::storage;
+use crate::thumbnail_utils::generate_thumbnail_hybrid;
+
+mod kick_downloads_helpers;
+use kick_downloads_helpers::{no_window, resolve_kick_ytdlp_binary, resolve_kick_ffmpeg_binary};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DownloadProgress {
@@ -1758,22 +1762,24 @@ pub async fn download_kick_vod(
     title: String,
     video_url: String,
     channel_slug: String,
+    page_url: Option<String>,
 ) -> Result<(), String> {
-    println!("[Rust] download_kick_vod called with:");
-    println!("[Rust]   download_id: {}", download_id);
-    println!("[Rust]   title: {}", title);
-    println!("[Rust]   video_url: {}", video_url);
-    println!("[Rust]   channel_slug: {}", channel_slug);
+    println!("[Kick] download_kick_vod called with:");
+    println!("[Kick]   download_id: {}", download_id);
+    println!("[Kick]   title: {}", title);
+    println!("[Kick]   video_url: {}", video_url);
+    println!("[Kick]   channel_slug: {}", channel_slug);
+    println!("[Kick]   page_url: {:?}", page_url);
 
     // Check if download already exists
     {
         let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
         if downloads.contains_key(&download_id) {
-            println!("[Rust] Download already in progress: {}", download_id);
+            println!("[Kick] Download already in progress: {}", download_id);
             return Err("Download already in progress".to_string());
         }
         downloads.insert(download_id.clone(), true);
-        println!("[Rust] Download registered: {}", download_id);
+        println!("[Kick] Download registered: {}", download_id);
     }
 
     // Clean up when done
@@ -1781,28 +1787,21 @@ pub async fn download_kick_vod(
         let download_id = download_id.clone();
         let downloads = ACTIVE_DOWNLOADS.clone();
         move || {
-            println!("[Rust] Cleaning up download: {}", download_id);
+            println!("[Kick] Cleaning up download: {}", download_id);
             let mut downloads = downloads.lock().unwrap();
             downloads.remove(&download_id);
         }
     };
 
-    // Create cancellation channel
-    let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
-    {
-        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
-        cancellers.insert(download_id.clone(), cancel_tx);
-    }
-
     // Get storage paths
-    println!("[Rust] Getting storage paths...");
+    println!("[Kick] Getting storage paths...");
     let paths = storage::init_storage_dirs().map_err(|e| {
-        println!("[Rust] Failed to get storage paths: {}", e);
+        println!("[Kick] Failed to get storage paths: {}", e);
         format!("Failed to get storage paths: {}", e)
     })?;
 
     println!(
-        "[Rust] Storage paths retrieved. Videos dir: {}",
+        "[Kick] Storage paths retrieved. Videos dir: {}",
         paths.videos.display()
     );
 
@@ -1831,8 +1830,8 @@ pub async fn download_kick_vod(
     let filename = format!("kick_{}_{}_{}.mp4", channel_prefix, safe_title, timestamp);
     let video_path = paths.videos.join(&filename);
 
-    println!("[Rust] Generated filename: {}", filename);
-    println!("[Rust] Full video path: {}", video_path.display());
+    println!("[Kick] Generated filename: {}", filename);
+    println!("[Kick] Full video path: {}", video_path.display());
 
     // Store download metadata
     {
@@ -1856,89 +1855,187 @@ pub async fn download_kick_vod(
             progress: 0.0,
             current_time: None,
             total_time: None,
-            status: "Starting download...".to_string(),
+            status: "Fetching video info...".to_string(),
         },
     );
 
     if let Err(e) = progress_result {
-        println!("[Rust] Failed to emit initial progress: {}", e);
+        println!("[Kick] Failed to emit initial progress: {}", e);
     }
 
-    // Clone app handle for use in async block
+    // Clone for async block
     let app_clone = app.clone();
     let download_id_clone = download_id.clone();
-    println!("[Rust] Starting async download task...");
+    println!("[Kick] Starting async download task...");
+
+    let (cancel_tx, mut cancel_rx) = oneshot::channel();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
 
     let result = tokio::spawn(async move {
-        use tauri_plugin_shell::ShellExt;
-        
-        println!("[Rust] Async task started for download: {}", download_id_clone);
+        println!("[Kick] Async task started for download: {}", download_id_clone);
 
-        let shell = app_clone.shell();
-
-        // First, get video info to get duration
-        println!("[Rust] Running ffmpeg to get video info for URL: {}", video_url);
-        let is_hls_probe = video_url.contains(".m3u8") || video_url.contains("/playlist/");
-        let mut probe_args: Vec<&str> = Vec::new();
-        if is_hls_probe {
-            probe_args.extend_from_slice(&[
-                "-reconnect", "1",
-                "-reconnect_streamed", "1",
-                "-reconnect_delay_max", "5",
-                "-headers", "Referer: https://kick.com\r\nOrigin: https://kick.com\r\n",
-                "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            ]);
-        }
-        probe_args.extend_from_slice(&["-i", &video_url, "-f", "null", "-t", "1", "-"]);
-        let info_output = match shell.sidecar("ffmpeg") {
-            Ok(ffmpeg) => {
-                match ffmpeg.args(probe_args).output().await {
-                    Ok(output) => output,
-                    Err(e) => return Err(format!("Failed to run ffmpeg info: {}", e))
-                }
-            }
-            Err(e) => return Err(format!("Failed to get ffmpeg sidecar: {}", e))
-        };
-
-        // Extract duration from stderr
-        let stderr = String::from_utf8_lossy(&info_output.stderr);
-        let duration = extract_duration_from_ffmpeg_output(&stderr);
-        println!("[Rust] Video duration extracted: {:?}", duration);
-
+        let ytdlp_path = resolve_kick_ytdlp_binary()?;
+        let ffmpeg_path = resolve_kick_ffmpeg_binary()?;
         let video_path_str = video_path.to_string_lossy().to_string();
 
-        // For Kick VODs, try stream copy first (fast), fall back to encoding if it fails
-        let download_result = run_full_download_with_encoder(
-            &app_clone,
-            &download_id_clone,
-            &video_url,
-            &video_path_str,
-            duration,
-            "copy", // Try copy first for Kick
-            true,   // use_copy_codec = true
-            &mut cancel_rx,
-        ).await;
+        println!("[Kick] Using yt-dlp: {}", ytdlp_path);
+        println!("[Kick] Using ffmpeg: {}", ffmpeg_path);
 
-        // If copy failed, try with software encoding
-        let download_result = match download_result {
-            Err(ref e) => {
-                println!("[Rust] Stream copy failed: {}. Retrying with software encoding...", e);
-                run_full_download_with_encoder(
-                    &app_clone,
-                    &download_id_clone,
-                    &video_url,
-                    &video_path_str,
-                    duration,
-                    "libx264",
-                    false,
-                    &mut cancel_rx,
-                ).await
-            }
-            other => other,
+        // Get video duration first for progress reporting
+        println!("[Kick] Fetching video duration...");
+        let duration_output = no_window(
+            tokio::process::Command::new(&ytdlp_path)
+                .arg("--print")
+                .arg("duration")
+                .arg("--impersonate").arg("chrome")
+                .arg(&video_url),
+        )
+        .output()
+        .await
+        .map_err(|e| format!("Failed to fetch duration: {}", e))?;
+
+        let total_duration = if duration_output.status.success() {
+            let duration_str = String::from_utf8_lossy(&duration_output.stdout)
+                .trim()
+                .to_string();
+            duration_str.parse::<f64>().ok()
+        } else {
+            None
         };
 
-        // Check result
-        download_result?;
+        println!("[Kick] Total duration: {:?}", total_duration);
+
+        // Run yt-dlp to download the VOD with parallel fragment downloads
+        let mut cmd = tokio::process::Command::new(&ytdlp_path);
+        no_window(&mut cmd);
+        
+        // yt-dlp --ffmpeg-location expects a DIRECTORY so it can find both ffmpeg and ffprobe
+        let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ffmpeg_path.clone());
+        
+        cmd.arg(&video_url)
+            .arg("-o")
+            .arg(&video_path_str)
+            .arg("--impersonate").arg("chrome")
+            .arg("--ffmpeg-location")
+            .arg(&ffmpeg_dir)
+            .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
+            .arg("--merge-output-format").arg("mp4")
+            .arg("--no-part") // Don't use .part files
+            .arg("--newline") // Output progress on new lines
+            .arg("--progress") // Show progress
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+
+        println!("[Kick] Running yt-dlp command...");
+
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        // Read stdout for progress updates (yt-dlp outputs progress to stdout)
+        let app_for_progress = app_clone.clone();
+        let download_id_for_progress = download_id_clone.clone();
+        let duration_for_progress = total_duration;
+
+        let stdout_task = stdout.map(|stdout| {
+            tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let reader = BufReader::new(stdout);
+                let mut lines = reader.lines();
+                let mut last_progress_time = std::time::Instant::now();
+
+                while let Ok(Some(line)) = lines.next_line().await {
+                    // Parse yt-dlp progress output
+                    // Format: [download]  XX.X% of ~XXX.XXMIB at XXX.XXKIB/s ETA XX:XX
+                    if line.contains("% of") || line.contains("100% of") {
+                        if let Some(pct_str) = line.split('%').next() {
+                            let pct_str = pct_str
+                                .trim_start_matches(|c: char| !c.is_ascii_digit() && c != '.');
+                            if let Ok(pct) = pct_str.trim().parse::<f64>() {
+                                if last_progress_time.elapsed().as_millis() >= 500 {
+                                    let current_time =
+                                        duration_for_progress.map(|dur| (pct / 100.0) * dur);
+
+                                    let _ = app_for_progress.emit(
+                                        "download-progress",
+                                        DownloadProgress {
+                                            download_id: download_id_for_progress.clone(),
+                                            progress: pct.min(99.0),
+                                            current_time,
+                                            total_time: duration_for_progress,
+                                            status: format!("Downloading: {:.1}%", pct),
+                                        },
+                                    );
+                                    last_progress_time = std::time::Instant::now();
+                                }
+                            }
+                        }
+                    } else if !line.is_empty() {
+                        println!("[Kick] yt-dlp: {}", line);
+                    }
+                }
+            })
+        });
+
+        // Drain stderr for warnings/errors
+        let stderr_task = stderr.map(|stderr| {
+            tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if !line.is_empty() {
+                        println!("[Kick] yt-dlp stderr: {}", line);
+                    }
+                }
+            })
+        });
+
+        let mut stdout_task = stdout_task;
+        let mut stderr_task = stderr_task;
+
+        // Wait for yt-dlp to complete or cancellation
+        let status = tokio::select! {
+            result = child.wait() => result
+                .map_err(|e| format!("Failed to wait for yt-dlp: {}", e))?,
+            _ = &mut cancel_rx => {
+                println!("[Kick] Download cancelled, terminating yt-dlp...");
+                let _ = child.kill().await;
+                if let Some(task) = stdout_task.take() {
+                    task.abort();
+                }
+                if let Some(task) = stderr_task.take() {
+                    task.abort();
+                }
+                cleanup_download();
+                return Err("Download cancelled".to_string());
+            }
+        };
+
+        // Clean up tasks
+        if let Some(task) = stdout_task {
+            task.abort();
+        }
+        if let Some(task) = stderr_task {
+            task.abort();
+        }
+
+        if !status.success() {
+            return Err(format!(
+                "yt-dlp exited with code: {:?}",
+                status.code()
+            ));
+        }
 
         // Check for cancellation before post-processing
         if cancel_rx.try_recv().is_ok() {
@@ -1947,7 +2044,7 @@ pub async fn download_kick_vod(
             return Err("Download cancelled".to_string());
         }
 
-        println!("[Rust] Download completed successfully");
+        println!("[Kick] Download completed successfully");
 
         // Get file metadata
         let metadata = match std::fs::metadata(&video_path) {
@@ -1958,41 +2055,37 @@ pub async fn download_kick_vod(
 
         // Check for cancellation before thumbnail generation
         if cancel_rx.try_recv().is_ok() {
-            println!("[Rust] Download cancelled before thumbnail generation");
+            println!("[Kick] Download cancelled before thumbnail generation");
             let _ = std::fs::remove_file(&video_path);
             return Err("Download cancelled".to_string());
         }
 
-        // Generate thumbnail
-        println!("[Rust] Generating thumbnail...");
+        // Generate thumbnail using hybrid approach (yt-dlp first, FFmpeg fallback)
+        // Use page_url for yt-dlp if available (to get platform thumbnail), otherwise use video_url
+        println!("[Kick] Generating thumbnail...");
         let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
-        let thumbnail_result = match shell.sidecar("ffmpeg") {
-            Ok(ffmpeg) => {
-                (ffmpeg.args([
-                    "-ss", "00:00:05",
-                    "-i", video_path.to_str().ok_or("Invalid video path")?,
-                    "-vframes", "1",
-                    "-vf", "scale=320:-1",
-                    "-y",
-                    thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
-                ]).output().await).ok()
-            }
-            Err(_) => None
-        };
-
-        let thumbnail_path_str = if let Some(ref result) = thumbnail_result {
-            if result.status.success() {
+        let thumbnail_source_url = page_url.as_ref().unwrap_or(&video_url);
+        
+        let thumbnail_path_str = match generate_thumbnail_hybrid(
+            &ytdlp_path,
+            &ffmpeg_path,
+            thumbnail_source_url,
+            &thumbnail_path,
+            "00:00:05",
+        ).await {
+            Ok(()) => {
+                println!("[Kick] Thumbnail generated: {}", thumbnail_path.display());
                 Some(thumbnail_path.to_string_lossy().to_string())
-            } else {
+            }
+            Err(e) => {
+                println!("[Kick] Thumbnail generation failed: {}", e);
                 None
             }
-        } else {
-            None
         };
 
         // Check for cancellation before video info extraction
         if cancel_rx.try_recv().is_ok() {
-            println!("[Rust] Download cancelled before video info extraction");
+            println!("[Kick] Download cancelled before video info extraction");
             let _ = std::fs::remove_file(&video_path);
             if let Some(ref thumb_path) = thumbnail_path_str {
                 let _ = std::fs::remove_file(thumb_path);
@@ -2001,17 +2094,18 @@ pub async fn download_kick_vod(
         }
 
         // Get video dimensions, codec info, and actual duration from downloaded file
-        println!("[Rust] Getting detailed video info...");
+        println!("[Kick] Getting detailed video info...");
         let video_info = get_video_info(&app_clone, &video_path).await.ok();
         let (width, height, codec, actual_file_duration) = if let Some(ref info) = video_info {
-            println!("[Rust] Video info - width: {}, height: {}, codec: {}, duration: {:?}", info.width, info.height, info.codec, info.duration);
+            println!("[Kick] Video info - width: {}, height: {}, codec: {}, duration: {:?}", info.width, info.height, info.codec, info.duration);
             (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
         } else {
+            println!("[Kick] Could not get video info");
             (None, None, None, None)
         };
 
-        // Prefer the actual file duration over the estimated duration from stream info
-        let final_duration = actual_file_duration.or(duration);
+        // Prefer the actual file duration over the estimated duration from yt-dlp
+        let final_duration = actual_file_duration.or(total_duration);
 
         println!("[Rust] Download task completed successfully");
         Ok(DownloadResult {
@@ -2028,14 +2122,17 @@ pub async fn download_kick_vod(
         })
     }).await;
 
-    println!("[Rust] Async task completed");
+    println!("[Kick] Async task completed");
 
-    cleanup_download();
+    {
+        let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
+        downloads.remove(&download_id);
+    }
 
-    println!("[Rust] Processing download result...");
+    println!("[Kick] Processing download result...");
     match result {
         Ok(Ok(download_result)) => {
-            println!("[Rust] Download successful!");
+            println!("[Kick] Download successful!");
 
             let _ = app.emit(
                 "download-progress",
