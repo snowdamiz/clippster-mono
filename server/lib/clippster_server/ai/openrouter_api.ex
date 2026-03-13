@@ -600,10 +600,12 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
           "virality_score" ->
             """
             **virality_score (REQUIRED):** Each clip MUST include a "virality_score" field:
-            - Number from 0-100
-            - Based on engagement potential
-            - Consider emotional impact, timing, content density
-            - Higher scores for more engaging content
+            - Number from 0-100 (weighted composite score)
+            - **Hook Power (30%)**: Does the first 1-2 seconds STOP THE SCROLL? No hook = cap at 40.
+            - **Emotional Arousal (25%)**: High-arousal only (anger, awe, humor, outrage, surprise, cringe). Monotone/calm = low.
+            - **Shareability (20%)**: Would someone send this to a friend? Quotable, meme-worthy, debate-starting.
+            - **Retention Curve (15%)**: Does tension escalate? Open loops? Satisfying payoff? Dead spots = -15 penalty.
+            - **Platform Fit (10%)**: Duration sweet spots, works on mute with captions, energy matches format.
             """
 
           "combined_transcript" ->

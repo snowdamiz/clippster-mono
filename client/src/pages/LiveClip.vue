@@ -77,13 +77,36 @@
               {{ streamers.length }} {{ streamers.length === 1 ? 'channel' : 'channels' }}
             </div>
 
-            <!-- Streamer Cards -->
-            <div class="liveclip__list">
-              <transition-group name="list" tag="div" class="liveclip__list-inner">
-                <div
-                  v-for="streamer in sortedStreamers"
-                  :key="streamer.id"
-                  class="monitor-card"
+            <!-- Platform Sections -->
+            <div class="liveclip__platform-sections">
+              <div
+                v-for="platformGroup in streamersByPlatform"
+                :key="platformGroup.platform"
+                class="liveclip__platform-section"
+              >
+                <!-- Platform Header -->
+                <div class="liveclip__platform-header">
+                  <div class="liveclip__platform-title-wrapper">
+                    <img
+                      :src="getPlatformIcon(platformGroup.platform)"
+                      :alt="platformGroup.platform"
+                      class="liveclip__platform-icon"
+                      :class="getPlatformIconClasses(platformGroup.platform)"
+                    />
+                    <h2 class="liveclip__platform-title">{{ platformGroup.platform }}</h2>
+                  </div>
+                  <div class="liveclip__platform-count">
+                    {{ platformGroup.count }} {{ platformGroup.count === 1 ? 'channel' : 'channels' }}
+                  </div>
+                </div>
+
+                <!-- Streamer Cards -->
+                <div class="liveclip__list">
+                  <transition-group name="list" tag="div" class="liveclip__list-inner">
+                    <div
+                      v-for="streamer in platformGroup.streamers"
+                      :key="streamer.id"
+                      class="monitor-card"
                   :class="{
                     'monitor-card--active': streamer.isDetecting,
                     'monitor-card--live': !streamer.isDetecting && streamer.isLive,
@@ -111,11 +134,35 @@
                     </div>
 
                     <div class="monitor-card__info">
-                      <div class="monitor-card__title">{{ streamer.displayName }}</div>
+                      <div class="monitor-card__title-row">
+                        <span class="monitor-card__title">{{ streamer.displayName }}</span>
+                        <!-- Live Status Badge -->
+                        <div v-if="streamer.isDetecting" class="monitor-status monitor-status--active monitor-status--inline">
+                          <span class="monitor-status__dot"></span>
+                          {{ getStatusLabel(streamer) }}
+                        </div>
+                        <template v-else>
+                          <div v-if="streamer.isCheckingLive" class="monitor-status monitor-status--checking monitor-status--inline">
+                            <Loader2 class="monitor-status__spinner" />
+                          </div>
+                          <div v-else-if="streamer.isLive" class="monitor-status monitor-status--live monitor-status--inline">
+                            <span class="monitor-status__dot"></span>
+                            LIVE
+                            <span v-if="streamer.viewerCount" class="monitor-status__viewers">
+                              {{ formatViewerCount(streamer.viewerCount) }}
+                            </span>
+                          </div>
+                          <div v-else class="monitor-status monitor-status--offline monitor-status--inline">
+                            <span class="monitor-status__dot"></span>
+                            Offline
+                          </div>
+                        </template>
+                      </div>
                       <div class="monitor-card__subtitle">
                         <span class="monitor-card__platform" :class="getPlatformTextClass(streamer.platform)">
                           {{ streamer.platform }}
                         </span>
+                        <span v-if="streamer.hasTempRecording" class="monitor-status__dvr monitor-status__dvr--inline">DVR</span>
                       </div>
                     </div>
 
@@ -142,34 +189,8 @@
                     </div>
                   </div>
 
-                  <!-- Stats Row: Status + DVR + Actions -->
+                  <!-- Stats Row: DVR + Actions -->
                   <div class="monitor-card__stats">
-                    <!-- Status Badge -->
-                    <div class="monitor-card__status-wrapper">
-                      <div v-if="streamer.isDetecting" class="monitor-status monitor-status--active">
-                        <span class="monitor-status__dot"></span>
-                        {{ getStatusLabel(streamer) }}
-                      </div>
-                      <template v-else>
-                        <div v-if="streamer.isCheckingLive" class="monitor-status monitor-status--checking">
-                          <Loader2 class="monitor-status__spinner" />
-                        </div>
-                        <div v-else-if="streamer.isLive" class="monitor-status monitor-status--live">
-                          <span class="monitor-status__dot"></span>
-                          LIVE
-                          <span v-if="streamer.viewerCount" class="monitor-status__viewers">
-                            {{ formatViewerCount(streamer.viewerCount) }}
-                          </span>
-                          <span v-if="streamer.hasTempRecording" class="monitor-status__dvr">DVR</span>
-                        </div>
-                        <div v-else class="monitor-status monitor-status--offline">
-                          <span class="monitor-status__dot"></span>
-                          Offline
-                        </div>
-                      </template>
-                    </div>
-
-                    <div class="monitor-card__divider"></div>
 
                     <!-- DVR Toggle -->
                     <button
@@ -231,9 +252,11 @@
                         </button>
                       </template>
                     </div>
-                  </div>
+                      </div>
+                    </div>
+                  </transition-group>
                 </div>
-              </transition-group>
+              </div>
             </div>
           </div>
 
@@ -325,6 +348,63 @@
         </DialogContent>
       </Dialog>
 
+      <!-- Twitter/X Unavailable Dialog -->
+      <Teleport to="body">
+        <Transition name="modal">
+          <div v-if="showTwitterUnavailableDialog" class="segment-dialog__overlay" @click.self="showTwitterUnavailableDialog = false">
+            <Transition name="dialog" appear>
+              <div v-if="showTwitterUnavailableDialog" class="segment-dialog" role="dialog" aria-modal="true">
+                <!-- Accent bar -->
+                <div class="segment-dialog__accent"></div>
+
+                <!-- Header -->
+                <div class="segment-dialog__header">
+                  <button class="segment-dialog__close" @click="showTwitterUnavailableDialog = false" title="Close">
+                    <X :size="18" />
+                  </button>
+                  <div class="segment-dialog__icon">
+                    <img src="/x.svg" alt="X/Twitter" style="width: 24px; height: 24px;" />
+                  </div>
+                  <h2 class="segment-dialog__title">X/Twitter Live Monitoring Unavailable</h2>
+                  <p class="segment-dialog__subtitle">Currently unavailable for live stream monitoring</p>
+                </div>
+
+                <!-- Content -->
+                <div class="segment-dialog__content">
+                  <p style="font-size: 0.875rem; color: var(--sidebar-text-muted); margin-bottom: 1rem;">
+                    We are actively working on implementing X/Twitter live monitoring capabilities. This feature will be available in a future update.
+                  </p>
+
+                  <!-- VOD Downloads Available Box -->
+                  <div class="twitter-dialog__alert">
+                    <svg style="width: 16px; height: 16px; flex-shrink: 0;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <div style="flex: 1;">
+                      <p style="font-weight: 500; font-size: 0.875rem; margin-bottom: 0.25rem;">X/Twitter VOD Downloads Available</p>
+                      <p style="font-size: 0.75rem; opacity: 0.8;">
+                        You can still download X/Twitter VODs from the Stream VODs page for offline clip creation.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="segment-dialog__footer">
+                  <button
+                    @click="showTwitterUnavailableDialog = false"
+                    class="segment-dialog__btn segment-dialog__btn--primary"
+                    style="flex: none; min-width: 120px;"
+                  >
+                    Got it
+                  </button>
+                </div>
+              </div>
+            </Transition>
+          </div>
+        </Transition>
+      </Teleport>
+
       <!-- Credit Warning Dialog -->
       <ConfirmationModal
         :show="showCreditWarningDialog"
@@ -337,12 +417,20 @@
         @confirm="confirmCreditWarning"
       />
 
-      <!-- Segment & Prompt Selection Dialog -->
+      <!-- Real-Time Detection Dialog (Auto mode only) -->
+      <RealtimeDetectionDialog
+        v-if="pendingMode === 'auto'"
+        v-model="showRealtimeDialog"
+        :prompts="prompts"
+        @confirm="handleRealtimeDetectionConfirm"
+      />
+
+      <!-- Segment & Prompt Selection Dialog (Record mode only) -->
       <Teleport to="body">
         <Transition name="modal">
-          <div v-if="showSegmentDialog" class="segment-dialog__overlay" @click.self="closeSegmentDialog">
+          <div v-if="showSegmentDialog && pendingMode === 'record'" class="segment-dialog__overlay" @click.self="closeSegmentDialog">
             <Transition name="dialog" appear>
-              <div v-if="showSegmentDialog" class="segment-dialog" role="dialog" aria-modal="true">
+              <div v-if="showSegmentDialog && pendingMode === 'record'" class="segment-dialog" role="dialog" aria-modal="true">
                 <!-- Accent bar -->
                 <div class="segment-dialog__accent"></div>
 
@@ -352,14 +440,13 @@
                     <X :size="18" />
                   </button>
                   <div class="segment-dialog__icon">
-                    <Sparkles v-if="pendingMode === 'auto'" :size="24" />
-                    <Video v-else :size="24" />
+                    <Video :size="24" />
                   </div>
                   <h2 class="segment-dialog__title">
-                    {{ pendingMode === 'auto' ? 'Auto-Detect Settings' : 'Record Settings' }}
+                    Record Settings
                   </h2>
                   <p class="segment-dialog__subtitle">
-                    {{ pendingMode === 'auto' ? 'AI-powered clip detection' : 'Record stream segments' }}
+                    Record stream segments
                   </p>
                 </div>
 
@@ -370,33 +457,13 @@
                     <label class="segment-dialog__label">Segment Duration</label>
                     <div class="segment-dialog__duration-grid">
                       <button
-                        v-for="duration in pendingMode === 'auto' ? availableDurationsAuto : availableDurationsRecord"
+                        v-for="duration in availableDurationsRecord"
                         :key="duration"
                         class="segment-dialog__duration-btn"
                         :class="{ 'segment-dialog__duration-btn--selected': selectedDuration === duration }"
                         @click="selectDuration(duration)"
                       >
                         {{ duration === 0 ? 'Entire' : `${duration} min` }}
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- Prompt Selection (Auto only) -->
-                  <div v-if="pendingMode === 'auto'" class="segment-dialog__field">
-                    <label class="segment-dialog__label">Detection Prompt</label>
-                    <div ref="dropdownTriggerRef" class="segment-dialog__dropdown-wrapper">
-                      <button
-                        class="segment-dialog__dropdown-trigger"
-                        @click="togglePromptDropdown"
-                      >
-                        <span class="segment-dialog__dropdown-value" :class="{ 'segment-dialog__dropdown-value--placeholder': !selectedPromptName }">
-                          {{ selectedPromptName || 'Select a prompt...' }}
-                        </span>
-                        <ChevronDown
-                          class="segment-dialog__dropdown-chevron"
-                          :class="{ 'segment-dialog__dropdown-chevron--open': showPromptDropdown }"
-                          :size="16"
-                        />
                       </button>
                     </div>
                   </div>
@@ -409,7 +476,6 @@
                   </button>
                   <button
                     class="segment-dialog__btn segment-dialog__btn--primary"
-                    :disabled="pendingMode === 'auto' && !selectedPromptId"
                     @click="handleConfirmSegmentDialog"
                   >
                     Start
@@ -473,9 +539,11 @@
   import { Input } from '@/components/ui/input';
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
+  import RealtimeDetectionDialog from '@/components/RealtimeDetectionDialog.vue';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
   import { useLivestreamStore } from '@/stores/livestream';
   import { useToast } from '@/composables/useToast';
+  import { useRealtimeClipDetection } from '@/composables/useRealtimeClipDetection';
   import {
     getAllMonitoredStreamers,
     createMonitoredStreamer,
@@ -524,9 +592,11 @@
   const searchResults = ref<TokenSearchResult[]>([]);
   const showSearchDialog = ref(false);
   const isSearching = ref(false);
+  const showTwitterUnavailableDialog = ref(false);
 
   // Segment & prompt selection dialog state
   const showSegmentDialog = ref(false);
+  const showRealtimeDialog = ref(false);
   const pendingMode = ref<'auto' | 'record' | null>(null);
   const pendingStreamerSelection = ref<ExtendedStreamer | null>(null);
   const selectedDuration = ref<number>(5);
@@ -543,6 +613,7 @@
   const dropdownMenuStyle = ref<{ top: string; left: string; width: string }>({ top: '0px', left: '0px', width: '300px' });
 
   const livestreamStore = useLivestreamStore();
+  const realtimeDetection = useRealtimeClipDetection();
 
   const {
     activeSessions,
@@ -581,6 +652,35 @@
     });
   });
 
+  // Group streamers by platform
+  const streamersByPlatform = computed(() => {
+    const grouped: Record<Platform, ExtendedStreamer[]> = {
+      Kick: [],
+      Twitch: [],
+      PumpFun: [],
+      YouTube: [],
+      Rumble: [],
+      Twitter: [],
+    };
+
+    sortedStreamers.value.forEach(streamer => {
+      if (grouped[streamer.platform]) {
+        grouped[streamer.platform].push(streamer);
+      }
+    });
+
+    // Get all platforms that have streamers and sort alphabetically
+    const platformsWithStreamers = Object.keys(grouped)
+      .filter(platform => grouped[platform as Platform].length > 0)
+      .sort() as Platform[];
+
+    return platformsWithStreamers.map(platform => ({
+      platform,
+      streamers: grouped[platform],
+      count: grouped[platform].length,
+    }));
+  });
+
   const showCreditWarningDialog = ref(false);
   const pendingStreamerStart = ref<{ streamer: ExtendedStreamer; detectClips: boolean } | null>(null);
 
@@ -600,6 +700,7 @@
     }, 60_000);
 
     window.addEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
+    window.addEventListener('realtime-clip-detected', handleRealtimeClipDetected as EventListener);
   });
 
   async function checkAllLiveStatuses() {
@@ -854,6 +955,7 @@
     }
 
     window.removeEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
+    window.removeEventListener('realtime-clip-detected', handleRealtimeClipDetected as EventListener);
   });
 
   watch([activeSessions, monitoredStreamers, dvrSessions], () => syncDetectionState(), { deep: true });
@@ -906,6 +1008,39 @@
       mintId: currentStreamer.mintId,
       profileImageUrl: currentStreamer.profileImageUrl,
     });
+  }
+
+  function handleRealtimeClipDetected(event: CustomEvent<{ 
+    clipId: string; 
+    projectId: string; 
+    title: string; 
+    startTime: number; 
+    duration: number;
+    viralityScore: number;
+    detectionReason: string;
+  }>) {
+    const { title, startTime, duration, viralityScore, detectionReason } = event.detail;
+    
+    // Find the streamer that's currently running real-time detection
+    const activeStreamer = streamers.value.find(s => s.isDetecting && realtimeDetection.isActive.value);
+    
+    if (activeStreamer) {
+      const formatTime = (seconds: number) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+      };
+
+      addActivityLog({
+        streamerId: activeStreamer.id,
+        streamerName: activeStreamer.displayName,
+        platform: activeStreamer.platform,
+        mintId: activeStreamer.mintId,
+        message: `Viral clip detected: "${title}" (${formatTime(startTime)} - ${Math.floor(duration)}s, ${Math.round(viralityScore)}% viral)`,
+        status: 'success',
+        profileImageUrl: activeStreamer.profileImageUrl,
+      });
+    }
   }
 
   async function loadStreamers() {
@@ -1148,38 +1283,10 @@
       }
     }
 
-    // Handle Twitter
+    // Handle Twitter - Block for live monitoring
     if (detectedPlatform.value === 'Twitter') {
-      // First check if it's a broadcast/space URL
-      const broadcastId = extractTwitterBroadcastId(inputValue.value);
-      if (broadcastId) {
-        addActivityLog({
-          streamerId: 'system',
-          streamerName: 'System',
-          platform: 'Twitter',
-          message: `Adding Twitter broadcast "${broadcastId.slice(0, 8)}..."...`,
-          status: 'loading',
-        });
-
-        // For broadcasts, use the full URL as the mintId (needed for yt-dlp)
-        await confirmAddStreamer(inputValue.value.trim(), broadcastId.slice(0, 16), undefined, 'twitter');
-        return;
-      }
-      
-      // Otherwise try to extract username
-      const username = extractTwitterUsername(inputValue.value);
-      if (username) {
-        addActivityLog({
-          streamerId: 'system',
-          streamerName: 'System',
-          platform: 'Twitter',
-          message: `Adding Twitter account "${username}"...`,
-          status: 'loading',
-        });
-
-        await confirmAddStreamer(username, username, undefined, 'twitter');
-        return;
-      }
+      showTwitterUnavailableDialog.value = true;
+      return;
     }
 
     // Handle Twitch
@@ -1420,11 +1527,67 @@
     selectedPromptName.value = '';
     selectedPromptContent.value = '';
 
-    if (detectClips && prompts.value.length === 0) {
-      await loadPrompts();
+    if (detectClips) {
+      // Load prompts for real-time detection
+      if (prompts.value.length === 0) {
+        await loadPrompts();
+      }
+      showRealtimeDialog.value = true;
+    } else {
+      // Show segment dialog for recording
+      showSegmentDialog.value = true;
+    }
+  }
+
+  async function handleRealtimeDetectionConfirm(data: { promptId: string; promptContent: string }) {
+    if (!pendingStreamerSelection.value) return;
+
+    const streamer = pendingStreamerSelection.value;
+    selectedPromptId.value = data.promptId;
+    selectedPromptContent.value = data.promptContent;
+
+    // Start DVR recording with 1-minute segments (triggers 4-second HLS chunks)
+    await updateSegmentDuration(streamer, 1);
+
+    // Start monitoring WITHOUT segment-based detection (real-time detection handles it)
+    await startMonitoring([streamer], {
+      detectClips: false, // Disable segment-based detection for real-time mode
+      segmentDurationMinutes: 1,
+      promptId: data.promptId || undefined,
+      promptContent: data.promptContent || undefined,
+    });
+
+    // Start real-time clip detection
+    const session = activeSessions.value.get(streamer.id);
+    if (session) {
+      await realtimeDetection.startDetection({
+        sessionId: session.sessionId,
+        streamerName: streamer.displayName,
+        platform: streamer.platform,
+        mintId: streamer.mintId,
+        prompt: data.promptContent || 'Detect viral moments',
+        segments: [], // Empty segments array - will be populated as recording progresses
+      });
+
+      addActivityLog({
+        streamerId: streamer.id,
+        streamerName: streamer.displayName,
+        platform: streamer.platform,
+        mintId: streamer.mintId,
+        message: 'Real-time clip detection started',
+        status: 'success',
+        profileImageUrl: streamer.profileImageUrl,
+      });
     }
 
-    showSegmentDialog.value = true;
+    // Move streamer to top of list
+    const index = streamers.value.findIndex((s) => s.id === streamer.id);
+    if (index > 0) {
+      const [movedStreamer] = streamers.value.splice(index, 1);
+      streamers.value.unshift(movedStreamer);
+    }
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
 
@@ -1474,17 +1637,38 @@
 
   async function stopStreamer(streamer: ExtendedStreamer) {
     try {
+      // Stop real-time detection if active
+      if (realtimeDetection.isActive.value) {
+        const creditsUsed = realtimeDetection.creditsUsed.value;
+        const durationMinutes = realtimeDetection.detectionDurationMinutes.value;
+        
+        realtimeDetection.stopDetection();
+        
+        addActivityLog({
+          streamerId: streamer.id,
+          streamerName: streamer.displayName,
+          platform: streamer.platform,
+          mintId: streamer.mintId,
+          message: `Real-time detection stopped (${durationMinutes} min, ${creditsUsed} credits used)`,
+          status: 'success',
+          profileImageUrl: streamer.profileImageUrl,
+        });
+      }
+
       await stopMonitoring([streamer.id]);
       resolvePendingLogs();
-      addActivityLog({
-        streamerId: streamer.id,
-        streamerName: streamer.displayName,
-        platform: streamer.platform,
-        mintId: streamer.mintId,
-        message: `${streamer.isDetecting ? 'Detection' : 'Recording'} stopped by user`,
-        status: 'success',
-        profileImageUrl: streamer.profileImageUrl,
-      });
+      
+      if (!realtimeDetection.isActive.value) {
+        addActivityLog({
+          streamerId: streamer.id,
+          streamerName: streamer.displayName,
+          platform: streamer.platform,
+          mintId: streamer.mintId,
+          message: `${streamer.isDetecting ? 'Detection' : 'Recording'} stopped by user`,
+          status: 'success',
+          profileImageUrl: streamer.profileImageUrl,
+        });
+      }
     } catch (error) {
       console.error('Failed to stop monitoring', error);
     }
@@ -1890,11 +2074,61 @@
     margin-bottom: 1rem;
   }
 
+  /* ===== Platform Sections ===== */
+  .liveclip__platform-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+
+  .liveclip__platform-section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .liveclip__platform-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .liveclip__platform-title-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .liveclip__platform-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .liveclip__platform-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+  }
+
+  .liveclip__platform-count {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+  }
+
   /* ===== Streamer List ===== */
   .liveclip__list-inner {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 1.25rem;
+    gap: 1rem;
   }
 
   /* When activity panel is present, use 2 columns */
@@ -1953,23 +2187,23 @@
   .monitor-card {
     background: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
-    border-radius: 16px;
+    border-radius: 12px;
     overflow: hidden;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
 
   .monitor-card:hover {
     border-color: var(--sidebar-accent);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   }
 
   /* Card Header */
   .monitor-card__header {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 1.25rem;
+    gap: 0.75rem;
+    padding: 0.875rem;
     cursor: pointer;
     transition: background 0.2s ease;
   }
@@ -1979,12 +2213,12 @@
   }
 
   .monitor-card__avatar {
-    width: 64px;
-    height: 64px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
     overflow: hidden;
     flex-shrink: 0;
-    border: 2px solid var(--sidebar-border);
+    border: 1.5px solid var(--sidebar-border);
   }
 
   .monitor-card__avatar-img {
@@ -2015,8 +2249,8 @@
   }
 
   .monitor-card__avatar-icon {
-    width: 32px;
-    height: 32px;
+    width: 22px;
+    height: 22px;
   }
 
   .monitor-card__info {
@@ -2024,31 +2258,33 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .monitor-card__title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .monitor-card__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    flex-shrink: 0;
+  }
+
+  .monitor-card__subtitle {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    display: flex;
     align-items: center;
     gap: 0.375rem;
   }
 
-  .monitor-card__title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-  }
-
-  .monitor-card__subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-  }
-
   .monitor-card__platform {
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
     font-weight: 500;
   }
 
@@ -2080,12 +2316,12 @@
   }
 
   .monitor-card__icon-btn {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 6px;
+    border-radius: 5px;
     background: rgba(0, 0, 0, 0.3);
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -2111,29 +2347,33 @@
   }
 
   .monitor-card__icon-btn-icon {
-    width: 13px;
-    height: 13px;
+    width: 12px;
+    height: 12px;
   }
 
   /* Status Badges */
   .monitor-status {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    font-size: 0.6875rem;
+    gap: 0.25rem;
+    font-size: 0.625rem;
     font-weight: 600;
   }
 
+  .monitor-status--inline {
+    flex-shrink: 0;
+  }
+
   .monitor-status__dot {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
     border-radius: 50%;
     animation: pulse 2s ease-in-out infinite;
   }
 
   .monitor-status__spinner {
-    width: 11px;
-    height: 11px;
+    width: 10px;
+    height: 10px;
     animation: spin 0.8s linear infinite;
   }
 
@@ -2159,12 +2399,16 @@
   }
 
   .monitor-status__dvr {
-    font-size: 0.5625rem;
+    font-size: 0.5rem;
     padding: 0.125rem 0.25rem;
     background-color: rgba(16, 185, 129, 0.2);
     color: #34d399;
-    border-radius: 4px;
+    border-radius: 3px;
     margin-left: 0.25rem;
+  }
+
+  .monitor-status__dvr--inline {
+    margin-left: 0;
   }
 
   .monitor-status--offline {
@@ -2186,8 +2430,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
-    padding: 0.875rem 1.25rem;
+    gap: 0.5rem;
+    padding: 0.625rem 0.875rem;
     border-top: 1px solid var(--sidebar-border);
     background: rgba(0, 0, 0, 0.15);
   }
@@ -2199,7 +2443,7 @@
 
   .monitor-card__divider {
     width: 1px;
-    height: 20px;
+    height: 16px;
     background: var(--sidebar-border);
   }
 
@@ -2237,14 +2481,14 @@
   }
 
   .monitor-setting__toggle {
-    height: 28px;
-    padding: 0 0.625rem;
+    height: 24px;
+    padding: 0 0.5rem;
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    font-size: 0.6875rem;
+    gap: 0.25rem;
+    font-size: 0.625rem;
     font-weight: 500;
-    border-radius: 6px;
+    border-radius: 5px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     background-color: rgba(255, 255, 255, 0.04);
     color: var(--sidebar-text-muted);
@@ -2269,8 +2513,8 @@
   }
 
   .monitor-setting__toggle-icon {
-    width: 12px;
-    height: 12px;
+    width: 11px;
+    height: 11px;
     opacity: 0.7;
   }
 
@@ -2281,14 +2525,14 @@
   .monitor-card__actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.375rem;
     margin-left: auto;
   }
 
   /* Segmented Button Group */
   .monitor-action-group {
     display: flex;
-    border-radius: 6px;
+    border-radius: 5px;
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.08);
   }
@@ -2296,9 +2540,9 @@
   .monitor-action-group__btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.4375rem 0.75rem;
-    font-size: 0.6875rem;
+    gap: 0.3rem;
+    padding: 0.375rem 0.625rem;
+    font-size: 0.625rem;
     font-weight: 500;
     background-color: rgba(255, 255, 255, 0.04);
     color: var(--sidebar-text-muted);
@@ -2330,10 +2574,10 @@
   .monitor-action {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.4375rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.6875rem;
+    gap: 0.3rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: 5px;
+    font-size: 0.625rem;
     font-weight: 500;
     border: 1px solid transparent;
     cursor: pointer;
@@ -2341,13 +2585,13 @@
   }
 
   .monitor-action__icon {
-    width: 13px;
-    height: 13px;
+    width: 12px;
+    height: 12px;
   }
 
   .monitor-action__spinner {
-    width: 13px;
-    height: 13px;
+    width: 12px;
+    height: 12px;
     animation: spin 0.8s linear infinite;
   }
 
@@ -2860,6 +3104,18 @@
 
   .segment-dialog__btn--primary:hover:not(:disabled) {
     opacity: 0.9;
+  }
+
+  /* ===== Twitter Dialog Alert ===== */
+  .twitter-dialog__alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.875rem;
+    border-radius: 8px;
+    background-color: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
   }
 
   /* ===== Transitions ===== */

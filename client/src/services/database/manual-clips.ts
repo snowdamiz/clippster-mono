@@ -66,7 +66,8 @@ export async function createManualClip(
     endTime: number;
     description?: string;
   },
-  filePath?: string
+  filePath?: string,
+  livestreamSessionId?: string
 ): Promise<string> {
   const db = await getDatabase();
   const clipId = generateId();
@@ -75,6 +76,26 @@ export async function createManualClip(
   // Look up the project name to store it on the clip
   const project = await getProject(projectId);
   const projectName = project?.name || null;
+
+  // If livestreamSessionId is provided, find the raw_videos for that session
+  // This links the clip to the actual livestream recording files
+  if (livestreamSessionId && !filePath) {
+    try {
+      const rawVideos = await db.select<{ file_path: string }[]>(
+        `SELECT file_path FROM raw_videos 
+         WHERE project_id = ? 
+         ORDER BY created_at ASC LIMIT 1`,
+        [projectId]
+      );
+      
+      if (rawVideos.length > 0) {
+        filePath = rawVideos[0].file_path;
+        console.log('[ManualClips] Linked clip to livestream recording:', filePath);
+      }
+    } catch (error) {
+      console.error('[ManualClips] Failed to find livestream video file:', error);
+    }
+  }
 
   // Create a session for manual clips (we group all manual clips under special sessions)
   // Check if there's an existing "manual" session for today, or create a new one

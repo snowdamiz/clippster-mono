@@ -267,7 +267,11 @@ defmodule ClippsterServerWeb.Router do
 
     post("/clips/detect", ClipsController, :detect)
     post("/clips/detect-chunked", ClipsController, :detect_chunked)
+    post("/clips/detect-realtime", ClipsController, :detect_realtime)
     post("/clips/transcribe", ClipsController, :transcribe)
+    
+    # Real-time detection credit deduction
+    post("/credits/deduct", ClipsController, :deduct_realtime_credits)
 
     # AI video generation routes
     post("/ai/generate-video", AIController, :generate_video)
