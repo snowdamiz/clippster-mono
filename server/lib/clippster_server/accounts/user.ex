@@ -61,6 +61,9 @@ defmodule ClippsterServer.Accounts.User do
     field :deactivated, :boolean, default: false
     field :deactivated_at, :utc_datetime
 
+    # Free tier monthly credit tracking
+    field :free_tier_last_credit_grant, :utc_datetime
+
     # Activity tracking
     field :last_active_at, :utc_datetime
 
@@ -313,6 +316,14 @@ defmodule ClippsterServer.Accounts.User do
   end
 
   @doc """
+  Changeset for free tier credit grant tracking.
+  """
+  def free_tier_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:free_tier_last_credit_grant])
+  end
+
+  @doc """
   Changeset for beta activation.
   """
   def beta_activation_changeset(user) do
@@ -349,7 +360,7 @@ defmodule ClippsterServer.Accounts.User do
       :admin_discount_stripe_coupon_id
     ])
     |> validate_inclusion(:subscription_status, ["none", "active", "cancelled", "expired"])
-    |> validate_inclusion(:subscription_tier, ["starter", "creator", "pro", nil])
+    |> validate_inclusion(:subscription_tier, ["basic", "starter", "creator", "pro", nil])
     |> validate_inclusion(:subscription_renewal_method, ["stripe", "crypto", "admin", nil])
   end
 

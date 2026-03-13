@@ -137,6 +137,7 @@
                   @watermarkSettingsChanged="onWatermarkSettingsChanged"
                   @editClip="onEditClip"
                   @addClip="onAddClip"
+                  @publishNow="onPublishNow"
                   @transcribeProject="onTranscribeProject"
                   @cancelTranscription="onCancelTranscription"
                   @viewTranscript="rightPanelTab = 'transcript'"
@@ -242,6 +243,16 @@
     @create-new="onCreateNewProject"
     @cancel="onExistingProjectCancel"
   />
+
+  <!-- Quick Publish Wizard -->
+  <QuickPublishWizard
+    :show="showPublishWizard"
+    :clip="clipToPublish"
+    :clip-path="clipToPublishPath"
+    :project-id="project?.id || ''"
+    :thumbnail-url="clipToPublishThumbnail"
+    @close="onPublishWizardClose"
+  />
 </template>
 
 <script setup lang="ts">
@@ -279,6 +290,7 @@
   import { useTranscriptionOnly } from '@/composables/useTranscriptionOnly';
   import { useRouter } from 'vue-router';
   import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
+  import QuickPublishWizard from './QuickPublishWizard.vue';
   import { createVideoEditorProjectFromClip } from '@/services/video-editor-project-creator';
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
@@ -352,6 +364,12 @@
     title: string;
     segments: { start_time: number; end_time: number }[];
   } | null>(null);
+
+  // Quick Publish Wizard state
+  const showPublishWizard = ref(false);
+  const clipToPublish = ref<ClipWithVersion | null>(null);
+  const clipToPublishPath = ref<string>('');
+  const clipToPublishThumbnail = ref<string | null>(null);
 
   // Segmented playback tracking
   const currentlyPlayingClipId = ref<string | null>(null);
@@ -571,6 +589,7 @@
     stopSegmentedPlayback,
     isPlayingSegments,
     segmentPlaybackEnded,
+    currentVideo,
   } = useVideoPlayer(projectRef);
 
   // Initialize focal point composable
@@ -2362,6 +2381,22 @@
     showExistingProjectDialog.value = false;
     existingProjectForClip.value = null;
     pendingClipToEdit.value = null;
+  }
+
+  // Handle Publish Now action
+  async function onPublishNow(clip: ClipWithVersion) {
+    clipToPublish.value = clip;
+    clipToPublishPath.value = currentVideo.value?.file_path || '';
+    clipToPublishThumbnail.value = clip.built_thumbnail_path || null;
+    showPublishWizard.value = true;
+  }
+
+  // Handle Publish Wizard close
+  function onPublishWizardClose() {
+    showPublishWizard.value = false;
+    clipToPublish.value = null;
+    clipToPublishPath.value = '';
+    clipToPublishThumbnail.value = null;
   }
 
   // Wait for a clip element to be present in the clips list (MediaPanel -> ClipsTab)

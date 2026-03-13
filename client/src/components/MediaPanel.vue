@@ -151,6 +151,7 @@
       @edit-clip="onEditClip"
       @adjust-clip="onAdjustClip"
       @add-clip="handleAddClip"
+      @publish-now="onPublishNow"
     />
   </div>
 </template>
@@ -433,6 +434,10 @@
 
   function onAdjustClip(clipId: string) {
     emit('adjustClip', clipId);
+  }
+
+  function onPublishNow(clip: ClipWithVersion) {
+    emit('publishNow', clip);
   }
 
   // Event listener for fallback refresh mechanism

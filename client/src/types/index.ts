@@ -349,6 +349,7 @@ export interface MediaPanelEmits {
   (e: 'transcribeProject'): void;
   (e: 'cancelTranscription'): void;
   (e: 'viewTranscript'): void;
+  (e: 'publishNow', clip: any): void;
 }
 
 export interface TimelinePlayheadProps {

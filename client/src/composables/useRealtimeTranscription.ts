@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { API_BASE } from '@/lib/apiBase';
 
 interface TranscriptWord {
   word: string;
@@ -95,7 +96,7 @@ export function useRealtimeTranscription() {
 
         console.log('[RealtimeTranscription] Sending to Whisper API...');
         const token = localStorage.getItem('auth_token') || '';
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/clips/transcribe`, {
+        const response = await fetch(`${API_BASE}/clips/transcribe`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,

@@ -400,11 +400,11 @@
                       <h3 class="billing-tier__name">Basic</h3>
                       <div class="billing-tier__price">
                         <span class="billing-tier__price-currency">$</span>
-                        <span class="billing-tier__price-amount">{{ billingInterval === 'yearly' ? '175.89' : '15.99' }}</span>
+                        <span class="billing-tier__price-amount">{{ billingInterval === 'yearly' ? '142.89' : '12.99' }}</span>
                         <span class="billing-tier__price-period">{{ billingInterval === 'yearly' ? '/yr' : '/mo' }}</span>
                       </div>
                       <div v-if="billingInterval === 'yearly'" class="billing-tier__price-effective">
-                        $14.66/mo effective
+                        $11.91/mo effective
                       </div>
                     </div>
 
@@ -446,7 +446,7 @@
                         <span>No organization membership</span>
                       </li>
                       <li class="billing-tier__feature" style="font-size: 0.75rem; color: rgb(156, 163, 175);">
-                        <span>Large credit pack only (1,800 @ $44)</span>
+                        <span>Large credit pack only (1,800 @ $39.99)</span>
                       </li>
                     </ul>
 
