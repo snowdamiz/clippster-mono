@@ -166,12 +166,18 @@ export function useLivestreamViewer() {
     getKickDvrSession,
     getTwitchDvrSession,
     getTwitterDvrSession,
+    getYouTubeDvrSession,
+    getRumbleDvrSession,
     addKickDvrSession,
     addTwitchDvrSession,
     addTwitterDvrSession,
+    addYouTubeDvrSession,
+    addRumbleDvrSession,
     removeKickDvrSession,
     removeTwitchDvrSession,
     removeTwitterDvrSession,
+    removeYouTubeDvrSession,
+    removeRumbleDvrSession,
     registerViewerSession,
     updateViewerSession,
     unregisterViewerSession,
@@ -999,11 +1005,21 @@ export function useLivestreamViewer() {
         ? parseInt(ytStatus.startedAt) * 1000
         : Date.now();
 
+      // Check if there's an existing recording for this streamer
+      // Priority: 1) YouTube DVR session, 2) Persistent recording from monitoring, 3) Start new
+      const existingDvrSession = getYouTubeDvrSession(streamerId);
       const existingPersistentSession = activeSessions.value.get(streamerId);
       let outputDir: string;
       let sessionId: string;
 
-      if (existingPersistentSession && (existingPersistentSession.platform === 'YouTube')) {
+      if (existingDvrSession) {
+        // Use existing DVR session - allows seeking back to beginning of stream
+        console.log('[LiveViewer] Found existing YouTube DVR session:', existingDvrSession.sessionId);
+        outputDir = existingDvrSession.outputDir;
+        sessionId = existingDvrSession.sessionId;
+        state.value.tempSessionId = sessionId;
+        state.value.isTempRecording = false;
+      } else if (existingPersistentSession && (existingPersistentSession.platform === 'YouTube')) {
         // Persistent auto-detect session exists with user-configured segments (e.g., 5-min)
         // Start a SEPARATE temp viewer session with 4-second segments for smooth playback
         // The two sessions will write to different directories and won't conflict
@@ -1026,6 +1042,7 @@ export function useLivestreamViewer() {
         outputDir = await getYouTubeSessionOutputDir(sessionId);
         console.log('[LiveViewer] YouTube viewer HLS output dir:', outputDir);
       } else {
+        // No existing DVR or persistent session - start new temp viewer session
         sessionId = `youtube-view-${channelId}-${Date.now()}`;
         state.value.tempSessionId = sessionId;
         state.value.isTempRecording = true;
@@ -1042,6 +1059,7 @@ export function useLivestreamViewer() {
         }
 
         outputDir = await getYouTubeSessionOutputDir(sessionId);
+        addYouTubeDvrSession(streamerId, channelId, sessionId, outputDir);
         console.log('[LiveViewer] YouTube HLS output dir:', outputDir);
       }
 
@@ -1125,11 +1143,21 @@ export function useLivestreamViewer() {
         ? new Date(rumbleStatus.startedAt).getTime()
         : Date.now();
 
+      // Check if there's an existing recording for this streamer
+      // Priority: 1) Rumble DVR session, 2) Persistent recording from monitoring, 3) Start new
+      const existingDvrSession = getRumbleDvrSession(streamerId);
       const existingPersistentSession = activeSessions.value.get(streamerId);
       let outputDir: string;
       let sessionId: string;
 
-      if (existingPersistentSession && existingPersistentSession.platform === 'Rumble') {
+      if (existingDvrSession) {
+        // Use existing DVR session - allows seeking back to beginning of stream
+        console.log('[LiveViewer] Found existing Rumble DVR session:', existingDvrSession.sessionId);
+        outputDir = existingDvrSession.outputDir;
+        sessionId = existingDvrSession.sessionId;
+        state.value.tempSessionId = sessionId;
+        state.value.isTempRecording = false;
+      } else if (existingPersistentSession && existingPersistentSession.platform === 'Rumble') {
         // Persistent auto-detect session exists with user-configured segments (e.g., 5-min)
         // Start a SEPARATE temp viewer session with 4-second segments for smooth playback
         // The two sessions will write to different directories and won't conflict
@@ -1152,6 +1180,7 @@ export function useLivestreamViewer() {
         outputDir = await getRumbleSessionOutputDir(sessionId);
         console.log('[LiveViewer] Rumble viewer HLS output dir:', outputDir);
       } else {
+        // No existing DVR or persistent session - start new temp viewer session
         sessionId = `rumble-view-${channelId}-${Date.now()}`;
         state.value.tempSessionId = sessionId;
         state.value.isTempRecording = true;
@@ -1168,6 +1197,7 @@ export function useLivestreamViewer() {
         }
 
         outputDir = await getRumbleSessionOutputDir(sessionId);
+        addRumbleDvrSession(streamerId, channelId, sessionId, outputDir);
         console.log('[LiveViewer] Rumble HLS output dir:', outputDir);
       }
 
@@ -2819,8 +2849,10 @@ export function useLivestreamViewer() {
             removeTwitchDvrSession(currentStreamerId);
           } else if (currentPlatform === 'YouTube') {
             await stopYouTubeRecordingSession(state.value.tempSessionId);
+            removeYouTubeDvrSession(currentStreamerId);
           } else if (currentPlatform === 'Rumble') {
             await stopRumbleRecordingSession(state.value.tempSessionId);
+            removeRumbleDvrSession(currentStreamerId);
           } else if (currentPlatform === 'Twitter') {
             await stopTwitterRecordingSession(state.value.tempSessionId);
             removeTwitterDvrSession(currentStreamerId);

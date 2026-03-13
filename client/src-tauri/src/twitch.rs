@@ -15,6 +15,7 @@ use crate::downloads::{
 };
 use crate::ffmpeg_utils::{get_video_info, parse_ffmpeg_time};
 use crate::storage;
+use crate::thumbnail_utils::generate_thumbnail_hybrid;
 use tokio::io::AsyncBufReadExt;
 
 #[cfg(target_os = "windows")]
@@ -1201,6 +1202,9 @@ pub async fn download_twitch_vod(
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location")
             .arg(&ffmpeg_dir)
+            .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
+            .arg("--merge-output-format").arg("mp4")
             .arg("--no-part") // Don't use .part files
             .arg("--newline") // Output progress on new lines
             .arg("--progress") // Show progress
@@ -1322,35 +1326,25 @@ pub async fn download_twitch_vod(
             .map_err(|e| format!("Failed to get file metadata: {}", e))?;
         let file_size = metadata.len();
 
-        // Generate thumbnail
+        // Generate thumbnail using hybrid approach (yt-dlp first, FFmpeg fallback)
         println!("[Twitch] Generating thumbnail...");
         let thumbnail_path = paths
             .thumbnails
             .join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
-        let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path).args([
-            "-hwaccel",
-            "auto",
-            "-ss",
+        
+        let thumbnail_path_str = match generate_thumbnail_hybrid(
+            &ytdlp_path,
+            &ffmpeg_path,
+            &video_url,
+            &thumbnail_path,
             "00:00:01",
-            "-i",
-            &video_path_str,
-            "-vframes",
-            "1",
-            "-vf",
-            "scale=320:-1",
-            "-y",
-            thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
-        ]))
-        .output()
-        .await;
-
-        let thumbnail_path_str = match thumbnail_result {
-            Ok(output) if output.status.success() => {
+        ).await {
+            Ok(()) => {
                 println!("[Twitch] Thumbnail generated: {}", thumbnail_path.display());
                 Some(thumbnail_path.to_string_lossy().to_string())
             }
-            _ => {
-                println!("[Twitch] Thumbnail generation failed");
+            Err(e) => {
+                println!("[Twitch] Thumbnail generation failed: {}", e);
                 None
             }
         };
@@ -1660,8 +1654,9 @@ pub async fn download_twitch_vod_segment(
             .arg("-o").arg(&video_path_str)
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
-            .arg("--external-downloader").arg("ffmpeg")
-            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
+            .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
+            .arg("--merge-output-format").arg("mp4")
             .arg("--download-sections").arg(&section_arg)
             .arg("--force-keyframes-at-cuts")  // Ensure clean cuts
             .arg("--no-part")  // Don't use .part files

@@ -235,7 +235,7 @@ export async function createLivestreamSession(
       console.log('[LiveMonitor] Reusing existing parent project:', projectId);
     } else {
       // Project was deleted, create a new one
-      const projectName = `${displayName || mintId.slice(0, 6)} Live ${new Date().toLocaleString()}`;
+      const projectName = `${displayName || mintId.slice(0, 6)} Live ${new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: true })}`;
       const projectDescription = `${platform || 'PumpFun'} livestream for ${displayName} (${mintId})`;
       projectId = await createProject(projectName, projectDescription, undefined, platform || 'PumpFun');
       console.log(
@@ -245,7 +245,7 @@ export async function createLivestreamSession(
     }
   } else {
     // Create a new parent project for this streamer
-    const projectName = `${displayName || mintId.slice(0, 6)} Live ${new Date().toLocaleString()}`;
+    const projectName = `${displayName || mintId.slice(0, 6)} Live ${new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: true })}`;
     const projectDescription = `${platform || 'PumpFun'} livestream for ${displayName} (${mintId})`;
     projectId = await createProject(projectName, projectDescription, undefined, platform || 'PumpFun');
     console.log('[LiveMonitor] Created new parent project:', projectId);
@@ -476,43 +476,54 @@ export async function updateSegmentStatus(
 }
 
 /**
- * Create a project specifically for clips from watch mode (temp recording).
- * This is called when a user creates their first clip while watching without recording.
- * Project name format: "{displayName} - {YYYY-MM-DD}"
+ * Create or find a project for manual clips from watch mode.
+ * This is called when a user creates their first clip while watching.
+ *
+ * Logic:
+ * 1. Check if there's an existing manual clip project from today → reuse that project
+ * 2. Otherwise, create a new project with "Manual Clips" prefix
+ *
+ * Project name format: "Manual Clips - {displayName} Live M/D/YYYY, H:MM:SS AM/PM"
+ * 
+ * Note: Manual clips are kept SEPARATE from auto-detect projects
  */
 export async function createLivestreamClipProject(
   displayName: string,
   mintId: string,
   platform?: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual'
 ): Promise<string> {
-  // Format date as YYYY-MM-DD
-  const date = new Date();
-  const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
-  
-  const projectName = `${displayName} - ${dateStr}`;
-  const platformName = platform || 'PumpFun';
-  const projectDescription = `Clips from ${platformName} livestream ${displayName} (${mintId})`;
-
-  // Reuse an existing project for this stream/day if it already exists
   const db = await getDatabase();
   const userId = getCurrentUserId();
+  const platformName = platform || 'PumpFun';
+  const startOfToday = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000); // Midnight today (Unix timestamp)
 
-  const existing = await db.select<{ id: string }[]>(
+  // Step 1: Check for existing manual clip project from today with matching name pattern
+  // Manual clip project names start with "Manual Clips - {displayName} Live "
+  const namePrefix = `Manual Clips - ${displayName} Live `;
+  const existingManualProject = await db.select<{ id: string, name: string, created_at: number }[]>(
     userId === null
-      ? 'SELECT id FROM projects WHERE name = ? AND platform = ? AND user_id IS NULL LIMIT 1'
-      : 'SELECT id FROM projects WHERE name = ? AND platform = ? AND (user_id = ? OR user_id IS NULL) LIMIT 1',
-    userId === null ? [projectName, platformName] : [projectName, platformName, userId]
+      ? `SELECT id, name, created_at FROM projects 
+         WHERE name LIKE ? AND platform = ? AND user_id IS NULL AND created_at > ?
+         ORDER BY created_at DESC LIMIT 1`
+      : `SELECT id, name, created_at FROM projects 
+         WHERE name LIKE ? AND platform = ? AND (user_id = ? OR user_id IS NULL) AND created_at > ?
+         ORDER BY created_at DESC LIMIT 1`,
+    userId === null 
+      ? [namePrefix + '%', platformName, startOfToday] 
+      : [namePrefix + '%', platformName, userId, startOfToday]
   );
 
-  if (existing[0]?.id) {
-    console.log('[LiveMonitor] Reusing existing clip project for watch mode:', existing[0].id, projectName);
-    return existing[0].id;
+  if (existingManualProject[0]?.id) {
+    console.log('[LiveMonitor] Reusing existing manual clip project from today:', existingManualProject[0].id, existingManualProject[0].name);
+    return existingManualProject[0].id;
   }
-  
-  // Use the existing createProject function
+
+  // Step 2: Create a new manual clip project with "Manual Clips" prefix
+  const projectName = `Manual Clips - ${displayName} Live ${new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: true })}`;
+  const projectDescription = `Manual clips from ${platformName} livestream ${displayName} (${mintId})`;
   const projectId = await createProject(projectName, projectDescription, undefined, platformName);
   
-  console.log('[LiveMonitor] Created clip project for watch mode:', projectId, projectName);
+  console.log('[LiveMonitor] Created new manual clip project:', projectId, projectName);
   
   return projectId;
 }

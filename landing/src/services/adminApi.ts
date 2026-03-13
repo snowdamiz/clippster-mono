@@ -215,6 +215,9 @@ export interface BetaCode {
     email: string | null
     wallet_address: string | null
   } | null
+  assigned_email: string | null
+  verified_at: string | null
+  verified_from_ip: string | null
   created_at: string
 }
 

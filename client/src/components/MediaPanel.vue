@@ -138,6 +138,7 @@
       :creator-profile="props.creatorProfile"
       :creator-profile-server-id="props.creatorProfileServerId"
       :hide-header="true"
+      :play-on-card-click="true"
       :vod-preset-config="props.vodPresetConfig"
       @detect-clips="handleDetectClips"
       @cancel-detection="handleCancelDetection"

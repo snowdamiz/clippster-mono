@@ -1663,62 +1663,93 @@
               console.warn('Failed to load video thumbnail for project:', project.id, error);
             }
           } else {
-            // Check if it's a parent project and try to get thumbnail from children
-            // This handles auto-segmented projects that have child projects but no direct videos yet
+            // Try to get thumbnail from first clip (for auto-detected clip projects)
             try {
-              // We can find children from the already loaded projects list if available,
-              // or we might need to check if we have child projects that are segments
-              // Since projects is already populated with all projects, let's check for children
-              // But we are inside the loop populating it.
-              // Let's try to find any project with parent_id === project.id
-              const children = projects.value.filter((p) => p.parent_id === project.id);
-              if (children.length > 0) {
-                // Found children, try to get a thumbnail from one of them
-                for (const child of children) {
-                  // Try to find thumbnail from child project directly
-                  let childThumb = child.thumbnail_path;
-
-                  // If not on project, check if we have videos for this child already loaded
-                  if (!childThumb && projectVideos.value[child.id]?.length > 0) {
-                    childThumb = projectVideos.value[child.id][0].thumbnail_path;
-                  }
-
-                  if (childThumb) {
-                    // Set thumbnail on the parent project object in memory
-                    project.thumbnail_path = childThumb;
-
-                    const dataUrl = await invoke<string>('read_file_as_data_url', {
-                      filePath: childThumb,
+              const { getClipsWithBuildStatus } = await import('@/services/database/clip-build');
+              const clips = await getClipsWithBuildStatus(project.id);
+              
+              if (clips.length > 0) {
+                let clipThumb = clips[0].built_thumbnail_path;
+                
+                // If no built_thumbnail_path, try to generate from the clip's video file
+                if (!clipThumb && clips[0].file_path) {
+                  try {
+                    // Generate thumbnail from the clip's video file
+                    const thumbnailPath = await invoke<string>('generate_video_thumbnail', {
+                      videoPath: clips[0].file_path,
+                      outputDir: null, // Use default temp directory
                     });
-                    thumbnailCache.value.set(project.id, dataUrl);
+                    clipThumb = thumbnailPath;
+                  } catch (thumbError) {
+                    console.warn('Failed to generate thumbnail from clip video:', thumbError);
+                  }
+                }
+                
+                if (clipThumb) {
+                  project.thumbnail_path = clipThumb;
 
-                    // Save to parent in DB if not already set
-                    await updateProject(project.id, undefined, undefined, childThumb);
-                    break;
-                  } else {
-                    // Force fetch child videos if not yet loaded (rare race condition fallback)
-                    try {
-                      const childVideos = await getRawVideosByProjectId(child.id);
-                      projectVideos.value[child.id] = childVideos;
+                  const dataUrl = await invoke<string>('read_file_as_data_url', {
+                    filePath: clipThumb,
+                  });
+                  thumbnailCache.value.set(project.id, dataUrl);
 
-                      if (childVideos.length > 0 && childVideos[0].thumbnail_path) {
-                        childThumb = childVideos[0].thumbnail_path;
-                        project.thumbnail_path = childThumb;
-                        const dataUrl = await invoke<string>('read_file_as_data_url', {
-                          filePath: childThumb,
-                        });
-                        thumbnailCache.value.set(project.id, dataUrl);
-                        await updateProject(project.id, undefined, undefined, childThumb);
-                        break;
+                  // Save this thumbnail to the project for future use
+                  await updateProject(project.id, undefined, undefined, clipThumb);
+                }
+              }
+              
+              if (!project.thumbnail_path) {
+                // Check if it's a parent project and try to get thumbnail from children
+                // This handles auto-segmented projects that have child projects but no direct videos yet
+                const children = projects.value.filter((p) => p.parent_id === project.id);
+                if (children.length > 0) {
+                  // Found children, try to get a thumbnail from one of them
+                  for (const child of children) {
+                    // Try to find thumbnail from child project directly
+                    let childThumb = child.thumbnail_path;
+
+                    // If not on project, check if we have videos for this child already loaded
+                    if (!childThumb && projectVideos.value[child.id]?.length > 0) {
+                      childThumb = projectVideos.value[child.id][0].thumbnail_path;
+                    }
+
+                    if (childThumb) {
+                      // Set thumbnail on the parent project object in memory
+                      project.thumbnail_path = childThumb;
+
+                      const dataUrl = await invoke<string>('read_file_as_data_url', {
+                        filePath: childThumb,
+                      });
+                      thumbnailCache.value.set(project.id, dataUrl);
+
+                      // Save to parent in DB if not already set
+                      await updateProject(project.id, undefined, undefined, childThumb);
+                      break;
+                    } else {
+                      // Force fetch child videos if not yet loaded (rare race condition fallback)
+                      try {
+                        const childVideos = await getRawVideosByProjectId(child.id);
+                        projectVideos.value[child.id] = childVideos;
+
+                        if (childVideos.length > 0 && childVideos[0].thumbnail_path) {
+                          childThumb = childVideos[0].thumbnail_path;
+                          project.thumbnail_path = childThumb;
+                          const dataUrl = await invoke<string>('read_file_as_data_url', {
+                            filePath: childThumb,
+                          });
+                          thumbnailCache.value.set(project.id, dataUrl);
+                          await updateProject(project.id, undefined, undefined, childThumb);
+                          break;
+                        }
+                      } catch (e) {
+                        console.warn('Failed to fetch child videos for thumbnail propagation', e);
                       }
-                    } catch (e) {
-                      console.warn('Failed to fetch child videos for thumbnail propagation', e);
                     }
                   }
                 }
               }
             } catch (error) {
-              console.warn('Failed to load thumbnail from children for project:', project.id, error);
+              console.warn('Failed to load thumbnail from clips or children for project:', project.id, error);
             }
           }
         }
@@ -4731,21 +4762,24 @@
   const filteredProjects = computed(() => {
     let result = projects.value;
 
-    // Filter out empty projects (projects with no raw videos)
+    // Filter out empty projects (projects with no raw videos AND no clips)
     // This hides folders that were created for downloads but the download hasn't completed yet
-    // or failed/was cancelled. Only show projects that have at least one raw video.
+    // or failed/was cancelled. Show projects that have at least one raw video OR at least one clip.
     result = result.filter((p) => {
       const videos = projectVideos.value[p.id] || [];
-      // For parent projects (folders), check if any child has videos
+      const clipCount = getClipCount(p.id);
+      
+      // For parent projects (folders), check if any child has videos or clips
       if (hasChildren(p.id)) {
         const childProjects = projects.value.filter(child => child.parent_id === p.id);
         return childProjects.some(child => {
           const childVideos = projectVideos.value[child.id] || [];
-          return childVideos.length > 0;
+          const childClipCount = getClipCount(child.id);
+          return childVideos.length > 0 || childClipCount > 0;
         });
       }
-      // For regular projects, check if they have videos
-      return videos.length > 0;
+      // For regular projects, check if they have videos OR clips
+      return videos.length > 0 || clipCount > 0;
     });
 
     // 1. Filter by View Mode (only if NOT searching)

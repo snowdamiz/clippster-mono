@@ -23,6 +23,7 @@ mod rumble;
 mod sidecar;
 mod storage;
 mod stripe_callback;
+mod thumbnail_utils;
 mod twitch;
 mod twitter;
 mod ui_utils;
@@ -1110,7 +1111,9 @@ commands::file_utils::generate_video_thumbnail,
             rumble::check_rumble_livestream,
             rumble::get_rumble_channel_info,
             rumble::get_rumble_vods,
+            rumble::get_rumble_videos,
             rumble::get_single_rumble_video,
+            rumble::get_rumble_vod_duration,
             rumble::download_rumble_vod,
             rumble::download_rumble_vod_segment,
             rumble::start_rumble_recording,

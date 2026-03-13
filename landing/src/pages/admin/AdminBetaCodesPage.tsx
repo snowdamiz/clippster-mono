@@ -4,11 +4,6 @@ import { PageLayout } from '@/components/dashboard/PageLayout'
 import { generateBetaCodes, listBetaCodes, type BetaCode, type BetaCodeStats } from '@/services/adminApi'
 import './AdminBetaCodesPage.css'
 
-function formatWalletAddress(address: string) {
-  if (!address) return ''
-  return `${address.slice(0, 6)}...${address.slice(-4)}`
-}
-
 function formatDate(dateString: string) {
   if (!dateString) return 'N/A'
   try {
@@ -216,7 +211,8 @@ export function AdminBetaCodesPage() {
                     <tr>
                       <th className="admin-beta__th">Code</th>
                       <th className="admin-beta__th">Status</th>
-                      <th className="admin-beta__th">Used By</th>
+                      <th className="admin-beta__th">Assigned To</th>
+                      <th className="admin-beta__th">Verified</th>
                       <th className="admin-beta__th">Created</th>
                       <th className="admin-beta__th">Actions</th>
                     </tr>
@@ -241,14 +237,20 @@ export function AdminBetaCodesPage() {
                           )}
                         </td>
                         <td className="admin-beta__td">
-                          {code.used_by ? (
-                            code.used_by.email ? (
-                              <span className="admin-beta__user">{code.used_by.email}</span>
-                            ) : code.used_by.wallet_address ? (
-                              <code className="admin-beta__wallet">{formatWalletAddress(code.used_by.wallet_address)}</code>
-                            ) : (
-                              <span className="admin-beta__user">User #{code.used_by.id}</span>
-                            )
+                          {code.assigned_email ? (
+                            <span className="admin-beta__user">{code.assigned_email}</span>
+                          ) : (
+                            <span className="admin-beta__no-user">-</span>
+                          )}
+                        </td>
+                        <td className="admin-beta__td">
+                          {code.verified_at ? (
+                            <div className="admin-beta__verified">
+                              <span className="admin-beta__date">{formatDate(code.verified_at)}</span>
+                              {code.verified_from_ip ? (
+                                <span className="admin-beta__ip">{code.verified_from_ip}</span>
+                              ) : null}
+                            </div>
                           ) : (
                             <span className="admin-beta__no-user">-</span>
                           )}

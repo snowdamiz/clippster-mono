@@ -115,7 +115,7 @@
                   <code class="admin-beta__code">{{ code.code }}</code>
                 </td>
                 <td class="admin-beta__td">
-                  <span v-if="code.verified_at" class="admin-beta__status admin-beta__status--used">
+                  <span v-if="code.used" class="admin-beta__status admin-beta__status--used">
                     <XCircle class="admin-beta__status-icon" />
                     Used
                   </span>
@@ -139,7 +139,7 @@
                   <span class="admin-beta__date">{{ formatDate(code.created_at) }}</span>
                 </td>
                 <td class="admin-beta__td">
-                  <button v-if="!code.verified_at" class="admin-beta__copy-btn" @click="copyBetaCode(code.code, code.id)">
+                  <button v-if="!code.used" class="admin-beta__copy-btn" @click="copyBetaCode(code.code, code.id)">
                     <Check
                       v-if="copiedCodeId === code.id"
                       class="admin-beta__copy-icon admin-beta__copy-icon--success"

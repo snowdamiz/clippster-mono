@@ -3321,6 +3321,485 @@ defmodule ClippsterServerWeb.ClipsController do
 
   defp parse_org_id(_), do: nil
 
+  # Deduct credits for real-time detection
+  def deduct_realtime_credits(conn, %{"amount" => amount, "reason" => reason}) do
+    case get_user_id_from_token(conn) do
+      {:ok, user_id, is_admin} ->
+        # Skip deduction for admins
+        if is_admin do
+          Logger.info("[ClipsController] Admin user - skipping credit deduction")
+          json(conn, %{success: true, credits_deducted: 0})
+        else
+          case Credits.deduct_credits(user_id, amount) do
+            {:ok, _} ->
+              Logger.info("[ClipsController] Deducted #{amount} credits for: #{reason}")
+              json(conn, %{success: true, credits_deducted: amount})
+
+            {:error, :insufficient_credits} ->
+              Logger.warning("[ClipsController] Insufficient credits for user #{user_id}")
+              
+              conn
+              |> put_status(402)
+              |> json(%{
+                success: false,
+                error: "Insufficient credits",
+                details: "Not enough credits to continue real-time detection"
+              })
+
+            {:error, reason} ->
+              Logger.error("[ClipsController] Credit deduction failed: #{inspect(reason)}")
+              
+              conn
+              |> put_status(500)
+              |> json(%{
+                success: false,
+                error: "Credit deduction failed",
+                details: inspect(reason)
+              })
+          end
+        end
+
+      {:error, reason} ->
+        Logger.warning("[ClipsController] Authentication failed: #{reason}")
+        
+        conn
+        |> put_status(401)
+        |> json(%{success: false, error: "Unauthorized"})
+    end
+  end
+
+  # Real-time clip detection endpoint
+  # Analyzes a rolling transcript buffer and returns detected clips
+  def detect_realtime(conn, params) do
+    %{
+      "transcript" => transcript,
+      "transcript_start" => transcript_start,
+      "transcript_end" => transcript_end,
+      "prompt" => user_prompt,
+      "virality_threshold" => virality_threshold
+    } = params
+    
+    audio_context = Map.get(params, "audio_context", "")
+    pending_clip = Map.get(params, "pending_clip", nil)
+    case get_user_id_from_token(conn) do
+      {:ok, user_id, is_admin} ->
+        Logger.info("[ClipsController] Real-time detection for user: #{user_id}")
+
+        # Check if AI is allowed for this user (skip for admins)
+        ai_check = if is_admin, do: :ok, else: check_ai_allowed(user_id)
+
+        case ai_check do
+          {:error, message} ->
+            Logger.warning("[ClipsController] AI blocked for user #{user_id}: #{message}")
+
+            conn
+            |> put_status(403)
+            |> json(%{
+              success: false,
+              error: "AI disabled",
+              details: message
+            })
+
+          :ok ->
+            Logger.info(
+              "[ClipsController] Analyzing transcript: #{String.slice(transcript, 0, 100)}..."
+            )
+
+            # Build prompt for AI using existing system prompt
+            system_prompt = SystemPrompt.get()
+
+            # Format pending clip context for AI
+            pending_clip_context = if pending_clip do
+              """
+              
+              PENDING CLIP (ongoing scene being tracked):
+              Title: "#{pending_clip["title"]}"
+              Time Range: #{pending_clip["start_time"]}s - #{pending_clip["end_time"]}s
+              Description: #{pending_clip["description"]}
+              Context: #{pending_clip["context_summary"]}
+              
+              CONTEXT CHANGE DETECTION:
+              Analyze if the current transcript is:
+              1. SAME CONTEXT (continuation of pending clip):
+                 - Same topic/scene/situation as pending clip
+                 - Example: Airport lady still freaking out → SAME CONTEXT
+                 - Example: Gambling session continues → SAME CONTEXT
+                 - Action: Set context_change=false, update pending_clip end_time to #{transcript_end}
+              
+              2. NEW CONTEXT (different scene):
+                 - Different topic/scene/situation from pending clip
+                 - Example: Airport scene ends, now talking about gambling → NEW CONTEXT
+                 - Example: Freakout ends, now calm conversation → NEW CONTEXT
+                 - Action: Set context_change=true, create new pending_clip for the new scene
+              
+              If SAME CONTEXT: Return {"context_change": false, "pending_clip": {updated clip with new end_time}}
+              If NEW CONTEXT: Return {"context_change": true, "pending_clip": {new clip data for the new scene}}
+              """
+            else
+              """
+              
+              NO PENDING CLIP:
+              This is the first detection or previous clip was saved.
+              If you detect a clip-worthy moment, create a new pending_clip.
+              Set context_change=false (no previous context to change from).
+              """
+            end
+            
+            # Format transcript for AI analysis
+            audio_info = if audio_context != "", do: "\n\n#{audio_context}\n", else: ""
+            
+            formatted_transcript = """
+            TRANSCRIPT (#{transcript_start}s - #{transcript_end}s):
+            #{transcript}#{audio_info}#{pending_clip_context}
+            You are a clip detector analyzing livestream content. Find moments that are entertaining, shareable, and worth clipping.
+
+            AUDIO ANALYSIS GUIDANCE:
+            - Volume spikes indicate screaming/yelling/excitement - STRONG clip signal
+            - Multiple volume spikes in short time = very likely clip-worthy moment
+            - Volume spikes + intense/emotional words = high-value clip
+            - Use audio context to identify moments the transcript alone might miss
+            
+            WHAT QUALIFIES AS 85+ SCORE (CLIP-WORTHY):
+            
+            GAMING STREAMS:
+            - Impressive clutch plays or skill moments (1v3+, comeback wins, tournament plays)
+            - Rage/tilt moments with strong reactions (screaming, breaking things, tilting hard)
+            - Hilarious fails or unexpected glitches that cause big reactions
+            - Hype moments (big wins, insane RNG, perfect timing)
+            - Drama with teammates or opponents (arguments, trash talk, beef)
+            - Funny banter or roasts that land perfectly
+            
+            IRL STREAMS:
+            - Confrontations or arguments (getting kicked out, disputes, drama)
+            - Unexpected encounters (celebrities, crazy people, weird situations)
+            - Funny or awkward social moments that are highly relatable
+            - Wholesome moments with strong emotional payoff
+            - Surprising reveals or announcements
+            - Chaotic or unpredictable events
+            
+            ALL STREAMS:
+            - Strong emotional reactions (genuine crying, explosive laughter, shock)
+            - Drama or controversy (call-outs, hot takes, relationship stuff)
+            - Genuinely funny comedy moments (not just chuckles, but actual hilarious content)
+            - Meme-worthy or highly quotable moments
+            - Moments fans would clip and share in Discord/Twitter
+            - Content that makes you go "oh shit" or laugh out loud
+
+            SCORING EXAMPLES (85+ THRESHOLD):
+            - Score 95: "Streamer accidentally leaks they're dating another streamer"
+            - Score 93: "Insane 1v5 ace clutch in ranked with crowd going wild"
+            - Score 90: "Streamer breaks keyboard in rage after losing tournament"
+            - Score 88: "IRL streamer gets confronted by security, kicked out"
+            - Score 87: "Hilarious fail where streamer falls off chair screaming"
+            - Score 86: "Streamer roasts toxic viewer so hard chat explodes"
+            - Score 85: "Emotional moment where streamer cries after big donation"
+            - Score 85: "Streamer has heated argument with teammate, drama unfolds"
+
+            NOT CLIP-WORTHY (Below 85):
+            - Normal conversation with chat (even if interesting)
+            - Regular gameplay without standout moments
+            - Mild reactions or generic excitement
+            - Mundane IRL activities (walking, eating, shopping)
+            - Standard wins/losses without special context
+            - Filler content between highlights
+
+            IMPORTANT: Score honestly. If it's not genuinely entertaining/shareable, don't force it to 85+.
+            The threshold is #{virality_threshold}. Only return clips that meet or exceed this score.
+
+            CRITICAL - NEW RESPONSE FORMAT (DO NOT USE OLD FORMAT):
+            You MUST return JSON in this EXACT format:
+            {
+              "context_change": true/false,
+              "pending_clip": {...} or null
+            }
+            
+            DO NOT return {"clips": [...]} - that format is DEPRECATED.
+            DO NOT return {"clips": [], "extensions": []} - that format is DEPRECATED.
+            
+            EXAMPLES:
+            
+            Example 1 - No clip detected:
+            {"context_change": false, "pending_clip": null}
+            
+            Example 2 - First clip detected (no previous context):
+            {
+              "context_change": false,
+              "pending_clip": {
+                "title": "Airport Lady Freakout Begins",
+                "description": "Woman starts yelling at airport staff",
+                "start_time": #{transcript_start},
+                "end_time": #{transcript_end},
+                "virality_score": 88,
+                "detection_reason": "Dramatic confrontation with volume spikes",
+                "context_summary": "Airport freakout scene"
+              }
+            }
+            
+            Example 3 - Continuing same scene (extend end_time):
+            {
+              "context_change": false,
+              "pending_clip": {
+                "title": "Airport Lady Freakout Escalates",
+                "description": "Woman continues yelling, security called",
+                "start_time": 800,
+                "end_time": #{transcript_end},
+                "virality_score": 92,
+                "detection_reason": "Escalating confrontation",
+                "context_summary": "Airport freakout scene"
+              }
+            }
+            
+            Example 4 - NEW scene detected (context changed):
+            {
+              "context_change": true,
+              "pending_clip": {
+                "title": "Gambling Hot Streak",
+                "description": "Streamer hits big win",
+                "start_time": #{transcript_start},
+                "end_time": #{transcript_end},
+                "virality_score": 85,
+                "detection_reason": "Exciting gambling moment",
+                "context_summary": "Gambling session"
+              }
+            }
+            
+            RULES:
+            - start_time and end_time are ABSOLUTE timestamps (seconds from stream start)
+            - When extending a scene, keep the original start_time, update end_time to #{transcript_end}
+            - Set context_change=true ONLY when the topic/scene completely changes
+            - Set context_change=false when continuing the same scene OR when no clip detected
+            """
+
+            # Call OpenRouter API using existing generate_clips function
+            case OpenRouterAPI.generate_clips(formatted_transcript, system_prompt, user_prompt) do
+              {:ok, ai_response, _usage} ->
+                # Log the full AI response for debugging
+                Logger.info("[ClipsController] Full AI response: #{inspect(ai_response)}")
+                
+                # Parse AI response - extract the new pending clip data (ignore AI's context_change)
+                ai_pending_clip = case ai_response do
+                  # New format
+                  %{"context_change" => _change, "pending_clip" => clip} ->
+                    clip
+                  
+                  # Old format fallback - convert to new format
+                  %{"clips" => clips} when is_list(clips) and length(clips) > 0 ->
+                    first_clip = List.first(clips)
+                    %{
+                      "title" => Map.get(first_clip, "title", "Untitled"),
+                      "description" => Map.get(first_clip, "description", ""),
+                      "start_time" => get_clip_start_time(first_clip, transcript_start),
+                      "end_time" => get_clip_end_time(first_clip, transcript_start, transcript_end),
+                      "virality_score" => Map.get(first_clip, "virality_score", 85),
+                      "detection_reason" => Map.get(first_clip, "reason", "") || Map.get(first_clip, "detection_reason", ""),
+                      "context_summary" => String.slice(Map.get(first_clip, "title", ""), 0, 50)
+                    }
+                  
+                  # No clips detected
+                  _ ->
+                    nil
+                end
+
+                # Server-side context change detection (don't trust AI's flag)
+                # Compare existing pending clip with new detection using time overlap + semantic similarity
+                # Max clip duration: 180 seconds (3 minutes) - force save if exceeded
+                max_clip_duration = 180
+                
+                {context_change, final_pending_clip} = cond do
+                  # No new clip detected by AI
+                  is_nil(ai_pending_clip) ->
+                    # If we have an existing pending clip and AI found nothing new,
+                    # this might mean the context ended - but we need consecutive "nothing" detections
+                    # For now, keep the existing pending clip (context continues until something new appears)
+                    {false, pending_clip}
+                  
+                  # No existing pending clip - this is a new detection
+                  is_nil(pending_clip) ->
+                    Logger.info("[ClipsController] First clip detected: #{ai_pending_clip["title"]}")
+                    {false, ai_pending_clip}
+                  
+                  # Both exist - compare them
+                  true ->
+                    # Check if pending clip has exceeded max duration
+                    pending_duration = Map.get(pending_clip, "end_time", 0) - Map.get(pending_clip, "start_time", 0)
+                    
+                    if pending_duration >= max_clip_duration do
+                      # Clip is too long - force save it and start new one
+                      Logger.info("[ClipsController] Pending clip exceeded max duration (#{pending_duration}s >= #{max_clip_duration}s), forcing save")
+                      {true, ai_pending_clip}
+                    else
+                      case should_merge_clips?(pending_clip, ai_pending_clip) do
+                        {:merge, reason} ->
+                          # Similar enough - merge/extend the pending clip
+                          merged = merge_pending_clips(pending_clip, ai_pending_clip)
+                          Logger.info("[ClipsController] Merging clips (#{reason}): #{merged["start_time"]}s - #{merged["end_time"]}s")
+                          {false, merged}
+                        
+                        {:different, reason} ->
+                          # Truly different context - save existing, start new
+                          Logger.info("[ClipsController] Context change (#{reason})! Saving: '#{pending_clip["title"]}' -> Starting: '#{ai_pending_clip["title"]}'")
+                          {true, ai_pending_clip}
+                      end
+                    end
+                end
+
+                Logger.info("[ClipsController] Context change: #{context_change}, Pending clip: #{if final_pending_clip, do: "#{final_pending_clip["title"]} (#{final_pending_clip["start_time"]}s - #{final_pending_clip["end_time"]}s)", else: "none"}")
+
+                json(conn, %{
+                  success: true,
+                  context_change: context_change,
+                  pending_clip: final_pending_clip
+                })
+
+              {:error, reason} ->
+                Logger.error("[ClipsController] AI detection failed: #{inspect(reason)}")
+
+                conn
+                |> put_status(500)
+                |> json(%{
+                  success: false,
+                  error: "Detection failed",
+                  details: inspect(reason)
+                })
+            end
+        end
+
+      {:error, reason} ->
+        Logger.warning("[ClipsController] Authentication failed: #{reason}")
+
+        conn
+        |> put_status(401)
+        |> json(%{success: false, error: "Unauthorized"})
+    end
+  end
+
+  # Helper functions for converting old clip format to new pending_clip format
+  defp get_clip_start_time(clip, transcript_start) do
+    # Old format had relative start_time, convert to absolute
+    case Map.get(clip, "segments") do
+      [first_segment | _] -> Map.get(first_segment, "start_time", transcript_start)
+      _ -> Map.get(clip, "start_time", transcript_start)
+    end
+  end
+
+  defp get_clip_end_time(clip, transcript_start, transcript_end) do
+    # Old format had duration, calculate end_time
+    case Map.get(clip, "segments") do
+      segments when is_list(segments) and length(segments) > 0 ->
+        last_segment = List.last(segments)
+        Map.get(last_segment, "end_time", transcript_end)
+      _ ->
+        start_time = get_clip_start_time(clip, transcript_start)
+        duration = Map.get(clip, "total_duration") || Map.get(clip, "duration", 30)
+        start_time + duration
+    end
+  end
+
+  # Calculate time overlap ratio between two clips
+  # Returns a value between 0.0 (no overlap) and 1.0 (complete overlap)
+  defp calculate_time_overlap(existing_clip, new_clip) do
+    existing_start = Map.get(existing_clip, "start_time", 0)
+    existing_end = Map.get(existing_clip, "end_time", 0)
+    new_start = Map.get(new_clip, "start_time", 0)
+    new_end = Map.get(new_clip, "end_time", 0)
+
+    # Calculate overlap
+    overlap_start = max(existing_start, new_start)
+    overlap_end = min(existing_end, new_end)
+    overlap_duration = max(0, overlap_end - overlap_start)
+
+    # Calculate the smaller clip's duration (use smaller to be more lenient)
+    existing_duration = max(1, existing_end - existing_start)
+    new_duration = max(1, new_end - new_start)
+    smaller_duration = min(existing_duration, new_duration)
+
+    # Return overlap as ratio of smaller clip
+    overlap_duration / smaller_duration
+  end
+
+  # Calculate word-based similarity between two strings
+  # Returns a value between 0.0 (no similarity) and 1.0 (identical)
+  defp calculate_word_similarity(str1, str2) when is_binary(str1) and is_binary(str2) do
+    words1 = str1 |> String.downcase() |> String.split(~r/\s+/, trim: true) |> MapSet.new()
+    words2 = str2 |> String.downcase() |> String.split(~r/\s+/, trim: true) |> MapSet.new()
+
+    if MapSet.size(words1) == 0 or MapSet.size(words2) == 0 do
+      0.0
+    else
+      intersection = MapSet.intersection(words1, words2) |> MapSet.size()
+      union = MapSet.union(words1, words2) |> MapSet.size()
+      intersection / union
+    end
+  end
+  defp calculate_word_similarity(_, _), do: 0.0
+
+  # Determine if two clips should be MERGED (extended) vs saved separately
+  # Returns {:merge, reason} if clips should be merged, {:different, reason} if truly different
+  defp should_merge_clips?(existing_clip, new_clip) when is_map(existing_clip) and is_map(new_clip) do
+    # Check title similarity
+    existing_title = Map.get(existing_clip, "title", "") || ""
+    new_title = Map.get(new_clip, "title", "") || ""
+    title_similarity = calculate_word_similarity(existing_title, new_title)
+    
+    # Check context summary similarity
+    existing_summary = Map.get(existing_clip, "context_summary", "") || ""
+    new_summary = Map.get(new_clip, "context_summary", "") || ""
+    context_similarity = calculate_word_similarity(existing_summary, new_summary)
+    
+    # Calculate time overlap
+    time_overlap = calculate_time_overlap(existing_clip, new_clip)
+    
+    Logger.info("[ClipsController] Merge check: time_overlap=#{Float.round(time_overlap, 2)}, context_sim=#{Float.round(context_similarity, 2)}, title_sim=#{Float.round(title_similarity, 2)}")
+    
+    # MERGE if:
+    # 1. Very high title similarity (>70%) - clearly same moment
+    # 2. OR moderate title similarity (>30%) WITH significant time overlap (>40%) - related content, extend it
+    # 3. OR any title similarity (>20%) WITH very high time overlap (>50%) - clearly same time period
+    # 4. OR high context similarity (>50%) WITH any overlap - same broader topic
+    cond do
+      title_similarity > 0.7 ->
+        {:merge, "high title similarity (#{Float.round(title_similarity, 2)})"}
+      
+      title_similarity > 0.3 and time_overlap > 0.4 ->
+        {:merge, "moderate title similarity (#{Float.round(title_similarity, 2)}) with significant overlap (#{Float.round(time_overlap, 2)})"}
+      
+      title_similarity > 0.2 and time_overlap > 0.5 ->
+        {:merge, "some title similarity (#{Float.round(title_similarity, 2)}) with very high overlap (#{Float.round(time_overlap, 2)})"}
+      
+      context_similarity > 0.5 and time_overlap > 0.1 ->
+        {:merge, "context similarity (#{Float.round(context_similarity, 2)}) with overlap"}
+      
+      true ->
+        {:different, "low similarity (title=#{Float.round(title_similarity, 2)}, context=#{Float.round(context_similarity, 2)}, overlap=#{Float.round(time_overlap, 2)})"}
+    end
+  end
+  defp should_merge_clips?(_, _), do: {:different, "invalid clips"}
+
+  # Merge two clips that represent the same context
+  # Keeps earliest start_time, latest end_time, and best metadata
+  defp merge_pending_clips(existing_clip, new_clip) do
+    existing_start = Map.get(existing_clip, "start_time", 0)
+    existing_end = Map.get(existing_clip, "end_time", 0)
+    new_start = Map.get(new_clip, "start_time", 0)
+    new_end = Map.get(new_clip, "end_time", 0)
+    
+    existing_score = Map.get(existing_clip, "virality_score", 0)
+    new_score = Map.get(new_clip, "virality_score", 0)
+    
+    # Use metadata from whichever has higher virality score
+    base_clip = if new_score > existing_score, do: new_clip, else: existing_clip
+    
+    %{
+      "title" => Map.get(base_clip, "title"),
+      "description" => Map.get(base_clip, "description"),
+      "start_time" => min(existing_start, new_start),
+      "end_time" => max(existing_end, new_end),
+      "virality_score" => max(existing_score, new_score),
+      "detection_reason" => Map.get(base_clip, "detection_reason"),
+      "context_summary" => Map.get(base_clip, "context_summary")
+    }
+  end
+
   # Check if AI clip detection is allowed for a user
   # Returns :ok if allowed, or {:error, message} if blocked
   defp check_ai_allowed(user_id) do

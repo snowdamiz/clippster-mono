@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="modelValue" class="workspace-dialog__overlay" @click.self="close">
+      <div v-if="modelValue" class="workspace-dialog__overlay">
         <Transition name="dialog" appear>
           <div v-if="modelValue" class="workspace-dialog" role="dialog" aria-modal="true">
             <!-- Header -->
@@ -1916,14 +1916,17 @@
       segments: clip.segments,
     });
 
-    // Track the currently playing clip
-    currentlyPlayingClipId.value = clip.id;
-
-    // Set guard flag so the segmentPlaybackEnded watcher doesn't clear currentlyPlayingClipId
+    // Set guard flag BEFORE stopping playback to prevent watcher from clearing currentlyPlayingClipId
     skipPlaybackEndedClear = true;
 
     // Stop any existing playback first
     stopSegmentedPlayback();
+
+    // Wait for stopSegmentedPlayback to complete and state to settle
+    await nextTick();
+
+    // Track the currently playing clip AFTER stopping previous playback
+    currentlyPlayingClipId.value = clip.id;
 
     // Set hover states to the playing clip so it highlights in both panel and timeline
     hoveredClipId.value = clip.id;
@@ -1939,11 +1942,48 @@
     await nextTick();
     scrollToClipInTimeline(clip.id);
 
-    // Check if this is a standalone clip file (DVR/livestream clip without raw video)
-    // If no video is loaded but clip has a file path, load the clip's video directly
+    // Check if this is a standalone clip file (exported/built clip)
+    // If the clip has a built_file_path, it's an exported clip - load it directly
+    // Otherwise, use segment playback on the raw video
+    const builtFilePath = clip.built_file_path;
+    const isBuiltClip = builtFilePath && builtFilePath.trim() !== '';
+
+    if (isBuiltClip) {
+      console.log('[ProjectWorkspaceDialog] Loading built clip file:', builtFilePath);
+      const loaded = await loadVideoFromPath(builtFilePath);
+      if (loaded) {
+        // For built clips, we just play from start - the whole file is the clip
+        // Wait for the video element to be ready after loading
+        await nextTick();
+
+        // Wait a bit more for the video element to actually render and be accessible
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        if (videoElement.value) {
+          videoElement.value.currentTime = 0;
+          videoElement.value.play().catch((err) => {
+            console.warn('[ProjectWorkspaceDialog] Autoplay prevented for built clip:', err);
+          });
+        }
+        
+        // Clear guard flag and timeout since we're done with this playback
+        if (skipPlaybackEndedClearTimeout) {
+          clearTimeout(skipPlaybackEndedClearTimeout);
+          skipPlaybackEndedClearTimeout = null;
+        }
+        skipPlaybackEndedClear = false;
+        
+        return;
+      }
+    }
+
+    // Check if this is a standalone clip file (DVR/livestream extracted clip)
+    // If the clip has a file_path that's different from the currently loaded video, load it
     const clipFilePath = clip.filename || clip.file_path;
+    const hasClipFile = clipFilePath && clipFilePath.trim() !== '';
+    const isDifferentFile = hasClipFile && videoSrc.value !== clipFilePath;
     const hasNoRawVideo = !videoSrc.value;
-    const isStandaloneClip = hasNoRawVideo && clipFilePath;
+    const isStandaloneClip = hasClipFile && (hasNoRawVideo || isDifferentFile);
 
     if (isStandaloneClip) {
       console.log('[ProjectWorkspaceDialog] Loading standalone clip file:', clipFilePath);
@@ -1962,6 +2002,14 @@
             console.warn('[ProjectWorkspaceDialog] Autoplay prevented for standalone clip:', err);
           });
         }
+        
+        // Clear guard flag and timeout since we're done with this playback
+        if (skipPlaybackEndedClearTimeout) {
+          clearTimeout(skipPlaybackEndedClearTimeout);
+          skipPlaybackEndedClearTimeout = null;
+        }
+        skipPlaybackEndedClear = false;
+        
         return;
       }
     }
@@ -2025,6 +2073,36 @@
           created_at: Date.now(),
         },
       ];
+    } else if (clip.current_version_start_time !== undefined && clip.current_version_end_time !== undefined) {
+      // Fallback: create single segment from version timing properties (from getClipsWithBuildStatus)
+      console.log('[ProjectWorkspaceDialog] Using fallback - current_version_start_time/end_time');
+      segments = [
+        {
+          id: `fallback-${clip.id}`,
+          clip_version_id: clip.current_version_id || clip.id,
+          segment_index: 0,
+          start_time: clip.current_version_start_time,
+          end_time: clip.current_version_end_time,
+          duration: clip.current_version_end_time - clip.current_version_start_time,
+          transcript: clip.current_version_description || null,
+          created_at: Date.now(),
+        },
+      ];
+    } else if (clip.start_time !== undefined && clip.end_time !== undefined) {
+      // Fallback: use clip's own start_time/end_time (manual/auto-detected clips)
+      console.log('[ProjectWorkspaceDialog] Using fallback - clip.start_time/end_time');
+      segments = [
+        {
+          id: `fallback-${clip.id}`,
+          clip_version_id: clip.current_version_id || clip.id,
+          segment_index: 0,
+          start_time: clip.start_time,
+          end_time: clip.end_time,
+          duration: clip.end_time - clip.start_time,
+          transcript: clip.current_version_description || clip.name || null,
+          created_at: Date.now(),
+        },
+      ];
     } else if (clip.total_duration > 0) {
       // Last resort: use total_duration from transformed clip
       console.log('[ProjectWorkspaceDialog] Using last resort - clip.total_duration');
@@ -2053,11 +2131,27 @@
 
     if (segments.length > 0) {
       // Ensure we have valid segments before playing
-      const validSegments = segments.filter(s => 
-        s.start_time >= 0 && 
-        s.end_time > s.start_time && 
-        s.end_time <= duration.value
-      );
+      console.log('[ProjectWorkspaceDialog] Validating segments. Video duration:', duration.value);
+      
+      const validSegments = segments.filter(s => {
+        const isValid = s.start_time >= 0 && 
+                       s.end_time > s.start_time && 
+                       s.end_time <= duration.value;
+        
+        if (!isValid) {
+          console.warn('[ProjectWorkspaceDialog] Invalid segment:', {
+            start: s.start_time,
+            end: s.end_time,
+            duration: s.duration,
+            videoDuration: duration.value,
+            startValid: s.start_time >= 0,
+            endValid: s.end_time > s.start_time,
+            withinDuration: s.end_time <= duration.value,
+          });
+        }
+        
+        return isValid;
+      });
 
       if (validSegments.length > 0) {
         console.log('[ProjectWorkspaceDialog] Playing', validSegments.length, 'valid segments');
@@ -2583,12 +2677,20 @@
   // Guard flag to prevent the segmented-playback-ended watcher from clearing
   // currentlyPlayingClipId when stopSegmentedPlayback is called inside onPlayClip
   let skipPlaybackEndedClear = false;
+  let skipPlaybackEndedClearTimeout: number | null = null;
 
   // Watch for segmented playback state changes
   watch([isPlayingSegments, segmentPlaybackEnded], ([isPlaying, ended]) => {
     if (!isPlaying && ended) {
       if (skipPlaybackEndedClear) {
-        skipPlaybackEndedClear = false;
+        // Keep the guard flag active for 200ms to handle the setTimeout in stopSegmentedPlayback
+        if (skipPlaybackEndedClearTimeout) {
+          clearTimeout(skipPlaybackEndedClearTimeout);
+        }
+        skipPlaybackEndedClearTimeout = window.setTimeout(() => {
+          skipPlaybackEndedClear = false;
+          skipPlaybackEndedClearTimeout = null;
+        }, 200);
         return;
       }
       // Clear the currently playing clip when playback ends naturally
