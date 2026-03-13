@@ -1219,24 +1219,27 @@ async function finalizeRecordingSession(session: { sessionId: string; projectId?
 async function handleDvrSegmentReady(payload: SegmentEventPayload) {
   if (!isMonitoring.value && activeSessions.value.size === 0) return;
 
-  const { fetchBalance, hoursRemaining } = useCreditBalance();
   const session = activeSessions.value.get(payload.streamerId);
 
-  // Process the segment silently (no activity logs for internal DVR chunk aggregation)
-  let detectClips = session?.detectClips ?? true;
-
-  if (detectClips) {
-    await fetchBalance();
-    const balance = hoursRemaining.value;
-    if (balance !== 'unlimited' && typeof balance === 'number' && balance <= 0) {
-      detectClips = false;
-    }
+  // Skip segment processing entirely if detectClips is false (real-time detection mode)
+  if (session?.detectClips === false) {
+    console.log('[LiveMonitor] Skipping segment processing - real-time detection mode active');
+    return;
   }
+
+  const { fetchBalance, hoursRemaining } = useCreditBalance();
+  await fetchBalance();
+
+  // Check if we have credits for detection
+  const balance = hoursRemaining.value;
+  const hasCredits = balance === 'unlimited' || (typeof balance === 'number' && balance > 0);
 
   const promptContent = session?.promptContent;
 
-  // Process segment without status callback (silent processing)
-  await handleSegmentReady(payload.sessionId, payload, detectClips, promptContent);
+  // Process segment without status callback (silent processing) only if we have credits
+  if (hasCredits) {
+    await handleSegmentReady(payload.sessionId, payload, true, promptContent);
+  }
 }
 
 async function initializeListeners() {
@@ -1257,6 +1260,37 @@ async function initializeListeners() {
     if (!activeSession || activeSession.sessionId !== payload.sessionId) {
       // This segment belongs to a DVR/viewer session, not an auto-detect session - skip it
       return;
+    }
+
+    // In real-time detection mode, track segments but skip AI detection
+    console.log('[LiveMonitor] segment-ready - detectClips:', activeSession.detectClips);
+    if (activeSession.detectClips === false) {
+      console.log('[LiveMonitor] Real-time detection mode - tracking segment for clip extraction');
+      
+      // Track segment for real-time clip extraction
+      // Real-time detection needs the segments array to call extract_livestream_clip
+      if (!activeSession.segments) {
+        activeSession.segments = [];
+      }
+      
+      const newSegment = {
+        segmentNumber: payload.segment,
+        filePath: payload.path,
+        startTime: payload.segment * (payload.duration || 4),
+        duration: payload.duration || 4,
+        endTime: (payload.segment + 1) * (payload.duration || 4),
+      };
+      
+      activeSession.segments.push(newSegment);
+      
+      // Update real-time detection with new segments
+      const { useRealtimeClipDetection } = await import('./useRealtimeClipDetection');
+      const detection = useRealtimeClipDetection();
+      if (detection.isActive.value) {
+        detection.updateSegments(activeSession.segments);
+      }
+      
+      return; // Skip traditional AI detection processing
     }
 
     const info = await getStreamerInfo(payload.streamerId);
@@ -1404,6 +1438,12 @@ async function initializeListeners() {
     level: string;
   }>('recorder-log', async (event) => {
     const { streamerId, mintId, message } = event.payload;
+
+    // Skip ALL recorder logs when in real-time detection mode
+    const session = activeSessions.value.get(streamerId);
+    if (session?.detectClips === false) {
+      return;
+    }
 
     // Filter out overly verbose messages
     if (message.includes('Encoder waiting for media')) return;
@@ -1801,6 +1841,7 @@ export function useLivestreamMonitoring() {
       // CRITICAL: Add to activeSessions IMMEDIATELY after getting sessionInfo
       // This prevents race conditions where viewer checks for existing sessions
       // before they're tracked, which would cause both to use the same session ID
+      console.log('[LiveMonitor] Creating session with detectClips:', options.detectClips);
       activeSessions.value.set(streamer.id, {
         sessionId: sessionInfo.sessionId,
         streamerId: streamer.id,
@@ -1968,16 +2009,18 @@ export function useLivestreamMonitoring() {
         });
       }
 
-      // Add log
-      addActivityLog({
-        streamerId: streamer.id,
-        streamerName: streamer.displayName,
-        platform: streamer.platform,
-        mintId: streamer.mintId,
-        message: 'Stream is live - Recording started',
-        status: 'success',
-        profileImageUrl: streamer.profileImageUrl,
-      });
+      // Add log (skip for real-time detection mode - it has its own logs)
+      if (options.detectClips !== false) {
+        addActivityLog({
+          streamerId: streamer.id,
+          streamerName: streamer.displayName,
+          platform: streamer.platform,
+          mintId: streamer.mintId,
+          message: 'Stream is live - Recording started',
+          status: 'success',
+          profileImageUrl: streamer.profileImageUrl,
+        });
+      }
 
       if (!isOnLivePage()) {
         showSuccess(
