@@ -13,7 +13,7 @@ defmodule ClippsterServer.Credits do
   @credit_packs %{
     "small" => %{hours: 240, usd: 10.00, name: "Small Pack"},
     "medium" => %{hours: 600, usd: 20.00, name: "Medium Pack"},
-    "large" => %{hours: 1_800, usd: 44.00, name: "Large Pack"}
+    "large" => %{hours: 1_800, usd: 39.99, name: "Large Pack"}
   }
 
   # Organization credit packs (for team purchases)

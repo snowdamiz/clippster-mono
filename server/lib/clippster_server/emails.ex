@@ -916,10 +916,10 @@ defmodule ClippsterServer.Emails do
                       Save #{discount_percent}% off First Month
                     </p>
                     <p style="margin: 0 0 16px 0; font-size: 13px; color: #a1a1aa;">
-                      Creator Tier - $54.99/month
+                      Creator Tier - $49.99/month
                     </p>
                     <p style="margin: 0; font-size: 18px; color: #22c55e; font-weight: 700;">
-                      $38.49 <span style="font-size: 14px; color: #71717a; text-decoration: line-through; font-weight: 400;">$54.99</span>
+                      $34.99 <span style="font-size: 14px; color: #71717a; text-decoration: line-through; font-weight: 400;">$49.99</span>
                     </p>
                   </div>
 
@@ -1114,8 +1114,8 @@ defmodule ClippsterServer.Emails do
     YOUR EXCLUSIVE DISCOUNT: #{discount_code}
 
     Save #{discount_percent}% off first month
-    Creator Tier - $54.99/month
-    Pay only $38.49 (save $16.50)
+    Creator Tier - $49.99/month
+    Pay only $34.99 (save $15.00)
 
     WHAT'S INCLUDED:
     • 1,800 credits/month (30 hours)
@@ -1279,10 +1279,10 @@ defmodule ClippsterServer.Emails do
                       Save #{discount_percent}% off First Month
                     </p>
                     <p style="margin: 0 0 16px 0; font-size: 13px; color: #a1a1aa;">
-                      Creator Tier - $54.99/month
+                      Creator Tier - $49.99/month
                     </p>
                     <p style="margin: 0; font-size: 18px; color: #22c55e; font-weight: 700;">
-                      $38.49 <span style="font-size: 14px; color: #71717a; text-decoration: line-through; font-weight: 400;">$54.99</span>
+                      $34.99 <span style="font-size: 14px; color: #71717a; text-decoration: line-through; font-weight: 400;">$49.99</span>
                     </p>
                   </div>
 
@@ -1473,8 +1473,8 @@ defmodule ClippsterServer.Emails do
     YOUR NEW EXCLUSIVE DISCOUNT: #{discount_code}
 
     Save #{discount_percent}% off first month
-    Creator Tier - $54.99/month
-    Pay only $38.49 (save $16.50)
+    Creator Tier - $49.99/month
+    Pay only $34.99 (save $15.00)
 
     WHAT'S INCLUDED:
     • 1,800 credits/month (30 hours)
