@@ -402,7 +402,7 @@
 
                               <!-- Build Clip -->
                               <button
-                                v-if="clip.build_status !== 'building'"
+                                v-if="clip.build_status !== 'building' && !hasCompletedBuilds(clip)"
                                 class="clips-tab-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
                                 @click.stop="
                                   onBuildClip(clip);
@@ -411,6 +411,19 @@
                               >
                                 <Hammer class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
                                 <span>Build Clip</span>
+                              </button>
+
+                              <!-- Publish Now (only for found clips NOT yet built) -->
+                              <button
+                                v-if="clip.build_status !== 'building' && !hasCompletedBuilds(clip)"
+                                class="clips-tab-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
+                                @click.stop="
+                                  onPublishNow(clip);
+                                  closeActionMenu();
+                                "
+                              >
+                                <Rocket class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
+                                <span>Publish Now</span>
                               </button>
 
                               <!-- Cancel Build -->
@@ -666,6 +679,7 @@
     Plus,
     Settings2,
     LayoutDashboard,
+    Rocket,
   } from 'lucide-vue-next';
   import { useAIPermission } from '@/composables/useAIPermission';
   import { useInEditorClips } from '@/stores/useInEditorClips';
@@ -882,13 +896,14 @@
     cancelDetection: [];
     deleteClip: [clipId: string];
     playClip: [clip: ClipWithVersion];
-    clipHover: [clipId: string];
+    clipHover: [clipId: string | null];
     seekVideo: [time: number];
     scrollToTimeline: [];
     refreshClips: [];
     editClip: [clipId: string];
     addClip: [];
     adjustClip: [clipId: string];
+    publishNow: [clip: ClipWithVersion];
   }>();
 
   // AI Permission check
@@ -1821,6 +1836,10 @@
 
   function onEditClip(clipId: string) {
     emit('editClip', clipId);
+  }
+
+  function onPublishNow(clip: ClipWithVersion) {
+    emit('publishNow', clip);
   }
 
   function onAdjustClip(clipId: string) {

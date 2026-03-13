@@ -1,9 +1,9 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="modelValue" class="build-dialog__overlay">
+      <div v-if="show" class="build-dialog__overlay" @click.self="handleClose">
         <Transition name="dialog" appear>
-          <div class="build-dialog">
+          <div v-if="show" class="build-dialog" role="dialog" aria-modal="true">
             <!-- Decorative top accent -->
             <div class="build-dialog__accent" />
 
@@ -661,48 +661,47 @@
 
                 <!-- Step 5: Publish -->
                 <Transition name="step-slide" mode="out-in">
-                  <div v-if="currentStep === 'publish'" key="publish" class="schedule-dialog__step-content">
-                    <div class="schedule-dialog__content">
-                      <form class="schedule-dialog__form" @submit.prevent="handlePublish">
+                  <div v-if="currentStep === 'publish'" key="publish" class="build-dialog__step-content">
+                      <form class="build-dialog__form" @submit.prevent="handlePublish">
                         <!-- Build Progress -->
-                        <div v-if="buildState.status === 'building'" class="schedule-dialog__alert schedule-dialog__alert--info">
-                          <Loader2 :size="16" class="schedule-dialog__spinner" />
-                          <div class="schedule-dialog__build-info">
+                        <div v-if="buildState.status === 'building'" class="build-dialog__alert build-dialog__alert--info">
+                          <Loader2 :size="16" class="build-dialog__spinner" />
+                          <div class="build-dialog__build-info">
                             <span>Building clip... {{ buildState.progress }}%</span>
-                            <div class="schedule-dialog__progress-bar">
-                              <div class="schedule-dialog__progress-fill" :style="{ width: `${buildState.progress}%` }"></div>
+                            <div class="build-dialog__progress-bar">
+                              <div class="build-dialog__progress-fill" :style="{ width: `${buildState.progress}%` }"></div>
                             </div>
                           </div>
                         </div>
-                        <div v-else-if="buildState.status === 'error'" class="schedule-dialog__alert schedule-dialog__alert--error">
+                        <div v-else-if="buildState.status === 'error'" class="build-dialog__alert build-dialog__alert--error">
                           <AlertCircle :size="16" />
-                          <p class="schedule-dialog__alert-text">Build failed: {{ buildState.error }}</p>
+                          <p class="build-dialog__alert-text">Build failed: {{ buildState.error }}</p>
                         </div>
 
                         <!-- Multi-Target Build Grid -->
-                        <div v-if="buildTargets.length > 0" class="schedule-dialog__field">
-                          <label class="schedule-dialog__label">Built Clips ({{ buildTargets.length }})</label>
-                          <p class="schedule-dialog__field-hint">Select platforms and accounts for each aspect ratio</p>
+                        <div v-if="buildTargets.length > 0" class="build-dialog__field">
+                          <label class="build-dialog__label">Built Clips ({{ buildTargets.length }})</label>
+                          <p class="build-dialog__field-hint">Select platforms and accounts for each aspect ratio</p>
                           
                           <!-- Group builds by aspect ratio -->
-                          <div class="space-y-6">
+                          <div class="build-dialog__aspect-ratio-groups">
                             <div
                               v-for="(targets, aspectRatio) in groupedBuildTargets"
                               :key="aspectRatio"
-                              class="schedule-dialog__aspect-ratio-group"
+                              class="build-dialog__aspect-ratio-group"
                             >
                               <!-- Aspect Ratio Header -->
-                              <div class="schedule-dialog__aspect-ratio-header">
-                                <span class="schedule-dialog__aspect-ratio-badge">{{ aspectRatio }}</span>
-                                <div class="schedule-dialog__build-badges">
+                              <div class="build-dialog__aspect-ratio-header">
+                                <span class="build-dialog__aspect-ratio-badge">{{ aspectRatio }}</span>
+                                <div class="build-dialog__build-badges">
                                   <span
                                     v-for="target in targets"
                                     :key="`${target.type}-${target.id}`"
                                     :class="[
-                                      'schedule-dialog__build-badge',
-                                      target.type === 'campaign' ? 'schedule-dialog__build-badge--campaign' :
-                                      target.type === 'org' ? 'schedule-dialog__build-badge--org' :
-                                      'schedule-dialog__build-badge--personal'
+                                      'build-dialog__build-badge',
+                                      target.type === 'campaign' ? 'build-dialog__build-badge--campaign' :
+                                      target.type === 'org' ? 'build-dialog__build-badge--org' :
+                                      'build-dialog__build-badge--personal'
                                     ]"
                                   >
                                     {{ target.name }}
@@ -711,20 +710,20 @@
                               </div>
                               
                               <!-- Platform Selection -->
-                              <div class="schedule-dialog__field">
-                                <label class="schedule-dialog__label">Platforms *</label>
-                                <div class="schedule-dialog__platforms">
+                              <div class="build-dialog__field">
+                                <label class="build-dialog__label">Platforms *</label>
+                                <div class="build-dialog__platforms">
                                   <label
                                     v-for="platform in availablePlatforms"
                                     :key="platform.id"
-                                    class="schedule-dialog__platform-option"
-                                    :class="{ 'schedule-dialog__platform-option--selected': targets[0].selectedPlatforms.has(platform.id) }"
+                                    class="build-dialog__platform-option"
+                                    :class="{ 'build-dialog__platform-option--selected': targets[0].selectedPlatforms.has(platform.id) }"
                                   >
                                     <input
                                       type="checkbox"
                                       :checked="targets[0].selectedPlatforms.has(platform.id)"
                                       @change="togglePlatformForAspectRatio(aspectRatio, platform.id)"
-                                      class="schedule-dialog__checkbox"
+                                      class="build-dialog__checkbox"
                                     />
                                     <component :is="platform.icon" :size="16" />
                                     <span>{{ platform.label }}</span>
@@ -733,43 +732,43 @@
                               </div>
                               
                               <!-- Account Selection per Platform -->
-                              <div v-if="getSelectedPlatformsForAspectRatio(aspectRatio).length > 0" class="schedule-dialog__field">
-                                <label class="schedule-dialog__label">Accounts *</label>
-                                <div class="schedule-dialog__account-configs">
+                              <div v-if="getSelectedPlatformsForAspectRatio(aspectRatio).length > 0" class="build-dialog__field">
+                                <label class="build-dialog__label">Accounts *</label>
+                                <div class="build-dialog__account-configs">
                                   <div
                                     v-for="platformId in getSelectedPlatformsForAspectRatio(aspectRatio)"
                                     :key="platformId"
-                                    class="schedule-dialog__account-config"
+                                    class="build-dialog__account-config"
                                   >
-                                    <div class="schedule-dialog__account-config-header">
+                                    <div class="build-dialog__account-config-header">
                                       <component :is="getPlatformIcon(platformId)" :size="14" />
                                       <span>{{ getPlatformLabel(platformId) }}</span>
                                     </div>
-                                    <div class="schedule-dialog__dropdown-wrapper">
+                                    <div class="build-dialog__dropdown-wrapper">
                                       <button
                                         type="button"
                                         @click="toggleAccountDropdownForAspectRatio(aspectRatio, platformId)"
-                                        class="schedule-dialog__dropdown-trigger schedule-dialog__dropdown-trigger--sm"
+                                        class="build-dialog__dropdown-trigger build-dialog__dropdown-trigger--sm"
                                       >
                                         <span class="truncate">{{ getAccountLabelForAspectRatio(aspectRatio, platformId) }}</span>
                                         <ChevronDown
-                                          class="schedule-dialog__dropdown-chevron"
-                                          :class="{ 'schedule-dialog__dropdown-chevron--open': activeAccountDropdown === `${aspectRatio}-${platformId}` }"
+                                          class="build-dialog__dropdown-chevron"
+                                          :class="{ 'build-dialog__dropdown-chevron--open': activeAccountDropdown === `${aspectRatio}-${platformId}` }"
                                           :size="14"
                                         />
                                       </button>
                                       
-                                      <div v-if="activeAccountDropdown === `${aspectRatio}-${platformId}`" class="schedule-dialog__dropdown">
+                                      <div v-if="activeAccountDropdown === `${aspectRatio}-${platformId}`" class="build-dialog__dropdown">
                                         <!-- Org Accounts Section -->
                                         <div v-if="getOrgAccountsForPlatform(platformId).length > 0">
-                                          <div class="schedule-dialog__dropdown-group">Organization Accounts</div>
+                                          <div class="build-dialog__dropdown-group">Organization Accounts</div>
                                           <button
                                             v-for="account in getOrgAccountsForPlatform(platformId)"
                                             :key="`org-${account.id}`"
                                             type="button"
                                             @click="selectAccountForAspectRatio(aspectRatio, platformId, `org:${account.id}`)"
-                                            class="schedule-dialog__dropdown-item"
-                                            :class="{ 'schedule-dialog__dropdown-item--selected': targets[0].selectedPlatforms.get(platformId) === `org:${account.id}` }"
+                                            class="build-dialog__dropdown-item"
+                                            :class="{ 'build-dialog__dropdown-item--selected': targets[0].selectedPlatforms.get(platformId) === `org:${account.id}` }"
                                           >
                                             @{{ account.username }}
                                           </button>
@@ -777,21 +776,21 @@
                                         
                                         <!-- Personal Accounts Section -->
                                         <div v-if="getPersonalAccountsForPlatform(platformId).length > 0">
-                                          <div class="schedule-dialog__dropdown-group">Personal Accounts</div>
+                                          <div class="build-dialog__dropdown-group">Personal Accounts</div>
                                           <button
                                             v-for="account in getPersonalAccountsForPlatform(platformId)"
                                             :key="`user-${account.id}`"
                                             type="button"
                                             @click="selectAccountForAspectRatio(aspectRatio, platformId, `user:${account.id}`)"
-                                            class="schedule-dialog__dropdown-item"
-                                            :class="{ 'schedule-dialog__dropdown-item--selected': targets[0].selectedPlatforms.get(platformId) === `user:${account.id}` }"
+                                            class="build-dialog__dropdown-item"
+                                            :class="{ 'build-dialog__dropdown-item--selected': targets[0].selectedPlatforms.get(platformId) === `user:${account.id}` }"
                                           >
                                             @{{ account.username }}
                                           </button>
                                         </div>
                                         
                                         <!-- No Accounts Message -->
-                                        <div v-if="getOrgAccountsForPlatform(platformId).length === 0 && getPersonalAccountsForPlatform(platformId).length === 0" class="schedule-dialog__dropdown-item" style="opacity: 0.6; cursor: default;">
+                                        <div v-if="getOrgAccountsForPlatform(platformId).length === 0 && getPersonalAccountsForPlatform(platformId).length === 0" class="build-dialog__dropdown-item" style="opacity: 0.6; cursor: default;">
                                           No accounts connected
                                         </div>
                                       </div>
@@ -804,22 +803,22 @@
                         </div>
 
                         <!-- Legacy Single Build UI (shown when no multi-target builds) -->
-                        <div v-else class="schedule-dialog__field">
-                          <label class="schedule-dialog__label">Platforms *</label>
+                        <div v-else class="build-dialog__field">
+                          <label class="build-dialog__label">Platforms *</label>
                           
                           <!-- Platform Grid (2 columns) -->
-                          <div class="schedule-dialog__platform-grid">
+                          <div class="build-dialog__platform-grid">
                             <label
                               v-for="platform in availablePlatforms"
                               :key="platform.id"
-                              class="schedule-dialog__platform-option"
-                              :class="{ 'schedule-dialog__platform-option--selected': isPlatformSelected(platform.id) }"
+                              class="build-dialog__platform-option"
+                              :class="{ 'build-dialog__platform-option--selected': isPlatformSelected(platform.id) }"
                             >
                               <input
                                 type="checkbox"
                                 :checked="isPlatformSelected(platform.id)"
                                 @change="togglePlatform(platform.id)"
-                                class="schedule-dialog__checkbox"
+                                class="build-dialog__checkbox"
                               />
                               <component :is="platform.icon" :size="16" />
                               <span>{{ platform.label }}</span>
@@ -827,38 +826,39 @@
                           </div>
                           
                           <!-- Aspect Ratio Selectors (shown below for selected platforms) -->
-                          <div v-if="selectedPublishPlatforms.length > 0 && selectedRatios.length > 1" class="schedule-dialog__aspect-ratio-rows">
+                          <div v-if="selectedPublishPlatforms.length > 0 && selectedRatios.length > 1" class="build-dialog__aspect-ratio-rows">
                             <div
                               v-for="platformId in selectedPublishPlatforms"
                               :key="platformId"
-                              class="schedule-dialog__aspect-ratio-row"
+                              class="build-dialog__aspect-ratio-row"
                             >
-                              <div class="schedule-dialog__aspect-ratio-label">
+                              <div class="build-dialog__aspect-ratio-label">
                                 <component :is="getPlatformIcon(platformId)" :size="14" />
                                 <span>{{ getPlatformLabel(platformId) }} aspect ratio:</span>
                               </div>
-                              <div class="relative flex-1">
+                              <div class="build-dialog__dropdown-wrapper" style="flex:1">
                                 <button
                                   @click="toggleAspectRatioDropdown(platformId)"
-                                  class="schedule-dialog__input schedule-dialog__select-button"
+                                  class="build-dialog__dropdown-trigger"
                                 >
-                                  <span class="truncate">
+                                  <span class="build-dialog__dropdown-text truncate">
                                     {{ platformConfigs[platformId]?.aspectRatio || 'Select...' }}
                                   </span>
                                   <ChevronDown
-                                    class="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform"
-                                    :class="{ 'rotate-180': activeAspectRatioDropdown === platformId }"
+                                    class="build-dialog__dropdown-chevron"
+                                    :class="{ 'build-dialog__dropdown-chevron--open': activeAspectRatioDropdown === platformId }"
+                                    :size="14"
                                   />
                                 </button>
 
                                 <!-- Dropdown -->
-                                <div v-if="activeAspectRatioDropdown === platformId" class="schedule-dialog__dropdown">
+                                <div v-if="activeAspectRatioDropdown === platformId" class="build-dialog__dropdown">
                                   <button
                                     v-for="ratio in selectedRatios"
                                     :key="ratio"
                                     @click="selectAspectRatio(platformId, ratio)"
-                                    class="schedule-dialog__dropdown-item"
-                                    :class="{ 'schedule-dialog__dropdown-item--selected': platformConfigs[platformId]?.aspectRatio === ratio }"
+                                    class="build-dialog__dropdown-item"
+                                    :class="{ 'build-dialog__dropdown-item--selected': platformConfigs[platformId]?.aspectRatio === ratio }"
                                   >
                                     {{ ratio }}
                                   </button>
@@ -867,68 +867,69 @@
                             </div>
                           </div>
                           
-                          <p v-if="selectedPublishPlatforms.length === 0" class="schedule-dialog__field-hint schedule-dialog__field-hint--error">
+                          <p v-if="selectedPublishPlatforms.length === 0" class="build-dialog__field-hint build-dialog__field-hint--error">
                             Please select at least one platform
                           </p>
                         </div>
 
                         <!-- Account Selection -->
-                        <div v-if="selectedPublishPlatforms.length > 0" class="schedule-dialog__field">
-                          <label class="schedule-dialog__label">Accounts *</label>
-                          <div class="schedule-dialog__account-configs">
+                        <div v-if="selectedPublishPlatforms.length > 0" class="build-dialog__field">
+                          <label class="build-dialog__label">Accounts *</label>
+                          <div class="build-dialog__account-configs">
                             <div
                               v-for="platformId in selectedPublishPlatforms"
                               :key="platformId"
-                              class="schedule-dialog__account-config"
+                              class="build-dialog__account-config"
                             >
-                              <div class="schedule-dialog__account-config-label">
+                              <div class="build-dialog__account-config-label">
                                 <component :is="getPlatformIcon(platformId)" :size="14" />
                                 <span>{{ getPlatformLabel(platformId) }}</span>
-                                <span class="schedule-dialog__account-aspect-ratio">({{ platformConfigs[platformId]?.aspectRatio }})</span>
+                                <span class="build-dialog__account-aspect-ratio">({{ platformConfigs[platformId]?.aspectRatio }})</span>
                               </div>
-                              <div class="relative">
+                              <div class="build-dialog__dropdown-wrapper" style="flex:1">
                                 <button
                                   @click="toggleAccountDropdown(platformId)"
-                                  class="schedule-dialog__input schedule-dialog__select-button"
+                                  class="build-dialog__dropdown-trigger"
                                 >
-                                  <span class="truncate">
+                                  <span class="build-dialog__dropdown-text truncate">
                                     {{ getSelectedAccountLabel(platformId) || 'Select account...' }}
                                   </span>
                                   <ChevronDown
-                                    class="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform"
-                                    :class="{ 'rotate-180': activeAccountDropdown === platformId }"
+                                    class="build-dialog__dropdown-chevron"
+                                    :class="{ 'build-dialog__dropdown-chevron--open': activeAccountDropdown === platformId }"
+                                    :size="14"
                                   />
                                 </button>
 
                                 <!-- Dropdown -->
-                                <div v-if="activeAccountDropdown === platformId" class="schedule-dialog__dropdown">
+                                <div v-if="activeAccountDropdown === platformId" class="build-dialog__dropdown">
                                   <button
                                     @click="selectAccount(platformId, '')"
-                                    class="schedule-dialog__dropdown-item"
-                                    :class="{ 'schedule-dialog__dropdown-item--selected': !platformConfigs[platformId]?.accountId }"
+                                    class="build-dialog__dropdown-item"
+                                    :class="{ 'build-dialog__dropdown-item--selected': !platformConfigs[platformId]?.accountId }"
                                   >
                                     Select account...
                                   </button>
                                   <template v-if="getOrgAccountsForPlatform(platformId).length > 0">
-                                    <div class="schedule-dialog__dropdown-group-label">Organization</div>
+                                    <div class="build-dialog__dropdown-group-label">Organization</div>
                                     <button
                                       v-for="account in getOrgAccountsForPlatform(platformId)"
                                       :key="`org-${account.id}`"
                                       @click="selectAccount(platformId, `org:${account.id}`)"
-                                      class="schedule-dialog__dropdown-item"
-                                      :class="{ 'schedule-dialog__dropdown-item--selected': platformConfigs[platformId]?.accountId === `org:${account.id}` }"
+                                      class="build-dialog__dropdown-item"
+                                      :class="{ 'build-dialog__dropdown-item--selected': platformConfigs[platformId]?.accountId === `org:${account.id}` }"
                                     >
                                       @{{ account.username }}
                                     </button>
                                   </template>
                                   <template v-if="getPersonalAccountsForPlatform(platformId).length > 0">
-                                    <div class="schedule-dialog__dropdown-group-label">Personal</div>
+                                    <div class="build-dialog__dropdown-group-label">Personal</div>
                                     <button
                                       v-for="account in getPersonalAccountsForPlatform(platformId)"
                                       :key="`user-${account.id}`"
                                       @click="selectAccount(platformId, `user:${account.id}`)"
-                                      class="schedule-dialog__dropdown-item"
-                                      :class="{ 'schedule-dialog__dropdown-item--selected': platformConfigs[platformId]?.accountId === `user:${account.id}` }"
+                                      class="build-dialog__dropdown-item"
+                                      :class="{ 'build-dialog__dropdown-item--selected': platformConfigs[platformId]?.accountId === `user:${account.id}` }"
                                     >
                                       @{{ account.username }}
                                     </button>
@@ -940,23 +941,22 @@
                         </div>
 
                         <!-- Caption -->
-                        <div class="schedule-dialog__field">
-                          <label class="schedule-dialog__label">Caption</label>
+                        <div class="build-dialog__field">
+                          <label class="build-dialog__label">Caption</label>
                           <textarea
                             v-model="caption"
                             rows="3"
                             :maxlength="2200"
                             placeholder="Add a caption for your post..."
-                            class="schedule-dialog__input schedule-dialog__textarea"
+                            class="build-dialog__input build-dialog__textarea"
                           ></textarea>
-                          <div class="schedule-dialog__caption-info">
-                            <p class="schedule-dialog__field-hint">
+                          <div class="build-dialog__caption-info">
+                            <p class="build-dialog__field-hint">
                               {{ caption.length }} / 2200
                             </p>
                           </div>
                         </div>
                       </form>
-                    </div>
                   </div>
                 </Transition>
               </div>
@@ -994,7 +994,7 @@
                   class="build-dialog__btn build-dialog__btn--primary"
                   :class="{ 'build-dialog__btn--disabled': !canPublish || isBuilding }"
                 >
-                  <Loader2 v-if="isBuilding" class="schedule-dialog__spinner" />
+                  <Loader2 v-if="isBuilding" class="build-dialog__spinner" />
                   <Share2 v-else class="build-dialog__btn-icon" />
                   <span>{{ isBuilding ? 'Building...' : `Publish (${totalSelectedPlatforms})` }}</span>
                 </button>
@@ -1051,6 +1051,7 @@ import ManualPOIEditor from './poi/ManualPOIEditor.vue';
 import type { ClipWithVersion, WatermarkSettings } from '@/services/database';
 import type { ManualFramingConfig, ManualFramingConfigs } from '@/types';
 import { getAllIntroOutros, type IntroOutro } from '@/services/database';
+import { markBuildAsPublished } from '@/services/database/clip-build';
 import { getUserOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
 import { ensureAssetDownloaded } from '@/services/orgAssetSync';
 import { invoke } from '@tauri-apps/api/core';
@@ -1133,7 +1134,7 @@ const availablePlatforms = [
 ];
 
 const props = defineProps<{
-  modelValue: boolean;
+  show: boolean;
   clip: ClipWithVersion | null;
   clipPath: string;
   projectId: string;
@@ -1144,9 +1145,8 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  'update:modelValue': [value: boolean];
-  'published': [];
   'close': [];
+  'published': [];
 }>();
 
 const authStore = useAuthStore();
@@ -1641,16 +1641,16 @@ function handleClickOutside(event: MouseEvent) {
   }
   // Close account dropdown when clicking outside
   if (activeAccountDropdown.value) {
-    const clickedInsideDropdown = (target as Element).closest('.schedule-dialog__dropdown');
-    const clickedInsideButton = (target as Element).closest('.schedule-dialog__dropdown-trigger');
+    const clickedInsideDropdown = (target as Element).closest('.build-dialog__dropdown');
+    const clickedInsideButton = (target as Element).closest('.build-dialog__dropdown-trigger');
     if (!clickedInsideDropdown && !clickedInsideButton) {
       activeAccountDropdown.value = null;
     }
   }
   // Close aspect ratio dropdown when clicking outside
   if (activeAspectRatioDropdown.value) {
-    const clickedInsideDropdown = (target as Element).closest('.schedule-dialog__dropdown');
-    const clickedInsideButton = (target as Element).closest('.schedule-dialog__select-button');
+    const clickedInsideDropdown = (target as Element).closest('.build-dialog__dropdown');
+    const clickedInsideButton = (target as Element).closest('.build-dialog__select-button');
     if (!clickedInsideDropdown && !clickedInsideButton) {
       activeAspectRatioDropdown.value = null;
     }
@@ -1977,7 +1977,7 @@ async function loadOrgBranding(orgProfile: ServerOrganizationCreatorProfile) {
           name: orgProfile.intro.name,
           file_path: introResult.filePath,
           type: 'intro' as const,
-          duration: orgProfile.intro.duration ? parseFloat(orgProfile.intro.duration) : null,
+          duration: orgProfile.intro.duration ? parseFloat(String(orgProfile.intro.duration)) : null,
           thumbnail_path: orgProfile.intro.thumbnail_url || null,
           thumbnail_generation_status: null,
           created_at: Date.now(),
@@ -2011,7 +2011,7 @@ async function loadOrgBranding(orgProfile: ServerOrganizationCreatorProfile) {
           name: orgProfile.outro.name,
           file_path: outroResult.filePath,
           type: 'outro' as const,
-          duration: orgProfile.outro.duration ? parseFloat(orgProfile.outro.duration) : null,
+          duration: orgProfile.outro.duration ? parseFloat(String(orgProfile.outro.duration)) : null,
           thumbnail_path: orgProfile.outro.thumbnail_url || null,
           thumbnail_generation_status: null,
           created_at: Date.now(),
@@ -2564,6 +2564,11 @@ async function handlePublish() {
         buildState.value.thumbnailPath,
         metadata
       );
+      
+      // Mark build as published
+      if (target.buildId) {
+        await markBuildAsPublished(target.buildId);
+      }
     }
     
     hasQueuedBackgroundPublish.value = true;
@@ -2606,7 +2611,6 @@ async function handlePublish() {
   // Close dialog immediately
   emit('published');
   emit('close');
-  emit('update:modelValue', false);
 }
 
 function handleClose() {
@@ -2616,7 +2620,6 @@ function handleClose() {
     backgroundPublish.reset();
   }
   emit('close');
-  emit('update:modelValue', false);
 }
 
 // Load data
@@ -3049,9 +3052,9 @@ function formatDuration(seconds: number): string {
 
 // Watch for dialog open
 watch(
-  () => props.modelValue,
+  () => props.show,
   async (isOpen) => {
-    console.warn('[QuickPublishWizard] modelValue changed:', isOpen);
+    console.warn('[QuickPublishWizard] show changed:', isOpen);
     if (isOpen) {
       console.warn('[QuickPublishWizard] Dialog opened, loading data...');
       hasQueuedBackgroundPublish.value = false;
@@ -3936,11 +3939,12 @@ onUnmounted(() => {
 
 .build-dialog__dropdown-wrapper {
   position: relative;
+  flex: 1;
 }
 
 .build-dialog__dropdown-trigger {
   width: 100%;
-  padding: 0.5rem 0.75rem;
+  padding: 0.75rem 1rem;
   background-color: var(--sidebar-hover);
   border: 1px solid var(--sidebar-border);
   border-radius: 8px;
@@ -3951,7 +3955,9 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
   text-align: left;
+  font-family: inherit;
 }
 
 .build-dialog__dropdown-trigger:hover {
@@ -4308,7 +4314,7 @@ onUnmounted(() => {
 }
 
 .build-dialog__select,
-.schedule-dialog__select {
+.build-dialog__select {
   width: 100%;
   padding: 0.625rem 0.875rem;
   background-color: var(--sidebar-hover);
@@ -4326,12 +4332,12 @@ onUnmounted(() => {
 }
 
 .build-dialog__select:hover,
-.schedule-dialog__select:hover {
+.build-dialog__select:hover {
   border-color: rgba(6, 182, 212, 0.4);
 }
 
 .build-dialog__select:focus,
-.schedule-dialog__select:focus {
+.build-dialog__select:focus {
   outline: none;
   border-color: var(--sidebar-accent);
 }
@@ -4413,302 +4419,70 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
-/* ===== Schedule Dialog Styles for Publish Step ===== */
-.schedule-dialog__step-content {
-  padding: 0;
-  min-height: min-content;
-}
-
-.schedule-dialog__content {
-  padding: 1.5rem;
-  min-height: min-content;
-}
-
-.schedule-dialog__form {
+/* ===== Publish Step: Form & Fields ===== */
+.build-dialog__form {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-  min-height: min-content;
 }
 
-.schedule-dialog__field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.schedule-dialog__label {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--sidebar-text);
-}
-
-.schedule-dialog__clip-preview {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.75rem;
-  background-color: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 8px;
-}
-
-.schedule-dialog__clip-thumbnail {
-  width: 80px;
-  height: 45px;
-  border-radius: 4px;
-  overflow: hidden;
-  background-color: var(--sidebar-surface);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.schedule-dialog__clip-thumbnail img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.schedule-dialog__clip-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.schedule-dialog__clip-name {
+.build-dialog__label {
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--sidebar-text);
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.schedule-dialog__clip-meta {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-  margin-top: 0.25rem;
-}
-
-.schedule-dialog__alert {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  border-radius: 8px;
+  gap: 0.5rem;
 }
 
-.schedule-dialog__alert--info {
-  background-color: rgba(6, 182, 212, 0.1);
-  border: 1px solid rgba(6, 182, 212, 0.3);
+.build-dialog__field-hint {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+  margin: 0;
 }
 
-.schedule-dialog__alert--error {
-  background-color: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+.build-dialog__field-hint--error {
   color: #ef4444;
 }
 
-.schedule-dialog__alert-text {
-  font-size: 0.875rem;
-  margin: 0;
-}
-
-.schedule-dialog__spinner {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.schedule-dialog__build-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.schedule-dialog__progress-bar {
-  height: 4px;
-  background-color: var(--sidebar-border);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.schedule-dialog__progress-fill {
-  height: 100%;
-  background-color: var(--sidebar-accent);
-  transition: width 200ms ease;
-}
-
-.build-dialog__builds-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
-}
-
-.build-dialog__build-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 0.75rem;
-  padding: 0.75rem;
-  background: rgba(39, 39, 42, 0.5);
-  border: 1px solid rgba(63, 63, 70, 0.5);
-  border-radius: 0.5rem;
-}
-
-.build-dialog__build-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.build-dialog__build-badges {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.build-dialog__build-platform,
-.build-dialog__build-account {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.schedule-dialog__platform-grid {
+/* Platform pill grid */
+.build-dialog__platform-grid,
+.build-dialog__platforms {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 0.625rem;
+  gap: 0.5rem;
 }
 
-.schedule-dialog__platform-option {
+.build-dialog__platform-option {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.625rem 0.875rem;
   background-color: var(--sidebar-hover);
   border: 1px solid var(--sidebar-border);
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 150ms ease;
   font-size: 0.8125rem;
   color: var(--sidebar-text);
 }
 
-.schedule-dialog__platform-option:hover {
+.build-dialog__platform-option:hover {
   border-color: rgba(6, 182, 212, 0.3);
 }
 
-.schedule-dialog__platform-option--selected {
-  border-color: var(--sidebar-accent);
+.build-dialog__platform-option--selected {
   background-color: rgba(6, 182, 212, 0.1);
+  border-color: var(--sidebar-accent);
+  color: var(--sidebar-accent);
 }
 
-.schedule-dialog__checkbox {
+.build-dialog__checkbox {
   display: none;
 }
 
-.schedule-dialog__aspect-ratio-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-  margin-top: 0.75rem;
-}
-
-.schedule-dialog__aspect-ratio-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.625rem 0.875rem;
-  background-color: rgba(6, 182, 212, 0.05);
-  border: 1px solid rgba(6, 182, 212, 0.2);
-  border-radius: 6px;
-}
-
-.schedule-dialog__aspect-ratio-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8125rem;
-  color: var(--sidebar-text);
-  min-width: 140px;
-}
-
-.schedule-dialog__aspect-ratio-select {
-  flex: 1;
-  padding: 0.5rem 0.75rem;
-  background-color: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 6px;
-  color: var(--sidebar-text);
-  font-size: 0.8125rem;
-  cursor: pointer;
-  transition: all 150ms ease;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.5rem center;
-  padding-right: 2rem;
-}
-
-.schedule-dialog__aspect-ratio-select:hover {
-  border-color: rgba(6, 182, 212, 0.4);
-}
-
-.schedule-dialog__aspect-ratio-select:focus {
-  outline: none;
-  border-color: var(--sidebar-accent);
-}
-
-.schedule-dialog__field-hint {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-  margin: 0;
-}
-
-.schedule-dialog__field-hint--error {
-  color: #ef4444;
-}
-
-.schedule-dialog__account-configs {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.schedule-dialog__account-config {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.schedule-dialog__account-config-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 100px;
-  font-size: 0.8125rem;
-  color: var(--sidebar-text);
-}
-
-.schedule-dialog__account-aspect-ratio {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-  margin-left: 0.25rem;
-}
-
-.schedule-dialog__dropdown-wrapper {
-  flex: 1;
-}
-
-.schedule-dialog__input,
-.schedule-dialog__textarea {
+/* Input */
+.build-dialog__input {
   width: 100%;
   padding: 0.75rem 1rem;
   background-color: var(--sidebar-hover);
@@ -4720,97 +4494,166 @@ onUnmounted(() => {
   transition: all 150ms ease;
 }
 
-.schedule-dialog__textarea {
-  resize: vertical;
-  min-height: 80px;
-}
-
-.schedule-dialog__input:focus,
-.schedule-dialog__textarea:focus {
+.build-dialog__input:focus {
   outline: none;
   border-color: var(--sidebar-accent);
   box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
 }
 
-.schedule-dialog__select-button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  cursor: pointer;
-  text-align: left;
-}
-
-.schedule-dialog__select-button:hover {
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-.schedule-dialog__input::placeholder {
+.build-dialog__input::placeholder {
   color: var(--sidebar-text-muted);
   opacity: 0.6;
 }
 
-.schedule-dialog__dropdown {
-  position: absolute;
-  top: calc(100% + 0.5rem);
-  left: 0;
-  right: 0;
-  background-color: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 8px;
-  overflow: hidden;
-  z-index: 10001;
-  max-height: 12rem;
-  overflow-y: auto;
+/* Textarea */
+.build-dialog__textarea {
+  resize: vertical;
+  min-height: 80px;
 }
 
-.schedule-dialog__dropdown::-webkit-scrollbar {
-  width: 6px;
-}
-
-.schedule-dialog__dropdown::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.schedule-dialog__dropdown::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.15);
-  border-radius: 3px;
-}
-
-.schedule-dialog__dropdown-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 0.625rem 0.75rem;
-  border-radius: 5px;
-  font-size: 0.875rem;
-  color: var(--sidebar-text);
-  background: transparent;
-  border: none;
-  transition: background-color 150ms ease;
-  cursor: pointer;
-}
-
-.schedule-dialog__dropdown-item:hover {
-  background-color: var(--sidebar-hover);
-}
-
-.schedule-dialog__dropdown-item--selected {
-  background-color: rgba(6, 182, 212, 0.15);
-  color: var(--sidebar-accent);
-}
-
-.schedule-dialog__dropdown-group-label {
-  padding: 0.5rem 0.875rem 0.25rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--sidebar-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.schedule-dialog__caption-info {
+/* Caption counter */
+.build-dialog__caption-info {
   text-align: right;
 }
+
+/* Aspect ratio groups container */
+.build-dialog__aspect-ratio-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Account aspect ratio tag */
+.build-dialog__account-aspect-ratio {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+  opacity: 0.7;
+}
+
+/* ===== Publish Step: Alerts ===== */
+.build-dialog__alert {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+}
+
+.build-dialog__alert--info {
+  background-color: rgba(6, 182, 212, 0.1);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+}
+
+.build-dialog__alert--error {
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.build-dialog__alert-text {
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.build-dialog__build-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.build-dialog__progress-bar {
+  height: 4px;
+  background-color: var(--sidebar-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.build-dialog__progress-fill {
+  height: 100%;
+  background-color: var(--sidebar-accent);
+  transition: width 200ms ease;
+}
+
+.build-dialog__clip-preview {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+}
+
+.build-dialog__clip-thumbnail {
+  width: 80px;
+  height: 45px;
+  border-radius: 4px;
+  overflow: hidden;
+  background-color: var(--sidebar-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.build-dialog__clip-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.build-dialog__clip-info { flex: 1; min-width: 0; }
+
+.build-dialog__clip-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--sidebar-text);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.build-dialog__clip-meta {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+  margin-top: 0.25rem;
+}
+
+.build-dialog__aspect-ratio-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  margin-top: 0.75rem;
+}
+
+.build-dialog__aspect-ratio-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  background-color: rgba(6, 182, 212, 0.05);
+  border: 1px solid rgba(6, 182, 212, 0.2);
+  border-radius: 6px;
+}
+
+.build-dialog__aspect-ratio-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--sidebar-text);
+  min-width: 140px;
+}
+
+.build-dialog__account-aspect-ratio {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+  margin-left: 0.25rem;
+}
+
+.build-dialog__caption-info { text-align: right; }
 
 /* ===== Transitions ===== */
 .modal-enter-active,
@@ -5052,25 +4895,21 @@ onUnmounted(() => {
 }
 
 /* ===== Aspect Ratio Grouping ===== */
-.schedule-dialog__aspect-ratio-group {
-  padding: 1rem;
-  background-color: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 8px;
+.build-dialog__aspect-ratio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   overflow: visible;
   position: relative;
 }
 
-.schedule-dialog__aspect-ratio-header {
+.build-dialog__aspect-ratio-header {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 1rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--sidebar-border);
 }
 
-.schedule-dialog__aspect-ratio-badge {
+.build-dialog__aspect-ratio-badge {
   display: inline-flex;
   align-items: center;
   padding: 0.375rem 0.75rem;
@@ -5082,14 +4921,14 @@ onUnmounted(() => {
   color: var(--sidebar-accent);
 }
 
-.schedule-dialog__build-badges {
+.build-dialog__build-badges {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
 }
 
-.schedule-dialog__build-badge {
+.build-dialog__build-badge {
   padding: 0.25rem 0.625rem;
   border-radius: 6px;
   font-size: 0.75rem;
@@ -5097,45 +4936,41 @@ onUnmounted(() => {
   border: 1px solid;
 }
 
-.schedule-dialog__build-badge--campaign {
+.build-dialog__build-badge--campaign {
   background-color: rgba(251, 146, 60, 0.15);
   border-color: rgba(251, 146, 60, 0.3);
   color: rgb(251, 146, 60);
 }
 
-.schedule-dialog__build-badge--org {
+.build-dialog__build-badge--org {
   background-color: rgba(59, 130, 246, 0.15);
   border-color: rgba(59, 130, 246, 0.3);
   color: rgb(96, 165, 250);
 }
 
-.schedule-dialog__build-badge--personal {
+.build-dialog__build-badge--personal {
   background-color: rgba(113, 113, 122, 0.15);
   border-color: rgba(113, 113, 122, 0.3);
   color: rgb(161, 161, 170);
 }
 
 /* ===== Account Configs ===== */
-.schedule-dialog__account-configs {
+.build-dialog__account-configs {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   overflow: visible;
 }
 
-.schedule-dialog__account-config {
+.build-dialog__account-config {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.625rem;
-  background-color: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 6px;
   overflow: visible;
   position: relative;
 }
 
-.schedule-dialog__account-config-header {
+.build-dialog__account-config-header {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -5145,62 +4980,36 @@ onUnmounted(() => {
   color: var(--sidebar-text-muted);
 }
 
-.schedule-dialog__dropdown-wrapper {
-  position: relative;
-  flex: 1;
-}
-
-.schedule-dialog__dropdown-trigger {
-  width: 100%;
+.build-dialog__dropdown-trigger--sm {
   padding: 0.5rem 0.75rem;
-  background-color: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 6px;
   font-size: 0.8125rem;
-  color: var(--sidebar-text);
-  cursor: pointer;
-  transition: all 150ms ease;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
 }
 
-.schedule-dialog__dropdown-trigger:hover {
-  border-color: var(--sidebar-accent);
-}
-
-.schedule-dialog__dropdown-trigger--sm {
-  padding: 0.375rem 0.625rem;
-  font-size: 0.75rem;
-}
-
-.schedule-dialog__dropdown-chevron {
+.build-dialog__dropdown-chevron {
   flex-shrink: 0;
   color: var(--sidebar-text-muted);
   transition: transform 150ms ease;
 }
 
-.schedule-dialog__dropdown-chevron--open {
+.build-dialog__dropdown-chevron--open {
   transform: rotate(180deg);
 }
 
-.schedule-dialog__dropdown {
+.build-dialog__dropdown {
   position: absolute;
   top: calc(100% + 0.25rem);
   left: 0;
   right: 0;
   background-color: var(--sidebar-surface);
-  border: 2px solid var(--sidebar-accent);
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
   max-height: 200px;
-  min-height: 40px;
   overflow-y: auto;
   z-index: 10001;
 }
 
-.schedule-dialog__dropdown-group {
+.build-dialog__dropdown-group {
   padding: 0.5rem 0.75rem 0.25rem;
   font-size: 0.6875rem;
   font-weight: 600;
@@ -5209,7 +5018,7 @@ onUnmounted(() => {
   letter-spacing: 0.05em;
 }
 
-.schedule-dialog__dropdown-item {
+.build-dialog__dropdown-item {
   width: 100%;
   padding: 0.5rem 0.75rem;
   background: transparent;
@@ -5221,11 +5030,11 @@ onUnmounted(() => {
   transition: background-color 150ms ease;
 }
 
-.schedule-dialog__dropdown-item:hover {
+.build-dialog__dropdown-item:hover {
   background-color: var(--sidebar-hover);
 }
 
-.schedule-dialog__dropdown-item--selected {
+.build-dialog__dropdown-item--selected {
   background-color: rgba(6, 182, 212, 0.15);
   color: var(--sidebar-accent);
   font-weight: 500;

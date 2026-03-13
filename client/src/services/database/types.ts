@@ -284,6 +284,9 @@ export interface ClipBuild {
   campaign_name: string | null;
   branding_profile_id: string | null;
   branding_type: 'org' | 'campaign' | 'personal' | 'none';
+  // Published status
+  is_published: boolean | number;
+  published_at: number | null;
   // Timestamps
   started_at: number;
   completed_at: number | null;

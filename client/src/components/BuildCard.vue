@@ -43,10 +43,19 @@
       </span>
     </div>
 
-    <!-- Top right: Duration -->
-    <div v-if="build.duration" class="absolute top-4 right-4 z-10">
-      <span class="text-xs px-2 py-1 rounded-md bg-black/60 text-white/90 font-medium backdrop-blur-sm">
+    <!-- Top right: Duration & Published Badge -->
+    <div class="absolute top-4 right-4 z-10 flex flex-col gap-1.5 items-end">
+      <span v-if="build.duration" class="text-xs px-2 py-1 rounded-md bg-black/60 text-white/90 font-medium backdrop-blur-sm">
         {{ formatDuration(build.duration) }}
+      </span>
+      <!-- Published Badge (exact StreamVods style) -->
+      <span 
+        v-if="build.is_published" 
+        class="text-xs px-2 py-1 rounded-md bg-green-500/30 text-green-300 border border-green-500/40 font-medium flex items-center gap-1"
+        :title="build.published_at ? `Published ${getRelativeTime(build.published_at)}` : 'Published'"
+      >
+        <Check class="h-2.5 w-2.5" />
+        Published
       </span>
     </div>
 
@@ -119,7 +128,7 @@
 
 <script setup lang="ts">
   import { computed } from 'vue';
-  import { Play, Trash2, Download, Video, ExternalLink, Share2 } from 'lucide-vue-next';
+  import { Play, Trash2, Download, Video, ExternalLink, Share2, Check } from 'lucide-vue-next';
   import type { ClipBuild } from '@/services/database';
   import { useFormatters } from '@/composables/useFormatters';
 

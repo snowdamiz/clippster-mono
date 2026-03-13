@@ -481,6 +481,16 @@
                             <Ratio class="w-2.5 h-2.5" />
                             {{ getBuildSiblingCount(item.build.id) }}
                           </div>
+
+                          <!-- Published Badge -->
+                          <div 
+                            v-if="item.build.is_published" 
+                            class="folder-dialog__build-badge folder-dialog__build-badge--published"
+                            :title="item.build.published_at ? `Published ${getRelativeTime(item.build.published_at)}` : 'Published'"
+                          >
+                            <Check :size="11" />
+                            Published
+                          </div>
                         </div>
 
                         <!-- Timestamp -->
@@ -664,71 +674,15 @@
       @confirm="bulkDeleteFolderDialogBuildsConfirmed"
     />
 
-    <!-- Dialog 1: Platform Selection -->
-    <PlatformSelectDialog
-      :open="showPlatformSelectDialog"
-      @close="showPlatformSelectDialog = false"
-      @selectPlatform="onPlatformSelected"
-    />
-
-    <!-- Dialog 2: Instagram Publish -->
-    <InstagramPublishDialog
-      :open="showPublishDialog"
-      :organization-id="selectedOrganization?.id"
-      :organization-name="selectedOrganization?.name"
-      :media-url="publishMediaUrl"
-      :thumbnail-url="publishThumbnailUrl"
-      :media-type="'video'"
-      :is-admin="isAdminOfSelectedOrg"
-      :creator-profiles="publishCreatorProfiles"
-      :campaign-id="publishCampaignId"
+    <!-- Simplified Publish Dialog -->
+    <SimplifiedPublishDialog
+      v-if="publishingBuild?.build"
+      v-model="showSimplifiedPublishDialog"
+      :clip="publishingBuild.clip || null"
+      :build="publishingBuild.build"
+      :file-path="publishingBuild.filePath"
+      :thumbnail-url="publishingBuild.thumbnailUrl"
       @close="onPublishDialogClose"
-      @published="onPublished"
-    />
-
-    <!-- Dialog 3b: Twitter/X Publish -->
-    <TwitterPublishDialog
-      :open="showTwitterPublishDialog"
-      :organization-id="selectedOrganization?.id"
-      :organization-name="selectedOrganization?.name"
-      :media-url="publishMediaUrl"
-      :thumbnail-url="publishThumbnailUrl"
-      :media-type="'video'"
-      :is-admin="isAdminOfSelectedOrg"
-      :creator-profiles="publishCreatorProfiles"
-      :campaign-id="publishCampaignId"
-      @close="onPublishDialogClose"
-      @published="onPublished"
-    />
-
-    <!-- Dialog 3c: TikTok Publish -->
-    <TiktokPublishDialog
-      :open="showTiktokPublishDialog"
-      :organization-id="selectedOrganization?.id"
-      :organization-name="selectedOrganization?.name"
-      :media-url="publishMediaUrl"
-      :thumbnail-url="publishThumbnailUrl"
-      :media-type="'video'"
-      :is-admin="isAdminOfSelectedOrg"
-      :creator-profiles="publishCreatorProfiles"
-      :campaign-id="publishCampaignId"
-      @close="onPublishDialogClose"
-      @published="onPublished"
-    />
-
-    <!-- Dialog 3d: YouTube Publish -->
-    <YoutubePublishDialog
-      :open="showYoutubePublishDialog"
-      :organization-id="selectedOrganization?.id"
-      :organization-name="selectedOrganization?.name"
-      :media-url="publishMediaUrl"
-      :thumbnail-url="publishThumbnailUrl"
-      :media-type="'video'"
-      :is-admin="isAdminOfSelectedOrg"
-      :creator-profiles="publishCreatorProfiles"
-      :campaign-id="publishCampaignId"
-      @close="onPublishDialogClose"
-      @published="onPublished"
     />
 
     <!-- Uploading Media Overlay -->
@@ -978,11 +932,7 @@
   import PaginationFooter from '@/components/PaginationFooter.vue';
   import BuildCard from '@/components/BuildCard.vue';
   import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue';
-  import PlatformSelectDialog from '@/components/PlatformSelectDialog.vue';
-  import InstagramPublishDialog from '@/components/InstagramPublishDialog.vue';
-  import TwitterPublishDialog from '@/components/TwitterPublishDialog.vue';
-  import TiktokPublishDialog from '@/components/TiktokPublishDialog.vue';
-  import YoutubePublishDialog from '@/components/YoutubePublishDialog.vue';
+  import SimplifiedPublishDialog from '@/components/SimplifiedPublishDialog.vue';
   import { Input } from '@/components/ui/input';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
@@ -1082,13 +1032,10 @@
   const workspaceProject = ref<Project | null>(null);
   const workspaceInitialClipId = ref<string | null>(null);
 
-  // Publish state (3-dialog flow)
+  // Publish state
   const authStore = useAuthStore();
   const router = useRouter();
-  const showPlatformSelectDialog = ref(false);
-  const showPublishDialog = ref(false);
-  const showTwitterPublishDialog = ref(false);
-  const showTiktokPublishDialog = ref(false);
+  const showSimplifiedPublishDialog = ref(false);
   const showYoutubePublishDialog = ref(false);
   const selectedPlatform = ref<'instagram' | 'twitter' | 'tiktok' | 'youtube'>('instagram');
   const publishingBuild = ref<{ build: ClipBuild; clip: ClipWithBuilds | null; filePath: string; thumbnailUrl: string | null } | null>(null);
@@ -1306,6 +1253,9 @@
           campaign_name: null,
           branding_profile_id: null,
           branding_type: 'personal',
+          // Published status
+          is_published: false,
+          published_at: null,
         };
 
         builds.push({
@@ -2739,187 +2689,17 @@
   // ============================================================================
 
   /**
-   * Initiate the publish flow.
-   * Looks up the clip's creator profile to auto-detect org/campaign context,
-   * then shows the platform selection dialog.
+   * Initiate the publish flow with SimplifiedPublishDialog.
    */
   async function initiatePublish(build: ClipBuild, filePath: string, thumbnailUrl: string | null, clip?: ClipWithBuilds) {
     publishingBuild.value = { build, clip: clip || null, filePath, thumbnailUrl };
-    publishCreatorProfileId.value = undefined;
-    publishCampaignId.value = undefined;
-    selectedOrganization.value = null;
-    publishCreatorProfiles.value = [];
-
-    // Auto-detect org context from clip's project creator profile
-    const projectId = clip?.project_id || build.clip_id;
-    if (projectId) {
-      try {
-        const creatorProfile = await getCreatorProfileByProjectId(projectId);
-        if (creatorProfile) {
-          // Local creator profile found — look up its server-side org linkage
-          const assignedResult = await getMyAssignedCreatorProfiles();
-          if (assignedResult.success) {
-            // Match by name since local profile IDs differ from server IDs
-            const matchingProfiles = assignedResult.profiles.filter(
-              (p) => p.name === creatorProfile.name
-            );
-            if (matchingProfiles.length === 1) {
-              // Single org match — auto-select
-              const matched = matchingProfiles[0];
-              publishCreatorProfileId.value = matched.id;
-              selectedOrganization.value = {
-                id: matched.organization_id,
-                name: matched.organization_name || 'Organization',
-                role: 'member',
-              };
-              publishCreatorProfiles.value = matchingProfiles.map((p) => ({ id: p.id, name: p.name }));
-            } else if (matchingProfiles.length > 1) {
-              // Multiple org matches — store all for the publish dialog to show
-              publishCreatorProfiles.value = matchingProfiles.map((p) => ({ id: p.id, name: p.name }));
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('[Clips] Failed to lookup creator profile for publish:', err);
-      }
-    }
-
-    // Also check clip's campaign_id
-    if (clip?.campaign_id) {
-      publishCampaignId.value = clip.campaign_id;
-    }
-
-    showPlatformSelectDialog.value = true;
-  }
-
-  /**
-   * Handle platform selection. Go directly to media upload + publish dialog.
-   * No more personal-vs-org destination picker — context is auto-detected.
-   */
-  async function onPlatformSelected(platform: 'instagram' | 'twitter' | 'tiktok' | 'youtube') {
-    selectedPlatform.value = platform;
-    showPlatformSelectDialog.value = false;
-
-    if (!publishingBuild.value) return;
-
-    isUploadingMedia.value = true;
-
-    try {
-      const { filePath, thumbnailUrl } = publishingBuild.value;
-      const videoDataUrl = await invoke<string>('read_file_as_data_url', { filePath });
-      const fileName = filePath.split(/[/\\]/).pop() || 'video.mp4';
-      const videoFile = dataUrlToFile(videoDataUrl, fileName);
-
-      let thumbnailFile: File | undefined;
-      if (thumbnailUrl) {
-        try {
-          const thumbPath = thumbnailUrl.startsWith('file://') ? thumbnailUrl.replace('file://', '') : thumbnailUrl;
-          if (!thumbPath.startsWith('data:') && !thumbPath.startsWith('http')) {
-            const thumbDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbPath });
-            thumbnailFile = dataUrlToFile(thumbDataUrl, 'thumbnail.jpg');
-          }
-        } catch (thumbError) {
-          console.warn('Could not read thumbnail:', thumbError);
-        }
-      }
-
-      // Upload via org endpoint if org context exists, otherwise personal
-      let uploadResult;
-      if (selectedOrganization.value) {
-        uploadResult = await uploadMediaForPost(selectedOrganization.value.id, videoFile, thumbnailFile);
-      } else {
-        uploadResult = await uploadUserMediaForPost(videoFile, thumbnailFile);
-      }
-
-      if (!uploadResult.success || !uploadResult.media_url) {
-        throw new Error(uploadResult.error || 'Failed to upload media');
-      }
-
-      publishMediaUrl.value = uploadResult.media_url;
-      publishThumbnailUrl.value = uploadResult.thumbnail_url || thumbnailUrl || '';
-
-      // If org context, also fetch assignable creator profiles for the publish dialog
-      if (selectedOrganization.value && publishCreatorProfiles.value.length === 0) {
-        const profilesResult = await getMyAssignedCreatorProfiles();
-        if (profilesResult.success) {
-          publishCreatorProfiles.value = profilesResult.profiles
-            .filter((p) => String(p.organization_id) === String(selectedOrganization.value!.id))
-            .map((p) => ({ id: p.id, name: p.name }));
-        }
-      }
-
-      openPlatformPublishDialog();
-    } catch (error) {
-      console.error('Failed to prepare for publishing:', error);
-      showErrorToast('Upload Failed', error instanceof Error ? error.message : 'Failed to upload video');
-    } finally {
-      isUploadingMedia.value = false;
-    }
-  }
-
-  /**
-   * Helper to convert data URL to File
-   */
-  function dataUrlToFile(dataUrl: string, fileName: string): File {
-    const base64Match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-    if (!base64Match) {
-      throw new Error('Invalid data URL format');
-    }
-    const mimeType = base64Match[1];
-    const base64Data = base64Match[2];
-
-    // Decode base64 to binary
-    const binaryString = atob(base64Data);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-
-    return new File([bytes], fileName, { type: mimeType });
-  }
-
-  /**
-   * Handle publish dialog close
-   */
-  function openPlatformPublishDialog() {
-    switch (selectedPlatform.value) {
-      case 'twitter': showTwitterPublishDialog.value = true; break;
-      case 'tiktok': showTiktokPublishDialog.value = true; break;
-      case 'youtube': showYoutubePublishDialog.value = true; break;
-      default: showPublishDialog.value = true; break;
-    }
+    showSimplifiedPublishDialog.value = true;
   }
 
   function onPublishDialogClose() {
-    showPublishDialog.value = false;
-    showTwitterPublishDialog.value = false;
-    showTiktokPublishDialog.value = false;
-    showYoutubePublishDialog.value = false;
+    showSimplifiedPublishDialog.value = false;
     publishingBuild.value = null;
-    publishMediaUrl.value = '';
-    publishThumbnailUrl.value = '';
-    publishCreatorProfiles.value = [];
-    publishCreatorProfileId.value = undefined;
-    publishCampaignId.value = undefined;
-    selectedOrganization.value = null;
   }
-
-  /**
-   * Handle successful publish
-   */
-  function onPublished(_post: unknown) {
-    const platformName = selectedPlatform.value === 'twitter' ? 'X' : 'Instagram';
-    showSuccessToast('Published!', `Your clip is being published to ${platformName}.`);
-    onPublishDialogClose();
-  }
-
-  /**
-   * Computed: Check if current user is admin of selected org
-   */
-  const isAdminOfSelectedOrg = computed(() => {
-    if (!selectedOrganization.value) return false;
-    return selectedOrganization.value.role === 'admin' || selectedOrganization.value.role === 'owner';
-  });
 
   // Handle closing workspace dialog - clear initial clip ID
   watch(showWorkspaceDialog, (isOpen) => {
@@ -4522,6 +4302,12 @@
   .folder-dialog__build-badge--sibling {
     background-color: rgba(59, 130, 246, 0.2);
     color: rgb(147, 197, 253);
+  }
+
+  .folder-dialog__build-badge--published {
+    background: rgba(34, 197, 94, 0.3);
+    color: #86efac;
+    border: 1px solid rgba(34, 197, 94, 0.4);
   }
 
   .folder-dialog__build-meta {

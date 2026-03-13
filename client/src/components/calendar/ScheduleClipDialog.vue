@@ -1,9 +1,9 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" @click.self="handleClose">
+      <div v-if="open" class="schedule-dialog__overlay" @click.self="handleClose">
         <Transition name="dialog" appear>
-          <div v-if="open" class="schedule-dialog" role="dialog" aria-modal="true">
+          <div v-if="open" class="schedule-dialog" role="dialog" aria-modal="true" aria-labelledby="schedule-dialog-title">
             <!-- Accent bar -->
             <div class="schedule-dialog__accent"></div>
 
@@ -20,7 +20,7 @@
               <div class="schedule-dialog__icon">
                 <Calendar :size="24" />
               </div>
-              <h2 class="schedule-dialog__title">Schedule Clip</h2>
+              <h2 id="schedule-dialog-title" class="schedule-dialog__title">Schedule Clip</h2>
               <p class="schedule-dialog__subtitle">Schedule this clip to your social media platforms</p>
             </div>
 
@@ -43,6 +43,174 @@
                         <span v-if="duration">{{ formatDuration(duration) }}</span>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                <!-- Posting Context -->
+                <div class="schedule-dialog__field">
+                  <label class="schedule-dialog__label">Post For</label>
+                  <div class="schedule-dialog__context-tabs">
+                    <button
+                      type="button"
+                      :class="['schedule-dialog__context-tab', { 'schedule-dialog__context-tab--active': postingContext === 'org' }]"
+                      @click="postingContext = 'org'"
+                    >
+                      <Building2 :size="14" />
+                      <span>Organization</span>
+                    </button>
+                    <button
+                      type="button"
+                      :class="['schedule-dialog__context-tab', { 'schedule-dialog__context-tab--active': postingContext === 'campaign' }]"
+                      @click="postingContext = 'campaign'"
+                    >
+                      <Trophy :size="14" />
+                      <span>Campaign</span>
+                    </button>
+                  </div>
+
+                  <!-- Org: creator profile dropdown (only if >1) -->
+                  <div v-if="postingContext === 'org'" class="schedule-dialog__context-detail">
+                    <div v-if="loadingOrgProfiles" class="schedule-dialog__field-hint">Loading profiles...</div>
+                    <template v-else-if="orgCreatorProfiles.length > 0">
+                      <div v-if="showOrgProfileDropdown" class="schedule-dialog__dropdown-wrapper">
+                        <label class="schedule-dialog__label-sm">Creator Profile</label>
+                        <button
+                          type="button"
+                          @click="toggleDropdown('org-profile')"
+                          :disabled="scheduling"
+                          class="schedule-dialog__dropdown-trigger"
+                        >
+                          <span class="truncate">
+                            <template v-if="selectedOrgProfileId">
+                              {{ orgCreatorProfiles.find(p => p.id === selectedOrgProfileId)?.name }}
+                            </template>
+                            <template v-else>Select creator profile</template>
+                          </span>
+                          <ChevronDown
+                            class="schedule-dialog__dropdown-chevron"
+                            :class="{ 'schedule-dialog__dropdown-chevron--open': openDropdown === 'org-profile' }"
+                            :size="16"
+                          />
+                        </button>
+                        <div v-if="openDropdown === 'org-profile'" class="schedule-dialog__dropdown">
+                          <button
+                            v-for="profile in orgCreatorProfiles"
+                            :key="profile.id"
+                            type="button"
+                            @click="selectedOrgProfileId = profile.id; openDropdown = null"
+                            class="schedule-dialog__dropdown-item"
+                            :class="{ 'schedule-dialog__dropdown-item--selected': selectedOrgProfileId === profile.id }"
+                          >
+                            <div class="schedule-dialog__profile-item">
+                              <div class="schedule-dialog__profile-avatar">
+                                <img v-if="profile.profile_image_url" :src="profile.profile_image_url" />
+                                <User v-else :size="12" />
+                              </div>
+                              <span>{{ profile.name }}</span>
+                              <span v-if="profile.scope === 'global'" class="schedule-dialog__profile-badge">Global</span>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                      <div v-else class="schedule-dialog__context-auto">
+                        <User :size="14" />
+                        <span>Posting as: <strong>{{ orgCreatorProfiles[0]?.name }}</strong></span>
+                      </div>
+                    </template>
+                    <p v-else class="schedule-dialog__field-hint">No creator profiles found for this organization</p>
+                  </div>
+
+                  <!-- Campaign: campaign dropdown + optional profile dropdown -->
+                  <div v-else-if="postingContext === 'campaign'" class="schedule-dialog__context-detail">
+                    <div v-if="loadingCampaigns" class="schedule-dialog__field-hint">Loading campaigns...</div>
+                    <template v-else-if="availableCampaigns.length > 0">
+                      <!-- Campaign selector -->
+                      <div class="schedule-dialog__dropdown-wrapper">
+                        <label class="schedule-dialog__label-sm">Campaign</label>
+                        <button
+                          type="button"
+                          @click="toggleDropdown('campaign')"
+                          :disabled="scheduling"
+                          class="schedule-dialog__dropdown-trigger"
+                        >
+                          <span class="truncate">
+                            {{ selectedCampaign?.title ?? 'Select campaign' }}
+                          </span>
+                          <ChevronDown
+                            class="schedule-dialog__dropdown-chevron"
+                            :class="{ 'schedule-dialog__dropdown-chevron--open': openDropdown === 'campaign' }"
+                            :size="16"
+                          />
+                        </button>
+                        <div v-if="openDropdown === 'campaign'" class="schedule-dialog__dropdown">
+                          <button
+                            v-for="campaign in availableCampaigns"
+                            :key="campaign.id"
+                            type="button"
+                            @click="selectedCampaignId = campaign.id; openDropdown = null"
+                            class="schedule-dialog__dropdown-item"
+                            :class="{ 'schedule-dialog__dropdown-item--selected': selectedCampaignId === campaign.id }"
+                          >
+                            <div class="schedule-dialog__profile-item">
+                              <div class="schedule-dialog__profile-avatar schedule-dialog__profile-avatar--campaign">
+                                <img v-if="campaign.cover_image_url" :src="campaign.cover_image_url" />
+                                <Trophy v-else :size="12" />
+                              </div>
+                              <span>{{ campaign.title }}</span>
+                              <span v-if="campaign.organization" class="schedule-dialog__profile-badge">{{ campaign.organization.name }}</span>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+
+                      <!-- Campaign branding profile (only if >1 profile) -->
+                      <div v-if="selectedCampaignId && showCampaignProfileDropdown" class="schedule-dialog__dropdown-wrapper" style="margin-top: 0.5rem">
+                        <label class="schedule-dialog__label-sm">Branding Profile</label>
+                        <button
+                          type="button"
+                          @click="toggleDropdown('campaign-profile')"
+                          :disabled="scheduling"
+                          class="schedule-dialog__dropdown-trigger"
+                        >
+                          <span class="truncate">
+                            <template v-if="selectedCampaignProfileId">
+                              {{ campaignProfiles.find(p => p.id === selectedCampaignProfileId)?.name }}
+                            </template>
+                            <template v-else>Select branding profile</template>
+                          </span>
+                          <ChevronDown
+                            class="schedule-dialog__dropdown-chevron"
+                            :class="{ 'schedule-dialog__dropdown-chevron--open': openDropdown === 'campaign-profile' }"
+                            :size="16"
+                          />
+                        </button>
+                        <div v-if="openDropdown === 'campaign-profile'" class="schedule-dialog__dropdown">
+                          <button
+                            v-for="profile in campaignProfiles"
+                            :key="profile.id"
+                            type="button"
+                            @click="selectedCampaignProfileId = profile.id; openDropdown = null"
+                            class="schedule-dialog__dropdown-item"
+                            :class="{ 'schedule-dialog__dropdown-item--selected': selectedCampaignProfileId === profile.id }"
+                          >
+                            <div class="schedule-dialog__profile-item">
+                              <div class="schedule-dialog__profile-avatar">
+                                <img v-if="profile.profile_image_url" :src="profile.profile_image_url" />
+                                <User v-else :size="12" />
+                              </div>
+                              <span>{{ profile.name }}</span>
+                              <span v-if="profile.isGlobal" class="schedule-dialog__profile-badge schedule-dialog__profile-badge--global">Global</span>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                      <!-- Auto-selected single profile indicator -->
+                      <div v-else-if="selectedCampaignId && !showCampaignProfileDropdown && campaignProfiles.length === 1" class="schedule-dialog__context-auto" style="margin-top: 0.5rem">
+                        <User :size="14" />
+                        <span>Branding: <strong>{{ campaignProfiles[0]?.name }}</strong></span>
+                      </div>
+                    </template>
+                    <p v-else class="schedule-dialog__field-hint">No active campaigns found. Join a campaign first.</p>
                   </div>
                 </div>
 
@@ -328,7 +496,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue';
-import { X, Calendar, CalendarDays, FileVideo, Loader2, AlertCircle, CheckCircle2, Instagram, Youtube, ChevronDown, Share2 } from 'lucide-vue-next';
+import { X, Calendar, CalendarDays, FileVideo, Loader2, AlertCircle, CheckCircle2, Instagram, Youtube, ChevronDown, Share2, Building2, Trophy, User } from 'lucide-vue-next';
 import XLogo from '@/components/icons/XLogo.vue';
 import TiktokLogo from '@/components/icons/TiktokLogo.vue';
 import CustomTimePicker from '@/components/CustomTimePicker.vue';
@@ -342,6 +510,8 @@ import { publishToUserInstagram, uploadUserMediaForPost } from '@/services/userI
 import { publishToUserYoutube } from '@/services/userYoutubeApi';
 import { schedulePost, updateScheduledPostMedia } from '@/services/schedulingApi';
 import { invoke } from '@tauri-apps/api/core';
+import { listOrganizationCreatorProfiles, type ServerOrganizationCreatorProfile } from '@/services/organizationProfilesApi';
+import { listMyCampaigns, type Campaign } from '@/services/campaignApi';
 
 interface Props {
   open: boolean;
@@ -386,6 +556,45 @@ const scheduling = ref(false);
 const error = ref<string | null>(null);
 const successCount = ref(0);
 const openDropdown = ref<string | null>(null);
+
+// Posting context
+type PostingContext = 'org' | 'campaign';
+const postingContext = ref<PostingContext>('org');
+
+// Org creator profiles
+const loadingOrgProfiles = ref(false);
+const orgCreatorProfiles = ref<ServerOrganizationCreatorProfile[]>([]);
+const selectedOrgProfileId = ref<number | null>(null);
+
+// Campaigns
+const loadingCampaigns = ref(false);
+const availableCampaigns = ref<Campaign[]>([]);
+const selectedCampaignId = ref<number | null>(null);
+const selectedCampaignProfileId = ref<number | null>(null);
+
+const selectedCampaign = computed(() =>
+  availableCampaigns.value.find(c => c.id === selectedCampaignId.value) ?? null
+);
+
+const campaignProfiles = computed(() => {
+  const c = selectedCampaign.value;
+  if (!c) return [];
+  const profiles: Array<{ id: number; name: string; profile_image_url: string | null; isGlobal: boolean }> = [];
+  if (c.branding_profile) {
+    profiles.push({ ...c.branding_profile, isGlobal: true });
+  }
+  if (c.creator_profiles && c.creator_profiles.length > 0) {
+    for (const p of c.creator_profiles) {
+      if (!profiles.find(x => x.id === p.id)) {
+        profiles.push({ ...p, isGlobal: false });
+      }
+    }
+  }
+  return profiles;
+});
+
+const showOrgProfileDropdown = computed(() => orgCreatorProfiles.value.length > 1);
+const showCampaignProfileDropdown = computed(() => campaignProfiles.value.length > 1);
 
 
 const orgName = computed(() => 'Organization');
@@ -509,6 +718,76 @@ const canSchedule = computed(() => {
   return true;
 });
 
+// Load org creator profiles
+async function loadOrgCreatorProfiles() {
+  if (!orgId.value) return;
+  loadingOrgProfiles.value = true;
+  try {
+    const res = await listOrganizationCreatorProfiles(orgId.value);
+    if (res.success) {
+      orgCreatorProfiles.value = res.profiles.filter(p => !p.disabled);
+      if (orgCreatorProfiles.value.length === 1) {
+        selectedOrgProfileId.value = orgCreatorProfiles.value[0].id;
+      } else {
+        selectedOrgProfileId.value = null;
+      }
+    }
+  } catch (err) {
+    console.error('[ScheduleClipDialog] Failed to load org profiles:', err);
+  } finally {
+    loadingOrgProfiles.value = false;
+  }
+}
+
+// Load campaigns the user has joined
+async function loadCampaigns() {
+  loadingCampaigns.value = true;
+  try {
+    const res = await listMyCampaigns('active');
+    if (res.success) {
+      availableCampaigns.value = res.campaigns;
+      if (availableCampaigns.value.length === 1) {
+        selectedCampaignId.value = availableCampaigns.value[0].id;
+        autoSelectCampaignProfile();
+      } else {
+        selectedCampaignId.value = null;
+        selectedCampaignProfileId.value = null;
+      }
+    }
+  } catch (err) {
+    console.error('[ScheduleClipDialog] Failed to load campaigns:', err);
+  } finally {
+    loadingCampaigns.value = false;
+  }
+}
+
+function autoSelectCampaignProfile() {
+  const profiles = campaignProfiles.value;
+  if (profiles.length === 1) {
+    selectedCampaignProfileId.value = profiles[0].id;
+  } else if (profiles.length === 0) {
+    selectedCampaignProfileId.value = null;
+  }
+}
+
+watch(selectedCampaignId, () => {
+  autoSelectCampaignProfile();
+});
+
+watch(postingContext, () => {
+  selectedOrgProfileId.value = null;
+  selectedCampaignId.value = null;
+  selectedCampaignProfileId.value = null;
+  if (postingContext.value === 'org') {
+    if (orgCreatorProfiles.value.length === 1) selectedOrgProfileId.value = orgCreatorProfiles.value[0].id;
+  } else {
+    if (availableCampaigns.value.length === 1) {
+      selectedCampaignId.value = availableCampaigns.value[0].id;
+      autoSelectCampaignProfile();
+    }
+  }
+});
+
 // Load accounts
 async function loadAccounts() {
   loadingAccounts.value = true;
@@ -577,6 +856,13 @@ async function handleSchedule() {
         media_type: 'video',
         clip_id: props.clipId,
       };
+
+      if (postingContext.value === 'org' && selectedOrgProfileId.value) {
+        scheduleData.creator_profile_id = selectedOrgProfileId.value;
+      } else if (postingContext.value === 'campaign') {
+        if (selectedCampaignId.value) scheduleData.campaign_id = selectedCampaignId.value;
+        if (selectedCampaignProfileId.value) scheduleData.creator_profile_id = selectedCampaignProfileId.value;
+      }
       
       // Add account info
       if (accountType === 'org') {
@@ -769,53 +1055,39 @@ watch(() => props.open, (isOpen) => {
     caption.value = '';
     error.value = null;
     successCount.value = 0;
+    postingContext.value = 'org';
+    selectedOrgProfileId.value = null;
+    selectedCampaignId.value = null;
+    selectedCampaignProfileId.value = null;
     initializeDefaultTime();
     loadAccounts();
+    loadOrgCreatorProfiles();
+    loadCampaigns();
   }
 }, { immediate: true });
 
 onMounted(() => {
   console.log('[ScheduleClipDialog] Component mounted, open:', props.open);
   initializeDefaultTime();
-  // Also load accounts on mount if dialog is already open
   if (props.open) {
     loadAccounts();
+    loadOrgCreatorProfiles();
+    loadCampaigns();
   }
 });
 </script>
 
 <style scoped>
 /* ===== Overlay ===== */
-.fixed {
+.schedule-dialog__overlay {
   position: fixed;
-}
-
-.inset-0 {
   inset: 0;
-}
-
-.z-50 {
-  z-index: 10000;
-}
-
-.flex {
-  display: flex;
-}
-
-.items-center {
-  align-items: center;
-}
-
-.justify-center {
-  justify-content: center;
-}
-
-.bg-black\/60 {
   background-color: rgba(0, 0, 0, 0.7);
-}
-
-.backdrop-blur-sm {
   backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
 }
 
 /* ===== Dialog Container ===== */
@@ -830,6 +1102,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
 }
 
 /* ===== Accent Bar ===== */
@@ -948,6 +1221,118 @@ onMounted(() => {
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--sidebar-text-muted);
+}
+
+/* ===== Posting Context ===== */
+.schedule-dialog__context-tabs {
+  display: flex;
+  gap: 0.375rem;
+  padding: 0.25rem;
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+}
+
+.schedule-dialog__context-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--sidebar-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.schedule-dialog__context-tab:hover:not(.schedule-dialog__context-tab--active) {
+  color: var(--sidebar-text);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.schedule-dialog__context-tab--active {
+  background-color: var(--sidebar-surface);
+  color: var(--sidebar-accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.schedule-dialog__context-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.schedule-dialog__context-auto {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  background-color: rgba(6, 182, 212, 0.06);
+  border: 1px solid rgba(6, 182, 212, 0.15);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  color: var(--sidebar-text-muted);
+}
+
+.schedule-dialog__context-auto strong {
+  color: var(--sidebar-text);
+  font-weight: 600;
+}
+
+.schedule-dialog__profile-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  overflow: hidden;
+}
+
+.schedule-dialog__profile-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--sidebar-text-muted);
+}
+
+.schedule-dialog__profile-avatar--campaign {
+  border-radius: 6px;
+}
+
+.schedule-dialog__profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.schedule-dialog__profile-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  background-color: rgba(6, 182, 212, 0.15);
+  color: var(--sidebar-accent);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+}
+
+.schedule-dialog__profile-badge--global {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: rgb(134, 239, 172);
+  border-color: rgba(34, 197, 94, 0.25);
 }
 
 /* ===== Inputs ===== */
@@ -1412,7 +1797,7 @@ onMounted(() => {
 
 .schedule-dialog__btn--primary {
   background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-  color: #000;
+  color: white;
 }
 
 .schedule-dialog__btn--primary:hover:not(:disabled) {
