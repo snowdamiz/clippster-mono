@@ -29,6 +29,10 @@ const hasCaptionTrack = computed(() => {
 	return editor.timeline.getTracks().some((t) => t.type === "caption");
 });
 
+const hasTranscriptWords = computed(() => {
+	return editor.transcript.getWords().length > 0;
+});
+
 function getPreviewStyle(preset: CaptionPreset): Record<string, string> {
 	const style: Record<string, string> = {
 		color: preset.color === "transparent" ? (preset.stroke?.color || "#FFFFFF") : preset.color,
@@ -328,6 +332,17 @@ async function handleGenerateSubtitles() {
 	}
 }
 
+function handleAddFromTranscript() {
+	const words = editor.transcript.getWords();
+	const captionWords: CaptionWord[] = words.map((w) => ({
+		word: w.word,
+		start: w.start,
+		end: w.end,
+		confidence: w.confidence,
+	}));
+	generateCaptionElements(captionWords);
+}
+
 function handleRemoveCaptions() {
 	const tracks = editor.timeline.getTracks();
 	for (const track of tracks) {
@@ -378,8 +393,22 @@ function handleRemoveCaptions() {
 			<!-- Divider -->
 			<div class="border-t border-white/10 mx-2" />
 
-			<!-- Generate section -->
-			<div class="space-y-3 p-4">
+			<!-- Add from existing transcript -->
+			<div v-if="hasTranscriptWords && !hasCaptionTrack" class="space-y-3 p-4">
+				<button
+					class="flex w-full items-center justify-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/20"
+					@click="handleAddFromTranscript"
+				>
+					<Captions class="size-4 shrink-0" />
+					<span class="truncate">Add Subtitles</span>
+				</button>
+				<p class="text-[10px] leading-relaxed text-zinc-500">
+					Add subtitles from the existing transcript.
+				</p>
+			</div>
+
+			<!-- Generate section (fresh transcription) -->
+			<div v-if="!hasTranscriptWords && !hasCaptionTrack" class="space-y-3 p-4">
 				<button
 					class="flex w-full items-center justify-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/20 disabled:opacity-50"
 					:disabled="isProcessing"

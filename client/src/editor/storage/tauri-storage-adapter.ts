@@ -597,7 +597,10 @@ class TauriStorageService {
 			videoServerPort = 8642;
 		}
 
-		const encodedPath = btoa(filePath);
+		const encodedPath = btoa(filePath)
+			.replace(/\+/g, '-')
+			.replace(/\//g, '_')
+			.replace(/=/g, '');
 		const serverUrl = `http://localhost:${videoServerPort}/video/${encodedPath}`;
 
 		// Use HEAD to determine file size before fetching
@@ -673,10 +676,16 @@ class TauriStorageService {
 		mediaAsset: MediaAsset;
 		projectId: string;
 	}): Promise<string> {
-		// If the file has a path property (from Tauri file picker), use it
+		// If the file has a path property (from Tauri file picker), copy it to the
+		// project's managed media directory so the asset persists after reload.
 		const fileWithPath = mediaAsset.file as File & { path?: string };
 		if (fileWithPath.path) {
-			return fileWithPath.path;
+			const { invoke } = await import("@tauri-apps/api/core");
+			return await invoke<string>("copy_file_to_project_media", {
+				sourcePath: fileWithPath.path,
+				projectId: _projectId,
+				fileName: `${mediaAsset.id}_${mediaAsset.name}`,
+			});
 		}
 
 		// If the URL is a convertFileSrc URL, extract the path
