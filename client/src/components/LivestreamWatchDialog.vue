@@ -358,7 +358,7 @@
             <!-- Quick Publish Wizard (unified build + publish flow) -->
             <QuickPublishWizard
               v-if="publishClipData && currentClipForPublish"
-              v-model="showQuickPublishWizard"
+              :show="showQuickPublishWizard"
               :clip="currentClipForPublish"
               :clip-path="publishClipData.clipPath"
               :project-id="publishClipData.projectId"

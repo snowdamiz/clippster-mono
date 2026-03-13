@@ -708,6 +708,7 @@
                         @adjust-clip="onClipsTabAdjustClip"
                         @refresh-clips="onClipsTabRefreshClips"
                         @detect-clips="onClipsTabDetectClips"
+                        @publish-now="onClipsTabPublishNow"
                       />
                     </div>
                   </div>
@@ -1220,6 +1221,16 @@
     <!-- Auth Modal -->
     <AuthModal v-model="showAuthModal" />
 
+    <!-- Quick Publish Wizard -->
+    <QuickPublishWizard
+      :show="showFolderPublishWizard"
+      :clip="folderClipToPublish"
+      :clip-path="folderClipToPublishPath"
+      :project-id="folderProject?.id || ''"
+      :thumbnail-url="folderClipToPublishThumbnail"
+      @close="onFolderPublishWizardClose"
+    />
+
     <!-- VOD Preset Editor -->
     <VodPresetEditor
       v-model="showVodPresetEditor"
@@ -1331,6 +1342,7 @@
   } from '@/components/ClipBuildSettingsDialog.vue';
   import FreeTierLimitDialog from '@/components/FreeTierLimitDialog.vue';
   import ClipsTab from '@/components/ClipsTab.vue';
+  import QuickPublishWizard from '@/components/QuickPublishWizard.vue';
   import { useRouter } from 'vue-router';
   import ExistingProjectDialog from '@/components/clip-editor/ExistingProjectDialog.vue';
   import AuthModal from '@/components/AuthModal.vue';
@@ -3413,6 +3425,30 @@
     if (folderProject.value) {
       startProjectDetection(folderProject.value);
     }
+  }
+
+  // Quick Publish Wizard state for folder dialog
+  const showFolderPublishWizard = ref(false);
+  const folderClipToPublish = ref<ClipWithVersion | null>(null);
+  const folderClipToPublishPath = ref<string>('');
+  const folderClipToPublishThumbnail = ref<string | null>(null);
+
+  function onClipsTabPublishNow(clip: ClipWithVersion) {
+    folderClipToPublish.value = clip;
+    // clip.file_path is the source segment video (local path), use as clip path so FFmpeg can probe dimensions
+    // Fall back to projectVideos if clip has no direct file_path
+    const projectId = clip.project_id || folderProject.value?.id;
+    const fallbackVideo = projectId ? (projectVideos.value[projectId]?.[0] ?? null) : null;
+    folderClipToPublishPath.value = clip.file_path || fallbackVideo?.file_path || '';
+    folderClipToPublishThumbnail.value = clip.built_thumbnail_path || null;
+    showFolderPublishWizard.value = true;
+  }
+
+  function onFolderPublishWizardClose() {
+    showFolderPublishWizard.value = false;
+    folderClipToPublish.value = null;
+    folderClipToPublishPath.value = '';
+    folderClipToPublishThumbnail.value = null;
   }
 
   async function loadFolderPrompts() {
@@ -5900,6 +5936,7 @@
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+    padding-bottom: 2rem;
   }
 
   .projects__loading {

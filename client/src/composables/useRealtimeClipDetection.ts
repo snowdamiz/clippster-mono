@@ -7,6 +7,7 @@ import { updateClip } from '@/services/database/clips';
 import { getOrCreateManualSession } from '@/services/database/clip-detection-sessions';
 import { createProject } from '@/services/database/projects';
 import type { SupportedLivestreamPlatform } from '@/types/livestream';
+import { API_BASE } from '@/lib/apiBase';
 
 interface DetectedClip {
   title: string;
@@ -226,7 +227,7 @@ export function useRealtimeClipDetection() {
   async function deductCredit() {
     try {
       const token = localStorage.getItem('auth_token') || '';
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/credits/deduct`, {
+      const response = await fetch(`${API_BASE}/credits/deduct`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -368,7 +369,7 @@ export function useRealtimeClipDetection() {
     try {
       const token = localStorage.getItem('auth_token') || '';
       
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/clips/detect-realtime`, {
+      const response = await fetch(`${API_BASE}/clips/detect-realtime`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

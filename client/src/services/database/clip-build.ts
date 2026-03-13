@@ -40,6 +40,18 @@ async function ensureClipBuildsBrandingSchema(db: any): Promise<void> {
     'branding_type',
     "TEXT DEFAULT 'personal'"
   );
+  await addColumnIfMissing(
+    db,
+    'clip_builds',
+    'is_published',
+    'INTEGER DEFAULT 0'
+  );
+  await addColumnIfMissing(
+    db,
+    'clip_builds',
+    'published_at',
+    'INTEGER'
+  );
 }
 
 // Update clip build status
@@ -685,6 +697,23 @@ export async function hasCompletedBuilds(clipId: string): Promise<boolean> {
 }
 
 // Get all clips with their builds (for the global Clips page)
+// Mark a build as published
+export async function markBuildAsPublished(buildId: string): Promise<void> {
+  try {
+    const db = await getDatabase();
+    await ensureClipBuildsBrandingSchema(db);
+    
+    const now = timestamp();
+    await db.execute(
+      'UPDATE clip_builds SET is_published = 1, published_at = ? WHERE id = ? AND is_published = 0',
+      [now, buildId]
+    );
+  } catch (error) {
+    console.error('[markBuildAsPublished] Failed to mark build as published:', error);
+    throw error;
+  }
+}
+
 export async function getAllClipsWithBuilds(): Promise<(Clip & { builds: ClipBuild[] })[]> {
   try {
     const db = await getDatabase();
@@ -729,6 +758,7 @@ export async function getAllClipsWithBuilds(): Promise<(Clip & { builds: ClipBui
           builds = rawBuilds.map((build) => ({
             ...build,
             include_subtitles: Boolean(build.include_subtitles),
+            is_published: Boolean(build.is_published),
           }));
         } catch {
           // Table might not exist yet

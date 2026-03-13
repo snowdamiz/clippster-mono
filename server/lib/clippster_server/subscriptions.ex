@@ -3,9 +3,9 @@ defmodule ClippsterServer.Subscriptions do
   The Subscriptions context - manages user subscriptions.
 
   Subscription Tiers (1 credit = 1 minute):
-  - Starter: $29.99/month, 600 credits (10 hours)
-  - Creator: $54.99/month, 1800 credits (30 hours)
-  - Pro: $204.99/month, 9000 credits (150 hours)
+  - Starter: $24.99/month, 600 credits (10 hours)
+  - Creator: $49.99/month, 1800 credits (30 hours)
+  - Pro: $199.99/month, 9000 credits (150 hours)
 
   Business Rules:
   - Users must have an active subscription to use the app
@@ -26,10 +26,10 @@ defmodule ClippsterServer.Subscriptions do
 
   # Subscription tiers with pricing and credits (1 credit = 1 minute)
   @subscription_tiers %{
-    "basic" => %{monthly_credits: 0, usd: 15.99, name: "Basic"},
-    "starter" => %{monthly_credits: 600, usd: 29.99, name: "Starter"},
-    "creator" => %{monthly_credits: 1800, usd: 54.99, name: "Creator"},
-    "pro" => %{monthly_credits: 9000, usd: 204.99, name: "Pro"}
+    "basic" => %{monthly_credits: 0, usd: 12.99, name: "Basic"},
+    "starter" => %{monthly_credits: 600, usd: 24.99, name: "Starter"},
+    "creator" => %{monthly_credits: 1800, usd: 49.99, name: "Creator"},
+    "pro" => %{monthly_credits: 9000, usd: 199.99, name: "Pro"}
   }
 
   @doc """
