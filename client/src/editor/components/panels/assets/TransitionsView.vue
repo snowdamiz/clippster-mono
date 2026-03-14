@@ -8,11 +8,12 @@ import { ArrowRightLeft, Check, Trash2 } from "lucide-vue-next";
 import PanelSearchBar from "./PanelSearchBar.vue";
 import TransitionPreviewCanvas from "./TransitionPreviewCanvas.vue";
 import { generateUUID } from "../../../utils/id";
-import { setDragData } from "../../../lib/drag-data";
+import { usePointerDrag } from "../../../composables/usePointerDrag";
 import type { TransitionDragData } from "../../../types/drag";
 
-function handleDragStart(e: DragEvent, preset: TransitionPreset) {
-	if (!e.dataTransfer) return;
+const { startDrag, wasDragCompleted } = usePointerDrag();
+
+function handlePointerDown(e: PointerEvent, preset: TransitionPreset) {
 	const data: TransitionDragData = {
 		id: generateUUID(),
 		name: preset.label,
@@ -20,7 +21,7 @@ function handleDragStart(e: DragEvent, preset: TransitionPreset) {
 		transitionType: preset.type,
 		duration: preset.defaultDuration,
 	};
-	setDragData({ dataTransfer: e.dataTransfer, dragData: data });
+	startDrag(e, data);
 }
 
 const { editor } = useEditor();
@@ -135,13 +136,13 @@ function removeTransition() {
 				<button
 					v-for="preset in filteredPresets"
 					:key="preset.type"
-					draggable="true"
 					class="group relative cursor-grab overflow-hidden rounded-lg border transition-all active:cursor-grabbing active:scale-[0.97]"
 					:class="activeTransition?.type === preset.type
 						? 'border-white/20 bg-white/[0.06]'
 						: 'border-white/[0.06] bg-zinc-950 hover:border-white/15'"
-					@click="applyTransition(preset)"
-					@dragstart="handleDragStart($event, preset)"
+					@click="!wasDragCompleted && applyTransition(preset)"
+					@pointerdown="handlePointerDown($event, preset)"
+					@dragstart.prevent
 				>
 					<!-- Preview thumbnail -->
 					<div class="aspect-[4/3] w-full overflow-hidden bg-zinc-950">

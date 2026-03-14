@@ -8,9 +8,29 @@
 import { shallowRef, onUnmounted, onMounted } from "vue";
 import { EditorCore } from "../core";
 
-export function useEditor() {
+type EditorSubscriptionKey =
+	| "playback"
+	| "timeline"
+	| "scenes"
+	| "project"
+	| "media"
+	| "selection";
+
+type EditorSubscriptionOptions = Partial<Record<EditorSubscriptionKey, boolean>>;
+
+const DEFAULT_SUBSCRIPTIONS: Record<EditorSubscriptionKey, boolean> = {
+	playback: true,
+	timeline: true,
+	scenes: true,
+	project: true,
+	media: true,
+	selection: true,
+};
+
+export function useEditor(options?: { subscribe?: EditorSubscriptionOptions }) {
 	const editor = EditorCore.getInstance();
 	const version = shallowRef(0);
+	const subscriptions = { ...DEFAULT_SUBSCRIPTIONS, ...options?.subscribe };
 
 	let unsubscribers: Array<() => void> = [];
 
@@ -19,14 +39,26 @@ export function useEditor() {
 	};
 
 	onMounted(() => {
-		unsubscribers = [
-			editor.playback.subscribe(handleChange),
-			editor.timeline.subscribe(handleChange),
-			editor.scenes.subscribe(handleChange),
-			editor.project.subscribe(handleChange),
-			editor.media.subscribe(handleChange),
-			editor.selection.subscribe(handleChange),
-		];
+		unsubscribers = [];
+
+		if (subscriptions.playback) {
+			unsubscribers.push(editor.playback.subscribe(handleChange));
+		}
+		if (subscriptions.timeline) {
+			unsubscribers.push(editor.timeline.subscribe(handleChange));
+		}
+		if (subscriptions.scenes) {
+			unsubscribers.push(editor.scenes.subscribe(handleChange));
+		}
+		if (subscriptions.project) {
+			unsubscribers.push(editor.project.subscribe(handleChange));
+		}
+		if (subscriptions.media) {
+			unsubscribers.push(editor.media.subscribe(handleChange));
+		}
+		if (subscriptions.selection) {
+			unsubscribers.push(editor.selection.subscribe(handleChange));
+		}
 	});
 
 	onUnmounted(() => {

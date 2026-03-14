@@ -19,6 +19,7 @@ export interface SessionSummary {
   id: number;
   name: string | null;
   status: string;
+  thumbnail_url: string | null;
   updated_at: string;
   inserted_at: string;
 }

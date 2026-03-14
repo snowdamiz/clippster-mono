@@ -348,14 +348,14 @@ pub async fn extract_and_chunk_audio(
         .filter(|&t| t > 0.0)
         .unwrap_or(video_duration)
         .min(video_duration);
-    
+
     if chunk_start >= chunk_end {
         return Err(format!(
             "Invalid time range: start ({:.2}s) must be less than end ({:.2}s)",
             chunk_start, chunk_end
         ));
     }
-    
+
     let effective_duration = chunk_end - chunk_start;
     println!(
         "[Rust] Chunking range: {:.2}s - {:.2}s (duration: {:.2}s)",
@@ -507,13 +507,24 @@ pub async fn extract_and_chunk_audio(
                 idx, start_time, end_time
             );
 
-            // Place -ss BEFORE -i for fast input seeking (keyframe-based)
-            // instead of slow output seeking (decodes from start to seek point)
+            // Combined seeking: input seek gets us close quickly, output seek
+            // trims the final few seconds accurately so chunk timestamps line up
+            // with the original source media.
+            let input_seek = (start_time - 5.0).max(0.0);
+            let output_seek = start_time - input_seek;
+
+            println!(
+                "[Rust] Chunk {} seek strategy: input_seek={:.3}s output_seek={:.3}s duration={:.3}s",
+                idx, input_seek, output_seek, actual_duration
+            );
+
             let mut args = vec![
                 "-ss".to_string(),
-                format!("{:.3}", start_time),
+                format!("{:.3}", input_seek),
                 "-i".to_string(),
                 source.clone(),
+                "-ss".to_string(),
+                format!("{:.3}", output_seek),
                 "-t".to_string(),
                 format!("{:.3}", actual_duration),
             ];

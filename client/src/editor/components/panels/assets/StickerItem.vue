@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import { setDragData, clearDragData } from "../../../lib/drag-data";
+import { usePointerDrag } from "../../../composables/usePointerDrag";
 import { getIconSvgUrl, ICONIFY_HOSTS, buildIconSvgUrl } from "../../../lib/iconify-api";
 import { Loader2 } from "lucide-vue-next";
 
@@ -20,6 +20,8 @@ watch(() => props.iconName, () => {
 	imageError.value = false;
 	hostIndex.value = 0;
 });
+
+const { startDrag, wasDragCompleted } = usePointerDrag();
 
 const displayName = props.iconName.split(":")[1] || props.iconName;
 const collectionPrefix = props.iconName.split(":")[0];
@@ -44,25 +46,18 @@ function handleImgError() {
 	}
 }
 
-function handleDragStart(e: DragEvent) {
-	if (!e.dataTransfer) return;
-	const emptyImg = new Image();
-	emptyImg.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=";
-	e.dataTransfer.setDragImage(emptyImg, 0, 0);
-	setDragData({
-		dataTransfer: e.dataTransfer,
-		dragData: {
-			id: props.iconName,
-			type: "sticker",
-			name: displayName,
-			iconName: props.iconName,
-		},
+function handlePointerDown(e: PointerEvent) {
+	startDrag(e, {
+		id: props.iconName,
+		type: "sticker",
+		name: displayName,
+		iconName: props.iconName,
 	});
-	e.dataTransfer.effectAllowed = "copy";
 }
 
-function handleDragEnd() {
-	clearDragData();
+function handleClick() {
+	if (wasDragCompleted.value) return;
+	emit("add", props.iconName);
 }
 </script>
 
@@ -72,10 +67,9 @@ function handleDragEnd() {
 		class="group relative flex aspect-square cursor-grab items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.03] transition-all hover:border-white/15 hover:bg-white/[0.07] active:cursor-grabbing"
 		:class="isAdding && 'pointer-events-none opacity-40'"
 		:title="`${displayName} (${collectionPrefix})`"
-		draggable="true"
-		@click="emit('add', iconName)"
-		@dragstart="handleDragStart"
-		@dragend="handleDragEnd"
+		@click="handleClick"
+		@pointerdown="handlePointerDown"
+		@dragstart.prevent
 	>
 		<!-- Icon preview -->
 		<div v-if="!imageError" class="flex size-full items-center justify-center p-2.5">
@@ -84,6 +78,7 @@ function handleDragEnd() {
 				:alt="displayName"
 				class="size-full object-contain"
 				loading="lazy"
+				draggable="false"
 				@error="handleImgError"
 			/>
 		</div>

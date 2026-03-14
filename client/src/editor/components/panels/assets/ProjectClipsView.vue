@@ -21,10 +21,11 @@ import {
 } from "lucide-vue-next";
 import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
 import { buildVideoElement } from "../../../lib/timeline/element-utils";
-import { setDragData } from "../../../lib/drag-data";
+import { usePointerDrag } from "../../../composables/usePointerDrag";
 import type { CreateTimelineElement } from "../../../types/timeline";
 
 const { editor, version } = useEditor();
+const { startDrag, wasDragCompleted } = usePointerDrag();
 
 const projects = ref<Project[]>([]);
 const selectedProject = ref<Project | null>(null);
@@ -219,6 +220,7 @@ function addToTimeline(clip: Clip) {
 }
 
 function handleClipClick(clip: Clip) {
+	if (wasDragCompleted.value) return;
 	if (isAlreadyAdded(clip)) {
 		addToTimeline(clip);
 	} else {
@@ -226,13 +228,11 @@ function handleClipClick(clip: Clip) {
 	}
 }
 
-function handleDragStart(e: DragEvent, clip: Clip) {
+function handlePointerDown(e: PointerEvent, clip: Clip) {
+	if (!isAlreadyAdded(clip)) return;
 	const mediaId = getMediaAssetId(clip);
-	if (!mediaId || !e.dataTransfer) return;
-	setDragData({
-		dataTransfer: e.dataTransfer,
-		dragData: { id: mediaId, type: "media", mediaType: "video", name: getClipName(clip) },
-	});
+	if (!mediaId) return;
+	startDrag(e, { id: mediaId, type: "media", mediaType: "video", name: getClipName(clip) });
 }
 
 /**
@@ -313,7 +313,15 @@ async function addClipToEditor(clip: Clip) {
 		const encodedPath = btoa(outputPath);
 		const url = `http://localhost:${videoServerPort}/video/${encodedPath}`;
 
-		const file = new File([], getClipName(clip), { type: "video/mp4" });
+		const response = await fetch(url);
+		if (!response.ok) {
+			throw new Error(`Failed to load extracted clip (${response.status})`);
+		}
+		const blob = await response.blob();
+		const file = new File([blob], getClipName(clip), {
+			type: blob.type || "video/mp4",
+			lastModified: Date.now(),
+		});
 		(file as File & { path?: string }).path = outputPath;
 
 		const asset: Omit<MediaAsset, "id"> = {
@@ -479,10 +487,10 @@ onMounted(loadProjects);
 							'ring-1 ring-green-500/30': isAlreadyAdded(clip),
 							'pointer-events-none': addingIds.has(clip.id),
 						}"
-						:draggable="isAlreadyAdded(clip)"
 						@click="handleClipClick(clip)"
 						@dblclick="addToTimeline(clip)"
-						@dragstart="(e: DragEvent) => handleDragStart(e, clip)"
+						@pointerdown="(e: PointerEvent) => handlePointerDown(e, clip)"
+						@dragstart.prevent
 					>
 						<!-- Thumbnail -->
 						<div class="relative aspect-video bg-zinc-800">
@@ -491,6 +499,7 @@ onMounted(loadProjects);
 								:src="getCachedThumbnail(clip.id)"
 								:alt="getClipName(clip)"
 								class="size-full object-cover"
+								draggable="false"
 								@error="($event.target as HTMLImageElement).style.display = 'none'"
 							/>
 							<div v-else class="flex size-full items-center justify-center">
