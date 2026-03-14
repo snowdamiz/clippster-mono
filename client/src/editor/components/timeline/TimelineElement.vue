@@ -321,7 +321,7 @@ const elementTooltip = computed(() => {
 		<div
 			:class="[
 				'group relative h-full cursor-pointer overflow-hidden border-2',
-				(track.type === 'text' || track.type === 'audio' || track.type === 'sticker' || track.type === 'caption') ? 'rounded-[3px]' : 'rounded-[0.5rem]',
+				(track.type === 'text' || track.type === 'audio' || track.type === 'sticker' || track.type === 'caption' || track.type === 'effect') ? 'rounded-[3px]' : 'rounded-[0.5rem]',
 				trackClasses,
 				isBeingDragged ? 'z-30' : 'z-10',
 				isHidden ? 'opacity-50' : '',
