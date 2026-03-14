@@ -357,7 +357,9 @@
 
 <style scoped>
   .admin-news {
-    @apply space-y-6;
+    > :not([hidden]) ~ :not([hidden]) {
+      margin-top: 1.5rem;
+    }
   }
 
   /* ===== Heading ===== */
@@ -479,7 +481,10 @@
   }
 
   .admin-news__card-content {
-    @apply p-4 space-y-3;
+    @apply p-4;
+    > :not([hidden]) ~ :not([hidden]) {
+      margin-top: 0.75rem;
+    }
   }
 
   .admin-news__card-title {
@@ -491,7 +496,9 @@
   }
 
   .admin-news__card-meta {
-    @apply space-y-2;
+    > :not([hidden]) ~ :not([hidden]) {
+      margin-top: 0.5rem;
+    }
   }
 
   .admin-news__meta-row {
