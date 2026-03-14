@@ -2008,11 +2008,15 @@ pub async fn prepare_intro_outro_for_concat(
 
     // Add common parameters
     // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
+    // aresample=async=1 fixes A/V sync by forcing audio samples to align with video PTS
+    // (intro/outro files often have non-zero audio start PTS that causes delay after concat)
     args.extend_from_slice(&[
         "-fps_mode".to_string(),
         "cfr".to_string(),
         "-r".to_string(),
         frame_rate.to_string(),
+        "-af".to_string(),
+        "aresample=async=1".to_string(),
         "-c:a".to_string(),
         "aac".to_string(),
         "-b:a".to_string(),

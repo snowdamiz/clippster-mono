@@ -63,25 +63,36 @@ export function useClipBuildPipeline() {
       // Update database status to building
       await updateClipBuildStatus(clipId, 'building', { progress: 0 });
 
-      // Calculate build number
-      let buildNumber = 1;
-      try {
-        const existingBuilds = await getClipBuilds(clipId);
-        buildNumber = existingBuilds.length + 1;
-      } catch {
-        buildNumber = 1;
-      }
+      // Use pre-created buildId/buildNumber from settings if provided (e.g. from QuickPublishWizard)
+      // to avoid creating a duplicate clip_builds record
+      let buildNumber: number;
+      let buildId: string;
 
-      // Create clip build record with campaign context
-      const buildId = await createClipBuild(clipId, {
-        aspectRatios: settings.aspectRatios,
-        quality: settings.quality,
-        frameRate: settings.frameRate,
-        outputFormat: settings.format,
-        campaignId: settings.campaignId || null,
-        brandingProfileId: settings.campaignBrandingProfileId ? String(settings.campaignBrandingProfileId) : null,
-        brandingType: settings.brandingType || 'org',
-      });
+      if (settings.buildId && settings.buildNumber) {
+        buildId = settings.buildId;
+        buildNumber = settings.buildNumber;
+        console.log('[BuildPipeline] Using pre-created buildId:', buildId, 'buildNumber:', buildNumber);
+      } else {
+        // Calculate build number
+        buildNumber = 1;
+        try {
+          const existingBuilds = await getClipBuilds(clipId);
+          buildNumber = existingBuilds.length + 1;
+        } catch {
+          buildNumber = 1;
+        }
+
+        // Create clip build record with campaign context
+        buildId = await createClipBuild(clipId, {
+          aspectRatios: settings.aspectRatios,
+          quality: settings.quality,
+          frameRate: settings.frameRate,
+          outputFormat: settings.format,
+          campaignId: settings.campaignId || null,
+          brandingProfileId: settings.campaignBrandingProfileId ? String(settings.campaignBrandingProfileId) : null,
+          brandingType: settings.brandingType || 'org',
+        });
+      }
 
       // Load segments from DB or create synthetic
       let segments: { id: string; start_time: number; end_time: number; duration: number; transcript: string | null }[] = [];
@@ -525,6 +536,7 @@ export function useClipBuildPipeline() {
         thumbnailPath: null,
         duration: null,
         error: err instanceof Error ? err.message : String(err),
+        aspectRatioOutputPaths: {},
       };
       throw err;
     }
