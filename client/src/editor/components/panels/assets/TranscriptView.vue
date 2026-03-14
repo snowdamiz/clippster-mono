@@ -48,6 +48,8 @@ const generatingStep = ref("");
 
 // Subscribe to transcript manager changes
 let unsubscribe: (() => void) | null = null;
+let loadTranscriptRequestId = 0;
+let lastTimingGapLogKey: string | null = null;
 
 // Current playback time from editor
 const currentTime = computed(() => {
@@ -228,11 +230,41 @@ function setWordRef(el: any, index: number) {
 
 // Load transcript from editor's timeline video elements
 async function loadTranscript() {
+	const requestId = ++loadTranscriptRequestId;
 	loading.value = true;
 	error.value = null;
 	words.value = [];
 
 	try {
+		const syncManagerWords = (reason: string): boolean => {
+			if (requestId !== loadTranscriptRequestId) {
+				console.log("[TranscriptView] Aborting stale transcript load", {
+					requestId,
+					activeRequestId: loadTranscriptRequestId,
+					reason,
+				});
+				return true;
+			}
+
+			const managerWords = editor.transcript.getWords();
+			if (managerWords.length === 0) return false;
+
+			console.log("[TranscriptView] Using transcript manager words", {
+				requestId,
+				reason,
+				count: managerWords.length,
+				firstWord: managerWords[0]?.word,
+				lastWord: managerWords[managerWords.length - 1]?.word,
+			});
+			words.value = managerWords;
+			return true;
+		};
+
+		// Check transcript manager first — project-loader may have already set words
+		if (syncManagerWords("initial-check")) {
+			return;
+		}
+
 		const activeProject = editor.project.getActive();
 		if (!activeProject) {
 			error.value = "No active project.";
@@ -242,24 +274,262 @@ async function loadTranscript() {
 		// Use the original Clippster project ID for transcript lookup.
 		// The transcript is stored against the source project (the one with the VOD),
 		// not the video editor project ID.
-		const transcriptProjectId = activeProject.settings?.sourceProjectId ?? activeProject.metadata.id;
+		let transcriptProjectId = activeProject.settings?.sourceProjectId;
+		let clipId = activeProject.settings?.sourceClipId;
+		let clipStart = activeProject.settings?.sourceClipStartTime;
+		let clipEnd = activeProject.settings?.sourceClipEndTime;
+		let clipSegments: Array<{ start: number; end: number }> | null = null;
 
-		// Try loading from the project's existing transcript (SQLite)
-		const { useTranscriptData } = await import("@/composables/useTranscriptData");
-		const { loadTranscriptData, transcriptData } = useTranscriptData(ref(transcriptProjectId));
-		await loadTranscriptData(transcriptProjectId);
+		console.log("[TranscriptView] Loading transcript", {
+			requestId,
+			projectId: activeProject.metadata.id,
+			transcriptProjectId,
+			clipId,
+			clipStart,
+			clipEnd,
+		});
 
-		if (transcriptData.value && transcriptData.value.words.length > 0) {
-			const loadedWords = transcriptData.value.words.map((w: any) => ({
-				word: w.word || w.text || w.content || String(w),
-				start: w.start || w.begin || w.startTime || 0,
-				end: w.end || w.finish || w.endTime || 0,
-				confidence: w.confidence,
-			}));
-			// Set words in transcript manager
-			editor.transcript.setWords(loadedWords);
-			words.value = loadedWords;
+		// If no sourceProjectId in settings, try resolving from media asset file paths
+		if (!transcriptProjectId) {
+			const assets = editor.media.getAssets();
+			for (const asset of assets) {
+				const pathToCheck = (asset as any).filePath || asset.url || "";
+				const match = pathToCheck.match(/clip_([0-9a-f-]{36})\./i);
+				if (match) {
+					try {
+						const { getClip } = await import("@/services/database/clips");
+						const clip = await getClip(match[1]);
+						if (clip?.project_id) {
+							transcriptProjectId = clip.project_id;
+							clipId = clipId ?? clip.id;
+							clipStart = clipStart ?? clip.start_time;
+							clipEnd = clipEnd ?? clip.end_time;
+							break;
+						}
+					} catch { /* not found */ }
+				}
+			}
+		}
+
+		if (!transcriptProjectId) {
+			transcriptProjectId = activeProject.metadata.id;
+		}
+
+		const { parseTranscriptToWords } = await import("@/utils/timelineUtils");
+		if (syncManagerWords("after-parser-import")) {
 			return;
+		}
+
+		const filterAndRebase = (wordList: TranscriptWord[]): TranscriptWord[] => {
+			if (clipStart == null || clipEnd == null) return wordList;
+
+			if (clipSegments && clipSegments.length > 0) {
+				const result: TranscriptWord[] = [];
+				let outputOffset = 0;
+
+				for (const seg of clipSegments) {
+					const segWords = wordList
+						.filter((w) => w.start >= seg.start && w.start < seg.end)
+						.map((w) => ({
+							...w,
+							start: w.start - seg.start + outputOffset,
+							end: w.end - seg.start + outputOffset,
+						}));
+
+					result.push(...segWords);
+					outputOffset += seg.end - seg.start;
+				}
+
+				console.log("[TranscriptView] filterAndRebase using clip segments", {
+					requestId,
+					segments: clipSegments.map((seg) => `${seg.start.toFixed(1)}-${seg.end.toFixed(1)}`),
+					matched: result.length,
+				});
+				return result;
+			}
+
+			const result = wordList
+				.filter((w) => w.start >= clipStart && w.start < clipEnd)
+				.map((w) => ({ ...w, start: w.start - clipStart, end: w.end - clipStart }));
+
+			console.log("[TranscriptView] filterAndRebase using clip range", {
+				requestId,
+				clipStart,
+				clipEnd,
+				matched: result.length,
+			});
+			return result;
+		};
+
+		// Strategy 1: Try clip segments' transcript_raw_json (available for previously built clips)
+		if (clipId) {
+			try {
+				const { getClipSegmentsByClipId } = await import("@/services/database/clip-segments");
+				const segments = await getClipSegmentsByClipId(clipId);
+				clipSegments = segments.map((seg) => ({
+					start: seg.start_time,
+					end: seg.end_time,
+				}));
+				const segmentWords: TranscriptWord[] = [];
+
+				for (const seg of segments) {
+					if (!seg.transcript_raw_json) continue;
+					const parsed = parseTranscriptToWords(seg.transcript_raw_json);
+					for (const w of parsed) {
+						const wa = w as any;
+						segmentWords.push({
+							word: wa.word || wa.text || String(wa),
+							start: wa.start || wa.begin || 0,
+							end: wa.end || wa.finish || 0,
+							confidence: wa.confidence,
+						});
+					}
+				}
+
+				if (syncManagerWords("after-segment-query")) {
+					return;
+				}
+
+				if (segmentWords.length > 0) {
+					segmentWords.sort((a, b) => a.start - b.start);
+					if (syncManagerWords("before-strategy-1-commit")) {
+						return;
+					}
+					console.log("[TranscriptView] Strategy 1 loaded segment transcript words", {
+						requestId,
+						clipId,
+						segmentCount: segments.length,
+						wordCount: segmentWords.length,
+					});
+					editor.transcript.setWords(segmentWords);
+					words.value = segmentWords;
+					return;
+				}
+			} catch {
+				// Fall through to Strategy 2
+			}
+		}
+
+		// Strategy 2: Load stitched VOD transcript and filter/rebase to clip time range
+		const { getTranscriptWithSegmentsByProjectId } = await import("@/services/database/transcripts");
+		const { transcript } = await getTranscriptWithSegmentsByProjectId(transcriptProjectId);
+		if (syncManagerWords("after-stitched-transcript-query")) {
+			return;
+		}
+
+		if (transcript && transcript.raw_json) {
+			const parsed = parseTranscriptToWords(transcript.raw_json);
+			if (parsed.length > 0) {
+				let loadedWords: TranscriptWord[] = parsed.map((w: any) => ({
+					word: w.word || w.text || w.content || String(w),
+					start: w.start || w.begin || w.startTime || 0,
+					end: w.end || w.finish || w.endTime || 0,
+					confidence: w.confidence,
+				}));
+
+				loadedWords = filterAndRebase(loadedWords);
+
+				if (loadedWords.length > 0) {
+					if (syncManagerWords("before-strategy-2-commit")) {
+						return;
+					}
+					console.log("[TranscriptView] Strategy 2 loaded stitched transcript words", {
+						requestId,
+						transcriptProjectId,
+						parsedCount: parsed.length,
+						loadedCount: loadedWords.length,
+					});
+					editor.transcript.setWords(loadedWords);
+					words.value = loadedWords;
+					return;
+				}
+			}
+		}
+
+		// Strategy 3: Fall back to chunked transcript chunks (when stitching failed or never ran)
+		try {
+			const { getRawVideosByProjectId } = await import("@/services/database/raw-videos");
+			const { getChunkedTranscriptByRawVideoId, getTranscriptChunks } = await import("@/services/database/chunked-transcripts");
+
+			const rawVideos = await getRawVideosByProjectId(transcriptProjectId);
+			if (rawVideos.length > 0) {
+				const chunkedTranscript = await getChunkedTranscriptByRawVideoId(rawVideos[0].id);
+				if (chunkedTranscript) {
+					const chunks = await getTranscriptChunks(chunkedTranscript.id);
+					const chunkWords: TranscriptWord[] = [];
+
+					for (const chunk of chunks) {
+						try {
+							const chunkData = JSON.parse(chunk.raw_json);
+							if (chunkData.segments && Array.isArray(chunkData.segments)) {
+								for (const seg of chunkData.segments) {
+									if (seg.words && Array.isArray(seg.words)) {
+										for (const w of seg.words) {
+											const wordText = w.word || w.text;
+											const start = w.start ?? w.startTime;
+											const end = w.end ?? w.endTime;
+											if (wordText && typeof start === "number" && typeof end === "number") {
+												chunkWords.push({
+													word: wordText,
+													start: start + chunk.start_time,
+													end: end + chunk.start_time,
+													confidence: w.confidence ?? w.prob,
+												});
+											}
+										}
+									}
+								}
+							}
+							if (chunkData.words && Array.isArray(chunkData.words)) {
+								for (const w of chunkData.words) {
+									const wordText = w.word || w.text;
+									const start = w.start ?? w.startTime;
+									const end = w.end ?? w.endTime;
+									if (wordText && typeof start === "number" && typeof end === "number") {
+										chunkWords.push({
+											word: wordText,
+											start: start + chunk.start_time,
+											end: end + chunk.start_time,
+											confidence: w.confidence ?? w.prob,
+										});
+									}
+								}
+							}
+						} catch {
+							// Skip unparseable chunks
+						}
+					}
+
+					if (chunkWords.length > 0) {
+						chunkWords.sort((a, b) => a.start - b.start);
+						// Deduplicate
+						const unique = chunkWords.filter((w, i, arr) =>
+							i === 0 || !(Math.abs(w.start - arr[i - 1].start) < 0.01 && w.word === arr[i - 1].word)
+						);
+						const finalWords = filterAndRebase(unique);
+						if (syncManagerWords("after-chunked-transcript-query")) {
+							return;
+						}
+
+						if (finalWords.length > 0) {
+							if (syncManagerWords("before-strategy-3-commit")) {
+								return;
+							}
+							console.log("[TranscriptView] Strategy 3 loaded chunked transcript words", {
+								requestId,
+								chunkWordCount: chunkWords.length,
+								uniqueCount: unique.length,
+								finalCount: finalWords.length,
+							});
+							editor.transcript.setWords(finalWords);
+							words.value = finalWords;
+							return;
+						}
+					}
+				}
+			}
+		} catch {
+			// Fall through to caption fallback
 		}
 
 		// Fallback: check if caption elements exist on timeline (they have word-level data)
@@ -289,6 +559,9 @@ async function loadTranscript() {
 
 		if (captionWords.length > 0) {
 			captionWords.sort((a, b) => a.start - b.start);
+			if (syncManagerWords("before-caption-fallback-commit")) {
+				return;
+			}
 			// Set words in transcript manager
 			editor.transcript.setWords(captionWords);
 			words.value = captionWords;
@@ -507,27 +780,57 @@ async function handleGenerateTranscript() {
 function updateCurrentWordIndex() {
 	if (words.value.length === 0) {
 		currentWordIndex.value = -1;
+		lastTimingGapLogKey = null;
 		return;
 	}
+
+	const ACTIVE_WORD_GRACE_SECONDS = 0.08;
 	const time = currentTime.value;
 	let newIndex = -1;
 	for (let i = 0; i < words.value.length; i++) {
-		if (time >= words.value[i].start && time <= words.value[i].end) {
+		if (
+			time >= words.value[i].start - ACTIVE_WORD_GRACE_SECONDS &&
+			time <= words.value[i].end + ACTIVE_WORD_GRACE_SECONDS
+		) {
 			newIndex = i;
 			break;
 		}
 	}
-	if (newIndex === -1) {
-		let closest = 0;
-		let closestDist = Infinity;
-		for (let i = 0; i < words.value.length; i++) {
-			const d = Math.abs(words.value[i].start - time);
-			if (d < closestDist) {
-				closestDist = d;
-				closest = i;
-			}
+
+	if (newIndex === -1 && currentWordIndex.value !== -1) {
+		const currentWord = words.value[currentWordIndex.value];
+		if (
+			currentWord &&
+			time > currentWord.end &&
+			time <= currentWord.end + ACTIVE_WORD_GRACE_SECONDS
+		) {
+			newIndex = currentWordIndex.value;
 		}
-		if (closestDist < 2.0) newIndex = closest;
+	}
+
+	if (newIndex === -1) {
+		const nextWord = words.value.find((word) => word.start > time);
+		if (nextWord) {
+			const gapToNext = nextWord.start - time;
+			if (gapToNext > 0.25 && gapToNext < 2.0) {
+				const logKey = `${nextWord.word}:${nextWord.start.toFixed(2)}:${time.toFixed(2)}`;
+				if (lastTimingGapLogKey !== logKey) {
+					console.log("[TranscriptView] No active transcript word at playback time", {
+						time,
+						nextWord: nextWord.word,
+						nextWordStart: nextWord.start,
+						gapToNext,
+					});
+					lastTimingGapLogKey = logKey;
+				}
+			} else if (gapToNext <= 0.25) {
+				lastTimingGapLogKey = null;
+			}
+		} else {
+			lastTimingGapLogKey = null;
+		}
+	} else {
+		lastTimingGapLogKey = null;
 	}
 
 	if (newIndex !== currentWordIndex.value) {
@@ -770,59 +1073,64 @@ function clearStrikethrough() {
 }
 
 
-// ── Paragraph drag reorder ──
-function onParagraphDragStart(event: DragEvent, paragraphId: string) {
-	draggingParagraphId.value = paragraphId;
-	if (event.dataTransfer) {
-		event.dataTransfer.effectAllowed = "move";
-		event.dataTransfer.setData("text/plain", paragraphId);
+// ── Paragraph pointer-based reorder ──
+const PARAGRAPH_DRAG_THRESHOLD = 5;
+
+function onParagraphPointerDown(event: PointerEvent, paragraphId: string) {
+	if (event.button !== 0) return;
+
+	const startY = event.clientY;
+	let started = false;
+
+	function onMove(ev: PointerEvent) {
+		if (!started) {
+			if (Math.abs(ev.clientY - startY) < PARAGRAPH_DRAG_THRESHOLD) return;
+			started = true;
+			draggingParagraphId.value = paragraphId;
+		}
+
+		// Hit-test: find which paragraph the cursor is over
+		const el = document.elementFromPoint(ev.clientX, ev.clientY);
+		if (!el) return;
+		const paragraphEl = (el as HTMLElement).closest('[data-paragraph-id]') as HTMLElement | null;
+		if (paragraphEl) {
+			const overId = paragraphEl.dataset.paragraphId!;
+			if (overId !== paragraphId) {
+				dragOverParagraphId.value = overId;
+			} else {
+				dragOverParagraphId.value = null;
+			}
+		}
 	}
-}
 
-function onParagraphDragOver(event: DragEvent, paragraphId: string) {
-	event.preventDefault();
-	if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-	dragOverParagraphId.value = paragraphId;
-}
+	function onUp() {
+		document.removeEventListener('pointermove', onMove);
+		document.removeEventListener('pointerup', onUp);
 
-function onParagraphDragLeave() {
-	dragOverParagraphId.value = null;
-}
+		if (started && draggingParagraphId.value && dragOverParagraphId.value) {
+			const targetParagraphId = dragOverParagraphId.value;
 
-function onParagraphDrop(event: DragEvent, targetParagraphId: string) {
-	event.preventDefault();
-	dragOverParagraphId.value = null;
+			const sourceIdx = paragraphs.value.findIndex((p) => p.id === draggingParagraphId.value);
+			const targetIdx = paragraphs.value.findIndex((p) => p.id === targetParagraphId);
+			if (sourceIdx !== -1 && targetIdx !== -1) {
+				const sourceOffset = paragraphWordOffsets.value[sourceIdx];
+				const sourceCount = paragraphs.value[sourceIdx].words.length;
 
-	if (!draggingParagraphId.value || draggingParagraphId.value === targetParagraphId) {
+				const newTargetOffset = targetIdx > sourceIdx
+					? paragraphWordOffsets.value[targetIdx] - sourceCount + paragraphs.value[targetIdx].words.length
+					: paragraphWordOffsets.value[targetIdx];
+
+				const command = new ReorderTranscriptWordsCommand(sourceOffset, sourceCount, newTargetOffset);
+				editor.command.execute({ command });
+			}
+		}
+
 		draggingParagraphId.value = null;
-		return;
+		dragOverParagraphId.value = null;
 	}
 
-	const sourceIdx = paragraphs.value.findIndex((p) => p.id === draggingParagraphId.value);
-	const targetIdx = paragraphs.value.findIndex((p) => p.id === targetParagraphId);
-	if (sourceIdx === -1 || targetIdx === -1) {
-		draggingParagraphId.value = null;
-		return;
-	}
-
-	// Reorder using command for undo/redo
-	const sourceOffset = paragraphWordOffsets.value[sourceIdx];
-	const sourceCount = paragraphs.value[sourceIdx].words.length;
-	
-	// Calculate target offset after removal
-	const newTargetOffset = targetIdx > sourceIdx
-		? paragraphWordOffsets.value[targetIdx] - sourceCount + paragraphs.value[targetIdx].words.length
-		: paragraphWordOffsets.value[targetIdx];
-
-	const command = new ReorderTranscriptWordsCommand(sourceOffset, sourceCount, newTargetOffset);
-	editor.command.execute({ command });
-
-	draggingParagraphId.value = null;
-}
-
-function onParagraphDragEnd() {
-	draggingParagraphId.value = null;
-	dragOverParagraphId.value = null;
+	document.addEventListener('pointermove', onMove);
+	document.addEventListener('pointerup', onUp);
 }
 
 // ── Timeline highlighting ──
@@ -961,7 +1269,13 @@ onMounted(() => {
 
 	// Subscribe to transcript manager changes
 	unsubscribe = editor.transcript.subscribe(() => {
-		words.value = editor.transcript.getWords();
+		const managerWords = editor.transcript.getWords();
+		console.log("[TranscriptView] Transcript manager updated", {
+			count: managerWords.length,
+			firstWord: managerWords[0]?.word,
+			lastWord: managerWords[managerWords.length - 1]?.word,
+		});
+		words.value = managerWords;
 	});
 });
 
@@ -1164,18 +1478,14 @@ watch(
 			<div
 				v-for="(paragraph, pIdx) in paragraphs"
 				:key="paragraph.id"
+				:data-paragraph-id="paragraph.id"
 				class="mb-3 rounded-md transition-all"
 				:class="{
 					'bg-blue-500/5 border border-blue-500/20': dragOverParagraphId === paragraph.id,
 					'opacity-50': draggingParagraphId === paragraph.id,
 					'bg-blue-500/10 border border-blue-500/30': hoveredParagraphId === paragraph.id,
 				}"
-				draggable="true"
-				@dragstart="onParagraphDragStart($event, paragraph.id)"
-				@dragover="onParagraphDragOver($event, paragraph.id)"
-				@dragleave="onParagraphDragLeave"
-				@drop="onParagraphDrop($event, paragraph.id)"
-				@dragend="onParagraphDragEnd"
+				@pointerdown="onParagraphPointerDown($event, paragraph.id)"
 				@mouseenter="onParagraphMouseEnter(paragraph.id)"
 				@mouseleave="onParagraphMouseLeave"
 			>

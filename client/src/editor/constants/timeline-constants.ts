@@ -7,23 +7,23 @@ export const TRACK_COLORS: Record<TrackType, { background: string; border: strin
 		border: "#3f3f46",
 	},
 	text: {
-		background: "bg-[#5DBAA0]",
+		background: "bg-[#5DBAA0]/60",
 		border: "#7CCDB8",
 	},
 	audio: {
-		background: "bg-[#915DBE]",
+		background: "bg-[#915DBE]/60",
 		border: "#A87BD4",
 	},
 	sticker: {
-		background: "bg-amber-500",
-		border: "#F59E0B",
+		background: "bg-amber-500/60",
+		border: "#FBBF24",
 	},
 	effect: {
-		background: "bg-[#E040FB]",
+		background: "bg-[#E040FB]/60",
 		border: "#E040FB",
 	},
 	caption: {
-		background: "bg-[#38BDF8]",
+		background: "bg-[#38BDF8]/60",
 		border: "#38BDF8",
 	},
 } as const;
@@ -31,10 +31,10 @@ export const TRACK_COLORS: Record<TrackType, { background: string; border: strin
 export const TRACK_HEIGHTS: Record<TrackType, number> = {
 	video: 80,
 	text: 25,
-	audio: 50,
-	sticker: 50,
-	effect: 30,
-	caption: 30,
+	audio: 25,
+	sticker: 25,
+	effect: 25,
+	caption: 25,
 } as const;
 
 export const TRACK_GAP = 4;

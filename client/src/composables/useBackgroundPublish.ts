@@ -89,8 +89,14 @@ export function useBackgroundPublish() {
       // Read thumbnail once if provided
       let thumbnailFile: File | undefined;
       if (thumbnailPath) {
-        const thumbnailDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbnailPath });
-        const thumbnailName = thumbnailPath.split(/[/\\]/).pop() || 'thumbnail.jpg';
+        let thumbnailDataUrl: string;
+        if (thumbnailPath.startsWith('data:')) {
+          // Already a data URL (e.g. from Clips page where thumbnails are pre-loaded as base64)
+          thumbnailDataUrl = thumbnailPath;
+        } else {
+          thumbnailDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbnailPath });
+        }
+        const thumbnailName = thumbnailPath.startsWith('data:') ? 'thumbnail.jpg' : (thumbnailPath.split(/[/\\]/).pop() || 'thumbnail.jpg');
         thumbnailFile = dataUrlToFile(thumbnailDataUrl, thumbnailName);
       }
 

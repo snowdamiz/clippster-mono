@@ -104,8 +104,6 @@ export const navigationItems: NavigationItem[] = [
     path: '/ai-video',
     icon: Wand2,
     group: 'create',
-    disabled: true,
-    badge: 'Coming Soon',
   },
 
   // Manage group - organization/settings

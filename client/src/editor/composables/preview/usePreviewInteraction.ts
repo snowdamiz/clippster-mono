@@ -7,7 +7,7 @@
  * - Canvas coords: position (0,0) = canvas center, scale=1 = 100%
  * - Screen coords: pixel position on the displayed (scaled) canvas element
  */
-import { computed, nextTick, ref, type Ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, type Ref } from "vue";
 import { useEditor } from "../useEditor";
 import { useElementSelection } from "../timeline/element/useElementSelection";
 import { usePreviewFocus } from "./usePreviewFocus";
@@ -83,12 +83,21 @@ export function usePreviewInteraction({
 	canvasWidth: Ref<number>;
 	canvasHeight: Ref<number>;
 }) {
-	const { editor, version } = useEditor();
+	const { editor, version } = useEditor({
+		subscribe: {
+			playback: false,
+			scenes: false,
+			project: false,
+			selection: false,
+		},
+	});
 	const { selectedElements, selectElement, clearElementSelection, isElementSelected } = useElementSelection();
 	const { previewFocused, setPreviewFocused } = usePreviewFocus();
 
 	const dragState = ref<DragState | null>(null);
 	const hoveredElementId = ref<string | null>(null);
+	const playbackTime = shallowRef(editor.playback.getCurrentTime());
+	let unsubscribePlayback: (() => void) | null = null;
 
 	// Center alignment guides — visible when element position snaps to center
 	const showCenterGuideX = ref(false); // vertical line (element centered horizontally)
@@ -101,8 +110,21 @@ export function usePreviewInteraction({
 	});
 
 	const currentTime = computed(() => {
-		void version.value;
-		return editor.playback.getCurrentTime();
+		return playbackTime.value;
+	});
+
+	onMounted(() => {
+		unsubscribePlayback = editor.playback.subscribe(() => {
+			const nextTime = editor.playback.getCurrentTime();
+			if (nextTime !== playbackTime.value) {
+				playbackTime.value = nextTime;
+			}
+		});
+	});
+
+	onUnmounted(() => {
+		unsubscribePlayback?.();
+		unsubscribePlayback = null;
 	});
 
 	/**

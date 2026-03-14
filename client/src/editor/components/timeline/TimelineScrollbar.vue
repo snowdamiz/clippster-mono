@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch, toRef } from "vue";
 
 const props = defineProps<{
-	scrollContainer: HTMLDivElement;
+	scrollContainer: HTMLDivElement | null;
 	trackLabelsWidth: number;
 }>();
 
@@ -15,23 +15,26 @@ const scrollLeft = ref(0);
 const scrollWidth = ref(0);
 const clientWidth = ref(0);
 
+const hasOverflow = computed(() => scrollWidth.value > clientWidth.value + 1);
+
 const thumbWidth = computed(() => {
-	if (scrollWidth.value <= 0 || clientWidth.value <= 0) return 0;
-	const ratio = clientWidth.value / scrollWidth.value;
-	if (ratio >= 1) return 0;
 	const trackW = trackRef.value?.clientWidth ?? 0;
+	if (trackW <= 0) return 0;
+	if (scrollWidth.value <= 0 || clientWidth.value <= 0 || !hasOverflow.value) {
+		return trackW;
+	}
+
+	const ratio = clientWidth.value / scrollWidth.value;
 	return Math.max(40, ratio * trackW);
 });
 
 const thumbLeft = computed(() => {
-	if (scrollWidth.value <= clientWidth.value) return 0;
+	if (!hasOverflow.value) return 0;
 	const trackW = trackRef.value?.clientWidth ?? 0;
 	const maxThumbLeft = trackW - thumbWidth.value;
 	const scrollRatio = scrollLeft.value / (scrollWidth.value - clientWidth.value);
 	return scrollRatio * maxThumbLeft;
 });
-
-const isVisible = computed(() => scrollWidth.value > clientWidth.value);
 
 function syncFromContainer() {
 	const el = props.scrollContainer;
@@ -42,6 +45,7 @@ function syncFromContainer() {
 }
 
 function onThumbMouseDown(e: MouseEvent) {
+	if (!hasOverflow.value) return;
 	e.preventDefault();
 	e.stopPropagation();
 	isDragging.value = true;
@@ -73,7 +77,7 @@ function onMouseUp() {
 
 function onTrackClick(e: MouseEvent) {
 	const container = props.scrollContainer;
-	if (e.target === thumbRef.value || !container || !trackRef.value) return;
+	if (e.target === thumbRef.value || !container || !trackRef.value || !hasOverflow.value) return;
 	e.preventDefault();
 	e.stopPropagation();
 
@@ -97,15 +101,21 @@ function scheduleSync() {
 	});
 }
 
-onMounted(() => {
-	const el = props.scrollContainer;
+function cleanupObservers() {
+	resizeObserver?.disconnect();
+	resizeObserver = null;
+	contentResizeObserver?.disconnect();
+	contentResizeObserver = null;
+}
+
+function setupObservers(el: HTMLDivElement) {
+	cleanupObservers();
+
 	el.addEventListener("scroll", syncFromContainer, { passive: true });
 
-	// Track container viewport size changes
 	resizeObserver = new ResizeObserver(() => scheduleSync());
 	resizeObserver.observe(el);
 
-	// Track inner content size changes (zoom causes width changes on the first child)
 	const contentChild = el.firstElementChild;
 	if (contentChild) {
 		contentResizeObserver = new ResizeObserver(() => scheduleSync());
@@ -113,12 +123,38 @@ onMounted(() => {
 	}
 
 	syncFromContainer();
+}
+
+// Watch for scrollContainer changes (e.g., when template ref is set after mount)
+let currentEl: HTMLDivElement | null = null;
+watch(toRef(props, "scrollContainer"), (el, oldEl) => {
+	if (oldEl) {
+		oldEl.removeEventListener("scroll", syncFromContainer);
+	}
+	if (el) {
+		currentEl = el;
+		setupObservers(el);
+		return;
+	}
+
+	currentEl = null;
+	scrollLeft.value = 0;
+	scrollWidth.value = 0;
+	clientWidth.value = 0;
+}, { immediate: true });
+
+onMounted(() => {
+	if (props.scrollContainer && !currentEl) {
+		setupObservers(props.scrollContainer);
+		currentEl = props.scrollContainer;
+	}
 });
 
 onUnmounted(() => {
-	props.scrollContainer?.removeEventListener("scroll", syncFromContainer);
-	resizeObserver?.disconnect();
-	contentResizeObserver?.disconnect();
+	if (currentEl) {
+		currentEl.removeEventListener("scroll", syncFromContainer);
+	}
+	cleanupObservers();
 	if (rafId !== null) cancelAnimationFrame(rafId);
 	document.removeEventListener("mousemove", onMouseMove);
 	document.removeEventListener("mouseup", onMouseUp);
@@ -127,7 +163,7 @@ onUnmounted(() => {
 
 <template>
 	<div
-		class="flex h-5 shrink-0 items-center border-t border-white/10 bg-[#18181b]"
+		class="flex h-5 shrink-0 items-center border-t border-white/10 bg-[#1e1e22]"
 	>
 		<!-- Spacer matching track labels width -->
 		<div class="shrink-0 border-r border-white/10" :style="{ width: `${trackLabelsWidth}px` }" />
@@ -135,7 +171,8 @@ onUnmounted(() => {
 		<!-- Scrollbar track -->
 		<div
 			ref="trackRef"
-			class="relative mx-1 flex-1 h-2.5 rounded-full bg-white/10 cursor-pointer"
+			class="relative mx-1 h-2.5 flex-1 rounded-full bg-white/[0.08]"
+			:class="hasOverflow ? 'cursor-pointer' : 'cursor-default'"
 			@mousedown="onTrackClick"
 		>
 			<!-- Scrollbar thumb -->
@@ -143,14 +180,16 @@ onUnmounted(() => {
 				ref="thumbRef"
 				class="absolute top-0 h-full rounded-full transition-colors duration-150"
 				:class="[
-					isDragging
-						? 'bg-white/50'
-						: 'bg-white/30 hover:bg-white/40',
+					!hasOverflow
+						? 'bg-white/20'
+						: isDragging
+						? 'bg-white/60'
+						: 'bg-white/40 hover:bg-white/50',
 				]"
 				:style="{
 					width: `${thumbWidth}px`,
 					left: `${thumbLeft}px`,
-					cursor: isDragging ? 'grabbing' : 'grab',
+					cursor: !hasOverflow ? 'default' : isDragging ? 'grabbing' : 'grab',
 				}"
 				@mousedown="onThumbMouseDown"
 			/>

@@ -35,6 +35,9 @@ export class AudioManager {
 	private unsubscribers: Array<() => void> = [];
 	private nativeBuffers = new Map<string, AudioBuffer>();
 	private nativeFailedKeys = new Set<string>();
+	private clipsReady = false;
+	private clipLoadPromise: Promise<AudioClipSource[]> | null = null;
+	private clipCacheVersion = 0;
 
 	constructor(private editor: EditorCore) {
 		this.lastVolume = this.editor.playback.getVolume();
@@ -101,6 +104,7 @@ export class AudioManager {
 	};
 
 	private handleTimelineChange = (): void => {
+		this.invalidateClipCache();
 		this.stopPlayback();
 		this.disposeSinks();
 
@@ -140,33 +144,29 @@ export class AudioManager {
 		if (!audioContext) return;
 
 		this.stopPlayback();
-		this.playbackSessionId++;
-
-		const tracks = this.editor.timeline.getTracks();
-		const mediaAssets = this.editor.media.getAssets();
+		const sessionId = ++this.playbackSessionId;
 		const duration = this.editor.timeline.getTotalDuration();
 
 		if (duration <= 0) return;
 
+		const playbackRequestedAt = performance.now();
 		if (audioContext.state === "suspended") {
 			await audioContext.resume();
 		}
+		if (sessionId !== this.playbackSessionId) return;
 
-		this.clips = await collectAudioClips({ tracks, mediaAssets });
-		console.log(`[AudioManager] Collected ${this.clips.length} audio clips:`, this.clips.map(c => ({
-			id: c.id,
-			sourceKey: c.sourceKey,
-			fileName: c.file.name,
-			fileType: c.file.type,
-			startTime: c.startTime,
-			duration: c.duration,
-			muted: c.muted,
-			volume: c.volume
-		})));
-		if (!this.editor.playback.getIsPlaying()) return;
-
+		// Anchor audio to the original play click so async prep doesn't leave audio behind video.
+		const anchorDelaySeconds = Math.max(
+			0,
+			(performance.now() - playbackRequestedAt) / 1000,
+		);
 		this.playbackStartTime = time;
-		this.playbackStartContextTime = audioContext.currentTime;
+		this.playbackStartContextTime =
+			audioContext.currentTime - anchorDelaySeconds;
+
+		this.clips = await this.ensureClipsLoaded();
+		if (!this.editor.playback.getIsPlaying()) return;
+		if (sessionId !== this.playbackSessionId) return;
 
 		this.scheduleUpcomingClips();
 
@@ -193,7 +193,6 @@ export class AudioManager {
 			if (clip.startTime > windowEnd) continue;
 
 			this.activeClipIds.add(clip.id);
-			console.log(`[AudioManager] Scheduling clip ${clip.id} (${clip.file.name}) at ${clip.startTime}s`);
 			this.runClipIterator({ clip, startTime: currentTime, sessionId: this.playbackSessionId })
 				.catch((err) => {
 					console.warn(`[AudioManager] Audio playback failed for clip ${clip.id}:`, err);
@@ -224,6 +223,54 @@ export class AudioManager {
 		this.queuedSources.clear();
 	}
 
+	private invalidateClipCache(): void {
+		this.clipCacheVersion += 1;
+		this.clips = [];
+		this.clipsReady = false;
+		this.clipLoadPromise = null;
+	}
+
+	private async ensureClipsLoaded(): Promise<AudioClipSource[]> {
+		if (this.clipsReady) {
+			return this.clips;
+		}
+
+		if (this.clipLoadPromise) {
+			return this.clipLoadPromise;
+		}
+
+		const cacheVersion = this.clipCacheVersion;
+		const tracks = this.editor.timeline.getTracks();
+		const mediaAssets = this.editor.media.getAssets();
+		const clipLoadPromise = collectAudioClips({ tracks, mediaAssets })
+			.then((clips) => {
+				if (cacheVersion !== this.clipCacheVersion) {
+					return this.clips;
+				}
+
+				this.clips = clips;
+				this.clipsReady = true;
+				return clips;
+			})
+			.catch((error) => {
+				if (cacheVersion === this.clipCacheVersion) {
+					this.clipLoadPromise = null;
+				}
+				throw error;
+			})
+			.finally(() => {
+				if (
+					cacheVersion === this.clipCacheVersion &&
+					this.clipLoadPromise === clipLoadPromise
+				) {
+					this.clipLoadPromise = null;
+				}
+			});
+
+		this.clipLoadPromise = clipLoadPromise;
+		return clipLoadPromise;
+	}
+
 	private async runClipIterator({
 		clip,
 		startTime,
@@ -243,11 +290,9 @@ export class AudioManager {
 		// If mediabunny sink is unavailable (e.g. codec not supported on this platform),
 		// fall back to native Web Audio API decoding
 		if (!sink) {
-			console.log(`[AudioManager] Mediabunny sink unavailable for ${clip.file.name}, using native fallback`);
 			await this.runNativeFallback({ clip, startTime, sessionId });
 			return;
 		}
-		console.log(`[AudioManager] Using mediabunny sink for ${clip.file.name}`);
 
 		const clipStart = clip.startTime;
 		const clipEnd = clip.startTime + clip.duration;
@@ -369,7 +414,6 @@ export class AudioManager {
 				const arrayBuffer = await clip.file.arrayBuffer();
 				audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
 				this.nativeBuffers.set(clip.sourceKey, audioBuffer);
-				console.log(`[AudioManager] Native fallback: decoded audio for ${clip.sourceKey}`);
 			} catch (err) {
 				console.warn(`[AudioManager] Native fallback also failed for ${clip.sourceKey}:`, err);
 				this.nativeFailedKeys.add(clip.sourceKey);
@@ -520,7 +564,6 @@ export class AudioManager {
 				input.dispose();
 				return null;
 			}
-			console.log(`[AudioManager] Audio track is decodable for ${clip.file.name}`);
 
 			const sink = new AudioBufferSink(audioTrack);
 			this.inputs.set(clip.sourceKey, input);
@@ -536,11 +579,7 @@ export class AudioManager {
 	 * Preload audio buffers for clips on timeline (called when timeline changes)
 	 */
 	private async preloadClips(): Promise<void> {
-		const tracks = this.editor.timeline.getTracks();
-		const mediaAssets = this.editor.media.getAssets();
-		const clips = await collectAudioClips({ tracks, mediaAssets });
-
-		console.log(`[AudioManager] Preloading ${clips.length} audio clips`);
+		const clips = await this.ensureClipsLoaded();
 
 		// Preload first 2 seconds of each clip
 		for (const clip of clips) {

@@ -11,6 +11,8 @@ export interface MediaDragData extends BaseDragData {
 export interface TextDragData extends BaseDragData {
 	type: "text";
 	content: string;
+	/** Full preset element properties for styled text presets */
+	presetElement?: Record<string, unknown>;
 }
 
 export interface StickerDragData extends BaseDragData {

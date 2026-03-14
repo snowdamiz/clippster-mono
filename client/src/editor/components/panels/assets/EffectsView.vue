@@ -2,10 +2,17 @@
 import { ref, computed } from "vue";
 import { EFFECT_PRESETS } from "../../../constants/effect-constants";
 import type { VideoEffectPreset } from "../../../types/effects";
-import { setDragData } from "../../../lib/drag-data";
 import { useEffectPreviews } from "../../../composables/usePreviewThumbnails";
+import { useEditor } from "../../../composables/useEditor";
+import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
+import { buildEffectElement } from "../../../lib/timeline/element-utils";
+import { usePointerDrag } from "../../../composables/usePointerDrag";
+import type { EffectDragData } from "../../../types/drag";
 import PanelSearchBar from "./PanelSearchBar.vue";
 
+const { editor, version } = useEditor();
+const { selectedElements } = useElementSelection();
+const { startDrag, wasDragCompleted } = usePointerDrag();
 const searchQuery = ref("");
 
 const effectTypes = EFFECT_PRESETS.map((p) => p.type);
@@ -19,25 +26,67 @@ const filteredPresets = computed(() => {
 	);
 });
 
-function handleDragStart(e: DragEvent, preset: VideoEffectPreset) {
-	if (!e.dataTransfer) return;
+function handlePointerDown(e: PointerEvent, preset: VideoEffectPreset) {
 	const params: Record<string, number | string> = {};
 	for (const [key, value] of Object.entries(preset.defaults)) {
 		if (key === "type" || key === "enabled" || key === "intensity") continue;
 		if (typeof value === "number" || typeof value === "string") params[key] = value;
 	}
-	setDragData({
-		dataTransfer: e.dataTransfer,
-		dragData: {
-			id: preset.type,
-			type: "effect",
-			name: preset.label,
-			effectType: preset.type,
+
+	const data: EffectDragData = {
+		id: `${preset.type}_${Date.now()}`,
+		name: preset.label,
+		type: "effect",
+		effectType: preset.type,
+		intensity: preset.defaults.intensity,
+		params,
+	};
+	startDrag(e, data);
+}
+
+function addEffectToTimeline(preset: VideoEffectPreset) {
+	const params: Record<string, number | string> = {};
+	for (const [key, value] of Object.entries(preset.defaults)) {
+		if (key === "type" || key === "enabled" || key === "intensity") continue;
+		if (typeof value === "number" || typeof value === "string") params[key] = value;
+	}
+
+	// If a video/image element is selected, add the effect to its effects array
+	for (const sel of selectedElements.value) {
+		void version.value;
+		const track = editor.timeline.getTrackById({ trackId: sel.trackId });
+		if (!track || track.type !== "video") continue;
+
+		const el = track.elements.find((e) => e.id === sel.elementId);
+		if (!el || (el.type !== "video" && el.type !== "image")) continue;
+
+		const existingEffects = (el as any).effects ?? [];
+		const newEffect = {
+			id: `${preset.type}_${Date.now()}`,
+			type: preset.type,
+			enabled: true,
 			intensity: preset.defaults.intensity,
-			params,
-		},
+			...params,
+		};
+
+		editor.timeline.updateElement({
+			trackId: sel.trackId,
+			elementId: sel.elementId,
+			updates: { effects: [...existingEffects, newEffect] },
+		});
+		return;
+	}
+
+	// No video element selected — insert as a standalone effect element at the playhead
+	const startTime = editor.playback.getCurrentTime();
+	const element = buildEffectElement({
+		effectType: preset.type as any,
+		name: preset.label,
+		intensity: preset.defaults.intensity,
+		params,
+		startTime,
 	});
-	e.dataTransfer.effectAllowed = "copy";
+	editor.timeline.insertElement({ element, placement: { mode: "auto" } });
 }
 </script>
 
@@ -54,9 +103,10 @@ function handleDragStart(e: DragEvent, preset: VideoEffectPreset) {
 				<div
 					v-for="preset in filteredPresets"
 					:key="preset.type"
-					class="group relative cursor-grab overflow-hidden rounded-lg border border-white/[0.06] bg-zinc-950 transition-all hover:border-white/15 active:cursor-grabbing active:scale-[0.97]"
-					draggable="true"
-					@dragstart="(e: DragEvent) => handleDragStart(e, preset)"
+					class="group relative cursor-grab overflow-hidden rounded-lg border border-white/[0.06] bg-zinc-950 transition-colors hover:border-white/15 active:cursor-grabbing active:scale-[0.97] active:transition-transform"
+					@click="!wasDragCompleted && addEffectToTimeline(preset)"
+					@pointerdown="handlePointerDown($event, preset)"
+					@dragstart.prevent
 				>
 					<!-- Thumbnail -->
 					<div class="aspect-[4/3] w-full overflow-hidden">
@@ -64,6 +114,7 @@ function handleDragStart(e: DragEvent, preset: VideoEffectPreset) {
 							v-if="previews[preset.type]"
 							:src="previews[preset.type]"
 							:alt="preset.label"
+							draggable="false"
 							class="size-full object-cover"
 						/>
 						<div v-else class="flex size-full items-center justify-center">

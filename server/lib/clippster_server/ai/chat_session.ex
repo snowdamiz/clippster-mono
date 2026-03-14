@@ -17,6 +17,7 @@ defmodule ClippsterServer.AI.ChatSession do
     field :reference_analysis, :map
     field :media_analysis, {:array, :map}
     field :reference_url, :string
+    field :thumbnail_url, :string
 
     belongs_to :user, ClippsterServer.Accounts.User
     has_many :messages, ClippsterServer.AI.ChatMessage, foreign_key: :session_id
@@ -39,6 +40,7 @@ defmodule ClippsterServer.AI.ChatSession do
       :reference_analysis,
       :media_analysis,
       :reference_url,
+      :thumbnail_url,
       :user_id
     ])
     |> validate_required([:user_id, :status])

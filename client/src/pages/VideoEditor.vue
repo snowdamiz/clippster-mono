@@ -380,7 +380,9 @@
     updateVideoEditorProject,
     deleteVideoEditorProject,
     getVideoEditorSourcesByProjectId,
+    updateVideoEditorSource,
   } from '@/services/database/video-editor-projects';
+  import { storageService } from '@/editor/storage/tauri-storage-adapter';
   import { getFullVideoEditorEdit } from '@/services/database/video-editor-edits';
   import { getRawVideo } from '@/services/database/raw-videos';
   import { getClipWithBuildStatus } from '@/services/database/clip-build';
@@ -626,62 +628,77 @@
         sources.set(project.id, projectSourceList);
         counts.set(project.id, projectSourceList.length);
 
-        // Load source thumbnails (up to 3 for display) - look up from original source if needed
+        // Load source thumbnails — two-tier strategy
         const thumbnailUrls: (string | null)[] = [];
-        const sourcesToLoad = projectSourceList.slice(0, 3);
-        for (const source of sourcesToLoad) {
-          let thumbnailPath = source.source_thumbnail;
 
-          // If no thumbnail stored, look it up from the original source
-          if (!thumbnailPath && source.source_id) {
-            try {
-              if (source.source_type === 'raw_video') {
-                const rawVideo = await getRawVideo(source.source_id);
-                thumbnailPath = rawVideo?.thumbnail_path || null;
-              } else if (source.source_type === 'clip') {
-                const clip = await getClipWithBuildStatus(source.source_id);
-                thumbnailPath = clip?.built_thumbnail_path || null;
-              }
-            } catch (err) {
-              console.warn('[VideoEditor] Failed to lookup source thumbnail:', source.id, err);
-            }
+        // Tier 1: read from opencut_media_assets (if project was ever opened in editor)
+        try {
+          const timelineThumbnail = await storageService.getProjectFirstVideoThumbnail({ projectId: project.id });
+          if (timelineThumbnail) {
+            thumbnailUrls.push(timelineThumbnail);
           }
+        } catch (err) {
+          console.warn('[VideoEditor] Failed to get timeline thumbnail:', project.id, err);
+        }
 
-          // If still no thumbnail, try to generate one from the video file
-          if (!thumbnailPath && source.source_path) {
-            try {
-              const videoExists = await invoke<boolean>('check_file_exists', { path: source.source_path });
-              if (videoExists) {
-                thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
-                  videoPath: source.source_path,
-                  timestampSeconds: source.trim_start || 1,
-                  outputFilename: `editor_thumb_${source.id}`,
-                });
+        // Tier 2: fall back to video_editor_sources cascade
+        if (!thumbnailUrls[0]) {
+          // Sources are ordered by order_index ASC from getVideoEditorSourcesByProjectId
+          const firstSource = projectSourceList[0];
+          if (firstSource) {
+            let thumbnailPath = firstSource.source_thumbnail;
+
+            if (!thumbnailPath && firstSource.source_id) {
+              try {
+                if (firstSource.source_type === 'raw_video') {
+                  const rawVideo = await getRawVideo(firstSource.source_id);
+                  thumbnailPath = rawVideo?.thumbnail_path || null;
+                } else if (firstSource.source_type === 'clip') {
+                  const clip = await getClipWithBuildStatus(firstSource.source_id);
+                  thumbnailPath = clip?.built_thumbnail_path || null;
+                }
+              } catch (err) {
+                console.warn('[VideoEditor] Failed to lookup source thumbnail:', err);
               }
-            } catch (err) {
-              console.warn('[VideoEditor] Failed to generate thumbnail:', source.id, err);
             }
-          }
 
-          if (thumbnailPath) {
-            try {
-              const exists = await invoke<boolean>('check_file_exists', { path: thumbnailPath });
-              if (exists) {
-                const dataUrl = await invoke<string>('read_file_as_data_url', {
-                  filePath: thumbnailPath,
-                });
-                thumbnailUrls.push(dataUrl);
-              } else {
+            if (!thumbnailPath && firstSource.source_path) {
+              try {
+                const videoExists = await invoke<boolean>('check_file_exists', { path: firstSource.source_path });
+                if (videoExists) {
+                  thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+                    videoPath: firstSource.source_path,
+                    timestampSeconds: firstSource.trim_start || 1,
+                    outputFilename: `editor_thumb_${firstSource.id}`,
+                  });
+                  // Persist so we don't regenerate on every listing load
+                  if (thumbnailPath) {
+                    updateVideoEditorSource(firstSource.id, { source_thumbnail: thumbnailPath }).catch(() => {});
+                  }
+                }
+              } catch (err) {
+                console.warn('[VideoEditor] Failed to generate thumbnail:', err);
+              }
+            }
+
+            if (thumbnailPath) {
+              try {
+                const exists = await invoke<boolean>('check_file_exists', { path: thumbnailPath });
+                if (exists) {
+                  const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbnailPath });
+                  thumbnailUrls.push(dataUrl);
+                } else {
+                  thumbnailUrls.push(null);
+                }
+              } catch {
                 thumbnailUrls.push(null);
               }
-            } catch (err) {
-              console.warn('[VideoEditor] Failed to load source thumbnail:', source.id, err);
+            } else {
               thumbnailUrls.push(null);
             }
-          } else {
-            thumbnailUrls.push(null);
           }
         }
+
         thumbnails.set(project.id, thumbnailUrls);
 
         // Load edit info to determine what types of edits exist

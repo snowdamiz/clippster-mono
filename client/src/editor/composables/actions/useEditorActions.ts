@@ -12,7 +12,7 @@ import type { ClipboardItem, CreateTimelineElement } from "../../types/timeline"
 
 export function useEditorActions() {
 	const { editor } = useEditor();
-	const { selectedElements, setElementSelection } = useElementSelection();
+	const { selectedElements, setElementSelection, clearElementSelection } = useElementSelection();
 
 	useActionHandler("toggle-play", () => {
 		editor.playback.toggle();
@@ -156,7 +156,10 @@ export function useEditorActions() {
 			}
 		}
 
-		editor.timeline.deleteElements({ elements: selectedElements.value });
+		const elementsToDelete = [...selectedElements.value];
+		clearElementSelection();
+
+		editor.timeline.deleteElements({ elements: elementsToDelete });
 
 		// Ripple: shift subsequent main track elements left to close gaps
 		if (deletedMainElements.length > 0 && mainTrack) {

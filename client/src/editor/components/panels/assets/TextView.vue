@@ -3,13 +3,17 @@ import { ref, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useFontManager } from "../../../composables/useFontManager";
 import { DEFAULT_TEXT_ELEMENT, TEXT_PRESETS } from "../../../constants/text-constants";
+import type { TextPreset } from "../../../constants/text-constants";
 import { buildTextElement } from "../../../lib/timeline/element-utils";
+import { usePointerDrag } from "../../../composables/usePointerDrag";
+import type { TextDragData } from "../../../types/drag";
 import { Plus } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import PanelSearchBar from "./PanelSearchBar.vue";
 
 const { editor } = useEditor();
 const { uploadCustomFont } = useFontManager();
+const { startDrag, wasDragCompleted } = usePointerDrag();
 
 const searchQuery = ref("");
 
@@ -18,6 +22,18 @@ const filteredPresets = computed(() => {
 	if (!q) return TEXT_PRESETS;
 	return TEXT_PRESETS.filter((p) => p.name.toLowerCase().includes(q) || p.element.content?.toLowerCase().includes(q));
 });
+
+function handlePointerDown(e: PointerEvent, preset: TextPreset) {
+	const merged = { ...DEFAULT_TEXT_ELEMENT, ...preset.element };
+	const data: TextDragData = {
+		id: preset.id,
+		name: preset.name,
+		type: "text",
+		content: merged.content ?? "Default Text",
+		presetElement: merged as Record<string, unknown>,
+	};
+	startDrag(e, data);
+}
 
 function addPreset(presetId: string) {
 	const preset = TEXT_PRESETS.find((p) => p.id === presetId);
@@ -125,8 +141,10 @@ function getPresetCardBg(preset: typeof TEXT_PRESETS[number]): string {
 				v-for="preset in filteredPresets"
 				:key="preset.id"
 				type="button"
-				class="group flex w-full items-center gap-3 border-b border-white/[0.05] px-3 py-2 transition-colors hover:bg-white/[0.03]"
-				@click="addPreset(preset.id)"
+				class="group flex w-full cursor-grab items-center gap-3 border-b border-white/[0.05] px-3 py-2 transition-colors hover:bg-white/[0.03] active:cursor-grabbing"
+				@click="!wasDragCompleted && addPreset(preset.id)"
+				@pointerdown="handlePointerDown($event, preset)"
+				@dragstart.prevent
 			>
 				<!-- Styled preview swatch -->
 				<div

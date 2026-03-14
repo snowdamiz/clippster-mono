@@ -82,16 +82,11 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 		}
 
 		// Use pre-decoded frame from prefetch() if available, otherwise decode inline
-		const t0 = performance.now();
 		const frame = this.prefetchedFrame ?? await videoCache.getFrameAt({
 			sinkKey: this.params.elementId,
 			file: this.params.file,
 			time: this.getSourceTime(time),
 		});
-		const decodeMs = performance.now() - t0;
-		if (decodeMs > 5) {
-			console.log(`[VideoNode] ${this.params.elementId.slice(0,8)} decode=${decodeMs.toFixed(1)}ms videoTime=${this.getSourceTime(time).toFixed(3)} timelineTime=${time.toFixed(3)}`);
-		}
 
 		if (frame) {
 			renderer.context.save();

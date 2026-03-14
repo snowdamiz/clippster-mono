@@ -20,7 +20,11 @@ const emit = defineEmits<{
 
 const rulerRef = defineModel<HTMLDivElement | null>("rulerRef", { default: null });
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		playback: false,
+	},
+});
 
 const duration = computed(() => {
 	void version.value;
