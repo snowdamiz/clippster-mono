@@ -20,7 +20,8 @@ defmodule ClippsterServer.PromoCodes do
 
     case get_active_code(normalized_code) do
       nil ->
-        {:error, :invalid_code}
+        # If not found locally, check if it's a beta invite code in Stripe
+        validate_stripe_beta_code(normalized_code, tier, user_id)
 
       promo ->
         cond do
@@ -529,4 +530,100 @@ defmodule ClippsterServer.PromoCodes do
   end
 
   defp normalize_code(_), do: nil
+
+  # Validates a beta invite code directly from Stripe.
+  # Used when code is not found in local database.
+  # Returns {:ok, promo_struct} if valid, {:error, reason} if invalid.
+  defp validate_stripe_beta_code(code, tier, user_id) do
+    # List promotion codes from Stripe with this code
+    case Stripe.PromotionCode.list(%{code: code, limit: 1}) do
+      {:ok, %{data: [stripe_promo | _]}} ->
+        # Found the code in Stripe, now validate it
+        cond do
+          # Check if active
+          !stripe_promo.active ->
+            {:error, :inactive_code}
+
+          # Check if expired
+          stripe_promo.expires_at && stripe_promo.expires_at < System.system_time(:second) ->
+            {:error, :expired_code}
+
+          # Check max redemptions
+          stripe_promo.max_redemptions && stripe_promo.times_redeemed >= stripe_promo.max_redemptions ->
+            {:error, :max_redemptions_reached}
+
+          # Check if user already redeemed (query Stripe subscriptions)
+          stripe_user_already_redeemed?(code, user_id) ->
+            {:error, :already_redeemed}
+
+          # Valid - construct a promo struct for compatibility
+          true ->
+            {:ok, build_promo_from_stripe(stripe_promo, tier)}
+        end
+
+      {:ok, %{data: []}} ->
+        # Code not found in Stripe either
+        {:error, :invalid_code}
+
+      {:error, %Stripe.Error{message: message}} ->
+        require Logger
+        Logger.error("Stripe API error validating promo code: #{message}")
+        {:error, :invalid_code}
+
+      {:error, error} ->
+        require Logger
+        Logger.error("Error validating Stripe promo code: #{inspect(error)}")
+        {:error, :invalid_code}
+    end
+  end
+
+  # Checks if a user has already redeemed a Stripe promotion code.
+  defp stripe_user_already_redeemed?(code, user_id) do
+    # Get user to find their Stripe customer ID
+    user = ClippsterServer.Accounts.get_user(user_id)
+
+    if user && user.stripe_customer_id do
+      # Check if this customer has any subscriptions with this promo code
+      case Stripe.Subscription.list(%{customer: user.stripe_customer_id, limit: 100}) do
+        {:ok, %{data: subscriptions}} ->
+          Enum.any?(subscriptions, fn sub ->
+            # Check if subscription has this discount applied
+            sub.discount && sub.discount.promotion_code &&
+              String.upcase(sub.discount.promotion_code) == String.upcase(code)
+          end)
+
+        _ ->
+          false
+      end
+    else
+      false
+    end
+  end
+
+  # Builds a PromoCode struct from Stripe promotion code data for compatibility.
+  defp build_promo_from_stripe(stripe_promo, tier) do
+    coupon = stripe_promo.coupon
+
+    %PromoCode{
+      code: stripe_promo.code,
+      percent_off: coupon.percent_off || 0,
+      duration_kind: coupon.duration,
+      duration_months: coupon.duration_in_months,
+      allowed_tiers: [tier],
+      # Beta codes are always for individual subscriptions, not orgs
+      allowed_org_tiers: [],
+      allowed_credit_packs: [],
+      is_active: stripe_promo.active,
+      max_redemptions: stripe_promo.max_redemptions,
+      redeem_by: if(stripe_promo.expires_at, do: DateTime.from_unix!(stripe_promo.expires_at), else: nil),
+      stripe_coupon_id: coupon.id,
+      stripe_promo_code_id: stripe_promo.id,
+      # Virtual fields for compatibility
+      id: nil,
+      name: "Beta Invite Discount",
+      created_by_admin_id: nil,
+      inserted_at: nil,
+      updated_at: nil
+    }
+  end
 end
