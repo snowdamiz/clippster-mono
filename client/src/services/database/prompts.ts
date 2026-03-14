@@ -77,16 +77,11 @@ export async function deletePrompt(id: string): Promise<void> {
 export async function seedDefaultPrompt(): Promise<void> {
   const db = await getDatabase();
 
-  // Check if a SYSTEM-WIDE default prompt already exists (user_id IS NULL)
-  // This ensures all users can see the default prompt
-  const existing = await db.select<Prompt[]>(
-    'SELECT * FROM prompts WHERE name = ? AND user_id IS NULL',
+  // Delete existing default prompt to force update
+  await db.execute(
+    'DELETE FROM prompts WHERE name = ? AND user_id IS NULL',
     ['Default Clip Detector']
   );
-
-  if (existing.length > 0) {
-    return;
-  }
 
   // Create the default prompt with user_id = NULL (system-wide, visible to all users)
   const defaultPromptContent = `Analyze this stream transcript and identify ALL potential clip-worthy moments for TikTok/Shorts/X.
@@ -123,9 +118,22 @@ export async function seedDefaultPrompt(): Promise<void> {
    - Minimum 10s, maximum 180s total per clip.
    - Prefer 15–90s when possible for short-form platforms.
 
+**SCORING MODEL (0-100):**
+- **Hook Power (25%)**: First 1-2 seconds must STOP THE SCROLL
+- **Emotional Arousal (20%)**: High-arousal emotions (anger, excitement, humor, charisma, banter chemistry)
+- **Shareability (25%)**: Quotable, relatable, "that's so [streamer]" factor, personality moments
+- **Retention Curve (15%)**: Escalating tension, open loops, satisfying payoff
+- **Platform Fit (10%)**: Duration sweet spots, works on mute
+- **Creator Factor (5%)**: For viral creators, personality IS content
+
 **WHAT TO LOOK FOR:**
-- Strong emotions or shifts; humor/awkwardness; drama/tension/conflict; surprises/reveals; bold claims; unusual behavior; struggle/vulnerability; high energy; relatable/resonant lines; quotable statements; notable reactions or audience moments.
-- ANY interaction that feels "human" or "authentic".`;
+- **Personality/Banter/Chemistry**: Infectious energy, charisma, natural chemistry. The "that's so [streamer]" factor. Community in-jokes. This is the MOST clipped content.
+- **IRL Moments**: Confrontations, awkward encounters, street interviews, gym content, fight content, public interactions.
+- **Energy Shifts**: Calm→hype, serious→cracking up, confident→tilted. These transitions are natural clip boundaries.
+- Strong emotions or shifts; humor/awkwardness; drama/tension/conflict; surprises/reveals; bold claims; unusual behavior; struggle/vulnerability; high energy; relatable/resonant lines; quotable statements.
+- **News/Trends Awareness**: The system provides real-time breaking news and trending topics context. Look for reactions to current events.
+- ANY interaction that feels "human" or "authentic".
+- **CRITICAL**: A 30-second clip of someone being genuinely funny/charismatic > a 90-second clip of someone calmly explaining something interesting.`;
 
   const id = generateId();
   const now = timestamp();
@@ -145,22 +153,18 @@ export async function seedDefaultPrompt(): Promise<void> {
 export async function seedGamingPrompt(): Promise<void> {
   const db = await getDatabase();
 
-  // Check if the Gaming prompt already exists
-  const existing = await db.select<Prompt[]>(
-    'SELECT * FROM prompts WHERE name = ? AND user_id IS NULL',
+  // Delete existing gaming prompt to force update
+  await db.execute(
+    'DELETE FROM prompts WHERE name = ? AND user_id IS NULL',
     ['Gaming Stream Clip Detector']
   );
-
-  if (existing.length > 0) {
-    return;
-  }
 
   const gamingPromptContent = `Analyze this gaming stream transcript and identify ALL potential clip-worthy moments for TikTok/Shorts/X.
 
 **DETECTION PHILOSOPHY:**
-- EXTREME BIAS TOWARDS FINDING CLIPS — when in doubt, INCLUDE IT.
-- It is better to provide a "maybe" clip than to miss a good one.
+- Bias toward inclusion, but every clip must have at least ONE moment that makes a viewer react.
 - Gaming content has INSTANT viral potential — prioritize emotion and action over perfect context.
+- Quality over quantity — we want viral moments, not filler.
 
 **ENHANCED DATA YOU RECEIVE:**
 Each transcript segment includes:
@@ -217,11 +221,23 @@ Each transcript segment includes:
 - **Skill plays:** Clutches, multi-kills, perfect executions, comeback moments, high-skill mechanics, first-time achievements.
 - **Emotional peaks:** Rage quits, hype explosions, genuine shock, loud outbursts, controller slams, screaming.
 - **Funny moments:** Epic fails, embarrassing deaths, game glitches, accidental team kills, hilarious misplays.
+- **Teammate banter/toxicity:** Roasting teammates, blame games, friendly fire reactions, voice chat comedy.
+- **Speedrun moments:** Record attempts, PB reactions, route discoveries, glitch executions.
+- **Chat interaction plays:** Reacting to chat suggestions, doing viewer challenges, community predictions.
+- **Gaming rage that's actually funny**: Not just angry — funny angry. The "I'm uninstalling" moments.
 - **Trash talk & banter:** Roasting opponents, confident predictions, call-outs, salty reactions, "get shit on" moments.
 - **Game-changers:** Match-winning plays, throw moments, comeback victories, unexpected plot twists.
 - **Tension & suspense:** Final circles, 1v1 situations, boss attempts, close matches.
 - Signal phrases: "clutch", "insane", "no way", "WHAT", "HOW", "let's go", "I'm done", "oh no", "that was clean".
-- ANY moment with strong emotion, impressive skill, or comedic value.`;
+- ANY moment with strong emotion, impressive skill, or comedic value.
+
+**SCORING MODEL (0-100):**
+- **Hook Power (25%)**: First 1-2 seconds must STOP THE SCROLL
+- **Emotional Arousal (20%)**: High-arousal emotions (rage, hype, laughter, shock)
+- **Shareability (25%)**: Quotable, relatable, meme potential
+- **Retention Curve (15%)**: Escalating tension, satisfying payoff
+- **Platform Fit (10%)**: Duration sweet spots (10-45s ideal)
+- **Creator Factor (5%)**: For viral creators, personality IS content`;
 
   const id = generateId();
   const now = timestamp();
@@ -240,23 +256,19 @@ Each transcript segment includes:
 export async function seedGamblingPrompt(): Promise<void> {
   const db = await getDatabase();
 
-  // Check if the Gambling prompt already exists
-  const existing = await db.select<Prompt[]>(
-    'SELECT * FROM prompts WHERE name = ? AND user_id IS NULL',
+  // Delete existing gambling prompt to force update
+  await db.execute(
+    'DELETE FROM prompts WHERE name = ? AND user_id IS NULL',
     ['Gambling Stream Clip Detector']
   );
-
-  if (existing.length > 0) {
-    return;
-  }
 
   const gamblingPromptContent = `Analyze this gambling stream transcript and identify ALL potential clip-worthy moments for TikTok/Shorts/X.
 
 **DETECTION PHILOSOPHY:**
-- EXTREME BIAS TOWARDS FINDING CLIPS — when in doubt, INCLUDE IT.
-- It is better to provide a "maybe" clip than to miss a good one.
+- Bias toward inclusion, but every clip must have at least ONE moment that makes a viewer react.
 - Gambling content is PURE EMOTION — every spin, hand, or bet is a potential viral moment.
 - Prioritize STAKES and REACTIONS over everything else — viewers want to feel the highs and lows.
+- Quality over quantity — we want viral moments, not filler.
 
 **ENHANCED DATA YOU RECEIVE:**
 Each transcript segment includes:
@@ -325,6 +337,8 @@ Each transcript segment includes:
 - **Emotional explosions:** Screaming (joy or agony), jumping out of chair, hands on head, standing up, running around room, uncontrollable laughter, crying.
 - **Rage & tilt:** Malding, "this is rigged", slot machine/dealer accusations, keyboard/mouse slams, headset throws, threatening to quit, "I'm never playing again", losing streak meltdowns.
 - **Anticipation & tension:** "Come on come on come on", holding breath, silence before result, "please please please", nervous laughter, sweating bullets, final spin before bust.
+- **Degen decision moment:** The CHOICE to max bet is often more viral than the result. "Fuck it, max bet" = instant clip.
+- **Near-miss psychology:** "SO CLOSE" moments, one symbol away, the pain of almost winning.
 - **Degen behavior:** "Last $100", "one more spin", "fuck it max bet", chasing losses after big loss, ignoring stop-loss, "I'm done after this" (continues anyway), going all-in.
 - **Comeback stories:** Down to last dollars → massive recovery, "I'm back baby", redemption arcs, recovering from tilt, turning $10 into $10k.
 - **Near misses:** "SO CLOSE", one symbol away from jackpot, bonus scatter tease (2/3 scatters), heartbreaking losses, "if that was one higher".
@@ -333,7 +347,15 @@ Each transcript segment includes:
 - **Community reactions:** Chat going crazy, donation reactions during big moments, viewer predictions coming true/failing.
 - **Ironic moments:** Saying "watch this hit" then bricking, "I have a feeling" before massive loss, overconfidence before bust.
 - Signal phrases: "LETS GO", "NO WAY", "OH MY GOD", "COME ON", "FUCK", "YES YES YES", "HOLY SHIT", "I'm done", "one more", "max bet", "bonus", "I'm back", "down bad", "rigged", "book it".
-- ANY moment with extreme emotion, high stakes mentioned, dramatic win/loss swings, or degen decision-making.`;
+- ANY moment with extreme emotion, high stakes mentioned, dramatic win/loss swings, or degen decision-making.
+
+**SCORING MODEL (0-100):**
+- **Hook Power (25%)**: First 1-2 seconds must STOP THE SCROLL
+- **Emotional Arousal (20%)**: High-arousal emotions (euphoria, devastation, rage)
+- **Shareability (25%)**: Quotable, relatable, "down bad" moments
+- **Retention Curve (15%)**: Escalating tension, satisfying payoff
+- **Platform Fit (10%)**: Duration sweet spots (15-60s ideal)
+- **Creator Factor (5%)**: For viral creators, personality IS content`;
 
   const id = generateId();
   const now = timestamp();
@@ -352,22 +374,19 @@ Each transcript segment includes:
 export async function seedBreakingNewsPrompt(): Promise<void> {
   const db = await getDatabase();
 
-  // Check if the Breaking News prompt already exists
-  const existing = await db.select<Prompt[]>(
-    'SELECT * FROM prompts WHERE name = ? AND user_id IS NULL',
+  // Delete existing breaking news prompt to force update
+  await db.execute(
+    'DELETE FROM prompts WHERE name = ? AND user_id IS NULL',
     ['Breaking News & Trending Viral']
   );
-
-  if (existing.length > 0) {
-    return;
-  }
 
   const breakingNewsPromptContent = `Analyze this stream transcript and identify ALL potential clip-worthy moments for TikTok/Shorts/X, with PRIORITY on breaking news, trending topics, and time-sensitive viral content.
 
 **DETECTION PHILOSOPHY:**
-- EXTREME BIAS TOWARDS FINDING CLIPS — when in doubt, INCLUDE IT.
-- It is better to provide a "maybe" clip than to miss a good one.
+- Bias toward inclusion, but every clip must have at least ONE moment that makes a viewer react.
 - TIME-SENSITIVE content has MAXIMUM viral potential — prioritize recency and trending topics over everything else.
+- Quality over quantity — we want viral moments, not filler.
+- **NEWS API INTEGRATION**: The system provides real-time breaking news and Google Trends context. Use it to identify when streamers are reacting to current events.
 
 **ENHANCED DATA YOU RECEIVE:**
 Each transcript segment includes:
@@ -424,11 +443,23 @@ Each transcript segment includes:
 - **Breaking news:** Stock market events, political announcements, natural disasters, sports upsets, tech launches, global crises discussed in real-time.
 - **Celebrity mentions:** Reactions to celebrity drama, scandals, tweets, deaths, marriages, arrests — any A-list name.
 - **Viral trends:** References to trending hashtags, challenges, memes, viral videos/tweets currently blowing up.
+- **Social media beef/drama:** Twitter beefs, community drama, streamer vs streamer conflicts.
+- **Platform drama:** Bans, unbans, controversies, TOS violations, platform policy changes.
 - **Hot takes:** Bold predictions, contrarian opinions, "I told you so" moments, insider knowledge.
 - **Market reactions:** Crypto pumps/dumps, rug pulls, scam exposures, whale alerts, price crashes/moons.
 - **Time signals:** "just happened", "breaking", "literally right now", "5 seconds ago", "just saw", "trending", "going viral", "everyone's talking about".
 - **Urgency phrases:** "holy shit", "no way", "wait what", "are you serious", "did you see".
-- ANY moment that references a specific person, event, or trend that is currently relevant or breaking.`;
+- ANY moment that references a specific person, event, or trend that is currently relevant or breaking.
+
+**SCORING MODEL (0-100):**
+- **Hook Power (25%)**: First 1-2 seconds must STOP THE SCROLL
+- **Emotional Arousal (20%)**: High-arousal emotions (shock, outrage, excitement)
+- **Shareability (25%)**: Quotable, debate-starting, "you NEED to see this"
+- **Retention Curve (15%)**: Escalating tension, satisfying payoff
+- **Platform Fit (10%)**: Duration sweet spots (15-60s ideal)
+- **Creator Factor (5%)**: For viral creators, personality IS content
+
+**NEWS/TRENDS BOOST**: If the clip references breaking news or trending topics from the system context, boost score by 5-15 points based on connection strength.`;
 
   const id = generateId();
   const now = timestamp();

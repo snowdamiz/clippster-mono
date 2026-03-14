@@ -58,7 +58,7 @@ interface SavedClipInfo {
 }
 
 const DETECTION_INTERVAL_MS = 30_000; // 30 seconds
-const VIRALITY_THRESHOLD = 85;
+const VIRALITY_THRESHOLD = 75; // Lowered from 85 - rolling window sees partial context
 const DEDUP_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const OVERLAP_THRESHOLD = 0.3; // 30% time overlap = potential duplicate
 const TITLE_SIMILARITY_THRESHOLD = 0.25; // 25% word similarity = potential duplicate (lowered to catch "Savage Brother Roast" variants)

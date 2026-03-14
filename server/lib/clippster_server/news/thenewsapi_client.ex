@@ -31,10 +31,13 @@ defmodule ClippsterServer.News.TheNewsAPIClient do
       language = Keyword.get(opts, :language, "en")
 
       # Calculate timestamp for 6 hours ago
+      # TheNewsAPI expects format: YYYY-MM-DDTHH:MM:SS (no timezone suffix)
       six_hours_ago =
         DateTime.utc_now()
         |> DateTime.add(-6, :hour)
+        |> DateTime.truncate(:second)
         |> DateTime.to_iso8601()
+        |> String.replace("Z", "")
 
       params = %{
         "api_token" => api_key,

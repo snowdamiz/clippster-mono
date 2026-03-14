@@ -312,12 +312,27 @@ async fn run_full_download_with_encoder(
     // HLS-specific input options must come before -i
     if is_hls {
         args.extend_from_slice(&[
+            // Network optimizations
             "-reconnect",
             "1",
             "-reconnect_streamed",
             "1",
             "-reconnect_delay_max",
             "5",
+            "-http_persistent",
+            "1",  // Reuse HTTP connections for speed
+            "-multiple_requests",
+            "1",  // Enable parallel segment downloads
+            "-timeout",
+            "5000000",  // 5 second timeout (microseconds)
+            "-rw_timeout",
+            "5000000",  // Read/write timeout
+            // Buffer optimizations
+            "-probesize",
+            "10M",  // Faster stream detection
+            "-analyzeduration",
+            "5M",  // Faster format analysis
+            // Headers
             "-headers",
             referer_header,
             "-user_agent",
@@ -331,22 +346,24 @@ async fn run_full_download_with_encoder(
             "-c:v",
             "copy",
             "-c:a",
-            "aac",
-            "-b:a",
-            "128k",
+            "copy",  // Copy audio too for maximum speed
             "-map",
             "0:v:0?",
             "-map",
             "0:a:0?",
+            "-copyts",  // Copy timestamps as-is for accuracy
+            "-start_at_zero",  // Normalize to zero start time
             "-movflags",
             "+faststart",
+            "-fflags",
+            "+genpts+igndts",  // Generate PTS, ignore DTS issues
             "-progress",
             "pipe:2",
             "-v",
             "warning",
             "-y",
             "-bsf:a",
-            "aac_adtstoasc",
+            "aac_adtstoasc",  // Convert ADTS to ASC for MP4 container
             output_path,
         ]);
     } else {
@@ -1782,17 +1799,6 @@ pub async fn download_kick_vod(
         println!("[Kick] Download registered: {}", download_id);
     }
 
-    // Clean up when done
-    let cleanup_download = {
-        let download_id = download_id.clone();
-        let downloads = ACTIVE_DOWNLOADS.clone();
-        move || {
-            println!("[Kick] Cleaning up download: {}", download_id);
-            let mut downloads = downloads.lock().unwrap();
-            downloads.remove(&download_id);
-        }
-    };
-
     // Get storage paths
     println!("[Kick] Getting storage paths...");
     let paths = storage::init_storage_dirs().map_err(|e| {
@@ -1908,134 +1914,47 @@ pub async fn download_kick_vod(
 
         println!("[Kick] Total duration: {:?}", total_duration);
 
-        // Run yt-dlp to download the VOD with parallel fragment downloads
-        let mut cmd = tokio::process::Command::new(&ytdlp_path);
-        no_window(&mut cmd);
-        
-        // yt-dlp --ffmpeg-location expects a DIRECTORY so it can find both ffmpeg and ffprobe
-        let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
-            .parent()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| ffmpeg_path.clone());
-        
-        cmd.arg(&video_url)
-            .arg("-o")
-            .arg(&video_path_str)
-            .arg("--impersonate").arg("chrome")
-            .arg("--ffmpeg-location")
-            .arg(&ffmpeg_dir)
-            .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
-            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
-            .arg("--merge-output-format").arg("mp4")
-            .arg("--no-part") // Don't use .part files
-            .arg("--newline") // Output progress on new lines
-            .arg("--progress") // Show progress
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
+        // Extract HLS playlist URL using yt-dlp (fast, <1 second)
+        println!("[Kick] Extracting HLS URL via yt-dlp...");
+        let url_output = no_window(
+            tokio::process::Command::new(&ytdlp_path)
+                .arg("--get-url")
+                .arg("--no-download")
+                .arg("--no-warnings")
+                .arg("--impersonate").arg("chrome")
+                .arg(&video_url),
+        )
+        .output()
+        .await
+        .map_err(|e| format!("Failed to extract HLS URL: {}", e))?;
 
-        println!("[Kick] Running yt-dlp command...");
-
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
-
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
-
-        // Read stdout for progress updates (yt-dlp outputs progress to stdout)
-        let app_for_progress = app_clone.clone();
-        let download_id_for_progress = download_id_clone.clone();
-        let duration_for_progress = total_duration;
-
-        let stdout_task = stdout.map(|stdout| {
-            tokio::spawn(async move {
-                use tokio::io::{AsyncBufReadExt, BufReader};
-                let reader = BufReader::new(stdout);
-                let mut lines = reader.lines();
-                let mut last_progress_time = std::time::Instant::now();
-
-                while let Ok(Some(line)) = lines.next_line().await {
-                    // Parse yt-dlp progress output
-                    // Format: [download]  XX.X% of ~XXX.XXMIB at XXX.XXKIB/s ETA XX:XX
-                    if line.contains("% of") || line.contains("100% of") {
-                        if let Some(pct_str) = line.split('%').next() {
-                            let pct_str = pct_str
-                                .trim_start_matches(|c: char| !c.is_ascii_digit() && c != '.');
-                            if let Ok(pct) = pct_str.trim().parse::<f64>() {
-                                if last_progress_time.elapsed().as_millis() >= 500 {
-                                    let current_time =
-                                        duration_for_progress.map(|dur| (pct / 100.0) * dur);
-
-                                    let _ = app_for_progress.emit(
-                                        "download-progress",
-                                        DownloadProgress {
-                                            download_id: download_id_for_progress.clone(),
-                                            progress: pct.min(99.0),
-                                            current_time,
-                                            total_time: duration_for_progress,
-                                            status: format!("Downloading: {:.1}%", pct),
-                                        },
-                                    );
-                                    last_progress_time = std::time::Instant::now();
-                                }
-                            }
-                        }
-                    } else if !line.is_empty() {
-                        println!("[Kick] yt-dlp: {}", line);
-                    }
-                }
-            })
-        });
-
-        // Drain stderr for warnings/errors
-        let stderr_task = stderr.map(|stderr| {
-            tokio::spawn(async move {
-                use tokio::io::{AsyncBufReadExt, BufReader};
-                let reader = BufReader::new(stderr);
-                let mut lines = reader.lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    if !line.is_empty() {
-                        println!("[Kick] yt-dlp stderr: {}", line);
-                    }
-                }
-            })
-        });
-
-        let mut stdout_task = stdout_task;
-        let mut stderr_task = stderr_task;
-
-        // Wait for yt-dlp to complete or cancellation
-        let status = tokio::select! {
-            result = child.wait() => result
-                .map_err(|e| format!("Failed to wait for yt-dlp: {}", e))?,
-            _ = &mut cancel_rx => {
-                println!("[Kick] Download cancelled, terminating yt-dlp...");
-                let _ = child.kill().await;
-                if let Some(task) = stdout_task.take() {
-                    task.abort();
-                }
-                if let Some(task) = stderr_task.take() {
-                    task.abort();
-                }
-                cleanup_download();
-                return Err("Download cancelled".to_string());
-            }
-        };
-
-        // Clean up tasks
-        if let Some(task) = stdout_task {
-            task.abort();
-        }
-        if let Some(task) = stderr_task {
-            task.abort();
+        if !url_output.status.success() {
+            let stderr = String::from_utf8_lossy(&url_output.stderr);
+            return Err(format!("Failed to get stream URL: {}", stderr.chars().take(300).collect::<String>()));
         }
 
-        if !status.success() {
-            return Err(format!(
-                "yt-dlp exited with code: {:?}",
-                status.code()
-            ));
+        let hls_url = String::from_utf8_lossy(&url_output.stdout).trim().to_string();
+        if hls_url.is_empty() {
+            return Err("yt-dlp returned empty URL".to_string());
         }
+
+        println!("[Kick] Got HLS URL, starting FFmpeg stream copy (fast mode)...");
+
+        // Use FFmpeg with stream copy (10-100x faster than re-encoding)
+        // This just copies the video/audio packets without re-encoding
+        let download_result = run_full_download_with_encoder(
+            &app_clone,
+            &download_id_clone,
+            &hls_url,
+            &video_path_str,
+            total_duration,
+            "copy",  // Encoder doesn't matter when use_copy_codec is true
+            true,    // use_copy_codec = true for maximum speed
+            &mut cancel_rx,
+        ).await;
+
+        // Check result
+        download_result?;
 
         // Check for cancellation before post-processing
         if cancel_rx.try_recv().is_ok() {
