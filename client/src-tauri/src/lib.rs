@@ -845,8 +845,8 @@ pub fn run() {
                         },
                         tauri_plugin_sql::Migration {
                             version: 94,
-                            description: "fix_project_media_users_fk",
-                            sql: include_str!("../migrations/094_fix_project_media_users_fk.sql"),
+                            description: "remove_users_fk_from_project_media",
+                            sql: include_str!("../migrations/094_remove_users_fk_from_project_media.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                     ],

@@ -40,6 +40,7 @@ defmodule ClippsterServerWeb.AIChatController do
             id: s.id,
             name: s.name,
             status: s.status,
+            thumbnail_url: s.thumbnail_url,
             updated_at: s.updated_at,
             inserted_at: s.inserted_at
           }
