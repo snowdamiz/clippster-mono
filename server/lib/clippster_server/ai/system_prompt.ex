@@ -237,4 +237,31 @@ defmodule ClippsterServer.AI.SystemPrompt do
   def get do
     @system_prompt
   end
+
+  @doc """
+  Returns the system prompt enriched with current breaking news context.
+  
+  This adds recent news articles to help the AI identify trending topics and timely content.
+  """
+  def get_with_news_context do
+    news_context = ClippsterServer.News.get_ai_context(10)
+    
+    """
+    #{@system_prompt}
+
+    ---
+
+    **CURRENT BREAKING NEWS CONTEXT:**
+
+    Use this context to identify clips that relate to trending topics, current events, or breaking news.
+    Clips that tie into current events have higher virality potential.
+
+    #{news_context}
+
+    ---
+
+    When you detect clips that reference or relate to any of these news topics, mention it in the "reason" field
+    and consider boosting the virality_score by 5-15 points if the connection is strong and timely.
+    """
+  end
 end

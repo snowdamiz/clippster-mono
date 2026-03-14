@@ -284,6 +284,13 @@ defmodule ClippsterServerWeb.Router do
     # AI reference analysis
     post("/ai/reference/analyze", AIChatController, :analyze_reference)
 
+    # News feed for AI context enrichment
+    get("/news", NewsController, :index)
+    get("/news/ai-context", NewsController, :ai_context)
+    get("/news/:uuid", NewsController, :show)
+    post("/news/search", NewsController, :search)
+    post("/news/fetch", NewsController, :fetch)
+
     # AI chat sessions (conversational video generation)
     get("/ai/chat/sessions", AIChatController, :list_sessions)
     post("/ai/chat/sessions", AIChatController, :create_session)
@@ -1222,6 +1229,10 @@ defmodule ClippsterServerWeb.Router do
     # Moderator action logs
     get("/admin/mod-logs", AdminController, :list_mod_logs)
     get("/admin/mod-logs/:mod_id", AdminController, :get_mod_logs_for_user)
+
+    # News management
+    patch("/admin/news/:uuid", NewsController, :update)
+    delete("/admin/news/:uuid", NewsController, :delete)
 
     # Admin subscription management
     post("/admin/users/:user_id/subscription", AdminController, :grant_subscription)
