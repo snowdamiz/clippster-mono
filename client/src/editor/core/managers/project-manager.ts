@@ -101,6 +101,7 @@ export class ProjectManager {
 		};
 
 		this.active = newProject;
+		this.editor.transcript.clear();
 		this.notify();
 
 		this.editor.media.clearAllAssets();
@@ -128,6 +129,7 @@ export class ProjectManager {
 
 		this.editor.save.pause();
 		await this.ensureStorageMigrations();
+		this.editor.transcript.clear();
 		this.editor.media.clearAllAssets();
 		this.editor.scenes.clearScenes();
 

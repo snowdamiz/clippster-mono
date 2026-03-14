@@ -13,7 +13,12 @@ import type { TimelineTrack } from "../../types/timeline";
 import PreviewOverlay from "./PreviewOverlay.vue";
 import SocialOverlay from "./SocialOverlay.vue";
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		playback: false,
+		selection: false,
+	},
+});
 const { isCropMode, activeSocialOverlay } = useEditorUIState();
 const { selectedElements } = useElementSelection();
 
@@ -105,21 +110,12 @@ watch(
 	{ immediate: true },
 );
 
-// RAF render loop
-let rafDebugCount = 0;
-let rafSkipCount = 0;
 useRafLoop(() => {
 	const canvas = canvasRef.value;
 	const r = renderer.value;
 	const renderTree = editor.renderer.getRenderTree();
 	if (!canvas || !r || !renderTree) return;
-	if (rendering) {
-		rafSkipCount++;
-		if (rafSkipCount % 30 === 0) {
-			console.warn(`[RAF] Skipped ${rafSkipCount} frames (still rendering previous)`);
-		}
-		return;
-	}
+	if (rendering) return;
 
 	const time = editor.playback.getCurrentTime();
 	const lastFrameTime = getLastFrameTime({ duration: renderTree.duration, fps: r.fps });
@@ -130,16 +126,9 @@ useRafLoop(() => {
 		rendering = true;
 		lastScene = renderTree;
 		lastFrame = frame;
-		const renderStart = performance.now();
 		r.renderToCanvas({ node: renderTree, time: renderTime, targetCanvas: canvas })
 			.then(() => {
-				const renderMs = performance.now() - renderStart;
 				rendering = false;
-				rafDebugCount++;
-				if (renderMs > 20 || rafDebugCount % 60 === 0) {
-					console.log(`[RAF] frame=${frame} t=${renderTime.toFixed(3)} renderMs=${renderMs.toFixed(1)} skipped=${rafSkipCount}`);
-					rafSkipCount = 0;
-				}
 			})
 			.catch(() => { rendering = false; });
 	}

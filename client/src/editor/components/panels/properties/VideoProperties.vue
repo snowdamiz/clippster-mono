@@ -997,123 +997,126 @@ function formatTime(seconds: number): string {
 
 		<!-- ══════ Audio Tab ══════ -->
 		<div v-else-if="activeTab === 'audio'" class="flex-1 overflow-y-auto p-3">
+			<div class="flex items-center border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
+				<span class="text-sm text-zinc-400">Audio</span>
+			</div>
 			<div class="space-y-4">
 				<!-- Volume -->
-				<div class="space-y-1">
-					<label class="text-[11px] text-zinc-500">Volume</label>
+				<div class="space-y-2">
+					<span class="text-xs font-medium text-zinc-300">Volume</span>
 					<div class="flex items-center gap-2">
 						<input type="range" :value="(element.volume ?? 1) * 100" min="0" max="200" step="1" class="flex-1" @input="handleVolumeSlider" />
 						<div class="flex h-7 w-16 items-center rounded-sm border border-white/10 bg-white/5 px-2">
 							<input type="number" :value="volumeInput" min="0" max="200" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => handleVolumeInput((e.target as HTMLInputElement).value)" @blur="handleVolumeBlur" />
-							<span class="text-[10px] text-zinc-500">%</span>
+							<span class="ml-0.5 shrink-0 text-[10px] text-zinc-500">%</span>
 						</div>
 					</div>
 				</div>
 
 				<!-- Mute -->
-				<div class="flex items-center justify-between">
+				<div class="flex items-center justify-between border-t border-white/[0.05] pt-4">
 					<span class="text-[11px] text-zinc-500">Mute</span>
-					<button
-						:class="[
-							'relative h-5 w-9 rounded-full transition-colors',
-							element.muted ? 'bg-red-500' : 'bg-zinc-700',
-						]"
-						@click="update({ muted: !element.muted })"
-					>
-						<span :class="['absolute top-0.5 size-4 rounded-full bg-white transition-transform', element.muted ? 'left-[18px]' : 'left-0.5']" />
-					</button>
+					<Switch :checked="element.muted" @update:checked="(val) => update({ muted: val })" />
 				</div>
 			</div>
 		</div>
 
 		<!-- ══════ Speed Tab ══════ -->
 		<div v-else-if="activeTab === 'speed'" class="flex-1 overflow-y-auto p-3">
-			<div class="space-y-2">
-				<label class="text-[11px] text-zinc-500">Speed</label>
-				<div class="flex items-center gap-2">
-					<div class="relative flex-1">
-						<input type="range" :value="currentSpeed * 10" min="1" max="100" step="1" class="w-full" @input="(e) => changeSpeed(Number((e.target as HTMLInputElement).value) / 10)" />
-						<!-- Tick marks -->
-						<div class="pointer-events-none absolute inset-x-0 top-1/2 flex h-0 items-center">
-							<div
-								v-for="tick in speedTicks"
-								:key="tick"
-								class="absolute h-[8px] w-px bg-white/25"
-								:style="{ left: `${((tick * 10 - 1) / 99) * 100}%` }"
-							/>
-						</div>
-					</div>
-					<div class="flex h-7 w-[72px] items-center rounded-sm border border-white/10 bg-white/5">
-						<input
-							type="text"
-							:value="speedInput"
-							class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none"
-							@input="(e) => handleSpeedInput((e.target as HTMLInputElement).value)"
-							@blur="handleSpeedBlur"
-							@keydown.enter="($event.target as HTMLInputElement).blur()"
-						/>
-						<span class="pr-1.5 text-[10px] text-zinc-500">x</span>
-					</div>
+			<div class="flex items-center border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
+				<span class="text-sm text-zinc-400">Speed</span>
+			</div>
+			<div class="flex items-center gap-2">
+				<input type="range" :value="currentSpeed * 10" min="1" max="100" step="1" class="flex-1" @input="(e) => changeSpeed(Number((e.target as HTMLInputElement).value) / 10)" />
+				<div class="flex h-7 w-[72px] items-center rounded-sm border border-white/10 bg-white/5 px-2">
+					<input
+						type="text"
+						:value="speedInput"
+						class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none"
+						@input="(e) => handleSpeedInput((e.target as HTMLInputElement).value)"
+						@blur="handleSpeedBlur"
+						@keydown.enter="($event.target as HTMLInputElement).blur()"
+					/>
+					<span class="ml-0.5 shrink-0 text-[10px] text-zinc-500">x</span>
 				</div>
 			</div>
 		</div>
 
 		<!-- ══════ Animate Tab ══════ -->
-		<div v-else-if="activeTab === 'animate'" class="flex-1 overflow-y-auto">
-			<AnimationProperties
-				:element-id="element.id"
-				:track-id="trackId"
-				:animation-in="element.animationIn"
-				:animation-out="element.animationOut"
-				:animation-loop="element.animationLoop"
-				:element-duration="element.duration"
-			/>
+		<div v-else-if="activeTab === 'animate'" class="flex flex-col flex-1 overflow-hidden">
+			<div class="flex shrink-0 items-center border-b border-white/10 px-3 py-1.5">
+				<span class="text-sm text-zinc-400">Animate</span>
+			</div>
+			<div class="flex-1 overflow-y-auto">
+				<AnimationProperties
+					:element-id="element.id"
+					:track-id="trackId"
+					:animation-in="element.animationIn"
+					:animation-out="element.animationOut"
+					:animation-loop="element.animationLoop"
+					:element-duration="element.duration"
+				/>
+			</div>
 		</div>
 
 		<!-- ══════ Adjust Tab ══════ -->
 		<div v-else-if="activeTab === 'adjust'" class="flex-1 overflow-y-auto p-3">
-			<div class="space-y-3">
+			<div class="flex items-center border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
+				<span class="text-sm text-zinc-400">Adjust</span>
+			</div>
+			<div class="space-y-4">
 				<div class="flex items-center justify-between">
 					<span class="text-xs font-medium text-zinc-300">Color</span>
 					<button class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300" @click="resetColor">
 						<RotateCcw class="size-3" />
+						<span>Reset</span>
 					</button>
 				</div>
 
-				<div v-for="prop in (['brightness', 'contrast', 'saturation', 'temperature', 'highlights', 'shadows', 'exposure'] as const)" :key="prop" class="space-y-0.5">
-					<label class="text-[10px] capitalize text-zinc-500">{{ prop }}</label>
-					<div class="flex items-center gap-2">
-						<input type="range" :value="ca[prop]" min="-100" max="100" step="1" class="flex-1" @input="(e) => updateColor({ [prop]: Number((e.target as HTMLInputElement).value) })" />
-						<input type="number" :value="ca[prop]" min="-100" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none" @input="(e) => updateColor({ [prop]: Number((e.target as HTMLInputElement).value) })" />
+				<div class="space-y-2">
+					<div v-for="prop in (['brightness', 'contrast', 'saturation', 'temperature', 'highlights', 'shadows', 'exposure'] as const)" :key="prop" class="space-y-1.5">
+						<label class="text-[11px] capitalize text-zinc-500">{{ prop }}</label>
+						<div class="flex items-center gap-2">
+							<input type="range" :value="ca[prop]" min="-100" max="100" step="1" class="flex-1" @input="(e) => updateColor({ [prop]: Number((e.target as HTMLInputElement).value) })" />
+							<div class="flex h-7 w-12 items-center rounded-sm border border-white/10 bg-white/5 px-1">
+								<input type="number" :value="ca[prop]" min="-100" max="100" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => updateColor({ [prop]: Number((e.target as HTMLInputElement).value) })" />
+							</div>
+						</div>
 					</div>
 				</div>
 
-				<div class="space-y-0.5">
-					<label class="text-[10px] text-zinc-500">Fade</label>
-					<div class="flex items-center gap-2">
-						<input type="range" :value="ca.fade" min="0" max="100" step="1" class="flex-1" @input="(e) => updateColor({ fade: Number((e.target as HTMLInputElement).value) })" />
-						<input type="number" :value="ca.fade" min="0" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none" @input="(e) => updateColor({ fade: Number((e.target as HTMLInputElement).value) })" />
+				<div class="space-y-2 border-t border-white/[0.05] pt-4">
+					<div class="space-y-1.5">
+						<label class="text-[11px] text-zinc-500">Fade</label>
+						<div class="flex items-center gap-2">
+							<input type="range" :value="ca.fade" min="0" max="100" step="1" class="flex-1" @input="(e) => updateColor({ fade: Number((e.target as HTMLInputElement).value) })" />
+							<div class="flex h-7 w-12 items-center rounded-sm border border-white/10 bg-white/5 px-1">
+								<input type="number" :value="ca.fade" min="0" max="100" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => updateColor({ fade: Number((e.target as HTMLInputElement).value) })" />
+							</div>
+						</div>
+					</div>
+
+					<div class="space-y-1.5">
+						<label class="text-[11px] text-zinc-500">Sharpness</label>
+						<div class="flex items-center gap-2">
+							<input type="range" :value="ca.sharpness" min="0" max="100" step="1" class="flex-1" @input="(e) => updateColor({ sharpness: Number((e.target as HTMLInputElement).value) })" />
+							<div class="flex h-7 w-12 items-center rounded-sm border border-white/10 bg-white/5 px-1">
+								<input type="number" :value="ca.sharpness" min="0" max="100" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => updateColor({ sharpness: Number((e.target as HTMLInputElement).value) })" />
+							</div>
+						</div>
 					</div>
 				</div>
 
-				<div class="space-y-0.5">
-					<label class="text-[10px] text-zinc-500">Sharpness</label>
-					<div class="flex items-center gap-2">
-						<input type="range" :value="ca.sharpness" min="0" max="100" step="1" class="flex-1" @input="(e) => updateColor({ sharpness: Number((e.target as HTMLInputElement).value) })" />
-						<input type="number" :value="ca.sharpness" min="0" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none" @input="(e) => updateColor({ sharpness: Number((e.target as HTMLInputElement).value) })" />
-					</div>
-				</div>
-
-				<div class="space-y-0.5">
-					<label class="text-[10px] text-zinc-500">Tint</label>
+				<div class="space-y-1.5 border-t border-white/[0.05] pt-4">
+					<label class="text-[11px] text-zinc-500">Tint</label>
 					<div class="flex items-center gap-2">
 						<div class="relative">
-							<input type="color" :value="ca.tint || '#000000'" class="absolute inset-0 h-6 w-6 cursor-pointer opacity-0"
+							<input type="color" :value="ca.tint || '#000000'" class="absolute inset-0 h-7 w-7 cursor-pointer opacity-0"
 								@input="(e) => updateColor({ tint: (e.target as HTMLInputElement).value })" />
-							<div class="size-6 rounded border border-white/10" :style="{ backgroundColor: ca.tint || 'transparent' }" />
+							<div class="flex h-7 w-7 items-center justify-center rounded-sm border border-white/10" :style="{ backgroundColor: ca.tint || 'transparent' }" />
 						</div>
-						<span class="text-[10px] text-zinc-400">{{ ca.tint || 'None' }}</span>
-						<button v-if="ca.tint" class="ml-auto text-[10px] text-zinc-500 hover:text-zinc-300" @click="updateColor({ tint: '' })">Clear</button>
+						<span class="text-[11px] text-zinc-400">{{ ca.tint || 'None' }}</span>
+						<button v-if="ca.tint" class="ml-auto flex h-7 items-center rounded-sm border border-white/10 bg-white/5 px-2 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200" @click="updateColor({ tint: '' })">Clear</button>
 					</div>
 				</div>
 			</div>

@@ -3,7 +3,7 @@ import { ref, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import type { ElementAnimation, AnimationType, AnimationEasing, AnimationCategory } from "../../../types/animations";
 import { ANIMATION_PRESETS, getPresetsForDirection, ANIMATION_CATEGORIES } from "../../../constants/animation-constants";
-import { X, RotateCcw } from "lucide-vue-next";
+import { X } from "lucide-vue-next";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const props = defineProps<{
@@ -127,8 +127,8 @@ function updateEasing(easing: AnimationEasing) {
 			</button>
 		</div>
 
-		<!-- Active animation controls -->
-		<div v-if="currentAnim" class="space-y-2.5 rounded-md border border-white/10 bg-white/[0.02] p-2.5">
+		<!-- Active animation controls (compact, no card) -->
+		<div v-if="currentAnim" class="space-y-2 border-b border-white/[0.05] pb-3">
 			<div class="flex items-center justify-between">
 				<span class="text-xs font-medium text-zinc-300">{{ ANIMATION_PRESETS.find(p => p.type === currentAnim!.type)?.label ?? currentAnim!.type }}</span>
 				<button
@@ -140,97 +140,73 @@ function updateEasing(easing: AnimationEasing) {
 				</button>
 			</div>
 
-			<!-- Duration -->
-			<div class="space-y-1">
-				<label class="text-[10px] text-zinc-500">Duration</label>
-				<div class="flex items-center gap-2">
-					<input
-						type="range"
-						:value="currentAnim!.duration * 10"
-						min="1"
-						:max="activeTab === 'loop' ? 100 : Math.min(elementDuration * 10, 50)"
-						step="1"
-						class="flex-1"
-						@input="(e) => updateDuration(Number((e.target as HTMLInputElement).value) / 10)"
-					/>
-					<div class="flex h-6 w-14 items-center rounded-sm border border-white/10 bg-white/5 px-1.5">
-						<span class="w-full text-center text-[10px] text-zinc-300">{{ currentAnim!.duration.toFixed(1) }}s</span>
-					</div>
+			<!-- Duration: inline label + slider + value -->
+			<div class="flex items-center gap-2">
+				<label class="w-14 shrink-0 text-[11px] text-zinc-500">Duration</label>
+				<input
+					type="range"
+					:value="currentAnim!.duration * 10"
+					min="1"
+					:max="activeTab === 'loop' ? 100 : Math.min(elementDuration * 10, 50)"
+					step="1"
+					class="flex-1"
+					@input="(e) => updateDuration(Number((e.target as HTMLInputElement).value) / 10)"
+				/>
+				<div class="flex h-7 w-12 items-center rounded-sm border border-white/10 bg-white/5 px-1.5">
+					<span class="w-full text-center text-xs text-zinc-300">{{ currentAnim!.duration.toFixed(1) }}s</span>
 				</div>
 			</div>
 
-			<!-- Easing -->
-			<div class="space-y-1">
-				<label class="text-[10px] text-zinc-500">Easing</label>
+			<!-- Easing: inline label + select -->
+			<div class="flex items-center gap-2">
+				<label class="w-14 shrink-0 text-[11px] text-zinc-500">Easing</label>
 				<Select :model-value="currentAnim!.easing" @update:model-value="(v) => updateEasing(v as AnimationEasing)">
-					<SelectTrigger class="h-6 w-full rounded-sm border border-white/10 bg-white/5 px-1.5 text-[10px] text-zinc-300">
+					<SelectTrigger class="h-7 flex-1 rounded-sm border border-white/10 bg-white/5 px-1.5 text-[10px] text-zinc-300">
 						<SelectValue />
 					</SelectTrigger>
-					<SelectContent class="bg-zinc-900 border-white/10">
+					<SelectContent class="border-white/10 bg-zinc-900">
 						<SelectItem v-for="opt in easingOptions" :key="opt.id" :value="opt.id" class="text-[10px] text-zinc-200">{{ opt.label }}</SelectItem>
 					</SelectContent>
 				</Select>
 			</div>
 		</div>
 
-		<!-- Category filter -->
+		<!-- Category filter pills -->
 		<div class="flex flex-wrap gap-1">
 			<button
-				:class="[
-					'rounded px-2 py-0.5 text-[10px] font-medium transition-colors',
-					selectedCategory === 'all'
-						? 'bg-white/10 text-zinc-200'
-						: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
-				]"
+				:class="['rounded px-2 py-0.5 text-[10px] font-medium transition-colors', selectedCategory === 'all' ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300']"
 				@click="selectedCategory = 'all'"
-			>
-				All
-			</button>
+			>All</button>
 			<button
 				v-for="cat in availableCategories"
 				:key="cat.id"
-				:class="[
-					'rounded px-2 py-0.5 text-[10px] font-medium transition-colors',
-					selectedCategory === cat.id
-						? 'bg-white/10 text-zinc-200'
-						: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
-				]"
+				:class="['rounded px-2 py-0.5 text-[10px] font-medium transition-colors', selectedCategory === cat.id ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300']"
 				@click="selectedCategory = cat.id"
-			>
-				{{ cat.label }}
-			</button>
+			>{{ cat.label }}</button>
 		</div>
 
-		<!-- Preset grid -->
-		<div class="grid grid-cols-3 gap-1.5">
-			<!-- None option -->
+		<!-- Compact 2-col preset list -->
+		<div class="grid grid-cols-2 gap-0.5">
 			<button
 				:class="[
-					'flex flex-col items-center justify-center rounded-md border px-1 py-2.5 text-center transition-colors',
-					!currentAnim
-						? 'border-primary/40 bg-primary/10 text-primary'
-						: 'border-white/10 bg-white/[0.02] text-zinc-500 hover:border-white/20 hover:bg-white/5 hover:text-zinc-300',
+					'flex h-7 items-center gap-1.5 rounded px-2 text-xs font-medium transition-colors',
+					!currentAnim ? 'bg-primary/10 text-primary' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
 				]"
 				@click="removeAnimation"
 			>
-				<X class="mb-0.5 size-4" />
-				<span class="text-[10px] font-medium">None</span>
+				<X class="size-3 shrink-0" />
+				None
 			</button>
-
 			<button
 				v-for="preset in filteredPresets"
 				:key="preset.type"
 				:class="[
-					'flex flex-col items-center justify-center rounded-md border px-1 py-2.5 text-center transition-colors',
-					currentAnim?.type === preset.type
-						? 'border-primary/40 bg-primary/10 text-primary'
-						: 'border-white/10 bg-white/[0.02] text-zinc-500 hover:border-white/20 hover:bg-white/5 hover:text-zinc-300',
+					'flex h-7 items-center rounded px-2 text-xs font-medium transition-colors',
+					currentAnim?.type === preset.type ? 'bg-primary/10 text-primary' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
 				]"
 				:title="preset.label"
 				@click="selectAnimation(preset.type)"
-			>
-				<span class="text-[10px] font-medium leading-tight">{{ preset.label }}</span>
-			</button>
+			>{{ preset.label }}</button>
 		</div>
 	</div>
 </template>

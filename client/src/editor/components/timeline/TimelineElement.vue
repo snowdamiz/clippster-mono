@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, toRef, watch } from "vue";
+import { computed, ref, shallowRef, toRef, watch, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useTimelineElementResize } from "../../composables/timeline/element/useElementResize";
 import { useElementFade } from "../../composables/timeline/element/useElementFade";
@@ -34,6 +34,7 @@ const props = defineProps<{
 	snappingEnabled: boolean;
 	rippleShifts?: Map<string, number>;
 	isEffectDropTarget?: boolean;
+	isPlayheadScrubbing?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -46,10 +47,22 @@ const emit = defineEmits<{
 	(e: "keyframeClick", payload: { elementId: string; offset: number; rect: DOMRect }): void;
 }>();
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		playback: false,
+		timeline: false,
+		scenes: false,
+		project: false,
+		media: true,
+		selection: false,
+	},
+});
 const { selectedElements } = useElementSelection();
 
-const mediaAssets = computed(() => editor.media.getAssets());
+const mediaAssets = computed(() => {
+	void version.value;
+	return editor.media.getAssets();
+});
 
 const mediaAsset = computed<MediaAsset | null>(() => {
 	const el = props.element;
@@ -154,7 +167,13 @@ const isHidden = computed(
 );
 
 const trackHeight = computed(() => getTrackHeight({ type: props.track.type }));
-const tileWidth = computed(() => trackHeight.value * (16 / 9));
+const isImageElement = computed(() => props.element.type === "image");
+const tileWidth = computed(() => {
+	if (isImageElement.value && mediaAsset.value?.width && mediaAsset.value?.height) {
+		return trackHeight.value * (mediaAsset.value.width / mediaAsset.value.height);
+	}
+	return trackHeight.value * (16 / 9);
+});
 
 const trackClasses = computed(() => getTrackClasses({ type: props.track.type }));
 const borderColor = computed(() => getTrackBorderColor({ type: props.track.type }));
@@ -184,9 +203,36 @@ const audioWaveformCanvas = ref<HTMLCanvasElement | null>(null);
 // Video waveform support (audio track rendered under filmstrip)
 const videoWaveformCanvas = ref<HTMLCanvasElement | null>(null);
 
-const playheadTime = computed(() => {
-	void version.value;
-	return editor.playback.getCurrentTime();
+const playheadTime = shallowRef(editor.playback.getCurrentTime());
+
+function syncPlayheadTime(time?: number) {
+	if (props.isPlayheadScrubbing) return;
+	playheadTime.value = time ?? editor.playback.getCurrentTime();
+}
+
+function handlePlaybackEvent(event: Event) {
+	syncPlayheadTime((event as CustomEvent<{ time?: number }>).detail?.time);
+}
+
+watch(
+	() => props.isPlayheadScrubbing,
+	(scrubbing) => {
+		if (!scrubbing) {
+			playheadTime.value = editor.playback.getCurrentTime();
+		}
+	},
+);
+
+onMounted(() => {
+	if (!isAudioElement.value && !isVideoElement.value) return;
+	window.addEventListener("playback-update", handlePlaybackEvent as EventListener);
+	window.addEventListener("playback-seek", handlePlaybackEvent as EventListener);
+});
+
+onUnmounted(() => {
+	if (!isAudioElement.value && !isVideoElement.value) return;
+	window.removeEventListener("playback-update", handlePlaybackEvent as EventListener);
+	window.removeEventListener("playback-seek", handlePlaybackEvent as EventListener);
 });
 
 const { isLoading: waveformLoading, isLoaded: waveformLoaded } = useAudioWaveform({
@@ -274,7 +320,8 @@ const elementTooltip = computed(() => {
 		<!-- Element inner -->
 		<div
 			:class="[
-				'relative h-full cursor-pointer overflow-hidden rounded-[0.5rem] border-2',
+				'group relative h-full cursor-pointer overflow-hidden border-2',
+				(track.type === 'text' || track.type === 'audio' || track.type === 'sticker' || track.type === 'caption' || track.type === 'effect') ? 'rounded-[3px]' : 'rounded-[0.5rem]',
 				trackClasses,
 				isBeingDragged ? 'z-30' : 'z-10',
 				isHidden ? 'opacity-50' : '',
@@ -282,7 +329,10 @@ const elementTooltip = computed(() => {
 			:style="{ borderColor: borderColor, outline: isSelected ? '1.5px solid rgba(14, 165, 233, 0.6)' : 'none', outlineOffset: '0px' }"
 		>
 			<!-- Track name label (sits in the top blue bar, not over content) -->
-			<div class="pointer-events-none absolute top-0 left-1 right-0 z-30 h-[16px] flex items-center justify-between">
+			<div
+				class="pointer-events-none absolute top-0 left-1 right-0 z-30 h-[16px] flex items-center justify-between transition-opacity duration-150"
+				:class="track.type === 'audio' ? 'group-hover:opacity-0' : ''"
+			>
 				<span class="truncate text-[10px] leading-none font-medium text-white/90">{{ element.name }}</span>
 				<!-- Layer indicator badge -->
 				<span
@@ -318,8 +368,8 @@ const elementTooltip = computed(() => {
 					<div v-else-if="element.type === 'audio'" class="relative w-full h-full">
 						<canvas
 							ref="audioWaveformCanvas"
-							class="absolute left-0 right-0 w-full pointer-events-none"
-							style="top: 16px; height: calc(100% - 16px); mix-blend-mode: normal; z-index: 5"
+							class="absolute inset-0 w-full h-full pointer-events-none"
+							style="mix-blend-mode: normal; z-index: 5"
 						/>
 						<div
 							v-if="waveformLoading"

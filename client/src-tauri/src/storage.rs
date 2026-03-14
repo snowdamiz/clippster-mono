@@ -917,6 +917,48 @@ pub fn save_editor_media_file(
     Ok(file_path.to_string_lossy().to_string())
 }
 
+/// Copy an existing file into the editor-media directory for a project.
+/// Used when the user uploads a local file via the file picker — stores a
+/// managed copy so the project is portable and doesn't depend on the
+/// original file location.
+/// Returns the absolute path of the copied file.
+#[tauri::command]
+pub fn copy_file_to_project_media(
+    source_path: String,
+    project_id: String,
+    file_name: String,
+) -> Result<String, String> {
+    use std::fs;
+
+    let source = std::path::Path::new(&source_path);
+    if !source.exists() {
+        return Err(format!("Source file not found: {}", source_path));
+    }
+
+    let app_dir = get_app_storage_dir()?;
+    let media_dir = app_dir.join("editor-media").join(&project_id);
+
+    fs::create_dir_all(&media_dir)
+        .map_err(|e| format!("Failed to create editor-media directory: {}", e))?;
+
+    let dest = media_dir.join(&file_name);
+
+    // Skip copy if destination already exists with the same size (idempotent)
+    if dest.exists() {
+        if let (Ok(src_meta), Ok(dst_meta)) = (fs::metadata(source), fs::metadata(&dest)) {
+            if src_meta.len() == dst_meta.len() {
+                return Ok(dest.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    fs::copy(source, &dest)
+        .map_err(|e| format!("Failed to copy file to editor-media: {}", e))?;
+
+    println!("[Storage] Copied media file to project: {}", dest.display());
+    Ok(dest.to_string_lossy().to_string())
+}
+
 /// Tauri command to get video duration using FFmpeg
 #[tauri::command]
 pub async fn get_video_duration(app: tauri::AppHandle, video_path: String) -> Result<f64, String> {

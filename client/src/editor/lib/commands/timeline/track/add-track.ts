@@ -14,6 +14,7 @@ export class AddTrackCommand extends Command {
 	constructor(
 		private type: TrackType,
 		private index?: number,
+		private name?: string,
 	) {
 		super();
 		this.trackId = generateUUID();
@@ -26,6 +27,7 @@ export class AddTrackCommand extends Command {
 		const newTrack: TimelineTrack = buildEmptyTrack({
 			id: this.trackId,
 			type: this.type,
+			name: this.name,
 		});
 
 		const updatedTracks = [...(this.savedState || [])];

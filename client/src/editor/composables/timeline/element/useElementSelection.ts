@@ -8,7 +8,16 @@ import { usePreviewFocus } from "../../preview/usePreviewFocus";
 type ElementRef = { trackId: string; elementId: string };
 
 export function useElementSelection() {
-	const { editor, version } = useEditor();
+	const { editor, version } = useEditor({
+		subscribe: {
+			playback: false,
+			timeline: false,
+			scenes: false,
+			project: false,
+			media: false,
+			selection: true,
+		},
+	});
 	const { setPreviewFocused } = usePreviewFocus();
 
 	const selectedElements = computed(() => {
