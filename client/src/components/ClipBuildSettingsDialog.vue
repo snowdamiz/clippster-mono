@@ -1006,6 +1006,9 @@
     brandingType?: 'org' | 'campaign' | 'personal' | 'none';
     organizationId?: number | null;
     organizationName?: string | null;
+    // Pre-created build record IDs — when provided, pipeline skips creating a new record
+    buildId?: string;
+    buildNumber?: number;
   }
 
   // Re-export the IntroOutroItem type for use in other components
