@@ -430,7 +430,8 @@ defmodule ClippsterServerWeb.ClipsController do
     reconstructed_transcript = reconstruct_timeline_from_chunks(sorted_chunks)
 
     # Process chunks with AI - either parallel normal mode or parallel multimodal mode
-    system_prompt = SystemPrompt.get()
+    # Use news + trends enriched system prompt for better context awareness
+    system_prompt = SystemPrompt.get_with_full_context()
     total_chunks = length(sorted_chunks)
 
     {all_clips, total_usage_tokens} =
@@ -1494,7 +1495,8 @@ defmodule ClippsterServerWeb.ClipsController do
         end
 
         # Step 3: Send to OpenRouter API with system prompt using optimized transcript
-        system_prompt = SystemPrompt.get()
+        # Use news + trends enriched system prompt for better context awareness
+        system_prompt = SystemPrompt.get_with_full_context()
 
         ai_result =
           if multimodal do
@@ -3406,7 +3408,8 @@ defmodule ClippsterServerWeb.ClipsController do
             )
 
             # Build prompt for AI using existing system prompt
-            system_prompt = SystemPrompt.get()
+            # Use news + trends enriched system prompt for better context awareness
+            system_prompt = SystemPrompt.get_with_full_context()
 
             # Format pending clip context for AI
             pending_clip_context = if pending_clip do

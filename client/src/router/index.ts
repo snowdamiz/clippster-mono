@@ -351,6 +351,11 @@ const router = createRouter({
           component: () => import('@/pages/admin/AdminSettings.vue'),
         },
         {
+          path: 'news',
+          name: 'admin-news',
+          component: () => import('@/pages/admin/AdminNews.vue'),
+        },
+        {
           path: 'org-applications',
           name: 'admin-org-applications',
           component: () => import('@/pages/admin/AdminOrgApplications.vue'),

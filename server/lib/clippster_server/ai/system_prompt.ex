@@ -9,7 +9,7 @@ defmodule ClippsterServer.AI.SystemPrompt do
   **AI-POWERED CLIP DETECTION WITH BROAD COVERAGE:**
 
   You now have access to sophisticated timing analysis and content metrics to create perfectly paced, engaging clips.
-  **GOAL:** Detect MAXIMUM potential clips. It is better to include a "maybe" clip than to miss a good one.
+  **GOAL:** Detect high-quality viral clips. Bias toward inclusion, but every clip must have at least ONE moment that makes a viewer react.
 
   **ENHANCED DATA YOU RECEIVE:**
   Each transcript segment includes:
@@ -74,6 +74,9 @@ defmodule ClippsterServer.AI.SystemPrompt do
   - **Genuine Reaction**: Unfiltered emotional response (rage, joy, disbelief, cringe). Authenticity is everything.
   - **Heated Debate**: Two+ people passionately disagreeing. Both sides must be represented.
   - **The Rant/Rage**: Genuine anger or frustration that viewers relate to or find entertaining.
+  - **Personality/Banter/Chemistry**: Infectious energy, charisma, natural chemistry between people. The "that's so [streamer]" factor. Community in-jokes. This is the MOST clipped content on Kick — personality IS the content.
+  - **IRL Moments**: Confrontations, awkward encounters, street interviews, gym content, fight content, public interactions, unexpected situations in real life.
+  - **Energy Shift**: The moment someone's vibe changes (calm→hype, serious→cracking up, confident→tilted). These transitions are natural clip boundaries.
   - **Fail/Win**: Unexpected outcome — prediction goes wrong, bet pays off, plan backfires spectacularly.
   - **Wholesome/Emotional**: Unexpected kindness, vulnerability, or genuine human connection.
   - **Tutorial/Mind-Blow**: Information so surprising or useful the viewer MUST share it.
@@ -83,11 +86,12 @@ defmodule ClippsterServer.AI.SystemPrompt do
 
   **8. EMOTIONAL AROUSAL SCIENCE:**
   High-arousal emotions drive shares. Low-arousal emotions kill virality.
-  - **VIRAL emotions (high arousal)**: Awe, anger, anxiety, excitement, humor, outrage, surprise, cringe
+  - **VIRAL emotions (high arousal)**: Awe, anger, anxiety, excitement, humor, outrage, surprise, cringe, infectious energy, charisma, banter chemistry
   - **DEAD emotions (low arousal)**: Sadness, contentment, calm, boredom
   - A clip where someone is calmly explaining something = low virality UNLESS the information itself is shocking.
   - A clip where someone is YELLING the same information = 10x more viral.
   - Energy and delivery matter as much as content. Monotone = death.
+  - **CRITICAL**: A 30-second clip of someone being genuinely funny/charismatic > a 90-second clip of someone calmly explaining something interesting.
 
   **9. RETENTION & SHARE TRIGGERS:**
   **Retention (keeps people watching):**
@@ -197,11 +201,12 @@ defmodule ClippsterServer.AI.SystemPrompt do
   - Duration = end_time - start_time; total_duration = sum(segment durations).
   - combined_transcript = segments concatenated with proper spacing.
   - virality_score: 0–100 composite. Score each dimension, then weight:
-    * **Hook Power (30%)**: Does the first 1-2 seconds STOP THE SCROLL? Shock, bold claim, emotional spike, curiosity gap. No hook = cap score at 40 regardless of content quality. A clip with a killer hook and mediocre content outperforms a clip with great content and a weak hook.
-    * **Emotional Arousal (25%)**: HIGH-arousal emotions only. Anger, awe, excitement, humor, outrage, surprise, cringe = high score. Calm explanation, mild amusement, sadness = low score. Yelling > talking. Passion > logic.
-    * **Shareability (20%)**: Would someone send this to a friend? Quotable one-liners, meme potential, relatable moments, "you NEED to see this" factor, debate-starting takes, comment bait.
+    * **Hook Power (25%)**: Does the first 1-2 seconds STOP THE SCROLL? Shock, bold claim, emotional spike, curiosity gap. No hook = cap score at 40 regardless of content quality. A clip with a killer hook and mediocre content outperforms a clip with great content and a weak hook.
+    * **Emotional Arousal (20%)**: HIGH-arousal emotions only. Anger, awe, excitement, humor, outrage, surprise, cringe, infectious energy, charisma, banter chemistry = high score. Calm explanation, mild amusement, sadness = low score. Yelling > talking. Passion > logic.
+    * **Shareability (25%)**: Would someone send this to a friend? Quotable one-liners, meme potential, relatable moments, "you NEED to see this" factor, debate-starting takes, comment bait, personality moments, "that's so [streamer]" factor, community in-jokes.
     * **Retention Curve (15%)**: Does tension ESCALATE or plateau? Are there open loops? Does every second earn its place? Is there a satisfying payoff? Would someone re-watch? Dead spots in the middle = -15 penalty.
     * **Platform Fit (10%)**: Duration sweet spots (TikTok: 15-60s, YouTube Shorts: 30-90s, Twitter: 15-45s). Does it work on mute with captions? Is the energy right for the format?
+    * **Creator Factor (5%)**: For known viral creators, their personality IS the content. A "normal" moment from a viral creator has more clip value than the same moment from an unknown streamer.
   - filename: descriptive, lowercase, underscores, ends with .mp4.
   - socialMediaPost: engaging caption with hashtags (2-4) and emojis.
   - No additional text — ONLY the JSON response.
@@ -236,5 +241,67 @@ defmodule ClippsterServer.AI.SystemPrompt do
   """
   def get do
     @system_prompt
+  end
+
+  @doc """
+  Returns the system prompt enriched with current breaking news context.
+  
+  This adds recent news articles to help the AI identify trending topics and timely content.
+  """
+  def get_with_news_context do
+    news_context = ClippsterServer.News.get_ai_context(10)
+    
+    """
+    #{@system_prompt}
+
+    ---
+
+    **CURRENT BREAKING NEWS CONTEXT:**
+
+    Use this context to identify clips that relate to trending topics, current events, or breaking news.
+    Clips that tie into current events have higher virality potential.
+
+    #{news_context}
+
+    ---
+
+    When you detect clips that reference or relate to any of these news topics, mention it in the "reason" field
+
+    When you detect clips that reference or relate to any of these news topics,
+    mention it in the "reason" field and apply the appropriate virality boost based on connection strength.
+    """
+  end
+
+  @doc """
+  Returns the system prompt with news context for AI enrichment.
+  
+  This function fetches breaking news, formats it for AI context,
+  and injects it into the system prompt with explicit virality boost instructions.
+  """
+  def get_with_full_context do
+    news_context = ClippsterServer.News.get_ai_context(10)
+    
+    """
+    #{@system_prompt}
+
+    ---
+
+    **CURRENT BREAKING NEWS:**
+
+    Use this context to identify clips that relate to current events or breaking news.
+    Clips that tie into current events have higher virality potential.
+
+    #{news_context}
+
+    ---
+
+    **VIRALITY BOOST TIERS:**
+    - **Direct reaction to news topic:** +15 points
+    - **Discussion of current event:** +10 points
+    - **Tangential reference:** +5 points
+
+    When you detect clips that reference or relate to any of these news topics,
+    mention it in the "reason" field and apply the appropriate virality boost based on connection strength.
+    """
   end
 end

@@ -213,6 +213,9 @@ config :appsignal, :config,
 # Freesound API (sound effects search proxy)
 config :clippster_server, :freesound, api_key: System.get_env("FREESOUND_API_KEY")
 
+# TheNewsAPI (breaking news feed for AI context)
+config :clippster_server, :thenewsapi, api_key: System.get_env("THENEWSAPI_KEY")
+
 # Cloudflare R2 storage configuration (for organization assets)
 r2_account_id = System.get_env("R2_ACCOUNT_ID")
 
