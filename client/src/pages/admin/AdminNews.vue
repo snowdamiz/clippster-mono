@@ -8,166 +8,175 @@
   >
     <template #actions>
       <button 
-        class="admin-news__action-btn" 
+        class="action-btn" 
         :disabled="isFetching"
         @click="manualFetch"
       >
-        <Loader2 v-if="isFetching" class="admin-news__action-icon admin-news__action-icon--spin" />
-        <RefreshCw v-else class="admin-news__action-icon" />
+        <Loader2 v-if="isFetching" class="action-btn__icon" :class="{ 'animate-spin': isFetching }" />
+        <RefreshCw v-else class="action-btn__icon" />
         Fetch News Now
       </button>
     </template>
 
-    <div class="admin-news">
-      <!-- Page Heading -->
-      <div class="admin-news__heading">
-        <h1 class="admin-news__title">News Management</h1>
-        <p class="admin-news__subtitle">Manage breaking news feed for AI context enrichment</p>
-      </div>
-
-      <!-- Stats Header -->
-      <div class="admin-news__stats-header">
-        <div class="admin-news__stats-info">
-          <div class="admin-news__stats-icon">
-            <Newspaper class="admin-news__stats-icon-svg" />
+    <div class="news-page">
+      <!-- Stats Cards -->
+      <div class="stats-grid">
+        <div class="stat-card stat-card--cyan">
+          <div class="stat-card__icon">
+            <Newspaper />
           </div>
-          <div>
-            <h2 class="admin-news__stats-title">Breaking News Feed</h2>
-            <p class="admin-news__stats-desc">Articles are automatically fetched every 15 minutes</p>
+          <div class="stat-card__content">
+            <span class="stat-card__value">{{ newsArticles.length }}</span>
+            <span class="stat-card__label">Total Articles</span>
           </div>
         </div>
-        <div class="admin-news__stats-meta">
-          <div class="admin-news__stat-card">
-            <p class="admin-news__stat-label">Total Articles</p>
-            <p class="admin-news__stat-value">{{ newsArticles.length }}</p>
+        <div class="stat-card stat-card--purple">
+          <div class="stat-card__icon">
+            <Clock />
           </div>
-          <div class="admin-news__stat-card">
-            <p class="admin-news__stat-label">Last Fetched</p>
-            <p class="admin-news__stat-value">{{ lastFetchTime || 'Never' }}</p>
+          <div class="stat-card__content">
+            <span class="stat-card__value">{{ lastFetchTime || 'Never' }}</span>
+            <span class="stat-card__label">Last Fetched</span>
+          </div>
+        </div>
+        <div class="stat-card stat-card--green">
+          <div class="stat-card__icon">
+            <Star />
+          </div>
+          <div class="stat-card__content">
+            <span class="stat-card__value">{{ newsArticles.filter(a => a.is_featured).length }}</span>
+            <span class="stat-card__label">Featured</span>
           </div>
         </div>
       </div>
 
-      <!-- Filters -->
-      <div class="admin-news__filters">
-        <CustomDropdown
-          v-model="filters.category"
-          :options="categoryOptions"
-          placeholder="All Categories"
-          trigger-class="admin-news__dropdown-trigger"
-          @update:modelValue="loadNews"
-        />
-        <CustomDropdown
-          v-model="filters.featured"
-          :options="featuredOptions"
-          placeholder="All Articles"
-          trigger-class="admin-news__dropdown-trigger"
-          @update:modelValue="loadNews"
-        />
-        <span class="admin-news__stats-count">
-          {{ filteredArticles.length }} article{{ filteredArticles.length !== 1 ? 's' : '' }}
-        </span>
-      </div>
+      <!-- News Section -->
+      <section class="section">
+        <div class="section__header">
+          <div class="section__header-icon section__header-icon--cyan">
+            <Newspaper />
+          </div>
+          <div class="section__header-text">
+            <h2 class="section-title">Breaking News Feed</h2>
+            <p class="section-subtitle">Articles are automatically fetched every 15 minutes · {{ filteredArticles.length }} article{{ filteredArticles.length !== 1 ? 's' : '' }}</p>
+          </div>
+          <div class="filters">
+            <CustomDropdown
+              v-model="filters.category"
+              :options="categoryOptions"
+              placeholder="All Categories"
+              trigger-class="dropdown-trigger"
+              @update:modelValue="loadNews"
+            />
+            <CustomDropdown
+              v-model="filters.featured"
+              :options="featuredOptions"
+              placeholder="All Articles"
+              trigger-class="dropdown-trigger"
+              @update:modelValue="loadNews"
+            />
+          </div>
+        </div>
 
-      <!-- Loading State -->
-      <div v-if="loading" class="admin-news__loading">
-        <Loader2 class="admin-news__loading-icon" />
-        <p class="admin-news__loading-text">Loading news articles...</p>
-      </div>
+        <!-- Loading State -->
+        <div v-if="loading" class="loading-rows">
+          <div v-for="i in 6" :key="i" class="skeleton-row skeleton-row--lg"></div>
+        </div>
 
-      <!-- News Articles Grid -->
-      <div v-else-if="filteredArticles.length > 0" class="admin-news__grid">
-        <div 
-          v-for="article in filteredArticles" 
-          :key="article.uuid" 
-          class="admin-news__card"
-        >
-          <!-- Article Image -->
-          <div v-if="article.image_url" class="admin-news__card-image">
-            <img :src="article.image_url" :alt="article.title" />
-            <div v-if="article.is_featured" class="admin-news__featured-badge">
-              <Star class="admin-news__featured-icon" />
-              Featured
+        <!-- News Articles Grid -->
+        <div v-else-if="filteredArticles.length > 0" class="news-grid">
+          <div 
+            v-for="article in filteredArticles" 
+            :key="article.uuid" 
+            class="news-card"
+          >
+            <!-- Article Image -->
+            <div v-if="article.image_url" class="news-card__image">
+              <img :src="article.image_url" :alt="article.title" />
+              <div v-if="article.is_featured" class="news-card__badge">
+                <Star />
+                Featured
+              </div>
             </div>
-          </div>
 
-          <!-- Article Content -->
-          <div class="admin-news__card-content">
-            <h3 class="admin-news__card-title">{{ article.title }}</h3>
-            <p class="admin-news__card-description">
-              {{ article.description || article.snippet }}
-            </p>
+            <!-- Article Content -->
+            <div class="news-card__content">
+              <h3 class="news-card__title">{{ article.title }}</h3>
+              <p class="news-card__description">
+                {{ article.description || article.snippet }}
+              </p>
 
-            <!-- Article Meta -->
-            <div class="admin-news__card-meta">
-              <div class="admin-news__meta-row">
-                <span v-if="article.source" class="admin-news__source">
-                  <Building2 class="admin-news__meta-icon" />
+              <!-- Article Meta -->
+              <div class="news-card__meta">
+                <span v-if="article.source" class="news-card__source">
+                  <Building2 />
                   {{ article.source }}
                 </span>
-                <span class="admin-news__time">
-                  <Clock class="admin-news__meta-icon" />
+                <span class="news-card__time">
+                  <Clock />
                   {{ formatTimeAgo(article.published_at) }}
                 </span>
               </div>
-              <div v-if="article.categories.length > 0" class="admin-news__categories">
+              <div v-if="article.categories.length > 0" class="news-card__tags">
                 <span
                   v-for="category in article.categories.slice(0, 3)"
                   :key="category"
-                  class="admin-news__category-tag"
+                  class="news-card__tag"
                 >
                   {{ category }}
                 </span>
               </div>
-            </div>
 
-            <!-- Article Actions -->
-            <div class="admin-news__card-actions">
-              <button
-                class="admin-news__btn admin-news__btn--view"
-                @click="openArticle(article.url)"
-              >
-                <ExternalLink class="admin-news__btn-icon" />
-                View Article
-              </button>
-              <button
-                class="admin-news__btn admin-news__btn--feature"
-                :class="{ 'admin-news__btn--featured': article.is_featured }"
-                :disabled="updatingArticleId === article.uuid"
-                @click="toggleFeatured(article)"
-              >
-                <Loader2
-                  v-if="updatingArticleId === article.uuid"
-                  class="admin-news__btn-icon admin-news__btn-icon--spin"
-                />
-                <Star v-else class="admin-news__btn-icon" />
-                {{ article.is_featured ? 'Unfeature' : 'Feature' }}
-              </button>
-              <button
-                class="admin-news__btn admin-news__btn--delete"
-                :disabled="deletingArticleId === article.uuid"
-                @click="confirmDelete(article)"
-              >
-                <Loader2
-                  v-if="deletingArticleId === article.uuid"
-                  class="admin-news__btn-icon admin-news__btn-icon--spin"
-                />
-                <Trash2 v-else class="admin-news__btn-icon" />
-                Delete
-              </button>
+              <!-- Article Actions -->
+              <div class="news-card__actions">
+                <button
+                  class="card-btn card-btn--view"
+                  @click="openArticle(article.url)"
+                >
+                  <ExternalLink />
+                  View
+                </button>
+                <button
+                  class="card-btn card-btn--feature"
+                  :class="{ 'card-btn--featured': article.is_featured }"
+                  :disabled="updatingArticleId === article.uuid"
+                  @click="toggleFeatured(article)"
+                >
+                  <Loader2
+                    v-if="updatingArticleId === article.uuid"
+                    class="animate-spin"
+                  />
+                  <Star v-else />
+                  {{ article.is_featured ? 'Unfeature' : 'Feature' }}
+                </button>
+                <button
+                  class="card-btn card-btn--delete"
+                  :disabled="deletingArticleId === article.uuid"
+                  @click="confirmDelete(article)"
+                >
+                  <Loader2
+                    v-if="deletingArticleId === article.uuid"
+                    class="animate-spin"
+                  />
+                  <Trash2 v-else />
+                  Delete
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Empty State -->
-      <div v-else class="admin-news__empty">
-        <div class="admin-news__empty-icon">
-          <Newspaper class="admin-news__empty-icon-svg" />
+        <!-- Empty State -->
+        <div v-else class="empty-state">
+          <Newspaper class="empty-state__icon" />
+          <p class="empty-state__title">No news articles found</p>
+          <p class="empty-state__text">Fetch breaking news to populate the AI context feed</p>
+          <button class="empty-state__btn" @click="manualFetch">
+            <RefreshCw />
+            Fetch News Now
+          </button>
         </div>
-        <p class="admin-news__empty-text">No news articles found</p>
-        <button class="admin-news__empty-btn" @click="manualFetch">Fetch News Now</button>
-      </div>
+      </section>
     </div>
 
     <!-- Delete Confirmation Dialog -->
@@ -356,424 +365,485 @@
 </script>
 
 <style scoped>
-  .admin-news {
-    > :not([hidden]) ~ :not([hidden]) {
-      margin-top: 1.5rem;
+  /* ===== Page Container ===== */
+  .news-page {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  /* ===== Stats Grid ===== */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 0.875rem;
+  }
+
+  @media (min-width: 640px) {
+    .stats-grid {
+      grid-template-columns: repeat(3, 1fr);
     }
   }
 
-  /* ===== Heading ===== */
-  .admin-news__heading {
-    margin-bottom: 1.5rem;
-  }
-
-  .admin-news__title {
-    font-size: 1.5rem;
-    line-height: 2rem;
-    font-weight: 700;
-    color: #ffffff;
-    margin-bottom: 0.5rem;
-  }
-
-  .admin-news__subtitle {
-    color: #9ca3af;
-  }
-
-  /* ===== Stats Header ===== */
-  .admin-news__stats-header {
+  .stat-card {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    background-color: #1f2937;
-    border-radius: 0.5rem;
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
+    gap: 0.875rem;
+    padding: 1rem 1.125rem;
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    transition: border-color 180ms ease;
   }
 
-  .admin-news__stats-info {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+  .stat-card:hover {
+    border-color: rgba(255, 255, 255, 0.1);
   }
 
-  .admin-news__stats-icon {
-    width: 3rem;
-    height: 3rem;
-    border-radius: 0.5rem;
-    background-color: rgba(59, 130, 246, 0.1);
+  .stat-card__icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
   }
 
-  .admin-news__stats-icon-svg {
-    width: 1.5rem;
-    height: 1.5rem;
-    color: #60a5fa;
+  .stat-card__icon svg {
+    width: 18px;
+    height: 18px;
+    color: white;
   }
 
-  .admin-news__stats-title {
-    font-size: 1.125rem;
-    line-height: 1.75rem;
-    font-weight: 600;
-    color: #ffffff;
+  .stat-card--cyan .stat-card__icon {
+    background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
   }
 
-  .admin-news__stats-desc {
-    font-size: 0.875rem;
-    line-height: 1.25rem;
-    color: #9ca3af;
+  .stat-card--purple .stat-card__icon {
+    background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%);
   }
 
-  .admin-news__stats-meta {
+  .stat-card--green .stat-card__icon {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  }
+
+  .stat-card__content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .stat-card__value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    line-height: 1;
+  }
+
+  .stat-card__label {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* ===== Section ===== */
+  .section {
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    padding: 1.25rem;
+  }
+
+  .section__header {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.875rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
   }
 
-  .admin-news__stat-card {
-    text-align: right;
+  .section__header-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--sidebar-hover);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
   }
 
-  .admin-news__stat-label {
-    font-size: 0.75rem;
-    line-height: 1rem;
-    color: #9ca3af;
-    margin-bottom: 0.25rem;
+  .section__header-icon svg {
+    width: 18px;
+    height: 18px;
+    color: var(--sidebar-text-muted);
   }
 
-  .admin-news__stat-value {
-    font-size: 1.25rem;
-    line-height: 1.75rem;
-    font-weight: 700;
-    color: #ffffff;
+  .section__header-icon--cyan {
+    background: rgba(6, 182, 212, 0.1);
+  }
+
+  .section__header-icon--cyan svg {
+    color: #06b6d4;
+  }
+
+  .section__header-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .section-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.125rem;
+  }
+
+  .section-subtitle {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
   }
 
   /* ===== Action Button ===== */
-  .admin-news__action-btn {
-    display: flex;
+  .action-btn {
+    display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    background-color: #2563eb;
-    color: #ffffff;
-    border-radius: 0.5rem;
-    transition: background-color 0.2s;
+    gap: 0.375rem;
+    height: 32px;
+    padding: 0 0.875rem;
+    background: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 150ms ease;
   }
 
-  .admin-news__action-btn:hover {
-    background-color: #1d4ed8;
+  .action-btn:hover {
+    opacity: 0.9;
   }
 
-  .admin-news__action-btn:disabled {
+  .action-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  .admin-news__action-icon {
-    width: 1rem;
-    height: 1rem;
+  .action-btn__icon {
+    width: 13px;
+    height: 13px;
   }
 
-  .admin-news__action-icon--spin {
-    animation: spin 1s linear infinite;
+  .animate-spin {
+    animation: spin 0.8s linear infinite;
   }
 
   @keyframes spin {
-    from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
   }
 
   /* ===== Filters ===== */
-  .admin-news__filters {
+  .filters {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .admin-news__dropdown-trigger {
-    background-color: #1f2937;
-    border-color: #374151;
-    color: #ffffff;
-  }
-
-  .admin-news__stats-count {
+    gap: 0.5rem;
     margin-left: auto;
-    font-size: 0.875rem;
-    line-height: 1.25rem;
-    color: #9ca3af;
   }
 
-  /* ===== Loading State ===== */
-  .admin-news__loading {
+  .dropdown-trigger {
+    background: var(--sidebar-hover);
+    border-color: var(--sidebar-border);
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Loading Rows ===== */
+  .loading-rows {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem 0;
+    gap: 0.75rem;
   }
 
-  .admin-news__loading-icon {
-    width: 2rem;
-    height: 2rem;
-    color: #60a5fa;
-    animation: spin 1s linear infinite;
-    margin-bottom: 0.75rem;
+  .skeleton-row {
+    height: 60px;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 8px;
   }
 
-  .admin-news__loading-text {
-    color: #9ca3af;
+  .skeleton-row--lg {
+    height: 180px;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 
   /* ===== News Grid ===== */
-  .admin-news__grid {
+  .news-grid {
     display: grid;
-    grid-template-columns: repeat(1, minmax(0, 1fr));
-    gap: 1.5rem;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 0.875rem;
   }
 
   @media (min-width: 768px) {
-    .admin-news__grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+    .news-grid {
+      grid-template-columns: repeat(2, 1fr);
     }
   }
 
   @media (min-width: 1024px) {
-    .admin-news__grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+    .news-grid {
+      grid-template-columns: repeat(3, 1fr);
     }
   }
 
-  .admin-news__card {
-    background-color: #1f2937;
-    border-radius: 0.5rem;
+  .news-card {
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
     overflow: hidden;
-    border: 1px solid #374151;
-    transition: border-color 0.2s;
+    transition: border-color 180ms ease;
   }
 
-  .admin-news__card:hover {
-    border-color: #4b5563;
+  .news-card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
   }
 
-  .admin-news__card-image {
+  .news-card__image {
     position: relative;
-    height: 12rem;
+    height: 160px;
     overflow: hidden;
+    background: var(--sidebar-surface);
   }
 
-  .admin-news__card-image img {
+  .news-card__image img {
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
 
-  .admin-news__featured-badge {
+  .news-card__badge {
     position: absolute;
-    top: 0.75rem;
-    right: 0.75rem;
+    top: 0.5rem;
+    right: 0.5rem;
     display: flex;
     align-items: center;
     gap: 0.25rem;
-    background-color: #eab308;
-    color: #111827;
     padding: 0.25rem 0.5rem;
+    background: #eab308;
+    color: #111827;
     border-radius: 9999px;
-    font-size: 0.75rem;
-    line-height: 1rem;
+    font-size: 0.625rem;
+    font-weight: 700;
+  }
+
+  .news-card__badge svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  .news-card__content {
+    padding: 0.875rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .news-card__title {
+    font-size: 0.8125rem;
     font-weight: 600;
-  }
-
-  .admin-news__featured-icon {
-    width: 0.75rem;
-    height: 0.75rem;
-  }
-
-  .admin-news__card-content {
-    padding: 1rem;
-  }
-
-  .admin-news__card-content > :not([hidden]) ~ :not([hidden]) {
-    margin-top: 0.75rem;
-  }
-
-  .admin-news__card-title {
-    color: #ffffff;
-    font-weight: 600;
-    font-size: 0.875rem;
-    line-height: 1.25rem;
+    color: var(--sidebar-text);
+    line-height: 1.3;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
 
-  .admin-news__card-description {
-    color: #9ca3af;
-    font-size: 0.75rem;
-    line-height: 1rem;
+  .news-card__description {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.4;
     display: -webkit-box;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
 
-  .admin-news__card-meta {
-    > :not([hidden]) ~ :not([hidden]) {
-      margin-top: 0.5rem;
-    }
-  }
-
-  .admin-news__meta-row {
+  .news-card__meta {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    font-size: 0.75rem;
-    line-height: 1rem;
-    color: #6b7280;
+    gap: 0.625rem;
+    font-size: 0.625rem;
+    color: var(--sidebar-text-muted);
   }
 
-  .admin-news__source,
-  .admin-news__time {
+  .news-card__source,
+  .news-card__time {
     display: flex;
     align-items: center;
     gap: 0.25rem;
   }
 
-  .admin-news__meta-icon {
-    width: 0.75rem;
-    height: 0.75rem;
+  .news-card__source svg,
+  .news-card__time svg {
+    width: 11px;
+    height: 11px;
   }
 
-  .admin-news__categories {
+  .news-card__tags {
     display: flex;
     align-items: center;
     gap: 0.25rem;
     flex-wrap: wrap;
   }
 
-  .admin-news__category-tag {
-    background-color: #374151;
-    color: #d1d5db;
-    padding: 0.125rem 0.5rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    line-height: 1rem;
+  .news-card__tag {
+    padding: 0.125rem 0.375rem;
+    background: var(--sidebar-surface);
+    border-radius: 3px;
+    font-size: 0.5625rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
-  .admin-news__card-actions {
+  .news-card__actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid #374151;
+    gap: 0.375rem;
+    padding-top: 0.625rem;
+    border-top: 1px solid var(--sidebar-border);
   }
 
-  .admin-news__btn {
+  .card-btn {
     display: flex;
     align-items: center;
     gap: 0.25rem;
-    padding: 0.375rem 0.75rem;
-    border-radius: 0.5rem;
-    font-size: 0.75rem;
-    line-height: 1rem;
-    font-weight: 500;
-    transition: background-color 0.2s, color 0.2s;
+    padding: 0.25rem 0.5rem;
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
   }
 
-  .admin-news__btn:disabled {
+  .card-btn svg {
+    width: 11px;
+    height: 11px;
+  }
+
+  .card-btn:hover {
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
+  }
+
+  .card-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  .admin-news__btn-icon {
-    width: 0.75rem;
-    height: 0.75rem;
+  .card-btn--view:hover {
+    border-color: #06b6d4;
+    color: #06b6d4;
   }
 
-  .admin-news__btn-icon--spin {
-    animation: spin 1s linear infinite;
+  .card-btn--feature:hover {
+    border-color: #eab308;
+    color: #eab308;
   }
 
-  .admin-news__btn--view {
-    background-color: #374151;
-    color: #ffffff;
-  }
-
-  .admin-news__btn--view:hover {
-    background-color: #4b5563;
-  }
-
-  .admin-news__btn--feature {
-    background-color: #374151;
-    color: #ffffff;
-  }
-
-  .admin-news__btn--feature:hover {
-    background-color: #ca8a04;
-  }
-
-  .admin-news__btn--featured {
-    background-color: #eab308;
+  .card-btn--featured {
+    background: #eab308;
+    border-color: #eab308;
     color: #111827;
   }
 
-  .admin-news__btn--featured:hover {
-    background-color: #ca8a04;
+  .card-btn--featured:hover {
+    opacity: 0.9;
   }
 
-  .admin-news__btn--delete {
-    background-color: #374151;
-    color: #ffffff;
+  .card-btn--delete {
     margin-left: auto;
   }
 
-  .admin-news__btn--delete:hover {
-    background-color: #dc2626;
+  .card-btn--delete:hover {
+    border-color: #ef4444;
+    color: #ef4444;
   }
 
   /* ===== Empty State ===== */
-  .admin-news__empty {
+  .empty-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 3rem 0;
+    text-align: center;
+    padding: 3rem 1.5rem;
   }
 
-  .admin-news__empty-icon {
-    width: 4rem;
-    height: 4rem;
-    border-radius: 9999px;
-    background-color: #1f2937;
-    display: flex;
+  .empty-state__icon {
+    width: 48px;
+    height: 48px;
+    color: var(--sidebar-text-muted);
+    margin-bottom: 0.875rem;
+    opacity: 0.5;
+  }
+
+  .empty-state__title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+  }
+
+  .empty-state__text {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 1.125rem;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+
+  .empty-state__btn {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    margin-bottom: 1rem;
+    gap: 0.375rem;
+    height: 32px;
+    padding: 0 0.875rem;
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
   }
 
-  .admin-news__empty-icon-svg {
-    width: 2rem;
-    height: 2rem;
-    color: #4b5563;
+  .empty-state__btn:hover {
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
   }
 
-  .admin-news__empty-text {
-    color: #9ca3af;
-    margin-bottom: 1rem;
-  }
-
-  .admin-news__empty-btn {
-    padding: 0.5rem 1rem;
-    background-color: #2563eb;
-    color: #ffffff;
-    border-radius: 0.5rem;
-    transition: background-color 0.2s;
-  }
-
-  .admin-news__empty-btn:hover {
-    background-color: #1d4ed8;
+  .empty-state__btn svg {
+    width: 13px;
+    height: 13px;
   }
 </style>
