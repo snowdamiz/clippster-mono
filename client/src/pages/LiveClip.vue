@@ -511,6 +511,14 @@
           </button>
         </div>
       </Teleport>
+
+      <!-- Auto-Detection Limit Dialog -->
+      <AutoDetectLimitDialog
+        :show="showAutoDetectLimitDialog"
+        :active-streamer-name="autoDetectLimitDialogData.activeStreamerName"
+        :requested-streamer-name="autoDetectLimitDialogData.requestedStreamerName"
+        @close="showAutoDetectLimitDialog = false"
+      />
     </PageLayout>
   </div>
 </template>
@@ -540,6 +548,7 @@
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import RealtimeDetectionDialog from '@/components/RealtimeDetectionDialog.vue';
+  import AutoDetectLimitDialog from '@/components/AutoDetectLimitDialog.vue';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
   import { useLivestreamStore } from '@/stores/livestream';
   import { useToast } from '@/composables/useToast';
@@ -683,6 +692,8 @@
 
   const showCreditWarningDialog = ref(false);
   const pendingStreamerStart = ref<{ streamer: ExtendedStreamer; detectClips: boolean } | null>(null);
+  const showAutoDetectLimitDialog = ref(false);
+  const autoDetectLimitDialogData = ref<{ activeStreamerName: string; requestedStreamerName: string }>({ activeStreamerName: '', requestedStreamerName: '' });
 
   const liveStatusInterval = ref<number | null>(null);
 
@@ -1731,6 +1742,20 @@
     }
 
     if (detectClips) {
+      // Check if auto-detection is already active on another stream
+      if (realtimeDetection.isActive.value) {
+        // Find the currently detecting streamer
+        const detectingStreamer = streamers.value.find(s => s.isDetecting && s.mode === 'Auto-Detect');
+        if (detectingStreamer) {
+          autoDetectLimitDialogData.value = {
+            activeStreamerName: detectingStreamer.displayName,
+            requestedStreamerName: streamer.displayName,
+          };
+          showAutoDetectLimitDialog.value = true;
+          return;
+        }
+      }
+
       if (!(await gates.aiDetection(`Use AI clip detection for ${streamer.displayName}`))) {
         return;
       }
