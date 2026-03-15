@@ -569,6 +569,11 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
       %{"clips" => _} ->
         {:error, ["clips must be an array"]}
 
+      # Real-time detection format: {context_change, pending_clip} - valid response
+      %{"context_change" => _} ->
+        IO.puts("[OpenRouterAPI] AI returned real-time detection format (context_change) - valid")
+        :ok
+
       _ ->
         {:error, ["clips array is missing"]}
     end

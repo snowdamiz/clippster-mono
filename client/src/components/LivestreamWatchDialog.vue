@@ -724,27 +724,31 @@
     // Prevent opening if already open
     if (showClipModal.value) return;
 
-    // Snapshot the frozen segments: take only the last 3 minutes of available segments
+    // Snapshot the frozen segments: take the 3 minutes ending at the current playhead position
     const allSegments = viewer.state.value.availableSegments;
-    const totalDuration = viewer.state.value.totalRecordedDuration;
+    const playheadPosition = viewer.state.value.playbackPosition;
     const maxClipWindow = 180; // 3 minutes
 
-    if (totalDuration >= maxClipWindow) {
-      // Filter to segments that fall within the last 3 minutes
-      const cutoffTime = totalDuration - maxClipWindow;
-      const relevantSegments = allSegments.filter((s: SegmentInfo) => s.endTime > cutoffTime);
+    // Use the playhead position as the end of the clip window (not the live edge)
+    const windowEnd = playheadPosition;
+    const windowStart = Math.max(0, windowEnd - maxClipWindow);
+    const windowDuration = windowEnd - windowStart;
 
-      // Re-base segment times to start from 0 within the 3-minute window
+    if (windowDuration > 0) {
+      // Filter to segments that overlap with the window around the playhead
+      const relevantSegments = allSegments.filter((s: SegmentInfo) => s.endTime > windowStart && s.startTime < windowEnd);
+
+      // Re-base segment times to start from 0 within the window
       frozenSegments.value = relevantSegments.map((s: SegmentInfo) => ({
         ...s,
-        startTime: Math.max(0, s.startTime - cutoffTime),
-        endTime: s.endTime - cutoffTime,
+        startTime: Math.max(0, s.startTime - windowStart),
+        endTime: Math.min(windowDuration, s.endTime - windowStart),
       }));
-      frozenClipDuration.value = maxClipWindow;
+      frozenClipDuration.value = windowDuration;
     } else {
-      // Less than 3 minutes available, use all segments as-is
+      // No valid window, use all segments as-is
       frozenSegments.value = [...allSegments];
-      frozenClipDuration.value = totalDuration;
+      frozenClipDuration.value = viewer.state.value.totalRecordedDuration;
     }
 
     // Pause the main HLS video to avoid audio overlap

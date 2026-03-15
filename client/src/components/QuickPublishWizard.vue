@@ -987,17 +987,27 @@
                   Next
                   <ArrowRightIcon class="build-dialog__btn-icon" />
                 </button>
-                <button
-                  v-else
-                  @click="handlePublish"
-                  :disabled="!canPublish || isBuilding"
-                  class="build-dialog__btn build-dialog__btn--primary"
-                  :class="{ 'build-dialog__btn--disabled': !canPublish || isBuilding }"
-                >
-                  <Loader2 v-if="isBuilding" class="build-dialog__spinner" />
-                  <Share2 v-else class="build-dialog__btn-icon" />
-                  <span>{{ isBuilding ? 'Building...' : `Publish (${totalSelectedPlatforms})` }}</span>
-                </button>
+                <template v-else>
+                  <button
+                    @click="handleNotNow"
+                    :disabled="isBuilding"
+                    class="build-dialog__btn build-dialog__btn--secondary"
+                    :class="{ 'build-dialog__btn--disabled': isBuilding }"
+                    style="margin-right: 0.75rem;"
+                  >
+                    Not Now
+                  </button>
+                  <button
+                    @click="handlePublish"
+                    :disabled="!canPublish || isBuilding"
+                    class="build-dialog__btn build-dialog__btn--primary"
+                    :class="{ 'build-dialog__btn--disabled': !canPublish || isBuilding }"
+                  >
+                    <Loader2 v-if="isBuilding" class="build-dialog__spinner" />
+                    <Share2 v-else class="build-dialog__btn-icon" />
+                    <span>{{ isBuilding ? 'Building...' : `Publish (${totalSelectedPlatforms})` }}</span>
+                  </button>
+                </template>
               </div>
             </div>
           </div>
@@ -1066,6 +1076,8 @@ import { listUserTwitterAccounts, type UserTwitterAccount } from '@/services/use
 import { listUserTiktokAccounts, type UserTiktokAccount } from '@/services/userTiktokApi';
 import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services/userInstagramApi';
 import { listUserYoutubeAccounts, type UserYoutubeAccount } from '@/services/userYoutubeApi';
+import { createProject } from '@/services/database/projects';
+import { updateClip } from '@/services/database/clips';
 
 interface IntroOutroItem extends Omit<IntroOutro, 'id'> {
   id: string;
@@ -2611,6 +2623,51 @@ async function handlePublish() {
   // Close dialog immediately
   emit('published');
   emit('close');
+}
+
+async function handleNotNow() {
+  if (isBuilding.value) return;
+  
+  console.log('[QuickPublishWizard] Not Now clicked - saving as manual clip project');
+  
+  try {
+    // Create a manual clip project
+    const projectName = `Manual Clip - ${props.clip?.current_version_name || props.clip?.name || 'Untitled'}`;
+    const projectDescription = `Manual clip saved from Quick Publish wizard`;
+    
+    const projectId = await createProject(
+      projectName,
+      projectDescription,
+      undefined, // no parent
+      'Manual' // platform type
+    );
+    
+    console.log('[QuickPublishWizard] Created manual clip project:', projectId, projectName);
+    
+    // Update the clip to link it to this project using direct database update
+    if (props.clip?.id) {
+      const { getDatabase, timestamp } = await import('@/services/database/core');
+      const db = await getDatabase();
+      const now = timestamp();
+      await db.execute(
+        'UPDATE clips SET project_id = ?, updated_at = ? WHERE id = ?',
+        [projectId, now, props.clip.id]
+      );
+      console.log('[QuickPublishWizard] Linked clip to manual project');
+    }
+    
+    // Show success message
+    const { useToast } = await import('@/composables/useToast');
+    const toast = useToast();
+    toast.success('Clip saved to Manual Clips project');
+    
+    emit('close');
+  } catch (error) {
+    console.error('[QuickPublishWizard] Failed to save manual clip:', error);
+    const { useToast } = await import('@/composables/useToast');
+    const toast = useToast();
+    toast.error('Failed to save clip');
+  }
 }
 
 function handleClose() {
