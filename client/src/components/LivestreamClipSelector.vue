@@ -681,16 +681,15 @@
       const thumbnailFilePath = extractionResult.thumbnailPath;
 
       // Save clip to database
+      let clipId: string | null = null;
       try {
-        const clipId = await createClipRecord(effectiveProjectId, clipFilePath, {
+        clipId = await createClipRecord(effectiveProjectId, clipFilePath, {
           name: finalClipName,
           duration: clipDuration,
           startTime: clipStartTime,
           endTime: clipEndTime,
           thumbnailPath: thumbnailFilePath || undefined,
         });
-
-        createdClipId.value = clipId;
 
         const manualSessionId = await getOrCreateManualSession(effectiveProjectId);
         const versionId = await createClipVersion(
@@ -717,6 +716,8 @@
         console.warn('[ClipSelector] Failed to save clip to database:', dbErr);
       }
 
+      // Always set these values even if database save failed, so Publish Now button works
+      createdClipId.value = clipId;
       createdClipPath.value = clipFilePath;
       clipCreated.value = true;
       clipName.value = finalClipName;
@@ -751,15 +752,48 @@
   }
 
   // Close modal
-  function handleClose(force = false) {
+  async function handleClose(force = false) {
     if (isCreating.value && !force) {
       console.warn('[ClipSelector] Force closing while clip creation in progress');
     }
     
-    // Show toast notification if clip was successfully created
-    if (clipCreated.value && clipName.value) {
-      const { success } = useToast();
-      success('Clip Saved', `"${clipName.value}" has been saved to VOD Library`, undefined, 'clips');
+    // If clip was successfully created and user clicked "Not Now", save to manual project
+    if (clipCreated.value && createdClipId.value && clipName.value) {
+      try {
+        console.log('[ClipSelector] Not Now clicked - saving clip to manual project');
+        
+        // Create a manual clip project
+        const { createProject } = await import('@/services/database/projects');
+        const projectName = `Manual Clip - ${clipName.value}`;
+        const projectDescription = `Manual clip created from livestream`;
+        
+        const manualProjectId = await createProject(
+          projectName,
+          projectDescription,
+          undefined, // no parent
+          'Manual' // platform type
+        );
+        
+        console.log('[ClipSelector] Created manual clip project:', manualProjectId, projectName);
+        
+        // Link the clip to the manual project using direct database update
+        const { getDatabase, timestamp } = await import('@/services/database/core');
+        const db = await getDatabase();
+        const now = timestamp();
+        await db.execute(
+          'UPDATE clips SET project_id = ?, updated_at = ? WHERE id = ?',
+          [manualProjectId, now, createdClipId.value]
+        );
+        
+        console.log('[ClipSelector] Linked clip to manual project');
+        
+        const { success } = useToast();
+        success('Clip Saved', `"${clipName.value}" has been saved to Manual Clips`, undefined, 'clips');
+      } catch (err) {
+        console.error('[ClipSelector] Failed to save to manual project:', err);
+        const { error: errorToast } = useToast();
+        errorToast('Error', 'Failed to save clip to manual project');
+      }
     }
     
     cleanupProgressListener();
