@@ -182,6 +182,7 @@
     Mail,
     Megaphone,
     Sparkles,
+    Newspaper,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import PageLayout from '@/components/PageLayout.vue';
@@ -322,6 +323,13 @@
     if (!isAdmin.value) return [];
     
     return [
+      {
+        id: 'news',
+        title: 'News Management',
+        description: 'Manage breaking news feed for AI context',
+        icon: Newspaper,
+        route: '/admin/news',
+      },
       {
         id: 'beta-codes',
         title: 'Beta Codes',

@@ -59,7 +59,9 @@
                       :options="availableTemplatesOptions"
                       placeholder="— No template —"
                       trigger-class="vod-preset-dialog__select-trigger"
+                      :show-delete="true"
                       @update:model-value="handleTemplateChange"
+                      @delete="deleteTemplate"
                     />
                   </div>
                   <button
@@ -454,6 +456,7 @@
     StampIcon,
     MoveIcon,
     ChevronDownIcon,
+    XCircleIcon,
   } from 'lucide-vue-next';
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
   import WatermarkPositionPicker, { type CreatorWatermarkSettings } from './WatermarkPositionPicker.vue';
@@ -476,6 +479,7 @@
     getVodPresetsUnlinked,
     createVodPreset,
     updateVodPreset as updateVodPresetDb,
+    deleteVodPreset,
   } from '@/services/database/vod-presets';
   import { resolveApplicableProfiles } from '@/composables/useBrandingProfileSelection';
 
@@ -925,6 +929,26 @@
       selectedTemplateId.value = id;
     } catch (error) {
       console.error('[VodPresetEditor] Failed to save template:', error);
+    }
+  }
+
+  // Delete template
+  async function deleteTemplate(templateId: string, event: Event) {
+    event.stopPropagation();
+    
+    try {
+      await deleteVodPreset(templateId);
+      console.log('[VodPresetEditor] Template deleted:', templateId);
+      
+      // If the deleted template was selected, clear selection
+      if (selectedTemplateId.value === templateId) {
+        selectedTemplateId.value = '';
+      }
+      
+      // Reload templates
+      await loadTemplates();
+    } catch (error) {
+      console.error('[VodPresetEditor] Failed to delete template:', error);
     }
   }
 

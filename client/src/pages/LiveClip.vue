@@ -1557,6 +1557,20 @@
     selectedPromptId.value = data.promptId;
     selectedPromptContent.value = data.promptContent;
 
+    // Check if auto-detection is already active on another stream
+    if (realtimeDetection.isActive.value) {
+      // Find the currently detecting streamer
+      const detectingStreamer = streamers.value.find(s => s.isDetecting && s.mode === 'Auto-Detect');
+      if (detectingStreamer) {
+        autoDetectLimitDialogData.value = {
+          activeStreamerName: detectingStreamer.displayName,
+          requestedStreamerName: streamer.displayName,
+        };
+        showAutoDetectLimitDialog.value = true;
+        return;
+      }
+    }
+
     // Start DVR recording with 1-minute segments (triggers 4-second HLS chunks)
     await updateSegmentDuration(streamer, 1);
 
