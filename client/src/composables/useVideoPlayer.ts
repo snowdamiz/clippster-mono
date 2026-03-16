@@ -491,6 +491,9 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
       currentSegmentIndex.value = 0;
       isPlayingSegments.value = true;
       segmentPlaybackEnded.value = false;
+      
+      // Set isPlaying immediately so UI updates right away
+      isPlaying.value = true;
 
       // Seek to first segment and start playback
       const firstSegment = currentSegments.value[0];
@@ -509,8 +512,6 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
             stopSegmentedPlayback();
           });
         }
-
-        isPlaying.value = true;
       }
     } catch (error) {
       stopSegmentedPlayback();

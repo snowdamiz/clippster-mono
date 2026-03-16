@@ -485,7 +485,22 @@ defmodule ClippsterServerWeb.ClipsController do
       "[ClipsController] After merge: #{length(merged_clips)} clips (was #{length(all_clips)})"
     )
 
-    # Validation step - using the merged clips and the reconstructed full transcript
+    # Advanced deduplication - catches 2-3 second variations and content duplicates
+    IO.puts("[ClipsController] Running advanced duplicate detection...")
+    ProgressChannel.broadcast_progress(project_id, "deduplicating", 93, "Removing duplicate clips...")
+    deduplicated_clips = deduplicate_clips_advanced(merged_clips)
+
+    # Quality filtering - remove clips below minimum virality threshold
+    IO.puts("[ClipsController] Filtering clips by quality threshold...")
+    ProgressChannel.broadcast_progress(project_id, "filtering", 94, "Filtering low-quality clips...")
+    quality_filtered_clips = filter_by_minimum_virality(deduplicated_clips)
+
+    IO.puts(
+      "[ClipsController] After deduplication and quality filtering: #{length(quality_filtered_clips)} clips " <>
+      "(removed #{length(merged_clips) - length(quality_filtered_clips)} clips)"
+    )
+
+    # Validation step - using the filtered clips and the reconstructed full transcript
     IO.puts("[ClipsController] Starting enhanced clip validation with full timeline data...")
 
     ProgressChannel.broadcast_progress(
@@ -496,7 +511,7 @@ defmodule ClippsterServerWeb.ClipsController do
     )
 
     # Validate all clips against the reconstructed transcript
-    case ClipValidation.validate_and_correct_clips(merged_clips, reconstructed_transcript, true) do
+    case ClipValidation.validate_and_correct_clips(quality_filtered_clips, reconstructed_transcript, true) do
       {:ok, validation_result} ->
         IO.puts("[ClipsController] Enhanced validation completed")
         IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
@@ -3191,6 +3206,187 @@ defmodule ClippsterServerWeb.ClipsController do
     t2 = Map.get(clip2, "combined_transcript", "")
 
     if String.length(t1) >= String.length(t2), do: t1, else: t2
+  end
+
+  # Advanced duplicate detection using content similarity
+  # Catches duplicates that time-overlap logic misses (2-3 second variations, shifted boundaries)
+  defp deduplicate_clips_advanced(clips) do
+    Logger.info("[ClipsController] Running advanced deduplication on #{length(clips)} clips")
+    
+    tier1_removed = 0
+    tier2_removed = 0
+    tier3_removed = 0
+    
+    # Process clips in order, removing duplicates as we find them
+    {deduplicated, stats} = Enum.reduce(clips, {[], %{tier1: 0, tier2: 0, tier3: 0}}, fn clip, {acc, stats} ->
+      # Check if this clip is a duplicate of any clip already in the accumulator
+      case find_duplicate_clip(clip, acc) do
+        nil ->
+          # No duplicate found, add to accumulator
+          {[clip | acc], stats}
+        
+        {duplicate_of, tier} ->
+          # Found duplicate, log it and skip this clip
+          clip_start = get_clip_start_time(clip)
+          clip_end = get_clip_end_time(clip)
+          dup_start = get_clip_start_time(duplicate_of)
+          dup_end = get_clip_end_time(duplicate_of)
+          clip_score = Map.get(clip, "virality_score", 0) || 0
+          dup_score = Map.get(duplicate_of, "virality_score", 0) || 0
+          
+          Logger.info(
+            "[ClipsController] Tier #{tier} duplicate detected: " <>
+            "Clip #{clip_start}-#{clip_end} (score: #{clip_score}) is duplicate of " <>
+            "#{dup_start}-#{dup_end} (score: #{dup_score}). Keeping higher score."
+          )
+          
+          # Update stats
+          new_stats = Map.update!(stats, String.to_atom("tier#{tier}"), &(&1 + 1))
+          {acc, new_stats}
+      end
+    end)
+    
+    total_removed = stats.tier1 + stats.tier2 + stats.tier3
+    
+    Logger.info(
+      "[ClipsController] Advanced deduplication complete: " <>
+      "Removed #{total_removed} duplicates " <>
+      "(Tier 1: #{stats.tier1}, Tier 2: #{stats.tier2}, Tier 3: #{stats.tier3}). " <>
+      "#{length(deduplicated)} clips remaining."
+    )
+    
+    Enum.reverse(deduplicated)
+  end
+
+  # Find if a clip is a duplicate of any clip in the accumulator
+  # Returns {duplicate_clip, tier} or nil
+  defp find_duplicate_clip(clip, acc) do
+    clip_start = get_clip_start_time(clip)
+    clip_end = get_clip_end_time(clip)
+    clip_duration = clip_end - clip_start
+    clip_transcript = Map.get(clip, "combined_transcript", "")
+    clip_title = get_clip_title(clip)
+    clip_score = Map.get(clip, "virality_score", 0) || 0
+    
+    Enum.reduce_while(acc, nil, fn existing_clip, _result ->
+      existing_start = get_clip_start_time(existing_clip)
+      existing_end = get_clip_end_time(existing_clip)
+      existing_duration = existing_end - existing_start
+      existing_transcript = Map.get(existing_clip, "combined_transcript", "")
+      existing_title = get_clip_title(existing_clip)
+      existing_score = Map.get(existing_clip, "virality_score", 0) || 0
+      
+      # Tier 1: Exact duplicate detection (±3s start/end, >90% transcript similarity)
+      start_diff = abs(clip_start - existing_start)
+      end_diff = abs(clip_end - existing_end)
+      transcript_sim = calculate_transcript_similarity(clip_transcript, existing_transcript)
+      
+      if start_diff <= 3.0 and end_diff <= 3.0 and transcript_sim > 0.90 do
+        # Keep the clip with higher virality score
+        if clip_score > existing_score do
+          # Current clip is better, but we can't replace in accumulator
+          # So we skip this duplicate (the lower-scored one stays)
+          {:cont, nil}
+        else
+          # Existing clip is better, skip current clip
+          {:halt, {existing_clip, 1}}
+        end
+      else
+        # Tier 2: Near-duplicate detection (>30% overlap, >75% transcript similarity, <30% duration diff)
+        overlap_start = max(clip_start, existing_start)
+        overlap_end = min(clip_end, existing_end)
+        overlap_duration = max(0, overlap_end - overlap_start)
+        shorter_duration = min(clip_duration, existing_duration)
+        overlap_ratio = if shorter_duration > 0, do: overlap_duration / shorter_duration, else: 0
+        duration_diff_ratio = abs(clip_duration - existing_duration) / max(clip_duration, existing_duration)
+        
+        if overlap_ratio > 0.30 and transcript_sim > 0.75 and duration_diff_ratio < 0.30 do
+          # Keep the clip with higher virality score
+          if clip_score > existing_score do
+            {:cont, nil}
+          else
+            {:halt, {existing_clip, 2}}
+          end
+        else
+          # Tier 3: Content-based duplicate detection (>85% transcript similarity, >70% title similarity)
+          title_sim = calculate_transcript_similarity(clip_title, existing_title)
+          
+          if transcript_sim > 0.85 and title_sim > 0.70 do
+            # Keep the clip with higher virality score
+            if clip_score > existing_score do
+              {:cont, nil}
+            else
+              {:halt, {existing_clip, 3}}
+            end
+          else
+            # Not a duplicate
+            {:cont, nil}
+          end
+        end
+      end
+    end)
+  end
+
+  # Calculate transcript similarity using Jaro distance
+  # Returns a value between 0.0 (completely different) and 1.0 (identical)
+  defp calculate_transcript_similarity(text1, text2) do
+    # Normalize texts for comparison
+    norm1 = normalize_text_for_comparison(text1)
+    norm2 = normalize_text_for_comparison(text2)
+    
+    # Handle empty strings
+    if norm1 == "" or norm2 == "" do
+      0.0
+    else
+      # Use Jaro distance (built into Elixir String module)
+      String.jaro_distance(norm1, norm2)
+    end
+  end
+
+  # Normalize text for comparison (lowercase, remove punctuation, trim whitespace)
+  defp normalize_text_for_comparison(text) when is_binary(text) do
+    text
+    |> String.downcase()
+    |> String.replace(~r/[^\w\s]/, "")
+    |> String.replace(~r/\s+/, " ")
+    |> String.trim()
+  end
+  defp normalize_text_for_comparison(_), do: ""
+
+  # Get clip title from clip map
+  defp get_clip_title(clip) do
+    Map.get(clip, "title", "") || ""
+  end
+
+  # Filter clips by minimum virality score
+  # Removes clips below the quality threshold
+  defp filter_by_minimum_virality(clips) do
+    minimum_score = 50
+    
+    filtered = Enum.filter(clips, fn clip ->
+      virality_score = Map.get(clip, "virality_score", 0) || 0
+      virality_score >= minimum_score
+    end)
+    
+    removed_count = length(clips) - length(filtered)
+    
+    if removed_count > 0 do
+      Logger.info(
+        "[ClipsController] Quality filter: Removed #{removed_count} clips below minimum virality score (#{minimum_score}). " <>
+        "#{length(filtered)} clips remaining."
+      )
+      
+      # Log examples of removed clips for debugging
+      removed_clips = clips -- filtered
+      Enum.take(removed_clips, 3)
+      |> Enum.each(fn clip ->
+        score = Map.get(clip, "virality_score", 0) || 0
+        title = get_clip_title(clip)
+        Logger.info("[ClipsController] Removed low-quality clip: \"#{title}\" (score: #{score})")
+      end)
+    end
+    
+    filtered
   end
 
   # Reconstruct timeline from multiple chunk transcripts

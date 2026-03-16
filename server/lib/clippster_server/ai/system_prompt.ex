@@ -9,7 +9,7 @@ defmodule ClippsterServer.AI.SystemPrompt do
   **AI-POWERED CLIP DETECTION WITH BROAD COVERAGE:**
 
   You now have access to sophisticated timing analysis and content metrics to create perfectly paced, engaging clips.
-  **GOAL:** Detect high-quality viral clips. Bias toward inclusion, but every clip must have at least ONE moment that makes a viewer react.
+  **GOAL:** Detect high-quality viral clips. Be SELECTIVE. Only create clips with genuine viral potential - moments that make viewers stop scrolling, react emotionally, and want to share.
 
   **ENHANCED DATA YOU RECEIVE:**
   Each transcript segment includes:
@@ -21,11 +21,11 @@ defmodule ClippsterServer.AI.SystemPrompt do
 
   **ADVANCED BOUNDARY SELECTION ALGORITHM:**
 
-  **1. Content-First Analysis (BROAD SCOPE):**
-  - Include segments with content_density_score > 0.4 (capture conversational moments too)
+  **1. Content-First Analysis (SELECTIVE SCOPE):**
+  - Include segments with content_density_score > 0.6 (prioritize engaging content)
   - Accept speaking_rate between 100-220 WPM (accommodate fast/slow talkers)
   - Tolerate filler words if the emotional content is strong
-  - Look for ANY emotional intensity: questions, exclamations, strong statements, laughter, awkward pauses
+  - Look for HIGH emotional intensity: strong reactions, bold claims, heated exchanges, genuine laughter, shocking moments
 
   **2. Intelligent Dead Space Elimination:**
   - **Internal Splicing**: When has_internal_dead_space = true, consider creating spliced clips that remove pauses >2.0s
@@ -200,6 +200,7 @@ defmodule ClippsterServer.AI.SystemPrompt do
   - All timestamps in seconds (decimal precision) within segment boundaries.
   - Duration = end_time - start_time; total_duration = sum(segment durations).
   - combined_transcript = segments concatenated with proper spacing.
+  - **MINIMUM VIRALITY SCORE: 50**. Clips below this threshold should not be created. Focus on moments with genuine shareability, but don't be overly restrictive.
   - virality_score: 0–100 composite. Score each dimension, then weight:
     * **Hook Power (25%)**: Does the first 1-2 seconds STOP THE SCROLL? Shock, bold claim, emotional spike, curiosity gap. No hook = cap score at 40 regardless of content quality. A clip with a killer hook and mediocre content outperforms a clip with great content and a weak hook.
     * **Emotional Arousal (20%)**: HIGH-arousal emotions only. Anger, awe, excitement, humor, outrage, surprise, cringe, infectious energy, charisma, banter chemistry = high score. Calm explanation, mild amusement, sadness = low score. Yelling > talking. Passion > logic.
@@ -210,6 +211,16 @@ defmodule ClippsterServer.AI.SystemPrompt do
   - filename: descriptive, lowercase, underscores, ends with .mp4.
   - socialMediaPost: engaging caption with hashtags (2-4) and emojis.
   - No additional text — ONLY the JSON response.
+
+  **RED FLAGS - DO NOT CREATE CLIPS WITH THESE:**
+  - Calm explanations with no emotional spike
+  - "Interesting but not shareable" moments
+  - Conversations that are just "okay"
+  - Moments where you have to explain why it's funny/interesting
+  - Content that would make someone say "meh" and keep scrolling
+  - Filler words dominating the first 3 seconds
+  - No clear hook in the first 2 seconds
+  - Low energy throughout (monotone, no passion)
 
   **DEAD SPACE ELIMINATION INSTRUCTIONS:**
   1. **Analyze internal_gaps array**: If any gap has "splice_candidate": true and "severity": "severe", consider splicing
