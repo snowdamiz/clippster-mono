@@ -104,9 +104,22 @@ export async function splitClipSegment(
 ): Promise<{ leftSegmentIndex: number; rightSegmentIndex: number }> {
   const db = await getDatabase();
 
+  // Get the clip to check if it's a manual/auto-detected clip
+  const clips = await db.select<any[]>(
+    'SELECT session_prompt FROM clips WHERE id = ?',
+    [clipId]
+  );
+
+  if (clips.length === 0) {
+    throw new Error('Clip not found');
+  }
+
+  const isManualOrAutoClip = clips[0].session_prompt === 'Manual clip creation' || 
+                              clips[0].session_prompt?.includes('auto');
+
   // Get the current version ID for this clip
   const clipVersions = await db.select<ClipVersion[]>(
-    'SELECT id FROM clip_versions WHERE clip_id = ? ORDER BY version_number DESC LIMIT 1',
+    'SELECT id, start_time, end_time FROM clip_versions WHERE clip_id = ? ORDER BY version_number DESC LIMIT 1',
     [clipId]
   );
 
@@ -115,6 +128,7 @@ export async function splitClipSegment(
   }
 
   const versionId = clipVersions[0].id;
+  const versionStartTime = clipVersions[0].start_time;
 
   // Get the segment to split and all subsequent segments
   const segments = await db.select<ClipSegment[]>(
@@ -128,14 +142,24 @@ export async function splitClipSegment(
 
   const segmentToSplit = segments[segmentIndex];
 
+  // For manual/auto clips, the timeline shows 0-based timestamps (clip file starts at 0)
+  // but the database stores original livestream timestamps (e.g., 8-10 seconds)
+  // We need to adjust the cutTime from timeline space to database space
+  let adjustedCutTime = cutTime;
+  if (isManualOrAutoClip) {
+    // Add the original start time offset to convert from 0-based to original timestamps
+    adjustedCutTime = cutTime + versionStartTime;
+    console.log(`[splitClipSegment] Manual/auto clip detected, adjusting cutTime from ${cutTime} to ${adjustedCutTime} (offset: ${versionStartTime})`);
+  }
+
   // Validate cut time is within segment bounds
-  if (cutTime <= segmentToSplit.start_time || cutTime >= segmentToSplit.end_time) {
-    throw new Error('Cut time must be within segment boundaries');
+  if (adjustedCutTime <= segmentToSplit.start_time || adjustedCutTime >= segmentToSplit.end_time) {
+    throw new Error(`Cut time must be within segment boundaries (${segmentToSplit.start_time} - ${segmentToSplit.end_time})`);
   }
 
   // Validate minimum segment durations (0.5 seconds each)
-  const leftDuration = cutTime - segmentToSplit.start_time;
-  const rightDuration = segmentToSplit.end_time - cutTime;
+  const leftDuration = adjustedCutTime - segmentToSplit.start_time;
+  const rightDuration = segmentToSplit.end_time - adjustedCutTime;
 
   if (leftDuration < 0.5 || rightDuration < 0.5) {
     throw new Error('Both segments must be at least 0.5 seconds long');
@@ -168,9 +192,9 @@ export async function splitClipSegment(
           const rightWords = [];
 
           for (const word of transcriptData.words) {
-            if (word.end !== undefined && word.end <= cutTime) {
+            if (word.end !== undefined && word.end <= adjustedCutTime) {
               leftWords.push(word);
-            } else if (word.start !== undefined && word.start >= cutTime) {
+            } else if (word.start !== undefined && word.start >= adjustedCutTime) {
               rightWords.push(word);
             }
           }
@@ -183,9 +207,9 @@ export async function splitClipSegment(
           const rightSegments = [];
 
           for (const seg of transcriptData.segments) {
-            if (seg.end !== undefined && seg.end <= cutTime) {
+            if (seg.end !== undefined && seg.end <= adjustedCutTime) {
               leftSegments.push(seg);
-            } else if (seg.start !== undefined && seg.start >= cutTime) {
+            } else if (seg.start !== undefined && seg.start >= adjustedCutTime) {
               rightSegments.push(seg);
             }
           }
@@ -198,9 +222,9 @@ export async function splitClipSegment(
           const rightWords = [];
 
           for (const word of transcriptData) {
-            if (word.end !== undefined && word.end <= cutTime) {
+            if (word.end !== undefined && word.end <= adjustedCutTime) {
               leftWords.push(word);
-            } else if (word.start !== undefined && word.start >= cutTime) {
+            } else if (word.start !== undefined && word.start >= adjustedCutTime) {
               rightWords.push(word);
             }
           }
@@ -238,7 +262,7 @@ export async function splitClipSegment(
         versionId,
         segmentIndex,
         segmentToSplit.start_time,
-        cutTime,
+        adjustedCutTime,
         leftDuration,
         leftTranscript,
         now,
@@ -254,7 +278,7 @@ export async function splitClipSegment(
         rightSegmentId,
         versionId,
         segmentIndex + 1,
-        cutTime,
+        adjustedCutTime,
         segmentToSplit.end_time,
         rightDuration,
         rightTranscript,

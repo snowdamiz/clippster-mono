@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="show" class="build-dialog__overlay" @click.self="handleClose">
+      <div v-if="show" class="build-dialog__overlay">
         <Transition name="dialog" appear>
           <div v-if="show" class="build-dialog" role="dialog" aria-modal="true">
             <!-- Decorative top accent -->
@@ -2458,7 +2458,8 @@ async function startBuildProcess() {
     }
     
     // Create build record in database with tracking fields
-    const buildNumber = Date.now();
+    // Use modulo to fit timestamp in u32 range (max 4,294,967,295)
+    const buildNumber = Date.now() % 4294967295;
     const buildId = await createClipBuild(props.clip!.id, {
       aspectRatios: [target.aspectRatio],
       quality: quality.value,
@@ -4436,6 +4437,7 @@ onUnmounted(() => {
   border: none;
   cursor: pointer;
   transition: all 150ms ease;
+  white-space: nowrap;
 }
 
 .build-dialog__btn-icon {

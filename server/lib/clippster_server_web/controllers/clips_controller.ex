@@ -3213,9 +3213,9 @@ defmodule ClippsterServerWeb.ClipsController do
   defp deduplicate_clips_advanced(clips) do
     Logger.info("[ClipsController] Running advanced deduplication on #{length(clips)} clips")
     
-    tier1_removed = 0
-    tier2_removed = 0
-    tier3_removed = 0
+    _tier1_removed = 0
+    _tier2_removed = 0
+    _tier3_removed = 0
     
     # Process clips in order, removing duplicates as we find them
     {deduplicated, stats} = Enum.reduce(clips, {[], %{tier1: 0, tier2: 0, tier3: 0}}, fn clip, {acc, stats} ->
