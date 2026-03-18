@@ -82,7 +82,7 @@
         </div>
         <!-- View Transcript Button (when transcript exists) -->
         <button
-          v-else-if="transcriptData && !props.isGenerating"
+          v-else-if="isTranscriptAvailable && !props.isGenerating"
           @click="handleViewTranscript"
           class="group flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15 rounded-md transition-all border border-emerald-500/20 hover:border-emerald-500/30"
           title="View transcript"
@@ -92,7 +92,7 @@
         </button>
         <!-- Transcribe Button (when no transcript and not transcribing) -->
         <button
-          v-else-if="!props.isGenerating && isAIAllowed && !transcriptData"
+          v-else-if="!props.isGenerating && isAIAllowed && !isTranscriptAvailable"
           @click="handleTranscribe"
           class="group flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground/80 hover:text-foreground bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.06] hover:border-white/[0.1]"
           title="Generate transcript"
@@ -220,7 +220,8 @@
   const unlistenFunctions = ref<UnlistenFn[]>([]);
 
   // Use transcript data composable
-  const { transcriptData } = useTranscriptData(computed(() => props.projectId || null));
+  const { transcriptData, loadTranscriptData } = useTranscriptData(computed(() => props.projectId || null));
+  const isTranscriptAvailable = computed(() => (transcriptData.value?.words.length ?? 0) > 0);
 
   // Watermark state
   const getDefaultWatermarkSettings = (): WatermarkSettings => ({
@@ -255,6 +256,7 @@
 
     // Add event listener for refresh events
     document.addEventListener('refresh-clips', handleRefreshEvent as EventListener);
+    document.addEventListener('transcript-updated', handleTranscriptUpdated as EventListener);
 
     // Add event listeners for clip build events using Tauri API
     try {
@@ -273,6 +275,7 @@
   onUnmounted(() => {
     // Remove event listener to prevent memory leaks
     document.removeEventListener('refresh-clips', handleRefreshEvent as EventListener);
+    document.removeEventListener('transcript-updated', handleTranscriptUpdated as EventListener);
 
     // Clean up Tauri event listeners
     unlistenFunctions.value.forEach((unlisten) => {
@@ -416,8 +419,13 @@
     emit('playClip', clip);
   }
 
-  function onClipHover(clipId: string) {
-    emit('clipHover', clipId);
+  function onClipHover(clipId: string | null) {
+    if (clipId) {
+      emit('clipHover', clipId);
+      return;
+    }
+
+    emit('clipLeave');
   }
 
   function onSeekVideo(time: number) {
@@ -445,6 +453,15 @@
     if (event.detail?.projectId === props.projectId) {
       refreshClips();
     }
+  }
+
+  function handleTranscriptUpdated(event: Event) {
+    const customEvent = event as CustomEvent<{ projectId?: string }>;
+    if (!props.projectId || String(customEvent.detail?.projectId) !== String(props.projectId)) {
+      return;
+    }
+
+    void loadTranscriptData(props.projectId);
   }
 
   // Handle clip build progress events

@@ -101,13 +101,16 @@
 
       <!-- Subtitle Overlay -->
       <div
-        v-if="subtitleSettings?.enabled && visibleWords.length > 0 && videoSrc && !videoLoading"
-        class="absolute subtitle-overlay pointer-events-none z-20"
-        :style="getSubtitleContainerStyle"
+        v-if="subtitleSettings?.enabled && subtitleDisplayWords.length > 0 && videoSrc && !videoLoading"
+        ref="subtitleOverlayRef"
+        class="absolute subtitle-overlay z-20"
+        :class="{ 'subtitle-overlay--editable': subtitleEditingEnabled }"
+        :style="subtitleOverlayStyle"
+        @pointerdown.stop="onSubtitleDragStart"
       >
-        <div class="subtitle-text-container" :style="{ ...getSubtitleContainerStyle, gap: wordGapStyle }">
+        <div class="subtitle-text-container" :style="{ ...subtitleTextContainerStyle, gap: wordGapStyle }">
           <span
-            v-for="(wordInfo, index) in visibleWords"
+            v-for="(wordInfo, index) in subtitleDisplayWords"
             :key="`subtitle-word-${wordInfo.start}-${index}`"
             class="subtitle-word-stack"
             :class="getAnimationClass"
@@ -206,7 +209,7 @@
 
                 <!-- Box highlight background (rendered behind text) -->
                 <rect
-                  v-if="subtitleSettings?.animationStyle === 'box-highlight' && isCurrentWord(wordInfo)"
+                  v-if="subtitleSettings?.animationStyle === 'box-highlight' && isCurrentWord(wordInfo) && !wordInfo.isSample"
                   x="0"
                   y="15%"
                   width="100%"
@@ -218,6 +221,17 @@
               </g>
             </svg>
           </span>
+        </div>
+
+        <div v-if="subtitleEditingEnabled" class="subtitle-edit-frame">
+          <div class="subtitle-edit-pill">Drag</div>
+          <button
+            class="subtitle-resize-handle"
+            title="Resize subtitles"
+            @pointerdown.stop.prevent="onSubtitleResizeStart"
+          >
+            <span class="subtitle-resize-icon"></span>
+          </button>
         </div>
       </div>
 
@@ -274,11 +288,17 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
+  import { ref, watch, computed, onMounted, onUnmounted, type CSSProperties } from 'vue';
   import { Video, AlertTriangle, Play, Pause, Film, RotateCcw } from 'lucide-vue-next';
   import Hls from 'hls.js';
 
-  import type { WhisperSegment, WatermarkSettings, PerRatioWatermarkSettings, ManualRegion } from '@/types';
+  import type {
+    WhisperSegment,
+    WatermarkSettings,
+    PerRatioWatermarkSettings,
+    ManualRegion,
+    SubtitleSettings,
+  } from '@/types';
 
   interface WatermarkData {
     dataUrl: string; // Data URL for display
@@ -297,6 +317,7 @@
     transcriptWords?: WordInfo[];
     transcriptSegments?: WhisperSegment[];
     currentTime?: number;
+    subtitleEditingEnabled?: boolean;
     watermarkSettings?: WatermarkSettings;
     watermarkData?: WatermarkData | null;
     audioGainDb?: number; // dB gain (-20 to +20) for audio playback preview
@@ -308,37 +329,6 @@
     start: number;
     end: number;
     confidence?: number;
-  }
-
-  interface SubtitleSettings {
-    enabled: boolean;
-    fontFamily: string;
-    fontSize: number;
-    fontWeight: number;
-    textColor: string;
-    backgroundColor: string;
-    backgroundEnabled: boolean;
-    border1Width: number;
-    border1Color: string;
-    border2Width: number;
-    border2Color: string;
-    shadowOffsetX: number;
-    shadowOffsetY: number;
-    shadowBlur: number;
-    shadowColor: string;
-    position: 'top' | 'middle' | 'bottom';
-    positionPercentage: number;
-    maxWidth: number;
-    animationStyle: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave';
-    highlightColor: string;
-    lineHeight: number;
-    letterSpacing: number;
-    textAlign: 'left' | 'center' | 'right';
-    textOffsetX: number;
-    textOffsetY: number;
-    padding: number;
-    borderRadius: number;
-    wordSpacing: number;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -376,6 +366,7 @@
     transcriptWords: () => [],
     transcriptSegments: () => [],
     currentTime: 0,
+    subtitleEditingEnabled: false,
     watermarkSettings: () => ({
       enabled: false,
       watermarkId: null,
@@ -400,6 +391,7 @@
     (e: 'retryLoad'): void;
     (e: 'videoElementReady', element: HTMLVideoElement): void;
     (e: 'watermarkIdChange', watermarkId: string | null): void;
+    (e: 'subtitleSettingsChange', settings: SubtitleSettings): void;
   }
 
   const emit = defineEmits<Emits>();
@@ -407,7 +399,17 @@
   const videoElementRef = ref<HTMLVideoElement | null>(null);
   const videoContainerRef = ref<HTMLElement | null>(null);
   const framingCanvasRef = ref<HTMLCanvasElement | null>(null);
+  const subtitleOverlayRef = ref<HTMLElement | null>(null);
   const containerHeight = ref<number>(1080); // Default to 1080p height
+  const isDraggingSubtitle = ref(false);
+  const isResizingSubtitle = ref(false);
+  const subtitleInteraction = ref<{
+    startX: number;
+    startY: number;
+    startOffsetX: number;
+    startPositionPercentage: number;
+    startFontSize: number;
+  } | null>(null);
 
   // Multi-region framing
   const hasFramingRegions = computed(() => (props.framingRegions?.length ?? 0) > 0);
@@ -697,8 +699,24 @@
     return allSegmentWords.slice(startIndex, endIndex);
   });
 
+  const subtitleDisplayWords = computed((): Array<WordInfo & { isSample?: boolean }> => {
+    if (visibleWords.value.length > 0) {
+      return visibleWords.value;
+    }
+
+    if (!props.subtitleEditingEnabled || !props.subtitleSettings?.enabled) {
+      return [];
+    }
+
+    return [
+      { word: 'Sample', start: 0, end: 0, isSample: true },
+      { word: 'Subtitle', start: 0, end: 0, isSample: true },
+    ];
+  });
+
   // Check if a word is currently being spoken
   function isCurrentWord(word: WordInfo): boolean {
+    if ((word as WordInfo & { isSample?: boolean }).isSample) return false;
     const time = props.currentTime || 0;
     return time >= word.start && time <= word.end;
   }
@@ -763,49 +781,44 @@
     return Math.min(0.2, calculatedDuration);
   }
 
-  const getSubtitleContainerStyle = computed(() => {
+  const subtitleOverlayStyle = computed((): CSSProperties => {
     if (!props.subtitleSettings) return {};
 
     const settings = props.subtitleSettings;
-    let topPosition = '50%';
-
-    if (settings.position === 'top') {
-      topPosition = settings.positionPercentage + '%';
-    } else if (settings.position === 'middle') {
-      topPosition = settings.positionPercentage + '%';
-    } else {
-      topPosition = settings.positionPercentage + '%';
-    }
-
-    // Apply text offsets (X and Y adjustments in percentage)
-    const leftOffset = settings.textOffsetX || 0;
     const topOffset = settings.textOffsetY || 0;
 
-    // Calculate scaled values for advanced settings
+    return {
+      top: `calc(${settings.positionPercentage}% + ${topOffset}%)`,
+      left: '50%',
+      transform: `translate(calc(-50% + ${settings.textOffsetX || 0}%), -50%)`,
+      width: `${settings.maxWidth}%`,
+      pointerEvents: props.subtitleEditingEnabled ? 'auto' : 'none',
+    };
+  });
+
+  const subtitleTextContainerStyle = computed((): CSSProperties => {
+    if (!props.subtitleSettings) return {};
+
+    const settings = props.subtitleSettings;
     const scaledPadding = Math.round((settings.padding || 0) * finalFontSizeScale.value);
     const scaledBorderRadius = Math.round((settings.borderRadius || 0) * finalFontSizeScale.value);
     const scaledLineHeight = settings.lineHeight || 1.2;
 
-    // Base styles
-    const baseStyles: Record<string, string> = {
-      top: topPosition,
-      left: '50%',
-      transform: `translate(calc(-50% + ${leftOffset}%), calc(-50% + ${topOffset}%))`,
-      width: settings.maxWidth + '%',
+    const styles: CSSProperties = {
       display: 'flex',
       justifyContent: 'center',
       alignItems: 'center',
       lineHeight: String(scaledLineHeight),
+      width: '100%',
     };
 
-    // Add background styles if enabled
     if (settings.backgroundEnabled) {
-      baseStyles.backgroundColor = settings.backgroundColor || '#000000';
-      baseStyles.padding = `${scaledPadding}px`;
-      baseStyles.borderRadius = `${scaledBorderRadius}px`;
+      styles.backgroundColor = settings.backgroundColor || '#000000';
+      styles.padding = `${scaledPadding}px`;
+      styles.borderRadius = `${scaledBorderRadius}px`;
     }
 
-    return baseStyles;
+    return styles;
   });
 
   // Calculate the final font size scale factor
@@ -861,6 +874,91 @@
     return `${adjustedLetterSpacing}px`;
   });
 
+  function clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function onSubtitleDragStart(event: PointerEvent) {
+    if (!props.subtitleEditingEnabled || !props.subtitleSettings || isResizingSubtitle.value) {
+      return;
+    }
+
+    const target = event.target as HTMLElement;
+    if (target.closest('.subtitle-resize-handle')) {
+      return;
+    }
+
+    subtitleInteraction.value = {
+      startX: event.clientX,
+      startY: event.clientY,
+      startOffsetX: props.subtitleSettings.textOffsetX,
+      startPositionPercentage: props.subtitleSettings.positionPercentage,
+      startFontSize: props.subtitleSettings.fontSize,
+    };
+    isDraggingSubtitle.value = true;
+    window.addEventListener('pointermove', handleSubtitlePointerMove);
+    window.addEventListener('pointerup', stopSubtitleInteraction);
+  }
+
+  function onSubtitleResizeStart(event: PointerEvent) {
+    if (!props.subtitleEditingEnabled || !props.subtitleSettings) {
+      return;
+    }
+
+    subtitleInteraction.value = {
+      startX: event.clientX,
+      startY: event.clientY,
+      startOffsetX: props.subtitleSettings.textOffsetX,
+      startPositionPercentage: props.subtitleSettings.positionPercentage,
+      startFontSize: props.subtitleSettings.fontSize,
+    };
+    isResizingSubtitle.value = true;
+    window.addEventListener('pointermove', handleSubtitlePointerMove);
+    window.addEventListener('pointerup', stopSubtitleInteraction);
+  }
+
+  function handleSubtitlePointerMove(event: PointerEvent) {
+    if (!props.subtitleSettings || !videoContainerRef.value || !subtitleInteraction.value) {
+      return;
+    }
+
+    const containerRect = videoContainerRef.value.getBoundingClientRect();
+    const overlayRect = subtitleOverlayRef.value?.getBoundingClientRect();
+    const deltaX = event.clientX - subtitleInteraction.value.startX;
+    const deltaY = event.clientY - subtitleInteraction.value.startY;
+
+    if (isDraggingSubtitle.value) {
+      const boxWidth = overlayRect?.width || containerRect.width * (props.subtitleSettings.maxWidth / 100);
+      const nextOffsetX = subtitleInteraction.value.startOffsetX + (deltaX / Math.max(boxWidth, 1)) * 100;
+      const nextPositionPercentage =
+        subtitleInteraction.value.startPositionPercentage + (deltaY / Math.max(containerRect.height, 1)) * 100;
+
+      emit('subtitleSettingsChange', {
+        ...props.subtitleSettings,
+        textOffsetX: clamp(nextOffsetX, -60, 60),
+        positionPercentage: clamp(nextPositionPercentage, 5, 95),
+        textOffsetY: 0,
+      });
+      return;
+    }
+
+    if (isResizingSubtitle.value) {
+      const delta = (deltaX - deltaY) * 0.18;
+      emit('subtitleSettingsChange', {
+        ...props.subtitleSettings,
+        fontSize: clamp(Math.round(subtitleInteraction.value.startFontSize + delta), 16, 140),
+      });
+    }
+  }
+
+  function stopSubtitleInteraction() {
+    isDraggingSubtitle.value = false;
+    isResizingSubtitle.value = false;
+    subtitleInteraction.value = null;
+    window.removeEventListener('pointermove', handleSubtitlePointerMove);
+    window.removeEventListener('pointerup', stopSubtitleInteraction);
+  }
+
   // Watermark overlay computed properties
   const getWatermarkSrc = computed(() => {
     return props.watermarkData?.dataUrl || '';
@@ -880,6 +978,15 @@
       }
     },
     { immediate: true }
+  );
+
+  watch(
+    () => [props.subtitleEditingEnabled, props.subtitleSettings?.enabled],
+    ([isEditingEnabled, areSubtitlesEnabled]) => {
+      if (!isEditingEnabled || !areSubtitlesEnabled) {
+        stopSubtitleInteraction();
+      }
+    }
   );
 
   // Handle image load to get natural dimensions
@@ -1236,6 +1343,7 @@
   });
 
   onUnmounted(() => {
+    stopSubtitleInteraction();
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
@@ -1493,6 +1601,63 @@
   .watermark-image {
     filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.3));
     transition: opacity 0.3s ease;
+  }
+
+  .subtitle-overlay--editable {
+    cursor: grab;
+    user-select: none;
+  }
+
+  .subtitle-overlay--editable:active {
+    cursor: grabbing;
+  }
+
+  .subtitle-edit-frame {
+    pointer-events: none;
+    position: absolute;
+    inset: -10px;
+    border: 1px dashed rgba(34, 211, 238, 0.55);
+    border-radius: 12px;
+    box-shadow: 0 0 0 1px rgba(8, 145, 178, 0.15);
+  }
+
+  .subtitle-edit-pill {
+    position: absolute;
+    left: 12px;
+    top: -12px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    background: rgba(8, 145, 178, 0.95);
+    color: white;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .subtitle-resize-handle {
+    pointer-events: auto;
+    position: absolute;
+    right: -8px;
+    bottom: -8px;
+    display: flex;
+    width: 22px;
+    height: 22px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 9999px;
+    background: rgba(8, 145, 178, 0.95);
+    cursor: nwse-resize;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  }
+
+  .subtitle-resize-icon {
+    width: 10px;
+    height: 10px;
+    border-right: 2px solid rgba(255, 255, 255, 0.95);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.95);
+    transform: translate(-1px, -1px);
   }
 
   /* Video element styling */

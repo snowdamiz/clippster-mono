@@ -43,6 +43,11 @@
                     :is-playing="isPlaying"
                     :aspect-ratio="selectedAspectRatio"
                     :focal-point="effectiveFocalPoint"
+                    :subtitle-settings="subtitleSettings || undefined"
+                    :transcript-words="transcriptData?.words || []"
+                    :transcript-segments="transcriptData?.whisperSegments || []"
+                    :current-time="currentTime"
+                    :subtitle-editing-enabled="isSubtitleEditingEnabled"
                     :framing-regions="vodPresetConfig?.framingConfig?.regions"
                     :watermark-settings="watermarkSettings"
                     :watermark-data="currentWatermarkData"
@@ -56,6 +61,7 @@
                     @retryLoad="loadVideoForProject"
                     @videoElementReady="onVideoElementReady"
                     @watermarkIdChange="onWatermarkIdChange"
+                    @subtitleSettingsChange="onSubtitleSettingsChanged"
                   />
                 </div>
 
@@ -78,7 +84,7 @@
                 />
               </div>
 
-              <!-- Right Column: Tabs (Clips / Transcript) -->
+              <!-- Right Column: Tabs (Clips / Transcript / Subtitles) -->
               <div class="workspace-dialog__media-column">
                 <!-- Tab Bar -->
                 <div class="workspace-dialog__tab-bar">
@@ -90,15 +96,20 @@
                     Clips
                   </button>
                   <button
+                    v-if="isTranscribed"
                     class="workspace-dialog__tab"
-                    :class="{
-                      'workspace-dialog__tab--active': rightPanelTab === 'transcript',
-                      'workspace-dialog__tab--has-transcript': isTranscribed,
-                    }"
-                    @click="rightPanelTab = 'transcript'"
+                    :class="{ 'workspace-dialog__tab--active': rightPanelTab === 'transcript' }"
+                    @click="openTranscriptTab"
                   >
                     Transcript
-                    <span v-if="isTranscribed" class="workspace-dialog__tab-badge">✓</span>
+                  </button>
+                  <button
+                    v-if="isTranscribed"
+                    class="workspace-dialog__tab"
+                    :class="{ 'workspace-dialog__tab--active': rightPanelTab === 'subtitles' }"
+                    @click="openSubtitlesTab"
+                  >
+                    Subtitles
                   </button>
                 </div>
 
@@ -122,6 +133,7 @@
                   :creator-default-outro="creatorDefaultOutro"
                   :creator-profile="creatorProfile"
                   :creator-profile-server-id="creatorProfileServerId"
+                  :subtitle-settings="subtitleSettings"
                   :is-transcribing="isTranscribing"
                   :transcribe-progress="transcribeProgressValue"
                   :transcribe-stage="transcribeStage"
@@ -140,20 +152,25 @@
                   @publishNow="onPublishNow"
                   @transcribeProject="onTranscribeProject"
                   @cancelTranscription="onCancelTranscription"
-                  @viewTranscript="rightPanelTab = 'transcript'"
+                  @viewTranscript="openTranscriptTab"
                 />
 
                 <!-- Transcript Tab -->
-                <div v-show="rightPanelTab === 'transcript'" class="flex flex-col flex-1 h-full min-h-0 px-4">
-                  <TranscriptPanel
+                <div v-if="isTranscribed" v-show="rightPanelTab === 'transcript'" class="flex flex-col flex-1 h-full min-h-0">
+                  <ProjectWorkspaceTranscriptTab
                     :project-id="project?.id"
                     :current-time="currentTime"
                     :duration="duration"
-                    :hide-header="false"
-                    @seekTo="seekToTime"
+                    @seekVideo="seekToTime"
                     @createClipFromTranscript="onCreateClipFromTranscript"
-                    @deleteTimeRange="onDeleteTimeRange"
-                    @splitAtTime="onSplitAtTime"
+                  />
+                </div>
+
+                <!-- Subtitles Tab -->
+                <div v-if="isTranscribed" v-show="rightPanelTab === 'subtitles'" class="flex flex-col flex-1 h-full min-h-0">
+                  <ProjectWorkspaceSubtitlesTab
+                    :subtitle-settings="subtitleSettings"
+                    @updateSubtitleSettings="setSubtitleSettings"
                   />
                 </div>
               </div>
@@ -277,7 +294,7 @@
   import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
   import { X, Film } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
-  import type { WatermarkSettings } from '@/types';
+  import type { WatermarkSettings, SubtitleSettings } from '@/types';
   import VideoPlayer from './VideoPlayer.vue';
   import VideoControls from './VideoControls.vue';
   import MediaPanel from './MediaPanel.vue';
@@ -286,7 +303,8 @@
   import ConfirmationModal from './ConfirmationModal.vue';
   import ClipDetectionConfirmDialog from './ClipDetectionConfirmDialog.vue';
   import TranscriptionConfirmDialog from './TranscriptionConfirmDialog.vue';
-  import TranscriptPanel from './TranscriptPanel.vue';
+  import ProjectWorkspaceTranscriptTab from './ProjectWorkspaceTranscriptTab.vue';
+  import ProjectWorkspaceSubtitlesTab from './ProjectWorkspaceSubtitlesTab.vue';
   import { useTranscriptionOnly } from '@/composables/useTranscriptionOnly';
   import { useRouter } from 'vue-router';
   import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
@@ -343,7 +361,7 @@
   const showTranscribeConfirmDialog = ref(false);
 
   // Right panel tab state
-  const rightPanelTab = ref<'clips' | 'transcript'>('clips');
+  const rightPanelTab = ref<'clips' | 'transcript' | 'subtitles'>('clips');
 
   // Transcription progress state
   const isTranscribing = ref(false);
@@ -411,6 +429,9 @@
   // Current watermark image data (for VideoPlayer)
   const currentWatermarkData = ref<{ dataUrl: string; width?: number; height?: number } | null>(null);
   const currentWatermarkId = ref<string | null>(null);
+
+  // Workspace-scoped subtitle settings for preview and exports launched from this dialog
+  const subtitleSettings = ref<SubtitleSettings | null>(null);
 
   // Helper to normalize aspect ratio string
   const normalizedAspectRatio = computed(() => {
@@ -483,14 +504,14 @@
   const projectRef = computed(() => props.project);
 
   // Use transcript data composable for subtitles
-  const { transcriptData } = useTranscriptData(computed(() => props.project?.id || null));
+  const { transcriptData, loadTranscriptData } = useTranscriptData(computed(() => props.project?.id || null));
 
   const isTranscribed = computed(() => {
-    return !!(
-      transcriptData.value &&
-      transcriptData.value.whisperSegments &&
-      transcriptData.value.whisperSegments.length > 0
-    );
+    return (transcriptData.value?.words.length ?? 0) > 0;
+  });
+
+  const isSubtitleEditingEnabled = computed(() => {
+    return rightPanelTab.value === 'subtitles' && Boolean(subtitleSettings.value?.enabled);
   });
 
   // Initialize progress socket
@@ -700,6 +721,28 @@
     showTranscribeConfirmDialog.value = true;
   }
 
+  function openTranscriptTab() {
+    if (!isTranscribed.value) return;
+    rightPanelTab.value = 'transcript';
+  }
+
+  function openSubtitlesTab() {
+    if (!isTranscribed.value) return;
+    rightPanelTab.value = 'subtitles';
+  }
+
+  function setSubtitleSettings(nextSettings: SubtitleSettings | null) {
+    subtitleSettings.value = nextSettings ? { ...nextSettings } : null;
+  }
+
+  function onSubtitleSettingsChanged(nextSettings: SubtitleSettings) {
+    if (!subtitleSettings.value?.enabled) return;
+    subtitleSettings.value = {
+      ...subtitleSettings.value,
+      ...nextSettings,
+    };
+  }
+
   async function onTranscribeConfirmed(organizationId: number | null = null) {
     if (!props.project?.id) return;
 
@@ -733,8 +776,9 @@
         } else {
           showSuccess('Transcription Complete', 'Transcript is ready for viewing.');
         }
-        // Auto-switch to transcript tab after successful transcription
-        rightPanelTab.value = 'transcript';
+
+        await loadTranscriptData(projectId);
+        openTranscriptTab();
       }
     } catch (err) {
       console.error('[ProjectWorkspaceDialog] Transcription failed:', err);
@@ -779,23 +823,6 @@
       const { error: showErr } = useToast();
       showErr('Clip Creation Failed', 'Failed to create clip from transcript selection.');
     }
-  }
-
-  function onDeleteTimeRange(startTime: number, endTime: number) {
-    console.log('[ProjectWorkspaceDialog] Delete time range:', startTime, '-', endTime);
-    // In the workspace dialog context, transcript delete removes the time range from clips
-    // by adjusting clip boundaries. This is a non-destructive operation on the source video.
-    const { success: showSuccess } = useToast();
-    showSuccess('Time Range Marked', `Marked ${(endTime - startTime).toFixed(1)}s for removal. Clips will be adjusted.`);
-  }
-
-  function onSplitAtTime(time: number) {
-    console.log('[ProjectWorkspaceDialog] Split at time:', time);
-    // In the workspace dialog context, splitting creates a new clip boundary at the given time
-    const { success: showSuccess } = useToast();
-    const mins = Math.floor(time / 60);
-    const secs = Math.floor(time % 60);
-    showSuccess('Split Point', `Split point set at ${mins}:${secs.toString().padStart(2, '0')}.`);
   }
 
   function onCancelTranscription() {
@@ -972,6 +999,8 @@
             if (timelineRef.value && timelineRef.value.loadTranscriptData) {
               await timelineRef.value.loadTranscriptData(projectId);
             }
+
+            await loadTranscriptData(projectId);
 
             // Emit refresh events for other components
             const refreshEvent = new CustomEvent('refresh-clips', {
@@ -2541,6 +2570,7 @@
         resetProgress();
         // Reset right panel tab
         rightPanelTab.value = 'clips';
+        subtitleSettings.value = null;
         // Clear creator profile
         creatorProfile.value = null;
       }
@@ -2593,6 +2623,7 @@
       hoveredClipId.value = null;
       hoveredTimelineClipId.value = null;
       currentlyPlayingClipId.value = null;
+      subtitleSettings.value = null;
 
       // Reload assets for the new project
       await loadVideos();
@@ -2634,6 +2665,19 @@
   );
 
   // Watch for dialog close to disconnect socket
+  watch(
+    isTranscribed,
+    (hasTranscript) => {
+      if (!hasTranscript && rightPanelTab.value !== 'clips') {
+        rightPanelTab.value = 'clips';
+      }
+      if (!hasTranscript) {
+        subtitleSettings.value = null;
+      }
+    },
+    { immediate: true }
+  );
+
   watch(
     () => props.modelValue,
     (newValue) => {
@@ -2753,16 +2797,30 @@
   onMounted(() => {
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('keydown', handleKeydown);
+    document.addEventListener('transcript-updated', handleTranscriptUpdated as EventListener);
   });
 
   onUnmounted(() => {
     document.removeEventListener('fullscreenchange', handleFullscreenChange);
     document.removeEventListener('keydown', handleKeydown);
+    document.removeEventListener('transcript-updated', handleTranscriptUpdated as EventListener);
     // Ensure we exit fullscreen on unmount
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
     }
   });
+
+  async function handleTranscriptUpdated(event: Event) {
+    const customEvent = event as CustomEvent<{ projectId?: string }>;
+    const eventProjectId = customEvent.detail?.projectId;
+    const currentProjectId = props.project?.id;
+
+    if (!eventProjectId || !currentProjectId || String(eventProjectId) !== String(currentProjectId)) {
+      return;
+    }
+
+    await loadTranscriptData(currentProjectId);
+  }
 </script>
 
 <style scoped>
@@ -2973,20 +3031,6 @@
   .workspace-dialog__tab--active {
     color: var(--sidebar-text, rgba(255, 255, 255, 0.9));
     border-bottom-color: var(--sidebar-accent, #06b6d4);
-  }
-
-  .workspace-dialog__tab--has-transcript {
-    color: #4ade80;
-  }
-
-  .workspace-dialog__tab--has-transcript.workspace-dialog__tab--active {
-    border-bottom-color: #22c55e;
-  }
-
-  .workspace-dialog__tab-badge {
-    font-size: 0.625rem;
-    font-weight: 700;
-    color: #22c55e;
   }
 
   /* ===== Timeline Section ===== */
