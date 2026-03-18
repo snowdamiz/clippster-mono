@@ -1961,11 +1961,18 @@
     await nextTick();
     scrollToClipInTimeline(clip.id);
 
-    // Check if this is a standalone clip file (exported/built clip)
-    // If the clip has a built_file_path, it's an exported clip - load it directly
-    // Otherwise, use segment playback on the raw video
+    // Check if this is a manual or auto-detected clip from livestream
+    // These clips ARE the source video (extracted during live stream)
+    // We should NOT load built files for these - instead use segment playback
+    const isManualOrAutoClip = clip.session_prompt === 'Manual clip creation' || 
+                                clip.session_prompt?.includes('auto') ||
+                                !clip.file_path || 
+                                clip.file_path === clip.built_file_path;
+    
+    // Check if this is a standalone clip file (exported/built clip from VOD)
+    // Only load built files for VOD clips, not manual/auto-detected clips
     const builtFilePath = clip.built_file_path;
-    const isBuiltClip = builtFilePath && builtFilePath.trim() !== '';
+    const isBuiltClip = builtFilePath && builtFilePath.trim() !== '' && !isManualOrAutoClip;
 
     if (isBuiltClip) {
       console.log('[ProjectWorkspaceDialog] Loading built clip file:', builtFilePath);
@@ -1980,8 +1987,11 @@
 
         if (videoElement.value) {
           videoElement.value.currentTime = 0;
+          // Set isPlaying immediately so UI updates right away
+          isPlaying.value = true;
           videoElement.value.play().catch((err) => {
             console.warn('[ProjectWorkspaceDialog] Autoplay prevented for built clip:', err);
+            isPlaying.value = false;
           });
         }
         
@@ -1996,33 +2006,117 @@
       }
     }
 
-    // Check if this is a standalone clip file (DVR/livestream extracted clip)
-    // If the clip has a file_path that's different from the currently loaded video, load it
+    // Check if this is a manual/auto-detected clip that needs to be loaded as main video
+    // For these clips, load the clip file as the main video source and use segment playback
     const clipFilePath = clip.filename || clip.file_path;
     const hasClipFile = clipFilePath && clipFilePath.trim() !== '';
     const isDifferentFile = hasClipFile && videoSrc.value !== clipFilePath;
     const hasNoRawVideo = !videoSrc.value;
-    const isStandaloneClip = hasClipFile && (hasNoRawVideo || isDifferentFile);
+    const needsVideoLoad = hasClipFile && (hasNoRawVideo || isDifferentFile);
 
-    if (isStandaloneClip) {
+    if (needsVideoLoad && isManualOrAutoClip) {
+      console.log('[ProjectWorkspaceDialog] Loading manual/auto clip as main video source:', clipFilePath);
+      const loaded = await loadVideoFromPath(clipFilePath);
+      if (loaded) {
+        // Wait for video to be ready
+        await nextTick();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        
+        // For manual/auto clips, the clip file starts at 0, but segments are stored with
+        // their original livestream timestamps. We need to adjust them to be 0-based.
+        const clipStartOffset = clip.current_version_start_time ?? clip.start_time ?? 0;
+        const clipDuration = duration.value || clip.total_duration || 
+                            (clip.current_version_end_time - clip.current_version_start_time) || 
+                            (clip.end_time - clip.start_time) || 0;
+        
+        // Get the clip's segments and adjust timestamps to be 0-based
+        let adjustedSegments = [];
+        if (clip.segments && clip.segments.length > 0) {
+          adjustedSegments = clip.segments.map((seg: any, index: number) => ({
+            id: seg.id || `seg-${clip.id}-${index}`,
+            clip_version_id: clip.current_version_id || clip.id,
+            segment_index: index,
+            start_time: Math.max(0, seg.start_time - clipStartOffset),
+            end_time: Math.min(clipDuration, seg.end_time - clipStartOffset),
+            duration: seg.duration,
+            transcript: seg.transcript || '',
+            transcript_raw_json: null,
+            audio_peaks: null,
+            created_at: Date.now(),
+            updated_at: Date.now()
+          }));
+        } else {
+          // No segments, create one spanning the full clip
+          adjustedSegments = [{
+            id: `trim-${clip.id}`,
+            clip_version_id: clip.current_version_id || clip.id,
+            segment_index: 0,
+            start_time: 0,
+            end_time: clipDuration,
+            duration: clipDuration,
+            transcript: clip.combined_transcript || clip.current_version_description || '',
+            transcript_raw_json: null,
+            audio_peaks: null,
+            created_at: Date.now(),
+            updated_at: Date.now()
+          }];
+        }
+        
+        console.log('[ProjectWorkspaceDialog] Playing manual/auto clip with adjusted segments:', adjustedSegments);
+        playClipSegments(adjustedSegments);
+        
+        // Update timelineClips to show the adjusted clip in the timeline
+        // This is critical - the timeline needs the clip with 0-based timestamps
+        timelineClips.value = [{
+          id: clip.id,
+          title: clip.title || clip.name || 'Manual Clip',
+          filename: clipFilePath,
+          type: 'continuous',
+          segments: adjustedSegments.map(seg => ({
+            start_time: seg.start_time,
+            end_time: seg.end_time,
+            duration: seg.duration,
+            transcript: seg.transcript
+          })),
+          total_duration: clipDuration,
+          combined_transcript: clip.combined_transcript || clip.current_version_description || '',
+          virality_score: clip.virality_score || 0,
+          current_version_virality_score: clip.current_version_virality_score || 0,
+          reason: clip.reason || 'Manual clip',
+          socialMediaPost: clip.socialMediaPost || '',
+          run_number: clip.run_number,
+          run_color: clip.run_color,
+          session_prompt: clip.session_prompt
+        }];
+        
+        // Clear guard flag
+        if (skipPlaybackEndedClearTimeout) {
+          clearTimeout(skipPlaybackEndedClearTimeout);
+          skipPlaybackEndedClearTimeout = null;
+        }
+        skipPlaybackEndedClear = false;
+        
+        return;
+      }
+    }
+    
+    // For other standalone clips (not manual/auto), load and play directly
+    if (needsVideoLoad && !isManualOrAutoClip) {
       console.log('[ProjectWorkspaceDialog] Loading standalone clip file:', clipFilePath);
       const loaded = await loadVideoFromPath(clipFilePath);
       if (loaded) {
-        // For standalone clips, we just play from start - the whole file is the clip
-        // Wait for the video element to be ready after loading
         await nextTick();
-
-        // Wait a bit more for the video element to actually render and be accessible
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         if (videoElement.value) {
           videoElement.value.currentTime = 0;
+          isPlaying.value = true;
           videoElement.value.play().catch((err) => {
             console.warn('[ProjectWorkspaceDialog] Autoplay prevented for standalone clip:', err);
+            isPlaying.value = false;
           });
         }
         
-        // Clear guard flag and timeout since we're done with this playback
         if (skipPlaybackEndedClearTimeout) {
           clearTimeout(skipPlaybackEndedClearTimeout);
           skipPlaybackEndedClearTimeout = null;
