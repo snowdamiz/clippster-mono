@@ -1,4 +1,5 @@
 // Barrel file - re-exports from all database modules
+// Audio download and playlist exports added
 export * from './types';
 export * from './core';
 export * from './projects';
@@ -34,3 +35,5 @@ export * from './watermark-presets';
 export * from './watermarks';
 export * from './vod-presets';
 export * from './user-preferences';
+export * from './downloaded-audio';
+export * from './audio-playlists';

@@ -1,6 +1,6 @@
 defmodule ClippsterServer.News.NewsPoller do
   @moduledoc """
-  GenServer that polls TheNewsAPI every 15 minutes to fetch breaking news.
+  GenServer that polls TheNewsAPI every 20 minutes to fetch breaking news.
   Also performs cleanup of old articles every hour.
   """
   use GenServer
@@ -8,7 +8,7 @@ defmodule ClippsterServer.News.NewsPoller do
 
   alias ClippsterServer.News
 
-  @poll_interval :timer.minutes(15)
+  @poll_interval :timer.minutes(20)
   @cleanup_interval :timer.hours(1)
   @article_retention_hours 24
 

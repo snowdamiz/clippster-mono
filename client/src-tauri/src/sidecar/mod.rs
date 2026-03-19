@@ -26,7 +26,7 @@ fn get_target_triple() -> &'static str {
 }
 
 /// Resolve the bundled node binary path using Tauri's sidecar naming convention.
-fn resolve_node_binary() -> Result<String, String> {
+pub fn resolve_node_binary() -> Result<String, String> {
     let exe_path =
         std::env::current_exe().map_err(|e| format!("Failed to get executable path: {}", e))?;
 

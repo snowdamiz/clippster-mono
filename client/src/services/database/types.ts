@@ -581,3 +581,37 @@ export interface CreatorProfileWithLinks extends CreatorProfile {
   campaign_title?: string | null;
   context_type?: 'personal' | 'organization' | 'campaign';
 }
+
+export interface DownloadedAudio {
+  id: string;
+  title: string;
+  source: 'youtube' | 'twitter' | 'upload';
+  platform: string | null;
+  source_url: string | null;
+  file_path: string;
+  duration: number | null;
+  file_size: number | null;
+  sample_rate: number | null;
+  channels: number | null;
+  thumbnail_url: string | null;
+  user_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface AudioPlaylist {
+  id: string;
+  name: string;
+  description: string | null;
+  user_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface AudioPlaylistItem {
+  id: string;
+  playlist_id: string;
+  audio_id: string;
+  position: number;
+  created_at: number;
+}

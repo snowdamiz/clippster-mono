@@ -1472,11 +1472,11 @@ fn get_target_triple() -> &'static str {
     compile_error!("Unsupported platform - only x86_64 Windows/Linux and x86_64/aarch64 macOS are supported");
 }
 
-fn resolve_ytdlp_binary() -> Result<String, String> {
+pub fn resolve_ytdlp_binary() -> Result<String, String> {
     resolve_sidecar_binary("yt-dlp")
 }
 
-fn resolve_ffmpeg_binary() -> Result<String, String> {
+pub fn resolve_ffmpeg_binary() -> Result<String, String> {
     resolve_sidecar_binary("ffmpeg")
 }
 

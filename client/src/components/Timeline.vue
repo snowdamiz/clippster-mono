@@ -399,6 +399,12 @@
     (newClips) => {
       if (newClips) {
         localClips.value = sortClips(newClips);
+        
+        // Auto-reveal all clips when they load
+        // This ensures manual clips and auto-detected clips from livestreams are visible
+        newClips.forEach((clip) => {
+          visibleClipIds.value.add(clip.id);
+        });
       }
     },
     { immediate: true, deep: true }
