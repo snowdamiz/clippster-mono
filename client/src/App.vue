@@ -13,6 +13,7 @@
   import AnnouncementDialog from '@/components/AnnouncementDialog.vue';
   import OrganizationInviteDialog from '@/components/OrganizationInviteDialog.vue';
   import FloatingChat from '@/components/chat/FloatingChat.vue';
+  import AudioPlayer from '@/components/AudioPlayer.vue';
   import { useAnnouncements } from '@/composables/useAnnouncements';
   import { listMyInvitations, acceptInvitation, type OrganizationInvitation } from '@/services/organizationsApi';
   import {
@@ -581,6 +582,9 @@
 
       <!-- Floating Chat Widget (Messenger-style popout) -->
       <FloatingChat />
+
+      <!-- Global Audio Player -->
+      <AudioPlayer />
 
       <!-- Global Livestream Watch Dialog (persists across navigation for PIP mode) -->
       <LivestreamWatchDialog

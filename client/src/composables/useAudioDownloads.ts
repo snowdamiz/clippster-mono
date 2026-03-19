@@ -15,6 +15,9 @@ export interface AudioDownloadResult {
   download_id: string;
   success: boolean;
   file_path?: string;
+  title?: string;
+  platform?: string;
+  source_url?: string;
   duration?: number;
   file_size?: number;
   sample_rate?: number;
@@ -150,24 +153,23 @@ export function useAudioDownloads() {
   }
 
   async function handleComplete(event: AudioDownloadResult) {
-    const download = activeDownloads.value.get(event.download_id);
-    
-    if (event.success && event.file_path && download) {
+    if (event.success && event.file_path && event.title && event.platform) {
       // Save to database
       try {
         await createDownloadedAudio(
-          download.title,
-          download.platform === 'YouTube' ? 'youtube' : 'twitter',
+          event.title,
+          event.platform === 'YouTube' ? 'youtube' : 'twitter',
           event.file_path,
-          download.platform,
-          undefined, // source_url not tracked in this flow
+          event.platform,
+          event.source_url,
           event.duration,
           event.file_size,
           event.sample_rate,
           event.channels
         );
+        console.log('[useAudioDownloads] Saved downloaded audio to database:', event.title);
       } catch (error) {
-        console.error('Failed to save downloaded audio to database:', error);
+        console.error('[useAudioDownloads] Failed to save downloaded audio to database:', error);
       }
     }
 

@@ -27,163 +27,203 @@
         </div>
       </template>
 
-      <!-- Active Downloads Section -->
-      <div v-if="getActiveDownloads().length > 0" class="projects__section">
-        <div class="projects__section-header-row">
-          <h3 class="projects__section-header">Active Downloads</h3>
+      <div class="projects__content">
+        <!-- Active Downloads Section -->
+        <div v-if="getActiveDownloads().length > 0" class="projects__section">
+          <div class="projects__section-header-row">
+            <h3 class="projects__section-header">Active Downloads</h3>
+          </div>
+          <div class="projects__grid projects__grid--downloads">
+            <DownloadCard
+              v-for="download in getActiveDownloads()"
+              :key="download.id"
+              :download="{
+                id: download.id,
+                title: download.title,
+                mintId: download.id,
+                progress: {
+                  download_id: download.id,
+                  progress: download.progress,
+                  status: download.status,
+                  current_time: undefined,
+                  total_time: undefined
+                },
+                result: undefined
+              }"
+            />
+          </div>
         </div>
-        <div class="projects__grid projects__grid--downloads">
-          <DownloadCard
-            v-for="download in getActiveDownloads()"
-            :key="download.id"
-            :download="{
-              id: download.id,
-              title: download.title,
-              mintId: download.id,
-              progress: {
-                download_id: download.id,
-                progress: download.progress,
-                status: download.status,
-                current_time: undefined,
-                total_time: undefined
-              },
-              result: undefined
-            }"
-          />
-        </div>
-      </div>
 
-      <!-- Downloaded Audio Section -->
-      <div v-if="filteredAudio.length > 0" class="projects__section">
+        <!-- Downloaded Audio Section -->
+        <div v-if="filteredAudio.length > 0" class="projects__section">
         <h3 class="projects__section-header">Downloaded Audio</h3>
         <div class="projects__grid">
           <div
             v-for="audio in filteredAudio"
             :key="audio.id"
             class="project-card"
+            @click="playAudio(audio)"
           >
-            <div class="project-card__thumbnail">
-              <div class="project-card__thumbnail-placeholder">
-                <Music :size="32" />
-              </div>
-              <div v-if="audio.duration" class="project-card__duration">
-                {{ formatDuration(audio.duration) }}
+            <!-- Fallback background for audio files -->
+            <div class="project-card__thumbnail project-card__thumbnail--empty">
+              <div class="project-card__thumbnail-gradient"></div>
+              
+              <!-- Standard Empty State -->
+              <div class="project-card__empty-icon">
+                <Music class="project-card__folder-icon" />
               </div>
             </div>
-            <div class="project-card__content">
-              <h3 class="project-card__title">{{ audio.title }}</h3>
+
+            <!-- Bottom Overlay with Info -->
+            <div class="project-card__bottom">
+              <!-- Title -->
+              <h3 class="project-card__title" :title="audio.title">
+                {{ audio.title }}
+              </h3>
+
+              <!-- Metadata Row -->
               <div class="project-card__meta">
-                <span class="project-card__platform" v-if="audio.platform">
-                  {{ audio.platform }}
+                <!-- Platform Icon -->
+                <div
+                  v-if="audio.platform === 'YouTube'"
+                  class="project-card__platform project-card__platform--youtube"
+                  title="YouTube"
+                >
+                  <img src="/youtube.svg" class="project-card__platform-icon" />
+                </div>
+                <div
+                  v-else-if="audio.platform === 'Twitter'"
+                  class="project-card__platform project-card__platform--twitter"
+                  title="Twitter"
+                >
+                  <img src="/x.svg" class="project-card__platform-icon" />
+                </div>
+                <div
+                  v-else-if="audio.platform === 'Upload'"
+                  class="project-card__platform project-card__platform--manual"
+                  title="Uploaded"
+                >
+                  <Upload class="project-card__platform-svg" />
+                </div>
+
+                <span v-if="audio.platform" class="project-card__dot"></span>
+
+                <!-- Duration -->
+                <span v-if="audio.duration" class="project-card__info">
+                  {{ formatDuration(audio.duration) }}
                 </span>
-                <span class="project-card__source">
-                  {{ audio.source === 'upload' ? 'Uploaded' : 'Downloaded' }}
-                </span>
-                <span v-if="audio.file_size" class="project-card__size">
+
+                <span v-if="audio.duration && audio.file_size" class="project-card__dot"></span>
+
+                <!-- File Size -->
+                <span v-if="audio.file_size" class="project-card__info">
                   {{ formatFileSize(audio.file_size) }}
                 </span>
               </div>
             </div>
-            <div class="project-card__actions">
+
+            <!-- Hover Actions -->
+            <div class="project-card__hover-actions">
               <button
-                @click="playAudio(audio)"
-                class="project-card__action"
+                @click.stop="playAudio(audio)"
+                class="project-card__hover-btn"
                 title="Play"
               >
-                <Play :size="18" />
+                <Play :size="16" />
               </button>
               <button
-                @click="showAddToPlaylistDialog(audio)"
-                class="project-card__action"
+                @click.stop="showAddToPlaylistDialog(audio)"
+                class="project-card__hover-btn"
                 title="Add to playlist"
               >
-                <ListPlus :size="18" />
+                <ListPlus :size="16" />
               </button>
               <button
-                @click="deleteAudio(audio)"
-                class="project-card__action project-card__action--danger"
+                @click.stop="deleteAudio(audio)"
+                class="project-card__hover-btn project-card__hover-btn--danger"
                 title="Delete"
               >
-                <Trash2 :size="18" />
+                <Trash2 :size="16" />
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Playlists Section -->
-      <div v-if="playlists.length > 0" class="projects__section">
-        <div class="projects__section-header-row">
-          <h3 class="projects__section-header">Playlists</h3>
-          <button @click="showCreatePlaylistDialog = true" class="projects-create-btn">
-            <Plus class="projects-create-btn__icon" />
-            New Playlist
-          </button>
-        </div>
-        <div class="projects__grid">
-          <div
-            v-for="playlist in playlists"
-            :key="playlist.id"
-            class="project-card project-card--playlist"
-            @click="viewPlaylist(playlist)"
-          >
-            <div class="project-card__thumbnail">
-              <div class="project-card__thumbnail-placeholder">
-                <ListMusic :size="32" />
+        <!-- Playlists Section -->
+        <div v-if="playlists.length > 0" class="projects__section">
+          <div class="projects__section-header-row">
+            <h3 class="projects__section-header">Playlists</h3>
+            <button @click="showCreatePlaylistDialog = true" class="projects-create-btn">
+              <Plus class="projects-create-btn__icon" />
+              New Playlist
+            </button>
+          </div>
+          <div class="projects__grid">
+            <div
+              v-for="playlist in playlists"
+              :key="playlist.id"
+              class="project-card project-card--playlist"
+              @click="viewPlaylist(playlist)"
+            >
+              <div class="project-card__thumbnail">
+                <div class="project-card__thumbnail-placeholder">
+                  <ListMusic :size="32" />
+                </div>
+                <div class="project-card__playlist-count">
+                  {{ getPlaylistTrackCount(playlist.id) }} tracks
+                </div>
               </div>
-              <div class="project-card__playlist-count">
-                {{ getPlaylistTrackCount(playlist.id) }} tracks
+              <div class="project-card__content">
+                <h3 class="project-card__title">{{ playlist.name }}</h3>
+                <p v-if="playlist.description" class="project-card__description">
+                  {{ playlist.description }}
+                </p>
               </div>
-            </div>
-            <div class="project-card__content">
-              <h3 class="project-card__title">{{ playlist.name }}</h3>
-              <p v-if="playlist.description" class="project-card__description">
-                {{ playlist.description }}
-              </p>
-            </div>
-            <div class="project-card__actions">
-              <button
-                @click.stop="playPlaylist(playlist)"
-                class="project-card__action"
-                title="Play all"
-              >
-                <Play :size="18" />
-              </button>
-              <button
-                @click.stop="editPlaylist(playlist)"
-                class="project-card__action"
-                title="Edit"
-              >
-                <Edit :size="18" />
-              </button>
-              <button
-                @click.stop="deletePlaylist(playlist)"
-                class="project-card__action project-card__action--danger"
-                title="Delete"
-              >
-                <Trash2 :size="18" />
-              </button>
+              <div class="project-card__actions">
+                <button
+                  @click.stop="playPlaylist(playlist)"
+                  class="project-card__action"
+                  title="Play all"
+                >
+                  <Play :size="18" />
+                </button>
+                <button
+                  @click.stop="editPlaylist(playlist)"
+                  class="project-card__action"
+                  title="Edit"
+                >
+                  <Edit :size="18" />
+                </button>
+                <button
+                  @click.stop="deletePlaylist(playlist)"
+                  class="project-card__action project-card__action--danger"
+                  title="Delete"
+                >
+                  <Trash2 :size="18" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Empty State -->
-      <div v-if="filteredAudio.length === 0 && playlists.length === 0 && getActiveDownloads().length === 0" class="projects-empty">
-        <Music class="projects-empty__icon" />
-        <h3 class="projects-empty__title">No Audio Files</h3>
-        <p class="projects-empty__text">
-          Download audio from YouTube or X Spaces, or upload your own audio files
-        </p>
-        <div class="projects-empty__actions">
-          <button @click="$router.push('/download-audio')" class="projects-empty__button">
-            <Download :size="18" />
-            Download Audio
-          </button>
-          <button @click="handleUploadAudio" class="projects-empty__button projects-empty__button--secondary">
-            <Upload :size="18" />
-            Upload Audio
-          </button>
+        <!-- Empty State -->
+        <div v-if="filteredAudio.length === 0 && playlists.length === 0 && getActiveDownloads().length === 0" class="projects-empty">
+          <Music class="projects-empty__icon" />
+          <h3 class="projects-empty__title">No Audio Files</h3>
+          <p class="projects-empty__text">
+            Download audio from YouTube or X Spaces, or upload your own audio files
+          </p>
+          <div class="projects-empty__actions">
+            <button @click="$router.push('/download-audio')" class="projects-empty__button">
+              <Download :size="18" />
+              Download Audio
+            </button>
+            <button @click="handleUploadAudio" class="projects-empty__button projects-empty__button--secondary">
+              <Upload :size="18" />
+              Upload Audio
+            </button>
+          </div>
         </div>
       </div>
     </PageLayout>
@@ -243,15 +283,19 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { useRouter } from 'vue-router';
   import { open } from '@tauri-apps/plugin-dialog';
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import PageLayout from '@/components/PageLayout.vue';
   import DownloadCard from '@/components/DownloadCard.vue';
   import { useAudioDownloads } from '@/composables/useAudioDownloads';
+  import { useAudioPlayer } from '@/composables/useAudioPlayer';
   import { useToast } from '@/composables/useToast';
+  import type { AudioDownloadResult } from '@/composables/useAudioDownloads';
   import {
     getAllDownloadedAudio,
+    createDownloadedAudio,
     deleteDownloadedAudio,
   } from '@/services/database/downloaded-audio';
   import {
@@ -279,6 +323,7 @@
   const router = useRouter();
   const { success, error: showError } = useToast();
   const { getActiveDownloads, uploadAudioFile } = useAudioDownloads();
+  const { playTrack } = useAudioPlayer();
 
   const audioFiles = ref<DownloadedAudio[]>([]);
   const playlists = ref<AudioPlaylist[]>([]);
@@ -287,6 +332,8 @@
   const newPlaylistName = ref('');
   const newPlaylistDescription = ref('');
   const playlistTrackCounts = ref<Map<string, number>>(new Map());
+  
+  let downloadCompleteUnlisten: UnlistenFn | null = null;
 
   const filteredAudio = computed(() => {
     if (!searchQuery.value) return audioFiles.value;
@@ -400,8 +447,13 @@
   }
 
   function playAudio(audio: DownloadedAudio) {
-    // TODO: Implement audio playback with global player
-    console.log('Play audio:', audio);
+    playTrack({
+      id: audio.id.toString(),
+      title: audio.title,
+      filePath: audio.file_path,
+      duration: audio.duration ?? undefined,
+      platform: audio.platform ?? undefined,
+    });
   }
 
   function playPlaylist(playlist: AudioPlaylist) {
@@ -457,6 +509,20 @@
       loadAudioFiles(),
       loadPlaylists(),
     ]);
+
+    // Listen for download complete events to refresh the library
+    downloadCompleteUnlisten = await listen<AudioDownloadResult>('download-complete', async (event) => {
+      if (event.payload.success) {
+        console.log('[AudioLibrary] Download completed, reloading audio files');
+        await loadAudioFiles();
+      }
+    });
+  });
+
+  onUnmounted(() => {
+    if (downloadCompleteUnlisten) {
+      downloadCompleteUnlisten();
+    }
   });
 </script>
 
@@ -610,6 +676,7 @@
     transform: scale(1.02);
   }
 
+  /* Thumbnail */
   .project-card__thumbnail {
     position: absolute;
     inset: 0;
@@ -619,6 +686,166 @@
     background-repeat: no-repeat;
   }
 
+  .project-card__thumbnail--empty {
+    background-color: var(--sidebar-hover);
+  }
+
+  .project-card__thumbnail-gradient {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.4) 50%, rgba(0, 0, 0, 0.5) 100%);
+  }
+
+  /* Empty State Icons */
+  .project-card__empty-icon {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.2;
+  }
+
+  .project-card__folder-icon {
+    width: 64px;
+    height: 64px;
+    color: var(--sidebar-text);
+  }
+
+  /* Bottom Info */
+  .project-card__bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    padding: 1rem;
+    padding-top: 7rem;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 50%, transparent 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .project-card__title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: white;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    line-height: 1.3;
+    transition: color 150ms ease;
+  }
+
+  .project-card:hover .project-card__title {
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .project-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+    flex-wrap: wrap;
+  }
+
+  .project-card__info {
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .project-card__dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.4);
+    flex-shrink: 0;
+  }
+
+  /* Platform Icons */
+  .project-card__platform {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+
+  .project-card__platform--youtube {
+    background-color: #dc2626;
+  }
+
+  .project-card__platform--twitter {
+    background-color: #000000;
+  }
+
+  .project-card__platform--manual {
+    background-color: #475569;
+    color: white;
+  }
+
+  .project-card__platform-icon {
+    width: 10px;
+    height: 10px;
+    filter: invert(1) brightness(2);
+  }
+
+  .project-card__platform-svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  /* Hover Actions */
+  .project-card__hover-actions {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    background-color: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+
+  .project-card:hover .project-card__hover-actions {
+    opacity: 1;
+  }
+
+  .project-card__hover-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: none;
+    border-radius: 9999px;
+    color: #1f2937;
+    cursor: pointer;
+    transition: all 150ms ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+
+  .project-card__hover-btn:hover {
+    background-color: white;
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+
+  .project-card__hover-btn--danger:hover {
+    background-color: #ef4444;
+    color: white;
+  }
+
+  /* Playlist Card Styles */
   .project-card__thumbnail-placeholder {
     position: absolute;
     inset: 0;
@@ -629,7 +856,6 @@
     color: var(--sidebar-text-muted);
   }
 
-  .project-card__duration,
   .project-card__playlist-count {
     position: absolute;
     bottom: 0.75rem;
@@ -653,17 +879,6 @@
     z-index: 5;
   }
 
-  .project-card__title {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.95);
-    margin: 0 0 0.375rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    letter-spacing: -0.01em;
-  }
-
   .project-card__description {
     font-size: 0.8125rem;
     color: rgba(255, 255, 255, 0.7);
@@ -672,23 +887,6 @@
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-  }
-
-  .project-card__meta {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.6);
-    flex-wrap: wrap;
-  }
-
-  .project-card__platform,
-  .project-card__source,
-  .project-card__size {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
   }
 
   .project-card__actions {

@@ -25,6 +25,9 @@ pub struct DownloadResult {
     pub download_id: String,
     pub success: bool,
     pub file_path: Option<String>,
+    pub title: Option<String>,
+    pub platform: Option<String>,
+    pub source_url: Option<String>,
     pub duration: Option<f64>,
     pub file_size: Option<u64>,
     pub sample_rate: Option<u32>,
@@ -108,6 +111,8 @@ pub async fn download_youtube_audio(
     let download_id_clone = download_id.clone();
     let app_clone = app.clone();
     let output_file_str = output_file.to_string_lossy().to_string();
+    let title_clone = title.clone();
+    let vod_url_clone = vod_url.clone();
 
     // Send initial progress
     let _ = app.emit("download-progress", DownloadProgress {
@@ -155,6 +160,9 @@ pub async fn download_youtube_audio(
                     download_id: download_id_clone.clone(),
                     success: false,
                     file_path: None,
+                    title: None,
+                    platform: None,
+                    source_url: None,
                     duration: None,
                     file_size: None,
                     sample_rate: None,
@@ -225,6 +233,9 @@ pub async fn download_youtube_audio(
                             download_id: download_id_clone,
                             success: true,
                             file_path: Some(output_file_str),
+                            title: Some(title_clone.clone()),
+                            platform: Some("YouTube".to_string()),
+                            source_url: Some(vod_url_clone.clone()),
                             duration: metadata.as_ref().and_then(|m| m.duration),
                             file_size,
                             sample_rate: metadata.as_ref().and_then(|m| m.sample_rate),
@@ -250,6 +261,9 @@ pub async fn download_youtube_audio(
                             download_id: download_id_clone,
                             success: false,
                             file_path: None,
+                            title: Some(title_clone.clone()),
+                            platform: Some("YouTube".to_string()),
+                            source_url: Some(vod_url_clone.clone()),
                             duration: None,
                             file_size: None,
                             sample_rate: None,
@@ -268,6 +282,9 @@ pub async fn download_youtube_audio(
                     download_id: download_id_clone,
                     success: false,
                     file_path: None,
+                    title: Some(title_clone),
+                    platform: Some("YouTube".to_string()),
+                    source_url: Some(vod_url_clone),
                     duration: None,
                     file_size: None,
                     sample_rate: None,
@@ -411,6 +428,9 @@ pub async fn upload_audio_file(
         download_id: format!("upload_{}", timestamp),
         success: true,
         file_path: Some(dest_path_str),
+        title: Some(title),
+        platform: Some("Upload".to_string()),
+        source_url: None,
         duration: metadata.as_ref().and_then(|m| m.duration),
         file_size,
         sample_rate: metadata.as_ref().and_then(|m| m.sample_rate),
