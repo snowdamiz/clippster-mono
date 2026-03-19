@@ -156,6 +156,8 @@ export function useAudioDownloads() {
   }
 
   async function handleComplete(event: AudioDownloadResult) {
+    console.log('[useAudioDownloads] Download complete event received:', event);
+    console.log('[useAudioDownloads] Platform value:', event.platform);
     if (event.success && event.file_path && event.title && event.platform) {
       // Save to database
       try {
@@ -172,6 +174,7 @@ export function useAudioDownloads() {
           event.thumbnail_url
         );
         console.log('[useAudioDownloads] Saved downloaded audio to database:', event.title);
+        console.log('[useAudioDownloads] Saved with platform:', event.platform);
       } catch (error) {
         console.error('[useAudioDownloads] Failed to save downloaded audio to database:', error);
       }

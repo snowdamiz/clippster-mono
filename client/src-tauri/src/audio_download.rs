@@ -114,6 +114,7 @@ pub async fn download_youtube_audio(
     let output_file_str = output_file.to_string_lossy().to_string();
     let title_clone = title.clone();
     let vod_url_clone = vod_url.clone();
+    let channel_name_clone = channel_name.clone();
 
     // Send initial progress
     let _ = app.emit("download-progress", DownloadProgress {
@@ -242,12 +243,19 @@ pub async fn download_youtube_audio(
                             None
                         };
                         
+                        // Determine platform based on channel_name
+                        let platform = if channel_name_clone == "twitter_space" {
+                            "Twitter".to_string()
+                        } else {
+                            "YouTube".to_string()
+                        };
+                        
                         let _ = app_clone.emit("download-complete", DownloadResult {
                             download_id: download_id_clone,
                             success: true,
                             file_path: Some(output_file_str),
                             title: Some(title_clone.clone()),
-                            platform: Some("YouTube".to_string()),
+                            platform: Some(platform),
                             source_url: Some(vod_url_clone.clone()),
                             duration: metadata.as_ref().and_then(|m| m.duration),
                             file_size,

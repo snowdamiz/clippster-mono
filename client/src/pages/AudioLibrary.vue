@@ -67,6 +67,22 @@
           <p class="projects__subtitle">Manage your downloaded audio and playlists</p>
         </div>
 
+        <!-- Tab Navigation -->
+        <div class="audio-tabs">
+          <button
+            :class="['audio-tab', { 'audio-tab--active': activeTab === 'all' }]"
+            @click="activeTab = 'all'"
+          >
+            Audio
+          </button>
+          <button
+            :class="['audio-tab', { 'audio-tab--active': activeTab === 'spaces' }]"
+            @click="activeTab = 'spaces'"
+          >
+            X Spaces
+          </button>
+        </div>
+
         <!-- Active Downloads Section -->
         <div v-if="getActiveDownloads().length > 0" class="projects__section">
           <div class="projects__section-header-row">
@@ -212,8 +228,8 @@
         </div>
       </div>
 
-        <!-- Playlists Section -->
-        <div v-if="playlists.length > 0" class="projects__section">
+        <!-- Playlists Section (hidden on X Spaces tab) -->
+        <div v-if="playlists.length > 0 && activeTab === 'all'" class="projects__section">
           <div class="projects__section-header-row">
             <h3 class="projects__section-header">Playlists</h3>
           </div>
@@ -244,21 +260,21 @@
                   class="project-card__action"
                   title="Play all"
                 >
-                  <Play :size="18" />
+                  <Play :size="16" />
                 </button>
                 <button
                   @click.stop="editPlaylist(playlist)"
                   class="project-card__action"
                   title="Edit"
                 >
-                  <Edit :size="18" />
+                  <Pencil :size="16" />
                 </button>
                 <button
                   @click.stop="deletePlaylist(playlist)"
                   class="project-card__action project-card__action--danger"
                   title="Delete"
                 >
-                  <Trash2 :size="18" />
+                  <Trash2 :size="16" />
                 </button>
               </div>
             </div>
@@ -331,6 +347,58 @@
                 class="bug-dialog__btn bug-dialog__btn--primary"
               >
                 Create
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Edit Playlist Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showEditPlaylistDialog" class="bug-dialog__overlay" @click.self="showEditPlaylistDialog = false">
+          <div class="bug-dialog">
+            <div class="bug-dialog__accent"></div>
+            <div class="bug-dialog__header">
+              <button class="bug-dialog__close" @click="showEditPlaylistDialog = false">
+                <X :size="18" />
+              </button>
+              <div class="bug-dialog__icon">
+                <Pencil :size="24" />
+              </div>
+              <h2 class="bug-dialog__title">Edit Playlist</h2>
+            </div>
+            <div class="bug-dialog__content">
+              <div class="bug-dialog__field">
+                <label class="bug-dialog__label">Playlist Name *</label>
+                <input
+                  v-model="editPlaylistName"
+                  type="text"
+                  placeholder="My Playlist"
+                  class="bug-dialog__input"
+                />
+              </div>
+              <div class="bug-dialog__field">
+                <label class="bug-dialog__label">Description</label>
+                <textarea
+                  v-model="editPlaylistDescription"
+                  rows="3"
+                  placeholder="Optional description"
+                  class="bug-dialog__input bug-dialog__textarea"
+                ></textarea>
+              </div>
+            </div>
+            <div class="bug-dialog__footer">
+              <button @click="showEditPlaylistDialog = false" class="bug-dialog__btn bug-dialog__btn--secondary">
+                Cancel
+              </button>
+              <button
+                @click="savePlaylistEdit"
+                :disabled="!editPlaylistName.trim()"
+                class="bug-dialog__btn bug-dialog__btn--primary"
+              >
+                Save
               </button>
             </div>
           </div>
@@ -417,8 +485,22 @@
                 <div
                   v-for="(track, index) in playlistTracks"
                   :key="track.playlist_item_id"
-                  class="playlist-track"
+                  :class="[
+                    'playlist-track',
+                    { 'playlist-track--dragging': draggedTrackIndex === index },
+                    { 'playlist-track--drag-over': dragOverTrackIndex === index }
+                  ]"
+                  @mouseenter="handleMouseEnter(index)"
+                  @mouseleave="handleMouseLeave"
+                  @mouseup="handleMouseUp(index)"
                 >
+                  <div 
+                    class="playlist-track__drag-handle"
+                    @mousedown.prevent="handleMouseDown(index)"
+                    title="Drag to reorder"
+                  >
+                    <GripVertical :size="18" />
+                  </div>
                   <div class="playlist-track__number">{{ index + 1 }}</div>
                   <div class="playlist-track__info">
                     <div class="playlist-track__title">{{ track.title }}</div>
@@ -484,6 +566,8 @@
     getPlaylistItemsWithAudio,
     removeAudioFromPlaylist,
     getPlaylistTrackCount as getPlaylistTrackCountFromDb,
+    reorderPlaylistItem,
+    updateAudioPlaylist,
   } from '@/services/database/audio-playlists';
   import type { DownloadedAudio, AudioPlaylist } from '@/services/database/types';
   import { invoke } from '@tauri-apps/api/core';
@@ -497,9 +581,10 @@
     Trash2,
     ListMusic,
     Plus,
-    Edit,
+    Pencil,
     X,
     Check,
+    GripVertical,
   } from 'lucide-vue-next';
 
   const router = useRouter();
@@ -510,30 +595,55 @@
   const audioFiles = ref<DownloadedAudio[]>([]);
   const playlists = ref<AudioPlaylist[]>([]);
   const searchQuery = ref('');
+  const activeTab = ref<'all' | 'spaces'>('all');
   const showCreatePlaylistDialog = ref(false);
   const showAddToPlaylistDialog = ref(false);
   const showPlaylistDetailDialog = ref(false);
+  const showEditPlaylistDialog = ref(false);
   const selectedAudioForPlaylist = ref<DownloadedAudio | null>(null);
   const selectedPlaylist = ref<AudioPlaylist | null>(null);
   const playlistTracks = ref<Array<DownloadedAudio & { playlist_item_id: string }>>([]);
   const newPlaylistName = ref('');
   const newPlaylistDescription = ref('');
+  const editPlaylistName = ref('');
+  const editPlaylistDescription = ref('');
   const playlistTrackCounts = ref<Map<string, number>>(new Map());
   const selectedAudioIds = ref<Set<string>>(new Set());
+  const draggedTrackIndex = ref<number | null>(null);
+  const dragOverTrackIndex = ref<number | null>(null);
+  const isDragging = ref(false);
   
   let downloadCompleteUnlisten: UnlistenFn | null = null;
 
   const filteredAudio = computed(() => {
-    if (!searchQuery.value) return audioFiles.value;
-    const query = searchQuery.value.toLowerCase();
-    return audioFiles.value.filter(audio =>
-      audio.title.toLowerCase().includes(query)
-    );
+    let filtered = audioFiles.value;
+    
+    // Filter by tab
+    if (activeTab.value === 'spaces') {
+      // X Spaces tab: only show Twitter Spaces
+      filtered = filtered.filter(audio => audio.platform === 'Twitter');
+    } else {
+      // All Audio tab: exclude Twitter Spaces
+      filtered = filtered.filter(audio => audio.platform !== 'Twitter');
+    }
+    
+    // Filter by search query
+    if (searchQuery.value) {
+      const query = searchQuery.value.toLowerCase();
+      filtered = filtered.filter(audio =>
+        audio.title.toLowerCase().includes(query)
+      );
+    }
+    
+    return filtered;
   });
 
   async function loadAudioFiles() {
     try {
       audioFiles.value = await getAllDownloadedAudio();
+      console.log('[AudioLibrary] All audio files loaded:', audioFiles.value.length);
+      console.log('[AudioLibrary] Audio files with platforms:', audioFiles.value.map(a => ({ title: a.title, platform: a.platform })));
+      console.log('[AudioLibrary] Files with platform=Twitter:', audioFiles.value.filter(a => a.platform === 'Twitter').length);
     } catch (error) {
       console.error('Failed to load audio files:', error);
       showError('Load Failed', 'Failed to load audio files');
@@ -768,8 +878,33 @@
   }
 
   function editPlaylist(playlist: AudioPlaylist) {
-    // TODO: Show edit playlist dialog
-    console.log('Edit playlist:', playlist);
+    selectedPlaylist.value = playlist;
+    editPlaylistName.value = playlist.name;
+    editPlaylistDescription.value = playlist.description || '';
+    showEditPlaylistDialog.value = true;
+  }
+
+  async function savePlaylistEdit() {
+    if (!selectedPlaylist.value || !editPlaylistName.value.trim()) return;
+
+    try {
+      // Update playlist in database
+      await updateAudioPlaylist(selectedPlaylist.value.id, {
+        name: editPlaylistName.value.trim(),
+        description: editPlaylistDescription.value.trim() || undefined
+      });
+
+      success('Updated', `Updated playlist: ${editPlaylistName.value}`);
+      
+      editPlaylistName.value = '';
+      editPlaylistDescription.value = '';
+      showEditPlaylistDialog.value = false;
+      
+      await loadPlaylists();
+    } catch (error) {
+      console.error('Update playlist error:', error);
+      showError('Update Failed', error instanceof Error ? error.message : String(error));
+    }
   }
 
   function openAddToPlaylistDialog(audio: DownloadedAudio) {
@@ -806,6 +941,65 @@
     return playlistTrackCounts.value.get(playlistId) || 0;
   }
 
+  function handleMouseDown(index: number) {
+    console.log('[Playlist] Mouse down on:', index);
+    draggedTrackIndex.value = index;
+    isDragging.value = true;
+  }
+
+  function handleMouseEnter(index: number) {
+    if (isDragging.value && draggedTrackIndex.value !== null && draggedTrackIndex.value !== index) {
+      console.log('[Playlist] Mouse enter:', index);
+      dragOverTrackIndex.value = index;
+      
+      // Visually reorder the array in real-time to show where it will drop
+      const tracks = [...playlistTracks.value];
+      const draggedTrack = tracks[draggedTrackIndex.value];
+      tracks.splice(draggedTrackIndex.value, 1);
+      tracks.splice(index, 0, draggedTrack);
+      playlistTracks.value = tracks;
+      
+      // Update the dragged index to the new position
+      draggedTrackIndex.value = index;
+    }
+  }
+
+  function handleMouseLeave() {
+    if (isDragging.value) {
+      dragOverTrackIndex.value = null;
+    }
+  }
+
+  async function handleMouseUp(dropIndex: number) {
+    console.log('[Playlist] Mouse up at:', dropIndex);
+    
+    if (!isDragging.value || !selectedPlaylist.value) {
+      isDragging.value = false;
+      draggedTrackIndex.value = null;
+      dragOverTrackIndex.value = null;
+      return;
+    }
+
+    // Array is already visually reordered from handleMouseEnter
+    // Just need to save to database
+    const draggedTrack = playlistTracks.value[dropIndex];
+    
+    // Clear drag state
+    isDragging.value = false;
+    draggedTrackIndex.value = null;
+    dragOverTrackIndex.value = null;
+    
+    try {
+      // Update database with new position
+      await reorderPlaylistItem(draggedTrack.playlist_item_id, dropIndex);
+    } catch (error) {
+      console.error('Reorder error:', error);
+      // Reload on error to restore correct order
+      await loadPlaylistTracks(selectedPlaylist.value.id);
+      showError('Reorder Failed', error instanceof Error ? error.message : String(error));
+    }
+  }
+
   function formatDuration(seconds: number): string {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -838,9 +1032,13 @@
 
     // Listen for download complete events to refresh the library
     downloadCompleteUnlisten = await listen<AudioDownloadResult>('download-complete', async (event) => {
+      console.log('[AudioLibrary] Received download-complete event:', event.payload);
       if (event.payload.success) {
-        console.log('[AudioLibrary] Download completed, reloading audio files');
+        console.log('[AudioLibrary] Download completed successfully, reloading audio files');
         await loadAudioFiles();
+        console.log('[AudioLibrary] Audio files reloaded, count:', audioFiles.value.length);
+      } else {
+        console.log('[AudioLibrary] Download failed:', event.payload.error);
       }
     });
   });
@@ -860,6 +1058,44 @@
     height: 100%;
     width: 100%;
     overflow: hidden;
+  }
+
+  /* ===== Audio Tabs ===== */
+  .audio-tabs {
+    display: flex;
+    gap: 0.5rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--sidebar-border);
+    margin-bottom: 1.5rem;
+  }
+
+  .audio-tab {
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .audio-tab:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-text);
+  }
+
+  .audio-tab--active {
+    background: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+    color: white;
+  }
+
+  .audio-tab--active:hover {
+    background: var(--sidebar-accent);
+    color: white;
   }
 
   /* ===== Header Actions ===== */
@@ -1247,8 +1483,9 @@
 
   .project-card__actions {
     position: absolute;
-    top: 0.75rem;
-    right: 0.75rem;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     display: flex;
     gap: 0.5rem;
     opacity: 0;
@@ -1264,26 +1501,27 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
-    background-color: rgba(0, 0, 0, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 6px;
-    color: white;
+    width: 2rem;
+    height: 2rem;
+    padding: 0.375rem;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: none;
+    border-radius: 50%;
+    color: #1a1a1a;
     cursor: pointer;
     transition: all 150ms ease;
-    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   }
 
   .project-card__action:hover {
-    background-color: rgba(0, 0, 0, 0.8);
-    border-color: rgba(255, 255, 255, 0.3);
-    transform: scale(1.05);
+    background-color: white;
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   }
 
   .project-card__action--danger:hover {
-    background-color: rgba(239, 68, 68, 0.9);
-    border-color: #ef4444;
+    background-color: #ef4444;
+    color: white;
   }
 
   /* ===== Empty State ===== */
@@ -1445,6 +1683,42 @@
   .playlist-track:hover {
     background: rgba(255, 255, 255, 0.05);
     border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .playlist-track--dragging {
+    opacity: 0.5;
+  }
+
+  .playlist-track--drag-over {
+    border-color: var(--sidebar-accent);
+    background: rgba(59, 130, 246, 0.1);
+  }
+
+  .playlist-track__drag-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sidebar-text-muted);
+    cursor: grab;
+    padding: 0.25rem;
+    margin-left: -0.25rem;
+    border-radius: 4px;
+    transition: all 150ms ease;
+    user-select: none;
+    -webkit-user-drag: element;
+  }
+
+  .playlist-track__drag-handle:hover {
+    color: var(--sidebar-text);
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .playlist-track__drag-handle:active {
+    cursor: grabbing;
+  }
+
+  .playlist-track {
+    user-select: none;
   }
 
   .playlist-track__number {

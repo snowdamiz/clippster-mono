@@ -1870,11 +1870,20 @@ pub fn delete_audio_file(file_path: String) -> Result<(), String> {
 
     let path = Path::new(&file_path);
 
-    // Validate the file path is in the audio directory
+    // Validate the file path is in one of the valid audio storage directories
     let paths = init_storage_dirs()?;
+    let library_audio_dir = get_library_audio_dir()?;
+    let downloaded_audio_dir = crate::audio_download::get_downloaded_audio_dir()?;
 
-    if !path.starts_with(&paths.audio) {
-        return Err("File path is not in the audio directory".to_string());
+    let is_in_audio_dir = path.starts_with(&paths.audio);
+    let is_in_library_audio_dir = path.starts_with(&library_audio_dir);
+    let is_in_downloaded_audio_dir = path.starts_with(&downloaded_audio_dir);
+
+    if !is_in_audio_dir && !is_in_library_audio_dir && !is_in_downloaded_audio_dir {
+        return Err(format!(
+            "File path is not in a valid audio directory. Path: {}, Audio dir: {:?}, Library audio dir: {:?}, Downloaded audio dir: {:?}",
+            file_path, paths.audio, library_audio_dir, downloaded_audio_dir
+        ));
     }
 
     // Check if file exists

@@ -30,6 +30,8 @@ import BrandingView from "./assets/BrandingView.vue";
 import UploadMediaView from "./assets/UploadMediaView.vue";
 import TranscriptView from "./assets/TranscriptView.vue";
 import AudioLibraryView from "./assets/AudioLibraryView.vue";
+import XSpacesView from "./assets/XSpacesView.vue";
+import FoldersView from "./assets/FoldersView.vue";
 
 const props = defineProps<{
 	activeTab: string;
@@ -38,7 +40,7 @@ const props = defineProps<{
 const { editor, version } = useEditor();
 const { startDrag, wasDragCompleted } = usePointerDrag();
 const showMediaDialog = ref(false);
-const dialogTab = ref<"upload" | "built" | "projects" | "audio">("upload");
+const dialogTab = ref<"upload" | "built" | "projects" | "audio" | "spaces">("upload");
 const viewMode = ref<"grid" | "list">("grid");
 const isProcessing = ref(false);
 const progress = ref(0);
@@ -320,13 +322,14 @@ function getMediaIcon(type: string) {
 						<DialogTitle class="text-sm font-medium text-zinc-200">Import Media</DialogTitle>
 					</DialogHeader>
 					<!-- Tab bar -->
-					<div class="flex items-center border-b border-white/10 px-4 mt-3 shrink-0">
+					<div class="flex items-center border-b border-white/10 px-4 mt-3 shrink-0 overflow-x-auto">
 						<button
 							v-for="tab in ([
 								{ key: 'upload', label: 'Upload', icon: Upload },
 								{ key: 'built', label: 'Built Clips', icon: Clapperboard },
 								{ key: 'projects', label: 'Projects', icon: FolderOpen },
 								{ key: 'audio', label: 'Audio', icon: Music },
+								{ key: 'spaces', label: 'X Spaces', icon: Music },
 							] as const)"
 							:key="tab.key"
 							type="button"
@@ -348,6 +351,7 @@ function getMediaIcon(type: string) {
 						<BuiltClipsView v-else-if="dialogTab === 'built'" />
 						<ProjectClipsView v-else-if="dialogTab === 'projects'" />
 						<AudioLibraryView v-else-if="dialogTab === 'audio'" />
+						<XSpacesView v-else-if="dialogTab === 'spaces'" />
 					</div>
 				</DialogContent>
 			</Dialog>
