@@ -17,6 +17,18 @@
 
         <!-- Controls -->
         <div class="audio-player__controls">
+          <!-- Previous Button -->
+          <button
+            v-if="playlist.length > 0"
+            @click="playPrevious"
+            class="audio-player__control-btn"
+            :disabled="currentTrackIndex === 0 && !isShuffle && repeatMode !== 'all'"
+            title="Previous"
+          >
+            <SkipBack :size="16" />
+          </button>
+
+          <!-- Play/Pause Button -->
           <button
             @click="togglePlayPause"
             class="audio-player__control-btn audio-player__control-btn--play"
@@ -24,6 +36,17 @@
           >
             <Pause v-if="isPlaying" :size="16" />
             <Play v-else :size="16" />
+          </button>
+
+          <!-- Next Button -->
+          <button
+            v-if="playlist.length > 0"
+            @click="playNext"
+            class="audio-player__control-btn"
+            :disabled="currentTrackIndex === playlist.length - 1 && !isShuffle && repeatMode !== 'all'"
+            title="Next"
+          >
+            <SkipForward :size="16" />
           </button>
 
           <div class="audio-player__time">
@@ -49,6 +72,29 @@
 
         <!-- Volume & Actions -->
         <div class="audio-player__actions">
+          <!-- Shuffle Button -->
+          <button
+            v-if="playlist.length > 0"
+            @click="toggleShuffle"
+            class="audio-player__control-btn"
+            :class="{ 'audio-player__control-btn--active': isShuffle }"
+            title="Shuffle"
+          >
+            <Shuffle :size="14" />
+          </button>
+
+          <!-- Repeat Button -->
+          <button
+            v-if="playlist.length > 0"
+            @click="toggleRepeat"
+            class="audio-player__control-btn"
+            :class="{ 'audio-player__control-btn--active': repeatMode !== 'off' }"
+            :title="repeatMode === 'off' ? 'Repeat Off' : repeatMode === 'all' ? 'Repeat All' : 'Repeat One'"
+          >
+            <Repeat v-if="repeatMode !== 'one'" :size="14" />
+            <Repeat1 v-else :size="14" />
+          </button>
+
           <!-- Volume Control -->
           <div class="audio-player__volume">
             <button
@@ -91,17 +137,25 @@
 <script setup lang="ts">
   import { ref } from 'vue';
   import { useAudioPlayer } from '@/composables/useAudioPlayer';
-  import { Music, Play, Pause, Volume, Volume1, Volume2, VolumeX, X } from 'lucide-vue-next';
+  import { Music, Play, Pause, Volume, Volume1, Volume2, VolumeX, X, Shuffle, Repeat, Repeat1, SkipBack, SkipForward } from 'lucide-vue-next';
 
   const {
     currentTrack,
+    playlist,
+    currentTrackIndex,
     isPlaying,
+    isShuffle,
+    repeatMode,
     progress,
     formattedCurrentTime,
     formattedDuration,
     volume,
     isMuted,
     togglePlayPause,
+    playNext,
+    playPrevious,
+    toggleShuffle,
+    toggleRepeat,
     seek,
     setVolume,
     toggleMute,
@@ -243,6 +297,25 @@
   .audio-player__control-btn:hover {
     background: rgba(255, 255, 255, 0.1);
     color: var(--sidebar-accent);
+  }
+
+  .audio-player__control-btn--active {
+    color: var(--sidebar-accent);
+    background: rgba(6, 182, 212, 0.15);
+  }
+
+  .audio-player__control-btn--active:hover {
+    background: rgba(6, 182, 212, 0.25);
+  }
+
+  .audio-player__control-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .audio-player__control-btn:disabled:hover {
+    background: transparent;
+    color: var(--sidebar-text-muted);
   }
 
   .audio-player__control-btn--play {

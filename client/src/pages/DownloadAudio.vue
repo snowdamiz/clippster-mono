@@ -9,7 +9,7 @@
       <template #actions>
         <div class="streamvods-actions">
           <!-- Recent Searches Dropdown -->
-          <div class="streamvods-recent" v-if="platformStore.getRecentSearches.length > 0">
+          <div class="streamvods-recent" v-if="platformStore.getAudioRecentSearches?.length > 0">
             <button
               @click="showRecentDropdown = !showRecentDropdown"
               class="streamvods-recent__trigger"
@@ -25,7 +25,7 @@
             <div v-if="showRecentDropdown" class="streamvods-recent__dropdown" @click.stop>
               <div class="streamvods-recent__header">Recent Searches</div>
               <div
-                v-for="search in platformStore.getRecentSearches.slice(0, 15)"
+                v-for="search in platformStore.getAudioRecentSearches.slice(0, 15)"
                 :key="`${search.platform}-${search.id}`"
                 class="streamvods-recent__item"
                 @click="handleRecentSearchClick(search); showRecentDropdown = false;"
@@ -55,7 +55,7 @@
                 </div>
               </div>
               <button
-                @click="platformStore.clearRecentSearches(); showRecentDropdown = false;"
+                @click="platformStore.clearAudioRecentSearches(); showRecentDropdown = false;"
                 class="streamvods-recent__clear"
               >
                 Clear All
@@ -361,6 +361,13 @@
       if (result.success && platformStore.clips.length > 0) {
         clips.value = [...platformStore.clips];
         success('Found', `Found ${platformStore.clips.length} item${platformStore.clips.length !== 1 ? 's' : ''}`);
+        
+        // Add to audio recent searches (not regular recent searches)
+        platformStore.addToAudioRecentSearches(
+          platformStore.currentSearchId || val,
+          val,
+          detectedPlatform.value as PlatformId
+        );
       } else if (result.success && platformStore.clips.length === 0) {
         searchError.value = 'No audio found for this URL';
       } else {

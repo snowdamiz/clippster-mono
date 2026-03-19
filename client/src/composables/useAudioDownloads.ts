@@ -1,4 +1,4 @@
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { createDownloadedAudio } from '@/services/database/downloaded-audio';
@@ -22,6 +22,7 @@ export interface AudioDownloadResult {
   file_size?: number;
   sample_rate?: number;
   channels?: number;
+  thumbnail_url?: string;
   error?: string;
 }
 
@@ -34,12 +35,14 @@ export interface ActiveAudioDownload {
   error?: string;
 }
 
+// Shared state across all instances (singleton pattern)
+const activeDownloads = ref<Map<string, ActiveAudioDownload>>(new Map());
+const queuedDownloads = ref<ActiveAudioDownload[]>([]);
+let progressUnlisten: UnlistenFn | null = null;
+let completeUnlisten: UnlistenFn | null = null;
+let isInitialized = false;
+
 export function useAudioDownloads() {
-  const activeDownloads = ref<Map<string, ActiveAudioDownload>>(new Map());
-  const queuedDownloads = ref<ActiveAudioDownload[]>([]);
-  
-  let progressUnlisten: UnlistenFn | null = null;
-  let completeUnlisten: UnlistenFn | null = null;
 
   async function startYouTubeAudioDownload(
     downloadId: string,
@@ -165,7 +168,8 @@ export function useAudioDownloads() {
           event.duration,
           event.file_size,
           event.sample_rate,
-          event.channels
+          event.channels,
+          event.thumbnail_url
         );
         console.log('[useAudioDownloads] Saved downloaded audio to database:', event.title);
       } catch (error) {
@@ -177,21 +181,25 @@ export function useAudioDownloads() {
     activeDownloads.value.delete(event.download_id);
   }
 
-  onMounted(async () => {
-    // Listen for download progress events
-    progressUnlisten = await listen<AudioDownloadProgress>('download-progress', (event) => {
-      handleProgress(event.payload);
-    });
+  // Initialize event listeners only once (singleton pattern)
+  if (!isInitialized) {
+    isInitialized = true;
+    (async () => {
+      // Listen for download progress events
+      progressUnlisten = await listen<AudioDownloadProgress>('download-progress', (event) => {
+        handleProgress(event.payload);
+      });
 
-    // Listen for download complete events
-    completeUnlisten = await listen<AudioDownloadResult>('download-complete', (event) => {
-      handleComplete(event.payload);
-    });
-  });
+      // Listen for download complete events
+      completeUnlisten = await listen<AudioDownloadResult>('download-complete', (event) => {
+        handleComplete(event.payload);
+      });
+    })();
+  }
 
   onUnmounted(() => {
-    if (progressUnlisten) progressUnlisten();
-    if (completeUnlisten) completeUnlisten();
+    // Don't unlisten since this is shared across all components
+    // The listeners will persist for the lifetime of the app
   });
 
   function getActiveDownloads(): ActiveAudioDownload[] {

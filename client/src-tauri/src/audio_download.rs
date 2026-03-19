@@ -32,6 +32,7 @@ pub struct DownloadResult {
     pub file_size: Option<u64>,
     pub sample_rate: Option<u32>,
     pub channels: Option<u32>,
+    pub thumbnail_url: Option<String>,
     pub error: Option<String>,
 }
 
@@ -145,6 +146,8 @@ pub async fn download_youtube_audio(
             .arg("-x") // Extract audio
             .arg("--audio-format").arg("mp3")
             .arg("--audio-quality").arg("0") // Best quality
+            .arg("--write-thumbnail") // Download thumbnail
+            .arg("--convert-thumbnails").arg("jpg") // Convert to jpg
             .arg("--concurrent-fragments").arg("4")
             .arg("--no-part")
             .arg("--newline")
@@ -167,6 +170,7 @@ pub async fn download_youtube_audio(
                     file_size: None,
                     sample_rate: None,
                     channels: None,
+                    thumbnail_url: None,
                     error: Some(format!("Failed to spawn yt-dlp: {}", e)),
                 });
                 return;
@@ -229,6 +233,15 @@ pub async fn download_youtube_audio(
                             .ok()
                             .map(|m| m.len());
                         
+                        // Find thumbnail file (yt-dlp saves it as .jpg next to the audio file)
+                        let thumbnail_path = std::path::Path::new(&output_file_str)
+                            .with_extension("jpg");
+                        let thumbnail_url = if thumbnail_path.exists() {
+                            Some(thumbnail_path.to_string_lossy().to_string())
+                        } else {
+                            None
+                        };
+                        
                         let _ = app_clone.emit("download-complete", DownloadResult {
                             download_id: download_id_clone,
                             success: true,
@@ -240,6 +253,7 @@ pub async fn download_youtube_audio(
                             file_size,
                             sample_rate: metadata.as_ref().and_then(|m| m.sample_rate),
                             channels: metadata.as_ref().and_then(|m| m.channels),
+                            thumbnail_url,
                             error: None,
                         });
                     }
@@ -268,6 +282,7 @@ pub async fn download_youtube_audio(
                             file_size: None,
                             sample_rate: None,
                             channels: None,
+                            thumbnail_url: None,
                             error: Some(error),
                         });
                     }
@@ -289,6 +304,7 @@ pub async fn download_youtube_audio(
                     file_size: None,
                     sample_rate: None,
                     channels: None,
+                    thumbnail_url: None,
                     error: Some("Download cancelled".to_string()),
                 });
             }
@@ -435,6 +451,7 @@ pub async fn upload_audio_file(
         file_size,
         sample_rate: metadata.as_ref().and_then(|m| m.sample_rate),
         channels: metadata.as_ref().and_then(|m| m.channels),
+        thumbnail_url: None,
         error: None,
     })
 }

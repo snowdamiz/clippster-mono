@@ -8,26 +8,65 @@
     >
       <template #actions>
         <div class="projects-header-actions">
-          <!-- Search -->
-          <div class="projects-header__search">
-            <Search class="projects-header__search-icon" />
-            <input
-              v-model="searchQuery"
-              type="text"
-              placeholder="Search audio..."
-              class="projects-header__search-input"
-            />
+          <!-- Bulk Actions (shown when items selected) -->
+          <div v-if="selectedAudioIds.size > 0" class="projects-bulk-actions">
+            <span class="projects-bulk-actions__count">{{ selectedAudioIds.size }} selected</span>
+            <button @click="addSelectedToPlaylist" class="projects-bulk-actions__btn">
+              <ListPlus :size="16" />
+              Add to Playlist
+            </button>
+            <button @click="deleteSelectedAudio" class="projects-bulk-actions__btn projects-bulk-actions__btn--danger">
+              <Trash2 :size="16" />
+              Delete
+            </button>
+            <button @click="clearSelection" class="projects-bulk-actions__btn">
+              <X :size="16" />
+              Clear
+            </button>
           </div>
 
-          <!-- Upload Audio Button -->
-          <button @click="handleUploadAudio" class="projects-create-btn">
-            <Upload class="projects-create-btn__icon" />
-            Upload Audio
-          </button>
+          <!-- Normal Actions -->
+          <template v-else>
+            <!-- Search -->
+            <div class="projects-header__search">
+              <Search class="projects-header__search-icon" />
+              <input
+                v-model="searchQuery"
+                type="text"
+                placeholder="Search audio..."
+                class="projects-header__search-input"
+              />
+            </div>
+
+            <!-- Select All Button -->
+            <button 
+              v-if="filteredAudio.length > 0"
+              @click="selectAll" 
+              class="projects-bulk-actions__btn"
+            >
+              <Check :size="16" />
+              Select All
+            </button>
+
+            <!-- Upload Audio Button -->
+            <button @click="handleUploadAudio" class="projects-create-btn">
+              <Upload class="projects-create-btn__icon" />
+              Upload Audio
+            </button>
+          </template>
         </div>
       </template>
 
       <div class="projects__content">
+        <!-- Page Heading -->
+        <div
+          v-if="filteredAudio.length > 0 || playlists.length > 0 || getActiveDownloads().length > 0"
+          class="projects__heading"
+        >
+          <h1 class="projects__title">Audio Library</h1>
+          <p class="projects__subtitle">Manage your downloaded audio and playlists</p>
+        </div>
+
         <!-- Active Downloads Section -->
         <div v-if="getActiveDownloads().length > 0" class="projects__section">
           <div class="projects__section-header-row">
@@ -56,23 +95,46 @@
 
         <!-- Downloaded Audio Section -->
         <div v-if="filteredAudio.length > 0" class="projects__section">
-        <h3 class="projects__section-header">Downloaded Audio</h3>
-        <div class="projects__grid">
-          <div
-            v-for="audio in filteredAudio"
-            :key="audio.id"
-            class="project-card"
-            @click="playAudio(audio)"
-          >
-            <!-- Fallback background for audio files -->
-            <div class="project-card__thumbnail project-card__thumbnail--empty">
-              <div class="project-card__thumbnail-gradient"></div>
-              
-              <!-- Standard Empty State -->
-              <div class="project-card__empty-icon">
-                <Music class="project-card__folder-icon" />
+          <h3 class="projects__section-header">Downloaded Audio</h3>
+          <div class="projects__grid">
+            <div
+              v-for="audio in filteredAudio"
+              :key="audio.id"
+              class="project-card project-card--audio"
+              @click="playAudio(audio)"
+            >
+              <!-- Selection Checkbox -->
+              <div
+                class="project-card__checkbox"
+                :class="{ 'project-card__checkbox--visible': isAudioSelected(audio.id) }"
+                @click.stop="toggleAudioSelection(audio.id)"
+              >
+                <div
+                  class="project-card__checkbox-inner"
+                  :class="{ 'project-card__checkbox-inner--checked': isAudioSelected(audio.id) }"
+                >
+                  <Check v-if="isAudioSelected(audio.id)" class="project-card__checkbox-icon" />
+                </div>
               </div>
-            </div>
+
+              <!-- Thumbnail or Fallback -->
+              <div
+                v-if="audio.thumbnail_url"
+                class="project-card__thumbnail"
+                :style="{
+                  backgroundImage: `url(${convertFileSrc(audio.thumbnail_url)})`,
+                }"
+              >
+                <div class="project-card__vignette"></div>
+              </div>
+              <div v-else class="project-card__thumbnail project-card__thumbnail--empty">
+                <div class="project-card__thumbnail-gradient"></div>
+                
+                <!-- Standard Empty State -->
+                <div class="project-card__empty-icon">
+                  <Music class="project-card__folder-icon" />
+                </div>
+              </div>
 
             <!-- Bottom Overlay with Info -->
             <div class="project-card__bottom">
@@ -132,7 +194,7 @@
                 <Play :size="16" />
               </button>
               <button
-                @click.stop="showAddToPlaylistDialog(audio)"
+                @click.stop="openAddToPlaylistDialog(audio)"
                 class="project-card__hover-btn"
                 title="Add to playlist"
               >
@@ -154,10 +216,6 @@
         <div v-if="playlists.length > 0" class="projects__section">
           <div class="projects__section-header-row">
             <h3 class="projects__section-header">Playlists</h3>
-            <button @click="showCreatePlaylistDialog = true" class="projects-create-btn">
-              <Plus class="projects-create-btn__icon" />
-              New Playlist
-            </button>
           </div>
           <div class="projects__grid">
             <div
@@ -279,6 +337,125 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- Add to Playlist Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showAddToPlaylistDialog" class="bug-dialog__overlay" @click.self="showAddToPlaylistDialog = false">
+          <div class="bug-dialog">
+            <div class="bug-dialog__accent"></div>
+            <div class="bug-dialog__header">
+              <button class="bug-dialog__close" @click="showAddToPlaylistDialog = false">
+                <X :size="18" />
+              </button>
+              <div class="bug-dialog__icon">
+                <ListPlus :size="24" />
+              </div>
+              <h2 class="bug-dialog__title">Add to Playlist</h2>
+            </div>
+            <div class="bug-dialog__content">
+              <div class="playlist-select">
+                <!-- Create New Playlist Button -->
+                <button
+                  @click="showAddToPlaylistDialog = false; showCreatePlaylistDialog = true"
+                  class="playlist-select__item playlist-select__item--create"
+                >
+                  <Plus :size="18" class="playlist-select__icon" />
+                  <div class="playlist-select__info">
+                    <div class="playlist-select__name">Create New Playlist</div>
+                  </div>
+                </button>
+
+                <!-- Existing Playlists -->
+                <button
+                  v-for="playlist in playlists"
+                  :key="playlist.id"
+                  @click="addToPlaylist(playlist.id)"
+                  class="playlist-select__item"
+                >
+                  <ListMusic :size="18" class="playlist-select__icon" />
+                  <div class="playlist-select__info">
+                    <div class="playlist-select__name">{{ playlist.name }}</div>
+                    <div class="playlist-select__count">{{ getPlaylistTrackCount(playlist.id) }} tracks</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+            <div class="bug-dialog__footer">
+              <button @click="showAddToPlaylistDialog = false" class="bug-dialog__btn bug-dialog__btn--secondary">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Playlist Detail Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showPlaylistDetailDialog && selectedPlaylist" class="bug-dialog__overlay" @click.self="showPlaylistDetailDialog = false">
+          <div class="bug-dialog bug-dialog--large">
+            <div class="bug-dialog__accent"></div>
+            <div class="bug-dialog__header">
+              <button class="bug-dialog__close" @click="showPlaylistDetailDialog = false">
+                <X :size="18" />
+              </button>
+              <div class="bug-dialog__icon">
+                <ListMusic :size="24" />
+              </div>
+              <h2 class="bug-dialog__title">{{ selectedPlaylist.name }}</h2>
+              <p v-if="selectedPlaylist.description" class="bug-dialog__subtitle">
+                {{ selectedPlaylist.description }}
+              </p>
+            </div>
+            <div class="bug-dialog__content">
+              <p v-if="playlistTracks.length === 0" class="bug-dialog__text">
+                No tracks in this playlist yet.
+              </p>
+              <div v-else class="playlist-tracks">
+                <div
+                  v-for="(track, index) in playlistTracks"
+                  :key="track.playlist_item_id"
+                  class="playlist-track"
+                >
+                  <div class="playlist-track__number">{{ index + 1 }}</div>
+                  <div class="playlist-track__info">
+                    <div class="playlist-track__title">{{ track.title }}</div>
+                    <div class="playlist-track__meta">
+                      <span v-if="track.platform" class="playlist-track__platform">{{ track.platform }}</span>
+                      <span v-if="track.platform && track.duration" class="playlist-track__dot">•</span>
+                      <span v-if="track.duration">{{ formatDuration(track.duration) }}</span>
+                    </div>
+                  </div>
+                  <div class="playlist-track__actions">
+                    <button
+                      @click="playAudio(track)"
+                      class="playlist-track__btn"
+                      title="Play"
+                    >
+                      <Play :size="16" />
+                    </button>
+                    <button
+                      @click="removeTrackFromPlaylist(track.playlist_item_id)"
+                      class="playlist-track__btn playlist-track__btn--danger"
+                      title="Remove from playlist"
+                    >
+                      <Trash2 :size="16" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="bug-dialog__footer">
+              <button @click="showPlaylistDetailDialog = false" class="bug-dialog__btn bug-dialog__btn--secondary">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -287,6 +464,7 @@
   import { useRouter } from 'vue-router';
   import { open } from '@tauri-apps/plugin-dialog';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { convertFileSrc } from '@tauri-apps/api/core';
   import PageLayout from '@/components/PageLayout.vue';
   import DownloadCard from '@/components/DownloadCard.vue';
   import { useAudioDownloads } from '@/composables/useAudioDownloads';
@@ -302,6 +480,9 @@
     getAllAudioPlaylists,
     createAudioPlaylist,
     deleteAudioPlaylist,
+    addAudioToPlaylist,
+    getPlaylistItemsWithAudio,
+    removeAudioFromPlaylist,
     getPlaylistTrackCount as getPlaylistTrackCountFromDb,
   } from '@/services/database/audio-playlists';
   import type { DownloadedAudio, AudioPlaylist } from '@/services/database/types';
@@ -318,20 +499,27 @@
     Plus,
     Edit,
     X,
+    Check,
   } from 'lucide-vue-next';
 
   const router = useRouter();
   const { success, error: showError } = useToast();
   const { getActiveDownloads, uploadAudioFile } = useAudioDownloads();
-  const { playTrack } = useAudioPlayer();
+  const { playTrack, playPlaylist: playPlaylistTracks } = useAudioPlayer();
 
   const audioFiles = ref<DownloadedAudio[]>([]);
   const playlists = ref<AudioPlaylist[]>([]);
   const searchQuery = ref('');
   const showCreatePlaylistDialog = ref(false);
+  const showAddToPlaylistDialog = ref(false);
+  const showPlaylistDetailDialog = ref(false);
+  const selectedAudioForPlaylist = ref<DownloadedAudio | null>(null);
+  const selectedPlaylist = ref<AudioPlaylist | null>(null);
+  const playlistTracks = ref<Array<DownloadedAudio & { playlist_item_id: string }>>([]);
   const newPlaylistName = ref('');
   const newPlaylistDescription = ref('');
   const playlistTrackCounts = ref<Map<string, number>>(new Map());
+  const selectedAudioIds = ref<Set<string>>(new Set());
   
   let downloadCompleteUnlisten: UnlistenFn | null = null;
 
@@ -350,6 +538,60 @@
       console.error('Failed to load audio files:', error);
       showError('Load Failed', 'Failed to load audio files');
     }
+  }
+
+  function toggleAudioSelection(audioId: string) {
+    if (selectedAudioIds.value.has(audioId)) {
+      selectedAudioIds.value.delete(audioId);
+    } else {
+      selectedAudioIds.value.add(audioId);
+    }
+  }
+
+  function isAudioSelected(audioId: string): boolean {
+    return selectedAudioIds.value.has(audioId);
+  }
+
+  function clearSelection() {
+    selectedAudioIds.value.clear();
+  }
+
+  function selectAll() {
+    // Select all filtered audio files (not playlists)
+    filteredAudio.value.forEach(audio => {
+      selectedAudioIds.value.add(audio.id);
+    });
+  }
+
+  async function deleteSelectedAudio() {
+    if (selectedAudioIds.value.size === 0) return;
+
+    const count = selectedAudioIds.value.size;
+    const confirmed = confirm(`Delete ${count} audio file${count > 1 ? 's' : ''}?`);
+    if (!confirmed) return;
+
+    try {
+      for (const audioId of selectedAudioIds.value) {
+        await deleteDownloadedAudio(audioId);
+      }
+      success('Deleted', `Deleted ${count} audio file${count > 1 ? 's' : ''}`);
+      clearSelection();
+      await loadAudioFiles();
+    } catch (error) {
+      console.error('Failed to delete audio files:', error);
+      showError('Delete Failed', 'Failed to delete selected audio files');
+    }
+  }
+
+  async function addSelectedToPlaylist() {
+    if (selectedAudioIds.value.size === 0) return;
+    
+    const selectedAudio = audioFiles.value.filter(a => selectedAudioIds.value.has(a.id));
+    if (selectedAudio.length === 0) return;
+
+    // For bulk add, we'll show the playlist dialog
+    selectedAudioForPlaylist.value = selectedAudio[0]; // Use first as reference
+    showAddToPlaylistDialog.value = true;
   }
 
   async function loadPlaylists() {
@@ -456,14 +698,73 @@
     });
   }
 
-  function playPlaylist(playlist: AudioPlaylist) {
-    // TODO: Implement playlist playback with global player
-    console.log('Play playlist:', playlist);
+  async function playPlaylist(playlist: AudioPlaylist) {
+    try {
+      const items = await getPlaylistItemsWithAudio(playlist.id);
+      const tracks = items.map((item: any) => ({
+        id: item.audio_id,
+        title: item.audio_title,
+        filePath: item.audio_file_path,
+        duration: item.audio_duration,
+        platform: item.audio_platform,
+      }));
+      
+      if (tracks.length > 0) {
+        await playPlaylistTracks(tracks);
+        success('Playing', `Playing ${playlist.name}`);
+      } else {
+        showError('Empty Playlist', 'This playlist has no tracks');
+      }
+    } catch (error) {
+      console.error('Play playlist error:', error);
+      showError('Failed', 'Could not play playlist');
+    }
   }
 
-  function viewPlaylist(playlist: AudioPlaylist) {
-    // TODO: Navigate to playlist detail view
-    console.log('View playlist:', playlist);
+  async function viewPlaylist(playlist: AudioPlaylist) {
+    selectedPlaylist.value = playlist;
+    await loadPlaylistTracks(playlist.id);
+    showPlaylistDetailDialog.value = true;
+  }
+
+  async function loadPlaylistTracks(playlistId: string) {
+    try {
+      const items = await getPlaylistItemsWithAudio(playlistId);
+      playlistTracks.value = items.map((item: any) => ({
+        id: item.audio_id,
+        title: item.audio_title,
+        source: item.audio_source,
+        platform: item.audio_platform,
+        source_url: item.audio_source_url,
+        file_path: item.audio_file_path,
+        duration: item.audio_duration,
+        file_size: item.audio_file_size,
+        sample_rate: item.audio_sample_rate,
+        channels: item.audio_channels,
+        thumbnail_url: item.audio_thumbnail_url,
+        user_id: item.audio_user_id,
+        created_at: item.audio_created_at,
+        updated_at: item.audio_updated_at,
+        playlist_item_id: item.id, // Store the playlist item ID for removal
+      }));
+    } catch (error) {
+      console.error('Load playlist tracks error:', error);
+      showError('Failed', 'Could not load playlist tracks');
+    }
+  }
+
+  async function removeTrackFromPlaylist(playlistItemId: string) {
+    if (!selectedPlaylist.value) return;
+    
+    try {
+      await removeAudioFromPlaylist(playlistItemId);
+      success('Removed', 'Track removed from playlist');
+      await loadPlaylistTracks(selectedPlaylist.value.id);
+      await loadPlaylists();
+    } catch (error) {
+      console.error('Remove track error:', error);
+      showError('Failed', error instanceof Error ? error.message : String(error));
+    }
   }
 
   function editPlaylist(playlist: AudioPlaylist) {
@@ -471,9 +772,34 @@
     console.log('Edit playlist:', playlist);
   }
 
-  function showAddToPlaylistDialog(audio: DownloadedAudio) {
-    // TODO: Show dialog to add audio to playlist
-    console.log('Add to playlist:', audio);
+  function openAddToPlaylistDialog(audio: DownloadedAudio) {
+    selectedAudioForPlaylist.value = audio;
+    showAddToPlaylistDialog.value = true;
+  }
+
+  async function addToPlaylist(playlistId: string) {
+    try {
+      // Check if we're doing bulk add
+      if (selectedAudioIds.value.size > 0) {
+        // Bulk add selected items
+        for (const audioId of selectedAudioIds.value) {
+          await addAudioToPlaylist(playlistId, audioId);
+        }
+        success('Added', `Added ${selectedAudioIds.value.size} tracks to playlist`);
+        clearSelection();
+      } else if (selectedAudioForPlaylist.value) {
+        // Single add
+        await addAudioToPlaylist(playlistId, selectedAudioForPlaylist.value.id.toString());
+        success('Added', `Added to playlist`);
+        selectedAudioForPlaylist.value = null;
+      }
+      
+      showAddToPlaylistDialog.value = false;
+      await loadPlaylists();
+    } catch (error) {
+      console.error('Add to playlist error:', error);
+      showError('Failed', error instanceof Error ? error.message : String(error));
+    }
   }
 
   function getPlaylistTrackCount(playlistId: string): number {
@@ -631,6 +957,36 @@
     color: var(--sidebar-text-muted);
     margin: 0;
     padding-bottom: 0.1rem;
+  }
+
+  /* ===== Content Container ===== */
+  .projects__content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    width: 100%;
+    flex: 1;
+  }
+
+  /* ===== Page Heading ===== */
+  .projects__heading {
+    margin-bottom: 0.5rem;
+  }
+
+  .projects__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.2rem;
+    letter-spacing: -0.02em;
+  }
+
+  .projects__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
   }
 
   /* ===== Projects Grid ===== */
@@ -997,6 +1353,170 @@
     border-color: rgba(255, 255, 255, 0.15);
   }
 
+  /* ===== Playlist Selection ===== */
+  .playlist-select {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  .playlist-select__item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 150ms ease;
+    text-align: left;
+  }
+
+  .playlist-select__item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--sidebar-accent);
+  }
+
+  .playlist-select__icon {
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .playlist-select__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .playlist-select__name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .playlist-select__count {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .playlist-select__item--create {
+    background: rgba(6, 182, 212, 0.1);
+    border-color: var(--sidebar-accent);
+  }
+
+  .playlist-select__item--create:hover {
+    background: rgba(6, 182, 212, 0.15);
+  }
+
+  .playlist-select__item--create .playlist-select__icon {
+    color: var(--sidebar-accent);
+  }
+
+  .playlist-select__item--create .playlist-select__name {
+    color: var(--sidebar-accent);
+    font-weight: 600;
+  }
+
+  /* ===== Playlist Tracks ===== */
+  .playlist-tracks {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .playlist-track {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    transition: all 150ms ease;
+  }
+
+  .playlist-track:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .playlist-track__number {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    min-width: 24px;
+    text-align: center;
+  }
+
+  .playlist-track__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .playlist-track__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 0.25rem;
+  }
+
+  .playlist-track__meta {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .playlist-track__platform {
+    text-transform: capitalize;
+  }
+
+  .playlist-track__dot {
+    opacity: 0.5;
+  }
+
+  .playlist-track__actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .playlist-track__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .playlist-track__btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
+  }
+
+  .playlist-track__btn--danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: #ef4444;
+    color: #ef4444;
+  }
+
   /* ===== Dialog Styling (matches ClipDetectionConfirmDialog) ===== */
   .bug-dialog__overlay {
     position: fixed;
@@ -1018,6 +1538,10 @@
     border-radius: 12px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
     overflow: hidden;
+  }
+
+  .bug-dialog--large {
+    max-width: 700px;
   }
 
   .bug-dialog__accent {
@@ -1076,6 +1600,12 @@
     margin: 0;
   }
 
+  .bug-dialog__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.5rem 0 0;
+  }
+
   .bug-dialog__content {
     padding: 0 1.5rem 1.5rem;
     display: flex;
@@ -1093,6 +1623,130 @@
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--sidebar-text);
+  }
+
+  /* Audio card specific styles - half height, same width */
+  .project-card--audio {
+    aspect-ratio: auto;
+    height: 160px;
+  }
+
+  .project-card--audio .project-card__thumbnail {
+    height: 100px;
+  }
+
+  .project-card--audio .project-card__thumbnail--empty {
+    height: 100px;
+  }
+
+  .project-card--audio .project-card__bottom {
+    padding: 0.75rem;
+  }
+
+  .project-card--audio .project-card__title {
+    font-size: 0.875rem;
+    line-height: 1.3;
+    -webkit-line-clamp: 2;
+  }
+
+  .project-card--audio .project-card__meta {
+    margin-top: 0.25rem;
+  }
+
+  /* Checkbox styles */
+  .project-card__checkbox {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 100;
+    opacity: 0;
+    transition: opacity 150ms ease;
+    pointer-events: auto;
+  }
+
+  .project-card:hover .project-card__checkbox,
+  .project-card__checkbox--visible {
+    opacity: 1;
+  }
+
+  .project-card__checkbox-inner {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background-color: rgba(0, 0, 0, 0.6);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .project-card__checkbox-inner:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+    border-color: rgba(255, 255, 255, 0.5);
+  }
+
+  .project-card__checkbox-inner--checked {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+  }
+
+  .project-card__checkbox-inner--checked:hover {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
+  .project-card__checkbox-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Bulk Actions */
+  .projects-bulk-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .projects-bulk-actions__count {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    padding: 0.5rem 0.75rem;
+    background: rgba(6, 182, 212, 0.1);
+    border-radius: 6px;
+  }
+
+  .projects-bulk-actions__btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.875rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: var(--sidebar-text);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .projects-bulk-actions__btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .projects-bulk-actions__btn--danger {
+    color: #ef4444;
+  }
+
+  .projects-bulk-actions__btn--danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
   }
 
   .bug-dialog__input {

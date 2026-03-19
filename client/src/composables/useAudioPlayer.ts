@@ -10,11 +10,16 @@ export interface AudioTrack {
 }
 
 const currentTrack = ref<AudioTrack | null>(null);
+const playlist = ref<AudioTrack[]>([]);
+const shuffledPlaylist = ref<AudioTrack[]>([]);
+const currentTrackIndex = ref(0);
 const isPlaying = ref(false);
 const currentTime = ref(0);
 const duration = ref(0);
 const volume = ref(0.7);
 const isMuted = ref(false);
+const isShuffle = ref(false);
+const repeatMode = ref<'off' | 'all' | 'one'>('off');
 const audioElement = ref<HTMLAudioElement | null>(null);
 
 export function useAudioPlayer() {
@@ -31,8 +36,28 @@ export function useAudioPlayer() {
       });
       
       audioElement.value.addEventListener('ended', () => {
-        isPlaying.value = false;
-        currentTime.value = 0;
+        // Handle repeat one mode
+        if (repeatMode.value === 'one') {
+          audioElement.value!.currentTime = 0;
+          audioElement.value!.play();
+          return;
+        }
+        
+        const activePlaylist = isShuffle.value && shuffledPlaylist.value.length > 0 
+          ? shuffledPlaylist.value 
+          : playlist.value;
+        
+        // Auto-advance to next track if in playlist
+        if (activePlaylist.length > 0 && currentTrackIndex.value < activePlaylist.length - 1) {
+          playNext();
+        } else if (repeatMode.value === 'all' && activePlaylist.length > 0) {
+          // Restart playlist from beginning
+          currentTrackIndex.value = 0;
+          playTrack(activePlaylist[0]);
+        } else {
+          isPlaying.value = false;
+          currentTime.value = 0;
+        }
       });
       
       audioElement.value.addEventListener('play', () => {
@@ -124,6 +149,99 @@ export function useAudioPlayer() {
     currentTrack.value = null;
     isPlaying.value = false;
     currentTime.value = 0;
+    playlist.value = [];
+    currentTrackIndex.value = 0;
+  }
+
+  function shuffleArray<T>(array: T[]): T[] {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  }
+
+  async function playPlaylist(tracks: AudioTrack[], startIndex = 0) {
+    if (tracks.length === 0) return;
+    
+    playlist.value = tracks;
+    
+    if (isShuffle.value) {
+      // Create shuffled version
+      shuffledPlaylist.value = shuffleArray(tracks);
+      currentTrackIndex.value = 0;
+      await playTrack(shuffledPlaylist.value[0]);
+    } else {
+      shuffledPlaylist.value = [];
+      currentTrackIndex.value = startIndex;
+      await playTrack(tracks[startIndex]);
+    }
+  }
+
+  async function playNext() {
+    const activePlaylist = isShuffle.value && shuffledPlaylist.value.length > 0 
+      ? shuffledPlaylist.value 
+      : playlist.value;
+    
+    if (activePlaylist.length === 0) return;
+    
+    const nextIndex = currentTrackIndex.value + 1;
+    if (nextIndex < activePlaylist.length) {
+      currentTrackIndex.value = nextIndex;
+      await playTrack(activePlaylist[nextIndex]);
+    }
+  }
+
+  async function playPrevious() {
+    const activePlaylist = isShuffle.value && shuffledPlaylist.value.length > 0 
+      ? shuffledPlaylist.value 
+      : playlist.value;
+    
+    if (activePlaylist.length === 0) return;
+    
+    const prevIndex = currentTrackIndex.value - 1;
+    if (prevIndex >= 0) {
+      currentTrackIndex.value = prevIndex;
+      await playTrack(activePlaylist[prevIndex]);
+    }
+  }
+
+  function toggleShuffle() {
+    isShuffle.value = !isShuffle.value;
+    
+    // If turning shuffle on and we have a playlist, create shuffled version
+    if (isShuffle.value && playlist.value.length > 0) {
+      shuffledPlaylist.value = shuffleArray(playlist.value);
+      // Find current track in shuffled playlist and update index
+      const currentTrackId = currentTrack.value?.id;
+      if (currentTrackId) {
+        const newIndex = shuffledPlaylist.value.findIndex(t => t.id === currentTrackId);
+        if (newIndex !== -1) {
+          currentTrackIndex.value = newIndex;
+        }
+      }
+    } else {
+      // Turning shuffle off - find current track in original playlist
+      const currentTrackId = currentTrack.value?.id;
+      if (currentTrackId && playlist.value.length > 0) {
+        const newIndex = playlist.value.findIndex(t => t.id === currentTrackId);
+        if (newIndex !== -1) {
+          currentTrackIndex.value = newIndex;
+        }
+      }
+      shuffledPlaylist.value = [];
+    }
+  }
+
+  function toggleRepeat() {
+    if (repeatMode.value === 'off') {
+      repeatMode.value = 'all';
+    } else if (repeatMode.value === 'all') {
+      repeatMode.value = 'one';
+    } else {
+      repeatMode.value = 'off';
+    }
   }
 
   const progress = computed(() => {
@@ -162,16 +280,25 @@ export function useAudioPlayer() {
 
   return {
     currentTrack,
+    playlist,
+    currentTrackIndex,
     isPlaying,
     currentTime,
     duration,
     volume,
     isMuted,
+    isShuffle,
+    repeatMode,
     progress,
     formattedCurrentTime,
     formattedDuration,
     playTrack,
+    playPlaylist,
+    playNext,
+    playPrevious,
     togglePlayPause,
+    toggleShuffle,
+    toggleRepeat,
     pause,
     play,
     seek,
