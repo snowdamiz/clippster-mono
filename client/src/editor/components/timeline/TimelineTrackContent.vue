@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { useEditor } from "../../composables/useEditor";
+import { EditorCore } from "../../core";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import TimelineElement from "./TimelineElement.vue";
 import type {
@@ -17,6 +17,7 @@ const props = defineProps<{
 	zoomLevel: number;
 	dragState: ElementDragState;
 	snappingEnabled: boolean;
+	isPlayheadScrubbing?: boolean;
 	razorMode?: boolean;
 	effectDropTargetId?: string | null;
 }>();
@@ -35,7 +36,7 @@ const emit = defineEmits<{
 
 defineExpose({});
 
-const { editor, version } = useEditor();
+const editor = EditorCore.getInstance();
 const { isElementSelected, clearElementSelection } = useElementSelection();
 
 const rippleShifts = ref<Map<string, number>>(new Map());
@@ -98,7 +99,8 @@ function onTrackMouseDown(event: MouseEvent) {
 				:is-selected="isElementSelected({ trackId: track.id, elementId: element.id })"
 				:drag-state="dragState"
 				:snapping-enabled="snappingEnabled"
-			:is-effect-drop-target="effectDropTargetId === element.id"
+				:is-playhead-scrubbing="isPlayheadScrubbing"
+				:is-effect-drop-target="effectDropTargetId === element.id"
 				:ripple-shifts="rippleShifts"
 				@snap-point-change="(sp) => emit('snapPointChange', sp)"
 				@resize-state-change="(p) => emit('resizeStateChange', p)"

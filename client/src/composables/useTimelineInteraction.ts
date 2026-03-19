@@ -338,9 +338,10 @@ export function useTimelineInteraction(
     // Check if we should skip zooming (e.g., for clip creation mode)
     const shouldSkipZoom = skipZoom?.() ?? false;
 
-    // Use lower threshold for clip creation mode (1% of timeline, ~0.5s for a 50s video)
+    // Use very low threshold for clip creation mode (0.1% of timeline, ~0.05s for a 50s video)
+    // This allows creating clips of any reasonable duration
     // vs standard 5% for zoom mode
-    const minThreshold = shouldSkipZoom ? 0.01 : 0.05;
+    const minThreshold = shouldSkipZoom ? 0.001 : 0.05;
 
     // Only process if the selection is meaningful
     if (selectionDuration >= minThreshold && duration.value > 0) {

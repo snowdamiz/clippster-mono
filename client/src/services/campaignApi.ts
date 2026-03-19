@@ -58,21 +58,24 @@ export interface Campaign {
   cover_image_url: string | null;
   budget: string;
   spent: string;
+  spent_budget: string;
   cpm: string;
   cpm_views: number;
   min_views_for_payment: number;
+  max_views?: number;
   join_type: 'open' | 'application_required';
   allowed_platforms: string[];
   payment_methods: string[];
   status: 'draft' | 'active' | 'paused' | 'completed';
   starts_at: string | null;
   ends_at: string | null;
-  global_watermarks: Record<string, number> | null;
-  global_intro_id: number | null;
-  global_outro_id: number | null;
-  require_watermark: boolean;
-  require_intro: boolean;
-  require_outro: boolean;
+  branding_profile_id: number | null;
+  payment_model: 'cpm' | 'per_clip';
+  per_clip_amount: string | null;
+  clips_per_profile: number;
+  assigned_streamer_ids: number[];
+  is_platform_campaign: boolean;
+  platform_payment_model?: string | null;
   inserted_at: string;
   updated_at: string;
   organization?: CampaignOrganization;
@@ -80,6 +83,7 @@ export interface Campaign {
   global_intro?: CampaignAsset | null;
   global_outro?: CampaignAsset | null;
   creator_profiles?: CampaignCreatorProfile[];
+  branding_profile?: CampaignCreatorProfile | null;
   participants_count?: number;
   joined_at?: string;
 }
@@ -170,13 +174,23 @@ export interface CampaignPayment {
   user_id: number;
   amount: string;
   views_at_payment: number | null;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'verified' | 'completed' | 'failed';
   external_transaction_id: string | null;
   paid_at: string | null;
+  verification_screenshot_url?: string | null;
+  verification_notes?: string | null;
+  payment_date?: string | null;
+  clipper_notified_at?: string | null;
   inserted_at: string;
   campaign?: {
     id: number;
     title: string;
+  };
+  submission?: CampaignSubmission;
+  user?: {
+    id: number;
+    email: string;
+    display_name: string | null;
   };
 }
 
@@ -366,9 +380,10 @@ export async function createCampaign(
     title: string;
     description?: string;
     cover_image_url?: string;
-    creator_profile_id?: number;
+    creator_profile_id?: number | null;
     budget?: number;
     cpm?: number;
+    cpm_views?: number;
     min_views_for_payment?: number;
     join_type?: 'open' | 'application_required';
     allowed_platforms?: string[];
@@ -376,6 +391,10 @@ export async function createCampaign(
     status?: string;
     starts_at?: string;
     ends_at?: string;
+    payment_model?: 'cpm' | 'per_clip';
+    per_clip_amount?: number;
+    clips_per_profile?: number;
+    branding_profile_id?: number | null;
   }
 ): Promise<CampaignResponse> {
   const response = await api.post(`/organizations/${organizationId}/campaigns`, data);
@@ -392,9 +411,10 @@ export async function updateCampaign(
     title: string;
     description: string;
     cover_image_url: string;
-    creator_profile_id: number;
+    creator_profile_id: number | null;
     budget: number;
     cpm: number;
+    cpm_views: number;
     min_views_for_payment: number;
     join_type: 'open' | 'application_required';
     allowed_platforms: string[];
@@ -402,6 +422,10 @@ export async function updateCampaign(
     status: string;
     starts_at: string;
     ends_at: string;
+    payment_model: 'cpm' | 'per_clip';
+    per_clip_amount: number;
+    clips_per_profile: number;
+    branding_profile_id: number | null;
   }>
 ): Promise<CampaignResponse> {
   const response = await api.put(`/organizations/${organizationId}/campaigns/${campaignId}`, data);
@@ -771,6 +795,15 @@ export async function getCampaignsByCreatorProfile(
 }
 
 /**
+ * Get all campaigns the current user has joined that use global branding (no creator profile).
+ * Used during clip build to allow users to select a global branding campaign for any VOD.
+ */
+export async function getMyGlobalBrandingCampaigns(): Promise<ListCampaignsResponse> {
+  const response = await api.get('/user/campaigns/global-branding');
+  return response.data;
+}
+
+/**
  * Get campaign details by ID (for applying assets during build).
  * Returns campaign with global assets.
  */
@@ -835,6 +868,54 @@ export async function removeCreatorProfileFromCampaign(
 ): Promise<CreatorProfileResponse> {
   const response = await api.delete(
     `/organizations/${organizationId}/campaigns/${campaignId}/creator-profiles/${creatorProfileId}`
+  );
+  return response.data;
+}
+
+/**
+ * Calculate payments for all verified submissions in a campaign
+ */
+export async function calculateCampaignPayments(
+  organizationId: number,
+  campaignId: number
+): Promise<{ success: boolean; payments_created: number; total_amount: string; error?: string }> {
+  const response = await api.post(
+    `/organizations/${organizationId}/campaigns/${campaignId}/calculate-payments`
+  );
+  return response.data;
+}
+
+/**
+ * List payments for a campaign (updated version with status filter)
+ */
+export async function listCampaignPaymentsWithFilter(
+  organizationId: number,
+  campaignId: number,
+  status?: string
+): Promise<{ success: boolean; payments: CampaignPayment[]; error?: string }> {
+  const params = status ? { status } : {};
+  const response = await api.get(
+    `/organizations/${organizationId}/campaigns/${campaignId}/payments`,
+    { params }
+  );
+  return response.data;
+}
+
+/**
+ * Verify payment completion with proof
+ */
+export async function verifyPayment(
+  organizationId: number,
+  paymentId: number,
+  data: {
+    screenshot_url?: string;
+    notes: string;
+    payment_date?: string;
+  }
+): Promise<{ success: boolean; payment: CampaignPayment; error?: string }> {
+  const response = await api.post(
+    `/organizations/${organizationId}/payments/${paymentId}/verify`,
+    data
   );
   return response.data;
 }

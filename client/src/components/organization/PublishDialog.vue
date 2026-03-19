@@ -181,12 +181,9 @@
                       </div>
                       <div class="space-y-1.5">
                         <label for="scheduleTime" class="block text-xs font-medium text-zinc-400">Time</label>
-                        <input
-                          id="scheduleTime"
-                          type="time"
+                        <CustomTimePicker
                           v-model="scheduleTime"
                           :disabled="publishing"
-                          class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all"
                         />
                       </div>
                     </div>
@@ -244,6 +241,7 @@
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
   import { Instagram, FileVideo, Loader2, ChevronDown, Calendar } from 'lucide-vue-next';
+  import CustomTimePicker from '@/components/CustomTimePicker.vue';
   import { useToast } from '@/composables/useToast';
   import {
     listSocialAccounts,

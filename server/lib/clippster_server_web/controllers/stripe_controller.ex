@@ -15,6 +15,7 @@ defmodule ClippsterServerWeb.StripeController do
   def create_checkout_session(conn, %{"pack_type" => pack_type} = params) do
     with {:ok, user_id} <- get_user_id_from_token(conn),
          {:ok, user} <- get_user(user_id),
+         {:ok, _} <- validate_tier_pack_access(user, pack_type),
          {:ok, pack_info} <- validate_pack_type(pack_type) do
       success_url =
         StripeReturn.success_url(conn, params)
@@ -84,6 +85,11 @@ defmodule ClippsterServerWeb.StripeController do
         conn
         |> put_status(400)
         |> json(%{success: false, error: "Invalid pack type"})
+
+      {:error, :tier_restriction} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Basic tier can only purchase the Large credit pack (1,800 credits)"})
     end
   end
 
@@ -286,6 +292,7 @@ defmodule ClippsterServerWeb.StripeController do
     subscription_type = get_metadata_value(metadata, "subscription_type")
     addon_tier = get_metadata_value(metadata, "addon_tier")
     promo_code_id = get_metadata_value(metadata, "promo_code_id")
+    affiliate_code = get_metadata_value(metadata, "affiliate_code")
 
     session_id = safe_get(session, "id")
     payment_intent = safe_get(session, "payment_intent")
@@ -330,7 +337,8 @@ defmodule ClippsterServerWeb.StripeController do
           stripe_customer_id,
           promo_code_id,
           billing_interval,
-          amount_total
+          amount_total,
+          affiliate_code
         )
 
       # Handle credit pack purchase for organization
@@ -456,6 +464,16 @@ defmodule ClippsterServerWeb.StripeController do
 
                 _ ->
                   :ok
+              end
+
+              # Allocate revenue to platform fund if enabled
+              case Subscriptions.get_active_subscription(user.id) do
+                nil -> :ok
+                subscription ->
+                  ClippsterServer.PlatformCampaigns.allocate_subscription_revenue(
+                    subscription.id,
+                    amount_usd
+                  )
               end
 
             {:error, reason} ->
@@ -679,13 +697,31 @@ defmodule ClippsterServerWeb.StripeController do
          stripe_customer_id,
          promo_code_id,
          billing_interval,
-         amount_total_cents
+         amount_total_cents,
+         affiliate_code
        ) do
     user_id_int = if is_binary(user_id), do: String.to_integer(user_id), else: user_id
 
     IO.puts(
-      "[Stripe Webhook] Creating subscription: user=#{user_id_int}, tier=#{tier}, interval=#{billing_interval}, sub_id=#{stripe_subscription_id}, promo_code_id=#{promo_code_id}"
+      "[Stripe Webhook] Creating subscription: user=#{user_id_int}, tier=#{tier}, interval=#{billing_interval}, sub_id=#{stripe_subscription_id}, promo_code_id=#{promo_code_id}, affiliate_code=#{inspect(affiliate_code)}"
     )
+
+    # If an affiliate code was entered at checkout, link the user to that affiliate
+    # so that commission tracking works. This handles the case where the user signed up
+    # without a referral code but entered an affiliate code in the promo field at checkout.
+    if affiliate_code do
+      case Affiliates.link_user_to_affiliate(user_id_int, affiliate_code) do
+        {:ok, affiliate} ->
+          IO.puts(
+            "[Stripe Webhook] Linked user #{user_id_int} to affiliate #{affiliate.id} via checkout code '#{affiliate_code}'"
+          )
+
+        {:error, reason} ->
+          IO.puts(
+            "[Stripe Webhook] Could not link user #{user_id_int} to affiliate code '#{affiliate_code}': #{inspect(reason)}"
+          )
+      end
+    end
 
     case Subscriptions.create_stripe_subscription(
            user_id_int,
@@ -726,6 +762,16 @@ defmodule ClippsterServerWeb.StripeController do
             0 -> get_subscription_amount(tier)
             cents -> Decimal.div(Decimal.new(cents), Decimal.new(100))
           end
+
+        # Allocate revenue to platform fund if enabled
+        case Subscriptions.get_active_subscription(user_id_int) do
+          nil -> :ok
+          subscription ->
+            ClippsterServer.PlatformCampaigns.allocate_subscription_revenue(
+              subscription.id,
+              amount
+            )
+        end
 
         case Affiliates.record_signup_commission(user_id_int, tier, amount) do
           {:ok, _} ->
@@ -1060,6 +1106,15 @@ defmodule ClippsterServerWeb.StripeController do
     case Credits.get_pack_info(pack_type) do
       nil -> {:error, :invalid_pack}
       pack_info -> {:ok, pack_info}
+    end
+  end
+
+  defp validate_tier_pack_access(user, pack_type) do
+    # Basic tier can only purchase large pack
+    if user.subscription_tier == "basic" && pack_type != "large" do
+      {:error, :tier_restriction}
+    else
+      {:ok, :allowed}
     end
   end
 end

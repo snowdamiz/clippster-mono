@@ -4,6 +4,8 @@ import { useEditorActions } from "../composables/actions/useEditorActions";
 import { useKeybindingsListener } from "../composables/useKeybindings";
 import { useImageMode } from "../composables/useImageMode";
 import { useAutoSave } from "../composables/useAutoSave";
+import { useElementSelection } from "../composables/timeline/element/useElementSelection";
+import { providePointerDrag } from "../composables/usePointerDrag";
 import KeyboardShortcutsModal from "./KeyboardShortcutsModal.vue";
 import EditorHeader from "./EditorHeader.vue";
 import Timeline from "./timeline/Timeline.vue";
@@ -32,6 +34,11 @@ import {
 useEditorActions();
 useKeybindingsListener();
 useAutoSave();
+providePointerDrag();
+
+const { selectedElements } = useElementSelection();
+
+const previewPanelRef = ref<InstanceType<typeof PreviewPanel> | null>(null);
 
 const { isImageMode } = useImageMode();
 
@@ -85,7 +92,7 @@ const tabConfig: Record<Tab, { icon: any; label: string }> = {
 	settings: { icon: Settings, label: "Settings" },
 };
 
-const activeTab = ref<Tab>("media");
+const activeTab = ref<Tab | null>("media");
 const shortcutsOpen = ref(false);
 
 function toggleShortcutsModal() {
@@ -137,7 +144,7 @@ onUnmounted(() => {
 <template>
 	<div class="flex h-full w-full flex-col overflow-hidden bg-[#0e0e10] text-white">
 		<!-- Header -->
-		<EditorHeader />
+		<EditorHeader :preview-container="previewPanelRef?.containerRef ?? null" />
 
 		<!-- ============ IMAGE MODE LAYOUT (Photoshop-like) ============ -->
 		<div v-if="isImageMode" class="flex flex-1 min-h-0 overflow-hidden">
@@ -154,7 +161,7 @@ onUnmounted(() => {
 							? 'bg-white/[0.08] text-blue-400'
 							: 'text-zinc-600 hover:text-zinc-300 hover:bg-white/[0.04]',
 					]"
-					@click="activeTab = tabKey"
+					@click="activeTab = activeTab === tabKey ? null : tabKey"
 				>
 					<component :is="tabConfig[tabKey].icon" class="size-[16px]" />
 					<span
@@ -178,7 +185,7 @@ onUnmounted(() => {
 
 			<!-- Center: Canvas workspace -->
 			<div class="flex-1 min-w-0 overflow-hidden bg-[#0a0a0c]">
-				<PreviewPanel />
+				<PreviewPanel ref="previewPanelRef" />
 			</div>
 
 			<!-- Right panel: Layers + Properties stacked -->

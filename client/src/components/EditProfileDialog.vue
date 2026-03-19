@@ -234,7 +234,7 @@
               <!-- Channel Links Section -->
               <div class="profile-dialog__section">
                 <div class="profile-dialog__section-header">
-                  <h3 class="profile-dialog__section-title">Clip Channel Links</h3>
+                  <h3 class="profile-dialog__section-title">Additional Links</h3>
                   <button @click="openAddChannelLink" class="profile-dialog__add-btn">
                     <Plus :size="14" />
                     Add Link

@@ -6,8 +6,8 @@ defmodule ClippsterServerWeb.AdminController do
   alias ClippsterServer.AI
   alias ClippsterServer.AppSettings
   alias ClippsterServer.BetaCodes
-  alias ClippsterServer.Subscriptions
-  alias ClippsterServer.OrganizationSubscriptions
+  alias ClippsterServer.{Accounts, Credits, Subscriptions, Organizations, OrganizationSubscriptions}
+  alias ClippsterServer.Storage
   alias ClippsterServer.PromoCodes
   alias ClippsterServer.ClipperProfiles.LeaderboardWorker
 
@@ -618,8 +618,8 @@ defmodule ClippsterServerWeb.AdminController do
         %{
           id: code.id,
           code: code.code,
-          used: not is_nil(code.used_by_user_id),
-          used_at: code.used_at,
+          used: not is_nil(code.verified_at),
+          used_at: code.verified_at,
           used_by:
             if code.used_by_user do
               %{
@@ -630,6 +630,9 @@ defmodule ClippsterServerWeb.AdminController do
             else
               nil
             end,
+          assigned_email: code.assigned_email,
+          verified_at: code.verified_at,
+          verified_from_ip: code.verified_from_ip,
           created_at: code.inserted_at
         }
       end)
@@ -1135,6 +1138,66 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   # ============================================================================
+  # Organization Feature Flags
+  # ============================================================================
+
+  @doc """
+  Enables campaigns access for an organization.
+  """
+  def enable_org_campaigns(conn, %{"organization_id" => org_id_string}) do
+    case parse_integer(org_id_string) do
+      {:ok, org_id} ->
+        case Organizations.enable_campaigns(org_id) do
+          {:ok, org} ->
+            json(conn, %{
+              success: true,
+              message: "Campaigns access enabled",
+              organization: %{id: org.id, campaigns_enabled: org.campaigns_enabled}
+            })
+
+          {:error, :organization_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "Organization not found"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid organization ID"})
+    end
+  end
+
+  @doc """
+  Disables campaigns access for an organization.
+  """
+  def disable_org_campaigns(conn, %{"organization_id" => org_id_string}) do
+    case parse_integer(org_id_string) do
+      {:ok, org_id} ->
+        case Organizations.disable_campaigns(org_id) do
+          {:ok, org} ->
+            json(conn, %{
+              success: true,
+              message: "Campaigns access disabled",
+              organization: %{id: org.id, campaigns_enabled: org.campaigns_enabled}
+            })
+
+          {:error, :organization_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "Organization not found"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid organization ID"})
+    end
+  end
+
+  # ============================================================================
   # Organization Subscription Management
   # ============================================================================
 
@@ -1601,6 +1664,62 @@ defmodule ClippsterServerWeb.AdminController do
     end
   end
 
+  @doc """
+  Enables campaigns access for a user.
+  """
+  def enable_campaigns(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.enable_campaigns(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "Campaigns access enabled",
+              user: %{id: user.id, campaigns_enabled: user.campaigns_enabled}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Disables campaigns access for a user.
+  """
+  def disable_campaigns(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.disable_campaigns(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "Campaigns access disabled",
+              user: %{id: user.id, campaigns_enabled: user.campaigns_enabled}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
   # ============================================
   # User Restrictions
   # ============================================
@@ -1866,7 +1985,7 @@ defmodule ClippsterServerWeb.AdminController do
               wallet_address: user.wallet_address,
               email: user.email,
               name: user.name,
-              avatar_url: user.avatar_url,
+              avatar_url: maybe_presign_avatar(user.avatar_url),
               provider: user.provider,
               is_admin: user.is_admin,
               is_moderator: user.is_moderator,
@@ -1877,6 +1996,7 @@ defmodule ClippsterServerWeb.AdminController do
               account_type: user.account_type,
               owned_organization_id: user.owned_organization_id,
               ai_editor_enabled: user.ai_editor_enabled,
+              campaigns_enabled: user.campaigns_enabled,
               created_at: user.inserted_at,
               last_active_at: user.last_active_at,
               credits: %{
@@ -1930,7 +2050,7 @@ defmodule ClippsterServerWeb.AdminController do
                       id: member.user.id,
                       name: member.user.name,
                       email: member.user.email,
-                      avatar_url: member.user.avatar_url
+                      avatar_url: maybe_presign_avatar(member.user.avatar_url)
                     }
                   else
                     nil
@@ -1952,7 +2072,7 @@ defmodule ClippsterServerWeb.AdminController do
                 id: owner.id,
                 name: owner.name,
                 email: owner.email,
-                avatar_url: owner.avatar_url
+                avatar_url: maybe_presign_avatar(owner.avatar_url)
               }
             else
               nil
@@ -2243,6 +2363,54 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   @doc """
+  Reinvites a single waitlist entry by ID.
+  Cancels old beta code and discount code, generates new ones, and sends new email.
+  """
+  def reinvite_waitlist_entry(conn, %{"id" => entry_id_string} = params) do
+    admin_id = conn.assigns.current_user.id
+
+    discount_config = %{
+      percent_off: Map.get(params, "percent_off", 30),
+      duration_months: Map.get(params, "duration_months", 1),
+      allowed_tiers: Map.get(params, "allowed_tiers", ["creator"])
+    }
+
+    case Integer.parse(entry_id_string) do
+      {entry_id, ""} ->
+        entry = ClippsterServer.Repo.get(ClippsterServer.Waitlist.WaitlistEntry, entry_id)
+
+        if entry do
+          case ClippsterServer.Waitlist.reinvite_entry(entry, admin_id, discount_config) do
+            {:ok, updated_entry} ->
+              json(conn, %{
+                success: true,
+                entry: %{
+                  id: updated_entry.id,
+                  email: updated_entry.email,
+                  invited_at: updated_entry.invited_at,
+                  email_sent_at: updated_entry.email_sent_at
+                }
+              })
+
+            {:error, reason} ->
+              conn
+              |> put_status(:internal_server_error)
+              |> json(%{success: false, error: inspect(reason)})
+          end
+        else
+          conn
+          |> put_status(:not_found)
+          |> json(%{success: false, error: "Waitlist entry not found"})
+        end
+
+      _ ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{success: false, error: "Invalid entry ID"})
+    end
+  end
+
+  @doc """
   Diagnostic endpoint to check org membership state.
   GET /admin/diagnostic/org-membership?org_id=2&email=noah@yeet.com
   """
@@ -2377,5 +2545,31 @@ defmodule ClippsterServerWeb.AdminController do
     Enum.map(errors, fn {:error, {email, reason}} ->
       %{email: email, error: inspect(reason)}
     end)
+  end
+
+  # Presign avatar URL only if it's from R2 storage
+  defp maybe_presign_avatar(nil), do: nil
+  defp maybe_presign_avatar(""), do: nil
+
+  defp maybe_presign_avatar(url) when is_binary(url) do
+    base = Storage.public_url_base()
+
+    cond do
+      # If it's from our R2 public URL, presign it
+      base && String.starts_with?(url, base) ->
+        Storage.presigned_url!(url)
+
+      # If it contains R2 domain, presign it
+      String.contains?(url, ".r2.cloudflarestorage.com") ->
+        Storage.presigned_url!(url)
+
+      # If it starts with storage key format, presign it
+      String.starts_with?(url, "avatars/") ->
+        Storage.presigned_url!(url)
+
+      # Otherwise it's an external URL (e.g., Google), return as-is
+      true ->
+        url
+    end
   end
 end

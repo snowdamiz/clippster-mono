@@ -518,8 +518,30 @@ defmodule ClippsterServer.OrganizationSubscriptions do
     Repo.transaction(fn ->
       org = Repo.get!(Organization, organization_id)
 
-      unless org.subscription_status in ["active"] do
+      unless org.subscription_status in ["active", "cancelled"] do
         Repo.rollback(:not_active)
+      end
+
+      # Cancel in Stripe if it's a Stripe subscription
+      if org.stripe_subscription_id && org.subscription_renewal_method == "stripe" do
+        case Stripe.Subscription.update(org.stripe_subscription_id, %{cancel_at_period_end: true}) do
+          {:ok, _} ->
+            IO.puts(
+              "[OrgSubscriptions] Cancelled Stripe subscription #{org.stripe_subscription_id} for org #{organization_id}"
+            )
+
+          {:error, %Stripe.Error{message: message}} ->
+            IO.puts(
+              "[OrgSubscriptions] Failed to cancel Stripe subscription for org #{organization_id}: #{message}"
+            )
+            # Continue anyway to mark as cancelled in DB
+
+          {:error, reason} ->
+            IO.puts(
+              "[OrgSubscriptions] Failed to cancel Stripe subscription for org #{organization_id}: #{inspect(reason)}"
+            )
+            # Continue anyway to mark as cancelled in DB
+        end
       end
 
       # Update status to cancelled

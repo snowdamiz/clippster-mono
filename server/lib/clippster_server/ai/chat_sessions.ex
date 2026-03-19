@@ -74,10 +74,29 @@ defmodule ClippsterServer.AI.ChatSessions do
   end
 
   def save_composition(session, composition) do
+    attrs = %{composition: composition, status: "generated"}
+
+    attrs =
+      case extract_thumbnail_url(session.media_items) do
+        nil -> attrs
+        url -> Map.put(attrs, :thumbnail_url, url)
+      end
+
     session
-    |> ChatSession.changeset(%{composition: composition, status: "generated"})
+    |> ChatSession.changeset(attrs)
     |> Repo.update()
   end
+
+  defp extract_thumbnail_url(media_items) when is_list(media_items) do
+    media_items
+    |> Enum.find(fn item -> Map.get(item, "type") in ["video", "image"] end)
+    |> case do
+      nil -> nil
+      item -> Map.get(item, "thumbnailUrl")
+    end
+  end
+
+  defp extract_thumbnail_url(_), do: nil
 
   def save_reference_analysis(session, analysis, url \\ nil) do
     attrs = %{reference_analysis: analysis}

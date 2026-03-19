@@ -293,6 +293,8 @@ export interface MediaPanelProps {
   // Creator profile default assets (auto-applied when building clips)
   creatorDefaultIntro?: IntroOutroRef | null;
   creatorDefaultOutro?: IntroOutroRef | null;
+  creatorProfile?: any | null;
+  creatorProfileServerId?: number | null;
   // Transcription progress
   isTranscribing?: boolean;
   transcribeProgress?: number;
@@ -347,6 +349,7 @@ export interface MediaPanelEmits {
   (e: 'transcribeProject'): void;
   (e: 'cancelTranscription'): void;
   (e: 'viewTranscript'): void;
+  (e: 'publishNow', clip: any): void;
 }
 
 export interface TimelinePlayheadProps {

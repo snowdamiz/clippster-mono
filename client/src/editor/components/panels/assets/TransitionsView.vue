@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { TRANSITION_PRESETS, TRANSITION_CATEGORIES } from "../../../constants/transition-constants";
-import type { TransitionCategory, TransitionPreset } from "../../../types/transitions";
+import { TRANSITION_PRESETS } from "../../../constants/transition-constants";
+import type { TransitionPreset } from "../../../types/transitions";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
-import { ArrowRightLeft, Search, Check, Trash2, GripVertical } from "lucide-vue-next";
+import { ArrowRightLeft, Check, Trash2 } from "lucide-vue-next";
+import PanelSearchBar from "./PanelSearchBar.vue";
 import TransitionPreviewCanvas from "./TransitionPreviewCanvas.vue";
 import { generateUUID } from "../../../utils/id";
-import { setDragData } from "../../../lib/drag-data";
+import { usePointerDrag } from "../../../composables/usePointerDrag";
 import type { TransitionDragData } from "../../../types/drag";
 
-function handleDragStart(e: DragEvent, preset: TransitionPreset) {
-	if (!e.dataTransfer) return;
+const { startDrag, wasDragCompleted } = usePointerDrag();
+
+function handlePointerDown(e: PointerEvent, preset: TransitionPreset) {
 	const data: TransitionDragData = {
 		id: generateUUID(),
 		name: preset.label,
@@ -19,33 +21,21 @@ function handleDragStart(e: DragEvent, preset: TransitionPreset) {
 		transitionType: preset.type,
 		duration: preset.defaultDuration,
 	};
-	setDragData({ dataTransfer: e.dataTransfer, dragData: data });
+	startDrag(e, data);
 }
 
 const { editor } = useEditor();
 const { selectedElements } = useElementSelection();
 
-const activeCategory = ref<TransitionCategory | "all">("all");
 const searchQuery = ref("");
 
 const filteredPresets = computed(() => {
-	let presets = TRANSITION_PRESETS;
-	if (activeCategory.value !== "all") {
-		presets = presets.filter((p) => p.category === activeCategory.value);
-	}
-	if (searchQuery.value.trim()) {
-		const q = searchQuery.value.toLowerCase();
-		presets = presets.filter(
-			(p) => p.label.toLowerCase().includes(q) || p.description.toLowerCase().includes(q),
-		);
-	}
-	return presets;
+	const q = searchQuery.value.trim().toLowerCase();
+	if (!q) return TRANSITION_PRESETS;
+	return TRANSITION_PRESETS.filter(
+		(p) => p.label.toLowerCase().includes(q) || p.description.toLowerCase().includes(q),
+	);
 });
-
-const categoryTabs = computed(() => [
-	{ key: "all" as const, label: "All" },
-	...TRANSITION_CATEGORIES,
-]);
 
 const selectedElement = computed(() => {
 	if (selectedElements.value.length !== 1) return null;
@@ -83,11 +73,7 @@ function applyTransition(preset: TransitionPreset) {
 	if (!scene) return;
 
 	const currentTransitions = [...(scene.transitions ?? [])];
-
-	// Remove existing transition for this element
 	const filtered = currentTransitions.filter((t) => t.targetElementId !== sel.element.id);
-
-	// Add new transition
 	filtered.push({
 		id: generateUUID(),
 		type: preset.type,
@@ -96,11 +82,8 @@ function applyTransition(preset: TransitionPreset) {
 		trackId: sel.trackId,
 	});
 
-	// Store transitions on the scene
 	const updatedScene = { ...scene, transitions: filtered };
-	const scenes = editor.scenes.getScenes().map((s) =>
-		s.id === scene.id ? updatedScene : s,
-	);
+	const scenes = editor.scenes.getScenes().map((s) => s.id === scene.id ? updatedScene : s);
 	editor.scenes.setScenes({ scenes, activeSceneId: scene.id });
 }
 
@@ -114,63 +97,25 @@ function removeTransition() {
 
 	const filtered = (scene.transitions ?? []).filter((t) => t.targetElementId !== sel.element.id);
 	const updatedScene = { ...scene, transitions: filtered };
-	const scenes = editor.scenes.getScenes().map((s) =>
-		s.id === scene.id ? updatedScene : s,
-	);
+	const scenes = editor.scenes.getScenes().map((s) => s.id === scene.id ? updatedScene : s);
 	editor.scenes.setScenes({ scenes, activeSceneId: scene.id });
 }
-
 </script>
 
 <template>
 	<div class="flex h-full flex-col">
-		<!-- Search -->
-		<div class="border-b border-white/10 px-3 py-2">
-			<div class="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2">
-				<Search class="size-3.5 shrink-0 text-zinc-500" />
-				<input
-					v-model="searchQuery"
-					type="text"
-					placeholder="Search transitions..."
-					class="h-7 w-full bg-transparent text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none"
-				/>
-			</div>
-		</div>
+		<PanelSearchBar v-model="searchQuery" placeholder="Search transitions..." />
 
-		<!-- Category tabs -->
-		<div class="flex items-center gap-0.5 overflow-x-auto border-b border-white/10 px-2 py-1">
-			<button
-				v-for="cat in categoryTabs"
-				:key="cat.key"
-				:class="[
-					'whitespace-nowrap rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
-					activeCategory === cat.key
-						? 'bg-blue-500/20 text-blue-400'
-						: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
-				]"
-				@click="activeCategory = cat.key"
-			>
-				{{ cat.label }}
-			</button>
-		</div>
-
-		<!-- Content -->
-		<div class="flex-1 overflow-y-auto p-3">
-			<!-- Hint -->
-			<div class="mb-3 flex items-center gap-2 rounded-md border border-white/5 bg-white/[0.02] px-2.5 py-1.5">
-				<GripVertical class="size-3.5 shrink-0 text-zinc-600" />
-				<p class="text-[11px] text-zinc-500">Drag between clips, or select a clip and click to apply</p>
-			</div>
-
+		<div class="flex-1 overflow-y-auto p-2">
 			<!-- Active transition -->
-			<div v-if="activeTransition" class="mb-3 rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
+			<div v-if="activeTransition" class="mb-2 rounded-lg border border-white/10 bg-white/[0.03] p-2.5">
 				<div class="flex items-center justify-between">
 					<div class="flex items-center gap-2">
 						<div class="size-8 shrink-0 overflow-hidden rounded bg-zinc-900">
 							<TransitionPreviewCanvas :transition-type="activeTransition.type" />
 						</div>
 						<div>
-							<p class="text-xs font-medium text-blue-400">{{ activeTransition.type }}</p>
+							<p class="text-xs font-medium text-zinc-200">{{ activeTransition.type }}</p>
 							<p class="text-[10px] text-zinc-500">{{ activeTransition.duration }}s duration</p>
 						</div>
 					</div>
@@ -183,37 +128,36 @@ function removeTransition() {
 				</div>
 			</div>
 
-			<!-- Transition grid -->
 			<div v-if="filteredPresets.length === 0" class="flex items-center justify-center py-8">
 				<p class="text-xs text-zinc-500">No transitions found</p>
 			</div>
 
-			<div v-else class="grid grid-cols-2 gap-2.5">
+			<div v-else class="grid grid-cols-2 gap-1.5">
 				<button
 					v-for="preset in filteredPresets"
 					:key="preset.type"
-					draggable="true"
-					:class="[
-						'group overflow-hidden rounded-xl border transition-all cursor-grab active:cursor-grabbing active:scale-[0.97]',
-						activeTransition?.type === preset.type
-							? 'border-blue-500/40 bg-blue-500/10'
-							: 'border-white/[0.08] bg-zinc-900/40 hover:border-[#E040FB]/40 hover:bg-[#E040FB]/[0.08]',
-					]"
-					@click="applyTransition(preset)"
-					@dragstart="handleDragStart($event, preset)"
+					class="group relative cursor-grab overflow-hidden rounded-lg border transition-all active:cursor-grabbing active:scale-[0.97]"
+					:class="activeTransition?.type === preset.type
+						? 'border-white/20 bg-white/[0.06]'
+						: 'border-white/[0.06] bg-zinc-950 hover:border-white/15'"
+					@click="!wasDragCompleted && applyTransition(preset)"
+					@pointerdown="handlePointerDown($event, preset)"
+					@dragstart.prevent
 				>
-					<!-- Transition preview thumbnail -->
-					<div class="relative aspect-[4/3] w-full overflow-hidden bg-zinc-950">
+					<!-- Preview thumbnail -->
+					<div class="aspect-[4/3] w-full overflow-hidden bg-zinc-950">
 						<TransitionPreviewCanvas :transition-type="preset.type" />
-						<!-- Active checkmark -->
-						<div v-if="activeTransition?.type === preset.type" class="absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full bg-blue-500">
-							<Check class="size-3 text-white" />
-						</div>
 					</div>
-					<div class="px-2.5 py-2 text-center">
-						<p class="text-[11px] font-medium" :class="activeTransition?.type === preset.type ? 'text-blue-400' : 'text-zinc-200 group-hover:text-white'">
+					<!-- Label overlay -->
+					<div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1.5 pt-4">
+						<p class="text-[10px] font-medium leading-tight group-hover:text-white"
+							:class="activeTransition?.type === preset.type ? 'text-white' : 'text-zinc-200'">
 							{{ preset.label }}
 						</p>
+					</div>
+					<!-- Active checkmark -->
+					<div v-if="activeTransition?.type === preset.type" class="absolute right-1.5 top-1.5 flex size-4 items-center justify-center rounded-full bg-white/20">
+						<Check class="size-2.5 text-white" />
 					</div>
 				</button>
 			</div>

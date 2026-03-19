@@ -38,6 +38,7 @@ const OrgSettings = lazy(() => import('./pages/dashboard/OrgSettings').then(m =>
 const OrgSocial = lazy(() => import('./pages/dashboard/OrgSocial').then(m => ({ default: m.OrgSocial })))
 const OrgShared = lazy(() => import('./pages/dashboard/OrgShared').then(m => ({ default: m.OrgShared })))
 const OrgCampaigns = lazy(() => import('./pages/dashboard/OrgCampaigns').then(m => ({ default: m.OrgCampaigns })))
+const CampaignDetailPage = lazy(() => import('./pages/dashboard/CampaignDetailPage').then(m => ({ default: m.default })))
 const OrgClippers = lazy(() => import('./pages/dashboard/OrgClippers').then(m => ({ default: m.OrgClippers })))
 const OrgPosts = lazy(() => import('./pages/dashboard/OrgPosts').then(m => ({ default: m.OrgPosts })))
 const OrgHiring = lazy(() => import('./pages/dashboard/OrgHiring').then(m => ({ default: m.OrgHiring })))
@@ -155,6 +156,7 @@ createRoot(document.getElementById('root')!).render(
                   <Route path="social" element={<OrgSocial />} />
                   <Route path="shared" element={<OrgShared />} />
                   <Route path="campaigns" element={<OrgCampaigns />} />
+                  <Route path="campaigns/:campaignId" element={<CampaignDetailPage />} />
                   <Route path="clippers" element={<OrgClippers />} />
                   <Route path="posts" element={<OrgPosts />} />
                   <Route path="hiring" element={<OrgHiring />} />

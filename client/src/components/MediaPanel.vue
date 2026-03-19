@@ -135,7 +135,10 @@
       :subtitle-settings="props.subtitleSettings"
       :creator-default-intro="props.creatorDefaultIntro"
       :creator-default-outro="props.creatorDefaultOutro"
+      :creator-profile="props.creatorProfile"
+      :creator-profile-server-id="props.creatorProfileServerId"
       :hide-header="true"
+      :play-on-card-click="true"
       :vod-preset-config="props.vodPresetConfig"
       @detect-clips="handleDetectClips"
       @cancel-detection="handleCancelDetection"
@@ -148,6 +151,7 @@
       @edit-clip="onEditClip"
       @adjust-clip="onAdjustClip"
       @add-clip="handleAddClip"
+      @publish-now="onPublishNow"
     />
   </div>
 </template>
@@ -191,6 +195,7 @@
     subtitleSettings: null,
     creatorDefaultIntro: null,
     creatorDefaultOutro: null,
+    creatorProfile: null,
     isTranscribing: false,
     transcribeProgress: 0,
     transcribeStage: '',
@@ -241,7 +246,6 @@
         watermarkSettings.value = {
           ...getDefaultWatermarkSettings(),
           ...parsed,
-          enabled: false, // Always start with watermark preview off
         };
         emit('watermarkSettingsChanged', watermarkSettings.value);
       }
@@ -430,6 +434,10 @@
 
   function onAdjustClip(clipId: string) {
     emit('adjustClip', clipId);
+  }
+
+  function onPublishNow(clip: ClipWithVersion) {
+    emit('publishNow', clip);
   }
 
   // Event listener for fallback refresh mechanism

@@ -215,6 +215,9 @@ export interface BetaCode {
     email: string | null
     wallet_address: string | null
   } | null
+  assigned_email: string | null
+  verified_at: string | null
+  verified_from_ip: string | null
   created_at: string
 }
 
@@ -279,9 +282,10 @@ export interface FeatureFlags {
 }
 
 export interface FreeTierBranding {
-  watermark_url: string
-  intro_url: string
-  outro_url: string
+  watermark_id: string | null
+  watermark_settings: any | null
+  intro_settings: any | null
+  outro_settings: any | null
 }
 
 export interface OrgApplication {
@@ -331,6 +335,10 @@ export interface Affiliate {
   solana_usdc_address?: string | null
   paypal_email?: string | null
   notes: string | null
+  discount_enabled?: boolean
+  discount_type?: string | null
+  first_month_discount_pct?: number | null
+  recurring_discount_pct?: number | null
   stats?: {
     total_referrals: number
     total_earned: number
@@ -915,9 +923,10 @@ export async function getFreeTierBranding(): Promise<FreeTierBranding> {
     'Failed to load free-tier branding',
   )
   return {
-    watermark_url: res.branding?.watermark_url || '',
-    intro_url: res.branding?.intro_url || '',
-    outro_url: res.branding?.outro_url || '',
+    watermark_id: res.branding?.watermark_id || null,
+    watermark_settings: res.branding?.watermark_settings || null,
+    intro_settings: res.branding?.intro_settings || null,
+    outro_settings: res.branding?.outro_settings || null,
   }
 }
 
@@ -1042,6 +1051,10 @@ export async function updateAffiliate(
     solana_usdc_address: string
     paypal_email: string
     notes: string
+    discount_enabled: boolean
+    discount_type: string
+    first_month_discount_pct: number
+    recurring_discount_pct: number
   }>,
 ) {
   return assertSuccess(

@@ -302,6 +302,7 @@ defmodule ClippsterServer.Social do
     query =
       from p in PostSubmission,
         where: p.organization_id == ^organization_id,
+        where: is_nil(p.campaign_id),
         order_by: [desc: p.posted_at, desc: p.inserted_at],
         limit: ^limit,
         offset: ^offset,
@@ -331,6 +332,7 @@ defmodule ClippsterServer.Social do
     count_query =
       from p in PostSubmission,
         where: p.organization_id == ^organization_id,
+        where: is_nil(p.campaign_id),
         select: count(p.id)
 
     count_query =
@@ -428,6 +430,15 @@ defmodule ClippsterServer.Social do
   def sync_post_analytics(%PostSubmission{} = submission, analytics) do
     submission
     |> PostSubmission.sync_analytics_changeset(analytics)
+    |> Repo.update()
+  end
+
+  @doc """
+  Updates the post_url for a submission (used when URL becomes available from feed).
+  """
+  def update_post_url(%PostSubmission{} = submission, post_url) do
+    submission
+    |> Ecto.Changeset.change(%{post_url: post_url})
     |> Repo.update()
   end
 
@@ -548,16 +559,71 @@ defmodule ClippsterServer.Social do
   end
 
   @doc """
+  Updates media URLs for a scheduled post after background upload completes.
+  """
+  def update_scheduled_post_media(%PostSubmission{} = post, attrs, %User{} = user) do
+    # Verify the user owns this post
+    if post.submitted_by_user_id == user.id do
+      post
+      |> PostSubmission.update_media_changeset(attrs)
+      |> Repo.update()
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
   Cancels a scheduled post.
   """
   def cancel_scheduled_post(%PostSubmission{} = post, %User{} = user) do
-    if can_user_edit_post?(post, user) do
+    if can_user_cancel_or_delete_post?(post, user) do
       post
       |> PostSubmission.cancel_changeset()
       |> Repo.update()
     else
       {:error, :unauthorized}
     end
+  end
+
+  @doc """
+  Permanently deletes a scheduled post.
+  """
+  def delete_scheduled_post(%PostSubmission{} = post, %User{} = user) do
+    if can_user_cancel_or_delete_post?(post, user) do
+      Repo.delete(post)
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Recovers posts stuck in 'publishing' status with stale locks (older than 5 minutes).
+  Resets them to 'scheduled' so the worker can retry.
+  """
+  def recover_stale_publishing_posts do
+    stale_threshold = DateTime.utc_now() |> DateTime.add(-300, :second) |> DateTime.truncate(:second)
+
+    {count, _} =
+      from(p in PostSubmission,
+        where: p.status == "publishing",
+        where: not is_nil(p.locked_at),
+        where: p.locked_at < ^stale_threshold
+      )
+      |> Repo.update_all(
+        set: [
+          status: "failed",
+          error_message: "Worker crashed during publishing - post may have been published externally",
+          locked_at: nil,
+          updated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        ]
+      )
+
+    if count > 0 do
+      require Logger
+      Logger.warning("[Social] Recovered #{count} stale publishing post(s) → marked as failed")
+    end
+
+    count
   end
 
   @doc """
@@ -926,6 +992,21 @@ defmodule ClippsterServer.Social do
       # User is an admin of the org
       post.organization_id && Organizations.is_admin?(post.organization_id, user.id) ->
         PostSubmission.can_edit?(post)
+
+      true ->
+        false
+    end
+  end
+
+  defp can_user_cancel_or_delete_post?(%PostSubmission{} = post, %User{} = user) do
+    cond do
+      # User submitted the post
+      post.submitted_by_user_id == user.id ->
+        PostSubmission.can_cancel_or_delete?(post)
+
+      # User is an admin of the org
+      post.organization_id && Organizations.is_admin?(post.organization_id, user.id) ->
+        PostSubmission.can_cancel_or_delete?(post)
 
       true ->
         false

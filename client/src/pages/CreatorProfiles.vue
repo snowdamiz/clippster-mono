@@ -144,7 +144,178 @@
           </div>
 
           <!-- Main Content Area -->
-          <div v-else-if="creators.length > 0" class="creators__list-section">
+          <div v-else-if="creators.length > 0 || campaigns.length > 0" class="creators__list-section">
+            <!-- Campaign Profiles Section -->
+            <div v-if="campaigns.length > 0" class="creators__section">
+              <div class="creators__section-header">
+                <div class="creators__section-title-wrapper">
+                  <Trophy class="creators__section-icon" />
+                  <h2 class="creators__section-title">Campaigns</h2>
+                </div>
+                <div class="creators__item-count">
+                  {{ campaigns.length }} {{ campaigns.length === 1 ? 'campaign' : 'campaigns' }}
+                </div>
+              </div>
+
+              <div class="creators__list">
+                <transition-group name="list" tag="div" class="creators__list-inner">
+                  <div 
+                    v-for="campaign in campaigns" 
+                    :key="campaign.id" 
+                    class="campaign-card"
+                    :class="{ 'campaign-card--expanded': isCampaignExpanded(campaign.id) }"
+                  >
+                    <!-- Campaign Header -->
+                    <div class="campaign-card__header" @click="toggleCampaignExpansion(campaign.id)">
+                      <div class="campaign-card__avatar" :class="{ 'campaign-card__avatar--global': campaign.isGlobalBranding }">
+                        <img
+                          v-if="campaign.cover_image_url"
+                          :src="campaign.cover_image_url"
+                          class="campaign-card__avatar-img"
+                        />
+                        <div v-else-if="campaign.isGlobalBranding" class="campaign-card__avatar-fallback campaign-card__avatar-fallback--global">
+                          <Globe class="campaign-card__avatar-icon" />
+                        </div>
+                        <div v-else class="campaign-card__avatar-fallback">
+                          <Trophy class="campaign-card__avatar-icon" />
+                        </div>
+                      </div>
+                      
+                      <div class="campaign-card__info">
+                        <div class="campaign-card__title">{{ campaign.title }}</div>
+                        <div class="campaign-card__subtitle">{{ campaign.organization_name }}</div>
+                      </div>
+
+                      <ChevronDown 
+                        class="campaign-card__expand-icon" 
+                        :class="{ 'campaign-card__expand-icon--rotated': isCampaignExpanded(campaign.id) }"
+                      />
+                    </div>
+
+                    <!-- Campaign Stats Row -->
+                    <div class="campaign-card__stats">
+                      <!-- Platform Icons -->
+                      <div class="campaign-card__platforms">
+                        <template v-if="campaign.isGlobalBranding">
+                          <div class="campaign-card__global-badge">
+                            <Globe :size="14" />
+                            <span>Any streamer eligible</span>
+                          </div>
+                        </template>
+                        <template v-else-if="campaign.uniquePlatforms.length > 0">
+                          <div
+                            v-for="platform in campaign.uniquePlatforms.slice(0, 4)"
+                            :key="platform"
+                            class="campaign-card__platform-icon-wrapper"
+                          >
+                            <img
+                              :src="getPlatformIcon(platform)"
+                              :alt="platform"
+                              class="campaign-card__platform-icon"
+                              :style="{ filter: getPlatformFilter(platform) }"
+                            />
+                          </div>
+                          <span v-if="campaign.uniquePlatforms.length > 4" class="campaign-card__more-badge">
+                            +{{ campaign.uniquePlatforms.length - 4 }}
+                          </span>
+                        </template>
+                      </div>
+
+                      <div class="campaign-card__divider"></div>
+
+                      <!-- Branding Icons -->
+                      <div class="campaign-card__branding">
+                        <div
+                          class="campaign-card__branding-icon"
+                          :class="{ 'campaign-card__branding-icon--active': campaign.hasIntro }"
+                          :title="campaign.hasIntro ? 'Intro configured' : 'No intro'"
+                        >
+                          <Play :size="16" />
+                        </div>
+                        <div
+                          class="campaign-card__branding-icon"
+                          :class="{ 'campaign-card__branding-icon--active': campaign.hasOutro }"
+                          :title="campaign.hasOutro ? 'Outro configured' : 'No outro'"
+                        >
+                          <SkipForward :size="16" />
+                        </div>
+                        <div
+                          class="campaign-card__branding-icon"
+                          :class="{ 'campaign-card__branding-icon--active': campaign.hasWatermark }"
+                          :title="campaign.hasWatermark ? 'Watermark configured' : 'No watermark'"
+                        >
+                          <ImageIcon :size="16" />
+                        </div>
+                      </div>
+
+                      <div class="campaign-card__divider"></div>
+
+                      <!-- Creator Count -->
+                      <div class="campaign-card__creator-count">
+                        <template v-if="!campaign.isGlobalBranding">
+                          {{ campaign.creators.length }} {{ campaign.creators.length === 1 ? 'creator' : 'creators' }}
+                        </template>
+                      </div>
+                    </div>
+
+                    <!-- Collapsed: Show first 3-4 creator avatars -->
+                    <div v-if="!campaign.isGlobalBranding && !isCampaignExpanded(campaign.id)" class="campaign-card__creators-preview">
+                      <div
+                        v-for="(creator, idx) in campaign.creators.slice(0, 4)"
+                        :key="creator.id"
+                        class="campaign-card__creator-avatar"
+                        :title="creator.name"
+                      >
+                        <img
+                          v-if="getCreatorProfileImage(creator)"
+                          :src="getCreatorProfileImage(creator)"
+                          class="campaign-card__creator-avatar-img"
+                        />
+                        <div v-else class="campaign-card__creator-avatar-fallback">
+                          {{ creator.name.charAt(0) }}
+                        </div>
+                      </div>
+                      <div v-if="campaign.creators.length > 4" class="campaign-card__more-creators">
+                        +{{ campaign.creators.length - 4 }} more
+                      </div>
+                    </div>
+
+                    <!-- Expanded: Show full creator list -->
+                    <div v-if="!campaign.isGlobalBranding && isCampaignExpanded(campaign.id)" class="campaign-card__creators-list">
+                      <div
+                        v-for="creator in campaign.creators"
+                        :key="creator.id"
+                        class="campaign-card__creator-item"
+                      >
+                        <div class="campaign-card__creator-avatar-small">
+                          <img
+                            v-if="getCreatorProfileImage(creator)"
+                            :src="getCreatorProfileImage(creator)"
+                            class="campaign-card__creator-avatar-img"
+                          />
+                          <div v-else class="campaign-card__creator-avatar-fallback">
+                            {{ creator.name.charAt(0) }}
+                          </div>
+                        </div>
+                        <div class="campaign-card__creator-info">
+                          <div class="campaign-card__creator-name">{{ creator.name }}</div>
+                          <div class="campaign-card__creator-platforms">
+                            <img
+                              v-for="link in creator.platform_links.slice(0, 3)"
+                              :key="link.id"
+                              :src="getPlatformIcon(link.platform)"
+                              :alt="link.platform"
+                              class="campaign-card__creator-platform-icon"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+              </transition-group>
+            </div>
+          </div>
+
             <!-- Organization Profiles Section -->
             <div v-if="organizationProfiles.length > 0" class="creators__section">
               <div class="creators__section-header">
@@ -770,12 +941,13 @@
     getAllStreamerProfiles,
     type CreatorProfileWithLinks,
   } from '@/services/database';
-  import {
-    getUserAssignedCreatorProfiles,
+  import { getUserAssignedCreatorProfiles,
     updatePlatformLink as updateOrgPlatformLink,
     toggleCreatorProfileDisabled,
     type ServerOrganizationCreatorProfile,
   } from '@/services/organizationProfilesApi';
+  import { listMyCampaigns, type Campaign, type CampaignCreatorProfile } from '@/services/campaignApi';
+  import { useProfileContext } from '@/composables/useProfileContext';
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
@@ -809,6 +981,9 @@
     HardDrive,
     Link,
     Paintbrush,
+    Trophy,
+    Globe,
+    ChevronDown,
   } from 'lucide-vue-next';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useLivestreamStore } from '@/stores/livestream';
@@ -816,10 +991,27 @@
   // Extended type that can represent both local and org profiles
   interface DisplayCreatorProfile extends CreatorProfileWithLinks {
     isOrgProfile?: boolean;
-    organization_id?: number;
-    organization_name?: string;
     server_id?: number;
     disabled?: boolean;
+    isGlobalBranding?: boolean;
+  }
+
+  // Grouped campaign display with all creators
+  interface DisplayCampaign {
+    id: number;
+    title: string;
+    organization_id: number;
+    organization_name: string;
+    cover_image_url?: string;
+    isGlobalBranding: boolean;
+    branding_profile_id: number | null;
+    creators: DisplayCreatorProfile[];
+    uniquePlatforms: PlatformId[];
+    hasIntro: boolean;
+    hasOutro: boolean;
+    hasWatermark: boolean;
+    created_at: number;
+    updated_at: number;
   }
 
   function getMonitoredStreamerId(creator: DisplayCreatorProfile): string | null {
@@ -984,6 +1176,8 @@
   // State
   const loading = ref(true);
   const creators = ref<DisplayCreatorProfile[]>([]);
+  const campaigns = ref<DisplayCampaign[]>([]);
+  const expandedCampaigns = ref<Set<number>>(new Set());
   const searchQuery = ref('');
   const showProfileDialog = ref(false);
   const creatorToEdit = ref<DisplayCreatorProfile | null>(null);
@@ -1043,17 +1237,18 @@
     });
   });
 
-  // Separate organization and user profiles
+  // Profile type filters
   const organizationProfiles = computed(() => {
-    return [...filteredCreators.value]
-      .filter((c) => c.isOrgProfile === true)
-      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    return sortedCreators.value.filter(c => c.isOrgProfile && !c.campaign_id);
   });
 
+  // No longer needed - campaigns are stored separately
+  // const campaignProfiles = computed(() => {
+  //   return sortedCreators.value.filter(c => c.campaign_id != null);
+  // });
+
   const userProfiles = computed(() => {
-    return [...filteredCreators.value]
-      .filter((c) => !c.isOrgProfile)
-      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    return sortedCreators.value.filter(c => !c.isOrgProfile && !c.campaign_id);
   });
 
   // Load creators on mount
@@ -1128,7 +1323,7 @@
             channelSlug: link.platform_id,
             hasProfileImage: Boolean(link.profile_image_url),
             isOrgLink,
-            organizationId: isOrgLink ? creator.organization_id : undefined,
+            organizationId: isOrgLink ? (creator.organization_id ?? undefined) : undefined,
             profileId: isOrgLink ? creator.server_id : undefined,
           });
         } else if (link.platform === 'twitch') {
@@ -1139,7 +1334,7 @@
             channelName: link.platform_id,
             hasProfileImage: Boolean(link.profile_image_url),
             isOrgLink,
-            organizationId: isOrgLink ? creator.organization_id : undefined,
+            organizationId: isOrgLink ? (creator.organization_id ?? undefined) : undefined,
             profileId: isOrgLink ? creator.server_id : undefined,
           });
         } else if (link.platform === 'YouTube') {
@@ -1150,7 +1345,7 @@
             channelId: link.platform_id,
             hasProfileImage: Boolean(link.profile_image_url),
             isOrgLink,
-            organizationId: isOrgLink ? creator.organization_id : undefined,
+            organizationId: isOrgLink ? (creator.organization_id ?? undefined) : undefined,
             profileId: isOrgLink ? creator.server_id : undefined,
           });
         } else if (link.platform === 'rumble') {
@@ -1161,7 +1356,7 @@
             channelName: link.platform_id,
             hasProfileImage: Boolean(link.profile_image_url),
             isOrgLink,
-            organizationId: isOrgLink ? creator.organization_id : undefined,
+            organizationId: isOrgLink ? (creator.organization_id ?? undefined) : undefined,
             profileId: isOrgLink ? creator.server_id : undefined,
           });
         }
@@ -1414,6 +1609,16 @@
           const orgDisplayProfiles = convertOrgProfilesToDisplay(orgResponse.profiles);
           displayProfiles.push(...orgDisplayProfiles);
         }
+
+        // Fetch campaign profiles
+        try {
+          const campaignsResponse = await listMyCampaigns();
+          if (campaignsResponse.success && campaignsResponse.campaigns.length > 0) {
+            campaigns.value = convertCampaignsToGroupedDisplay(campaignsResponse.campaigns);
+          }
+        } catch (err) {
+          console.warn('[CreatorProfiles] Failed to load campaign profiles:', err);
+        }
       }
 
       creators.value = displayProfiles;
@@ -1481,7 +1686,116 @@
       organization_id: profile.organization_id,
       organization_name: profile.organization_name,
       server_id: profile.id,
+      context_type: 'organization',
     }));
+  }
+
+  function convertCampaignsToGroupedDisplay(campaignsList: Campaign[]): DisplayCampaign[] {
+    const displayCampaigns: DisplayCampaign[] = [];
+    
+    for (const campaign of campaignsList) {
+      const isGlobalBrandingCampaign = campaign.creator_profile_id === null && campaign.branding_profile_id !== null;
+      
+      const campaignProfiles = campaign.creator_profiles || [];
+      if (campaignProfiles.length === 0 && campaign.creator_profile) {
+        campaignProfiles.push(campaign.creator_profile);
+      }
+
+      // Convert creator profiles to DisplayCreatorProfile format
+      const creators: DisplayCreatorProfile[] = campaignProfiles.map((cp) => ({
+        id: `campaign-${campaign.id}-${cp.id}`,
+        name: cp.name,
+        description: cp.description ?? null,
+        profile_image_path: cp.profile_image_url ?? null,
+        intro_id: cp.intro?.id ? `org-asset-${cp.intro.id}` : null,
+        outro_id: cp.outro?.id ? `org-asset-${cp.outro.id}` : null,
+        watermark_id: cp.watermark?.id ? `org-asset-${cp.watermark.id}` : null,
+        watermark_settings: cp.watermark_settings ? JSON.stringify(cp.watermark_settings) : null,
+        layout_overlays: null,
+        intro_outro_settings: null,
+        intro_ratio_settings: null,
+        outro_ratio_settings: null,
+        created_at: new Date(campaign.inserted_at).getTime(),
+        updated_at: new Date(campaign.updated_at).getTime(),
+        user_id: null,
+        platform_links: (cp.platform_links || []).map((link) => ({
+          id: `campaign-link-${campaign.id}-${link.id}`,
+          creator_profile_id: `campaign-${campaign.id}-${cp.id}`,
+          platform: link.platform as PlatformId,
+          platform_id: link.platform_id,
+          display_name: link.display_name ?? null,
+          profile_image_url: link.profile_image_url ?? null,
+          is_primary: link.is_primary,
+          created_at: Date.now(),
+          monitored_streamer_id: null,
+        })),
+        scope: 'streamer',
+        isOrgProfile: true,
+        organization_id: campaign.organization_id,
+        organization_name: campaign.organization?.name ?? `Campaign ${campaign.id}`,
+        campaign_id: campaign.id,
+        campaign_title: campaign.title,
+        server_id: cp.id,
+        context_type: 'campaign',
+        disabled: false,
+      }));
+
+      // Get unique platforms across all creators
+      const platformSet = new Set<PlatformId>();
+      creators.forEach(creator => {
+        creator.platform_links.forEach(link => platformSet.add(link.platform));
+      });
+
+      // Check if campaign has branding
+      // For global branding campaigns, assume branding exists if branding_profile_id is set
+      // For regular campaigns, check if any creator has branding
+      let hasIntro = false;
+      let hasOutro = false;
+      let hasWatermark = false;
+
+      if (isGlobalBrandingCampaign && campaign.branding_profile_id) {
+        // Global branding - assume all branding is configured if branding_profile_id exists
+        hasIntro = true;
+        hasOutro = true;
+        hasWatermark = true;
+      } else {
+        // Regular campaign - check individual creators
+        hasIntro = creators.some(c => c.intro_id !== null);
+        hasOutro = creators.some(c => c.outro_id !== null);
+        hasWatermark = creators.some(c => c.watermark_id !== null);
+      }
+
+      displayCampaigns.push({
+        id: campaign.id,
+        title: campaign.title,
+        organization_id: campaign.organization_id,
+        organization_name: campaign.organization?.name ?? `Campaign ${campaign.id}`,
+        cover_image_url: campaign.cover_image_url ?? undefined,
+        isGlobalBranding: isGlobalBrandingCampaign,
+        branding_profile_id: campaign.branding_profile_id,
+        creators,
+        uniquePlatforms: Array.from(platformSet),
+        hasIntro,
+        hasOutro,
+        hasWatermark,
+        created_at: new Date(campaign.inserted_at).getTime(),
+        updated_at: new Date(campaign.updated_at).getTime(),
+      });
+    }
+
+    return displayCampaigns;
+  }
+
+  function toggleCampaignExpansion(campaignId: number) {
+    if (expandedCampaigns.value.has(campaignId)) {
+      expandedCampaigns.value.delete(campaignId);
+    } else {
+      expandedCampaigns.value.add(campaignId);
+    }
+  }
+
+  function isCampaignExpanded(campaignId: number): boolean {
+    return expandedCampaigns.value.has(campaignId);
   }
 
   function getCreatorProfileImage(creator: DisplayCreatorProfile): string | undefined {
@@ -1730,23 +2044,31 @@
     }
   }
 
-  function viewCreatorVods(creator: DisplayCreatorProfile) {
+  async function viewCreatorVods(creator: DisplayCreatorProfile) {
     const primaryLink = creator.platform_links.find((l) => l.is_primary) || creator.platform_links[0];
     if (!primaryLink) {
       showError('No Platform', 'This creator has no platform links configured');
       return;
     }
 
+    // Track profile usage context
+    const { trackProfileUsage } = useProfileContext();
+    await trackProfileUsage(creator);
+
     router.push({
       path: '/vods',
       query: {
         platform: primaryLink.platform,
-        search: primaryLink.platform_id,
+        id: primaryLink.platform_id,
       },
     });
   }
 
-  function openDownloadDialog(creator: DisplayCreatorProfile) {
+  async function openDownloadDialog(creator: DisplayCreatorProfile) {
+    // Track profile usage context
+    const { trackProfileUsage } = useProfileContext();
+    await trackProfileUsage(creator);
+
     creatorToDownload.value = creator;
     showDownloadDialog.value = true;
   }
@@ -2287,6 +2609,19 @@
     align-items: center;
     justify-content: center;
     background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, var(--sidebar-hover) 100%);
+  }
+
+  .creator-card__avatar-fallback--global {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.25) 0%, rgba(16, 185, 129, 0.15) 100%);
+  }
+
+  .creator-card__avatar--global {
+    border: 2px solid rgba(6, 182, 212, 0.4);
+  }
+
+  .creator-card__avatar-fallback--global .creator-card__avatar-icon {
+    color: var(--sidebar-accent);
+    opacity: 0.9;
   }
 
   .creator-card__avatar-icon {
@@ -2898,6 +3233,310 @@
   .list-leave-active {
     position: absolute;
     z-index: 0;
+  }
+
+  /* ===== Campaign Card Styles ===== */
+  .campaign-card {
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 16px;
+    overflow: hidden;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .campaign-card:hover {
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  }
+
+  .campaign-card__header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+
+  .campaign-card__header:hover {
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .campaign-card__avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    border: 2px solid var(--sidebar-border);
+  }
+
+  .campaign-card__avatar--global {
+    border: 2px solid rgba(6, 182, 212, 0.4);
+  }
+
+  .campaign-card__avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .campaign-card__avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, var(--sidebar-hover) 100%);
+  }
+
+  .campaign-card__avatar-fallback--global {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.25) 0%, rgba(16, 185, 129, 0.15) 100%);
+  }
+
+  .campaign-card__avatar-icon {
+    width: 32px;
+    height: 32px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaign-card__avatar-fallback--global .campaign-card__avatar-icon {
+    color: var(--sidebar-accent);
+  }
+
+  .campaign-card__info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .campaign-card__title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .campaign-card__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .campaign-card__expand-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--sidebar-text-muted);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .campaign-card__expand-icon--rotated {
+    transform: rotate(180deg);
+  }
+
+  .campaign-card__stats {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 0.875rem 1.25rem;
+    border-top: 1px solid var(--sidebar-border);
+    background: rgba(0, 0, 0, 0.15);
+  }
+
+  .campaign-card__platforms {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .campaign-card__global-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(16, 185, 129, 0.08) 100%);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-accent);
+  }
+
+  .campaign-card__platform-icon-wrapper {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--sidebar-hover);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .campaign-card__platform-icon {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+  }
+
+  .campaign-card__more-badge {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+  }
+
+  .campaign-card__divider {
+    width: 1px;
+    height: 20px;
+    background: var(--sidebar-border);
+  }
+
+  .campaign-card__branding {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .campaign-card__branding-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--sidebar-text-muted);
+    opacity: 0.4;
+    transition: all 0.2s ease;
+  }
+
+  .campaign-card__branding-icon--active {
+    background: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    opacity: 1;
+  }
+
+  .campaign-card__creator-count {
+    margin-left: auto;
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+  }
+
+  .campaign-card__creators-preview {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .campaign-card__creator-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid var(--sidebar-bg);
+    margin-left: -0.5rem;
+  }
+
+  .campaign-card__creator-avatar:first-child {
+    margin-left: 0;
+  }
+
+  .campaign-card__creator-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .campaign-card__creator-avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, var(--sidebar-hover) 100%);
+    color: var(--sidebar-text);
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+
+  .campaign-card__more-creators {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+    margin-left: 0.5rem;
+  }
+
+  .campaign-card__creators-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .campaign-card__creator-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--sidebar-border);
+    transition: background 0.2s ease;
+  }
+
+  .campaign-card__creator-item:last-child {
+    border-bottom: none;
+  }
+
+  .campaign-card__creator-item:hover {
+    background: var(--sidebar-hover);
+  }
+
+  .campaign-card__creator-avatar-small {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .campaign-card__creator-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .campaign-card__creator-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    margin-bottom: 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .campaign-card__creator-platforms {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .campaign-card__creator-platform-icon {
+    width: 14px;
+    height: 14px;
+    object-fit: contain;
   }
 </style>
 

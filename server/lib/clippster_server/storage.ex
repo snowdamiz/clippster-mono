@@ -4,6 +4,8 @@ defmodule ClippsterServer.Storage do
   R2 is S3-compatible, so we use ex_aws_s3.
   """
 
+  require Logger
+
   @doc """
   Returns the ExAws configuration for R2.
   Note: Hackney SSL options are configured globally in runtime.exs
@@ -42,19 +44,20 @@ defmodule ClippsterServer.Storage do
   """
   def upload_file(file_binary, key, opts \\ []) do
     content_type = Keyword.get(opts, :content_type, "application/octet-stream")
+    byte_size = byte_size(file_binary)
 
-    request =
-      ExAws.S3.put_object(bucket(), key, file_binary,
-        content_type: content_type,
-        acl: :public_read
-      )
+    Logger.info(
+      "[Storage] Uploading file to R2 key=#{key} content_type=#{content_type} bytes=#{byte_size}"
+    )
 
-    case ExAws.request(request, config()) do
+    case do_upload(file_binary, key, content_type, byte_size) do
       {:ok, _response} ->
         url = build_public_url(key)
+        Logger.info("[Storage] R2 upload succeeded for key=#{key}")
         {:ok, url}
 
       {:error, reason} ->
+        Logger.error("[Storage] R2 upload failed for key=#{key}: #{inspect(reason)}")
         {:error, reason}
     end
   end
@@ -92,6 +95,33 @@ defmodule ClippsterServer.Storage do
     case extract_key_from_url(url) do
       {:ok, key} -> delete_file(key)
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Generates a presigned URL for uploading a file directly to R2.
+  
+  Returns {:ok, %{upload_url: presigned_url, media_url: public_url}} on success.
+  The upload_url is used for the PUT request, media_url is the final public URL.
+  """
+  def generate_presigned_upload_url(key, opts \\ []) do
+    expires_in = Keyword.get(opts, :expires_in, 600) # 10 minutes default
+    content_type = Keyword.get(opts, :content_type, "video/mp4")
+    
+    # Convert keyword list to map for ExAws.S3.presigned_url
+    config_map = config() |> Enum.into(%{})
+    
+    # Generate presigned URL for PUT operation
+    case ExAws.S3.presigned_url(config_map, :put, bucket(), key, 
+           expires_in: expires_in,
+           query_params: [{"Content-Type", content_type}]
+         ) do
+      {:ok, presigned_url} ->
+        public_url = build_public_url(key)
+        {:ok, %{upload_url: presigned_url, media_url: public_url}}
+      
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -140,6 +170,60 @@ defmodule ClippsterServer.Storage do
     Keyword.get(r2_config, :account_id) != nil and
       Keyword.get(r2_config, :access_key_id) != nil and
       Keyword.get(r2_config, :secret_access_key) != nil
+  end
+
+  defp upload_config do
+    hackney_opts =
+      Application.get_env(:ex_aws, :hackney_opts, [])
+      |> Keyword.merge(
+        connect_timeout: 120_000,
+        recv_timeout: 300_000
+      )
+
+    config()
+    |> Keyword.put(:hackney_opts, hackney_opts)
+  end
+
+  # Multipart upload threshold: 8MB
+  @multipart_threshold 8 * 1024 * 1024
+  # Multipart chunk size: 8MB
+  @multipart_chunk_size 8 * 1024 * 1024
+
+  defp do_upload(file_binary, key, content_type, byte_size) when byte_size >= @multipart_threshold do
+    Logger.info("[Storage] Using multipart R2 upload for key=#{key}")
+
+    file_binary
+    |> chunk_binary(@multipart_chunk_size)
+    |> ExAws.S3.upload(bucket(), key,
+      content_type: content_type,
+      acl: :public_read,
+      max_concurrency: 4,
+      timeout: 120_000
+    )
+    |> ExAws.request(upload_config())
+  end
+
+  defp do_upload(file_binary, key, content_type, _byte_size) do
+    key
+    |> put_object_request(file_binary, content_type)
+    |> ExAws.request(upload_config())
+  end
+
+  defp put_object_request(key, file_binary, content_type) do
+    ExAws.S3.put_object(bucket(), key, file_binary,
+      content_type: content_type,
+      acl: :public_read
+    )
+  end
+
+  defp chunk_binary(binary, chunk_size) do
+    Stream.unfold(binary, fn
+      <<>> -> nil
+      remaining ->
+        current_size = min(byte_size(remaining), chunk_size)
+        <<chunk::binary-size(current_size), rest::binary>> = remaining
+        {chunk, rest}
+    end)
   end
 
   @doc """

@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState, useEffect, useMemo, type ReactNode } from 'react'
+import { createContext, useContext, useState, useMemo, type ReactNode } from 'react'
 import { API_BASE } from '@/lib/apiBase'
 
 interface DownloadContextType {
@@ -27,15 +27,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const [downloadsEnabled, setDownloadsEnabled] = useState(initialAccess)
   const [showBetaCodeModal, setShowBetaCodeModal] = useState(false)
 
-  useEffect(() => {
-    // Show beta code modal on load if downloads are not enabled
-    if (!downloadsEnabled) {
-      const timer = setTimeout(() => {
-        setShowBetaCodeModal(true)
-      }, 500)
-      return () => clearTimeout(timer)
-    }
-  }, [downloadsEnabled])
+  // Removed auto-popup modal - beta code is only required when clicking download
 
   const openBetaCodeModal = () => {
     setShowBetaCodeModal(true)

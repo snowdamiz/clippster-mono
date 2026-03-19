@@ -181,6 +181,8 @@
     ScrollText,
     Mail,
     Megaphone,
+    Sparkles,
+    Newspaper,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import PageLayout from '@/components/PageLayout.vue';
@@ -300,6 +302,13 @@
     
     return [
       {
+        id: 'platform-campaigns',
+        title: 'Platform Campaigns',
+        description: 'Manage Clippster-owned campaigns and rewards',
+        icon: Sparkles,
+        route: '/admin/platform-campaigns',
+      },
+      {
         id: 'affiliates',
         title: 'Affiliates',
         description: 'Manage affiliate accounts, commissions, and payouts',
@@ -314,6 +323,13 @@
     if (!isAdmin.value) return [];
     
     return [
+      {
+        id: 'news',
+        title: 'News Management',
+        description: 'Manage breaking news feed for AI context',
+        icon: Newspaper,
+        route: '/admin/news',
+      },
       {
         id: 'beta-codes',
         title: 'Beta Codes',

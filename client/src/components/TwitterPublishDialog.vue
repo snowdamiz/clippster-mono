@@ -144,12 +144,9 @@
                       </div>
                       <div class="twitter-dialog__field" style="flex: 1">
                         <label for="tw-scheduleTime" class="twitter-dialog__label-sm">Time</label>
-                        <input
-                          id="tw-scheduleTime"
-                          type="time"
+                        <CustomTimePicker
                           v-model="scheduleTime"
                           :disabled="publishing"
-                          class="twitter-dialog__input"
                         />
                       </div>
                     </div>
@@ -201,6 +198,7 @@
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
   import { FileVideo, Loader2, ChevronDown, Calendar, X, AlertCircle } from 'lucide-vue-next';
+  import CustomTimePicker from '@/components/CustomTimePicker.vue';
   import XLogo from '@/components/icons/XLogo.vue';
   import { useToast } from '@/composables/useToast';
   import { getMyAssignedAccounts, listSocialAccounts, publishPost, type SocialAccount } from '@/services/socialAccountsApi';

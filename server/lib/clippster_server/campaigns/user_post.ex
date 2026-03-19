@@ -37,6 +37,7 @@ defmodule ClippsterServer.Campaigns.UserPost do
     field :reach_count, :integer, default: 0
     field :impressions_count, :integer, default: 0
     field :synced_at, :utc_datetime
+    field :posted_at, :utc_datetime
 
     belongs_to :user, User
     belongs_to :clipper_social_account, ClipperSocialAccount
@@ -62,12 +63,14 @@ defmodule ClippsterServer.Campaigns.UserPost do
       :media_url,
       :thumbnail_url,
       :media_type,
-      :status
+      :status,
+      :posted_at
     ])
     |> validate_required([:user_id, :clipper_social_account_id, :platform, :post_id, :media_url])
     |> normalize_platform()
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:media_type, @media_types)
+    |> put_posted_at_default()
     |> foreign_key_constraint(:user_id)
     |> foreign_key_constraint(:clipper_social_account_id)
     |> unique_constraint([:platform, :post_id], name: :user_posts_platform_post_unique)
@@ -118,5 +121,12 @@ defmodule ClippsterServer.Campaigns.UserPost do
 
   defp put_synced_at(changeset) do
     put_change(changeset, :synced_at, DateTime.utc_now() |> DateTime.truncate(:second))
+  end
+
+  defp put_posted_at_default(changeset) do
+    case get_field(changeset, :posted_at) do
+      nil -> put_change(changeset, :posted_at, DateTime.utc_now() |> DateTime.truncate(:second))
+      _ -> changeset
+    end
   end
 end

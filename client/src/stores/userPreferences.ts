@@ -7,7 +7,12 @@ import {
   saveLocalPreferences,
 } from '@/services/database/user-preferences';
 
-const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app');
+function normalizeApiOrigin(url: string): string {
+  const trimmed = url.trim().replace(/\/+$/, '');
+  return trimmed.toLowerCase().endsWith('/api') ? trimmed.slice(0, -4) : trimmed;
+}
+
+const API_BASE = normalizeApiOrigin(import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app'));
 
 export type ToastCategory =
   | 'livestream'
@@ -16,7 +21,8 @@ export type ToastCategory =
   | 'projects'
   | 'social'
   | 'organization'
-  | 'system';
+  | 'system'
+  | 'campaigns';
 
 export const useUserPreferencesStore = defineStore('userPreferences', () => {
   // State

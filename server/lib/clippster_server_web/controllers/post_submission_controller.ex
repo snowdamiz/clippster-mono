@@ -8,7 +8,7 @@ defmodule ClippsterServerWeb.PostSubmissionController do
   require Logger
 
   alias ClippsterServer.Social
-  alias ClippsterServer.Social.{ProviderMode, SocialAccount, Platform, TwitterDuplicateDetector}
+  alias ClippsterServer.Social.{ProviderMode, SocialAccount, Platform}
   alias ClippsterServer.Social.Providers.PostForMe
   alias ClippsterServer.Organizations
 
@@ -136,7 +136,12 @@ defmodule ClippsterServerWeb.PostSubmissionController do
                 media_type: params["media_type"],
                 caption: params["caption"],
                 media_url: params["media_url"],
-                thumbnail_url: params["thumbnail_url"]
+                thumbnail_url: params["thumbnail_url"],
+                campaign_id: params["campaign_id"],
+                clip_id: params["clip_id"],
+                clip_build_id: params["clip_build_id"],
+                aspect_ratio: params["aspect_ratio"],
+                build_type: params["build_type"]
               }
 
               case Social.create_post_submission(org_id, submission_attrs, user) do
@@ -307,6 +312,55 @@ defmodule ClippsterServerWeb.PostSubmissionController do
           total_impressions: summary.total_impressions || 0
         }
       })
+    else
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Not a member of this organization"})
+    end
+  end
+
+  @doc """
+  POST /api/organizations/:organization_id/posts/presigned-upload
+
+  Generates a presigned URL for direct client-to-R2 upload.
+  This avoids server HTTP timeouts for large files.
+
+  Accepts JSON with:
+  - filename: The filename (e.g. "clip.mp4")
+  - content_type: Optional content type (defaults to "video/mp4")
+
+  Returns presigned upload URL and final media URL.
+  """
+  def get_presigned_upload_url(conn, %{"organization_id" => org_id} = params) do
+    user = conn.assigns.current_user
+
+    if Organizations.is_member?(org_id, user.id) do
+      filename = params["filename"] || "video.mp4"
+      content_type = params["content_type"] || "video/mp4"
+
+      # Generate unique key for the file
+      ext = Path.extname(filename) |> String.downcase()
+      timestamp = DateTime.utc_now() |> DateTime.to_unix()
+      unique_id = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+      key = "social-media/#{org_id}/#{timestamp}_#{unique_id}#{ext}"
+
+      case ClippsterServer.Storage.generate_presigned_upload_url(key,
+             content_type: content_type,
+             expires_in: 600
+           ) do
+        {:ok, %{upload_url: upload_url, media_url: media_url}} ->
+          json(conn, %{
+            success: true,
+            upload_url: upload_url,
+            media_url: media_url,
+            thumbnail_url: nil
+          })
+
+        {:error, reason} ->
+          conn
+          |> put_status(500)
+          |> json(%{success: false, error: "Failed to generate presigned URL: #{inspect(reason)}"})
+      end
     else
       conn
       |> put_status(403)
@@ -534,95 +588,64 @@ defmodule ClippsterServerWeb.PostSubmissionController do
     end
   end
 
-  defp publish_to_platform(submission, %{platform: platform} = account, params)
-       when platform in ["twitter", "x"] do
+  defp publish_to_twitter(submission, account, params) do
     Logger.info(
-      "[PostSubmission] Starting X publish for submission #{submission.id} (two-step flow)"
+      "[PostSubmission] Starting X publish for submission #{submission.id} via PostForMe"
     )
 
     Logger.info("[PostSubmission] Media URL: #{params["media_url"]}")
     Logger.info("[PostSubmission] Platform User ID: #{account.platform_user_id}")
 
-    access_token = SocialAccount.get_access_token(account)
+    with {:ok, provider_account_id} <- get_provider_account_id(account),
+         {:ok, media_url} <- ensure_accessible_media_url(params["media_url"]) do
+      
+      post_params = %{
+        caption: params["caption"] || "",
+        social_accounts: [provider_account_id],
+        media: [%{url: media_url}],
+        external_id: "submission:#{submission.id}"
+      }
 
-    if is_nil(access_token) or access_token == "" do
-      Logger.error("[PostSubmission] No access token found for account #{account.id}")
+      Logger.info("[PostSubmission] Creating PostForMe post with external_id: submission:#{submission.id}")
 
-      Social.mark_post_failed(submission, "No access token available")
-    else
-      Logger.info(
-        "[PostSubmission] Access token available (length: #{String.length(access_token)})"
-      )
+      case PostForMe.create_social_post(post_params) do
+        {:ok, pfm_post} ->
+          Logger.info(
+            "[PostSubmission] Twitter post created successfully via PostForMe! Post ID: #{pfm_post.id}"
+          )
 
-      # Check for duplicate content before publishing
-      caption = params["caption"] || ""
-
-      case TwitterDuplicateDetector.check_duplicate(account.id, caption, []) do
-        {:ok, _content_hash} ->
-          # No duplicate, proceed with publish
-          publish_opts = %{
-            filename: "video.mp4",
-            ig_user_id: account.platform_user_id
+          result = %{
+            post_id: pfm_post.id || "pfm_#{submission.id}",
+            post_url: nil  # Will be fetched from feed later
           }
 
-          # Step 1: Upload media
-          Logger.info("[PostSubmission] Twitter: uploading media for submission #{submission.id}")
+          Social.mark_post_published(submission, %{
+            post_id: result.post_id,
+            post_url: result.post_url,
+            posted_at: DateTime.utc_now()
+          })
 
-          case Platform.call("twitter", :publish_media, [
-                 access_token,
-                 params["media_url"],
-                 publish_opts
-               ]) do
-            {:ok, %{media_id: media_id}} ->
-              # Step 2: Create tweet with media_id
-              Logger.info("[PostSubmission] Twitter: creating tweet with media_id #{media_id}")
-
-              case Platform.call("twitter", :create_tweet, [
-                     access_token,
-                     params["caption"] || "",
-                     [media_ids: [media_id]]
-                   ]) do
-                {:ok, result} ->
-                  Logger.info(
-                    "[PostSubmission] Twitter tweet created successfully! Post ID: #{result.post_id}"
-                  )
-
-                  # Update submission with post details and content hash
-                  final_content_hash = TwitterDuplicateDetector.generate_hash(caption, [media_id])
-
-                  Social.mark_post_published(submission, %{
-                    post_id: result.post_id,
-                    post_url: result.post_url,
-                    posted_at: DateTime.utc_now(),
-                    content_hash: final_content_hash
-                  })
-
-                {:error, reason} ->
-                  error_msg = if is_binary(reason), do: reason, else: inspect(reason)
-                  Logger.error("[PostSubmission] Twitter tweet creation failed: #{error_msg}")
-
-                  Social.mark_post_failed(submission, error_msg)
-              end
-
-            {:error, reason} ->
-              error_msg = if is_binary(reason), do: reason, else: inspect(reason)
-              Logger.error("[PostSubmission] Twitter media upload failed: #{error_msg}")
-
-              Social.mark_post_failed(submission, error_msg)
-          end
-
-        {:error, :duplicate_content, existing_post} ->
-          # Duplicate detected
-          error_msg =
-            "This content has already been posted to X. Duplicate posts are not allowed within 24 hours. (Matches post #{existing_post.id})"
-
-          Logger.warning(
-            "[PostSubmission] Duplicate content detected for submission #{submission.id}: #{error_msg}"
-          )
+        {:error, reason} ->
+          error_msg = if is_binary(reason), do: reason, else: inspect(reason)
+          Logger.error("[PostSubmission] Twitter post creation failed: #{error_msg}")
 
           Social.mark_post_failed(submission, error_msg)
       end
+    else
+      {:error, :missing_provider_account_id} ->
+        Logger.error("[PostSubmission] Account #{account.id} missing PostForMe provider_account_id")
+        Social.mark_post_failed(submission, "Account missing PostForMe provider_account_id")
+      
+      {:error, reason} ->
+        error_msg = if is_binary(reason), do: reason, else: inspect(reason)
+        Logger.error("[PostSubmission] Twitter publish failed: #{error_msg}")
+        Social.mark_post_failed(submission, error_msg)
     end
+  end
+
+  defp publish_to_platform(submission, %{platform: platform} = account, params)
+       when platform in ["twitter", "x"] do
+    publish_to_twitter(submission, account, params)
   end
 
   defp publish_to_platform(submission, account, params) do
@@ -673,6 +696,21 @@ defmodule ClippsterServerWeb.PostSubmissionController do
 
           Social.mark_post_failed(submission, error_msg)
       end
+    end
+  end
+
+  defp get_provider_account_id(%SocialAccount{provider_account_id: id}) when is_binary(id) and id != "", do: {:ok, id}
+  defp get_provider_account_id(_), do: {:error, :missing_provider_account_id}
+
+  defp ensure_accessible_media_url(media_url) do
+    # Generate presigned URL for R2 storage
+    if String.contains?(media_url, ".r2.cloudflarestorage.com") do
+      case ClippsterServer.Storage.presigned_url(media_url, expires_in: 7_200) do
+        {:ok, url} -> {:ok, url}
+        {:error, _} -> {:ok, media_url}  # Fallback to original
+      end
+    else
+      {:ok, media_url}
     end
   end
 
@@ -746,16 +784,6 @@ defmodule ClippsterServerWeb.PostSubmissionController do
       name: user.name,
       avatar_url: user.avatar_url
     }
-  end
-
-  defp get_provider_account_id(account) do
-    provider_account_id = account.provider_account_id
-
-    if is_binary(provider_account_id) and provider_account_id != "" do
-      {:ok, provider_account_id}
-    else
-      {:error, "Social account is missing a Post For Me provider_account_id"}
-    end
   end
 
   defp ensure_post_for_me_media_url(nil), do: {:error, "media_url is required"}

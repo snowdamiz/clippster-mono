@@ -487,6 +487,123 @@
                     </div>
 
                     <div class="build-dialog__addons-section">
+
+                      <!-- Organization Builds Section (shown only when orgs with matching streamer exist) -->
+                      <div v-if="availableOrgs.length > 0" class="build-dialog__field build-dialog__multi-select-section">
+                        <div class="build-dialog__section-header">
+                          <Building2 class="build-dialog__section-icon" />
+                          <span class="build-dialog__section-title">Build for Organizations</span>
+                        </div>
+                        <p class="build-dialog__section-hint">Select organizations and aspect ratios for each build</p>
+                        
+                        <div class="build-dialog__multi-select-list">
+                          <div
+                            v-for="(org, orgIndex) in availableOrgs"
+                            :key="org.profile.id"
+                            class="build-dialog__multi-select-item"
+                          >
+                            <!-- Org checkbox -->
+                            <button
+                              type="button"
+                              @click="toggleOrgSelection(orgIndex)"
+                              class="build-dialog__multi-select-toggle"
+                            >
+                              <div
+                                class="build-dialog__multi-select-checkbox"
+                                :class="{ 'build-dialog__multi-select-checkbox--checked': org.selected }"
+                              >
+                                <CheckIcon v-if="org.selected" class="build-dialog__multi-select-checkbox-icon" />
+                              </div>
+                              <span class="build-dialog__multi-select-name">{{ org.profile.organization_name || org.profile.name }}</span>
+                            </button>
+                            
+                            <!-- Nested aspect ratio checkboxes (shown when org is selected AND multiple ratios available) -->
+                            <Transition name="slide-fade">
+                              <div v-if="org.selected && hasMultipleAspectRatios" class="build-dialog__nested-ratios">
+                                <button
+                                  v-for="ratio in selectedRatios"
+                                  :key="ratio"
+                                  type="button"
+                                  @click="toggleOrgAspectRatio(orgIndex, ratio)"
+                                  class="build-dialog__ratio-chip"
+                                  :class="{ 'build-dialog__ratio-chip--selected': org.aspectRatios.includes(ratio) }"
+                                >
+                                  <CheckIcon v-if="org.aspectRatios.includes(ratio)" class="build-dialog__ratio-chip-icon" />
+                                  {{ ratio }}
+                                </button>
+                              </div>
+                            </Transition>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Campaign Builds Section (shown only when campaigns exist) -->
+                      <div v-if="availableCampaignSelections.length > 0" class="build-dialog__field build-dialog__multi-select-section">
+                        <div class="build-dialog__section-header">
+                          <Megaphone class="build-dialog__section-icon text-orange-400" />
+                          <span class="build-dialog__section-title">Build for Campaigns</span>
+                        </div>
+                        <p class="build-dialog__section-hint">Campaign branding will override organization branding</p>
+                        
+                        <div class="build-dialog__multi-select-list">
+                          <div
+                            v-for="(campaignSel, campaignIndex) in availableCampaignSelections"
+                            :key="campaignSel.campaign.id"
+                            class="build-dialog__multi-select-item"
+                          >
+                            <!-- Campaign checkbox -->
+                            <button
+                              type="button"
+                              @click="toggleCampaignSelection(campaignIndex)"
+                              class="build-dialog__multi-select-toggle"
+                            >
+                              <div
+                                class="build-dialog__multi-select-checkbox build-dialog__multi-select-checkbox--campaign"
+                                :class="{ 'build-dialog__multi-select-checkbox--checked': campaignSel.selected }"
+                              >
+                                <CheckIcon v-if="campaignSel.selected" class="build-dialog__multi-select-checkbox-icon" />
+                              </div>
+                              <div class="build-dialog__campaign-info">
+                                <span class="build-dialog__multi-select-name">{{ campaignSel.campaign.title }}</span>
+                                <span class="build-dialog__campaign-org-name">{{ campaignSel.campaign.organization?.name }}</span>
+                              </div>
+                              <span v-if="!campaignSel.campaign.branding_profile_id" class="build-dialog__badge build-dialog__badge--global">
+                                <Globe class="build-dialog__badge-icon" />
+                                Global
+                              </span>
+                            </button>
+                            
+                            <!-- Nested aspect ratio checkboxes (shown when campaign is selected AND multiple ratios available) -->
+                            <Transition name="slide-fade">
+                              <div v-if="campaignSel.selected && hasMultipleAspectRatios" class="build-dialog__nested-ratios">
+                                <button
+                                  v-for="ratio in selectedRatios"
+                                  :key="ratio"
+                                  type="button"
+                                  @click="toggleCampaignAspectRatio(campaignIndex, ratio)"
+                                  class="build-dialog__ratio-chip"
+                                  :class="{ 'build-dialog__ratio-chip--selected': campaignSel.aspectRatios.includes(ratio) }"
+                                >
+                                  <CheckIcon v-if="campaignSel.aspectRatios.includes(ratio)" class="build-dialog__ratio-chip-icon" />
+                                  {{ ratio }}
+                                </button>
+                              </div>
+                            </Transition>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <!-- Build count summary -->
+                      <div v-if="totalBuildsCount > 0" class="build-dialog__builds-summary">
+                        <span class="build-dialog__builds-count">{{ totalBuildsCount }} build{{ totalBuildsCount !== 1 ? 's' : '' }} will be created</span>
+                      </div>
+
+                      <!-- Intro/Outro section - hidden for free tier users (admin-controlled) -->
+                      <!-- Disabled when orgs/campaigns are selected (branding comes from their profiles) -->
+                      <div v-if="!isFreeTier" class="build-dialog__intro-outro-section" :class="{ 'build-dialog__intro-outro-section--disabled': hasOrgOrCampaignSelected }">
+                      <div v-if="hasOrgOrCampaignSelected" class="build-dialog__disabled-notice">
+                        <span>Intro/Outro controlled by organization or campaign branding</span>
+                      </div>
                       <!-- Intro Compact Selector -->
                       <div class="build-dialog__field">
                         <div class="build-dialog__field-header">
@@ -508,7 +625,9 @@
                           <button
                             ref="introButtonRef"
                             @click="toggleIntroDropdown"
+                            :disabled="hasOrgOrCampaignSelected"
                             class="build-dialog__dropdown-trigger"
+                            :class="{ 'build-dialog__dropdown-trigger--disabled': hasOrgOrCampaignSelected }"
                           >
                             <span class="build-dialog__dropdown-text">
                               {{
@@ -597,7 +716,9 @@
                           <button
                             ref="outroButtonRef"
                             @click="toggleOutroDropdown"
+                            :disabled="hasOrgOrCampaignSelected"
                             class="build-dialog__dropdown-trigger"
+                            :class="{ 'build-dialog__dropdown-trigger--disabled': hasOrgOrCampaignSelected }"
                           >
                             <span class="build-dialog__dropdown-text">
                               {{
@@ -670,6 +791,8 @@
                         <span class="build-dialog__duration-label">Total Duration</span>
                         <span class="build-dialog__duration-value">{{ formatDuration(totalDuration) }}</span>
                       </div>
+                      </div>
+                      <!-- End intro/outro section -->
                     </div>
                   </div>
                 </Transition>
@@ -709,7 +832,7 @@
                   :class="{ 'build-dialog__btn--disabled': !canProceed }"
                 >
                   <WrenchIcon class="build-dialog__btn-icon" />
-                  <span>Build {{ selectedRatios.length > 1 ? `${selectedRatios.length} Videos` : 'Video' }}</span>
+                  <span>{{ publishMode ? 'Build & Publish' : `Build ${totalBuildsCount > 0 ? totalBuildsCount : selectedRatios.length} Video${(totalBuildsCount > 0 ? totalBuildsCount : selectedRatios.length) !== 1 ? 's' : ''}` }}</span>
                 </button>
               </div>
             </div>
@@ -767,14 +890,26 @@
     SettingsIcon,
     SparkleIcon,
     Building2,
+    Megaphone,
+    Globe,
   } from 'lucide-vue-next';
   import type { ClipWithVersion, WatermarkSettings } from '@/services/database';
   import { getAllIntroOutros, type IntroOutro } from '@/services/database';
   import { getUserOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
   import { resolveOverlayImagePath } from '@/services/database/watermarks';
   import { useAuthStore } from '@/stores/auth';
+  import { useFreeTierLimits } from '@/composables/useFreeTierLimits';
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
   import SubtitleAdjustmentDialog from './SubtitleAdjustmentDialog.vue';
+  import {
+    getMyGlobalBrandingCampaigns,
+    getCampaignsByCreatorProfile,
+    type Campaign,
+  } from '@/services/campaignApi';
+  import {
+    getUserAssignedCreatorProfiles,
+    type ServerOrganizationCreatorProfile,
+  } from '@/services/organizationProfilesApi';
   import type {
     ManualFramingConfig,
     SubtitleOverride,
@@ -824,12 +959,30 @@
     initialFramingMode?: 'auto' | 'manual' | null;
     initialFramingConfigs?: import('@/types').ManualFramingConfigs | null;
     vodPresetConfig?: import('@/types').ActiveVodPresetConfig | null;
+    // Server ID of the creator profile for this clip (used to fetch profile-specific campaigns)
+    creatorProfileServerId?: number | null;
+    // Publish mode - when true, shows "Build & Publish" and emits build-complete event
+    publishMode?: boolean;
+    // Single ratio mode - when true, only one aspect ratio can be selected at a time
+    singleRatioMode?: boolean;
   }>();
 
   const emit = defineEmits<{
     'update:modelValue': [value: boolean];
     confirm: [settings: BuildSettings];
+    'build-complete': [buildIds: string[]];
   }>();
+
+  // Build target for multi-org/campaign builds
+  export interface BuildTarget {
+    type: 'org' | 'campaign';
+    id: number;
+    name: string;
+    brandingProfileId: number | null;
+    aspectRatios: string[];
+    organizationId?: number;
+    organizationName?: string;
+  }
 
   export interface BuildSettings {
     aspectRatios: string[];
@@ -844,6 +997,18 @@
     manualFramingConfigs?: import('@/types').ManualFramingConfigs;
     subtitleOverrides?: SubtitleOverrides;
     layoutOverlays?: import('@/types').LayoutOverlay[];
+    // Multi-build targets (orgs and campaigns with their aspect ratios)
+    buildTargets?: BuildTarget[];
+    // Legacy single campaign fields (kept for backward compatibility)
+    campaignId?: number | null;
+    selectedCampaign?: import('@/services/campaignApi').Campaign | null;
+    campaignBrandingProfileId?: number | null;
+    brandingType?: 'org' | 'campaign' | 'personal' | 'none';
+    organizationId?: number | null;
+    organizationName?: string | null;
+    // Pre-created build record IDs — when provided, pipeline skips creating a new record
+    buildId?: string;
+    buildNumber?: number;
   }
 
   // Re-export the IntroOutroItem type for use in other components
@@ -851,6 +1016,40 @@
 
   // Auth store for checking org memberships
   const authStore = useAuthStore();
+
+  // Free tier limits composable
+  const { isFreeTier } = useFreeTierLimits();
+
+  // Multi-org/campaign selection state
+  interface OrgSelection {
+    profile: ServerOrganizationCreatorProfile;
+    selected: boolean;
+    aspectRatios: string[];
+  }
+  interface CampaignSelection {
+    campaign: Campaign;
+    selected: boolean;
+    aspectRatios: string[];
+  }
+  
+  const availableOrgs = ref<OrgSelection[]>([]);
+  const availableCampaignSelections = ref<CampaignSelection[]>([]);
+  const loadingOrgsAndCampaigns = ref(false);
+  
+  // Legacy campaign selection state (kept for backward compatibility)
+  const isForCampaign = ref(false);
+  const availableCampaigns = ref<Campaign[]>([]);
+  const selectedCampaign = ref<Campaign | null>(null);
+  const loadingCampaigns = ref(false);
+  const showCampaignDropdown = ref(false);
+  const campaignButtonRef = ref<HTMLElement | null>(null);
+  const campaignDropdownRef = ref<HTMLElement | null>(null);
+  const campaignDropdownPosition = ref<{ top: string; left: string; width: string; maxHeight: string }>({
+    top: '0px',
+    left: '0px',
+    width: '0px',
+    maxHeight: '192px',
+  });
 
   // State
   const selectedRatios = ref<string[]>(['16:9']);
@@ -1084,6 +1283,14 @@
           await loadIntroOutros();
         }
 
+        // Reset campaign selection state
+        isForCampaign.value = false;
+        selectedCampaign.value = null;
+        showCampaignDropdown.value = false;
+
+        // Load available orgs and campaigns for the streamer
+        await loadOrgsAndCampaigns();
+
         // Pre-select creator profile defaults
         if (props.defaultIntro) {
           // Find the matching intro in the loaded list
@@ -1130,6 +1337,9 @@
         selectedIntro.value = null;
         selectedOutro.value = null;
         videoPath.value = null;
+        isForCampaign.value = false;
+        selectedCampaign.value = null;
+        availableCampaigns.value = [];
       }
     }
   );
@@ -1274,6 +1484,16 @@
       !outroDropdownRef.value.contains(target)
     ) {
       showOutroDropdown.value = false;
+    }
+
+    if (
+      showCampaignDropdown.value &&
+      campaignButtonRef.value &&
+      !campaignButtonRef.value.contains(target) &&
+      campaignDropdownRef.value &&
+      !campaignDropdownRef.value.contains(target)
+    ) {
+      showCampaignDropdown.value = false;
     }
   }
 
@@ -1463,6 +1683,11 @@
 
   // Methods
   function toggleRatio(ratio: string) {
+    if (props.singleRatioMode) {
+      // In single ratio mode, replace the selection instead of toggling
+      selectedRatios.value = [ratio];
+      return;
+    }
     const index = selectedRatios.value.indexOf(ratio);
     if (index > -1) {
       selectedRatios.value.splice(index, 1);
@@ -1485,6 +1710,249 @@
 
   // Guard to prevent double submissions (e.g., from double-clicks)
   const isSubmitting = ref(false);
+
+  // Load available orgs and campaigns for the streamer
+  async function loadOrgsAndCampaigns() {
+    loadingOrgsAndCampaigns.value = true;
+    try {
+      // Get streamer name from clip's project or creator profile
+      const streamerName = props.clip?.project_name?.toLowerCase() || '';
+      
+      // 1. Fetch org profiles assigned to user and filter by streamer match
+      const orgRes = await getUserAssignedCreatorProfiles();
+      const matchingOrgs: OrgSelection[] = [];
+      
+      if (orgRes.success && orgRes.profiles.length > 0) {
+        for (const profile of orgRes.profiles) {
+          // Check if this profile matches the streamer (by name or platform links)
+          const profileName = profile.name?.toLowerCase() || '';
+          const hasStreamerMatch = profileName.includes(streamerName) || 
+            streamerName.includes(profileName) ||
+            profile.platform_links?.some(link => 
+              link.display_name?.toLowerCase().includes(streamerName) ||
+              streamerName.includes(link.display_name?.toLowerCase() || '')
+            );
+          
+          // Also include global scope profiles
+          if (hasStreamerMatch || profile.scope === 'global') {
+            matchingOrgs.push({
+              profile,
+              selected: false,
+              aspectRatios: [],
+            });
+          }
+        }
+      }
+      
+      availableOrgs.value = matchingOrgs;
+      console.log('[ClipBuildSettingsDialog] Found', matchingOrgs.length, 'matching org profiles for streamer:', streamerName);
+      
+      // 2. Fetch campaigns (global branding + creator-profile-specific)
+      const campaignResults: Campaign[] = [];
+      
+      // Global branding campaigns
+      const globalRes = await getMyGlobalBrandingCampaigns();
+      if (globalRes.success && globalRes.campaigns) {
+        campaignResults.push(...globalRes.campaigns);
+      }
+      
+      // Profile-specific campaigns
+      if (props.creatorProfileServerId) {
+        const profileRes = await getCampaignsByCreatorProfile(props.creatorProfileServerId);
+        if (profileRes.success && profileRes.campaigns) {
+          for (const c of profileRes.campaigns) {
+            if (!campaignResults.find((r) => r.id === c.id)) {
+              campaignResults.push(c);
+            }
+          }
+        }
+      }
+      
+      // Convert to CampaignSelection format
+      availableCampaignSelections.value = campaignResults.map(campaign => ({
+        campaign,
+        selected: false,
+        aspectRatios: [],
+      }));
+      
+      // Also set legacy availableCampaigns for backward compatibility
+      availableCampaigns.value = campaignResults;
+      
+      console.log('[ClipBuildSettingsDialog] Found', campaignResults.length, 'campaigns');
+    } catch (e) {
+      console.warn('[ClipBuildSettingsDialog] Failed to load orgs/campaigns:', e);
+      availableOrgs.value = [];
+      availableCampaignSelections.value = [];
+      availableCampaigns.value = [];
+    } finally {
+      loadingOrgsAndCampaigns.value = false;
+    }
+  }
+  
+  // Toggle org selection
+  function toggleOrgSelection(index: number) {
+    const org = availableOrgs.value[index];
+    org.selected = !org.selected;
+    if (!org.selected) {
+      org.aspectRatios = [];
+    }
+  }
+  
+  // Toggle aspect ratio for org
+  function toggleOrgAspectRatio(orgIndex: number, ratio: string) {
+    const org = availableOrgs.value[orgIndex];
+    const ratioIndex = org.aspectRatios.indexOf(ratio);
+    if (ratioIndex > -1) {
+      org.aspectRatios.splice(ratioIndex, 1);
+    } else {
+      org.aspectRatios.push(ratio);
+    }
+  }
+  
+  // Toggle campaign selection
+  function toggleCampaignSelection(index: number) {
+    const campaign = availableCampaignSelections.value[index];
+    campaign.selected = !campaign.selected;
+    if (!campaign.selected) {
+      campaign.aspectRatios = [];
+    }
+  }
+  
+  // Toggle aspect ratio for campaign
+  function toggleCampaignAspectRatio(campaignIndex: number, ratio: string) {
+    const campaign = availableCampaignSelections.value[campaignIndex];
+    const ratioIndex = campaign.aspectRatios.indexOf(ratio);
+    if (ratioIndex > -1) {
+      campaign.aspectRatios.splice(ratioIndex, 1);
+    } else {
+      campaign.aspectRatios.push(ratio);
+    }
+  }
+  
+  // Check if we have multiple aspect ratios selected (show nested selectors)
+  const hasMultipleAspectRatios = computed(() => selectedRatios.value.length > 1);
+  
+  // Check if any org or campaign is selected (for disabling intro/outro)
+  const hasOrgOrCampaignSelected = computed(() => {
+    const hasSelectedOrg = availableOrgs.value.some(org => org.selected);
+    const hasSelectedCampaign = availableCampaignSelections.value.some(c => c.selected);
+    return hasSelectedOrg || hasSelectedCampaign;
+  });
+  
+  // Get total number of builds that will be created
+  // Must match the logic in confirmBuild() - when nested aspectRatios is empty, use selectedRatios
+  const totalBuildsCount = computed(() => {
+    let count = 0;
+    
+    console.log('[BuildDialog] Calculating totalBuildsCount...');
+    console.log('[BuildDialog] hasMultipleAspectRatios:', hasMultipleAspectRatios.value);
+    console.log('[BuildDialog] selectedRatios:', selectedRatios.value);
+    console.log('[BuildDialog] availableOrgs:', availableOrgs.value.map(o => ({ name: o.profile.name, selected: o.selected, aspectRatios: o.aspectRatios })));
+    console.log('[BuildDialog] availableCampaignSelections:', availableCampaignSelections.value.map(c => ({ name: c.campaign.title, selected: c.selected, aspectRatios: c.aspectRatios })));
+    
+    // Count org builds (each org × each aspect ratio = 1 build)
+    for (const org of availableOrgs.value) {
+      if (org.selected) {
+        // If multiple aspect ratios mode and user selected specific ratios, use those
+        // Otherwise fall back to all selected ratios (same as confirmBuild)
+        const ratios = hasMultipleAspectRatios.value && org.aspectRatios.length > 0 
+          ? org.aspectRatios 
+          : selectedRatios.value;
+        console.log(`[BuildDialog] Org "${org.profile.name}" selected, ratios:`, ratios, 'adding', ratios.length);
+        count += ratios.length;
+      }
+    }
+    
+    // Count campaign builds
+    for (const campaign of availableCampaignSelections.value) {
+      if (campaign.selected) {
+        const ratios = hasMultipleAspectRatios.value && campaign.aspectRatios.length > 0 
+          ? campaign.aspectRatios 
+          : selectedRatios.value;
+        console.log(`[BuildDialog] Campaign "${campaign.campaign.title}" selected, ratios:`, ratios, 'adding', ratios.length);
+        count += ratios.length;
+      }
+    }
+    
+    console.log('[BuildDialog] Total build count:', count);
+    return count;
+  });
+
+  // Legacy: Load available campaigns for campaign selection
+  async function loadAvailableCampaigns() {
+    loadingCampaigns.value = true;
+    try {
+      const results: Campaign[] = [];
+
+      // 1. Fetch global branding campaigns (work with ANY VOD)
+      const globalRes = await getMyGlobalBrandingCampaigns();
+      if (globalRes.success && globalRes.campaigns) {
+        results.push(...globalRes.campaigns);
+      }
+
+      // 2. If this clip has a creator profile, also fetch campaigns for that profile
+      if (props.creatorProfileServerId) {
+        const profileRes = await getCampaignsByCreatorProfile(props.creatorProfileServerId);
+        if (profileRes.success && profileRes.campaigns) {
+          // Add campaigns not already in list (no duplicates)
+          for (const c of profileRes.campaigns) {
+            if (!results.find((r) => r.id === c.id)) {
+              results.push(c);
+            }
+          }
+        }
+      }
+
+      availableCampaigns.value = results;
+    } catch (e) {
+      console.warn('[ClipBuildSettingsDialog] Failed to load campaigns:', e);
+      availableCampaigns.value = [];
+    } finally {
+      loadingCampaigns.value = false;
+    }
+  }
+
+  // Toggle campaign checkbox
+  function toggleIsForCampaign() {
+    isForCampaign.value = !isForCampaign.value;
+    if (!isForCampaign.value) {
+      selectedCampaign.value = null;
+    }
+  }
+
+  function toggleCampaignDropdown() {
+    if (!campaignButtonRef.value) return;
+    const pos = calculateDropdownPosition(campaignButtonRef.value);
+    campaignDropdownPosition.value = pos;
+    showCampaignDropdown.value = !showCampaignDropdown.value;
+  }
+
+  async function selectCampaign(campaign: Campaign) {
+    selectedCampaign.value = campaign;
+    showCampaignDropdown.value = false;
+    
+    // Fetch campaign branding assets to override org branding
+    await loadCampaignBranding(campaign);
+  }
+
+  // Load campaign branding assets and override org branding
+  async function loadCampaignBranding(campaign: Campaign) {
+    try {
+      // Campaign branding overrides org branding completely
+      // This means: no org watermark, no org overlay, no org intro/outro
+      // Only campaign-specific branding is applied
+      
+      // For now, we'll pass the campaign context to the build command
+      // The build command will fetch the campaign's branding profile assets
+      // and apply them instead of org assets
+      
+      console.log('[ClipBuildSettingsDialog] Campaign selected:', campaign.title);
+      console.log('[ClipBuildSettingsDialog] Campaign branding will override org branding');
+      console.log('[ClipBuildSettingsDialog] Campaign branding_profile_id:', campaign.branding_profile_id);
+    } catch (error) {
+      console.error('[ClipBuildSettingsDialog] Failed to load campaign branding:', error);
+    }
+  }
 
   // Reset isSubmitting when dialog opens so subsequent builds work
   watch(
@@ -1523,6 +1991,58 @@
     const finalSubtitleOverrides =
       Object.keys(subtitleOverrides.value).length > 0 ? subtitleOverrides.value : undefined;
 
+    // Build targets from multi-select (orgs and campaigns with their aspect ratios)
+    const buildTargets: BuildTarget[] = [];
+    
+    // Add org build targets
+    for (const org of availableOrgs.value) {
+      if (org.selected) {
+        // If multiple aspect ratios, use selected ones; otherwise use all selected ratios
+        const ratios = hasMultipleAspectRatios.value && org.aspectRatios.length > 0 
+          ? org.aspectRatios 
+          : [...selectedRatios.value];
+        
+        // Create one build target per aspect ratio
+        for (const ratio of ratios) {
+          buildTargets.push({
+            type: 'org',
+            id: org.profile.id,
+            name: org.profile.organization_name || org.profile.name,
+            brandingProfileId: org.profile.id,
+            aspectRatios: [ratio],
+            organizationId: org.profile.organization_id,
+            organizationName: org.profile.organization_name,
+          });
+        }
+      }
+    }
+    
+    // Add campaign build targets
+    for (const campaignSel of availableCampaignSelections.value) {
+      if (campaignSel.selected) {
+        // If multiple aspect ratios, use selected ones; otherwise use all selected ratios
+        const ratios = hasMultipleAspectRatios.value && campaignSel.aspectRatios.length > 0 
+          ? campaignSel.aspectRatios 
+          : [...selectedRatios.value];
+        
+        // Create one build target per aspect ratio
+        for (const ratio of ratios) {
+          buildTargets.push({
+            type: 'campaign',
+            id: campaignSel.campaign.id,
+            name: campaignSel.campaign.title,
+            brandingProfileId: campaignSel.campaign.branding_profile_id,
+            aspectRatios: [ratio],
+            organizationId: campaignSel.campaign.organization?.id,
+            organizationName: campaignSel.campaign.organization?.name,
+          });
+        }
+      }
+    }
+
+    const selectedCampaignTargets = availableCampaignSelections.value.filter((campaignSel) => campaignSel.selected);
+    const singleSelectedCampaign = selectedCampaignTargets.length === 1 ? selectedCampaignTargets[0].campaign : null;
+
     const settings: BuildSettings = {
       aspectRatios: [...selectedRatios.value], // Create a copy to avoid mutation issues
       quality: quality.value,
@@ -1538,11 +2058,27 @@
       layoutOverlays: props.vodPresetConfig?.layoutOverlays?.length
         ? props.vodPresetConfig.layoutOverlays
         : undefined,
+      // Multi-build targets
+      buildTargets: buildTargets.length > 0 ? buildTargets : undefined,
+      // Legacy single campaign fields (kept for backward compatibility)
+      campaignId: singleSelectedCampaign?.id ?? (isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.id : null),
+      selectedCampaign: singleSelectedCampaign ?? (isForCampaign.value ? selectedCampaign.value : null),
+      campaignBrandingProfileId: singleSelectedCampaign?.branding_profile_id
+        ?? (isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.branding_profile_id : null),
+      brandingType: buildTargets.length > 0
+        ? (singleSelectedCampaign ? 'campaign' : undefined)
+        : (isForCampaign.value && selectedCampaign.value ? 'campaign' : 'personal'),
     };
 
-    console.log('[ClipBuildSettingsDialog] Emitting confirm with aspectRatios:', settings.aspectRatios);
+    console.log('[ClipBuildSettingsDialog] Emitting confirm with buildTargets:', buildTargets.length, 'targets');
+    console.log('[ClipBuildSettingsDialog] Build targets:', buildTargets);
     emit('confirm', settings);
-    close();
+    
+    // In publish mode, keep dialog open and wait for build completion
+    // The parent component will handle the build and emit build-complete event
+    if (!props.publishMode) {
+      close();
+    }
   }
 </script>
 
@@ -2337,9 +2873,236 @@
     border: 1px solid rgba(139, 92, 246, 0.3);
   }
 
+  .build-dialog__badge--global {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    border: 1px solid rgba(6, 182, 212, 0.25);
+    font-size: 0.625rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+  }
+
   .build-dialog__badge-icon {
     width: 10px;
     height: 10px;
+  }
+
+  /* ===== Campaign Section ===== */
+  .build-dialog__campaign-section {
+    padding: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    gap: 0;
+  }
+
+  .build-dialog__campaign-toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    width: 100%;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+    color: var(--sidebar-text);
+  }
+
+  .build-dialog__campaign-checkbox {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 1.5px solid var(--sidebar-border);
+    background-color: var(--sidebar-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 150ms ease;
+    margin-top: 1px;
+  }
+
+  .build-dialog__campaign-checkbox--checked {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
+  .build-dialog__campaign-checkbox-icon {
+    width: 11px;
+    height: 11px;
+    color: #000;
+  }
+
+  .build-dialog__campaign-toggle-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    flex: 1;
+  }
+
+  .build-dialog__campaign-toggle-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .build-dialog__campaign-toggle-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .build-dialog__campaign-toggle-hint {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.4;
+  }
+
+  .build-dialog__campaign-picker {
+    margin-top: 0.875rem;
+    padding-top: 0.875rem;
+    border-top: 1px solid var(--sidebar-border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .build-dialog__campaign-selected {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .build-dialog__campaign-selected-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    overflow: hidden;
+    background-color: var(--sidebar-surface);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .build-dialog__campaign-cover {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .build-dialog__campaign-cover-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .build-dialog__campaign-selected-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .build-dialog__campaign-selected-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    truncate: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .build-dialog__campaign-selected-org {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .build-dialog__dropdown-text--placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+  }
+
+  .build-dialog__campaign-item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.625rem 0.75rem;
+  }
+
+  .build-dialog__campaign-item-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    overflow: hidden;
+    background-color: var(--sidebar-hover);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .build-dialog__campaign-item-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .build-dialog__campaign-item-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .build-dialog__campaign-item-org {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .build-dialog__campaign-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.625rem 0.75rem;
+    background-color: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    border-radius: 6px;
+  }
+
+  .build-dialog__campaign-notice-icon {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background-color: var(--sidebar-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: #000;
+    margin-top: 1px;
+  }
+
+  .build-dialog__campaign-notice-text {
+    font-size: 0.8125rem;
+    color: var(--sidebar-accent);
+    margin: 0;
+    line-height: 1.4;
   }
 
   .build-dialog__dropdown-wrapper {
@@ -2370,6 +3133,30 @@
     outline: none;
     border-color: var(--sidebar-accent);
     box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .build-dialog__dropdown-trigger--disabled,
+  .build-dialog__dropdown-trigger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  .build-dialog__intro-outro-section--disabled {
+    opacity: 0.6;
+  }
+
+  .build-dialog__disabled-notice {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.75rem;
+    background-color: rgba(251, 146, 60, 0.1);
+    border: 1px solid rgba(251, 146, 60, 0.3);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    color: rgb(251, 146, 60);
   }
 
   .build-dialog__dropdown-text {
@@ -2619,6 +3406,161 @@
   .slide-fade-leave-to {
     opacity: 0;
     transform: translateY(-10px);
+  }
+
+  /* ===== Multi-Select Section ===== */
+  .build-dialog__multi-select-section {
+    margin-bottom: 1rem;
+  }
+
+  .build-dialog__section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .build-dialog__section-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-accent);
+  }
+
+  .build-dialog__section-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .build-dialog__section-hint {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin-bottom: 0.75rem;
+  }
+
+  .build-dialog__multi-select-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .build-dialog__multi-select-item {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    padding: 0.5rem;
+  }
+
+  .build-dialog__multi-select-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.5rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .build-dialog__multi-select-checkbox {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--sidebar-border);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 150ms ease;
+  }
+
+  .build-dialog__multi-select-checkbox--checked {
+    background: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
+  .build-dialog__multi-select-checkbox--campaign.build-dialog__multi-select-checkbox--checked {
+    background: rgb(249, 115, 22);
+    border-color: rgb(249, 115, 22);
+  }
+
+  .build-dialog__multi-select-checkbox-icon {
+    width: 12px;
+    height: 12px;
+    color: white;
+  }
+
+  .build-dialog__multi-select-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .build-dialog__campaign-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    flex: 1;
+  }
+
+  .build-dialog__campaign-org-name {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .build-dialog__nested-ratios {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem 0.5rem 0.25rem 2.5rem;
+  }
+
+  .build-dialog__ratio-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 999px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .build-dialog__ratio-chip:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .build-dialog__ratio-chip--selected {
+    background: rgba(6, 182, 212, 0.15);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
+  }
+
+  .build-dialog__ratio-chip-icon {
+    width: 10px;
+    height: 10px;
+  }
+
+  .build-dialog__builds-summary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem;
+    background: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    border-radius: 8px;
+    margin-top: 0.5rem;
+  }
+
+  .build-dialog__builds-count {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
   }
 
   .step-slide-enter-active {

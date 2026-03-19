@@ -43,12 +43,28 @@
                 </span>
               </div>
               <p class="user-bio">{{ affiliate.user?.name || affiliate.user?.email || 'No user info' }}</p>
+              <div class="ref-link">
+                <Link2 :size="14" class="ref-link__icon" />
+                <span class="ref-link__url">{{ referralUrl }}</span>
+                <button class="ref-link__copy" @click="copyRefLink" :title="refLinkCopied ? 'Copied!' : 'Copy link'">
+                  <Check v-if="refLinkCopied" :size="14" />
+                  <Copy v-else :size="14" />
+                </button>
+              </div>
             </div>
           </div>
           <div class="user-stats">
             <div class="stat">
               <span class="stat__value">{{ referrals.length }}</span>
               <span class="stat__label">Referrals</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value stat__value--green">${{ totalEarned }}</span>
+              <span class="stat__label">Earned</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value stat__value--amber">${{ totalPending }}</span>
+              <span class="stat__label">Pending</span>
             </div>
             <div class="stat">
               <span class="stat__value">{{ formatDate(affiliate.inserted_at) }}</span>
@@ -442,6 +458,8 @@
     Info,
     Settings,
     ChevronDown,
+    Link2,
+    Copy,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import {
@@ -466,6 +484,36 @@
   const referrals = ref<AffiliateReferral[]>([]);
   const payouts = ref<AffiliatePayout[]>([]);
   const showDiscountTypeDropdown = ref(false);
+  const refLinkCopied = ref(false);
+
+  const referralUrl = computed(() => {
+    if (!affiliate.value) return '';
+    return `https://clippster.app/?ref=${affiliate.value.referral_code}`;
+  });
+
+  const totalEarned = computed(() => {
+    return referrals.value
+      .filter(r => r.status === 'confirmed')
+      .reduce((sum, r) => sum + (r.commission_usd || 0), 0)
+      .toFixed(2);
+  });
+
+  const totalPending = computed(() => {
+    return referrals.value
+      .filter(r => r.status === 'pending')
+      .reduce((sum, r) => sum + (r.commission_usd || 0), 0)
+      .toFixed(2);
+  });
+
+  async function copyRefLink() {
+    try {
+      await navigator.clipboard.writeText(referralUrl.value);
+      refLinkCopied.value = true;
+      setTimeout(() => { refLinkCopied.value = false; }, 2000);
+    } catch {
+      // Fallback
+    }
+  }
 
   const editForm = reactive({
     signup_commission_pct: 0,
@@ -804,6 +852,61 @@
   margin: 0;
   line-height: 1.5;
   max-width: 420px;
+}
+
+.ref-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+  padding: 0.3rem 0.625rem;
+  background: rgba(6, 182, 212, 0.08);
+  border: 1px solid rgba(6, 182, 212, 0.2);
+  border-radius: 6px;
+  max-width: 100%;
+}
+
+.ref-link__icon {
+  color: rgba(6, 182, 212, 0.7);
+  flex-shrink: 0;
+}
+
+.ref-link__url {
+  font-size: 0.75rem;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: rgba(6, 182, 212, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.ref-link__copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--sidebar-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 150ms ease;
+}
+
+.ref-link__copy:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--sidebar-text);
+}
+
+.stat__value--green {
+  color: #10b981;
+}
+
+.stat__value--amber {
+  color: #f59e0b;
 }
 
 .user-stats {

@@ -73,7 +73,7 @@ defmodule ClippsterServer.BetaCodes do
   """
   def get_code_stats do
     total = Repo.aggregate(BetaCode, :count)
-    used = Repo.aggregate(from(c in BetaCode, where: not is_nil(c.used_by_user_id)), :count)
+    used = Repo.aggregate(from(c in BetaCode, where: not is_nil(c.verified_at)), :count)
 
     %{
       total: total,
@@ -96,6 +96,20 @@ defmodule ClippsterServer.BetaCodes do
   def delete_unused_codes do
     from(c in BetaCode, where: is_nil(c.used_by_user_id))
     |> Repo.delete_all()
+  end
+
+  @doc """
+  Deletes a specific beta code by ID.
+  Returns {:ok, beta_code} on success or {:error, reason} on failure.
+  """
+  def delete_code(code_id) when is_integer(code_id) do
+    case Repo.get(BetaCode, code_id) do
+      nil ->
+        {:error, :not_found}
+
+      beta_code ->
+        Repo.delete(beta_code)
+    end
   end
 
   @doc """

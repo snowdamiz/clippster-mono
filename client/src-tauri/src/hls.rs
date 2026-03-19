@@ -824,3 +824,68 @@ async fn run_hls_recorder(
 
     Ok(())
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VodSegmentInput {
+    pub filename: String,
+    pub duration: f64,
+}
+
+/// Create a static VOD m3u8 playlist from a list of segments.
+/// Used for the frozen clip preview player in the manual clipping tool.
+#[tauri::command]
+pub async fn create_vod_playlist(
+    output_dir: String,
+    segments: Vec<VodSegmentInput>,
+    filename: String,
+) -> Result<String, String> {
+    if segments.is_empty() {
+        return Err("No segments provided".to_string());
+    }
+
+    let max_duration = segments
+        .iter()
+        .map(|s| s.duration.ceil() as u32)
+        .max()
+        .unwrap_or(4);
+
+    let mut content = String::new();
+    content.push_str("#EXTM3U\n");
+    content.push_str("#EXT-X-VERSION:3\n");
+    content.push_str(&format!("#EXT-X-TARGETDURATION:{}\n", max_duration));
+    content.push_str("#EXT-X-PLAYLIST-TYPE:VOD\n");
+    content.push_str("#EXT-X-MEDIA-SEQUENCE:0\n");
+
+    for segment in &segments {
+        content.push_str(&format!("#EXTINF:{:.3},\n", segment.duration));
+        content.push_str(&format!("{}\n", segment.filename));
+    }
+
+    content.push_str("#EXT-X-ENDLIST\n");
+
+    let playlist_path = PathBuf::from(&output_dir).join(&filename);
+    tokio::fs::write(&playlist_path, &content)
+        .await
+        .map_err(|e| format!("Failed to write VOD playlist: {}", e))?;
+
+    println!(
+        "[HLS] Created VOD playlist at {:?} with {} segments",
+        playlist_path,
+        segments.len()
+    );
+
+    Ok(playlist_path.to_string_lossy().to_string())
+}
+
+/// Delete a VOD playlist file (cleanup after clip selector closes)
+#[tauri::command]
+pub async fn delete_vod_playlist(playlist_path: String) -> Result<(), String> {
+    let path = PathBuf::from(&playlist_path);
+    if path.exists() {
+        tokio::fs::remove_file(&path)
+            .await
+            .map_err(|e| format!("Failed to delete VOD playlist: {}", e))?;
+    }
+    Ok(())
+}

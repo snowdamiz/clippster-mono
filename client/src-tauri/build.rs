@@ -103,8 +103,9 @@ fn main() {
         }
     }
 
-    // Download ffmpeg
+    // Download ffmpeg and ffprobe
     download_ffmpeg(&binaries_dir, &target_os, &target_arch);
+    download_ffprobe(&binaries_dir, &target_os, &target_arch);
 
     // Download node for ALL platforms (needed for cross-platform bundling)
     // Windows
@@ -128,6 +129,16 @@ fn main() {
     // it tries to process them as bundle resources on the initial build.
     #[cfg(unix)]
     fix_ffmpeg_lib_permissions(&manifest_dir);
+
+    // Ensure ffmpeg-libs directory exists with at least one file so the
+    // "ffmpeg-libs/*" glob in tauri.conf.json doesn't fail on platforms
+    // that don't need dynamic FFmpeg libraries (macOS/Linux use static linking).
+    let ffmpeg_libs_dir = manifest_dir.join("ffmpeg-libs");
+    fs::create_dir_all(&ffmpeg_libs_dir).ok();
+    let placeholder = ffmpeg_libs_dir.join(".gitkeep");
+    if !placeholder.exists() {
+        File::create(&placeholder).ok();
+    }
 
     // Run tauri-build
     tauri_build::build();
@@ -631,6 +642,126 @@ fn extract_node_from_tar_gz(
     }
 
     Err(format!("node binary not found in archive at path: {}", extract_path).into())
+}
+
+fn download_ffprobe(binaries_dir: &Path, target_os: &str, target_arch: &str) {
+    // Platform-specific ffprobe binary names and URLs
+    // Using eugeneware/ffmpeg-static for direct binary downloads (no archive extraction needed for macOS/Linux)
+    // Using BtbN for Windows (requires zip extraction)
+    let (ffprobe_name, download_url, is_archive) = match (target_os, target_arch) {
+        ("windows", "x86_64") => (
+            "ffprobe-x86_64-pc-windows-msvc.exe",
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip".to_string(),
+            true,
+        ),
+        ("macos", "x86_64") => (
+            "ffprobe-x86_64-apple-darwin",
+            format!("https://github.com/eugeneware/ffmpeg-static/releases/download/{}/ffprobe-darwin-x64", FFMPEG_STATIC_VERSION),
+            false,
+        ),
+        ("macos", "aarch64") => (
+            "ffprobe-aarch64-apple-darwin",
+            format!("https://github.com/eugeneware/ffmpeg-static/releases/download/{}/ffprobe-darwin-arm64", FFMPEG_STATIC_VERSION),
+            false,
+        ),
+        ("linux", "x86_64") => (
+            "ffprobe-x86_64-unknown-linux-gnu",
+            format!("https://github.com/eugeneware/ffmpeg-static/releases/download/{}/ffprobe-linux-x64", FFMPEG_STATIC_VERSION),
+            false,
+        ),
+        _ => {
+            println!(
+                "cargo:warning=Unsupported platform for ffprobe: {}-{}",
+                target_os, target_arch
+            );
+            return;
+        }
+    };
+
+    let ffprobe_path = binaries_dir.join(ffprobe_name);
+
+    // Skip download if already exists
+    if ffprobe_path.exists() {
+        println!(
+            "cargo:warning=ffprobe binary already exists at {:?}",
+            ffprobe_path
+        );
+        return;
+    }
+
+    println!(
+        "cargo:warning=Downloading ffprobe for {}-{}...",
+        target_os, target_arch
+    );
+
+    // Download ffprobe
+    let result = if is_archive {
+        download_and_extract_ffprobe(&download_url, &ffprobe_path)
+    } else {
+        download_binary(&download_url, &ffprobe_path)
+    };
+
+    match result {
+        Ok(_) => println!(
+            "cargo:warning=Successfully downloaded ffprobe to {:?}",
+            ffprobe_path
+        ),
+        Err(e) => {
+            println!("cargo:warning=Failed to download ffprobe: {}", e);
+            println!(
+                "cargo:warning=Please download manually from: {}",
+                download_url
+            );
+            println!("cargo:warning=Extract and place at: {:?}", ffprobe_path);
+        }
+    }
+}
+
+fn download_and_extract_ffprobe(
+    url: &str,
+    output_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Download the file
+    let response = ureq::get(url).call()?;
+    let mut bytes = Vec::new();
+    response.into_reader().read_to_end(&mut bytes)?;
+
+    // Extract ffprobe from zip (Windows only)
+    if url.ends_with(".zip") {
+        extract_ffprobe_from_zip(&bytes, output_path)?;
+    } else {
+        return Err("Unsupported archive format for ffprobe".into());
+    }
+
+    set_executable_permissions(output_path)?;
+    Ok(())
+}
+
+fn extract_ffprobe_from_zip(
+    bytes: &[u8],
+    output_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let reader = Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(reader)?;
+
+    // Find ffprobe executable in the archive
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let file_name = file.name().to_string();
+
+        // Look for ffprobe executable (might be in subdirectory)
+        if file_name.contains("ffprobe")
+            && (file_name.ends_with("ffprobe.exe")
+                || file_name.ends_with("/ffprobe")
+                || file_name.ends_with("\\ffprobe"))
+        {
+            let mut output_file = File::create(output_path)?;
+            io::copy(&mut file, &mut output_file)?;
+            return Ok(());
+        }
+    }
+
+    Err("ffprobe binary not found in archive".into())
 }
 
 fn download_ytdlp(binaries_dir: &Path, target_os: &str, target_arch: &str) {

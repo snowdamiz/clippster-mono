@@ -16,6 +16,10 @@ import {
 	Strikethrough,
 	RotateCcw,
 	Trash2,
+	Baseline,
+	Sparkles,
+	MessageSquare,
+	Zap,
 } from "lucide-vue-next";
 import AnimationProperties from "./AnimationProperties.vue";
 
@@ -30,6 +34,12 @@ const { allFonts, uploadCustomFont, ensureFontLoaded } = useFontManager();
 // ── Top-level tabs (CapCut style) ──
 type TopTab = "style" | "effects" | "bubble" | "animate";
 const activeTopTab = ref<TopTab>("style");
+const topTabs: { id: TopTab; label: string; icon: any }[] = [
+	{ id: 'style', label: 'Style', icon: Baseline },
+	{ id: 'effects', label: 'Effects', icon: Sparkles },
+	{ id: 'bubble', label: 'Bubble', icon: MessageSquare },
+	{ id: 'animate', label: 'Animate', icon: Zap },
+];
 
 // ── Input refs ──
 const fontSizeInput = ref(props.element.fontSize.toString());
@@ -305,19 +315,9 @@ const quickStyles = [
 </script>
 
 <template>
-	<div class="flex flex-col text-xs">
-		<!-- ═══ Top-level tab bar (CapCut style) ═══ -->
-		<div class="flex border-b border-white/10">
-			<button
-				v-for="tab in (['style', 'effects', 'bubble', 'animate'] as TopTab[])"
-				:key="tab"
-				class="flex-1 py-2 text-center text-xs font-medium capitalize transition-colors"
-				:class="activeTopTab === tab ? 'text-primary border-b-2 border-primary' : 'text-zinc-500 hover:text-zinc-300'"
-				@click="activeTopTab = tab"
-			>
-				{{ tab === 'animate' ? 'Animate' : tab.charAt(0).toUpperCase() + tab.slice(1) }}
-			</button>
-		</div>
+	<div class="flex h-full flex-row text-xs">
+		<!-- ═══ Content Area ═══ -->
+		<div class="flex flex-1 min-w-0 flex-col overflow-hidden">
 
 		<!-- ═══════════════════════════════════════════ -->
 		<!-- TAB: Style                                 -->
@@ -834,6 +834,26 @@ const quickStyles = [
 				:animation-loop="element.animationLoop"
 				:element-duration="element.duration"
 			/>
+		</div>
+		</div>
+
+		<!-- ═══ Right Tab Strip ═══ -->
+		<div class="flex w-10 shrink-0 flex-col items-center gap-2 border-l border-white/10 bg-[#0e0e10] py-3 overflow-y-auto scrollbar-hidden">
+			<button
+				v-for="tab in topTabs"
+				:key="tab.id"
+				type="button"
+				:title="tab.label"
+				:class="[
+					'flex flex-col items-center justify-center rounded-md p-1.5 transition-colors',
+					activeTopTab === tab.id
+						? 'text-blue-400'
+						: 'text-zinc-500 hover:text-zinc-300',
+				]"
+				@click="activeTopTab = tab.id"
+			>
+				<component :is="tab.icon" class="size-[15px]" />
+			</button>
 		</div>
 	</div>
 </template>

@@ -17,7 +17,7 @@ const subscriptionPlans = [
     description: 'Try Clippster',
     icon: Package,
     features: [
-      '60 one-time credits',
+      '60 credits/month',
       '5 clip builds/day',
       '1 editor export/day',
       '2 VOD downloads/day',
@@ -32,8 +32,31 @@ const subscriptionPlans = [
     accentColor: 'zinc'
   },
   {
+    name: 'Basic',
+    price: 12.99,
+    period: 'month',
+    credits: 0,
+    description: 'Essential features',
+    icon: Zap,
+    features: [
+      'Unlimited clip builds',
+      'Social posting & scheduling',
+      'Campaign participation',
+      'Custom watermark',
+    ],
+    limitations: [
+      'No AI clip detection',
+      'No AI Video Creator',
+      'No organization features',
+      'Large credit pack only (1,800 @ $39.99)',
+    ],
+    cta: 'Get Started',
+    highlight: false,
+    accentColor: 'sky'
+  },
+  {
     name: 'Starter',
-    price: 29.99,
+    price: 24.99,
     period: 'month',
     credits: 600,
     description: 'Perfect for beginners',
@@ -51,7 +74,7 @@ const subscriptionPlans = [
   },
   {
     name: 'Creator',
-    price: 54.99,
+    price: 49.99,
     period: 'month',
     credits: 1800,
     description: 'For growing creators',
@@ -70,7 +93,7 @@ const subscriptionPlans = [
   },
   {
     name: 'Pro',
-    price: 204.99,
+    price: 199.99,
     period: 'month',
     credits: 9000,
     description: 'For power users & teams',
@@ -93,7 +116,7 @@ const subscriptionPlans = [
 const creditPacks = [
   { name: 'Small Pack', credits: 240, price: 10, perCredit: '0.042', savings: null, icon: Package, valueBar: 33 },
   { name: 'Medium Pack', credits: 600, price: 19.99, perCredit: '0.033', savings: null, popular: true, icon: TrendingUp, valueBar: 66 },
-  { name: 'Large Pack', credits: 1800, price: 44.99, perCredit: '0.025', savings: '40%', icon: Crown, valueBar: 100 },
+  { name: 'Large Pack', credits: 1800, price: 39.99, perCredit: '0.022', savings: '40%', icon: Crown, valueBar: 100 },
 ]
 
 // Organization plans (base tiers only, no add-ons)
@@ -311,7 +334,7 @@ const faqs = [
   },
   {
     q: 'What payment methods do you accept?',
-    a: 'We accept all major credit cards through Stripe, and cryptocurrency (SOL) through Phantom wallet integration.'
+    a: 'We accept all major credit cards through Stripe.'
   },
 ]
 
@@ -476,7 +499,7 @@ export function PricingPage() {
 
         {/* Subscription Plans */}
         <section className="mb-24">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 max-w-7xl mx-auto">
             {subscriptionPlans.map((plan, index) => {
               const Icon = plan.icon
               

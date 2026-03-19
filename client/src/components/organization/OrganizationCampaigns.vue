@@ -199,7 +199,7 @@
               ></div>
             </div>
             <span class="campaigns__budget-text">
-              ${{ formatBudget(campaign.spent || 0) }} / ${{ formatBudget(campaign.budget) }}
+              ${{ formatBudget(campaign.spent_budget || 0) }} spent / ${{ formatBudget(campaign.budget) }} total
             </span>
           </div>
 
@@ -345,48 +345,47 @@
                       <DollarSign :size="28" />
                     </div>
                     <h2 class="campaign-wizard__title">Set your pricing</h2>
-                    <p class="campaign-wizard__subtitle">Configure CPM rates and budget</p>
+                    <p class="campaign-wizard__subtitle">Configure payment model and budget</p>
                   </div>
 
                   <div class="campaign-wizard__fields">
-                    <div class="campaign-wizard__row">
-                      <div class="campaign-wizard__field">
-                        <label class="campaign-wizard__label">CPM Price ($)</label>
-                        <input
-                          v-model.number="campaignForm.cpm"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          class="campaign-wizard__input"
-                          placeholder="0.00"
-                        />
-                      </div>
-                      <div class="campaign-wizard__field">
-                        <label class="campaign-wizard__label">Per Views</label>
-                        <CustomDropdown
-                          v-model="campaignForm.cpm_views"
-                          :options="cpmViewsOptions"
-                          placeholder="Select views"
-                          class="campaign-wizard__dropdown"
-                          trigger-class="campaign-wizard__dropdown-trigger"
-                        />
+                    <!-- Payment Model Toggle -->
+                    <div class="campaign-wizard__field">
+                      <label class="campaign-wizard__label">Payment Model</label>
+                      <div class="campaign-wizard__toggle-container">
+                        <span :class="{ 'campaign-wizard__toggle-label--active': campaignForm.payment_model === 'cpm' }">CPM (Cost Per Mille)</span>
+                        <label class="campaign-wizard__toggle-switch">
+                          <input type="checkbox" :checked="campaignForm.payment_model === 'per_clip'" @change="togglePaymentModel" />
+                          <span class="campaign-wizard__toggle-slider"></span>
+                        </label>
+                        <span :class="{ 'campaign-wizard__toggle-label--active': campaignForm.payment_model === 'per_clip' }">Pay Per Clip</span>
                       </div>
                     </div>
-                    <p class="campaign-wizard__hint">
-                      ${{ campaignForm.cpm }} per {{ formatViews(campaignForm.cpm_views) }} views
-                    </p>
 
-                    <div class="campaign-wizard__row">
-                      <div class="campaign-wizard__field">
-                        <label class="campaign-wizard__label">Budget ($)</label>
-                        <input
-                          v-model.number="campaignForm.budget"
-                          type="number"
-                          step="1"
-                          min="0"
-                          class="campaign-wizard__input"
-                          placeholder="0"
-                        />
+                    <!-- CPM Fields -->
+                    <template v-if="campaignForm.payment_model === 'cpm'">
+                      <div class="campaign-wizard__row">
+                        <div class="campaign-wizard__field">
+                          <label class="campaign-wizard__label">CPM Price ($)</label>
+                          <input
+                            v-model.number="campaignForm.cpm"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            class="campaign-wizard__input"
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div class="campaign-wizard__field">
+                          <label class="campaign-wizard__label">Per Views</label>
+                          <CustomDropdown
+                            v-model="campaignForm.cpm_views"
+                            :options="cpmViewsOptions"
+                            placeholder="Select views"
+                            class="campaign-wizard__dropdown"
+                            trigger-class="campaign-wizard__dropdown-trigger"
+                          />
+                        </div>
                       </div>
                       <div class="campaign-wizard__field">
                         <label class="campaign-wizard__label">Min Views for Payment</label>
@@ -397,7 +396,66 @@
                           class="campaign-wizard__input"
                           placeholder="1000"
                         />
+                        <p class="campaign-wizard__hint">
+                          Minimum views required before payment is eligible
+                        </p>
                       </div>
+                      <div class="campaign-wizard__field">
+                        <label class="campaign-wizard__label">Max Views (Optional)</label>
+                        <input
+                          v-model.number="campaignForm.max_views"
+                          type="number"
+                          min="0"
+                          class="campaign-wizard__input"
+                          placeholder="500000"
+                        />
+                        <p class="campaign-wizard__hint">
+                          Maximum views counted for payment. Payment calculated only for views between min and max (e.g., 10K min to 500K max)
+                        </p>
+                      </div>
+                      <p class="campaign-wizard__hint">
+                        ${{ campaignForm.cpm }} per {{ formatViews(campaignForm.cpm_views) }} views
+                      </p>
+                    </template>
+
+                    <!-- Pay Per Clip Fields -->
+                    <template v-else>
+                      <div class="campaign-wizard__row">
+                        <div class="campaign-wizard__field">
+                          <label class="campaign-wizard__label">Amount Per Clip ($)</label>
+                          <input
+                            v-model.number="campaignForm.per_clip_amount"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            class="campaign-wizard__input"
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div class="campaign-wizard__field">
+                          <label class="campaign-wizard__label">Clips Per Profile</label>
+                          <input
+                            v-model.number="campaignForm.clips_per_profile"
+                            type="number"
+                            min="1"
+                            class="campaign-wizard__input"
+                            placeholder="5"
+                          />
+                        </div>
+                      </div>
+                    </template>
+
+                    <!-- Budget (always shown) -->
+                    <div class="campaign-wizard__field">
+                      <label class="campaign-wizard__label">Budget ($)</label>
+                      <input
+                        v-model.number="campaignForm.budget"
+                        type="number"
+                        step="1"
+                        min="0"
+                        class="campaign-wizard__input"
+                        placeholder="0"
+                      />
                     </div>
                   </div>
                 </div>
@@ -501,14 +559,14 @@
                   </div>
                 </div>
 
-                <!-- Step 5: Creator Profiles -->
+                <!-- Step 5: Campaign Branding -->
                 <div v-if="currentStep === 5" class="campaign-wizard__step">
                   <div class="campaign-wizard__header">
                     <div class="campaign-wizard__icon">
                       <Users :size="28" />
                     </div>
-                    <h2 class="campaign-wizard__title">Select creator profiles</h2>
-                    <p class="campaign-wizard__subtitle">Choose which creator profiles clippers can use</p>
+                    <h2 class="campaign-wizard__title">Campaign Branding</h2>
+                    <p class="campaign-wizard__subtitle">Choose global branding or specific creator profiles</p>
                   </div>
 
                   <div class="campaign-wizard__fields">
@@ -519,6 +577,39 @@
                       <p>No creator profiles available. Create profiles in the Creator Profiles tab first.</p>
                     </div>
                     <div v-else class="campaign-wizard__profiles-list">
+                      <!-- Global Branding Option (only if org has global branding setup) -->
+                      <button
+                        v-if="hasGlobalBranding"
+                        type="button"
+                        @click="selectGlobalBranding"
+                        class="campaign-wizard__profile"
+                        :class="{
+                          'campaign-wizard__profile--selected': isGlobalBrandingSelected,
+                        }"
+                      >
+                        <div class="campaign-wizard__profile-avatar">
+                          <Globe class="campaign-wizard__profile-avatar-icon" />
+                        </div>
+                        <div class="campaign-wizard__profile-info">
+                          <span class="campaign-wizard__profile-name">Global Branding</span>
+                          <span class="campaign-wizard__profile-desc">
+                            Allow clippers to use any streamer with organization branding
+                          </span>
+                        </div>
+                        <div
+                          v-if="isGlobalBrandingSelected"
+                          class="campaign-wizard__profile-check"
+                        >
+                          <Check class="campaign-wizard__profile-check-icon" />
+                        </div>
+                      </button>
+
+                      <!-- Divider if global branding exists -->
+                      <div v-if="hasGlobalBranding" class="campaign-wizard__divider">
+                        <span class="campaign-wizard__divider-text">OR select specific creator profiles</span>
+                      </div>
+
+                      <!-- Creator Profiles (disabled if global branding selected) -->
                       <button
                         v-for="profile in availableCreatorProfiles"
                         :key="profile.id"
@@ -527,7 +618,9 @@
                         class="campaign-wizard__profile"
                         :class="{
                           'campaign-wizard__profile--selected': selectedCreatorProfileIds.includes(profile.id),
+                          'campaign-wizard__profile--disabled': isGlobalBrandingSelected,
                         }"
+                        :disabled="isGlobalBrandingSelected"
                       >
                         <div class="campaign-wizard__profile-avatar">
                           <img v-if="profile.profile_image_url" :src="profile.profile_image_url" />
@@ -548,8 +641,12 @@
                       </button>
                     </div>
                     <p class="campaign-wizard__hint">
-                      {{ selectedCreatorProfileIds.length }} profile(s) selected. Each profile includes their
-                      watermarks, intro/outro videos.
+                      <template v-if="isGlobalBrandingSelected">
+                        Global branding selected. Clippers can use any streamer with your organization's branding.
+                      </template>
+                      <template v-else>
+                        {{ selectedCreatorProfileIds.length }} creator profile(s) selected. Each profile includes their watermarks, intro/outro videos.
+                      </template>
                     </p>
                   </div>
                 </div>
@@ -560,89 +657,11 @@
                     <div class="campaign-wizard__icon">
                       <Film :size="28" />
                     </div>
-                    <h2 class="campaign-wizard__title">Add campaign assets</h2>
-                    <p class="campaign-wizard__subtitle">Optional intro, outro, watermarks, and cover image</p>
+                    <h2 class="campaign-wizard__title">Campaign Assets</h2>
+                    <p class="campaign-wizard__subtitle">Add a cover image for your campaign</p>
                   </div>
 
                   <div class="campaign-wizard__fields">
-                    <!-- Global Intro -->
-                    <div class="campaign-wizard__asset-row">
-                      <div class="campaign-wizard__asset-header">
-                        <label class="campaign-wizard__label">Intro Video</label>
-                        <label class="campaign-wizard__checkbox-label">
-                          <input
-                            type="checkbox"
-                            v-model="campaignForm.require_intro"
-                            class="campaign-wizard__checkbox"
-                          />
-                          Required
-                        </label>
-                      </div>
-                      <CustomDropdown
-                        v-model="campaignForm.global_intro_id"
-                        :options="introOptions"
-                        placeholder="Select intro"
-                        class="campaign-wizard__dropdown"
-                        trigger-class="campaign-wizard__dropdown-trigger"
-                      />
-                    </div>
-
-                    <!-- Global Outro -->
-                    <div class="campaign-wizard__asset-row">
-                      <div class="campaign-wizard__asset-header">
-                        <label class="campaign-wizard__label">Outro Video</label>
-                        <label class="campaign-wizard__checkbox-label">
-                          <input
-                            type="checkbox"
-                            v-model="campaignForm.require_outro"
-                            class="campaign-wizard__checkbox"
-                          />
-                          Required
-                        </label>
-                      </div>
-                      <CustomDropdown
-                        v-model="campaignForm.global_outro_id"
-                        :options="outroOptions"
-                        placeholder="Select outro"
-                        class="campaign-wizard__dropdown"
-                        trigger-class="campaign-wizard__dropdown-trigger"
-                      />
-                    </div>
-
-                    <!-- Global Watermarks -->
-                    <div class="campaign-wizard__asset-row">
-                      <div class="campaign-wizard__asset-header">
-                        <label class="campaign-wizard__label">Watermarks</label>
-                        <label class="campaign-wizard__checkbox-label">
-                          <input
-                            type="checkbox"
-                            v-model="campaignForm.require_watermark"
-                            class="campaign-wizard__checkbox"
-                          />
-                          Required
-                        </label>
-                      </div>
-                      <div class="campaign-wizard__watermark-row">
-                        <div class="campaign-wizard__watermark-status">
-                          <span class="campaign-wizard__watermark-label">Configured:</span>
-                          <span v-if="hasAnyWatermarkConfigured" class="campaign-wizard__watermark-value">
-                            {{ getConfiguredWatermarkRatios() }}
-                          </span>
-                          <span v-else class="campaign-wizard__watermark-none">None</span>
-                        </div>
-                        <button
-                          type="button"
-                          @click="openWatermarkPositionPicker"
-                          class="campaign-wizard__watermark-btn"
-                        >
-                          Configure
-                        </button>
-                      </div>
-                      <p class="campaign-wizard__hint">
-                        Set watermark images and positions for each aspect ratio
-                      </p>
-                    </div>
-
                     <!-- Cover Image -->
                     <div class="campaign-wizard__field">
                       <label class="campaign-wizard__label">Cover Image</label>
@@ -908,63 +927,142 @@
                   <div class="campaign-edit__section">
                     <h3 class="campaign-edit__section-title">Pricing & Budget</h3>
                     <div class="campaign-edit__fields">
-                      <div class="campaign-edit__row">
-                        <div class="campaign-edit__field">
-                          <label class="campaign-edit__label">CPM Price ($)</label>
-                          <input
-                            v-model.number="campaignForm.cpm"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            class="campaign-edit__input"
-                            placeholder="0.00"
-                          />
-                        </div>
-                        <div class="campaign-edit__field">
-                          <label class="campaign-edit__label">Per Views</label>
-                          <CustomDropdown
-                            v-model="campaignForm.cpm_views"
-                            :options="cpmViewsOptions"
-                            placeholder="Select views"
-                            class="campaign-edit__dropdown"
-                            trigger-class="campaign-edit__dropdown-trigger"
-                          />
+                      <!-- Payment Model Toggle -->
+                      <div class="campaign-edit__field">
+                        <div class="campaign-edit__toggle-container">
+                          <span class="campaign-edit__toggle-label" :class="{ 'campaign-edit__toggle-label--active': campaignForm.payment_model === 'cpm' }">
+                            CPM (Cost Per Mille)
+                          </span>
+                          <label class="campaign-edit__toggle-switch">
+                            <input
+                              type="checkbox"
+                              :checked="campaignForm.payment_model === 'per_clip'"
+                              @change="campaignForm.payment_model = campaignForm.payment_model === 'cpm' ? 'per_clip' : 'cpm'"
+                            />
+                            <span class="campaign-edit__toggle-slider"></span>
+                          </label>
+                          <span class="campaign-edit__toggle-label" :class="{ 'campaign-edit__toggle-label--active': campaignForm.payment_model === 'per_clip' }">
+                            Pay Per Clip
+                          </span>
                         </div>
                       </div>
-                      <p class="campaign-edit__hint">
-                        ${{ campaignForm.cpm }} per {{ formatViews(campaignForm.cpm_views) }} views
-                      </p>
 
-                      <div class="campaign-edit__row">
-                        <div class="campaign-edit__field">
-                          <label class="campaign-edit__label">Budget ($)</label>
-                          <input
-                            v-model.number="campaignForm.budget"
-                            type="number"
-                            step="1"
-                            min="0"
-                            class="campaign-edit__input"
-                            placeholder="0"
-                          />
+                      <!-- CPM Fields -->
+                      <template v-if="campaignForm.payment_model === 'cpm'">
+                        <div class="campaign-edit__row">
+                          <div class="campaign-edit__field">
+                            <label class="campaign-edit__label">CPM Price ($)</label>
+                            <input
+                              v-model.number="campaignForm.cpm"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              class="campaign-edit__input"
+                              placeholder="0.00"
+                            />
+                          </div>
+                          <div class="campaign-edit__field">
+                            <label class="campaign-edit__label">Per Views</label>
+                            <CustomDropdown
+                              v-model="campaignForm.cpm_views"
+                              :options="cpmViewsOptions"
+                              placeholder="Select views"
+                              class="campaign-edit__dropdown"
+                              trigger-class="campaign-edit__dropdown-trigger"
+                            />
+                          </div>
                         </div>
-                        <div class="campaign-edit__field">
-                          <label class="campaign-edit__label">Min Views for Payment</label>
-                          <input
-                            v-model.number="campaignForm.min_views_for_payment"
-                            type="number"
-                            step="100"
-                            min="0"
-                            class="campaign-edit__input"
-                            placeholder="1000"
-                          />
+                        <p class="campaign-edit__hint">
+                          ${{ campaignForm.cpm }} per {{ formatViews(campaignForm.cpm_views) }} views
+                        </p>
+
+                        <div class="campaign-edit__row">
+                          <div class="campaign-edit__field">
+                            <label class="campaign-edit__label">Budget ($)</label>
+                            <input
+                              v-model.number="campaignForm.budget"
+                              type="number"
+                              step="1"
+                              min="0"
+                              class="campaign-edit__input"
+                              placeholder="0"
+                            />
+                          </div>
+                          <div class="campaign-edit__field">
+                            <label class="campaign-edit__label">Min Views for Payment</label>
+                            <input
+                              v-model.number="campaignForm.min_views_for_payment"
+                              type="number"
+                              step="100"
+                              min="0"
+                              class="campaign-edit__input"
+                              placeholder="1000"
+                            />
+                          </div>
                         </div>
-                      </div>
+                      </template>
+
+                      <!-- Pay Per Clip Fields -->
+                      <template v-if="campaignForm.payment_model === 'per_clip'">
+                        <div class="campaign-edit__row">
+                          <div class="campaign-edit__field">
+                            <label class="campaign-edit__label">Amount Per Clip ($)</label>
+                            <input
+                              v-model.number="campaignForm.per_clip_amount"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              class="campaign-edit__input"
+                              placeholder="0.00"
+                            />
+                          </div>
+                          <div class="campaign-edit__field">
+                            <label class="campaign-edit__label">Total Clips Per Profile</label>
+                            <input
+                              v-model.number="campaignForm.clips_per_profile"
+                              type="number"
+                              step="1"
+                              min="1"
+                              class="campaign-edit__input"
+                              placeholder="5"
+                            />
+                          </div>
+                        </div>
+                        <p class="campaign-edit__hint">
+                          ${{ campaignForm.per_clip_amount }} per clip, max {{ campaignForm.clips_per_profile }} clips per profile
+                        </p>
+
+                        <div class="campaign-edit__row">
+                          <div class="campaign-edit__field">
+                            <label class="campaign-edit__label">Budget ($)</label>
+                            <input
+                              v-model.number="campaignForm.budget"
+                              type="number"
+                              step="1"
+                              min="0"
+                              class="campaign-edit__input"
+                              placeholder="0"
+                            />
+                          </div>
+                          <div class="campaign-edit__field">
+                            <label class="campaign-edit__label">Min Views for Payment</label>
+                            <input
+                              v-model.number="campaignForm.min_views_for_payment"
+                              type="number"
+                              step="100"
+                              min="0"
+                              class="campaign-edit__input"
+                              placeholder="1000"
+                            />
+                          </div>
+                        </div>
+                      </template>
                     </div>
                   </div>
 
                   <!-- Platforms & Payment Section -->
                   <div class="campaign-edit__section">
-                    <h3 class="campaign-edit__section-title">Platforms & Payment</h3>
+                    <h3 class="campaign-edit__section-title">Platforms & Payment Methods</h3>
                     <div class="campaign-edit__fields">
                       <div class="campaign-edit__field">
                         <label class="campaign-edit__label">Allowed Platforms</label>
@@ -1036,123 +1134,75 @@
                     </div>
                   </div>
 
-                  <!-- Creator Profiles Section -->
+                  <!-- Campaign Branding Section -->
                   <div class="campaign-edit__section">
-                    <h3 class="campaign-edit__section-title">Creator Profiles</h3>
+                    <h3 class="campaign-edit__section-title">Campaign Branding</h3>
                     <div class="campaign-edit__fields">
+                      <!-- Global Branding Toggle (only if org has global branding) -->
+                      <div v-if="hasGlobalBranding" class="campaign-edit__field">
+                        <label class="campaign-edit__label">
+                          <input
+                            type="checkbox"
+                            v-model="isGlobalBrandingSelected"
+                            @change="handleGlobalBrandingToggle"
+                            class="campaign-edit__checkbox"
+                          />
+                          Use Global Branding
+                        </label>
+                        <p class="campaign-edit__hint">
+                          Allow clippers to use any streamer with your organization's branding (intro, outro, watermarks)
+                        </p>
+                      </div>
+
+                      <!-- Creator Profile Selection -->
                       <div class="campaign-edit__field">
-                        <label class="campaign-edit__label">Assign Creator Profiles</label>
-                        <div v-if="loadingProfiles" class="campaign-edit__loading">
-                          <Loader2 class="campaign-edit__loading-icon" />
-                          <span>Loading profiles...</span>
-                        </div>
-                        <div v-else-if="availableCreatorProfiles.length === 0" class="campaign-edit__empty">
-                          <p>No creator profiles available. Create one first.</p>
-                        </div>
-                        <div v-else class="campaign-edit__profiles">
+                        <label class="campaign-edit__label">
+                          Creator Profile{{ isGlobalBrandingSelected ? '' : 's' }}
+                          <span v-if="isGlobalBrandingSelected" class="campaign-edit__optional">(for global branding assets)</span>
+                        </label>
+                        <!-- Show dropdown when global branding is selected -->
+                        <CustomDropdown
+                          v-if="isGlobalBrandingSelected"
+                          v-model="campaignForm.branding_profile_id"
+                          :options="globalBrandingProfileOptions"
+                          placeholder="Select branding profile"
+                          class="campaign-edit__dropdown"
+                          trigger-class="campaign-edit__dropdown-trigger"
+                        />
+                        <!-- Show profile list when global branding is NOT selected -->
+                        <div v-if="!isGlobalBrandingSelected" class="campaign-edit__profiles-list">
                           <button
                             v-for="profile in availableCreatorProfiles"
                             :key="profile.id"
                             type="button"
                             @click="toggleCreatorProfile(profile.id)"
-                            class="campaign-edit__profile-btn"
-                            :class="{ 'campaign-edit__profile-btn--selected': selectedCreatorProfileIds.includes(profile.id) }"
+                            class="campaign-edit__profile"
+                            :class="{
+                              'campaign-edit__profile--selected': selectedCreatorProfileIds.includes(profile.id),
+                            }"
                           >
                             <div class="campaign-edit__profile-avatar">
-                              <img
-                                v-if="profile.profile_image_url"
-                                :src="profile.profile_image_url"
-                                :alt="profile.name"
-                              />
-                              <User v-else :size="20" />
+                              <img v-if="profile.profile_image_url" :src="profile.profile_image_url" />
+                              <User v-else class="campaign-edit__profile-avatar-icon" />
                             </div>
-                            <span class="campaign-edit__profile-name">{{ profile.name }}</span>
-                            <Check v-if="selectedCreatorProfileIds.includes(profile.id)" class="campaign-edit__profile-check" :size="16" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Global Assets Section -->
-                  <div class="campaign-edit__section">
-                    <h3 class="campaign-edit__section-title">Global Assets</h3>
-                    <div class="campaign-edit__fields">
-                      <!-- Global Intro -->
-                      <div class="campaign-edit__asset-row">
-                        <div class="campaign-edit__asset-header">
-                          <label class="campaign-edit__label">Intro Video</label>
-                          <label class="campaign-edit__checkbox-label">
-                            <input
-                              type="checkbox"
-                              v-model="campaignForm.require_intro"
-                              class="campaign-edit__checkbox"
-                            />
-                            Required
-                          </label>
-                        </div>
-                        <CustomDropdown
-                          v-model="campaignForm.global_intro_id"
-                          :options="introOptions"
-                          placeholder="Select intro"
-                          class="campaign-edit__dropdown"
-                          trigger-class="campaign-edit__dropdown-trigger"
-                        />
-                      </div>
-
-                      <!-- Global Outro -->
-                      <div class="campaign-edit__asset-row">
-                        <div class="campaign-edit__asset-header">
-                          <label class="campaign-edit__label">Outro Video</label>
-                          <label class="campaign-edit__checkbox-label">
-                            <input
-                              type="checkbox"
-                              v-model="campaignForm.require_outro"
-                              class="campaign-edit__checkbox"
-                            />
-                            Required
-                          </label>
-                        </div>
-                        <CustomDropdown
-                          v-model="campaignForm.global_outro_id"
-                          :options="outroOptions"
-                          placeholder="Select outro"
-                          class="campaign-edit__dropdown"
-                          trigger-class="campaign-edit__dropdown-trigger"
-                        />
-                      </div>
-
-                      <!-- Global Watermarks -->
-                      <div class="campaign-edit__asset-row">
-                        <div class="campaign-edit__asset-header">
-                          <label class="campaign-edit__label">Watermarks</label>
-                          <label class="campaign-edit__checkbox-label">
-                            <input
-                              type="checkbox"
-                              v-model="campaignForm.require_watermark"
-                              class="campaign-edit__checkbox"
-                            />
-                            Required
-                          </label>
-                        </div>
-                        <div class="campaign-edit__watermark-row">
-                          <div class="campaign-edit__watermark-status">
-                            <span class="campaign-edit__watermark-label">Configured:</span>
-                            <span v-if="hasAnyWatermarkConfigured" class="campaign-edit__watermark-value">
-                              {{ getConfiguredWatermarkRatios() }}
-                            </span>
-                            <span v-else class="campaign-edit__watermark-none">None</span>
-                          </div>
-                          <button
-                            type="button"
-                            @click="openWatermarkPositionPicker"
-                            class="campaign-edit__watermark-btn"
-                          >
-                            Configure
+                            <div class="campaign-edit__profile-info">
+                              <span class="campaign-edit__profile-name">{{ profile.name }}</span>
+                            </div>
+                            <div
+                              v-if="selectedCreatorProfileIds.includes(profile.id)"
+                              class="campaign-edit__profile-check"
+                            >
+                              <Check class="campaign-edit__profile-check-icon" />
+                            </div>
                           </button>
                         </div>
                         <p class="campaign-edit__hint">
-                          Set watermark images and positions for each aspect ratio
+                          <template v-if="isGlobalBrandingSelected">
+                            Select which creator profile's assets (intro, outro, watermarks) to use for global branding
+                          </template>
+                          <template v-else>
+                            Select one or more creator profiles that clippers can use for this campaign
+                          </template>
                         </p>
                       </div>
                     </div>
@@ -1238,6 +1288,13 @@
                   @click="detailTab = 'submissions'"
                 >
                   Submissions
+                </button>
+                <button
+                  class="campaigns-detail__tab"
+                  :class="{ 'campaigns-detail__tab--active': detailTab === 'payments' }"
+                  @click="detailTab = 'payments'; loadPayments();"
+                >
+                  Payments
                 </button>
               </div>
 
@@ -1448,6 +1505,72 @@
                         >
                           <DollarSign :size="14" />
                           Pay
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Payments Tab -->
+                <div v-else-if="detailTab === 'payments'" class="campaigns-detail__content">
+                  <div class="campaigns-detail__payments-header">
+                    <button
+                      v-if="isAdmin"
+                      class="campaigns-detail__calculate-btn"
+                      @click="calculatePaymentsAction"
+                      :disabled="calculatingPayments"
+                    >
+                      <Loader2 v-if="calculatingPayments" :size="16" class="spin" />
+                      <Calculator v-else :size="16" />
+                      Calculate Payments
+                    </button>
+                  </div>
+
+                  <div v-if="loadingPayments" class="campaigns-detail__loading">
+                    <Loader2 class="campaigns-dialog__spinner" />
+                  </div>
+                  <div v-else-if="payments.length === 0" class="campaigns-detail__empty">
+                    No payments yet. Calculate payments for verified submissions.
+                  </div>
+                  <div v-else class="campaigns-detail__list">
+                    <div v-for="payment in payments" :key="payment.id" class="campaigns-detail__payment">
+                      <div class="campaigns-detail__payment-info">
+                        <div class="campaigns-detail__payment-header">
+                          <span class="campaigns-detail__payment-user">
+                            {{ payment.user?.display_name || payment.user?.email }}
+                          </span>
+                          <span class="campaigns-detail__payment-amount">${{ payment.amount }}</span>
+                        </div>
+                        <div class="campaigns-detail__payment-meta">
+                          {{ payment.views_at_payment?.toLocaleString() || 0 }} views ·
+                          {{ formatRelativeTime(payment.inserted_at) }}
+                        </div>
+                        <div v-if="payment.verification_notes" class="campaigns-detail__payment-notes">
+                          {{ payment.verification_notes }}
+                        </div>
+                      </div>
+                      <div class="campaigns-detail__payment-actions">
+                        <span
+                          class="campaigns-detail__payment-status"
+                          :class="`campaigns-detail__payment-status--${payment.status}`"
+                        >
+                          {{ payment.status }}
+                        </span>
+                        <button
+                          v-if="isAdmin && payment.status === 'pending'"
+                          class="campaigns-detail__verify-btn"
+                          @click="openVerifyPaymentDialog(payment)"
+                        >
+                          <CheckCircle :size="14" />
+                          Submit Proof
+                        </button>
+                        <button
+                          v-if="payment.verification_screenshot_url"
+                          class="campaigns-detail__action-btn campaigns-detail__action-btn--secondary"
+                          @click="viewScreenshot(payment.verification_screenshot_url)"
+                          title="View proof"
+                        >
+                          <Image :size="14" />
                         </button>
                       </div>
                     </div>
@@ -1680,18 +1803,105 @@
       </Transition>
     </Teleport>
 
-    <!-- Watermark Position Picker -->
-    <WatermarkPositionPicker
-      :show="showWatermarkPositionPicker"
-      :settings="campaignForm.global_watermark_settings || undefined"
-      @close="showWatermarkPositionPicker = false"
-      @save="handleWatermarkSettingsSave"
-    />
+    <!-- Verify Payment Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showVerifyPaymentDialog"
+          class="campaigns-dialog__overlay"
+          @click.self="showVerifyPaymentDialog = false"
+          @keydown.esc="showVerifyPaymentDialog = false"
+        >
+          <Transition name="dialog" appear>
+            <div
+              v-if="showVerifyPaymentDialog"
+              class="campaigns-dialog campaigns-dialog--medium"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div class="campaigns-dialog__accent campaigns-dialog__accent--green"></div>
+
+              <!-- Header -->
+              <div class="campaigns-dialog__header">
+                <button
+                  class="campaigns-dialog__close"
+                  @click="showVerifyPaymentDialog = false"
+                  :disabled="verifyingPayment"
+                >
+                  <X :size="18" />
+                </button>
+                <div class="campaigns-dialog__icon campaigns-dialog__icon--green">
+                  <CheckCircle :size="24" />
+                </div>
+                <h2 class="campaigns-dialog__title">Verify Payment</h2>
+                <p class="campaigns-dialog__subtitle">
+                  Submit proof of payment for ${{ selectedPayment?.amount }}
+                </p>
+              </div>
+
+              <!-- Content -->
+              <div class="campaigns-dialog__content">
+                <div class="campaigns-dialog__field">
+                  <label class="campaigns-dialog__label">Screenshot URL</label>
+                  <input
+                    v-model="verificationScreenshotUrl"
+                    type="url"
+                    placeholder="https://..."
+                    class="campaigns-dialog__input"
+                  />
+                  <p class="campaigns-dialog__hint">Upload screenshot to your assets and paste URL here</p>
+                </div>
+
+                <div class="campaigns-dialog__field">
+                  <label class="campaigns-dialog__label">Transaction ID / Notes *</label>
+                  <textarea
+                    v-model="verificationNotes"
+                    placeholder="Enter transaction ID, payment method details, or other notes..."
+                    class="campaigns-dialog__textarea"
+                    rows="3"
+                  ></textarea>
+                </div>
+
+                <div class="campaigns-dialog__field">
+                  <label class="campaigns-dialog__label">Payment Date</label>
+                  <input
+                    v-model="verificationPaymentDate"
+                    type="date"
+                    class="campaigns-dialog__input"
+                  />
+                </div>
+              </div>
+
+              <!-- Footer -->
+              <div class="campaigns-dialog__footer">
+                <button
+                  class="campaigns-dialog__btn campaigns-dialog__btn--secondary"
+                  @click="showVerifyPaymentDialog = false"
+                  :disabled="verifyingPayment"
+                >
+                  Cancel
+                </button>
+                <button
+                  class="campaigns-dialog__btn campaigns-dialog__btn--success"
+                  @click="verifyPaymentAction"
+                  :disabled="verifyingPayment || !verificationNotes"
+                >
+                  <Loader2 v-if="verifyingPayment" class="campaigns-dialog__btn-spinner" />
+                  {{ verifyingPayment ? 'Verifying...' : 'Submit Proof & Notify Clipper' }}
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
   </div>
 </template>
 
 <script setup lang="ts">
   import { ref, reactive, computed, onMounted, watch } from 'vue';
+  import { useRouter } from 'vue-router';
   import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import {
     Megaphone,
@@ -1724,6 +1934,8 @@
     Clock,
     UserCheck,
     ShieldCheck,
+    Calculator,
+    Image,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import { Badge } from '@/components/ui/badge';
@@ -1765,9 +1977,13 @@
     updateSubmissionViews,
     uploadCampaignCoverImage,
     setCampaignCreatorProfiles,
+    calculateCampaignPayments,
+    listCampaignPayments,
+    verifyPayment,
     type Campaign,
     type CampaignParticipant,
     type CampaignSubmission,
+    type CampaignPayment,
     type CampaignCreatorProfile,
     getPlatformDisplayName,
   } from '@/services/campaignApi';
@@ -1778,7 +1994,6 @@
   import { listOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
   import { CLIPPER_PLATFORMS, PAYMENT_METHOD_TYPES } from '@/services/clipperProfileApi';
   import { useToast } from '@/composables/useToast';
-  import WatermarkPositionPicker, { type CreatorWatermarkSettings } from '@/components/WatermarkPositionPicker.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
 
   const props = defineProps<{
@@ -1786,6 +2001,7 @@
     isAdmin: boolean;
   }>();
 
+  const router = useRouter();
   const { toast } = useToast();
 
   const loading = ref(true);
@@ -1799,7 +2015,6 @@
   const showDeleteDialog = ref(false);
   const showPaymentDialog = ref(false);
   const showUpdateViewsDialog = ref(false);
-  const showWatermarkPositionPicker = ref(false);
 
   const editingCampaign = ref<Campaign | null>(null);
   const selectedCampaign = ref<Campaign | null>(null);
@@ -1814,6 +2029,17 @@
   const paymentSubmission = ref<CampaignSubmission | null>(null);
   const paymentAmount = ref(0);
   const creatingPayment = ref(false);
+
+  // Payments
+  const payments = ref<CampaignPayment[]>([]);
+  const loadingPayments = ref(false);
+  const calculatingPayments = ref(false);
+  const showVerifyPaymentDialog = ref(false);
+  const selectedPayment = ref<CampaignPayment | null>(null);
+  const verificationScreenshotUrl = ref('');
+  const verificationNotes = ref('');
+  const verificationPaymentDate = ref('');
+  const verifyingPayment = ref(false);
 
   // Update views
   const viewsSubmission = ref<CampaignSubmission | null>(null);
@@ -1832,7 +2058,34 @@
   const availableCreatorProfiles = ref<ServerOrganizationCreatorProfile[]>([]);
   const availableAssets = ref<ServerOrganizationAsset[]>([]);
   const loadingProfiles = ref(false);
-  const selectedCreatorProfileIds = ref<number[]>([]);
+  const selectedCreatorProfileIds = ref<(number | null)[]>([]);
+  const isGlobalBrandingSelected = ref(false);
+
+  // Check if organization has global branding setup (has branding assets and at least one creator profile)
+  const hasGlobalBranding = computed(() => {
+    // Don't show global branding option while still loading
+    if (loadingProfiles.value) {
+      return false;
+    }
+    
+    const brandingAssets = availableAssets.value.filter(asset => 
+      ['intro', 'outro', 'watermark'].includes(asset.asset_type)
+    );
+    const hasBrandingAssets = brandingAssets.length > 0;
+    const hasProfiles = availableCreatorProfiles.value.length > 0;
+    
+    console.log('[Campaign Branding] hasGlobalBranding check:', {
+      loading: loadingProfiles.value,
+      totalAssets: availableAssets.value.length,
+      brandingAssets: brandingAssets.map(a => ({ id: a.id, type: a.asset_type, name: a.name })),
+      hasBrandingAssets,
+      profileCount: availableCreatorProfiles.value.length,
+      hasProfiles,
+      result: hasBrandingAssets && hasProfiles
+    });
+    
+    return hasBrandingAssets && hasProfiles;
+  });
 
   // Dropdown options
   const cpmViewsOptions = [
@@ -1862,6 +2115,22 @@
       .map((a) => ({ label: a.name, value: a.id })),
   ]);
 
+  const creatorProfileOptions = computed(() => [
+    { label: 'Global Branding (Any Streamer)', value: null },
+    ...availableCreatorProfiles.value.map((p) => ({ label: p.name, value: p.id })),
+  ]);
+
+  const brandingProfileOptions = computed(() => [
+    { label: 'No branding', value: null },
+    ...availableCreatorProfiles.value.map((p) => ({ label: p.name, value: p.id })),
+  ]);
+
+  // Options for global branding - only show profiles with scope='global'
+  const globalBrandingProfileOptions = computed(() => {
+    const globalProfiles = availableCreatorProfiles.value.filter(p => p.scope === 'global');
+    return globalProfiles.map((p) => ({ label: p.name, value: p.id }));
+  });
+
   const campaignForm = reactive({
     title: '',
     description: '',
@@ -1869,20 +2138,20 @@
     cpm_views: 1000,
     budget: 0,
     min_views_for_payment: 1000,
+    max_views: null as number | null,
     join_type: 'open' as 'open' | 'application_required',
     allowed_platforms: [] as string[],
     payment_methods: [] as string[],
     cover_image_url: '',
     starts_at: '',
     ends_at: '',
-    // Global assets
-    global_intro_id: null as number | null,
-    global_outro_id: null as number | null,
-    global_watermarks: {} as Record<string, any>,
-    global_watermark_settings: null as CreatorWatermarkSettings | null,
-    require_watermark: false,
-    require_intro: false,
-    require_outro: false,
+    // Payment model
+    payment_model: 'cpm' as 'cpm' | 'per_clip',
+    per_clip_amount: 0,
+    clips_per_profile: 5,
+    // Creator and branding
+    creator_profile_id: null as number | null,
+    branding_profile_id: null as number | null,
   });
 
   // Wizard state
@@ -2021,7 +2290,7 @@
   };
 
   const getBudgetPercentage = (campaign: Campaign) => {
-    const spent = parseFloat(campaign.spent || '0');
+    const spent = parseFloat(campaign.spent_budget || '0');
     const budget = parseFloat(campaign.budget || '0');
     if (budget === 0) return 0;
     return Math.min((spent / budget) * 100, 100);
@@ -2153,6 +2422,10 @@
     }
   };
 
+  const togglePaymentModel = () => {
+    campaignForm.payment_model = campaignForm.payment_model === 'cpm' ? 'per_clip' : 'cpm';
+  };
+
   const loadCampaigns = async () => {
     if (!props.organizationId) return;
 
@@ -2185,6 +2458,7 @@
       }
       if (assetsRes.success) {
         availableAssets.value = assetsRes.assets;
+        console.log('[Campaign Branding] Loaded assets:', assetsRes.assets.map(a => ({ id: a.id, type: a.asset_type, name: a.name })));
       }
     } catch (error) {
       console.error('Failed to load creator profiles/assets:', error);
@@ -2193,7 +2467,47 @@
     }
   };
 
-  const toggleCreatorProfile = (profileId: number) => {
+  const selectGlobalBranding = () => {
+    isGlobalBrandingSelected.value = true;
+    selectedCreatorProfileIds.value = [];
+    // Clear creator_profile_id for global branding (null means any streamer)
+    campaignForm.creator_profile_id = null;
+    // Auto-select the only global profile if there's exactly one
+    const globalProfiles = availableCreatorProfiles.value.filter(p => p.scope === 'global');
+    if (globalProfiles.length === 1) {
+      campaignForm.branding_profile_id = globalProfiles[0].id;
+    } else {
+      campaignForm.branding_profile_id = globalProfiles[0]?.id || null;
+    }
+  };
+
+  const handleGlobalBrandingToggle = () => {
+    if (isGlobalBrandingSelected.value) {
+      // Global branding enabled - clear specific profile selections
+      selectedCreatorProfileIds.value = [];
+      // Auto-select the only global profile if there's exactly one
+      const globalProfiles = availableCreatorProfiles.value.filter(p => p.scope === 'global');
+      if (globalProfiles.length === 1) {
+        campaignForm.branding_profile_id = globalProfiles[0].id;
+      } else if (globalProfiles.length > 1) {
+        // If multiple global profiles, keep current selection or default to first global
+        const currentIsGlobal = globalProfiles.some(p => p.id === campaignForm.branding_profile_id);
+        if (!currentIsGlobal) {
+          campaignForm.branding_profile_id = globalProfiles[0]?.id || null;
+        }
+      } else {
+        campaignForm.branding_profile_id = null;
+      }
+    } else {
+      // Global branding disabled - clear branding profile
+      campaignForm.branding_profile_id = null;
+    }
+  };
+
+  const toggleCreatorProfile = (profileId: number | null) => {
+    // Don't allow toggling if global branding is selected
+    if (isGlobalBrandingSelected.value) return;
+
     const idx = selectedCreatorProfileIds.value.indexOf(profileId);
     if (idx >= 0) {
       selectedCreatorProfileIds.value.splice(idx, 1);
@@ -2202,43 +2516,12 @@
     }
   };
 
-  const setWatermark = (aspectRatio: string, value: string) => {
-    if (value && value !== 'null') {
-      campaignForm.global_watermarks[aspectRatio] = parseInt(value);
-    } else {
-      delete campaignForm.global_watermarks[aspectRatio];
-    }
-  };
-
-  // Watermark position picker helpers
-  const hasAnyWatermarkConfigured = computed(() => {
-    if (!campaignForm.global_watermark_settings) return false;
-    const settings = campaignForm.global_watermark_settings;
-    return ['16:9', '9:16', '1:1', '4:5'].some((ratio) => settings[ratio as keyof CreatorWatermarkSettings] !== null);
-  });
-
-  const getConfiguredWatermarkRatios = () => {
-    if (!campaignForm.global_watermark_settings) return '';
-    const settings = campaignForm.global_watermark_settings;
-    const configured = ['16:9', '9:16', '1:1', '4:5'].filter(
-      (ratio) => settings[ratio as keyof CreatorWatermarkSettings] !== null
-    );
-    return configured.join(', ');
-  };
-
-  const openWatermarkPositionPicker = () => {
-    showWatermarkPositionPicker.value = true;
-  };
-
-  const handleWatermarkSettingsSave = (settings: CreatorWatermarkSettings) => {
-    campaignForm.global_watermark_settings = settings;
-    showWatermarkPositionPicker.value = false;
-  };
 
   const openCreateDialog = async () => {
     editingCampaign.value = null;
     coverImagePreview.value = '';
     selectedCreatorProfileIds.value = [];
+    isGlobalBrandingSelected.value = false;
     currentStep.value = 1;
     error.value = null;
     Object.assign(campaignForm, {
@@ -2254,13 +2537,11 @@
       cover_image_url: '',
       starts_at: '',
       ends_at: '',
-      global_intro_id: null,
-      global_outro_id: null,
-      global_watermarks: {},
-      global_watermark_settings: null,
-      require_watermark: false,
-      require_intro: false,
-      require_outro: false,
+      payment_model: 'cpm' as 'cpm' | 'per_clip',
+      per_clip_amount: 0,
+      clips_per_profile: 5,
+      creator_profile_id: null,
+      branding_profile_id: null,
     });
     showCampaignDialog.value = true;
     await loadCreatorProfilesAndAssets();
@@ -2270,6 +2551,8 @@
     editingCampaign.value = campaign;
     coverImagePreview.value = '';
     selectedCreatorProfileIds.value = campaign.creator_profiles?.map((p) => p.id) || [];
+    // Set global branding flag based on whether campaign has creator_profile_id null AND branding_profile_id set
+    isGlobalBrandingSelected.value = campaign.creator_profile_id === null && campaign.branding_profile_id !== null;
     error.value = null;
     Object.assign(campaignForm, {
       title: campaign.title,
@@ -2284,16 +2567,21 @@
       cover_image_url: campaign.cover_image_url || '',
       starts_at: campaign.starts_at ? campaign.starts_at.slice(0, 16) : '',
       ends_at: campaign.ends_at ? campaign.ends_at.slice(0, 16) : '',
-      global_intro_id: campaign.global_intro_id || null,
-      global_outro_id: campaign.global_outro_id || null,
-      global_watermarks: campaign.global_watermarks || {},
-      global_watermark_settings: (campaign.global_watermarks as unknown as CreatorWatermarkSettings) || null,
-      require_watermark: campaign.require_watermark || false,
-      require_intro: campaign.require_intro || false,
-      require_outro: campaign.require_outro || false,
+      payment_model: campaign.payment_model || 'cpm',
+      per_clip_amount: campaign.per_clip_amount ? parseFloat(campaign.per_clip_amount) : 0,
+      clips_per_profile: campaign.clips_per_profile || 5,
+      creator_profile_id: campaign.creator_profile_id || null,
+      branding_profile_id: campaign.branding_profile_id || null,
     });
     showCampaignDialog.value = true;
     await loadCreatorProfilesAndAssets();
+  };
+
+  const convertToISO8601 = (datetimeLocal: string): string | undefined => {
+    if (!datetimeLocal) return undefined;
+    // datetime-local format: "2024-03-06T21:15"
+    // Convert to ISO 8601 with timezone: "2024-03-06T21:15:00Z"
+    return `${datetimeLocal}:00Z`;
   };
 
   const saveCampaign = async () => {
@@ -2311,15 +2599,22 @@
         allowed_platforms: campaignForm.allowed_platforms,
         payment_methods: campaignForm.payment_methods,
         cover_image_url: campaignForm.cover_image_url || undefined,
-        starts_at: campaignForm.starts_at || undefined,
-        ends_at: campaignForm.ends_at || undefined,
-        global_intro_id: campaignForm.global_intro_id,
-        global_outro_id: campaignForm.global_outro_id,
-        global_watermarks: campaignForm.global_watermark_settings || campaignForm.global_watermarks,
-        require_watermark: campaignForm.require_watermark,
-        require_intro: campaignForm.require_intro,
-        require_outro: campaignForm.require_outro,
+        starts_at: convertToISO8601(campaignForm.starts_at),
+        ends_at: convertToISO8601(campaignForm.ends_at),
+        payment_model: campaignForm.payment_model,
+        per_clip_amount: campaignForm.payment_model === 'per_clip' ? campaignForm.per_clip_amount : undefined,
+        clips_per_profile: campaignForm.payment_model === 'per_clip' ? campaignForm.clips_per_profile : undefined,
+        // For global branding, explicitly send null for creator_profile_id
+        creator_profile_id: isGlobalBrandingSelected.value ? null : (campaignForm.creator_profile_id || undefined),
+        branding_profile_id: campaignForm.branding_profile_id || undefined,
       };
+
+      console.log('[Campaign Save] About to save with:', {
+        isGlobalBranding: isGlobalBrandingSelected.value,
+        creator_profile_id: data.creator_profile_id,
+        branding_profile_id: data.branding_profile_id,
+        selectedCreatorProfileIds: selectedCreatorProfileIds.value
+      });
 
       let response;
       if (editingCampaign.value) {
@@ -2328,14 +2623,36 @@
         response = await createCampaign(Number(props.organizationId), data);
       }
 
+      console.log('[Campaign Save] API response:', {
+        success: response.success,
+        campaign: response.campaign ? {
+          id: response.campaign.id,
+          creator_profile_id: response.campaign.creator_profile_id,
+          branding_profile_id: response.campaign.branding_profile_id,
+          creator_profiles: response.campaign.creator_profiles
+        } : null
+      });
+
       if (response.success && response.campaign) {
-        // Save creator profiles assignment
-        if (selectedCreatorProfileIds.value.length > 0) {
+        // Save creator profiles assignment (only if NOT using global branding)
+        if (!isGlobalBrandingSelected.value) {
+          const profileIds = selectedCreatorProfileIds.value.filter((id): id is number => id !== null);
+          if (profileIds.length > 0) {
+            await setCampaignCreatorProfiles(
+              Number(props.organizationId),
+              response.campaign.id,
+              profileIds
+            );
+          }
+        } else {
+          // For global branding, clear any existing creator profile assignments
+          console.log('[Campaign Save] Clearing creator profiles for global branding campaign');
           await setCampaignCreatorProfiles(
             Number(props.organizationId),
             response.campaign.id,
-            selectedCreatorProfileIds.value
+            []
           );
+          console.log('[Campaign Save] Creator profiles cleared');
         }
 
         toast({ title: 'Success', description: `Campaign ${editingCampaign.value ? 'updated' : 'created'}` });
@@ -2357,11 +2674,7 @@
   };
 
   const viewCampaign = async (campaign: Campaign) => {
-    selectedCampaign.value = campaign;
-    detailTab.value = 'overview';
-    showDetailDialog.value = true;
-    await loadParticipants();
-    await loadSubmissions();
+    router.push(`/organization/${props.organizationId}/campaigns/${campaign.id}`);
   };
 
   const loadParticipants = async () => {
@@ -2385,7 +2698,7 @@
 
     loadingSubmissions.value = true;
     try {
-      const response = await listCampaignSubmissions(Number(props.organizationId), Number(selectedCampaign.value.id));
+      const response = await listCampaignSubmissions(Number(props.organizationId), selectedCampaign.value.id);
       if (response.success) {
         submissions.value = response.submissions;
       }
@@ -2394,6 +2707,83 @@
     } finally {
       loadingSubmissions.value = false;
     }
+  };
+
+  const loadPayments = async () => {
+    if (!selectedCampaign.value) return;
+
+    loadingPayments.value = true;
+    try {
+      const response = await listCampaignPayments(Number(props.organizationId), selectedCampaign.value.id);
+      if (response.success) {
+        payments.value = response.payments;
+      }
+    } catch (error) {
+      console.error('Failed to load payments:', error);
+    } finally {
+      loadingPayments.value = false;
+    }
+  };
+
+  const calculatePaymentsAction = async () => {
+    if (!selectedCampaign.value) return;
+
+    calculatingPayments.value = true;
+    try {
+      const response = await calculateCampaignPayments(Number(props.organizationId), selectedCampaign.value.id);
+      if (response.success) {
+        toast({
+          title: 'Success',
+          description: `Created ${response.payments_created} payments totaling $${response.total_amount}`,
+        });
+        await loadPayments();
+      } else {
+        toast({ title: 'Error', description: response.error || 'Failed to calculate payments', type: 'error' });
+      }
+    } catch (error) {
+      console.error('Failed to calculate payments:', error);
+      toast({ title: 'Error', description: 'Failed to calculate payments', type: 'error' });
+    } finally {
+      calculatingPayments.value = false;
+    }
+  };
+
+  const openVerifyPaymentDialog = (payment: CampaignPayment) => {
+    selectedPayment.value = payment;
+    verificationScreenshotUrl.value = '';
+    verificationNotes.value = '';
+    verificationPaymentDate.value = new Date().toISOString().split('T')[0];
+    showVerifyPaymentDialog.value = true;
+  };
+
+  const verifyPaymentAction = async () => {
+    if (!selectedPayment.value) return;
+
+    verifyingPayment.value = true;
+    try {
+      const response = await verifyPayment(Number(props.organizationId), selectedPayment.value.id, {
+        screenshot_url: verificationScreenshotUrl.value,
+        notes: verificationNotes.value,
+        payment_date: verificationPaymentDate.value,
+      });
+
+      if (response.success) {
+        toast({ title: 'Success', description: 'Payment verified and clipper notified' });
+        showVerifyPaymentDialog.value = false;
+        await loadPayments();
+      } else {
+        toast({ title: 'Error', description: response.error || 'Failed to verify payment', type: 'error' });
+      }
+    } catch (error) {
+      console.error('Failed to verify payment:', error);
+      toast({ title: 'Error', description: 'Failed to verify payment', type: 'error' });
+    } finally {
+      verifyingPayment.value = false;
+    }
+  };
+
+  const viewScreenshot = (url: string) => {
+    window.open(url, '_blank');
   };
 
   const confirmDeleteCampaign = (campaign: Campaign) => {
@@ -4984,6 +5374,34 @@
     border-color: rgba(6, 182, 212, 0.4);
   }
 
+  .campaign-wizard__profile--disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  .campaign-wizard__divider {
+    display: flex;
+    align-items: center;
+    margin: 1rem 0;
+    text-align: center;
+  }
+
+  .campaign-wizard__divider::before,
+  .campaign-wizard__divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .campaign-wizard__divider-text {
+    padding: 0 1rem;
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
   .campaign-wizard__profile-avatar {
     width: 40px;
     height: 40px;
@@ -5715,6 +6133,271 @@
     width: 20px;
     height: 20px;
     animation: spin 1s linear infinite;
+  }
+
+  /* Payment Model Toggle Switch */
+  .campaign-edit__toggle-container {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .campaign-edit__toggle-label {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    transition: all 200ms ease;
+    font-weight: 500;
+  }
+
+  .campaign-edit__toggle-label--active {
+    color: var(--sidebar-text);
+    font-weight: 600;
+  }
+
+  .campaign-edit__toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+
+  .campaign-edit__toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .campaign-edit__toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--sidebar-border);
+    transition: 0.3s;
+    border-radius: 24px;
+  }
+
+  .campaign-edit__toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+  }
+
+  .campaign-edit__toggle-switch input:checked + .campaign-edit__toggle-slider {
+    background-color: var(--sidebar-accent);
+  }
+
+  .campaign-edit__toggle-switch input:checked + .campaign-edit__toggle-slider:before {
+    transform: translateX(24px);
+  }
+
+  .campaign-edit__toggle-switch:hover .campaign-edit__toggle-slider {
+    opacity: 0.9;
+  }
+
+  /* Wizard Toggle Styles */
+  .campaign-wizard__toggle-container {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 0;
+  }
+
+  .campaign-wizard__toggle-label--active {
+    color: var(--sidebar-text);
+    font-weight: 600;
+  }
+
+  .campaign-wizard__toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+
+  .campaign-wizard__toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .campaign-wizard__toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--sidebar-border);
+    transition: 0.3s;
+    border-radius: 24px;
+  }
+
+  .campaign-wizard__toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+  }
+
+  .campaign-wizard__toggle-switch input:checked + .campaign-wizard__toggle-slider {
+    background-color: var(--sidebar-accent);
+  }
+
+  .campaign-wizard__toggle-switch input:checked + .campaign-wizard__toggle-slider:before {
+    transform: translateX(24px);
+  }
+
+  .campaign-wizard__toggle-switch:hover .campaign-wizard__toggle-slider {
+    opacity: 0.9;
+  }
+
+  /* Campaign Edit Checkbox */
+  .campaign-edit__checkbox {
+    margin-right: 0.5rem;
+    cursor: pointer;
+  }
+
+  .campaign-edit__optional {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 400;
+    margin-left: 0.25rem;
+  }
+
+  /* Campaign Edit Profile List */
+  .campaign-edit__profiles-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .campaign-edit__profile {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .campaign-edit__profile:hover {
+    background-color: var(--sidebar-active);
+    border-color: rgba(6, 182, 212, 0.3);
+  }
+
+  .campaign-edit__profile--selected {
+    background-color: rgba(6, 182, 212, 0.1);
+    border-color: rgba(6, 182, 212, 0.4);
+  }
+
+  .campaign-edit__profile-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    overflow: hidden;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .campaign-edit__profile-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .campaign-edit__profile-avatar-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaign-edit__profile-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .campaign-edit__profile-name {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .campaign-edit__profile-check {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: var(--sidebar-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .campaign-edit__profile-check-icon {
+    width: 12px;
+    height: 12px;
+    color: white;
+  }
+
+  /* Streamer Assignment */
+  .campaign-edit__streamers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    min-height: 40px;
+  }
+
+  .campaign-edit__streamer-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.75rem;
+    background-color: rgba(6, 182, 212, 0.1);
+    border: 1px solid var(--sidebar-accent);
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    color: var(--sidebar-text);
+    cursor: default;
+    transition: all 150ms ease;
+  }
+
+  .campaign-edit__streamer-tag:hover {
+    background-color: rgba(6, 182, 212, 0.15);
+  }
+
+  .campaign-edit__streamer-tag svg {
+    cursor: pointer;
+    color: var(--sidebar-text-muted);
+    transition: color 150ms ease;
+  }
+
+  .campaign-edit__streamer-tag svg:hover {
+    color: #ef4444;
   }
 
   /* Creator Profiles */

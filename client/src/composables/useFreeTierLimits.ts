@@ -15,6 +15,7 @@ export type FreeTierAction = keyof typeof FREE_TIER_LIMITS;
 /** Tier hierarchy for access checks */
 const TIER_HIERARCHY: Record<string, number> = {
   free: 0,
+  basic: 0.5,
   starter: 1,
   creator: 2,
   pro: 3,

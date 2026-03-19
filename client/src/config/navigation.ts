@@ -19,6 +19,8 @@ import {
   CalendarDays,
   Paintbrush,
   Image,
+  Headphones,
+  Music,
 } from 'lucide-vue-next';
 
 export type NavigationGroup = 'browse' | 'create' | 'manage' | 'system';
@@ -63,9 +65,15 @@ export const navigationItems: NavigationItem[] = [
     group: 'browse',
   },
   {
-    name: 'Search VODs',
+    name: 'Download VODs',
     path: '/vods',
     icon: Video,
+    group: 'browse',
+  },
+  {
+    name: 'Download Audio',
+    path: '/download-audio',
+    icon: Headphones,
     group: 'browse',
   },
   {
@@ -80,8 +88,6 @@ export const navigationItems: NavigationItem[] = [
     icon: Megaphone,
     group: 'browse',
     restrictedHidden: true,
-    disabled: true,
-    badge: 'Coming Soon',
   },
 
   // Create group - content creation tools
@@ -89,6 +95,12 @@ export const navigationItems: NavigationItem[] = [
     name: 'VOD Library',
     path: '/projects',
     icon: Folder,
+    group: 'create',
+  },
+  {
+    name: 'Audio Library',
+    path: '/audio-library',
+    icon: Music,
     group: 'create',
   },
   {
@@ -108,8 +120,6 @@ export const navigationItems: NavigationItem[] = [
     path: '/ai-video',
     icon: Wand2,
     group: 'create',
-    disabled: true,
-    badge: 'Coming Soon',
   },
   {
     name: 'Design Studio',

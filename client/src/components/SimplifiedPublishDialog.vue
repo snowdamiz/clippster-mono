@@ -1,0 +1,1142 @@
+<template>
+  <Teleport to="body">
+    <Transition name="modal">
+      <div v-if="modelValue" class="publish-dialog__overlay" @click.self="handleClose">
+        <Transition name="dialog" appear>
+          <div class="publish-dialog" role="dialog" aria-modal="true">
+            <!-- Accent bar -->
+            <div class="publish-dialog__accent"></div>
+
+            <!-- Header -->
+            <div class="publish-dialog__header">
+              <button class="publish-dialog__close" @click="handleClose" title="Close">
+                <X :size="18" />
+              </button>
+              <div class="publish-dialog__icon">
+                <Rocket :size="24" />
+              </div>
+              <h2 class="publish-dialog__title">Publish Clip</h2>
+              <p class="publish-dialog__subtitle">{{ clip?.name || 'Clip' }} • {{ formatDuration(build.duration) }}</p>
+              <!-- Badges -->
+              <div class="publish-dialog__badges">
+                <span class="publish-dialog__badge publish-dialog__badge--ratio">{{ parsedAspectRatio }}</span>
+                <span v-if="brandingLabel" class="publish-dialog__badge publish-dialog__badge--branding">{{ brandingLabel }}</span>
+              </div>
+            </div>
+
+            <!-- Content -->
+            <div class="publish-dialog__content">
+              <form class="publish-dialog__form" @submit.prevent="handlePublish">
+
+                <!-- Post For -->
+                <div class="publish-dialog__field">
+                  <label class="publish-dialog__label">Post For</label>
+                  <div class="publish-dialog__context-tabs">
+                    <button
+                      type="button"
+                      :class="['publish-dialog__context-tab', { 'publish-dialog__context-tab--active': postingContext === 'org' }]"
+                      @click="postingContext = 'org'"
+                    >
+                      <Building2 :size="14" />
+                      <span>Organization</span>
+                    </button>
+                    <button
+                      type="button"
+                      :class="['publish-dialog__context-tab', { 'publish-dialog__context-tab--active': postingContext === 'campaign' }]"
+                      @click="postingContext = 'campaign'"
+                    >
+                      <Trophy :size="14" />
+                      <span>Campaign</span>
+                    </button>
+                  </div>
+
+                  <!-- Org: creator profile dropdown (only if >1) -->
+                  <div v-if="postingContext === 'org'" class="publish-dialog__context-detail">
+                    <div v-if="loadingOrgProfiles" class="publish-dialog__hint">Loading profiles...</div>
+                    <template v-else-if="orgCreatorProfiles.length > 0">
+                      <div v-if="showOrgProfileDropdown" class="publish-dialog__select-wrap">
+                        <label class="publish-dialog__label-sm">Creator Profile</label>
+                        <button
+                          type="button"
+                          @click="showContextDropdown = showContextDropdown === 'org-profile' ? null : 'org-profile'"
+                          class="publish-dialog__select"
+                        >
+                          <span class="publish-dialog__select-text">
+                            {{ selectedOrgProfileId ? orgCreatorProfiles.find(p => p.id === selectedOrgProfileId)?.name : 'Select creator profile' }}
+                          </span>
+                          <ChevronDown :size="14" :class="{ 'publish-dialog__chevron--open': showContextDropdown === 'org-profile' }" class="publish-dialog__chevron" />
+                        </button>
+                        <div v-if="showContextDropdown === 'org-profile'" class="publish-dialog__dropdown">
+                          <button
+                            v-for="profile in orgCreatorProfiles"
+                            :key="profile.id"
+                            type="button"
+                            @click="selectedOrgProfileId = profile.id; showContextDropdown = null"
+                            class="publish-dialog__dropdown-item"
+                            :class="{ 'publish-dialog__dropdown-item--selected': selectedOrgProfileId === profile.id }"
+                          >
+                            <div class="publish-dialog__profile-item">
+                              <div class="publish-dialog__profile-avatar">
+                                <img v-if="profile.profile_image_url" :src="profile.profile_image_url" />
+                                <User v-else :size="12" />
+                              </div>
+                              <span>{{ profile.name }}</span>
+                              <span v-if="profile.scope === 'global'" class="publish-dialog__profile-badge">Global</span>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                      <div v-else class="publish-dialog__context-auto">
+                        <User :size="14" />
+                        <span>Posting as: <strong>{{ orgCreatorProfiles[0]?.name }}</strong></span>
+                      </div>
+                    </template>
+                    <p v-else class="publish-dialog__hint">No creator profiles found for this organization</p>
+                  </div>
+
+                  <!-- Campaign: campaign dropdown + optional branding profile dropdown -->
+                  <div v-else-if="postingContext === 'campaign'" class="publish-dialog__context-detail">
+                    <div v-if="loadingCampaigns" class="publish-dialog__hint">Loading campaigns...</div>
+                    <template v-else-if="availableCampaigns.length > 0">
+                      <div class="publish-dialog__select-wrap">
+                        <label class="publish-dialog__label-sm">Campaign</label>
+                        <button
+                          type="button"
+                          @click="showContextDropdown = showContextDropdown === 'campaign' ? null : 'campaign'"
+                          class="publish-dialog__select"
+                        >
+                          <span class="publish-dialog__select-text">{{ selectedCampaign?.title ?? 'Select campaign' }}</span>
+                          <ChevronDown :size="14" :class="{ 'publish-dialog__chevron--open': showContextDropdown === 'campaign' }" class="publish-dialog__chevron" />
+                        </button>
+                        <div v-if="showContextDropdown === 'campaign'" class="publish-dialog__dropdown">
+                          <button
+                            v-for="campaign in availableCampaigns"
+                            :key="campaign.id"
+                            type="button"
+                            @click="selectedCampaignId = campaign.id; showContextDropdown = null"
+                            class="publish-dialog__dropdown-item"
+                            :class="{ 'publish-dialog__dropdown-item--selected': selectedCampaignId === campaign.id }"
+                          >
+                            <div class="publish-dialog__profile-item">
+                              <div class="publish-dialog__profile-avatar publish-dialog__profile-avatar--campaign">
+                                <img v-if="campaign.cover_image_url" :src="campaign.cover_image_url" />
+                                <Trophy v-else :size="12" />
+                              </div>
+                              <span>{{ campaign.title }}</span>
+                              <span v-if="campaign.organization" class="publish-dialog__profile-badge">{{ campaign.organization.name }}</span>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+
+                      <!-- Branding profile (only if >1) -->
+                      <div v-if="selectedCampaignId && showCampaignProfileDropdown" class="publish-dialog__select-wrap" style="margin-top: 0.5rem">
+                        <label class="publish-dialog__label-sm">Branding Profile</label>
+                        <button
+                          type="button"
+                          @click="showContextDropdown = showContextDropdown === 'campaign-profile' ? null : 'campaign-profile'"
+                          class="publish-dialog__select"
+                        >
+                          <span class="publish-dialog__select-text">
+                            {{ selectedCampaignProfileId ? campaignProfiles.find(p => p.id === selectedCampaignProfileId)?.name : 'Select branding profile' }}
+                          </span>
+                          <ChevronDown :size="14" :class="{ 'publish-dialog__chevron--open': showContextDropdown === 'campaign-profile' }" class="publish-dialog__chevron" />
+                        </button>
+                        <div v-if="showContextDropdown === 'campaign-profile'" class="publish-dialog__dropdown">
+                          <button
+                            v-for="profile in campaignProfiles"
+                            :key="profile.id"
+                            type="button"
+                            @click="selectedCampaignProfileId = profile.id; showContextDropdown = null"
+                            class="publish-dialog__dropdown-item"
+                            :class="{ 'publish-dialog__dropdown-item--selected': selectedCampaignProfileId === profile.id }"
+                          >
+                            <div class="publish-dialog__profile-item">
+                              <div class="publish-dialog__profile-avatar">
+                                <img v-if="profile.profile_image_url" :src="profile.profile_image_url" />
+                                <User v-else :size="12" />
+                              </div>
+                              <span>{{ profile.name }}</span>
+                              <span v-if="profile.isGlobal" class="publish-dialog__profile-badge publish-dialog__profile-badge--global">Global</span>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                      <div v-else-if="selectedCampaignId && !showCampaignProfileDropdown && campaignProfiles.length === 1" class="publish-dialog__context-auto" style="margin-top: 0.5rem">
+                        <User :size="14" />
+                        <span>Branding: <strong>{{ campaignProfiles[0]?.name }}</strong></span>
+                      </div>
+                    </template>
+                    <p v-else class="publish-dialog__hint">No active campaigns found. Join a campaign first.</p>
+                  </div>
+                </div>
+
+                <!-- Platform Selection -->
+                <div class="publish-dialog__field">
+                  <label class="publish-dialog__label">Platforms *</label>
+                  <div class="publish-dialog__platform-grid">
+                    <label
+                      v-for="platform in availablePlatforms"
+                      :key="platform.id"
+                      class="publish-dialog__platform-option"
+                      :class="{ 'publish-dialog__platform-option--selected': isPlatformSelected(platform.id) }"
+                    >
+                      <input type="checkbox" :checked="isPlatformSelected(platform.id)" @change="togglePlatform(platform.id)" class="publish-dialog__checkbox" />
+                      <component :is="platform.icon" :size="16" />
+                      <span>{{ platform.label }}</span>
+                    </label>
+                  </div>
+                  <p v-if="selectedPublishPlatforms.length === 0" class="publish-dialog__hint publish-dialog__hint--error">
+                    Please select at least one platform
+                  </p>
+                </div>
+
+                <!-- Account Selection -->
+                <div v-if="selectedPublishPlatforms.length > 0" class="publish-dialog__field">
+                  <label class="publish-dialog__label">Accounts *</label>
+                  <div class="publish-dialog__account-configs">
+                    <div v-for="platformId in selectedPublishPlatforms" :key="platformId" class="publish-dialog__account-config">
+                      <div class="publish-dialog__account-label">
+                        <component :is="getPlatformIcon(platformId)" :size="14" />
+                        <span>{{ getPlatformLabel(platformId) }}</span>
+                      </div>
+                      <div class="publish-dialog__select-wrap">
+                        <button
+                          type="button"
+                          @click="toggleAccountDropdown(platformId)"
+                          class="publish-dialog__select"
+                        >
+                          <span class="publish-dialog__select-text">{{ getSelectedAccountLabel(platformId) || 'Select account...' }}</span>
+                          <ChevronDown :size="14" :class="{ 'publish-dialog__chevron--open': activeAccountDropdown === platformId }" class="publish-dialog__chevron" />
+                        </button>
+                        <div v-if="activeAccountDropdown === platformId" class="publish-dialog__dropdown">
+                          <button type="button" @click="selectAccount(platformId, '')" class="publish-dialog__dropdown-item" :class="{ 'publish-dialog__dropdown-item--selected': !platformConfigs[platformId]?.accountId }">
+                            Select account...
+                          </button>
+                          <template v-if="getOrgAccountsForPlatform(platformId).length > 0">
+                            <div class="publish-dialog__dropdown-group">Organization</div>
+                            <button v-for="account in getOrgAccountsForPlatform(platformId)" :key="`org-${account.id}`" type="button" @click="selectAccount(platformId, `org:${account.id}`)" class="publish-dialog__dropdown-item" :class="{ 'publish-dialog__dropdown-item--selected': platformConfigs[platformId]?.accountId === `org:${account.id}` }">
+                              @{{ account.username }}
+                            </button>
+                          </template>
+                          <template v-if="getPersonalAccountsForPlatform(platformId).length > 0">
+                            <div class="publish-dialog__dropdown-group">Personal</div>
+                            <button v-for="account in getPersonalAccountsForPlatform(platformId)" :key="`user-${account.id}`" type="button" @click="selectAccount(platformId, `user:${account.id}`)" class="publish-dialog__dropdown-item" :class="{ 'publish-dialog__dropdown-item--selected': platformConfigs[platformId]?.accountId === `user:${account.id}` }">
+                              @{{ account.username }}
+                            </button>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Caption -->
+                <div class="publish-dialog__field">
+                  <label class="publish-dialog__label">Caption</label>
+                  <textarea v-model="caption" rows="3" :maxlength="2200" placeholder="Add a caption for your post..." class="publish-dialog__textarea"></textarea>
+                  <p class="publish-dialog__hint publish-dialog__hint--right">{{ caption.length }} / 2200</p>
+                </div>
+
+              </form>
+            </div>
+
+            <!-- Footer -->
+            <div class="publish-dialog__footer">
+              <button @click="handleClose" class="publish-dialog__btn publish-dialog__btn--secondary">
+                Cancel
+              </button>
+              <button
+                @click="handlePublish"
+                :disabled="!canPublish || isPublishing"
+                class="publish-dialog__btn publish-dialog__btn--primary"
+              >
+                <Loader2 v-if="isPublishing" :size="16" class="publish-dialog__spinner" />
+                <Share2 v-else :size="16" />
+                {{ isPublishing ? 'Publishing...' : `Publish (${selectedPublishPlatforms.length})` }}
+              </button>
+            </div>
+          </div>
+        </Transition>
+      </div>
+    </Transition>
+  </Teleport>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted, watch } from 'vue';
+import { X, Instagram, Youtube, ChevronDown, Rocket, Loader2, Share2, Building2, Trophy, User } from 'lucide-vue-next';
+import XLogo from '@/components/icons/XLogo.vue';
+import TiktokLogo from '@/components/icons/TiktokLogo.vue';
+import type { ClipBuild, Clip } from '@/services/database';
+import { useBackgroundPublish } from '@/composables/useBackgroundPublish';
+import { markBuildAsPublished } from '@/services/database/clip-build';
+import { listSocialAccounts, type SocialAccount } from '@/services/socialAccountsApi';
+import { listUserTwitterAccounts, type UserTwitterAccount } from '@/services/userTwitterApi';
+import { listUserTiktokAccounts, type UserTiktokAccount } from '@/services/userTiktokApi';
+import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services/userInstagramApi';
+import { listUserYoutubeAccounts, type UserYoutubeAccount } from '@/services/userYoutubeApi';
+import { listMyCampaigns, type Campaign } from '@/services/campaignApi';
+import { listOrganizationCreatorProfiles, type ServerOrganizationCreatorProfile } from '@/services/organizationProfilesApi';
+import { useAuthStore } from '@/stores/auth';
+type ClipWithBuilds = Clip & { builds: ClipBuild[] };
+
+const props = defineProps<{
+  modelValue: boolean;
+  clip: ClipWithBuilds | null;
+  build: ClipBuild;
+  filePath: string;
+  thumbnailUrl: string | null;
+}>();
+
+const emit = defineEmits<{
+  'update:modelValue': [value: boolean];
+  close: [];
+}>();
+
+const backgroundPublish = useBackgroundPublish();
+const authStore = useAuthStore();
+
+function handleClose() {
+  emit('update:modelValue', false);
+  emit('close');
+}
+
+const parsedAspectRatio = computed(() => {
+  const ar = props.build?.aspect_ratios;
+  if (!ar) return '16:9';
+  try {
+    const parsed = JSON.parse(ar);
+    if (Array.isArray(parsed)) return parsed[0] || '16:9';
+    return parsed;
+  } catch {
+    return ar;
+  }
+});
+
+const brandingLabel = computed(() => {
+  if (props.build?.campaign_id) return props.build?.campaign_name || 'Campaign';
+  if (props.build?.organization_id) return props.build?.organization_name || 'Organization';
+  return null;
+});
+
+// Platform selection
+const availablePlatforms = [
+  { id: 'instagram', label: 'Instagram', icon: Instagram },
+  { id: 'twitter', label: 'X (Twitter)', icon: XLogo },
+  { id: 'tiktok', label: 'TikTok', icon: TiktokLogo },
+  { id: 'youtube', label: 'YouTube', icon: Youtube },
+];
+
+const selectedPublishPlatforms = ref<string[]>([]);
+const platformConfigs = ref<Record<string, { accountId?: string }>>({});
+const caption = ref('');
+const activeAccountDropdown = ref<string | null>(null);
+const isPublishing = ref(false);
+
+// Posting context
+type PostingContext = 'org' | 'campaign';
+const postingContext = ref<PostingContext>('org');
+
+// Org creator profiles
+const loadingOrgProfiles = ref(false);
+const orgCreatorProfiles = ref<ServerOrganizationCreatorProfile[]>([]);
+const selectedOrgProfileId = ref<number | null>(null);
+
+// Campaigns
+const loadingCampaigns = ref(false);
+const availableCampaigns = ref<Campaign[]>([]);
+const selectedCampaignId = ref<number | null>(null);
+const selectedCampaignProfileId = ref<number | null>(null);
+const showContextDropdown = ref<string | null>(null);
+
+const selectedCampaign = computed(() =>
+  availableCampaigns.value.find(c => c.id === selectedCampaignId.value) ?? null
+);
+
+const campaignProfiles = computed(() => {
+  const c = selectedCampaign.value;
+  if (!c) return [];
+  const profiles: Array<{ id: number; name: string; profile_image_url: string | null; isGlobal: boolean }> = [];
+  if (c.branding_profile) profiles.push({ ...c.branding_profile, isGlobal: true });
+  if (c.creator_profiles) {
+    for (const p of c.creator_profiles) {
+      if (!profiles.find(x => x.id === p.id)) profiles.push({ ...p, isGlobal: false });
+    }
+  }
+  return profiles;
+});
+
+const showOrgProfileDropdown = computed(() => orgCreatorProfiles.value.length > 1);
+const showCampaignProfileDropdown = computed(() => campaignProfiles.value.length > 1);
+
+function autoSelectCampaignProfile() {
+  if (campaignProfiles.value.length === 1) {
+    selectedCampaignProfileId.value = campaignProfiles.value[0].id;
+  } else {
+    selectedCampaignProfileId.value = null;
+  }
+}
+
+watch(selectedCampaignId, () => autoSelectCampaignProfile());
+
+watch(postingContext, () => {
+  selectedOrgProfileId.value = null;
+  selectedCampaignId.value = null;
+  selectedCampaignProfileId.value = null;
+  showContextDropdown.value = null;
+  if (postingContext.value === 'org') {
+    if (orgCreatorProfiles.value.length === 1) selectedOrgProfileId.value = orgCreatorProfiles.value[0].id;
+  } else {
+    if (availableCampaigns.value.length === 1) {
+      selectedCampaignId.value = availableCampaigns.value[0].id;
+      autoSelectCampaignProfile();
+    }
+  }
+});
+
+// Legacy tracking compat (still used in handlePublish for effectiveOrgId)
+const trackingOrgId = computed(() =>
+  postingContext.value === 'org' && props.build?.organization_id
+    ? String(props.build.organization_id)
+    : null
+);
+const trackingCampaignId = computed(() =>
+  postingContext.value === 'campaign' ? selectedCampaignId.value : (props.build?.campaign_id ?? null)
+);
+
+// Load available social accounts
+const orgAccounts = ref<SocialAccount[]>([]);
+const personalTwitterAccounts = ref<UserTwitterAccount[]>([]);
+const personalTiktokAccounts = ref<UserTiktokAccount[]>([]);
+const personalInstagramAccounts = ref<UserInstagramAccount[]>([]);
+const personalYoutubeAccounts = ref<UserYoutubeAccount[]>([]);
+
+function isPlatformSelected(platformId: string): boolean {
+  return selectedPublishPlatforms.value.includes(platformId);
+}
+
+function togglePlatform(platformId: string) {
+  const index = selectedPublishPlatforms.value.indexOf(platformId);
+  if (index > -1) {
+    selectedPublishPlatforms.value.splice(index, 1);
+    delete platformConfigs.value[platformId];
+  } else {
+    selectedPublishPlatforms.value.push(platformId);
+    platformConfigs.value[platformId] = {};
+  }
+}
+
+function getPlatformLabel(platformId: string): string {
+  return availablePlatforms.find(p => p.id === platformId)?.label || platformId;
+}
+
+function getPlatformIcon(platformId: string) {
+  return availablePlatforms.find(p => p.id === platformId)?.icon || Instagram;
+}
+
+function getPersonalAccountsForPlatform(platformId: string): (UserTwitterAccount | UserTiktokAccount | UserInstagramAccount | UserYoutubeAccount)[] {
+  switch (platformId) {
+    case 'twitter':
+      return personalTwitterAccounts.value;
+    case 'tiktok':
+      return personalTiktokAccounts.value;
+    case 'instagram':
+      return personalInstagramAccounts.value;
+    case 'youtube':
+      return personalYoutubeAccounts.value;
+    default:
+      return [];
+  }
+}
+
+function getOrgAccountsForPlatform(platformId: string): SocialAccount[] {
+  const platformMap: Record<string, string> = {
+    instagram: 'instagram',
+    twitter: 'twitter',
+    tiktok: 'tiktok',
+    youtube: 'youtube',
+  };
+  return orgAccounts.value.filter((a) => a.platform === platformMap[platformId]);
+}
+
+function getSelectedAccountLabel(platformId: string): string | null {
+  const accountId = platformConfigs.value[platformId]?.accountId;
+  if (!accountId) return null;
+  
+  const [type, id] = accountId.split(':');
+  const idNum = Number(id);
+  
+  if (type === 'org') {
+    const account = orgAccounts.value.find(a => a.id === idNum);
+    return account ? `@${account.username}` : null;
+  } else {
+    const accounts = getPersonalAccountsForPlatform(platformId);
+    const account = accounts.find(a => a.id === idNum);
+    return account ? `@${account.username}` : null;
+  }
+}
+
+function toggleAccountDropdown(platformId: string) {
+  activeAccountDropdown.value = activeAccountDropdown.value === platformId ? null : platformId;
+}
+
+function selectAccount(platformId: string, accountId: string) {
+  if (!platformConfigs.value[platformId]) {
+    platformConfigs.value[platformId] = {};
+  }
+  platformConfigs.value[platformId].accountId = accountId || undefined;
+  activeAccountDropdown.value = null;
+}
+
+const canPublish = computed(() => {
+  if (selectedPublishPlatforms.value.length === 0) return false;
+  
+  for (const platformId of selectedPublishPlatforms.value) {
+    if (!platformConfigs.value[platformId]?.accountId) return false;
+  }
+  
+  return true;
+});
+
+async function loadOrgCreatorProfiles() {
+  const orgId = authStore.user?.owned_organization_id;
+  if (!orgId) return;
+  loadingOrgProfiles.value = true;
+  try {
+    const res = await listOrganizationCreatorProfiles(orgId);
+    if (res.success) {
+      orgCreatorProfiles.value = res.profiles.filter(p => !p.disabled);
+      if (orgCreatorProfiles.value.length === 1) {
+        selectedOrgProfileId.value = orgCreatorProfiles.value[0].id;
+      }
+    }
+  } catch (err) {
+    console.error('[SimplifiedPublishDialog] Failed to load org profiles:', err);
+  } finally {
+    loadingOrgProfiles.value = false;
+  }
+}
+
+async function loadCampaigns() {
+  loadingCampaigns.value = true;
+  try {
+    const res = await listMyCampaigns('active');
+    if (res.success) {
+      availableCampaigns.value = res.campaigns;
+      if (availableCampaigns.value.length === 1) {
+        selectedCampaignId.value = availableCampaigns.value[0].id;
+        autoSelectCampaignProfile();
+      }
+    }
+  } catch (err) {
+    console.error('[SimplifiedPublishDialog] Failed to load campaigns:', err);
+  } finally {
+    loadingCampaigns.value = false;
+  }
+}
+
+function formatDuration(seconds: number | null | undefined): string {
+  if (!seconds) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+onMounted(async () => {
+  // Load org accounts if build is tied to an org
+  if (props.build?.organization_id) {
+    const orgResult = await listSocialAccounts(props.build.organization_id);
+    if (orgResult.success) {
+      orgAccounts.value = orgResult.accounts || [];
+    }
+  } else if (authStore.user?.owned_organization_id) {
+    const orgResult = await listSocialAccounts(authStore.user.owned_organization_id);
+    if (orgResult.success) {
+      orgAccounts.value = orgResult.accounts || [];
+    }
+  }
+
+  const [twitterRes, tiktokRes, instagramRes, youtubeRes] = await Promise.all([
+    listUserTwitterAccounts(),
+    listUserTiktokAccounts(),
+    listUserInstagramAccounts(),
+    listUserYoutubeAccounts(),
+  ]);
+
+  if (twitterRes.success) personalTwitterAccounts.value = twitterRes.accounts || [];
+  if (tiktokRes.success) personalTiktokAccounts.value = tiktokRes.accounts || [];
+  if (instagramRes.success) personalInstagramAccounts.value = instagramRes.accounts || [];
+  if (youtubeRes.success) personalYoutubeAccounts.value = youtubeRes.accounts || [];
+
+  await Promise.all([loadOrgCreatorProfiles(), loadCampaigns()]);
+});
+
+async function handlePublish() {
+  if (!canPublish.value || isPublishing.value) return;
+  
+  isPublishing.value = true;
+  
+  try {
+    const aspectRatio = props.build?.aspect_ratios || '16:9';
+
+    // Build publish targets and platformToRatioMap
+    const publishTargets: any[] = [];
+    const platformToRatioMap: Record<string, string> = {};
+
+    for (const platformId of selectedPublishPlatforms.value) {
+      const accountId = platformConfigs.value[platformId]?.accountId;
+      if (!accountId) continue;
+      
+      const [accountType, accountIdStr] = accountId.split(':');
+      publishTargets.push({
+        platformId,
+        accountType: accountType as 'org' | 'user',
+        accountId: Number(accountIdStr),
+      });
+
+      // Map every platform to the build's aspect ratio
+      platformToRatioMap[platformId] = aspectRatio;
+    }
+
+    // Start R2 upload of the already-built file first
+    const aspectRatioOutputPaths: Record<string, string> = {
+      [aspectRatio]: props.filePath,
+    };
+
+    const effectiveOrgId = props.build?.organization_id
+      || (authStore.user?.owned_organization_id ? Number(authStore.user.owned_organization_id) : null);
+
+    await backgroundPublish.startUpload(
+      aspectRatioOutputPaths,
+      props.thumbnailUrl || null,
+      effectiveOrgId
+    );
+
+    const buildType = props.build?.branding_type === 'none' ? 'personal' : props.build?.branding_type;
+    const metadata = {
+      clipId: props.clip?.id,
+      clipBuildId: props.build?.id,
+      organizationId: effectiveOrgId ?? undefined,
+      campaignId: props.build?.campaign_id || trackingCampaignId.value || undefined,
+      creatorProfileId: postingContext.value === 'org'
+        ? (selectedOrgProfileId.value ?? undefined)
+        : (selectedCampaignProfileId.value ?? undefined),
+      buildType: buildType as 'org' | 'campaign' | 'personal' | undefined,
+      aspectRatio,
+      platformToRatioMap,
+    };
+    
+    backgroundPublish.queuePublish(
+      publishTargets,
+      caption.value,
+      effectiveOrgId,
+      props.thumbnailUrl || null,
+      metadata
+    );
+    
+    if (props.build?.id) {
+      await markBuildAsPublished(props.build.id);
+    }
+    
+    emit('update:modelValue', false);
+    emit('close');
+  } finally {
+    isPublishing.value = false;
+  }
+}
+</script>
+
+<style scoped>
+/* ===== Overlay ===== */
+.publish-dialog__overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+/* ===== Dialog Container ===== */
+.publish-dialog {
+  background-color: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 480px;
+  margin: 1rem;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+/* ===== Accent Bar ===== */
+.publish-dialog__accent {
+  height: 3px;
+  background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+  flex-shrink: 0;
+}
+
+/* ===== Header ===== */
+.publish-dialog__header {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem 1.5rem 1rem;
+  text-align: center;
+}
+
+.publish-dialog__close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--sidebar-text-muted);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+.publish-dialog__close:hover {
+  background-color: var(--sidebar-hover);
+  color: var(--sidebar-text);
+}
+
+.publish-dialog__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  background-color: rgba(6, 182, 212, 0.15);
+  color: var(--sidebar-accent);
+  margin-bottom: 0.875rem;
+}
+
+.publish-dialog__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--sidebar-text);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.publish-dialog__subtitle {
+  font-size: 0.8125rem;
+  color: var(--sidebar-text-muted);
+  margin: 0.25rem 0 0;
+}
+
+.publish-dialog__badges {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
+.publish-dialog__badge {
+  padding: 0.25rem 0.625rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid;
+}
+
+.publish-dialog__badge--ratio {
+  background: rgba(6, 182, 212, 0.15);
+  color: var(--sidebar-accent);
+  border-color: rgba(6, 182, 212, 0.4);
+}
+
+.publish-dialog__badge--branding {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--sidebar-text-muted);
+  border-color: var(--sidebar-border);
+  font-weight: 500;
+}
+
+/* ===== Content Area ===== */
+.publish-dialog__content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 1.5rem 1.5rem;
+}
+
+.publish-dialog__content::-webkit-scrollbar { width: 6px; }
+.publish-dialog__content::-webkit-scrollbar-track { background: transparent; }
+.publish-dialog__content::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.15); border-radius: 3px; }
+
+/* ===== Posting Context ===== */
+.publish-dialog__context-tabs {
+  display: flex;
+  gap: 0.375rem;
+  padding: 0.25rem;
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+}
+
+.publish-dialog__context-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--sidebar-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.publish-dialog__context-tab:hover:not(.publish-dialog__context-tab--active) {
+  color: var(--sidebar-text);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.publish-dialog__context-tab--active {
+  background-color: var(--sidebar-surface);
+  color: var(--sidebar-accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.publish-dialog__context-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.publish-dialog__context-auto {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  background-color: rgba(6, 182, 212, 0.06);
+  border: 1px solid rgba(6, 182, 212, 0.15);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  color: var(--sidebar-text-muted);
+}
+
+.publish-dialog__context-auto strong {
+  color: var(--sidebar-text);
+  font-weight: 600;
+}
+
+.publish-dialog__label-sm {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--sidebar-text-muted);
+}
+
+.publish-dialog__profile-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  overflow: hidden;
+}
+
+.publish-dialog__profile-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--sidebar-text-muted);
+}
+
+.publish-dialog__profile-avatar--campaign {
+  border-radius: 6px;
+}
+
+.publish-dialog__profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.publish-dialog__profile-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  background-color: rgba(6, 182, 212, 0.15);
+  color: var(--sidebar-accent);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+}
+
+.publish-dialog__profile-badge--global {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: rgb(134, 239, 172);
+  border-color: rgba(34, 197, 94, 0.25);
+}
+
+/* ===== Form ===== */
+.publish-dialog__form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.publish-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.publish-dialog__label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--sidebar-text);
+}
+
+.publish-dialog__hint {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+  margin: 0;
+}
+.publish-dialog__hint--error { color: #ef4444; }
+.publish-dialog__hint--right { text-align: right; }
+
+/* ===== Platform Grid ===== */
+.publish-dialog__platform-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.625rem;
+}
+
+.publish-dialog__platform-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 150ms ease;
+  font-size: 0.8125rem;
+  color: var(--sidebar-text);
+}
+.publish-dialog__platform-option:hover { border-color: rgba(6, 182, 212, 0.3); }
+.publish-dialog__platform-option--selected {
+  border-color: var(--sidebar-accent);
+  background-color: rgba(6, 182, 212, 0.1);
+}
+.publish-dialog__checkbox { display: none; }
+
+/* ===== Account Configs ===== */
+.publish-dialog__account-configs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.publish-dialog__account-config {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.publish-dialog__account-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 100px;
+  font-size: 0.8125rem;
+  color: var(--sidebar-text);
+  flex-shrink: 0;
+}
+
+/* ===== Select / Dropdown ===== */
+.publish-dialog__select-wrap {
+  position: relative;
+  flex: 1;
+}
+
+.publish-dialog__select {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: var(--sidebar-text);
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 150ms ease;
+  text-align: left;
+}
+.publish-dialog__select:hover { border-color: rgba(255, 255, 255, 0.1); }
+.publish-dialog__select:focus {
+  outline: none;
+  border-color: var(--sidebar-accent);
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+}
+
+.publish-dialog__select-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.publish-dialog__chevron {
+  flex-shrink: 0;
+  color: var(--sidebar-text-muted);
+  transition: transform 150ms ease;
+}
+.publish-dialog__chevron--open { transform: rotate(180deg); }
+
+.publish-dialog__dropdown {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  background-color: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 10001;
+}
+.publish-dialog__dropdown::-webkit-scrollbar { width: 6px; }
+.publish-dialog__dropdown::-webkit-scrollbar-track { background: transparent; }
+.publish-dialog__dropdown::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.15); border-radius: 3px; }
+
+.publish-dialog__dropdown-group {
+  padding: 0.5rem 0.875rem 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sidebar-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.publish-dialog__dropdown-item {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-size: 0.875rem;
+  color: var(--sidebar-text);
+  cursor: pointer;
+  transition: background-color 150ms ease;
+  display: block;
+}
+.publish-dialog__dropdown-item:hover { background-color: var(--sidebar-hover); }
+.publish-dialog__dropdown-item--selected {
+  background-color: rgba(6, 182, 212, 0.15);
+  color: var(--sidebar-accent);
+  font-weight: 500;
+}
+
+/* ===== Textarea ===== */
+.publish-dialog__textarea {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: var(--sidebar-text);
+  font-family: inherit;
+  transition: all 150ms ease;
+  resize: vertical;
+  min-height: 80px;
+}
+.publish-dialog__textarea:focus {
+  outline: none;
+  border-color: var(--sidebar-accent);
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+}
+.publish-dialog__textarea::placeholder { color: var(--sidebar-text-muted); opacity: 0.6; }
+
+/* ===== Footer ===== */
+.publish-dialog__footer {
+  display: flex;
+  gap: 0.625rem;
+  padding: 1.25rem 1.5rem;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+/* ===== Buttons ===== */
+.publish-dialog__btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+.publish-dialog__btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.publish-dialog__btn--secondary {
+  background-color: var(--sidebar-hover);
+  color: var(--sidebar-text);
+  border: 1px solid var(--sidebar-border);
+}
+.publish-dialog__btn--secondary:hover:not(:disabled) {
+  background-color: var(--sidebar-active);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.publish-dialog__btn--primary {
+  background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+  color: white;
+}
+.publish-dialog__btn--primary:hover:not(:disabled) { opacity: 0.9; }
+
+.publish-dialog__spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+/* ===== Transitions ===== */
+.modal-enter-active, .modal-leave-active { transition: opacity 200ms ease; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
+
+.dialog-enter-active { transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1); }
+.dialog-leave-active { transition: all 150ms ease-in; }
+.dialog-enter-from { opacity: 0; transform: scale(0.96) translateY(8px); }
+.dialog-leave-to { opacity: 0; transform: scale(0.98); }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>

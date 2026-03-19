@@ -25,11 +25,12 @@ const elementsWithTracks = computed(() => {
 </script>
 
 <template>
-	<div class="h-full overflow-y-auto rounded-sm bg-[#18181b] text-zinc-200">
+	<div class="h-full rounded-sm bg-[#18181b] text-zinc-200">
 		<template v-if="selectedElements.length > 0">
 			<div
 				v-for="{ track, element } in elementsWithTracks"
 				:key="element.id"
+				class="h-full"
 			>
 				<TextProperties
 					v-if="element.type === 'text'"
@@ -72,10 +73,6 @@ const elementsWithTracks = computed(() => {
 					:element="(element as CaptionElement)"
 					:track-id="track.id"
 				/>
-			</div>
-			<!-- Keyframe Editor -->
-			<div class="border-t border-white/10">
-				<KeyframeEditorPanel />
 			</div>
 		</template>
 

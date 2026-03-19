@@ -172,6 +172,68 @@ defmodule ClippsterServer.Waitlist do
   end
 
   @doc """
+  Reinvites a waitlist entry by canceling old codes and issuing new ones.
+  Deletes old beta code, generates new one, and sends new invite email.
+  """
+  def reinvite_entry(entry, admin_id, discount_config) do
+    Repo.transaction(fn ->
+      # Lock the entry row
+      entry = Repo.get!(WaitlistEntry, entry.id, lock: "FOR UPDATE") |> Repo.preload(:beta_code)
+
+      # Delete old beta code if it exists and hasn't been used
+      if entry.beta_code_id && entry.beta_code && is_nil(entry.beta_code.used_by_user_id) do
+        ClippsterServer.BetaCodes.delete_code(entry.beta_code_id)
+      end
+
+      # Delete old discount code from Stripe if it exists
+      if entry.discount_stripe_promo_id do
+        # Note: Stripe promo codes cannot be deleted, only deactivated
+        # We'll just create a new one and let the old one expire
+      end
+
+      # Generate new beta code
+      {:ok, beta_code} = ClippsterServer.BetaCodes.generate_assigned_code(entry.email)
+
+      # Generate new discount code
+      case ClippsterServer.PromoCodes.create_waitlist_discount_code(
+             entry.id,
+             admin_id,
+             discount_config
+           ) do
+        {:ok, %{code: discount_code, stripe_promo_id: stripe_promo_id}} ->
+          # Send reinvite email (different from regular invite)
+          email_result =
+            send_reinvite_email(entry, beta_code, discount_code, discount_config.percent_off)
+
+          # Update entry with new invite tracking
+          attrs = %{
+            invited_at: DateTime.utc_now() |> DateTime.truncate(:second),
+            beta_code_id: beta_code.id,
+            discount_code: discount_code,
+            discount_stripe_promo_id: stripe_promo_id,
+            email_delivery_error: nil
+          }
+
+          attrs =
+            case email_result do
+              {:ok, _} ->
+                Map.put(attrs, :email_sent_at, DateTime.utc_now() |> DateTime.truncate(:second))
+
+              {:error, reason} ->
+                Map.put(attrs, :email_delivery_error, inspect(reason))
+            end
+
+          entry
+          |> WaitlistEntry.invite_changeset(attrs)
+          |> Repo.update!()
+
+        {:error, reason} ->
+          Repo.rollback({:discount_code_failed, reason})
+      end
+    end)
+  end
+
+  @doc """
   Invites all uninvited waitlist entries in batches.
   Processes 10 entries per batch with 1 second delay for Stripe rate limiting.
   """
@@ -234,6 +296,22 @@ defmodule ClippsterServer.Waitlist do
 
       {:error, reason} ->
         Logger.error("Failed to send waitlist invite email to #{entry.email}: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  defp send_reinvite_email(entry, beta_code, discount_code, discount_percent) do
+    require Logger
+
+    case entry.email
+         |> Emails.waitlist_reinvite_email(beta_code.code, discount_code, discount_percent)
+         |> Mailer.deliver() do
+      {:ok, _} ->
+        Logger.info("Waitlist reinvite email sent to #{entry.email}")
+        {:ok, :sent}
+
+      {:error, reason} ->
+        Logger.error("Failed to send waitlist reinvite email to #{entry.email}: #{inspect(reason)}")
         {:error, reason}
     end
   end

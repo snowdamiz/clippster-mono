@@ -8,14 +8,13 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tauri::Emitter;
-use tauri_plugin_shell::ShellExt;
-
-use crate::storage;
 use tokio::io::AsyncBufReadExt;
 use crate::downloads::{
     DownloadProgress, DownloadResult, ACTIVE_DOWNLOADS, ACTIVE_DOWNLOAD_CANCELLERS, DOWNLOAD_METADATA,
     DownloadMetadata,
 };
+use crate::storage;
+use crate::thumbnail_utils::generate_thumbnail_hybrid;
 
 #[cfg(target_os = "windows")]
 #[allow(unused_imports)]
@@ -193,9 +192,77 @@ pub async fn check_youtube_livestream(channel: String) -> Result<String, String>
     Ok(serde_json::to_string(&status).unwrap())
 }
 
+/// Get a single YouTube video's metadata using yt-dlp
+#[tauri::command]
+pub async fn get_single_youtube_video(video_url: String) -> Result<String, String> {
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    
+    println!("[YouTube] Fetching single video: {}", video_url);
+
+    let mut cmd = tokio::process::Command::new(&ytdlp_path);
+    no_window(&mut cmd);
+
+    cmd.arg("--dump-json")
+        .arg("--skip-download")
+        .arg("--no-warnings")
+        .arg("--impersonate").arg("chrome")
+        .arg(&video_url);
+
+    let output = cmd.output().await
+        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if stdout.trim().is_empty() {
+        return Err(format!("yt-dlp returned no output. stderr: {}", &stderr[..stderr.len().min(500)]));
+    }
+
+    let json: serde_json::Value = serde_json::from_str(stdout.trim())
+        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+
+    let video_id = match json["id"].as_str() {
+        Some(id) if !id.is_empty() => id.to_string(),
+        _ => return Err("No video ID in response".to_string()),
+    };
+
+    let upload_date = if let Some(release_ts) = json["release_timestamp"].as_i64() {
+        Some(release_ts.to_string())
+    } else if let Some(ts) = json["timestamp"].as_i64() {
+        Some(ts.to_string())
+    } else {
+        json["upload_date"].as_str().map(String::from)
+    };
+
+    let thumbnail_url = json["thumbnail"].as_str().map(String::from)
+        .or_else(|| Some(format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", video_id)));
+
+    let url = json["webpage_url"].as_str()
+        .map(String::from)
+        .unwrap_or_else(|| format!("https://www.youtube.com/watch?v={}", video_id));
+
+    let vod = YouTubeVod {
+        video_id,
+        title: json["title"].as_str().map(String::from),
+        duration: json["duration"].as_f64(),
+        view_count: json["view_count"].as_i64(),
+        thumbnail_url,
+        upload_date,
+        url,
+    };
+
+    Ok(serde_json::to_string(&vec![vod]).unwrap())
+}
+
 /// Get list of live stream VODs from a YouTube channel using yt-dlp
 #[tauri::command]
 pub async fn get_youtube_vods(channel: String, limit: Option<u32>) -> Result<String, String> {
+    // Check if input is a direct video URL
+    if let Some(video_id) = extract_video_id(&channel) {
+        println!("[YouTube VODs] Detected video URL, fetching single video: {}", video_id);
+        return get_single_youtube_video(format!("https://www.youtube.com/watch?v={}", video_id)).await;
+    }
+    
     let channel_id = normalize_channel_input(&channel);
     let ytdlp_path = resolve_ytdlp_binary()?;
     
@@ -295,6 +362,12 @@ pub async fn get_youtube_vods(channel: String, limit: Option<u32>) -> Result<Str
 /// Get list of regular videos (not live streams) from a YouTube channel using yt-dlp
 #[tauri::command]
 pub async fn get_youtube_videos(channel: String, limit: Option<u32>) -> Result<String, String> {
+    // Check if input is a direct video URL
+    if let Some(video_id) = extract_video_id(&channel) {
+        println!("[YouTube Videos] Detected video URL, fetching single video: {}", video_id);
+        return get_single_youtube_video(format!("https://www.youtube.com/watch?v={}", video_id)).await;
+    }
+    
     let channel_id = normalize_channel_input(&channel);
     let ytdlp_path = resolve_ytdlp_binary()?;
     
@@ -490,8 +563,9 @@ pub async fn download_youtube_vod(
             .arg("-o").arg(&output_file_str)
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
-            .arg("--external-downloader").arg("ffmpeg")
-            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
+            .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
+            .arg("--merge-output-format").arg("mp4")
             .arg("--newline")
             .arg("--progress")
             .stdout(std::process::Stdio::piped())
@@ -539,11 +613,14 @@ pub async fn download_youtube_vod(
                                         .find(|s| s.ends_with('%'))
                                         .and_then(|s| s.trim_end_matches('%').parse::<f64>().ok())
                                     {
+                                        // Calculate current_time from percentage and total_duration
+                                        let current_time = total_duration.map(|dur| (percent_str / 100.0) * dur);
+                                        
                                         let _ = app_progress.emit("download-progress", DownloadProgress {
                                             download_id: download_id_progress.clone(),
                                             progress: percent_str,
-                                            current_time: None,
-                                            total_time: None,
+                                            current_time,
+                                            total_time: total_duration,
                                             status: format!("Downloading... {}%", percent_str as u32),
                                         });
                                     }
@@ -607,29 +684,23 @@ pub async fn download_youtube_vod(
                             .ok()
                             .map(|m| m.len());
                         
-                        // Generate thumbnail
+                        // Generate thumbnail using hybrid approach (yt-dlp first, FFmpeg fallback)
                         println!("[YouTube] Generating thumbnail...");
                         let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
-                        let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
-                            .args([
-                                "-hwaccel", "auto",
-                                "-ss", "00:00:05",
-                                "-i", &output_file_str,
-                                "-vframes", "1",
-                                "-vf", "scale=320:-1",
-                                "-y",
-                                thumbnail_path.to_str().unwrap_or(""),
-                            ]))
-                            .output()
-                            .await;
                         
-                        let thumbnail_path_str = match thumbnail_result {
-                            Ok(output) if output.status.success() => {
+                        let thumbnail_path_str = match generate_thumbnail_hybrid(
+                            &ytdlp_path,
+                            &ffmpeg_path,
+                            &vod_url,
+                            &thumbnail_path,
+                            "00:00:05",
+                        ).await {
+                            Ok(()) => {
                                 println!("[YouTube] Thumbnail generated: {}", thumbnail_path.display());
                                 Some(thumbnail_path.to_string_lossy().to_string())
                             }
-                            _ => {
-                                println!("[YouTube] Thumbnail generation failed");
+                            Err(e) => {
+                                println!("[YouTube] Thumbnail generation failed: {}", e);
                                 None
                             }
                         };
@@ -1080,19 +1151,52 @@ pub fn is_youtube_recording_active(channel: String) -> bool {
         .any(|entry| entry.channel_id == channel_id)
 }
 
-/// Get duration for a YouTube VOD using ffprobe
+/// Get duration for a YouTube VOD using yt-dlp + ffprobe
+/// First extracts the direct stream URL using yt-dlp, then uses ffprobe to get duration
 #[tauri::command]
-pub async fn get_youtube_vod_duration(app: tauri::AppHandle, vod_url: String) -> Result<f64, String> {
+pub async fn get_youtube_vod_duration(_app: tauri::AppHandle, vod_url: String) -> Result<f64, String> {
     println!("[YouTube] Getting duration for URL: {}", vod_url);
     
-    let output = app.shell()
-        .sidecar("ffprobe")
-        .map_err(|e| format!("Failed to get ffprobe sidecar: {}", e))?
+    // Step 1: Use yt-dlp to extract the direct stream URL
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    
+    println!("[YouTube] Extracting stream URL via yt-dlp...");
+    let ytdlp_output = no_window(
+        tokio::process::Command::new(&ytdlp_path)
+            .arg("--get-url")
+            .arg("--no-download")
+            .arg("--no-warnings")
+            .arg("--impersonate").arg("chrome")
+            .arg(&vod_url)
+    )
+    .output()
+    .await
+    .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+    
+    if !ytdlp_output.status.success() {
+        let stderr = String::from_utf8_lossy(&ytdlp_output.stderr);
+        return Err(format!("yt-dlp failed to extract stream URL: {}", stderr.chars().take(300).collect::<String>()));
+    }
+    
+    let stream_url = String::from_utf8_lossy(&ytdlp_output.stdout).trim().to_string();
+    if stream_url.is_empty() {
+        return Err("yt-dlp returned empty stream URL".to_string());
+    }
+    
+    println!("[YouTube] Got stream URL, probing duration with ffprobe...");
+    
+    // Step 2: Use ffprobe on the direct stream URL
+    let ffprobe_path = resolve_sidecar_binary("ffprobe")?;
+    
+    let mut cmd = tokio::process::Command::new(&ffprobe_path);
+    no_window(&mut cmd);
+    
+    let output = cmd
         .args([
             "-v", "error",
             "-show_entries", "format=duration",
             "-of", "default=noprint_wrappers=1:nokey=1",
-            &vod_url
+            &stream_url
         ])
         .output()
         .await
@@ -1206,6 +1310,53 @@ pub async fn get_youtube_channel_info(channel: String) -> Result<String, String>
 }
 
 // Helper functions
+
+/// Extract YouTube video ID from various URL formats
+/// Returns Some(video_id) if input is a video URL, None if it's a channel URL or other
+fn extract_video_id(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    
+    // youtube.com/watch?v=VIDEO_ID
+    if let Some(v_param) = trimmed.split("watch?v=").nth(1) {
+        let video_id = v_param.split('&').next().unwrap_or(v_param);
+        if !video_id.is_empty() && video_id.len() == 11 {
+            return Some(video_id.to_string());
+        }
+    }
+    
+    // youtu.be/VIDEO_ID
+    if trimmed.contains("youtu.be/") {
+        if let Some(id_part) = trimmed.split("youtu.be/").nth(1) {
+            let video_id = id_part.split('?').next().unwrap_or(id_part).split('/').next().unwrap_or("");
+            if !video_id.is_empty() && video_id.len() == 11 {
+                return Some(video_id.to_string());
+            }
+        }
+    }
+    
+    // youtube.com/embed/VIDEO_ID
+    if let Some(embed_part) = trimmed.split("/embed/").nth(1) {
+        let video_id = embed_part.split('?').next().unwrap_or(embed_part).split('/').next().unwrap_or("");
+        if !video_id.is_empty() && video_id.len() == 11 {
+            return Some(video_id.to_string());
+        }
+    }
+    
+    // youtube.com/v/VIDEO_ID
+    if let Some(v_part) = trimmed.split("/v/").nth(1) {
+        let video_id = v_part.split('?').next().unwrap_or(v_part).split('/').next().unwrap_or("");
+        if !video_id.is_empty() && video_id.len() == 11 {
+            return Some(video_id.to_string());
+        }
+    }
+    
+    // Direct 11-character video ID
+    if trimmed.len() == 11 && !trimmed.contains('/') && !trimmed.contains('@') {
+        return Some(trimmed.to_string());
+    }
+    
+    None
+}
 
 fn normalize_channel_input(input: &str) -> String {
     let trimmed = input.trim();
@@ -1321,11 +1472,11 @@ fn get_target_triple() -> &'static str {
     compile_error!("Unsupported platform - only x86_64 Windows/Linux and x86_64/aarch64 macOS are supported");
 }
 
-fn resolve_ytdlp_binary() -> Result<String, String> {
+pub fn resolve_ytdlp_binary() -> Result<String, String> {
     resolve_sidecar_binary("yt-dlp")
 }
 
-fn resolve_ffmpeg_binary() -> Result<String, String> {
+pub fn resolve_ffmpeg_binary() -> Result<String, String> {
     resolve_sidecar_binary("ffmpeg")
 }
 
@@ -1496,8 +1647,9 @@ pub async fn download_youtube_vod_segment(
             .arg("-o").arg(&video_path_str)
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
-            .arg("--external-downloader").arg("ffmpeg")
-            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
+            .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
+            .arg("--merge-output-format").arg("mp4")
             .arg("--download-sections").arg(&section_arg)
             .arg("--force-keyframes-at-cuts")  // Ensure clean cuts
             .arg("--no-part")  // Don't use .part files

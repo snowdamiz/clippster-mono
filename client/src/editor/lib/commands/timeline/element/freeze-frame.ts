@@ -45,6 +45,10 @@ export class FreezeFrameCommand extends Command {
 		const rightElementId = generateUUID();
 
 		// Build the freeze frame image element
+		// The freeze frame PNG is captured from the preview canvas which already
+		// has all transforms (scale, position, rotation, crop, flip, opacity)
+		// baked into the rendered pixels. Use neutral defaults so FFmpeg doesn't
+		// double-apply them during export.
 		const freezeElement: ImageElement = {
 			id: this.freezeElementId,
 			type: "image",
@@ -54,12 +58,10 @@ export class FreezeFrameCommand extends Command {
 			duration: this.freezeDuration,
 			trimStart: 0,
 			trimEnd: 0,
-			transform: "transform" in element
-				? { ...element.transform }
-				: { scale: 1, position: { x: 0, y: 0 }, rotate: 0 },
-			opacity: "opacity" in element ? element.opacity : 1,
-			flip: "flip" in element ? element.flip : undefined,
-			crop: "crop" in element ? element.crop : undefined,
+			transform: { scale: 1, position: { x: 0, y: 0 }, rotate: 0 },
+			opacity: 1,
+			flip: undefined,
+			crop: undefined,
 		};
 
 		const updatedTracks = this.savedState.map((t) => {

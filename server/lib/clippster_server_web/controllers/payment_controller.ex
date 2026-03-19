@@ -27,11 +27,20 @@ defmodule ClippsterServerWeb.PaymentController do
     company_wallet = Credits.get_company_wallet_address()
     rpc_url = Credits.get_solana_rpc_url()
 
+    # Filter packs based on user's subscription tier
+    user = conn.assigns[:current_user]
+    filtered_packs = if user && user.subscription_tier == "basic" do
+      # Basic tier can only purchase large pack
+      Map.take(packs, ["large"])
+    else
+      packs
+    end
+
     case ClippsterServer.PriceService.get_sol_price() do
       {:ok, sol_usd_rate} ->
         # Calculate SOL amounts for each pack
         packs_with_sol =
-          Enum.map(packs, fn {key, pack} ->
+          Enum.map(filtered_packs, fn {key, pack} ->
             sol_amount = pack.usd / sol_usd_rate
             {key, Map.put(pack, :sol_amount, sol_amount)}
           end)

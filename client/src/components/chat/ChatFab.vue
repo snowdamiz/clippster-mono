@@ -3,12 +3,33 @@ import { useMessagingStore } from '@/stores/messaging';
 import { useChatPopout } from '@/composables/useChatPopout';
 import { MessageSquare } from 'lucide-vue-next';
 
+defineProps<{ compact?: boolean }>();
+
 const messagingStore = useMessagingStore();
 const { togglePopover, hasNewMessagePulse, isPopoverOpen } = useChatPopout();
 </script>
 
 <template>
+  <!-- Compact header variant -->
   <button
+    v-if="compact"
+    class="relative flex size-8 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+    :class="{ 'bg-white/5 text-zinc-200': isPopoverOpen }"
+    @click="togglePopover"
+    title="Messages"
+  >
+    <MessageSquare class="size-4" />
+    <span
+      v-if="messagingStore.totalUnread > 0"
+      class="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full border-2 border-[#0e0e10] bg-red-500 px-1 text-[10px] font-bold text-white"
+    >
+      {{ messagingStore.totalUnread > 99 ? '99+' : messagingStore.totalUnread }}
+    </span>
+  </button>
+
+  <!-- Full floating FAB variant -->
+  <button
+    v-else
     class="chat-fab"
     :class="{ 'chat-fab--pulse': hasNewMessagePulse, 'chat-fab--active': isPopoverOpen }"
     @click="togglePopover"

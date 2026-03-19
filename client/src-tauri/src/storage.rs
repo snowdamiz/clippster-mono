@@ -917,6 +917,48 @@ pub fn save_editor_media_file(
     Ok(file_path.to_string_lossy().to_string())
 }
 
+/// Copy an existing file into the editor-media directory for a project.
+/// Used when the user uploads a local file via the file picker — stores a
+/// managed copy so the project is portable and doesn't depend on the
+/// original file location.
+/// Returns the absolute path of the copied file.
+#[tauri::command]
+pub fn copy_file_to_project_media(
+    source_path: String,
+    project_id: String,
+    file_name: String,
+) -> Result<String, String> {
+    use std::fs;
+
+    let source = std::path::Path::new(&source_path);
+    if !source.exists() {
+        return Err(format!("Source file not found: {}", source_path));
+    }
+
+    let app_dir = get_app_storage_dir()?;
+    let media_dir = app_dir.join("editor-media").join(&project_id);
+
+    fs::create_dir_all(&media_dir)
+        .map_err(|e| format!("Failed to create editor-media directory: {}", e))?;
+
+    let dest = media_dir.join(&file_name);
+
+    // Skip copy if destination already exists with the same size (idempotent)
+    if dest.exists() {
+        if let (Ok(src_meta), Ok(dst_meta)) = (fs::metadata(source), fs::metadata(&dest)) {
+            if src_meta.len() == dst_meta.len() {
+                return Ok(dest.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    fs::copy(source, &dest)
+        .map_err(|e| format!("Failed to copy file to editor-media: {}", e))?;
+
+    println!("[Storage] Copied media file to project: {}", dest.display());
+    Ok(dest.to_string_lossy().to_string())
+}
+
 /// Tauri command to get video duration using FFmpeg
 #[tauri::command]
 pub async fn get_video_duration(app: tauri::AppHandle, video_path: String) -> Result<f64, String> {
@@ -1828,11 +1870,20 @@ pub fn delete_audio_file(file_path: String) -> Result<(), String> {
 
     let path = Path::new(&file_path);
 
-    // Validate the file path is in the audio directory
+    // Validate the file path is in one of the valid audio storage directories
     let paths = init_storage_dirs()?;
+    let library_audio_dir = get_library_audio_dir()?;
+    let downloaded_audio_dir = crate::audio_download::get_downloaded_audio_dir()?;
 
-    if !path.starts_with(&paths.audio) {
-        return Err("File path is not in the audio directory".to_string());
+    let is_in_audio_dir = path.starts_with(&paths.audio);
+    let is_in_library_audio_dir = path.starts_with(&library_audio_dir);
+    let is_in_downloaded_audio_dir = path.starts_with(&downloaded_audio_dir);
+
+    if !is_in_audio_dir && !is_in_library_audio_dir && !is_in_downloaded_audio_dir {
+        return Err(format!(
+            "File path is not in a valid audio directory. Path: {}, Audio dir: {:?}, Library audio dir: {:?}, Downloaded audio dir: {:?}",
+            file_path, paths.audio, library_audio_dir, downloaded_audio_dir
+        ));
     }
 
     // Check if file exists

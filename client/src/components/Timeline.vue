@@ -399,6 +399,12 @@
     (newClips) => {
       if (newClips) {
         localClips.value = sortClips(newClips);
+        
+        // Auto-reveal all clips when they load
+        // This ensures manual clips and auto-detected clips from livestreams are visible
+        newClips.forEach((clip) => {
+          visibleClipIds.value.add(clip.id);
+        });
       }
     },
     { immediate: true, deep: true }
@@ -731,10 +737,11 @@
 
   function onVideoTrackClick(event: MouseEvent) {
     // Only seek if we're not in the middle of a drag selection and didn't just finish dragging
-    if (!isDragging.value && !justFinishedDragging.value) {
+    // Also don't seek when add clip mode is active
+    if (!isDragging.value && !justFinishedDragging.value && !isAddClipModeActive.value) {
       onSeekTimeline(event);
     } else {
-      console.log('[Timeline] Not seeking - currently dragging or just finished dragging');
+      console.log('[Timeline] Not seeking - currently dragging or just finished dragging or in add clip mode');
     }
   }
 
@@ -748,7 +755,8 @@
 
   function onClipTrackClick(event: MouseEvent) {
     // Only seek if we're not in the middle of a drag selection and didn't just finish dragging
-    if (!isDragging.value && !justFinishedDragging.value) {
+    // Also don't seek when add clip mode is active
+    if (!isDragging.value && !justFinishedDragging.value && !isAddClipModeActive.value) {
       onSeekTimeline(event);
     }
   }

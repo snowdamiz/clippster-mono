@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="modelValue" class="workspace-dialog__overlay" @click.self="close">
+      <div v-if="modelValue" class="workspace-dialog__overlay">
         <Transition name="dialog" appear>
           <div v-if="modelValue" class="workspace-dialog" role="dialog" aria-modal="true">
             <!-- Header -->
@@ -120,6 +120,8 @@
                   :aspect-ratio="selectedAspectRatio"
                   :creator-default-intro="creatorDefaultIntro"
                   :creator-default-outro="creatorDefaultOutro"
+                  :creator-profile="creatorProfile"
+                  :creator-profile-server-id="creatorProfileServerId"
                   :is-transcribing="isTranscribing"
                   :transcribe-progress="transcribeProgressValue"
                   :transcribe-stage="transcribeStage"
@@ -135,6 +137,7 @@
                   @watermarkSettingsChanged="onWatermarkSettingsChanged"
                   @editClip="onEditClip"
                   @addClip="onAddClip"
+                  @publishNow="onPublishNow"
                   @transcribeProject="onTranscribeProject"
                   @cancelTranscription="onCancelTranscription"
                   @viewTranscript="rightPanelTab = 'transcript'"
@@ -240,6 +243,16 @@
     @create-new="onCreateNewProject"
     @cancel="onExistingProjectCancel"
   />
+
+  <!-- Quick Publish Wizard -->
+  <QuickPublishWizard
+    :show="showPublishWizard"
+    :clip="clipToPublish"
+    :clip-path="clipToPublishPath"
+    :project-id="project?.id || ''"
+    :thumbnail-url="clipToPublishThumbnail"
+    @close="onPublishWizardClose"
+  />
 </template>
 
 <script setup lang="ts">
@@ -253,12 +266,12 @@
     deleteClip,
     getWatermarkByServerId,
     getCreatorProfileByProjectId,
-    getIntroOutroById,
     getProject,
     createClipVersion,
     updateClip,
     getOrCreateManualSession,
   } from '@/services/database';
+  import { resolveIntroOutroById } from '@/services/database/intro-outros';
   import { resolveBrandingProfile } from '@/composables/useBrandingProfileSelection';
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
@@ -277,6 +290,7 @@
   import { useTranscriptionOnly } from '@/composables/useTranscriptionOnly';
   import { useRouter } from 'vue-router';
   import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
+  import QuickPublishWizard from './QuickPublishWizard.vue';
   import { createVideoEditorProjectFromClip } from '@/services/video-editor-project-creator';
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
@@ -351,6 +365,12 @@
     segments: { start_time: number; end_time: number }[];
   } | null>(null);
 
+  // Quick Publish Wizard state
+  const showPublishWizard = ref(false);
+  const clipToPublish = ref<ClipWithVersion | null>(null);
+  const clipToPublishPath = ref<string>('');
+  const clipToPublishThumbnail = ref<string | null>(null);
+
   // Segmented playback tracking
   const currentlyPlayingClipId = ref<string | null>(null);
 
@@ -407,7 +427,15 @@
   watch(
     [watermarkSettings, normalizedAspectRatio],
     async ([settings, aspectRatioStr]) => {
+      console.log('[ProjectWorkspaceDialog] Watermark watcher triggered:', {
+        enabled: settings.enabled,
+        watermarkId: settings.watermarkId,
+        aspectRatio: aspectRatioStr,
+        currentWatermarkData: !!currentWatermarkData.value,
+      });
+      
       if (!settings.enabled) {
+        console.log('[ProjectWorkspaceDialog] Watermark disabled, clearing data');
         currentWatermarkData.value = null;
         currentWatermarkId.value = null;
         return;
@@ -417,18 +445,27 @@
       let targetId = settings.watermarkId;
       const perRatio = settings.perRatioSettings;
 
-      if (perRatio && perRatio[aspectRatioStr as keyof typeof perRatio]) {
+      // Skip per-ratio watermark ID overrides when the top-level watermark is an org-asset.
+      // For org-asset watermarks (e.g. free tier admin branding), per-ratio configs only
+      // carry position data — the watermarkId inside them is the admin's local SQLite UUID
+      // which free tier users do not have in their database.
+      const isOrgAsset = targetId?.startsWith('org-asset-');
+      if (!isOrgAsset && perRatio && perRatio[aspectRatioStr as keyof typeof perRatio]) {
         const config = perRatio[aspectRatioStr as keyof typeof perRatio];
         if (config && config.watermarkId) {
           targetId = config.watermarkId;
+          console.log('[ProjectWorkspaceDialog] Using per-ratio watermark ID:', targetId, 'for', aspectRatioStr);
         }
       }
 
       // Only reload if the watermark ID changed
       if (targetId !== currentWatermarkId.value) {
+        console.log('[ProjectWorkspaceDialog] Watermark ID changed, loading:', targetId);
         currentWatermarkId.value = targetId;
         // Use loadWatermarkDataById which handles both local and org-asset watermarks
         await loadWatermarkDataById(targetId);
+      } else {
+        console.log('[ProjectWorkspaceDialog] Watermark ID unchanged, skipping reload');
       }
     },
     { deep: true, immediate: true }
@@ -436,6 +473,7 @@
 
   // Creator profile associated with this project (for preconfiguring settings)
   const creatorProfile = ref<CreatorProfileWithLinks | null>(null);
+  const creatorProfileServerId = ref<number | null>(null);
 
   // Creator profile default intro/outro (auto-applied when building clips)
   const creatorDefaultIntro = ref<IntroOutro | null>(null);
@@ -551,6 +589,7 @@
     stopSegmentedPlayback,
     isPlayingSegments,
     segmentPlaybackEnded,
+    currentVideo,
   } = useVideoPlayer(projectRef);
 
   // Initialize focal point composable
@@ -811,7 +850,9 @@
     _promptId: string,
     promptContent: string,
     organizationId: number | null = null,
-    multimodal: boolean = false
+    multimodal: boolean = false,
+    startTime?: number,
+    endTime?: number
   ) {
     console.log('[ProjectWorkspaceDialog] === DETECT CLIPS CONFIRMED ===');
     console.log('[ProjectWorkspaceDialog] _promptId:', _promptId);
@@ -892,6 +933,8 @@
           forceReprocess: false,
           organizationId: organizationId,
           multimodal: multimodal,
+          startTime,
+          endTime,
         });
 
         if (result.success) {
@@ -1643,6 +1686,22 @@
       const profile = await resolveBrandingProfile(projectId);
       creatorProfile.value = profile;
 
+      console.log('[ProjectWorkspaceDialog] Resolved branding profile:', {
+        name: profile?.name,
+        id: profile?.id,
+        context_type: profile?.context_type,
+        watermark_id: profile?.watermark_id,
+        watermark_settings: profile?.watermark_settings,
+      });
+
+      // Extract server ID for campaign lookup (org profiles have numeric string IDs)
+      if (profile && profile.context_type === 'organization' && profile.id && !profile.id.startsWith('campaign-')) {
+        const serverId = parseInt(profile.id, 10);
+        creatorProfileServerId.value = isNaN(serverId) ? null : serverId;
+      } else {
+        creatorProfileServerId.value = null;
+      }
+
       if (profile) {
         console.log(
           '[ProjectWorkspaceDialog] Found creator profile:',
@@ -1651,13 +1710,16 @@
           profile.watermark_id
         );
 
-        // Apply watermark settings from creator profile (if not already applied from project)
-        if (profile.watermark_id && !watermarkSettings.value.enabled) {
-          console.log('[ProjectWorkspaceDialog] Applying creator watermark:', profile.watermark_id);
+        // Apply watermark settings from creator profile
+        // Profile watermark should override project-saved watermark (unless user explicitly customized it)
+        if (profile.watermark_id) {
+          console.log('[ProjectWorkspaceDialog] Applying creator watermark:', profile.watermark_id, 'current enabled:', watermarkSettings.value.enabled, 'current watermarkId:', watermarkSettings.value.watermarkId);
 
           // Parse the creator's per-ratio watermark settings
           let perRatioSettings = null;
           let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+          let effectiveWatermarkId = profile.watermark_id;
+          
           if (profile.watermark_settings) {
             try {
               perRatioSettings = JSON.parse(profile.watermark_settings);
@@ -1667,6 +1729,12 @@
               if (ratioConfig?.position) {
                 defaultPos = ratioConfig.position;
               }
+              // IMPORTANT: Use the per-ratio watermarkId if available, as it may differ from
+              // the main profile.watermark_id (which can be stale or incorrectly set)
+              if (ratioConfig?.watermarkId) {
+                effectiveWatermarkId = ratioConfig.watermarkId;
+                console.log('[ProjectWorkspaceDialog] Using per-ratio watermarkId:', effectiveWatermarkId, 'instead of profile.watermark_id:', profile.watermark_id);
+              }
             } catch (e) {
               console.warn('[ProjectWorkspaceDialog] Failed to parse creator watermark settings:', e);
             }
@@ -1675,7 +1743,7 @@
           const newSettings = {
             ...watermarkSettings.value,
             enabled: true,
-            watermarkId: profile.watermark_id,
+            watermarkId: effectiveWatermarkId,
             positionX: defaultPos.x,
             positionY: defaultPos.y,
             opacity: defaultPos.opacity,
@@ -1703,24 +1771,151 @@
         }
 
         // Load creator's default intro (will be auto-applied when building clips)
+        // Use resolveIntroOutroById which handles org-asset-* IDs by downloading from server
         if (profile.intro_id) {
-          const intro = await getIntroOutroById(profile.intro_id);
-          if (intro) {
-            creatorDefaultIntro.value = intro;
-            console.log('[ProjectWorkspaceDialog] Loaded creator default intro:', intro.name);
+          const introResolved = await resolveIntroOutroById(profile.intro_id);
+          if (introResolved) {
+            creatorDefaultIntro.value = {
+              id: profile.intro_id,
+              type: 'intro',
+              name: profile.name + ' Intro',
+              file_path: introResolved.filePath,
+              duration: introResolved.duration,
+              thumbnail_path: null,
+            } as IntroOutro;
+            console.log('[ProjectWorkspaceDialog] Loaded creator default intro:', profile.intro_id);
           }
         }
 
         // Load creator's default outro (will be auto-applied when building clips)
         if (profile.outro_id) {
-          const outro = await getIntroOutroById(profile.outro_id);
-          if (outro) {
-            creatorDefaultOutro.value = outro;
-            console.log('[ProjectWorkspaceDialog] Loaded creator default outro:', outro.name);
+          const outroResolved = await resolveIntroOutroById(profile.outro_id);
+          if (outroResolved) {
+            creatorDefaultOutro.value = {
+              id: profile.outro_id,
+              type: 'outro',
+              name: profile.name + ' Outro',
+              file_path: outroResolved.filePath,
+              duration: outroResolved.duration,
+              thumbnail_path: null,
+            } as IntroOutro;
+            console.log('[ProjectWorkspaceDialog] Loaded creator default outro:', profile.outro_id);
           }
         }
       } else {
         console.log('[ProjectWorkspaceDialog] No creator profile found for project:', projectId);
+      }
+
+      // For free tier users, admin-configured branding OVERRIDES any project/creator watermark
+      {
+        const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
+        const { getBrandingIfFreeTier } = useFreeTierBranding();
+        const adminBranding = await getBrandingIfFreeTier();
+        
+        console.log('[ProjectWorkspaceDialog] Checking free tier branding:', {
+          hasBranding: !!adminBranding,
+          watermark_id: adminBranding?.watermark_id,
+          watermark_url: adminBranding?.watermark_url,
+        });
+        
+        if (adminBranding) {
+          console.log('[ProjectWorkspaceDialog] Free tier user detected, applying admin branding (overrides project/creator watermark)');
+          
+          // Apply admin watermark settings — overrides any previously set watermark
+          if (adminBranding.watermark_id) {
+            console.log('[ProjectWorkspaceDialog] Admin watermark ID:', adminBranding.watermark_id);
+            
+            // Parse per-ratio settings to get default position
+            let perRatioSettings = null;
+            let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+            let effectiveWatermarkId = adminBranding.watermark_id;
+            
+            if (adminBranding.watermark_settings) {
+              try {
+                perRatioSettings = typeof adminBranding.watermark_settings === 'string' 
+                  ? JSON.parse(adminBranding.watermark_settings)
+                  : adminBranding.watermark_settings;
+                
+                const ratioConfig = perRatioSettings['16:9'];
+                if (ratioConfig?.position) {
+                  defaultPos = ratioConfig.position;
+                }
+                // Use per-ratio watermarkId if available
+                if (ratioConfig?.watermarkId) {
+                  effectiveWatermarkId = ratioConfig.watermarkId;
+                }
+              } catch (e) {
+                console.warn('[ProjectWorkspaceDialog] Failed to parse admin watermark settings:', e);
+              }
+            }
+            
+            const newSettings = {
+              enabled: true,
+              watermarkId: effectiveWatermarkId,
+              positionX: defaultPos.x,
+              positionY: defaultPos.y,
+              opacity: defaultPos.opacity,
+              scale: defaultPos.scale,
+              // Pass admin per-ratio settings for position data.
+              // The watcher skips per-ratio watermarkId overrides for org-asset IDs,
+              // so these only affect position/opacity/scale per ratio — not which image loads.
+              perRatioSettings: perRatioSettings,
+            };
+            
+            console.log('[ProjectWorkspaceDialog] Applying admin watermark settings:', {
+              watermarkId: newSettings.watermarkId,
+            });
+            
+            // Pre-set currentWatermarkId to the effective watermark ID BEFORE updating
+            // watermarkSettings — this ensures the watcher sees no change and skips reload
+            currentWatermarkId.value = effectiveWatermarkId;
+            
+            if (mediaPanelRef.value) {
+              mediaPanelRef.value.setWatermarkSettings(newSettings);
+            }
+            watermarkSettings.value = newSettings;
+            
+            // Download watermark via presigned URL (bypasses org-asset system)
+            if (adminBranding.watermark_url) {
+              console.log('[ProjectWorkspaceDialog] Downloading free tier watermark via presigned URL');
+              try {
+                const dataUrl = await invoke<string>('download_url_as_data_url', { url: adminBranding.watermark_url });
+                const dimensions = await new Promise<{ width: number; height: number } | null>((resolve) => {
+                  const img = new Image();
+                  img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                  img.onerror = () => resolve(null);
+                  img.src = dataUrl;
+                });
+                currentWatermarkData.value = {
+                  dataUrl,
+                  width: dimensions?.width || undefined,
+                  height: dimensions?.height || undefined,
+                };
+                console.log('[ProjectWorkspaceDialog] Free tier watermark loaded:', {
+                  width: dimensions?.width,
+                  height: dimensions?.height,
+                });
+              } catch (dlErr) {
+                console.error('[ProjectWorkspaceDialog] Failed to download free tier watermark:', dlErr);
+                await loadWatermarkDataById(adminBranding.watermark_id);
+              }
+            } else {
+              await loadWatermarkDataById(adminBranding.watermark_id);
+            }
+          }
+          
+          // Load admin intro (will be auto-applied when building clips)
+          if (adminBranding.intro) {
+            creatorDefaultIntro.value = adminBranding.intro as any;
+            console.log('[ProjectWorkspaceDialog] Loaded admin default intro:', adminBranding.intro.name);
+          }
+          
+          // Load admin outro (will be auto-applied when building clips)
+          if (adminBranding.outro) {
+            creatorDefaultOutro.value = adminBranding.outro as any;
+            console.log('[ProjectWorkspaceDialog] Loaded admin default outro:', adminBranding.outro.name);
+          }
+        }
       }
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to load creator profile:', error);
@@ -1740,14 +1935,17 @@
       segments: clip.segments,
     });
 
-    // Track the currently playing clip
-    currentlyPlayingClipId.value = clip.id;
-
-    // Set guard flag so the segmentPlaybackEnded watcher doesn't clear currentlyPlayingClipId
+    // Set guard flag BEFORE stopping playback to prevent watcher from clearing currentlyPlayingClipId
     skipPlaybackEndedClear = true;
 
     // Stop any existing playback first
     stopSegmentedPlayback();
+
+    // Wait for stopSegmentedPlayback to complete and state to settle
+    await nextTick();
+
+    // Track the currently playing clip AFTER stopping previous playback
+    currentlyPlayingClipId.value = clip.id;
 
     // Set hover states to the playing clip so it highlights in both panel and timeline
     hoveredClipId.value = clip.id;
@@ -1763,17 +1961,24 @@
     await nextTick();
     scrollToClipInTimeline(clip.id);
 
-    // Check if this is a standalone clip file (DVR/livestream clip without raw video)
-    // If no video is loaded but clip has a file path, load the clip's video directly
-    const clipFilePath = clip.filename || clip.file_path;
-    const hasNoRawVideo = !videoSrc.value;
-    const isStandaloneClip = hasNoRawVideo && clipFilePath;
+    // Check if this is a manual or auto-detected clip from livestream
+    // These clips ARE the source video (extracted during live stream)
+    // We should NOT load built files for these - instead use segment playback
+    const isManualOrAutoClip = clip.session_prompt === 'Manual clip creation' || 
+                                clip.session_prompt?.includes('auto') ||
+                                !clip.file_path || 
+                                clip.file_path === clip.built_file_path;
+    
+    // Check if this is a standalone clip file (exported/built clip from VOD)
+    // Only load built files for VOD clips, not manual/auto-detected clips
+    const builtFilePath = clip.built_file_path;
+    const isBuiltClip = builtFilePath && builtFilePath.trim() !== '' && !isManualOrAutoClip;
 
-    if (isStandaloneClip) {
-      console.log('[ProjectWorkspaceDialog] Loading standalone clip file:', clipFilePath);
-      const loaded = await loadVideoFromPath(clipFilePath);
+    if (isBuiltClip) {
+      console.log('[ProjectWorkspaceDialog] Loading built clip file:', builtFilePath);
+      const loaded = await loadVideoFromPath(builtFilePath);
       if (loaded) {
-        // For standalone clips, we just play from start - the whole file is the clip
+        // For built clips, we just play from start - the whole file is the clip
         // Wait for the video element to be ready after loading
         await nextTick();
 
@@ -1782,10 +1987,142 @@
 
         if (videoElement.value) {
           videoElement.value.currentTime = 0;
+          // Set isPlaying immediately so UI updates right away
+          isPlaying.value = true;
           videoElement.value.play().catch((err) => {
-            console.warn('[ProjectWorkspaceDialog] Autoplay prevented for standalone clip:', err);
+            console.warn('[ProjectWorkspaceDialog] Autoplay prevented for built clip:', err);
+            isPlaying.value = false;
           });
         }
+        
+        // Clear guard flag and timeout since we're done with this playback
+        if (skipPlaybackEndedClearTimeout) {
+          clearTimeout(skipPlaybackEndedClearTimeout);
+          skipPlaybackEndedClearTimeout = null;
+        }
+        skipPlaybackEndedClear = false;
+        
+        return;
+      }
+    }
+
+    // Check if this is a manual/auto-detected clip that needs to be loaded as main video
+    // For these clips, load the clip file as the main video source and use segment playback
+    const clipFilePath = clip.filename || clip.file_path;
+    const hasClipFile = clipFilePath && clipFilePath.trim() !== '';
+    const isDifferentFile = hasClipFile && videoSrc.value !== clipFilePath;
+    const hasNoRawVideo = !videoSrc.value;
+    const needsVideoLoad = hasClipFile && (hasNoRawVideo || isDifferentFile);
+
+    if (needsVideoLoad && isManualOrAutoClip) {
+      console.log('[ProjectWorkspaceDialog] Loading manual/auto clip as main video source:', clipFilePath);
+      const loaded = await loadVideoFromPath(clipFilePath);
+      if (loaded) {
+        // Wait for video to be ready
+        await nextTick();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        
+        // For manual/auto clips, the clip file starts at 0, but segments are stored with
+        // their original livestream timestamps. We need to adjust them to be 0-based.
+        const clipStartOffset = clip.current_version_start_time ?? clip.start_time ?? 0;
+        const clipDuration = duration.value || clip.total_duration || 
+                            (clip.current_version_end_time - clip.current_version_start_time) || 
+                            (clip.end_time - clip.start_time) || 0;
+        
+        // Get the clip's segments and adjust timestamps to be 0-based
+        let adjustedSegments = [];
+        if (clip.segments && clip.segments.length > 0) {
+          adjustedSegments = clip.segments.map((seg: any, index: number) => ({
+            id: seg.id || `seg-${clip.id}-${index}`,
+            clip_version_id: clip.current_version_id || clip.id,
+            segment_index: index,
+            start_time: Math.max(0, seg.start_time - clipStartOffset),
+            end_time: Math.min(clipDuration, seg.end_time - clipStartOffset),
+            duration: seg.duration,
+            transcript: seg.transcript || '',
+            transcript_raw_json: null,
+            audio_peaks: null,
+            created_at: Date.now(),
+            updated_at: Date.now()
+          }));
+        } else {
+          // No segments, create one spanning the full clip
+          adjustedSegments = [{
+            id: `trim-${clip.id}`,
+            clip_version_id: clip.current_version_id || clip.id,
+            segment_index: 0,
+            start_time: 0,
+            end_time: clipDuration,
+            duration: clipDuration,
+            transcript: clip.combined_transcript || clip.current_version_description || '',
+            transcript_raw_json: null,
+            audio_peaks: null,
+            created_at: Date.now(),
+            updated_at: Date.now()
+          }];
+        }
+        
+        console.log('[ProjectWorkspaceDialog] Playing manual/auto clip with adjusted segments:', adjustedSegments);
+        playClipSegments(adjustedSegments);
+        
+        // Update timelineClips to show the adjusted clip in the timeline
+        // This is critical - the timeline needs the clip with 0-based timestamps
+        timelineClips.value = [{
+          id: clip.id,
+          title: clip.title || clip.name || 'Manual Clip',
+          filename: clipFilePath,
+          type: 'continuous',
+          segments: adjustedSegments.map(seg => ({
+            start_time: seg.start_time,
+            end_time: seg.end_time,
+            duration: seg.duration,
+            transcript: seg.transcript
+          })),
+          total_duration: clipDuration,
+          combined_transcript: clip.combined_transcript || clip.current_version_description || '',
+          virality_score: clip.virality_score || 0,
+          current_version_virality_score: clip.current_version_virality_score || 0,
+          reason: clip.reason || 'Manual clip',
+          socialMediaPost: clip.socialMediaPost || '',
+          run_number: clip.run_number,
+          run_color: clip.run_color,
+          session_prompt: clip.session_prompt
+        }];
+        
+        // Clear guard flag
+        if (skipPlaybackEndedClearTimeout) {
+          clearTimeout(skipPlaybackEndedClearTimeout);
+          skipPlaybackEndedClearTimeout = null;
+        }
+        skipPlaybackEndedClear = false;
+        
+        return;
+      }
+    }
+    
+    // For other standalone clips (not manual/auto), load and play directly
+    if (needsVideoLoad && !isManualOrAutoClip) {
+      console.log('[ProjectWorkspaceDialog] Loading standalone clip file:', clipFilePath);
+      const loaded = await loadVideoFromPath(clipFilePath);
+      if (loaded) {
+        await nextTick();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        if (videoElement.value) {
+          videoElement.value.currentTime = 0;
+          isPlaying.value = true;
+          videoElement.value.play().catch((err) => {
+            console.warn('[ProjectWorkspaceDialog] Autoplay prevented for standalone clip:', err);
+            isPlaying.value = false;
+          });
+        }
+        
+        if (skipPlaybackEndedClearTimeout) {
+          clearTimeout(skipPlaybackEndedClearTimeout);
+          skipPlaybackEndedClearTimeout = null;
+        }
+        skipPlaybackEndedClear = false;
+        
         return;
       }
     }
@@ -1849,6 +2186,36 @@
           created_at: Date.now(),
         },
       ];
+    } else if (clip.current_version_start_time !== undefined && clip.current_version_end_time !== undefined) {
+      // Fallback: create single segment from version timing properties (from getClipsWithBuildStatus)
+      console.log('[ProjectWorkspaceDialog] Using fallback - current_version_start_time/end_time');
+      segments = [
+        {
+          id: `fallback-${clip.id}`,
+          clip_version_id: clip.current_version_id || clip.id,
+          segment_index: 0,
+          start_time: clip.current_version_start_time,
+          end_time: clip.current_version_end_time,
+          duration: clip.current_version_end_time - clip.current_version_start_time,
+          transcript: clip.current_version_description || null,
+          created_at: Date.now(),
+        },
+      ];
+    } else if (clip.start_time !== undefined && clip.end_time !== undefined) {
+      // Fallback: use clip's own start_time/end_time (manual/auto-detected clips)
+      console.log('[ProjectWorkspaceDialog] Using fallback - clip.start_time/end_time');
+      segments = [
+        {
+          id: `fallback-${clip.id}`,
+          clip_version_id: clip.current_version_id || clip.id,
+          segment_index: 0,
+          start_time: clip.start_time,
+          end_time: clip.end_time,
+          duration: clip.end_time - clip.start_time,
+          transcript: clip.current_version_description || clip.name || null,
+          created_at: Date.now(),
+        },
+      ];
     } else if (clip.total_duration > 0) {
       // Last resort: use total_duration from transformed clip
       console.log('[ProjectWorkspaceDialog] Using last resort - clip.total_duration');
@@ -1877,11 +2244,27 @@
 
     if (segments.length > 0) {
       // Ensure we have valid segments before playing
-      const validSegments = segments.filter(s => 
-        s.start_time >= 0 && 
-        s.end_time > s.start_time && 
-        s.end_time <= duration.value
-      );
+      console.log('[ProjectWorkspaceDialog] Validating segments. Video duration:', duration.value);
+      
+      const validSegments = segments.filter(s => {
+        const isValid = s.start_time >= 0 && 
+                       s.end_time > s.start_time && 
+                       s.end_time <= duration.value;
+        
+        if (!isValid) {
+          console.warn('[ProjectWorkspaceDialog] Invalid segment:', {
+            start: s.start_time,
+            end: s.end_time,
+            duration: s.duration,
+            videoDuration: duration.value,
+            startValid: s.start_time >= 0,
+            endValid: s.end_time > s.start_time,
+            withinDuration: s.end_time <= duration.value,
+          });
+        }
+        
+        return isValid;
+      });
 
       if (validSegments.length > 0) {
         console.log('[ProjectWorkspaceDialog] Playing', validSegments.length, 'valid segments');
@@ -2092,6 +2475,22 @@
     showExistingProjectDialog.value = false;
     existingProjectForClip.value = null;
     pendingClipToEdit.value = null;
+  }
+
+  // Handle Publish Now action
+  async function onPublishNow(clip: ClipWithVersion) {
+    clipToPublish.value = clip;
+    clipToPublishPath.value = currentVideo.value?.file_path || '';
+    clipToPublishThumbnail.value = clip.built_thumbnail_path || null;
+    showPublishWizard.value = true;
+  }
+
+  // Handle Publish Wizard close
+  function onPublishWizardClose() {
+    showPublishWizard.value = false;
+    clipToPublish.value = null;
+    clipToPublishPath.value = '';
+    clipToPublishThumbnail.value = null;
   }
 
   // Wait for a clip element to be present in the clips list (MediaPanel -> ClipsTab)
@@ -2407,12 +2806,20 @@
   // Guard flag to prevent the segmented-playback-ended watcher from clearing
   // currentlyPlayingClipId when stopSegmentedPlayback is called inside onPlayClip
   let skipPlaybackEndedClear = false;
+  let skipPlaybackEndedClearTimeout: number | null = null;
 
   // Watch for segmented playback state changes
   watch([isPlayingSegments, segmentPlaybackEnded], ([isPlaying, ended]) => {
     if (!isPlaying && ended) {
       if (skipPlaybackEndedClear) {
-        skipPlaybackEndedClear = false;
+        // Keep the guard flag active for 200ms to handle the setTimeout in stopSegmentedPlayback
+        if (skipPlaybackEndedClearTimeout) {
+          clearTimeout(skipPlaybackEndedClearTimeout);
+        }
+        skipPlaybackEndedClearTimeout = window.setTimeout(() => {
+          skipPlaybackEndedClear = false;
+          skipPlaybackEndedClearTimeout = null;
+        }, 200);
         return;
       }
       // Clear the currently playing clip when playback ends naturally

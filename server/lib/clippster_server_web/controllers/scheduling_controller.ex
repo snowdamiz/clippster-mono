@@ -53,15 +53,23 @@ defmodule ClippsterServerWeb.SchedulingController do
       owner_type = determine_owner_type(params)
 
       # Validate org membership and settings if org post
+      immediate = params["immediate"] == true
+
       with :ok <- validate_scheduling_request(params, user, owner_type),
            attrs <- build_scheduling_attrs(params, owner_type),
-           {:ok, post} <- Social.schedule_post(attrs, user) do
+           # For immediate publish: override scheduled_at to now and use create_immediate_post
+           # (bypasses the 5-min minimum validation in schedule_changeset)
+           attrs <- if(immediate, do: Map.put(attrs, :scheduled_at, DateTime.utc_now()), else: attrs),
+           {:ok, post} <- if(immediate,
+             do: Social.create_immediate_post(attrs, user),
+             else: Social.schedule_post(attrs, user)
+           ) do
         conn
         |> put_status(201)
         |> json(%{
           success: true,
           post: serialize_post(post),
-          message: "Post scheduled successfully"
+          message: if(immediate, do: "Post queued for immediate publishing", else: "Post scheduled successfully")
         })
       else
         {:error, :unauthorized} ->
@@ -92,6 +100,69 @@ defmodule ClippsterServerWeb.SchedulingController do
           |> put_status(400)
           |> json(%{success: false, error: to_string(reason)})
       end
+    end
+  end
+
+  # ============================================================================
+  # Update Scheduled Post Media URL (for background uploads)
+  # ============================================================================
+
+  @doc """
+  Update media_url for scheduled posts after background upload completes.
+  PATCH /social/scheduled/update-media
+
+  Body:
+  {
+    "post_ids": [1, 2, 3],
+    "media_url": "https://...r2.cloudflarestorage.com/...",
+    "thumbnail_url": "https://...r2.cloudflarestorage.com/..."
+  }
+  """
+  def update_media(conn, %{"post_ids" => post_ids, "media_url" => media_url} = params) do
+    user = conn.assigns.current_user
+    thumbnail_url = params["thumbnail_url"]
+
+    results =
+      Enum.map(post_ids, fn post_id ->
+        case Social.get_post_submission(post_id) do
+          nil ->
+            {:error, "Post #{post_id} not found"}
+
+          post ->
+            # Verify user owns this post
+            if post.submitted_by_user_id == user.id do
+              attrs = %{
+                media_url: media_url,
+                thumbnail_url: thumbnail_url,
+                status: "scheduled"
+              }
+
+              case Social.update_scheduled_post_media(post, attrs, user) do
+                {:ok, _updated} -> {:ok, post_id}
+                {:error, changeset} when is_struct(changeset, Ecto.Changeset) ->
+                  {:error, "Failed to update post #{post_id}: #{inspect(changeset.errors)}"}
+                {:error, reason} -> {:error, "Failed to update post #{post_id}: #{inspect(reason)}"}
+              end
+            else
+              {:error, "Unauthorized for post #{post_id}"}
+            end
+        end
+      end)
+
+    successful = Enum.count(results, fn r -> match?({:ok, _}, r) end)
+    failed = Enum.count(results, fn r -> match?({:error, _}, r) end)
+
+    if successful > 0 do
+      json(conn, %{
+        success: true,
+        updated: successful,
+        failed: failed,
+        message: "Updated #{successful} post(s)"
+      })
+    else
+      conn
+      |> put_status(400)
+      |> json(%{success: false, error: "Failed to update any posts"})
     end
   end
 
@@ -193,6 +264,41 @@ defmodule ClippsterServerWeb.SchedulingController do
   end
 
   # ============================================================================
+  # Delete Scheduled Post
+  # ============================================================================
+
+  @doc """
+  Permanently delete a scheduled post.
+  DELETE /social/scheduled/:id
+  """
+  def delete(conn, %{"id" => post_id}) do
+    user = conn.assigns.current_user
+
+    case Social.get_post_submission(post_id) do
+      nil ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Post not found"})
+
+      post ->
+        case Social.delete_scheduled_post(post, user) do
+          {:ok, _deleted} ->
+            json(conn, %{success: true, message: "Post deleted successfully"})
+
+          {:error, :unauthorized} ->
+            conn
+            |> put_status(403)
+            |> json(%{success: false, error: "You don't have permission to delete this post"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: to_string(reason)})
+        end
+    end
+  end
+
+  # ============================================================================
   # Retry Failed Post
   # ============================================================================
 
@@ -256,9 +362,28 @@ defmodule ClippsterServerWeb.SchedulingController do
 
     posts = Social.get_user_scheduled_posts(user.id, status: status)
 
+    # Gracefully handle any corrupted posts by filtering them out
+    serialized_posts =
+      posts
+      |> Enum.map(fn post ->
+        try do
+          {:ok, serialize_post(post)}
+        rescue
+          e ->
+            require Logger
+            Logger.error("Failed to serialize post #{post.id}: #{inspect(e)}")
+            {:error, post.id}
+        end
+      end)
+      |> Enum.filter(fn
+        {:ok, _} -> true
+        {:error, _} -> false
+      end)
+      |> Enum.map(fn {:ok, post} -> post end)
+
     json(conn, %{
       success: true,
-      posts: Enum.map(posts, &serialize_post/1)
+      posts: serialized_posts
     })
   end
 
@@ -305,9 +430,28 @@ defmodule ClippsterServerWeb.SchedulingController do
 
       {:ok, %{posts: posts, total: total}} = Social.get_org_scheduled_posts(org_id, opts)
 
+      # Gracefully handle any corrupted posts by filtering them out
+      serialized_posts =
+        posts
+        |> Enum.map(fn post ->
+          try do
+            {:ok, serialize_post(post)}
+          rescue
+            e ->
+              require Logger
+              Logger.error("Failed to serialize post #{post.id}: #{inspect(e)}")
+              {:error, post.id}
+          end
+        end)
+        |> Enum.filter(fn
+          {:ok, _} -> true
+          {:error, _} -> false
+        end)
+        |> Enum.map(fn {:ok, post} -> post end)
+
       json(conn, %{
         success: true,
-        posts: Enum.map(posts, &serialize_post/1),
+        posts: serialized_posts,
         total: total
       })
     else
@@ -642,7 +786,7 @@ defmodule ClippsterServerWeb.SchedulingController do
           |> Enum.filter(fn post ->
             has_account = post.organization_social_account != nil
             has_provider_id = has_account && is_binary(post.organization_social_account.provider_account_id)
-            has_post_url = is_binary(post.post_url) && post.post_url != ""
+            has_post_identifier = is_binary(post.provider_post_id) || (is_binary(post.post_url) && post.post_url != "")
             is_supported = post.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
             
             if not has_account do
@@ -651,14 +795,14 @@ defmodule ClippsterServerWeb.SchedulingController do
             if has_account and not has_provider_id do
               Logger.warning("[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) account has no provider_account_id")
             end
-            if not has_post_url do
-              Logger.warning("[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) has no post_url - cannot sync analytics")
+            if not has_post_identifier do
+              Logger.warning("[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) has no provider_post_id or post_url - cannot sync analytics")
             end
             if not is_supported do
               Logger.debug("[sync_org_posts_analytics] Post #{post.id} platform #{post.platform} not supported")
             end
             
-            has_account && has_provider_id && has_post_url && is_supported
+            has_account && has_provider_id && has_post_identifier && is_supported
           end)
         
         Logger.info("[sync_org_posts_analytics] #{length(filtered_posts)} posts after filtering (need account + provider_id + supported platform)")
@@ -676,36 +820,57 @@ defmodule ClippsterServerWeb.SchedulingController do
             {:ok, feed_items} ->
               Logger.info("[sync_org_posts_analytics] Fetched #{length(feed_items)} feed items from PostForMe")
               for post <- account_posts do
-                case extract_post_identifier(post.platform, post.post_url) do
-                  {:ok, post_identifier} ->
-                    Logger.debug("[sync_org_posts_analytics] Post #{post.id}: extracted identifier #{post_identifier} from #{post.post_url}")
-                    
-                    case match_feed_item(post.platform, feed_items, post_identifier) do
-                      nil -> 
-                        Logger.warning("[sync_org_posts_analytics] Post #{post.id}: identifier #{post_identifier} NOT FOUND in feed")
-                        :ok
-                      item ->
-                        Logger.info("[sync_org_posts_analytics] Post #{post.id}: MATCHED feed item")
-                        analytics = extract_feed_analytics(post.platform, item, account)
-                        Logger.info("[sync_org_posts_analytics] Post #{post.id}: extracted analytics: #{inspect(analytics)}")
-                        
-                        # Only sync if at least one metric is non-zero to avoid overwriting real data with zeros
-                        metric_keys = [:view_count, :like_count, :comment_count, :save_count, :reach_count, :impressions_count, :share_count]
-                        has_real_data = Enum.any?(metric_keys, fn k -> (Map.get(analytics, k) || 0) > 0 end)
-                        
-                        if has_real_data do
-                          case Social.sync_post_analytics(post, analytics) do
-                            {:ok, _} -> Logger.info("[sync_org_posts_analytics] Post #{post.id}: analytics synced successfully")
-                            {:error, reason} -> Logger.error("[sync_org_posts_analytics] Post #{post.id}: sync failed: #{inspect(reason)}")
-                          end
-                        else
-                          Logger.debug("[sync_org_posts_analytics] Post #{post.id}: skipping sync - all metrics are zero")
-                        end
+                # Try to match by provider_post_id first (PostForMe social_post_id), then fall back to extracting from URL
+                feed_item = cond do
+                  is_binary(post.provider_post_id) ->
+                    Logger.debug("[sync_org_posts_analytics] Post #{post.id}: matching by provider_post_id #{post.provider_post_id}")
+                    Enum.find(feed_items, fn item -> item["social_post_id"] == post.provider_post_id end)
+                  
+                  is_binary(post.post_url) && post.post_url != "" ->
+                    case extract_post_identifier(post.platform, post.post_url) do
+                      {:ok, post_identifier} ->
+                        Logger.debug("[sync_org_posts_analytics] Post #{post.id}: extracted identifier #{post_identifier} from #{post.post_url}")
+                        match_feed_item(post.platform, feed_items, post_identifier)
+                      {:error, reason} ->
+                        Logger.warning("[sync_org_posts_analytics] Post #{post.id}: failed to extract identifier from #{post.post_url}: #{inspect(reason)}")
+                        nil
                     end
-
-                  {:error, reason} -> 
-                    Logger.warning("[sync_org_posts_analytics] Post #{post.id}: failed to extract identifier from #{post.post_url}: #{inspect(reason)}")
+                  
+                  true ->
+                    nil
+                end
+                
+                case feed_item do
+                  nil -> 
+                    Logger.warning("[sync_org_posts_analytics] Post #{post.id}: NOT FOUND in feed")
                     :ok
+                  item ->
+                    Logger.info("[sync_org_posts_analytics] Post #{post.id}: MATCHED feed item")
+                    analytics = extract_feed_analytics(post.platform, item, account)
+                    Logger.info("[sync_org_posts_analytics] Post #{post.id}: extracted analytics: #{inspect(analytics)}")
+                    
+                    # Update post_url if it's missing
+                    if is_nil(post.post_url) || post.post_url == "" do
+                      if platform_url = item["platform_url"] do
+                        case Social.update_post_url(post, platform_url) do
+                          {:ok, _} -> Logger.info("[sync_org_posts_analytics] Post #{post.id}: updated post_url to #{platform_url}")
+                          {:error, reason} -> Logger.error("[sync_org_posts_analytics] Post #{post.id}: failed to update post_url: #{inspect(reason)}")
+                        end
+                      end
+                    end
+                    
+                    # Only sync if at least one metric is non-zero to avoid overwriting real data with zeros
+                    metric_keys = [:view_count, :like_count, :comment_count, :save_count, :reach_count, :impressions_count, :share_count]
+                    has_real_data = Enum.any?(metric_keys, fn k -> (Map.get(analytics, k) || 0) > 0 end)
+                    
+                    if has_real_data do
+                      case Social.sync_post_analytics(post, analytics) do
+                        {:ok, _} -> Logger.info("[sync_org_posts_analytics] Post #{post.id}: analytics synced successfully")
+                        {:error, reason} -> Logger.error("[sync_org_posts_analytics] Post #{post.id}: sync failed: #{inspect(reason)}")
+                      end
+                    else
+                      Logger.debug("[sync_org_posts_analytics] Post #{post.id}: skipping sync - all metrics are zero")
+                    end
                 end
               end
 
@@ -1226,6 +1391,7 @@ defmodule ClippsterServerWeb.SchedulingController do
     %{
       platform: params["platform"],
       media_url: params["media_url"],
+      thumbnail_url: params["thumbnail_url"],
       caption: params["caption"],
       media_type: params["media_type"],
       scheduled_at: parse_datetime(params["scheduled_at"]),
@@ -1242,6 +1408,7 @@ defmodule ClippsterServerWeb.SchedulingController do
     %{
       platform: params["platform"],
       media_url: params["media_url"],
+      thumbnail_url: params["thumbnail_url"],
       caption: params["caption"],
       media_type: params["media_type"],
       scheduled_at: parse_datetime(params["scheduled_at"]),

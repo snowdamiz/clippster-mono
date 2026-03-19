@@ -50,11 +50,13 @@ interface PlatformState {
   total: number;
   lastSearchTime: number | null;
   recentSearches: RecentSearch[];
+  audioRecentSearches: RecentSearch[];
   activePlatform: PlatformId;
 }
 
 const MAX_RECENT_SEARCHES = 20; // Increased since we're combining all platforms
 const RECENT_SEARCHES_KEY = 'vods_recent_searches';
+const AUDIO_RECENT_SEARCHES_KEY = 'audio_recent_searches';
 
 // Load recent searches from localStorage
 function loadRecentSearches(): RecentSearch[] {
@@ -65,6 +67,19 @@ function loadRecentSearches(): RecentSearch[] {
     }
   } catch (error) {
     console.warn('Failed to load recent searches', error);
+  }
+  return [];
+}
+
+// Load audio recent searches from localStorage
+function loadAudioRecentSearches(): RecentSearch[] {
+  try {
+    const stored = localStorage.getItem(AUDIO_RECENT_SEARCHES_KEY);
+    if (stored && stored.trim() !== '') {
+      return JSON.parse(stored);
+    }
+  } catch (error) {
+    console.warn('Failed to load audio recent searches', error);
   }
   return [];
 }
@@ -132,6 +147,15 @@ function saveRecentSearches(searches: RecentSearch[]) {
   }
 }
 
+// Save audio recent searches to localStorage
+function saveAudioRecentSearches(searches: RecentSearch[]) {
+  try {
+    localStorage.setItem(AUDIO_RECENT_SEARCHES_KEY, JSON.stringify(searches));
+  } catch (error) {
+    console.error('Failed to save audio recent searches', error);
+  }
+}
+
 export const usePlatformStore = defineStore('platform', {
   state: (): PlatformState => {
     // Load existing searches or migrate old ones
@@ -145,6 +169,9 @@ export const usePlatformStore = defineStore('platform', {
       saveRecentSearches(recentSearches);
     }
 
+    // Load audio recent searches
+    const audioRecentSearches = loadAudioRecentSearches();
+
     return {
       clips: [],
       currentSearchId: '',
@@ -154,6 +181,7 @@ export const usePlatformStore = defineStore('platform', {
       total: 0,
       lastSearchTime: null,
       recentSearches,
+      audioRecentSearches,
       activePlatform: 'pumpfun',
     };
   },
@@ -166,6 +194,10 @@ export const usePlatformStore = defineStore('platform', {
     // Get all recent searches sorted by timestamp (most recent first)
     getRecentSearches: (state) => {
       return [...state.recentSearches].sort((a, b) => b.timestamp - a.timestamp);
+    },
+    // Get audio recent searches sorted by timestamp (most recent first)
+    getAudioRecentSearches: (state) => {
+      return [...state.audioRecentSearches].sort((a, b) => b.timestamp - a.timestamp);
     },
     // Get recent searches for a specific platform
     getRecentSearchesByPlatform: (state) => (platform: PlatformId) => {
@@ -230,6 +262,52 @@ export const usePlatformStore = defineStore('platform', {
       }
 
       saveRecentSearches(this.recentSearches);
+    },
+
+    // Add a search to audio recent searches
+    addToAudioRecentSearches(
+      id: string,
+      displayText: string,
+      platform: PlatformId,
+      label?: string,
+      metadata?: { symbol?: string; name?: string; imageUrl?: string }
+    ) {
+      const existingIndex = this.audioRecentSearches.findIndex(
+        (search) => search.id === id && search.platform === platform
+      );
+
+      if (existingIndex !== -1) {
+        // Update existing entry
+        this.audioRecentSearches[existingIndex].timestamp = Date.now();
+        this.audioRecentSearches[existingIndex].displayText = displayText;
+        if (label !== undefined) {
+          this.audioRecentSearches[existingIndex].label = label;
+        }
+        if (metadata) {
+          if (metadata.symbol) this.audioRecentSearches[existingIndex].symbol = metadata.symbol;
+          if (metadata.name) this.audioRecentSearches[existingIndex].name = metadata.name;
+          if (metadata.imageUrl) this.audioRecentSearches[existingIndex].imageUrl = metadata.imageUrl;
+        }
+      } else {
+        // Add new entry
+        this.audioRecentSearches.push({
+          id,
+          platform,
+          displayText,
+          label,
+          timestamp: Date.now(),
+          ...metadata,
+        });
+
+        // Limit total searches
+        if (this.audioRecentSearches.length > MAX_RECENT_SEARCHES) {
+          // Remove oldest
+          this.audioRecentSearches.sort((a, b) => b.timestamp - a.timestamp);
+          this.audioRecentSearches = this.audioRecentSearches.slice(0, MAX_RECENT_SEARCHES);
+        }
+      }
+
+      saveAudioRecentSearches(this.audioRecentSearches);
     },
 
     // Background metadata fetch for Kick (avatar/username)
@@ -357,6 +435,12 @@ export const usePlatformStore = defineStore('platform', {
       saveRecentSearches([]);
     },
 
+    // Clear all audio recent searches
+    clearAudioRecentSearches() {
+      this.audioRecentSearches = [];
+      saveAudioRecentSearches([]);
+    },
+
     // Remove a specific recent search
     removeFromRecentSearches(id: string, platform: PlatformId) {
       const index = this.recentSearches.findIndex((s) => s.id === id && s.platform === platform);
@@ -470,28 +554,54 @@ export const usePlatformStore = defineStore('platform', {
             break;
 
           case 'YouTube': {
-            extractedId = extractYouTubeChannel(trimmedInput) || trimmedInput.trim();
-            if (!extractedId) {
-              this.error = 'Invalid YouTube channel URL or @handle';
-              this.loading = false;
-              return { success: false, error: this.error };
+            // Import extractYouTubeVideoId dynamically
+            const { extractYouTubeVideoId } = await import('@/services/youtube');
+            
+            // Check if it's a direct video URL
+            const videoId = extractYouTubeVideoId(trimmedInput);
+            if (videoId) {
+              // Direct video URL - pass through as-is, backend will handle it
+              extractedId = trimmedInput.trim();
+              this.currentSearchId = videoId;
+            } else {
+              // Channel URL or handle
+              extractedId = extractYouTubeChannel(trimmedInput) || trimmedInput.trim();
+              if (!extractedId) {
+                this.error = 'Invalid YouTube URL. Enter a channel URL (@handle or /channel/ID) or a direct video link.';
+                this.loading = false;
+                return { success: false, error: this.error };
+              }
+              this.currentSearchId = extractedId;
             }
-            this.currentSearchId = extractedId;
+            
             const tabToUse = tab || 'streams';
-            console.log('[Platform Store] YouTube search - tab:', tabToUse);
+            console.log('[Platform Store] YouTube search - input:', extractedId, 'tab:', tabToUse, 'isVideo:', !!videoId);
             result = await this.getYouTubeClips(extractedId, limit, tabToUse);
             break;
           }
 
           case 'rumble': {
+            // Import extractRumbleVideoId dynamically
+            const { extractRumbleVideoId } = await import('@/services/rumble');
+            
+            // Check if it's a direct video URL
+            const videoId = extractRumbleVideoId(trimmedInput);
+            if (videoId) {
+              // Direct video URL - pass through as-is, backend will handle it
+              extractedId = trimmedInput.trim();
+              this.currentSearchId = videoId;
+              console.log('[Platform Store] Rumble search - video URL detected:', videoId);
+              result = await this.getRumbleClips(extractedId, limit, tab || 'streams');
+              break;
+            }
+            
             // If it's a full URL, use it directly to preserve /livestreams or /videos paths
             // Otherwise, extract the channel name
             let channelInput: string;
             if (trimmedInput.includes('rumble.com/')) {
               const extracted = extractRumbleChannel(trimmedInput);
               if (!extracted) {
-                // extractRumbleChannel returns null for video URLs (e.g. rumble.com/v12abc-title.html)
-                this.error = "That's a Rumble video link, not a channel page. Enter the channel URL instead — e.g. rumble.com/c/ChannelName or rumble.com/user/Username.";
+                this.error = 'Invalid Rumble URL. Enter a channel URL (rumble.com/c/ChannelName) or a direct video link.';
                 this.loading = false;
                 return { success: false, error: this.error };
               }
@@ -514,14 +624,21 @@ export const usePlatformStore = defineStore('platform', {
           }
 
           case 'twitter': {
-            // Twitter requires exact broadcast/space URL
+            // Twitter supports broadcast/space URLs and regular tweet video URLs
             const broadcastId = extractTwitterBroadcastId(trimmedInput);
-            if (!broadcastId) {
-              this.error = 'Invalid X/Twitter URL. Must be a broadcast (/i/broadcasts/) or space (/i/spaces/) URL.';
+            
+            // Check if it's a valid Twitter/X URL (broadcast, space, or regular tweet)
+            const isValidTwitterUrl = trimmedInput.includes('twitter.com') || trimmedInput.includes('x.com');
+            
+            if (!isValidTwitterUrl) {
+              this.error = 'Invalid X/Twitter URL. Enter a broadcast, space, or tweet video URL.';
               this.loading = false;
               return { success: false, error: this.error };
             }
-            this.currentSearchId = broadcastId;
+            
+            // Use broadcast ID if available, otherwise use the full URL
+            this.currentSearchId = broadcastId || trimmedInput;
+            console.log('[Platform Store] Twitter search - URL:', trimmedInput, 'broadcastId:', broadcastId);
             result = await this.getTwitterClip(trimmedInput);
             break;
           }

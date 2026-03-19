@@ -197,6 +197,22 @@ export async function schedulePost(data: SchedulePostData): Promise<ScheduleResp
 }
 
 /**
+ * Update media URLs for scheduled posts after background upload
+ */
+export async function updateScheduledPostMedia(
+  postIds: number[],
+  mediaUrl: string,
+  thumbnailUrl?: string
+): Promise<{ success: boolean; updated: number; failed: number; error?: string }> {
+  const response = await api.patch('/social/scheduled/update-media', {
+    post_ids: Array.isArray(postIds) ? postIds : [postIds],
+    media_url: mediaUrl,
+    thumbnail_url: thumbnailUrl,
+  });
+  return response.data;
+}
+
+/**
  * List user's scheduled posts
  */
 export async function listScheduledPosts(status?: string): Promise<ScheduledPostsListResponse> {
@@ -229,6 +245,14 @@ export async function updateScheduledPost(
  */
 export async function cancelScheduledPost(postId: number): Promise<ScheduleResponse> {
   const response = await api.post(`/social/scheduled/${postId}/cancel`);
+  return response.data;
+}
+
+/**
+ * Permanently delete a scheduled post
+ */
+export async function deleteScheduledPost(postId: number): Promise<ScheduleResponse> {
+  const response = await api.delete(`/social/scheduled/${postId}`);
   return response.data;
 }
 

@@ -193,7 +193,7 @@
               </button>
               <button
                 @click="confirm"
-                :disabled="!selectedPromptId || isProcessing"
+                :disabled="!selectedPromptId || isProcessing || (!isAdmin && !hasEnoughCredits(calculatedCredits))"
                 class="detect-clips-dialog__btn detect-clips-dialog__btn--primary"
               >
                 <Loader2 v-if="isProcessing" :size="16" class="detect-clips-dialog__spinner" />
@@ -287,15 +287,25 @@
   const isAdmin = computed(() => selectedSourceHoursRemaining.value === Infinity);
 
   // Calculate credits based on duration, transcription status, and multimodal mode
+  // Must match server's per-step ceil math:
+  //   - Not transcribed: ceil(minutes * 0.3) [transcribe] + ceil(minutes * 0.7) [detect]
+  //   - Already transcribed: ceil(minutes * 0.7) [detect only]
+  // Multimodal applies 2x to the detection step only (transcription unchanged)
   const calculatedCredits = computed(() => {
     // For multi-segment mode, use total duration; for single video, use selected range
     const durationToCharge = props.segmentCount ? effectiveDuration.value : selectedDuration.value;
     const minutesToCharge = durationToCharge / 60; // Convert seconds to minutes
-    // If already transcribed, charge 0.75 credits per minute, otherwise 1.0
-    const baseRate = props.isTranscribed ? 0.75 : 1.0;
-    // Apply 2x multiplier for multimodal mode
-    const rate = multimodalEnabled.value ? baseRate * 2.0 : baseRate;
-    return minutesToCharge * rate;
+    const multiMod = multimodalEnabled.value ? 2.0 : 1.0;
+
+    if (props.isTranscribed) {
+      // Detection only: ceil(minutes * 0.7 * multiMod)
+      return Math.ceil(minutesToCharge * 0.7 * multiMod);
+    } else {
+      // Transcription + detection, each ceiled separately (matches server)
+      const transcriptionCredits = Math.ceil(minutesToCharge * 0.3);
+      const detectionCredits = Math.ceil(minutesToCharge * 0.7 * multiMod);
+      return transcriptionCredits + detectionCredits;
+    }
   });
 
   // Computed credit information based on selected source
@@ -323,7 +333,10 @@
     }
 
     if (remaining < creditsToCharge) {
-      return `Insufficient credits in ${sourceName}. You have ${roundedRemaining} credits, but this operation requires ${roundedCredits} credits${multimodalNote}.`;
+      const adjustRangeHint = !props.segmentCount && props.videoDuration > 0 
+        ? ' Adjust the time range above to reduce the cost.' 
+        : '';
+      return `Insufficient credits in ${sourceName}. You have ${roundedRemaining} credits, but this operation requires ${roundedCredits} credits${multimodalNote}.${adjustRangeHint}`;
     }
 
     return `This operation will charge ${roundedCredits} credits${multimodalNote} from ${sourceName}. You have ${roundedRemaining} credits remaining.`;
@@ -383,7 +396,7 @@
       const creditsToCharge = calculatedCredits.value;
 
       if (!hasEnoughCredits(creditsToCharge)) {
-        error.value = 'Insufficient credits for this operation';
+        error.value = `Insufficient credits. This operation requires ${creditsToCharge} credits but you don't have enough.`;
         return;
       }
     }

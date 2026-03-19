@@ -101,6 +101,7 @@ function prefixOverlayAssetIds(overlays: unknown[]): unknown[] {
  * Convert a server org creator profile to the local CreatorProfileWithLinks format.
  */
 function serverProfileToLocal(sp: ServerOrganizationCreatorProfile): CreatorProfileWithLinks {
+  console.log('[serverProfileToLocal] Converting profile:', sp.name, 'server watermark_id:', sp.watermark_id);
   return {
     id: String(sp.id),
     name: sp.name,
@@ -110,9 +111,9 @@ function serverProfileToLocal(sp: ServerOrganizationCreatorProfile): CreatorProf
     outro_id: sp.outro_id != null ? `org-asset-${sp.outro_id}` : null,
     watermark_id: sp.watermark_id != null ? `org-asset-${sp.watermark_id}` : null,
     watermark_settings: sp.watermark_settings ? JSON.stringify(prefixWatermarkSettingsIds(sp.watermark_settings)) : null,
-    intro_outro_settings: null,
-    intro_ratio_settings: null,
-    outro_ratio_settings: null,
+    intro_outro_settings: sp.intro_outro_settings ? JSON.stringify(sp.intro_outro_settings) : null,
+    intro_ratio_settings: sp.intro_ratio_settings || null,
+    outro_ratio_settings: sp.outro_ratio_settings || null,
     auto_dvr_enabled: 0,
     layout_overlays: sp.layout_overlays ? JSON.stringify(prefixOverlayAssetIds(sp.layout_overlays)) : null,
     scope: sp.scope || 'streamer',
@@ -130,13 +131,16 @@ function serverProfileToLocal(sp: ServerOrganizationCreatorProfile): CreatorProf
       is_primary: Boolean(link.is_primary),
       created_at: new Date(link.inserted_at).getTime(),
     })),
+    organization_id: sp.organization_id,
+    organization_name: sp.organization_name,
+    context_type: 'organization',
   };
 }
 
 /**
  * Convert a campaign creator profile to the local CreatorProfileWithLinks format.
  */
-function campaignProfileToLocal(cp: CampaignCreatorProfile): CreatorProfileWithLinks {
+function campaignProfileToLocal(cp: CampaignCreatorProfile, campaign: any): CreatorProfileWithLinks {
   return {
     id: `campaign-${cp.id}`,
     name: cp.name,
@@ -166,6 +170,11 @@ function campaignProfileToLocal(cp: CampaignCreatorProfile): CreatorProfileWithL
       is_primary: Boolean(link.is_primary),
       created_at: Date.now(),
     })),
+    organization_id: campaign.organization_id,
+    organization_name: campaign.organization?.name || null,
+    campaign_id: campaign.id,
+    campaign_title: campaign.title,
+    context_type: 'campaign',
   };
 }
 
@@ -241,10 +250,11 @@ export async function resolveApplicableProfiles(
           // Check if this campaign profile matches the project's streamer
           if (linksMatchStreamer(cp.platform_links || [], projectPlatform, projectPlatformId)) {
             hasCampaignMatch = true;
+            const orgName = campaign.organization?.name || 'Unknown Org';
             profiles.push({
               source: 'campaign',
-              profile: campaignProfileToLocal(cp),
-              label: `Campaign: ${campaign.title}`,
+              profile: campaignProfileToLocal(cp, campaign),
+              label: `Campaign (${orgName}): ${campaign.title}`,
             });
             console.log('[BrandingProfile] Found campaign streamer match:', cp.name, 'for campaign:', campaign.title);
           }
@@ -266,7 +276,7 @@ export async function resolveApplicableProfiles(
           profiles.push({
             source: 'org-streamer',
             profile: serverProfileToLocal(sp),
-            label: sourceLabel('org-streamer'),
+            label: `${sp.organization_name}: ${sp.name}`,
           });
           console.log('[BrandingProfile] Found org streamer match:', sp.name);
         } else if (scope === 'global') {
@@ -274,7 +284,7 @@ export async function resolveApplicableProfiles(
           profiles.push({
             source: 'org-global',
             profile: serverProfileToLocal(sp),
-            label: sourceLabel('org-global'),
+            label: `${sp.organization_name}: ${sp.name}`,
           });
         }
       }
@@ -283,21 +293,20 @@ export async function resolveApplicableProfiles(
     console.warn('[BrandingProfile] Failed to fetch org-assigned profiles:', e);
   }
 
-  // 3. Local streamer-specific profile (only if no org streamer match)
-  if (!hasOrgStreamerMatch) {
-    try {
-      const streamerProfile = await getCreatorProfileByProjectId(projectId);
-      if (streamerProfile) {
-        hasLocalStreamerMatch = true;
-        profiles.push({
-          source: 'streamer',
-          profile: streamerProfile,
-          label: sourceLabel('streamer'),
-        });
-      }
-    } catch (e) {
-      console.warn('[BrandingProfile] Failed to resolve local streamer profile:', e);
+  // 3. Local streamer-specific profile
+  // Always check for personal streamer profile - user may want to choose between personal and org profiles
+  try {
+    const streamerProfile = await getCreatorProfileByProjectId(projectId);
+    if (streamerProfile) {
+      hasLocalStreamerMatch = true;
+      profiles.push({
+        source: 'streamer',
+        profile: streamerProfile,
+        label: sourceLabel('streamer'),
+      });
     }
+  } catch (e) {
+    console.warn('[BrandingProfile] Failed to resolve local streamer profile:', e);
   }
 
   // 4. User's personal global profiles (only if no org streamer match and no campaign match)
@@ -319,18 +328,16 @@ export async function resolveApplicableProfiles(
   const hasAnyStreamerMatch = hasOrgStreamerMatch || hasLocalStreamerMatch || hasCampaignMatch;
 
   // Apply priority filtering:
-  // - If any streamer match exists, remove org-global profiles
+  // IMPORTANT: 
+  // - org-global profiles come from getMyAssignedCreatorProfiles() which only returns
+  //   profiles explicitly assigned to the user by an org admin. These should ALWAYS be available.
+  // - org-streamer and campaign profiles should coexist with personal streamer profiles.
+  //   Users should be able to choose between using org branding vs their personal profile.
+  // - Only filter out personal-global profiles when there's a streamer-specific match.
   if (hasAnyStreamerMatch) {
-    const filtered = profiles.filter((p) => p.source !== 'org-global');
-
-    // Campaign + personal-only streamer (no org) → campaign auto-wins, remove personal streamer
-    if (hasCampaignMatch && hasLocalStreamerMatch && !hasOrgStreamerMatch) {
-      return filtered.filter((p) => p.source !== 'streamer');
-    }
-
-    // Campaign + org streamer → keep both, user selects
-    // Org streamer only → already excluded personal-global above
-    return filtered;
+    // Filter out personal-global profiles (user's own global profiles)
+    // but keep all streamer-specific profiles (personal, org, campaign) for user selection
+    return profiles.filter((p) => p.source !== 'personal-global');
   }
 
   return profiles;

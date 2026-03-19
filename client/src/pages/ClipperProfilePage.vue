@@ -487,9 +487,12 @@
                     <component :is="getPlatformIcon(submission.platform)" />
                   </div>
                   <div class="submission-row__content">
-                    <a :href="submission.clip_url" target="_blank" class="submission-row__link">
+                    <a v-if="submission.clip_url" :href="submission.clip_url" target="_blank" class="submission-row__link">
                       {{ truncateUrl(submission.clip_url) }}
                     </a>
+                    <span v-else class="submission-row__link submission-row__link--disabled">
+                      {{ truncateUrl(submission.clip_url) }}
+                    </span>
                     <span class="submission-row__meta">
                       {{ submission.campaign?.title || 'Unknown' }} · {{ submission.view_count.toLocaleString() }} views
                     </span>
@@ -585,7 +588,7 @@
                         {{ post.status }}
                       </span>
                       <a v-if="post.post_url" :href="post.post_url" target="_blank" class="post-card__link">
-                        View on Instagram
+                        View on {{ getPlatformDisplayName(post.platform) }}
                       </a>
                     </div>
                     <p v-if="post.caption" class="post-card__caption">
@@ -605,57 +608,6 @@
                       <span class="post-card__date">{{ formatDate(post.published_at || post.inserted_at) }}</span>
                     </div>
                   </div>
-                </div>
-              </div>
-            </section>
-
-            <!-- Submitted Post Links -->
-            <section class="section">
-              <div class="section__header">
-                <div class="section__header-icon">
-                  <Link2 />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section-title">Submitted Post Links</h2>
-                  <p class="section-subtitle">External posts you've manually tracked</p>
-                </div>
-                <button class="action-btn" @click="showAddPostDialog = true">
-                  <Plus />
-                  Add Post
-                </button>
-              </div>
-
-              <div v-if="loadingExternalPosts" class="loading-rows">
-                <div v-for="i in 3" :key="i" class="skeleton-row"></div>
-              </div>
-              <div v-else-if="externalPosts.length === 0" class="empty-state empty-state--compact">
-                <Link2 class="empty-state__icon" />
-                <p class="empty-state__title">No submitted posts yet</p>
-                <p class="empty-state__text">Add a post link to track it here</p>
-                <button class="empty-state__btn empty-state__btn--primary" @click="showAddPostDialog = true">
-                  <Plus />
-                  Add Post
-                </button>
-              </div>
-              <div v-else class="submission-list">
-                <div v-for="post in externalPosts" :key="post.id" class="submission-row">
-                  <div class="submission-row__platform" :class="getSubmissionPlatformClass(post.platform)">
-                    <component :is="getPlatformIcon(post.platform)" />
-                  </div>
-                  <div class="submission-row__content">
-                    <a :href="post.post_url" target="_blank" class="submission-row__link">
-                      {{ truncateUrl(post.post_url) }}
-                    </a>
-                    <span class="submission-row__meta">
-                      <template v-if="post.creator_profile">{{ post.creator_profile.name }} · </template>
-                      <template v-else>Personal · </template>
-                      {{ formatViews(post.analytics?.view_count || 0) }} views
-                    </span>
-                  </div>
-                  <span class="status-badge" :class="`status-badge--${post.status}`">
-                    {{ post.status }}
-                  </span>
-                  <span class="submission-row__date">{{ formatDate(post.inserted_at) }}</span>
                 </div>
               </div>
             </section>
@@ -1349,6 +1301,7 @@
     getUserAnalyticsSummary,
     listUserPosts,
     syncUserAnalytics,
+    generatePostThumbnail,
     type UserInstagramAccount,
     type UserPost,
     type UserAnalyticsSummary,
@@ -1390,6 +1343,11 @@
   } from '@/services/campaignApi';
   import { useToast } from '@/composables/useToast';
   import { formatLastActive } from '@/utils/timeUtils';
+  import { 
+    initThumbnailCache, 
+    getCachedThumbnail, 
+    setCachedThumbnail 
+  } from '@/db/thumbnail-cache';
   import {
     getMyDashboard,
     getMyReferrals,
@@ -1608,6 +1566,18 @@
     return views.toString();
   };
 
+  const getPlatformDisplayName = (platform: string): string => {
+    const platformNames: Record<string, string> = {
+      'instagram': 'Instagram',
+      'x': 'X',
+      'twitter': 'X',
+      'youtube': 'YouTube',
+      'tiktok': 'TikTok',
+      'facebook': 'Facebook'
+    };
+    return platformNames[platform?.toLowerCase()] || platform || 'Platform';
+  };
+
   const switchLeaderboardPeriod = (period: 'weekly' | 'monthly') => {
     if (leaderboardPeriod.value !== period) {
       leaderboardPeriod.value = period;
@@ -1714,7 +1684,10 @@
   const loadPostsAnalytics = async () => {
     loadingPosts.value = true;
     try {
-      // Sync analytics from PostForMe first
+      // Initialize thumbnail cache
+      await initThumbnailCache();
+      
+      // Sync analytics from PostForMe
       await syncUserAnalytics();
 
       // Load analytics summary
@@ -1726,7 +1699,56 @@
       // Load posts list
       const postsRes = await listUserPosts();
       if (postsRes.success) {
-        userPosts.value = postsRes.posts;
+        // Apply cached thumbnails first
+        const postsWithCache = await Promise.all(
+          postsRes.posts.map(async (post) => {
+            if (!post.thumbnail_url && post.media_url) {
+              const cached = await getCachedThumbnail(post.id);
+              if (cached) {
+                return { ...post, thumbnail_url: cached };
+              }
+            }
+            return post;
+          })
+        );
+        
+        userPosts.value = postsWithCache;
+        
+        // Generate thumbnails for posts missing them (parallel, max 3 concurrent)
+        const postsNeedingThumbnails = postsWithCache.filter(
+          post => !post.thumbnail_url && post.media_url
+        );
+        
+        if (postsNeedingThumbnails.length > 0) {
+          console.log(`Generating thumbnails for ${postsNeedingThumbnails.length} posts...`);
+          
+          // Generate in batches of 3 to avoid overwhelming the server
+          const batchSize = 3;
+          for (let i = 0; i < postsNeedingThumbnails.length; i += batchSize) {
+            const batch = postsNeedingThumbnails.slice(i, i + batchSize);
+            await Promise.allSettled(
+              batch.map(async (post) => {
+                try {
+                  const result = await generatePostThumbnail(post.id);
+                  if (result.success && result.thumbnail_url) {
+                    // Cache the thumbnail
+                    await setCachedThumbnail(post.id, result.thumbnail_url);
+                    // Update local state
+                    const idx = userPosts.value.findIndex(p => p.id === post.id);
+                    if (idx >= 0) {
+                      userPosts.value[idx].thumbnail_url = result.thumbnail_url;
+                    }
+                  }
+                } catch (error: any) {
+                  // Silently handle errors (already has thumbnail or FFmpeg failed)
+                  if (error?.response?.status !== 400) {
+                    console.warn(`Failed to generate thumbnail for post ${post.id}:`, error?.response?.data?.error || error.message);
+                  }
+                }
+              })
+            );
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to load posts analytics:', error);
@@ -1877,7 +1899,10 @@
     (typeof amount === 'string' ? parseFloat(amount) : amount).toFixed(2);
   const formatCpm = (cpm: string | number) => (typeof cpm === 'string' ? parseFloat(cpm) : cpm).toFixed(2);
   const formatDate = (dateStr: string) => fmtDate(dateStr);
-  const truncateUrl = (url: string) => (url.length > 40 ? url.substring(0, 40) + '...' : url);
+  const truncateUrl = (url: string | null | undefined) => {
+    if (!url) return 'N/A';
+    return url.length > 40 ? url.substring(0, 40) + '...' : url;
+  };
 
   const loadSocialAccounts = async () => {
     loadingSocialAccounts.value = true;
@@ -2214,7 +2239,7 @@
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
-    padding: 1.5rem;
+    padding: 1rem 1.5rem 0 1.5rem;
     max-width: 1400px;
     margin: 0 auto;
     width: 100%;
@@ -2666,6 +2691,7 @@
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
+    padding-bottom: 4rem;
   }
 
   /* ===== Notice ===== */

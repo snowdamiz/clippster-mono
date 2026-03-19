@@ -63,6 +63,10 @@
                   <Sparkles :size="12" />
                   AI Editor Enabled
                 </span>
+                <span v-if="user.campaigns_enabled" class="status-badge status-badge--campaigns">
+                  <Target :size="12" />
+                  Campaigns Enabled
+                </span>
               </div>
               <p class="user-bio">{{ user.email || user.wallet_address }}</p>
             </div>
@@ -147,6 +151,21 @@
                   <button @click="disableAiEditor" v-if="user.ai_editor_enabled" class="action-btn action-btn--outline">
                     <Sparkles :size="18" />
                     <span>Disable AI Editor</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Campaigns Access Group -->
+              <div class="action-group">
+                <div class="action-group__label">Campaigns Access</div>
+                <div class="action-group__buttons">
+                  <button @click="enableCampaigns" v-if="!user.campaigns_enabled" class="action-btn action-btn--outline">
+                    <Target :size="18" />
+                    <span>Enable Campaigns</span>
+                  </button>
+                  <button @click="disableCampaigns" v-if="user.campaigns_enabled" class="action-btn action-btn--outline">
+                    <Target :size="18" />
+                    <span>Disable Campaigns</span>
                   </button>
                 </div>
               </div>
@@ -542,6 +561,7 @@ import {
   X,
   Key,
   Sparkles,
+  Target,
   CreditCard,
   Coins,
   Info,
@@ -724,6 +744,30 @@ const disableAiEditor = async () => {
     }
   } catch (err: any) {
     toastError(err.response?.data?.error || 'Failed to disable AI editor');
+  }
+};
+
+const enableCampaigns = async () => {
+  try {
+    const response = await api.post(`/admin/users/${userId.value}/campaigns`);
+    if (response.data.success) {
+      toast('Campaigns access enabled');
+      await loadUserProfile();
+    }
+  } catch (err: any) {
+    toastError(err.response?.data?.error || 'Failed to enable campaigns');
+  }
+};
+
+const disableCampaigns = async () => {
+  try {
+    const response = await api.delete(`/admin/users/${userId.value}/campaigns`);
+    if (response.data.success) {
+      toast('Campaigns access disabled');
+      await loadUserProfile();
+    }
+  } catch (err: any) {
+    toastError(err.response?.data?.error || 'Failed to disable campaigns');
   }
 };
 
@@ -1042,6 +1086,12 @@ onMounted(() => {
 .status-badge--ai-editor {
   background: rgba(168, 85, 247, 0.15);
   color: #c084fc;
+}
+
+.status-badge--campaigns {
+  background: rgba(147, 51, 234, 0.1);
+  color: rgb(147, 51, 234);
+  border: 1px solid rgba(147, 51, 234, 0.2);
 }
 
 .status-badge--none {

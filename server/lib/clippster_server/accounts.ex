@@ -10,6 +10,7 @@ defmodule ClippsterServer.Accounts do
   alias ClippsterServer.{Emails, Mailer, Analytics}
   alias ClippsterServer.Auth.TokenGenerator
   alias ClippsterServer.Affiliates
+  alias ClippsterServer.Storage
 
   # OTP expires in 10 minutes
   @otp_expiry_minutes 10
@@ -85,7 +86,7 @@ defmodule ClippsterServer.Accounts do
 
   @doc """
   Creates a user. If this is the first user, they are marked as admin.
-  New users automatically receive 60 free minutes of credits.
+  New users receive 60 free credits monthly, tracked by free_tier_last_credit_grant.
   """
   def create_user(wallet_address, referral_code \\ nil) do
     is_first_user = Repo.aggregate(User, :count) == 0
@@ -104,8 +105,9 @@ defmodule ClippsterServer.Accounts do
       # Set affiliate referral if present
       user = maybe_set_referral(user, affiliate_id)
 
-      # Give new user 60 free minutes of credits
-      {:ok, _user_credit} = Credits.add_credits(user.id, 60)
+      # Set free tier credit grant timestamp so worker grants credits after 30 days
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      {:ok, user} = user |> User.free_tier_changeset(%{free_tier_last_credit_grant: now}) |> Repo.update()
 
       user
     end)
@@ -126,7 +128,7 @@ defmodule ClippsterServer.Accounts do
   @doc """
   Creates or gets a user from OAuth provider (Google, etc.).
   If this is the first user, they are marked as admin.
-  New users automatically receive 60 free minutes of credits.
+  New users receive 60 free credits monthly, tracked by free_tier_last_credit_grant.
   """
   def get_or_create_oauth_user(provider, provider_id, oauth_info \\ %{}, referral_code \\ nil) do
     case get_user_by_provider(provider, provider_id) do
@@ -164,12 +166,15 @@ defmodule ClippsterServer.Accounts do
     affiliate_id = resolve_affiliate_id(referral_code)
 
     Repo.transaction(fn ->
+      # Download and store avatar in R2 if it's an external URL
+      avatar_url = download_and_store_avatar(Map.get(oauth_info, :avatar_url), provider, provider_id)
+
       user_attrs = %{
         provider: provider,
         provider_id: provider_id,
         email: Map.get(oauth_info, :email),
         name: Map.get(oauth_info, :name),
-        avatar_url: Map.get(oauth_info, :avatar_url),
+        avatar_url: avatar_url,
         is_admin: is_first_user
       }
 
@@ -181,8 +186,9 @@ defmodule ClippsterServer.Accounts do
       # Set affiliate referral if present
       user = maybe_set_referral(user, affiliate_id)
 
-      # Give new user 60 free minutes of credits
-      {:ok, _user_credit} = Credits.add_credits(user.id, 60)
+      # Set free tier credit grant timestamp so worker grants credits after 30 days
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      {:ok, user} = user |> User.free_tier_changeset(%{free_tier_last_credit_grant: now}) |> Repo.update()
 
       user
     end)
@@ -203,10 +209,19 @@ defmodule ClippsterServer.Accounts do
 
   # Updates OAuth information for a user (e.g., refresh profile data on login).
   defp update_oauth_info(user, oauth_info) do
+    # Only download new avatar if the external URL has changed
+    new_avatar_url = Map.get(oauth_info, :avatar_url)
+    avatar_url = 
+      if new_avatar_url && new_avatar_url != user.avatar_url && is_external_url?(new_avatar_url) do
+        download_and_store_avatar(new_avatar_url, user.provider, user.provider_id) || user.avatar_url
+      else
+        user.avatar_url
+      end
+
     oauth_attrs = %{
       email: Map.get(oauth_info, :email) || user.email,
       name: Map.get(oauth_info, :name) || user.name,
-      avatar_url: Map.get(oauth_info, :avatar_url) || user.avatar_url
+      avatar_url: avatar_url
     }
 
     user
@@ -216,12 +231,15 @@ defmodule ClippsterServer.Accounts do
 
   # Links a new OAuth provider to an existing user (e.g., user created with email/password, now logging in with Google)
   defp link_oauth_provider(user, provider, provider_id, oauth_info) do
+    # Download and store avatar in R2 if it's an external URL
+    avatar_url = download_and_store_avatar(Map.get(oauth_info, :avatar_url), provider, provider_id) || user.avatar_url
+
     oauth_attrs = %{
       provider: provider,
       provider_id: provider_id,
       email: Map.get(oauth_info, :email) || user.email,
       name: Map.get(oauth_info, :name) || user.name,
-      avatar_url: Map.get(oauth_info, :avatar_url) || user.avatar_url,
+      avatar_url: avatar_url,
       email_verified: true
     }
 
@@ -239,10 +257,13 @@ defmodule ClippsterServer.Accounts do
         {:error, :not_found}
 
       user ->
+        # Download and store avatar in R2 if it's an external URL
+        avatar_url = download_and_store_avatar(Map.get(oauth_info, :avatar_url), "google", user_id) || user.avatar_url
+
         user_attrs = %{
           email: Map.get(oauth_info, :email),
           name: Map.get(oauth_info, :name) || user.name,
-          avatar_url: Map.get(oauth_info, :avatar_url) || user.avatar_url
+          avatar_url: avatar_url
         }
 
         user
@@ -1246,6 +1267,125 @@ defmodule ClippsterServer.Accounts do
       user
       |> Ecto.Changeset.change(%{ai_editor_enabled: false})
       |> Repo.update()
+    end
+  end
+
+  @doc """
+  Enables campaigns access for a user.
+  """
+  def enable_campaigns(user_id) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      user
+      |> Ecto.Changeset.change(%{campaigns_enabled: true})
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Disables campaigns access for a user.
+  """
+  def disable_campaigns(user_id) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      user
+      |> Ecto.Changeset.change(%{campaigns_enabled: false})
+      |> Repo.update()
+    end
+  end
+
+  # Private helper functions
+
+  # Downloads an avatar from an external URL and stores it in R2
+  defp download_and_store_avatar(nil, _provider, _provider_id), do: nil
+  defp download_and_store_avatar("", _provider, _provider_id), do: nil
+
+  defp download_and_store_avatar(avatar_url, provider, provider_id) when is_binary(avatar_url) do
+    # Only download if it's an external URL (not already in R2)
+    if is_external_url?(avatar_url) do
+      try do
+        # Download the image
+        case HTTPoison.get(avatar_url, [], timeout: 10_000, recv_timeout: 10_000) do
+          {:ok, %HTTPoison.Response{status_code: 200, body: image_binary, headers: headers}} ->
+            # Determine content type from headers or default to jpeg
+            content_type =
+              headers
+              |> Enum.find(fn {key, _} -> String.downcase(key) == "content-type" end)
+              |> case do
+                {_, type} -> type
+                nil -> "image/jpeg"
+              end
+
+            # Generate storage key
+            timestamp = DateTime.utc_now() |> DateTime.to_unix()
+            extension = get_extension_from_content_type(content_type)
+            key = "avatars/#{provider}/#{provider_id}_#{timestamp}#{extension}"
+
+            # Upload to R2
+            case Storage.upload_file(image_binary, key, content_type: content_type) do
+              {:ok, url} ->
+                IO.puts("[Accounts] Downloaded and stored avatar: #{url}")
+                url
+
+              {:error, reason} ->
+                IO.puts("[Accounts] Failed to upload avatar to R2: #{inspect(reason)}")
+                # Return original URL as fallback
+                avatar_url
+            end
+
+          {:ok, %HTTPoison.Response{status_code: status}} ->
+            IO.puts("[Accounts] Failed to download avatar, status: #{status}")
+            avatar_url
+
+          {:error, reason} ->
+            IO.puts("[Accounts] Failed to download avatar: #{inspect(reason)}")
+            avatar_url
+        end
+      rescue
+        e ->
+          IO.puts("[Accounts] Exception downloading avatar: #{inspect(e)}")
+          avatar_url
+      end
+    else
+      # Already an R2 URL, return as-is
+      avatar_url
+    end
+  end
+
+  # Check if a URL is external (not from R2)
+  defp is_external_url?(nil), do: false
+  defp is_external_url?(""), do: false
+
+  defp is_external_url?(url) when is_binary(url) do
+    base = Storage.public_url_base()
+
+    cond do
+      # If it's from our R2 public URL, it's not external
+      base && String.starts_with?(url, base) -> false
+      # If it contains R2 domain, it's not external
+      String.contains?(url, ".r2.cloudflarestorage.com") -> false
+      # If it starts with our storage key format, it's not external
+      String.starts_with?(url, "avatars/") -> false
+      # Otherwise it's external
+      true -> true
+    end
+  end
+
+  # Get file extension from content type
+  defp get_extension_from_content_type(content_type) do
+    case content_type do
+      "image/jpeg" -> ".jpg"
+      "image/jpg" -> ".jpg"
+      "image/png" -> ".png"
+      "image/gif" -> ".gif"
+      "image/webp" -> ".webp"
+      _ -> ".jpg"
     end
   end
 end

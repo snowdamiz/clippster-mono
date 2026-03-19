@@ -1,8 +1,10 @@
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 // Modules
+mod api;
 mod assets;
 mod audio;
+mod audio_download;
 mod audio_peaks;
 mod auth;
 mod avatar_proxy;
@@ -22,6 +24,7 @@ mod rumble;
 mod sidecar;
 mod storage;
 mod stripe_callback;
+mod thumbnail_utils;
 mod twitch;
 mod twitter;
 mod ui_utils;
@@ -841,6 +844,12 @@ pub fn run() {
                             sql: include_str!("../migrations/091_add_source_start_time_to_audio_tracks.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 94,
+                            description: "remove_users_fk_from_project_media",
+                            sql: include_str!("../migrations/094_remove_users_fk_from_project_media.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -1093,6 +1102,7 @@ commands::file_utils::generate_video_thumbnail,
             youtube::get_youtube_channel_info,
             youtube::get_youtube_vods,
             youtube::get_youtube_videos,
+            youtube::get_single_youtube_video,
             youtube::get_youtube_vod_duration,
             youtube::download_youtube_vod,
             youtube::download_youtube_vod_segment,
@@ -1108,6 +1118,9 @@ commands::file_utils::generate_video_thumbnail,
             rumble::check_rumble_livestream,
             rumble::get_rumble_channel_info,
             rumble::get_rumble_vods,
+            rumble::get_rumble_videos,
+            rumble::get_single_rumble_video,
+            rumble::get_rumble_vod_duration,
             rumble::download_rumble_vod,
             rumble::download_rumble_vod_segment,
             rumble::start_rumble_recording,
@@ -1149,6 +1162,12 @@ commands::file_utils::generate_video_thumbnail,
             audio::extract_audio_to_file_wav,
             audio::get_audio_duration,
             download_library_audio,
+            
+            // Audio download commands
+            audio_download::download_youtube_audio,
+            audio_download::download_twitter_space_audio,
+            audio_download::upload_audio_file,
+            audio_download::cancel_audio_download,
 
             // Waveform commands
             waveform::extract_audio_waveform,
@@ -1173,6 +1192,7 @@ commands::file_utils::generate_video_thumbnail,
             storage::generate_thumbnail_at_timestamp,
             storage::save_temp_file,
             storage::save_editor_media_file,
+            storage::copy_file_to_project_media,
             storage::read_file_as_data_url,
             storage::delete_video_file,
             storage::delete_raw_video_files,
@@ -1257,6 +1277,8 @@ commands::file_utils::generate_video_thumbnail,
     hls::cleanup_hls_recordings,
     hls::get_recording_output_dir,
     hls::get_hls_segments,
+    hls::create_vod_playlist,
+    hls::delete_vod_playlist,
 
 // Video Editor Export commands
 video_editor_export::export_video_editor_project_simple,

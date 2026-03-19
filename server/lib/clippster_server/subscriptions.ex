@@ -3,9 +3,9 @@ defmodule ClippsterServer.Subscriptions do
   The Subscriptions context - manages user subscriptions.
 
   Subscription Tiers (1 credit = 1 minute):
-  - Starter: $29.99/month, 600 credits (10 hours)
-  - Creator: $54.99/month, 1800 credits (30 hours)
-  - Pro: $204.99/month, 9000 credits (150 hours)
+  - Starter: $24.99/month, 600 credits (10 hours)
+  - Creator: $49.99/month, 1800 credits (30 hours)
+  - Pro: $199.99/month, 9000 credits (150 hours)
 
   Business Rules:
   - Users must have an active subscription to use the app
@@ -26,9 +26,10 @@ defmodule ClippsterServer.Subscriptions do
 
   # Subscription tiers with pricing and credits (1 credit = 1 minute)
   @subscription_tiers %{
-    "starter" => %{monthly_credits: 600, usd: 29.99, name: "Starter"},
-    "creator" => %{monthly_credits: 1800, usd: 54.99, name: "Creator"},
-    "pro" => %{monthly_credits: 9000, usd: 204.99, name: "Pro"}
+    "basic" => %{monthly_credits: 0, usd: 12.99, name: "Basic"},
+    "starter" => %{monthly_credits: 600, usd: 24.99, name: "Starter"},
+    "creator" => %{monthly_credits: 1800, usd: 49.99, name: "Creator"},
+    "pro" => %{monthly_credits: 9000, usd: 199.99, name: "Pro"}
   }
 
   @doc """
@@ -300,8 +301,30 @@ defmodule ClippsterServer.Subscriptions do
     Repo.transaction(fn ->
       user = Repo.get!(User, user_id)
 
-      unless user.subscription_status in ["active"] do
+      unless user.subscription_status in ["active", "cancelled"] do
         Repo.rollback(:not_active)
+      end
+
+      # Cancel in Stripe if it's a Stripe subscription
+      if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
+        case Stripe.Subscription.update(user.stripe_subscription_id, %{cancel_at_period_end: true}) do
+          {:ok, _} ->
+            IO.puts(
+              "[Subscriptions] Cancelled Stripe subscription #{user.stripe_subscription_id} for user #{user_id}"
+            )
+
+          {:error, %Stripe.Error{message: message}} ->
+            IO.puts(
+              "[Subscriptions] Failed to cancel Stripe subscription for user #{user_id}: #{message}"
+            )
+            # Continue anyway to mark as cancelled in DB
+
+          {:error, reason} ->
+            IO.puts(
+              "[Subscriptions] Failed to cancel Stripe subscription for user #{user_id}: #{inspect(reason)}"
+            )
+            # Continue anyway to mark as cancelled in DB
+        end
       end
 
       # Update user status to cancelled
@@ -505,7 +528,7 @@ defmodule ClippsterServer.Subscriptions do
   # Subscription Tier Changes
   # ============================================================================
 
-  @tier_price_hierarchy %{"starter" => 1, "creator" => 2, "pro" => 3}
+  @tier_price_hierarchy %{"basic" => 0.5, "starter" => 1, "creator" => 2, "pro" => 3}
 
   @doc """
   Changes subscription tier (upgrade/downgrade) for a user with an active Stripe subscription.
@@ -567,8 +590,14 @@ defmodule ClippsterServer.Subscriptions do
             })
             |> Repo.update()
 
-          # Grant the new tier's credits
-          {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
+          # If downgrading to basic tier, wipe all credits
+          if pending_tier == "basic" do
+            {:ok, _} = Credits.set_credits(user_id, 0)
+            IO.puts("[Subscriptions] Wiped all credits for user #{user_id} (downgraded to Basic)")
+          else
+            # Grant the new tier's credits
+            {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
+          end
 
           IO.puts(
             "[Subscriptions] Applied pending downgrade for user #{user_id}: #{user.subscription_tier} -> #{pending_tier}"
@@ -714,7 +743,8 @@ defmodule ClippsterServer.Subscriptions do
               metadata: %{
                 subscription_tier: new_tier,
                 monthly_credits: to_string(new_tier_info.monthly_credits),
-                pending_downgrade: "true"
+                pending_downgrade: "true",
+                wipe_credits_on_apply: if(new_tier == "basic", do: "true", else: "false")
               }
             }
 

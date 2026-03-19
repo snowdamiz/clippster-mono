@@ -4,14 +4,14 @@
       type="button"
       ref="triggerRef"
       @click="toggleDropdown"
-      class="w-full px-3 py-2 bg-background/50 border border-input rounded-md text-left flex items-center justify-between hover:border-primary/50 transition-colors text-sm"
+      class="custom-dropdown__trigger"
       :class="triggerClass"
     >
-      <span class="truncate text-foreground">
+      <span class="truncate">
         {{ selectedLabel || placeholder }}
       </span>
       <ChevronDown
-        class="h-4 w-4 text-muted-foreground transition-transform flex-shrink-0 ml-2"
+        class="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform flex-shrink-0 ml-2"
         :class="{ 'rotate-180': isOpen }"
       />
     </button>
@@ -20,26 +20,40 @@
       <div
         v-if="isOpen"
         ref="dropdownRef"
-        class="fixed bg-popover border border-border rounded-lg shadow-xl z-[9999] overflow-y-auto custom-scrollbar"
+        class="custom-dropdown__menu"
         :style="{
           top: dropdownPosition.top,
           left: dropdownPosition.left,
+          bottom: dropdownPosition.bottom,
           width: dropdownPosition.width,
           minWidth: dropdownPosition.minWidth,
           maxHeight: dropdownPosition.maxHeight,
         }"
         @click.stop
       >
-        <button
+        <div
           v-for="option in options"
           :key="option.value"
-          @click="selectOption(option)"
-          class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm text-foreground"
-          :class="{ 'bg-primary/10 text-primary': modelValue === option.value }"
+          class="custom-dropdown__item-wrapper"
+          :class="{ 'custom-dropdown__item-wrapper--selected': modelValue === option.value }"
         >
-          {{ option.label }}
-        </button>
-        <div v-if="options.length === 0" class="px-3 py-2.5 text-sm text-center text-muted-foreground">No options</div>
+          <button
+            @click="selectOption(option)"
+            class="custom-dropdown__item"
+            :class="{ 'custom-dropdown__item--selected': modelValue === option.value }"
+          >
+            {{ option.label }}
+          </button>
+          <button
+            v-if="showDelete"
+            @click="handleDelete(option, $event)"
+            class="custom-dropdown__delete-btn"
+            title="Delete template"
+          >
+            <XCircle :size="16" />
+          </button>
+        </div>
+        <div v-if="options.length === 0" class="custom-dropdown__empty">No options</div>
       </div>
     </Teleport>
   </div>
@@ -47,7 +61,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
-  import { ChevronDown } from 'lucide-vue-next';
+  import { ChevronDown, XCircle } from 'lucide-vue-next';
 
   export interface DropdownOption {
     label: string;
@@ -59,10 +73,12 @@
     options: DropdownOption[];
     placeholder?: string;
     triggerClass?: string;
+    showDelete?: boolean;
   }>();
 
   const emit = defineEmits<{
     'update:modelValue': [value: any];
+    'delete': [value: any, event: Event];
   }>();
 
   const isOpen = ref(false);
@@ -71,6 +87,7 @@
   const dropdownPosition = ref({
     top: '0px',
     left: '0px',
+    bottom: 'auto',
     width: 'auto',
     minWidth: '0px',
     maxHeight: '300px',
@@ -100,6 +117,7 @@
       dropdownPosition.value = {
         top: 'auto',
         left: `${rect.left}px`,
+        bottom: 'auto',
         width: 'auto',
         minWidth: `${rect.width}px`,
         maxHeight: `${maxHeight}px`,
@@ -109,6 +127,7 @@
       dropdownPosition.value = {
         top: `${rect.bottom + spacing}px`,
         left: `${rect.left}px`,
+        bottom: 'auto',
         width: 'auto',
         minWidth: `${rect.width}px`,
         maxHeight: `${maxHeight}px`,
@@ -141,6 +160,11 @@
   function selectOption(option: DropdownOption) {
     emit('update:modelValue', option.value);
     isOpen.value = false;
+  }
+
+  function handleDelete(option: DropdownOption, event: Event) {
+    event.stopPropagation();
+    emit('delete', option.value, event);
   }
 
   function handleClickOutside(event: MouseEvent) {
@@ -176,17 +200,108 @@
 </script>
 
 <style scoped>
-  .custom-scrollbar::-webkit-scrollbar {
+  /* ===== Trigger Button ===== */
+  .custom-dropdown__trigger {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .custom-dropdown__trigger:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  /* ===== Dropdown Menu ===== */
+  .custom-dropdown__menu {
+    position: fixed;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    overflow: hidden;
+    z-index: 10002;
+    overflow-y: auto;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+  }
+
+  .custom-dropdown__menu::-webkit-scrollbar {
     width: 6px;
   }
-  .custom-scrollbar::-webkit-scrollbar-track {
+
+  .custom-dropdown__menu::-webkit-scrollbar-track {
     background: transparent;
   }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--muted-foreground) / 0.3);
+
+  .custom-dropdown__menu::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
     border-radius: 3px;
   }
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--muted-foreground) / 0.5);
+
+  /* ===== Dropdown Item Wrapper ===== */
+  .custom-dropdown__item-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: background-color 150ms ease;
+  }
+
+  .custom-dropdown__item-wrapper:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .custom-dropdown__item-wrapper--selected {
+    background-color: rgba(6, 182, 212, 0.15);
+  }
+
+  /* ===== Dropdown Item ===== */
+  .custom-dropdown__item {
+    flex: 1;
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    border: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .custom-dropdown__item--selected {
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Delete Button ===== */
+  .custom-dropdown__delete-btn {
+    padding: 0.625rem 0.75rem;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: color 150ms ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .custom-dropdown__delete-btn:hover {
+    color: #ef4444;
+  }
+
+  /* ===== Empty State ===== */
+  .custom-dropdown__empty {
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
+    text-align: center;
+    color: var(--sidebar-text-muted);
   }
 </style>

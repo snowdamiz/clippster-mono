@@ -49,10 +49,6 @@
         <span class="text-muted-foreground">Selected Duration:</span>
         <span class="font-medium text-foreground">{{ formatDuration(selectedDuration) }}</span>
       </div>
-      <div class="flex items-center justify-between text-sm">
-        <span class="text-muted-foreground">Estimated Size:</span>
-        <span class="font-medium text-foreground">{{ estimatedSize }}</span>
-      </div>
       <div v-if="selectionError" class="text-xs text-red-400">
         {{ selectionError }}
       </div>
@@ -78,7 +74,6 @@
 
   const props = withDefaults(defineProps<Props>(), {
     totalDuration: 0,
-    modelValue: () => ({ startTime: 0, endTime: 0 }),
   });
 
   const emit = defineEmits<Emits>();
@@ -97,16 +92,6 @@
   });
 
   const selectedDuration = computed(() => Math.max(0, endTime.value - startTime.value));
-
-  const estimatedSize = computed(() => {
-    // Rough estimate: 1MB per minute of video
-    const sizeMB = (selectedDuration.value / 60) * 1;
-    if (sizeMB < 1024) {
-      return `~${sizeMB.toFixed(1)} MB`;
-    } else {
-      return `~${(sizeMB / 1024).toFixed(1)} GB`;
-    }
-  });
 
   const selectionError = computed(() => {
     if (startTime.value >= endTime.value) {
@@ -206,8 +191,11 @@
     const start = startTime.value;
     const end = endTime.value;
 
-    emit('update:modelValue', { startTime: start, endTime: end });
-    emit('change', { startTime: start, endTime: end });
+    // Only emit if we have a valid time range
+    if (start < end && end > 0) {
+      emit('update:modelValue', { startTime: start, endTime: end });
+      emit('change', { startTime: start, endTime: end });
+    }
   }
 
   // Initialize with provided values or defaults

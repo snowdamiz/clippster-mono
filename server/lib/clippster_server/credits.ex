@@ -13,7 +13,7 @@ defmodule ClippsterServer.Credits do
   @credit_packs %{
     "small" => %{hours: 240, usd: 10.00, name: "Small Pack"},
     "medium" => %{hours: 600, usd: 20.00, name: "Medium Pack"},
-    "large" => %{hours: 1_800, usd: 44.00, name: "Large Pack"}
+    "large" => %{hours: 1_800, usd: 39.99, name: "Large Pack"}
   }
 
   # Organization credit packs (for team purchases)
@@ -481,7 +481,8 @@ defmodule ClippsterServer.Credits do
       status: "processing",
       project_id: Keyword.get(opts, :project_id),
       video_url: Keyword.get(opts, :video_url),
-      job_type: Keyword.get(opts, :job_type, "clip_detection")
+      job_type: Keyword.get(opts, :job_type, "clip_detection"),
+      organization_id: Keyword.get(opts, :organization_id)
     }
 
     ProcessingJob.create_changeset(attrs)
@@ -585,6 +586,37 @@ defmodule ClippsterServer.Credits do
       {:ok, job} -> cancel_processing_job(job.id, user_id, reason)
       {:error, :not_found} -> {:error, :no_active_job}
     end
+  end
+
+  @doc """
+  Cancels all active processing jobs of a given type for a project and refunds
+  their credits. Used to refund transcription costs when a subsequent detect
+  step fails with insufficient credits.
+
+  Returns {:ok, total_refunded} where total_refunded is the sum of all credits
+  returned to the user.
+  """
+  def cancel_jobs_by_project_and_type(project_id, user_id, job_type, reason \\ "Subsequent step failed") do
+    jobs =
+      ProcessingJob
+      |> where([j], j.project_id == ^project_id)
+      |> where([j], j.user_id == ^user_id)
+      |> where([j], j.job_type == ^job_type)
+      |> where([j], j.status == "processing")
+      |> Repo.all()
+
+    total_refunded =
+      Enum.reduce(jobs, 0.0, fn job, acc ->
+        case cancel_processing_job(job.id, user_id, reason) do
+          {:ok, %{refunded: amount}} ->
+            acc + Decimal.to_float(amount)
+
+          _ ->
+            acc
+        end
+      end)
+
+    {:ok, total_refunded}
   end
 
   @doc """

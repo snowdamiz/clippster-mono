@@ -70,6 +70,8 @@ defmodule ClippsterServer.Application do
       ClippsterServer.Social.ScheduledPostWorker,
       # Shared clips cleanup worker (deletes expired clips daily)
       ClippsterServer.Organizations.SharedClipCleanupWorker,
+      # Free tier monthly credit grant worker
+      ClippsterServer.Workers.FreeTierCreditWorker,
       # Release info cache for landing page downloads
       ClippsterServer.ReleaseService,
       # Clipper profile workers
@@ -78,6 +80,8 @@ defmodule ClippsterServer.Application do
       ClippsterServer.ClipperProfiles.ResponseTimeWorker,
       # Campaign submission view sync worker
       ClippsterServer.Campaigns.SubmissionViewSyncWorker,
+      # News poller for breaking news feed
+      ClippsterServer.News.NewsPoller,
       # Start to serve requests, typically the last entry
       ClippsterServerWeb.Endpoint
     ]

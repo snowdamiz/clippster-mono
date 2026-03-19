@@ -46,8 +46,8 @@ export class TimelineManager {
 
 	constructor(private editor: EditorCore) {}
 
-	addTrack({ type, index }: { type: TrackType; index?: number }): string {
-		const command = new AddTrackCommand(type, index);
+	addTrack({ type, index, name }: { type: TrackType; index?: number; name?: string }): string {
+		const command = new AddTrackCommand(type, index, name);
 		this.editor.command.execute({ command });
 		return command.getTrackId();
 	}

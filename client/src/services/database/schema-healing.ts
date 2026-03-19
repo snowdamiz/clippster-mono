@@ -19,7 +19,7 @@ async function hasColumn(db: any, table: string, column: string): Promise<boolea
   return cols.some((c) => c.name === column);
 }
 
-async function addColumnIfMissing(
+export async function addColumnIfMissing(
   db: any,
   table: string,
   column: string,
@@ -114,6 +114,67 @@ export async function healSchema(): Promise<void> {
     // --- Design Studio: clips cover image columns ---
     await addColumnIfMissing(db, 'clips', 'cover_image_id', 'TEXT');
     await addColumnIfMissing(db, 'clips', 'cover_image_path', 'TEXT');
+
+    // --- Migrations 095-097: audio download tables ---
+    await db.execute(`CREATE TABLE IF NOT EXISTS downloaded_audio (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      source TEXT NOT NULL CHECK(source IN ('youtube', 'twitter', 'upload')),
+      platform TEXT,
+      source_url TEXT,
+      file_path TEXT NOT NULL,
+      duration REAL,
+      file_size INTEGER,
+      sample_rate INTEGER,
+      channels INTEGER,
+      thumbnail_url TEXT,
+      user_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_downloaded_audio_user_id ON downloaded_audio(user_id)'
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_downloaded_audio_created_at ON downloaded_audio(created_at DESC)'
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_downloaded_audio_source ON downloaded_audio(source)'
+    );
+
+    await db.execute(`CREATE TABLE IF NOT EXISTS audio_playlists (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      user_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_audio_playlists_user_id ON audio_playlists(user_id)'
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_audio_playlists_created_at ON audio_playlists(created_at DESC)'
+    );
+
+    await db.execute(`CREATE TABLE IF NOT EXISTS audio_playlist_items (
+      id TEXT PRIMARY KEY,
+      playlist_id TEXT NOT NULL,
+      audio_id TEXT NOT NULL,
+      position INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (playlist_id) REFERENCES audio_playlists(id) ON DELETE CASCADE,
+      FOREIGN KEY (audio_id) REFERENCES downloaded_audio(id) ON DELETE CASCADE
+    )`);
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_audio_playlist_items_playlist_id ON audio_playlist_items(playlist_id)'
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_audio_playlist_items_audio_id ON audio_playlist_items(audio_id)'
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_audio_playlist_items_position ON audio_playlist_items(playlist_id, position)'
+    );
 
     healed = true;
     console.log('[schema-healing] Schema healing complete');

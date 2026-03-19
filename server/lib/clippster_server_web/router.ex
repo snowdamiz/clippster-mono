@@ -267,7 +267,11 @@ defmodule ClippsterServerWeb.Router do
 
     post("/clips/detect", ClipsController, :detect)
     post("/clips/detect-chunked", ClipsController, :detect_chunked)
+    post("/clips/detect-realtime", ClipsController, :detect_realtime)
     post("/clips/transcribe", ClipsController, :transcribe)
+    
+    # Real-time detection credit deduction
+    post("/credits/deduct", ClipsController, :deduct_realtime_credits)
 
     # AI video generation routes
     post("/ai/generate-video", AIController, :generate_video)
@@ -279,6 +283,13 @@ defmodule ClippsterServerWeb.Router do
 
     # AI reference analysis
     post("/ai/reference/analyze", AIChatController, :analyze_reference)
+
+    # News feed for AI context enrichment
+    get("/news", NewsController, :index)
+    get("/news/ai-context", NewsController, :ai_context)
+    get("/news/:uuid", NewsController, :show)
+    post("/news/search", NewsController, :search)
+    post("/news/fetch", NewsController, :fetch)
 
     # AI chat sessions (conversational video generation)
     get("/ai/chat/sessions", AIChatController, :list_sessions)
@@ -388,6 +399,16 @@ defmodule ClippsterServerWeb.Router do
     )
 
     post("/invitations/:token/accept", OrganizationController, :accept_invitation)
+
+    # Invite user by user_id (for Clipper Directory)
+    post(
+      "/organizations/:organization_id/invite-user",
+      OrganizationController,
+      :invite_user
+    )
+
+    # List current user's pending invitations
+    get("/me/invitations", OrganizationController, :list_my_invitations)
 
     # Create member account directly (admin creates account for user)
     post(
@@ -676,6 +697,12 @@ defmodule ClippsterServerWeb.Router do
     get("/organizations/:organization_id/posts/:id", PostSubmissionController, :show)
 
     post(
+      "/organizations/:organization_id/posts/presigned-upload",
+      PostSubmissionController,
+      :get_presigned_upload_url
+    )
+
+    post(
       "/organizations/:organization_id/posts/upload-media",
       PostSubmissionController,
       :upload_media
@@ -771,8 +798,16 @@ defmodule ClippsterServerWeb.Router do
       :campaigns_by_creator_profile
     )
 
+    get("/user/campaigns/global-branding", CampaignController, :global_branding_campaigns)
+
     get("/user/submissions", CampaignController, :my_submissions)
     get("/user/earnings", CampaignController, :my_earnings)
+
+    # Notifications
+    get("/user/notifications", NotificationController, :index)
+    get("/user/notifications/unread-count", NotificationController, :unread_count)
+    post("/user/notifications/:id/read", NotificationController, :mark_read)
+    post("/user/notifications/read-all", NotificationController, :mark_all_read)
 
     # Clipper social accounts (for campaigns)
     get("/user/social-accounts", ClipperProfileController, :list_social_accounts)
@@ -804,6 +839,7 @@ defmodule ClippsterServerWeb.Router do
     post("/user/posts/sync-analytics", UserPostsController, :sync_user_analytics)
     get("/user/posts/:id", UserPostsController, :show)
     post("/user/posts/:id/sync", UserPostsController, :sync_analytics)
+    post("/user/posts/:id/generate-thumbnail", UserPostsController, :generate_thumbnail)
 
     # ============================================================================
     # Social Media Scheduling
@@ -818,6 +854,8 @@ defmodule ClippsterServerWeb.Router do
     # Get/update/cancel/retry a scheduled post
     get("/social/scheduled/:id", SchedulingController, :show)
     put("/social/scheduled/:id", SchedulingController, :update)
+    delete("/social/scheduled/:id", SchedulingController, :delete)
+    patch("/social/scheduled/update-media", SchedulingController, :update_media)
     post("/social/scheduled/:id/cancel", SchedulingController, :cancel)
     post("/social/scheduled/:id/retry", SchedulingController, :retry)
 
@@ -983,6 +1021,13 @@ defmodule ClippsterServerWeb.Router do
     post("/organizations/:organization_id/campaigns/:id/activate", CampaignController, :activate)
     post("/organizations/:organization_id/campaigns/:id/complete", CampaignController, :complete)
 
+    # Calculate payments for campaign
+    post(
+      "/organizations/:organization_id/campaigns/:id/calculate-payments",
+      CampaignController,
+      :calculate_payments
+    )
+
     # Campaign creator profiles
     get(
       "/organizations/:organization_id/campaigns/:id/creator-profiles",
@@ -1078,6 +1123,12 @@ defmodule ClippsterServerWeb.Router do
     )
 
     post(
+      "/organizations/:organization_id/payments/:payment_id/verify",
+      CampaignController,
+      :verify_payment
+    )
+
+    post(
       "/organizations/:organization_id/payments/:payment_id/complete",
       CampaignController,
       :complete_payment
@@ -1167,6 +1218,10 @@ defmodule ClippsterServerWeb.Router do
     post("/admin/users/:user_id/ai-editor", AdminController, :enable_ai_editor)
     delete("/admin/users/:user_id/ai-editor", AdminController, :disable_ai_editor)
 
+    # Campaigns access management
+    post("/admin/users/:user_id/campaigns", AdminController, :enable_campaigns)
+    delete("/admin/users/:user_id/campaigns", AdminController, :disable_campaigns)
+
     # User restrictions
     post("/admin/users/:user_id/restrict", AdminController, :restrict_user)
     delete("/admin/users/:user_id/restrict", AdminController, :unrestrict_user)
@@ -1181,6 +1236,10 @@ defmodule ClippsterServerWeb.Router do
     # Moderator action logs
     get("/admin/mod-logs", AdminController, :list_mod_logs)
     get("/admin/mod-logs/:mod_id", AdminController, :get_mod_logs_for_user)
+
+    # News management
+    patch("/admin/news/:uuid", NewsController, :update)
+    delete("/admin/news/:uuid", NewsController, :delete)
 
     # Admin subscription management
     post("/admin/users/:user_id/subscription", AdminController, :grant_subscription)
@@ -1220,6 +1279,10 @@ defmodule ClippsterServerWeb.Router do
     put("/admin/organizations/:organization_id/seats", AdminController, :set_org_seats)
     delete("/admin/organizations/:id", AdminController, :delete_organization)
 
+    # Admin org feature flags
+    post("/admin/organizations/:organization_id/campaigns", AdminController, :enable_org_campaigns)
+    delete("/admin/organizations/:organization_id/campaigns", AdminController, :disable_org_campaigns)
+
     # Admin bug report management (delete route only - index/update in mod scope)
     delete("/admin/bug-reports/:id", BugReportsController, :delete)
 
@@ -1253,6 +1316,7 @@ defmodule ClippsterServerWeb.Router do
     post("/admin/waitlist", AdminController, :add_to_waitlist)
     post("/admin/waitlist/invite", AdminController, :invite_waitlist)
     post("/admin/waitlist/:id/invite", AdminController, :invite_waitlist_entry)
+    post("/admin/waitlist/:id/reinvite", AdminController, :reinvite_waitlist_entry)
 
     # Admin affiliate management
     get("/admin/affiliates", AffiliateController, :list_affiliates)
@@ -1277,6 +1341,20 @@ defmodule ClippsterServerWeb.Router do
     # Admin messaging (bulk email campaigns)
     post("/admin/messaging/send", AdminMessagingController, :send_campaign)
     get("/admin/messaging/campaigns", AdminMessagingController, :list_campaigns)
+
+    # Platform campaigns management
+    get("/admin/platform-campaigns", PlatformCampaignController, :list_campaigns)
+    get("/admin/platform-campaigns/stats", PlatformCampaignController, :get_stats)
+    get("/admin/platform-campaigns/:id", PlatformCampaignController, :get_campaign)
+    post("/admin/platform-campaigns", PlatformCampaignController, :create_campaign)
+    put("/admin/platform-campaigns/:id", PlatformCampaignController, :update_campaign)
+    delete("/admin/platform-campaigns/:id", PlatformCampaignController, :delete_campaign)
+    get("/admin/platform-campaigns/:campaign_id/rewards", PlatformCampaignController, :get_campaign_rewards)
+
+    # Revenue allocation settings
+    get("/admin/revenue-allocation/settings", PlatformCampaignController, :get_revenue_settings)
+    put("/admin/revenue-allocation/settings", PlatformCampaignController, :update_revenue_settings)
+    get("/admin/revenue-allocation/transactions", PlatformCampaignController, :get_revenue_transactions)
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

@@ -9,21 +9,43 @@ pub async fn extract_clip_segment(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let duration = end_time - start_time;
 
+    if duration <= 0.0 {
+        return Err(format!(
+            "Invalid clip duration: start_time={} end_time={}",
+            start_time, end_time
+        )
+        .into());
+    }
+
     println!(
-        "[FFmpeg] Extracting segment: {}s - {}s (duration: {}s)",
+        "[FFmpeg] Extracting frame-accurate segment: {}s - {}s (duration: {}s)",
         start_time, end_time, duration
     );
 
     let output = AsyncCommand::new("ffmpeg")
         .arg("-y") // Overwrite output file
-        .arg("-ss")
-        .arg(start_time.to_string())
         .arg("-i")
         .arg(input_path)
+        .arg("-ss")
+        .arg(start_time.to_string())
         .arg("-t")
         .arg(duration.to_string())
-        .arg("-c")
-        .arg("copy")
+        .arg("-map")
+        .arg("0:v:0")
+        .arg("-map")
+        .arg("0:a:0?")
+        .arg("-c:v")
+        .arg("libx264")
+        .arg("-preset")
+        .arg("veryfast")
+        .arg("-crf")
+        .arg("18")
+        .arg("-pix_fmt")
+        .arg("yuv420p")
+        .arg("-c:a")
+        .arg("aac")
+        .arg("-b:a")
+        .arg("192k")
         .arg("-avoid_negative_ts")
         .arg("make_zero")
         .arg("-movflags")

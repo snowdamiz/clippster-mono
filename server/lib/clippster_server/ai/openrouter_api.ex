@@ -23,9 +23,9 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
         IO.puts("[OpenRouterAPI] API key configured")
 
         # Get model from environment or use default
-        model = System.get_env("OPENROUTER_MODEL", "z-ai/glm-4.7")
+        model = System.get_env("OPENROUTER_MODEL", "x-ai/grok-4.1-fast")
         IO.puts("[OpenRouterAPI] Using model: #{model}")
-        IO.puts("[OpenRouterAPI] Using Responses API with high reasoning effort")
+        IO.puts("[OpenRouterAPI] Using Responses API")
 
         # Start with the initial request
         generate_clips_with_retry(
@@ -99,7 +99,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
       "reasoning" => %{
         "effort" => "high"
       },
-      "max_output_tokens" => 16000
+      "max_output_tokens" => 32000
     }
 
     IO.puts("[OpenRouterAPI] Request payload prepared for Responses API")
@@ -569,6 +569,11 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
       %{"clips" => _} ->
         {:error, ["clips must be an array"]}
 
+      # Real-time detection format: {context_change, pending_clip} - valid response
+      %{"context_change" => _} ->
+        IO.puts("[OpenRouterAPI] AI returned real-time detection format (context_change) - valid")
+        :ok
+
       _ ->
         {:error, ["clips array is missing"]}
     end
@@ -600,10 +605,12 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
           "virality_score" ->
             """
             **virality_score (REQUIRED):** Each clip MUST include a "virality_score" field:
-            - Number from 0-100
-            - Based on engagement potential
-            - Consider emotional impact, timing, content density
-            - Higher scores for more engaging content
+            - Number from 0-100 (weighted composite score)
+            - **Hook Power (30%)**: Does the first 1-2 seconds STOP THE SCROLL? No hook = cap at 40.
+            - **Emotional Arousal (25%)**: High-arousal only (anger, awe, humor, outrage, surprise, cringe). Monotone/calm = low.
+            - **Shareability (20%)**: Would someone send this to a friend? Quotable, meme-worthy, debate-starting.
+            - **Retention Curve (15%)**: Does tension escalate? Open loops? Satisfying payoff? Dead spots = -15 penalty.
+            - **Platform Fit (10%)**: Duration sweet spots, works on mute with captions, energy matches format.
             """
 
           "combined_transcript" ->

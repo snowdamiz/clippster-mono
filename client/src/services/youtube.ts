@@ -23,6 +23,49 @@ export interface YouTubeVod {
 }
 
 /**
+ * Extract YouTube video ID from various URL formats
+ * Returns video ID if input is a video URL, null otherwise
+ */
+export function extractYouTubeVideoId(input: string): string | null {
+  if (!input || typeof input !== 'string') {
+    return null;
+  }
+
+  const trimmed = input.trim();
+
+  // youtube.com/watch?v=VIDEO_ID
+  if (trimmed.includes('watch?v=')) {
+    const match = trimmed.match(/watch\?v=([a-zA-Z0-9_-]{11})/);
+    if (match) return match[1];
+  }
+
+  // youtu.be/VIDEO_ID
+  if (trimmed.includes('youtu.be/')) {
+    const match = trimmed.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+    if (match) return match[1];
+  }
+
+  // youtube.com/embed/VIDEO_ID
+  if (trimmed.includes('/embed/')) {
+    const match = trimmed.match(/\/embed\/([a-zA-Z0-9_-]{11})/);
+    if (match) return match[1];
+  }
+
+  // youtube.com/v/VIDEO_ID
+  if (trimmed.includes('/v/')) {
+    const match = trimmed.match(/\/v\/([a-zA-Z0-9_-]{11})/);
+    if (match) return match[1];
+  }
+
+  // Direct 11-character video ID
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed) && !trimmed.includes('/') && !trimmed.startsWith('@')) {
+    return trimmed;
+  }
+
+  return null;
+}
+
+/**
  * Extract YouTube channel ID or handle from URL
  */
 export function extractYouTubeChannel(input: string): string | null {
@@ -31,6 +74,11 @@ export function extractYouTubeChannel(input: string): string | null {
   }
 
   const trimmed = input.trim();
+
+  // If it's a video URL, return null (not a channel)
+  if (extractYouTubeVideoId(trimmed)) {
+    return null;
+  }
 
   // URL parsing
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
@@ -133,12 +181,26 @@ async function getYouTubeVodDuration(vodUrl: string): Promise<number | undefined
 }
 
 /**
+ * Get a single YouTube video by URL or ID
+ */
+export async function getSingleYouTubeVideo(videoUrl: string): Promise<YouTubeVod[]> {
+  try {
+    const result = await invoke<string>('get_single_youtube_video', { videoUrl });
+    return JSON.parse(result);
+  } catch (error: unknown) {
+    console.error('[YouTube] Failed to get video:', error);
+    return [];
+  }
+}
+
+/**
  * Get VODs (past live streams) for a YouTube channel
+ * Also supports direct video URLs
  */
 export async function getYouTubeVods(channel: string, limit: number = 20): Promise<YouTubeVod[]> {
   try {
-    const channelId = extractYouTubeChannel(channel) || channel.trim();
-    const result = await invoke<string>('get_youtube_vods', { channel: channelId, limit });
+    // Backend now handles video URL detection automatically
+    const result = await invoke<string>('get_youtube_vods', { channel: channel.trim(), limit });
     const vods: YouTubeVod[] = JSON.parse(result);
     
     // If yt-dlp didn't return duration, try ffprobe
@@ -161,11 +223,12 @@ export async function getYouTubeVods(channel: string, limit: number = 20): Promi
 
 /**
  * Get regular videos (not live streams) for a YouTube channel
+ * Also supports direct video URLs
  */
 export async function getYouTubeVideos(channel: string, limit: number = 20): Promise<YouTubeVod[]> {
   try {
-    const channelId = extractYouTubeChannel(channel) || channel.trim();
-    const result = await invoke<string>('get_youtube_videos', { channel: channelId, limit });
+    // Backend now handles video URL detection automatically
+    const result = await invoke<string>('get_youtube_videos', { channel: channel.trim(), limit });
     const videos: YouTubeVod[] = JSON.parse(result);
     
     // If yt-dlp didn't return duration, try ffprobe

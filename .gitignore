@@ -2,6 +2,7 @@
 # General
 # ===========================
 node_modules
+package-lock.json
 .DS_Store
 Thumbs.db
 *.log
@@ -79,8 +80,6 @@ server/priv/static/
 # Fetch files
 server/.fetch
 
-server/yarn.lock
-
 # ===========================
 # Environment & Secrets
 # ===========================
@@ -110,4 +109,4 @@ client/src-tauri/ffmpeg-dev.zip
 client/src-tauri/pkg-config.zip
 client/src-tauri/ffmpeg-dev/
 .gitnexus/
-.windsurf/skills/gitnexus
+.windsurf/skills/gitnexus.ded-note/

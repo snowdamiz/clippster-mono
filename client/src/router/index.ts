@@ -263,6 +263,32 @@ const router = createRouter({
         },
       ],
     },
+    // Download Audio page
+    {
+      path: '/download-audio',
+      name: 'download-audio',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'download-audio-home',
+          component: () => import('@/pages/DownloadAudio.vue'),
+        },
+      ],
+    },
+    // Audio Library page
+    {
+      path: '/audio-library',
+      name: 'audio-library',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'audio-library-home',
+          component: () => import('@/pages/AudioLibrary.vue'),
+        },
+      ],
+    },
     // Messages page (Telegram-style)
     {
       path: '/messages',
@@ -369,9 +395,19 @@ const router = createRouter({
           component: () => import('@/pages/admin/AdminSettings.vue'),
         },
         {
+          path: 'news',
+          name: 'admin-news',
+          component: () => import('@/pages/admin/AdminNews.vue'),
+        },
+        {
           path: 'org-applications',
           name: 'admin-org-applications',
           component: () => import('@/pages/admin/AdminOrgApplications.vue'),
+        },
+        {
+          path: 'platform-campaigns',
+          name: 'admin-platform-campaigns',
+          component: () => import('@/pages/admin/AdminPlatformCampaigns.vue'),
         },
         {
           path: 'affiliates',
@@ -493,6 +529,11 @@ const router = createRouter({
           path: 'campaigns',
           name: 'org-campaigns',
           component: () => import('@/pages/organization/OrganizationCampaigns.vue'),
+        },
+        {
+          path: 'campaigns/:campaignId',
+          name: 'org-campaign-detail',
+          component: () => import('@/pages/CampaignDetailPage.vue'),
         },
         {
           path: 'clippers',
@@ -680,17 +721,6 @@ router.beforeEach(async (to, _from, next) => {
         // If we can't check, allow through (don't block on network errors)
       }
     }
-  }
-
-  // Block campaigns routes (Coming Soon)
-  if (to.path === '/campaigns' || to.name === 'campaigns-home') {
-    next('/creators');
-    return;
-  }
-  if (to.name === 'org-campaigns') {
-    const orgId = to.params.id as string;
-    next(`/organization/${orgId}`);
-    return;
   }
 
   // Check Live Clip feature flag for /live-clip route

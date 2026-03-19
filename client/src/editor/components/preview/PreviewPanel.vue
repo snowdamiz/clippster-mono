@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, shallowRef, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../composables/useEditor";
 import { useRafLoop } from "../../composables/useRafLoop";
@@ -12,14 +12,19 @@ import { buildScene } from "../../renderer/scene-builder";
 import { getLastFrameTime } from "../../lib/time";
 import type { TimelineTrack } from "../../types/timeline";
 import type { AspectRatioId } from "../../types/project";
+import type { SocialOverlayPreset } from "../../types/social-overlays";
 import { ChevronDown, Smartphone, Maximize, Minimize, Link2 } from "lucide-vue-next";
+import { SOCIAL_OVERLAY_PRESETS } from "../../constants/social-overlay-constants";
 import PreviewOverlay from "./PreviewOverlay.vue";
 import SocialOverlay from "./SocialOverlay.vue";
-import { SOCIAL_OVERLAY_PRESETS } from "../../constants/social-overlay-constants";
-import type { SocialOverlayPreset } from "../../types/social-overlays";
 
-const { editor, version } = useEditor();
-const { isCropMode } = useEditorUIState();
+const { editor, version } = useEditor({
+	subscribe: {
+		playback: false,
+		selection: false,
+	},
+});
+const { isCropMode, activeSocialOverlay } = useEditorUIState();
 const { selectedElements } = useElementSelection();
 const { isImageMode } = useImageMode();
 
@@ -33,9 +38,8 @@ const aspectPresets = [
 const showAspectMenu = ref(false);
 const showSocialMenu = ref(false);
 const showSpeedMenu = ref(false);
-const activeSocialOverlay = ref<SocialOverlayPreset | null>(null);
 const isFullscreen = ref(false);
-const previewContainerRef = ref<HTMLDivElement | null>(null);
+const containerRef = ref<HTMLDivElement | null>(null);
 
 // Custom aspect ratio state
 const showCustomSize = ref(false);
@@ -201,21 +205,12 @@ watch(
 	{ immediate: true },
 );
 
-// RAF render loop
-let rafDebugCount = 0;
-let rafSkipCount = 0;
 useRafLoop(() => {
 	const canvas = canvasRef.value;
 	const r = renderer.value;
 	const renderTree = editor.renderer.getRenderTree();
 	if (!canvas || !r || !renderTree) return;
-	if (rendering) {
-		rafSkipCount++;
-		if (rafSkipCount % 30 === 0) {
-			console.warn(`[RAF] Skipped ${rafSkipCount} frames (still rendering previous)`);
-		}
-		return;
-	}
+	if (rendering) return;
 
 	const time = editor.playback.getCurrentTime();
 	const lastFrameTime = getLastFrameTime({ duration: renderTree.duration, fps: r.fps });
@@ -226,16 +221,9 @@ useRafLoop(() => {
 		rendering = true;
 		lastScene = renderTree;
 		lastFrame = frame;
-		const renderStart = performance.now();
 		r.renderToCanvas({ node: renderTree, time: renderTime, targetCanvas: canvas })
 			.then(() => {
-				const renderMs = performance.now() - renderStart;
 				rendering = false;
-				rafDebugCount++;
-				if (renderMs > 20 || rafDebugCount % 60 === 0) {
-					console.log(`[RAF] frame=${frame} t=${renderTime.toFixed(3)} renderMs=${renderMs.toFixed(1)} skipped=${rafSkipCount}`);
-					rafSkipCount = 0;
-				}
 			})
 			.catch(() => { rendering = false; });
 	}
@@ -355,6 +343,8 @@ watch(
 	{ immediate: true },
 );
 
+defineExpose({ containerRef });
+
 function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number; opacity: number; rotation: number; isFullFrameOverlay?: boolean }) {
 	if (overlay.isFullFrameOverlay) {
 		return {
@@ -376,36 +366,10 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 	};
 }
 
-function toggleFullscreen() {
-	const container = previewContainerRef.value;
-	if (!container) return;
-
-	if (!isFullscreen.value) {
-		if (container.requestFullscreen) {
-			container.requestFullscreen();
-		}
-	} else {
-		if (document.exitFullscreen) {
-			document.exitFullscreen();
-		}
-	}
-}
-
-function handleFullscreenChange() {
-	isFullscreen.value = !!document.fullscreenElement;
-}
-
-onMounted(() => {
-	document.addEventListener('fullscreenchange', handleFullscreenChange);
-});
-
-onUnmounted(() => {
-	document.removeEventListener('fullscreenchange', handleFullscreenChange);
-});
 </script>
 
 <template>
-	<div class="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-[#0e0e10]">
+	<div ref="containerRef" class="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-[#0e0e10]">
 		<!-- Aspect ratio + speed selector bar -->
 		<div class="relative flex items-center justify-center border-b border-white/10 px-3 py-1.5">
 			<!-- Playback speed selector (left) -->
@@ -598,7 +562,7 @@ onUnmounted(() => {
 		</div>
 
 		<!-- Canvas + Interactive Overlay -->
-		<div ref="previewContainerRef" class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden p-4">
+		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden p-4">
 			<div class="preview-canvas-wrapper relative rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
 				:style="{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }"
 			>

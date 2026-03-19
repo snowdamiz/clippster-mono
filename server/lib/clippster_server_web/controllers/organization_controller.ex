@@ -567,7 +567,85 @@ defmodule ClippsterServerWeb.OrganizationController do
         conn
         |> put_status(400)
         |> json(%{success: false, error: "This invitation was sent to a different email address"})
+
+      {:error, :basic_tier_cannot_join} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Upgrade to Starter or higher to join organizations"})
     end
+  end
+
+  @doc """
+  Invite a user to join the organization by user_id (for Clipper Directory).
+  """
+  def invite_user(conn, %{"organization_id" => org_id, "user_id" => user_id} = params) do
+    user = conn.assigns.current_user
+    role = Map.get(params, "role", "member")
+
+    case Organizations.invite_member_by_user_id(org_id, user_id, role, user) do
+      {:ok, invitation} ->
+        json(conn, %{
+          success: true,
+          invitation: serialize_invitation(invitation),
+          message: "Invitation sent"
+        })
+
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Not authorized to invite members"})
+
+      {:error, :user_not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "User not found"})
+
+      {:error, :already_member} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "User is already a member"})
+
+      {:error, :invitation_pending} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "An invitation has already been sent to this user"})
+
+      {:error, :seat_limit_reached} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Organization seat limit reached"})
+
+      {:error, _} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Failed to send invitation"})
+    end
+  end
+
+  @doc """
+  List pending invitations for the current user.
+  """
+  def list_my_invitations(conn, _params) do
+    user = conn.assigns.current_user
+    invitations = Organizations.list_user_pending_invitations(user.email)
+
+    json(conn, %{
+      success: true,
+      invitations:
+        Enum.map(invitations, fn inv ->
+          %{
+            id: inv.id,
+            organization_id: inv.organization_id,
+            organization_name: inv.organization.name,
+            organization_logo: inv.organization.logo_url,
+            role: inv.role,
+            inviter_name:
+              inv.invited_by_user && (inv.invited_by_user.name || inv.invited_by_user.email),
+            expires_at: inv.expires_at,
+            inserted_at: inv.inserted_at
+          }
+        end)
+    })
   end
 
   # ============================================================================

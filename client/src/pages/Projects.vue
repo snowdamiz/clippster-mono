@@ -447,6 +447,7 @@
       :watermark-settings="folderCreatorWatermarkSettings"
       :default-intro="folderCreatorDefaultIntro"
       :default-outro="folderCreatorDefaultOutro"
+      :creator-profile-server-id="folderCreatorProfileServerId"
       @confirm="onFolderBuildConfirm"
     />
 
@@ -707,6 +708,7 @@
                         @adjust-clip="onClipsTabAdjustClip"
                         @refresh-clips="onClipsTabRefreshClips"
                         @detect-clips="onClipsTabDetectClips"
+                        @publish-now="onClipsTabPublishNow"
                       />
                     </div>
                   </div>
@@ -1219,6 +1221,16 @@
     <!-- Auth Modal -->
     <AuthModal v-model="showAuthModal" />
 
+    <!-- Quick Publish Wizard -->
+    <QuickPublishWizard
+      :show="showFolderPublishWizard"
+      :clip="folderClipToPublish"
+      :clip-path="folderClipToPublishPath"
+      :project-id="folderProject?.id || ''"
+      :thumbnail-url="folderClipToPublishThumbnail"
+      @close="onFolderPublishWizardClose"
+    />
+
     <!-- VOD Preset Editor -->
     <VodPresetEditor
       v-model="showVodPresetEditor"
@@ -1330,6 +1342,7 @@
   } from '@/components/ClipBuildSettingsDialog.vue';
   import FreeTierLimitDialog from '@/components/FreeTierLimitDialog.vue';
   import ClipsTab from '@/components/ClipsTab.vue';
+  import QuickPublishWizard from '@/components/QuickPublishWizard.vue';
   import { useRouter } from 'vue-router';
   import ExistingProjectDialog from '@/components/clip-editor/ExistingProjectDialog.vue';
   import AuthModal from '@/components/AuthModal.vue';
@@ -1662,62 +1675,93 @@
               console.warn('Failed to load video thumbnail for project:', project.id, error);
             }
           } else {
-            // Check if it's a parent project and try to get thumbnail from children
-            // This handles auto-segmented projects that have child projects but no direct videos yet
+            // Try to get thumbnail from first clip (for auto-detected clip projects)
             try {
-              // We can find children from the already loaded projects list if available,
-              // or we might need to check if we have child projects that are segments
-              // Since projects is already populated with all projects, let's check for children
-              // But we are inside the loop populating it.
-              // Let's try to find any project with parent_id === project.id
-              const children = projects.value.filter((p) => p.parent_id === project.id);
-              if (children.length > 0) {
-                // Found children, try to get a thumbnail from one of them
-                for (const child of children) {
-                  // Try to find thumbnail from child project directly
-                  let childThumb = child.thumbnail_path;
-
-                  // If not on project, check if we have videos for this child already loaded
-                  if (!childThumb && projectVideos.value[child.id]?.length > 0) {
-                    childThumb = projectVideos.value[child.id][0].thumbnail_path;
-                  }
-
-                  if (childThumb) {
-                    // Set thumbnail on the parent project object in memory
-                    project.thumbnail_path = childThumb;
-
-                    const dataUrl = await invoke<string>('read_file_as_data_url', {
-                      filePath: childThumb,
+              const { getClipsWithBuildStatus } = await import('@/services/database/clip-build');
+              const clips = await getClipsWithBuildStatus(project.id);
+              
+              if (clips.length > 0) {
+                let clipThumb = clips[0].built_thumbnail_path;
+                
+                // If no built_thumbnail_path, try to generate from the clip's video file
+                if (!clipThumb && clips[0].file_path) {
+                  try {
+                    // Generate thumbnail from the clip's video file
+                    const thumbnailPath = await invoke<string>('generate_video_thumbnail', {
+                      videoPath: clips[0].file_path,
+                      outputDir: null, // Use default temp directory
                     });
-                    thumbnailCache.value.set(project.id, dataUrl);
+                    clipThumb = thumbnailPath;
+                  } catch (thumbError) {
+                    console.warn('Failed to generate thumbnail from clip video:', thumbError);
+                  }
+                }
+                
+                if (clipThumb) {
+                  project.thumbnail_path = clipThumb;
 
-                    // Save to parent in DB if not already set
-                    await updateProject(project.id, undefined, undefined, childThumb);
-                    break;
-                  } else {
-                    // Force fetch child videos if not yet loaded (rare race condition fallback)
-                    try {
-                      const childVideos = await getRawVideosByProjectId(child.id);
-                      projectVideos.value[child.id] = childVideos;
+                  const dataUrl = await invoke<string>('read_file_as_data_url', {
+                    filePath: clipThumb,
+                  });
+                  thumbnailCache.value.set(project.id, dataUrl);
 
-                      if (childVideos.length > 0 && childVideos[0].thumbnail_path) {
-                        childThumb = childVideos[0].thumbnail_path;
-                        project.thumbnail_path = childThumb;
-                        const dataUrl = await invoke<string>('read_file_as_data_url', {
-                          filePath: childThumb,
-                        });
-                        thumbnailCache.value.set(project.id, dataUrl);
-                        await updateProject(project.id, undefined, undefined, childThumb);
-                        break;
+                  // Save this thumbnail to the project for future use
+                  await updateProject(project.id, undefined, undefined, clipThumb);
+                }
+              }
+              
+              if (!project.thumbnail_path) {
+                // Check if it's a parent project and try to get thumbnail from children
+                // This handles auto-segmented projects that have child projects but no direct videos yet
+                const children = projects.value.filter((p) => p.parent_id === project.id);
+                if (children.length > 0) {
+                  // Found children, try to get a thumbnail from one of them
+                  for (const child of children) {
+                    // Try to find thumbnail from child project directly
+                    let childThumb = child.thumbnail_path;
+
+                    // If not on project, check if we have videos for this child already loaded
+                    if (!childThumb && projectVideos.value[child.id]?.length > 0) {
+                      childThumb = projectVideos.value[child.id][0].thumbnail_path;
+                    }
+
+                    if (childThumb) {
+                      // Set thumbnail on the parent project object in memory
+                      project.thumbnail_path = childThumb;
+
+                      const dataUrl = await invoke<string>('read_file_as_data_url', {
+                        filePath: childThumb,
+                      });
+                      thumbnailCache.value.set(project.id, dataUrl);
+
+                      // Save to parent in DB if not already set
+                      await updateProject(project.id, undefined, undefined, childThumb);
+                      break;
+                    } else {
+                      // Force fetch child videos if not yet loaded (rare race condition fallback)
+                      try {
+                        const childVideos = await getRawVideosByProjectId(child.id);
+                        projectVideos.value[child.id] = childVideos;
+
+                        if (childVideos.length > 0 && childVideos[0].thumbnail_path) {
+                          childThumb = childVideos[0].thumbnail_path;
+                          project.thumbnail_path = childThumb;
+                          const dataUrl = await invoke<string>('read_file_as_data_url', {
+                            filePath: childThumb,
+                          });
+                          thumbnailCache.value.set(project.id, dataUrl);
+                          await updateProject(project.id, undefined, undefined, childThumb);
+                          break;
+                        }
+                      } catch (e) {
+                        console.warn('Failed to fetch child videos for thumbnail propagation', e);
                       }
-                    } catch (e) {
-                      console.warn('Failed to fetch child videos for thumbnail propagation', e);
                     }
                   }
                 }
               }
             } catch (error) {
-              console.warn('Failed to load thumbnail from children for project:', project.id, error);
+              console.warn('Failed to load thumbnail from clips or children for project:', project.id, error);
             }
           }
         }
@@ -2012,6 +2056,7 @@
   const folderClipsLoading = ref(false);
   const folderClipToBuild = ref<ClipWithVersionAndSegment | null>(null);
   const showFolderBuildDialog = ref(false);
+  const folderCreatorProfileServerId = ref<number | null>(null);
   const folderDownloadDropdownId = ref<string | null>(null);
   const folderPrompts = ref<Prompt[]>([]);
 
@@ -2479,6 +2524,9 @@
         clip.builds[existingBuildIdx].output_paths = JSON.stringify(all_output_paths || [output_path]);
       }
       console.log(`[Projects] Local state updated for completed clip: ${clip_id}`);
+      
+      // Show success toast with Publish Now option
+      success('Build Complete', 'Your clip has been built successfully. Ready to publish!');
     } else if (isCancelled) {
       clip.build_status = 'pending';
       clip.build_progress = 0;
@@ -2794,13 +2842,52 @@
         }
       }
 
+      // If no watermark found from creator profiles, check for free tier admin branding
       if (!watermarkId) {
-        console.log('[Projects] loadPreviewWatermark: No watermark_id found');
-        return;
+        const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
+        const { getBrandingIfFreeTier } = useFreeTierBranding();
+        const adminBranding = await getBrandingIfFreeTier();
+        
+        if (adminBranding?.watermark_id) {
+          console.log('[Projects] loadPreviewWatermark: Using admin free tier watermark:', adminBranding.watermark_id);
+          
+          // Server provides a presigned URL — download directly via Tauri (bypasses CORS)
+          if (adminBranding.watermark_url) {
+            console.log('[Projects] loadPreviewWatermark: Downloading free tier watermark via presigned URL');
+            try {
+              const dataUrl = await invoke<string>('download_url_as_data_url', { url: adminBranding.watermark_url });
+              const dimensions = await new Promise<{ width: number; height: number } | null>((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                img.onerror = () => resolve(null);
+                img.src = dataUrl;
+              });
+              previewWatermarkData.value = {
+                dataUrl,
+                width: dimensions?.width || undefined,
+                height: dimensions?.height || undefined,
+              };
+              console.log('[Projects] loadPreviewWatermark: Free tier watermark loaded:', {
+                width: dimensions?.width,
+                height: dimensions?.height,
+              });
+            } catch (dlErr) {
+              console.error('[Projects] loadPreviewWatermark: Failed to download free tier watermark:', dlErr);
+              return;
+            }
+          } else {
+            watermarkId = adminBranding.watermark_id;
+          }
+          watermarkSettingsRaw = adminBranding.watermark_settings ? JSON.stringify(adminBranding.watermark_settings) : null;
+        } else {
+          console.log('[Projects] loadPreviewWatermark: No watermark_id found (checked creator profiles + admin branding)');
+          return;
+        }
       }
 
-      // Load the watermark image
-      console.log('[Projects] loadPreviewWatermark: Loading watermark image for ID:', watermarkId);
+      // Load the watermark image (skip if already loaded from free tier presigned URL above)
+      if (!previewWatermarkData.value && watermarkId) {
+        console.log('[Projects] loadPreviewWatermark: Loading watermark image for ID:', watermarkId);
 
       // Check if this is an organization asset (ID format: org-asset-{serverId})
       if (watermarkId.startsWith('org-asset-')) {
@@ -2927,6 +3014,7 @@
         };
         console.log('[Projects] loadPreviewWatermark: Watermark data loaded:', { width: wmWidth, height: wmHeight });
       }
+      } // end if (!previewWatermarkData.value && watermarkId)
 
       // Parse watermark settings (from project or creator profile)
       let watermarkSettings: WatermarkSettings = {
@@ -2953,10 +3041,13 @@
           if (ratioConfig) {
             // Handle both old format (direct x/y/opacity/scale) and new format (position object)
             const position = ratioConfig.position || ratioConfig;
+            // For org-asset watermarks (e.g. free tier admin branding), never override the
+            // top-level watermarkId with the per-ratio one — those are the admin's local UUIDs.
+            const isOrgAsset = watermarkId?.startsWith('org-asset-');
             watermarkSettings = {
               ...watermarkSettings,
               enabled: true,
-              watermarkId: ratioConfig.watermarkId || watermarkId,
+              watermarkId: (!isOrgAsset && ratioConfig.watermarkId) ? ratioConfig.watermarkId : watermarkId,
               positionX: position.x ?? 12,
               positionY: position.y ?? 92,
               opacity: position.opacity ?? 80,
@@ -3336,6 +3427,30 @@
     }
   }
 
+  // Quick Publish Wizard state for folder dialog
+  const showFolderPublishWizard = ref(false);
+  const folderClipToPublish = ref<ClipWithVersion | null>(null);
+  const folderClipToPublishPath = ref<string>('');
+  const folderClipToPublishThumbnail = ref<string | null>(null);
+
+  function onClipsTabPublishNow(clip: ClipWithVersion) {
+    folderClipToPublish.value = clip;
+    // clip.file_path is the source segment video (local path), use as clip path so FFmpeg can probe dimensions
+    // Fall back to projectVideos if clip has no direct file_path
+    const projectId = clip.project_id || folderProject.value?.id;
+    const fallbackVideo = projectId ? (projectVideos.value[projectId]?.[0] ?? null) : null;
+    folderClipToPublishPath.value = clip.file_path || fallbackVideo?.file_path || '';
+    folderClipToPublishThumbnail.value = clip.built_thumbnail_path || null;
+    showFolderPublishWizard.value = true;
+  }
+
+  function onFolderPublishWizardClose() {
+    showFolderPublishWizard.value = false;
+    folderClipToPublish.value = null;
+    folderClipToPublishPath.value = '';
+    folderClipToPublishThumbnail.value = null;
+  }
+
   async function loadFolderPrompts() {
     try {
       folderPrompts.value = await getAllPrompts();
@@ -3406,6 +3521,7 @@
     folderCreatorDefaultOutro.value = null;
     folderCreatorWatermarkSettings.value = null;
     folderCreatorProfile.value = null;
+    folderCreatorProfileServerId.value = null;
 
     // Look up branding profile for this clip's project (streamer, global, or user-selected)
     try {
@@ -3416,6 +3532,14 @@
       if (profile) {
         console.log('[Projects] Found creator profile for folder build:', profile.name);
         folderCreatorProfile.value = profile;
+
+        // Extract numeric server ID for campaign lookup (org profiles have numeric string IDs)
+        if (profile.context_type === 'organization' && profile.id && !profile.id.startsWith('campaign-')) {
+          const serverId = parseInt(profile.id, 10);
+          if (!isNaN(serverId)) {
+            folderCreatorProfileServerId.value = serverId;
+          }
+        }
 
         // Load creator's default intro
         if (profile.intro_id) {
@@ -3510,6 +3634,8 @@
 
     try {
       console.log('[Projects] Starting folder build with aspectRatios:', settings.aspectRatios);
+      console.log('[Projects] buildTargets:', settings.buildTargets);
+      
       // Get the video file for this clip's segment
       const videos = projectVideos.value[clip.segment_id];
       if (!videos || videos.length === 0) {
@@ -3517,6 +3643,13 @@
         return;
       }
       const videoPath = videos[0].file_path;
+      
+      // Check if we have multi-build targets (orgs/campaigns selected)
+      if (settings.buildTargets && settings.buildTargets.length > 0) {
+        console.log('[Projects] Multi-build mode: processing', settings.buildTargets.length, 'targets');
+        await executeMultiBuildTargets(clip, videoPath, settings);
+        return;
+      }
 
       // IMPORTANT: Reload segments from database to get latest edits from timeline
       // The clip object may have stale data if user edited segments on timeline
@@ -3625,6 +3758,226 @@
           };
         }
       }
+      
+      // If no watermark from dialog, check for free tier admin branding
+      if (!watermarkSettings) {
+        const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
+        const { getBrandingIfFreeTier } = useFreeTierBranding();
+        const adminBranding = await getBrandingIfFreeTier();
+        
+        if (adminBranding?.watermark_id) {
+          console.log('[Projects] Applying admin free tier watermark to build:', adminBranding.watermark_id);
+          
+          // Parse per-ratio settings to get default position
+          let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+          if (adminBranding.watermark_settings) {
+            try {
+              const perRatioSettings = typeof adminBranding.watermark_settings === 'string' 
+                ? JSON.parse(adminBranding.watermark_settings)
+                : adminBranding.watermark_settings;
+              const ratioConfig = perRatioSettings['16:9'];
+              if (ratioConfig?.position) {
+                defaultPos = ratioConfig.position;
+              }
+            } catch (e) {
+              console.warn('[Projects] Failed to parse admin watermark settings:', e);
+            }
+          }
+          
+          // Download watermark via presigned URL to local file for FFmpeg
+          let filePath: string | null = null;
+          let wmWidth: number | null = null;
+          let wmHeight: number | null = null;
+          
+          if (adminBranding.watermark_url) {
+            try {
+              const filename = `free-tier-watermark-${adminBranding.watermark_id.replace(/[^a-zA-Z0-9-]/g, '_')}.png`;
+              filePath = await invoke<string>('download_org_asset_from_url', {
+                url: adminBranding.watermark_url,
+                filename,
+                assetType: 'watermarks',
+                organizationId: 'free-tier',
+              });
+              console.log('[Projects] Free tier watermark downloaded to:', filePath);
+              // Measure dimensions
+              const dataUrl = await invoke<string>('read_file_as_data_url', { filePath });
+              const dims = await new Promise<{ width: number; height: number } | null>((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                img.onerror = () => resolve(null);
+                img.src = dataUrl;
+              });
+              wmWidth = dims?.width ?? null;
+              wmHeight = dims?.height ?? null;
+            } catch (dlErr) {
+              console.error('[Projects] Failed to download free tier watermark for build:', dlErr);
+            }
+          } else {
+            // Fallback: try local database lookup (for org members who have the asset synced)
+            const { getWatermarkImage } = await import('@/services/database/watermarks');
+            const watermarkImage = await getWatermarkImage(adminBranding.watermark_id);
+            if (watermarkImage) {
+              filePath = watermarkImage.file_path;
+              wmWidth = watermarkImage.width ?? null;
+              wmHeight = watermarkImage.height ?? null;
+            }
+          }
+          
+          if (filePath) {
+            watermarkSettings = {
+              enabled: true,
+              watermarkId: adminBranding.watermark_id,
+              filePath,
+              width: wmWidth,
+              height: wmHeight,
+              positionX: defaultPos.x,
+              positionY: defaultPos.y,
+              opacity: defaultPos.opacity,
+              scale: defaultPos.scale,
+            };
+            console.log('[Projects] Admin watermark settings applied:', {
+              watermarkId: watermarkSettings.watermarkId,
+              position: { x: defaultPos.x, y: defaultPos.y },
+            });
+          }
+        }
+      }
+
+      // ── Campaign Branding Override ────────────────────────────────────────────
+      // When user selected a campaign, its branding COMPLETELY replaces creator profile branding.
+      // Also save campaign_id on the clip for payment tracking.
+      if (settings.campaignId && settings.selectedCampaign) {
+        const campaign = settings.selectedCampaign;
+        console.log('[Projects] Applying campaign branding for:', campaign.title, '(id:', campaign.id, ')');
+
+        // Override creator profile defaults with campaign global assets
+        if (campaign.global_intro) {
+          const { ensureAssetDownloaded } = await import('@/services/orgAssetSync');
+          const introResult = await ensureAssetDownloaded({
+            id: campaign.global_intro.id,
+            name: campaign.global_intro.name,
+            asset_type: 'intro',
+            url: campaign.global_intro.url,
+            organization_id: campaign.organization_id,
+            organization_name: campaign.organization?.name || '',
+            duration: campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : undefined,
+            inserted_at: campaign.inserted_at,
+            updated_at: campaign.updated_at,
+          } as unknown as import('@/services/orgAssetSync').ServerOrganizationAsset);
+          if (introResult.success && introResult.filePath) {
+            folderCreatorDefaultIntro.value = {
+              id: `org-asset-${campaign.global_intro.id}`,
+              type: 'intro',
+              name: campaign.global_intro.name,
+              file_path: introResult.filePath,
+              duration: campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : null,
+              thumbnail_path: campaign.global_intro.thumbnail_url || null,
+              thumbnail_generation_status: 'completed' as const,
+              organization_id: String(campaign.organization_id),
+              organization_name: campaign.organization?.name || null,
+              created_at: Date.now(),
+              updated_at: Date.now(),
+            };
+            console.log('[Projects] Campaign global intro applied:', campaign.global_intro.name);
+          }
+        } else {
+          // No campaign global intro — clear creator default so no intro is forced
+          folderCreatorDefaultIntro.value = null;
+        }
+
+        if (campaign.global_outro) {
+          const { ensureAssetDownloaded } = await import('@/services/orgAssetSync');
+          const outroResult = await ensureAssetDownloaded({
+            id: campaign.global_outro.id,
+            name: campaign.global_outro.name,
+            asset_type: 'outro',
+            url: campaign.global_outro.url,
+            organization_id: campaign.organization_id,
+            organization_name: campaign.organization?.name || '',
+            duration: campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : undefined,
+            inserted_at: campaign.inserted_at,
+            updated_at: campaign.updated_at,
+          } as unknown as import('@/services/orgAssetSync').ServerOrganizationAsset);
+          if (outroResult.success && outroResult.filePath) {
+            folderCreatorDefaultOutro.value = {
+              id: `org-asset-${campaign.global_outro.id}`,
+              type: 'outro',
+              name: campaign.global_outro.name,
+              file_path: outroResult.filePath,
+              duration: campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : null,
+              thumbnail_path: campaign.global_outro.thumbnail_url || null,
+              thumbnail_generation_status: 'completed' as const,
+              organization_id: String(campaign.organization_id),
+              organization_name: campaign.organization?.name || null,
+              created_at: Date.now(),
+              updated_at: Date.now(),
+            };
+
+            console.log('[Projects] Campaign global outro applied:', campaign.global_outro.name);
+          }
+        } else {
+          // No campaign global outro — clear creator default
+          folderCreatorDefaultOutro.value = null;
+        }
+
+        // Override watermark with campaign branding profile watermark (if available via creator profile)
+        const campaignCreatorProfile = campaign.creator_profiles?.[0] || campaign.creator_profile;
+        if (campaignCreatorProfile?.watermark?.url) {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const filename = `campaign-watermark-${campaignCreatorProfile.watermark.id}.png`;
+          try {
+            const filePath = await invoke<string>('download_org_asset_from_url', {
+              url: campaignCreatorProfile.watermark.url,
+              filename,
+              assetType: 'watermarks',
+              organizationId: String(campaign.organization_id),
+            });
+
+            let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+            if (campaignCreatorProfile.watermark_settings) {
+              try {
+                const wmSettings = typeof campaignCreatorProfile.watermark_settings === 'string'
+                  ? JSON.parse(campaignCreatorProfile.watermark_settings as unknown as string)
+                  : campaignCreatorProfile.watermark_settings;
+                const ratioConfig = wmSettings['16:9'];
+                if (ratioConfig?.position) defaultPos = ratioConfig.position;
+              } catch (e) {
+                console.warn('[Projects] Failed to parse campaign watermark settings:', e);
+              }
+            }
+
+            folderCreatorWatermarkSettings.value = {
+              enabled: true,
+              watermarkId: `org-asset-${campaignCreatorProfile.watermark.id}`,
+              positionX: defaultPos.x,
+              positionY: defaultPos.y,
+              opacity: defaultPos.opacity,
+              scale: defaultPos.scale,
+              perRatioSettings: (campaignCreatorProfile.watermark_settings as any) ?? null,
+            };
+            console.log('[Projects] Campaign watermark applied:', campaignCreatorProfile.watermark.name);
+          } catch (e) {
+            console.warn('[Projects] Failed to download campaign watermark:', e);
+            folderCreatorWatermarkSettings.value = null;
+          }
+        } else {
+          // No campaign watermark — clear creator default
+          folderCreatorWatermarkSettings.value = null;
+        }
+
+        // Clear the creator profile so it doesn't override the campaign branding
+        folderCreatorProfile.value = null;
+
+        // Save campaign_id to the clip for payment tracking
+        try {
+          const { updateClip } = await import('@/services/database/clips');
+          await updateClip(clip.id, { campaign_id: settings.campaignId });
+          console.log('[Projects] Saved campaign_id', settings.campaignId, 'to clip', clip.id);
+        } catch (e) {
+          console.warn('[Projects] Failed to save campaign_id to clip:', e);
+        }
+      }
+      // ── End Campaign Branding Override ───────────────────────────────────────
 
       // Determine effective intro/outro: creator profile defaults take precedence (mandatory), then dialog selection
       // Creator profile intro/outro MUST be applied when set - they are mandatory defaults
@@ -3779,21 +4132,93 @@
         }
       }
 
-      // Free tier branding override: replace user assets with admin-configured branding
+      // Free tier branding override: replace user intro/outro with admin-configured branding
       const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
       const { getBrandingIfFreeTier } = useFreeTierBranding();
       const adminBranding = await getBrandingIfFreeTier();
       if (adminBranding) {
-        // Override watermark with admin watermark
-        if (adminBranding.watermark_url) {
-          watermarkSettings = adminBranding.watermark_settings || null;
-        }
-        // Override intro/outro with admin versions (nullify user selections)
+        console.log('[Projects] Free tier user detected - applying admin branding');
+
+        // Clear any user-selected global intro/outro
         introPath = null;
         introDuration = null;
         outroPath = null;
         outroDuration = null;
-        console.log('[Projects] Free tier branding applied — admin watermark/intro/outro injected');
+
+        // Resolve admin per-ratio intro/outro settings into file paths
+        if (adminBranding.intro_settings || adminBranding.outro_settings) {
+          const introRatioSettings = adminBranding.intro_settings ?? {};
+          const outroRatioSettings = adminBranding.outro_settings ?? {};
+
+          const allRatios = new Set([
+            ...Object.keys(introRatioSettings),
+            ...Object.keys(outroRatioSettings),
+          ]);
+
+          for (const ratio of allRatios) {
+            const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
+
+            const introConfig = introRatioSettings[ratio];
+            if (introConfig?.assetId) {
+              // Use presigned URL if available (free tier users), otherwise fall back to local resolution
+              if ((introConfig as any).url) {
+                try {
+                  const filename = `free-tier-intro-${introConfig.assetId.replace(/[^a-zA-Z0-9-]/g, '_')}.mp4`;
+                  const localPath = await invoke<string>('download_org_asset_from_url', {
+                    url: (introConfig as any).url,
+                    filename,
+                    assetType: 'intros',
+                    organizationId: 'free-tier',
+                  });
+                  ratioData.introPath = localPath;
+                  console.log(`[Projects] Admin intro for ${ratio} downloaded:`, localPath);
+                } catch (dlErr) {
+                  console.error(`[Projects] Failed to download admin intro for ${ratio}:`, dlErr);
+                }
+              } else {
+                const { resolveIntroOutroById } = await import('@/services/database/intro-outros');
+                const resolved = await resolveIntroOutroById(introConfig.assetId);
+                if (resolved) {
+                  ratioData.introPath = resolved.filePath;
+                  ratioData.introDuration = resolved.duration ?? undefined;
+                  console.log(`[Projects] Admin intro for ${ratio}:`, resolved.filePath);
+                }
+              }
+            }
+
+            const outroConfig = outroRatioSettings[ratio];
+            if (outroConfig?.assetId) {
+              // Use presigned URL if available (free tier users), otherwise fall back to local resolution
+              if ((outroConfig as any).url) {
+                try {
+                  const filename = `free-tier-outro-${outroConfig.assetId.replace(/[^a-zA-Z0-9-]/g, '_')}.mp4`;
+                  const localPath = await invoke<string>('download_org_asset_from_url', {
+                    url: (outroConfig as any).url,
+                    filename,
+                    assetType: 'outros',
+                    organizationId: 'free-tier',
+                  });
+                  ratioData.outroPath = localPath;
+                  console.log(`[Projects] Admin outro for ${ratio} downloaded:`, localPath);
+                } catch (dlErr) {
+                  console.error(`[Projects] Failed to download admin outro for ${ratio}:`, dlErr);
+                }
+              } else {
+                const { resolveIntroOutroById } = await import('@/services/database/intro-outros');
+                const resolved = await resolveIntroOutroById(outroConfig.assetId);
+                if (resolved) {
+                  ratioData.outroPath = resolved.filePath;
+                  ratioData.outroDuration = resolved.duration ?? undefined;
+                  console.log(`[Projects] Admin outro for ${ratio}:`, resolved.filePath);
+                }
+              }
+            }
+
+            if (ratioData.introPath || ratioData.outroPath) {
+              introOutroPerRatio[ratio] = ratioData;
+            }
+          }
+        }
       }
 
       // Start the build using the correct command
@@ -3854,6 +4279,297 @@
     } finally {
       // Reset the build in progress flag
       isFolderBuildInProgress.value = false;
+    }
+  }
+
+  // Execute multiple build targets sequentially (for org/campaign multi-builds)
+  async function executeMultiBuildTargets(
+    clip: ClipWithVersionAndSegment,
+    videoPath: string,
+    settings: BuildSettings
+  ) {
+    const buildTargets = settings.buildTargets!;
+    console.log(`[Projects] Starting ${buildTargets.length} sequential builds`);
+    
+    const { createClipBuild, getClipBuilds, updateClipBuild } = await import('@/services/database/clip-build');
+    const { getClipSegmentsByVersionId } = await import('@/services/database/clip-segments');
+    const { updateClipBuildStatus } = await import('@/services/database');
+    
+    // Load segments once (shared across all builds)
+    let segments: any[] = [];
+    const versionId = clip.current_version_id || clip.current_version?.id;
+    if (versionId) {
+      try {
+        const dbSegments = await getClipSegmentsByVersionId(versionId);
+        if (dbSegments.length > 0) {
+          segments = dbSegments.map((s: any) => ({
+            id: s.id,
+            start_time: s.start_time,
+            end_time: s.end_time,
+            duration: s.duration || s.end_time - s.start_time,
+            transcript: s.transcript || null,
+          }));
+        }
+      } catch (err) {
+        console.warn('[Projects] Could not load segments:', err);
+      }
+    }
+    
+    // Fallback to synthetic segment
+    if (segments.length === 0) {
+      const startTime = clip.current_version?.start_time ?? clip.start_time ?? 0;
+      const endTime = clip.current_version?.end_time ?? clip.end_time ?? 0;
+      segments = [{
+        id: `fallback-${clip.id}`,
+        start_time: startTime,
+        end_time: endTime,
+        duration: endTime - startTime,
+        transcript: null,
+      }];
+    }
+    
+    // Process each build target sequentially
+    for (let i = 0; i < buildTargets.length; i++) {
+      const target = buildTargets[i];
+      console.log(`[Projects] Building ${i + 1}/${buildTargets.length}: ${target.type} - ${target.name} (${target.aspectRatios.join(', ')})`);
+      
+      // Get build number
+      let buildNumber = 1;
+      try {
+        const existingBuilds = await getClipBuilds(clip.id);
+        buildNumber = existingBuilds.length + 1;
+      } catch {
+        buildNumber = 1;
+      }
+      
+      // Create build record for this target
+      const buildId = await createClipBuild(clip.id, {
+        aspectRatios: target.aspectRatios,
+        quality: settings.quality,
+        frameRate: settings.frameRate,
+        outputFormat: settings.format,
+        organizationId: target.organizationId || null,
+        organizationName: target.organizationName || null,
+        campaignId: target.type === 'campaign' ? target.id : null,
+        campaignName: target.type === 'campaign' ? target.name : null,
+        brandingProfileId: target.brandingProfileId ? String(target.brandingProfileId) : null,
+        brandingType: target.type,
+      });
+      
+      // Fetch branding assets for this target (watermark, intro, outro)
+      let watermarkSettings = null;
+      let introPath: string | null = null;
+      let introDuration: number | null = null;
+      let outroPath: string | null = null;
+      let outroDuration: number | null = null;
+      const introOutroPerRatio: Record<string, any> = {};
+      
+      // Fetch org/campaign branding profile assets
+      if (target.brandingProfileId && target.organizationId) {
+        try {
+          const { getUserAssignedCreatorProfiles } = await import('@/services/organizationProfilesApi');
+          const { ensureAssetDownloaded } = await import('@/services/orgAssetSync');
+          
+          // Get the creator profile to access its assets
+          const profilesRes = await getUserAssignedCreatorProfiles();
+          if (profilesRes.success && profilesRes.profiles) {
+            const profile = profilesRes.profiles.find(p => p.id === Number(target.brandingProfileId));
+            
+            if (profile) {
+              // Download and apply watermark
+              if (profile.watermark) {
+                const wmResult = await ensureAssetDownloaded({
+                  id: profile.watermark.id,
+                  name: profile.watermark.name,
+                  asset_type: 'watermark',
+                  url: profile.watermark.url || '',
+                  thumbnail_url: profile.watermark.thumbnail_url || null,
+                  organization_id: target.organizationId,
+                  organization_name: target.organizationName || '',
+                  width: null,
+                  height: null,
+                  duration: null,
+                  file_size: null,
+                  mime_type: null,
+                  uploaded_by: null,
+                  inserted_at: profile.inserted_at,
+                  updated_at: profile.updated_at,
+                } as any);
+                if (wmResult.success && wmResult.filePath) {
+                  // Parse watermark settings for position
+                  let posX = 88, posY = 81, opacity = 80, scale = 20;
+                  if (profile.watermark_settings) {
+                    const wmSettings = typeof profile.watermark_settings === 'string' 
+                      ? JSON.parse(profile.watermark_settings) 
+                      : profile.watermark_settings;
+                    const defaultRatio = wmSettings['16:9'] || wmSettings['9:16'] || Object.values(wmSettings)[0];
+                    if (defaultRatio?.position) {
+                      posX = defaultRatio.position.x ?? posX;
+                      posY = defaultRatio.position.y ?? posY;
+                      opacity = defaultRatio.position.opacity ?? opacity;
+                      scale = defaultRatio.position.scale ?? scale;
+                    }
+                  }
+                  watermarkSettings = {
+                    enabled: true,
+                    watermarkId: String(profile.watermark.id),
+                    filePath: wmResult.filePath,
+                    width: null,
+                    height: null,
+                    positionX: posX,
+                    positionY: posY,
+                    opacity: opacity,
+                    scale: scale,
+                    perRatioSettings: profile.watermark_settings,
+                  };
+                  console.log(`[Projects] Applied ${target.type} watermark:`, profile.watermark.name);
+                }
+              }
+              
+              // Download and apply intro
+              if (profile.intro) {
+                const introResult = await ensureAssetDownloaded({
+                  id: profile.intro.id,
+                  name: profile.intro.name,
+                  asset_type: 'intro',
+                  url: profile.intro.url || '',
+                  thumbnail_url: profile.intro.thumbnail_url || null,
+                  organization_id: target.organizationId,
+                  organization_name: target.organizationName || '',
+                  width: null,
+                  height: null,
+                  duration: profile.intro.duration,
+                  file_size: null,
+                  mime_type: null,
+                  uploaded_by: null,
+                  inserted_at: profile.inserted_at,
+                  updated_at: profile.updated_at,
+                } as any);
+                if (introResult.success && introResult.filePath) {
+                  introPath = introResult.filePath;
+                  introDuration = profile.intro.duration;
+                  console.log(`[Projects] Applied ${target.type} intro:`, profile.intro.name);
+                }
+              }
+              
+              // Download and apply outro
+              if (profile.outro) {
+                const outroResult = await ensureAssetDownloaded({
+                  id: profile.outro.id,
+                  name: profile.outro.name,
+                  asset_type: 'outro',
+                  url: profile.outro.url || '',
+                  thumbnail_url: profile.outro.thumbnail_url || null,
+                  organization_id: target.organizationId,
+                  organization_name: target.organizationName || '',
+                  width: null,
+                  height: null,
+                  duration: profile.outro.duration,
+                  file_size: null,
+                  mime_type: null,
+                  uploaded_by: null,
+                  inserted_at: profile.inserted_at,
+                  updated_at: profile.updated_at,
+                } as any);
+                if (outroResult.success && outroResult.filePath) {
+                  outroPath = outroResult.filePath;
+                  outroDuration = profile.outro.duration;
+                  console.log(`[Projects] Applied ${target.type} outro:`, profile.outro.name);
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`[Projects] Failed to fetch branding for ${target.type} ${target.name}:`, err);
+        }
+      }
+      
+      // Create promise for build completion
+      const buildCompletePromise = new Promise<void>((resolve, reject) => {
+        const handleComplete = async (event: any) => {
+          const payload = event.payload;
+          if (payload.clip_id !== clip.id) return;
+          
+          window.removeEventListener('clip-build-complete' as any, handleComplete);
+          
+          if (payload.success && payload.output_path) {
+            await updateClipBuild(buildId, {
+              status: 'completed',
+              filePath: payload.output_path,
+              outputPaths: payload.all_output_paths,
+              thumbnailPath: payload.thumbnail_path || undefined,
+              duration: payload.duration || undefined,
+            });
+            resolve();
+          } else {
+            await updateClipBuild(buildId, {
+              status: 'failed',
+              errorMessage: payload.error || 'Build failed',
+            });
+            reject(new Error(payload.error || 'Build failed'));
+          }
+        };
+        
+        // Listen for Tauri event
+        import('@tauri-apps/api/event').then(({ listen }) => {
+          listen('clip-build-complete', handleComplete);
+        });
+      });
+      
+      // Start the build
+      await invoke('build_clip_from_segments', {
+        projectId: clip.segment_id,
+        clipId: clip.id,
+        clipName: clip.current_version?.name || clip.name || 'Untitled',
+        videoPath,
+        segments,
+        subtitleSettings: null,
+        subtitleOverrides: settings.subtitleOverrides || null,
+        transcriptWords: [],
+        transcriptSegments: [],
+        maxWords: 3,
+        aspectRatios: target.aspectRatios,
+        quality: settings.quality,
+        frameRate: settings.frameRate,
+        outputFormat: settings.format,
+        runNumber: clip.run_number || null,
+        buildNumber,
+        buildId,
+        introPath,
+        introDuration,
+        outroPath,
+        outroDuration,
+        introOutroPerRatio: Object.keys(introOutroPerRatio).length > 0 ? introOutroPerRatio : null,
+        watermarkSettings,
+        audioSettings: null,
+        framingStrategy: null,
+        manualFramingConfigs: settings.manualFramingConfigs || null,
+        segmentFramingConfigs: null,
+        videoFilterSegments: null,
+        textOverlays: null,
+        stickers: null,
+        clipWatermarks: null,
+        clipEffects: null,
+        audioEffects: null,
+        layoutOverlays: settings.layoutOverlays || null,
+        campaignId: target.type === 'campaign' ? target.id : null,
+        campaignBrandingProfileId: target.brandingProfileId,
+        brandingType: target.type,
+      });
+      
+      // Wait for this build to complete before starting next
+      await buildCompletePromise;
+      console.log(`[Projects] Completed build ${i + 1}/${buildTargets.length}`);
+    }
+    
+    success('Builds completed', `Successfully built ${buildTargets.length} clips.`);
+    showFolderBuildDialog.value = false;
+    folderClipToBuild.value = null;
+    isFolderBuildInProgress.value = false;
+    
+    // Refresh clips list
+    if (clip.segment_id) {
+      await loadFolderClips(clip.segment_id);
     }
   }
 
@@ -4082,9 +4798,25 @@
   const filteredProjects = computed(() => {
     let result = projects.value;
 
-    // Note: We no longer filter out projects based on active downloads.
-    // Projects should always appear in folder view once created.
-    // Active downloads are shown separately in the Active Downloads section.
+    // Filter out empty projects (projects with no raw videos AND no clips)
+    // This hides folders that were created for downloads but the download hasn't completed yet
+    // or failed/was cancelled. Show projects that have at least one raw video OR at least one clip.
+    result = result.filter((p) => {
+      const videos = projectVideos.value[p.id] || [];
+      const clipCount = getClipCount(p.id);
+      
+      // For parent projects (folders), check if any child has videos or clips
+      if (hasChildren(p.id)) {
+        const childProjects = projects.value.filter(child => child.parent_id === p.id);
+        return childProjects.some(child => {
+          const childVideos = projectVideos.value[child.id] || [];
+          const childClipCount = getClipCount(child.id);
+          return childVideos.length > 0 || childClipCount > 0;
+        });
+      }
+      // For regular projects, check if they have videos OR clips
+      return videos.length > 0 || clipCount > 0;
+    });
 
     // 1. Filter by View Mode (only if NOT searching)
     // If user is searching, we want to search across all projects regardless of folder structure
@@ -5204,6 +5936,7 @@
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+    padding-bottom: 2rem;
   }
 
   .projects__loading {
@@ -5618,13 +6351,13 @@
 
   @media (min-width: 1400px) {
     .projects__grid {
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(3, 1fr);
     }
   }
 
   @media (min-width: 1800px) {
     .projects__grid {
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(3, 1fr);
     }
   }
 

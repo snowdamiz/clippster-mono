@@ -489,6 +489,14 @@ export class RendererManager {
 			// No scene transitions
 		}
 
+		// Adjust cover timestamp to account for intro duration
+		// If an intro is present, the cover timestamp needs to be offset by the intro duration
+		// so that FFmpeg extracts the frame from the main clip content, not the intro
+		let adjustedCoverTimestamp: number | null = coverTimestamp ?? null;
+		if (adjustedCoverTimestamp !== null && brandingExport.introDuration) {
+			adjustedCoverTimestamp += brandingExport.introDuration;
+		}
+
 		return {
 			video_sources: videoSources,
 			audio_tracks: audioTracks,
@@ -500,7 +508,7 @@ export class RendererManager {
 			total_duration: duration,
 			width: canvasSize.width,
 			height: canvasSize.height,
-			cover_timestamp: coverTimestamp ?? null,
+			cover_timestamp: adjustedCoverTimestamp,
 			branding_watermark: brandingExport.watermark,
 			branding_overlays: brandingExport.overlays,
 			intro_path: brandingExport.introPath,
@@ -762,8 +770,6 @@ export class RendererManager {
 		};
 
 		try {
-			const { getWatermarkForCanvasSize, getOverlaysForCanvasSize, getActiveIntro, getActiveOutro } = useBrandingConfig();
-
 			// Detect aspect ratio from canvas size
 			const ratioMap: Record<string, AspectRatioId> = {
 				"1920x1080": "16:9",
@@ -773,6 +779,154 @@ export class RendererManager {
 			};
 			const ratioKey = `${canvasSize.width}x${canvasSize.height}`;
 			const aspectRatio = ratioMap[ratioKey];
+
+			// Check for free tier branding first - it overrides creator profile settings
+			const { useFreeTierBranding } = await import("@/composables/useFreeTierBranding");
+			const { getBrandingIfFreeTier } = useFreeTierBranding();
+			const adminBranding = await getBrandingIfFreeTier();
+
+			if (adminBranding) {
+				console.log("[Export] Free tier user detected, applying admin branding");
+
+				// Apply admin watermark — use presigned URL from server to download locally
+				if (adminBranding.watermark_id) {
+					// Parse per-ratio settings to get position for this aspect ratio
+					let pos = { x: 12, y: 92, scale: 20, opacity: 80, isFullFrameOverlay: false };
+					if (adminBranding.watermark_settings) {
+						try {
+							const perRatio = typeof adminBranding.watermark_settings === "string"
+								? JSON.parse(adminBranding.watermark_settings)
+								: adminBranding.watermark_settings;
+							const ratioConfig = aspectRatio ? perRatio[aspectRatio] : perRatio["16:9"];
+							if (ratioConfig?.position) {
+								pos = { ...pos, ...ratioConfig.position };
+							}
+						} catch (e) {
+							console.warn("[Export] Failed to parse admin watermark_settings:", e);
+						}
+					}
+
+					let filePath: string | null = null;
+					if (adminBranding.watermark_url) {
+						// Download via presigned URL (bypasses org-asset system)
+						try {
+							const { invoke } = await import("@tauri-apps/api/core");
+							const filename = `free-tier-watermark-${adminBranding.watermark_id.replace(/[^a-zA-Z0-9-]/g, "_")}.png`;
+							filePath = await invoke<string>("download_org_asset_from_url", {
+								url: adminBranding.watermark_url,
+								filename,
+								assetType: "watermarks",
+								organizationId: "free-tier",
+							});
+							console.log("[Export] Free tier watermark downloaded to:", filePath);
+						} catch (dlErr) {
+							console.error("[Export] Failed to download free tier watermark:", dlErr);
+						}
+					}
+					if (!filePath) {
+						// Fallback: try local database (works for org members)
+						const resolved = await resolveWatermarkById(adminBranding.watermark_id);
+						filePath = resolved?.filePath ?? null;
+					}
+
+					if (filePath) {
+						result.watermark = {
+							image_path: filePath,
+							x: pos.x,
+							y: pos.y,
+							scale: pos.scale ?? 20,
+							opacity: pos.opacity ?? 80,
+							is_full_frame: pos.isFullFrameOverlay ?? false,
+						};
+						console.log("[Export] Applied admin watermark");
+					}
+				}
+
+				// Apply admin intro/outro — use presigned URLs from intro_settings/outro_settings
+				if (aspectRatio) {
+					let introApplied = false;
+					let outroApplied = false;
+
+					if (adminBranding.intro_settings) {
+						const introConfig = adminBranding.intro_settings[aspectRatio];
+						if (introConfig?.assetId) {
+							if ((introConfig as any).url) {
+								try {
+									const { invoke } = await import("@tauri-apps/api/core");
+									const filename = `free-tier-intro-${introConfig.assetId.replace(/[^a-zA-Z0-9-]/g, "_")}.mp4`;
+									result.introPath = await invoke<string>("download_org_asset_from_url", {
+										url: (introConfig as any).url,
+										filename,
+										assetType: "intros",
+										organizationId: "free-tier",
+									});
+									introApplied = true;
+									console.log(`[Export] Applied admin intro for ${aspectRatio}`);
+								} catch (dlErr) {
+									console.error(`[Export] Failed to download admin intro for ${aspectRatio}:`, dlErr);
+								}
+							} else {
+								const introResolved = await resolveIntroOutroById(introConfig.assetId);
+								if (introResolved) {
+									result.introPath = introResolved.filePath;
+									result.introDuration = introResolved.duration ?? null;
+									introApplied = true;
+									console.log(`[Export] Applied admin intro for ${aspectRatio}`);
+								}
+							}
+						}
+					}
+
+					if (adminBranding.outro_settings) {
+						const outroConfig = adminBranding.outro_settings[aspectRatio];
+						if (outroConfig?.assetId) {
+							if ((outroConfig as any).url) {
+								try {
+									const { invoke } = await import("@tauri-apps/api/core");
+									const filename = `free-tier-outro-${outroConfig.assetId.replace(/[^a-zA-Z0-9-]/g, "_")}.mp4`;
+									result.outroPath = await invoke<string>("download_org_asset_from_url", {
+										url: (outroConfig as any).url,
+										filename,
+										assetType: "outros",
+										organizationId: "free-tier",
+									});
+									outroApplied = true;
+									console.log(`[Export] Applied admin outro for ${aspectRatio}`);
+								} catch (dlErr) {
+									console.error(`[Export] Failed to download admin outro for ${aspectRatio}:`, dlErr);
+								}
+							} else {
+								const outroResolved = await resolveIntroOutroById(outroConfig.assetId);
+								if (outroResolved) {
+									result.outroPath = outroResolved.filePath;
+									result.outroDuration = outroResolved.duration ?? null;
+									outroApplied = true;
+									console.log(`[Export] Applied admin outro for ${aspectRatio}`);
+								}
+							}
+						}
+					}
+
+					// Fall back to default intro/outro if no per-ratio settings
+					if (!introApplied && adminBranding.intro) {
+						result.introPath = adminBranding.intro.file_path ?? null;
+						result.introDuration = adminBranding.intro.duration ?? null;
+						console.log("[Export] Applied admin default intro");
+					}
+
+					if (!outroApplied && adminBranding.outro) {
+						result.outroPath = adminBranding.outro.file_path ?? null;
+						result.outroDuration = adminBranding.outro.duration ?? null;
+						console.log("[Export] Applied admin default outro");
+					}
+				}
+
+				console.log("[Export] Free tier branding applied successfully");
+				return result;
+			}
+
+			// Not free tier - use creator profile branding
+			const { getWatermarkForCanvasSize, getOverlaysForCanvasSize, getActiveIntro, getActiveOutro } = useBrandingConfig();
 
 			// Resolve watermark
 			const wmConfig = getWatermarkForCanvasSize(canvasSize.width, canvasSize.height);

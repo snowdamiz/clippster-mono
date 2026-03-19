@@ -54,18 +54,8 @@ export class BaseNode<Params extends BaseNodeParams = BaseNodeParams> {
 
 		// Phase 2: render children sequentially (compositing order matters)
 		if (this.children.length > 1) {
-			const t0 = performance.now();
-			for (let i = 0; i < this.children.length; i++) {
-				const ct0 = performance.now();
-				await this.children[i].render({ renderer, time });
-				const childMs = performance.now() - ct0;
-				if (childMs > 5) {
-					console.log(`[BaseNode] child[${i}/${this.children.length}] took=${childMs.toFixed(1)}ms t=${time.toFixed(3)}`);
-				}
-			}
-			const totalMs = performance.now() - t0;
-			if (totalMs > 10) {
-				console.log(`[BaseNode] ${this.children.length} children total=${totalMs.toFixed(1)}ms t=${time.toFixed(3)}`);
+			for (const child of this.children) {
+				await child.render({ renderer, time });
 			}
 		} else {
 			for (const child of this.children) {

@@ -7,9 +7,9 @@ use std::{
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use tauri::Emitter;
-use tauri_plugin_shell::ShellExt;
 use tokio::sync::oneshot;
 use crate::storage;
+use crate::thumbnail_utils::generate_thumbnail_hybrid;
 use tokio::io::AsyncBufReadExt;
 use base64::Engine;
 
@@ -510,17 +510,52 @@ pub async fn get_twitter_broadcast_info(url: String) -> Result<String, String> {
     Ok(stdout.to_string())
 }
 
-/// Get duration for a Twitter broadcast using ffprobe on the m3u8 manifest
+/// Get duration for a Twitter broadcast using yt-dlp + ffprobe
+/// First extracts the direct stream URL using yt-dlp, then uses ffprobe to get duration
 #[tauri::command]
-pub async fn get_twitter_broadcast_duration(app: tauri::AppHandle, manifest_url: String) -> Result<f64, String> {
-    let output = app.shell()
-        .sidecar("ffprobe")
-        .map_err(|e| format!("Failed to get ffprobe sidecar: {}", e))?
+pub async fn get_twitter_broadcast_duration(_app: tauri::AppHandle, manifest_url: String) -> Result<f64, String> {
+    println!("[Twitter] Getting duration for URL: {}", manifest_url);
+    
+    // Step 1: Use yt-dlp to extract the direct stream URL
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    
+    println!("[Twitter] Extracting stream URL via yt-dlp...");
+    let ytdlp_output = no_window(
+        tokio::process::Command::new(&ytdlp_path)
+            .arg("--get-url")
+            .arg("--no-download")
+            .arg("--no-warnings")
+            .arg("--impersonate").arg("chrome")
+            .arg(&manifest_url)
+    )
+    .output()
+    .await
+    .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+    
+    if !ytdlp_output.status.success() {
+        let stderr = String::from_utf8_lossy(&ytdlp_output.stderr);
+        return Err(format!("yt-dlp failed to extract stream URL: {}", stderr.chars().take(300).collect::<String>()));
+    }
+    
+    let stream_url = String::from_utf8_lossy(&ytdlp_output.stdout).trim().to_string();
+    if stream_url.is_empty() {
+        return Err("yt-dlp returned empty stream URL".to_string());
+    }
+    
+    println!("[Twitter] Got stream URL, probing duration with ffprobe...");
+    
+    // Step 2: Use ffprobe on the direct stream URL
+    let ffprobe_path = resolve_sidecar_binary("ffprobe")?;
+    
+    let mut cmd = tokio::process::Command::new(&ffprobe_path);
+    no_window(&mut cmd);
+    
+    let output = cmd
         .args([
             "-v", "error",
             "-show_entries", "format=duration",
             "-of", "default=noprint_wrappers=1:nokey=1",
-            &manifest_url
+            &stream_url
         ])
         .output()
         .await
@@ -533,6 +568,8 @@ pub async fn get_twitter_broadcast_duration(app: tauri::AppHandle, manifest_url:
     
     let stdout = String::from_utf8_lossy(&output.stdout);
     let duration_str = stdout.trim();
+    
+    println!("[Twitter] ffprobe duration output: {}", duration_str);
     
     if duration_str.is_empty() || duration_str == "N/A" {
         return Err("Duration not available".to_string());
@@ -680,14 +717,15 @@ pub async fn download_twitter_vod(
         let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
             .parent()
             .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| ffmpeg_path.to_string_lossy().to_string());
+            .unwrap_or_else(|| ffmpeg_path.clone());
         
         cmd.arg(&vod_url)
             .arg("-o").arg(&output_file_str)
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
-            .arg("--external-downloader").arg("ffmpeg")
-            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
+            .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
+            .arg("--merge-output-format").arg("mp4")
             .arg("--newline")
             .arg("--progress")
             .stdout(std::process::Stdio::piped())
@@ -813,29 +851,23 @@ pub async fn download_twitter_vod(
                 // Get file metadata
                 let file_size = std::fs::metadata(&output_file_str).ok().map(|m| m.len());
                 
-                // Generate thumbnail
+                // Generate thumbnail using hybrid approach (yt-dlp first, FFmpeg fallback)
                 println!("[Twitter] Generating thumbnail...");
                 let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
-                let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
-                    .args([
-                        "-hwaccel", "auto",
-                        "-ss", "00:00:05",
-                        "-i", &output_file_str,
-                        "-vframes", "1",
-                        "-vf", "scale=320:-1",
-                        "-y",
-                        thumbnail_path.to_str().unwrap_or(""),
-                    ]))
-                    .output()
-                    .await;
                 
-                let thumbnail_path_str = match thumbnail_result {
-                    Ok(output) if output.status.success() => {
+                let thumbnail_path_str = match generate_thumbnail_hybrid(
+                    &ytdlp_path,
+                    &ffmpeg_path,
+                    &vod_url,
+                    &thumbnail_path,
+                    "00:00:05",
+                ).await {
+                    Ok(()) => {
                         println!("[Twitter] Thumbnail generated: {}", thumbnail_path.display());
                         Some(thumbnail_path.to_string_lossy().to_string())
                     }
-                    _ => {
-                        println!("[Twitter] Thumbnail generation failed");
+                    Err(e) => {
+                        println!("[Twitter] Thumbnail generation failed: {}", e);
                         None
                     }
                 };
@@ -906,48 +938,107 @@ fn extract_broadcast_id(url: &str) -> Result<String, String> {
     }
 }
 
-fn resolve_ytdlp_binary() -> Result<PathBuf, String> {
+/// Resolve a sidecar binary path using Tauri's naming convention.
+/// Tauri places sidecars next to the executable with -{target_triple} suffix.
+/// In dev mode, they're in src-tauri/binaries/ with the same naming.
+fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
+    let exe_path =
+        std::env::current_exe().map_err(|e| format!("Failed to get executable path: {}", e))?;
+
+    let exe_dir = exe_path.parent().ok_or("Failed to get parent directory")?;
+
+    let target_triple = get_target_triple();
+
     #[cfg(target_os = "windows")]
-    let binary_name = "yt-dlp.exe";
-    
+    let binary_name = format!("{}-{}.exe", base_name, target_triple);
+
     #[cfg(not(target_os = "windows"))]
-    let binary_name = "yt-dlp";
-    
-    let exe_dir = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable directory: {}", e))?
-        .parent()
-        .ok_or("Failed to get parent directory")?
-        .to_path_buf();
-    
-    let ytdlp_path = exe_dir.join(binary_name);
-    
-    if ytdlp_path.exists() {
-        Ok(ytdlp_path)
-    } else {
-        Err(format!("yt-dlp binary not found at: {}", ytdlp_path.display()))
+    let binary_name = format!("{}-{}", base_name, target_triple);
+
+    // Production: sidecar is next to the executable
+    let prod_path = exe_dir.join(&binary_name);
+    if prod_path.exists() {
+        println!(
+            "[Twitter] Found {} at (prod): {}",
+            base_name,
+            prod_path.display()
+        );
+        return Ok(prod_path.to_string_lossy().to_string());
     }
+
+    // macOS production bundle: Tauri strips the target triple from sidecar names
+    #[cfg(target_os = "windows")]
+    let bare_name = format!("{}.exe", base_name);
+    #[cfg(not(target_os = "windows"))]
+    let bare_name = base_name.to_string();
+
+    let bare_path = exe_dir.join(&bare_name);
+    if bare_path.exists() {
+        println!(
+            "[Twitter] Found {} at (bundle): {}",
+            base_name,
+            bare_path.display()
+        );
+        return Ok(bare_path.to_string_lossy().to_string());
+    }
+
+    // Development mode: check src-tauri/binaries/
+    if let Some(target_dir) = exe_dir.parent() {
+        if let Some(target_parent) = target_dir.parent() {
+            let dev_path = target_parent.join("binaries").join(&binary_name);
+            if dev_path.exists() {
+                println!(
+                    "[Twitter] Found {} at (dev): {}",
+                    base_name,
+                    dev_path.display()
+                );
+                return Ok(dev_path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // Fallback to system PATH
+    #[cfg(target_os = "windows")]
+    let fallback = format!("{}.exe", base_name);
+
+    #[cfg(not(target_os = "windows"))]
+    let fallback = base_name.to_string();
+
+    println!(
+        "[Twitter] {} not found in bundle, falling back to PATH: {}",
+        base_name, fallback
+    );
+    Ok(fallback)
 }
 
-fn resolve_ffmpeg_binary() -> Result<PathBuf, String> {
-    #[cfg(target_os = "windows")]
-    let binary_name = "ffmpeg.exe";
-    
-    #[cfg(not(target_os = "windows"))]
-    let binary_name = "ffmpeg";
-    
-    let exe_dir = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable directory: {}", e))?
-        .parent()
-        .ok_or("Failed to get parent directory")?
-        .to_path_buf();
-    
-    let ffmpeg_path = exe_dir.join(binary_name);
-    
-    if ffmpeg_path.exists() {
-        Ok(ffmpeg_path)
-    } else {
-        Err(format!("ffmpeg binary not found at: {}", ffmpeg_path.display()))
-    }
+fn get_target_triple() -> &'static str {
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    return "x86_64-pc-windows-msvc";
+
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    return "x86_64-apple-darwin";
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    return "aarch64-apple-darwin";
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return "x86_64-unknown-linux-gnu";
+
+    #[cfg(not(any(
+        all(target_os = "windows", target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "linux", target_arch = "x86_64")
+    )))]
+    compile_error!("Unsupported platform - only x86_64 Windows/Linux and x86_64/aarch64 macOS are supported");
+}
+
+fn resolve_ytdlp_binary() -> Result<String, String> {
+    resolve_sidecar_binary("yt-dlp")
+}
+
+fn resolve_ffmpeg_binary() -> Result<String, String> {
+    resolve_sidecar_binary("ffmpeg")
 }
 
 fn format_time_for_filename(seconds: f64) -> String {
@@ -1055,16 +1146,16 @@ pub async fn download_twitter_vod_segment(
         let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
             .parent()
             .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| ffmpeg_path.to_string_lossy().to_string());
+            .unwrap_or_else(|| ffmpeg_path.clone());
         cmd.arg(&vod_url)
             .arg("-o").arg(&video_path_str)
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
-            .arg("--external-downloader").arg("ffmpeg")
-            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
+            .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
+            .arg("--merge-output-format").arg("mp4")
             .arg("--download-sections").arg(&section_arg)
             .arg("--force-keyframes-at-cuts")
-            .arg("--no-part")
             .arg("--newline")
             .arg("--progress")
             .stdout(std::process::Stdio::piped())

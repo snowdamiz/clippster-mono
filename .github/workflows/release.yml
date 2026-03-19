@@ -820,7 +820,7 @@ jobs:
             "format": "UDZO"
           }
           APPDMG_EOF
-            npm install -g appdmg
+            yarn global add appdmg
             rm -f "$DMG_FILE"
             appdmg "$APPDMG_CONFIG" "$DMG_FILE"
             # Sign the DMG

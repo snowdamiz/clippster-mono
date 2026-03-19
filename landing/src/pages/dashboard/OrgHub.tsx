@@ -140,7 +140,6 @@ export function OrgHub() {
       description: 'Run and track clipping campaigns',
       icon: Target,
       route: `/dashboard/org/${id}/campaigns`,
-      comingSoon: true,
     },
     {
       id: 'clippers',

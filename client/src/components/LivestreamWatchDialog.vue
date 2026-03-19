@@ -286,16 +286,21 @@
                       <!-- Clip Button -->
                       <button
                         @click="openClipModal"
-                        class="px-3 py-2 bg-gradient-to-r from-[var(--sidebar-accent)] to-[#0891b2] hover:opacity-90 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2"
                         :disabled="
-                          viewer.state.value.totalRecordedDuration < 5 ||
+                          viewer.state.value.totalRecordedDuration < 180 ||
                           viewer.state.value.availableSegments.length === 0
                         "
+                        :class="[
+                          'px-3 py-2 bg-gradient-to-r from-[var(--sidebar-accent)] to-[#0891b2] text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2',
+                          viewer.state.value.totalRecordedDuration >= 180 && viewer.state.value.availableSegments.length > 0
+                            ? 'hover:opacity-90 cursor-pointer'
+                            : 'opacity-50 cursor-not-allowed'
+                        ]"
                         :title="
                           viewer.state.value.availableSegments.length === 0
                             ? 'Waiting for segments to load...'
-                            : viewer.state.value.totalRecordedDuration < 5
-                              ? 'Wait for more content to be recorded'
+                            : viewer.state.value.totalRecordedDuration < 180
+                              ? `DVR buffer building... ${formatTime(180 - viewer.state.value.totalRecordedDuration)} remaining`
                               : 'Create clip (C)'
                         "
                       >
@@ -329,23 +334,40 @@
             </div>
 
             <!-- Clip Modal -->
-            <ClipDurationModal
+            <LivestreamClipSelector
               v-if="showClipModal"
-              :available-duration="viewer.availableClipDuration.value"
+              :available-duration="frozenClipDuration"
               :project-id="sessionProjectId || viewer.state.value.projectId"
               :session-id="viewer.state.value.sessionId"
               :temp-session-id="viewer.state.value.tempSessionId"
-              :playback-position="viewer.state.value.playbackPosition"
+              :playback-position="frozenClipDuration"
               :watermark-settings="viewer.state.value.watermarkSettings"
               :watermark-id="viewer.state.value.watermarkId"
-              :segments="viewer.state.value.availableSegments"
+              :segments="frozenSegments"
               :display-name="props.displayName"
               :mint-id="props.mintId"
               :is-temp-recording="viewer.state.value.isTempRecording"
               :streamer-id="props.streamerId"
               :platform="props.platform"
-              @close="showClipModal = false"
+              :hls-output-dir="viewer.hlsOutputDir.value"
+              @close="handleClipSelectorClose"
               @clip-created="handleClipCreated"
+              @publish-clip="handlePublishClip"
+            />
+
+            <!-- Quick Publish Wizard (unified build + publish flow) -->
+            <QuickPublishWizard
+              v-if="publishClipData && currentClipForPublish"
+              :show="showQuickPublishWizard"
+              :clip="currentClipForPublish"
+              :clip-path="publishClipData.clipPath"
+              :project-id="publishClipData.projectId"
+              :watermark-settings="(viewer.state.value.watermarkSettings as any) || null"
+              :thumbnail-url="currentClipForPublish.thumbnail_path || null"
+              :platform="props.platform"
+              :creator-profile-server-id="null"
+              @published="handlePublishComplete"
+              @close="handleQuickPublishClose"
             />
           </div>
         </Transition>
@@ -384,7 +406,8 @@
   import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
   import { useToast } from '@/composables/useToast';
   import LivestreamSeekBar from './LivestreamSeekBar.vue';
-  import ClipDurationModal from './ClipDurationModal.vue';
+  import LivestreamClipSelector from './LivestreamClipSelector.vue';
+  import QuickPublishWizard from './QuickPublishWizard.vue';
   import { createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
   import { getWatermarkImage, resolveWatermarkById } from '@/services/database/watermarks';
   import { createClipVersion } from '@/services/database/clip-versions';
@@ -428,6 +451,14 @@
   const viewer = useLivestreamViewer();
   const livestreamStore = useLivestreamStore();
 
+  interface SegmentInfo {
+    segmentNumber: number;
+    filePath: string;
+    startTime: number;
+    duration: number;
+    endTime: number;
+  }
+
   // UI State
   const isFullscreen = ref(false);
   const showControls = ref(true);
@@ -436,6 +467,16 @@
   const watermarkUrl = ref<string | null>(null);
   const watermarkDimensions = ref<{ width: number; height: number } | null>(null);
   let controlsTimeout: number | null = null;
+
+  // Frozen clip selector state (snapshot at moment user clicks Clip)
+  const frozenSegments = ref<SegmentInfo[]>([]);
+  const frozenClipDuration = ref(0);
+  const wasPlayingBeforeClip = ref(false);
+
+  // Build and publish workflow state
+  const showQuickPublishWizard = ref(false);
+  const publishClipData = ref<{ clipId: string; clipPath: string; projectId: string } | null>(null);
+  const currentClipForPublish = ref<any>(null);
 
   // PiP state tracking
   const isInPipMode = ref(false);
@@ -493,6 +534,7 @@
   const showWatermark = computed(() => {
     return viewer.state.value.watermarkId && viewer.state.value.watermarkSettings;
   });
+
 
   const watermarkStyle = computed<CSSProperties>(() => {
     const settings = viewer.state.value.watermarkSettings;
@@ -681,7 +723,52 @@
   function openClipModal() {
     // Prevent opening if already open
     if (showClipModal.value) return;
+
+    // Snapshot the frozen segments: take the 3 minutes ending at the current playhead position
+    const allSegments = viewer.state.value.availableSegments;
+    const playheadPosition = viewer.state.value.playbackPosition;
+    const maxClipWindow = 180; // 3 minutes
+
+    // Use the playhead position as the end of the clip window (not the live edge)
+    const windowEnd = playheadPosition;
+    const windowStart = Math.max(0, windowEnd - maxClipWindow);
+    const windowDuration = windowEnd - windowStart;
+
+    if (windowDuration > 0) {
+      // Filter to segments that overlap with the window around the playhead
+      const relevantSegments = allSegments.filter((s: SegmentInfo) => s.endTime > windowStart && s.startTime < windowEnd);
+
+      // Re-base segment times to start from 0 within the window
+      frozenSegments.value = relevantSegments.map((s: SegmentInfo) => ({
+        ...s,
+        startTime: Math.max(0, s.startTime - windowStart),
+        endTime: Math.min(windowDuration, s.endTime - windowStart),
+      }));
+      frozenClipDuration.value = windowDuration;
+    } else {
+      // No valid window, use all segments as-is
+      frozenSegments.value = [...allSegments];
+      frozenClipDuration.value = viewer.state.value.totalRecordedDuration;
+    }
+
+    // Pause the main HLS video to avoid audio overlap
+    wasPlayingBeforeClip.value = viewer.state.value.isPlaying;
+    viewer.pause();
+
     showClipModal.value = true;
+  }
+
+  function handleClipSelectorClose() {
+    showClipModal.value = false;
+
+    // Resume playback if it was playing before opening the clip selector
+    if (wasPlayingBeforeClip.value) {
+      viewer.togglePlayPause();
+    }
+
+    // Clear frozen state
+    frozenSegments.value = [];
+    frozenClipDuration.value = 0;
   }
 
   // Quick clip: Create a 30-second clip without any dialog
@@ -787,17 +874,12 @@
 
       // Save clip to database
       try {
-        // Get campaign ID from store if this streamer is associated with a campaign
-        const sessionCampaign = livestreamStore.getSessionCampaign(props.streamerId);
-        const campaignId = sessionCampaign?.id;
-
         const clipId = await createClipRecord(effectiveProjectId, clipFilePath, {
           name: clipName,
           duration: QUICK_CLIP_DURATION,
           startTime: clipStartTime,
           endTime: clipEndTime,
           thumbnailPath: thumbnailFilePath || undefined,
-          campaignId,
         });
 
         const manualSessionId = await getOrCreateManualSession(effectiveProjectId);
@@ -812,7 +894,7 @@
           },
           'detected'
         );
-        await updateClip(clipId, { current_version_id: versionId });
+        await updateClip(clipId, { current_version_id: versionId, detection_session_id: manualSessionId });
         console.log('[WatchDialog] Quick clip saved to database');
 
         // Update project thumbnail if it doesn't have one yet
@@ -851,7 +933,8 @@
   }
 
   function handleClipCreated(clipPath: string, projectId: string) {
-    showClipModal.value = false;
+    // Don't close modal — let user see success state with Publish Now / Not Now buttons.
+    // Modal closes when user clicks "Not Now" (close) or "Publish Now" (publish-clip).
 
     // Track the project and clip count for this session
     if (projectId) {
@@ -860,6 +943,56 @@
     }
 
     emit('clip-created', clipPath, projectId);
+  }
+
+  async function handlePublishClip(clipId: string, clipPath: string, projectId: string) {
+    console.log('[WatchDialog] handlePublishClip called:', { clipId, clipPath, projectId });
+    
+    // Close the clip selector modal
+    showClipModal.value = false;
+
+    // Track the project and clip count for this session
+    if (projectId) {
+      sessionProjectId.value = projectId;
+      clipsCreatedCount.value++;
+    }
+
+    // Store clip data for publish workflow
+    publishClipData.value = { clipId, clipPath, projectId };
+    console.log('[WatchDialog] publishClipData set:', publishClipData.value);
+
+    // Load clip data from database
+    try {
+      const { getClip } = await import('@/services/database/clips');
+      const clip = await getClip(clipId);
+      console.log('[WatchDialog] Loaded clip from database:', clip);
+      
+      if (clip) {
+        currentClipForPublish.value = clip;
+        console.log('[WatchDialog] currentClipForPublish set:', currentClipForPublish.value);
+        // Open the unified QuickPublishWizard
+        showQuickPublishWizard.value = true;
+        console.log('[WatchDialog] showQuickPublishWizard set to true');
+      } else {
+        console.error('[WatchDialog] Clip not found in database');
+        showError('Error', 'Failed to load clip data');
+      }
+    } catch (err) {
+      console.error('[WatchDialog] Failed to load clip for publishing:', err);
+      showError('Error', 'Failed to load clip data');
+    }
+  }
+
+  function handlePublishComplete() {
+    // Publishing was initiated (dialog closes immediately, publish happens in background)
+    showSuccess('Publishing', 'Your clip is being published in the background');
+    handleQuickPublishClose();
+  }
+
+  function handleQuickPublishClose() {
+    showQuickPublishWizard.value = false;
+    publishClipData.value = null;
+    currentClipForPublish.value = null;
   }
 
   async function handleClose() {

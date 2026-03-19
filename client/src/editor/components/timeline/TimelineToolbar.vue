@@ -107,6 +107,12 @@ const redoCount = computed(() => {
 	return editor.command.getRedoStackSize();
 });
 
+const hasTimelineContent = computed(() => {
+	void version.value;
+	const tracks = editor.timeline.getTracks();
+	return tracks.some((track) => track.elements.length > 0);
+});
+
 const sliderValue = computed(() => zoomToSlider({ zoomLevel: props.zoomLevel, minZoom: props.minZoom }));
 
 function handleZoom(direction: "in" | "out") {
@@ -137,7 +143,7 @@ function handleAction(action: string, event?: MouseEvent) {
 				<!-- Play/Pause -->
 				<Tooltip>
 					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" @click="handleAction('toggle-play', $event)">
+						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" @click="handleAction('toggle-play', $event)">
 							<Pause v-if="isPlaying" class="size-4" />
 							<Play v-else class="size-4" />
 						</Button>
@@ -148,7 +154,7 @@ function handleAction(action: string, event?: MouseEvent) {
 				<!-- Go to start -->
 				<Tooltip>
 					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" @click="handleAction('goto-start', $event)">
+						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" @click="handleAction('goto-start', $event)">
 							<SkipBack class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -197,7 +203,7 @@ function handleAction(action: string, event?: MouseEvent) {
 				<!-- Split -->
 				<Tooltip>
 					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" @click="handleAction('split', $event)">
+						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" @click="handleAction('split', $event)">
 							<Scissors class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -207,7 +213,7 @@ function handleAction(action: string, event?: MouseEvent) {
 				<!-- Split left -->
 				<Tooltip>
 					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" @click="handleAction('split-left', $event)">
+						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" @click="handleAction('split-left', $event)">
 							<AlignLeft class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -217,7 +223,7 @@ function handleAction(action: string, event?: MouseEvent) {
 				<!-- Split right -->
 				<Tooltip>
 					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" @click="handleAction('split-right', $event)">
+						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" @click="handleAction('split-right', $event)">
 							<AlignRight class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -227,7 +233,7 @@ function handleAction(action: string, event?: MouseEvent) {
 				<!-- Duplicate -->
 				<Tooltip>
 					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" @click="handleAction('duplicate-selected', $event)">
+						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" @click="handleAction('duplicate-selected', $event)">
 							<Copy class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -237,7 +243,7 @@ function handleAction(action: string, event?: MouseEvent) {
 				<!-- Delete -->
 				<Tooltip>
 					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" @click="handleAction('delete-selected', $event)">
+						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" @click="handleAction('delete-selected', $event)">
 							<Trash2 class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -251,9 +257,11 @@ function handleAction(action: string, event?: MouseEvent) {
 							variant="ghost"
 							size="icon"
 							:disabled="!hasVideoOrImageSelected"
-							:class="{ 'bg-primary/20 text-primary': isCropMode }"
+							class="relative overflow-visible"
+							:class="{ 'text-cyan-400': isCropMode }"
 							@click="toggleCropMode(selectedVideoOrImage?.crop)"
 						>
+							<span v-if="isCropMode" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
 							<Crop class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -263,7 +271,7 @@ function handleAction(action: string, event?: MouseEvent) {
 				<!-- Freeze Frame -->
 				<Tooltip>
 					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" @click="handleAction('freeze-frame', $event)">
+						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" @click="handleAction('freeze-frame', $event)">
 							<Snowflake class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -275,7 +283,7 @@ function handleAction(action: string, event?: MouseEvent) {
 				<!-- Bookmark -->
 				<Tooltip>
 					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" @click="handleAction('toggle-bookmark', $event)">
+						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" @click="handleAction('toggle-bookmark', $event)">
 							<Bookmark class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -290,9 +298,12 @@ function handleAction(action: string, event?: MouseEvent) {
 						<Button
 							variant="ghost"
 							size="icon"
-							:class="{ 'bg-primary/20 text-primary': razorMode }"
+							:disabled="!hasTimelineContent"
+							class="relative overflow-visible"
+							:class="{ 'text-cyan-400': razorMode }"
 							@click="emit('toggleRazorMode')"
 						>
+							<span v-if="razorMode" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
 							<MousePointerClick class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -305,9 +316,12 @@ function handleAction(action: string, event?: MouseEvent) {
 						<Button
 							variant="ghost"
 							size="icon"
-							:class="{ 'bg-primary/20 text-primary': autoFollow }"
+							:disabled="!hasTimelineContent"
+							class="relative overflow-visible"
+							:class="{ 'text-cyan-400': autoFollow }"
 							@click="emit('toggleAutoFollow')"
 						>
+							<span v-if="autoFollow" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
 							<Navigation2 class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -325,9 +339,12 @@ function handleAction(action: string, event?: MouseEvent) {
 						<Button
 							variant="ghost"
 							size="icon"
-							:class="{ 'bg-primary/20 text-primary': mainTrackMagnet }"
+							:disabled="!hasTimelineContent"
+							class="relative overflow-visible"
+							:class="{ 'text-cyan-400': mainTrackMagnet }"
 							@click="emit('toggleMainTrackMagnet')"
 						>
+							<span v-if="mainTrackMagnet" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
 							<Magnet class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -340,9 +357,12 @@ function handleAction(action: string, event?: MouseEvent) {
 						<Button
 							variant="ghost"
 							size="icon"
-							:class="{ 'bg-primary/20 text-primary': autoSnapping }"
+							:disabled="!hasTimelineContent"
+							class="relative overflow-visible"
+							:class="{ 'text-cyan-400': autoSnapping }"
 							@click="emit('toggleAutoSnapping')"
 						>
+							<span v-if="autoSnapping" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
 							<SplitSquareHorizontal class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -355,9 +375,12 @@ function handleAction(action: string, event?: MouseEvent) {
 						<Button
 							variant="ghost"
 							size="icon"
-							:class="{ 'bg-primary/20 text-primary': linkage }"
+							:disabled="!hasTimelineContent"
+							class="relative overflow-visible"
+							:class="{ 'text-cyan-400': linkage }"
 							@click="emit('toggleLinkage')"
 						>
+							<span v-if="linkage" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
 							<Link class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -372,7 +395,7 @@ function handleAction(action: string, event?: MouseEvent) {
 					<!-- Scroll to playhead -->
 					<Tooltip>
 						<TooltipTrigger as-child>
-							<Button variant="ghost" size="icon" @click="emit('scrollToPlayhead')">
+							<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" @click="emit('scrollToPlayhead')">
 								<Crosshair class="size-4" />
 							</Button>
 						</TooltipTrigger>
@@ -382,7 +405,7 @@ function handleAction(action: string, event?: MouseEvent) {
 					<!-- Zoom to fit -->
 					<Tooltip>
 						<TooltipTrigger as-child>
-							<Button variant="ghost" size="icon" @click="emit('zoomToFit')">
+							<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" @click="emit('zoomToFit')">
 								<Maximize2 class="size-4" />
 							</Button>
 						</TooltipTrigger>
@@ -390,19 +413,20 @@ function handleAction(action: string, event?: MouseEvent) {
 					</Tooltip>
 				</TooltipProvider>
 
-				<Button variant="ghost" size="icon" @click="handleZoom('out')">
+				<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" @click="handleZoom('out')">
 					<ZoomOut class="size-4" />
 				</Button>
 				<input
 					type="range"
 					class="w-28 accent-primary"
+					:disabled="!hasTimelineContent"
 					:value="sliderValue"
 					min="0"
 					max="1"
 					step="0.005"
 					@input="handleSliderInput"
 				/>
-				<Button variant="ghost" size="icon" @click="handleZoom('in')">
+				<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" @click="handleZoom('in')">
 					<ZoomIn class="size-4" />
 				</Button>
 			</div>

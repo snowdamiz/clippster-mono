@@ -116,6 +116,7 @@ export interface Clip {
   built_duration: number | null;
   // Version tracking
   current_version_id: string | null;
+  detection_session_id: string | null;
   // Campaign integration
   campaign_id: number | null;
   // Cover image (from image editor)
@@ -279,6 +280,16 @@ export interface ClipBuild {
   status: 'building' | 'completed' | 'failed';
   error_message: string | null;
   progress: number;
+  // Branding context
+  organization_id: number | null;
+  organization_name: string | null;
+  campaign_id: number | null;
+  campaign_name: string | null;
+  branding_profile_id: string | null;
+  branding_type: 'org' | 'campaign' | 'personal' | 'none';
+  // Published status
+  is_published: boolean | number;
+  published_at: number | null;
   // Timestamps
   started_at: number;
   completed_at: number | null;
@@ -541,7 +552,7 @@ export interface CreatorIntroOutroSettings {
 }
 
 // Separate per-ratio settings for intro and outro independently
-export type AspectRatioId = '9:16' | '1:1' | '4:5';
+export type AspectRatioId = '16:9' | '9:16' | '1:1' | '4:5';
 export type RatioAssetMap = Record<AspectRatioId, CreatorRatioAssetConfig | null>;
 
 export interface CreatorProfile {
@@ -579,4 +590,43 @@ export interface CreatorPlatformLink {
 
 export interface CreatorProfileWithLinks extends CreatorProfile {
   platform_links: CreatorPlatformLink[];
+  organization_id?: number | null;
+  organization_name?: string | null;
+  campaign_id?: number | null;
+  campaign_title?: string | null;
+  context_type?: 'personal' | 'organization' | 'campaign';
+}
+
+export interface DownloadedAudio {
+  id: string;
+  title: string;
+  source: 'youtube' | 'twitter' | 'upload';
+  platform: string | null;
+  source_url: string | null;
+  file_path: string;
+  duration: number | null;
+  file_size: number | null;
+  sample_rate: number | null;
+  channels: number | null;
+  thumbnail_url: string | null;
+  user_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface AudioPlaylist {
+  id: string;
+  name: string;
+  description: string | null;
+  user_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface AudioPlaylistItem {
+  id: string;
+  playlist_id: string;
+  audio_id: string;
+  position: number;
+  created_at: number;
 }

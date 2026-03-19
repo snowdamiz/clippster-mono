@@ -144,9 +144,9 @@
 
   // Subscription tiers for display (1 credit = 1 minute)
   const tiers = ref([
-    { id: 'starter', name: 'Starter', price_usd: 29.99, monthly_credits: 600 },
-    { id: 'creator', name: 'Creator', price_usd: 54.99, monthly_credits: 1800 },
-    { id: 'pro', name: 'Pro', price_usd: 204.99, monthly_credits: 9000 },
+    { id: 'starter', name: 'Starter', price_usd: 24.99, monthly_credits: 600 },
+    { id: 'creator', name: 'Creator', price_usd: 49.99, monthly_credits: 1800 },
+    { id: 'pro', name: 'Pro', price_usd: 199.99, monthly_credits: 9000 },
   ]);
 
   // Dynamic header based on context

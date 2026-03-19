@@ -8,6 +8,10 @@ use crate::ffmpeg_utils::{
     detect_hardware_encoder, extract_duration_from_ffmpeg_output, get_video_info, parse_ffmpeg_time,
 };
 use crate::storage;
+use crate::thumbnail_utils::generate_thumbnail_hybrid;
+
+mod kick_downloads_helpers;
+use kick_downloads_helpers::{no_window, resolve_kick_ytdlp_binary, resolve_kick_ffmpeg_binary};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DownloadProgress {
@@ -61,51 +65,6 @@ fn format_time_for_filename(seconds: f64) -> String {
     format!("{:02}{:02}{:02}", h, m, s)
 }
 
-/// Remux input_path → output_path adding -movflags +faststart (moves moov atom to front).
-/// This is a fast stream-copy operation — no re-encoding, typically 5-15 seconds even for 2hr VODs.
-/// Deletes input_path on success.
-async fn remux_with_faststart(
-    app: &tauri::AppHandle,
-    input_path: &str,
-    output_path: &str,
-) -> Result<(), String> {
-    use tauri_plugin_shell::ShellExt;
-
-    println!(
-        "[Rust] Remuxing for faststart: {} -> {}",
-        input_path, output_path
-    );
-
-    let shell = app.shell();
-    let output = shell
-        .sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
-            "-i",
-            input_path,
-            "-c",
-            "copy",
-            "-movflags",
-            "+faststart",
-            "-y",
-            output_path,
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run faststart remux: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Faststart remux failed: {}", stderr));
-    }
-
-    // Delete the raw temp file now that the faststart version exists
-    let _ = std::fs::remove_file(input_path);
-
-    println!("[Rust] Faststart remux completed successfully");
-    Ok(())
-}
-
 /// Helper function to run FFmpeg segment download with a specific encoder
 /// Returns Ok(()) on success, Err(error_message) on failure
 async fn run_segment_download_with_encoder(
@@ -138,10 +97,6 @@ async fn run_segment_download_with_encoder(
     let segment_duration_str = format!("{:.3}", segment_duration);
     let referer_header = "Referer: https://kick.com\r\nOrigin: https://kick.com\r\n";
     let user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
-    // Write to a temp file first (no faststart), then do a fast remux pass to add faststart.
-    // This avoids the slow in-place moov rewrite that causes the "stuck at 99%" stall.
-    let temp_output_path = format!("{}.dl.tmp.mp4", output_path);
 
     let mut args: Vec<&str> = Vec::new();
     // HLS-specific input options must come before -i
@@ -180,12 +135,14 @@ async fn run_segment_download_with_encoder(
         "0:a:0?",
         "-avoid_negative_ts",
         "make_zero",
+        "-movflags",
+        "+faststart",
         "-progress",
         "pipe:2",
         "-v",
         "warning",
         "-y",
-        &temp_output_path,
+        output_path,
     ]);
 
     let (mut rx, child) = cmd
@@ -302,46 +259,14 @@ async fn run_segment_download_with_encoder(
             _ = &mut *cancel_rx => {
                 println!("[Rust] Download cancelled, terminating FFmpeg...");
                 let _ = child.kill();
-                // Clean up temp file
-                let _ = std::fs::remove_file(&temp_output_path);
                 return Err("Download cancelled".to_string());
             }
         }
     }
 
     if success {
-        // Emit "Optimizing for playback..." before the fast remux pass
-        let _ = app.emit(
-            "download-progress",
-            DownloadProgress {
-                download_id: download_id.to_string(),
-                progress: 97.0,
-                current_time: None,
-                total_time: None,
-                status: "Optimizing for playback...".to_string(),
-            },
-        );
-
-        // Fast remux pass: move moov atom to front for instant seeking.
-        // Reads from temp_output_path, writes final file to output_path, deletes temp on success.
-        if let Err(e) = remux_with_faststart(app, &temp_output_path, output_path).await {
-            // Remux failed — rename temp file to output so we at least have the video
-            println!(
-                "[Rust] Faststart remux failed ({}), using raw download file",
-                e
-            );
-            if let Err(rename_err) = std::fs::rename(&temp_output_path, output_path) {
-                let _ = std::fs::remove_file(&temp_output_path);
-                return Err(format!(
-                    "Download succeeded but file move failed: {}",
-                    rename_err
-                ));
-            }
-        }
         Ok(())
     } else {
-        // Clean up temp file on failure
-        let _ = std::fs::remove_file(&temp_output_path);
         Err(format!(
             "FFmpeg segment download failed: {}",
             last_error.unwrap_or_else(|| "Unknown error".to_string())
@@ -382,21 +307,32 @@ async fn run_full_download_with_encoder(
     let referer_header = "Referer: https://kick.com\r\nOrigin: https://kick.com\r\n";
     let user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-    // Write to a temp file first (no faststart), then do a fast remux pass to add faststart.
-    // This avoids the slow in-place moov rewrite that causes the "stuck at 99%" stall.
-    let temp_output_path = format!("{}.dl.tmp.mp4", output_path);
-
     // Build args based on whether we're copying or encoding
     let mut args: Vec<&str> = Vec::new();
     // HLS-specific input options must come before -i
     if is_hls {
         args.extend_from_slice(&[
+            // Network optimizations
             "-reconnect",
             "1",
             "-reconnect_streamed",
             "1",
             "-reconnect_delay_max",
             "5",
+            "-http_persistent",
+            "1",  // Reuse HTTP connections for speed
+            "-multiple_requests",
+            "1",  // Enable parallel segment downloads
+            "-timeout",
+            "5000000",  // 5 second timeout (microseconds)
+            "-rw_timeout",
+            "5000000",  // Read/write timeout
+            // Buffer optimizations
+            "-probesize",
+            "10M",  // Faster stream detection
+            "-analyzeduration",
+            "5M",  // Faster format analysis
+            // Headers
             "-headers",
             referer_header,
             "-user_agent",
@@ -410,21 +346,25 @@ async fn run_full_download_with_encoder(
             "-c:v",
             "copy",
             "-c:a",
-            "aac",
-            "-b:a",
-            "128k",
+            "copy",  // Copy audio too for maximum speed
             "-map",
             "0:v:0?",
             "-map",
             "0:a:0?",
+            "-copyts",  // Copy timestamps as-is for accuracy
+            "-start_at_zero",  // Normalize to zero start time
+            "-movflags",
+            "+faststart",
+            "-fflags",
+            "+genpts+igndts",  // Generate PTS, ignore DTS issues
             "-progress",
             "pipe:2",
             "-v",
             "warning",
             "-y",
             "-bsf:a",
-            "aac_adtstoasc",
-            &temp_output_path,
+            "aac_adtstoasc",  // Convert ADTS to ASC for MP4 container
+            output_path,
         ]);
     } else {
         args.extend_from_slice(&[
@@ -444,12 +384,14 @@ async fn run_full_download_with_encoder(
             "0:a:0?",
             "-avoid_negative_ts",
             "make_zero",
+            "-movflags",
+            "+faststart",
             "-progress",
             "pipe:2",
             "-v",
             "warning",
             "-y",
-            &temp_output_path,
+            output_path,
         ]);
     }
 
@@ -570,46 +512,14 @@ async fn run_full_download_with_encoder(
             _ = &mut *cancel_rx => {
                 println!("[Rust] Download cancelled, terminating FFmpeg...");
                 let _ = child.kill();
-                // Clean up temp file
-                let _ = std::fs::remove_file(&temp_output_path);
                 return Err("Download cancelled".to_string());
             }
         }
     }
 
     if success {
-        // Emit "Optimizing for playback..." before the fast remux pass
-        let _ = app.emit(
-            "download-progress",
-            DownloadProgress {
-                download_id: download_id.to_string(),
-                progress: 97.0,
-                current_time: None,
-                total_time: None,
-                status: "Optimizing for playback...".to_string(),
-            },
-        );
-
-        // Fast remux pass: move moov atom to front for instant seeking.
-        // Reads from temp_output_path, writes final file to output_path, deletes temp on success.
-        if let Err(e) = remux_with_faststart(app, &temp_output_path, output_path).await {
-            // Remux failed — rename temp file to output so we at least have the video
-            println!(
-                "[Rust] Faststart remux failed ({}), using raw download file",
-                e
-            );
-            if let Err(rename_err) = std::fs::rename(&temp_output_path, output_path) {
-                let _ = std::fs::remove_file(&temp_output_path);
-                return Err(format!(
-                    "Download succeeded but file move failed: {}",
-                    rename_err
-                ));
-            }
-        }
         Ok(())
     } else {
-        // Clean up temp file on failure
-        let _ = std::fs::remove_file(&temp_output_path);
         Err(format!(
             "FFmpeg download failed: {}",
             last_error.unwrap_or_else(|| "Unknown error".to_string())
@@ -1869,51 +1779,35 @@ pub async fn download_kick_vod(
     title: String,
     video_url: String,
     channel_slug: String,
+    page_url: Option<String>,
 ) -> Result<(), String> {
-    println!("[Rust] download_kick_vod called with:");
-    println!("[Rust]   download_id: {}", download_id);
-    println!("[Rust]   title: {}", title);
-    println!("[Rust]   video_url: {}", video_url);
-    println!("[Rust]   channel_slug: {}", channel_slug);
+    println!("[Kick] download_kick_vod called with:");
+    println!("[Kick]   download_id: {}", download_id);
+    println!("[Kick]   title: {}", title);
+    println!("[Kick]   video_url: {}", video_url);
+    println!("[Kick]   channel_slug: {}", channel_slug);
+    println!("[Kick]   page_url: {:?}", page_url);
 
     // Check if download already exists
     {
         let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
         if downloads.contains_key(&download_id) {
-            println!("[Rust] Download already in progress: {}", download_id);
+            println!("[Kick] Download already in progress: {}", download_id);
             return Err("Download already in progress".to_string());
         }
         downloads.insert(download_id.clone(), true);
-        println!("[Rust] Download registered: {}", download_id);
-    }
-
-    // Clean up when done
-    let cleanup_download = {
-        let download_id = download_id.clone();
-        let downloads = ACTIVE_DOWNLOADS.clone();
-        move || {
-            println!("[Rust] Cleaning up download: {}", download_id);
-            let mut downloads = downloads.lock().unwrap();
-            downloads.remove(&download_id);
-        }
-    };
-
-    // Create cancellation channel
-    let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
-    {
-        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
-        cancellers.insert(download_id.clone(), cancel_tx);
+        println!("[Kick] Download registered: {}", download_id);
     }
 
     // Get storage paths
-    println!("[Rust] Getting storage paths...");
+    println!("[Kick] Getting storage paths...");
     let paths = storage::init_storage_dirs().map_err(|e| {
-        println!("[Rust] Failed to get storage paths: {}", e);
+        println!("[Kick] Failed to get storage paths: {}", e);
         format!("Failed to get storage paths: {}", e)
     })?;
 
     println!(
-        "[Rust] Storage paths retrieved. Videos dir: {}",
+        "[Kick] Storage paths retrieved. Videos dir: {}",
         paths.videos.display()
     );
 
@@ -1942,8 +1836,8 @@ pub async fn download_kick_vod(
     let filename = format!("kick_{}_{}_{}.mp4", channel_prefix, safe_title, timestamp);
     let video_path = paths.videos.join(&filename);
 
-    println!("[Rust] Generated filename: {}", filename);
-    println!("[Rust] Full video path: {}", video_path.display());
+    println!("[Kick] Generated filename: {}", filename);
+    println!("[Kick] Full video path: {}", video_path.display());
 
     // Store download metadata
     {
@@ -1967,86 +1861,97 @@ pub async fn download_kick_vod(
             progress: 0.0,
             current_time: None,
             total_time: None,
-            status: "Starting download...".to_string(),
+            status: "Fetching video info...".to_string(),
         },
     );
 
     if let Err(e) = progress_result {
-        println!("[Rust] Failed to emit initial progress: {}", e);
+        println!("[Kick] Failed to emit initial progress: {}", e);
     }
 
-    // Clone app handle for use in async block
+    // Clone for async block
     let app_clone = app.clone();
     let download_id_clone = download_id.clone();
-    println!("[Rust] Starting async download task...");
+    println!("[Kick] Starting async download task...");
+
+    let (cancel_tx, mut cancel_rx) = oneshot::channel();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
 
     let result = tokio::spawn(async move {
-        use tauri_plugin_shell::ShellExt;
-        
-        println!("[Rust] Async task started for download: {}", download_id_clone);
+        println!("[Kick] Async task started for download: {}", download_id_clone);
 
-        let shell = app_clone.shell();
-
-        // First, get video info to get duration
-        println!("[Rust] Running ffmpeg to get video info for URL: {}", video_url);
-        let is_hls_probe = video_url.contains(".m3u8") || video_url.contains("/playlist/");
-        let mut probe_args: Vec<&str> = Vec::new();
-        if is_hls_probe {
-            probe_args.extend_from_slice(&[
-                "-reconnect", "1",
-                "-reconnect_streamed", "1",
-                "-reconnect_delay_max", "5",
-                "-headers", "Referer: https://kick.com\r\nOrigin: https://kick.com\r\n",
-                "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            ]);
-        }
-        probe_args.extend_from_slice(&["-i", &video_url, "-f", "null", "-t", "1", "-"]);
-        let info_output = match shell.sidecar("ffmpeg") {
-            Ok(ffmpeg) => {
-                match ffmpeg.args(probe_args).output().await {
-                    Ok(output) => output,
-                    Err(e) => return Err(format!("Failed to run ffmpeg info: {}", e))
-                }
-            }
-            Err(e) => return Err(format!("Failed to get ffmpeg sidecar: {}", e))
-        };
-
-        // Extract duration from stderr
-        let stderr = String::from_utf8_lossy(&info_output.stderr);
-        let duration = extract_duration_from_ffmpeg_output(&stderr);
-        println!("[Rust] Video duration extracted: {:?}", duration);
-
+        let ytdlp_path = resolve_kick_ytdlp_binary()?;
+        let ffmpeg_path = resolve_kick_ffmpeg_binary()?;
         let video_path_str = video_path.to_string_lossy().to_string();
 
-        // For Kick VODs, try stream copy first (fast), fall back to encoding if it fails
+        println!("[Kick] Using yt-dlp: {}", ytdlp_path);
+        println!("[Kick] Using ffmpeg: {}", ffmpeg_path);
+
+        // Get video duration first for progress reporting
+        println!("[Kick] Fetching video duration...");
+        let duration_output = no_window(
+            tokio::process::Command::new(&ytdlp_path)
+                .arg("--print")
+                .arg("duration")
+                .arg("--impersonate").arg("chrome")
+                .arg(&video_url),
+        )
+        .output()
+        .await
+        .map_err(|e| format!("Failed to fetch duration: {}", e))?;
+
+        let total_duration = if duration_output.status.success() {
+            let duration_str = String::from_utf8_lossy(&duration_output.stdout)
+                .trim()
+                .to_string();
+            duration_str.parse::<f64>().ok()
+        } else {
+            None
+        };
+
+        println!("[Kick] Total duration: {:?}", total_duration);
+
+        // Extract HLS playlist URL using yt-dlp (fast, <1 second)
+        println!("[Kick] Extracting HLS URL via yt-dlp...");
+        let url_output = no_window(
+            tokio::process::Command::new(&ytdlp_path)
+                .arg("--get-url")
+                .arg("--no-download")
+                .arg("--no-warnings")
+                .arg("--impersonate").arg("chrome")
+                .arg(&video_url),
+        )
+        .output()
+        .await
+        .map_err(|e| format!("Failed to extract HLS URL: {}", e))?;
+
+        if !url_output.status.success() {
+            let stderr = String::from_utf8_lossy(&url_output.stderr);
+            return Err(format!("Failed to get stream URL: {}", stderr.chars().take(300).collect::<String>()));
+        }
+
+        let hls_url = String::from_utf8_lossy(&url_output.stdout).trim().to_string();
+        if hls_url.is_empty() {
+            return Err("yt-dlp returned empty URL".to_string());
+        }
+
+        println!("[Kick] Got HLS URL, starting FFmpeg stream copy (fast mode)...");
+
+        // Use FFmpeg with stream copy (10-100x faster than re-encoding)
+        // This just copies the video/audio packets without re-encoding
         let download_result = run_full_download_with_encoder(
             &app_clone,
             &download_id_clone,
-            &video_url,
+            &hls_url,
             &video_path_str,
-            duration,
-            "copy", // Try copy first for Kick
-            true,   // use_copy_codec = true
+            total_duration,
+            "copy",  // Encoder doesn't matter when use_copy_codec is true
+            true,    // use_copy_codec = true for maximum speed
             &mut cancel_rx,
         ).await;
-
-        // If copy failed, try with software encoding
-        let download_result = match download_result {
-            Err(ref e) => {
-                println!("[Rust] Stream copy failed: {}. Retrying with software encoding...", e);
-                run_full_download_with_encoder(
-                    &app_clone,
-                    &download_id_clone,
-                    &video_url,
-                    &video_path_str,
-                    duration,
-                    "libx264",
-                    false,
-                    &mut cancel_rx,
-                ).await
-            }
-            other => other,
-        };
 
         // Check result
         download_result?;
@@ -2058,7 +1963,7 @@ pub async fn download_kick_vod(
             return Err("Download cancelled".to_string());
         }
 
-        println!("[Rust] Download completed successfully");
+        println!("[Kick] Download completed successfully");
 
         // Get file metadata
         let metadata = match std::fs::metadata(&video_path) {
@@ -2069,41 +1974,37 @@ pub async fn download_kick_vod(
 
         // Check for cancellation before thumbnail generation
         if cancel_rx.try_recv().is_ok() {
-            println!("[Rust] Download cancelled before thumbnail generation");
+            println!("[Kick] Download cancelled before thumbnail generation");
             let _ = std::fs::remove_file(&video_path);
             return Err("Download cancelled".to_string());
         }
 
-        // Generate thumbnail
-        println!("[Rust] Generating thumbnail...");
+        // Generate thumbnail using hybrid approach (yt-dlp first, FFmpeg fallback)
+        // Use page_url for yt-dlp if available (to get platform thumbnail), otherwise use video_url
+        println!("[Kick] Generating thumbnail...");
         let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
-        let thumbnail_result = match shell.sidecar("ffmpeg") {
-            Ok(ffmpeg) => {
-                (ffmpeg.args([
-                    "-ss", "00:00:05",
-                    "-i", video_path.to_str().ok_or("Invalid video path")?,
-                    "-vframes", "1",
-                    "-vf", "scale=320:-1",
-                    "-y",
-                    thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
-                ]).output().await).ok()
-            }
-            Err(_) => None
-        };
-
-        let thumbnail_path_str = if let Some(ref result) = thumbnail_result {
-            if result.status.success() {
+        let thumbnail_source_url = page_url.as_ref().unwrap_or(&video_url);
+        
+        let thumbnail_path_str = match generate_thumbnail_hybrid(
+            &ytdlp_path,
+            &ffmpeg_path,
+            thumbnail_source_url,
+            &thumbnail_path,
+            "00:00:05",
+        ).await {
+            Ok(()) => {
+                println!("[Kick] Thumbnail generated: {}", thumbnail_path.display());
                 Some(thumbnail_path.to_string_lossy().to_string())
-            } else {
+            }
+            Err(e) => {
+                println!("[Kick] Thumbnail generation failed: {}", e);
                 None
             }
-        } else {
-            None
         };
 
         // Check for cancellation before video info extraction
         if cancel_rx.try_recv().is_ok() {
-            println!("[Rust] Download cancelled before video info extraction");
+            println!("[Kick] Download cancelled before video info extraction");
             let _ = std::fs::remove_file(&video_path);
             if let Some(ref thumb_path) = thumbnail_path_str {
                 let _ = std::fs::remove_file(thumb_path);
@@ -2112,17 +2013,18 @@ pub async fn download_kick_vod(
         }
 
         // Get video dimensions, codec info, and actual duration from downloaded file
-        println!("[Rust] Getting detailed video info...");
+        println!("[Kick] Getting detailed video info...");
         let video_info = get_video_info(&app_clone, &video_path).await.ok();
         let (width, height, codec, actual_file_duration) = if let Some(ref info) = video_info {
-            println!("[Rust] Video info - width: {}, height: {}, codec: {}, duration: {:?}", info.width, info.height, info.codec, info.duration);
+            println!("[Kick] Video info - width: {}, height: {}, codec: {}, duration: {:?}", info.width, info.height, info.codec, info.duration);
             (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
         } else {
+            println!("[Kick] Could not get video info");
             (None, None, None, None)
         };
 
-        // Prefer the actual file duration over the estimated duration from stream info
-        let final_duration = actual_file_duration.or(duration);
+        // Prefer the actual file duration over the estimated duration from yt-dlp
+        let final_duration = actual_file_duration.or(total_duration);
 
         println!("[Rust] Download task completed successfully");
         Ok(DownloadResult {
@@ -2139,14 +2041,17 @@ pub async fn download_kick_vod(
         })
     }).await;
 
-    println!("[Rust] Async task completed");
+    println!("[Kick] Async task completed");
 
-    cleanup_download();
+    {
+        let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
+        downloads.remove(&download_id);
+    }
 
-    println!("[Rust] Processing download result...");
+    println!("[Kick] Processing download result...");
     match result {
         Ok(Ok(download_result)) => {
-            println!("[Rust] Download successful!");
+            println!("[Kick] Download successful!");
 
             let _ = app.emit(
                 "download-progress",
