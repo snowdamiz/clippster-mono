@@ -29,6 +29,7 @@ import TransitionsView from "./assets/TransitionsView.vue";
 import BrandingView from "./assets/BrandingView.vue";
 import UploadMediaView from "./assets/UploadMediaView.vue";
 import TranscriptView from "./assets/TranscriptView.vue";
+import AudioLibraryView from "./assets/AudioLibraryView.vue";
 
 const props = defineProps<{
 	activeTab: string;
@@ -37,7 +38,7 @@ const props = defineProps<{
 const { editor, version } = useEditor();
 const { startDrag, wasDragCompleted } = usePointerDrag();
 const showMediaDialog = ref(false);
-const dialogTab = ref<"upload" | "built" | "projects">("upload");
+const dialogTab = ref<"upload" | "built" | "projects" | "audio">("upload");
 const viewMode = ref<"grid" | "list">("grid");
 const isProcessing = ref(false);
 const progress = ref(0);
@@ -325,6 +326,7 @@ function getMediaIcon(type: string) {
 								{ key: 'upload', label: 'Upload', icon: Upload },
 								{ key: 'built', label: 'Built Clips', icon: Clapperboard },
 								{ key: 'projects', label: 'Projects', icon: FolderOpen },
+								{ key: 'audio', label: 'Audio', icon: Music },
 							] as const)"
 							:key="tab.key"
 							type="button"
@@ -345,6 +347,7 @@ function getMediaIcon(type: string) {
 						<UploadMediaView v-if="dialogTab === 'upload'" />
 						<BuiltClipsView v-else-if="dialogTab === 'built'" />
 						<ProjectClipsView v-else-if="dialogTab === 'projects'" />
+						<AudioLibraryView v-else-if="dialogTab === 'audio'" />
 					</div>
 				</DialogContent>
 			</Dialog>
