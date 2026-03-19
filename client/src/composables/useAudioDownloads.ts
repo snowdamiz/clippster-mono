@@ -1,0 +1,213 @@
+import { ref, onMounted, onUnmounted } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { createDownloadedAudio } from '@/services/database/downloaded-audio';
+
+export interface AudioDownloadProgress {
+  download_id: string;
+  progress: number;
+  current_time?: number;
+  total_time?: number;
+  status: string;
+}
+
+export interface AudioDownloadResult {
+  download_id: string;
+  success: boolean;
+  file_path?: string;
+  duration?: number;
+  file_size?: number;
+  sample_rate?: number;
+  channels?: number;
+  error?: string;
+}
+
+export interface ActiveAudioDownload {
+  id: string;
+  title: string;
+  platform: string;
+  progress: number;
+  status: string;
+  error?: string;
+}
+
+export function useAudioDownloads() {
+  const activeDownloads = ref<Map<string, ActiveAudioDownload>>(new Map());
+  const queuedDownloads = ref<ActiveAudioDownload[]>([]);
+  
+  let progressUnlisten: UnlistenFn | null = null;
+  let completeUnlisten: UnlistenFn | null = null;
+
+  async function startYouTubeAudioDownload(
+    downloadId: string,
+    title: string,
+    vodUrl: string,
+    channelName: string
+  ): Promise<void> {
+    // Add to active downloads
+    activeDownloads.value.set(downloadId, {
+      id: downloadId,
+      title,
+      platform: 'YouTube',
+      progress: 0,
+      status: 'Starting...',
+    });
+
+    try {
+      await invoke('download_youtube_audio', {
+        downloadId,
+        title,
+        vodUrl,
+        channelName,
+      });
+    } catch (error) {
+      console.error('Failed to start YouTube audio download:', error);
+      const download = activeDownloads.value.get(downloadId);
+      if (download) {
+        download.error = error instanceof Error ? error.message : String(error);
+        download.status = 'Failed';
+      }
+      throw error;
+    }
+  }
+
+  async function startTwitterSpaceAudioDownload(
+    downloadId: string,
+    title: string,
+    spaceUrl: string
+  ): Promise<void> {
+    // Add to active downloads
+    activeDownloads.value.set(downloadId, {
+      id: downloadId,
+      title,
+      platform: 'Twitter',
+      progress: 0,
+      status: 'Starting...',
+    });
+
+    try {
+      await invoke('download_twitter_space_audio', {
+        downloadId,
+        title,
+        spaceUrl,
+      });
+    } catch (error) {
+      console.error('Failed to start Twitter Space audio download:', error);
+      const download = activeDownloads.value.get(downloadId);
+      if (download) {
+        download.error = error instanceof Error ? error.message : String(error);
+        download.status = 'Failed';
+      }
+      throw error;
+    }
+  }
+
+  async function uploadAudioFile(filePath: string, title: string): Promise<AudioDownloadResult> {
+    try {
+      const result = await invoke<AudioDownloadResult>('upload_audio_file', {
+        filePath,
+        title,
+      });
+
+      // Save to database if successful
+      if (result.success && result.file_path) {
+        await createDownloadedAudio(
+          title,
+          'upload',
+          result.file_path,
+          undefined,
+          undefined,
+          result.duration,
+          result.file_size,
+          result.sample_rate,
+          result.channels
+        );
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Failed to upload audio file:', error);
+      throw error;
+    }
+  }
+
+  async function cancelDownload(downloadId: string): Promise<void> {
+    try {
+      await invoke('cancel_audio_download', { downloadId });
+      activeDownloads.value.delete(downloadId);
+    } catch (error) {
+      console.error('Failed to cancel audio download:', error);
+      throw error;
+    }
+  }
+
+  function handleProgress(event: AudioDownloadProgress) {
+    const download = activeDownloads.value.get(event.download_id);
+    if (download) {
+      download.progress = event.progress;
+      download.status = event.status;
+    }
+  }
+
+  async function handleComplete(event: AudioDownloadResult) {
+    const download = activeDownloads.value.get(event.download_id);
+    
+    if (event.success && event.file_path && download) {
+      // Save to database
+      try {
+        await createDownloadedAudio(
+          download.title,
+          download.platform === 'YouTube' ? 'youtube' : 'twitter',
+          event.file_path,
+          download.platform,
+          undefined, // source_url not tracked in this flow
+          event.duration,
+          event.file_size,
+          event.sample_rate,
+          event.channels
+        );
+      } catch (error) {
+        console.error('Failed to save downloaded audio to database:', error);
+      }
+    }
+
+    // Remove from active downloads
+    activeDownloads.value.delete(event.download_id);
+  }
+
+  onMounted(async () => {
+    // Listen for download progress events
+    progressUnlisten = await listen<AudioDownloadProgress>('download-progress', (event) => {
+      handleProgress(event.payload);
+    });
+
+    // Listen for download complete events
+    completeUnlisten = await listen<AudioDownloadResult>('download-complete', (event) => {
+      handleComplete(event.payload);
+    });
+  });
+
+  onUnmounted(() => {
+    if (progressUnlisten) progressUnlisten();
+    if (completeUnlisten) completeUnlisten();
+  });
+
+  function getActiveDownloads(): ActiveAudioDownload[] {
+    return Array.from(activeDownloads.value.values());
+  }
+
+  function getQueuedDownloads(): ActiveAudioDownload[] {
+    return queuedDownloads.value;
+  }
+
+  return {
+    activeDownloads,
+    queuedDownloads,
+    startYouTubeAudioDownload,
+    startTwitterSpaceAudioDownload,
+    uploadAudioFile,
+    cancelDownload,
+    getActiveDownloads,
+    getQueuedDownloads,
+  };
+}

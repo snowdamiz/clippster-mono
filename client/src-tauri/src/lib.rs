@@ -4,6 +4,7 @@ use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 mod api;
 mod assets;
 mod audio;
+mod audio_download;
 mod audio_peaks;
 mod auth;
 mod avatar_proxy;
@@ -1161,6 +1162,12 @@ commands::file_utils::generate_video_thumbnail,
             audio::extract_audio_to_file_wav,
             audio::get_audio_duration,
             download_library_audio,
+            
+            // Audio download commands
+            audio_download::download_youtube_audio,
+            audio_download::download_twitter_space_audio,
+            audio_download::upload_audio_file,
+            audio_download::cancel_audio_download,
 
             // Waveform commands
             waveform::extract_audio_waveform,
