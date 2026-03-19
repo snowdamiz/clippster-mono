@@ -28,26 +28,54 @@ Add "Download Audio" page, "Audio Library" page for downloading/managing MP3 fil
 ### Frontend Pages
 
 **1. DownloadAudio.vue** (`client/src/pages/DownloadAudio.vue`)
-- **Clone StreamVods.vue completely**
+- **Clone StreamVods.vue completely** - exact layout, styling, and structure
 - Only support YouTube and X Spaces (Twitter) platforms
 - Remove Kick, Twitch, PumpFun, Rumble detection
 - Change download action to call audio download commands
 - Navigate to `/audio-library` instead of `/projects` after download starts
 - Same UI: search input, platform detection, VOD grid, download dialog
+- **Use CustomDropdown component** for all dropdowns (matches app-wide styling)
+- **All dialogs must use BugReportDialog.vue styling pattern**:
+  - `.bug-dialog__overlay` with backdrop-filter blur
+  - `.bug-dialog__accent` top accent bar
+  - `.bug-dialog__header` with icon, title, subtitle
+  - `.bug-dialog__content` for form/content area
+  - `.bug-dialog__footer` for action buttons
+  - `.bug-dialog__btn--primary` and `.bug-dialog__btn--secondary` button styles
+  - Use `var(--sidebar-surface)`, `var(--sidebar-border)`, etc. CSS variables
 
 **2. AudioLibrary.vue** (`client/src/pages/AudioLibrary.vue`)
-- **Clone Projects.vue completely**
+- **Clone Projects.vue completely** - exact layout, styling, and structure
 - Show active audio downloads section (like active VOD downloads)
 - Show downloaded audio files grid (like projects grid)
 - Use `useAudioDownloads` composable (clone of `useDownloads`)
 - Same UI: search, filters, selection, delete, pagination
 - Audio playback controls in cards (instead of video thumbnail)
+- **Audio file upload functionality**:
+  - "Upload Audio" button in header (like "New Project" in Projects.vue)
+  - File picker for MP3, M4A, WAV, FLAC, OGG audio files
+  - Upload progress indicator
+  - Save uploaded files to `downloaded_audio` table and storage
+- **Match Projects.vue styling exactly**:
+  - `.projects-header-actions` for header controls
+  - `.projects__grid` for card grid layout
+  - `.project-card` styling for audio file cards
+  - `.projects__section-header` for section titles
+  - Use same color scheme, spacing, borders, shadows
+- **Use CustomDropdown component** for all dropdowns (status, sort, etc.)
+- **All dialogs must use BugReportDialog.vue styling pattern**
 
 ### Backend (Rust/Tauri)
 
 **New Commands** (`client/src-tauri/src/audio_download.rs`)
 - `download_youtube_audio` - yt-dlp with `-x --audio-format mp3 --audio-quality 0`
 - `download_twitter_space_audio` - yt-dlp for X Spaces audio extraction
+- `upload_audio_file` - Copy user-selected audio file to storage directory
+  - Accept file path from file picker dialog
+  - Validate file format (MP3, M4A, WAV, FLAC, OGG)
+  - Extract metadata (duration, file size, sample rate, channels) using FFmpeg
+  - Copy to `downloaded_audio/` directory with sanitized filename
+  - Return file info for database storage
 - Emit `download-progress` and `download-complete` events (same as video downloads)
 - Store files in `downloaded_audio/` directory
 
@@ -58,11 +86,14 @@ Add "Download Audio" page, "Audio Library" page for downloading/managing MP3 fil
 CREATE TABLE downloaded_audio (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
-  platform TEXT NOT NULL, -- 'YouTube' or 'twitter'
-  source_url TEXT NOT NULL,
+  source TEXT NOT NULL, -- 'youtube', 'twitter', or 'upload'
+  platform TEXT, -- 'YouTube' or 'twitter' (null for uploads)
+  source_url TEXT, -- Original URL (null for uploads)
   file_path TEXT NOT NULL,
   duration REAL,
   file_size INTEGER,
+  sample_rate INTEGER,
+  channels INTEGER,
   thumbnail_url TEXT,
   user_id TEXT,
   created_at INTEGER NOT NULL,
@@ -110,6 +141,10 @@ CREATE TABLE downloaded_audio (
 4. Use `DownloadCard` for active downloads (no changes needed)
 5. Create audio file cards with playback controls
 6. Add delete functionality (delete from DB + file system)
+7. Add "Upload Audio" button in header
+8. Implement file picker for audio files (MP3, M4A, WAV, FLAC, OGG)
+9. Call `upload_audio_file` Tauri command on file selection
+10. Show upload progress and save to database on completion
 
 ### Phase 5: Navigation & Routing
 1. Add "Download Audio" to `navigation.ts` (Browse group, after Search VODs)
@@ -120,10 +155,11 @@ CREATE TABLE downloaded_audio (
 1. Test YouTube audio download
 2. Test X Spaces audio download
 3. Test batch downloads
-4. Test navigation flow (Download Audio → Audio Library)
-5. Test active download progress display
-6. Test audio playback in library
-7. Test delete functionality
+4. Test audio file upload (MP3, M4A, WAV, FLAC, OGG)
+5. Test navigation flow (Download Audio → Audio Library)
+6. Test active download progress display
+7. Test audio playback in library
+8. Test delete functionality (both downloaded and uploaded files)
 
 ## Files to Create
 
@@ -243,6 +279,13 @@ CREATE TABLE audio_playlist_items (
 - Progress bar with seek capability
 - Current time / Total duration display
 - Minimalist design with essential controls
+- **Styling must match app design system**:
+  - Background: `var(--sidebar-surface)`
+  - Border: `var(--sidebar-border)`
+  - Text: `var(--sidebar-text)`
+  - Accent: `var(--accent-primary)`
+  - Use same button hover states as other components
+  - Match spacing/padding from existing UI elements
 
 **Store: `useAudioPlayer.ts` (Pinia store)**
 - Global state for current playlist
@@ -362,3 +405,43 @@ CREATE TABLE audio_playlist_items (
 - `client/src-tauri/src/lib.rs` - Register audio commands
 - `client/src-tauri/src/storage.rs` - Add audio directory
 - `client/src-tauri/src/commands/mod.rs` - Add audio_download module
+
+## Design & Styling Requirements
+
+### Critical: Match Existing Components
+
+**AudioLibrary.vue MUST match Projects.vue:**
+- Exact same layout structure and grid system
+- Same header with search, filters, sort controls
+- Same card styling (`.project-card` classes)
+- Same section headers (`.projects__section-header`)
+- Same color scheme, spacing, borders, shadows
+- Same selection/delete/pagination UI
+
+**DownloadAudio.vue MUST match StreamVods.vue:**
+- Exact same layout structure
+- Same search input and platform detection UI
+- Same VOD grid display
+- Same download dialog flow
+- Same color scheme and styling
+
+**All Dialogs MUST use BugReportDialog.vue pattern:**
+- Structure: overlay → dialog → accent bar → header → content → footer
+- Classes: `.bug-dialog__overlay`, `.bug-dialog__accent`, `.bug-dialog__header`, etc.
+- Buttons: `.bug-dialog__btn--primary`, `.bug-dialog__btn--secondary`
+- CSS Variables: `var(--sidebar-surface)`, `var(--sidebar-border)`, `var(--sidebar-text)`, `var(--accent-primary)`
+- Backdrop filter blur on overlay
+- Consistent transitions and animations
+
+**All Dropdowns MUST use CustomDropdown component:**
+- No custom dropdown implementations
+- Use existing `CustomDropdown.vue` component
+- Pass `trigger-class` for custom trigger styling if needed
+- Maintains app-wide dropdown consistency
+
+**GlobalAudioPlayer styling:**
+- Use CSS variables for all colors
+- Match button styles from existing components
+- Consistent spacing with app design system
+- Fixed position at bottom with proper z-index
+- Minimalist, non-intrusive design

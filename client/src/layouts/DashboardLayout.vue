@@ -16,6 +16,8 @@
     </main>
     <!-- Authentication Modal -->
     <AuthModal v-model="showAuthModal" />
+    <!-- Global Audio Player -->
+    <GlobalAudioPlayer />
   </div>
 </template>
 
@@ -23,6 +25,7 @@
   import { ref, computed, watch } from 'vue';
   import DashboardSidebar from '@/components/DashboardSidebar.vue';
   import AuthModal from '@/components/AuthModal.vue';
+  import GlobalAudioPlayer from '@/components/GlobalAudioPlayer.vue';
   import { useAuthStore } from '@/stores/auth';
   import { useSidebarState } from '@/composables/useSidebarState';
 

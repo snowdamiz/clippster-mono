@@ -245,6 +245,32 @@ const router = createRouter({
         },
       ],
     },
+    // Download Audio page
+    {
+      path: '/download-audio',
+      name: 'download-audio',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'download-audio-home',
+          component: () => import('@/pages/DownloadAudio.vue'),
+        },
+      ],
+    },
+    // Audio Library page
+    {
+      path: '/audio-library',
+      name: 'audio-library',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'audio-library-home',
+          component: () => import('@/pages/AudioLibrary.vue'),
+        },
+      ],
+    },
     // Messages page (Telegram-style)
     {
       path: '/messages',

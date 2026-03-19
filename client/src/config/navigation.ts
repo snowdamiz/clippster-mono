@@ -17,6 +17,8 @@ import {
   Wand2,
   Handshake,
   CalendarDays,
+  Headphones,
+  Music,
 } from 'lucide-vue-next';
 
 export type NavigationGroup = 'browse' | 'create' | 'manage' | 'system';
@@ -61,9 +63,15 @@ export const navigationItems: NavigationItem[] = [
     group: 'browse',
   },
   {
-    name: 'Search VODs',
+    name: 'Download VODs',
     path: '/vods',
     icon: Video,
+    group: 'browse',
+  },
+  {
+    name: 'Download Audio',
+    path: '/download-audio',
+    icon: Headphones,
     group: 'browse',
   },
   {
@@ -85,6 +93,12 @@ export const navigationItems: NavigationItem[] = [
     name: 'VOD Library',
     path: '/projects',
     icon: Folder,
+    group: 'create',
+  },
+  {
+    name: 'Audio Library',
+    path: '/audio-library',
+    icon: Music,
     group: 'create',
   },
   {
