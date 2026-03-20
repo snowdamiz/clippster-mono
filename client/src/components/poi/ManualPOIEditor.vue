@@ -153,6 +153,7 @@
                 @add-segment="addSegment"
                 @delete-segment="deleteSegment"
                 @select-segment="selectSegment"
+                @update-segment="updateSegment"
               />
             </div>
 
@@ -281,6 +282,9 @@
   // Local state
   const regions = ref<ManualRegion[]>([]);
   const selectedRegionId = ref<string | null>(null);
+
+  // Base regions - apply to entire clip when no segment is active
+  const baseRegions = ref<ManualRegion[]>([]);
 
   // Segment management state
   const segmentConfigs = ref<SegmentRegionConfig[]>([]);
@@ -634,6 +638,19 @@
 
   // Select a segment
   function selectSegment(segmentId: string) {
+    // Save current regions before switching
+    if (activeSegmentId.value && activeSegmentId.value !== segmentId) {
+      // Save current segment's regions
+      const currentSegment = segmentConfigs.value.find(s => s.segmentId === activeSegmentId.value);
+      if (currentSegment) {
+        currentSegment.regions = JSON.parse(JSON.stringify(regions.value));
+      }
+    } else if (activeSegmentId.value === null) {
+      // Save base regions
+      baseRegions.value = JSON.parse(JSON.stringify(regions.value));
+    }
+    
+    // Switch to new segment
     activeSegmentId.value = segmentId;
     const segment = segmentConfigs.value.find(s => s.segmentId === segmentId);
     if (segment) {
@@ -641,6 +658,63 @@
       regions.value = JSON.parse(JSON.stringify(segment.regions));
     }
   }
+
+  // Update segment times (from timeline drag/resize)
+  function updateSegment(segmentId: string, updates: { startTime?: number; endTime?: number }) {
+    const segment = segmentConfigs.value.find(s => s.segmentId === segmentId);
+    if (segment) {
+      if (updates.startTime !== undefined) {
+        segment.startTime = updates.startTime;
+      }
+      if (updates.endTime !== undefined) {
+        segment.endTime = updates.endTime;
+      }
+    }
+  }
+
+  // Watch for time changes during playback and auto-switch segments
+  watch(currentTime, (time) => {
+    if (segmentConfigs.value.length === 0) return;
+    if (!isPlaying.value) return;
+    
+    // Find which segment the current time falls into
+    const activeSegment = segmentConfigs.value.find(
+      seg => time >= seg.startTime && time <= seg.endTime
+    );
+    
+    if (activeSegment) {
+      // We're inside a segment
+      if (activeSegment.segmentId !== activeSegmentId.value) {
+        // Save current regions before switching
+        if (activeSegmentId.value) {
+          const currentSegment = segmentConfigs.value.find(s => s.segmentId === activeSegmentId.value);
+          if (currentSegment) {
+            currentSegment.regions = JSON.parse(JSON.stringify(regions.value));
+          }
+        } else {
+          // We were in base regions, save them
+          baseRegions.value = JSON.parse(JSON.stringify(regions.value));
+        }
+        
+        // Switch to the segment
+        activeSegmentId.value = activeSegment.segmentId;
+        regions.value = JSON.parse(JSON.stringify(activeSegment.regions));
+      }
+    } else {
+      // We're outside all segments - use base regions
+      if (activeSegmentId.value !== null) {
+        // Save current segment's regions
+        const currentSegment = segmentConfigs.value.find(s => s.segmentId === activeSegmentId.value);
+        if (currentSegment) {
+          currentSegment.regions = JSON.parse(JSON.stringify(regions.value));
+        }
+        
+        // Switch to base regions
+        activeSegmentId.value = null;
+        regions.value = JSON.parse(JSON.stringify(baseRegions.value));
+      }
+    }
+  });
 
   // Reset all regions
   function resetRegions() {
@@ -655,19 +729,27 @@
 
   // Confirm and emit the configuration
   function confirmConfig() {
-    if (regions.value.length === 0) return;
+    if (regions.value.length === 0 && baseRegions.value.length === 0) return;
 
-    // Save current segment's regions if we have segments
+    // Save current regions
     if (activeSegmentId.value) {
+      // Save current segment's regions
       const activeSegment = segmentConfigs.value.find(s => s.segmentId === activeSegmentId.value);
       if (activeSegment) {
         activeSegment.regions = JSON.parse(JSON.stringify(regions.value));
       }
+    } else {
+      // Save base regions
+      baseRegions.value = JSON.parse(JSON.stringify(regions.value));
     }
+
+    // Use base regions as the default regions in config
+    // Segments will override these for their specific time ranges
+    const finalRegions = baseRegions.value.length > 0 ? baseRegions.value : regions.value;
 
     const config: ManualFramingConfig = {
       mode: 'manual',
-      regions: JSON.parse(JSON.stringify(regions.value)),
+      regions: JSON.parse(JSON.stringify(finalRegions)),
       targetAspectRatio: props.targetAspectRatio,
       sourceAspectRatio: props.sourceAspectRatio,
       segmentConfigs: segmentConfigs.value.length > 0 ? JSON.parse(JSON.stringify(segmentConfigs.value)) : undefined,
