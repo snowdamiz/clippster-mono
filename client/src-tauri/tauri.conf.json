@@ -13,7 +13,7 @@
     "windows": [],
     "macOSPrivateApi": true,
     "security": {
-      "csp": "default-src 'self' asset: https://asset.localhost; connect-src 'self' asset: https://asset.localhost tauri: http://ipc.localhost ipc://localhost http://localhost:* http://127.0.0.1:* https://clippster-server.fly.dev https: wss:; img-src 'self' asset: https://asset.localhost data: blob: https:; media-src 'self' asset: https://asset.localhost tauri: blob: data: https: http://localhost:* http://127.0.0.1:*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data: blob:",
+      "csp": "default-src 'self' asset: http://asset.localhost https://asset.localhost; connect-src 'self' asset: http://asset.localhost https://asset.localhost tauri: http://ipc.localhost ipc://localhost http://localhost:* http://127.0.0.1:* https://clippster-server.fly.dev https: wss:; img-src 'self' asset: http://asset.localhost https://asset.localhost data: blob: https:; media-src 'self' asset: http://asset.localhost https://asset.localhost tauri: blob: data: https: http://localhost:* http://127.0.0.1:*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data: blob:",
       "dangerousDisableAssetCspModification": [
         ".*/.*"
       ],
