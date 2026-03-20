@@ -62,9 +62,29 @@
           class="absolute overflow-hidden z-[5]"
           :style="getRegionPreviewStyle(region)"
         >
-          <!-- Video crop preview -->
+          <!-- Uploaded image media -->
+          <img
+            v-if="region.mediaAssetId && region.mediaType === 'image'"
+            :src="region.mediaAssetId"
+            class="absolute inset-0 w-full h-full object-cover pointer-events-none"
+            alt=""
+            draggable="false"
+          />
+          <!-- Uploaded video media -->
           <video
-            v-if="videoUrl"
+            v-else-if="region.mediaAssetId && region.mediaType === 'video'"
+            :ref="(el) => setVideoRef(region.id, el as HTMLVideoElement)"
+            :src="region.mediaAssetId"
+            class="absolute inset-0 w-full h-full object-cover pointer-events-none"
+            preload="metadata"
+            muted
+            playsinline
+            loop
+            @loadedmetadata="(e) => onVideoLoaded(e.target as HTMLVideoElement)"
+          />
+          <!-- Video crop preview (default behavior) -->
+          <video
+            v-else-if="videoUrl"
             :ref="(el) => setVideoRef(region.id, el as HTMLVideoElement)"
             :src="videoUrl"
             class="absolute max-w-none pointer-events-none"

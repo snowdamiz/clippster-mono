@@ -640,16 +640,35 @@ export interface ManualRegion {
   source: ManualRegionRect;
   // Output position (normalized 0-1 coordinates on target canvas)
   output: ManualRegionRect;
+  // Media asset reference (use editor asset system)
+  mediaAssetId?: string; // Reference to MediaAsset in editor.media
+  mediaType?: 'video-crop' | 'image' | 'video'; // Type of content in this region
+}
+
+// Time-based segment configuration for POI regions
+export interface SegmentRegionConfig {
+  segmentId: string;
+  startTime: number; // Relative to clip start (seconds)
+  endTime: number; // Relative to clip start (seconds)
+  regions: ManualRegion[]; // Region configuration for this time segment
 }
 
 export interface ManualFramingConfig {
   mode: 'manual';
-  regions: ManualRegion[];
+  regions: ManualRegion[]; // Default/fallback regions
   targetAspectRatio: string; // "9:16", "4:5", etc.
   sourceAspectRatio?: string; // "16:9" typically
+  // Segment-based configurations (for dynamic camera position changes)
+  segmentConfigs?: SegmentRegionConfig[];
+  // Global source frame transform (for scaling/positioning entire source)
+  sourceTransform?: {
+    scale: number; // Scale factor (1.0 = no scale)
+    x: number; // X offset (normalized 0-1)
+    y: number; // Y offset (normalized 0-1)
+  };
 }
 
-// Segment-specific framing configuration
+// Segment-specific framing configuration (legacy)
 export interface SegmentFramingConfig {
   segmentIds: string[]; // Which segment IDs this framing applies to
   config: ManualFramingConfig;

@@ -6,15 +6,27 @@
         <div class="text-xs font-medium text-zinc-300">Source Video</div>
         <span class="text-[10px] text-zinc-500 font-mono">{{ sourceAspectRatio }}</span>
       </div>
-      <button
-        @click="addRegion"
-        class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-md transition-colors"
-        :disabled="regions.length >= maxRegions"
-        :class="{ 'opacity-50 cursor-not-allowed': regions.length >= maxRegions }"
-      >
-        <PlusIcon class="w-3 h-3" />
-        Add Region
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          @click="openMediaUpload"
+          class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 rounded-md transition-colors"
+          :disabled="!selectedRegionId"
+          :class="{ 'opacity-50 cursor-not-allowed': !selectedRegionId }"
+          title="Upload image/video for selected region"
+        >
+          <ImageIcon class="w-3 h-3" />
+          Upload Media
+        </button>
+        <button
+          @click="addRegion"
+          class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-md transition-colors"
+          :disabled="regions.length >= maxRegions"
+          :class="{ 'opacity-50 cursor-not-allowed': regions.length >= maxRegions }"
+        >
+          <PlusIcon class="w-3 h-3" />
+          Add Region
+        </button>
+      </div>
     </div>
 
     <!-- Canvas Area -->
@@ -54,6 +66,30 @@
         <div class="absolute inset-0 pointer-events-none">
           <div class="w-full h-full grid grid-cols-3 grid-rows-3">
             <div v-for="i in 9" :key="i" class="border border-white/5" />
+          </div>
+        </div>
+
+        <!-- Source Frame Transform Overlay (for scaling entire frame) -->
+        <div
+          v-if="showFrameTransform"
+          class="absolute inset-0 border-2 border-purple-500 pointer-events-none z-20"
+          :style="frameTransformStyle"
+        >
+          <!-- Corner handles -->
+          <div
+            v-for="corner in ['nw', 'ne', 'sw', 'se']"
+            :key="corner"
+            class="absolute w-3 h-3 bg-purple-500 border border-white pointer-events-auto cursor-pointer"
+            :class="{
+              'top-0 left-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize': corner === 'nw',
+              'top-0 right-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize': corner === 'ne',
+              'bottom-0 left-0 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize': corner === 'sw',
+              'bottom-0 right-0 translate-x-1/2 translate-y-1/2 cursor-nwse-resize': corner === 'se',
+            }"
+            @mousedown="(e) => startFrameResize(e, corner)"
+          />
+          <div class="absolute top-0 left-0 -translate-y-full px-2 py-1 bg-purple-500 text-white text-[10px] font-medium rounded-t">
+            Source Frame (Drag corners to scale)
           </div>
         </div>
 
@@ -110,7 +146,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-  import { PlusIcon, VideoIcon, PlusCircleIcon } from 'lucide-vue-next';
+  import { PlusIcon, VideoIcon, PlusCircleIcon, ImageIcon } from 'lucide-vue-next';
   import Hls from 'hls.js';
   import POIRegion from './POIRegion.vue';
   import type { ManualRegion, ManualRegionRect } from '@/types';
@@ -142,12 +178,25 @@
     deleteRegion: [id: string];
     selectRegion: [id: string | null];
     timeUpdate: [time: number];
+    uploadMedia: [regionId: string];
   }>();
 
   const containerRef = ref<HTMLElement | null>(null);
   const videoRef = ref<HTMLVideoElement | null>(null);
   const containerWidth = ref(0);
   const containerHeight = ref(0);
+
+  // Source frame transform state
+  const showFrameTransform = ref(false);
+  const frameTransform = ref({
+    scale: 1,
+    x: 0,
+    y: 0,
+  });
+  const isResizingFrame = ref(false);
+  const resizeStartPos = ref({ x: 0, y: 0 });
+  const resizeStartTransform = ref({ scale: 1, x: 0, y: 0 });
+  const resizeCorner = ref<string>('');
 
   // HLS.js instance for proper MPEG-TS (.ts) file playback with A/V sync
   let hlsInstance: Hls | null = null;
@@ -277,6 +326,15 @@
     };
   });
 
+  // Frame transform style
+  const frameTransformStyle = computed(() => {
+    const transform = frameTransform.value;
+    return {
+      transform: `translate(${transform.x * 100}%, ${transform.y * 100}%) scale(${transform.scale})`,
+      transformOrigin: 'center center',
+    };
+  });
+
   // Get region index for labeling
   function getRegionIndex(id: string): number {
     return props.regions.findIndex((r) => r.id === id);
@@ -335,6 +393,50 @@
   // Select a region
   function selectRegion(id: string) {
     emit('selectRegion', id);
+  }
+
+  // Open media upload for selected region
+  function openMediaUpload() {
+    if (props.selectedRegionId) {
+      emit('uploadMedia', props.selectedRegionId);
+    }
+  }
+
+  // Start frame resize
+  function startFrameResize(e: MouseEvent, corner: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    isResizingFrame.value = true;
+    resizeCorner.value = corner;
+    resizeStartPos.value = { x: e.clientX, y: e.clientY };
+    resizeStartTransform.value = { ...frameTransform.value };
+    
+    document.addEventListener('mousemove', onFrameResize);
+    document.addEventListener('mouseup', stopFrameResize);
+  }
+
+  // Handle frame resize
+  function onFrameResize(e: MouseEvent) {
+    if (!isResizingFrame.value) return;
+    
+    const deltaX = e.clientX - resizeStartPos.value.x;
+    const deltaY = e.clientY - resizeStartPos.value.y;
+    
+    // Calculate scale based on diagonal movement
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    const direction = deltaX + deltaY > 0 ? 1 : -1;
+    const scaleDelta = (distance / 200) * direction;
+    
+    const newScale = Math.max(0.5, Math.min(3, resizeStartTransform.value.scale + scaleDelta));
+    frameTransform.value.scale = newScale;
+  }
+
+  // Stop frame resize
+  function stopFrameResize() {
+    isResizingFrame.value = false;
+    document.removeEventListener('mousemove', onFrameResize);
+    document.removeEventListener('mouseup', stopFrameResize);
   }
 
   // Track drag state for cursor styling

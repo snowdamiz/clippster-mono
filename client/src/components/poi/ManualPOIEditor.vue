@@ -51,6 +51,7 @@
                     @delete-region="deleteRegion"
                     @select-region="selectRegion"
                     @time-update="onTimeUpdate"
+                    @upload-media="handleMediaUpload"
                   />
                 </div>
 
@@ -141,6 +142,18 @@
                   {{ videoError }}
                 </div>
               </div>
+
+              <!-- Segment Timeline -->
+              <POISegmentTimeline
+                v-if="clipDuration > 0"
+                :segments="segmentConfigs"
+                :active-segment-id="activeSegmentId"
+                :duration="clipDuration"
+                :current-time="currentTime"
+                @add-segment="addSegment"
+                @delete-segment="deleteSegment"
+                @select-segment="selectSegment"
+              />
             </div>
 
             <!-- Footer -->
@@ -210,7 +223,8 @@
   import Hls from 'hls.js';
   import POISourcePanel from './POISourcePanel.vue';
   import POITargetPanel from './POITargetPanel.vue';
-  import type { ManualRegion, ManualFramingConfig, WatermarkSettings, LayoutOverlay } from '@/types';
+  import POISegmentTimeline from './POISegmentTimeline.vue';
+  import type { ManualRegion, ManualFramingConfig, WatermarkSettings, LayoutOverlay, SegmentRegionConfig } from '@/types';
   import { utf8ToBase64 } from '@/utils/encoding';
 
   interface WatermarkPreview {
@@ -267,6 +281,10 @@
   // Local state
   const regions = ref<ManualRegion[]>([]);
   const selectedRegionId = ref<string | null>(null);
+
+  // Segment management state
+  const segmentConfigs = ref<SegmentRegionConfig[]>([]);
+  const activeSegmentId = ref<string | null>(null);
 
   // Video playback state
   const isPlaying = ref(false);
@@ -488,11 +506,23 @@
     () => props.modelValue,
     async (isOpen) => {
       if (isOpen) {
+        // Load initial configuration
         if (props.initialConfig && props.initialConfig.regions.length > 0) {
           // Deep clone the regions
           regions.value = JSON.parse(JSON.stringify(props.initialConfig.regions));
+          
+          // Load segment configurations if present
+          if (props.initialConfig.segmentConfigs && props.initialConfig.segmentConfigs.length > 0) {
+            segmentConfigs.value = JSON.parse(JSON.stringify(props.initialConfig.segmentConfigs));
+            activeSegmentId.value = segmentConfigs.value[0].segmentId;
+          } else {
+            segmentConfigs.value = [];
+            activeSegmentId.value = null;
+          }
         } else {
           regions.value = [];
+          segmentConfigs.value = [];
+          activeSegmentId.value = null;
         }
         selectedRegionId.value = regions.value.length > 0 ? regions.value[0].id : null;
 
@@ -540,6 +570,78 @@
     selectedRegionId.value = id;
   }
 
+  // Handle media upload for a region
+  async function handleMediaUpload(regionId: string) {
+    // Create file input element
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,video/*';
+    
+    input.onchange = async (e: Event) => {
+      const target = e.target as HTMLInputElement;
+      const file = target.files?.[0];
+      if (!file) return;
+
+      try {
+        // For now, store the file URL directly
+        // TODO: Integrate with editor asset system when available in POI context
+        const fileUrl = URL.createObjectURL(file);
+        const mediaType = file.type.startsWith('image/') ? 'image' : 'video';
+        
+        updateRegion(regionId, {
+          mediaAssetId: fileUrl, // Temporary: using object URL
+          mediaType: mediaType as 'image' | 'video',
+        });
+        
+        console.log('[ManualPOIEditor] Media uploaded for region:', regionId, mediaType);
+      } catch (error) {
+        console.error('[ManualPOIEditor] Failed to upload media:', error);
+      }
+    };
+    
+    input.click();
+  }
+
+  // Add a new segment
+  function addSegment() {
+    const lastSegment = segmentConfigs.value[segmentConfigs.value.length - 1];
+    const startTime = lastSegment ? lastSegment.endTime : 0;
+    const endTime = Math.min(startTime + (clipDuration.value / 4), clipDuration.value);
+    
+    if (startTime >= clipDuration.value) return;
+    
+    const newSegment: SegmentRegionConfig = {
+      segmentId: `segment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      startTime,
+      endTime,
+      regions: JSON.parse(JSON.stringify(regions.value)), // Copy current regions
+    };
+    
+    segmentConfigs.value.push(newSegment);
+    activeSegmentId.value = newSegment.segmentId;
+  }
+
+  // Delete a segment
+  function deleteSegment(segmentId: string) {
+    const index = segmentConfigs.value.findIndex(s => s.segmentId === segmentId);
+    if (index !== -1) {
+      segmentConfigs.value.splice(index, 1);
+      if (activeSegmentId.value === segmentId) {
+        activeSegmentId.value = segmentConfigs.value[0]?.segmentId || null;
+      }
+    }
+  }
+
+  // Select a segment
+  function selectSegment(segmentId: string) {
+    activeSegmentId.value = segmentId;
+    const segment = segmentConfigs.value.find(s => s.segmentId === segmentId);
+    if (segment) {
+      // Load segment's regions
+      regions.value = JSON.parse(JSON.stringify(segment.regions));
+    }
+  }
+
   // Reset all regions
   function resetRegions() {
     regions.value = [];
@@ -555,11 +657,20 @@
   function confirmConfig() {
     if (regions.value.length === 0) return;
 
+    // Save current segment's regions if we have segments
+    if (activeSegmentId.value) {
+      const activeSegment = segmentConfigs.value.find(s => s.segmentId === activeSegmentId.value);
+      if (activeSegment) {
+        activeSegment.regions = JSON.parse(JSON.stringify(regions.value));
+      }
+    }
+
     const config: ManualFramingConfig = {
       mode: 'manual',
       regions: JSON.parse(JSON.stringify(regions.value)),
       targetAspectRatio: props.targetAspectRatio,
       sourceAspectRatio: props.sourceAspectRatio,
+      segmentConfigs: segmentConfigs.value.length > 0 ? JSON.parse(JSON.stringify(segmentConfigs.value)) : undefined,
     };
 
     emit('confirm', config);
