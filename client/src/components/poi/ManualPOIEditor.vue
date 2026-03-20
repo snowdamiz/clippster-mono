@@ -333,7 +333,7 @@
 
   // Computed clip duration
   const clipDuration = computed(() => {
-    if (props.clipEndTime && props.clipStartTime) {
+    if (props.clipEndTime !== undefined && props.clipStartTime !== undefined) {
       return props.clipEndTime - props.clipStartTime;
     }
     // Fallback to full video duration for VOD pre-edit use case
