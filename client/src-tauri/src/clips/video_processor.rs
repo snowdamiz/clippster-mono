@@ -2763,7 +2763,7 @@ pub async fn build_multi_region_clip(
     // 4. If segments exist, use enable filter to switch regions based on time
 
     let mut filter_parts: Vec<String> = Vec::new();
-    let mut region_labels: Vec<(String, u32, u32)> = Vec::new();
+    let mut region_labels: Vec<(String, u32, u32, Option<String>)> = Vec::new();
 
     // Apply source transform if present (scale and translate the source video)
     let source_label = if let Some(ref transform) = working_config.source_transform {
@@ -2838,7 +2838,7 @@ pub async fn build_multi_region_clip(
     // Helper function to build region filters
     let mut build_region_filters = |regions: &Vec<super::types::ManualRegion>, 
                                  prefix: &str, 
-                                 enable_condition: Option<String>| -> Vec<(String, u32, u32)> {
+                                 enable_condition: Option<String>| -> Vec<(String, u32, u32, Option<String>)> {
         let mut labels = Vec::new();
         for (i, region) in regions.iter().enumerate() {
             // Calculate source crop in pixels
@@ -2864,21 +2864,16 @@ pub async fn build_multi_region_clip(
 
             let label = format!("{}{}", prefix, i);
             
-            // Build crop and scale filter
-            let mut filter = format!(
-                "[{}]crop={}:{}:{}:{},scale={}:{}:flags=lanczos",
-                source_label, crop_w, crop_h, crop_x, crop_y, out_w, out_h
+            // Build crop and scale filter (without enable - we'll apply enable to overlay instead)
+            let filter = format!(
+                "[{}]crop={}:{}:{}:{},scale={}:{}:flags=lanczos[{}]",
+                source_label, crop_w, crop_h, crop_x, crop_y, out_w, out_h, label
             );
             
-            // Add enable condition if provided (for time-based switching)
-            if let Some(ref condition) = enable_condition {
-                filter.push_str(&format!(",{}", condition));
-            }
-            
-            filter.push_str(&format!("[{}]", label));
             filter_parts.push(filter);
 
-            labels.push((label, out_x, out_y));
+            // Store label with enable condition for overlay stage
+            labels.push((label, out_x, out_y, enable_condition.clone()));
         }
         labels
     };
@@ -2889,11 +2884,17 @@ pub async fn build_multi_region_clip(
         
         // Build base regions (active outside all segments)
         // Enable condition: NOT in any segment time range
+        // IMPORTANT: Segment times are absolute, but after FFmpeg trim (-ss), timeline starts at 0
+        // So we need to convert segment times to be relative to clip start
         let mut base_enable_parts = Vec::new();
         for seg in segments.iter() {
+            // Convert absolute segment times to relative (from clip start)
+            let relative_start = seg.start_time - start_time;
+            let relative_end = seg.end_time - start_time;
+            
             // For each segment, add condition: NOT (t >= start AND t <= end)
             // Which is: t < start OR t > end
-            base_enable_parts.push(format!("lt(t,{}) + gt(t,{})", seg.start_time, seg.end_time));
+            base_enable_parts.push(format!("lt(t,{})+gt(t,{})", relative_start, relative_end));
         }
         let base_enable = if base_enable_parts.is_empty() {
             None
@@ -2905,7 +2906,7 @@ pub async fn build_multi_region_clip(
             // We want base active when outside ALL segments
             // So: (t < seg1.start OR t > seg1.end) AND (t < seg2.start OR t > seg2.end) ...
             // In FFmpeg: multiply the conditions (1 = true, 0 = false)
-            Some(format!("enable='{}' ", base_enable_parts.join("*")))
+            Some(format!("enable={}", base_enable_parts.join("*")))
         };
         
         println!("[Rust] Building base regions with enable condition: {:?}", base_enable);
@@ -2914,15 +2915,19 @@ pub async fn build_multi_region_clip(
         
         // Build segment-specific regions
         for (seg_idx, seg) in segments.iter().enumerate() {
+            // Convert absolute segment times to relative (from clip start)
+            let relative_start = seg.start_time - start_time;
+            let relative_end = seg.end_time - start_time;
+            
             // Enable condition: t >= start AND t <= end
             let seg_enable = format!(
-                "enable='gte(t,{})*lte(t,{})'",
-                seg.start_time, seg.end_time
+                "enable=gte(t,{})*lte(t,{})",
+                relative_start, relative_end
             );
             
             println!(
-                "[Rust] Building segment {} regions ({:.2}s - {:.2}s) with {} regions",
-                seg_idx, seg.start_time, seg.end_time, seg.regions.len()
+                "[Rust] Building segment {} regions ({:.2}s - {:.2}s relative to clip) with {} regions",
+                seg_idx, relative_start, relative_end, seg.regions.len()
             );
             
             let seg_labels = build_region_filters(
@@ -2946,17 +2951,29 @@ pub async fn build_multi_region_clip(
     // Build overlay chain
     // Start with base canvas, overlay each region
     let mut current_label = "base".to_string();
-    for (i, (region_label, out_x, out_y)) in region_labels.iter().enumerate() {
+    for (i, (region_label, out_x, out_y, enable_cond)) in region_labels.iter().enumerate() {
         let next_label = if i == region_labels.len() - 1 {
             "vout".to_string() // Final output
         } else {
             format!("tmp{}", i)
         };
 
-        filter_parts.push(format!(
-            "[{}][{}]overlay={}:{}[{}]",
-            current_label, region_label, out_x, out_y, next_label
-        ));
+        // Build overlay filter with optional enable condition
+        let mut overlay_filter = format!(
+            "[{}][{}]overlay={}:{}",
+            current_label, region_label, out_x, out_y
+        );
+        
+        // Apply enable condition to overlay if present
+        // Note: We need to wrap the expression in single quotes and escape it properly
+        if let Some(ref cond) = enable_cond {
+            // Extract just the expression part (remove "enable=" prefix)
+            let expr = cond.strip_prefix("enable=").unwrap_or(cond);
+            overlay_filter.push_str(&format!(":enable='{}'", expr));
+        }
+        
+        overlay_filter.push_str(&format!("[{}]", next_label));
+        filter_parts.push(overlay_filter);
 
         current_label = next_label;
     }
