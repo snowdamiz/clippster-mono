@@ -441,6 +441,23 @@ export const usePlatformStore = defineStore('platform', {
       saveAudioRecentSearches([]);
     },
 
+    // Remove audio platform searches (YouTube/Twitter) from VOD recent searches
+    // This cleans up searches that were incorrectly added before the fix
+    cleanupAudioSearchesFromVodList() {
+      const audioPlatforms: PlatformId[] = ['YouTube', 'twitter'];
+      const originalLength = this.recentSearches.length;
+      
+      this.recentSearches = this.recentSearches.filter(
+        (search) => !audioPlatforms.includes(search.platform)
+      );
+      
+      if (this.recentSearches.length !== originalLength) {
+        saveRecentSearches(this.recentSearches);
+        return originalLength - this.recentSearches.length;
+      }
+      return 0;
+    },
+
     // Remove a specific recent search
     removeFromRecentSearches(id: string, platform: PlatformId) {
       const index = this.recentSearches.findIndex((s) => s.id === id && s.platform === platform);
@@ -495,7 +512,7 @@ export const usePlatformStore = defineStore('platform', {
     },
 
     // Universal search function that handles different platforms
-    async searchClips(input: string, limit: number = 20, tab?: 'streams' | 'videos') {
+    async searchClips(input: string, limit: number = 20, tab?: 'streams' | 'videos', skipRecentSearches: boolean = false) {
       const trimmedInput = input.trim();
       const config = platformConfigs[this.activePlatform];
 
@@ -665,7 +682,8 @@ export const usePlatformStore = defineStore('platform', {
 
           // Save to recent searches with platform
           // Skip for Twitter - it's handled in getTwitterClip with full metadata
-          if (this.activePlatform !== 'twitter') {
+          // Skip if caller wants to manage recent searches separately (e.g., Download Audio)
+          if (!skipRecentSearches && this.activePlatform !== 'twitter') {
             this.addToRecentSearches(extractedId!, trimmedInput, this.activePlatform, undefined);
           }
 

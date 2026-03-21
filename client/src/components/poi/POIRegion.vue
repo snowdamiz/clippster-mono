@@ -99,6 +99,7 @@
     minHeight?: number; // Minimum height as percentage (0-1)
     containerWidth: number; // Container width in pixels
     containerHeight: number; // Container height in pixels
+    aspectRatioLocked?: boolean; // Lock aspect ratio during resize (default true)
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -109,6 +110,7 @@
     showResizeHandles: true,
     minWidth: 0.05,
     minHeight: 0.05,
+    aspectRatioLocked: true,
   });
 
   const emit = defineEmits<{
@@ -221,28 +223,83 @@
     let newRect = { ...startRect.value };
     const dir = resizeDirection.value;
 
-    // Handle horizontal resize
-    if (dir.includes('w')) {
-      const maxDeltaX = startRect.value.width - props.minWidth;
-      const clampedDeltaX = clamp(deltaX, -startRect.value.x, maxDeltaX);
-      newRect.x = startRect.value.x + clampedDeltaX;
-      newRect.width = startRect.value.width - clampedDeltaX;
-    }
-    if (dir.includes('e')) {
-      const maxWidth = 1 - startRect.value.x;
-      newRect.width = clamp(startRect.value.width + deltaX, props.minWidth, maxWidth);
-    }
+    if (props.aspectRatioLocked) {
+      // Aspect ratio locked - maintain proportions
+      const aspectRatio = startRect.value.width / startRect.value.height;
 
-    // Handle vertical resize
-    if (dir.includes('n')) {
-      const maxDeltaY = startRect.value.height - props.minHeight;
-      const clampedDeltaY = clamp(deltaY, -startRect.value.y, maxDeltaY);
-      newRect.y = startRect.value.y + clampedDeltaY;
-      newRect.height = startRect.value.height - clampedDeltaY;
-    }
-    if (dir.includes('s')) {
-      const maxHeight = 1 - startRect.value.y;
-      newRect.height = clamp(startRect.value.height + deltaY, props.minHeight, maxHeight);
+      // For corner handles, use the dominant direction (larger delta)
+      if (dir.includes('e') || dir.includes('w')) {
+        // Horizontal resize - adjust height to maintain aspect ratio
+        if (dir.includes('w')) {
+          const maxDeltaX = startRect.value.width - props.minWidth;
+          const clampedDeltaX = clamp(deltaX, -startRect.value.x, maxDeltaX);
+          newRect.x = startRect.value.x + clampedDeltaX;
+          newRect.width = startRect.value.width - clampedDeltaX;
+        } else {
+          const maxWidth = 1 - startRect.value.x;
+          newRect.width = clamp(startRect.value.width + deltaX, props.minWidth, maxWidth);
+        }
+        
+        // Adjust height to maintain aspect ratio
+        const newHeight = newRect.width / aspectRatio;
+        
+        // For north corners, adjust y position
+        if (dir.includes('n')) {
+          const heightDelta = newHeight - startRect.value.height;
+          newRect.y = clamp(startRect.value.y - heightDelta, 0, 1 - newHeight);
+        }
+        
+        newRect.height = clamp(newHeight, props.minHeight, 1 - newRect.y);
+      } else {
+        // Vertical resize - adjust width to maintain aspect ratio
+        if (dir.includes('n')) {
+          const maxDeltaY = startRect.value.height - props.minHeight;
+          const clampedDeltaY = clamp(deltaY, -startRect.value.y, maxDeltaY);
+          newRect.y = startRect.value.y + clampedDeltaY;
+          newRect.height = startRect.value.height - clampedDeltaY;
+        } else {
+          const maxHeight = 1 - startRect.value.y;
+          newRect.height = clamp(startRect.value.height + deltaY, props.minHeight, maxHeight);
+        }
+        
+        // Adjust width to maintain aspect ratio
+        const newWidth = newRect.height * aspectRatio;
+        
+        // For west handles, adjust x position
+        if (dir.includes('w')) {
+          const widthDelta = newWidth - startRect.value.width;
+          newRect.x = clamp(startRect.value.x - widthDelta, 0, 1 - newWidth);
+        }
+        
+        newRect.width = clamp(newWidth, props.minWidth, 1 - newRect.x);
+      }
+    } else {
+      // Aspect ratio unlocked - free resize
+      // Handle horizontal resize (west/left side)
+      if (dir.includes('w')) {
+        const maxDeltaX = startRect.value.width - props.minWidth;
+        const clampedDeltaX = clamp(deltaX, -startRect.value.x, maxDeltaX);
+        newRect.x = startRect.value.x + clampedDeltaX;
+        newRect.width = startRect.value.width - clampedDeltaX;
+      }
+      // Handle horizontal resize (east/right side)
+      if (dir.includes('e')) {
+        const maxWidth = 1 - startRect.value.x;
+        newRect.width = clamp(startRect.value.width + deltaX, props.minWidth, maxWidth);
+      }
+
+      // Handle vertical resize (north/top side)
+      if (dir.includes('n')) {
+        const maxDeltaY = startRect.value.height - props.minHeight;
+        const clampedDeltaY = clamp(deltaY, -startRect.value.y, maxDeltaY);
+        newRect.y = startRect.value.y + clampedDeltaY;
+        newRect.height = startRect.value.height - clampedDeltaY;
+      }
+      // Handle vertical resize (south/bottom side)
+      if (dir.includes('s')) {
+        const maxHeight = 1 - startRect.value.y;
+        newRect.height = clamp(startRect.value.height + deltaY, props.minHeight, maxHeight);
+      }
     }
 
     emit('update', newRect);

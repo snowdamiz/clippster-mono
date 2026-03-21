@@ -1021,8 +1021,8 @@
       :initial-config="getConfigForRatio(editingAspectRatio)"
       :target-aspect-ratio="editingAspectRatio"
       :source-aspect-ratio="'16:9'"
-      :thumbnail-url="videoFrameUrl || thumbnailUrl"
-      :video-path="videoPath"
+      :thumbnail-url="thumbnailUrl"
+      :video-path="clipPath"
       :clip-start-time="clipStartTime"
       :clip-end-time="clipEndTime"
       :watermark-settings="watermarkSettings"
@@ -1177,9 +1177,6 @@ const outputFormat = ref<'mp4' | 'mov'>('mp4');
 const manualFramingConfigs = ref<ManualFramingConfigs>({});
 const showManualPOIEditor = ref(false);
 const editingAspectRatio = ref<string>('9:16');
-const videoFrameUrl = ref<string | null>(null);
-const videoPath = ref<string | null>(null);
-const loadingVideoFrame = ref(false);
 
 // Add-ons (Step 4)
 const intros = ref<IntroOutroItem[]>([]);
@@ -3063,42 +3060,6 @@ async function loadAccounts() {
   }
 }
 
-// Load a frame from the video for the POI editor preview
-async function loadVideoFrame() {
-  if (!props.clipPath || loadingVideoFrame.value) return;
-
-  loadingVideoFrame.value = true;
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-
-    // For livestream clips, the clipPath IS the extracted clip file - use it directly
-    // The clip is already extracted from HLS segments, so it's the source video
-    videoPath.value = props.clipPath;
-    console.log('[QuickPublishWizard] Using clip path as source video:', props.clipPath.split(/[\\/]/).pop());
-
-    // Generate a frame at 1 second into the clip for preview
-    const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
-      videoPath: props.clipPath,
-      timestampSeconds: 1,
-      outputFilename: `poi_preview_${props.clip?.id || Date.now()}`,
-    });
-
-    // Convert to data URL for display
-    const dataUrl = await invoke<string>('read_file_as_data_url', {
-      filePath: thumbnailPath,
-    });
-
-    videoFrameUrl.value = dataUrl;
-  } catch (error) {
-    console.warn('[QuickPublishWizard] Failed to load video frame:', error);
-    // Use thumbnail URL prop as fallback
-    videoFrameUrl.value = props.thumbnailUrl || null;
-    // Still set the video path so POI editor can play the video
-    videoPath.value = props.clipPath;
-  } finally {
-    loadingVideoFrame.value = false;
-  }
-}
 
 // Helpers
 function formatDuration(seconds: number): string {
@@ -3144,7 +3105,6 @@ watch(
         loadCreatorProfileData(),
         loadAvailableCampaigns(),
         loadAccounts(),
-        loadVideoFrame(),
       ]);
       console.warn('[QuickPublishWizard] All data loaded. intros:', intros.value.length, 'outros:', outros.value.length, 'campaigns:', availableCampaigns.value.length);
     }

@@ -635,6 +635,11 @@
   onMounted(async () => {
     document.addEventListener('click', handleClickOutside);
     window.addEventListener('focus', handleWindowFocus);
+    
+    // Clean up any audio platform searches (YouTube/Twitter) from VOD recent searches
+    // These were incorrectly added before the fix
+    platformStore.cleanupAudioSearchesFromVodList();
+    
     await platformStore.refreshRecentSearchMetadata();
     await loadDownloadedVodIds();
     detectPlatform();
