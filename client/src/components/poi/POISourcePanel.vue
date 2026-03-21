@@ -27,6 +27,37 @@
       </div>
     </div>
 
+    <!-- Aspect Ratio Lock Control (shown when region is selected) -->
+    <div
+      v-if="selectedRegion"
+      class="px-3 py-2 border-b border-zinc-700/50 bg-zinc-900/30"
+    >
+      <label class="flex items-center gap-2 cursor-pointer group">
+        <input
+          type="checkbox"
+          :checked="selectedRegion.aspectRatioLocked !== false"
+          @change="toggleAspectRatioLock"
+          class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0"
+        />
+        <LockIcon
+          v-if="selectedRegion.aspectRatioLocked !== false"
+          class="w-3.5 h-3.5 text-emerald-400"
+        />
+        <UnlockIcon
+          v-else
+          class="w-3.5 h-3.5 text-amber-400"
+        />
+        <span class="text-xs font-medium group-hover:text-zinc-200 transition-colors"
+          :class="selectedRegion.aspectRatioLocked !== false ? 'text-emerald-300' : 'text-amber-300'"
+        >
+          {{ selectedRegion.aspectRatioLocked !== false ? 'Aspect Ratio Locked' : 'Aspect Ratio Unlocked' }}
+        </span>
+        <span class="text-[10px] text-zinc-500">
+          ({{ selectedRegion.aspectRatioLocked !== false ? 'maintains proportions' : 'free resize' }})
+        </span>
+      </label>
+    </div>
+
     <!-- Canvas Area -->
     <div class="flex-1 p-3 flex items-center justify-center bg-zinc-950/50">
       <div ref="containerRef" class="relative bg-black rounded-lg overflow-hidden shadow-lg" :style="containerStyle">
@@ -79,6 +110,7 @@
           :container-height="containerHeight"
           :resizable="true"
           :draggable="true"
+          :aspect-ratio-locked="region.aspectRatioLocked !== false"
           @update="(rect) => updateRegionSource(region.id, rect)"
           @delete="deleteRegion(region.id)"
           @select="selectRegion(region.id)"
@@ -120,7 +152,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-  import { PlusIcon, VideoIcon, PlusCircleIcon, ImageIcon } from 'lucide-vue-next';
+  import { PlusIcon, VideoIcon, PlusCircleIcon, ImageIcon, LockIcon, UnlockIcon } from 'lucide-vue-next';
   import Hls from 'hls.js';
   import POIRegion from './POIRegion.vue';
   import type { ManualRegion, ManualRegionRect } from '@/types';
@@ -288,9 +320,22 @@
     };
   });
 
+  // Get selected region
+  const selectedRegion = computed(() => {
+    return props.regions.find(r => r.id === props.selectedRegionId) || null;
+  });
+
   // Get region index for labeling
   function getRegionIndex(id: string): number {
     return props.regions.findIndex((r) => r.id === id);
+  }
+
+  // Toggle aspect ratio lock for selected region
+  function toggleAspectRatioLock() {
+    if (!selectedRegion.value) return;
+    
+    const newLockState = !(selectedRegion.value.aspectRatioLocked !== false);
+    emit('updateRegion', selectedRegion.value.id, { aspectRatioLocked: newLockState });
   }
 
   // Get next available color
@@ -309,21 +354,42 @@
   function addRegion() {
     if (props.regions.length >= props.maxRegions) return;
 
+    // Source crop dimensions (normalized 0-1)
+    const sourceCropWidth = 0.5;
+    const sourceCropHeight = 0.5;
+    
+    // Parse source video aspect ratio (default 16:9)
+    const [sourceW, sourceH] = (props.sourceAspectRatio || '16:9').split(':').map(Number);
+    const sourceVideoAspect = sourceW / sourceH; // 16/9 = 1.778
+    
+    // Calculate the actual aspect ratio of the cropped region
+    // The crop is normalized (0-1), but we need to account for the source video's aspect ratio
+    // Example: 0.5 width on 16:9 source = 0.5 * 1.778 = 0.889 actual width
+    //          0.5 height on 16:9 source = 0.5 actual height
+    //          Aspect ratio = 0.889 / 0.5 = 1.778 (same as source)
+    const actualCropAspect = (sourceCropWidth * sourceVideoAspect) / sourceCropHeight;
+    
+    // Calculate output dimensions that maintain the crop's aspect ratio
+    // Fit to full width, calculate height based on actual crop aspect ratio
+    const outputWidth = 1.0;
+    const outputHeight = outputWidth / actualCropAspect;
+    
     const newRegion: ManualRegion = {
       id: generateId(),
       color: getNextColor(),
       source: {
         x: 0.25,
         y: 0.25,
-        width: 0.5,
-        height: 0.5,
+        width: sourceCropWidth,
+        height: sourceCropHeight,
       },
       output: {
         x: 0,
-        y: props.regions.length > 0 ? props.regions.length * 0.33 : 0,
-        width: 1,
-        height: 0.33,
+        y: props.regions.length > 0 ? Math.min(props.regions.length * 0.33, 0.6) : 0,
+        width: outputWidth,
+        height: Math.min(outputHeight, 1.0), // Clamp to canvas bounds
       },
+      aspectRatioLocked: true, // Lock aspect ratio by default
     };
 
     emit('addRegion', newRegion);
@@ -332,7 +398,33 @@
 
   // Update a region's source rect
   function updateRegionSource(id: string, rect: ManualRegionRect) {
-    emit('updateRegion', id, { source: rect });
+    const region = props.regions.find(r => r.id === id);
+    
+    // If aspect ratio is locked, recalculate output dimensions
+    if (region?.aspectRatioLocked !== false) {
+      // Parse source video aspect ratio (default 16:9)
+      const [sourceW, sourceH] = (props.sourceAspectRatio || '16:9').split(':').map(Number);
+      const sourceVideoAspect = sourceW / sourceH;
+      
+      // Calculate the actual aspect ratio of the cropped region
+      // Account for source video's aspect ratio
+      const actualCropAspect = (rect.width * sourceVideoAspect) / rect.height;
+      
+      const currentOutput = region?.output || { x: 0, y: 0, width: 1, height: 0.33 };
+      
+      // Maintain output width, adjust height to match actual crop aspect ratio
+      const newOutputHeight = currentOutput.width / actualCropAspect;
+      
+      emit('updateRegion', id, { 
+        source: rect,
+        output: {
+          ...currentOutput,
+          height: newOutputHeight,
+        }
+      });
+    } else {
+      emit('updateRegion', id, { source: rect });
+    }
   }
 
   // Delete a region

@@ -643,6 +643,8 @@ export interface ManualRegion {
   // Media asset reference (use editor asset system)
   mediaAssetId?: string; // Reference to MediaAsset in editor.media
   mediaType?: 'video-crop' | 'image' | 'video'; // Type of content in this region
+  // Aspect ratio locking (prevents distortion when resizing output)
+  aspectRatioLocked?: boolean; // Default true - maintains source aspect ratio in output
 }
 
 // Time-based segment configuration for POI regions

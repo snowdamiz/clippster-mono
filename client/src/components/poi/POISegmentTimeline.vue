@@ -2,9 +2,12 @@
   <div class="poi-segment-timeline border-t border-zinc-800 bg-zinc-900/70">
     <!-- Header -->
     <div class="flex items-center justify-between px-3 py-2 border-b border-zinc-700/50">
-      <div class="flex items-center gap-2">
-        <div class="text-xs font-medium text-zinc-300">Segments</div>
-        <span class="text-[10px] text-zinc-500">{{ segments.length }} segment{{ segments.length !== 1 ? 's' : '' }}</span>
+      <div class="flex flex-col gap-0.5">
+        <div class="flex items-center gap-2">
+          <div class="text-sm font-semibold text-zinc-200">Time-Based Regions</div>
+          <span class="text-xs text-zinc-500">{{ segments.length }} segment{{ segments.length !== 1 ? 's' : '' }}</span>
+        </div>
+        <div class="text-xs text-zinc-400">Set different regions for specific time periods</div>
       </div>
       <button
         @click="addSegment"
@@ -28,9 +31,38 @@
       <!-- Timeline track -->
       <div 
         ref="timelineRef"
-        class="relative h-12 bg-zinc-900/50 rounded-lg border border-zinc-800/50 cursor-crosshair overflow-visible"
+        class="relative h-12 bg-zinc-900/50 rounded-lg border border-zinc-800/50 overflow-hidden"
         @click="onTimelineClick"
       >
+        <!-- Filmstrip background -->
+        <div class="absolute inset-0 bg-black/20">
+          <canvas
+            v-if="videoUrl"
+            ref="filmstripCanvasRef"
+            class="absolute inset-0 w-full h-full opacity-60 blur-[0.5px]"
+          />
+          <img
+            v-else-if="thumbnailUrl"
+            :src="thumbnailUrl"
+            class="absolute inset-0 w-full h-full object-cover opacity-60 blur-[0.5px]"
+            alt="Timeline preview"
+          />
+        </div>
+        
+        <!-- Hidden video for frame extraction -->
+        <video
+          v-if="videoUrl"
+          ref="filmstripVideoRef"
+          :src="videoUrl"
+          class="hidden"
+          preload="metadata"
+          muted
+          playsinline
+          @loadedmetadata="generateFilmstrip"
+        />
+        
+        <!-- Dark overlay for better contrast -->
+        <div class="absolute inset-0 bg-gradient-to-b from-zinc-900/40 via-zinc-900/20 to-zinc-900/40" />
         <!-- Segments -->
         <div
           v-for="(segment, index) in segments"
@@ -89,22 +121,25 @@
 
           <!-- Delete button -->
           <button
-            v-if="segments.length > 1"
             @click.stop="deleteSegment(segment.segmentId)"
-            class="absolute -top-3 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all shadow-lg hover:scale-110"
+            class="absolute -top-7 left-1/2 -translate-x-1/2 w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all shadow-lg hover:scale-110 z-30"
             title="Delete segment"
           >
-            <XIcon class="w-3.5 h-3.5" />
+            <XIcon class="w-3 h-3" />
           </button>
         </div>
 
         <!-- Playhead indicator -->
         <div
           v-if="currentTime !== null"
-          class="absolute top-0 bottom-0 w-0.5 bg-white/90 pointer-events-none z-20 shadow-lg"
+          class="absolute top-0 bottom-0 w-0.5 bg-white/90 z-20 shadow-lg cursor-ew-resize"
           :style="{ left: `${(currentTime / duration) * 100}%` }"
+          @mousedown.stop="startDragPlayhead"
         >
-          <div class="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white rounded-full shadow-lg border-2 border-zinc-900" />
+          <div 
+            class="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white rounded-full shadow-lg border-2 border-zinc-900 cursor-ew-resize hover:scale-125 transition-transform"
+            @mousedown.stop="startDragPlayhead"
+          />
         </div>
       </div>
     </div>
@@ -133,6 +168,10 @@
     activeSegmentId: string | null;
     duration: number;
     currentTime: number | null;
+    videoUrl?: string | null;
+    thumbnailUrl?: string | null;
+    clipStartTime?: number;
+    clipEndTime?: number;
   }
 
   const props = defineProps<Props>();
@@ -142,9 +181,12 @@
     deleteSegment: [segmentId: string];
     selectSegment: [segmentId: string];
     updateSegment: [segmentId: string, updates: { startTime?: number; endTime?: number }];
+    seekTime: [time: number];
   }>();
 
   const timelineRef = ref<HTMLElement | null>(null);
+  const filmstripVideoRef = ref<HTMLVideoElement | null>(null);
+  const filmstripCanvasRef = ref<HTMLCanvasElement | null>(null);
   const isResizing = ref(false);
   const resizingSegmentId = ref<string | null>(null);
   const resizingEdge = ref<'start' | 'end' | null>(null);
@@ -154,10 +196,98 @@
   const dragStartX = ref(0);
   const dragStartTime = ref(0);
 
+  const isDraggingPlayhead = ref(false);
+
+  // Generate filmstrip with multiple frames across timeline
+  async function generateFilmstrip() {
+    if (!filmstripVideoRef.value || !filmstripCanvasRef.value || !timelineRef.value) return;
+    
+    const video = filmstripVideoRef.value;
+    const canvas = filmstripCanvasRef.value;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Set canvas size to match timeline
+    const rect = timelineRef.value.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+
+    // Use clip start/end times if provided, otherwise use full video duration
+    const clipStart = props.clipStartTime || 0;
+    const clipEnd = props.clipEndTime || video.duration;
+    const clipDuration = clipEnd - clipStart;
+
+    const frameCount = Math.min(40, Math.floor(rect.width / 30)); // One frame every ~30px, max 40 frames
+    const frameWidth = rect.width / frameCount;
+
+    // Draw frames across the timeline (only from clip portion)
+    for (let i = 0; i < frameCount; i++) {
+      // Calculate time within the clip range
+      const clipProgress = i / frameCount;
+      const absoluteTime = clipStart + (clipProgress * clipDuration);
+      video.currentTime = absoluteTime;
+      
+      // Wait for seek to complete
+      await new Promise<void>((resolve) => {
+        const onSeeked = () => {
+          video.removeEventListener('seeked', onSeeked);
+          resolve();
+        };
+        video.addEventListener('seeked', onSeeked);
+      });
+
+      // Calculate aspect-ratio-preserving dimensions
+      const videoAspect = video.videoWidth / video.videoHeight;
+      const frameHeight = rect.height;
+      const scaledWidth = frameHeight * videoAspect;
+      
+      // Draw this frame
+      const x = i * frameWidth;
+      ctx.drawImage(video, x, 0, scaledWidth, frameHeight);
+    }
+  }
+
   // Get active segment
   const activeSegment = computed(() => {
     return props.segments.find(s => s.segmentId === props.activeSegmentId) || null;
   });
+
+  // Start dragging playhead
+  function startDragPlayhead(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    isDraggingPlayhead.value = true;
+    
+    document.addEventListener('mousemove', onDragPlayhead);
+    document.addEventListener('mouseup', stopDragPlayhead);
+  }
+
+  // Handle playhead drag
+  function onDragPlayhead(e: MouseEvent) {
+    if (!isDraggingPlayhead.value || !timelineRef.value) return;
+    
+    const rect = timelineRef.value.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percent = Math.max(0, Math.min(1, x / rect.width));
+    
+    if (e.shiftKey) {
+      // Precision mode: quantize to 0.01 second increments (10ms steps)
+      const rawTime = percent * props.duration;
+      const quantized = Math.round(rawTime / 0.01) * 0.01;
+      emit('seekTime', Math.max(0, Math.min(props.duration, quantized)));
+    } else {
+      // Normal mode: direct position mapping
+      const newTime = percent * props.duration;
+      emit('seekTime', newTime);
+    }
+  }
+
+  // Stop dragging playhead
+  function stopDragPlayhead() {
+    isDraggingPlayhead.value = false;
+    document.removeEventListener('mousemove', onDragPlayhead);
+    document.removeEventListener('mouseup', stopDragPlayhead);
+  }
 
   // Check if can add more segments
   const canAddSegment = computed(() => {
@@ -201,9 +331,9 @@
     emit('selectSegment', segmentId);
   }
 
-  // Click timeline to create segment at that position
+  // Handle timeline click
   function onTimelineClick(e: MouseEvent) {
-    if (!timelineRef.value || isResizing.value) return;
+    if (!timelineRef.value) return;
     
     const rect = timelineRef.value.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
@@ -218,8 +348,8 @@
     if (clickedSegment) {
       selectSegment(clickedSegment.segmentId);
     } else {
-      // Create new segment at click position
-      addSegment();
+      // Seek to clicked position (don't auto-create segment)
+      emit('seekTime', clickTime);
     }
   }
 
@@ -243,7 +373,13 @@
     const rect = timelineRef.value.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mousePercent = Math.max(0, Math.min(1, mouseX / rect.width));
-    const newTime = mousePercent * props.duration;
+    let newTime = mousePercent * props.duration;
+    
+    // Snap to playhead if within threshold (0.5 seconds)
+    const snapThreshold = 0.5;
+    if (props.currentTime !== null && Math.abs(newTime - props.currentTime) < snapThreshold) {
+      newTime = props.currentTime;
+    }
     
     const segment = props.segments.find(s => s.segmentId === resizingSegmentId.value);
     if (!segment) return;
@@ -306,7 +442,22 @@
     
     // Clamp to timeline bounds
     newStartTime = Math.max(0, Math.min(newStartTime, props.duration - segmentDuration));
-    const newEndTime = newStartTime + segmentDuration;
+    let newEndTime = newStartTime + segmentDuration;
+    
+    // Snap to playhead if either edge is within threshold (0.5 seconds)
+    const snapThreshold = 0.5;
+    if (props.currentTime !== null) {
+      // Check if start time should snap to playhead
+      if (Math.abs(newStartTime - props.currentTime) < snapThreshold) {
+        newStartTime = props.currentTime;
+        newEndTime = newStartTime + segmentDuration;
+      }
+      // Check if end time should snap to playhead
+      else if (Math.abs(newEndTime - props.currentTime) < snapThreshold) {
+        newEndTime = props.currentTime;
+        newStartTime = newEndTime - segmentDuration;
+      }
+    }
     
     emit('updateSegment', draggingSegmentId.value, { 
       startTime: newStartTime, 

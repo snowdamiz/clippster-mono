@@ -2689,10 +2689,6 @@ pub async fn build_multi_region_clip(
     let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
     let duration = end_time - start_time;
 
-    if config.regions.is_empty() {
-        return Err("MultiRegion config has no regions defined".to_string());
-    }
-
     // Parse target aspect ratio
     let aspect =
         parse_aspect_ratio_string(target_aspect_ratio).unwrap_or(super::types::AspectRatio {
@@ -2700,12 +2696,52 @@ pub async fn build_multi_region_clip(
             height: 16.0,
         });
 
-    println!(
-        "[Rust] Building multi-region clip with {} regions, aspect: {}:{}",
-        config.regions.len(),
-        aspect.width,
-        aspect.height
-    );
+    // If no regions but sourceTransform is set, create a full-frame region
+    let mut working_config = config.clone();
+    if working_config.regions.is_empty() && working_config.source_transform.is_some() {
+        println!("[Rust] No regions defined but sourceTransform is set - creating full-frame region");
+        // Create a full-frame region that uses the entire source
+        working_config.regions.push(super::types::ManualRegion {
+            id: "full_frame".to_string(),
+            color: "#ffffff".to_string(),
+            label: Some("Full Frame".to_string()),
+            source: super::types::NormalizedBBox {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
+            output: super::types::NormalizedBBox {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
+            media_asset_id: None,
+            media_type: None,
+        });
+    } else if working_config.regions.is_empty() {
+        return Err("MultiRegion config has no regions defined and no sourceTransform".to_string());
+    }
+
+    // Check if we have time-based segment configs
+    let has_segments = working_config.segment_configs.is_some() 
+        && !working_config.segment_configs.as_ref().unwrap().is_empty();
+    
+    if has_segments {
+        println!(
+            "[Rust] Building multi-region clip with TIME-BASED SEGMENTS: {} base regions, {} segments",
+            working_config.regions.len(),
+            working_config.segment_configs.as_ref().unwrap().len()
+        );
+    } else {
+        println!(
+            "[Rust] Building multi-region clip with {} regions, aspect: {}:{}",
+            working_config.regions.len(),
+            aspect.width,
+            aspect.height
+        );
+    }
 
     // Get video info for pixel calculations
     let video_info = get_video_info(app, video_path).await?;
@@ -2724,39 +2760,181 @@ pub async fn build_multi_region_clip(
     // 1. Input video gets labeled as [v]
     // 2. For each region, crop from [v] and scale to output size
     // 3. Create black canvas and overlay each region at its output position
+    // 4. If segments exist, use enable filter to switch regions based on time
 
     let mut filter_parts: Vec<String> = Vec::new();
     let mut region_labels: Vec<(String, u32, u32)> = Vec::new();
 
-    // For each region, create crop and scale filters
-    for (i, region) in config.regions.iter().enumerate() {
-        // Calculate source crop in pixels (ensure even for H.264 compatibility)
-        let crop_x = (region.source.x * source_w) as u32;
-        let crop_y = (region.source.y * source_h) as u32;
-        let crop_w = make_even((region.source.width * source_w) as u32);
-        let crop_h = make_even((region.source.height * source_h) as u32);
-
-        // Calculate output position and size in pixels (ensure even dimensions for scale)
-        let out_x = (region.output.x * output_w as f64) as u32;
-        let out_y = (region.output.y * output_h as f64) as u32;
-        let out_w = make_even((region.output.width * output_w as f64) as u32);
-        let out_h = make_even((region.output.height * output_h as f64) as u32);
-
+    // Apply source transform if present (scale and translate the source video)
+    let source_label = if let Some(ref transform) = working_config.source_transform {
         println!(
-            "[Rust] Region {}: crop={}:{}:{}:{} -> scale={}:{} @ ({},{})",
-            i, crop_w, crop_h, crop_x, crop_y, out_w, out_h, out_x, out_y
+            "[Rust] Applying sourceTransform: scale={}, x={}, y={}",
+            transform.scale, transform.x, transform.y
         );
+        
+        // The sourceTransform works as follows:
+        // 1. The 16:9 source is letterboxed in the 9:16 output at scale=1.0
+        // 2. scale > 1.0 zooms in (crops edges), scale < 1.0 zooms out (more letterbox)
+        // 3. x/y are pixel offsets in the output canvas space
+        
+        // Calculate base dimensions: fit 16:9 width to 9:16 output width
+        let base_w = output_w as f64;
+        let base_h = base_w / (source_w / source_h);
+        
+        // Apply scale
+        let scaled_w = make_even((base_w * transform.scale) as u32);
+        let scaled_h = make_even((base_h * transform.scale) as u32);
+        
+        // Calculate position in output canvas (centered + offset)
+        let center_x = (output_w as f64 - scaled_w as f64) / 2.0;
+        let center_y = (output_h as f64 - scaled_h as f64) / 2.0;
+        let final_x = center_x + transform.x;
+        let final_y = center_y + transform.y;
+        
+        println!(
+            "[Rust] Source transform: base {}x{} -> scaled {}x{} @ ({}, {})",
+            base_w as u32, base_h as u32, scaled_w, scaled_h, final_x, final_y
+        );
+        
+        // If scaled video is larger than output, we need to crop it
+        // If scaled video is smaller than output, we need to pad it
+        if scaled_w > output_w || scaled_h > output_h {
+            // Scale > 1.0: crop the scaled video to fit output canvas
+            // The crop position is inverted from the translation offset
+            let crop_x = (-final_x).max(0.0) as u32;
+            let crop_y = (-final_y).max(0.0) as u32;
+            
+            println!(
+                "[Rust] Scaled video larger than output - cropping at ({}, {})",
+                crop_x, crop_y
+            );
+            
+            filter_parts.push(format!(
+                "[0:v]scale={}:{}:flags=lanczos,crop={}:{}:{}:{}[vsrc]",
+                scaled_w, scaled_h,
+                output_w, output_h,
+                crop_x, crop_y
+            ));
+        } else {
+            // Scale <= 1.0: pad the scaled video to output canvas
+            println!(
+                "[Rust] Scaled video smaller than output - padding at ({}, {})",
+                final_x as i32, final_y as i32
+            );
+            
+            filter_parts.push(format!(
+                "[0:v]scale={}:{}:flags=lanczos,pad={}:{}:{}:{}:black[vsrc]",
+                scaled_w, scaled_h,
+                output_w, output_h,
+                final_x as i32, final_y as i32
+            ));
+        }
+        
+        "vsrc"
+    } else {
+        "0:v"
+    };
 
-        let label = format!("r{}", i);
+    // Helper function to build region filters
+    let build_region_filters = |regions: &Vec<super::types::ManualRegion>, 
+                                 prefix: &str, 
+                                 enable_condition: Option<String>| -> Vec<(String, u32, u32)> {
+        let mut labels = Vec::new();
+        for (i, region) in regions.iter().enumerate() {
+            // Calculate source crop in pixels
+            let (crop_x, crop_y, crop_w, crop_h) = if working_config.source_transform.is_some() {
+                let x = (region.source.x * output_w as f64) as u32;
+                let y = (region.source.y * output_h as f64) as u32;
+                let w = make_even((region.source.width * output_w as f64) as u32);
+                let h = make_even((region.source.height * output_h as f64) as u32);
+                (x, y, w, h)
+            } else {
+                let x = (region.source.x * source_w) as u32;
+                let y = (region.source.y * source_h) as u32;
+                let w = make_even((region.source.width * source_w) as u32);
+                let h = make_even((region.source.height * source_h) as u32);
+                (x, y, w, h)
+            };
 
-        // Crop from input and scale to output size
-        // Using lanczos scaling for better quality
-        filter_parts.push(format!(
-            "[0:v]crop={}:{}:{}:{},scale={}:{}:flags=lanczos[{}]",
-            crop_w, crop_h, crop_x, crop_y, out_w, out_h, label
-        ));
+            // Calculate output position and size
+            let out_x = (region.output.x * output_w as f64) as u32;
+            let out_y = (region.output.y * output_h as f64) as u32;
+            let out_w = make_even((region.output.width * output_w as f64) as u32);
+            let out_h = make_even((region.output.height * output_h as f64) as u32);
 
-        region_labels.push((label, out_x, out_y));
+            let label = format!("{}{}", prefix, i);
+            
+            // Build crop and scale filter
+            let mut filter = format!(
+                "[{}]crop={}:{}:{}:{},scale={}:{}:flags=lanczos",
+                source_label, crop_w, crop_h, crop_x, crop_y, out_w, out_h
+            );
+            
+            // Add enable condition if provided (for time-based switching)
+            if let Some(ref condition) = enable_condition {
+                filter.push_str(&format!(",{}", condition));
+            }
+            
+            filter.push_str(&format!("[{}]", label));
+            filter_parts.push(filter);
+
+            labels.push((label, out_x, out_y));
+        }
+        labels
+    };
+
+    // Build regions based on whether we have segments
+    if has_segments {
+        let segments = working_config.segment_configs.as_ref().unwrap();
+        
+        // Build base regions (active outside all segments)
+        // Enable condition: NOT in any segment time range
+        let mut base_enable_parts = Vec::new();
+        for seg in segments.iter() {
+            // For each segment, add condition: NOT (t >= start AND t <= end)
+            // Which is: t < start OR t > end
+            base_enable_parts.push(format!("lt(t,{}) + gt(t,{})", seg.start_time, seg.end_time));
+        }
+        let base_enable = if base_enable_parts.is_empty() {
+            None
+        } else {
+            // Base regions enabled when ANY of the "not in segment" conditions are true
+            // But we want ALL segments to be false, so we use multiplication (AND logic)
+            // Actually, we want: NOT (in seg1 OR in seg2 OR ...) = (NOT in seg1) AND (NOT in seg2) AND ...
+            // For each segment: NOT (t >= start AND t <= end) = (t < start OR t > end)
+            // We want base active when outside ALL segments
+            // So: (t < seg1.start OR t > seg1.end) AND (t < seg2.start OR t > seg2.end) ...
+            // In FFmpeg: multiply the conditions (1 = true, 0 = false)
+            Some(format!("enable='{}' ", base_enable_parts.join("*")))
+        };
+        
+        println!("[Rust] Building base regions with enable condition: {:?}", base_enable);
+        let base_labels = build_region_filters(&working_config.regions, "base_r", base_enable);
+        region_labels.extend(base_labels);
+        
+        // Build segment-specific regions
+        for (seg_idx, seg) in segments.iter().enumerate() {
+            // Enable condition: t >= start AND t <= end
+            let seg_enable = format!(
+                "enable='gte(t,{})*lte(t,{})'",
+                seg.start_time, seg.end_time
+            );
+            
+            println!(
+                "[Rust] Building segment {} regions ({:.2}s - {:.2}s) with {} regions",
+                seg_idx, seg.start_time, seg.end_time, seg.regions.len()
+            );
+            
+            let seg_labels = build_region_filters(
+                &seg.regions, 
+                &format!("seg{}_r", seg_idx), 
+                Some(seg_enable)
+            );
+            region_labels.extend(seg_labels);
+        }
+    } else {
+        // No segments - build regions normally without enable filters
+        region_labels = build_region_filters(&working_config.regions, "r", None);
     }
 
     // Create base canvas (black background)
