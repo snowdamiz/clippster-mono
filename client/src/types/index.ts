@@ -94,6 +94,7 @@ export interface TimelineEmits {
   (e: 'timelineSegmentClick', clipId: string, segmentIndex: number, event?: MouseEvent): void;
   (e: 'scrollToMediaPanel', clipId: string): void;
   (e: 'zoomChanged', zoomLevel: number): void;
+  (e: 'toggleSubtitles'): void;
   (
     e: 'segmentUpdated',
     clipId: string,

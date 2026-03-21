@@ -175,3 +175,72 @@ export async function deleteClip(id: string): Promise<void> {
   const db = await getDatabase();
   await db.execute('DELETE FROM clips WHERE id = ?', [id]);
 }
+
+/**
+ * Update subtitle settings for a clip
+ */
+export async function updateClipSubtitleSettings(
+  clipId: string,
+  enabled: boolean,
+  presetId: string | null
+): Promise<void> {
+  const db = await getDatabase();
+  const now = timestamp();
+
+  // Ensure subtitle columns exist
+  try {
+    const columnResult = await db.select<{ name: string }[]>('PRAGMA table_info(clips)');
+    const columns = columnResult.map((col) => col.name);
+
+    if (!columns.includes('subtitle_enabled')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_enabled INTEGER DEFAULT 0');
+    }
+
+    if (!columns.includes('subtitle_preset_id')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_preset_id TEXT');
+    }
+  } catch (e) {
+    console.warn('[Clips] Failed to check/add subtitle columns:', e);
+  }
+
+  await db.execute(
+    'UPDATE clips SET subtitle_enabled = ?, subtitle_preset_id = ?, updated_at = ? WHERE id = ?',
+    [enabled ? 1 : 0, presetId, now, clipId]
+  );
+}
+
+/**
+ * Update subtitle settings for multiple clips
+ */
+export async function updateMultipleClipsSubtitleSettings(
+  clipIds: string[],
+  enabled: boolean,
+  presetId: string | null
+): Promise<void> {
+  const db = await getDatabase();
+  const now = timestamp();
+
+  // Ensure subtitle columns exist
+  try {
+    const columnResult = await db.select<{ name: string }[]>('PRAGMA table_info(clips)');
+    const columns = columnResult.map((col) => col.name);
+
+    if (!columns.includes('subtitle_enabled')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_enabled INTEGER DEFAULT 0');
+    }
+
+    if (!columns.includes('subtitle_preset_id')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_preset_id TEXT');
+    }
+  } catch (e) {
+    console.warn('[Clips] Failed to check/add subtitle columns:', e);
+  }
+
+  // Update all clips in a transaction
+  for (const clipId of clipIds) {
+    await db.execute(
+      'UPDATE clips SET subtitle_enabled = ?, subtitle_preset_id = ?, updated_at = ? WHERE id = ?',
+      [enabled ? 1 : 0, presetId, now, clipId]
+    );
+  }
+}

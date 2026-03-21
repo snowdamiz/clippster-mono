@@ -493,17 +493,16 @@ export async function persistClipDetectionResults(
   projectId: string,
   prompt: string,
   detectionResults: {
-    clips: any[];
-    transcript?: any;
-    validation?: any;
+    clips?: any[];
+    jobId?: string;
   },
-  options?: {
-    detectionModel?: string;
-    serverResponseId?: string;
+  metadata?: {
     processingTimeMs?: number;
-    videoFilePath?: string;
-    rawVideoId?: string;
-  }
+    detectionModel?: string;
+    serverResponseId?: string | null;
+    multimodal?: boolean;
+  },
+  subtitleSettings?: { enabled: boolean; presetId: string } | null
 ): Promise<string> {
   const startTime = Date.now();
   // Check for nested structure in clips property

@@ -102,8 +102,7 @@
       <!-- Subtitle Overlay -->
       <div
         v-if="subtitleSettings?.enabled && visibleWords.length > 0 && videoSrc && !videoLoading"
-        class="absolute subtitle-overlay pointer-events-none z-20"
-        :style="getSubtitleContainerStyle"
+        class="absolute inset-0 subtitle-overlay pointer-events-none z-20 flex items-center justify-center"
       >
         <div class="subtitle-text-container" :style="{ ...getSubtitleContainerStyle, gap: wordGapStyle }">
           <span
@@ -198,7 +197,9 @@
                     fontWeight: subtitleSettings.fontWeight,
                     fontSize: getTextStyle.fontSize,
                     letterSpacing: svgLetterSpacing,
-                    fill: subtitleSettings?.textColor || '#FFFFFF',
+                    fill: (subtitleSettings?.animationStyle === 'karaoke' && isCurrentWord(wordInfo)) 
+                      ? (subtitleSettings?.highlightColor || '#FFFF00')
+                      : (subtitleSettings?.textColor || '#FFFFFF'),
                   }"
                 >
                   {{ wordInfo.word }}
@@ -610,7 +611,15 @@
 
   // Find the current whisper segment
   const currentSegment = computed((): WhisperSegment | null => {
+    console.log('[VideoPlayer] currentSegment check:', {
+      subtitleEnabled: props.subtitleSettings?.enabled,
+      hasTranscriptSegments: !!props.transcriptSegments,
+      segmentsLength: props.transcriptSegments?.length || 0,
+      currentTime: props.currentTime,
+    });
+    
     if (!props.subtitleSettings?.enabled || !props.transcriptSegments || props.transcriptSegments.length === 0) {
+      console.log('[VideoPlayer] No current segment - missing data');
       return null;
     }
 
@@ -619,11 +628,13 @@
     // Find segment that contains the current time
     for (const segment of props.transcriptSegments) {
       if (time >= segment.start && time <= segment.end) {
+        console.log('[VideoPlayer] Found current segment:', segment);
         return segment;
       }
     }
 
     // Return null if in dead space between segments
+    console.log('[VideoPlayer] No segment at current time:', time);
     return null;
   });
 
@@ -654,7 +665,10 @@
   // Get visible words (chunked display - shows X words at a time, then jumps to next X)
   const visibleWords = computed((): WordInfo[] => {
     const allSegmentWords = segmentWords.value;
-    if (allSegmentWords.length === 0) return [];
+    
+    if (allSegmentWords.length === 0) {
+      return [];
+    }
 
     const maxWords = maxWordsForAspectRatio.value;
     const time = props.currentTime || 0;
@@ -1200,6 +1214,17 @@
 
   // Setup ResizeObserver to track container size changes
   let resizeObserver: ResizeObserver | null = null;
+
+  // Debug subtitle overlay rendering
+  watch([() => props.subtitleSettings, visibleWords, () => props.videoSrc, () => props.videoLoading], ([settings, words, src, loading]) => {
+    console.log('[VideoPlayer] Subtitle overlay conditions:', {
+      subtitleEnabled: settings?.enabled,
+      visibleWordsCount: words.length,
+      hasVideoSrc: !!src,
+      videoLoading: loading,
+      shouldShow: settings?.enabled && words.length > 0 && !!src && !loading,
+    });
+  });
 
   onMounted(() => {
     if (videoContainerRef.value) {

@@ -22,6 +22,7 @@ export interface ChunkedDetectionOptions {
   multimodal?: boolean; // Enable multimodal detection (3 models + decider, 2x credits)
   startTime?: number; // Start time in seconds for detection range
   endTime?: number; // End time in seconds for detection range
+  subtitleSettings?: { enabled: boolean; presetId: string } | null;
 }
 
 export interface DetectionProgress {
@@ -551,11 +552,18 @@ export function useChunkedClipDetection() {
       };
 
       // Store results in database
-      const sessionId = await persistClipDetectionResults(projectId, prompt, result, {
-        processingTimeMs: 0, // Cached processing is fast
-        detectionModel: 'claude-3.5-sonnet-chunked',
-        serverResponseId: result.jobId || null,
-      });
+      const sessionId = await persistClipDetectionResults(
+        projectId,
+        prompt,
+        result,
+        {
+          processingTimeMs: 0, // Cached processing is fast
+          detectionModel: 'claude-3.5-sonnet-chunked',
+          serverResponseId: result.jobId || null,
+          multimodal: currentMultimodal,
+        },
+        options.subtitleSettings || null
+      );
 
       // IMPORTANT: When using cached chunks, the full transcript isn't part of the response.
       // We need to stitch the chunked transcripts together and save it as the project transcript

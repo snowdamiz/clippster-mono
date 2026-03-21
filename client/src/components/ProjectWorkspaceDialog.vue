@@ -46,6 +46,10 @@
                     :framing-regions="vodPresetConfig?.framingConfig?.regions"
                     :watermark-settings="watermarkSettings"
                     :watermark-data="currentWatermarkData"
+                    :subtitle-settings="activeSubtitleSettings"
+                    :transcript-words="transcriptWords"
+                    :transcript-segments="transcriptSegments"
+                    :current-time="currentTime"
                     @togglePlayPause="togglePlayPause"
                     @timeUpdate="onTimeUpdate"
                     @loadedMetadata="onLoadedMetadata"
@@ -184,6 +188,7 @@
                 @refreshClipsData="onRefreshClipsData"
                 @playFromTime="onPlayFromTime"
                 @editClip="onEditClip"
+                @toggleSubtitles="onToggleSubtitles"
               />
             </div>
           </div>
@@ -234,6 +239,14 @@
     @confirm="onTranscribeConfirmed"
   />
 
+  <!-- Subtitle Editor Dialog -->
+  <SubtitleEditorDialog
+    :model-value="showSubtitleEditorDialog"
+    :clips="timelineClips"
+    :project-id="project?.id"
+    @update:model-value="showSubtitleEditorDialog = $event"
+    @save="onSaveSubtitles"
+  />
 
   <!-- Existing Project Dialog -->
   <ExistingProjectDialog
@@ -286,6 +299,7 @@
   import ConfirmationModal from './ConfirmationModal.vue';
   import ClipDetectionConfirmDialog from './ClipDetectionConfirmDialog.vue';
   import TranscriptionConfirmDialog from './TranscriptionConfirmDialog.vue';
+  import SubtitleEditorDialog from './SubtitleEditorDialog.vue';
   import TranscriptPanel from './TranscriptPanel.vue';
   import { useTranscriptionOnly } from '@/composables/useTranscriptionOnly';
   import { useRouter } from 'vue-router';
@@ -306,6 +320,7 @@
   import { getRawVideosByProjectId } from '@/services/database';
   import { getProjectVodPresetConfig } from '@/services/database/vod-presets';
   import type { ActiveVodPresetConfig } from '@/types';
+  import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
 
   const authStore = useAuthStore();
   const { error: showError } = useToast();
@@ -341,6 +356,9 @@
 
   // Transcription confirmation state
   const showTranscribeConfirmDialog = ref(false);
+
+  // Subtitle editor state
+  const showSubtitleEditorDialog = ref(false);
 
   // Right panel tab state
   const rightPanelTab = ref<'clips' | 'transcript'>('clips');
@@ -482,8 +500,25 @@
   // Use video player composable
   const projectRef = computed(() => props.project);
 
-  // Use transcript data composable for subtitles
+  // Use transcript data composable
   const { transcriptData } = useTranscriptData(computed(() => props.project?.id || null));
+
+  // Store active subtitle settings (persists during playback even if currentlyPlayingClipId is cleared)
+  const activeSubtitleSettings = ref<any>(undefined);
+
+  // Get transcript words for subtitle rendering
+  const transcriptWords = computed(() => {
+    const words = transcriptData.value?.words || [];
+    console.log('[ProjectWorkspaceDialog] transcriptWords:', words.length);
+    return words;
+  });
+
+  // Get transcript segments (whisper segments) for subtitle rendering
+  const transcriptSegments = computed(() => {
+    const segments = transcriptData.value?.whisperSegments || [];
+    console.log('[ProjectWorkspaceDialog] transcriptSegments:', segments.length);
+    return segments;
+  });
 
   const isTranscribed = computed(() => {
     return !!(
@@ -811,6 +846,50 @@
     showSuccess('Transcription Cancelled', 'Transcription was cancelled.');
   }
 
+  function onToggleSubtitles() {
+    // Check if user is authenticated
+    if (!authStore.isAuthenticated) {
+      window.dispatchEvent(new CustomEvent('show-auth-modal'));
+      return;
+    }
+
+    // Check if project has transcript
+    if (!isTranscribed.value) {
+      // No transcript - show transcription dialog first
+      const { info: showInfo } = useToast();
+      showInfo('Transcript Required', 'Subtitles require a transcript. Please transcribe your video first.');
+      showTranscribeConfirmDialog.value = true;
+    } else {
+      // Has transcript - show subtitle editor dialog
+      showSubtitleEditorDialog.value = true;
+    }
+  }
+
+  async function onSaveSubtitles(clipIds: string[], presetId: string, applyToAll: boolean) {
+    console.log('[ProjectWorkspaceDialog] Saving subtitles:', { clipIds, presetId, applyToAll });
+    
+    try {
+      const { updateMultipleClipsSubtitleSettings } = await import('@/services/database/clips');
+      
+      // Update subtitle settings for all selected clips
+      await updateMultipleClipsSubtitleSettings(clipIds, true, presetId);
+      
+      const { success: showSuccess } = useToast();
+      const clipCount = clipIds.length;
+      showSuccess(
+        'Subtitles Configured',
+        `Subtitles with ${presetId} style applied to ${clipCount} clip${clipCount !== 1 ? 's' : ''}.`
+      );
+      
+      // Refresh clips to show updated subtitle settings
+      await onRefreshClipsData();
+    } catch (error) {
+      console.error('[ProjectWorkspaceDialog] Failed to save subtitles:', error);
+      const { error: showError } = useToast();
+      showError('Save Failed', 'Failed to save subtitle settings. Please try again.');
+    }
+  }
+
   async function onCancelDetection() {
     console.log('[ProjectWorkspaceDialog] Cancelling clip detection...');
 
@@ -851,8 +930,9 @@
     promptContent: string,
     organizationId: number | null = null,
     multimodal: boolean = false,
-    startTime?: number,
-    endTime?: number
+    startTime: number = 0,
+    endTime: number = 0,
+    subtitleSettings: { enabled: boolean; presetId: string } | null = null
   ) {
     console.log('[ProjectWorkspaceDialog] === DETECT CLIPS CONFIRMED ===');
     console.log('[ProjectWorkspaceDialog] _promptId:', _promptId);
@@ -935,6 +1015,7 @@
           multimodal: multimodal,
           startTime,
           endTime,
+          subtitleSettings,
         });
 
         if (result.success) {
@@ -1355,6 +1436,8 @@
           run_number: clip.run_number,
           run_color: clip.session_run_color,
           session_prompt: clip.session_prompt, // Include for sorting (manual clips detection)
+          subtitle_enabled: clip.subtitle_enabled,
+          subtitle_preset_id: clip.subtitle_preset_id,
         };
       })
       .filter(Boolean); // Remove any null entries
@@ -1951,6 +2034,75 @@
     hoveredClipId.value = clip.id;
     hoveredTimelineClipId.value = clip.id;
     console.log('[ProjectWorkspaceDialog] Set currentlyPlayingClipId to:', clip.id);
+
+    // Set subtitle settings for this clip (persists during playback)
+    if (clip.subtitle_enabled && clip.subtitle_preset_id) {
+      const preset = CAPTION_PRESETS.find(p => p.id === clip.subtitle_preset_id);
+      if (preset) {
+        const animationStyleMap: Record<string, 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave'> = {
+          'none': 'none',
+          'karaoke': 'karaoke',
+          'karaoke-scale': 'karaoke',
+          'zoom': 'zoom',
+          'pop': 'pop',
+          'glow': 'glow',
+          'box-highlight': 'box-highlight',
+          'typewriter': 'typewriter',
+          'wave': 'wave',
+        };
+        
+        // Convert fontWeight to number (handle both numeric strings and named weights)
+        const fontWeightMap: Record<string, number> = {
+          'normal': 400,
+          'bold': 700,
+          '100': 100,
+          '200': 200,
+          '300': 300,
+          '400': 400,
+          '500': 500,
+          '600': 600,
+          '700': 700,
+          '800': 800,
+          '900': 900,
+        };
+        const fontWeight = fontWeightMap[preset.fontWeight || '700'] || 700;
+        
+        activeSubtitleSettings.value = {
+          enabled: true,
+          fontFamily: preset.fontFamily || 'Montserrat',
+          fontSize: preset.fontSize || 48,
+          fontWeight: fontWeight,
+          textColor: preset.color || '#FFFFFF',
+          backgroundColor: preset.backgroundColor || 'transparent',
+          backgroundEnabled: preset.backgroundColor !== 'transparent',
+          position: 'bottom' as const,
+          positionPercentage: 85,
+          maxWidth: 90,
+          animationStyle: animationStyleMap[preset.highlightStyle || 'none'] || 'none',
+          highlightColor: preset.highlightColor || '#FFFF00',
+          border1Width: preset.stroke?.width || 0,
+          border1Color: preset.stroke?.color || '#000000',
+          border2Width: 0,
+          border2Color: '#000000',
+          shadowBlur: 0,
+          shadowOffsetX: 0,
+          shadowOffsetY: 0,
+          shadowColor: '#000000',
+          lineHeight: preset.lineHeight || 1.2,
+          letterSpacing: preset.letterSpacing || 0,
+          textAlign: 'center' as const,
+          textOffsetX: 0,
+          textOffsetY: 0,
+          padding: 0,
+          borderRadius: 0,
+          wordSpacing: 0.35,
+        };
+        console.log('[ProjectWorkspaceDialog] Set subtitle settings for clip:', clip.subtitle_preset_id);
+      }
+    } else {
+      activeSubtitleSettings.value = undefined;
+      console.log('[ProjectWorkspaceDialog] No subtitles for this clip');
+    }
 
     // Reveal the clip in the timeline (makes it visible if hidden)
     if (timelineRef.value) {

@@ -316,6 +316,9 @@ export interface ClipWithVersion extends Clip {
   current_version_segments?: ClipSegment[];
   // Multiple builds support
   builds?: ClipBuild[];
+  // Subtitle settings
+  subtitle_enabled?: number;
+  subtitle_preset_id?: string;
 }
 
 // Clip with version data plus segment (child project) info for folder-level view
