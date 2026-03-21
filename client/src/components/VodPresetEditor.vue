@@ -82,7 +82,7 @@
                     <CropIcon class="vod-preset-dialog__section-icon" />
                     <h3 class="vod-preset-dialog__section-title">Framing</h3>
                     <span class="vod-preset-dialog__section-badge">
-                      {{ framingRegions.length }} region{{ framingRegions.length !== 1 ? 's' : '' }}
+                      {{ framingConfig?.regions?.length || 0 }} region{{ (framingConfig?.regions?.length || 0) !== 1 ? 's' : '' }}
                     </span>
                   </div>
                   <button
@@ -90,14 +90,14 @@
                     class="vod-preset-dialog__action-btn"
                   >
                     <LayoutDashboardIcon class="vod-preset-dialog__action-btn-icon" />
-                    {{ framingRegions.length > 0 ? 'Edit Framing' : 'Configure Framing' }}
+                    {{ (framingConfig?.regions?.length || 0) > 0 ? 'Edit Framing' : 'Configure Framing' }}
                   </button>
                 </div>
 
                 <!-- Framing Preview -->
-                <div v-if="framingRegions.length > 0" class="flex gap-3">
+                <div v-if="framingConfig?.regions && framingConfig.regions.length > 0" class="flex gap-3">
                   <div
-                    v-for="(region, idx) in framingRegions"
+                    v-for="(region, idx) in framingConfig.regions"
                     :key="region.id"
                     class="vod-preset-dialog__region-chip"
                   >
@@ -326,8 +326,8 @@
             <div class="vod-preset-dialog__footer">
               <div class="vod-preset-dialog__footer-info">
                 Target: <span class="font-medium" style="color: var(--sidebar-text)">{{ selectedAspectRatio }}</span>
-                <span v-if="framingRegions.length > 0" class="ml-2">
-                  · {{ framingRegions.length }} region{{ framingRegions.length !== 1 ? 's' : '' }}
+                <span v-if="framingConfig?.regions && framingConfig.regions.length > 0" class="ml-2">
+                  · {{ framingConfig.regions.length }} region{{ framingConfig.regions.length !== 1 ? 's' : '' }}
                 </span>
                 <span v-if="layoutOverlays.length > 0" class="ml-2">
                   · {{ layoutOverlays.length }} overlay{{ layoutOverlays.length !== 1 ? 's' : '' }}
@@ -520,7 +520,7 @@
 
   // State
   const selectedAspectRatio = ref('9:16');
-  const framingRegions = ref<ManualRegion[]>([]);
+  const framingConfig = ref<ManualFramingConfig | null>(null);
   const layoutOverlays = ref<LayoutOverlay[]>([]);
   const watermarkMode = ref<'creator' | 'custom' | 'none'>('none');
   const customWatermarkSettings = ref<WatermarkSettings | null>(null);
@@ -620,13 +620,7 @@
   }
 
   const currentFramingConfig = computed((): ManualFramingConfig | null => {
-    if (framingRegions.value.length === 0) return null;
-    return {
-      mode: 'manual',
-      regions: framingRegions.value,
-      targetAspectRatio: selectedAspectRatio.value,
-      sourceAspectRatio: props.sourceAspectRatio,
-    };
+    return framingConfig.value;
   });
 
   // Load templates
@@ -651,9 +645,9 @@
     if (!template) return;
 
     selectedAspectRatio.value = template.targetAspectRatio;
-    framingRegions.value = template.framingConfig?.regions
-      ? JSON.parse(JSON.stringify(template.framingConfig.regions))
-      : [];
+    framingConfig.value = template.framingConfig
+      ? JSON.parse(JSON.stringify(template.framingConfig))
+      : null;
     layoutOverlays.value = template.layoutOverlays
       ? JSON.parse(JSON.stringify(template.layoutOverlays))
       : [];
@@ -673,7 +667,7 @@
 
   // Handle framing confirmed from ManualPOIEditor
   function onFramingConfirmed(config: ManualFramingConfig) {
-    framingRegions.value = JSON.parse(JSON.stringify(config.regions));
+    framingConfig.value = JSON.parse(JSON.stringify(config));
   }
 
   // Layout overlay management
@@ -989,9 +983,9 @@
         // Load from initial config or defaults
         if (props.initialConfig) {
           selectedAspectRatio.value = props.initialConfig.targetAspectRatio;
-          framingRegions.value = props.initialConfig.framingConfig?.regions
-            ? JSON.parse(JSON.stringify(props.initialConfig.framingConfig.regions))
-            : [];
+          framingConfig.value = props.initialConfig.framingConfig
+            ? JSON.parse(JSON.stringify(props.initialConfig.framingConfig))
+            : null;
           layoutOverlays.value = props.initialConfig.layoutOverlays
             ? JSON.parse(JSON.stringify(props.initialConfig.layoutOverlays))
             : [];
@@ -1022,7 +1016,7 @@
           }
         } else {
           selectedAspectRatio.value = '9:16';
-          framingRegions.value = [];
+          framingConfig.value = null;
           layoutOverlays.value = [];
           watermarkMode.value = hasCreatorProfile.value ? 'creator' : 'none';
           customWatermarkSettings.value = null;

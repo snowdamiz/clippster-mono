@@ -692,6 +692,38 @@ pub struct ManualRegion {
     pub source: NormalizedBBox,
     /// Output position (normalized 0-1 coordinates on target canvas)
     pub output: NormalizedBBox,
+    /// Media asset reference (file path or asset ID)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_asset_id: Option<String>,
+    /// Type of media content in this region
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>, // "video-crop" | "image" | "video"
+}
+
+/// Source frame transform for scaling/positioning entire source
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceTransform {
+    /// Scale factor (0.5 to 3.0)
+    pub scale: f64,
+    /// X offset (normalized 0-1)
+    pub x: f64,
+    /// Y offset (normalized 0-1)
+    pub y: f64,
+}
+
+/// Time-based segment configuration for POI regions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SegmentRegionConfig {
+    /// Unique segment identifier
+    pub segment_id: String,
+    /// Start time relative to clip start (seconds)
+    pub start_time: f64,
+    /// End time relative to clip start (seconds)
+    pub end_time: f64,
+    /// Region configuration for this time segment
+    pub regions: Vec<ManualRegion>,
 }
 
 /// Manual framing configuration with multiple regions
@@ -706,9 +738,15 @@ pub struct ManualFramingConfig {
     pub target_aspect_ratio: String,
     /// Source aspect ratio (e.g., "16:9")
     pub source_aspect_ratio: Option<String>,
+    /// Global source frame transform
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_transform: Option<SourceTransform>,
+    /// Segment-based region configurations
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub segment_configs: Option<Vec<SegmentRegionConfig>>,
 }
 
-/// Segment-specific framing configuration
+/// Segment-specific framing configuration (legacy)
 /// Associates a framing config with specific segment IDs
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

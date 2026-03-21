@@ -51,6 +51,7 @@
                     @delete-region="deleteRegion"
                     @select-region="selectRegion"
                     @time-update="onTimeUpdate"
+                    @upload-media="handleMediaUpload"
                   />
                 </div>
 
@@ -79,6 +80,7 @@
                     :overlay-previews="resolvedOverlays"
                     @update-region="updateRegion"
                     @select-region="selectRegion"
+                    @update-source-transform="handleSourceTransformUpdate"
                   />
                 </div>
               </div>
@@ -141,14 +143,35 @@
                   {{ videoError }}
                 </div>
               </div>
+
+              <!-- Segment Timeline -->
+              <POISegmentTimeline
+                v-if="clipDuration > 0"
+                :segments="segmentConfigs"
+                :active-segment-id="activeSegmentId"
+                :duration="clipDuration"
+                :current-time="currentTime"
+                :video-url="videoUrl"
+                :thumbnail-url="thumbnailUrl"
+                :clip-start-time="clipStartTime"
+                :clip-end-time="clipEndTime"
+                @add-segment="addSegment"
+                @delete-segment="deleteSegment"
+                @select-segment="selectSegment"
+                @update-segment="updateSegment"
+                @seek-time="handleSeekTime"
+              />
             </div>
 
             <!-- Footer -->
             <div class="flex items-center justify-between px-5 py-4 border-t border-zinc-800 bg-zinc-900/50">
               <div class="text-sm text-zinc-400">
-                <span v-if="regions.length === 0" class="text-amber-400">
+                <span v-if="regions.length === 0 && !sourceTransform" class="text-amber-400">
                   <AlertCircleIcon class="w-4 h-4 inline mr-1" />
-                  Add at least one region to continue
+                  Add at least one region or enable source frame scaling
+                </span>
+                <span v-else-if="sourceTransform && regions.length === 0" class="text-zinc-500">
+                  Source frame scaling configured
                 </span>
                 <span v-else class="text-zinc-500">
                   {{ regions.length }} region{{ regions.length !== 1 ? 's' : '' }} configured
@@ -158,8 +181,8 @@
                 <button
                   @click="resetRegions"
                   class="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
-                  :disabled="regions.length === 0"
-                  :class="{ 'opacity-50 cursor-not-allowed': regions.length === 0 }"
+                  :disabled="regions.length === 0 && !sourceTransform"
+                  :class="{ 'opacity-50 cursor-not-allowed': regions.length === 0 && !sourceTransform }"
                 >
                   Reset
                 </button>
@@ -171,16 +194,16 @@
                 </button>
                 <button
                   @click="confirmConfig"
-                  :disabled="regions.length === 0"
+                  :disabled="regions.length === 0 && !sourceTransform"
                   class="flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-lg transition-all relative overflow-hidden group"
                   :class="
-                    regions.length === 0
+                    regions.length === 0 && !sourceTransform
                       ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
                       : 'bg-gradient-to-r from-blue-600 to-violet-600 text-white hover:from-blue-500 hover:to-violet-500'
                   "
                 >
                   <div
-                    v-if="regions.length > 0"
+                    v-if="regions.length > 0 || sourceTransform"
                     class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
                   />
                   <CheckIcon class="h-4 w-4 relative" />
@@ -196,7 +219,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, computed, onUnmounted } from 'vue';
+  import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
   import {
     LayoutDashboardIcon,
     XIcon,
@@ -210,7 +233,8 @@
   import Hls from 'hls.js';
   import POISourcePanel from './POISourcePanel.vue';
   import POITargetPanel from './POITargetPanel.vue';
-  import type { ManualRegion, ManualFramingConfig, WatermarkSettings, LayoutOverlay } from '@/types';
+  import POISegmentTimeline from './POISegmentTimeline.vue';
+  import type { ManualRegion, ManualFramingConfig, WatermarkSettings, LayoutOverlay, SegmentRegionConfig } from '@/types';
   import { utf8ToBase64 } from '@/utils/encoding';
 
   interface WatermarkPreview {
@@ -268,6 +292,16 @@
   const regions = ref<ManualRegion[]>([]);
   const selectedRegionId = ref<string | null>(null);
 
+  // Base regions - apply to entire clip when no segment is active
+  const baseRegions = ref<ManualRegion[]>([]);
+
+  // Segment management state
+  const segmentConfigs = ref<SegmentRegionConfig[]>([]);
+  const activeSegmentId = ref<string | null>(null);
+
+  // Source frame transform (16:9 scaling in 9:16)
+  const sourceTransform = ref<{ scale: number; x: number; y: number } | null>(null);
+
   // Video playback state
   const isPlaying = ref(false);
   const currentTime = ref(0);
@@ -304,14 +338,63 @@
     return `http://localhost:${port}/video/${encodedPath}`;
   }
 
+  // Keyboard controls for precision scrubbing
+  function handleKeyDown(e: KeyboardEvent) {
+    // Only handle if dialog is open and not typing in an input
+    if (!props.modelValue) return;
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    
+    const microStep = 0.01; // 10ms - ultra precise
+    const fineStep = 0.1; // 100ms - fine control
+    const jumpTime = 1.0; // 1 second for shift+arrow
+    
+    switch(e.key) {
+      case 'ArrowLeft':
+        e.preventDefault();
+        if (e.shiftKey) {
+          // Jump back 1 second
+          currentTime.value = Math.max(0, currentTime.value - jumpTime);
+        } else if (e.ctrlKey || e.metaKey) {
+          // Ultra precise: 10ms steps
+          currentTime.value = Math.max(0, currentTime.value - microStep);
+        } else {
+          // Fine: 100ms steps (0.1 second)
+          currentTime.value = Math.max(0, currentTime.value - fineStep);
+        }
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        if (e.shiftKey) {
+          // Jump forward 1 second
+          currentTime.value = Math.min(clipDuration.value, currentTime.value + jumpTime);
+        } else if (e.ctrlKey || e.metaKey) {
+          // Ultra precise: 10ms steps
+          currentTime.value = Math.min(clipDuration.value, currentTime.value + microStep);
+        } else {
+          // Fine: 100ms steps (0.1 second)
+          currentTime.value = Math.min(clipDuration.value, currentTime.value + fineStep);
+        }
+        break;
+      case ' ':
+        e.preventDefault();
+        togglePlayback();
+        break;
+    }
+  }
+
+  onMounted(() => {
+    document.addEventListener('keydown', handleKeyDown);
+  });
+
   onUnmounted(() => {
     cleanupHls();
     cleanupSeekListeners();
+    document.removeEventListener('keydown', handleKeyDown);
   });
 
   // Computed clip duration
   const clipDuration = computed(() => {
-    if (props.clipEndTime && props.clipStartTime) {
+    if (props.clipEndTime !== undefined && props.clipStartTime !== undefined) {
       return props.clipEndTime - props.clipStartTime;
     }
     // Fallback to full video duration for VOD pre-edit use case
@@ -459,12 +542,26 @@
     const wasPlaying = isPlaying.value;
     isPlaying.value = false; // Pause during seek
     isSeeking.value = true;
+    
+    // Store initial mouse position and time for precision mode
+    const startX = event.clientX;
+    const startTime = currentTime.value;
 
     seekMoveListener = (e: MouseEvent) => {
       if (!progressBarRef.value) return;
       const rect = progressBarRef.value.getBoundingClientRect();
-      const position = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      currentTime.value = position * clipDuration.value;
+      const x = e.clientX - rect.left;
+      const percent = Math.max(0, Math.min(1, x / rect.width));
+      
+      if (e.shiftKey) {
+        // Precision mode: quantize to 0.01 second increments
+        const rawTime = percent * clipDuration.value;
+        const quantized = Math.round(rawTime / 0.01) * 0.01;
+        currentTime.value = Math.max(0, Math.min(clipDuration.value, quantized));
+      } else {
+        // Normal mode: direct position mapping
+        currentTime.value = percent * clipDuration.value;
+      }
     };
 
     seekUpListener = () => {
@@ -488,11 +585,28 @@
     () => props.modelValue,
     async (isOpen) => {
       if (isOpen) {
+        // Load initial configuration
         if (props.initialConfig && props.initialConfig.regions.length > 0) {
           // Deep clone the regions
           regions.value = JSON.parse(JSON.stringify(props.initialConfig.regions));
+          
+          // Load segment configurations if present
+          if (props.initialConfig.segmentConfigs && props.initialConfig.segmentConfigs.length > 0) {
+            segmentConfigs.value = JSON.parse(JSON.stringify(props.initialConfig.segmentConfigs));
+            // Don't auto-activate first segment - let the watch on currentTime determine active segment
+            activeSegmentId.value = null;
+            // Save base regions if we have regions but no active segment
+            if (regions.value.length > 0) {
+              baseRegions.value = JSON.parse(JSON.stringify(regions.value));
+            }
+          } else {
+            segmentConfigs.value = [];
+            activeSegmentId.value = null;
+          }
         } else {
           regions.value = [];
+          segmentConfigs.value = [];
+          activeSegmentId.value = null;
         }
         selectedRegionId.value = regions.value.length > 0 ? regions.value[0].id : null;
 
@@ -540,6 +654,190 @@
     selectedRegionId.value = id;
   }
 
+  // Handle source transform updates from POITargetPanel
+  function handleSourceTransformUpdate(transform: { scale: number; x: number; y: number }) {
+    sourceTransform.value = { ...transform };
+  }
+
+  // Handle media upload for a region
+  async function handleMediaUpload(regionId: string) {
+    // Create file input element
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,video/*';
+    
+    input.onchange = async (e: Event) => {
+      const target = e.target as HTMLInputElement;
+      const file = target.files?.[0];
+      if (!file) return;
+
+      try {
+        // For now, store the file URL directly
+        // TODO: Integrate with editor asset system when available in POI context
+        const fileUrl = URL.createObjectURL(file);
+        const mediaType = file.type.startsWith('image/') ? 'image' : 'video';
+        
+        updateRegion(regionId, {
+          mediaAssetId: fileUrl, // Temporary: using object URL
+          mediaType: mediaType as 'image' | 'video',
+        });
+        
+        console.log('[ManualPOIEditor] Media uploaded for region:', regionId, mediaType);
+      } catch (error) {
+        console.error('[ManualPOIEditor] Failed to upload media:', error);
+      }
+    };
+    
+    input.click();
+  }
+
+  // Add a new segment
+  function addSegment() {
+    // Create segment at current playhead position (or at end if no playhead)
+    const startTime = currentTime.value !== null ? currentTime.value : 
+                      (segmentConfigs.value.length > 0 ? segmentConfigs.value[segmentConfigs.value.length - 1].endTime : 0);
+    
+    // Default duration: 5 seconds or 1/4 of clip duration, whichever is smaller
+    const defaultDuration = Math.min(5, clipDuration.value / 4);
+    const endTime = Math.min(startTime + defaultDuration, clipDuration.value);
+    
+    if (startTime >= clipDuration.value) return;
+    
+    // If this is the first segment and we're not currently in a segment, save current regions as base
+    if (segmentConfigs.value.length === 0 && activeSegmentId.value === null) {
+      baseRegions.value = JSON.parse(JSON.stringify(regions.value));
+    }
+    
+    const newSegment: SegmentRegionConfig = {
+      segmentId: `segment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      startTime,
+      endTime,
+      regions: JSON.parse(JSON.stringify(regions.value)), // Copy current regions
+    };
+    
+    segmentConfigs.value.push(newSegment);
+    
+    // Sort segments by start time
+    segmentConfigs.value.sort((a, b) => a.startTime - b.startTime);
+    
+    activeSegmentId.value = newSegment.segmentId;
+  }
+
+  // Delete a segment
+  function deleteSegment(segmentId: string) {
+    const index = segmentConfigs.value.findIndex(s => s.segmentId === segmentId);
+    if (index !== -1) {
+      segmentConfigs.value.splice(index, 1);
+      if (activeSegmentId.value === segmentId) {
+        activeSegmentId.value = segmentConfigs.value[0]?.segmentId || null;
+      }
+    }
+  }
+
+  // Select a segment
+  function selectSegment(segmentId: string) {
+    const segment = segmentConfigs.value.find(s => s.segmentId === segmentId);
+    if (!segment) return;
+    
+    // Check if current time is actually within this segment's range
+    const isWithinSegment = currentTime.value >= segment.startTime && currentTime.value <= segment.endTime;
+    
+    if (isWithinSegment) {
+      // Save current regions before switching
+      if (activeSegmentId.value && activeSegmentId.value !== segmentId) {
+        // Save current segment's regions
+        const currentSegment = segmentConfigs.value.find(s => s.segmentId === activeSegmentId.value);
+        if (currentSegment) {
+          currentSegment.regions = JSON.parse(JSON.stringify(regions.value));
+        }
+      } else if (activeSegmentId.value === null) {
+        // Save base regions
+        baseRegions.value = JSON.parse(JSON.stringify(regions.value));
+      }
+      
+      // Switch to segment and load its regions
+      activeSegmentId.value = segmentId;
+      regions.value = JSON.parse(JSON.stringify(segment.regions));
+    } else {
+      // We're outside the segment - don't activate it, just seek to its start time
+      // This will trigger the watch on currentTime which will handle the segment switch
+      currentTime.value = segment.startTime;
+    }
+  }
+
+  // Update segment times (from timeline drag/resize)
+  function updateSegment(segmentId: string, updates: { startTime?: number; endTime?: number }) {
+    const segment = segmentConfigs.value.find(s => s.segmentId === segmentId);
+    if (segment) {
+      if (updates.startTime !== undefined) {
+        segment.startTime = updates.startTime;
+      }
+      if (updates.endTime !== undefined) {
+        segment.endTime = updates.endTime;
+      }
+    }
+  }
+
+  // Handle seek time from timeline playhead drag
+  function handleSeekTime(time: number) {
+    currentTime.value = time;
+    // Video elements in POISourcePanel and POITargetPanel will sync via their watch on videoTime prop
+  }
+
+  // Watch for time changes and auto-switch segments (works during playback AND manual scrubbing)
+  watch(currentTime, (time) => {
+    if (segmentConfigs.value.length === 0) {
+      // No segments - ensure we're using base regions
+      if (activeSegmentId.value !== null) {
+        activeSegmentId.value = null;
+        if (baseRegions.value.length > 0) {
+          regions.value = JSON.parse(JSON.stringify(baseRegions.value));
+        }
+      }
+      return;
+    }
+    
+    // Find which segment the current time falls into
+    const activeSegment = segmentConfigs.value.find(
+      seg => time >= seg.startTime && time <= seg.endTime
+    );
+    
+    if (activeSegment) {
+      // We're inside a segment
+      if (activeSegment.segmentId !== activeSegmentId.value) {
+        // Save current regions before switching
+        if (activeSegmentId.value) {
+          const currentSegment = segmentConfigs.value.find(s => s.segmentId === activeSegmentId.value);
+          if (currentSegment) {
+            currentSegment.regions = JSON.parse(JSON.stringify(regions.value));
+          }
+        } else {
+          // We were in base regions, save them
+          baseRegions.value = JSON.parse(JSON.stringify(regions.value));
+        }
+        
+        // Switch to the segment
+        activeSegmentId.value = activeSegment.segmentId;
+        regions.value = JSON.parse(JSON.stringify(activeSegment.regions));
+      }
+    } else {
+      // We're outside all segments - use base regions
+      if (activeSegmentId.value !== null) {
+        // Save current segment's regions
+        const currentSegment = segmentConfigs.value.find(s => s.segmentId === activeSegmentId.value);
+        if (currentSegment) {
+          currentSegment.regions = JSON.parse(JSON.stringify(regions.value));
+        }
+        
+        // Switch to base regions
+        activeSegmentId.value = null;
+        if (baseRegions.value.length > 0) {
+          regions.value = JSON.parse(JSON.stringify(baseRegions.value));
+        }
+      }
+    }
+  }, { immediate: true });
+
   // Reset all regions
   function resetRegions() {
     regions.value = [];
@@ -553,13 +851,32 @@
 
   // Confirm and emit the configuration
   function confirmConfig() {
-    if (regions.value.length === 0) return;
+    // Allow applying if we have regions OR source transform
+    if (regions.value.length === 0 && baseRegions.value.length === 0 && !sourceTransform.value) return;
+
+    // Save current regions
+    if (activeSegmentId.value) {
+      // Save current segment's regions
+      const activeSegment = segmentConfigs.value.find(s => s.segmentId === activeSegmentId.value);
+      if (activeSegment) {
+        activeSegment.regions = JSON.parse(JSON.stringify(regions.value));
+      }
+    } else {
+      // Save base regions
+      baseRegions.value = JSON.parse(JSON.stringify(regions.value));
+    }
+
+    // Use base regions as the default regions in config
+    // Segments will override these for their specific time ranges
+    const finalRegions = baseRegions.value.length > 0 ? baseRegions.value : regions.value;
 
     const config: ManualFramingConfig = {
       mode: 'manual',
-      regions: JSON.parse(JSON.stringify(regions.value)),
+      regions: JSON.parse(JSON.stringify(finalRegions)),
       targetAspectRatio: props.targetAspectRatio,
       sourceAspectRatio: props.sourceAspectRatio,
+      segmentConfigs: segmentConfigs.value.length > 0 ? JSON.parse(JSON.stringify(segmentConfigs.value)) : undefined,
+      sourceTransform: sourceTransform.value ? JSON.parse(JSON.stringify(sourceTransform.value)) : undefined,
     };
 
     emit('confirm', config);

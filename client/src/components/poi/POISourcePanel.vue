@@ -6,15 +6,56 @@
         <div class="text-xs font-medium text-zinc-300">Source Video</div>
         <span class="text-[10px] text-zinc-500 font-mono">{{ sourceAspectRatio }}</span>
       </div>
-      <button
-        @click="addRegion"
-        class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-md transition-colors"
-        :disabled="regions.length >= maxRegions"
-        :class="{ 'opacity-50 cursor-not-allowed': regions.length >= maxRegions }"
-      >
-        <PlusIcon class="w-3 h-3" />
-        Add Region
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          @click="openMediaUpload"
+          class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 rounded-md transition-colors"
+          title="Upload image/video (creates new region)"
+        >
+          <ImageIcon class="w-3 h-3" />
+          Upload Media
+        </button>
+        <button
+          @click="addRegion"
+          class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-md transition-colors"
+          :disabled="regions.length >= maxRegions"
+          :class="{ 'opacity-50 cursor-not-allowed': regions.length >= maxRegions }"
+        >
+          <PlusIcon class="w-3 h-3" />
+          Add Region
+        </button>
+      </div>
+    </div>
+
+    <!-- Aspect Ratio Lock Control (shown when region is selected) -->
+    <div
+      v-if="selectedRegion"
+      class="px-3 py-2 border-b border-zinc-700/50 bg-zinc-900/30"
+    >
+      <label class="flex items-center gap-2 cursor-pointer group">
+        <input
+          type="checkbox"
+          :checked="selectedRegion.aspectRatioLocked !== false"
+          @change="toggleAspectRatioLock"
+          class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0"
+        />
+        <LockIcon
+          v-if="selectedRegion.aspectRatioLocked !== false"
+          class="w-3.5 h-3.5 text-emerald-400"
+        />
+        <UnlockIcon
+          v-else
+          class="w-3.5 h-3.5 text-amber-400"
+        />
+        <span class="text-xs font-medium group-hover:text-zinc-200 transition-colors"
+          :class="selectedRegion.aspectRatioLocked !== false ? 'text-emerald-300' : 'text-amber-300'"
+        >
+          {{ selectedRegion.aspectRatioLocked !== false ? 'Aspect Ratio Locked' : 'Aspect Ratio Unlocked' }}
+        </span>
+        <span class="text-[10px] text-zinc-500">
+          ({{ selectedRegion.aspectRatioLocked !== false ? 'maintains proportions' : 'free resize' }})
+        </span>
+      </label>
     </div>
 
     <!-- Canvas Area -->
@@ -69,6 +110,7 @@
           :container-height="containerHeight"
           :resizable="true"
           :draggable="true"
+          :aspect-ratio-locked="region.aspectRatioLocked !== false"
           @update="(rect) => updateRegionSource(region.id, rect)"
           @delete="deleteRegion(region.id)"
           @select="selectRegion(region.id)"
@@ -109,8 +151,8 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-  import { PlusIcon, VideoIcon, PlusCircleIcon } from 'lucide-vue-next';
+  import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+  import { PlusIcon, VideoIcon, PlusCircleIcon, ImageIcon, LockIcon, UnlockIcon } from 'lucide-vue-next';
   import Hls from 'hls.js';
   import POIRegion from './POIRegion.vue';
   import type { ManualRegion, ManualRegionRect } from '@/types';
@@ -142,6 +184,7 @@
     deleteRegion: [id: string];
     selectRegion: [id: string | null];
     timeUpdate: [time: number];
+    uploadMedia: [regionId: string];
   }>();
 
   const containerRef = ref<HTMLElement | null>(null);
@@ -277,9 +320,22 @@
     };
   });
 
+  // Get selected region
+  const selectedRegion = computed(() => {
+    return props.regions.find(r => r.id === props.selectedRegionId) || null;
+  });
+
   // Get region index for labeling
   function getRegionIndex(id: string): number {
     return props.regions.findIndex((r) => r.id === id);
+  }
+
+  // Toggle aspect ratio lock for selected region
+  function toggleAspectRatioLock() {
+    if (!selectedRegion.value) return;
+    
+    const newLockState = !(selectedRegion.value.aspectRatioLocked !== false);
+    emit('updateRegion', selectedRegion.value.id, { aspectRatioLocked: newLockState });
   }
 
   // Get next available color
@@ -298,21 +354,42 @@
   function addRegion() {
     if (props.regions.length >= props.maxRegions) return;
 
+    // Source crop dimensions (normalized 0-1)
+    const sourceCropWidth = 0.5;
+    const sourceCropHeight = 0.5;
+    
+    // Parse source video aspect ratio (default 16:9)
+    const [sourceW, sourceH] = (props.sourceAspectRatio || '16:9').split(':').map(Number);
+    const sourceVideoAspect = sourceW / sourceH; // 16/9 = 1.778
+    
+    // Calculate the actual aspect ratio of the cropped region
+    // The crop is normalized (0-1), but we need to account for the source video's aspect ratio
+    // Example: 0.5 width on 16:9 source = 0.5 * 1.778 = 0.889 actual width
+    //          0.5 height on 16:9 source = 0.5 actual height
+    //          Aspect ratio = 0.889 / 0.5 = 1.778 (same as source)
+    const actualCropAspect = (sourceCropWidth * sourceVideoAspect) / sourceCropHeight;
+    
+    // Calculate output dimensions that maintain the crop's aspect ratio
+    // Fit to full width, calculate height based on actual crop aspect ratio
+    const outputWidth = 1.0;
+    const outputHeight = outputWidth / actualCropAspect;
+    
     const newRegion: ManualRegion = {
       id: generateId(),
       color: getNextColor(),
       source: {
         x: 0.25,
         y: 0.25,
-        width: 0.5,
-        height: 0.5,
+        width: sourceCropWidth,
+        height: sourceCropHeight,
       },
       output: {
         x: 0,
-        y: props.regions.length > 0 ? props.regions.length * 0.33 : 0,
-        width: 1,
-        height: 0.33,
+        y: props.regions.length > 0 ? Math.min(props.regions.length * 0.33, 0.6) : 0,
+        width: outputWidth,
+        height: Math.min(outputHeight, 1.0), // Clamp to canvas bounds
       },
+      aspectRatioLocked: true, // Lock aspect ratio by default
     };
 
     emit('addRegion', newRegion);
@@ -321,7 +398,33 @@
 
   // Update a region's source rect
   function updateRegionSource(id: string, rect: ManualRegionRect) {
-    emit('updateRegion', id, { source: rect });
+    const region = props.regions.find(r => r.id === id);
+    
+    // If aspect ratio is locked, recalculate output dimensions
+    if (region?.aspectRatioLocked !== false) {
+      // Parse source video aspect ratio (default 16:9)
+      const [sourceW, sourceH] = (props.sourceAspectRatio || '16:9').split(':').map(Number);
+      const sourceVideoAspect = sourceW / sourceH;
+      
+      // Calculate the actual aspect ratio of the cropped region
+      // Account for source video's aspect ratio
+      const actualCropAspect = (rect.width * sourceVideoAspect) / rect.height;
+      
+      const currentOutput = region?.output || { x: 0, y: 0, width: 1, height: 0.33 };
+      
+      // Maintain output width, adjust height to match actual crop aspect ratio
+      const newOutputHeight = currentOutput.width / actualCropAspect;
+      
+      emit('updateRegion', id, { 
+        source: rect,
+        output: {
+          ...currentOutput,
+          height: newOutputHeight,
+        }
+      });
+    } else {
+      emit('updateRegion', id, { source: rect });
+    }
   }
 
   // Delete a region
@@ -335,6 +438,23 @@
   // Select a region
   function selectRegion(id: string) {
     emit('selectRegion', id);
+  }
+
+  // Open media upload - creates new region if none selected
+  function openMediaUpload() {
+    if (props.selectedRegionId) {
+      emit('uploadMedia', props.selectedRegionId);
+    } else {
+      // Auto-create a region first, then upload media to it
+      addRegion();
+      // The new region will be auto-selected, emit upload for it
+      // Wait for next tick to ensure region is created
+      nextTick(() => {
+        if (props.selectedRegionId) {
+          emit('uploadMedia', props.selectedRegionId);
+        }
+      });
+    }
   }
 
   // Track drag state for cursor styling

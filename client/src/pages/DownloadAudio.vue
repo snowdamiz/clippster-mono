@@ -357,7 +357,7 @@
     try {
       // Use platformStore to search via yt-dlp
       platformStore.setActivePlatform(detectedPlatform.value as PlatformId);
-      const result = await platformStore.searchClips(val, 20);
+      const result = await platformStore.searchClips(val, 20, undefined, true);
       if (result.success && platformStore.clips.length > 0) {
         clips.value = [...platformStore.clips];
         success('Found', `Found ${platformStore.clips.length} item${platformStore.clips.length !== 1 ? 's' : ''}`);

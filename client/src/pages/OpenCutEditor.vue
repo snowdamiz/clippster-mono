@@ -13,17 +13,24 @@ const isLoading = ref(true);
 const error = ref<string | null>(null);
 
 onMounted(async () => {
+	console.log('[OpenCutEditor] Component mounted, route query:', route.query);
+	
 	const projectId = route.query.projectId as string;
 	if (!projectId) {
+		console.error('[OpenCutEditor] No project ID in query params');
 		error.value = "No project ID provided";
 		isLoading.value = false;
 		return;
 	}
 
+	console.log('[OpenCutEditor] Loading project:', projectId);
+
 	try {
 		// Load the Clippster project into the OpenCut editor via bridge
 		// This initializes EditorCore internally and converts the SQLite project
+		console.log('[OpenCutEditor] Calling loadClippsterProject...');
 		const editor = await loadClippsterProject(projectId);
+		console.log('[OpenCutEditor] Project loaded successfully');
 
 		// Wait for project to be fully loaded and ready
 		// Verify that both project and scene are accessible before rendering
@@ -43,12 +50,15 @@ onMounted(async () => {
 		}
 
 		if (retries >= maxRetries) {
+			console.error('[OpenCutEditor] Timeout waiting for project to load');
 			throw new Error("Timeout waiting for project to load");
 		}
 
+		console.log('[OpenCutEditor] Project fully loaded and ready');
 		isLoading.value = false;
 	} catch (err) {
-		console.error("Failed to load project into editor:", err);
+		console.error('[OpenCutEditor] Failed to load project into editor:', err);
+		console.error('[OpenCutEditor] Error stack:', err instanceof Error ? err.stack : 'No stack trace');
 		error.value = err instanceof Error ? err.message : "Failed to load project";
 		isLoading.value = false;
 	}

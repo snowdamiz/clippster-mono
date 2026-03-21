@@ -7,6 +7,22 @@
         <span class="text-[10px] text-zinc-500 font-mono">{{ targetAspectRatio }}</span>
       </div>
       <div class="flex items-center gap-2">
+        <label class="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer border-2"
+          :class="showSourceFrame 
+            ? 'bg-gradient-to-r from-purple-600/20 to-blue-600/20 border-purple-500/50 text-purple-200 hover:border-purple-400' 
+            : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:bg-zinc-700/50 hover:border-zinc-600 hover:text-zinc-200'"
+        >
+          <input
+            type="checkbox"
+            v-model="showSourceFrame"
+            class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-purple-500 focus:ring-purple-500 focus:ring-offset-0"
+          />
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <rect x="2" y="5" width="20" height="14" rx="2" stroke-width="2"/>
+            <path d="M2 10h20M2 15h20" stroke-width="2"/>
+          </svg>
+          <span>Scale 16:9 Source</span>
+        </label>
         <button
           @click="autoArrangeVertical"
           class="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700/50 rounded transition-colors"
@@ -39,6 +55,54 @@
           <div class="absolute h-full border-l border-white/5" style="left: 66.66%" />
         </div>
 
+        <!-- 16:9 Source Frame Overlay (when Scale 16:9 is enabled) -->
+        <div
+          v-if="showSourceFrame"
+          class="absolute border-2 border-purple-500 cursor-move z-[3]"
+          :style="sourceFrameStyle"
+          @mousedown="startDragSourceFrame"
+        >
+          <!-- Source video/thumbnail preview -->
+          <video
+            v-if="videoUrl"
+            ref="sourceFrameVideoRef"
+            :key="`${videoUrl}-${videoCacheBuster}`"
+            :src="videoUrl"
+            class="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-50"
+            preload="metadata"
+            muted
+            playsinline
+            @loadedmetadata="(e) => onVideoLoaded(e.target as HTMLVideoElement)"
+          />
+          <img
+            v-else-if="thumbnailUrl"
+            :key="`${thumbnailUrl}-${videoCacheBuster}`"
+            :src="thumbnailUrl"
+            class="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-50"
+            alt="Source frame"
+            draggable="false"
+          />
+          
+          <!-- Label -->
+          <div class="absolute top-0 left-0 -translate-y-full px-2 py-1 bg-purple-500 text-white text-[10px] font-medium rounded-t whitespace-nowrap">
+            16:9 Source Frame (Drag to position)
+          </div>
+
+          <!-- Corner resize handles -->
+          <div
+            v-for="corner in ['nw', 'ne', 'sw', 'se']"
+            :key="corner"
+            class="absolute w-3 h-3 bg-purple-500 border border-white pointer-events-auto"
+            :class="{
+              'top-0 left-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize': corner === 'nw',
+              'top-0 right-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize': corner === 'ne',
+              'bottom-0 left-0 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize': corner === 'sw',
+              'bottom-0 right-0 translate-x-1/2 translate-y-1/2 cursor-nwse-resize': corner === 'se',
+            }"
+            @mousedown.stop="(e) => startResizeSourceFrame(e, corner)"
+          />
+        </div>
+
         <!-- Layout overlay previews (behind region content) -->
         <template v-if="overlayPreviews?.length">
           <div
@@ -62,9 +126,29 @@
           class="absolute overflow-hidden z-[5]"
           :style="getRegionPreviewStyle(region)"
         >
-          <!-- Video crop preview -->
+          <!-- Uploaded image media -->
+          <img
+            v-if="region.mediaAssetId && region.mediaType === 'image'"
+            :src="region.mediaAssetId"
+            class="absolute inset-0 w-full h-full object-cover pointer-events-none"
+            alt=""
+            draggable="false"
+          />
+          <!-- Uploaded video media -->
           <video
-            v-if="videoUrl"
+            v-else-if="region.mediaAssetId && region.mediaType === 'video'"
+            :ref="(el) => setVideoRef(region.id, el as HTMLVideoElement)"
+            :src="region.mediaAssetId"
+            class="absolute inset-0 w-full h-full object-cover pointer-events-none"
+            preload="metadata"
+            muted
+            playsinline
+            loop
+            @loadedmetadata="(e) => onVideoLoaded(e.target as HTMLVideoElement)"
+          />
+          <!-- Video crop preview (default behavior) -->
+          <video
+            v-else-if="videoUrl"
             :ref="(el) => setVideoRef(region.id, el as HTMLVideoElement)"
             :src="videoUrl"
             class="absolute max-w-none pointer-events-none"
@@ -108,6 +192,7 @@
           :draggable="true"
           :show-controls="false"
           :show-resize-handles="true"
+          :aspect-ratio-locked="region.aspectRatioLocked !== false"
           @update="(rect) => updateRegionOutput(region.id, rect)"
           @select="selectRegion(region.id)"
           @drag-start="onDragStart"
@@ -137,11 +222,6 @@
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- Instructions -->
-    <div class="px-3 py-2 border-t border-zinc-700/50">
-      <p class="text-[10px] text-zinc-500 text-center">Drag and resize regions to arrange the final output layout</p>
     </div>
   </div>
 </template>
@@ -198,14 +278,171 @@
   const emit = defineEmits<{
     updateRegion: [id: string, region: Partial<ManualRegion>];
     selectRegion: [id: string | null];
+    updateSourceTransform: [transform: { scale: number; x: number; y: number }];
   }>();
 
   const containerRef = ref<HTMLElement | null>(null);
   const containerWidth = ref(0);
   const containerHeight = ref(0);
 
+  // Source frame scaling state
+  const showSourceFrame = ref(false);
+  const sourceFrameTransform = ref({
+    scale: 1,
+    x: 0,
+    y: 0,
+  });
+  const isDraggingSourceFrame = ref(false);
+  const dragStartPos = ref({ x: 0, y: 0 });
+  const dragStartTransform = ref({ x: 0, y: 0 });
+
+  // Watch for Scale 16:9 checkbox - auto-fit when enabled
+  watch(showSourceFrame, (enabled) => {
+    if (enabled) {
+      // Start at scale 1.0 - entire 16:9 frame visible, centered in 9:16
+      // User can then drag corners to zoom in and drag body to reposition
+      sourceFrameTransform.value.scale = 1.0;
+      sourceFrameTransform.value.x = 0;
+      sourceFrameTransform.value.y = 0;
+    }
+  });
+
   // Video refs for each region
   const videoRefs = ref<Map<string, HTMLVideoElement>>(new Map());
+  
+  // Source frame video ref
+  const sourceFrameVideoRef = ref<HTMLVideoElement | null>(null);
+  
+  // Cache buster for forcing video reload
+  const videoCacheBuster = ref(Date.now());
+  
+  // Watch for videoUrl or thumbnailUrl changes and force reload
+  watch([() => props.videoUrl, () => props.thumbnailUrl], ([newVideoUrl, newThumbUrl], [oldVideoUrl, oldThumbUrl]) => {
+    if (newVideoUrl !== oldVideoUrl || newThumbUrl !== oldThumbUrl) {
+      // Force complete recreation by changing cache buster
+      videoCacheBuster.value = Date.now();
+      
+      // Also force reload if video element exists
+      if (sourceFrameVideoRef.value) {
+        sourceFrameVideoRef.value.load();
+      }
+    }
+  });
+
+  // Watch for source frame video ref changes and add to videoRefs map
+  watch(sourceFrameVideoRef, (newVideo, oldVideo) => {
+    if (oldVideo) {
+      videoRefs.value.delete('__sourceFrame__');
+    }
+    if (newVideo) {
+      videoRefs.value.set('__sourceFrame__', newVideo);
+    }
+  });
+
+  // Watch for source frame transform changes and emit to parent
+  watch(sourceFrameTransform, (transform) => {
+    if (showSourceFrame.value) {
+      emit('updateSourceTransform', { ...transform });
+    }
+  }, { deep: true });
+
+  // Compute source frame style (16:9 frame positioned in 9:16 container)
+  const sourceFrameStyle = computed(() => {
+    const transform = sourceFrameTransform.value;
+    
+    // For 16:9 source in 9:16 container:
+    // - 16:9 is wider (aspect ~1.78)
+    // - 9:16 is taller (aspect ~0.56)
+    // - Base size: fit 16:9 to container WIDTH (so entire frame is visible, letterboxed)
+    // - Then apply scale to zoom in/out
+    
+    const sourceAspect = 16 / 9;
+    
+    // Fit to WIDTH for 16:9 in portrait container (letterbox effect)
+    // Base dimensions at scale 1.0
+    const baseWidth = containerWidth.value;
+    const baseHeight = baseWidth / sourceAspect;
+    
+    // Apply scale
+    const width = baseWidth * transform.scale;
+    const height = baseHeight * transform.scale;
+    
+    // Center by default, then apply transform offset
+    const left = (containerWidth.value - width) / 2 + transform.x;
+    const top = (containerHeight.value - height) / 2 + transform.y;
+    
+    return {
+      left: `${left}px`,
+      top: `${top}px`,
+      width: `${width}px`,
+      height: `${height}px`,
+    };
+  });
+
+  // Start dragging source frame
+  function startDragSourceFrame(e: MouseEvent) {
+    e.preventDefault();
+    isDraggingSourceFrame.value = true;
+    dragStartPos.value = { x: e.clientX, y: e.clientY };
+    dragStartTransform.value = { x: sourceFrameTransform.value.x, y: sourceFrameTransform.value.y };
+    
+    document.addEventListener('mousemove', onDragSourceFrame);
+    document.addEventListener('mouseup', stopDragSourceFrame);
+  }
+
+  // Handle source frame drag
+  function onDragSourceFrame(e: MouseEvent) {
+    if (!isDraggingSourceFrame.value) return;
+    
+    const deltaX = e.clientX - dragStartPos.value.x;
+    const deltaY = e.clientY - dragStartPos.value.y;
+    
+    sourceFrameTransform.value.x = dragStartTransform.value.x + deltaX;
+    sourceFrameTransform.value.y = dragStartTransform.value.y + deltaY;
+  }
+
+  // Stop dragging source frame
+  function stopDragSourceFrame() {
+    isDraggingSourceFrame.value = false;
+    document.removeEventListener('mousemove', onDragSourceFrame);
+    document.removeEventListener('mouseup', stopDragSourceFrame);
+  }
+
+  // Start resizing source frame (corner drag)
+  function startResizeSourceFrame(e: MouseEvent, corner: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const startScale = sourceFrameTransform.value.scale;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    
+    const onResize = (e: MouseEvent) => {
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+      
+      // Calculate direction based on corner
+      // For all corners, dragging outward (positive delta) should increase scale
+      let scaleDelta = 0;
+      if (corner === 'se' || corner === 'ne') {
+        // Right corners: positive X = scale up
+        scaleDelta = deltaX / 200;
+      } else {
+        // Left corners: negative X = scale up
+        scaleDelta = -deltaX / 200;
+      }
+      
+      sourceFrameTransform.value.scale = Math.max(0.5, Math.min(5, startScale + scaleDelta));
+    };
+    
+    const stopResize = () => {
+      document.removeEventListener('mousemove', onResize);
+      document.removeEventListener('mouseup', stopResize);
+    };
+    
+    document.addEventListener('mousemove', onResize);
+    document.addEventListener('mouseup', stopResize);
+  }
 
   // Set video ref for a region
   function setVideoRef(regionId: string, el: HTMLVideoElement | null) {

@@ -24,10 +24,10 @@ pub async fn extract_clip_segment(
 
     let output = AsyncCommand::new("ffmpeg")
         .arg("-y") // Overwrite output file
+        .arg("-ss")
+        .arg(start_time.to_string()) // Fast input seeking - MUST be before -i
         .arg("-i")
         .arg(input_path)
-        .arg("-ss")
-        .arg(start_time.to_string())
         .arg("-t")
         .arg(duration.to_string())
         .arg("-map")
