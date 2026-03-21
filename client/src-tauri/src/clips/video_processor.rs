@@ -2836,7 +2836,7 @@ pub async fn build_multi_region_clip(
     };
 
     // Helper function to build region filters
-    let build_region_filters = |regions: &Vec<super::types::ManualRegion>, 
+    let mut build_region_filters = |regions: &Vec<super::types::ManualRegion>, 
                                  prefix: &str, 
                                  enable_condition: Option<String>| -> Vec<(String, u32, u32)> {
         let mut labels = Vec::new();

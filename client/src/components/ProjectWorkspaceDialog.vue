@@ -2394,6 +2394,12 @@
         clipSegments: segments,
       });
 
+      console.log('[ProjectWorkspaceDialog] Video editor project created:', {
+        projectId: result.projectId,
+        clipId,
+        clipTitle,
+      });
+
       // Add clip to in-editor tracking
       await inEditorStore.addClip({
         clipId,
@@ -2403,15 +2409,11 @@
         assetPath: videoSrc.value,
       });
 
-      // Close the workspace dialog first, then navigate to editor
-      close();
+      console.log('[ProjectWorkspaceDialog] Navigating to editor with projectId:', result.projectId);
 
       // Navigate to the new OpenCut editor
+      // Don't close the dialog - the route change will handle cleanup
       router.push({ path: '/editor', query: { projectId: result.projectId } });
-
-      console.log(
-        `[ProjectWorkspaceDialog] Opening editor for "${clipTitle}" in video project ${result.projectId}`
-      );
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to create video editor project:', error);
       showError('Failed to Open Editor', 'Could not create video editor project. Please try again.');
@@ -2424,6 +2426,12 @@
   async function openClipInExistingProject(project: VideoEditorProject) {
     const pending = pendingClipToEdit.value;
     if (!pending) return;
+
+    console.log('[ProjectWorkspaceDialog] Opening existing project:', {
+      projectId: project.id,
+      clipId: pending.clipId,
+      clipTitle: pending.title,
+    });
 
     // Add clip to in-editor tracking (re-opening existing project)
     await inEditorStore.addClip({
@@ -2439,15 +2447,11 @@
     showExistingProjectDialog.value = false;
     existingProjectForClip.value = null;
 
-    // Close the workspace dialog first, then open the clip editor
-    close();
+    console.log('[ProjectWorkspaceDialog] Navigating to editor with projectId:', project.id);
 
-    // Navigate to the new OpenCut editor
+    // Navigate to the OpenCut editor
+    // Don't close the dialog - the route change will handle cleanup
     router.push({ path: '/editor', query: { projectId: project.id } });
-
-    console.log(
-      `[ProjectWorkspaceDialog] Opening editor for "${pending.title}" in existing project ${project.id}`
-    );
   }
 
   // Handle existing project dialog - open existing
