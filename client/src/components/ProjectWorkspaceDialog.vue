@@ -47,6 +47,7 @@
                     :watermark-settings="watermarkSettings"
                     :watermark-data="currentWatermarkData"
                     :subtitle-settings="activeSubtitleSettings"
+                    :subtitle-initial-position="activeSubtitlePosition"
                     :transcript-words="transcriptWords"
                     :transcript-segments="transcriptSegments"
                     :current-time="currentTime"
@@ -61,6 +62,7 @@
                     @videoElementReady="onVideoElementReady"
                     @watermarkIdChange="onWatermarkIdChange"
                     @subtitlePositionChange="onSubtitlePositionChange"
+                    @subtitleFontSizeChange="onSubtitleFontSizeChange"
                   />
                 </div>
 
@@ -507,6 +509,17 @@
 
   // Store active subtitle settings (persists during playback even if currentlyPlayingClipId is cleared)
   const activeSubtitleSettings = ref<any>(undefined);
+
+  // Subtitle position for the currently playing clip — defaults to bottom-center (50, 85)
+  const activeSubtitlePosition = computed(() => {
+    const clip = timelineClips.value.find((c: any) => c.id === currentlyPlayingClipId.value);
+    if (!clip || !activeSubtitleSettings.value) return null;
+    return {
+      x: clip.subtitle_position_x ?? 50,
+      y: clip.subtitle_position_y ?? 85,
+      width: clip.subtitle_position_width ?? null,
+    };
+  });
 
   // Get transcript words for subtitle rendering
   const transcriptWords = computed(() => {
@@ -1440,6 +1453,9 @@
           session_prompt: clip.session_prompt, // Include for sorting (manual clips detection)
           subtitle_enabled: clip.subtitle_enabled,
           subtitle_preset_id: clip.subtitle_preset_id,
+          subtitle_position_x: clip.subtitle_position_x ?? null,
+          subtitle_position_y: clip.subtitle_position_y ?? null,
+          subtitle_position_width: clip.subtitle_position_width ?? null,
         };
       })
       .filter(Boolean); // Remove any null entries
@@ -1675,13 +1691,27 @@
     }
   }
 
-  // Handle subtitle position change (when user drags subtitles)
-  async function onSubtitlePositionChange(position: { x: number; y: number }) {
+  // Handle subtitle font size change (when user drags a corner handle)
+  function onSubtitleFontSizeChange(fontSize: number) {
+    if (activeSubtitleSettings.value) {
+      activeSubtitleSettings.value = { ...activeSubtitleSettings.value, fontSize };
+    }
+  }
+
+  // Handle subtitle position change (when user drags/resizes subtitles)
+  async function onSubtitlePositionChange(position: { x: number; y: number }, width: number) {
     if (!currentlyPlayingClipId.value) return;
-    
+
+    // Update the in-memory clip so the computed activeSubtitlePosition reflects immediately
+    const clip = timelineClips.value.find((c: any) => c.id === currentlyPlayingClipId.value);
+    if (clip) {
+      clip.subtitle_position_x = position.x;
+      clip.subtitle_position_y = position.y;
+      clip.subtitle_position_width = width;
+    }
+
     try {
-      await updateClipSubtitlePosition(currentlyPlayingClipId.value, position.x, position.y);
-      console.log('[ProjectWorkspaceDialog] Saved subtitle position:', position);
+      await updateClipSubtitlePosition(currentlyPlayingClipId.value, position.x, position.y, width);
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to save subtitle position:', error);
     }

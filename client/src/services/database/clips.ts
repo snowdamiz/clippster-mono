@@ -244,6 +244,17 @@ export async function updateMultipleClipsSubtitleSettings(
     console.warn('[Clips] Failed to check/add subtitle columns:', e);
   }
 
+  // Ensure subtitle_position_width column exists
+  try {
+    const columnResult2 = await db.select<{ name: string }[]>('PRAGMA table_info(clips)');
+    const columns2 = columnResult2.map((col) => col.name);
+    if (!columns2.includes('subtitle_position_width')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_position_width REAL');
+    }
+  } catch (e) {
+    console.warn('[Clips] Failed to check/add subtitle_position_width column:', e);
+  }
+
   // Update all clips in a transaction
   for (const clipId of clipIds) {
     await db.execute(
@@ -256,13 +267,29 @@ export async function updateMultipleClipsSubtitleSettings(
 export async function updateClipSubtitlePosition(
   clipId: string,
   positionX: number,
-  positionY: number
+  positionY: number,
+  width?: number
 ): Promise<void> {
   const db = await getDatabase();
   const now = timestamp();
 
+  // Ensure columns exist
+  try {
+    const cols = await db.select<{ name: string }[]>('PRAGMA table_info(clips)');
+    const colNames = cols.map((c) => c.name);
+    if (!colNames.includes('subtitle_position_x'))
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_position_x REAL');
+    if (!colNames.includes('subtitle_position_y'))
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_position_y REAL');
+    if (!colNames.includes('subtitle_position_width'))
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_position_width REAL');
+  } catch (e) {
+    console.warn('[Clips] Failed to check/add subtitle position columns:', e);
+  }
+
   await db.execute(
-    'UPDATE clips SET subtitle_position_x = ?, subtitle_position_y = ?, updated_at = ? WHERE id = ?',
-    [positionX, positionY, now, clipId]
+    'UPDATE clips SET subtitle_position_x = ?, subtitle_position_y = ?, subtitle_position_width = ?, updated_at = ? WHERE id = ?',
+    [positionX, positionY, width ?? null, now, clipId]
   );
 }
+
