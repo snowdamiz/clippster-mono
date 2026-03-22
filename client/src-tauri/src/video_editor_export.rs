@@ -573,9 +573,45 @@ pub async fn export_video_editor_project(
         if has_crop {
             // crop=w:h:x:y using FFmpeg expressions with iw/ih
 
-            let crop_w = 1.0 - crop_left - crop_right;
+            let mut crop_w = 1.0 - crop_left - crop_right;
 
-            let crop_h = 1.0 - crop_top - crop_bottom;
+            let mut crop_h = 1.0 - crop_top - crop_bottom;
+
+            // Validate crop dimensions to prevent FFmpeg errors
+            // Ensure crop_w and crop_h are positive and result in valid dimensions
+            const MIN_CROP_FRACTION: f64 = 0.01; // Minimum 1% of source dimension
+
+            if crop_w <= 0.0 {
+                eprintln!(
+                    "[WARN] Invalid crop width: crop_left={}, crop_right={}, crop_w={}. Clamping to minimum.",
+                    crop_left, crop_right, crop_w
+                );
+                crop_w = MIN_CROP_FRACTION;
+            } else if crop_w < MIN_CROP_FRACTION {
+                eprintln!(
+                    "[WARN] Crop width too small: {}. Clamping to minimum {}.",
+                    crop_w, MIN_CROP_FRACTION
+                );
+                crop_w = MIN_CROP_FRACTION;
+            }
+
+            if crop_h <= 0.0 {
+                eprintln!(
+                    "[WARN] Invalid crop height: crop_top={}, crop_bottom={}, crop_h={}. Clamping to minimum.",
+                    crop_top, crop_bottom, crop_h
+                );
+                crop_h = MIN_CROP_FRACTION;
+            } else if crop_h < MIN_CROP_FRACTION {
+                eprintln!(
+                    "[WARN] Crop height too small: {}. Clamping to minimum {}.",
+                    crop_h, MIN_CROP_FRACTION
+                );
+                crop_h = MIN_CROP_FRACTION;
+            }
+
+            // Ensure crop_w and crop_h don't exceed 1.0
+            crop_w = crop_w.min(1.0);
+            crop_h = crop_h.min(1.0);
 
             transform_filters.push(format!(
                 "crop=iw*{}:ih*{}:iw*{}:ih*{}",
