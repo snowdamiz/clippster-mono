@@ -232,6 +232,14 @@ export async function updateMultipleClipsSubtitleSettings(
     if (!columns.includes('subtitle_preset_id')) {
       await db.execute('ALTER TABLE clips ADD COLUMN subtitle_preset_id TEXT');
     }
+
+    if (!columns.includes('subtitle_position_x')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_position_x REAL');
+    }
+
+    if (!columns.includes('subtitle_position_y')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_position_y REAL');
+    }
   } catch (e) {
     console.warn('[Clips] Failed to check/add subtitle columns:', e);
   }
@@ -243,4 +251,18 @@ export async function updateMultipleClipsSubtitleSettings(
       [enabled ? 1 : 0, presetId, now, clipId]
     );
   }
+}
+
+export async function updateClipSubtitlePosition(
+  clipId: string,
+  positionX: number,
+  positionY: number
+): Promise<void> {
+  const db = await getDatabase();
+  const now = timestamp();
+
+  await db.execute(
+    'UPDATE clips SET subtitle_position_x = ?, subtitle_position_y = ?, updated_at = ? WHERE id = ?',
+    [positionX, positionY, now, clipId]
+  );
 }

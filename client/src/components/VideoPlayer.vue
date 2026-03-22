@@ -104,7 +104,13 @@
         v-if="subtitleSettings?.enabled && visibleWords.length > 0 && videoSrc && !videoLoading"
         class="absolute inset-0 subtitle-overlay pointer-events-none z-20 flex items-center justify-center"
       >
-        <div class="subtitle-text-container" :style="{ ...getSubtitleContainerStyle, gap: wordGapStyle }">
+        <div 
+          ref="subtitleContainerRef"
+          class="subtitle-text-container cursor-move pointer-events-auto"
+          :class="{ 'outline outline-2 outline-yellow-400': isDraggingSubtitles }"
+          :style="{ ...getSubtitleContainerStyle, gap: wordGapStyle }"
+          @mousedown="startDragSubtitles"
+        >
           <span
             v-for="(wordInfo, index) in visibleWords"
             :key="`subtitle-word-${wordInfo.start}-${index}`"
@@ -201,6 +207,9 @@
                       ? (subtitleSettings?.highlightColor || '#FFFF00')
                       : (subtitleSettings?.textColor || '#FFFFFF'),
                   }"
+                  :data-word="wordInfo.word"
+                  :data-is-current="isCurrentWord(wordInfo)"
+                  :data-animation-style="subtitleSettings?.animationStyle"
                 >
                   {{ wordInfo.word }}
                 </text>
@@ -401,6 +410,7 @@
     (e: 'retryLoad'): void;
     (e: 'videoElementReady', element: HTMLVideoElement): void;
     (e: 'watermarkIdChange', watermarkId: string | null): void;
+    (e: 'subtitlePositionChange', position: { x: number; y: number }): void;
   }
 
   const emit = defineEmits<Emits>();
@@ -408,7 +418,13 @@
   const videoElementRef = ref<HTMLVideoElement | null>(null);
   const videoContainerRef = ref<HTMLElement | null>(null);
   const framingCanvasRef = ref<HTMLCanvasElement | null>(null);
+  const subtitleContainerRef = ref<HTMLElement | null>(null);
   const containerHeight = ref<number>(1080); // Default to 1080p height
+
+  // Subtitle dragging state
+  const isDraggingSubtitles = ref(false);
+  const subtitleDragOffset = ref({ x: 0, y: 0 });
+  const customSubtitlePosition = ref<{ x: number; y: number } | null>(null);
 
   // Multi-region framing
   const hasFramingRegions = computed(() => (props.framingRegions?.length ?? 0) > 0);
@@ -642,17 +658,15 @@
   const segmentWords = computed((): WordInfo[] => {
     if (!currentSegment.value) return [];
 
-    // If segment has words attached, use those
-    if (currentSegment.value.words && currentSegment.value.words.length > 0) {
-      return currentSegment.value.words;
+    // ALWAYS filter from all transcript words - segment.words contains incorrect data
+    // (words from wrong segments with mismatched timestamps)
+    if (!props.transcriptWords || props.transcriptWords.length === 0) {
+      console.log('[VideoPlayer] No transcriptWords available');
+      return [];
     }
 
-    // Otherwise, filter from all transcript words
-    // Use a more inclusive filter - word overlaps with segment in any way
-    if (!props.transcriptWords || props.transcriptWords.length === 0) return [];
-
     const segment = currentSegment.value;
-    return props.transcriptWords.filter((word) => {
+    const filtered = props.transcriptWords.filter((word) => {
       // Include word if it starts within segment OR ends within segment OR spans the entire segment
       return (
         (word.start >= segment.start && word.start < segment.end) ||
@@ -660,6 +674,20 @@
         (word.start <= segment.start && word.end >= segment.end)
       );
     });
+    
+    // Always log on first run to debug
+    if (filtered.length === 0) {
+      console.log('[VideoPlayer] segmentWords filter returned ZERO:', {
+        segmentStart: segment.start,
+        segmentEnd: segment.end,
+        totalWords: props.transcriptWords.length,
+        filteredWords: filtered.length,
+        firstWords: props.transcriptWords.slice(0, 5).map(w => ({ word: w.word, start: w.start, end: w.end })),
+        wordsNearSegment: props.transcriptWords.filter(w => w.start >= 1620 && w.start <= 1632).slice(0, 5).map(w => ({ word: w.word, start: w.start, end: w.end }))
+      });
+    }
+    
+    return filtered;
   });
 
   // Get visible words (chunked display - shows X words at a time, then jumps to next X)
@@ -714,6 +742,8 @@
   // Check if a word is currently being spoken
   function isCurrentWord(word: WordInfo): boolean {
     const time = props.currentTime || 0;
+    
+    // Word timestamps from props.transcriptWords are absolute video timestamps
     return time >= word.start && time <= word.end;
   }
 
@@ -781,6 +811,28 @@
     if (!props.subtitleSettings) return {};
 
     const settings = props.subtitleSettings;
+    
+    // Use custom position if dragging, otherwise use preset position
+    if (customSubtitlePosition.value) {
+      const scaledPadding = Math.round((settings.padding || 0) * finalFontSizeScale.value);
+      const scaledBorderRadius = Math.round((settings.borderRadius || 0) * finalFontSizeScale.value);
+      const scaledLineHeight = settings.lineHeight || 1.2;
+      
+      return {
+        position: 'absolute',
+        left: customSubtitlePosition.value.x + '%',
+        top: customSubtitlePosition.value.y + '%',
+        width: settings.maxWidth + '%',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        lineHeight: String(scaledLineHeight),
+        padding: scaledPadding ? `${scaledPadding}px` : '0',
+        borderRadius: scaledBorderRadius ? `${scaledBorderRadius}px` : '0',
+        backgroundColor: settings.backgroundEnabled ? settings.backgroundColor : 'transparent',
+      };
+    }
+    
     let topPosition = '50%';
 
     if (settings.position === 'top') {
@@ -1215,6 +1267,50 @@
   // Setup ResizeObserver to track container size changes
   let resizeObserver: ResizeObserver | null = null;
 
+  // Subtitle drag handlers
+  function startDragSubtitles(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!subtitleContainerRef.value || !videoContainerRef.value) return;
+    
+    isDraggingSubtitles.value = true;
+    
+    const containerRect = videoContainerRef.value.getBoundingClientRect();
+    const subtitleRect = subtitleContainerRef.value.getBoundingClientRect();
+    
+    subtitleDragOffset.value = {
+      x: e.clientX - subtitleRect.left,
+      y: e.clientY - subtitleRect.top,
+    };
+    
+    document.addEventListener('mousemove', onDragSubtitles);
+    document.addEventListener('mouseup', stopDragSubtitles);
+  }
+  
+  function onDragSubtitles(e: MouseEvent) {
+    if (!isDraggingSubtitles.value || !videoContainerRef.value) return;
+    
+    const containerRect = videoContainerRef.value.getBoundingClientRect();
+    
+    // Calculate position as percentage of container
+    const x = ((e.clientX - containerRect.left - subtitleDragOffset.value.x) / containerRect.width) * 100;
+    const y = ((e.clientY - containerRect.top - subtitleDragOffset.value.y) / containerRect.height) * 100;
+    
+    customSubtitlePosition.value = { x, y };
+  }
+  
+  function stopDragSubtitles() {
+    isDraggingSubtitles.value = false;
+    document.removeEventListener('mousemove', onDragSubtitles);
+    document.removeEventListener('mouseup', stopDragSubtitles);
+    
+    // Emit position change event
+    if (customSubtitlePosition.value) {
+      emit('subtitlePositionChange', customSubtitlePosition.value);
+    }
+  }
+
   // Debug subtitle overlay rendering
   watch([() => props.subtitleSettings, visibleWords, () => props.videoSrc, () => props.videoLoading], ([settings, words, src, loading]) => {
     console.log('[VideoPlayer] Subtitle overlay conditions:', {
@@ -1224,6 +1320,16 @@
       videoLoading: loading,
       shouldShow: settings?.enabled && words.length > 0 && !!src && !loading,
     });
+    
+    // Debug karaoke settings
+    if (settings?.animationStyle === 'karaoke') {
+      console.log('[VideoPlayer] Karaoke subtitle settings:', {
+        animationStyle: settings.animationStyle,
+        textColor: settings.textColor,
+        highlightColor: settings.highlightColor,
+        currentTime: props.currentTime,
+      });
+    }
   });
 
   onMounted(() => {

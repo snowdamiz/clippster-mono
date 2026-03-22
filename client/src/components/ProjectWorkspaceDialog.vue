@@ -60,6 +60,7 @@
                     @retryLoad="loadVideoForProject"
                     @videoElementReady="onVideoElementReady"
                     @watermarkIdChange="onWatermarkIdChange"
+                    @subtitlePositionChange="onSubtitlePositionChange"
                   />
                 </div>
 
@@ -319,6 +320,7 @@
   import { useAuthStore } from '@/stores/auth';
   import { getRawVideosByProjectId } from '@/services/database';
   import { getProjectVodPresetConfig } from '@/services/database/vod-presets';
+  import { updateClipSubtitlePosition } from '@/services/database/clips';
   import type { ActiveVodPresetConfig } from '@/types';
   import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
 
@@ -1670,6 +1672,18 @@
     if (watermarkId && watermarkSettings.value?.enabled) {
       console.log('[ProjectWorkspaceDialog] Loading different watermark for aspect ratio:', watermarkId);
       await loadWatermarkDataById(watermarkId);
+    }
+  }
+
+  // Handle subtitle position change (when user drags subtitles)
+  async function onSubtitlePositionChange(position: { x: number; y: number }) {
+    if (!currentlyPlayingClipId.value) return;
+    
+    try {
+      await updateClipSubtitlePosition(currentlyPlayingClipId.value, position.x, position.y);
+      console.log('[ProjectWorkspaceDialog] Saved subtitle position:', position);
+    } catch (error) {
+      console.error('[ProjectWorkspaceDialog] Failed to save subtitle position:', error);
     }
   }
 

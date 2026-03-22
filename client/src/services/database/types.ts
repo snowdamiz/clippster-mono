@@ -319,6 +319,8 @@ export interface ClipWithVersion extends Clip {
   // Subtitle settings
   subtitle_enabled?: number;
   subtitle_preset_id?: string;
+  subtitle_position_x?: number;
+  subtitle_position_y?: number;
 }
 
 // Clip with version data plus segment (child project) info for folder-level view
