@@ -2841,20 +2841,86 @@ pub async fn build_multi_region_clip(
                                  enable_condition: Option<String>| -> Vec<(String, u32, u32, Option<String>)> {
         let mut labels = Vec::new();
         for (i, region) in regions.iter().enumerate() {
+            // Validate and clamp source coordinates to valid range [0, 1]
+            let source_x = region.source.x.clamp(0.0, 1.0);
+            let source_y = region.source.y.clamp(0.0, 1.0);
+            let source_width = region.source.width.clamp(0.0, 1.0);
+            let source_height = region.source.height.clamp(0.0, 1.0);
+            
+            // Log warnings if values were clamped
+            if source_x != region.source.x || source_y != region.source.y {
+                eprintln!(
+                    "[WARN] Region {} source position out of bounds: x={}, y={}. Clamped to: x={}, y={}",
+                    region.id, region.source.x, region.source.y, source_x, source_y
+                );
+            }
+            if source_width != region.source.width || source_height != region.source.height {
+                eprintln!(
+                    "[WARN] Region {} source dimensions out of bounds: width={}, height={}. Clamped to: width={}, height={}",
+                    region.id, region.source.width, region.source.height, source_width, source_height
+                );
+            }
+            
             // Calculate source crop in pixels
-            let (crop_x, crop_y, crop_w, crop_h) = if working_config.source_transform.is_some() {
-                let x = (region.source.x * output_w as f64) as u32;
-                let y = (region.source.y * output_h as f64) as u32;
-                let w = make_even((region.source.width * output_w as f64) as u32);
-                let h = make_even((region.source.height * output_h as f64) as u32);
+            let (crop_x, crop_y, mut crop_w, mut crop_h) = if working_config.source_transform.is_some() {
+                let x = (source_x * output_w as f64) as u32;
+                let y = (source_y * output_h as f64) as u32;
+                let w = make_even((source_width * output_w as f64) as u32);
+                let h = make_even((source_height * output_h as f64) as u32);
                 (x, y, w, h)
             } else {
-                let x = (region.source.x * source_w) as u32;
-                let y = (region.source.y * source_h) as u32;
-                let w = make_even((region.source.width * source_w) as u32);
-                let h = make_even((region.source.height * source_h) as u32);
+                let x = (source_x * source_w) as u32;
+                let y = (source_y * source_h) as u32;
+                let w = make_even((source_width * source_w) as u32);
+                let h = make_even((source_height * source_h) as u32);
                 (x, y, w, h)
             };
+            
+            // Validate crop dimensions
+            const MIN_CROP_PIXELS: u32 = 2; // FFmpeg minimum for most codecs
+            
+            // Ensure minimum dimensions
+            if crop_w < MIN_CROP_PIXELS {
+                eprintln!(
+                    "[WARN] Region {} crop width too small: {}. Clamping to minimum: {}",
+                    region.id, crop_w, MIN_CROP_PIXELS
+                );
+                crop_w = MIN_CROP_PIXELS;
+            }
+            if crop_h < MIN_CROP_PIXELS {
+                eprintln!(
+                    "[WARN] Region {} crop height too small: {}. Clamping to minimum: {}",
+                    region.id, crop_h, MIN_CROP_PIXELS
+                );
+                crop_h = MIN_CROP_PIXELS;
+            }
+            
+            // Ensure crop doesn't exceed source dimensions
+            let max_w = if working_config.source_transform.is_some() { output_w } else { source_w as u32 };
+            let max_h = if working_config.source_transform.is_some() { output_h } else { source_h as u32 };
+            
+            if crop_w > max_w {
+                eprintln!(
+                    "[WARN] Region {} crop width {} exceeds source width {}. Clamping to source width.",
+                    region.id, crop_w, max_w
+                );
+                crop_w = max_w;
+            }
+            if crop_h > max_h {
+                eprintln!(
+                    "[WARN] Region {} crop height {} exceeds source height {}. Clamping to source height.",
+                    region.id, crop_h, max_h
+                );
+                crop_h = max_h;
+            }
+            
+            // Ensure crop dimensions are even (required by most codecs)
+            crop_w = make_even(crop_w);
+            crop_h = make_even(crop_h);
+            
+            // Recalculate position to ensure crop stays within bounds
+            let crop_x = crop_x.min(max_w.saturating_sub(crop_w));
+            let crop_y = crop_y.min(max_h.saturating_sub(crop_h));
 
             // Calculate output position and size
             let out_x = (region.output.x * output_w as f64) as u32;
