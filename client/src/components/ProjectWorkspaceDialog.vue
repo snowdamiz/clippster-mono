@@ -43,10 +43,57 @@
                     placeholder="Select aspect ratio"
                     class="workspace-dialog__aspect-dropdown"
                   />
+                  
+                  <!-- Platform Preview Button (only shown for 9:16) -->
+                  <button
+                    v-if="is916"
+                    ref="socialButtonRef"
+                    type="button"
+                    class="workspace-dialog__platform-button"
+                    @click="showSocialMenu = !showSocialMenu"
+                  >
+                    <Smartphone :size="14" />
+                    <span>{{ activeSocialOverlay?.label || 'Platform' }}</span>
+                  </button>
                 </div>
 
+                <!-- Social Overlay Dropdown Menu -->
+                <Teleport to="body">
+                  <Transition name="dropdown">
+                    <div
+                      v-if="showSocialMenu && is916"
+                      class="workspace-dialog__social-menu"
+                      :style="socialMenuStyle"
+                    >
+                      <!-- None option -->
+                      <button
+                        type="button"
+                        class="workspace-dialog__social-option"
+                        :class="{ 'workspace-dialog__social-option--active': !activeSocialOverlay }"
+                        @click="activeSocialOverlay = null; showSocialMenu = false"
+                      >
+                        <span class="workspace-dialog__social-icon">✕</span>
+                        <span class="workspace-dialog__social-label">None</span>
+                      </button>
+                      
+                      <!-- Platform options -->
+                      <button
+                        v-for="preset in SOCIAL_OVERLAY_PRESETS"
+                        :key="preset.platform"
+                        type="button"
+                        class="workspace-dialog__social-option"
+                        :class="{ 'workspace-dialog__social-option--active': activeSocialOverlay?.platform === preset.platform }"
+                        @click="toggleSocialOverlay(preset)"
+                      >
+                        <span class="workspace-dialog__social-icon">{{ preset.icon }}</span>
+                        <span class="workspace-dialog__social-label">{{ preset.label }}</span>
+                      </button>
+                    </div>
+                  </Transition>
+                </Teleport>
+
                 <!-- Video Player Container -->
-                <div class="workspace-dialog__video-wrapper">
+                <div class="workspace-dialog__video-wrapper" style="position: relative;">
                   <VideoPlayer
                     :video-src="videoSrc"
                     :video-loading="videoLoading"
@@ -68,6 +115,18 @@
                     @videoElementReady="onVideoElementReady"
                     @watermarkIdChange="onWatermarkIdChange"
                   />
+                  
+                  <!-- Social Platform Overlay -->
+                  <div
+                    v-if="activeSocialOverlay"
+                    style="position: absolute; inset: 0; z-index: 100; pointer-events: none; user-select: none;"
+                  >
+                    <SocialOverlay
+                      :preset="activeSocialOverlay"
+                      :canvas-width="selectedAspectRatio.width"
+                      :canvas-height="selectedAspectRatio.height"
+                    />
+                  </div>
                 </div>
 
                 <!-- Video Controls Bar -->
@@ -286,7 +345,7 @@
   import { resolveBrandingProfile } from '@/composables/useBrandingProfileSelection';
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
-  import { X, Film } from 'lucide-vue-next';
+  import { X, Film, Smartphone } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import type { WatermarkSettings } from '@/types';
   import VideoPlayer from './VideoPlayer.vue';
@@ -299,6 +358,9 @@
   import TranscriptionConfirmDialog from './TranscriptionConfirmDialog.vue';
   import TranscriptPanel from './TranscriptPanel.vue';
   import CustomDropdown from './CustomDropdown.vue';
+  import SocialOverlay from '@/editor/components/preview/SocialOverlay.vue';
+  import { SOCIAL_OVERLAY_PRESETS } from '@/editor/constants/social-overlay-constants';
+  import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
   import { useTranscriptionOnly } from '@/composables/useTranscriptionOnly';
   import { useRouter } from 'vue-router';
   import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
@@ -407,6 +469,11 @@
   // Preview aspect ratio for video player (separate from selectedAspectRatio used for framing)
   const previewAspectRatio = ref<string>('16:9');
 
+  // Social overlay state
+  const activeSocialOverlay = ref<SocialOverlayPreset | null>(null);
+  const showSocialMenu = ref(false);
+  const socialButtonRef = ref<HTMLButtonElement | null>(null);
+
   // VOD preset config state
   const vodPresetConfig = ref<ActiveVodPresetConfig | null>(null);
 
@@ -461,6 +528,21 @@
     }));
   });
 
+  // Check if current aspect ratio is 9:16 (vertical)
+  const is916 = computed(() => previewAspectRatio.value === '9:16');
+
+  // Social menu positioning
+  const socialMenuStyle = computed(() => {
+    const el = socialButtonRef.value;
+    if (!el) return {};
+    const rect = el.getBoundingClientRect();
+    return {
+      top: `${rect.bottom + 6}px`,
+      left: `${rect.left + rect.width / 2}px`,
+      transform: 'translateX(-50%)',
+    };
+  });
+
   // Framing regions for the currently selected preview aspect ratio
   const currentFramingRegions = computed(() => {
     if (previewAspectRatio.value === '16:9') {
@@ -493,6 +575,24 @@
       selectedAspectRatio.value = parseAspectRatio(newRatio);
     }
   });
+
+  // Hide social overlay when switching away from 9:16
+  watch(is916, (val) => {
+    if (!val) {
+      activeSocialOverlay.value = null;
+      showSocialMenu.value = false;
+    }
+  });
+
+  // Toggle social overlay
+  function toggleSocialOverlay(preset: SocialOverlayPreset) {
+    if (activeSocialOverlay.value?.platform === preset.platform) {
+      activeSocialOverlay.value = null;
+    } else {
+      activeSocialOverlay.value = preset;
+    }
+    showSocialMenu.value = false;
+  }
 
   // Watch for settings or aspect ratio changes to load correct watermark data
   watch(
@@ -3175,6 +3275,79 @@
   .workspace-dialog__aspect-dropdown {
     flex: 1;
     max-width: 150px;
+  }
+
+  .workspace-dialog__platform-button {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .workspace-dialog__platform-button:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .workspace-dialog__social-menu {
+    position: fixed;
+    z-index: 10000;
+    min-width: 180px;
+    background: rgba(24, 24, 27, 0.98);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.5rem;
+    padding: 0.375rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(12px);
+  }
+
+  .workspace-dialog__social-option {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.8125rem;
+    color: rgba(255, 255, 255, 0.7);
+    background: transparent;
+    border: none;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: all 150ms ease;
+    text-align: left;
+  }
+
+  .workspace-dialog__social-option:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  .workspace-dialog__social-option--active {
+    background: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
+  }
+
+  .workspace-dialog__social-option--active:hover {
+    background: rgba(6, 182, 212, 0.2);
+  }
+
+  .workspace-dialog__social-icon {
+    font-size: 1.125rem;
+    line-height: 1;
+  }
+
+  .workspace-dialog__social-label {
+    font-weight: 500;
   }
 
   .workspace-dialog__video-wrapper {
