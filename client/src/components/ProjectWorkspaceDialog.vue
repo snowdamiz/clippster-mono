@@ -63,6 +63,7 @@
                     @watermarkIdChange="onWatermarkIdChange"
                     @subtitlePositionChange="onSubtitlePositionChange"
                     @subtitleFontSizeChange="onSubtitleFontSizeChange"
+                    @subtitleSelected="onSubtitleSelected"
                   />
                 </div>
 
@@ -148,6 +149,17 @@
                   @transcribeProject="onTranscribeProject"
                   @cancelTranscription="onCancelTranscription"
                   @viewTranscript="rightPanelTab = 'transcript'"
+                />
+
+                <!-- Subtitle Properties Tab -->
+                <SubtitlePropertiesPanel
+                  v-if="rightPanelTab === 'subtitles' && activeSubtitleSettings"
+                  :settings="activeSubtitleSettings"
+                  :segments="subtitleSegmentsForPanel"
+                  :current-time="currentTime"
+                  @close="rightPanelTab = 'clips'"
+                  @updateSettings="onSubtitleSettingsUpdate"
+                  @updateSegmentText="onSubtitleSegmentTextUpdate"
                 />
 
                 <!-- Transcript Tab -->
@@ -304,6 +316,7 @@
   import TranscriptionConfirmDialog from './TranscriptionConfirmDialog.vue';
   import SubtitleEditorDialog from './SubtitleEditorDialog.vue';
   import TranscriptPanel from './TranscriptPanel.vue';
+  import SubtitlePropertiesPanel from './SubtitlePropertiesPanel.vue';
   import { useTranscriptionOnly } from '@/composables/useTranscriptionOnly';
   import { useRouter } from 'vue-router';
   import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
@@ -365,7 +378,7 @@
   const showSubtitleEditorDialog = ref(false);
 
   // Right panel tab state
-  const rightPanelTab = ref<'clips' | 'transcript'>('clips');
+  const rightPanelTab = ref<'clips' | 'transcript' | 'subtitles'>('clips');
 
   // Transcription progress state
   const isTranscribing = ref(false);
@@ -395,6 +408,10 @@
 
   // Segmented playback tracking
   const currentlyPlayingClipId = ref<string | null>(null);
+  const lastPlayedClipId = ref<string | null>(null);
+  
+  // Selected clip for subtitle editing (separate from playback)
+  const selectedClipId = ref<string | null>(null);
 
   // Timeline clips state
   const timelineClips = ref<any[]>([]);
@@ -510,9 +527,11 @@
   // Store active subtitle settings (persists during playback even if currentlyPlayingClipId is cleared)
   const activeSubtitleSettings = ref<any>(undefined);
 
-  // Subtitle position for the currently playing clip — defaults to bottom-center (50, 85)
+  // Subtitle position for the currently/last playing clip — defaults to bottom-center (50, 85)
   const activeSubtitlePosition = computed(() => {
-    const clip = timelineClips.value.find((c: any) => c.id === currentlyPlayingClipId.value);
+    // Use currentlyPlayingClipId if available, otherwise use lastPlayedClipId to persist position
+    const clipId = currentlyPlayingClipId.value || lastPlayedClipId.value;
+    const clip = timelineClips.value.find((c: any) => c.id === clipId);
     if (!clip || !activeSubtitleSettings.value) return null;
     return {
       x: clip.subtitle_position_x ?? 50,
@@ -533,6 +552,37 @@
     const segments = transcriptData.value?.whisperSegments || [];
     console.log('[ProjectWorkspaceDialog] transcriptSegments:', segments.length);
     return segments;
+  });
+
+  // Segments scoped to the selected/playing clip for the subtitle properties panel
+  const subtitleSegmentsForPanel = computed(() => {
+    const clipId = selectedClipId.value || currentlyPlayingClipId.value;
+    const clip = timelineClips.value.find((c: any) => c.id === clipId);
+    if (!clip) return [];
+    
+    // Get the clip's segments which contain the clip's own transcript data
+    const clipSegments = clip.current_version_segments || clip.segments || [];
+    if (clipSegments.length === 0) return [];
+    
+    // The clip segment has the plain text transcript that matches what's being displayed
+    // Parse it to extract individual lines/sentences
+    const clipTranscript = clipSegments[0]?.transcript || '';
+    if (!clipTranscript) return [];
+    
+    // Split by sentence-ending punctuation or line breaks
+    const sentences = clipTranscript
+      .split(/(?<=[.!?])\s+/)
+      .filter((s: string) => s.trim().length > 0);
+    
+    // Create simple segments with estimated timing
+    const clipDuration = clipSegments[0].duration || 10;
+    const timePerSentence = clipDuration / sentences.length;
+    
+    return sentences.map((text: string, i: number) => ({
+      start: i * timePerSentence,
+      end: (i + 1) * timePerSentence,
+      text: text.trim(),
+    }));
   });
 
   const isTranscribed = computed(() => {
@@ -1691,11 +1741,35 @@
     }
   }
 
+  // Handle subtitle selected (when user clicks subtitle box)
+  function onSubtitleSelected() {
+    // Set selectedClipId to the currently playing clip (or first clip if none playing)
+    if (currentlyPlayingClipId.value) {
+      selectedClipId.value = currentlyPlayingClipId.value;
+    } else if (timelineClips.value.length > 0) {
+      selectedClipId.value = timelineClips.value[0].id;
+    }
+    rightPanelTab.value = 'subtitles';
+  }
+
   // Handle subtitle font size change (when user drags a corner handle)
   function onSubtitleFontSizeChange(fontSize: number) {
     if (activeSubtitleSettings.value) {
       activeSubtitleSettings.value = { ...activeSubtitleSettings.value, fontSize };
     }
+  }
+
+  // Handle subtitle settings update from the properties panel
+  function onSubtitleSettingsUpdate(patch: Partial<typeof activeSubtitleSettings.value>) {
+    if (activeSubtitleSettings.value) {
+      activeSubtitleSettings.value = { ...activeSubtitleSettings.value, ...patch };
+    }
+  }
+
+  // Handle transcript text edit from properties panel (in-memory only for now)
+  function onSubtitleSegmentTextUpdate(_index: number, _text: string) {
+    // Transcript edits are reflected reactively via subtitleSegmentsForPanel
+    // Full persistence would require a separate transcript edit API
   }
 
   // Handle subtitle position change (when user drags/resizes subtitles)
@@ -2073,6 +2147,7 @@
 
     // Track the currently playing clip AFTER stopping previous playback
     currentlyPlayingClipId.value = clip.id;
+    lastPlayedClipId.value = clip.id;
 
     // Set hover states to the playing clip so it highlights in both panel and timeline
     hoveredClipId.value = clip.id;

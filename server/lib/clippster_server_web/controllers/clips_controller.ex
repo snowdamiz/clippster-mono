@@ -555,7 +555,7 @@ defmodule ClippsterServerWeb.ClipsController do
         {:ok,
          %{
            success: true,
-           clips: %{"clips" => final_clips},
+           clips: final_clips,
            transcript: reconstructed_transcript,
            processing_info: %{
              used_chunked_processing: true,
@@ -587,7 +587,7 @@ defmodule ClippsterServerWeb.ClipsController do
         {:ok,
          %{
            success: true,
-           clips: %{"clips" => all_clips},
+           clips: all_clips,
            transcript: reconstructed_transcript,
            processing_info: %{
              used_chunked_processing: true,

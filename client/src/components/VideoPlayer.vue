@@ -111,15 +111,11 @@
           :style="getSubtitleContainerStyle"
           @mousedown.self="startDragSubtitles"
         >
-          <!-- Corner resize handles (drag to scale font size) -->
-          <div class="subtitle-corner-handle subtitle-corner-handle--tl" @mousedown.stop="startFontResize($event)" />
-          <div class="subtitle-corner-handle subtitle-corner-handle--tr" @mousedown.stop="startFontResize($event)" />
-          <div class="subtitle-corner-handle subtitle-corner-handle--bl" @mousedown.stop="startFontResize($event)" />
-          <div class="subtitle-corner-handle subtitle-corner-handle--br" @mousedown.stop="startFontResize($event)" />
-          <!-- Drag handle bar at top -->
+          <!-- Drag handle bar at top — click to open properties, drag to move -->
           <div
             class="subtitle-drag-bar"
             @mousedown.stop="startDragSubtitles"
+            @click.stop="emit('subtitleSelected')"
           >
             <span class="subtitle-drag-label">⠿ subtitles</span>
           </div>
@@ -127,7 +123,7 @@
         <div 
           ref="subtitleContainerRef"
           class="subtitle-text-container cursor-move pointer-events-auto"
-          :style="{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', width: '100%', gap: wordGapStyle }"
+          :style="{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', width: 'fit-content', gap: wordGapStyle }"
           @mousedown="startDragSubtitles"
         >
           <span
@@ -394,7 +390,7 @@
       positionPercentage: 97,
       maxWidth: 90,
       animationStyle: 'none',
-      highlightColor: '#FFFF00',
+      highlightColor: '#00FF00',
       lineHeight: 1.2,
       letterSpacing: 0,
       textAlign: 'center',
@@ -434,6 +430,7 @@
     (e: 'watermarkIdChange', watermarkId: string | null): void;
     (e: 'subtitlePositionChange', position: { x: number; y: number }, width: number): void;
     (e: 'subtitleFontSizeChange', fontSize: number): void;
+    (e: 'subtitleSelected'): void;
   }
 
   const emit = defineEmits<Emits>();
@@ -460,6 +457,8 @@
   const fontResizeStartX = ref(0);
   const fontResizeStartY = ref(0);
   const fontResizeStartSize = ref(0);
+  // Which corner: tl | tr | bl | br
+  const fontResizeCorner = ref<'tl' | 'tr' | 'bl' | 'br'>('br');
 
   watch(() => props.subtitleInitialPosition, (pos) => {
     customSubtitlePosition.value = pos ? { x: pos.x, y: pos.y } : { x: 50, y: 85 };
@@ -880,14 +879,17 @@
     const scaledBorderRadius = Math.round((settings.borderRadius || 0) * finalFontSizeScale.value);
     const scaledLineHeight = settings.lineHeight || 1.2;
 
-    // Base styles — always use absolute positioning anchored to the overlay container
+    // Base styles — always use absolute positioning anchored to the overlay container.
+    // Width is fit-content so the box shrinks/grows with the text.
     const baseStyles: Record<string, string> = {
       position: 'absolute',
       top: topPct + '%',
       left: leftPct + '%',
       transform: `translate(calc(-50% + ${leftOffset}%), calc(-50% + ${topOffset}%))`,
-      width: customSubtitleWidth.value + '%',
+      width: 'max-content',
+      maxWidth: customSubtitleWidth.value + '%',
       display: 'flex',
+      flexWrap: 'wrap',
       justifyContent: 'center',
       alignItems: 'center',
       lineHeight: String(scaledLineHeight),
@@ -1329,8 +1331,8 @@
     };
   }
 
-  // Font resize via corner handles — dragging up/right = bigger, down/left = smaller
-  function startFontResize(e: MouseEvent) {
+  // Font resize via corner handles — dragging away from center = bigger
+  function startFontResize(e: MouseEvent, corner: 'tl' | 'tr' | 'bl' | 'br') {
     e.preventDefault();
     e.stopPropagation();
 
@@ -1338,6 +1340,7 @@
     fontResizeStartX.value = e.clientX;
     fontResizeStartY.value = e.clientY;
     fontResizeStartSize.value = props.subtitleSettings?.fontSize ?? 48;
+    fontResizeCorner.value = corner;
 
     document.addEventListener('mousemove', onFontResize);
     document.addEventListener('mouseup', stopSubtitleInteraction);
@@ -1346,10 +1349,16 @@
   function onFontResize(e: MouseEvent) {
     if (!isResizingSubtitles.value || !videoContainerRef.value) return;
     const containerRect = videoContainerRef.value.getBoundingClientRect();
-    // Diagonal drag distance as fraction of container height — feels natural
-    const deltaX = e.clientX - fontResizeStartX.value;
-    const deltaY = fontResizeStartY.value - e.clientY; // up = positive
-    const delta = (deltaX + deltaY) / 2;
+    const dx = e.clientX - fontResizeStartX.value;
+    const dy = e.clientY - fontResizeStartY.value;
+    // Away from corner = bigger. Each corner's outward direction:
+    // tl: left(-x) and up(-y)   = bigger → signX=-1, signY=-1
+    // tr: right(+x) and up(-y)  = bigger → signX=+1, signY=-1
+    // bl: left(-x) and down(+y) = bigger → signX=-1, signY=+1
+    // br: right(+x) and down(+y)= bigger → signX=+1, signY=+1
+    const signX = (fontResizeCorner.value === 'tr' || fontResizeCorner.value === 'br') ? 1 : -1;
+    const signY = (fontResizeCorner.value === 'bl' || fontResizeCorner.value === 'br') ? 1 : -1;
+    const delta = (dx * signX + dy * signY) / 2;
     const scaledDelta = (delta / containerRect.height) * 200;
     const newSize = Math.max(8, Math.min(200, fontResizeStartSize.value + scaledDelta));
     emit('subtitleFontSizeChange', Math.round(newSize));
@@ -1595,7 +1604,7 @@
     border: 1px dashed rgba(255, 255, 255, 0.45);
     border-radius: 4px;
     box-sizing: border-box;
-    padding: 20px 6px 6px;
+    padding: 18px 0 0 0; /* top only — for drag bar; no side/bottom padding so box fits text */
     cursor: move;
     user-select: none;
     transition: border-color 0.15s;
@@ -1628,29 +1637,6 @@
     pointer-events: none;
     user-select: none;
   }
-
-  /* Corner resize handles — drag to scale font size */
-  .subtitle-corner-handle {
-    position: absolute;
-    width: 10px;
-    height: 10px;
-    background: rgba(255, 255, 255, 0.9);
-    border: 1px solid rgba(0, 0, 0, 0.4);
-    border-radius: 2px;
-    cursor: nwse-resize;
-    z-index: 2;
-    transition: background 0.15s, transform 0.15s;
-  }
-
-  .subtitle-corner-handle:hover {
-    background: #ffffff;
-    transform: scale(1.3);
-  }
-
-  .subtitle-corner-handle--tl { top: -5px; left: -5px; cursor: nwse-resize; }
-  .subtitle-corner-handle--tr { top: -5px; right: -5px; cursor: nesw-resize; }
-  .subtitle-corner-handle--bl { bottom: -5px; left: -5px; cursor: nesw-resize; }
-  .subtitle-corner-handle--br { bottom: -5px; right: -5px; cursor: nwse-resize; }
 
   /* Subtitle word animation styles */
   .subtitle-text-container {

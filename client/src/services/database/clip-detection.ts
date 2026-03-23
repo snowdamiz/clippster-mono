@@ -505,28 +505,46 @@ export async function persistClipDetectionResults(
   subtitleSettings?: { enabled: boolean; presetId: string } | null
 ): Promise<string> {
   const startTime = Date.now();
+  
+  console.log('[Database] persistClipDetectionResults called with:', {
+    projectId,
+    detectionResultsKeys: Object.keys(detectionResults),
+    clipsType: typeof detectionResults.clips,
+    clipsIsArray: Array.isArray(detectionResults.clips),
+    clipsLength: Array.isArray(detectionResults.clips) ? detectionResults.clips.length : 'N/A',
+  });
+  
   // Check for nested structure in clips property
   if (
     detectionResults.clips &&
     typeof detectionResults.clips === 'object' &&
     (detectionResults.clips as any).clips
   ) {
+    console.log('[Database] Found nested clips structure, unwrapping...');
     (detectionResults as any).clips = (detectionResults.clips as any).clips;
   }
 
   // Double-check if clips might be in a different property
   if (!detectionResults.clips || (detectionResults.clips as any[]).length === 0) {
+    console.log('[Database] No clips found in clips property, searching other properties...');
     for (const key of Object.keys(detectionResults)) {
       const value = detectionResults[key as keyof typeof detectionResults];
       if (Array.isArray(value) && value.length > 0) {
         // Check if this looks like clips data
         if ((value[0] as any)?.id || (value[0] as any)?.title || (value[0] as any)?.segments) {
+          console.log(`[Database] Found clips in property: ${key}`);
           (detectionResults as any).clips = value;
           break;
         }
       }
     }
   }
+  
+  console.log('[Database] After extraction - clips:', {
+    hasClips: !!detectionResults.clips,
+    isArray: Array.isArray(detectionResults.clips),
+    length: Array.isArray(detectionResults.clips) ? detectionResults.clips.length : 'N/A',
+  });
 
   // Ensure clip versioning tables exist before proceeding
   await ensureClipVersioningTables();
