@@ -802,6 +802,7 @@ defmodule ClippsterServerWeb.AuthController do
         avatar_url: user.avatar_url,
         wallet_address: user.wallet_address,
         is_admin: user.is_admin,
+        is_moderator: user.is_moderator,
         ai_editor_enabled: user.ai_editor_enabled,
         campaigns_enabled: user.campaigns_enabled,
         account_type: user.account_type,

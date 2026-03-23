@@ -873,7 +873,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+  import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import {
     WrenchIcon,
     CheckIcon,
@@ -1509,7 +1509,7 @@
     const minDropdownHeight = 80; // minimum usable height
     const viewportHeight = window.innerHeight;
     const viewportWidth = window.innerWidth;
-    const spacing = 4;
+    const spacing = 8;
 
     // Calculate available space
     const spaceBelow = viewportHeight - rect.bottom - spacing;
@@ -1518,13 +1518,14 @@
     let top: string;
     let maxHeight: string;
 
-    // Prefer showing below, but switch to above if not enough space below and more space above
-    const showAbove = spaceBelow < minDropdownHeight && spaceAbove > spaceBelow;
+    // Show above if there's not enough space below for at least 150px (enough for ~3 items)
+    // OR if there's more space above than below
+    const showAbove = spaceBelow < 150 || (spaceBelow < maxDropdownHeight && spaceAbove > spaceBelow);
 
     if (showAbove) {
       // Show above the button
       const availableHeight = Math.min(maxDropdownHeight, spaceAbove);
-      maxHeight = `${availableHeight}px`;
+      maxHeight = `${Math.max(availableHeight, minDropdownHeight)}px`;
       top = `${rect.top - availableHeight - spacing}px`;
     } else {
       // Show below the button
@@ -1555,19 +1556,57 @@
     };
   }
 
-  function toggleIntroDropdown() {
-    if (introButtonRef.value) {
-      introDropdownPosition.value = calculateDropdownPosition(introButtonRef.value);
+  async function toggleIntroDropdown() {
+    console.log('[ClipBuildSettingsDialog] toggleIntroDropdown called');
+    console.log('[ClipBuildSettingsDialog] hasOrgOrCampaignSelected:', hasOrgOrCampaignSelected.value);
+    console.log('[ClipBuildSettingsDialog] intros.value.length:', intros.value.length);
+    
+    // Wait for next tick to ensure button ref is available after template renders
+    await nextTick();
+    
+    if (!introButtonRef.value) {
+      console.warn('[ClipBuildSettingsDialog] Intro button ref not available');
+      return;
     }
+    
+    console.log('[ClipBuildSettingsDialog] Calculating intro dropdown position...');
+    introDropdownPosition.value = calculateDropdownPosition(introButtonRef.value);
+    console.log('[ClipBuildSettingsDialog] Intro dropdown position:', {
+      top: introDropdownPosition.value.top,
+      left: introDropdownPosition.value.left,
+      width: introDropdownPosition.value.width,
+      maxHeight: introDropdownPosition.value.maxHeight
+    });
+    
     showIntroDropdown.value = !showIntroDropdown.value;
+    console.log('[ClipBuildSettingsDialog] showIntroDropdown.value:', showIntroDropdown.value);
     showOutroDropdown.value = false;
   }
 
-  function toggleOutroDropdown() {
-    if (outroButtonRef.value) {
-      outroDropdownPosition.value = calculateDropdownPosition(outroButtonRef.value);
+  async function toggleOutroDropdown() {
+    console.log('[ClipBuildSettingsDialog] toggleOutroDropdown called');
+    console.log('[ClipBuildSettingsDialog] hasOrgOrCampaignSelected:', hasOrgOrCampaignSelected.value);
+    console.log('[ClipBuildSettingsDialog] outros.value.length:', outros.value.length);
+    
+    // Wait for next tick to ensure button ref is available after template renders
+    await nextTick();
+    
+    if (!outroButtonRef.value) {
+      console.warn('[ClipBuildSettingsDialog] Outro button ref not available');
+      return;
     }
+    
+    console.log('[ClipBuildSettingsDialog] Calculating outro dropdown position...');
+    outroDropdownPosition.value = calculateDropdownPosition(outroButtonRef.value);
+    console.log('[ClipBuildSettingsDialog] Outro dropdown position:', {
+      top: outroDropdownPosition.value.top,
+      left: outroDropdownPosition.value.left,
+      width: outroDropdownPosition.value.width,
+      maxHeight: outroDropdownPosition.value.maxHeight
+    });
+    
     showOutroDropdown.value = !showOutroDropdown.value;
+    console.log('[ClipBuildSettingsDialog] showOutroDropdown.value:', showOutroDropdown.value);
     showIntroDropdown.value = false;
   }
 
@@ -1842,7 +1881,15 @@
   const hasOrgOrCampaignSelected = computed(() => {
     const hasSelectedOrg = availableOrgs.value.some(org => org.selected);
     const hasSelectedCampaign = availableCampaignSelections.value.some(c => c.selected);
-    return hasSelectedOrg || hasSelectedCampaign;
+    const result = hasSelectedOrg || hasSelectedCampaign;
+    console.log('[ClipBuildSettingsDialog] hasOrgOrCampaignSelected computed:', {
+      hasSelectedOrg,
+      hasSelectedCampaign,
+      result,
+      availableOrgs: availableOrgs.value.map(o => ({ name: o.profile.name, selected: o.selected })),
+      availableCampaigns: availableCampaignSelections.value.map(c => ({ title: c.campaign.title, selected: c.selected }))
+    });
+    return result;
   });
   
   // Get total number of builds that will be created
@@ -3192,7 +3239,7 @@
     border-radius: 8px;
     padding: 0.25rem;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-    z-index: 9999;
+    z-index: 10001;
     overflow-y: auto;
   }
 

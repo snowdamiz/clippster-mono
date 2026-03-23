@@ -3162,29 +3162,14 @@
       // Load VOD preset config and apply aspect ratio
       // Check current project first, then fall back to parent project
       try {
-<<<<<<< HEAD
-        console.log('[ProjectWorkspaceDialog] Project change - VOD preset from project:', newProjectId);
-=======
         console.log('[ProjectWorkspaceDialog] Loading VOD preset config for project:', newProjectId);
->>>>>>> 8136452d9838f178203b070d71cf95734a0d4fab
         vodPresetConfig.value = await getProjectVodPresetConfig(newProjectId);
         console.log('[ProjectWorkspaceDialog] Project change - VOD preset result:', vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found');
         if (!vodPresetConfig.value && props.project?.parent_id) {
-<<<<<<< HEAD
-          console.log('[ProjectWorkspaceDialog] Project change - VOD preset from parent:', props.project.parent_id);
-=======
           console.log('[ProjectWorkspaceDialog] No config for current project, trying parent:', props.project.parent_id);
->>>>>>> 8136452d9838f178203b070d71cf95734a0d4fab
           vodPresetConfig.value = await getProjectVodPresetConfig(props.project.parent_id);
           console.log('[ProjectWorkspaceDialog] Project change - Parent VOD preset result:', vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found');
         }
-<<<<<<< HEAD
-        if (vodPresetConfig.value?.targetAspectRatio) {
-          const parts = vodPresetConfig.value.targetAspectRatio.split(':').map(Number);
-          if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
-            selectedAspectRatio.value = { width: parts[0], height: parts[1] };
-            console.log('[ProjectWorkspaceDialog] Project change - Applied VOD preset aspect ratio:', vodPresetConfig.value.targetAspectRatio);
-=======
         console.log('[ProjectWorkspaceDialog] Loaded VOD preset config:', vodPresetConfig.value);
         if (vodPresetConfig.value?.framingConfig) {
           console.log('[ProjectWorkspaceDialog] VOD preset has framing config:', {
@@ -3202,7 +3187,6 @@
             defaultRatio = '4:5';
           } else if (targetRatio) {
             defaultRatio = targetRatio;
->>>>>>> 8136452d9838f178203b070d71cf95734a0d4fab
           }
           
           console.log('[ProjectWorkspaceDialog] Setting default preview aspect ratio:', defaultRatio);

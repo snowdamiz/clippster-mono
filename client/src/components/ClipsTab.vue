@@ -692,6 +692,7 @@
   } from 'lucide-vue-next';
   import { useAIPermission } from '@/composables/useAIPermission';
   import { useInEditorClips } from '@/stores/useInEditorClips';
+  import { useClipThumbnailStore } from '@/stores/clipThumbnails';
   import ClipBuildSettingsDialog, { type BuildSettings, type BuildTarget, type IntroOutroItem } from './ClipBuildSettingsDialog.vue';
   import FramedThumbnail from './FramedThumbnail.vue';
   import type { SubtitleSettings, WatermarkSettings, IntroOutroRef } from '@/types';
@@ -923,6 +924,9 @@
   const inEditorStore = useInEditorClips();
   inEditorStore.hydrate();
 
+  // Persistent thumbnail cache store
+  const thumbnailStore = useClipThumbnailStore();
+
   // State
   const hoveredClipId = ref<string | null>(null);
   const clipsScrollContainer = ref<HTMLElement | null>(null);
@@ -941,8 +945,8 @@
   const savedFramingMode = ref<'auto' | 'manual' | null>(null);
   const savedFramingConfigs = ref<import('@/types').ManualFramingConfigs | null>(null);
 
-  // Thumbnail cache for clip cards
-  const clipThumbnailCache = ref<Map<string, string>>(new Map());
+  // Use persistent thumbnail cache from store (no longer component-scoped)
+  // const clipThumbnailCache = ref<Map<string, string>>(new Map()); // REMOVED - now using store
 
   // Track if thumbnails are being loaded
   const isLoadingThumbnails = ref(false);
@@ -954,7 +958,7 @@
   const allThumbnailsReady = computed(() => {
     if (props.clips.length === 0) return true;
     // All clips should either have a thumbnail in cache, or not need one (no built_thumbnail_path)
-    return props.clips.every((clip) => clipThumbnailCache.value.has(clip.id) || !clip.built_thumbnail_path);
+    return props.clips.every((clip) => thumbnailStore.hasThumbnail(clip.id) || !clip.built_thumbnail_path);
   });
 
   // Close dropdowns when clicking outside
@@ -989,10 +993,10 @@
       // Only reload thumbnails if clips actually changed (new clips added or clips modified)
       const hasNewClips = !oldClips || newClips.length !== oldClips.length;
       const hasClipsWithNewThumbnails = newClips.some(
-        (clip) => clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
+        (clip) => clip.built_thumbnail_path && !thumbnailStore.hasThumbnail(clip.id)
       );
       const hasClipsNeedingThumbnails = newClips.some(
-        (clip) => !clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
+        (clip) => !clip.built_thumbnail_path && !thumbnailStore.hasThumbnail(clip.id)
       );
 
       if (hasNewClips || hasClipsWithNewThumbnails || hasClipsNeedingThumbnails) {
@@ -1015,43 +1019,10 @@
     { deep: true, immediate: true }
   );
 
-  // Load clip thumbnails into cache
+  // Load clip thumbnails into persistent cache
   async function loadClipThumbnails() {
-    const clipsWithThumbnails = props.clips.filter(
-      (clip) => clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
-    );
-
-    // Load existing thumbnails if there are any
-    if (clipsWithThumbnails.length > 0) {
-      const { invoke } = await import('@tauri-apps/api/core');
-
-      let hasNewThumbnails = false;
-
-      // Load thumbnails in parallel (max 5 at a time)
-      const batchSize = 5;
-      for (let i = 0; i < clipsWithThumbnails.length; i += batchSize) {
-        const batch = clipsWithThumbnails.slice(i, i + batchSize);
-        await Promise.all(
-          batch.map(async (clip) => {
-            try {
-              const dataUrl = await invoke<string>('read_file_as_data_url', {
-                filePath: clip.built_thumbnail_path,
-              });
-              clipThumbnailCache.value.set(clip.id, dataUrl);
-              hasNewThumbnails = true;
-            } catch (err) {
-              console.warn(`[ClipsTab] Failed to load thumbnail for clip ${clip.id}:`, err);
-            }
-          })
-        );
-      }
-
-      // Trigger Vue reactivity by replacing the Map reference
-      // This is necessary because Map.set() mutations don't trigger re-renders
-      if (hasNewThumbnails) {
-        clipThumbnailCache.value = new Map(clipThumbnailCache.value);
-      }
-    }
+    // Use store's batch loading method - it handles deduplication and caching
+    await thumbnailStore.loadThumbnails(props.clips);
 
     // Generate missing thumbnails sequentially (one at a time) for clips without built_thumbnail_path.
     // This covers cases where ProjectWorkspaceDialog is opened directly without going through Projects.vue.
@@ -1113,7 +1084,7 @@
     if (thumbnailGenerationInProgress) return;
 
     const clipsWithoutThumbnails = props.clips.filter(
-      (clip) => !clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
+      (clip) => !clip.built_thumbnail_path && !thumbnailStore.hasThumbnail(clip.id)
     );
 
     if (clipsWithoutThumbnails.length === 0) return;
@@ -1178,11 +1149,8 @@
             const dataUrl = await invoke<string>('read_file_as_data_url', {
               filePath: thumbnailPath,
             });
-            clipThumbnailCache.value.set(clip.id, dataUrl);
+            thumbnailStore.setThumbnail(clip.id, dataUrl);
             hasNewThumbnails = true;
-
-            // Trigger Vue reactivity after each thumbnail so they appear incrementally
-            clipThumbnailCache.value = new Map(clipThumbnailCache.value);
 
             // Persist to database (non-blocking)
             updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
@@ -1199,15 +1167,12 @@
       thumbnailGenerationInProgress = false;
     }
 
-    // Final reactivity trigger in case the incremental ones were batched
-    if (hasNewThumbnails) {
-      clipThumbnailCache.value = new Map(clipThumbnailCache.value);
-    }
+    // No need for final reactivity trigger - store handles it
   }
 
   // Get thumbnail URL for a clip
   function getClipThumbnail(clipId: string): string | null {
-    return clipThumbnailCache.value.get(clipId) || null;
+    return thumbnailStore.getThumbnail(clipId);
   }
 
   // Check if VOD preset has framing regions configured

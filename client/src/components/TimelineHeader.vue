@@ -55,23 +55,6 @@
         </button>
       </div>
 
-      <!-- Subtitles Button -->
-      <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
-        <button
-          @click="$emit('toggleSubtitles')"
-          :disabled="clipCount === 0"
-          :class="[
-            'p-1.5 rounded-md transition-all duration-150',
-            clipCount > 0
-              ? 'text-cyan-300 hover:bg-gradient-to-b hover:from-cyan-500/20 hover:to-cyan-600/10 hover:shadow-[0_0_8px_rgba(34,211,153,0.15)]'
-              : 'text-white/15 cursor-not-allowed',
-          ]"
-          :title="clipCount > 0 ? 'Add or edit subtitles' : 'Add clips to enable subtitles'"
-        >
-          <Captions :size="14" />
-        </button>
-      </div>
-
       <!-- Playback Controls Group -->
       <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
         <button
@@ -105,6 +88,22 @@
           title="Seek forward (→ arrow key)"
         >
           <FastForward :size="14" />
+        </button>
+        <div class="w-px h-4 bg-white/8 mx-0.5"></div>
+        <!-- Subtitles Button -->
+        <button
+          @click="$emit('toggleSubtitles')"
+          :disabled="clipCount === 0"
+          :class="[
+            'px-2 py-1.5 rounded-md transition-all duration-150 flex items-center gap-1.5',
+            clipCount > 0
+              ? 'text-cyan-300 hover:bg-gradient-to-b hover:from-cyan-500/20 hover:to-cyan-600/10 hover:shadow-[0_0_8px_rgba(34,211,153,0.15)]'
+              : 'text-white/15 cursor-not-allowed',
+          ]"
+          :title="clipCount > 0 ? 'Add or edit subtitles' : 'Add clips to enable subtitles'"
+        >
+          <Captions :size="14" />
+          <span class="text-[11px] font-medium">Subtitles</span>
         </button>
       </div>
     </div>
