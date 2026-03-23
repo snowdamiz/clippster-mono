@@ -756,6 +756,55 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   @doc """
+  Extend a user's subscription by a specified number of days.
+  Requires admin authentication.
+  """
+  def extend_subscription(conn, %{"user_id" => user_id_string} = params) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        days = Map.get(params, "days", 30)
+        grant_credits = Map.get(params, "grant_credits", false)
+
+        days_int = parse_days(days)
+        grant_credits_bool = parse_boolean(grant_credits)
+
+        case Subscriptions.admin_extend_subscription(user_id, days_int, grant_credits_bool) do
+          {:ok, _result} ->
+            subscription_info = Subscriptions.get_subscription_status(user_id)
+
+            json(conn, %{
+              success: true,
+              message: "Successfully extended subscription by #{days_int} days",
+              subscription: subscription_info
+            })
+
+          {:error, :no_tier} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "User does not have a subscription tier"})
+
+          {:error, :invalid_tier} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "User has an invalid subscription tier"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{
+              success: false,
+              error: "Failed to extend subscription: #{inspect(reason)}"
+            })
+        end
+
+      {:error, _} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
   Cancel a user's subscription.
   Requires admin authentication.
   """

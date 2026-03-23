@@ -1218,15 +1218,47 @@
     );
   });
 
+  // Cache for raw video paths by project ID
+  const rawVideoPathCache = ref<Map<string, string>>(new Map());
+
   // Get video path for a clip (for framed thumbnail rendering)
   function getClipVideoPath(clip: ClipWithVersion): string | null {
     // Use the project's raw video path for rendering framed thumbnails
     // We can't use clip.file_path as it might point to a build output
-    if (!props.projectId) return null;
+    const projectId = clip.project_id || props.projectId;
+    if (!projectId) return null;
     
-    // Return a video server URL that the FramedThumbnail component can load
-    // The actual video path will be resolved by the video server
-    return `http://localhost:48276/video/${props.projectId}`;
+    // Check cache first
+    const cachedPath = rawVideoPathCache.value.get(projectId);
+    if (cachedPath) {
+      // Return a video server URL with base64-encoded file path
+      const encodedPath = btoa(cachedPath);
+      return `http://localhost:48276/video/${encodedPath}`;
+    }
+    
+    // Load raw video path asynchronously and cache it
+    loadRawVideoPath(projectId);
+    
+    // Return null for now - component will re-render when cache is populated
+    return null;
+  }
+
+  // Load raw video path for a project and cache it
+  async function loadRawVideoPath(projectId: string) {
+    if (rawVideoPathCache.value.has(projectId)) return;
+    
+    try {
+      const { getRawVideosByProjectId } = await import('@/services/database');
+      const rawVideos = await getRawVideosByProjectId(projectId);
+      
+      if (rawVideos.length > 0) {
+        rawVideoPathCache.value.set(projectId, rawVideos[0].file_path);
+        // Trigger reactivity
+        rawVideoPathCache.value = new Map(rawVideoPathCache.value);
+      }
+    } catch (err) {
+      console.warn(`[ClipsTab] Failed to load raw video path for project ${projectId}:`, err);
+    }
   }
 
   // Parse aspect ratio string (e.g., "9:16") to { width, height } object
