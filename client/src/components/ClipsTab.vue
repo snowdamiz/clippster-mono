@@ -208,8 +208,17 @@
                 <div class="flex gap-3 p-3 pl-4">
                   <!-- Thumbnail -->
                   <div class="flex-shrink-0 w-24 h-16 rounded-md overflow-hidden bg-black/30 border border-border/30 relative">
+                    <!-- Framed thumbnail when VOD preset has framing regions -->
+                    <FramedThumbnail
+                      v-if="hasVodFraming && getClipVideoPath(clip)"
+                      :video-src="getClipVideoPath(clip)!"
+                      :framing-regions="vodPresetConfig!.framingConfig!.regions"
+                      :aspect-ratio="parseAspectRatio(vodPresetConfig!.targetAspectRatio)"
+                      :seek-time="getClipMidpoint(clip)"
+                    />
+                    <!-- Standard thumbnail -->
                     <img
-                      v-if="getClipThumbnail(clip.id)"
+                      v-else-if="getClipThumbnail(clip.id)"
                       :src="getClipThumbnail(clip.id)!"
                       :alt="clip.current_version_name || clip.name || 'Clip thumbnail'"
                       class="w-full h-full object-cover"
@@ -684,6 +693,7 @@
   import { useAIPermission } from '@/composables/useAIPermission';
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import ClipBuildSettingsDialog, { type BuildSettings, type BuildTarget, type IntroOutroItem } from './ClipBuildSettingsDialog.vue';
+  import FramedThumbnail from './FramedThumbnail.vue';
   import type { SubtitleSettings, WatermarkSettings, IntroOutroRef } from '@/types';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import type { AnalyzeSpeakersResponse } from '@/services/speaker-detection-api';
@@ -1198,6 +1208,74 @@
   // Get thumbnail URL for a clip
   function getClipThumbnail(clipId: string): string | null {
     return clipThumbnailCache.value.get(clipId) || null;
+  }
+
+  // Check if VOD preset has framing regions configured
+  const hasVodFraming = computed(() => {
+    return !!(
+      props.vodPresetConfig?.framingConfig?.regions &&
+      props.vodPresetConfig.framingConfig.regions.length > 0
+    );
+  });
+
+  // Cache for raw video paths by project ID
+  const rawVideoPathCache = ref<Map<string, string>>(new Map());
+
+  // Get video path for a clip (for framed thumbnail rendering)
+  function getClipVideoPath(clip: ClipWithVersion): string | null {
+    // Use the project's raw video path for rendering framed thumbnails
+    // We can't use clip.file_path as it might point to a build output
+    const projectId = clip.project_id || props.projectId;
+    if (!projectId) return null;
+    
+    // Check cache first
+    const cachedPath = rawVideoPathCache.value.get(projectId);
+    if (cachedPath) {
+      // Return a video server URL with base64-encoded file path
+      const encodedPath = btoa(cachedPath);
+      return `http://localhost:48276/video/${encodedPath}`;
+    }
+    
+    // Load raw video path asynchronously and cache it
+    loadRawVideoPath(projectId);
+    
+    // Return null for now - component will re-render when cache is populated
+    return null;
+  }
+
+  // Load raw video path for a project and cache it
+  async function loadRawVideoPath(projectId: string) {
+    if (rawVideoPathCache.value.has(projectId)) return;
+    
+    try {
+      const { getRawVideosByProjectId } = await import('@/services/database');
+      const rawVideos = await getRawVideosByProjectId(projectId);
+      
+      if (rawVideos.length > 0) {
+        rawVideoPathCache.value.set(projectId, rawVideos[0].file_path);
+        // Trigger reactivity
+        rawVideoPathCache.value = new Map(rawVideoPathCache.value);
+      }
+    } catch (err) {
+      console.warn(`[ClipsTab] Failed to load raw video path for project ${projectId}:`, err);
+    }
+  }
+
+  // Parse aspect ratio string (e.g., "9:16") to { width, height } object
+  function parseAspectRatio(ratio: string): { width: number; height: number } {
+    const parts = ratio.split(':');
+    if (parts.length !== 2) return { width: 16, height: 9 };
+    return {
+      width: parseInt(parts[0], 10) || 16,
+      height: parseInt(parts[1], 10) || 9,
+    };
+  }
+
+  // Get midpoint time of a clip for thumbnail generation
+  function getClipMidpoint(clip: ClipWithVersion): number {
+    const startTime = clip.current_version_start_time ?? clip.start_time ?? 0;
+    const endTime = clip.current_version_end_time ?? clip.end_time ?? 0;
+    return (startTime + endTime) / 2;
   }
 
   // Sorted clips: by virality descending across all runs

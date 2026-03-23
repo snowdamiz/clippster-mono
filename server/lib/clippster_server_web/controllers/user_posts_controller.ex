@@ -491,6 +491,24 @@ defmodule ClippsterServerWeb.UserPostsController do
 
     case PostForMe.create_social_post(post_params) do
       {:ok, post} ->
+        Logger.info("[UserPosts] PostForMe post created - id: #{post.id}, status: #{post.status}, scheduled_at: #{inspect(post.scheduled_at)}")
+        Logger.info("[UserPosts] PostForMe raw response: #{inspect(post.raw)}")
+        
+        # Check for post results to see if there are any errors
+        case PostForMe.list_social_post_results(%{social_post_id: post.id}) do
+          {:ok, %{data: results}} when is_list(results) and length(results) > 0 ->
+            Enum.each(results, fn result ->
+              if result["success"] == false do
+                Logger.error("[UserPosts] PostForMe publishing failed for post #{post.id}: #{inspect(result["error"])}")
+                Logger.error("[UserPosts] PostForMe result details: #{inspect(result)}")
+              else
+                Logger.info("[UserPosts] PostForMe publishing succeeded for post #{post.id}")
+              end
+            end)
+          _ ->
+            Logger.warning("[UserPosts] No PostForMe results found yet for post #{post.id}")
+        end
+        
         # Try to fetch the post URL and provider_post_id from the feed
         {post_url, provider_post_id} = fetch_post_data_from_feed(account.provider_account_id, post.id)
         {:ok, %{
@@ -500,21 +518,33 @@ defmodule ClippsterServerWeb.UserPostsController do
         }}
 
       {:error, reason} ->
+        Logger.error("[UserPosts] PostForMe post creation failed: #{inspect(reason)}")
         {:error, reason}
     end
   end
 
   # Fetch post URL and provider_post_id from PostForMe feed by post ID
+  # Retries up to 3 times with 3-second delays to allow PostForMe's feed to index the post
   defp fetch_post_data_from_feed(provider_account_id, post_id) do
+    fetch_post_data_from_feed_with_retry(provider_account_id, post_id, 3)
+  end
+
+  defp fetch_post_data_from_feed_with_retry(provider_account_id, post_id, retries_left) do
     case fetch_post_for_me_feed(provider_account_id) do
       {:ok, feed_items} ->
         # Find the post in the feed by social_post_id
         case Enum.find(feed_items, fn item ->
           item["social_post_id"] == post_id
         end) do
-          nil -> 
-            Logger.warning("[UserPosts] Post #{post_id} not found in feed yet, URL and provider_post_id will be nil")
+          nil when retries_left > 0 -> 
+            Logger.info("[UserPosts] Post #{post_id} not found in feed yet, retrying in 3 seconds (#{retries_left} retries left)")
+            Process.sleep(3000)
+            fetch_post_data_from_feed_with_retry(provider_account_id, post_id, retries_left - 1)
+          
+          nil ->
+            Logger.warning("[UserPosts] Post #{post_id} not found in feed after all retries, URL and provider_post_id will be nil")
             {nil, nil}
+          
           item -> 
             url = item["platform_url"]
             provider_id = item["platform_post_id"]
@@ -522,8 +552,13 @@ defmodule ClippsterServerWeb.UserPostsController do
             {url, provider_id}
         end
 
+      {:error, reason} when retries_left > 0 ->
+        Logger.warning("[UserPosts] Failed to fetch feed for data lookup: #{inspect(reason)}, retrying in 3 seconds")
+        Process.sleep(3000)
+        fetch_post_data_from_feed_with_retry(provider_account_id, post_id, retries_left - 1)
+
       {:error, reason} ->
-        Logger.warning("[UserPosts] Failed to fetch feed for data lookup: #{inspect(reason)}")
+        Logger.warning("[UserPosts] Failed to fetch feed for data lookup after all retries: #{inspect(reason)}")
         {nil, nil}
     end
   end

@@ -1195,6 +1195,10 @@
   // Open POI editor for a specific ratio
   function openPOIEditorForRatio(ratio: string) {
     editingAspectRatio.value = ratio;
+    const config = getConfigForRatio(ratio);
+    console.log('[ClipBuildSettingsDialog] Opening POI editor for ratio:', ratio);
+    console.log('[ClipBuildSettingsDialog] Config for ratio:', config);
+    console.log('[ClipBuildSettingsDialog] All manualFramingConfigs:', manualFramingConfigs.value);
     showManualPOIEditor.value = true;
   }
   const introButtonRef = ref<HTMLElement | null>(null);
@@ -1269,6 +1273,8 @@
           const ratio = props.vodPresetConfig.targetAspectRatio;
           manualFramingConfigs.value = { [ratio]: props.vodPresetConfig.framingConfig };
           console.log('[ClipBuildSettingsDialog] Initialized framing configs from VOD preset for ratio:', ratio);
+          console.log('[ClipBuildSettingsDialog] VOD preset framing config:', props.vodPresetConfig.framingConfig);
+          console.log('[ClipBuildSettingsDialog] manualFramingConfigs after init:', manualFramingConfigs.value);
         } else {
           manualFramingConfigs.value = {};
         }

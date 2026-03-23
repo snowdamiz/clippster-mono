@@ -2302,7 +2302,8 @@
     const endDate = new Date(campaign.ends_at);
     const diffMs = endDate.getTime() - now.getTime();
     const diffDays = Math.ceil(diffMs / 86400000);
-    return diffDays;
+    // Return null for campaigns that have already ended
+    return diffDays >= 0 ? diffDays : null;
   };
 
   const getPlatformClass = (platform: string) => {
