@@ -2906,15 +2906,27 @@ async function loadOrgsAndCampaigns() {
       }
     }
     
+    // Filter out ended campaigns (only show active ones)
+    const now = new Date();
+    const activeCampaigns = campaignResults.filter(campaign => {
+      if (!campaign.ends_at) return true; // No end date = always active
+      const endsAt = new Date(campaign.ends_at);
+      return endsAt > now; // Only include if end date is in the future
+    });
+    
     // Convert to CampaignSelection format
-    availableCampaignSelections.value = campaignResults.map(campaign => ({
+    availableCampaignSelections.value = activeCampaigns.map(campaign => ({
       campaign,
       selected: false,
       aspectRatios: [],
     }));
     
     // Also set legacy availableCampaigns for backward compatibility
-    availableCampaigns.value = campaignResults;
+    availableCampaigns.value = activeCampaigns;
+    
+    if (campaignResults.length > activeCampaigns.length) {
+      console.log('[QuickPublishWizard] Filtered out', campaignResults.length - activeCampaigns.length, 'ended campaigns');
+    }
     
     console.log('[QuickPublishWizard] Found', campaignResults.length, 'campaigns');
   } catch (e) {
