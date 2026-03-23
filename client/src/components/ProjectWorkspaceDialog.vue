@@ -2838,6 +2838,7 @@
         await loadVideoForProject();
         // Load timeline clips when dialog opens
         if (props.project) {
+          console.log('[ProjectWorkspaceDialog] Opening workspace for project:', props.project.id, 'parent_id:', props.project.parent_id);
           await loadTimelineClips(props.project.id);
 
           // Load creator profile and apply their default settings (watermark, etc.)
@@ -2847,13 +2848,16 @@
           // Check current project first, then fall back to parent project
           try {
             vodPresetConfig.value = await getProjectVodPresetConfig(props.project.id);
+            console.log('[ProjectWorkspaceDialog] VOD preset from project:', props.project.id, vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found');
             if (!vodPresetConfig.value && props.project.parent_id) {
               vodPresetConfig.value = await getProjectVodPresetConfig(props.project.parent_id);
+              console.log('[ProjectWorkspaceDialog] VOD preset from parent:', props.project.parent_id, vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found');
             }
             if (vodPresetConfig.value?.targetAspectRatio) {
               const parts = vodPresetConfig.value.targetAspectRatio.split(':').map(Number);
               if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
                 selectedAspectRatio.value = { width: parts[0], height: parts[1] };
+                console.log('[ProjectWorkspaceDialog] Applied VOD preset aspect ratio:', vodPresetConfig.value.targetAspectRatio);
               }
             }
             // Apply focal point from framing regions so the preview crops to the right area
@@ -2918,17 +2922,19 @@
 
   // Watch for project changes
   watch(
-    () => props.project?.id,
-    (newProjectId, oldProjectId) => {
-      if (newProjectId) {
+    () => props.project,
+    async (newProject, oldProject) => {
+      if (newProject && oldProject?.id !== newProject.id) {
+        const newProjectId = newProject.id;
+        console.log('[ProjectWorkspaceDialog] Project changed from', oldProject?.id, 'to', newProjectId, 'parent_id:', newProject.parent_id);
         setProgressProjectId(newProjectId.toString());
       } else {
         setProgressProjectId(null);
       }
 
       // When switching projects, restore state from global tracking if available
-      if (newProjectId && newProjectId !== oldProjectId) {
-        const detectionState = getDetectionState(newProjectId);
+      if (newProject && newProject.id !== oldProject?.id) {
+        const detectionState = getDetectionState(newProject.id);
         if (detectionState && detectionState.isActive) {
           // Restore active detection state for this project
           clipGenerationInProgress.value = true;
@@ -2972,14 +2978,19 @@
       // Load VOD preset config and apply aspect ratio
       // Check current project first, then fall back to parent project
       try {
+        console.log('[ProjectWorkspaceDialog] Project change - VOD preset from project:', newProjectId);
         vodPresetConfig.value = await getProjectVodPresetConfig(newProjectId);
+        console.log('[ProjectWorkspaceDialog] Project change - VOD preset result:', vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found');
         if (!vodPresetConfig.value && props.project?.parent_id) {
+          console.log('[ProjectWorkspaceDialog] Project change - VOD preset from parent:', props.project.parent_id);
           vodPresetConfig.value = await getProjectVodPresetConfig(props.project.parent_id);
+          console.log('[ProjectWorkspaceDialog] Project change - Parent VOD preset result:', vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found');
         }
         if (vodPresetConfig.value?.targetAspectRatio) {
           const parts = vodPresetConfig.value.targetAspectRatio.split(':').map(Number);
           if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
             selectedAspectRatio.value = { width: parts[0], height: parts[1] };
+            console.log('[ProjectWorkspaceDialog] Project change - Applied VOD preset aspect ratio:', vodPresetConfig.value.targetAspectRatio);
           }
         }
         // Apply focal point from framing regions

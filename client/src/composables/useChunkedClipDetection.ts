@@ -67,6 +67,9 @@ export function useChunkedClipDetection() {
   // Track multimodal mode for enhanced detection
   let currentMultimodal: boolean = false;
 
+  // Track subtitle settings for clip persistence
+  let currentSubtitleSettings: { enabled: boolean; presetId: string } | null = null;
+
   // Cancel the current detection process and request server-side refund
   async function cancelDetection() {
     if (!isProcessing.value) return;
@@ -160,6 +163,7 @@ export function useChunkedClipDetection() {
       console.log('[ChunkedClipDetection] options.multimodal value:', options.multimodal);
       currentMultimodal = options.multimodal ?? false;
       console.log('[ChunkedClipDetection] Multimodal mode set to:', currentMultimodal);
+      currentSubtitleSettings = options.subtitleSettings ?? null;
 
       isProcessing.value = true;
       progress.value = {
@@ -562,7 +566,7 @@ export function useChunkedClipDetection() {
           serverResponseId: result.jobId || null,
           multimodal: currentMultimodal,
         },
-        null
+        currentSubtitleSettings
       );
 
       // IMPORTANT: When using cached chunks, the full transcript isn't part of the response.

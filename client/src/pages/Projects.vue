@@ -1446,10 +1446,12 @@
   }
 
   async function openVodPresetEditor(project: Project) {
+    console.log('[Projects] Opening VodPresetEditor for project:', project.id, 'parent_id:', project.parent_id);
     vodPresetProject.value = project;
     // Load existing config
     try {
       const config = await getProjectVodPresetConfig(project.id);
+      console.log('[Projects] VodPresetEditor loaded existing config:', config ? `found (${config.targetAspectRatio})` : 'not found');
       vodPresetInitialConfig.value = config;
     } catch (e) {
       console.warn('[Projects] Failed to load VOD preset config:', e);
@@ -1461,9 +1463,11 @@
   async function onVodPresetConfirmed(config: ActiveVodPresetConfig) {
     if (!vodPresetProject.value) return;
     const projectId = vodPresetProject.value.id;
+    console.log('[Projects] Saving VOD preset to project:', projectId, 'aspect ratio:', config.targetAspectRatio);
     try {
       await setProjectVodPreset(projectId, config.presetId, config);
       vodPresetConfigs.value[projectId] = config;
+      console.log('[Projects] VOD preset saved successfully to project:', projectId);
       success('VOD pre-edit settings applied');
     } catch (e) {
       console.error('[Projects] Failed to save VOD preset:', e);
@@ -5012,6 +5016,7 @@
   }
 
   function openWorkspace(project: Project, initialClipId?: string | null) {
+    console.log('[Projects] Opening workspace for project:', project.id, 'parent_id:', project.parent_id);
     workspaceProject.value = project;
     workspaceInitialClipId.value = initialClipId || null;
     showWorkspaceDialog.value = true;
@@ -5556,7 +5561,8 @@
     organizationId: number | null = null,
     multimodal: boolean = false,
     startTime: number = 0,
-    endTime: number = 0
+    endTime: number = 0,
+    subtitleSettings: { enabled: boolean; presetId: string } | null = null
   ) {
     if (!projectToDetect.value || segmentsToDetect.value.length === 0) {
       return;
@@ -5607,6 +5613,7 @@
               multimodal: multimodal,
               startTime: startTime,
               endTime: endTime,
+              subtitleSettings: subtitleSettings,
             });
 
             if (result.success) {
