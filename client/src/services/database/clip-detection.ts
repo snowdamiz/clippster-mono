@@ -672,11 +672,11 @@ export async function persistClipDetectionResults(
 
   // Create detection session
   const sessionId = await createClipDetectionSession(projectId, prompt, {
-    detectionModel: options?.detectionModel || 'claude-3.5-sonnet',
-    serverResponseId: options?.serverResponseId,
+    detectionModel: metadata?.detectionModel || 'claude-3.5-sonnet',
+    serverResponseId: metadata?.serverResponseId,
     qualityScore: detectionResults.validation?.qualityScore,
     totalClipsDetected: detectionResults.clips?.length || 0,
-    processingTimeMs: options?.processingTimeMs || Date.now() - startTime,
+    processingTimeMs: metadata?.processingTimeMs || Date.now() - startTime,
     validationData: detectionResults.validation,
   });
 
@@ -727,12 +727,12 @@ export async function persistClipDetectionResults(
 
     // Generate thumbnail at the midpoint of the clip
     let thumbnailPath: string | undefined;
-    if (options?.videoFilePath && startTime !== undefined && endTime !== undefined) {
+    if (metadata?.videoFilePath && startTime !== undefined && endTime !== undefined) {
       try {
         const midpoint = startTime + (endTime - startTime) / 2;
         const clipId = generateId(); // Pre-generate ID for thumbnail filename
         thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
-          videoPath: options.videoFilePath,
+          videoPath: metadata.videoFilePath,
           timestampSeconds: midpoint,
           outputFilename: `clip_${clipId}`,
         });
@@ -750,7 +750,7 @@ export async function persistClipDetectionResults(
         projectId,
         sessionId,
         clipInfo,
-        options?.videoFilePath,
+        metadata?.videoFilePath,
         thumbnailPath
       );
     } catch (e) {

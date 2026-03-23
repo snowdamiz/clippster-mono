@@ -562,7 +562,7 @@ export function useChunkedClipDetection() {
           serverResponseId: result.jobId || null,
           multimodal: currentMultimodal,
         },
-        options.subtitleSettings || null
+        null
       );
 
       // IMPORTANT: When using cached chunks, the full transcript isn't part of the response.
@@ -679,6 +679,8 @@ export function useChunkedClipDetection() {
 
       return { success: true, sessionId };
     } catch (error) {
+      console.error('[ChunkedClipDetection] processWithCachedChunks FAILED:', error);
+      console.error('[ChunkedClipDetection] Error stack:', error instanceof Error ? error.stack : 'no stack');
       const errorMessage = error instanceof Error ? error.message : String(error);
       return { success: false, error: errorMessage };
     }
