@@ -34,8 +34,66 @@
                 class="workspace-dialog__player-column"
                 :class="{ 'workspace-dialog__player-column--fullscreen': isFullscreen }"
               >
+                <!-- Aspect Ratio Selector (only shown when VOD preset exists) -->
+                <div v-if="vodPresetConfig" class="workspace-dialog__aspect-selector">
+                  <label class="workspace-dialog__aspect-label">Preview:</label>
+                  <CustomDropdown
+                    v-model="previewAspectRatio"
+                    :options="aspectRatioOptions"
+                    placeholder="Select aspect ratio"
+                    class="workspace-dialog__aspect-dropdown"
+                  />
+                  
+                  <!-- Platform Preview Button (only shown for 9:16) -->
+                  <button
+                    v-if="is916"
+                    ref="socialButtonRef"
+                    type="button"
+                    class="workspace-dialog__platform-button"
+                    @click="showSocialMenu = !showSocialMenu"
+                  >
+                    <Smartphone :size="14" />
+                    <span>{{ activeSocialOverlay?.label || 'Platform' }}</span>
+                  </button>
+                </div>
+
+                <!-- Social Overlay Dropdown Menu -->
+                <Teleport to="body">
+                  <Transition name="dropdown">
+                    <div
+                      v-if="showSocialMenu && is916"
+                      class="workspace-dialog__social-menu"
+                      :style="socialMenuStyle"
+                    >
+                      <!-- None option -->
+                      <button
+                        type="button"
+                        class="workspace-dialog__social-option"
+                        :class="{ 'workspace-dialog__social-option--active': !activeSocialOverlay }"
+                        @click="activeSocialOverlay = null; showSocialMenu = false"
+                      >
+                        <span class="workspace-dialog__social-icon">✕</span>
+                        <span class="workspace-dialog__social-label">None</span>
+                      </button>
+                      
+                      <!-- Platform options -->
+                      <button
+                        v-for="preset in SOCIAL_OVERLAY_PRESETS"
+                        :key="preset.platform"
+                        type="button"
+                        class="workspace-dialog__social-option"
+                        :class="{ 'workspace-dialog__social-option--active': activeSocialOverlay?.platform === preset.platform }"
+                        @click="toggleSocialOverlay(preset)"
+                      >
+                        <span class="workspace-dialog__social-icon">{{ preset.icon }}</span>
+                        <span class="workspace-dialog__social-label">{{ preset.label }}</span>
+                      </button>
+                    </div>
+                  </Transition>
+                </Teleport>
+
                 <!-- Video Player Container -->
-                <div class="workspace-dialog__video-wrapper">
+                <div class="workspace-dialog__video-wrapper" style="position: relative;">
                   <VideoPlayer
                     :video-src="videoSrc"
                     :video-loading="videoLoading"
@@ -43,7 +101,7 @@
                     :is-playing="isPlaying"
                     :aspect-ratio="selectedAspectRatio"
                     :focal-point="effectiveFocalPoint"
-                    :framing-regions="vodPresetConfig?.framingConfig?.regions"
+                    :framing-regions="currentFramingRegions"
                     :watermark-settings="watermarkSettings"
                     :watermark-data="currentWatermarkData"
                     :subtitle-settings="activeSubtitleSettings"
@@ -65,6 +123,18 @@
                     @subtitleFontSizeChange="onSubtitleFontSizeChange"
                     @subtitleSelected="onSubtitleSelected"
                   />
+                  
+                  <!-- Social Platform Overlay -->
+                  <div
+                    v-if="activeSocialOverlay"
+                    style="position: absolute; inset: 0; z-index: 100; pointer-events: none; user-select: none;"
+                  >
+                    <SocialOverlay
+                      :preset="activeSocialOverlay"
+                      :canvas-width="selectedAspectRatio.width"
+                      :canvas-height="selectedAspectRatio.height"
+                    />
+                  </div>
                 </div>
 
                 <!-- Video Controls Bar -->
@@ -303,7 +373,7 @@
   import { resolveBrandingProfile } from '@/composables/useBrandingProfileSelection';
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
-  import { X, Film } from 'lucide-vue-next';
+  import { X, Film, Smartphone } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import type { WatermarkSettings } from '@/types';
   import VideoPlayer from './VideoPlayer.vue';
@@ -317,6 +387,10 @@
   import SubtitleEditorDialog from './SubtitleEditorDialog.vue';
   import TranscriptPanel from './TranscriptPanel.vue';
   import SubtitlePropertiesPanel from './SubtitlePropertiesPanel.vue';
+  import CustomDropdown from './CustomDropdown.vue';
+  import SocialOverlay from '@/editor/components/preview/SocialOverlay.vue';
+  import { SOCIAL_OVERLAY_PRESETS } from '@/editor/constants/social-overlay-constants';
+  import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
   import { useTranscriptionOnly } from '@/composables/useTranscriptionOnly';
   import { useRouter } from 'vue-router';
   import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
@@ -430,6 +504,14 @@
 
   // Aspect ratio state
   const selectedAspectRatio = ref({ width: 16, height: 9 });
+  
+  // Preview aspect ratio for video player (separate from selectedAspectRatio used for framing)
+  const previewAspectRatio = ref<string>('16:9');
+
+  // Social overlay state
+  const activeSocialOverlay = ref<SocialOverlayPreset | null>(null);
+  const showSocialMenu = ref(false);
+  const socialButtonRef = ref<HTMLButtonElement | null>(null);
 
   // VOD preset config state
   const vodPresetConfig = ref<ActiveVodPresetConfig | null>(null);
@@ -461,6 +543,95 @@
     if (Math.abs(ratio - 4 / 5) < 0.01) return '4:5';
     return `${width}:${height}`;
   });
+
+  // Available aspect ratios for preview dropdown (16:9 + VOD preset ratios)
+  const availablePreviewRatios = computed(() => {
+    const ratios = ['16:9']; // Always include source ratio
+    
+    if (vodPresetConfig.value?.framingConfig) {
+      // Add the target aspect ratio from VOD preset
+      const targetRatio = vodPresetConfig.value.targetAspectRatio;
+      if (targetRatio && !ratios.includes(targetRatio)) {
+        ratios.push(targetRatio);
+      }
+    }
+    
+    return ratios;
+  });
+
+  // Aspect ratio options for CustomDropdown component
+  const aspectRatioOptions = computed(() => {
+    return availablePreviewRatios.value.map(ratio => ({
+      label: ratio,
+      value: ratio
+    }));
+  });
+
+  // Check if current aspect ratio is 9:16 (vertical)
+  const is916 = computed(() => previewAspectRatio.value === '9:16');
+
+  // Social menu positioning
+  const socialMenuStyle = computed(() => {
+    const el = socialButtonRef.value;
+    if (!el) return {};
+    const rect = el.getBoundingClientRect();
+    return {
+      top: `${rect.bottom + 6}px`,
+      left: `${rect.left + rect.width / 2}px`,
+      transform: 'translateX(-50%)',
+    };
+  });
+
+  // Framing regions for the currently selected preview aspect ratio
+  const currentFramingRegions = computed(() => {
+    if (previewAspectRatio.value === '16:9') {
+      return undefined; // No framing for source ratio
+    }
+    
+    if (vodPresetConfig.value?.framingConfig && 
+        vodPresetConfig.value.targetAspectRatio === previewAspectRatio.value) {
+      return vodPresetConfig.value.framingConfig.regions;
+    }
+    
+    return undefined;
+  });
+
+  // Convert aspect ratio string to {width, height} object
+  const parseAspectRatio = (ratio: string) => {
+    const [width, height] = ratio.split(':').map(Number);
+    return { width, height };
+  };
+
+  // Update preview aspect ratio and apply to video player
+  const setPreviewAspectRatio = (ratio: string) => {
+    previewAspectRatio.value = ratio;
+    selectedAspectRatio.value = parseAspectRatio(ratio);
+  };
+
+  // Watch for preview aspect ratio changes from CustomDropdown
+  watch(previewAspectRatio, (newRatio) => {
+    if (newRatio) {
+      selectedAspectRatio.value = parseAspectRatio(newRatio);
+    }
+  });
+
+  // Hide social overlay when switching away from 9:16
+  watch(is916, (val) => {
+    if (!val) {
+      activeSocialOverlay.value = null;
+      showSocialMenu.value = false;
+    }
+  });
+
+  // Toggle social overlay
+  function toggleSocialOverlay(preset: SocialOverlayPreset) {
+    if (activeSocialOverlay.value?.platform === preset.platform) {
+      activeSocialOverlay.value = null;
+    } else {
+      activeSocialOverlay.value = preset;
+    }
+    showSocialMenu.value = false;
+  }
 
   // Watch for settings or aspect ratio changes to load correct watermark data
   watch(
@@ -2853,6 +3024,13 @@
               vodPresetConfig.value = await getProjectVodPresetConfig(props.project.parent_id);
               console.log('[ProjectWorkspaceDialog] VOD preset from parent:', props.project.parent_id, vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found');
             }
+            console.log('[ProjectWorkspaceDialog] Loaded VOD preset config:', vodPresetConfig.value);
+            if (vodPresetConfig.value?.framingConfig) {
+              console.log('[ProjectWorkspaceDialog] VOD preset has framing config:', {
+                targetAspectRatio: vodPresetConfig.value.targetAspectRatio,
+                regionsCount: vodPresetConfig.value.framingConfig.regions?.length || 0,
+              });
+            }
             if (vodPresetConfig.value?.targetAspectRatio) {
               const parts = vodPresetConfig.value.targetAspectRatio.split(':').map(Number);
               if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
@@ -2959,39 +3137,79 @@
   watch(
     () => props.project?.id,
     async (newProjectId, oldProjectId) => {
-      if (!props.modelValue) return;
-      if (!newProjectId || newProjectId === oldProjectId) return;
+      if (!newProjectId) return;
+      // Allow first load (oldProjectId undefined) or actual project change
+      if (oldProjectId !== undefined && newProjectId === oldProjectId) return;
+      
+      // Skip full reload if dialog isn't open (but still load VOD preset config below)
+      const shouldReloadAssets = props.modelValue;
 
-      // Reset local playback state
-      resetVideoState();
-      timelineClips.value = [];
-      hoveredClipId.value = null;
-      hoveredTimelineClipId.value = null;
-      currentlyPlayingClipId.value = null;
+      if (shouldReloadAssets) {
+        // Reset local playback state
+        resetVideoState();
+        timelineClips.value = [];
+        hoveredClipId.value = null;
+        hoveredTimelineClipId.value = null;
+        currentlyPlayingClipId.value = null;
 
-      // Reload assets for the new project
-      await loadVideos();
-      await loadVideoForProject();
-      await loadTimelineClips(newProjectId);
-      await loadCreatorProfileSettings(newProjectId);
+        // Reload assets for the new project
+        await loadVideos();
+        await loadVideoForProject();
+        await loadTimelineClips(newProjectId);
+        await loadCreatorProfileSettings(newProjectId);
+      }
 
       // Load VOD preset config and apply aspect ratio
       // Check current project first, then fall back to parent project
       try {
+<<<<<<< HEAD
         console.log('[ProjectWorkspaceDialog] Project change - VOD preset from project:', newProjectId);
+=======
+        console.log('[ProjectWorkspaceDialog] Loading VOD preset config for project:', newProjectId);
+>>>>>>> 8136452d9838f178203b070d71cf95734a0d4fab
         vodPresetConfig.value = await getProjectVodPresetConfig(newProjectId);
         console.log('[ProjectWorkspaceDialog] Project change - VOD preset result:', vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found');
         if (!vodPresetConfig.value && props.project?.parent_id) {
+<<<<<<< HEAD
           console.log('[ProjectWorkspaceDialog] Project change - VOD preset from parent:', props.project.parent_id);
+=======
+          console.log('[ProjectWorkspaceDialog] No config for current project, trying parent:', props.project.parent_id);
+>>>>>>> 8136452d9838f178203b070d71cf95734a0d4fab
           vodPresetConfig.value = await getProjectVodPresetConfig(props.project.parent_id);
           console.log('[ProjectWorkspaceDialog] Project change - Parent VOD preset result:', vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found');
         }
+<<<<<<< HEAD
         if (vodPresetConfig.value?.targetAspectRatio) {
           const parts = vodPresetConfig.value.targetAspectRatio.split(':').map(Number);
           if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
             selectedAspectRatio.value = { width: parts[0], height: parts[1] };
             console.log('[ProjectWorkspaceDialog] Project change - Applied VOD preset aspect ratio:', vodPresetConfig.value.targetAspectRatio);
+=======
+        console.log('[ProjectWorkspaceDialog] Loaded VOD preset config:', vodPresetConfig.value);
+        if (vodPresetConfig.value?.framingConfig) {
+          console.log('[ProjectWorkspaceDialog] VOD preset has framing config:', {
+            targetAspectRatio: vodPresetConfig.value.targetAspectRatio,
+            regionsCount: vodPresetConfig.value.framingConfig.regions?.length || 0,
+          });
+          
+          // Set default preview aspect ratio based on priority: 9:16 > 4:5 > first VOD ratio > 16:9
+          const targetRatio = vodPresetConfig.value.targetAspectRatio;
+          let defaultRatio = '16:9';
+          
+          if (targetRatio === '9:16') {
+            defaultRatio = '9:16';
+          } else if (targetRatio === '4:5') {
+            defaultRatio = '4:5';
+          } else if (targetRatio) {
+            defaultRatio = targetRatio;
+>>>>>>> 8136452d9838f178203b070d71cf95734a0d4fab
           }
+          
+          console.log('[ProjectWorkspaceDialog] Setting default preview aspect ratio:', defaultRatio);
+          setPreviewAspectRatio(defaultRatio);
+        } else {
+          // No VOD preset, default to 16:9
+          setPreviewAspectRatio('16:9');
         }
         // Apply focal point from framing regions
         if (vodPresetConfig.value?.framingConfig?.regions?.length) {
@@ -3007,17 +3225,57 @@
         } else {
           vodFocalPointOverride.value = null;
         }
-      } catch {
+      } catch (e) {
+        console.error('[ProjectWorkspaceDialog] Failed to load VOD preset config:', e);
         vodPresetConfig.value = null;
       }
-    }
+    },
+    { immediate: true }
   );
 
-  // Watch for dialog close to disconnect socket
+  // Watch for dialog open to load VOD preset config
   watch(
     () => props.modelValue,
-    (newValue) => {
-      if (!newValue) {
+    async (isOpen) => {
+      if (isOpen && props.project?.id) {
+        // Load VOD preset config when dialog opens with a project
+        try {
+          console.log('[ProjectWorkspaceDialog] Dialog opened, loading VOD preset config for project:', props.project.id);
+          vodPresetConfig.value = await getProjectVodPresetConfig(props.project.id);
+          if (!vodPresetConfig.value && props.project.parent_id) {
+            console.log('[ProjectWorkspaceDialog] No config for current project, trying parent:', props.project.parent_id);
+            vodPresetConfig.value = await getProjectVodPresetConfig(props.project.parent_id);
+          }
+          console.log('[ProjectWorkspaceDialog] Loaded VOD preset config:', vodPresetConfig.value);
+          if (vodPresetConfig.value?.framingConfig) {
+            console.log('[ProjectWorkspaceDialog] VOD preset has framing config:', {
+              targetAspectRatio: vodPresetConfig.value.targetAspectRatio,
+              regionsCount: vodPresetConfig.value.framingConfig.regions?.length || 0,
+            });
+            
+            // Set default preview aspect ratio based on priority: 9:16 > 4:5 > first VOD ratio > 16:9
+            const targetRatio = vodPresetConfig.value.targetAspectRatio;
+            let defaultRatio = '16:9';
+            
+            if (targetRatio === '9:16') {
+              defaultRatio = '9:16';
+            } else if (targetRatio === '4:5') {
+              defaultRatio = '4:5';
+            } else if (targetRatio) {
+              defaultRatio = targetRatio;
+            }
+            
+            console.log('[ProjectWorkspaceDialog] Setting default preview aspect ratio:', defaultRatio);
+            setPreviewAspectRatio(defaultRatio);
+          } else {
+            // No VOD preset, default to 16:9
+            setPreviewAspectRatio('16:9');
+          }
+        } catch (e) {
+          console.error('[ProjectWorkspaceDialog] Failed to load VOD preset config on dialog open:', e);
+          vodPresetConfig.value = null;
+        }
+      } else if (!isOpen) {
         // Disconnect progress socket when dialog closes
         setProgressProjectId(null);
       }
@@ -3291,6 +3549,100 @@
     display: flex !important;
     flex-direction: column !important;
     justify-content: center !important;
+  }
+
+  .workspace-dialog__aspect-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .workspace-dialog__aspect-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+
+  .workspace-dialog__aspect-dropdown {
+    flex: 1;
+    max-width: 150px;
+  }
+
+  .workspace-dialog__platform-button {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .workspace-dialog__platform-button:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .workspace-dialog__social-menu {
+    position: fixed;
+    z-index: 10000;
+    min-width: 180px;
+    background: rgba(24, 24, 27, 0.98);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.5rem;
+    padding: 0.375rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(12px);
+  }
+
+  .workspace-dialog__social-option {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.8125rem;
+    color: rgba(255, 255, 255, 0.7);
+    background: transparent;
+    border: none;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: all 150ms ease;
+    text-align: left;
+  }
+
+  .workspace-dialog__social-option:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  .workspace-dialog__social-option--active {
+    background: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
+  }
+
+  .workspace-dialog__social-option--active:hover {
+    background: rgba(6, 182, 212, 0.2);
+  }
+
+  .workspace-dialog__social-icon {
+    font-size: 1.125rem;
+    line-height: 1;
+  }
+
+  .workspace-dialog__social-label {
+    font-weight: 500;
   }
 
   .workspace-dialog__video-wrapper {
