@@ -34,6 +34,17 @@
                 class="workspace-dialog__player-column"
                 :class="{ 'workspace-dialog__player-column--fullscreen': isFullscreen }"
               >
+                <!-- Aspect Ratio Selector (only shown when VOD preset exists) -->
+                <div v-if="vodPresetConfig" class="workspace-dialog__aspect-selector">
+                  <label class="workspace-dialog__aspect-label">Preview:</label>
+                  <CustomDropdown
+                    v-model="previewAspectRatio"
+                    :options="aspectRatioOptions"
+                    placeholder="Select aspect ratio"
+                    class="workspace-dialog__aspect-dropdown"
+                  />
+                </div>
+
                 <!-- Video Player Container -->
                 <div class="workspace-dialog__video-wrapper">
                   <VideoPlayer
@@ -43,7 +54,7 @@
                     :is-playing="isPlaying"
                     :aspect-ratio="selectedAspectRatio"
                     :focal-point="effectiveFocalPoint"
-                    :framing-regions="vodPresetConfig?.framingConfig?.regions"
+                    :framing-regions="currentFramingRegions"
                     :watermark-settings="watermarkSettings"
                     :watermark-data="currentWatermarkData"
                     @togglePlayPause="togglePlayPause"
@@ -287,6 +298,7 @@
   import ClipDetectionConfirmDialog from './ClipDetectionConfirmDialog.vue';
   import TranscriptionConfirmDialog from './TranscriptionConfirmDialog.vue';
   import TranscriptPanel from './TranscriptPanel.vue';
+  import CustomDropdown from './CustomDropdown.vue';
   import { useTranscriptionOnly } from '@/composables/useTranscriptionOnly';
   import { useRouter } from 'vue-router';
   import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
@@ -391,6 +403,9 @@
 
   // Aspect ratio state
   const selectedAspectRatio = ref({ width: 16, height: 9 });
+  
+  // Preview aspect ratio for video player (separate from selectedAspectRatio used for framing)
+  const previewAspectRatio = ref<string>('16:9');
 
   // VOD preset config state
   const vodPresetConfig = ref<ActiveVodPresetConfig | null>(null);
@@ -421,6 +436,62 @@
     if (Math.abs(ratio - 1) < 0.01) return '1:1';
     if (Math.abs(ratio - 4 / 5) < 0.01) return '4:5';
     return `${width}:${height}`;
+  });
+
+  // Available aspect ratios for preview dropdown (16:9 + VOD preset ratios)
+  const availablePreviewRatios = computed(() => {
+    const ratios = ['16:9']; // Always include source ratio
+    
+    if (vodPresetConfig.value?.framingConfig) {
+      // Add the target aspect ratio from VOD preset
+      const targetRatio = vodPresetConfig.value.targetAspectRatio;
+      if (targetRatio && !ratios.includes(targetRatio)) {
+        ratios.push(targetRatio);
+      }
+    }
+    
+    return ratios;
+  });
+
+  // Aspect ratio options for CustomDropdown component
+  const aspectRatioOptions = computed(() => {
+    return availablePreviewRatios.value.map(ratio => ({
+      label: ratio,
+      value: ratio
+    }));
+  });
+
+  // Framing regions for the currently selected preview aspect ratio
+  const currentFramingRegions = computed(() => {
+    if (previewAspectRatio.value === '16:9') {
+      return undefined; // No framing for source ratio
+    }
+    
+    if (vodPresetConfig.value?.framingConfig && 
+        vodPresetConfig.value.targetAspectRatio === previewAspectRatio.value) {
+      return vodPresetConfig.value.framingConfig.regions;
+    }
+    
+    return undefined;
+  });
+
+  // Convert aspect ratio string to {width, height} object
+  const parseAspectRatio = (ratio: string) => {
+    const [width, height] = ratio.split(':').map(Number);
+    return { width, height };
+  };
+
+  // Update preview aspect ratio and apply to video player
+  const setPreviewAspectRatio = (ratio: string) => {
+    previewAspectRatio.value = ratio;
+    selectedAspectRatio.value = parseAspectRatio(ratio);
+  };
+
+  // Watch for preview aspect ratio changes from CustomDropdown
+  watch(previewAspectRatio, (newRatio) => {
+    if (newRatio) {
+      selectedAspectRatio.value = parseAspectRatio(newRatio);
+    }
   });
 
   // Watch for settings or aspect ratio changes to load correct watermark data
@@ -2579,6 +2650,13 @@
             if (!vodPresetConfig.value && props.project.parent_id) {
               vodPresetConfig.value = await getProjectVodPresetConfig(props.project.parent_id);
             }
+            console.log('[ProjectWorkspaceDialog] Loaded VOD preset config:', vodPresetConfig.value);
+            if (vodPresetConfig.value?.framingConfig) {
+              console.log('[ProjectWorkspaceDialog] VOD preset has framing config:', {
+                targetAspectRatio: vodPresetConfig.value.targetAspectRatio,
+                regionsCount: vodPresetConfig.value.framingConfig.regions?.length || 0,
+              });
+            }
             if (vodPresetConfig.value?.targetAspectRatio) {
               const parts = vodPresetConfig.value.targetAspectRatio.split(':').map(Number);
               if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
@@ -2682,34 +2760,61 @@
   watch(
     () => props.project?.id,
     async (newProjectId, oldProjectId) => {
-      if (!props.modelValue) return;
-      if (!newProjectId || newProjectId === oldProjectId) return;
+      if (!newProjectId) return;
+      // Allow first load (oldProjectId undefined) or actual project change
+      if (oldProjectId !== undefined && newProjectId === oldProjectId) return;
+      
+      // Skip full reload if dialog isn't open (but still load VOD preset config below)
+      const shouldReloadAssets = props.modelValue;
 
-      // Reset local playback state
-      resetVideoState();
-      timelineClips.value = [];
-      hoveredClipId.value = null;
-      hoveredTimelineClipId.value = null;
-      currentlyPlayingClipId.value = null;
+      if (shouldReloadAssets) {
+        // Reset local playback state
+        resetVideoState();
+        timelineClips.value = [];
+        hoveredClipId.value = null;
+        hoveredTimelineClipId.value = null;
+        currentlyPlayingClipId.value = null;
 
-      // Reload assets for the new project
-      await loadVideos();
-      await loadVideoForProject();
-      await loadTimelineClips(newProjectId);
-      await loadCreatorProfileSettings(newProjectId);
+        // Reload assets for the new project
+        await loadVideos();
+        await loadVideoForProject();
+        await loadTimelineClips(newProjectId);
+        await loadCreatorProfileSettings(newProjectId);
+      }
 
       // Load VOD preset config and apply aspect ratio
       // Check current project first, then fall back to parent project
       try {
+        console.log('[ProjectWorkspaceDialog] Loading VOD preset config for project:', newProjectId);
         vodPresetConfig.value = await getProjectVodPresetConfig(newProjectId);
         if (!vodPresetConfig.value && props.project?.parent_id) {
+          console.log('[ProjectWorkspaceDialog] No config for current project, trying parent:', props.project.parent_id);
           vodPresetConfig.value = await getProjectVodPresetConfig(props.project.parent_id);
         }
-        if (vodPresetConfig.value?.targetAspectRatio) {
-          const parts = vodPresetConfig.value.targetAspectRatio.split(':').map(Number);
-          if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
-            selectedAspectRatio.value = { width: parts[0], height: parts[1] };
+        console.log('[ProjectWorkspaceDialog] Loaded VOD preset config:', vodPresetConfig.value);
+        if (vodPresetConfig.value?.framingConfig) {
+          console.log('[ProjectWorkspaceDialog] VOD preset has framing config:', {
+            targetAspectRatio: vodPresetConfig.value.targetAspectRatio,
+            regionsCount: vodPresetConfig.value.framingConfig.regions?.length || 0,
+          });
+          
+          // Set default preview aspect ratio based on priority: 9:16 > 4:5 > first VOD ratio > 16:9
+          const targetRatio = vodPresetConfig.value.targetAspectRatio;
+          let defaultRatio = '16:9';
+          
+          if (targetRatio === '9:16') {
+            defaultRatio = '9:16';
+          } else if (targetRatio === '4:5') {
+            defaultRatio = '4:5';
+          } else if (targetRatio) {
+            defaultRatio = targetRatio;
           }
+          
+          console.log('[ProjectWorkspaceDialog] Setting default preview aspect ratio:', defaultRatio);
+          setPreviewAspectRatio(defaultRatio);
+        } else {
+          // No VOD preset, default to 16:9
+          setPreviewAspectRatio('16:9');
         }
         // Apply focal point from framing regions
         if (vodPresetConfig.value?.framingConfig?.regions?.length) {
@@ -2725,17 +2830,57 @@
         } else {
           vodFocalPointOverride.value = null;
         }
-      } catch {
+      } catch (e) {
+        console.error('[ProjectWorkspaceDialog] Failed to load VOD preset config:', e);
         vodPresetConfig.value = null;
       }
-    }
+    },
+    { immediate: true }
   );
 
-  // Watch for dialog close to disconnect socket
+  // Watch for dialog open to load VOD preset config
   watch(
     () => props.modelValue,
-    (newValue) => {
-      if (!newValue) {
+    async (isOpen) => {
+      if (isOpen && props.project?.id) {
+        // Load VOD preset config when dialog opens with a project
+        try {
+          console.log('[ProjectWorkspaceDialog] Dialog opened, loading VOD preset config for project:', props.project.id);
+          vodPresetConfig.value = await getProjectVodPresetConfig(props.project.id);
+          if (!vodPresetConfig.value && props.project.parent_id) {
+            console.log('[ProjectWorkspaceDialog] No config for current project, trying parent:', props.project.parent_id);
+            vodPresetConfig.value = await getProjectVodPresetConfig(props.project.parent_id);
+          }
+          console.log('[ProjectWorkspaceDialog] Loaded VOD preset config:', vodPresetConfig.value);
+          if (vodPresetConfig.value?.framingConfig) {
+            console.log('[ProjectWorkspaceDialog] VOD preset has framing config:', {
+              targetAspectRatio: vodPresetConfig.value.targetAspectRatio,
+              regionsCount: vodPresetConfig.value.framingConfig.regions?.length || 0,
+            });
+            
+            // Set default preview aspect ratio based on priority: 9:16 > 4:5 > first VOD ratio > 16:9
+            const targetRatio = vodPresetConfig.value.targetAspectRatio;
+            let defaultRatio = '16:9';
+            
+            if (targetRatio === '9:16') {
+              defaultRatio = '9:16';
+            } else if (targetRatio === '4:5') {
+              defaultRatio = '4:5';
+            } else if (targetRatio) {
+              defaultRatio = targetRatio;
+            }
+            
+            console.log('[ProjectWorkspaceDialog] Setting default preview aspect ratio:', defaultRatio);
+            setPreviewAspectRatio(defaultRatio);
+          } else {
+            // No VOD preset, default to 16:9
+            setPreviewAspectRatio('16:9');
+          }
+        } catch (e) {
+          console.error('[ProjectWorkspaceDialog] Failed to load VOD preset config on dialog open:', e);
+          vodPresetConfig.value = null;
+        }
+      } else if (!isOpen) {
         // Disconnect progress socket when dialog closes
         setProgressProjectId(null);
       }
@@ -3009,6 +3154,27 @@
     display: flex !important;
     flex-direction: column !important;
     justify-content: center !important;
+  }
+
+  .workspace-dialog__aspect-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .workspace-dialog__aspect-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+
+  .workspace-dialog__aspect-dropdown {
+    flex: 1;
+    max-width: 150px;
   }
 
   .workspace-dialog__video-wrapper {

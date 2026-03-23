@@ -68,7 +68,8 @@ function formatBudget(budget: string | number) {
 function getDaysRemaining(campaign: Campaign): number | null {
   if (!campaign.ends_at) return null
   const diff = Math.ceil((new Date(campaign.ends_at).getTime() - Date.now()) / 86400000)
-  return diff >= 0 ? diff : 0
+  // Return null for campaigns that have already ended
+  return diff >= 0 ? diff : null
 }
 function getBudgetPercentage(campaign: Campaign): number {
   const budget = parseFloat(campaign.budget || '0')
