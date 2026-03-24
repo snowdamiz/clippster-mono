@@ -1971,8 +1971,10 @@ pub async fn prepare_intro_outro_for_concat(
 
     // Build scale + pad filter to fit intro/outro within target dimensions
     // This maintains aspect ratio and adds black bars if needed (letterbox/pillarbox)
+    // Use trunc(iw/2)*2 to force even dimensions — scale with force_original_aspect_ratio=decrease
+    // can round up by 1px, causing pad to fail with "padded dimensions cannot be smaller than input"
     let scale_pad_filter = format!(
-        "scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black",
+        "scale={}:{}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black",
         crop_w, crop_h, crop_w, crop_h
     );
 

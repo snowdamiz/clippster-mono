@@ -41,6 +41,8 @@ pub struct SubtitleOverride {
     pub position_percentage: f32,
     #[serde(default)]
     pub max_width: Option<f32>,
+    #[serde(default)]
+    pub preset_id: Option<String>,
 }
 
 // Map of aspect ratio string to subtitle override

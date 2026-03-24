@@ -23,6 +23,7 @@ import {
   Briefcase,
 } from 'lucide-react'
 import { getTotalUnread } from '@/services/messagingApi'
+import { api } from '@/lib/api'
 
 function SkeletonCard() {
   return (
@@ -82,6 +83,26 @@ export function OrgHub() {
   } = useOrganization()
   const { hasMultipleOrgs } = useOrganizationSelector()
   const [unreadMessages, setUnreadMessages] = useState(0)
+  const [setupLoading, setSetupLoading] = useState(false)
+
+  // Open Stripe setup for org payment
+  const openStripeSetup = async () => {
+    if (!id || !organization) return
+    setSetupLoading(true)
+    try {
+      const response = await api.post(`/organizations/${id}/payments/stripe/setup`)
+      if (response.data.success && response.data.url) {
+        window.location.href = response.data.url
+      } else {
+        throw new Error(response.data.error || 'Failed to create payment session')
+      }
+    } catch (err) {
+      console.error('Failed to open Stripe setup:', err)
+      // TODO: Show error to user
+    } finally {
+      setSetupLoading(false)
+    }
+  }
 
   useEffect(() => {
     loadOrganization()
@@ -253,15 +274,59 @@ export function OrgHub() {
         <LoadingSkeleton />
       ) : (
         <div className="flex flex-col gap-6 p-6 max-w-[1400px] mx-auto w-full">
-          {/* Page Heading */}
-          <div>
-            <h1 className="text-2xl font-bold text-white mb-[0.2rem] tracking-[-0.02em]">
-              Manage Your Organization
-            </h1>
-            <p className="text-sm text-zinc-500 leading-relaxed m-0">
-              {organization?.description || 'Access team tools, content management, and settings'}
-            </p>
-          </div>
+          {/* Payment Setup Gate */}
+          {!(organization as any)?.setup_completed && role === 'owner' ? (
+            <div className="bg-gradient-to-br from-cyan-500/10 to-blue-500/5 border border-cyan-500/20 rounded-xl p-8 text-center max-w-[600px] mx-auto mb-8">
+              <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                <CreditCard size={48} />
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-3">Complete Your Organization Setup</h2>
+              <p className="text-zinc-400 leading-relaxed mb-8">
+                Your organization has been created with custom billing. Please complete the payment setup to activate your subscription.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8 text-left">
+                <div className="flex justify-between items-center p-3 bg-zinc-900/60 border border-zinc-800 rounded-lg">
+                  <span className="text-zinc-500 text-sm font-medium">Plan:</span>
+                  <span className="text-white text-sm font-semibold">
+                    {(organization as any)?.subscription_tier === 'custom' ? 'Custom' : (organization as any)?.subscription_tier || 'Standard'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-zinc-900/60 border border-zinc-800 rounded-lg">
+                  <span className="text-zinc-500 text-sm font-medium">Monthly Price:</span>
+                  <span className="text-white text-sm font-semibold">
+                    ${(organization as any)?.admin_price_cents ? ((organization as any).admin_price_cents / 100).toFixed(2) : '0.00'}/mo
+                  </span>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-zinc-900/60 border border-zinc-800 rounded-lg">
+                  <span className="text-zinc-500 text-sm font-medium">Seats:</span>
+                  <span className="text-white text-sm font-semibold">{(organization as any)?.max_seats || 'Unlimited'}</span>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-zinc-900/60 border border-zinc-800 rounded-lg">
+                  <span className="text-zinc-500 text-sm font-medium">AI Credits:</span>
+                  <span className="text-white text-sm font-semibold">{(organization as any)?.monthly_credits || 0}/mo</span>
+                </div>
+              </div>
+              <button
+                className="inline-flex items-center gap-2 h-11 px-6 text-sm font-semibold rounded-lg bg-gradient-to-r from-cyan-400 to-cyan-500 text-[#0a0a0b] border-none cursor-pointer transition-all duration-150 hover:opacity-90 hover:translate-y-[-1px] disabled:opacity-60 disabled:cursor-not-allowed mb-4"
+                onClick={openStripeSetup}
+                disabled={setupLoading}
+              >
+                {setupLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                {setupLoading ? 'Redirecting...' : 'Pay Now & Activate'}
+              </button>
+              <p className="text-zinc-500 text-xs m-0">You'll be redirected to Stripe to set up recurring billing.</p>
+            </div>
+          ) : (
+            /* Page Heading */
+            <div>
+              <h1 className="text-2xl font-bold text-white mb-[0.2rem] tracking-[-0.02em]">
+                Manage Your Organization
+              </h1>
+              <p className="text-sm text-zinc-500 leading-relaxed m-0">
+                {organization?.description || 'Access team tools, content management, and settings'}
+              </p>
+            </div>
+          )}
 
           <HubToolSection title="Team" tools={teamTools} />
           <HubToolSection title="Content" tools={contentTools} />

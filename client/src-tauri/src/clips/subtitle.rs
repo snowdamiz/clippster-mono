@@ -217,8 +217,42 @@ pub fn generate_ass_file(
         }
     };
 
-    let primary_color = convert_color(&settings.text_color);
-    let border1_color = convert_color(&settings.border1_color);
+    // Apply per-ratio visual overrides from JSON (set when user picks a different preset per ratio)
+    let (eff_text_color, eff_font_family, eff_font_weight, eff_font_size, eff_border1_color,
+         eff_border1_width, eff_shadow_x, eff_shadow_y, eff_shadow_blur, eff_shadow_color,
+         eff_animation_style) = if let Some(ov) = per_ratio_override {
+        let tc    = ov.get("textColor").and_then(|v| v.as_str()).map(String::from)
+                      .unwrap_or_else(|| settings.text_color.clone());
+        let ff    = ov.get("fontFamily").and_then(|v| v.as_str()).map(String::from)
+                      .unwrap_or_else(|| settings.font_family.clone());
+        let fw    = ov.get("fontWeight").and_then(|v| v.as_f64()).map(|v| v as u32)
+                      .unwrap_or(settings.font_weight);
+        let fs    = ov.get("fontSize").and_then(|v| v.as_f64()).map(|v| v as f32)
+                      .unwrap_or(settings.font_size);
+        let bc1   = ov.get("border1Color").and_then(|v| v.as_str()).map(String::from)
+                      .unwrap_or_else(|| settings.border1_color.clone());
+        let bw1   = ov.get("border1Width").and_then(|v| v.as_f64()).map(|v| v as f32)
+                      .unwrap_or(settings.border1_width);
+        let sx    = ov.get("shadowOffsetX").and_then(|v| v.as_f64()).map(|v| v as f32)
+                      .unwrap_or(settings.shadow_offset_x);
+        let sy    = ov.get("shadowOffsetY").and_then(|v| v.as_f64()).map(|v| v as f32)
+                      .unwrap_or(settings.shadow_offset_y);
+        let sb    = ov.get("shadowBlur").and_then(|v| v.as_f64()).map(|v| v as f32)
+                      .unwrap_or(settings.shadow_blur);
+        let sc    = ov.get("shadowColor").and_then(|v| v.as_str()).map(String::from)
+                      .unwrap_or_else(|| settings.shadow_color.clone());
+        let anim  = ov.get("animationStyle").and_then(|v| v.as_str()).map(String::from)
+                      .unwrap_or_else(|| settings.animation_style.clone());
+        (tc, ff, fw, fs, bc1, bw1, sx, sy, sb, sc, anim)
+    } else {
+        (settings.text_color.clone(), settings.font_family.clone(), settings.font_weight,
+         settings.font_size, settings.border1_color.clone(), settings.border1_width,
+         settings.shadow_offset_x, settings.shadow_offset_y, settings.shadow_blur,
+         settings.shadow_color.clone(), settings.animation_style.clone())
+    };
+
+    let primary_color = convert_color(&eff_text_color);
+    let border1_color = convert_color(&eff_border1_color);
     let border2_color = convert_color(&settings.border2_color);
     let _back_color = convert_color(&settings.background_color);
 
@@ -233,7 +267,7 @@ pub fn generate_ass_file(
         "[Rust] ASS colors - Primary: {}, Border1: {}, Border2: {}",
         primary_color, border1_color, border2_color
     );
-    println!("[Rust] Using font: {}", settings.font_family);
+    println!("[Rust] Using font: {}", eff_font_family);
 
     // Calculate aspect ratio scaling (matches VideoPlayer.vue logic)
     let aspect_ratio_value = if let Some(ar) = aspect_ratio {
@@ -254,23 +288,26 @@ pub fn generate_ass_file(
     // The frontend preview renders fonts larger relative to the video frame due to DPI/scaling differences
     let font_size_scale = font_size_scale * 1.5;
 
-    let adjusted_font_size = (settings.font_size * font_size_scale).round();
+    let adjusted_font_size = (eff_font_size * font_size_scale).round();
     // CSS WebkitTextStroke is centered on the path, so only half extends outwards.
     // ASS Outline is entirely outwards. To match the visual thickness of the frontend,
     // we need to divide the stroke width by 2.
-    let adjusted_border1_width = settings.border1_width * font_size_scale * 0.8;
+    let adjusted_border1_width = eff_border1_width * font_size_scale * 0.8;
     let adjusted_border2_width = settings.border2_width * font_size_scale * 0.8;
     // ASS Shadow parameter is an offset depth, calculate from shadow offset X/Y
     // Use the magnitude of the offset vector for proper shadow distance
     let shadow_offset_magnitude =
-        ((settings.shadow_offset_x.powi(2) + settings.shadow_offset_y.powi(2)).sqrt())
+        ((eff_shadow_x.powi(2) + eff_shadow_y.powi(2)).sqrt())
             * font_size_scale;
     let adjusted_shadow = shadow_offset_magnitude;
     let adjusted_letter_spacing = settings.letter_spacing * font_size_scale;
+    // Suppress unused variable warnings for effective fields used downstream
+    let _ = eff_shadow_blur; let _ = eff_shadow_color;
+    let _ = &eff_animation_style;
 
     println!(
         "[Rust] Font size: {} -> {} (scale: {})",
-        settings.font_size, adjusted_font_size, font_size_scale
+        eff_font_size, adjusted_font_size, font_size_scale
     );
 
     // Calculate margins and positioning to match VideoPlayer.vue
@@ -350,13 +387,13 @@ pub fn generate_ass_file(
     // if the internal family name is just "Montserrat".
 
     // We'll use the base family name in the Style
-    let font_name_for_style = settings.font_family.clone();
+    let font_name_for_style = eff_font_family.clone();
 
     // But we still need to embed the specific font file corresponding to the weight.
     // (This is handled by get_required_font_files and embed_fonts_in_ass)
 
     // Standard ASS Bold flag (only for generic bold, specific weights handled via \fw)
-    let bold = if settings.font_weight >= 700 { -1 } else { 0 };
+    let bold = if eff_font_weight >= 700 { -1 } else { 0 };
 
     println!("[Rust] Font name for ASS: {}", font_name_for_style);
 
@@ -555,7 +592,7 @@ pub fn generate_ass_file(
 
             // Layer 0: Border2Layer base text with all words at normal size
             // Use \fw tag to ensure correct font weight
-            let weight_tag = format!("{{\\fw{}}}", settings.font_weight);
+            let weight_tag = format!("{{\\fw{}}}", eff_font_weight);
             let base_text = chunk
                 .iter()
                 .map(|w| format!("{}{}", weight_tag, w.word))
@@ -583,7 +620,7 @@ pub fn generate_ass_file(
             )
             .unwrap();
 
-            // Layers 1 & 3: If there's an active word, render it scaled on top (for both border layers)
+            // Layers 1 & 3: If there's an active word, render it with the selected animation style
             if let Some(active_idx) = active_word_idx {
                 let active_word = &chunk[active_idx];
                 let word_duration = active_word.end - active_word.start;
@@ -596,49 +633,139 @@ pub fn generate_ass_file(
                     0
                 };
 
-                let scale_up_end = word_start_in_interval + anim_duration_ms;
-
-                // Build text with spaces to position the active word correctly
-                // Use invisible characters (zero-width) for other words to maintain spacing
-                let mut positioned_text_parts = Vec::new();
-                for (k, word) in chunk.iter().enumerate() {
-                    if k == active_idx {
-                        // Active word with animation
-                        positioned_text_parts.push(format!(
-                            "{}{{\\r\\t({},{},\\fscx115\\fscy115)}}{}{{\\fscx100\\fscy100}}",
-                            weight_tag, word_start_in_interval, scale_up_end, word.word
-                        ));
-                    } else {
-                        // Use {\alpha&HFF&} to make word invisible (maintains spacing)
-                        // Still include weight tag to maintain spacing metrics
-                        positioned_text_parts
-                            .push(format!("{}{{\\alpha&HFF&}}{}", weight_tag, word.word));
+                // Build overlay text based on animation style
+                let overlay_text = match eff_animation_style.as_str() {
+                    "none" => {
+                        // No animation: render all words normally (no overlay needed)
+                        String::new()
                     }
+                    "single-word" => {
+                        // Only show the active word, hide others
+                        format!("{}{}", weight_tag, active_word.word)
+                    }
+                    "typewriter" => {
+                        // Typewriter: reveal words one by one, active word appears
+                        let mut parts = Vec::new();
+                        for (k, word) in chunk.iter().enumerate() {
+                            if k <= active_idx {
+                                parts.push(format!("{}{}", weight_tag, word.word));
+                            }
+                        }
+                        parts.join(&word_separator)
+                    }
+                    "wave" => {
+                        // Wave: active word gets a slight vertical offset
+                        let mut parts = Vec::new();
+                        for (k, word) in chunk.iter().enumerate() {
+                            if k == active_idx {
+                                parts.push(format!("{}{{\\t(0,0,\\fry10)}}{}", weight_tag, word.word));
+                            } else {
+                                parts.push(format!("{}{}", weight_tag, word.word));
+                            }
+                        }
+                        parts.join(&word_separator)
+                    }
+                    "glow" => {
+                        // Glow: active word gets a glow effect via shadow
+                        let mut parts = Vec::new();
+                        for (k, word) in chunk.iter().enumerate() {
+                            if k == active_idx {
+                                parts.push(format!("{}{{\\shad4\\bord4\\3c&HFF00FF&}}{}{{\\shad{}\\bord{}\\3c&H000000&}}", 
+                                    weight_tag, word.word, adjusted_shadow, adjusted_border1_width));
+                            } else {
+                                parts.push(format!("{}{}", weight_tag, word.word));
+                            }
+                        }
+                        parts.join(&word_separator)
+                    }
+                    "box-highlight" => {
+                        // Box highlight: active word gets a background box
+                        let mut parts = Vec::new();
+                        for (k, word) in chunk.iter().enumerate() {
+                            if k == active_idx {
+                                // Create a pseudo-background with border and shadow
+                                parts.push(format!("{}{{\\bord6\\shad4\\3c&H000000&\\4a&H80&HFFFFFF&}}{}{{\\bord{}\\shad{}\\3c&H000000&\\4a&H00&}}", 
+                                    weight_tag, word.word, adjusted_border1_width, adjusted_shadow));
+                            } else {
+                                parts.push(format!("{}{}", weight_tag, word.word));
+                            }
+                        }
+                        parts.join(&word_separator)
+                    }
+                    "pop" => {
+                        // Pop: active word scales up more aggressively
+                        let scale_up_end = word_start_in_interval + anim_duration_ms;
+                        let mut positioned_text_parts = Vec::new();
+                        for (k, word) in chunk.iter().enumerate() {
+                            if k == active_idx {
+                                positioned_text_parts.push(format!(
+                                    "{}{{\\r\\t({},{},\\fscx130\\fscy130)}}{}{{\\fscx100\\fscy100}}",
+                                    weight_tag, word_start_in_interval, scale_up_end, word.word
+                                ));
+                            } else {
+                                positioned_text_parts.push(format!("{}{}", weight_tag, word.word));
+                            }
+                        }
+                        positioned_text_parts.join(&word_separator)
+                    }
+                    "zoom" => {
+                        // Zoom: slower scale-up effect
+                        let scale_up_end = word_start_in_interval + (anim_duration_ms * 2);
+                        let mut positioned_text_parts = Vec::new();
+                        for (k, word) in chunk.iter().enumerate() {
+                            if k == active_idx {
+                                positioned_text_parts.push(format!(
+                                    "{}{{\\r\\t({},{},\\fscx110\\fscy110)}}{}{{\\fscx100\\fscy100}}",
+                                    weight_tag, word_start_in_interval, scale_up_end, word.word
+                                ));
+                            } else {
+                                positioned_text_parts.push(format!("{}{}", weight_tag, word.word));
+                            }
+                        }
+                        positioned_text_parts.join(&word_separator)
+                    }
+                    _ => {
+                        // Default karaoke/scale-up animation
+                        let scale_up_end = word_start_in_interval + anim_duration_ms;
+                        let mut positioned_text_parts = Vec::new();
+                        for (k, word) in chunk.iter().enumerate() {
+                            if k == active_idx {
+                                positioned_text_parts.push(format!(
+                                    "{}{{\\r\\t({},{},\\fscx115\\fscy115)}}{}{{\\fscx100\\fscy100}}",
+                                    weight_tag, word_start_in_interval, scale_up_end, word.word
+                                ));
+                            } else {
+                                positioned_text_parts.push(format!("{}{{\\alpha&HFF&}}{}", weight_tag, word.word));
+                            }
+                        }
+                        positioned_text_parts.join(&word_separator)
+                    }
+                };
+
+                // Only render overlay layers if there's content to render
+                if !overlay_text.is_empty() {
+                    // Layer 1: Border2Layer active word (shadow + outer border)
+                    writeln!(
+                        file,
+                        "Dialogue: 1,{},{},Border2Layer,,0,0,0,,{}{}",
+                        format_time(t_start),
+                        format_time(t_end),
+                        pos_tag,
+                        overlay_text
+                    )
+                    .unwrap();
+
+                    // Layer 3: Border1Layer active word (inner border)
+                    writeln!(
+                        file,
+                        "Dialogue: 3,{},{},Border1Layer,,0,0,0,,{}{}",
+                        format_time(t_start),
+                        format_time(t_end),
+                        pos_tag,
+                        overlay_text
+                    )
+                    .unwrap();
                 }
-
-                let overlay_text = positioned_text_parts.join(&word_separator);
-
-                // Layer 1: Border2Layer active word (shadow + outer border)
-                writeln!(
-                    file,
-                    "Dialogue: 1,{},{},Border2Layer,,0,0,0,,{}{}",
-                    format_time(t_start),
-                    format_time(t_end),
-                    pos_tag,
-                    overlay_text
-                )
-                .unwrap();
-
-                // Layer 3: Border1Layer active word (inner border)
-                writeln!(
-                    file,
-                    "Dialogue: 3,{},{},Border1Layer,,0,0,0,,{}{}",
-                    format_time(t_start),
-                    format_time(t_end),
-                    pos_tag,
-                    overlay_text
-                )
-                .unwrap();
             }
         }
     }

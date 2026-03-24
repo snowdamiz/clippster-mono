@@ -226,6 +226,7 @@ export interface SubtitleOverride {
   positionPercentage: number; // Override vertical position (0-100)
   position?: { x: number; y: number }; // Override position as x,y coordinates (0-100)
   maxWidth?: number; // Override max width for this aspect ratio
+  presetId?: string; // Override subtitle style preset for this aspect ratio
 }
 
 // Map of aspect ratio to subtitle overrides

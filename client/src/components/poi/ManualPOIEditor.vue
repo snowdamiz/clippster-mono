@@ -166,29 +166,42 @@
                 @seek-time="handleSeekTime"
               />
 
-              <!-- Subtitle Positioning Controls -->
-              <div v-if="subtitleSettings" class="px-5 py-3 border-t border-zinc-800 bg-zinc-900/50">
-                <div class="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="subtitle-positioning"
-                    v-model="subtitlePositioningEnabled"
-                    class="w-4 h-4 text-blue-600 bg-zinc-800 border-zinc-600 rounded focus:ring-blue-500 focus:ring-2"
-                  />
-                  <label for="subtitle-positioning" class="text-sm font-medium text-white flex items-center gap-2">
-                    <Type class="h-4 w-4 text-purple-400" />
-                    Enable subtitle positioning
+              <!-- Subtitle Controls (only shown when clip has subtitles) -->
+              <div v-if="subtitleSettings" class="border-t border-zinc-800">
+                <!-- Checkbox row -->
+                <div class="px-5 py-3 bg-zinc-900/50">
+                  <label class="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      v-model="subtitlePositioningEnabled"
+                      class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-purple-500 focus:ring-purple-500 focus:ring-offset-0"
+                    />
+                    <CaptionsIcon class="h-4 w-4 text-purple-400 shrink-0" />
+                    <span class="text-sm font-medium text-white">Subtitles</span>
+                    <span class="text-[10px] text-zinc-500 ml-auto">{{ targetAspectRatio }}</span>
                   </label>
-                  <span class="text-[10px] text-zinc-500">{{ targetAspectRatio }}</span>
+                  <p v-if="subtitlePositioningEnabled" class="text-[10px] text-zinc-400 mt-1 ml-7">
+                    Drag to reposition · drag corner to resize
+                  </p>
                 </div>
-                <p class="text-[10px] text-zinc-400 mt-1 ml-7">
-                  Drag subtitles in the preview to adjust their position for this aspect ratio
-                </p>
-              </div>
 
-              <!-- Debug info -->
-              <div v-if="!subtitleSettings" class="px-5 py-3 border-t border-zinc-800 bg-zinc-900/50">
-                <p class="text-[10px] text-amber-400">Debug: subtitleSettings is null/undefined</p>
+                <!-- Preset picker (shown when enabled) -->
+                <div v-if="subtitlePositioningEnabled" class="px-5 pb-3 bg-zinc-900/50">
+                  <p class="text-[10px] text-zinc-500 mb-2">Style for {{ targetAspectRatio }}</p>
+                  <div class="grid grid-cols-5 gap-1.5">
+                    <button
+                      v-for="p in SUBTITLE_PRESETS_FOR_POI"
+                      :key="p.id"
+                      @click="setSubtitlePreset(p.id)"
+                      class="flex flex-col items-center gap-1 px-1 py-2 rounded-lg border transition-all text-center"
+                      :class="localSubtitlePresetId === p.id
+                        ? 'border-purple-500 bg-purple-500/20 text-white'
+                        : 'border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200'"
+                    >
+                      <span class="text-[10px] font-semibold leading-tight">{{ p.name }}</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -258,13 +271,24 @@
     PlayIcon,
     PauseIcon,
     RotateCcwIcon,
+    CaptionsIcon,
   } from 'lucide-vue-next';
+  import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
   import Hls from 'hls.js';
   import POISourcePanel from './POISourcePanel.vue';
   import POITargetPanel from './POITargetPanel.vue';
   import POISegmentTimeline from './POISegmentTimeline.vue';
   import type { ManualRegion, ManualFramingConfig, WatermarkSettings, LayoutOverlay, SegmentRegionConfig, SubtitleSettings } from '@/types';
   import { utf8ToBase64 } from '@/utils/encoding';
+
+  // The 5 presets shown in the POI subtitle picker (matches SubtitleEditorDialog)
+  const SUBTITLE_PRESETS_FOR_POI = [
+    { id: 'mr-beast',          name: 'MrBeast' },
+    { id: 'tiktok-bold',       name: 'TikTok Bold' },
+    { id: 'subtitle-tutorial', name: 'Clean' },
+    { id: 'neon-glow',         name: 'Neon' },
+    { id: 'karaoke',           name: 'Karaoke' },
+  ];
 
   interface WatermarkPreview {
     filePath: string;
@@ -321,7 +345,7 @@
   const emit = defineEmits<{
     'update:modelValue': [value: boolean];
     confirm: [config: ManualFramingConfig];
-    subtitlePositionChange: [position: { x: number; y: number; width?: number }];
+    subtitlePositionChange: [position: { x: number; y: number; width?: number; presetId?: string }];
   }>();
 
   // Local state
@@ -350,6 +374,8 @@
     props.subtitlePositionOverride ? { ...props.subtitlePositionOverride } : { x: 50, y: 85, width: 80 }
   );
   const subtitlePositioningEnabled = ref(false);
+  // Track the selected preset for this ratio (defaults to the clip's existing preset)
+  const localSubtitlePresetId = ref<string>(props.subtitleSettings?.selectedPresetId ?? '');
   const isSeeking = ref(false);
   const progressBarRef = ref<HTMLElement | null>(null);
 
@@ -733,11 +759,31 @@
     input.click();
   }
 
-  // Handle subtitle position changes
+  // Handle subtitle position changes (from dragging in POITargetPanel)
   function onSubtitlePositionChange(position: { x: number; y: number; width?: number }) {
     localSubtitlePosition.value = { ...position };
-    emit('subtitlePositionChange', { ...position });
+    emit('subtitlePositionChange', { ...position, presetId: localSubtitlePresetId.value || undefined });
   }
+
+  // Set a subtitle preset for this aspect ratio
+  function setSubtitlePreset(presetId: string) {
+    localSubtitlePresetId.value = presetId;
+    emit('subtitlePositionChange', { ...localSubtitlePosition.value, presetId });
+  }
+
+  // Watch for subtitleSettings prop changes to sync initial preset id
+  watch(
+    () => props.subtitleSettings?.selectedPresetId,
+    (id) => { if (id && !localSubtitlePresetId.value) localSubtitlePresetId.value = id; },
+    { immediate: true }
+  );
+
+  // Sync subtitle position when prop changes (dialog reopened for a different ratio)
+  watch(
+    () => props.subtitlePositionOverride,
+    (pos) => { if (pos) localSubtitlePosition.value = { ...pos }; },
+    { deep: true }
+  );
 
   // Add a new segment
   function addSegment() {

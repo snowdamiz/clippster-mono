@@ -648,7 +648,7 @@
       :default-intro="creatorDefaultIntro"
       :default-outro="creatorDefaultOutro"
       :thumbnail-url="videoThumbnailUrl"
-      :subtitle-settings="subtitleSettings"
+      :subtitle-settings="derivedSubtitleSettings ?? subtitleSettings"
       :initial-aspect-ratios="savedAspectRatios"
       :initial-framing-mode="savedFramingMode"
       :initial-framing-configs="savedFramingConfigs"
@@ -696,6 +696,7 @@
   import ClipBuildSettingsDialog, { type BuildSettings, type BuildTarget, type IntroOutroItem } from './ClipBuildSettingsDialog.vue';
   import FramedThumbnail from './FramedThumbnail.vue';
   import type { SubtitleSettings, WatermarkSettings, IntroOutroRef } from '@/types';
+  import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import type { AnalyzeSpeakersResponse } from '@/services/speaker-detection-api';
   import type { FramingStrategy as DbFramingStrategy, ParsedStrategyData } from '@/services/database/speaker-detection';
@@ -933,6 +934,55 @@
   const clipElements = ref<Map<string, HTMLElement>>(new Map());
   const showBuildSettingsDialog = ref(false);
   const clipToBuild = ref<ClipWithVersion | null>(null);
+
+  // Derive SubtitleSettings from the clip being built (reads preset from DB data on the clip)
+  const derivedSubtitleSettings = computed((): SubtitleSettings | null => {
+    const clip = clipToBuild.value as any;
+    if (!clip?.subtitle_enabled || !clip?.subtitle_preset_id) return null;
+    const preset = CAPTION_PRESETS.find((p) => p.id === clip.subtitle_preset_id);
+    if (!preset) return null;
+    const fontWeightMap: Record<string, number> = {
+      normal: 400, bold: 700,
+      '100': 100, '200': 200, '300': 300, '400': 400,
+      '500': 500, '600': 600, '700': 700, '800': 800, '900': 900,
+    };
+    const animMap: Record<string, SubtitleSettings['animationStyle']> = {
+      none: 'none', karaoke: 'karaoke', 'karaoke-scale': 'karaoke',
+      zoom: 'zoom', pop: 'pop', glow: 'glow',
+      'box-highlight': 'box-highlight', typewriter: 'typewriter', wave: 'wave',
+    };
+    return {
+      enabled: true,
+      selectedPresetId: preset.id,
+      fontFamily: preset.fontFamily,
+      fontSize: preset.fontSize,
+      fontWeight: fontWeightMap[String(preset.fontWeight)] ?? 700,
+      textColor: preset.color,
+      backgroundColor: preset.backgroundColor,
+      backgroundEnabled: preset.backgroundColor !== 'transparent',
+      position: 'bottom' as const,
+      positionPercentage: clip.subtitle_position_y ?? 85,
+      maxWidth: clip.subtitle_position_width ?? 90,
+      animationStyle: animMap[preset.highlightStyle] ?? 'none',
+      highlightColor: preset.highlightColor,
+      border1Width: preset.stroke?.width ?? 0,
+      border1Color: preset.stroke?.color ?? '#000000',
+      border2Width: 0,
+      border2Color: '#000000',
+      shadowBlur: preset.shadow?.blur ?? 0,
+      shadowOffsetX: preset.shadow?.offsetX ?? 0,
+      shadowOffsetY: preset.shadow?.offsetY ?? 0,
+      shadowColor: preset.shadow?.color ?? '#000000',
+      lineHeight: preset.lineHeight,
+      letterSpacing: preset.letterSpacing,
+      textAlign: 'center' as const,
+      textOffsetX: 0,
+      textOffsetY: 0,
+      padding: 0,
+      borderRadius: 0,
+      wordSpacing: 0.35,
+    };
+  });
   const openDownloadDropdownId = ref<string | null>(null);
   const dropdownButtonRefs = ref<Map<string, HTMLElement>>(new Map());
 
@@ -2646,26 +2696,76 @@
         }
       }
 
+      // Effective subtitle settings: prefer derived (from clip DB columns) over prop
+      const effectiveSubtitleSettings = derivedSubtitleSettings.value ?? props.subtitleSettings ?? null;
+
+      // Helper: build SubtitleSettings from a CAPTION_PRESETS id
+      function buildSettingsFromPresetId(presetId: string): Partial<SubtitleSettings> | null {
+        const preset = CAPTION_PRESETS.find((p) => p.id === presetId);
+        if (!preset) return null;
+        const fontWeightMap: Record<string, number> = {
+          normal: 400, bold: 700,
+          '100': 100, '200': 200, '300': 300, '400': 400,
+          '500': 500, '600': 600, '700': 700, '800': 800, '900': 900,
+        };
+        const animMap: Record<string, SubtitleSettings['animationStyle']> = {
+          none: 'none', karaoke: 'karaoke', 'karaoke-scale': 'karaoke',
+          zoom: 'zoom', pop: 'pop', glow: 'glow',
+          'box-highlight': 'box-highlight', typewriter: 'typewriter', wave: 'wave',
+        };
+        return {
+          selectedPresetId: preset.id,
+          fontFamily: preset.fontFamily,
+          fontSize: preset.fontSize,
+          fontWeight: fontWeightMap[String(preset.fontWeight)] ?? 700,
+          textColor: preset.color,
+          backgroundColor: preset.backgroundColor,
+          backgroundEnabled: preset.backgroundColor !== 'transparent',
+          animationStyle: animMap[preset.highlightStyle] ?? 'none',
+          highlightColor: preset.highlightColor,
+          border1Width: preset.stroke?.width ?? 0,
+          border1Color: preset.stroke?.color ?? '#000000',
+          shadowBlur: preset.shadow?.blur ?? 0,
+          shadowOffsetX: preset.shadow?.offsetX ?? 0,
+          shadowOffsetY: preset.shadow?.offsetY ?? 0,
+          shadowColor: preset.shadow?.color ?? '#000000',
+          lineHeight: preset.lineHeight,
+          letterSpacing: preset.letterSpacing,
+          wordSpacing: 0.35,
+        };
+      }
+
       // Pass all build settings to the backend (including build number for filename)
-      // Subtitle settings come directly from SubtitlesTab via props
       // Merge perRatioConfigs from clip editor with subtitleOverrides from build settings
       // perRatioConfigs from clip editor takes precedence (user configured in editor)
       let finalSubtitleOverrides = settings.subtitleOverrides || null;
-      if (props.subtitleSettings?.perRatioConfigs) {
+      if (effectiveSubtitleSettings?.perRatioConfigs) {
         const editorOverrides: Record<string, { fontSize: number; positionPercentage: number; maxWidth?: number }> = {};
-        for (const [ratio, config] of Object.entries(props.subtitleSettings.perRatioConfigs)) {
+        for (const [ratio, config] of Object.entries(effectiveSubtitleSettings.perRatioConfigs)) {
           editorOverrides[ratio] = {
             fontSize: config.fontSize,
-            positionPercentage: config.position?.y ?? config.positionPercentage, // Use Y position as the vertical position percentage
+            positionPercentage: config.position?.y ?? config.positionPercentage,
             maxWidth: config.maxWidth,
           };
         }
-        // Merge: editor configs override build settings configs
         finalSubtitleOverrides = {
           ...(settings.subtitleOverrides || {}),
           ...editorOverrides,
         };
-        console.log('[ClipsTab] Merged subtitle overrides from clip editor:', finalSubtitleOverrides);
+      }
+
+      // Apply per-ratio presetId overrides: if a ratio has a presetId, merge those preset's
+      // visual fields into that ratio's override JSON so Rust uses them via per_ratio_override.
+      if (finalSubtitleOverrides) {
+        for (const [ratio, override] of Object.entries(finalSubtitleOverrides)) {
+          const ov = override as any;
+          if (ov?.presetId) {
+            const presetOverride = buildSettingsFromPresetId(ov.presetId);
+            if (presetOverride) {
+              (finalSubtitleOverrides as any)[ratio] = { ...ov, ...presetOverride };
+            }
+          }
+        }
       }
 
       // ── Per-Target Build Loop ──────────────────────────────────────────────
@@ -2717,7 +2817,7 @@
           quality: settings.quality,
           frameRate: settings.frameRate,
           outputFormat: settings.format,
-          includeSubtitles: props.subtitleSettings?.enabled ?? false,
+          includeSubtitles: effectiveSubtitleSettings?.enabled ?? false,
           organizationId: tg.organizationId || null,
           organizationName: tg.target?.type === 'org' 
             ? (tg.target as any).name
@@ -3362,7 +3462,7 @@
         clipName: clip.current_version_name || clip.name || 'Untitled',
         videoPath: projectVideo.file_path,
         segments: segments,
-        subtitleSettings: props.subtitleSettings,
+        subtitleSettings: effectiveSubtitleSettings,
         subtitleOverrides: finalSubtitleOverrides,
         transcriptWords: transcriptWords,
         transcriptSegments: transcriptSegments,

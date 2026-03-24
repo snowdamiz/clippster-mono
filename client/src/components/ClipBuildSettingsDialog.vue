@@ -1414,31 +1414,28 @@
       ...subtitleOverrides.value,
       [ratio]: override,
     };
-    console.log('[BuildSettings] Subtitle override updated for', ratio, ':', override);
   }
 
-  // Handle subtitle position change from POI editor
-  function onSubtitlePositionChange(position: { x: number; y: number; width?: number }) {
+  // Handle subtitle position change from POI editor (also carries optional presetId for per-ratio style)
+  function onSubtitlePositionChange(position: { x: number; y: number; width?: number; presetId?: string }) {
     const ratio = editingAspectRatio.value;
     const existingOverride = subtitleOverrides.value[ratio as keyof SubtitleOverrides] || {
-      fontSize: 32, // Default font size
-      positionPercentage: 85, // Default position
+      fontSize: props.subtitleSettings?.fontSize ?? 32,
+      positionPercentage: 85,
       position: { x: 50, y: 85 },
-      maxWidth: 80, // Default max width
+      maxWidth: 80,
     };
-    
-    // Update the position in the override
+
     subtitleOverrides.value = {
       ...subtitleOverrides.value,
       [ratio]: {
         ...existingOverride,
         position: { x: position.x, y: position.y },
-        maxWidth: position.width,
-        positionPercentage: position.y, // Keep for compatibility
+        maxWidth: position.width ?? existingOverride.maxWidth,
+        positionPercentage: position.y,
+        ...(position.presetId ? { presetId: position.presetId } : {}),
       },
     };
-    
-    console.log('[BuildSettings] Subtitle position updated for', ratio, ':', position);
   }
 
   // Load a frame from the video for the POI editor preview

@@ -135,6 +135,7 @@ defmodule ClippsterServer.Organizations.Organization do
       "enterprise_base",
       "enterprise_ai",
       "enterprise_unlimited",
+      "custom",
       nil
     ])
   end

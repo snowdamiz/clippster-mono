@@ -214,41 +214,40 @@
           </div>
         </div>
 
-        <!-- Subtitle preview overlay -->
+        <!-- Subtitle draggable/resizable box -->
         <div
           v-if="subtitleSettings && subtitlePositioningEnabled"
-          class="absolute pointer-events-auto z-20"
-          :style="subtitlePreviewStyle"
+          class="absolute z-20 pointer-events-auto"
+          :style="subtitleBoxStyle"
         >
-          <!-- Subtitle container wrapper for dragging -->
+          <!-- Drag body -->
           <div
-            class="subtitle-selection-box pointer-events-auto"
-            :class="{ 'is-active': isDraggingSubtitles || isResizingSubtitles }"
-            :style="subtitleContainerStyle"
-            @mousedown.self="startDragSubtitles"
+            class="w-full h-full flex items-center justify-center cursor-move select-none"
+            :class="isDraggingSubtitles ? 'ring-2 ring-purple-400' : 'ring-1 ring-purple-500/60 hover:ring-purple-400'"
+            style="border-radius: 4px; background: rgba(88,28,135,0.15);"
+            @mousedown.prevent="startDragSubtitles"
           >
-            <!-- Drag handle bar at top -->
             <div
-              class="subtitle-drag-bar"
-              @mousedown.stop="startDragSubtitles"
+              class="text-center font-medium pointer-events-none"
+              :style="subtitleTextStyle"
             >
-              <span class="subtitle-drag-label">⠿ subtitles</span>
-            </div>
-            
-            <div 
-              ref="subtitleContainerRef"
-              class="subtitle-text-container cursor-move pointer-events-auto"
-              :style="{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', width: 'fit-content', gap: wordGapStyle }"
-              @mousedown="startDragSubtitles"
-            >
-              <div 
-                class="text-white text-center font-medium px-3 py-1 rounded bg-black/80 border border-white/20"
-                :style="subtitleTextStyle"
-              >
-                Sample Subtitle
-              </div>
+              Sample Text
             </div>
           </div>
+
+          <!-- Corner resize handles -->
+          <div
+            v-for="corner in ['nw','ne','sw','se']"
+            :key="corner"
+            class="absolute w-2.5 h-2.5 bg-purple-500 border border-white pointer-events-auto z-30"
+            :class="{
+              'top-0 left-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize': corner === 'nw',
+              'top-0 right-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize': corner === 'ne',
+              'bottom-0 left-0 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize': corner === 'sw',
+              'bottom-0 right-0 translate-x-1/2 translate-y-1/2 cursor-nwse-resize': corner === 'se',
+            }"
+            @mousedown.stop.prevent="(e) => startResizeSubtitles(e, corner)"
+          />
         </div>
 
         <!-- Empty state -->
@@ -350,6 +349,15 @@
     props.subtitlePosition ? { ...props.subtitlePosition } : { x: 50, y: 85, width: 80 }
   );
   const subtitleContainerRef = ref<HTMLElement | null>(null);
+
+  // Sync local subtitle position when prop changes (e.g. switching aspect ratios)
+  watch(
+    () => props.subtitlePosition,
+    (pos) => {
+      if (pos) localSubtitlePosition.value = { ...pos };
+    },
+    { deep: true }
+  );
 
   // Watch for Scale 16:9 checkbox - auto-fit when enabled
   watch(showSourceFrame, (enabled) => {
@@ -577,68 +585,43 @@
     };
   });
 
-  // Calculate subtitle preview style
-  const subtitlePreviewStyle = computed(() => {
-    // Use subtitlePosition if available, otherwise use default position
-    const position = props.subtitlePosition || { x: 50, y: 85, width: 80 };
-    const { x, y, width } = position;
-    
+  // Subtitle box — positioned as absolute rect using x/y as center, width as %
+  const subtitleBoxStyle = computed(() => {
+    const pos = localSubtitlePosition.value;
+    const w = pos.width ?? 80;
+    // Height is fixed at ~12% of container to give enough drag area
+    const h = 12;
+    // x/y are center percentages → convert to left/top
+    const left = pos.x - w / 2;
+    const top = pos.y - h / 2;
     return {
-      left: `${x}%`,
-      top: `${y}%`,
-      transform: 'translate(-50%, -50%)',
-      maxWidth: width ? `${width}%` : '80%',
+      left: `${left}%`,
+      top: `${top}%`,
+      width: `${w}%`,
+      height: `${h}%`,
     };
   });
 
-  // Calculate subtitle text style
+  // Subtitle text style — scaled down for the small POI preview canvas
   const subtitleTextStyle = computed(() => {
     if (!props.subtitleSettings) return {};
-    
     const settings = props.subtitleSettings;
     const aspect = parseAspectRatio(props.targetAspectRatio);
-    const aspectRatio = aspect.width / aspect.height;
-    
-    // Scale font size based on aspect ratio (matches VideoPlayer.vue logic)
-    let fontScale = 1;
-    if (aspectRatio <= 0.9) {
-      fontScale = 0.65; // Vertical formats (9:16, 4:5)
-    } else if (aspectRatio > 0.9 && aspectRatio <= 1.1) {
-      fontScale = 0.78; // Square format (1:1)
-    }
-    
-    const adjustedFontSize = Math.round(settings.fontSize * fontScale * 0.5); // Scale down for POI preview
-    
+    const ar = aspect.width / aspect.height;
+    // Scale font down for the small preview canvas (container is ~200px wide)
+    const scale = ar < 0.9 ? 0.28 : ar < 1.2 ? 0.32 : 0.22;
+    const fs = Math.max(8, Math.round(settings.fontSize * scale));
+    const stroke = settings.border1Width > 0
+      ? `${settings.border1Color} 0 0 0 ${settings.border1Width * scale}px`
+      : undefined;
     return {
-      fontSize: `${adjustedFontSize}px`,
+      fontSize: `${fs}px`,
       fontFamily: settings.fontFamily,
-      fontWeight: settings.fontWeight,
+      fontWeight: String(settings.fontWeight),
       color: settings.textColor,
-      textShadow: settings.border1Width > 0 ? `-${settings.border1Width}px 0 ${settings.border1Color}, ${settings.border1Width}px 0 ${settings.border1Color}, 0 -${settings.border1Width}px ${settings.border1Color}, 0 ${settings.border1Width}px ${settings.border1Color}` : 'none',
+      WebkitTextStroke: stroke,
+      lineHeight: String(settings.lineHeight || 1.2),
     };
-  });
-
-  // Calculate subtitle container style for dragging
-  const subtitleContainerStyle = computed(() => {
-    // Use localSubtitlePosition if available, otherwise use default position
-    const position = localSubtitlePosition.value || { x: 50, y: 85, width: 80 };
-    const { x, y, width } = position;
-    
-    return {
-      position: 'absolute',
-      top: y + '%',
-      left: x + '%',
-      transform: 'translate(-50%, -50%)',
-      width: width ? width + '%' : '80%',
-      maxWidth: width ? width + '%' : '80%',
-      cursor: isDraggingSubtitles.value ? 'grabbing' : 'grab',
-    };
-  });
-
-  // Calculate word gap style
-  const wordGapStyle = computed(() => {
-    if (!props.subtitleSettings) return '0.25rem';
-    return `${props.subtitleSettings.wordSpacing * 0.25}rem`;
   });
 
   // Calculate overlay preview style
@@ -829,6 +812,50 @@
     isDraggingSubtitles.value = false;
     document.removeEventListener('mousemove', onSubtitleDragMove);
     document.removeEventListener('mouseup', onSubtitleDragEnd);
+  }
+
+  // Resize subtitle box by dragging corners
+  function startResizeSubtitles(event: MouseEvent, corner: string) {
+    if (!containerRef.value) return;
+    isResizingSubtitles.value = true;
+
+    const rect = containerRef.value.getBoundingClientRect();
+    const startX = event.clientX;
+    const startWidth = localSubtitlePosition.value.width ?? 80;
+    const startCenterX = localSubtitlePosition.value.x;
+
+    const onMove = (e: MouseEvent) => {
+      const deltaXPct = ((e.clientX - startX) / rect.width) * 100;
+      let newWidth: number;
+      let newCenterX: number;
+
+      if (corner === 'ne' || corner === 'se') {
+        // Right corners: dragging right increases width, center shifts right
+        newWidth = Math.max(20, Math.min(100, startWidth + deltaXPct * 2));
+        newCenterX = startCenterX;
+      } else {
+        // Left corners: dragging left increases width, center shifts left
+        newWidth = Math.max(20, Math.min(100, startWidth - deltaXPct * 2));
+        newCenterX = startCenterX;
+      }
+
+      localSubtitlePosition.value = {
+        ...localSubtitlePosition.value,
+        x: Math.max(newWidth / 2, Math.min(100 - newWidth / 2, newCenterX)),
+        width: newWidth,
+      };
+      emit('subtitlePositionChange', { ...localSubtitlePosition.value });
+    };
+
+    const onUp = () => {
+      isResizingSubtitles.value = false;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    event.preventDefault();
   }
 
   // Update container dimensions
