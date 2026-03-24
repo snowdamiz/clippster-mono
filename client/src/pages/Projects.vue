@@ -2506,7 +2506,7 @@
       return;
     }
 
-    console.log(`[Projects] Clip build complete: ${clip_id}`, { buildSuccess, output_path });
+    console.log(`[Projects] Clip build complete: ${clip_id}`, { buildSuccess, output_path, buildError });
 
     const isCancelled = buildError && (buildError.includes('cancelled') || buildError.includes('Cancelled'));
 

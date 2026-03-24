@@ -975,13 +975,14 @@
 
   // Build target for multi-org/campaign builds
   export interface BuildTarget {
-    type: 'org' | 'campaign';
-    id: number;
+    type: 'org' | 'campaign' | 'personal';
+    id: number | null;
     name: string;
-    brandingProfileId: number | null;
+    brandingProfileId?: number | null;
     aspectRatios: string[];
     organizationId?: number;
     organizationName?: string;
+    selectedPlatforms?: Map<string, any>;
   }
 
   export interface BuildSettings {
@@ -1880,6 +1881,11 @@
       }
     }
     
+    // If no org/campaign selected, it's a personal build (one per selected ratio)
+    if (count === 0) {
+      count = selectedRatios.value.length;
+    }
+    
     console.log('[BuildDialog] Total build count:', count);
     return count;
   });
@@ -2046,6 +2052,20 @@
       }
     }
 
+    // If no orgs/campaigns selected, create personal build targets (one per aspect ratio)
+    if (buildTargets.length === 0) {
+      for (const ratio of selectedRatios.value) {
+        buildTargets.push({
+          type: 'personal',
+          id: null,
+          name: 'Personal',
+          aspectRatios: [ratio],
+          selectedPlatforms: new Map(),
+        });
+      }
+      console.log('[ClipBuildSettingsDialog] No orgs/campaigns selected, created', buildTargets.length, 'personal build targets');
+    }
+
     const selectedCampaignTargets = availableCampaignSelections.value.filter((campaignSel) => campaignSel.selected);
     const singleSelectedCampaign = selectedCampaignTargets.length === 1 ? selectedCampaignTargets[0].campaign : null;
 
@@ -2064,16 +2084,14 @@
       layoutOverlays: props.vodPresetConfig?.layoutOverlays?.length
         ? props.vodPresetConfig.layoutOverlays
         : undefined,
-      // Multi-build targets
-      buildTargets: buildTargets.length > 0 ? buildTargets : undefined,
+      // Multi-build targets (always populated — personal targets as fallback)
+      buildTargets: buildTargets,
       // Legacy single campaign fields (kept for backward compatibility)
       campaignId: singleSelectedCampaign?.id ?? (isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.id : null),
       selectedCampaign: singleSelectedCampaign ?? (isForCampaign.value ? selectedCampaign.value : null),
       campaignBrandingProfileId: singleSelectedCampaign?.branding_profile_id
         ?? (isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.branding_profile_id : null),
-      brandingType: buildTargets.length > 0
-        ? (singleSelectedCampaign ? 'campaign' : undefined)
-        : (isForCampaign.value && selectedCampaign.value ? 'campaign' : 'personal'),
+      brandingType: singleSelectedCampaign ? 'campaign' : (isForCampaign.value && selectedCampaign.value ? 'campaign' : 'personal'),
     };
 
     console.log('[ClipBuildSettingsDialog] Emitting confirm with buildTargets:', buildTargets.length, 'targets');

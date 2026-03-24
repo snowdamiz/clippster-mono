@@ -2074,7 +2074,7 @@
       // → groups: [{target, ratios:['16:9','9:16']}, {target, ratios:['16:9']}]
       interface TargetGroup {
         key: string;
-        type: 'org' | 'campaign' | 'legacy';
+        type: 'org' | 'campaign' | 'personal' | 'legacy';
         target: BuildTarget | null;
         ratios: string[];
         campaignId: number | null;
@@ -2096,7 +2096,7 @@
               target: bt,
               ratios: [],
               campaignId: bt.type === 'campaign' ? bt.id : null,
-              brandingProfileId: bt.brandingProfileId,
+              brandingProfileId: bt.brandingProfileId ?? null,
               organizationId: bt.organizationId,
               selectedCampaign: bt.type === 'campaign' ? settings.selectedCampaign : null,
             });
