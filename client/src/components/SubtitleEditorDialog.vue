@@ -167,7 +167,7 @@
                         <span style="color: #FACC15;">WORD</span> BY <span style="color: #FACC15;">WORD</span>
                       </span>
                     </div>
-                    <p class="text-[10px] text-muted-foreground mt-1">Word-by-word highlight (Opus style)</p>
+                    <p class="text-[10px] text-muted-foreground mt-1">Word-by-word highlight</p>
                   </button>
                 </div>
               </div>
@@ -205,14 +205,15 @@
                 <div class="flex-1">
                   <p class="font-medium text-xs sm:text-sm mb-0.5 sm:mb-1">Subtitle Position</p>
                   <p class="text-[10px] sm:text-xs opacity-80">
-                    Subtitles will be positioned at bottom-center (Opus style). You can adjust positioning per aspect ratio in the POI editor during clip building.
+                    Subtitles will be positioned at bottom-center. You can adjust positioning per aspect ratio in the POI editor during clip building.
                   </p>
                 </div>
               </div>
 
               <!-- Error Message -->
               <div v-if="error" class="subtitle-editor-dialog__alert subtitle-editor-dialog__alert--error">
-                <p class="text-xs sm:text-sm">{{ error }}</p>
+                <AlertCircle :size="16" />
+                <p class="subtitle-editor-dialog__alert-text">{{ error }}</p>
               </div>
             </div>
 
@@ -243,7 +244,7 @@
 
 <script setup lang="ts">
   import { ref, watch } from 'vue';
-  import { Captions, Info, Loader2, X } from 'lucide-vue-next';
+  import { Captions, Info, Loader2, X, AlertCircle } from 'lucide-vue-next';
   import type { Clip } from '@/types';
 
   interface Props {
@@ -358,11 +359,12 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
   }
 
   .subtitle-editor-dialog__accent {
     height: 3px;
-    background: linear-gradient(90deg, #22D3EE, rgba(34, 211, 238, 0.5));
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
     flex-shrink: 0;
   }
 
@@ -409,8 +411,8 @@
     width: 52px;
     height: 52px;
     border-radius: 12px;
-    background-color: rgba(34, 211, 238, 0.15);
-    color: #22D3EE;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
     margin-bottom: 0.875rem;
   }
 
@@ -486,11 +488,11 @@
 
   .subtitle-editor-dialog__toggle:focus {
     outline: none;
-    box-shadow: 0 0 0 2px #22D3EE;
+    box-shadow: 0 0 0 2px var(--sidebar-accent);
   }
 
   .subtitle-editor-dialog__toggle--active {
-    background-color: #22D3EE;
+    background-color: var(--sidebar-accent);
   }
 
   .subtitle-editor-dialog__toggle-thumb {
@@ -542,7 +544,7 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background-color: #22D3EE;
+    background-color: var(--sidebar-accent);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -610,7 +612,7 @@
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background-color: #22D3EE;
+    background-color: var(--sidebar-accent);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -628,15 +630,21 @@
   }
 
   .subtitle-editor-dialog__alert--info {
-    background-color: rgba(34, 211, 238, 0.08);
-    border: 1px solid rgba(34, 211, 238, 0.15);
-    color: #22D3EE;
+    background-color: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
   }
 
   .subtitle-editor-dialog__alert--error {
     background-color: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.2);
     color: #f87171;
+  }
+
+  .subtitle-editor-dialog__alert-text {
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    margin: 0;
   }
 
   .subtitle-editor-dialog__footer {
@@ -678,8 +686,8 @@
   }
 
   .subtitle-editor-dialog__btn--primary {
-    background: linear-gradient(135deg, #22D3EE 0%, #0891b2 100%);
-    color: #000;
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
   }
 
   .subtitle-editor-dialog__btn--primary:hover:not(:disabled) {

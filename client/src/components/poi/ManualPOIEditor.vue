@@ -78,9 +78,13 @@
                     :is-playing="isPlaying"
                     :watermark-preview="resolvedWatermark"
                     :overlay-previews="resolvedOverlays"
+                    :subtitle-settings="subtitleSettings"
+                    :subtitle-position="localSubtitlePosition"
+                    :subtitle-positioning-enabled="subtitlePositioningEnabled"
                     @update-region="updateRegion"
                     @select-region="selectRegion"
                     @update-source-transform="handleSourceTransformUpdate"
+                    @subtitlePositionChange="onSubtitlePositionChange"
                   />
                 </div>
               </div>
@@ -161,6 +165,31 @@
                 @update-segment="updateSegment"
                 @seek-time="handleSeekTime"
               />
+
+              <!-- Subtitle Positioning Controls -->
+              <div v-if="subtitleSettings" class="px-5 py-3 border-t border-zinc-800 bg-zinc-900/50">
+                <div class="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="subtitle-positioning"
+                    v-model="subtitlePositioningEnabled"
+                    class="w-4 h-4 text-blue-600 bg-zinc-800 border-zinc-600 rounded focus:ring-blue-500 focus:ring-2"
+                  />
+                  <label for="subtitle-positioning" class="text-sm font-medium text-white flex items-center gap-2">
+                    <Type class="h-4 w-4 text-purple-400" />
+                    Enable subtitle positioning
+                  </label>
+                  <span class="text-[10px] text-zinc-500">{{ targetAspectRatio }}</span>
+                </div>
+                <p class="text-[10px] text-zinc-400 mt-1 ml-7">
+                  Drag subtitles in the preview to adjust their position for this aspect ratio
+                </p>
+              </div>
+
+              <!-- Debug info -->
+              <div v-if="!subtitleSettings" class="px-5 py-3 border-t border-zinc-800 bg-zinc-900/50">
+                <p class="text-[10px] text-amber-400">Debug: subtitleSettings is null/undefined</p>
+              </div>
             </div>
 
             <!-- Footer -->
@@ -234,7 +263,7 @@
   import POISourcePanel from './POISourcePanel.vue';
   import POITargetPanel from './POITargetPanel.vue';
   import POISegmentTimeline from './POISegmentTimeline.vue';
-  import type { ManualRegion, ManualFramingConfig, WatermarkSettings, LayoutOverlay, SegmentRegionConfig } from '@/types';
+  import type { ManualRegion, ManualFramingConfig, WatermarkSettings, LayoutOverlay, SegmentRegionConfig, SubtitleSettings } from '@/types';
   import { utf8ToBase64 } from '@/utils/encoding';
 
   interface WatermarkPreview {
@@ -273,6 +302,10 @@
     layoutOverlays?: LayoutOverlay[];
     // Pre-resolved overlay preview data URLs (keyed by overlay id)
     overlayPreviewUrls?: Record<string, string>;
+    // Optional subtitle settings for preview
+    subtitleSettings?: SubtitleSettings | null;
+    // Optional subtitle position override for this aspect ratio
+    subtitlePositionOverride?: { x: number; y: number; width?: number } | null;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -281,11 +314,14 @@
     clipEndTime: 0,
     fullVideoDuration: 0,
     watermarkSettings: null,
+    subtitleSettings: null,
+    subtitlePositionOverride: null,
   });
 
   const emit = defineEmits<{
     'update:modelValue': [value: boolean];
     confirm: [config: ManualFramingConfig];
+    subtitlePositionChange: [position: { x: number; y: number; width?: number }];
   }>();
 
   // Local state
@@ -308,6 +344,12 @@
   const videoUrl = ref<string | null>(null);
   const videoLoading = ref(false);
   const videoError = ref<string | null>(null);
+
+  // Subtitle positioning state
+  const localSubtitlePosition = ref<{ x: number; y: number; width?: number }>(
+    props.subtitlePositionOverride ? { ...props.subtitlePositionOverride } : { x: 50, y: 85, width: 80 }
+  );
+  const subtitlePositioningEnabled = ref(false);
   const isSeeking = ref(false);
   const progressBarRef = ref<HTMLElement | null>(null);
 
@@ -689,6 +731,12 @@
     };
     
     input.click();
+  }
+
+  // Handle subtitle position changes
+  function onSubtitlePositionChange(position: { x: number; y: number; width?: number }) {
+    localSubtitlePosition.value = { ...position };
+    emit('subtitlePositionChange', { ...position });
   }
 
   // Add a new segment

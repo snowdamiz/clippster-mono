@@ -161,6 +161,7 @@ pub fn generate_ass_file(
     video_height: u32,
     fonts_dir: Option<&std::path::Path>,
     time_offset: f64, // Offset to add to all subtitle times (e.g., intro duration)
+    per_ratio_override: Option<&serde_json::Value>, // Per-aspect-ratio subtitle override
 ) -> Result<(), String> {
     let mut file = std::fs::File::create(output_path)
         .map_err(|e| format!("Failed to create subtitle file: {}", e))?;
@@ -276,8 +277,20 @@ pub fn generate_ass_file(
     // Vue uses a container with width=maxWidth% centered on screen
     // And positions it using top=positionPercentage% and translate(-50%, -50%)
 
+    // Extract per-ratio override values if available
+    let (override_x, override_y, override_max_width) = if let Some(r#override) = per_ratio_override {
+        // Parse the override JSON
+        let x = r#override.get("x").and_then(|v| v.as_f64()).unwrap_or(50.0);
+        let y = r#override.get("y").and_then(|v| v.as_f64()).unwrap_or(85.0);
+        let max_width = r#override.get("width").and_then(|v| v.as_f64()).unwrap_or(settings.max_width as f64);
+        (x, y, max_width)
+    } else {
+        // Use default values from settings
+        (50.0, settings.position_percentage as f64, settings.max_width as f64)
+    };
+
     let adjusted_padding = settings.padding * font_size_scale;
-    let box_width_px = play_res_x as f64 * (settings.max_width as f64 / 100.0);
+    let box_width_px = play_res_x as f64 * (override_max_width / 100.0);
 
     // Calculate margins to constrain text to box_width - 2*padding
     // The box is centered on screen, so margins are symmetric
@@ -288,7 +301,7 @@ pub fn generate_ass_file(
     // Calculate target position for \pos(x,y)
     // X: Center of screen + Offset (percentage of box width)
     let shift_x_px = box_width_px * (settings.text_offset_x as f64 / 100.0);
-    let target_x = (play_res_x as f64 / 2.0) + shift_x_px;
+    let _target_x = (play_res_x as f64 / 2.0) + shift_x_px;
 
     // Y: Position% of screen + Offset (percentage of height)
     // We approximate height as 2 lines + padding for the offset calculation
@@ -300,14 +313,36 @@ pub fn generate_ass_file(
     // We use a factor of the font size as a heuristic for the correction
     let vertical_correction = (adjusted_font_size as f64) * 0.3;
 
-    let target_y = (play_res_y as f64 * (settings.position_percentage as f64 / 100.0)) + shift_y_px
+    let target_y = (play_res_y as f64 * (override_y / 100.0)) + shift_y_px
         - vertical_correction;
 
-    // Use Alignment 5 (Middle Center) to match Vue's translate(-50%, -50%)
-    let alignment = 5;
+    // Map textAlign to ASS alignment values (numpad layout)
+    // Bottom row: 1=left, 2=center, 3=right
+    // Middle row: 4=left, 5=center, 6=right
+    // Top row: 7=left, 8=center, 9=right
+    // We use middle row (4/5/6) to match vertical centering
+    let (alignment, adjusted_target_x) = match settings.text_align.as_str() {
+        "left" => {
+            // Alignment 4 = Middle Left
+            // Position at left edge of text box (side_margin + padding)
+            let x = side_margin + adjusted_padding as f64;
+            (4, x)
+        }
+        "right" => {
+            // Alignment 6 = Middle Right
+            // Position at right edge of text box (play_res_x - side_margin - padding)
+            let x = play_res_x as f64 - side_margin - adjusted_padding as f64;
+            (6, x)
+        }
+        _ => {
+            // Default to center (alignment 5) - use override_x if available
+            let x = play_res_x as f64 * (override_x / 100.0);
+            (5, x)
+        }
+    };
     let margin_v = 10; // Not used for positioning with \pos, but required by Style
 
-    let pos_tag = format!("{{\\pos({:.0},{:.0})}}", target_x, target_y);
+    let pos_tag = format!("{{\\pos({:.0},{:.0})}}", adjusted_target_x, target_y);
 
     // For embedded fonts, we need to reference the actual font family name
     // and use \fw tags for specific weights, as standard ASS only supports Bold/Italic.

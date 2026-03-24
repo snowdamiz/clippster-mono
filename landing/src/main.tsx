@@ -23,6 +23,9 @@ const AcceptInvitationPage = lazy(() => import('./pages/auth/AcceptInvitationPag
 const GoogleCallbackPage = lazy(() => import('./pages/auth/GoogleCallbackPage').then(m => ({ default: m.GoogleCallbackPage })))
 const OAuthCallbackPage = lazy(() => import('./pages/auth/OAuthCallbackPage').then(m => ({ default: m.OAuthCallbackPage })))
 
+// Public pages
+const ClipperPublicProfilePage = lazy(() => import('./pages/ClipperPublicProfilePage').then(m => ({ default: m.ClipperPublicProfilePage })))
+
 // Dashboard layout
 const DashboardLayout = lazy(() => import('./layouts/DashboardLayout').then(m => ({ default: m.DashboardLayout })))
 const DashboardIndex = lazy(() => import('./pages/dashboard/DashboardIndex').then(m => ({ default: m.DashboardIndex })))
@@ -114,6 +117,7 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="/pricing" element={<PricingPage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />
+                <Route path="/clippers/:slug" element={<ClipperPublicProfilePage />} />
 
                 {/* Auth pages */}
                 <Route path="/login" element={<LoginPage />} />

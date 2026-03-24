@@ -1317,6 +1317,7 @@
     hasTranscriptForProject,
   } from '@/services/database';
   import { useInEditorClips } from '@/stores/useInEditorClips';
+  import { useClipThumbnailStore } from '@/stores/clipThumbnails';
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { extractMintId } from '@/services/pumpfun';
   import { useFormatters } from '@/composables/useFormatters';
@@ -1388,7 +1389,8 @@
   const projectVideos = ref<Record<string, RawVideo[]>>({});
   const videoEditorProjects = ref<Record<string, VideoEditorProject>>({});
   const thumbnailCache = ref<Map<string, string>>(new Map());
-  const clipThumbnailCache = ref<Map<string, string>>(new Map());
+  // Use persistent clip thumbnail store instead of component-level cache
+  const clipThumbnailStore = useClipThumbnailStore();
   const { getRelativeTime, formatDuration } = useFormatters();
   const { success, error } = useToast();
   const { activeSessions } = useLivestreamMonitoring();
@@ -1986,8 +1988,8 @@
 
   // Get thumbnail URL for a clip - uses cached data URLs
   function getClipThumbnailUrl(clip: ClipWithVersionAndSegment): string | null {
-    // Check clip thumbnail cache first
-    const cachedThumbnail = clipThumbnailCache.value.get(clip.id);
+    // Check persistent clip thumbnail cache first
+    const cachedThumbnail = clipThumbnailStore.getThumbnail(clip.id);
     if (cachedThumbnail) {
       return cachedThumbnail;
     }
@@ -2304,25 +2306,8 @@
 
   // Load existing clip thumbnails in parallel (fast - just reading files)
   async function loadClipThumbnailsInParallel() {
-    const clipsWithThumbnails = folderClips.value.filter(
-      (clip) => clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
-    );
-
-    if (clipsWithThumbnails.length === 0) return;
-
-    // Load all thumbnails in parallel
-    await Promise.all(
-      clipsWithThumbnails.map(async (clip) => {
-        try {
-          const dataUrl = await invoke<string>('read_file_as_data_url', {
-            filePath: clip.built_thumbnail_path,
-          });
-          clipThumbnailCache.value.set(clip.id, dataUrl);
-        } catch (err) {
-          console.warn('Failed to load clip thumbnail:', clip.id, err);
-        }
-      })
-    );
+    // Use persistent store's batch loading method - it handles deduplication and caching
+    await clipThumbnailStore.loadThumbnails(folderClips.value);
   }
 
   // Track which projects have had thumbnails generated to avoid re-generation
@@ -2410,7 +2395,7 @@
             const dataUrl = await invoke<string>('read_file_as_data_url', {
               filePath: thumbnailPath,
             });
-            clipThumbnailCache.value.set(clip.id, dataUrl);
+            clipThumbnailStore.setThumbnail(clip.id, dataUrl);
 
             // Update the clip's thumbnail path
             clip.built_thumbnail_path = thumbnailPath;

@@ -303,6 +303,7 @@ const animationStyles = [
   { id: 'pop', name: 'Pop', desc: 'Bouncy emphasis effect' },
   { id: 'glow', name: 'Glow', desc: 'Glowing word highlight' },
   { id: 'wave', name: 'Wave', desc: 'Floating wave motion' },
+  { id: 'single-word', name: 'Single Word', desc: 'One word at a time with punchy effect' },
   { id: 'none', name: 'None', desc: 'Static text, no animation' },
 ];
 

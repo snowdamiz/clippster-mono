@@ -196,7 +196,8 @@ export interface SubtitleSettings {
     | 'glow'
     | 'box-highlight'
     | 'typewriter'
-    | 'wave';
+    | 'wave'
+    | 'single-word';
   highlightColor: string;
   lineHeight: number;
   letterSpacing: number;
@@ -982,7 +983,8 @@ export type TextAnimation =
   | 'karaoke'
   | 'glow'
   | 'box-highlight'
-  | 'wave';
+  | 'wave'
+  | 'single-word';
 
 export type TextStylePreset = 'title' | 'lower-third' | 'caption' | 'quote' | 'custom';
 
@@ -1191,7 +1193,8 @@ export interface ClipSubtitleSettings {
     | 'glow'
     | 'box-highlight'
     | 'typewriter'
-    | 'wave';
+    | 'wave'
+    | 'single-word';
   highlightColor: string;
   lineHeight: number;
   letterSpacing: number;

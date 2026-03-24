@@ -214,6 +214,43 @@
           </div>
         </div>
 
+        <!-- Subtitle preview overlay -->
+        <div
+          v-if="subtitleSettings && subtitlePositioningEnabled"
+          class="absolute pointer-events-auto z-20"
+          :style="subtitlePreviewStyle"
+        >
+          <!-- Subtitle container wrapper for dragging -->
+          <div
+            class="subtitle-selection-box pointer-events-auto"
+            :class="{ 'is-active': isDraggingSubtitles || isResizingSubtitles }"
+            :style="subtitleContainerStyle"
+            @mousedown.self="startDragSubtitles"
+          >
+            <!-- Drag handle bar at top -->
+            <div
+              class="subtitle-drag-bar"
+              @mousedown.stop="startDragSubtitles"
+            >
+              <span class="subtitle-drag-label">⠿ subtitles</span>
+            </div>
+            
+            <div 
+              ref="subtitleContainerRef"
+              class="subtitle-text-container cursor-move pointer-events-auto"
+              :style="{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', width: 'fit-content', gap: wordGapStyle }"
+              @mousedown="startDragSubtitles"
+            >
+              <div 
+                class="text-white text-center font-medium px-3 py-1 rounded bg-black/80 border border-white/20"
+                :style="subtitleTextStyle"
+              >
+                Sample Subtitle
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Empty state -->
         <div v-if="regions.length === 0" class="absolute inset-0 flex items-center justify-center">
           <div class="text-center">
@@ -231,7 +268,7 @@
   import { LayoutGridIcon, LayoutIcon } from 'lucide-vue-next';
   import POIRegion from './POIRegion.vue';
   import MediaPreview from '@/components/MediaPreview.vue';
-  import type { ManualRegion, ManualRegionRect } from '@/types';
+  import type { ManualRegion, ManualRegionRect, SubtitleSettings } from '@/types';
 
   interface WatermarkPreview {
     filePath?: string;
@@ -256,7 +293,7 @@
     regions: ManualRegion[];
     selectedRegionId: string | null;
     thumbnailUrl?: string | null;
-    targetAspectRatio?: string;
+    targetAspectRatio: string;
     sourceAspectRatio?: string;
     videoUrl?: string | null;
     videoTime?: number;
@@ -265,6 +302,11 @@
     watermarkPreview?: WatermarkPreview | null;
     // Optional layout overlay previews
     overlayPreviews?: OverlayPreview[];
+    // Optional subtitle settings for preview
+    subtitleSettings?: SubtitleSettings | null;
+    // Optional subtitle position for preview
+    subtitlePosition?: { x: number; y: number; width?: number } | null;
+    subtitlePositioningEnabled?: boolean;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -273,12 +315,16 @@
     videoTime: 0,
     isPlaying: false,
     watermarkPreview: null,
+    subtitleSettings: null,
+    subtitlePosition: null,
+    subtitlePositioningEnabled: false,
   });
 
   const emit = defineEmits<{
     updateRegion: [id: string, region: Partial<ManualRegion>];
     selectRegion: [id: string | null];
     updateSourceTransform: [transform: { scale: number; x: number; y: number }];
+    subtitlePositionChange: [position: { x: number; y: number; width?: number }];
   }>();
 
   const containerRef = ref<HTMLElement | null>(null);
@@ -295,6 +341,15 @@
   const isDraggingSourceFrame = ref(false);
   const dragStartPos = ref({ x: 0, y: 0 });
   const dragStartTransform = ref({ x: 0, y: 0 });
+
+  // Subtitle dragging state
+  const isDraggingSubtitles = ref(false);
+  const isResizingSubtitles = ref(false);
+  const subtitleDragOffset = ref({ x: 0, y: 0 });
+  const localSubtitlePosition = ref<{ x: number; y: number; width?: number }>(
+    props.subtitlePosition ? { ...props.subtitlePosition } : { x: 50, y: 85, width: 80 }
+  );
+  const subtitleContainerRef = ref<HTMLElement | null>(null);
 
   // Watch for Scale 16:9 checkbox - auto-fit when enabled
   watch(showSourceFrame, (enabled) => {
@@ -522,6 +577,70 @@
     };
   });
 
+  // Calculate subtitle preview style
+  const subtitlePreviewStyle = computed(() => {
+    // Use subtitlePosition if available, otherwise use default position
+    const position = props.subtitlePosition || { x: 50, y: 85, width: 80 };
+    const { x, y, width } = position;
+    
+    return {
+      left: `${x}%`,
+      top: `${y}%`,
+      transform: 'translate(-50%, -50%)',
+      maxWidth: width ? `${width}%` : '80%',
+    };
+  });
+
+  // Calculate subtitle text style
+  const subtitleTextStyle = computed(() => {
+    if (!props.subtitleSettings) return {};
+    
+    const settings = props.subtitleSettings;
+    const aspect = parseAspectRatio(props.targetAspectRatio);
+    const aspectRatio = aspect.width / aspect.height;
+    
+    // Scale font size based on aspect ratio (matches VideoPlayer.vue logic)
+    let fontScale = 1;
+    if (aspectRatio <= 0.9) {
+      fontScale = 0.65; // Vertical formats (9:16, 4:5)
+    } else if (aspectRatio > 0.9 && aspectRatio <= 1.1) {
+      fontScale = 0.78; // Square format (1:1)
+    }
+    
+    const adjustedFontSize = Math.round(settings.fontSize * fontScale * 0.5); // Scale down for POI preview
+    
+    return {
+      fontSize: `${adjustedFontSize}px`,
+      fontFamily: settings.fontFamily,
+      fontWeight: settings.fontWeight,
+      color: settings.textColor,
+      textShadow: settings.border1Width > 0 ? `-${settings.border1Width}px 0 ${settings.border1Color}, ${settings.border1Width}px 0 ${settings.border1Color}, 0 -${settings.border1Width}px ${settings.border1Color}, 0 ${settings.border1Width}px ${settings.border1Color}` : 'none',
+    };
+  });
+
+  // Calculate subtitle container style for dragging
+  const subtitleContainerStyle = computed(() => {
+    // Use localSubtitlePosition if available, otherwise use default position
+    const position = localSubtitlePosition.value || { x: 50, y: 85, width: 80 };
+    const { x, y, width } = position;
+    
+    return {
+      position: 'absolute',
+      top: y + '%',
+      left: x + '%',
+      transform: 'translate(-50%, -50%)',
+      width: width ? width + '%' : '80%',
+      maxWidth: width ? width + '%' : '80%',
+      cursor: isDraggingSubtitles.value ? 'grabbing' : 'grab',
+    };
+  });
+
+  // Calculate word gap style
+  const wordGapStyle = computed(() => {
+    if (!props.subtitleSettings) return '0.25rem';
+    return `${props.subtitleSettings.wordSpacing * 0.25}rem`;
+  });
+
   // Calculate overlay preview style
   function getOverlayStyle(overlay: OverlayPreview) {
     if (overlay.isFullFrame) {
@@ -660,6 +779,58 @@
     isDragging.value = false;
   }
 
+  // Subtitle dragging functions
+  function startDragSubtitles(event: MouseEvent) {
+    if (!containerRef.value) return;
+
+    isDraggingSubtitles.value = true;
+    const rect = containerRef.value.getBoundingClientRect();
+    
+    // Calculate the drag offset from the subtitle center
+    const centerX = rect.left + (rect.width * localSubtitlePosition.value.x / 100);
+    const centerY = rect.top + (rect.height * localSubtitlePosition.value.y / 100);
+    
+    subtitleDragOffset.value = {
+      x: event.clientX - centerX,
+      y: event.clientY - centerY,
+    };
+
+    // Add global mouse listeners
+    document.addEventListener('mousemove', onSubtitleDragMove);
+    document.addEventListener('mouseup', onSubtitleDragEnd);
+    
+    event.preventDefault();
+  }
+
+  function onSubtitleDragMove(event: MouseEvent) {
+    if (!isDraggingSubtitles.value || !containerRef.value) return;
+
+    const rect = containerRef.value.getBoundingClientRect();
+    
+    // Calculate new position as percentage
+    const newX = ((event.clientX - subtitleDragOffset.value.x - rect.left) / rect.width) * 100;
+    const newY = ((event.clientY - subtitleDragOffset.value.y - rect.top) / rect.height) * 100;
+    
+    // Constrain to container bounds
+    const constrainedX = Math.max(10, Math.min(90, newX));
+    const constrainedY = Math.max(10, Math.min(90, newY));
+    
+    localSubtitlePosition.value = {
+      ...localSubtitlePosition.value,
+      x: constrainedX,
+      y: constrainedY,
+    };
+    
+    // Emit position change
+    emit('subtitlePositionChange', { ...localSubtitlePosition.value });
+  }
+
+  function onSubtitleDragEnd() {
+    isDraggingSubtitles.value = false;
+    document.removeEventListener('mousemove', onSubtitleDragMove);
+    document.removeEventListener('mouseup', onSubtitleDragEnd);
+  }
+
   // Update container dimensions
   function updateContainerDimensions() {
     if (containerRef.value) {
@@ -684,7 +855,21 @@
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
+    // Clean up subtitle drag listeners
+    document.removeEventListener('mousemove', onSubtitleDragMove);
+    document.removeEventListener('mouseup', onSubtitleDragEnd);
   });
+
+  // Watch for subtitle position prop changes
+  watch(
+    () => props.subtitlePosition,
+    (newPosition) => {
+      if (newPosition) {
+        localSubtitlePosition.value = { ...newPosition };
+      }
+    },
+    { immediate: true }
+  );
 
   // Watch for aspect ratio changes
   watch(
@@ -698,5 +883,53 @@
 <style scoped>
   .poi-target-panel {
     background: linear-gradient(to bottom, rgb(24 24 27 / 0.8), rgb(24 24 27 / 0.95));
+  }
+
+  /* Subtitle dragging styles */
+  .subtitle-selection-box {
+    position: relative;
+    border: 2px dashed rgba(147, 51, 234, 0.5);
+    border-radius: 8px;
+    padding: 4px;
+    transition: all 0.2s ease;
+  }
+
+  .subtitle-selection-box:hover {
+    border-color: rgba(147, 51, 234, 0.8);
+    background: rgba(147, 51, 234, 0.05);
+  }
+
+  .subtitle-selection-box.is-active {
+    border-color: rgba(147, 51, 234, 1);
+    background: rgba(147, 51, 234, 0.1);
+  }
+
+  .subtitle-drag-bar {
+    position: absolute;
+    top: -12px;
+    left: 0;
+    right: 0;
+    height: 12px;
+    background: rgba(147, 51, 234, 0.8);
+    border-radius: 4px 4px 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+  }
+
+  .subtitle-drag-bar:hover {
+    background: rgba(147, 51, 234, 1);
+  }
+
+  .subtitle-drag-label {
+    font-size: 8px;
+    color: white;
+    font-weight: 500;
+    user-select: none;
+  }
+
+  .subtitle-text-container {
+    user-select: none;
   }
 </style>

@@ -230,7 +230,7 @@
                           <span style="color: #FACC15;">WORD</span> BY <span style="color: #FACC15;">WORD</span>
                         </span>
                       </div>
-                      <p class="text-[10px] text-muted-foreground mt-1">Word-by-word highlight (Opus style)</p>
+                      <p class="text-[10px] text-muted-foreground mt-1">Word-by-word highlight</p>
                     </button>
                   </div>
 

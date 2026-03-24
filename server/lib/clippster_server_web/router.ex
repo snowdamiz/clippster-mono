@@ -227,6 +227,21 @@ defmodule ClippsterServerWeb.Router do
 
     # Waitlist signup (public)
     post("/waitlist", WaitlistController, :create)
+
+    # Public clipper profile (shareable links)
+    get("/clippers/:slug", ClipperProfilesController, :show)
+
+    get(
+      "/clippers/:slug/portfolio-clips/:clip_id/presigned-url",
+      ClipperProfilesController,
+      :public_portfolio_clip_presigned_url
+    )
+
+    get(
+      "/clippers/:slug/portfolio-clips/:clip_id/thumbnail-presigned-url",
+      ClipperProfilesController,
+      :public_portfolio_clip_thumbnail_presigned_url
+    )
   end
 
   # Protected routes (require authentication)
@@ -948,23 +963,10 @@ defmodule ClippsterServerWeb.Router do
     )
 
     # ============================================================================
-    # Clipper Directory - Public Profiles
+    # Clipper Directory - Authenticated Only
     # ============================================================================
     get("/clippers", ClipperProfilesController, :index)
     get("/clippers/leaderboard", ClipperProfilesController, :leaderboard)
-    get("/clippers/:slug", ClipperProfilesController, :show)
-
-    get(
-      "/clippers/:slug/portfolio-clips/:clip_id/presigned-url",
-      ClipperProfilesController,
-      :public_portfolio_clip_presigned_url
-    )
-
-    get(
-      "/clippers/:slug/portfolio-clips/:clip_id/thumbnail-presigned-url",
-      ClipperProfilesController,
-      :public_portfolio_clip_thumbnail_presigned_url
-    )
 
     post("/clippers/:slug/endorsements", ClipperProfilesController, :create_endorsement)
 

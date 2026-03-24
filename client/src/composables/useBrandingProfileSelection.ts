@@ -397,29 +397,11 @@ export async function resolveBrandingProfile(
     await setProjectBrandingProfile(projectId, null);
   }
 
-  if (candidates.length === 1) {
-    // Auto-select the only option
-    const candidate = candidates[0];
-    await trySaveSelection(projectId, candidate);
-    console.log('[BrandingProfile] Auto-selected only available profile:', candidate.profile.name, `(${candidate.source})`);
-    return candidate.profile;
-  }
-
-  // Multiple candidates — open selector dialog
-  return new Promise<CreatorProfileWithLinks | null>((resolve) => {
-    applicableProfiles.value = candidates;
-    pendingResolve.value = async (selected) => {
-      if (selected) {
-        const selectedCandidate = candidates.find((c) => c.profile.id === selected.id);
-        if (selectedCandidate) {
-          await trySaveSelection(projectId, selectedCandidate);
-        }
-        console.log('[BrandingProfile] User selected profile:', selected.name);
-      }
-      resolve(selected);
-    };
-    showSelector.value = true;
-  });
+  // Auto-select the first available profile (no dialog)
+  const candidate = candidates[0];
+  await trySaveSelection(projectId, candidate);
+  console.log('[BrandingProfile] Auto-selected profile:', candidate.profile.name, `(${candidate.source})`);
+  return candidate.profile;
 }
 
 /**

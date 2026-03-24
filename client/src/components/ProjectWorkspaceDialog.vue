@@ -731,28 +731,24 @@
     const clip = timelineClips.value.find((c: any) => c.id === clipId);
     if (!clip) return [];
     
-    // Get the clip's segments which contain the clip's own transcript data
+    // Get the clip's time range from its segments
     const clipSegments = clip.current_version_segments || clip.segments || [];
     if (clipSegments.length === 0) return [];
     
-    // The clip segment has the plain text transcript that matches what's being displayed
-    // Parse it to extract individual lines/sentences
-    const clipTranscript = clipSegments[0]?.transcript || '';
-    if (!clipTranscript) return [];
+    const clipStartTime = clipSegments[0].start_time;
+    const clipEndTime = clipSegments[clipSegments.length - 1].end_time;
     
-    // Split by sentence-ending punctuation or line breaks
-    const sentences = clipTranscript
-      .split(/(?<=[.!?])\s+/)
-      .filter((s: string) => s.trim().length > 0);
+    // Filter the project's transcript segments to only those within this clip's time range
+    const allSegments = transcriptSegments.value || [];
+    const filteredSegments = allSegments.filter((seg: any) => {
+      return seg.start >= clipStartTime && seg.end <= clipEndTime;
+    });
     
-    // Create simple segments with estimated timing
-    const clipDuration = clipSegments[0].duration || 10;
-    const timePerSentence = clipDuration / sentences.length;
-    
-    return sentences.map((text: string, i: number) => ({
-      start: i * timePerSentence,
-      end: (i + 1) * timePerSentence,
-      text: text.trim(),
+    // Adjust segment times to be relative to clip start (0-based)
+    return filteredSegments.map((seg: any) => ({
+      start: seg.start - clipStartTime,
+      end: seg.end - clipStartTime,
+      text: seg.text,
     }));
   });
 
@@ -1914,8 +1910,19 @@
 
   // Handle subtitle selected (when user clicks subtitle box)
   function onSubtitleSelected() {
-    // Set selectedClipId to the currently playing clip (or first clip if none playing)
-    if (currentlyPlayingClipId.value) {
+    // Find which clip contains the current playback time
+    const currentClip = timelineClips.value.find((clip: any) => {
+      const segments = clip.current_version_segments || clip.segments || [];
+      if (segments.length === 0) return false;
+      const startTime = segments[0].start_time;
+      const endTime = segments[segments.length - 1].end_time;
+      return currentTime.value >= startTime && currentTime.value <= endTime;
+    });
+    
+    // Set selectedClipId to the clip at current time (or first clip if none found)
+    if (currentClip) {
+      selectedClipId.value = currentClip.id;
+    } else if (currentlyPlayingClipId.value) {
       selectedClipId.value = currentlyPlayingClipId.value;
     } else if (timelineClips.value.length > 0) {
       selectedClipId.value = timelineClips.value[0].id;

@@ -854,7 +854,10 @@
       :watermark-settings="watermarkSettings"
       :layout-overlays="vodPresetConfig?.layoutOverlays"
       :overlay-preview-urls="overlayPreviewUrls"
+      :subtitle-settings="subtitleSettings"
+      :subtitle-position-override="getSubtitlePositionForRatio(editingAspectRatio)"
       @confirm="onManualConfigConfirm"
+      @subtitlePositionChange="onSubtitlePositionChange"
     />
 
     <!-- Subtitle Adjustment Dialog -->
@@ -1379,6 +1382,25 @@
     return !!subtitleOverrides.value[ratio as keyof SubtitleOverrides];
   }
 
+  // Get subtitle position for POI editor (returns position object)
+  function getSubtitlePositionForRatio(ratio: string): { x: number; y: number; width?: number } {
+    const override = subtitleOverrides.value[ratio as keyof SubtitleOverrides];
+    if (override?.position) {
+      return {
+        x: override.position.x,
+        y: override.position.y,
+        width: override.maxWidth,
+      };
+    }
+    
+    // Return defaults
+    return {
+      x: 50,
+      y: 85,
+      width: 80,
+    };
+  }
+
   // Open subtitle adjustment dialog for a specific ratio
   function openSubtitleEditorForRatio(ratio: string) {
     editingSubtitleRatio.value = ratio;
@@ -1393,6 +1415,30 @@
       [ratio]: override,
     };
     console.log('[BuildSettings] Subtitle override updated for', ratio, ':', override);
+  }
+
+  // Handle subtitle position change from POI editor
+  function onSubtitlePositionChange(position: { x: number; y: number; width?: number }) {
+    const ratio = editingAspectRatio.value;
+    const existingOverride = subtitleOverrides.value[ratio as keyof SubtitleOverrides] || {
+      fontSize: 32, // Default font size
+      positionPercentage: 85, // Default position
+      position: { x: 50, y: 85 },
+      maxWidth: 80, // Default max width
+    };
+    
+    // Update the position in the override
+    subtitleOverrides.value = {
+      ...subtitleOverrides.value,
+      [ratio]: {
+        ...existingOverride,
+        position: { x: position.x, y: position.y },
+        maxWidth: position.width,
+        positionPercentage: position.y, // Keep for compatibility
+      },
+    };
+    
+    console.log('[BuildSettings] Subtitle position updated for', ratio, ':', position);
   }
 
   // Load a frame from the video for the POI editor preview

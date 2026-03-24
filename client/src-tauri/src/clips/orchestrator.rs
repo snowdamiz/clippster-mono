@@ -730,6 +730,11 @@ pub async fn build_clip_internal_simple(
                     let sub_path = clip_base_dir.join(format!("subtitles_{}.ass", ratio_suffix));
                     // Pass intro_duration as time offset for subtitle timings
                     let subtitle_offset = intro_duration.unwrap_or(0.0);
+                    // Convert subtitle override to JSON Value if available
+                    let per_ratio_override_json = subtitle_overrides
+                        .and_then(|overrides| overrides.get(&aspect_ratio_str).cloned())
+                        .map(|o| serde_json::to_value(o).unwrap());
+                    
                     generate_ass_file(
                         &effective_settings, 
                         words, 
@@ -740,7 +745,8 @@ pub async fn build_clip_internal_simple(
                         video_info.width,
                         video_info.height,
                         fonts_dir.as_deref(),
-                        subtitle_offset
+                        subtitle_offset,
+                        per_ratio_override_json.as_ref()
                     ).map_err(|e| format!("Failed to generate subtitle file: {}", e))?;
                     
                     Some(sub_path)

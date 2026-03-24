@@ -9,11 +9,11 @@
     >
       <template #actions>
         <div v-if="profile" class="profile-header-actions">
-          <button @click="openMessageDialog" class="profile-action-btn profile-action-btn--primary">
+          <button v-if="authStore.isAuthenticated" @click="openMessageDialog" class="profile-action-btn profile-action-btn--primary">
             <MessageCircle class="profile-action-btn__icon" />
             Message
           </button>
-          <button @click="openEndorsementDialog" class="profile-action-btn profile-action-btn--outline">
+          <button v-if="authStore.isAuthenticated" @click="openEndorsementDialog" class="profile-action-btn profile-action-btn--outline">
             <Star class="profile-action-btn__icon" />
             Endorse
           </button>
@@ -661,7 +661,9 @@
   };
 
   const copyProfileLink = () => {
-    const url = window.location.href;
+    // Generate landing web app URL, not desktop app URL
+    const landingUrl = import.meta.env.VITE_LANDING_URL || 'https://clippster.app';
+    const url = `${landingUrl}/clippers/${profile.value?.slug}`;
     navigator.clipboard.writeText(url).then(() => {
       toast({
         title: 'Link Copied',

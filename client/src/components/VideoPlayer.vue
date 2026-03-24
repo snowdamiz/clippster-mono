@@ -123,7 +123,7 @@
         <div 
           ref="subtitleContainerRef"
           class="subtitle-text-container cursor-move pointer-events-auto"
-          :style="{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', width: 'fit-content', gap: wordGapStyle }"
+          :style="{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', width: 'fit-content', gap: wordGapStyle }"
           @mousedown="startDragSubtitles"
         >
           <span
@@ -200,8 +200,13 @@
                     strokeWidth: subtitleSettings.border1Width * 2 * finalFontSizeScale + 'px',
                     strokeLinejoin: 'round',
                     strokeLinecap: 'round',
-                    fill: 'none',
+                    fill: (subtitleSettings?.animationStyle === 'karaoke' && isCurrentWord(wordInfo)) 
+                      ? (subtitleSettings?.highlightColor || '#FFFF00')
+                      : (subtitleSettings?.textColor || '#FFFFFF'),
                   }"
+                  :data-word="wordInfo.word"
+                  :data-is-current="isCurrentWord(wordInfo)"
+                  :data-animation-style="subtitleSettings?.animationStyle"
                 >
                   {{ wordInfo.word }}
                 </text>
@@ -356,7 +361,7 @@
     position: 'top' | 'middle' | 'bottom';
     positionPercentage: number;
     maxWidth: number;
-    animationStyle: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave';
+    animationStyle: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave' | 'single-word';
     highlightColor: string;
     lineHeight: number;
     letterSpacing: number;
@@ -752,8 +757,56 @@
       return [];
     }
 
-    const maxWords = maxWordsForAspectRatio.value;
     const time = props.currentTime || 0;
+    const animationStyle = props.subtitleSettings?.animationStyle;
+
+    console.log('[VideoPlayer] Animation style check:', {
+      animationStyle,
+      subtitleSettings: props.subtitleSettings,
+      isSingleWord: animationStyle === 'single-word'
+    });
+
+    // Single word mode - only show the current word
+    if (animationStyle === 'single-word') {
+      // Use the same approach as OpenCut editor - simple and effective
+      let currentWord = null;
+      
+      // Find the current word being spoken
+      for (let i = 0; i < allSegmentWords.length; i++) {
+        const word = allSegmentWords[i];
+        if (time >= word.start && time < word.end) {
+          currentWord = word;
+          break;
+        }
+      }
+
+      // If no current word, don't show anything (clean gaps)
+      if (!currentWord) {
+        return [];
+      }
+
+      // Simple validation - just check we have a valid word
+      const wordDuration = currentWord.end - currentWord.start;
+      
+      // Skip extremely short words (likely transcription errors)
+      if (wordDuration < 0.05) {
+        return [];
+      }
+
+      // Debug logging
+      console.log('[VideoPlayer] Simple single word timing:', {
+        currentTime: time.toFixed(3),
+        word: currentWord.word,
+        wordStart: currentWord.start.toFixed(3),
+        wordEnd: currentWord.end.toFixed(3),
+        wordDuration: wordDuration.toFixed(3)
+      });
+
+      return [currentWord];
+    }
+
+    // Normal chunked display for other animation styles
+    const maxWords = maxWordsForAspectRatio.value;
 
     // If segment has fewer words than the limit, show all
     if (allSegmentWords.length <= maxWords) {
@@ -814,6 +867,7 @@
       'animation-box-highlight': style === 'box-highlight',
       'animation-typewriter': style === 'typewriter',
       'animation-wave': style === 'wave',
+      'animation-single-word': style === 'single-word',
     };
   });
 
@@ -865,14 +919,36 @@
     if (!props.subtitleSettings) return {};
 
     const settings = props.subtitleSettings;
+    console.log('[VideoPlayer] Subtitle textAlign:', settings.textAlign);
     
-    // Determine position: always use customSubtitlePosition (defaults to bottom-center 50,85)
-    const topPct = customSubtitlePosition.value.y;
-    const leftPct = customSubtitlePosition.value.x;
-
     // Apply text offsets (X and Y adjustments in percentage)
     const leftOffset = settings.textOffsetX || 0;
     const topOffset = settings.textOffsetY || 0;
+    
+    // Determine position: always use customSubtitlePosition (defaults to bottom-center 50,85)
+    const topPct = customSubtitlePosition.value.y;
+    
+    // Calculate horizontal position based on alignment
+    let leftPct: number;
+    let transformX: string;
+    
+    switch (settings.textAlign) {
+      case 'left':
+        // Position at 10% from left edge, apply offset from left edge
+        leftPct = 10;
+        transformX = `${leftOffset}%`;
+        break;
+      case 'right':
+        // Position at 90% from left edge, apply offset from right edge
+        leftPct = 90;
+        transformX = `calc(-100% + ${leftOffset}%)`;
+        break;
+      default:
+        // Center alignment: use custom position and center the container
+        leftPct = customSubtitlePosition.value.x;
+        transformX = `calc(-50% + ${leftOffset}%)`;
+        break;
+    }
 
     // Calculate scaled values for advanced settings
     const scaledPadding = Math.round((settings.padding || 0) * finalFontSizeScale.value);
@@ -885,12 +961,12 @@
       position: 'absolute',
       top: topPct + '%',
       left: leftPct + '%',
-      transform: `translate(calc(-50% + ${leftOffset}%), calc(-50% + ${topOffset}%))`,
+      transform: `translate(${transformX}, calc(-50% + ${topOffset}%))`,
       width: 'max-content',
       maxWidth: customSubtitleWidth.value + '%',
       display: 'flex',
       flexWrap: 'wrap',
-      justifyContent: 'center',
+      justifyContent: settings.textAlign || 'center',
       alignItems: 'center',
       lineHeight: String(scaledLineHeight),
     };
@@ -902,6 +978,7 @@
       baseStyles.borderRadius = `${scaledBorderRadius}px`;
     }
 
+    console.log('[VideoPlayer] Computed subtitle styles:', baseStyles);
     return baseStyles;
   });
 
@@ -1723,6 +1800,26 @@
     }
     100% {
       transform: translateY(0) scale(1.03);
+    }
+  }
+
+  /* Single word animation - punchy entrance and exit */
+  .subtitle-word-stack.animation-single-word {
+    animation: single-word-punch 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  }
+
+  @keyframes single-word-punch {
+    0% {
+      opacity: 0;
+      transform: scale(0.8) translateY(10px);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.1) translateY(-2px);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) translateY(0);
     }
   }
 
