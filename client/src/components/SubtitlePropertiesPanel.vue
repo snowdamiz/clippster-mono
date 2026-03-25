@@ -50,6 +50,91 @@
         </div>
       </div>
 
+      <!-- ── MULTI-COLOR (Single-Word Mode Only) ── -->
+      <div v-if="settings.animationStyle === 'single-word'" class="sp__section">
+        <div class="sp__section-hd-row">
+          <span class="sp__section-hd">Multi-Color Words</span>
+          <label class="sp__toggle">
+            <input type="checkbox" :checked="settings.multiColorEnabled"
+              @change="update('multiColorEnabled', ($event.target as HTMLInputElement).checked)" />
+            <span class="sp__toggle-track"><span class="sp__toggle-thumb"></span></span>
+          </label>
+        </div>
+        
+        <template v-if="settings.multiColorEnabled">
+          <div class="sp__field sp__mt">
+            <label class="sp__radio-option">
+              <input type="radio" name="multiColorMode" :checked="settings.multiColorMode === 'default'"
+                @change="update('multiColorMode', 'default')" />
+              <span class="sp__radio-label">Default Palette</span>
+            </label>
+            <p class="sp__hint">Green → Cyan → Yellow → White</p>
+          </div>
+          
+          <div class="sp__field sp__mt">
+            <label class="sp__radio-option">
+              <input type="radio" name="multiColorMode" :checked="settings.multiColorMode === 'custom'"
+                @change="update('multiColorMode', 'custom')" />
+              <span class="sp__radio-label">Custom Palette</span>
+            </label>
+          </div>
+          
+          <div v-if="settings.multiColorMode === 'custom'" class="sp__color-palette sp__mt">
+            <div v-for="(color, index) in settings.colorPalette" :key="index" class="sp__palette-item">
+              <label class="sp__swatch-wrap">
+                <input type="color" :value="color"
+                  @input="updatePaletteColor(index, ($event.target as HTMLInputElement).value)" />
+                <span class="sp__swatch" :style="{ background: color }"></span>
+              </label>
+              <input class="sp__hex" type="text" :value="color" maxlength="7"
+                @change="updatePaletteColor(index, ($event.target as HTMLInputElement).value)" />
+              <button v-if="settings.colorPalette.length > 1" @click="removePaletteColor(index)" class="sp__btn-remove" title="Remove color">✕</button>
+            </div>
+            <button @click="addPaletteColor" class="sp__btn-add">+ Add Color</button>
+          </div>
+        </template>
+      </div>
+
+      <!-- ── HIGHLIGHT COLOR (Karaoke/Pop/Zoom Modes) ── -->
+      <div v-if="['karaoke', 'pop', 'zoom'].includes(settings.animationStyle)" class="sp__section">
+        <div class="sp__section-hd">Highlight Color</div>
+        <p class="sp__hint sp__mb">Color when word is active</p>
+        
+        <div class="sp__preset-colors">
+          <button 
+            v-for="preset in highlightColorPresets" 
+            :key="preset.value"
+            class="sp__color-preset"
+            :class="{ 'sp__color-preset--active': settings.highlightColor === preset.value }"
+            :style="{ background: preset.value }"
+            @click="update('highlightColor', preset.value)"
+            :title="preset.name"
+          >
+            <span class="sp__color-preset-check">✓</span>
+          </button>
+          
+          <button 
+            class="sp__color-preset sp__color-preset--custom"
+            :class="{ 'sp__color-preset--active': isCustomHighlightColor }"
+            @click="showCustomHighlightPicker = true"
+            title="Custom Color"
+          >
+            <span v-if="isCustomHighlightColor" class="sp__color-preset-swatch" :style="{ background: settings.highlightColor }"></span>
+            <span v-else class="sp__color-preset-icon">🎨</span>
+          </button>
+        </div>
+        
+        <div v-if="showCustomHighlightPicker || isCustomHighlightColor" class="sp__custom-color sp__mt">
+          <label class="sp__swatch-wrap">
+            <input type="color" :value="settings.highlightColor"
+              @input="update('highlightColor', ($event.target as HTMLInputElement).value)" />
+            <span class="sp__swatch" :style="{ background: settings.highlightColor }"></span>
+          </label>
+          <input class="sp__hex" type="text" :value="settings.highlightColor" maxlength="7"
+            @change="update('highlightColor', ($event.target as HTMLInputElement).value)" />
+        </div>
+      </div>
+
       <!-- ── FONT ── -->
       <div class="sp__section">
         <div class="sp__section-hd">Font</div>
@@ -249,6 +334,9 @@ interface SubtitleSettings {
   maxWidth: number;
   animationStyle: string;
   highlightColor: string;
+  multiColorEnabled: boolean;
+  multiColorMode: 'default' | 'custom';
+  colorPalette: string[];
   lineHeight: number;
   letterSpacing: number;
   textAlign: string;
@@ -358,6 +446,47 @@ function onSegmentTextChange(index: number, text: string) {
   editableSegments.value[index].text = text;
   emit('updateSegmentText', index, text);
 }
+
+// Highlight color presets
+const highlightColorPresets = [
+  { name: 'Neon Green', value: '#04F827' },
+  { name: 'Yellow', value: '#FFFD03' },
+  { name: 'App Cyan', value: '#0ea5e9' },
+];
+
+// Check if current highlight color is a custom color (not in presets)
+const isCustomHighlightColor = computed(() => {
+  return !highlightColorPresets.some(p => p.value === props.settings.highlightColor);
+});
+
+// Show custom highlight picker
+const showCustomHighlightPicker = ref(false);
+
+// Multi-color palette helper functions
+function updatePaletteColor(index: number, color: string) {
+  const newPalette = [...props.settings.colorPalette];
+  newPalette[index] = color;
+  update('colorPalette', newPalette);
+}
+
+function addPaletteColor() {
+  const newPalette = [...props.settings.colorPalette, '#FFFFFF'];
+  update('colorPalette', newPalette);
+}
+
+function removePaletteColor(index: number) {
+  const newPalette = props.settings.colorPalette.filter((_, i) => i !== index);
+  update('colorPalette', newPalette);
+}
+
+// Initialize colorPalette if empty when custom mode is selected
+watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length], ([mode, length]) => {
+  if (mode === 'custom' && length === 0) {
+    // Initialize with default palette colors
+    update('colorPalette', ['#04F827', '#0ea5e9', '#FFFD03', '#FFFFFF']);
+  }
+});
+
 </script>
 
 <style scoped>
@@ -439,7 +568,7 @@ function onSegmentTextChange(index: number, text: string) {
 
 .sp__section--last {
   border-bottom: none;
-  padding-bottom: 1.5rem;
+  padding-bottom: 2.5rem;
 }
 
 .sp__section-hd {
@@ -832,5 +961,140 @@ function onSegmentTextChange(index: number, text: string) {
   font-size: 11px;
   text-align: center;
   padding: 16px 0;
+}
+
+/* Radio options */
+.sp__radio-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.sp__radio-option input[type="radio"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.sp__radio-label {
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Multi-color palette */
+.sp__color-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sp__palette-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sp__btn-remove {
+  width: 24px;
+  height: 24px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 150ms ease;
+}
+
+.sp__btn-remove:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+}
+
+.sp__btn-add {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--sidebar-text);
+  border: 1px dashed var(--sidebar-border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 150ms ease;
+}
+
+.sp__btn-add:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--sidebar-accent);
+  color: var(--sidebar-accent);
+}
+
+/* Highlight color presets */
+.sp__preset-colors {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sp__color-preset {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 150ms ease;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sp__color-preset:hover {
+  transform: scale(1.05);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.sp__color-preset--active {
+  border-color: var(--sidebar-accent);
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2);
+}
+
+.sp__color-preset-check {
+  color: white;
+  font-size: 20px;
+  font-weight: bold;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.sp__color-preset--active .sp__color-preset-check {
+  opacity: 1;
+}
+
+.sp__color-preset--custom {
+  background: linear-gradient(135deg, 
+    #ff0000 0%, #ff7f00 14%, #ffff00 28%, 
+    #00ff00 42%, #0000ff 57%, #4b0082 71%, 
+    #9400d3 85%, #ff0000 100%);
+}
+
+.sp__color-preset-icon {
+  font-size: 24px;
+}
+
+.sp__color-preset-swatch {
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+}
+
+.sp__custom-color {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sp__mb {
+  margin-bottom: 12px;
 }
 </style>

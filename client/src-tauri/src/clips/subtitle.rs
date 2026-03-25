@@ -1,6 +1,42 @@
 use super::types::{AspectRatio, SubtitleSettings, TextOverlaySettings, WordInfo};
 use std::io::Write;
 
+// Default color palette for multi-color single-word mode
+const DEFAULT_COLOR_PALETTE: [&str; 4] = ["#04F827", "#0ea5e9", "#FFFD03", "#FFFFFF"];
+
+// Convert hex color to ASS override tag format (&HBBGGRR& with trailing &)
+fn convert_hex_to_ass_color(hex: &str) -> String {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() >= 6 {
+        let r = &hex[0..2];
+        let g = &hex[2..4];
+        let b = &hex[4..6];
+        // ASS override tags use BGR order with optional alpha prefix, and trailing &
+        format!("&H{}{}{}&", b, g, r).to_uppercase()
+    } else {
+        "&HFFFFFF&".to_string()
+    }
+}
+
+// Helper function to get the color for a word based on multi-color settings
+fn get_word_color(word_index: usize, settings: &SubtitleSettings) -> String {
+    if !settings.multi_color_enabled {
+        // Multi-color is OFF, use the regular text color
+        return settings.text_color.clone();
+    }
+    
+    // Multi-color is ON
+    if settings.multi_color_mode == "custom" && !settings.color_palette.is_empty() {
+        // Use custom palette
+        let palette_index = word_index % settings.color_palette.len();
+        settings.color_palette[palette_index].clone()
+    } else {
+        // Use default palette (Neon Green, Cyan, Yellow, White)
+        let palette_index = word_index % DEFAULT_COLOR_PALETTE.len();
+        DEFAULT_COLOR_PALETTE[palette_index].to_string()
+    }
+}
+
 // Helper to embed fonts directly in ASS file
 pub fn embed_fonts_in_ass(
     file: &mut std::fs::File,
@@ -284,16 +320,16 @@ pub fn generate_ass_file(
         1.0 // Wide formats (16:9, 21:9)
     };
 
-    // Apply a correction factor to match the frontend visual size for font size
-    // The frontend preview renders fonts larger relative to the video frame due to DPI/scaling differences
-    let font_size_scale = font_size_scale * 1.5;
-
+    // NOTE: The frontend uses videoScaleFactor (containerHeight / 1080) for dynamic scaling
+    // based on actual viewport size. In export, we work with fixed PlayResY=1080,
+    // so we don't need additional scaling - the font size is already relative to 1080p.
+    
     let adjusted_font_size = (eff_font_size * font_size_scale).round();
     // CSS WebkitTextStroke is centered on the path, so only half extends outwards.
     // ASS Outline is entirely outwards. To match the visual thickness of the frontend,
     // we need to divide the stroke width by 2.
-    let adjusted_border1_width = eff_border1_width * font_size_scale * 0.8;
-    let adjusted_border2_width = settings.border2_width * font_size_scale * 0.8;
+    let adjusted_border1_width = eff_border1_width * font_size_scale * 0.5;
+    let adjusted_border2_width = settings.border2_width * font_size_scale * 0.5;
     // ASS Shadow parameter is an offset depth, calculate from shadow offset X/Y
     // Use the magnitude of the offset vector for proper shadow distance
     let shadow_offset_magnitude =
@@ -345,13 +381,9 @@ pub fn generate_ass_file(
     let approx_height = (adjusted_font_size as f64 * 2.0) + (adjusted_padding as f64 * 2.0);
     let shift_y_px = approx_height * (settings.text_offset_y as f64 / 100.0);
 
-    // Apply a vertical correction to raise the subtitles slightly
-    // The font scaling (1.5x) pushes the bottom edge down, so we compensate by moving the center up
-    // We use a factor of the font size as a heuristic for the correction
-    let vertical_correction = (adjusted_font_size as f64) * 0.3;
-
-    let target_y = (play_res_y as f64 * (override_y / 100.0)) + shift_y_px
-        - vertical_correction;
+    // NOTE: Removed vertical_correction - the frontend doesn't apply any correction,
+    // so we shouldn't either to match the preview exactly
+    let target_y = (play_res_y as f64 * (override_y / 100.0)) + shift_y_px;
 
     // Map textAlign to ASS alignment values (numpad layout)
     // Bottom row: 1=left, 2=center, 3=right
@@ -641,7 +673,10 @@ pub fn generate_ass_file(
                     }
                     "single-word" => {
                         // Only show the active word, hide others
-                        format!("{}{}", weight_tag, active_word.word)
+                        // Get the color for this word (supports multi-color mode)
+                        let word_color = get_word_color(active_idx, settings);
+                        let ass_color = convert_hex_to_ass_color(&word_color);
+                        format!("{{\\c{}}}{}{}", ass_color, weight_tag, active_word.word)
                     }
                     "typewriter" => {
                         // Typewriter: reveal words one by one, active word appears
@@ -693,14 +728,16 @@ pub fn generate_ass_file(
                         parts.join(&word_separator)
                     }
                     "pop" => {
-                        // Pop: active word scales up more aggressively
+                        // Pop: active word scales up more aggressively with highlight color
                         let scale_up_end = word_start_in_interval + anim_duration_ms;
                         let mut positioned_text_parts = Vec::new();
+                        let highlight_ass_color = convert_hex_to_ass_color(&settings.highlight_color);
+                        
                         for (k, word) in chunk.iter().enumerate() {
                             if k == active_idx {
                                 positioned_text_parts.push(format!(
-                                    "{}{{\\r\\t({},{},\\fscx130\\fscy130)}}{}{{\\fscx100\\fscy100}}",
-                                    weight_tag, word_start_in_interval, scale_up_end, word.word
+                                    "{}{{\\c{}\\r\\t({},{},\\fscx130\\fscy130)}}{}{{\\fscx100\\fscy100}}",
+                                    weight_tag, highlight_ass_color, word_start_in_interval, scale_up_end, word.word
                                 ));
                             } else {
                                 positioned_text_parts.push(format!("{}{}", weight_tag, word.word));
@@ -709,14 +746,16 @@ pub fn generate_ass_file(
                         positioned_text_parts.join(&word_separator)
                     }
                     "zoom" => {
-                        // Zoom: slower scale-up effect
+                        // Zoom: slower scale-up effect with highlight color
                         let scale_up_end = word_start_in_interval + (anim_duration_ms * 2);
                         let mut positioned_text_parts = Vec::new();
+                        let highlight_ass_color = convert_hex_to_ass_color(&settings.highlight_color);
+                        
                         for (k, word) in chunk.iter().enumerate() {
                             if k == active_idx {
                                 positioned_text_parts.push(format!(
-                                    "{}{{\\r\\t({},{},\\fscx110\\fscy110)}}{}{{\\fscx100\\fscy100}}",
-                                    weight_tag, word_start_in_interval, scale_up_end, word.word
+                                    "{}{{\\c{}\\r\\t({},{},\\fscx110\\fscy110)}}{}{{\\fscx100\\fscy100}}",
+                                    weight_tag, highlight_ass_color, word_start_in_interval, scale_up_end, word.word
                                 ));
                             } else {
                                 positioned_text_parts.push(format!("{}{}", weight_tag, word.word));
@@ -725,16 +764,22 @@ pub fn generate_ass_file(
                         positioned_text_parts.join(&word_separator)
                     }
                     _ => {
-                        // Default karaoke/scale-up animation
+                        // Default karaoke/scale-up animation with highlight color
                         let scale_up_end = word_start_in_interval + anim_duration_ms;
                         let mut positioned_text_parts = Vec::new();
+                        
+                        // Get highlight color for karaoke effect (from settings.highlight_color)
+                        let highlight_ass_color = convert_hex_to_ass_color(&settings.highlight_color);
+                        
                         for (k, word) in chunk.iter().enumerate() {
                             if k == active_idx {
+                                // Active word: scale up with highlight color
                                 positioned_text_parts.push(format!(
-                                    "{}{{\\r\\t({},{},\\fscx115\\fscy115)}}{}{{\\fscx100\\fscy100}}",
-                                    weight_tag, word_start_in_interval, scale_up_end, word.word
+                                    "{}{{\\c{}\\r\\t({},{},\\fscx115\\fscy115)}}{}{{\\fscx100\\fscy100}}",
+                                    weight_tag, highlight_ass_color, word_start_in_interval, scale_up_end, word.word
                                 ));
                             } else {
+                                // Other words: transparent (hidden)
                                 positioned_text_parts.push(format!("{}{{\\alpha&HFF&}}{}", weight_tag, word.word));
                             }
                         }
@@ -916,10 +961,9 @@ pub fn generate_text_overlay_ass_file(
     // Font sizes in text overlays are defined relative to a 1080p reference height.
     // The frontend scales: displayedFontSize = configuredFontSize * (containerHeight / 1080)
     //
-    // However, there's a difference in how fonts are rendered in the browser vs. FFmpeg/ASS.
-    // We need to apply the same 1.5x correction factor used by subtitles to match the preview.
-    // This accounts for DPI/scaling differences between browser rendering and ASS rendering.
-    let font_correction_factor = 1.5;
+    // In export, we work with fixed PlayResY=1080, so font sizes don't need additional
+    // correction factors - they're already defined at the right scale.
+    let font_correction_factor = 1.0;
 
     println!(
         "[Rust] Text overlay generation for {}: play_res_x={}, play_res_y={}, font_correction={}",
@@ -1172,8 +1216,9 @@ pub fn merge_text_overlays_into_ass(
 
         let bold = if style.font_weight >= 700 { 1 } else { 0 };
 
-        // Apply 1.5x correction factor to match browser rendering (same as generate_text_overlay_ass_file)
-        let font_correction_factor = 1.5_f32;
+        // NOTE: Removed 1.5x correction factor to match browser rendering exactly
+        // Font sizes are defined at 1080p reference and don't need additional scaling
+        let font_correction_factor = 1.0_f32;
 
         let outline_width = if style.border1_width > 0.0 {
             (style.border1_width * font_correction_factor * 0.5).max(0.5)

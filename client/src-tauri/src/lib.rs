@@ -13,6 +13,7 @@ mod clips;
 mod commands;
 mod downloads;
 mod dvr;
+mod ffmpeg_sidecar;
 mod ffmpeg_utils;
 mod focal_detection;
 mod font_commands;

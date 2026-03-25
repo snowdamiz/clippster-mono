@@ -23,6 +23,14 @@ pub struct SubtitleSettings {
     pub position_percentage: f32,
     pub max_width: f32,
     pub animation_style: String,
+    #[serde(default = "default_highlight_color")]
+    pub highlight_color: String,
+    #[serde(default)]
+    pub multi_color_enabled: bool,
+    #[serde(default = "default_multi_color_mode")]
+    pub multi_color_mode: String,
+    #[serde(default)]
+    pub color_palette: Vec<String>,
     pub line_height: f32,
     pub letter_spacing: f32,
     pub text_align: String,
@@ -31,6 +39,14 @@ pub struct SubtitleSettings {
     pub padding: f32,
     pub border_radius: f32,
     pub word_spacing: f32,
+}
+
+fn default_highlight_color() -> String {
+    "#FFFD03".to_string()
+}
+
+fn default_multi_color_mode() -> String {
+    "default".to_string()
 }
 
 // Per-aspect-ratio subtitle override (size, position, and width)

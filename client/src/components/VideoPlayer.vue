@@ -117,8 +117,14 @@
             @mousedown.stop="startDragSubtitles"
             @click.stop="emit('subtitleSelected')"
           >
-            <span class="subtitle-drag-label">⠿ subtitles</span>
+            <span class="subtitle-drag-label">⠿ SUBTITLES</span>
           </div>
+
+          <!-- Corner resize handles for font size adjustment -->
+          <div class="resize-handle resize-handle-tl" @mousedown.stop="(e) => startFontResize(e, 'tl')"></div>
+          <div class="resize-handle resize-handle-tr" @mousedown.stop="(e) => startFontResize(e, 'tr')"></div>
+          <div class="resize-handle resize-handle-bl" @mousedown.stop="(e) => startFontResize(e, 'bl')"></div>
+          <div class="resize-handle resize-handle-br" @mousedown.stop="(e) => startFontResize(e, 'br')"></div>
 
         <div 
           ref="subtitleContainerRef"
@@ -1681,7 +1687,7 @@
     border: 1px dashed rgba(255, 255, 255, 0.45);
     border-radius: 4px;
     box-sizing: border-box;
-    padding: 18px 0 0 0; /* top only — for drag bar; no side/bottom padding so box fits text */
+    padding: 22px 0 0 0; /* top only — for drag bar; no side/bottom padding so box fits text */
     cursor: move;
     user-select: none;
     transition: border-color 0.15s;
@@ -1689,7 +1695,8 @@
 
   .subtitle-selection-box:hover,
   .subtitle-selection-box.is-active {
-    border-color: rgba(255, 255, 255, 0.85);
+    border-color: rgba(59, 130, 246, 0.85);
+    border-width: 2px;
   }
 
   /* Drag bar at the top of the selection box */
@@ -1698,21 +1705,76 @@
     top: 0;
     left: 0;
     right: 0;
-    height: 18px;
+    height: 22px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: move;
-    border-radius: 3px 3px 0 0;
-    background: rgba(0, 0, 0, 0.35);
+    border-radius: 4px 4px 0 0;
+    background: rgba(59, 130, 246, 0.85);
+    backdrop-filter: blur(4px);
+    transition: background 0.15s;
+  }
+
+  .subtitle-drag-bar:hover {
+    background: rgba(59, 130, 246, 0.95);
   }
 
   .subtitle-drag-label {
-    font-size: 9px;
-    color: rgba(255, 255, 255, 0.6);
-    letter-spacing: 0.05em;
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    letter-spacing: 0.1em;
     pointer-events: none;
     user-select: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Corner resize handles for font size adjustment */
+  .resize-handle {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: rgba(59, 130, 246, 0.9);
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    z-index: 10;
+    opacity: 0;
+    transition: opacity 0.15s, transform 0.15s;
+  }
+
+  .subtitle-selection-box:hover .resize-handle,
+  .subtitle-selection-box.is-active .resize-handle {
+    opacity: 1;
+  }
+
+  .resize-handle:hover {
+    transform: scale(1.3);
+    background: rgba(59, 130, 246, 1);
+  }
+
+  .resize-handle-tl {
+    top: -5px;
+    left: -5px;
+    cursor: nwse-resize;
+  }
+
+  .resize-handle-tr {
+    top: -5px;
+    right: -5px;
+    cursor: nesw-resize;
+  }
+
+  .resize-handle-bl {
+    bottom: -5px;
+    left: -5px;
+    cursor: nesw-resize;
+  }
+
+  .resize-handle-br {
+    bottom: -5px;
+    right: -5px;
+    cursor: nwse-resize;
   }
 
   /* Subtitle word animation styles */

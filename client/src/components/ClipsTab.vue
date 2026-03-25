@@ -939,6 +939,22 @@
   const derivedSubtitleSettings = computed((): SubtitleSettings | null => {
     const clip = clipToBuild.value as any;
     if (!clip?.subtitle_enabled || !clip?.subtitle_preset_id) return null;
+    
+    // First, try to load full settings from database if they exist
+    if (clip.subtitle_settings) {
+      try {
+        const savedSettings = typeof clip.subtitle_settings === 'string' 
+          ? JSON.parse(clip.subtitle_settings) 
+          : clip.subtitle_settings;
+        console.log('[ClipsTab] Using saved subtitle settings from database for clip build');
+        return savedSettings;
+      } catch (error) {
+        console.error('[ClipsTab] Failed to parse subtitle_settings JSON:', error);
+        // Fall back to preset below
+      }
+    }
+    
+    // Fall back to preset if no full settings saved
     const preset = CAPTION_PRESETS.find((p) => p.id === clip.subtitle_preset_id);
     if (!preset) return null;
     const fontWeightMap: Record<string, number> = {

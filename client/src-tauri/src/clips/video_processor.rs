@@ -3905,7 +3905,20 @@ async fn burn_subtitles_to_video(
         .to_string_lossy()
         .replace("\\", "/")
         .replace(":", "\\:");
-    let vf_arg = format!("format=rgb24,ass='{}'", sub_arg);
+    
+    // Get fonts directory for subtitle rendering
+    let fonts_dir_for_burn = get_fonts_dir(app).ok();
+    
+    // Build ass filter with fontsdir parameter for accurate font rendering
+    let vf_arg = if let Some(fdir) = fonts_dir_for_burn {
+        let fonts_dir_str = fdir
+            .to_string_lossy()
+            .replace("\\", "/")
+            .replace(":", "\\:");
+        format!("format=rgb24,ass='{}':fontsdir='{}'", sub_arg, fonts_dir_str)
+    } else {
+        format!("format=rgb24,ass='{}'", sub_arg)
+    };
 
     let paths = crate::storage::init_storage_dirs()
         .map_err(|e| format!("Failed to get storage paths: {}", e))?;

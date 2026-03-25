@@ -199,6 +199,9 @@ export interface SubtitleSettings {
     | 'wave'
     | 'single-word';
   highlightColor: string;
+  multiColorEnabled: boolean;
+  multiColorMode: 'default' | 'custom';
+  colorPalette: string[];
   lineHeight: number;
   letterSpacing: number;
   textAlign: 'left' | 'center' | 'right';
@@ -1197,6 +1200,9 @@ export interface ClipSubtitleSettings {
     | 'wave'
     | 'single-word';
   highlightColor: string;
+  multiColorEnabled: boolean;
+  multiColorMode: 'default' | 'custom';
+  colorPalette: string[];
   lineHeight: number;
   letterSpacing: number;
   textAlign: 'left' | 'center' | 'right';

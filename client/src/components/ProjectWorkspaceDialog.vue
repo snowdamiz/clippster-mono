@@ -825,6 +825,7 @@
   const {
     videoElement,
     videoSrc,
+    currentFilePath,
     videoLoading,
     videoError,
     isPlaying,
@@ -1931,16 +1932,100 @@
   }
 
   // Handle subtitle font size change (when user drags a corner handle)
-  function onSubtitleFontSizeChange(fontSize: number) {
+  async function onSubtitleFontSizeChange(fontSize: number) {
     if (activeSubtitleSettings.value) {
       activeSubtitleSettings.value = { ...activeSubtitleSettings.value, fontSize };
+      
+      // CRITICAL: Sync current position from subtitle_position columns into settings
+      const currentClip = timelineClips.value.find((c: any) => c.id === currentlyPlayingClipId.value);
+      if (currentClip) {
+        if (currentClip.subtitle_position_y != null) {
+          activeSubtitleSettings.value.positionPercentage = currentClip.subtitle_position_y;
+        }
+        if (currentClip.subtitle_position_width != null) {
+          activeSubtitleSettings.value.maxWidth = currentClip.subtitle_position_width;
+        }
+      }
+      
+      // Save the full settings to the database
+      if (currentlyPlayingClipId.value) {
+        try {
+          const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } = await import('@/services/database/clips');
+          await updateClipFullSubtitleSettings(currentlyPlayingClipId.value, activeSubtitleSettings.value);
+          
+          // CRITICAL: Also save position to the separate columns to keep them in sync
+          if (currentClip) {
+            const posX = currentClip.subtitle_position_x ?? 50;
+            const posY = currentClip.subtitle_position_y ?? 85;
+            const width = currentClip.subtitle_position_width ?? null;
+            await updateClipSubtitlePosition(currentlyPlayingClipId.value, posX, posY, width);
+            console.log('[ProjectWorkspaceDialog] Synced position columns after font size change');
+          }
+          
+          console.log('[ProjectWorkspaceDialog] Saved subtitle font size change with current position for clip:', currentlyPlayingClipId.value);
+        } catch (error) {
+          console.error('[ProjectWorkspaceDialog] Failed to save subtitle font size:', error);
+        }
+      }
     }
   }
 
   // Handle subtitle settings update from the properties panel
-  function onSubtitleSettingsUpdate(patch: Partial<typeof activeSubtitleSettings.value>) {
+  async function onSubtitleSettingsUpdate(patch: Partial<typeof activeSubtitleSettings.value>) {
+    console.log('[ProjectWorkspaceDialog] onSubtitleSettingsUpdate called with patch:', patch);
+    
     if (activeSubtitleSettings.value) {
-      activeSubtitleSettings.value = { ...activeSubtitleSettings.value, ...patch };
+      // Merge the patch with current settings
+      const updatedSettings = { ...activeSubtitleSettings.value, ...patch };
+      
+      // CRITICAL: Sync the current dragged position from subtitle_position columns into the settings
+      // This ensures when we reload settings, the position is preserved
+      const currentClip = timelineClips.value.find((c: any) => c.id === currentlyPlayingClipId.value);
+      if (currentClip) {
+        console.log('[ProjectWorkspaceDialog] Current clip position before sync:', {
+          x: currentClip.subtitle_position_x,
+          y: currentClip.subtitle_position_y,
+          width: currentClip.subtitle_position_width
+        });
+        
+        if (currentClip.subtitle_position_y != null) {
+          updatedSettings.positionPercentage = currentClip.subtitle_position_y;
+        }
+        if (currentClip.subtitle_position_width != null) {
+          updatedSettings.maxWidth = currentClip.subtitle_position_width;
+        }
+        
+        console.log('[ProjectWorkspaceDialog] Updated settings after position sync:', {
+          positionPercentage: updatedSettings.positionPercentage,
+          maxWidth: updatedSettings.maxWidth
+        });
+      } else {
+        console.warn('[ProjectWorkspaceDialog] Could not find current clip to sync position!');
+      }
+      
+      activeSubtitleSettings.value = updatedSettings;
+      
+      // Save the full settings to the database for the currently playing clip
+      if (currentlyPlayingClipId.value) {
+        try {
+          const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } = await import('@/services/database/clips');
+          await updateClipFullSubtitleSettings(currentlyPlayingClipId.value, activeSubtitleSettings.value);
+          
+          // CRITICAL: Also save position to the separate columns to keep them in sync
+          // This ensures that if something reloads the clip, the position columns match the JSON
+          if (currentClip) {
+            const posX = currentClip.subtitle_position_x ?? 50;
+            const posY = currentClip.subtitle_position_y ?? 85;
+            const width = currentClip.subtitle_position_width ?? null;
+            await updateClipSubtitlePosition(currentlyPlayingClipId.value, posX, posY, width);
+            console.log('[ProjectWorkspaceDialog] Synced position columns to match JSON:', { posX, posY, width });
+          }
+          
+          console.log('[ProjectWorkspaceDialog] Saved full subtitle settings for clip with current position:', currentlyPlayingClipId.value);
+        } catch (error) {
+          console.error('[ProjectWorkspaceDialog] Failed to save subtitle settings:', error);
+        }
+      }
     }
   }
 
@@ -1962,8 +2047,21 @@
       clip.subtitle_position_width = width;
     }
 
+    // CRITICAL: Also update activeSubtitleSettings to keep them in sync
+    if (activeSubtitleSettings.value) {
+      activeSubtitleSettings.value.positionPercentage = position.y;
+      activeSubtitleSettings.value.maxWidth = width;
+    }
+
     try {
+      // Save position to separate columns
       await updateClipSubtitlePosition(currentlyPlayingClipId.value, position.x, position.y, width);
+      
+      // Also save full settings with the updated position
+      if (activeSubtitleSettings.value) {
+        const { updateClipFullSubtitleSettings } = await import('@/services/database/clips');
+        await updateClipFullSubtitleSettings(currentlyPlayingClipId.value, activeSubtitleSettings.value);
+      }
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to save subtitle position:', error);
     }
@@ -2304,6 +2402,75 @@
     }
   }
 
+  // Helper function to load subtitle settings from preset (fallback when no full settings saved)
+  function loadSubtitleSettingsFromPreset(clip: any) {
+    const preset = CAPTION_PRESETS.find(p => p.id === clip.subtitle_preset_id);
+    if (!preset) return;
+    
+    const animationStyleMap: Record<string, 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave'> = {
+      'none': 'none',
+      'karaoke': 'karaoke',
+      'karaoke-scale': 'karaoke',
+      'zoom': 'zoom',
+      'pop': 'pop',
+      'glow': 'glow',
+      'box-highlight': 'box-highlight',
+      'typewriter': 'typewriter',
+      'wave': 'wave',
+    };
+    
+    const fontWeightMap: Record<string, number> = {
+      'normal': 400,
+      'bold': 700,
+      '100': 100,
+      '200': 200,
+      '300': 300,
+      '400': 400,
+      '500': 500,
+      '600': 600,
+      '700': 700,
+      '800': 800,
+      '900': 900,
+    };
+    const fontWeight = fontWeightMap[preset.fontWeight || '700'] || 700;
+    
+    activeSubtitleSettings.value = {
+      enabled: true,
+      selectedPresetId: preset.id,
+      fontFamily: preset.fontFamily || 'Montserrat',
+      fontSize: preset.fontSize || 48,
+      fontWeight: fontWeight,
+      textColor: preset.color || '#FFFFFF',
+      backgroundColor: preset.backgroundColor || 'transparent',
+      backgroundEnabled: preset.backgroundColor !== 'transparent',
+      position: 'bottom' as const,
+      positionPercentage: clip.subtitle_position_y ?? 85, // Use saved position
+      maxWidth: clip.subtitle_position_width ?? 90, // Use saved width
+      animationStyle: animationStyleMap[preset.highlightStyle || 'none'] || 'none',
+      highlightColor: preset.highlightColor || '#FFFD03',
+      multiColorEnabled: false,
+      multiColorMode: 'default',
+      colorPalette: [],
+      border1Width: preset.stroke?.width || 0,
+      border1Color: preset.stroke?.color || '#000000',
+      border2Width: 0,
+      border2Color: '#000000',
+      shadowBlur: preset.shadow?.blur ?? 0,
+      shadowOffsetX: preset.shadow?.offsetX ?? 0,
+      shadowOffsetY: preset.shadow?.offsetY ?? 0,
+      shadowColor: preset.shadow?.color || '#000000',
+      lineHeight: preset.lineHeight || 1.2,
+      letterSpacing: preset.letterSpacing || 0,
+      textAlign: 'center' as const,
+      textOffsetX: 0,
+      textOffsetY: 0,
+      padding: 0,
+      borderRadius: 0,
+      wordSpacing: 0.35,
+    };
+    console.log('[ProjectWorkspaceDialog] Loaded subtitle settings from preset:', preset.id, 'with saved position:', clip.subtitle_position_y);
+  }
+
   // Function to handle clip playback
   async function onPlayClip(clip: any) {
     console.log('[ProjectWorkspaceDialog] onPlayClip called with clip:', {
@@ -2334,67 +2501,32 @@
 
     // Set subtitle settings for this clip (persists during playback)
     if (clip.subtitle_enabled && clip.subtitle_preset_id) {
-      const preset = CAPTION_PRESETS.find(p => p.id === clip.subtitle_preset_id);
-      if (preset) {
-        const animationStyleMap: Record<string, 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave'> = {
-          'none': 'none',
-          'karaoke': 'karaoke',
-          'karaoke-scale': 'karaoke',
-          'zoom': 'zoom',
-          'pop': 'pop',
-          'glow': 'glow',
-          'box-highlight': 'box-highlight',
-          'typewriter': 'typewriter',
-          'wave': 'wave',
-        };
-        
-        // Convert fontWeight to number (handle both numeric strings and named weights)
-        const fontWeightMap: Record<string, number> = {
-          'normal': 400,
-          'bold': 700,
-          '100': 100,
-          '200': 200,
-          '300': 300,
-          '400': 400,
-          '500': 500,
-          '600': 600,
-          '700': 700,
-          '800': 800,
-          '900': 900,
-        };
-        const fontWeight = fontWeightMap[preset.fontWeight || '700'] || 700;
-        
-        activeSubtitleSettings.value = {
-          enabled: true,
-          fontFamily: preset.fontFamily || 'Montserrat',
-          fontSize: preset.fontSize || 48,
-          fontWeight: fontWeight,
-          textColor: preset.color || '#FFFFFF',
-          backgroundColor: preset.backgroundColor || 'transparent',
-          backgroundEnabled: preset.backgroundColor !== 'transparent',
-          position: 'bottom' as const,
-          positionPercentage: 85,
-          maxWidth: 90,
-          animationStyle: animationStyleMap[preset.highlightStyle || 'none'] || 'none',
-          highlightColor: preset.highlightColor || '#FFFF00',
-          border1Width: preset.stroke?.width || 0,
-          border1Color: preset.stroke?.color || '#000000',
-          border2Width: 0,
-          border2Color: '#000000',
-          shadowBlur: 0,
-          shadowOffsetX: 0,
-          shadowOffsetY: 0,
-          shadowColor: '#000000',
-          lineHeight: preset.lineHeight || 1.2,
-          letterSpacing: preset.letterSpacing || 0,
-          textAlign: 'center' as const,
-          textOffsetX: 0,
-          textOffsetY: 0,
-          padding: 0,
-          borderRadius: 0,
-          wordSpacing: 0.35,
-        };
-        console.log('[ProjectWorkspaceDialog] Set subtitle settings for clip:', clip.subtitle_preset_id);
+      // First, try to load full settings from database if they exist
+      if (clip.subtitle_settings) {
+        try {
+          const savedSettings = typeof clip.subtitle_settings === 'string' 
+            ? JSON.parse(clip.subtitle_settings) 
+            : clip.subtitle_settings;
+          
+          // IMPORTANT: Override position/width with the separately stored values
+          // Position is stored in subtitle_position_x/y/width columns and takes precedence
+          if (clip.subtitle_position_y != null) {
+            savedSettings.positionPercentage = clip.subtitle_position_y;
+          }
+          if (clip.subtitle_position_width != null) {
+            savedSettings.maxWidth = clip.subtitle_position_width;
+          }
+          
+          activeSubtitleSettings.value = savedSettings;
+          console.log('[ProjectWorkspaceDialog] Loaded full subtitle settings from database for clip:', clip.id, 'with position override:', clip.subtitle_position_y);
+        } catch (error) {
+          console.error('[ProjectWorkspaceDialog] Failed to parse subtitle_settings JSON:', error);
+          // Fall back to preset
+          loadSubtitleSettingsFromPreset(clip);
+        }
+      } else {
+        // Fall back to preset if no full settings saved
+        loadSubtitleSettingsFromPreset(clip);
       }
     } else {
       activeSubtitleSettings.value = undefined;
@@ -2410,20 +2542,34 @@
     await nextTick();
     scrollToClipInTimeline(clip.id);
 
-    // Check if this is a manual or auto-detected clip from livestream
-    // These clips ARE the source video (extracted during live stream)
-    // We should NOT load built files for these - instead use segment playback
-    const isManualOrAutoClip = clip.session_prompt === 'Manual clip creation' || 
-                                clip.session_prompt?.includes('auto') ||
-                                !clip.file_path || 
-                                clip.file_path === clip.built_file_path;
+    // Determine how to play this clip:
+    // 1. If it has a built_file_path, play that (self-contained export)
+    // 2. If it's a manual/auto clip with its own file, load and play that with segments
+    // 3. Otherwise, load the project's source video and play segments
     
-    // Check if this is a standalone clip file (exported/built clip from VOD)
-    // Only load built files for VOD clips, not manual/auto-detected clips
     const builtFilePath = clip.built_file_path;
-    const isBuiltClip = builtFilePath && builtFilePath.trim() !== '' && !isManualOrAutoClip;
+    const hasBuiltFile = builtFilePath && builtFilePath.trim() !== '';
+    
+    // Manual/auto clips from livestream have their own extracted file
+    const isManualOrAutoClip = clip.session_prompt === 'Manual clip creation' || 
+                                clip.session_prompt?.includes('auto');
+    
+    const clipOwnFile = clip.filename || clip.file_path;
+    const hasClipOwnFile = clipOwnFile && clipOwnFile.trim() !== '';
 
-    if (isBuiltClip) {
+    console.log('[ProjectWorkspaceDialog] Clip detection:', {
+      clipId: clip.id,
+      session_prompt: clip.session_prompt,
+      file_path: clip.file_path,
+      built_file_path: clip.built_file_path,
+      filename: clip.filename,
+      hasBuiltFile,
+      isManualOrAutoClip,
+      hasClipOwnFile,
+    });
+
+    // Priority 1: Built clips - these are self-contained exports
+    if (hasBuiltFile) {
       console.log('[ProjectWorkspaceDialog] Loading built clip file:', builtFilePath);
       const loaded = await loadVideoFromPath(builtFilePath);
       if (loaded) {
@@ -2455,17 +2601,14 @@
       }
     }
 
-    // Check if this is a manual/auto-detected clip that needs to be loaded as main video
-    // For these clips, load the clip file as the main video source and use segment playback
-    const clipFilePath = clip.filename || clip.file_path;
-    const hasClipFile = clipFilePath && clipFilePath.trim() !== '';
-    const isDifferentFile = hasClipFile && videoSrc.value !== clipFilePath;
-    const hasNoRawVideo = !videoSrc.value;
-    const needsVideoLoad = hasClipFile && (hasNoRawVideo || isDifferentFile);
-
-    if (needsVideoLoad && isManualOrAutoClip) {
-      console.log('[ProjectWorkspaceDialog] Loading manual/auto clip as main video source:', clipFilePath);
-      const loaded = await loadVideoFromPath(clipFilePath);
+    // Priority 2: Manual/auto clips with their own extracted file
+    if (isManualOrAutoClip && hasClipOwnFile) {
+      const isDifferentFile = currentFilePath.value !== clipOwnFile;
+      const needsVideoLoad = !currentFilePath.value || isDifferentFile;
+      
+      if (needsVideoLoad) {
+        console.log('[ProjectWorkspaceDialog] Loading manual/auto clip as main video source:', clipOwnFile);
+        const loaded = await loadVideoFromPath(clipOwnFile);
       if (loaded) {
         // Wait for video to be ready
         await nextTick();
@@ -2519,9 +2662,9 @@
         timelineClips.value = [{
           id: clip.id,
           title: clip.title || clip.name || 'Manual Clip',
-          filename: clipFilePath,
+          filename: clipOwnFile,
           type: 'continuous',
-          segments: adjustedSegments.map(seg => ({
+          segments: adjustedSegments.map((seg: any) => ({
             start_time: seg.start_time,
             end_time: seg.end_time,
             duration: seg.duration,
@@ -2548,31 +2691,45 @@
         return;
       }
     }
+    }
+
+    // Priority 3: Non-built VOD clips - need to load the project's source video
+    // These clips don't have built files yet and aren't manual/auto clips
+    const needsSourceVideo = !hasBuiltFile && !isManualOrAutoClip;
     
-    // For other standalone clips (not manual/auto), load and play directly
-    if (needsVideoLoad && !isManualOrAutoClip) {
-      console.log('[ProjectWorkspaceDialog] Loading standalone clip file:', clipFilePath);
-      const loaded = await loadVideoFromPath(clipFilePath);
-      if (loaded) {
+    if (needsSourceVideo) {
+      // Check if the current video is different from the project's raw video
+      const projectVideo = currentVideo.value;
+      const projectFilePath = projectVideo?.file_path;
+      
+      // If we don't have the right source video loaded, load it
+      if (!projectFilePath || currentFilePath.value !== projectFilePath) {
+        console.log('[ProjectWorkspaceDialog] Loading project source video for non-built VOD clip');
+        await loadVideoForProject();
+        
+        // Wait for video to be ready and metadata to load
         await nextTick();
         await new Promise((resolve) => setTimeout(resolve, 100));
-
-        if (videoElement.value) {
-          videoElement.value.currentTime = 0;
-          isPlaying.value = true;
-          videoElement.value.play().catch((err) => {
-            console.warn('[ProjectWorkspaceDialog] Autoplay prevented for standalone clip:', err);
-            isPlaying.value = false;
-          });
+        
+        // Wait for duration to be available (video metadata loaded)
+        let attempts = 0;
+        while ((!duration.value || duration.value === 0) && attempts < 50) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          attempts++;
         }
         
-        if (skipPlaybackEndedClearTimeout) {
-          clearTimeout(skipPlaybackEndedClearTimeout);
-          skipPlaybackEndedClearTimeout = null;
+        if (!duration.value || duration.value === 0) {
+          console.warn('[ProjectWorkspaceDialog] Video duration not available after loading, cannot play clip');
+          currentlyPlayingClipId.value = null;
+          if (skipPlaybackEndedClearTimeout) {
+            clearTimeout(skipPlaybackEndedClearTimeout);
+            skipPlaybackEndedClearTimeout = null;
+          }
+          skipPlaybackEndedClear = false;
+          return;
         }
-        skipPlaybackEndedClear = false;
         
-        return;
+        console.log('[ProjectWorkspaceDialog] Video loaded, duration:', duration.value);
       }
     }
 

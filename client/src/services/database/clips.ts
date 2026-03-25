@@ -293,3 +293,36 @@ export async function updateClipSubtitlePosition(
   );
 }
 
+/**
+ * Update full subtitle settings for a clip (stores complete settings as JSON)
+ * This preserves all customizations made to subtitle styling, animation, colors, etc.
+ */
+export async function updateClipFullSubtitleSettings(
+  clipId: string,
+  settings: any // SubtitleSettings type from @/types
+): Promise<void> {
+  const db = await getDatabase();
+  const now = timestamp();
+
+  // Ensure subtitle_settings column exists
+  try {
+    const cols = await db.select<{ name: string }[]>('PRAGMA table_info(clips)');
+    const colNames = cols.map((c) => c.name);
+    if (!colNames.includes('subtitle_settings')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_settings TEXT');
+      console.log('[Clips] Added subtitle_settings column to clips table');
+    }
+  } catch (e) {
+    console.warn('[Clips] Failed to check/add subtitle_settings column:', e);
+  }
+
+  // Store the full settings as JSON
+  const settingsJson = JSON.stringify(settings);
+  await db.execute(
+    'UPDATE clips SET subtitle_enabled = ?, subtitle_preset_id = ?, subtitle_settings = ?, updated_at = ? WHERE id = ?',
+    [settings.enabled ? 1 : 0, settings.selectedPresetId ?? null, settingsJson, now, clipId]
+  );
+  
+  console.log(`[Clips] Saved full subtitle settings for clip ${clipId}:`, settings);
+}
+
