@@ -811,13 +811,13 @@ defmodule ClippsterServerWeb.AdminController do
   def cancel_user_subscription(conn, %{"user_id" => user_id_string}) do
     case parse_integer(user_id_string) do
       {:ok, user_id} ->
-        case Subscriptions.cancel_subscription(user_id) do
+        case Subscriptions.admin_cancel_subscription(user_id) do
           {:ok, _user} ->
             subscription_info = Subscriptions.get_subscription_status(user_id)
 
             json(conn, %{
               success: true,
-              message: "Successfully cancelled subscription for user",
+              message: "Successfully cancelled subscription for user (immediate - no future charges)",
               subscription: subscription_info
             })
 
@@ -825,6 +825,11 @@ defmodule ClippsterServerWeb.AdminController do
             conn
             |> put_status(400)
             |> json(%{success: false, error: "User does not have an active subscription"})
+
+          {:error, {:stripe_error, message}} ->
+            conn
+            |> put_status(502)
+            |> json(%{success: false, error: "Failed to cancel in Stripe: #{inspect(message)}"})
 
           {:error, reason} ->
             conn
@@ -1584,10 +1589,15 @@ defmodule ClippsterServerWeb.AdminController do
         case OrganizationSubscriptions.admin_cancel_subscription(org_id) do
           {:ok, _org} ->
             status = OrganizationSubscriptions.get_subscription_status(org_id)
-            json(conn, %{success: true, message: "Subscription cancelled", subscription: status})
+            json(conn, %{success: true, message: "Subscription cancelled (immediate - no future charges)", subscription: status})
 
           {:error, :not_active} ->
             conn |> put_status(400) |> json(%{success: false, error: "No active subscription"})
+
+          {:error, {:stripe_error, message}} ->
+            conn
+            |> put_status(502)
+            |> json(%{success: false, error: "Failed to cancel in Stripe: #{inspect(message)}"})
 
           {:error, reason} ->
             conn

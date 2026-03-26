@@ -513,7 +513,9 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   # ============================================================================
 
   @doc """
-  Cancels organization subscription. Access continues until end_date.
+  Cancels organization subscription (user-initiated or owner-initiated).
+  IMMEDIATELY cancels in Stripe (base + all add-ons) to prevent future charges.
+  Organization retains access until end_date.
   """
   def cancel_subscription(organization_id) do
     Repo.transaction(fn ->
@@ -523,27 +525,56 @@ defmodule ClippsterServer.OrganizationSubscriptions do
         Repo.rollback(:not_active)
       end
 
-      # Cancel in Stripe if it's a Stripe subscription
+      # IMMEDIATELY cancel base subscription in Stripe to stop future charges
       if org.stripe_subscription_id && org.subscription_renewal_method == "stripe" do
-        case Stripe.Subscription.update(org.stripe_subscription_id, %{cancel_at_period_end: true}) do
+        case Stripe.Subscription.delete(org.stripe_subscription_id) do
           {:ok, _} ->
             IO.puts(
-              "[OrgSubscriptions] Cancelled Stripe subscription #{org.stripe_subscription_id} for org #{organization_id}"
+              "[OrgSubscriptions] IMMEDIATELY cancelled Stripe base subscription #{org.stripe_subscription_id} for org #{organization_id} - no future charges"
             )
 
           {:error, %Stripe.Error{message: message}} ->
             IO.puts(
-              "[OrgSubscriptions] Failed to cancel Stripe subscription for org #{organization_id}: #{message}"
+              "[OrgSubscriptions] Failed to cancel Stripe base subscription for org #{organization_id}: #{message}"
             )
             # Continue anyway to mark as cancelled in DB
 
           {:error, reason} ->
             IO.puts(
-              "[OrgSubscriptions] Failed to cancel Stripe subscription for org #{organization_id}: #{inspect(reason)}"
+              "[OrgSubscriptions] Failed to cancel Stripe base subscription for org #{organization_id}: #{inspect(reason)}"
             )
             # Continue anyway to mark as cancelled in DB
         end
       end
+
+      # IMMEDIATELY cancel ALL add-ons in Stripe
+      active_addons =
+        OrganizationSubscriptionAddon
+        |> where([a], a.organization_id == ^organization_id and a.status == "active")
+        |> Repo.all()
+
+      Enum.each(active_addons, fn addon ->
+        if addon.stripe_subscription_id do
+          case Stripe.Subscription.delete(addon.stripe_subscription_id) do
+            {:ok, _} ->
+              IO.puts(
+                "[OrgSubscriptions] IMMEDIATELY cancelled Stripe add-on subscription #{addon.stripe_subscription_id} (#{addon.addon_tier}) for org #{organization_id}"
+              )
+
+            {:error, %Stripe.Error{message: message}} ->
+              IO.puts(
+                "[OrgSubscriptions] Failed to cancel Stripe add-on #{addon.addon_tier} for org #{organization_id}: #{message}"
+              )
+              # Continue with other add-ons
+
+            {:error, reason} ->
+              IO.puts(
+                "[OrgSubscriptions] Failed to cancel Stripe add-on #{addon.addon_tier} for org #{organization_id}: #{inspect(reason)}"
+              )
+              # Continue with other add-ons
+          end
+        end
+      end)
 
       # Update status to cancelled
       {:ok, updated_org} =
@@ -553,12 +584,100 @@ defmodule ClippsterServer.OrganizationSubscriptions do
         })
         |> Repo.update()
 
-      # Cancel active addons
+      # Cancel active addons in database
       OrganizationSubscriptionAddon
       |> where([a], a.organization_id == ^organization_id and a.status == "active")
       |> Repo.update_all(set: [status: "cancelled"])
 
-      IO.puts("[OrgSubscriptions] Cancelled subscription for org #{organization_id}")
+      IO.puts(
+        "[OrgSubscriptions] Cancelled subscription for org #{organization_id}, access until #{org.subscription_end_date}"
+      )
+
+      updated_org
+    end)
+  end
+
+  @doc """
+  Admin-initiated immediate cancellation for organization.
+  IMMEDIATELY cancels base subscription and ALL add-ons in Stripe (stops all future charges).
+  Organization optionally retains access until period end based on database end_date.
+  """
+  def admin_cancel_subscription(organization_id) do
+    Repo.transaction(fn ->
+      org = Repo.get!(Organization, organization_id)
+
+      unless org.subscription_status in ["active", "cancelled"] do
+        Repo.rollback(:not_active)
+      end
+
+      # IMMEDIATELY cancel base subscription in Stripe - no more charges
+      if org.stripe_subscription_id && org.subscription_renewal_method == "stripe" do
+        case Stripe.Subscription.delete(org.stripe_subscription_id) do
+          {:ok, _} ->
+            IO.puts(
+              "[OrgSubscriptions] ADMIN: IMMEDIATELY cancelled Stripe base subscription #{org.stripe_subscription_id} for org #{organization_id} - no future charges"
+            )
+
+          {:error, %Stripe.Error{message: message}} ->
+            IO.puts(
+              "[OrgSubscriptions] ADMIN: Failed to cancel Stripe base subscription for org #{organization_id}: #{message}"
+            )
+            # For admin cancellations, rollback if Stripe fails
+            Repo.rollback({:stripe_error, message})
+
+          {:error, reason} ->
+            IO.puts(
+              "[OrgSubscriptions] ADMIN: Failed to cancel Stripe base subscription for org #{organization_id}: #{inspect(reason)}"
+            )
+            Repo.rollback({:stripe_error, reason})
+        end
+      end
+
+      # IMMEDIATELY cancel ALL add-ons in Stripe
+      active_addons =
+        OrganizationSubscriptionAddon
+        |> where([a], a.organization_id == ^organization_id and a.status == "active")
+        |> Repo.all()
+
+      Enum.each(active_addons, fn addon ->
+        if addon.stripe_subscription_id do
+          case Stripe.Subscription.delete(addon.stripe_subscription_id) do
+            {:ok, _} ->
+              IO.puts(
+                "[OrgSubscriptions] ADMIN: IMMEDIATELY cancelled Stripe add-on subscription #{addon.stripe_subscription_id} (#{addon.addon_tier}) for org #{organization_id}"
+              )
+
+            {:error, %Stripe.Error{message: message}} ->
+              IO.puts(
+                "[OrgSubscriptions] ADMIN: Failed to cancel Stripe add-on #{addon.addon_tier} for org #{organization_id}: #{message}"
+              )
+              # For admin, we log but continue with other add-ons
+
+            {:error, reason} ->
+              IO.puts(
+                "[OrgSubscriptions] ADMIN: Failed to cancel Stripe add-on #{addon.addon_tier} for org #{organization_id}: #{inspect(reason)}"
+              )
+              # Continue with other add-ons
+          end
+        end
+      end)
+
+      # Update status to cancelled
+      {:ok, updated_org} =
+        org
+        |> Organization.subscription_changeset(%{
+          subscription_status: "cancelled"
+        })
+        |> Repo.update()
+
+      # Cancel active addons in database
+      OrganizationSubscriptionAddon
+      |> where([a], a.organization_id == ^organization_id and a.status == "active")
+      |> Repo.update_all(set: [status: "cancelled"])
+
+      IO.puts(
+        "[OrgSubscriptions] ADMIN: Cancelled subscription for org #{organization_id}"
+      )
 
       updated_org
     end)
@@ -1216,13 +1335,6 @@ defmodule ClippsterServer.OrganizationSubscriptions do
     org
     |> Organization.subscription_changeset(%{max_seats: max_seats})
     |> Repo.update()
-  end
-
-  @doc """
-  Admin cancels an organization's subscription.
-  """
-  def admin_cancel_subscription(organization_id) do
-    cancel_subscription(organization_id)
   end
 
   # ============================================================================
