@@ -125,6 +125,7 @@ export interface Clip {
   subtitle_position_x?: number | null;
   subtitle_position_y?: number | null;
   subtitle_position_width?: number | null;
+  subtitle_settings?: string | null; // JSON string of full subtitle settings
   created_at: number;
   updated_at: number;
 }

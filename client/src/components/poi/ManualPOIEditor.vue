@@ -4,32 +4,32 @@
       <div v-if="modelValue" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[10001]">
         <Transition name="dialog" appear>
           <div
-            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl w-full max-w-4xl mx-4 border border-white/10 max-h-[90vh] flex flex-col overflow-hidden shadow-2xl"
+            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl w-full max-w-5xl mx-4 border border-white/10 max-h-[90vh] flex flex-col overflow-hidden shadow-2xl"
           >
             <!-- Top accent -->
             <div class="h-1 w-full bg-gradient-to-r from-blue-500 via-violet-500 to-purple-500 flex-shrink-0" />
 
             <!-- Header -->
-            <div class="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-900/50">
-              <div class="flex items-center gap-3">
+            <div class="flex items-center justify-between px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/50">
+              <div class="flex items-center gap-2.5">
                 <div
-                  class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-violet-500/20 flex items-center justify-center border border-blue-500/30"
+                  class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500/20 to-violet-500/20 flex items-center justify-center border border-blue-500/30"
                 >
-                  <LayoutDashboardIcon class="h-5 w-5 text-blue-400" />
+                  <LayoutDashboardIcon class="h-4 w-4 text-blue-400" />
                 </div>
-                <div>
-                  <h2 class="text-lg font-semibold text-white">Manual Framing Editor</h2>
-                  <p class="text-xs text-zinc-400">
-                    Define crop regions on the source and arrange them in the {{ targetAspectRatio }} output
-                  </p>
+                <div class="flex items-baseline gap-2">
+                  <h2 class="text-base font-semibold text-white">Manual Framing Editor</h2>
+                  <span class="text-[11px] text-zinc-500">
+                    · Define crop regions on the source and arrange them in the {{ targetAspectRatio }} output
+                  </span>
                 </div>
               </div>
               <button
                 @click="close"
-                class="p-2 hover:bg-zinc-800 rounded-xl transition-colors border border-zinc-800"
+                class="p-1.5 hover:bg-zinc-800 rounded-lg transition-colors border border-zinc-800"
                 title="Close"
               >
-                <XIcon class="h-5 w-5 text-zinc-400 hover:text-white" />
+                <XIcon class="h-4 w-4 text-zinc-400 hover:text-white" />
               </button>
             </div>
 
@@ -78,20 +78,23 @@
                     :is-playing="isPlaying"
                     :watermark-preview="resolvedWatermark"
                     :overlay-previews="resolvedOverlays"
-                    :subtitle-settings="subtitleSettings"
+                    :subtitle-settings="localSubtitleSettings"
                     :subtitle-position="localSubtitlePosition"
                     :subtitle-positioning-enabled="subtitlePositioningEnabled"
+                    :transcript-words="transcriptWords"
+                    :transcript-segments="transcriptSegments"
                     @update-region="updateRegion"
                     @select-region="selectRegion"
                     @update-source-transform="handleSourceTransformUpdate"
                     @subtitlePositionChange="onSubtitlePositionChange"
+                    @subtitleSettingsChange="onSubtitleSettingsChange"
                   />
                 </div>
               </div>
 
               <!-- Video Playback Controls -->
-              <div v-if="clipDuration > 0" class="px-5 py-3 border-t border-zinc-800 bg-zinc-900/70">
-                <div class="flex items-center gap-4">
+              <div v-if="clipDuration > 0" class="px-4 py-2 border-t border-zinc-800 bg-zinc-900/70">
+                <div class="flex items-center gap-3">
                   <!-- Play/Pause button -->
                   <button
                     @click="togglePlayback"
@@ -168,45 +171,119 @@
 
               <!-- Subtitle Controls (only shown when clip has subtitles) -->
               <div v-if="subtitleSettings" class="border-t border-zinc-800">
-                <!-- Checkbox row -->
-                <div class="px-5 py-3 bg-zinc-900/50">
-                  <label class="flex items-center gap-3 cursor-pointer">
+                <!-- Single line: Checkbox + Icon + Label + Drag hint + Karaoke Color OR Multi-color + Style Dropdown + Aspect ratio -->
+                <div class="px-4 py-2 bg-zinc-900/50">
+                  <div class="flex items-center gap-3">
+                    <!-- Checkbox -->
                     <input
                       type="checkbox"
                       v-model="subtitlePositioningEnabled"
-                      class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-purple-500 focus:ring-purple-500 focus:ring-offset-0"
+                      class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-purple-500 focus:ring-purple-500 focus:ring-offset-0 shrink-0"
                     />
                     <CaptionsIcon class="h-4 w-4 text-purple-400 shrink-0" />
-                    <span class="text-sm font-medium text-white">Subtitles</span>
-                    <span class="text-[10px] text-zinc-500 ml-auto">{{ targetAspectRatio }}</span>
-                  </label>
-                  <p v-if="subtitlePositioningEnabled" class="text-[10px] text-zinc-400 mt-1 ml-7">
-                    Drag to reposition · drag corner to resize
-                  </p>
-                </div>
+                    
+                    <!-- Subtitles label + Drag hint -->
+                    <div class="flex-1 min-w-0">
+                      <span class="text-sm font-medium text-white">Subtitles</span>
+                      <span v-if="subtitlePositioningEnabled" class="text-[10px] text-zinc-400 ml-2">
+                        · Drag to reposition · drag corner to resize
+                      </span>
+                    </div>
 
-                <!-- Preset picker (shown when enabled) -->
-                <div v-if="subtitlePositioningEnabled" class="px-5 pb-3 bg-zinc-900/50">
-                  <p class="text-[10px] text-zinc-500 mb-2">Style for {{ targetAspectRatio }}</p>
-                  <div class="grid grid-cols-5 gap-1.5">
-                    <button
-                      v-for="p in SUBTITLE_PRESETS_FOR_POI"
-                      :key="p.id"
-                      @click="setSubtitlePreset(p.id)"
-                      class="flex flex-col items-center gap-1 px-1 py-2 rounded-lg border transition-all text-center"
-                      :class="localSubtitlePresetId === p.id
-                        ? 'border-purple-500 bg-purple-500/20 text-white'
-                        : 'border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200'"
-                    >
-                      <span class="text-[10px] font-semibold leading-tight">{{ p.name }}</span>
-                    </button>
+                    <!-- Karaoke Color Dropdown (inline, only for karaoke) -->
+                    <div v-if="subtitlePositioningEnabled && localSubtitleSettings.animationStyle === 'karaoke'" class="relative shrink-0" style="min-width: 90px">
+                      <button
+                        @click.stop="showColorDropdown = !showColorDropdown"
+                        class="w-full flex items-center justify-between gap-1.5 px-2.5 py-1.5 text-xs bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700 hover:border-zinc-600 rounded-lg text-zinc-200 transition-all cursor-pointer"
+                      >
+                        <div class="flex items-center gap-1.5">
+                          <div 
+                            class="w-3 h-3 rounded border border-zinc-600 shrink-0"
+                            :style="{ backgroundColor: localSubtitleSettings.highlightColor }"
+                          ></div>
+                          <span class="truncate text-[11px]">{{ getColorName(localSubtitleSettings.highlightColor) }}</span>
+                        </div>
+                        <ChevronDownIcon class="h-3 w-3 shrink-0" />
+                      </button>
+
+                      <!-- Color Dropdown (opens upward) -->
+                      <div
+                        v-if="showColorDropdown"
+                        class="absolute bottom-full left-0 right-0 mb-2 bg-zinc-900 border border-zinc-700 rounded-lg overflow-hidden z-50 shadow-2xl"
+                      >
+                        <button
+                          v-for="color in PRESET_COLORS"
+                          :key="color.value"
+                          @click="onHighlightColorChange(color.value)"
+                          class="w-full text-left px-3 py-2 text-xs transition-colors flex items-center gap-2 border-b border-zinc-800 last:border-b-0"
+                          :class="localSubtitleSettings.highlightColor === color.value
+                            ? 'bg-cyan-500/15 text-cyan-300'
+                            : 'text-zinc-300 hover:bg-zinc-800'"
+                        >
+                          <div 
+                            class="w-3.5 h-3.5 rounded border border-zinc-600 shrink-0"
+                            :style="{ backgroundColor: color.value }"
+                          ></div>
+                          <span>{{ color.name }}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- Single Word Multi-Color Toggle (inline, only for single-word) -->
+                    <div v-if="subtitlePositioningEnabled && localSubtitleSettings.animationStyle === 'single-word'" class="flex items-center gap-2 shrink-0">
+                      <input
+                        type="checkbox"
+                        :checked="localSubtitleSettings.multiColorEnabled"
+                        @change="onMultiColorToggle($event)"
+                        class="w-3.5 h-3.5 rounded border-zinc-600 bg-zinc-700 text-purple-500 focus:ring-purple-500 focus:ring-offset-0"
+                      />
+                      <span class="text-[11px] text-zinc-300 whitespace-nowrap">Multi-Color</span>
+                    </div>
+
+                    <!-- Style Dropdown -->
+                    <div class="relative shrink-0" style="min-width: 135px">
+                      <button
+                        @click.stop="showStyleDropdown = !showStyleDropdown"
+                        class="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-xs bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700 hover:border-zinc-600 rounded-lg text-zinc-200 transition-all cursor-pointer"
+                        :disabled="!subtitlePositioningEnabled"
+                        :class="{ 'opacity-50 cursor-not-allowed': !subtitlePositioningEnabled }"
+                      >
+                        <span class="truncate font-medium">{{ getCurrentStyleName() }}</span>
+                        <ChevronDownIcon
+                          class="h-3.5 w-3.5 shrink-0 transition-transform"
+                          :class="{ 'rotate-180': showStyleDropdown }"
+                        />
+                      </button>
+
+                      <!-- Dropdown Menu (opens UPWARD) -->
+                      <div
+                        v-if="showStyleDropdown && subtitlePositioningEnabled"
+                        class="absolute bottom-full left-0 right-0 mb-2 bg-zinc-900 border border-zinc-700 rounded-lg overflow-hidden z-50 max-h-64 overflow-y-auto shadow-2xl"
+                      >
+                        <button
+                          v-for="style in ANIMATION_STYLES"
+                          :key="style.id"
+                          @click="onStyleChange(style.id)"
+                          class="w-full text-left px-3 py-2.5 text-xs transition-colors border-b border-zinc-800 last:border-b-0"
+                          :class="localSubtitleSettings.animationStyle === style.id
+                            ? 'bg-cyan-500/15 text-cyan-300'
+                            : 'text-zinc-300 hover:bg-zinc-800'"
+                        >
+                          <div class="font-semibold">{{ style.name }}</div>
+                          <div class="text-[10px] text-zinc-500 mt-0.5">{{ style.desc }}</div>
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- Aspect Ratio Badge -->
+                    <span class="text-[10px] text-zinc-500 shrink-0 font-mono">{{ targetAspectRatio }}</span>
                   </div>
                 </div>
               </div>
             </div>
 
             <!-- Footer -->
-            <div class="flex items-center justify-between px-5 py-4 border-t border-zinc-800 bg-zinc-900/50">
+            <div class="flex items-center justify-between px-4 py-2.5 border-t border-zinc-800 bg-zinc-900/50">
               <div class="text-sm text-zinc-400">
                 <span v-if="regions.length === 0 && !sourceTransform" class="text-amber-400">
                   <AlertCircleIcon class="w-4 h-4 inline mr-1" />
@@ -222,7 +299,7 @@
               <div class="flex items-center gap-3">
                 <button
                   @click="resetRegions"
-                  class="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
+                  class="px-3 py-1.5 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
                   :disabled="regions.length === 0 && !sourceTransform"
                   :class="{ 'opacity-50 cursor-not-allowed': regions.length === 0 && !sourceTransform }"
                 >
@@ -230,14 +307,14 @@
                 </button>
                 <button
                   @click="close"
-                  class="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
+                  class="px-3 py-1.5 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   @click="confirmConfig"
                   :disabled="regions.length === 0 && !sourceTransform"
-                  class="flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-lg transition-all relative overflow-hidden group"
+                  class="flex items-center gap-2 px-4 py-1.5 text-sm font-semibold rounded-lg transition-all relative overflow-hidden group"
                   :class="
                     regions.length === 0 && !sourceTransform
                       ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
@@ -272,8 +349,8 @@
     PauseIcon,
     RotateCcwIcon,
     CaptionsIcon,
+    ChevronDownIcon,
   } from 'lucide-vue-next';
-  import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
   import Hls from 'hls.js';
   import POISourcePanel from './POISourcePanel.vue';
   import POITargetPanel from './POITargetPanel.vue';
@@ -281,13 +358,27 @@
   import type { ManualRegion, ManualFramingConfig, WatermarkSettings, LayoutOverlay, SegmentRegionConfig, SubtitleSettings } from '@/types';
   import { utf8ToBase64 } from '@/utils/encoding';
 
-  // The 5 presets shown in the POI subtitle picker (matches SubtitleEditorDialog)
-  const SUBTITLE_PRESETS_FOR_POI = [
-    { id: 'mr-beast',          name: 'MrBeast' },
-    { id: 'tiktok-bold',       name: 'TikTok Bold' },
-    { id: 'subtitle-tutorial', name: 'Clean' },
-    { id: 'neon-glow',         name: 'Neon' },
-    { id: 'karaoke',           name: 'Karaoke' },
+  // Animation styles shown in the subtitle section (matches SubtitlePropertiesPanel)
+  const ANIMATION_STYLES = [
+    { id: 'karaoke', name: 'Karaoke', desc: 'Word-by-word color highlight' },
+    { id: 'zoom', name: 'Zoom', desc: 'Current word scales up' },
+    { id: 'pop', name: 'Pop', desc: 'Bouncy emphasis effect' },
+    { id: 'glow', name: 'Glow', desc: 'Glowing word highlight' },
+    { id: 'wave', name: 'Wave', desc: 'Floating wave motion' },
+    { id: 'single-word', name: 'Single Word', desc: 'One word at a time' },
+    { id: 'none', name: 'None', desc: 'Static text, no animation' },
+  ];
+
+  // Preset colors for karaoke highlight
+  const PRESET_COLORS = [
+    { name: 'Cyan', value: '#22D3EE' },
+    { name: 'Purple', value: '#A855F7' },
+    { name: 'Pink', value: '#EC4899' },
+    { name: 'Green', value: '#10B981' },
+    { name: 'Yellow', value: '#FBBF24' },
+    { name: 'Orange', value: '#F97316' },
+    { name: 'Red', value: '#EF4444' },
+    { name: 'Blue', value: '#3B82F6' },
   ];
 
   interface WatermarkPreview {
@@ -307,6 +398,20 @@
     opacity: number;
     isFullFrame: boolean;
     label?: string;
+  }
+
+  interface WordInfo {
+    word: string;
+    start: number;
+    end: number;
+    confidence?: number;
+  }
+
+  interface WhisperSegment {
+    text: string;
+    start: number;
+    end: number;
+    words?: WordInfo[];
   }
 
   interface Props {
@@ -330,6 +435,9 @@
     subtitleSettings?: SubtitleSettings | null;
     // Optional subtitle position override for this aspect ratio
     subtitlePositionOverride?: { x: number; y: number; width?: number } | null;
+    // Optional transcript data for subtitle rendering
+    transcriptWords?: WordInfo[];
+    transcriptSegments?: WhisperSegment[];
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -340,12 +448,15 @@
     watermarkSettings: null,
     subtitleSettings: null,
     subtitlePositionOverride: null,
+    transcriptWords: () => [],
+    transcriptSegments: () => [],
   });
 
   const emit = defineEmits<{
     'update:modelValue': [value: boolean];
     confirm: [config: ManualFramingConfig];
     subtitlePositionChange: [position: { x: number; y: number; width?: number; presetId?: string }];
+    subtitleSettingsChange: [settings: SubtitleSettings];
   }>();
 
   // Local state
@@ -374,8 +485,21 @@
     props.subtitlePositionOverride ? { ...props.subtitlePositionOverride } : { x: 50, y: 85, width: 80 }
   );
   const subtitlePositioningEnabled = ref(false);
-  // Track the selected preset for this ratio (defaults to the clip's existing preset)
-  const localSubtitlePresetId = ref<string>(props.subtitleSettings?.selectedPresetId ?? '');
+  
+  // Local copy of subtitle settings that can be modified
+  const localSubtitleSettings = ref<SubtitleSettings>(
+    props.subtitleSettings ? { ...props.subtitleSettings } : {
+      enabled: true,
+      selectedPresetId: 'neon-glow',
+      animationStyle: 'glow',
+      textColor: '#FFFFFF',
+      highlightColor: '#22D3EE',
+      multiColorEnabled: false,
+    } as SubtitleSettings
+  );
+  
+  const showStyleDropdown = ref(false);
+  const showColorDropdown = ref(false);
   const isSeeking = ref(false);
   const progressBarRef = ref<HTMLElement | null>(null);
 
@@ -411,6 +535,12 @@
     // Only handle if dialog is open and not typing in an input
     if (!props.modelValue) return;
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    
+    // Close dropdown on Escape
+    if (e.key === 'Escape' && showStyleDropdown.value) {
+      showStyleDropdown.value = false;
+      return;
+    }
     
     const microStep = 0.01; // 10ms - ultra precise
     const fineStep = 0.1; // 100ms - fine control
@@ -450,14 +580,34 @@
     }
   }
 
+  // Click outside to close dropdown
+  function handleClickOutside(e: MouseEvent) {
+    const target = e.target as HTMLElement;
+    if (showStyleDropdown.value && !target.closest('.relative')) {
+      showStyleDropdown.value = false;
+    }
+    if (showColorDropdown.value && !target.closest('.relative')) {
+      showColorDropdown.value = false;
+    }
+  }
+
   onMounted(() => {
     document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('click', handleClickOutside);
+
+    // Debug: Log transcript props
+    console.log('[ManualPOIEditor] Mounted with transcript data:', {
+      transcriptWordsLength: props.transcriptWords?.length,
+      transcriptSegmentsLength: props.transcriptSegments?.length,
+      firstWord: props.transcriptWords?.[0]
+    });
   });
 
   onUnmounted(() => {
     cleanupHls();
     cleanupSeekListeners();
     document.removeEventListener('keydown', handleKeyDown);
+    document.removeEventListener('click', handleClickOutside);
   });
 
   // Computed clip duration
@@ -682,6 +832,14 @@
         isPlaying.value = false;
         currentTime.value = 0;
 
+        console.log('[ManualPOIEditor] Dialog opened:', {
+          clipStartTime: props.clipStartTime,
+          clipEndTime: props.clipEndTime,
+          clipDuration: clipDuration.value,
+          absoluteVideoTime: absoluteVideoTime.value,
+          videoPath: props.videoPath
+        });
+
         // Load video URL
         await loadVideoUrl();
       } else {
@@ -762,20 +920,61 @@
   // Handle subtitle position changes (from dragging in POITargetPanel)
   function onSubtitlePositionChange(position: { x: number; y: number; width?: number }) {
     localSubtitlePosition.value = { ...position };
-    emit('subtitlePositionChange', { ...position, presetId: localSubtitlePresetId.value || undefined });
+    emit('subtitlePositionChange', { ...position });
   }
 
-  // Set a subtitle preset for this aspect ratio
-  function setSubtitlePreset(presetId: string) {
-    localSubtitlePresetId.value = presetId;
-    emit('subtitlePositionChange', { ...localSubtitlePosition.value, presetId });
+  // Handle subtitle settings change (e.g., font size from resize)
+  function onSubtitleSettingsChange(settings: SubtitleSettings) {
+    console.log('[ManualPOIEditor] onSubtitleSettingsChange called:', {
+      newFontSize: settings.fontSize,
+      oldFontSize: localSubtitleSettings.value.fontSize
+    });
+    localSubtitleSettings.value = { ...settings };
+    emit('subtitleSettingsChange', { ...settings });
   }
 
-  // Watch for subtitleSettings prop changes to sync initial preset id
+  // Handle animation style change
+  function onStyleChange(styleId: string) {
+    localSubtitleSettings.value.animationStyle = styleId as any;
+    showStyleDropdown.value = false;
+    emit('subtitleSettingsChange', { ...localSubtitleSettings.value });
+  }
+
+  // Get current style display name
+  function getCurrentStyleName(): string {
+    const style = ANIMATION_STYLES.find(s => s.id === localSubtitleSettings.value.animationStyle);
+    return style ? style.name : 'None';
+  }
+
+  // Handle karaoke highlight color change
+  function onHighlightColorChange(colorValue: string) {
+    localSubtitleSettings.value.highlightColor = colorValue;
+    showColorDropdown.value = false;
+    emit('subtitleSettingsChange', { ...localSubtitleSettings.value });
+  }
+
+  // Get color name from value
+  function getColorName(colorValue: string): string {
+    const color = PRESET_COLORS.find(c => c.value === colorValue);
+    return color ? color.name : 'Custom';
+  }
+
+  // Handle single-word multi-color toggle
+  function onMultiColorToggle(event: Event) {
+    const target = event.target as HTMLInputElement;
+    localSubtitleSettings.value.multiColorEnabled = target.checked;
+    emit('subtitleSettingsChange', { ...localSubtitleSettings.value });
+  }
+
+  // Watch for subtitleSettings prop changes to sync local copy
   watch(
-    () => props.subtitleSettings?.selectedPresetId,
-    (id) => { if (id && !localSubtitlePresetId.value) localSubtitlePresetId.value = id; },
-    { immediate: true }
+    () => props.subtitleSettings,
+    (settings) => {
+      if (settings) {
+        localSubtitleSettings.value = { ...settings };
+      }
+    },
+    { immediate: true, deep: true }
   );
 
   // Sync subtitle position when prop changes (dialog reopened for a different ratio)

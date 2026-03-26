@@ -921,6 +921,10 @@ pub fn generate_text_overlay_ass_file(
                     position_percentage: 50.0,
                     max_width: first_overlay.style.max_width,
                     animation_style: "none".to_string(),
+                    highlight_color: "#FFFD03".to_string(),
+                    multi_color_enabled: false,
+                    multi_color_mode: "default".to_string(),
+                    color_palette: vec![],
                     line_height: first_overlay.style.line_height,
                     letter_spacing: first_overlay.style.letter_spacing,
                     text_align: first_overlay

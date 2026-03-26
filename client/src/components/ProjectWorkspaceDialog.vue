@@ -1973,13 +1973,14 @@
   // Handle subtitle settings update from the properties panel
   async function onSubtitleSettingsUpdate(patch: Partial<typeof activeSubtitleSettings.value>) {
     console.log('[ProjectWorkspaceDialog] onSubtitleSettingsUpdate called with patch:', patch);
+    console.log('[ProjectWorkspaceDialog] currentlyPlayingClipId.value:', currentlyPlayingClipId.value);
+    console.log('[ProjectWorkspaceDialog] activeSubtitleSettings.value:', activeSubtitleSettings.value);
     
     if (activeSubtitleSettings.value) {
       // Merge the patch with current settings
       const updatedSettings = { ...activeSubtitleSettings.value, ...patch };
       
-      // CRITICAL: Sync the current dragged position from subtitle_position columns into the settings
-      // This ensures when we reload settings, the position is preserved
+      // Try to sync the current dragged position from subtitle_position columns
       const currentClip = timelineClips.value.find((c: any) => c.id === currentlyPlayingClipId.value);
       if (currentClip) {
         console.log('[ProjectWorkspaceDialog] Current clip position before sync:', {
@@ -2000,19 +2001,21 @@
           maxWidth: updatedSettings.maxWidth
         });
       } else {
-        console.warn('[ProjectWorkspaceDialog] Could not find current clip to sync position!');
+        console.warn('[ProjectWorkspaceDialog] Could not find current clip in timelineClips for position sync. ClipId:', currentlyPlayingClipId.value);
       }
       
       activeSubtitleSettings.value = updatedSettings;
       
       // Save the full settings to the database for the currently playing clip
+      // IMPORTANT: Save even if currentClip wasn't found in timelineClips
       if (currentlyPlayingClipId.value) {
         try {
           const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } = await import('@/services/database/clips');
           await updateClipFullSubtitleSettings(currentlyPlayingClipId.value, activeSubtitleSettings.value);
           
-          // CRITICAL: Also save position to the separate columns to keep them in sync
-          // This ensures that if something reloads the clip, the position columns match the JSON
+          console.log('[ProjectWorkspaceDialog] Saved subtitle settings to database for clip:', currentlyPlayingClipId.value);
+          
+          // Also save position to the separate columns if we have the clip data
           if (currentClip) {
             const posX = currentClip.subtitle_position_x ?? 50;
             const posY = currentClip.subtitle_position_y ?? 85;
@@ -2022,6 +2025,23 @@
           }
           
           console.log('[ProjectWorkspaceDialog] Saved full subtitle settings for clip with current position:', currentlyPlayingClipId.value);
+          
+          // CRITICAL: Wait for clips data to refresh so updated settings are available
+          // Use a promise to wait for the refresh to actually complete
+          await new Promise<void>((resolve) => {
+            setTimeout(async () => {
+              // Refresh MediaPanel clips
+              if (mediaPanelRef.value) {
+                await mediaPanelRef.value.refreshClips();
+              }
+              
+              // Refresh timeline clips (this updates the in-memory clip data)
+              await loadTimelineClips(props.project!.id);
+              
+              console.log('[ProjectWorkspaceDialog] Clips data refreshed after saving subtitle settings');
+              resolve();
+            }, 50); // Small delay to ensure DB write completes
+          });
         } catch (error) {
           console.error('[ProjectWorkspaceDialog] Failed to save subtitle settings:', error);
         }
@@ -2499,34 +2519,70 @@
     hoveredTimelineClipId.value = clip.id;
     console.log('[ProjectWorkspaceDialog] Set currentlyPlayingClipId to:', clip.id);
 
+    // CRITICAL: Fetch the FULL clip data from the database to get subtitle_settings
+    // The clip object passed in might not have all fields populated
+    let fullClip = clip;
+    try {
+      const { getClip } = await import('@/services/database/clips');
+      const dbClip = await getClip(clip.id);
+      if (dbClip) {
+        fullClip = dbClip;
+        console.log('[ProjectWorkspaceDialog] Loaded full clip data from database:', {
+          clipId: fullClip.id,
+          hasSubtitleSettings: !!fullClip.subtitle_settings,
+          subtitleSettingsType: typeof fullClip.subtitle_settings,
+          subtitleSettingsLength: fullClip.subtitle_settings ? fullClip.subtitle_settings.length : 0,
+          presetId: fullClip.subtitle_preset_id
+        });
+      }
+    } catch (error) {
+      console.warn('[ProjectWorkspaceDialog] Failed to load full clip data, using passed clip:', error);
+    }
+
     // Set subtitle settings for this clip (persists during playback)
-    if (clip.subtitle_enabled && clip.subtitle_preset_id) {
+    if (fullClip.subtitle_enabled && fullClip.subtitle_preset_id) {
+      console.log('[ProjectWorkspaceDialog] Loading subtitle settings for clip:', {
+        clipId: fullClip.id,
+        hasSubtitleSettings: !!fullClip.subtitle_settings,
+        subtitleSettingsType: typeof fullClip.subtitle_settings,
+        subtitleSettingsLength: fullClip.subtitle_settings ? fullClip.subtitle_settings.length : 0,
+        presetId: fullClip.subtitle_preset_id
+      });
+      
       // First, try to load full settings from database if they exist
-      if (clip.subtitle_settings) {
+      if (fullClip.subtitle_settings) {
         try {
-          const savedSettings = typeof clip.subtitle_settings === 'string' 
-            ? JSON.parse(clip.subtitle_settings) 
-            : clip.subtitle_settings;
+          const savedSettings = typeof fullClip.subtitle_settings === 'string' 
+            ? JSON.parse(fullClip.subtitle_settings) 
+            : fullClip.subtitle_settings;
+          
+          console.log('[ProjectWorkspaceDialog] Parsed subtitle_settings:', {
+            animationStyle: savedSettings.animationStyle,
+            textColor: savedSettings.textColor,
+            border1Width: savedSettings.border1Width,
+            border2Width: savedSettings.border2Width
+          });
           
           // IMPORTANT: Override position/width with the separately stored values
           // Position is stored in subtitle_position_x/y/width columns and takes precedence
-          if (clip.subtitle_position_y != null) {
-            savedSettings.positionPercentage = clip.subtitle_position_y;
+          if (fullClip.subtitle_position_y != null) {
+            savedSettings.positionPercentage = fullClip.subtitle_position_y;
           }
-          if (clip.subtitle_position_width != null) {
-            savedSettings.maxWidth = clip.subtitle_position_width;
+          if (fullClip.subtitle_position_width != null) {
+            savedSettings.maxWidth = fullClip.subtitle_position_width;
           }
           
           activeSubtitleSettings.value = savedSettings;
-          console.log('[ProjectWorkspaceDialog] Loaded full subtitle settings from database for clip:', clip.id, 'with position override:', clip.subtitle_position_y);
+          console.log('[ProjectWorkspaceDialog] Loaded full subtitle settings from database for clip:', fullClip.id, 'with position override:', fullClip.subtitle_position_y);
         } catch (error) {
           console.error('[ProjectWorkspaceDialog] Failed to parse subtitle_settings JSON:', error);
           // Fall back to preset
-          loadSubtitleSettingsFromPreset(clip);
+          loadSubtitleSettingsFromPreset(fullClip);
         }
       } else {
         // Fall back to preset if no full settings saved
-        loadSubtitleSettingsFromPreset(clip);
+        console.warn('[ProjectWorkspaceDialog] No subtitle_settings found in clip object, falling back to preset');
+        loadSubtitleSettingsFromPreset(fullClip);
       }
     } else {
       activeSubtitleSettings.value = undefined;
@@ -3514,8 +3570,10 @@
         }, 200);
         return;
       }
-      // Clear the currently playing clip when playback ends naturally
-      currentlyPlayingClipId.value = null;
+      // IMPORTANT: Do NOT clear currentlyPlayingClipId here!
+      // We need to keep track of which clip is active so subtitle settings can be saved.
+      // The clip ID will be updated when a new clip is played via onPlayClip.
+      // currentlyPlayingClipId.value = null; // REMOVED - breaks subtitle settings persistence
     }
   });
 

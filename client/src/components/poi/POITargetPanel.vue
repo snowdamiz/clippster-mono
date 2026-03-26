@@ -227,11 +227,91 @@
             style="border-radius: 4px; background: rgba(88,28,135,0.15);"
             @mousedown.prevent="startDragSubtitles"
           >
+            <!-- Actual transcript words (when available) -->
             <div
-              class="text-center font-medium pointer-events-none"
+              v-if="visibleWords.length > 0"
+              class="flex flex-wrap items-center justify-center gap-2 px-2 pointer-events-none"
+            >
+              <span
+                v-for="(wordInfo, index) in visibleWords"
+                :key="`subtitle-word-${wordInfo.start}-${index}`"
+                class="relative inline-block"
+              >
+                <!-- Use SVG for proper border rendering -->
+                <span class="invisible select-none" :style="subtitleTextStyle">{{ wordInfo.word }}</span>
+                <svg class="absolute inset-0 w-full h-full overflow-visible" style="pointer-events: none">
+                  <!-- Border 2 (Outer) -->
+                  <text
+                    v-if="props.subtitleSettings.border2Width > 0"
+                    x="50%"
+                    y="55%"
+                    dominant-baseline="middle"
+                    text-anchor="middle"
+                    :style="{
+                      fontFamily: props.subtitleSettings.fontFamily,
+                      fontWeight: props.subtitleSettings.fontWeight,
+                      fontSize: subtitleTextStyle.fontSize,
+                      stroke: props.subtitleSettings.border2Color,
+                      strokeWidth: (props.subtitleSettings.border1Width + props.subtitleSettings.border2Width) * 2 + 'px',
+                      strokeLinejoin: 'round',
+                      strokeLinecap: 'round',
+                      fill: 'none',
+                    }"
+                  >
+                    {{ wordInfo.word }}
+                  </text>
+
+                  <!-- Border 1 (Inner) -->
+                  <text
+                    v-if="props.subtitleSettings.border1Width > 0"
+                    x="50%"
+                    y="55%"
+                    dominant-baseline="middle"
+                    text-anchor="middle"
+                    :style="{
+                      fontFamily: props.subtitleSettings.fontFamily,
+                      fontWeight: props.subtitleSettings.fontWeight,
+                      fontSize: subtitleTextStyle.fontSize,
+                      stroke: props.subtitleSettings.border1Color,
+                      strokeWidth: props.subtitleSettings.border1Width * 2 + 'px',
+                      strokeLinejoin: 'round',
+                      strokeLinecap: 'round',
+                      fill: 'none',
+                    }"
+                  >
+                    {{ wordInfo.word }}
+                  </text>
+
+                  <!-- Fill Text -->
+                  <text
+                    x="50%"
+                    y="55%"
+                    dominant-baseline="middle"
+                    text-anchor="middle"
+                    :style="{
+                      fontFamily: props.subtitleSettings.fontFamily,
+                      fontWeight: props.subtitleSettings.fontWeight,
+                      fontSize: subtitleTextStyle.fontSize,
+                      fill: (props.subtitleSettings.animationStyle === 'karaoke' && isCurrentWord(wordInfo)) 
+                        ? (props.subtitleSettings.highlightColor || '#FFFF00')
+                        : (props.subtitleSettings.animationStyle === 'single-word' 
+                            ? getWordColor(getWordIndexInTranscript(wordInfo))
+                            : (props.subtitleSettings.textColor || '#FFFFFF')),
+                    }"
+                  >
+                    {{ wordInfo.word }}
+                  </text>
+                </svg>
+              </span>
+            </div>
+
+            <!-- Sample text (when no transcript) -->
+            <div
+              v-else
+              class="text-center font-medium pointer-events-none px-2"
               :style="subtitleTextStyle"
             >
-              Sample Text
+              {{ sampleSubtitleText }}
             </div>
           </div>
 
@@ -288,6 +368,20 @@
     label?: string;
   }
 
+  interface WordInfo {
+    word: string;
+    start: number;
+    end: number;
+    confidence?: number;
+  }
+
+  interface WhisperSegment {
+    text: string;
+    start: number;
+    end: number;
+    words?: WordInfo[];
+  }
+
   interface Props {
     regions: ManualRegion[];
     selectedRegionId: string | null;
@@ -306,6 +400,9 @@
     // Optional subtitle position for preview
     subtitlePosition?: { x: number; y: number; width?: number } | null;
     subtitlePositioningEnabled?: boolean;
+    // Optional transcript data for subtitle rendering
+    transcriptWords?: WordInfo[];
+    transcriptSegments?: WhisperSegment[];
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -317,6 +414,8 @@
     subtitleSettings: null,
     subtitlePosition: null,
     subtitlePositioningEnabled: false,
+    transcriptWords: () => [],
+    transcriptSegments: () => [],
   });
 
   const emit = defineEmits<{
@@ -324,6 +423,7 @@
     selectRegion: [id: string | null];
     updateSourceTransform: [transform: { scale: number; x: number; y: number }];
     subtitlePositionChange: [position: { x: number; y: number; width?: number }];
+    subtitleSettingsChange: [settings: SubtitleSettings];
   }>();
 
   const containerRef = ref<HTMLElement | null>(null);
@@ -520,7 +620,22 @@
   // Handle video loaded - set initial time after metadata is available
   function onVideoLoaded(video: HTMLVideoElement) {
     if (video) {
-      video.currentTime = props.videoTime;
+      const targetTime = props.videoTime ?? 0;
+      console.log('[POITargetPanel] Video metadata loaded, forcing seek to:', targetTime, 'current:', video.currentTime);
+      
+      // Ensure video is seekable before setting time
+      if (video.readyState >= 2) {
+        video.currentTime = targetTime;
+      } else {
+        // Wait for canplay event
+        const handleCanPlay = () => {
+          console.log('[POITargetPanel] Video can play, seeking to:', targetTime);
+          video.currentTime = targetTime;
+          video.removeEventListener('canplay', handleCanPlay);
+        };
+        video.addEventListener('canplay', handleCanPlay, { once: true });
+      }
+      
       // If we're already playing, start this video too
       if (props.isPlaying) {
         video.play().catch(console.error);
@@ -547,8 +662,9 @@
     () => props.videoTime,
     (time) => {
       videoRefs.value.forEach((video) => {
-        // Use a larger threshold for looping detection
-        if (Math.abs(video.currentTime - time) > 0.5) {
+        // Use 0.1 second threshold to allow accurate seeking while avoiding feedback loops
+        if (Math.abs(video.currentTime - time) > 0.1) {
+          console.log('[POITargetPanel] Seeking video from', video.currentTime, 'to', time);
           video.currentTime = time;
           // If we're playing and just seeked, make sure playback continues
           if (props.isPlaying) {
@@ -556,7 +672,8 @@
           }
         }
       });
-    }
+    },
+    { immediate: true }
   );
 
   // Parse aspect ratio string to numbers
@@ -614,15 +731,145 @@
     const stroke = settings.border1Width > 0
       ? `${settings.border1Color} 0 0 0 ${settings.border1Width * scale}px`
       : undefined;
-    return {
+    
+    const styles: any = {
       fontSize: `${fs}px`,
       fontFamily: settings.fontFamily,
       fontWeight: String(settings.fontWeight),
       color: settings.textColor,
       WebkitTextStroke: stroke,
       lineHeight: String(settings.lineHeight || 1.2),
+      letterSpacing: `${settings.letterSpacing}px`,
     };
+    
+    // Add background if enabled
+    if (settings.backgroundEnabled && settings.backgroundColor !== 'transparent') {
+      styles.backgroundColor = settings.backgroundColor;
+      styles.padding = '2px 6px';
+      styles.borderRadius = '2px';
+    }
+    
+    // Add shadow if configured
+    if (settings.shadowBlur > 0) {
+      styles.textShadow = `${settings.shadowOffsetX}px ${settings.shadowOffsetY}px ${settings.shadowBlur}px ${settings.shadowColor}`;
+    }
+    
+    return styles;
   });
+  
+  // Sample subtitle text based on animation style
+  const sampleSubtitleText = computed(() => {
+    console.log('[POITargetPanel] sampleSubtitleText computed:', {
+      hasSubtitleSettings: !!props.subtitleSettings,
+      hasTranscriptWords: !!props.transcriptWords,
+      transcriptWordsLength: props.transcriptWords?.length,
+      style: props.subtitleSettings?.animationStyle
+    });
+
+    if (!props.subtitleSettings) return 'Sample Text';
+    
+    // If we have transcript data, we'll render actual words, not sample text
+    if (props.transcriptWords && props.transcriptWords.length > 0) {
+      return ''; // Actual words will be rendered separately
+    }
+    
+    const style = props.subtitleSettings.animationStyle;
+    
+    // Single-word style shows 1 word
+    if (style === 'single-word') {
+      return 'WORD';
+    }
+    
+    // Default sample for other animation styles
+    return 'Sample subtitle text';
+  });
+
+  // Compute visible words based on current video time
+  const visibleWords = computed((): WordInfo[] => {
+    console.log('[POITargetPanel] visibleWords computed:', {
+      hasTranscriptWords: !!props.transcriptWords,
+      transcriptWordsLength: props.transcriptWords?.length,
+      hasSubtitleSettings: !!props.subtitleSettings,
+      videoTime: props.videoTime
+    });
+
+    if (!props.transcriptWords || props.transcriptWords.length === 0 || !props.subtitleSettings) {
+      return [];
+    }
+
+    const time = props.videoTime || 0;
+    const animationStyle = props.subtitleSettings.animationStyle;
+
+    console.log('[POITargetPanel] Computing visible words:', {
+      time,
+      animationStyle,
+      totalWords: props.transcriptWords.length
+    });
+
+    // Single word mode - only show the current word
+    if (animationStyle === 'single-word') {
+      const currentWord = props.transcriptWords.find(w => time >= w.start && time < w.end);
+      console.log('[POITargetPanel] Single word mode:', {
+        currentWord,
+        time,
+        firstWordTime: props.transcriptWords[0],
+        lastWordTime: props.transcriptWords[props.transcriptWords.length - 1]
+      });
+      return currentWord ? [currentWord] : [];
+    }
+
+    // For other animation styles, show words within a 3-second window
+    const WINDOW_SIZE = 3;
+    const words = props.transcriptWords.filter(
+      w => w.start <= time + WINDOW_SIZE && w.end >= time - WINDOW_SIZE
+    );
+    console.log('[POITargetPanel] Window mode, visible words:', {
+      count: words.length,
+      firstWord: words[0],
+      lastWord: words[words.length - 1]
+    });
+    return words;
+  });
+
+  // Check if a word is currently being spoken
+  function isCurrentWord(word: WordInfo): boolean {
+    const time = props.videoTime || 0;
+    
+    // Check if we're in the word's time window
+    if (time >= word.start && time < word.end) {
+      return true;
+    }
+    
+    // Look back tolerance for words that started between frames
+    const LOOK_BACK_TOLERANCE = 0.05; // 50ms
+    const timeSinceWordStart = time - word.start;
+    
+    if (timeSinceWordStart > 0 && timeSinceWordStart <= LOOK_BACK_TOLERANCE) {
+      if (time < word.end) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Get word color for multi-color mode
+  function getWordColor(wordIndex: number): string {
+    if (!props.subtitleSettings?.multiColorEnabled) {
+      return props.subtitleSettings?.textColor || '#FFFFFF';
+    }
+
+    const palette = props.subtitleSettings.colorPalette && props.subtitleSettings.colorPalette.length > 0
+      ? props.subtitleSettings.colorPalette
+      : ['#04F827', '#0ea5e9', '#FFFD03', '#FFFFFF']; // Default: Green, Cyan, Yellow, White
+    
+    return palette[wordIndex % palette.length];
+  }
+
+  // Get word index in full transcript (for color rotation)
+  function getWordIndexInTranscript(word: WordInfo): number {
+    return props.transcriptWords?.findIndex(w => w.start === word.start && w.end === word.end) || 0;
+  }
 
   // Calculate overlay preview style
   function getOverlayStyle(overlay: OverlayPreview) {
@@ -816,35 +1063,75 @@
 
   // Resize subtitle box by dragging corners
   function startResizeSubtitles(event: MouseEvent, corner: string) {
-    if (!containerRef.value) return;
+    console.log('[POITargetPanel] startResizeSubtitles called:', { corner, containerExists: !!containerRef.value });
+    if (!containerRef.value || !props.subtitleSettings) return;
     isResizingSubtitles.value = true;
 
     const rect = containerRef.value.getBoundingClientRect();
     const startX = event.clientX;
+    const startY = event.clientY;
     const startWidth = localSubtitlePosition.value.width ?? 80;
     const startCenterX = localSubtitlePosition.value.x;
+    const startFontSize = props.subtitleSettings.fontSize || 32;
+
+    console.log('[POITargetPanel] Resize started:', {
+      corner,
+      startWidth,
+      startFontSize,
+      startCenterX
+    });
 
     const onMove = (e: MouseEvent) => {
+      // Calculate horizontal delta for box width
       const deltaXPct = ((e.clientX - startX) / rect.width) * 100;
       let newWidth: number;
       let newCenterX: number;
 
       if (corner === 'ne' || corner === 'se') {
-        // Right corners: dragging right increases width, center shifts right
+        // Right corners: dragging right increases width
         newWidth = Math.max(20, Math.min(100, startWidth + deltaXPct * 2));
         newCenterX = startCenterX;
       } else {
-        // Left corners: dragging left increases width, center shifts left
+        // Left corners: dragging left increases width
         newWidth = Math.max(20, Math.min(100, startWidth - deltaXPct * 2));
         newCenterX = startCenterX;
       }
+
+      // Calculate diagonal distance for more sensitive font size control
+      const deltaXPixels = e.clientX - startX;
+      const deltaYPixels = e.clientY - startY;
+      const diagonalDistance = Math.sqrt(deltaXPixels * deltaXPixels + deltaYPixels * deltaYPixels);
+      
+      // Determine direction: outward (increasing) or inward (decreasing)
+      let direction = 0;
+      if (corner === 'se') {
+        direction = (deltaXPixels > 0 || deltaYPixels > 0) ? 1 : -1;
+      } else if (corner === 'sw') {
+        direction = (deltaXPixels < 0 || deltaYPixels > 0) ? 1 : -1;
+      } else if (corner === 'ne') {
+        direction = (deltaXPixels > 0 || deltaYPixels < 0) ? 1 : -1;
+      } else if (corner === 'nw') {
+        direction = (deltaXPixels < 0 || deltaYPixels < 0) ? 1 : -1;
+      }
+
+      // More sensitive font size control: 1 pixel of diagonal movement = 0.3pt font size change
+      const fontSizeChange = (diagonalDistance * direction * 0.3);
+      const newFontSize = Math.round(Math.max(12, Math.min(120, startFontSize + fontSizeChange)));
 
       localSubtitlePosition.value = {
         ...localSubtitlePosition.value,
         x: Math.max(newWidth / 2, Math.min(100 - newWidth / 2, newCenterX)),
         width: newWidth,
       };
+      
+      // Emit both position and settings changes
       emit('subtitlePositionChange', { ...localSubtitlePosition.value });
+      
+      const updatedSettings = {
+        ...props.subtitleSettings,
+        fontSize: newFontSize
+      };
+      emit('subtitleSettingsChange', updatedSettings);
     };
 
     const onUp = () => {

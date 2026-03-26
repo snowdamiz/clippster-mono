@@ -53,7 +53,10 @@
       <!-- ── MULTI-COLOR (Single-Word Mode Only) ── -->
       <div v-if="settings.animationStyle === 'single-word'" class="sp__section">
         <div class="sp__section-hd-row">
-          <span class="sp__section-hd">Multi-Color Words</span>
+          <div>
+            <div class="sp__section-hd">Multi-Color Words</div>
+            <p class="sp__hint" style="margin-top: 4px;">Cycle through colors for each word</p>
+          </div>
           <label class="sp__toggle">
             <input type="checkbox" :checked="settings.multiColorEnabled"
               @change="update('multiColorEnabled', ($event.target as HTMLInputElement).checked)" />
@@ -62,16 +65,21 @@
         </div>
         
         <template v-if="settings.multiColorEnabled">
-          <div class="sp__field sp__mt">
+          <div class="sp__mt" style="margin-top: 12px;">
             <label class="sp__radio-option">
               <input type="radio" name="multiColorMode" :checked="settings.multiColorMode === 'default'"
                 @change="update('multiColorMode', 'default')" />
               <span class="sp__radio-label">Default Palette</span>
             </label>
-            <p class="sp__hint">Green → Cyan → Yellow → White</p>
+            <div class="sp__color-palette-preview sp__mt" style="margin-left: 24px; margin-top: 6px;">
+              <span class="sp__palette-dot" style="background: #04F827;" title="Green"></span>
+              <span class="sp__palette-dot" style="background: #0ea5e9;" title="Cyan"></span>
+              <span class="sp__palette-dot" style="background: #FFFD03;" title="Yellow"></span>
+              <span class="sp__palette-dot" style="background: #FFFFFF;" title="White"></span>
+            </div>
           </div>
           
-          <div class="sp__field sp__mt">
+          <div class="sp__mt" style="margin-top: 12px;">
             <label class="sp__radio-option">
               <input type="radio" name="multiColorMode" :checked="settings.multiColorMode === 'custom'"
                 @change="update('multiColorMode', 'custom')" />
@@ -79,7 +87,7 @@
             </label>
           </div>
           
-          <div v-if="settings.multiColorMode === 'custom'" class="sp__color-palette sp__mt">
+          <div v-if="settings.multiColorMode === 'custom'" class="sp__color-palette sp__mt" style="margin-top: 12px; padding-left: 24px;">
             <div v-for="(color, index) in settings.colorPalette" :key="index" class="sp__palette-item">
               <label class="sp__swatch-wrap">
                 <input type="color" :value="color"
@@ -196,37 +204,38 @@
       <!-- ── OUTLINE ── -->
       <div class="sp__section">
         <div class="sp__section-hd">Outline</div>
+        <p class="sp__hint sp__mb">Layered strokes (Border 1 on top, Border 2 behind it)</p>
         <div class="sp__row2">
           <div class="sp__field">
-            <span class="sp__label">Outer <em class="sp__val">{{ settings.border2Width }}px</em></span>
-            <input type="range" class="sp__slider" :value="settings.border2Width" min="0" max="20" step="1"
-              @input="update('border2Width', Number(($event.target as HTMLInputElement).value))" />
-          </div>
-          <div class="sp__field">
-            <span class="sp__label">Outer Color</span>
-            <div class="sp__swatch-row">
-              <label class="sp__swatch-wrap">
-                <input type="color" :value="settings.border2Color" @input="update('border2Color', ($event.target as HTMLInputElement).value)" />
-                <span class="sp__swatch" :style="{ background: settings.border2Color }"></span>
-              </label>
-              <input class="sp__hex" type="text" :value="settings.border2Color" maxlength="7" @change="update('border2Color', ($event.target as HTMLInputElement).value)" />
-            </div>
-          </div>
-        </div>
-        <div class="sp__row2 sp__mt">
-          <div class="sp__field">
-            <span class="sp__label">Inner <em class="sp__val">{{ settings.border1Width }}px</em></span>
+            <span class="sp__label">Border 1 <em class="sp__val">{{ settings.border1Width }}px</em></span>
             <input type="range" class="sp__slider" :value="settings.border1Width" min="0" max="20" step="1"
               @input="update('border1Width', Number(($event.target as HTMLInputElement).value))" />
           </div>
           <div class="sp__field">
-            <span class="sp__label">Inner Color</span>
+            <span class="sp__label">Border 1 Color</span>
             <div class="sp__swatch-row">
               <label class="sp__swatch-wrap">
                 <input type="color" :value="settings.border1Color" @input="update('border1Color', ($event.target as HTMLInputElement).value)" />
                 <span class="sp__swatch" :style="{ background: settings.border1Color }"></span>
               </label>
               <input class="sp__hex" type="text" :value="settings.border1Color" maxlength="7" @change="update('border1Color', ($event.target as HTMLInputElement).value)" />
+            </div>
+          </div>
+        </div>
+        <div class="sp__row2 sp__mt">
+          <div class="sp__field">
+            <span class="sp__label">Border 2 <em class="sp__val">{{ settings.border2Width }}px</em></span>
+            <input type="range" class="sp__slider" :value="settings.border2Width" min="0" max="20" step="1"
+              @input="update('border2Width', Number(($event.target as HTMLInputElement).value))" />
+          </div>
+          <div class="sp__field">
+            <span class="sp__label">Border 2 Color</span>
+            <div class="sp__swatch-row">
+              <label class="sp__swatch-wrap">
+                <input type="color" :value="settings.border2Color" @input="update('border2Color', ($event.target as HTMLInputElement).value)" />
+                <span class="sp__swatch" :style="{ background: settings.border2Color }"></span>
+              </label>
+              <input class="sp__hex" type="text" :value="settings.border2Color" maxlength="7" @change="update('border2Color', ($event.target as HTMLInputElement).value)" />
             </div>
           </div>
         </div>
@@ -878,30 +887,36 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
   position: relative;
   width: 44px;
   height: 24px;
-  background: var(--sidebar-border);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 12px;
   cursor: pointer;
-  transition: background 200ms ease;
+  transition: all 200ms ease;
+  display: block;
 }
 
-.sp__toggle--on {
-  background: var(--sidebar-accent);
+.sp__toggle input:checked + .sp__toggle-track {
+  background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
+  border-color: rgba(14, 165, 233, 0.5);
+  box-shadow: 0 0 12px rgba(14, 165, 233, 0.3);
 }
 
-.sp__toggle-knob {
+.sp__toggle-thumb {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   background: #fff;
   border-radius: 50%;
-  transition: transform 200ms ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: all 200ms ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  display: block;
 }
 
-.sp__toggle--on .sp__toggle-knob {
+.sp__toggle input:checked + .sp__toggle-track .sp__toggle-thumb {
   transform: translateX(20px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
 /* Transcript */
@@ -986,6 +1001,26 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.sp__color-palette-preview {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sp__palette-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease;
+  cursor: default;
+}
+
+.sp__palette-dot:hover {
+  transform: scale(1.1);
 }
 
 .sp__palette-item {

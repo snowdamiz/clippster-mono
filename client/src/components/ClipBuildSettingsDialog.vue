@@ -856,6 +856,8 @@
       :overlay-preview-urls="overlayPreviewUrls"
       :subtitle-settings="subtitleSettings"
       :subtitle-position-override="getSubtitlePositionForRatio(editingAspectRatio)"
+      :transcript-words="transcriptWords"
+      :transcript-segments="transcriptSegments"
       @confirm="onManualConfigConfirm"
       @subtitlePositionChange="onSubtitlePositionChange"
     />
@@ -902,6 +904,7 @@
   import { resolveOverlayImagePath } from '@/services/database/watermarks';
   import { useAuthStore } from '@/stores/auth';
   import { useFreeTierLimits } from '@/composables/useFreeTierLimits';
+  import { useTranscriptData } from '@/composables/useTranscriptData';
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
   import SubtitleAdjustmentDialog from './SubtitleAdjustmentDialog.vue';
   import {
@@ -1078,6 +1081,48 @@
 
   // Overlay preview state for ManualPOIEditor
   const overlayPreviewUrls = ref<Record<string, string>>({});
+
+  // Use transcript data composable for the clip's project
+  const clipProjectId = computed(() => props.clip?.project_id || null);
+  const { transcriptData } = useTranscriptData(clipProjectId);
+
+  // Get transcript words and segments for the current clip (filtered and adjusted)
+  const transcriptWords = computed(() => {
+    if (!transcriptData.value?.words || !props.clip) return [];
+    
+    const clipStart = props.clip.current_version_start_time || 0;
+    const clipEnd = props.clip.current_version_end_time || clipStart + (props.clip.duration || 0);
+    
+    // Filter and adjust word timestamps to be relative to clip start
+    return transcriptData.value.words
+      .filter(w => w.start >= clipStart && w.end <= clipEnd)
+      .map(w => ({
+        ...w,
+        start: w.start - clipStart,
+        end: w.end - clipStart
+      }));
+  });
+
+  const transcriptSegments = computed(() => {
+    if (!transcriptData.value?.whisperSegments || !props.clip) return [];
+    
+    const clipStart = props.clip.current_version_start_time || 0;
+    const clipEnd = props.clip.current_version_end_time || clipStart + (props.clip.duration || 0);
+    
+    // Filter and adjust segment timestamps to be relative to clip start
+    return transcriptData.value.whisperSegments
+      .filter(s => s.start >= clipStart && s.end <= clipEnd)
+      .map(s => ({
+        ...s,
+        start: s.start - clipStart,
+        end: s.end - clipStart,
+        words: s.words?.map(w => ({
+          ...w,
+          start: w.start - clipStart,
+          end: w.end - clipStart
+        }))
+      }));
+  });
 
   // Subtitle override state - stores per-ratio customizations
   const subtitleOverrides = ref<SubtitleOverrides>({});
@@ -2238,6 +2283,7 @@
     color: var(--sidebar-text-muted);
     cursor: pointer;
     transition: all 150ms ease;
+    z-index: 10;
   }
 
   .build-dialog__close:hover {

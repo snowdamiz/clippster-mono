@@ -324,5 +324,17 @@ export async function updateClipFullSubtitleSettings(
   );
   
   console.log(`[Clips] Saved full subtitle settings for clip ${clipId}:`, settings);
+  
+  // VERIFY: Read back what was actually saved to the database
+  const verifyResult = await db.select<any[]>('SELECT subtitle_settings FROM clips WHERE id = ?', [clipId]);
+  if (verifyResult && verifyResult[0]) {
+    console.log('[Clips] VERIFY - Data actually in database:', {
+      hasSubtitleSettings: !!verifyResult[0].subtitle_settings,
+      length: verifyResult[0].subtitle_settings?.length,
+      preview: verifyResult[0].subtitle_settings?.substring(0, 100)
+    });
+  } else {
+    console.error('[Clips] VERIFY - Could not read back clip data!');
+  }
 }
 

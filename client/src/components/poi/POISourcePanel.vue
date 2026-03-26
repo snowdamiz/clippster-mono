@@ -265,15 +265,17 @@
     (time) => {
       if (!videoRef.value) return;
       // Only seek if there's a significant difference (to avoid feedback loops)
-      // Use a larger threshold for looping detection
-      if (Math.abs(videoRef.value.currentTime - time) > 0.5) {
+      // Use 0.1 second threshold to allow accurate seeking while avoiding feedback loops
+      if (Math.abs(videoRef.value.currentTime - time) > 0.1) {
+        console.log('[POISourcePanel] Seeking video from', videoRef.value.currentTime, 'to', time);
         videoRef.value.currentTime = time;
         // If we're playing and just seeked, make sure playback continues
         if (props.isPlaying) {
           videoRef.value.play().catch(console.error);
         }
       }
-    }
+    },
+    { immediate: true }
   );
 
   // Handle video time update
@@ -286,8 +288,25 @@
   // Handle video loaded
   function onVideoLoaded() {
     if (videoRef.value) {
-      // Always set currentTime, even if it's 0 (0 is falsy but valid)
-      videoRef.value.currentTime = props.videoTime;
+      // Force seek to the correct time when video loads
+      // This ensures we start at the clip position, not the VOD beginning
+      const targetTime = props.videoTime ?? 0;
+      console.log('[POISourcePanel] Video metadata loaded, forcing seek to:', targetTime, 'current:', videoRef.value.currentTime);
+      
+      // Ensure video is seekable before setting time
+      if (videoRef.value.readyState >= 2) {
+        videoRef.value.currentTime = targetTime;
+      } else {
+        // Wait for canplay event
+        const handleCanPlay = () => {
+          if (videoRef.value) {
+            console.log('[POISourcePanel] Video can play, seeking to:', targetTime);
+            videoRef.value.currentTime = targetTime;
+            videoRef.value.removeEventListener('canplay', handleCanPlay);
+          }
+        };
+        videoRef.value.addEventListener('canplay', handleCanPlay, { once: true });
+      }
     }
   }
 

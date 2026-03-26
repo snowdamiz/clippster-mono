@@ -168,7 +168,7 @@
               <g :style="{ transformOrigin: 'center', transformBox: 'fill-box' }">
                 <!-- Layer 1 (bottom): Border 2 (Outer) with Shadow -->
                 <text
-                  v-if="subtitleSettings && (subtitleSettings.border2Width > 0 || subtitleSettings.border1Width > 0)"
+                  v-if="subtitleSettings && subtitleSettings.border2Width > 0"
                   x="50%"
                   y="55%"
                   dominant-baseline="middle"
@@ -178,14 +178,14 @@
                     fontWeight: subtitleSettings.fontWeight,
                     fontSize: getTextStyle.fontSize,
                     letterSpacing: svgLetterSpacing,
-                    stroke: subtitleSettings.border2Color,
-                    strokeWidth:
-                      (subtitleSettings.border1Width + subtitleSettings.border2Width) * 2 * finalFontSizeScale + 'px',
+                    stroke: subtitleSettings.border2Color || '#FF0000',
+                    strokeWidth: Math.max((subtitleSettings.border1Width + subtitleSettings.border2Width) * 2 * finalFontSizeScale, 10) + 'px',
                     strokeLinejoin: 'round',
                     strokeLinecap: 'round',
-                    fill: 'none', // No fill for border layer
-                    filter: `url(#shadow-${index})`,
+                    fill: 'none',
+                    opacity: '1',
                   }"
+                  :data-debug-outer="`RENDERING: border2=${subtitleSettings.border2Width}, color=${subtitleSettings.border2Color}, width=${Math.max((subtitleSettings.border1Width + subtitleSettings.border2Width) * 2 * finalFontSizeScale, 10)}`"
                 >
                   {{ wordInfo.word }}
                 </text>
@@ -206,10 +206,9 @@
                     strokeWidth: subtitleSettings.border1Width * 2 * finalFontSizeScale + 'px',
                     strokeLinejoin: 'round',
                     strokeLinecap: 'round',
-                    fill: (subtitleSettings?.animationStyle === 'karaoke' && isCurrentWord(wordInfo)) 
-                      ? (subtitleSettings?.highlightColor || '#FFFF00')
-                      : (subtitleSettings?.textColor || '#FFFFFF'),
+                    fill: 'none',
                   }"
+                  :data-debug-inner="`border1: ${subtitleSettings.border1Width}, color: ${subtitleSettings.border1Color}, width: ${subtitleSettings.border1Width * 2 * finalFontSizeScale}`"
                   :data-word="wordInfo.word"
                   :data-is-current="isCurrentWord(wordInfo)"
                   :data-animation-style="subtitleSettings?.animationStyle"
@@ -231,7 +230,9 @@
                     letterSpacing: svgLetterSpacing,
                     fill: (subtitleSettings?.animationStyle === 'karaoke' && isCurrentWord(wordInfo)) 
                       ? (subtitleSettings?.highlightColor || '#FFFF00')
-                      : (subtitleSettings?.textColor || '#FFFFFF'),
+                      : (subtitleSettings?.animationStyle === 'single-word' 
+                          ? getWordColor(getWordIndexInTranscript(wordInfo))
+                          : (subtitleSettings?.textColor || '#FFFFFF')),
                   }"
                   :data-word="wordInfo.word"
                   :data-is-current="isCurrentWord(wordInfo)"
@@ -369,6 +370,9 @@
     maxWidth: number;
     animationStyle: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave' | 'single-word';
     highlightColor: string;
+    multiColorEnabled: boolean;
+    multiColorMode: 'default' | 'custom';
+    colorPalette: string[];
     lineHeight: number;
     letterSpacing: number;
     textAlign: 'left' | 'center' | 'right';
@@ -856,8 +860,62 @@
   function isCurrentWord(word: WordInfo): boolean {
     const time = props.currentTime || 0;
     
-    // Word timestamps from props.transcriptWords are absolute video timestamps
-    return time >= word.start && time <= word.end;
+    // FIRST: Check if we're exactly in the word's time window
+    if (time >= word.start && time < word.end) {
+      return true;
+    }
+    
+    // SECOND: Check if we just barely missed the word's start (handles frame skipping)
+    // Look back up to 50ms to catch words that started between frames
+    const LOOK_BACK_TOLERANCE = 0.05; // 50ms
+    const timeSinceWordStart = time - word.start;
+    
+    // Did this word start very recently (within 50ms ago)?
+    if (timeSinceWordStart > 0 && timeSinceWordStart <= LOOK_BACK_TOLERANCE) {
+      // AND is the word still supposed to be playing?
+      if (time < word.end) {
+        return true;
+      }
+    }
+    
+    // Word is not active (either hasn't started yet, or already ended, or we're in a gap/pause)
+    return false;
+  }
+
+  // Default color palette for multi-color single-word mode
+  const DEFAULT_COLOR_PALETTE = ['#04F827', '#0ea5e9', '#FFFD03', '#FFFFFF']; // Green, Cyan, Yellow, White
+
+  // Get the color for a word based on multi-color settings (for single-word mode)
+  function getWordColor(wordIndex: number): string {
+    const settings = props.subtitleSettings;
+    
+    // Only apply multi-color in single-word mode
+    if (!settings || settings.animationStyle !== 'single-word' || !settings.multiColorEnabled) {
+      // Multi-color is OFF or not in single-word mode, use the regular text color
+      return settings?.textColor || '#FFFFFF';
+    }
+    
+    // Multi-color is ON in single-word mode
+    if (settings.multiColorMode === 'custom' && settings.colorPalette && settings.colorPalette.length > 0) {
+      // Use custom palette
+      const paletteIndex = wordIndex % settings.colorPalette.length;
+      return settings.colorPalette[paletteIndex];
+    } else {
+      // Use default palette (Neon Green, Cyan, Yellow, White)
+      const paletteIndex = wordIndex % DEFAULT_COLOR_PALETTE.length;
+      return DEFAULT_COLOR_PALETTE[paletteIndex];
+    }
+  }
+
+  // Get the index of the current word in the full transcript
+  function getWordIndexInTranscript(word: WordInfo): number {
+    if (!props.transcriptWords || props.transcriptWords.length === 0) {
+      return 0;
+    }
+    
+    // Find the index of this word in the transcript
+    const index = props.transcriptWords.findIndex(w => w.start === word.start && w.word === word.word);
+    return index >= 0 ? index : 0;
   }
 
   // Get the animation class based on animation style
