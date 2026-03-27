@@ -951,7 +951,13 @@ defmodule ClippsterServerWeb.OrganizationController do
       owner_id: org.owner_id,
       created_at: org.inserted_at,
       settings: org.settings || %{},
-      restriction_defaults: org.restriction_defaults || %{}
+      restriction_defaults: org.restriction_defaults || %{},
+      setup_completed: org.setup_completed,
+      admin_price_cents: org.admin_price_cents,
+      subscription_tier: org.subscription_tier,
+      subscription_status: org.subscription_status,
+      monthly_credits: org.monthly_credits,
+      max_seats: org.max_seats
     }
   end
 

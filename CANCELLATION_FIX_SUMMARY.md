@@ -9,7 +9,7 @@
 
 **Problem:** All subscription cancellation paths were using `Stripe.Subscription.update(id, %{cancel_at_period_end: true})` which **does NOT stop Stripe from charging customers**. It only schedules a cancellation at the end of the billing period, meaning Stripe continued to charge customers every month even after "cancellation."
 
-**Solution:** Changed all cancellation paths to use `Stripe.Subscription.delete(id)` which **immediately cancels billing** and stops all future charges.
+**Solution:** Changed all cancellation paths to use `Stripe.Subscription.cancel(id)` which **immediately cancels billing** and stops all future charges.
 
 ---
 
@@ -109,7 +109,7 @@ Stripe.Subscription.update(subscription_id, %{cancel_at_period_end: true})
 
 **After:**
 ```elixir
-Stripe.Subscription.delete(subscription_id)
+Stripe.Subscription.cancel(subscription_id)
 ```
 
 **Impact:** Immediately stops all future billing instead of just scheduling cancellation.
@@ -136,7 +136,7 @@ active_addons =
 
 Enum.each(active_addons, fn addon ->
   if addon.stripe_subscription_id do
-    Stripe.Subscription.delete(addon.stripe_subscription_id)
+    Stripe.Subscription.cancel(addon.stripe_subscription_id)
   end
 end)
 

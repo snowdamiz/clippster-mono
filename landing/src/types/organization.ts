@@ -9,6 +9,12 @@ export interface Organization {
   restriction_defaults?: OrganizationRestrictionDefaults
   inserted_at?: string
   updated_at?: string
+  setup_completed?: boolean
+  admin_price_cents?: number
+  subscription_tier?: string
+  subscription_status?: string
+  monthly_credits?: number
+  max_seats?: number
 }
 
 export interface OrganizationMember {

@@ -96,6 +96,12 @@ export interface Organization {
     allow_ai?: boolean;
   };
   restriction_defaults?: OrganizationRestrictionDefaults;
+  setup_completed?: boolean;
+  admin_price_cents?: number;
+  subscription_tier?: string;
+  subscription_status?: string;
+  monthly_credits?: number;
+  max_seats?: number;
 }
 
 // Cache duration: 2 minutes before background refresh

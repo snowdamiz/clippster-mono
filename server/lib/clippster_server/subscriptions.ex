@@ -309,7 +309,7 @@ defmodule ClippsterServer.Subscriptions do
 
       # IMMEDIATELY cancel in Stripe to stop all future charges
       if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
-        case Stripe.Subscription.delete(user.stripe_subscription_id) do
+        case Stripe.Subscription.cancel(user.stripe_subscription_id) do
           {:ok, _} ->
             IO.puts(
               "[Subscriptions] IMMEDIATELY cancelled Stripe subscription #{user.stripe_subscription_id} for user #{user_id} - no future charges"
@@ -366,7 +366,7 @@ defmodule ClippsterServer.Subscriptions do
 
       # IMMEDIATELY cancel in Stripe - no more charges
       if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
-        case Stripe.Subscription.delete(user.stripe_subscription_id) do
+        case Stripe.Subscription.cancel(user.stripe_subscription_id) do
           {:ok, _} ->
             IO.puts(
               "[Subscriptions] ADMIN: IMMEDIATELY cancelled Stripe subscription #{user.stripe_subscription_id} for user #{user_id} - no future charges"

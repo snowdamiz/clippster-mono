@@ -162,6 +162,7 @@ import { getThumbnailByClipId } from '@/services/database/thumbnails';
 import { getStoragePath } from '@/services/storage';
 import type { Clip, ClipBuild } from '@/services/database/types';
 import { invoke } from '@tauri-apps/api/core';
+import { useClipThumbnailStore } from '@/stores/clipThumbnails';
 
 // Build entry combines clip info with specific build info
 interface BuildEntry {
@@ -179,6 +180,7 @@ const emit = defineEmits<{
   (e: 'dragEnd', position: { x: number; y: number }): void;
 }>();
 
+const thumbnailStore = useClipThumbnailStore();
 const loading = ref(true);
 const clips = ref<Clip[]>([]);
 const allBuilds = ref<BuildEntry[]>([]);
@@ -186,7 +188,6 @@ const searchQuery = ref('');
 const draggingEntry = ref<BuildEntry | null>(null);
 const draggingBuildId = ref<string | null>(null);
 const dragPosition = ref({ x: 0, y: 0 });
-const thumbnailCache = ref<Map<string, string>>(new Map());
 
 // Count of built clips for header
 const builtClipsCount = computed(() => allBuilds.value.length);
@@ -207,8 +208,8 @@ const filteredBuilds = computed(() => {
 
 // Get thumbnail URL from cache
 function getThumbnailUrl(entry: BuildEntry): string | null {
-  // Try build-specific thumbnail first, then fall back to clip thumbnail
-  return thumbnailCache.value.get(entry.build.id) || thumbnailCache.value.get(entry.clip.id) || null;
+  // Try build-specific thumbnail first, then fall back to clip thumbnail from store
+  return thumbnailStore.getBuildThumbnail(entry.build.id) || thumbnailStore.getThumbnail(entry.clip.id) || null;
 }
 
 // Get badge info for a build
@@ -309,7 +310,7 @@ function handleMouseDown(event: MouseEvent, entry: BuildEntry) {
         buildId: potentialDragEntry.build.id,
         clipName: potentialDragEntry.clip.name,
         mediaUrl: potentialDragEntry.filePath,
-        thumbnailUrl: thumbnailCache.value.get(potentialDragEntry.build.id) || thumbnailCache.value.get(potentialDragEntry.clip.id) || null,
+        thumbnailUrl: thumbnailStore.getBuildThumbnail(potentialDragEntry.build.id) || thumbnailStore.getThumbnail(potentialDragEntry.clip.id) || null,
         duration: potentialDragEntry.build.duration || potentialDragEntry.clip.built_duration,
         projectName: potentialDragEntry.clip.project_name,
         organizationName: potentialDragEntry.build.organization_name || null,
@@ -350,8 +351,13 @@ async function loadClips() {
     clips.value = await getAllClips();
     await loadBuilds();
     console.log('[ClipsSidebar] Loaded builds:', allBuilds.value.length);
+    
+    // Batch load clip thumbnails using the persistent store
+    await thumbnailStore.loadThumbnails(clips.value);
+    
+    // Load build-specific thumbnails
     await loadThumbnails();
-    console.log('[ClipsSidebar] Thumbnails loaded:', thumbnailCache.value.size);
+    console.log('[ClipsSidebar] Thumbnails loaded');
   } catch (error) {
     console.error('[ClipsSidebar] Failed to load clips:', error);
   } finally {
@@ -441,7 +447,7 @@ function getThumbnailPathForEntry(entry: BuildEntry): string | null {
 // Load thumbnails for all builds
 async function loadThumbnails() {
   const buildsNeedingThumbs = allBuilds.value.filter(
-    (entry) => !thumbnailCache.value.has(entry.build.id)
+    (entry) => !thumbnailStore.hasBuildThumbnail(entry.build.id)
   );
   console.log('[ClipsSidebar] Builds needing thumbnails:', buildsNeedingThumbs.length);
   if (buildsNeedingThumbs.length === 0) return;
@@ -455,7 +461,7 @@ async function loadThumbnails() {
         try {
           const dataUrl = await loadBuildThumbnail(entry);
           if (dataUrl) {
-            thumbnailCache.value.set(entry.build.id, dataUrl);
+            thumbnailStore.setBuildThumbnail(entry.build.id, dataUrl);
             hasNew = true;
           }
         } catch (err) {
@@ -464,11 +470,7 @@ async function loadThumbnails() {
       })
     );
   }
-  console.log('[ClipsSidebar] Thumbnail loading complete:', thumbnailCache.value.size);
-  // Trigger reactivity by creating new Map
-  if (hasNew) {
-    thumbnailCache.value = new Map(thumbnailCache.value);
-  }
+  console.log('[ClipsSidebar] Thumbnail loading complete');
 }
 
 // Load thumbnail for a single build - tries multiple sources

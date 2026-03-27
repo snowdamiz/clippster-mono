@@ -489,7 +489,7 @@ const router = createRouter({
     {
       path: '/organization/:id',
       name: 'organization-detail',
-      component: () => import('@/layouts/DashboardLayout.vue'),
+      component: () => import('@/layouts/OrganizationLayout.vue'),
       meta: { requiresAuth: true, requiresOrgSubscription: true },
       children: [
         {

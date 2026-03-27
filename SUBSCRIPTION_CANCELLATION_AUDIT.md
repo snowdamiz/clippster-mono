@@ -377,9 +377,8 @@ end
 - `server/lib/clippster_server_web/controllers/stripe_controller.ex` - Webhook handlers
 
 ### Stripe API References
-- `Stripe.Subscription.update(id, %{cancel_at_period_end: true})` - Schedules cancellation
-- `Stripe.Subscription.delete(id)` - Immediately cancels subscription
-- `Stripe.Subscription.delete(id, %{prorate: true})` - Cancels and issues prorated refund
+- `Stripe.Subscription.update(id, %{cancel_at_period_end: true})` - Schedules cancellation (OLD/WRONG)
+- `Stripe.Subscription.cancel(id)` - Immediately cancels subscription (NEW/CORRECT)
 
 ---
 

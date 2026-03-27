@@ -4,11 +4,14 @@ import { invoke } from '@tauri-apps/api/core';
 
 /**
  * Persistent thumbnail cache store
- * Maintains clip thumbnail data URLs across component mounts/unmounts
+ * Maintains clip and build thumbnail data URLs across component mounts/unmounts
  */
 export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
   // Map of clipId -> data URL
   const thumbnailCache = ref<Map<string, string>>(new Map());
+  
+  // Map of buildId or filePath -> data URL for build-specific thumbnails
+  const buildThumbnailCache = ref<Map<string, string>>(new Map());
 
   // Track which thumbnails are currently being loaded to prevent duplicates
   const loadingThumbnails = ref<Set<string>>(new Set());
@@ -135,12 +138,81 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
   }
 
   /**
+   * Get a build thumbnail from cache (by buildId or filePath)
+   */
+  function getBuildThumbnail(key: string): string | null {
+    return buildThumbnailCache.value.get(key) || null;
+  }
+
+  /**
+   * Check if a build thumbnail exists in cache
+   */
+  function hasBuildThumbnail(key: string): boolean {
+    return buildThumbnailCache.value.has(key);
+  }
+
+  /**
+   * Set a build thumbnail directly
+   */
+  function setBuildThumbnail(key: string, dataUrl: string): void {
+    buildThumbnailCache.value.set(key, dataUrl);
+    buildThumbnailCache.value = new Map(buildThumbnailCache.value);
+  }
+
+  /**
+   * Load build thumbnails in parallel (batched)
+   */
+  async function loadBuildThumbnails(
+    builds: Array<{ key: string; thumbnailPath: string }>
+  ): Promise<void> {
+    const buildsToLoad = builds.filter(
+      (build) =>
+        !buildThumbnailCache.value.has(build.key) &&
+        !loadingThumbnails.value.has(build.key)
+    );
+
+    if (buildsToLoad.length === 0) return;
+
+    const batchSize = 5;
+    let hasNewThumbnails = false;
+
+    for (let i = 0; i < buildsToLoad.length; i += batchSize) {
+      const batch = buildsToLoad.slice(i, i + batchSize);
+
+      await Promise.all(
+        batch.map(async (build) => {
+          try {
+            loadingThumbnails.value.add(build.key);
+
+            const dataUrl = await invoke<string>('read_file_as_data_url', {
+              filePath: build.thumbnailPath,
+            });
+
+            buildThumbnailCache.value.set(build.key, dataUrl);
+            hasNewThumbnails = true;
+          } catch (error) {
+            console.warn(`[ClipThumbnailStore] Failed to load build thumbnail for ${build.key}:`, error);
+          } finally {
+            loadingThumbnails.value.delete(build.key);
+          }
+        })
+      );
+    }
+
+    if (hasNewThumbnails) {
+      buildThumbnailCache.value = new Map(buildThumbnailCache.value);
+    }
+  }
+
+  /**
    * Clear all thumbnails from cache
    */
   function clearCache(): void {
     thumbnailCache.value.clear();
+    buildThumbnailCache.value.clear();
     loadingThumbnails.value.clear();
     thumbnailCache.value = new Map();
+    buildThumbnailCache.value = new Map();
   }
 
   /**
@@ -161,6 +233,7 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
 
   return {
     thumbnailCache,
+    buildThumbnailCache,
     getThumbnail,
     hasThumbnail,
     isLoading,
@@ -168,6 +241,10 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
     loadThumbnails,
     setThumbnail,
     removeThumbnail,
+    getBuildThumbnail,
+    hasBuildThumbnail,
+    setBuildThumbnail,
+    loadBuildThumbnails,
     clearCache,
     clearClips,
   };

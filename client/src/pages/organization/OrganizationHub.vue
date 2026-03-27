@@ -78,46 +78,8 @@
 
       <!-- Main Content -->
       <div v-else class="org-hub__content">
-        <!-- Payment Setup Gate -->
-        <div v-if="!(organization as any)?.setup_completed && role === 'owner'" class="org-hub__setup-gate">
-          <div class="org-hub__setup-icon">
-            <CreditCard :size="48" />
-          </div>
-          <h2 class="org-hub__setup-title">Complete Your Organization Setup</h2>
-          <p class="org-hub__setup-desc">
-            Your organization has been created with custom billing. Please complete the payment setup to activate your subscription.
-          </p>
-          <div class="org-hub__setup-details">
-            <div class="org-hub__setup-detail">
-              <span class="org-hub__setup-label">Plan:</span>
-              <span class="org-hub__setup-value">
-                {{ (organization as any)?.subscription_tier === 'custom' ? 'Custom' : (organization as any)?.subscription_tier || 'Standard' }}
-              </span>
-            </div>
-            <div class="org-hub__setup-detail">
-              <span class="org-hub__setup-label">Monthly Price:</span>
-              <span class="org-hub__setup-value">
-                ${{ (organization as any)?.admin_price_cents ? ((organization as any).admin_price_cents / 100).toFixed(2) : '0.00' }}/mo
-              </span>
-            </div>
-            <div class="org-hub__setup-detail">
-              <span class="org-hub__setup-label">Seats:</span>
-              <span class="org-hub__setup-value">{{ (organization as any)?.max_seats || 'Unlimited' }}</span>
-            </div>
-            <div class="org-hub__setup-detail">
-              <span class="org-hub__setup-label">AI Credits:</span>
-              <span class="org-hub__setup-value">{{ (organization as any)?.monthly_credits || 0 }}/mo</span>
-            </div>
-          </div>
-          <button class="org-hub__setup-btn" @click="openStripeSetup" :disabled="setupLoading">
-            <Loader2 v-if="setupLoading" class="org-hub__setup-spinner" />
-            {{ setupLoading ? 'Redirecting...' : 'Pay Now & Activate' }}
-          </button>
-          <p class="org-hub__setup-note">You'll be redirected to Stripe to set up recurring billing.</p>
-        </div>
-
         <!-- Page Heading -->
-        <div v-else class="org-hub__heading">
+        <div class="org-hub__heading">
           <h1 class="org-hub__title">Manage Your Organization</h1>
           <p class="org-hub__subtitle">
             {{ organization?.description || 'Access team tools, content management, and settings' }}
@@ -250,7 +212,6 @@
   const router = useRouter();
   const showInviteDialog = ref(false);
   const { hasMultipleOrgs } = useOrganizationSelector();
-  const setupLoading = ref(false);
 
   const {
     loading,
@@ -270,26 +231,6 @@
     assetsLoaded,
     loadOrgAssets,
   } = useOrganization();
-
-  // Open Stripe setup for org payment
-  const openStripeSetup = async () => {
-    if (!organizationId.value || !organization.value) return;
-    setupLoading.value = true;
-    try {
-      const response = await api.post(`/organizations/${organizationId.value}/payments/stripe/setup`);
-      if (response.data.success && response.data.url) {
-        window.location.href = response.data.url;
-      } else {
-        throw new Error(response.data.error || 'Failed to create payment session');
-      }
-    } catch (err) {
-      console.error('Failed to open Stripe setup:', err);
-      // TODO: Show error to user
-    } finally {
-      setupLoading.value = false;
-    }
-  };
-
   // Load profile and asset counts for display
   const profilesCount = computed(() => creatorProfiles.value.length);
   const assetsCount = computed(() => orgAssets.value.length);
@@ -894,111 +835,6 @@
     to {
       transform: rotate(360deg);
     }
-  }
-
-  /* ===== Payment Setup Gate ===== */
-  .org-hub__setup-gate {
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%);
-    border: 1px solid rgba(6, 182, 212, 0.2);
-    border-radius: 12px;
-    padding: 2rem;
-    text-align: center;
-    max-width: 600px;
-    margin: 0 auto 2rem;
-  }
-
-  .org-hub__setup-icon {
-    width: 80px;
-    height: 80px;
-    margin: 0 auto 1.5rem;
-    border-radius: 50%;
-    background: rgba(6, 182, 212, 0.15);
-    border: 1px solid rgba(6, 182, 212, 0.3);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #22d3ee;
-  }
-
-  .org-hub__setup-title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0 0 0.75rem;
-  }
-
-  .org-hub__setup-desc {
-    font-size: 0.9375rem;
-    color: var(--sidebar-text-muted);
-    line-height: 1.6;
-    margin: 0 0 2rem;
-  }
-
-  .org-hub__setup-details {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-    margin-bottom: 2rem;
-    text-align: left;
-  }
-
-  .org-hub__setup-detail {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem 1rem;
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-  }
-
-  .org-hub__setup-label {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    font-weight: 500;
-  }
-
-  .org-hub__setup-value {
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    font-weight: 600;
-  }
-
-  .org-hub__setup-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    height: 44px;
-    padding: 0 1.5rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border-radius: 8px;
-    border: none;
-    cursor: pointer;
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
-    transition: all 150ms ease;
-    margin-bottom: 1rem;
-  }
-
-  .org-hub__setup-btn:hover:not(:disabled) {
-    opacity: 0.9;
-    transform: translateY(-1px);
-  }
-
-  .org-hub__setup-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .org-hub__setup-spinner {
-    animation: spin 0.8s linear infinite;
-  }
-
-  .org-hub__setup-note {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
   }
 
   /* ===== Responsive Adjustments ===== */

@@ -836,7 +836,7 @@ defmodule ClippsterServerWeb.SubscriptionController do
   """
   def cancel(conn, _params) do
     with {:ok, user_id} <- get_user_id_from_token(conn),
-         {:ok, user} <- get_user(user_id) do
+         {:ok, _user} <- get_user(user_id) do
       # Use the subscription service which now immediately cancels in Stripe
       case Subscriptions.cancel_subscription(user_id) do
         {:ok, updated_user} ->

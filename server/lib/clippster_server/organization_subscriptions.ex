@@ -527,7 +527,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
 
       # IMMEDIATELY cancel base subscription in Stripe to stop future charges
       if org.stripe_subscription_id && org.subscription_renewal_method == "stripe" do
-        case Stripe.Subscription.delete(org.stripe_subscription_id) do
+        case Stripe.Subscription.cancel(org.stripe_subscription_id) do
           {:ok, _} ->
             IO.puts(
               "[OrgSubscriptions] IMMEDIATELY cancelled Stripe base subscription #{org.stripe_subscription_id} for org #{organization_id} - no future charges"
@@ -555,7 +555,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
 
       Enum.each(active_addons, fn addon ->
         if addon.stripe_subscription_id do
-          case Stripe.Subscription.delete(addon.stripe_subscription_id) do
+          case Stripe.Subscription.cancel(addon.stripe_subscription_id) do
             {:ok, _} ->
               IO.puts(
                 "[OrgSubscriptions] IMMEDIATELY cancelled Stripe add-on subscription #{addon.stripe_subscription_id} (#{addon.addon_tier}) for org #{organization_id}"
@@ -612,7 +612,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
 
       # IMMEDIATELY cancel base subscription in Stripe - no more charges
       if org.stripe_subscription_id && org.subscription_renewal_method == "stripe" do
-        case Stripe.Subscription.delete(org.stripe_subscription_id) do
+        case Stripe.Subscription.cancel(org.stripe_subscription_id) do
           {:ok, _} ->
             IO.puts(
               "[OrgSubscriptions] ADMIN: IMMEDIATELY cancelled Stripe base subscription #{org.stripe_subscription_id} for org #{organization_id} - no future charges"
@@ -641,7 +641,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
 
       Enum.each(active_addons, fn addon ->
         if addon.stripe_subscription_id do
-          case Stripe.Subscription.delete(addon.stripe_subscription_id) do
+          case Stripe.Subscription.cancel(addon.stripe_subscription_id) do
             {:ok, _} ->
               IO.puts(
                 "[OrgSubscriptions] ADMIN: IMMEDIATELY cancelled Stripe add-on subscription #{addon.stripe_subscription_id} (#{addon.addon_tier}) for org #{organization_id}"
@@ -1006,7 +1006,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
                                  admin_price_cents: price_cents,
                                  admin_billing_cycle_day: start_date.day,
                                  created_by_admin_id: admin_id,
-                                 setup_completed: false
+                                 setup_completed: if(price_cents == 0, do: true, else: false)
                                })
                                |> Repo.update() do
                             {:ok, updated_org} ->
@@ -1174,7 +1174,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
                        admin_price_cents: price_cents,
                        admin_billing_cycle_day: start_date.day,
                        created_by_admin_id: admin_id,
-                       setup_completed: false
+                       setup_completed: if(price_cents == 0, do: true, else: false)
                      })
                      |> Repo.update() do
                   {:ok, updated_org} ->

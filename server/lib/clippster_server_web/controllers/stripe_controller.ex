@@ -115,69 +115,92 @@ defmodule ClippsterServerWeb.StripeController do
         else
           price_cents = org.admin_price_cents || 0
 
-          success_url =
-            StripeReturn.success_url(conn, params)
-            |> StripeReturn.with_query(
-              session_id: "{CHECKOUT_SESSION_ID}",
-              org: to_string(org.id),
-              setup: "complete"
-            )
+          # If price is $0, mark setup as completed immediately without Stripe
+          if price_cents == 0 do
+            alias ClippsterServer.Organizations.Organization
+            alias ClippsterServer.Repo
 
-          cancel_url =
-            StripeReturn.cancel_url(conn, params)
-            |> StripeReturn.with_query(org: to_string(org.id))
+            case org
+                 |> Organization.subscription_changeset(%{setup_completed: true})
+                 |> Repo.update() do
+              {:ok, _updated} ->
+                conn
+                |> json(%{
+                  success: true,
+                  message: "Setup completed (no payment required)",
+                  redirect_to: "/dashboard/org/#{org.id}"
+                })
 
-          tier_label =
-            case org.subscription_tier do
-              "custom" -> "Custom Plan"
-              tier -> String.replace(tier || "Organization", "_", " ") |> String.capitalize()
+              {:error, _reason} ->
+                conn
+                |> put_status(500)
+                |> json(%{success: false, error: "Failed to complete setup"})
             end
+          else
+            success_url =
+              StripeReturn.success_url(conn, params)
+              |> StripeReturn.with_query(
+                session_id: "{CHECKOUT_SESSION_ID}",
+                org: to_string(org.id),
+                setup: "complete"
+              )
 
-          session_params = %{
-            mode: "subscription",
-            payment_method_types: ["card"],
-            line_items: [
-              %{
-                price_data: %{
-                  currency: "usd",
-                  product_data: %{
-                    name: "#{org.name} — #{tier_label} Subscription",
-                    description:
-                      "#{org.max_seats || "Unlimited"} seats · #{org.monthly_credits || 0} monthly credits"
+            cancel_url =
+              StripeReturn.cancel_url(conn, params)
+              |> StripeReturn.with_query(org: to_string(org.id))
+
+            tier_label =
+              case org.subscription_tier do
+                "custom" -> "Custom Plan"
+                tier -> String.replace(tier || "Organization", "_", " ") |> String.capitalize()
+              end
+
+            session_params = %{
+              mode: "subscription",
+              payment_method_types: ["card"],
+              line_items: [
+                %{
+                  price_data: %{
+                    currency: "usd",
+                    product_data: %{
+                      name: "#{org.name} — #{tier_label} Subscription",
+                      description:
+                        "#{org.max_seats || "Unlimited"} seats · #{org.monthly_credits || 0} monthly credits"
+                    },
+                    unit_amount: price_cents,
+                    recurring: %{interval: "month"}
                   },
-                  unit_amount: price_cents,
-                  recurring: %{interval: "month"}
-                },
-                quantity: 1
-              }
-            ],
-            metadata: %{
-              user_id: to_string(user_id),
-              organization_id: to_string(org.id),
-              org_setup: "true"
-            },
-            customer_email: user.email,
-            success_url: success_url,
-            cancel_url: cancel_url
-          }
+                  quantity: 1
+                }
+              ],
+              metadata: %{
+                user_id: to_string(user_id),
+                organization_id: to_string(org.id),
+                org_setup: "true"
+              },
+              customer_email: user.email,
+              success_url: success_url,
+              cancel_url: cancel_url
+            }
 
-          case Stripe.Checkout.Session.create(session_params) do
-            {:ok, session} ->
-              json(conn, %{
-                success: true,
-                session_id: session.id,
-                url: session.url
-              })
+            case Stripe.Checkout.Session.create(session_params) do
+              {:ok, session} ->
+                json(conn, %{
+                  success: true,
+                  session_id: session.id,
+                  url: session.url
+                })
 
-            {:error, %Stripe.Error{message: message}} ->
-              conn
-              |> put_status(500)
-              |> json(%{success: false, error: "Failed to create checkout session: #{message}"})
+              {:error, %Stripe.Error{message: message}} ->
+                conn
+                |> put_status(500)
+                |> json(%{success: false, error: "Failed to create checkout session: #{message}"})
 
-            {:error, _} ->
-              conn
-              |> put_status(500)
-              |> json(%{success: false, error: "Failed to create checkout session"})
+              {:error, _} ->
+                conn
+                |> put_status(500)
+                |> json(%{success: false, error: "Failed to create checkout session"})
+            end
           end
         end
       end
