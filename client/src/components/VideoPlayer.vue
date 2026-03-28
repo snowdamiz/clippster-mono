@@ -148,7 +148,7 @@
               :class="{ 'current-word': isCurrentWord(wordInfo) }"
               :style="getTextStyle"
             >
-              {{ wordInfo.word }}
+              {{ subtitleSettings?.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
             </span>
 
             <svg class="absolute inset-0 w-full h-full overflow-visible" style="pointer-events: none">
@@ -187,7 +187,7 @@
                   }"
                   :data-debug-outer="`RENDERING: border2=${subtitleSettings.border2Width}, color=${subtitleSettings.border2Color}, width=${Math.max((subtitleSettings.border1Width + subtitleSettings.border2Width) * 2 * finalFontSizeScale, 10)}`"
                 >
-                  {{ wordInfo.word }}
+                  {{ subtitleSettings?.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
                 </text>
 
                 <!-- Layer 2 (middle): Border 1 (Inner) -->
@@ -213,7 +213,7 @@
                   :data-is-current="isCurrentWord(wordInfo)"
                   :data-animation-style="subtitleSettings?.animationStyle"
                 >
-                  {{ wordInfo.word }}
+                  {{ subtitleSettings?.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
                 </text>
 
                 <!-- Layer 3 (top): Fill Text -->
@@ -238,7 +238,7 @@
                   :data-is-current="isCurrentWord(wordInfo)"
                   :data-animation-style="subtitleSettings?.animationStyle"
                 >
-                  {{ wordInfo.word }}
+                  {{ subtitleSettings?.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
                 </text>
 
                 <!-- Box highlight background (rendered behind text) -->
@@ -1071,13 +1071,20 @@
     const adjustedFontSize = Math.round(settings.fontSize * finalFontSizeScale.value);
     const adjustedLetterSpacing = (settings.letterSpacing || 0) * finalFontSizeScale.value;
 
-    return {
+    const styles: any = {
       color: settings.textColor,
       fontFamily: `"${settings.fontFamily}", Arial, sans-serif`,
       fontWeight: settings.fontWeight,
       fontSize: `${adjustedFontSize}px`,
       letterSpacing: `${adjustedLetterSpacing}px`,
     };
+    
+    // Add uppercase for single-word style (CapCut-style)
+    if (settings.animationStyle === 'single-word') {
+      styles.textTransform = 'uppercase';
+    }
+    
+    return styles;
   });
 
   // Calculate word gap (spacing between words)

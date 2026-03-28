@@ -938,20 +938,51 @@
   // Derive SubtitleSettings from the clip being built (reads preset from DB data on the clip)
   const derivedSubtitleSettings = computed((): SubtitleSettings | null => {
     const clip = clipToBuild.value as any;
-    if (!clip?.subtitle_enabled || !clip?.subtitle_preset_id) return null;
+    console.log('[ClipsTab] derivedSubtitleSettings computed, clip:', {
+      clipId: clip?.id,
+      clipName: clip?.name,
+      subtitle_enabled: clip?.subtitle_enabled,
+      subtitle_preset_id: clip?.subtitle_preset_id,
+      has_subtitle_settings: !!clip?.subtitle_settings,
+      subtitle_settings_type: typeof clip?.subtitle_settings,
+      subtitle_settings_length: clip?.subtitle_settings?.length
+    });
+    
+    if (!clip?.subtitle_enabled || !clip?.subtitle_preset_id) {
+      console.log('[ClipsTab] No subtitles enabled or no preset ID, returning null');
+      return null;
+    }
     
     // First, try to load full settings from database if they exist
     if (clip.subtitle_settings) {
       try {
+        console.log('[ClipsTab] Raw subtitle_settings from clip:', {
+          type: typeof clip.subtitle_settings,
+          value: clip.subtitle_settings,
+          clipId: clip.id,
+          clipName: clip.name
+        });
         const savedSettings = typeof clip.subtitle_settings === 'string' 
           ? JSON.parse(clip.subtitle_settings) 
           : clip.subtitle_settings;
-        console.log('[ClipsTab] Using saved subtitle settings from database for clip build');
+        console.log('[ClipsTab] Using saved subtitle settings from database for clip build:', {
+          animationStyle: savedSettings.animationStyle,
+          border1Width: savedSettings.border1Width,
+          border1Color: savedSettings.border1Color,
+          border2Width: savedSettings.border2Width,
+          border2Color: savedSettings.border2Color,
+          fontSize: savedSettings.fontSize,
+          fontFamily: savedSettings.fontFamily,
+          textColor: savedSettings.textColor,
+          highlightColor: savedSettings.highlightColor
+        });
         return savedSettings;
       } catch (error) {
         console.error('[ClipsTab] Failed to parse subtitle_settings JSON:', error);
         // Fall back to preset below
       }
+    } else {
+      console.log('[ClipsTab] No subtitle_settings in clip, falling back to preset:', clip.subtitle_preset_id);
     }
     
     // Fall back to preset if no full settings saved
@@ -2044,6 +2075,26 @@
     savedAspectRatios.value = null;
     savedFramingMode.value = null;
     savedFramingConfigs.value = null;
+
+    // CRITICAL: Fetch subtitle_settings from database and merge with the existing clip object
+    // The clip object passed in has segments and timing data, but might not have subtitle_settings
+    try {
+      const { getClip } = await import('@/services/database/clips');
+      const dbClip = await getClip(clip.id);
+      if (dbClip && dbClip.subtitle_settings) {
+        // Merge subtitle_settings from database into the existing clip object
+        clip.subtitle_settings = dbClip.subtitle_settings;
+        console.log('[ClipsTab] Merged subtitle_settings from database:', {
+          clipId: clip.id,
+          hasSubtitleSettings: !!clip.subtitle_settings,
+          subtitleSettingsType: typeof clip.subtitle_settings,
+          subtitleSettingsLength: clip.subtitle_settings ? clip.subtitle_settings.length : 0,
+          presetId: clip.subtitle_preset_id
+        });
+      }
+    } catch (error) {
+      console.warn('[ClipsTab] Failed to load subtitle_settings from database:', error);
+    }
 
     // Open dialog immediately (don't wait for async operations)
     clipToBuild.value = clip;

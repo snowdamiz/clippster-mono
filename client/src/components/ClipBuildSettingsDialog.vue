@@ -309,59 +309,9 @@
                       </Transition>
                     </div>
 
-                    <!-- Subtitle Adjustments -->
-                    <div
-                      v-if="subtitleSettings?.enabled && selectedRatios.length > 0"
-                      class="build-dialog__subtitle-section"
-                      :class="{ 'build-dialog__subtitle-section--with-border': hasPortraitRatio }"
-                    >
-                      <div class="build-dialog__section-header">
-                        <Type class="build-dialog__section-icon" />
-                        <h4 class="build-dialog__section-title">Subtitle Positioning</h4>
-                      </div>
-
-                      <p class="build-dialog__subtitle-hint">
-                        Fine-tune subtitle size and position for each aspect ratio
-                      </p>
-
-                      <div class="build-dialog__subtitle-list">
-                        <button
-                          v-for="ratio in selectedRatios"
-                          :key="ratio"
-                          @click="openSubtitleEditorForRatio(ratio)"
-                          class="build-dialog__ratio-config"
-                          :class="{ 'build-dialog__ratio-config--configured': hasSubtitleOverride(ratio) }"
-                        >
-                          <div class="build-dialog__ratio-config-left">
-                            <div
-                              class="build-dialog__ratio-preview"
-                              :class="{ 'build-dialog__ratio-preview--configured': hasSubtitleOverride(ratio) }"
-                              :style="{
-                                aspectRatio: ratio.replace(':', '/'),
-                                height: ratio === '1:1' ? '1.5rem' : '2rem',
-                                width: ratio === '1:1' ? '1.5rem' : 'auto',
-                              }"
-                            ></div>
-                            <span class="build-dialog__ratio-label">{{ ratio }}</span>
-                          </div>
-                          <div class="build-dialog__ratio-config-right">
-                            <span
-                              v-if="hasSubtitleOverride(ratio)"
-                              class="build-dialog__ratio-status build-dialog__ratio-status--configured"
-                            >
-                              ✓ {{ getSubtitleOverrideForRatio(ratio).fontSize }}px @
-                              {{ getSubtitleOverrideForRatio(ratio).positionPercentage }}%
-                            </span>
-                            <span v-else class="build-dialog__ratio-status">Click to adjust</span>
-                            <ChevronRightIcon class="build-dialog__ratio-chevron" />
-                          </div>
-                        </button>
-                      </div>
-                    </div>
-
                     <!-- Empty state when no content to show -->
                     <div
-                      v-if="!hasPortraitRatio && !(subtitleSettings?.enabled && selectedRatios.length > 0)"
+                      v-if="!hasPortraitRatio"
                       class="build-dialog__empty-state"
                     >
                       <p class="build-dialog__empty-text">No framing options needed for your selected formats.</p>
@@ -854,12 +804,13 @@
       :watermark-settings="watermarkSettings"
       :layout-overlays="vodPresetConfig?.layoutOverlays"
       :overlay-preview-urls="overlayPreviewUrls"
-      :subtitle-settings="subtitleSettings"
+      :subtitle-settings="effectiveSubtitleSettings"
       :subtitle-position-override="getSubtitlePositionForRatio(editingAspectRatio)"
       :transcript-words="transcriptWords"
       :transcript-segments="transcriptSegments"
       @confirm="onManualConfigConfirm"
       @subtitlePositionChange="onSubtitlePositionChange"
+      @subtitleSettingsChange="onSubtitleSettingsChange"
     />
 
     <!-- Subtitle Adjustment Dialog -->
@@ -1128,6 +1079,25 @@
   const subtitleOverrides = ref<SubtitleOverrides>({});
   const showSubtitleAdjustmentDialog = ref(false);
   const editingSubtitleRatio = ref<string>('16:9');
+  
+  // Local mutable copy of subtitle settings (can be updated from ManualPOIEditor)
+  const localSubtitleSettings = ref<SubtitleSettings | null>(null);
+  
+  // Initialize and sync local subtitle settings from prop
+  watch(() => props.subtitleSettings, (settings) => {
+    if (settings) {
+      // Always sync from prop to ensure we have latest data
+      localSubtitleSettings.value = { ...settings };
+      console.log('[ClipBuildSettingsDialog] Synced local subtitle settings from prop:', {
+        animationStyle: localSubtitleSettings.value.animationStyle,
+        border1Width: localSubtitleSettings.value.border1Width,
+        border2Width: localSubtitleSettings.value.border2Width
+      });
+    }
+  }, { immediate: true, deep: true });
+  
+  // Use local settings if available, otherwise fall back to prop
+  const effectiveSubtitleSettings = computed(() => localSubtitleSettings.value || props.subtitleSettings);
 
   // Clip timing for video preview
   const clipStartTime = computed(() => props.clip?.current_version_start_time || 0);
@@ -1141,7 +1111,7 @@
 
   // Check if subtitles need configuration
   const hasSubtitlesEnabled = computed(() => {
-    return props.subtitleSettings?.enabled && selectedRatios.value.length > 0;
+    return effectiveSubtitleSettings.value?.enabled && selectedRatios.value.length > 0;
   });
 
   // Visible steps (framing step shown when portrait ratios selected OR subtitles enabled)
@@ -1417,8 +1387,8 @@
     }
     // Return defaults from project subtitle settings
     return {
-      fontSize: props.subtitleSettings?.fontSize ?? 32,
-      positionPercentage: props.subtitleSettings?.positionPercentage ?? 85,
+      fontSize: effectiveSubtitleSettings.value?.fontSize ?? 32,
+      positionPercentage: effectiveSubtitleSettings.value?.positionPercentage ?? 85,
     };
   }
 
@@ -1465,7 +1435,7 @@
   function onSubtitlePositionChange(position: { x: number; y: number; width?: number; presetId?: string }) {
     const ratio = editingAspectRatio.value;
     const existingOverride = subtitleOverrides.value[ratio as keyof SubtitleOverrides] || {
-      fontSize: props.subtitleSettings?.fontSize ?? 32,
+      fontSize: effectiveSubtitleSettings.value?.fontSize ?? 32,
       positionPercentage: 85,
       position: { x: 50, y: 85 },
       maxWidth: 80,
@@ -1479,6 +1449,36 @@
         maxWidth: position.width ?? existingOverride.maxWidth,
         positionPercentage: position.y,
         ...(position.presetId ? { presetId: position.presetId } : {}),
+      },
+    };
+  }
+
+  // Handle subtitle settings change from POI editor (animation style, colors, borders, etc.)
+  function onSubtitleSettingsChange(settings: SubtitleSettings) {
+    console.log('[ClipBuildSettingsDialog] onSubtitleSettingsChange called:', {
+      animationStyle: settings.animationStyle,
+      border1Width: settings.border1Width,
+      border2Width: settings.border2Width,
+      highlightColor: settings.highlightColor,
+      fontSize: settings.fontSize
+    });
+    
+    // Update the local subtitle settings
+    localSubtitleSettings.value = { ...settings };
+    
+    // Also update the override for this ratio to preserve the changes
+    const ratio = editingAspectRatio.value;
+    const existingOverride = subtitleOverrides.value[ratio as keyof SubtitleOverrides] || {};
+    
+    subtitleOverrides.value = {
+      ...subtitleOverrides.value,
+      [ratio]: {
+        ...existingOverride,
+        fontSize: settings.fontSize,
+        // Store other relevant settings that might be changed
+        animationStyle: settings.animationStyle,
+        highlightColor: settings.highlightColor,
+        multiColorEnabled: settings.multiColorEnabled,
       },
     };
   }

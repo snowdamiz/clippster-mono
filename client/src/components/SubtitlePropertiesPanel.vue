@@ -447,8 +447,116 @@ function formatTime(s: number) {
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
+// Get default settings for a specific animation style
+function getStyleDefaults(styleId: string): Partial<SubtitleSettings> {
+  const defaults: Record<string, Partial<SubtitleSettings>> = {
+    'single-word': {
+      // CapCut-style defaults for single-word
+      fontFamily: 'Montserrat',
+      fontSize: 80,
+      fontWeight: 900,
+      textColor: '#FFFFFF',
+      border1Width: 8,
+      border1Color: '#000000',
+      border2Width: 0,
+      border2Color: '#000000',
+      shadowBlur: 0,
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      shadowColor: '#000000',
+      backgroundEnabled: false,
+      backgroundColor: 'transparent',
+      multiColorEnabled: false,
+      highlightColor: '#FFFFFF',
+    },
+    'karaoke': {
+      fontFamily: 'Montserrat',
+      fontSize: 48,
+      fontWeight: 700,
+      textColor: '#FFFFFF',
+      border1Width: 3,
+      border1Color: '#000000',
+      border2Width: 0,
+      border2Color: '#000000',
+      shadowBlur: 0,
+      highlightColor: '#FACC15',
+      backgroundEnabled: false,
+      backgroundColor: 'transparent',
+    },
+    'zoom': {
+      fontFamily: 'Montserrat',
+      fontSize: 48,
+      fontWeight: 700,
+      textColor: '#FFFFFF',
+      border1Width: 3,
+      border1Color: '#000000',
+      border2Width: 0,
+      shadowBlur: 0,
+      highlightColor: '#22D3EE',
+      backgroundEnabled: false,
+    },
+    'pop': {
+      fontFamily: 'Montserrat',
+      fontSize: 48,
+      fontWeight: 700,
+      textColor: '#FFFFFF',
+      border1Width: 3,
+      border1Color: '#000000',
+      border2Width: 0,
+      shadowBlur: 0,
+      highlightColor: '#EC4899',
+      backgroundEnabled: false,
+    },
+    'glow': {
+      fontFamily: 'Montserrat',
+      fontSize: 44,
+      fontWeight: 700,
+      textColor: '#FFFFFF',
+      border1Width: 0,
+      border1Color: '#000000',
+      border2Width: 0,
+      shadowBlur: 15,
+      shadowColor: '#22D3EE',
+      highlightColor: '#22D3EE',
+      backgroundEnabled: false,
+    },
+    'wave': {
+      fontFamily: 'Montserrat',
+      fontSize: 42,
+      fontWeight: 600,
+      textColor: '#FFFFFF',
+      border1Width: 2,
+      border1Color: '#000000',
+      border2Width: 0,
+      shadowBlur: 4,
+      shadowColor: 'rgba(0,0,0,0.8)',
+      backgroundEnabled: false,
+    },
+    'none': {
+      fontFamily: 'Montserrat',
+      fontSize: 42,
+      fontWeight: 600,
+      textColor: '#FFFFFF',
+      border1Width: 0,
+      border1Color: '#000000',
+      border2Width: 0,
+      shadowBlur: 4,
+      shadowColor: 'rgba(0,0,0,0.8)',
+      backgroundEnabled: false,
+    },
+  };
+  
+  return defaults[styleId] || {};
+}
+
 function update<K extends keyof SubtitleSettings>(key: K, value: SubtitleSettings[K]) {
-  emit('updateSettings', { [key]: value } as Partial<SubtitleSettings>);
+  // When changing animation style, apply style-specific defaults
+  if (key === 'animationStyle') {
+    const styleDefaults = getStyleDefaults(value as string);
+    emit('updateSettings', { ...styleDefaults, [key]: value } as Partial<SubtitleSettings>);
+  } else {
+    emit('updateSettings', { [key]: value } as Partial<SubtitleSettings>);
+  }
 }
 
 function onSegmentTextChange(index: number, text: string) {

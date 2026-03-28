@@ -75,6 +75,7 @@
                     :source-aspect-ratio="sourceAspectRatio"
                     :video-url="videoUrl"
                     :video-time="absoluteVideoTime"
+                    :clip-start-time="clipStartTime"
                     :is-playing="isPlaying"
                     :watermark-preview="resolvedWatermark"
                     :overlay-previews="resolvedOverlays"
@@ -832,12 +833,23 @@
         isPlaying.value = false;
         currentTime.value = 0;
 
+        // Auto-enable subtitle positioning if clip has subtitles
+        if (props.subtitleSettings && props.subtitleSettings.enabled) {
+          subtitlePositioningEnabled.value = true;
+          console.log('[ManualPOIEditor] Auto-enabled subtitle positioning');
+        }
+
         console.log('[ManualPOIEditor] Dialog opened:', {
           clipStartTime: props.clipStartTime,
           clipEndTime: props.clipEndTime,
           clipDuration: clipDuration.value,
           absoluteVideoTime: absoluteVideoTime.value,
-          videoPath: props.videoPath
+          videoPath: props.videoPath,
+          hasSubtitleSettings: !!props.subtitleSettings,
+          transcriptWordsCount: props.transcriptWords?.length || 0,
+          transcriptSegmentsCount: props.transcriptSegments?.length || 0,
+          firstWord: props.transcriptWords?.[0],
+          firstSegment: props.transcriptSegments?.[0]
         });
 
         // Load video URL
@@ -846,6 +858,8 @@
         // Cleanup when closing
         isPlaying.value = false;
         videoUrl.value = null;
+        // Reset subtitle positioning state
+        subtitlePositioningEnabled.value = false;
       }
     },
     { immediate: true }
@@ -933,10 +947,131 @@
     emit('subtitleSettingsChange', { ...settings });
   }
 
+  // Get default settings for a specific animation style
+  function getStyleDefaults(styleId: string): Partial<SubtitleSettings> {
+    const defaults: Record<string, Partial<SubtitleSettings>> = {
+      'single-word': {
+        // CapCut-style defaults for single-word
+        fontFamily: 'Montserrat',
+        fontSize: 80,
+        fontWeight: 900,
+        textColor: '#FFFFFF',
+        border1Width: 8,
+        border1Color: '#000000',
+        border2Width: 0,
+        border2Color: '#000000',
+        shadowBlur: 0,
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        shadowColor: '#000000',
+        backgroundEnabled: false,
+        backgroundColor: 'transparent',
+        multiColorEnabled: false,
+        highlightColor: '#FFFFFF',
+      },
+      'karaoke': {
+        fontFamily: 'Montserrat',
+        fontSize: 48,
+        fontWeight: 700,
+        textColor: '#FFFFFF',
+        border1Width: 3,
+        border1Color: '#000000',
+        border2Width: 0,
+        border2Color: '#000000',
+        shadowBlur: 0,
+        highlightColor: '#FACC15',
+        backgroundEnabled: false,
+        backgroundColor: 'transparent',
+      },
+      'zoom': {
+        fontFamily: 'Montserrat',
+        fontSize: 48,
+        fontWeight: 700,
+        textColor: '#FFFFFF',
+        border1Width: 3,
+        border1Color: '#000000',
+        border2Width: 0,
+        shadowBlur: 0,
+        highlightColor: '#22D3EE',
+        backgroundEnabled: false,
+      },
+      'pop': {
+        fontFamily: 'Montserrat',
+        fontSize: 48,
+        fontWeight: 700,
+        textColor: '#FFFFFF',
+        border1Width: 3,
+        border1Color: '#000000',
+        border2Width: 0,
+        shadowBlur: 0,
+        highlightColor: '#EC4899',
+        backgroundEnabled: false,
+      },
+      'glow': {
+        fontFamily: 'Montserrat',
+        fontSize: 44,
+        fontWeight: 700,
+        textColor: '#FFFFFF',
+        border1Width: 0,
+        border1Color: '#000000',
+        border2Width: 0,
+        shadowBlur: 15,
+        shadowColor: '#22D3EE',
+        highlightColor: '#22D3EE',
+        backgroundEnabled: false,
+      },
+      'wave': {
+        fontFamily: 'Montserrat',
+        fontSize: 42,
+        fontWeight: 600,
+        textColor: '#FFFFFF',
+        border1Width: 2,
+        border1Color: '#000000',
+        border2Width: 0,
+        shadowBlur: 4,
+        shadowColor: 'rgba(0,0,0,0.8)',
+        backgroundEnabled: false,
+      },
+      'none': {
+        fontFamily: 'Montserrat',
+        fontSize: 42,
+        fontWeight: 600,
+        textColor: '#FFFFFF',
+        border1Width: 0,
+        border1Color: '#000000',
+        border2Width: 0,
+        shadowBlur: 4,
+        shadowColor: 'rgba(0,0,0,0.8)',
+        backgroundEnabled: false,
+      },
+    };
+    
+    return defaults[styleId] || {};
+  }
+
   // Handle animation style change
   function onStyleChange(styleId: string) {
-    localSubtitleSettings.value.animationStyle = styleId as any;
+    console.log('[ManualPOIEditor] Style changed:', {
+      oldStyle: localSubtitleSettings.value.animationStyle,
+      newStyle: styleId,
+      border1Width: localSubtitleSettings.value.border1Width,
+      border2Width: localSubtitleSettings.value.border2Width,
+      fontSize: localSubtitleSettings.value.fontSize,
+      highlightColor: localSubtitleSettings.value.highlightColor
+    });
+    
+    // Apply style-specific defaults when switching styles
+    const styleDefaults = getStyleDefaults(styleId);
+    localSubtitleSettings.value = {
+      ...localSubtitleSettings.value,
+      ...styleDefaults,
+      animationStyle: styleId as any,
+    };
+    
     showStyleDropdown.value = false;
+    console.log('[ManualPOIEditor] After style change with defaults, full settings:', {
+      ...localSubtitleSettings.value
+    });
     emit('subtitleSettingsChange', { ...localSubtitleSettings.value });
   }
 
@@ -971,6 +1106,15 @@
     () => props.subtitleSettings,
     (settings) => {
       if (settings) {
+        console.log('[ManualPOIEditor] Syncing subtitle settings from props:', {
+          animationStyle: settings.animationStyle,
+          border1Width: settings.border1Width,
+          border1Color: settings.border1Color,
+          border2Width: settings.border2Width,
+          border2Color: settings.border2Color,
+          highlightColor: settings.highlightColor,
+          fontSize: settings.fontSize
+        });
         localSubtitleSettings.value = { ...settings };
       }
     },

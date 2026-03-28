@@ -238,7 +238,7 @@
                 class="relative inline-block"
               >
                 <!-- Use SVG for proper border rendering -->
-                <span class="invisible select-none" :style="subtitleTextStyle">{{ wordInfo.word }}</span>
+                <span class="invisible select-none" :style="subtitleTextStyle">{{ props.subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}</span>
                 <svg class="absolute inset-0 w-full h-full overflow-visible" style="pointer-events: none">
                   <!-- Border 2 (Outer) -->
                   <text
@@ -258,7 +258,7 @@
                       fill: 'none',
                     }"
                   >
-                    {{ wordInfo.word }}
+                    {{ props.subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
                   </text>
 
                   <!-- Border 1 (Inner) -->
@@ -279,7 +279,7 @@
                       fill: 'none',
                     }"
                   >
-                    {{ wordInfo.word }}
+                    {{ props.subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
                   </text>
 
                   <!-- Fill Text -->
@@ -299,7 +299,7 @@
                             : (props.subtitleSettings.textColor || '#FFFFFF')),
                     }"
                   >
-                    {{ wordInfo.word }}
+                    {{ props.subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
                   </text>
                 </svg>
               </span>
@@ -390,6 +390,7 @@
     sourceAspectRatio?: string;
     videoUrl?: string | null;
     videoTime?: number;
+    clipStartTime?: number; // For converting absolute time to clip-relative for subtitle matching
     isPlaying?: boolean;
     // Optional watermark preview overlay
     watermarkPreview?: WatermarkPreview | null;
@@ -409,6 +410,7 @@
     targetAspectRatio: '9:16',
     sourceAspectRatio: '16:9',
     videoTime: 0,
+    clipStartTime: 0,
     isPlaying: false,
     watermarkPreview: null,
     subtitleSettings: null,
@@ -742,6 +744,11 @@
       letterSpacing: `${settings.letterSpacing}px`,
     };
     
+    // Add uppercase for single-word style (CapCut-style)
+    if (settings.animationStyle === 'single-word') {
+      styles.textTransform = 'uppercase';
+    }
+    
     // Add background if enabled
     if (settings.backgroundEnabled && settings.backgroundColor !== 'transparent') {
       styles.backgroundColor = settings.backgroundColor;
@@ -790,40 +797,84 @@
       hasTranscriptWords: !!props.transcriptWords,
       transcriptWordsLength: props.transcriptWords?.length,
       hasSubtitleSettings: !!props.subtitleSettings,
-      videoTime: props.videoTime
+      videoTime: props.videoTime,
+      clipStartTime: props.clipStartTime
     });
 
     if (!props.transcriptWords || props.transcriptWords.length === 0 || !props.subtitleSettings) {
       return [];
     }
 
-    const time = props.videoTime || 0;
+    // Convert absolute video time to clip-relative time for subtitle matching
+    // (transcriptWords have been adjusted to be relative to clip start)
+    const absoluteTime = props.videoTime || 0;
+    const clipRelativeTime = absoluteTime - (props.clipStartTime || 0);
     const animationStyle = props.subtitleSettings.animationStyle;
 
     console.log('[POITargetPanel] Computing visible words:', {
-      time,
+      absoluteTime,
+      clipStartTime: props.clipStartTime,
+      clipRelativeTime,
       animationStyle,
-      totalWords: props.transcriptWords.length
+      totalWords: props.transcriptWords.length,
+      firstWord: props.transcriptWords[0],
+      lastWord: props.transcriptWords[props.transcriptWords.length - 1]
     });
 
     // Single word mode - only show the current word
     if (animationStyle === 'single-word') {
-      const currentWord = props.transcriptWords.find(w => time >= w.start && time < w.end);
+      const currentWord = props.transcriptWords.find(w => clipRelativeTime >= w.start && clipRelativeTime < w.end);
       console.log('[POITargetPanel] Single word mode:', {
         currentWord,
-        time,
+        clipRelativeTime,
         firstWordTime: props.transcriptWords[0],
         lastWordTime: props.transcriptWords[props.transcriptWords.length - 1]
       });
       return currentWord ? [currentWord] : [];
     }
 
-    // For other animation styles, show words within a 3-second window
+    // For karaoke and other segment-based styles, show only words from the current segment
+    // Find the current segment from transcriptSegments
+    console.log('[POITargetPanel] Checking segments:', {
+      hasSegments: !!props.transcriptSegments,
+      segmentCount: props.transcriptSegments?.length || 0,
+      clipRelativeTime,
+      animationStyle
+    });
+    
+    if (props.transcriptSegments && props.transcriptSegments.length > 0) {
+      const currentSegment = props.transcriptSegments.find(
+        seg => clipRelativeTime >= seg.start && clipRelativeTime < seg.end
+      );
+      
+      console.log('[POITargetPanel] Current segment lookup:', {
+        found: !!currentSegment,
+        clipRelativeTime,
+        firstSegment: props.transcriptSegments[0],
+        lastSegment: props.transcriptSegments[props.transcriptSegments.length - 1]
+      });
+      
+      if (currentSegment && currentSegment.words && currentSegment.words.length > 0) {
+        console.log('[POITargetPanel] Segment mode, visible words from current segment:', {
+          count: currentSegment.words.length,
+          segmentStart: currentSegment.start,
+          segmentEnd: currentSegment.end,
+          segmentText: currentSegment.text
+        });
+        return currentSegment.words;
+      }
+      
+      // No current segment found - show nothing (between segments)
+      console.log('[POITargetPanel] No current segment found, showing nothing');
+      return [];
+    }
+
+    // Fallback: use 3-second window ONLY if no segments are available at all
     const WINDOW_SIZE = 3;
     const words = props.transcriptWords.filter(
-      w => w.start <= time + WINDOW_SIZE && w.end >= time - WINDOW_SIZE
+      w => w.start <= clipRelativeTime + WINDOW_SIZE && w.end >= clipRelativeTime - WINDOW_SIZE
     );
-    console.log('[POITargetPanel] Window mode, visible words:', {
+    console.log('[POITargetPanel] Window mode (fallback), visible words:', {
       count: words.length,
       firstWord: words[0],
       lastWord: words[words.length - 1]
@@ -833,19 +884,21 @@
 
   // Check if a word is currently being spoken
   function isCurrentWord(word: WordInfo): boolean {
-    const time = props.videoTime || 0;
+    // Convert absolute video time to clip-relative time
+    const absoluteTime = props.videoTime || 0;
+    const clipRelativeTime = absoluteTime - (props.clipStartTime || 0);
     
     // Check if we're in the word's time window
-    if (time >= word.start && time < word.end) {
+    if (clipRelativeTime >= word.start && clipRelativeTime < word.end) {
       return true;
     }
     
     // Look back tolerance for words that started between frames
     const LOOK_BACK_TOLERANCE = 0.05; // 50ms
-    const timeSinceWordStart = time - word.start;
+    const timeSinceWordStart = clipRelativeTime - word.start;
     
     if (timeSinceWordStart > 0 && timeSinceWordStart <= LOOK_BACK_TOLERANCE) {
-      if (time < word.end) {
+      if (clipRelativeTime < word.end) {
         return true;
       }
     }
@@ -1097,26 +1150,10 @@
         newCenterX = startCenterX;
       }
 
-      // Calculate diagonal distance for more sensitive font size control
-      const deltaXPixels = e.clientX - startX;
-      const deltaYPixels = e.clientY - startY;
-      const diagonalDistance = Math.sqrt(deltaXPixels * deltaXPixels + deltaYPixels * deltaYPixels);
-      
-      // Determine direction: outward (increasing) or inward (decreasing)
-      let direction = 0;
-      if (corner === 'se') {
-        direction = (deltaXPixels > 0 || deltaYPixels > 0) ? 1 : -1;
-      } else if (corner === 'sw') {
-        direction = (deltaXPixels < 0 || deltaYPixels > 0) ? 1 : -1;
-      } else if (corner === 'ne') {
-        direction = (deltaXPixels > 0 || deltaYPixels < 0) ? 1 : -1;
-      } else if (corner === 'nw') {
-        direction = (deltaXPixels < 0 || deltaYPixels < 0) ? 1 : -1;
-      }
-
-      // More sensitive font size control: 1 pixel of diagonal movement = 0.3pt font size change
-      const fontSizeChange = (diagonalDistance * direction * 0.3);
-      const newFontSize = Math.round(Math.max(12, Math.min(120, startFontSize + fontSizeChange)));
+      // Calculate font size directly from box width ratio
+      // This creates a 1:1 correlation between box size and font size
+      const widthRatio = newWidth / startWidth;
+      const newFontSize = Math.round(Math.max(12, Math.min(120, startFontSize * widthRatio)));
 
       localSubtitlePosition.value = {
         ...localSubtitlePosition.value,

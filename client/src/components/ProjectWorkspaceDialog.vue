@@ -2011,6 +2011,18 @@
       if (currentlyPlayingClipId.value) {
         try {
           const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } = await import('@/services/database/clips');
+          
+          console.log('[ProjectWorkspaceDialog] About to save full settings to database:', {
+            clipId: currentlyPlayingClipId.value,
+            animationStyle: activeSubtitleSettings.value.animationStyle,
+            border1Width: activeSubtitleSettings.value.border1Width,
+            border1Color: activeSubtitleSettings.value.border1Color,
+            border2Width: activeSubtitleSettings.value.border2Width,
+            border2Color: activeSubtitleSettings.value.border2Color,
+            fontSize: activeSubtitleSettings.value.fontSize,
+            highlightColor: activeSubtitleSettings.value.highlightColor
+          });
+          
           await updateClipFullSubtitleSettings(currentlyPlayingClipId.value, activeSubtitleSettings.value);
           
           console.log('[ProjectWorkspaceDialog] Saved subtitle settings to database for clip:', currentlyPlayingClipId.value);
