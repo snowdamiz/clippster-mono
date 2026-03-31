@@ -361,53 +361,76 @@
                 <p class="org-dialog__subtitle">Update your public organization information</p>
               </div>
               <div class="org-dialog__content">
-                <div class="org-settings__form-group">
-                  <label class="org-settings__form-label">Organization Logo</label>
-                  <div class="org-settings__logo-row">
-                    <div class="org-settings__logo-preview">
-                      <img v-if="organization?.logo_url && !logoLoadError" :src="organization.logo_url" class="org-settings__logo-img" @error="logoLoadError = true" />
-                      <Building2 v-else class="org-settings__logo-placeholder" />
-                      <div v-if="uploadingLogo" class="org-settings__logo-loading"><Loader2 class="org-settings__logo-spinner" /></div>
-                    </div>
-                    <div class="org-settings__logo-actions">
-                      <input ref="logoInputRef" type="file" accept="image/jpeg,image/png,image/gif,image/webp" class="org-settings__file-input" @change="handleLogoUpload" />
-                      <button type="button" @click="($refs.logoInputRef as HTMLInputElement)?.click()" :disabled="uploadingLogo" class="org-settings__upload-btn">
-                        <Upload class="org-settings__upload-icon" />
-                        {{ organization?.logo_url ? 'Change Logo' : 'Upload Logo' }}
-                      </button>
+                <!-- Basic Information Section -->
+                <div class="org-dialog__section">
+                  <h3 class="org-dialog__section-title">Basic Information</h3>
+                  
+                  <div class="org-settings__form-group">
+                    <label class="org-settings__form-label">Organization Logo</label>
+                    <div class="org-settings__logo-row">
+                      <div class="org-settings__logo-preview">
+                        <img v-if="organization?.logo_url && !logoLoadError" :src="organization.logo_url" class="org-settings__logo-img" @error="logoLoadError = true" />
+                        <Building2 v-else class="org-settings__logo-placeholder" />
+                        <div v-if="uploadingLogo" class="org-settings__logo-loading"><Loader2 class="org-settings__logo-spinner" /></div>
+                      </div>
+                      <div class="org-settings__logo-actions">
+                        <input ref="logoInputRef" type="file" accept="image/jpeg,image/png,image/gif,image/webp" class="org-settings__file-input" @change="handleLogoUpload" />
+                        <button type="button" @click="($refs.logoInputRef as HTMLInputElement)?.click()" :disabled="uploadingLogo" class="org-settings__upload-btn">
+                          <Upload class="org-settings__upload-icon" />
+                          {{ organization?.logo_url ? 'Change Logo' : 'Upload Logo' }}
+                        </button>
+                        <p class="org-settings__logo-hint">JPEG, PNG, GIF, or WebP. Max 5MB.</p>
+                      </div>
                     </div>
                   </div>
+
+                  <div class="org-settings__form-group">
+                    <label class="org-settings__form-label">Organization Name</label>
+                    <input v-model="editData.name" type="text" class="org-settings__form-input" placeholder="Enter organization name" />
+                  </div>
+
+                  <div class="org-settings__form-group">
+                    <label class="org-settings__form-label">Bio</label>
+                    <textarea v-model="editData.bio" rows="4" class="org-settings__form-textarea" placeholder="Tell clippers about your organization..." />
+                    <p class="org-settings__form-hint">{{ (editData.bio || '').length }}/500 characters</p>
+                  </div>
                 </div>
-                <div class="org-settings__form-group">
-                  <label class="org-settings__form-label">Organization Name</label>
-                  <input v-model="editData.name" type="text" class="org-settings__form-input" placeholder="Enter organization name" />
+
+                <!-- Contact & Details Section -->
+                <div class="org-dialog__section">
+                  <h3 class="org-dialog__section-title">Contact & Details</h3>
+                  
+                  <div class="org-settings__form-group">
+                    <label class="org-settings__form-label">Website URL</label>
+                    <input v-model="editData.website_url" type="text" class="org-settings__form-input" placeholder="https://yourwebsite.com" />
+                  </div>
+
+                  <div class="org-settings__form-group">
+                    <label class="org-settings__form-label">Public Contact Email</label>
+                    <input v-model="editData.public_contact_email" type="email" class="org-settings__form-input" placeholder="contact@yourorg.com" />
+                  </div>
+
+                  <div class="org-settings__form-group">
+                    <label class="org-settings__form-label">Description</label>
+                    <textarea v-model="editData.description" rows="3" class="org-settings__form-textarea" placeholder="A brief description for internal use..." />
+                  </div>
                 </div>
-                <div class="org-settings__form-group">
-                  <label class="org-settings__form-label">Description</label>
-                  <textarea v-model="editData.description" rows="3" class="org-settings__form-textarea" placeholder="A brief description of your organization..." />
-                </div>
-                <div class="org-settings__form-group">
-                  <label class="org-settings__form-label">Bio</label>
-                  <textarea v-model="editData.bio" rows="4" class="org-settings__form-textarea" placeholder="Public organization bio..." />
-                </div>
-                <div class="org-settings__form-group">
-                  <label class="org-settings__form-label">Website URL</label>
-                  <input v-model="editData.website_url" type="text" class="org-settings__form-input" placeholder="https://..." />
-                </div>
-                <div class="org-settings__form-group">
-                  <label class="org-settings__form-label">Public Contact Email</label>
-                  <input v-model="editData.public_contact_email" type="email" class="org-settings__form-input" placeholder="contact@yourorg.com" />
-                </div>
-                <div class="org-settings__form-group">
-                  <label class="org-settings__form-label">Content Type</label>
-                  <div class="hw__tags">
-                    <button v-for="tag in SPECIALTY_TAGS" :key="tag.value" type="button" class="hw__tag" :class="{ 'hw__tag--selected': editData.content_type_tags.includes(tag.value) }" @click="toggleArrayTag(tag.value)">{{ tag.label }}</button>
+
+                <!-- Content Type Section -->
+                <div class="org-dialog__section">
+                  <h3 class="org-dialog__section-title">Content Specialties</h3>
+                  
+                  <div class="org-settings__form-group">
+                    <label class="org-settings__form-label">Content Types</label>
+                    <div class="hw__tags">
+                      <button v-for="tag in SPECIALTY_TAGS" :key="tag.value" type="button" class="hw__tag" :class="{ 'hw__tag--selected': editData.content_type_tags.includes(tag.value) }" @click="toggleArrayTag(tag.value)">{{ tag.label }}</button>
+                    </div>
                   </div>
                 </div>
               </div>
               <div class="org-dialog__footer">
                 <button class="org-dialog__btn org-dialog__btn--secondary" @click="showEditProfileDialog = false" :disabled="saving">Cancel</button>
-                <button class="org-dialog__btn org-dialog__btn--danger" @click="saveAndCloseProfileDialog" :disabled="saving">
+                <button class="org-dialog__btn org-dialog__btn--primary" @click="saveAndCloseProfileDialog" :disabled="saving">
                   <Loader2 v-if="saving" class="org-dialog__btn-spinner" />
                   {{ saving ? 'Saving...' : 'Save Profile' }}
                 </button>
@@ -709,6 +732,7 @@
     max-width: 1400px;
     margin: 0 auto;
     width: 100%;
+    padding: 1.5rem;
   }
 
   .profile-header-card {
@@ -717,6 +741,7 @@
     border: 1px solid var(--sidebar-border);
     border-radius: 16px;
     overflow: hidden;
+    margin-bottom: 1.5rem;
   }
   .profile-header-bg {
     position: absolute;
@@ -1459,6 +1484,28 @@
     padding: 0 1.5rem;
   }
 
+  .org-dialog__section {
+    margin-bottom: 2rem;
+  }
+
+  .org-dialog__section:last-child {
+    margin-bottom: 0;
+  }
+
+  .org-dialog__section-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 1rem;
+    letter-spacing: -0.01em;
+  }
+
+  .org-settings__form-hint {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.375rem 0 0;
+  }
+
   .org-dialog__preview-card {
     display: flex;
     align-items: center;
@@ -1577,6 +1624,15 @@
   .org-dialog__btn--secondary:hover:not(:disabled) {
     background-color: var(--sidebar-active);
     border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .org-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .org-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
   }
 
   .org-dialog__btn--danger {
