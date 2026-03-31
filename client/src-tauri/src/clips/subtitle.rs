@@ -255,8 +255,10 @@ pub fn generate_ass_file(
 
     // Apply per-ratio visual overrides from JSON (set when user picks a different preset per ratio)
     let (eff_text_color, eff_font_family, eff_font_weight, eff_font_size, eff_border1_color,
-         eff_border1_width, eff_shadow_x, eff_shadow_y, eff_shadow_blur, eff_shadow_color,
-         eff_animation_style) = if let Some(ov) = per_ratio_override {
+         eff_border1_width, eff_border2_color, eff_border2_width, eff_shadow_x, eff_shadow_y, 
+         eff_shadow_blur, eff_shadow_color, eff_animation_style, eff_highlight_color,
+         eff_multi_color_enabled, eff_multi_color_mode, eff_color_palette, eff_background_color, 
+         eff_background_enabled) = if let Some(ov) = per_ratio_override {
         let tc    = ov.get("textColor").and_then(|v| v.as_str()).map(String::from)
                       .unwrap_or_else(|| settings.text_color.clone());
         let ff    = ov.get("fontFamily").and_then(|v| v.as_str()).map(String::from)
@@ -269,6 +271,10 @@ pub fn generate_ass_file(
                       .unwrap_or_else(|| settings.border1_color.clone());
         let bw1   = ov.get("border1Width").and_then(|v| v.as_f64()).map(|v| v as f32)
                       .unwrap_or(settings.border1_width);
+        let bc2   = ov.get("border2Color").and_then(|v| v.as_str()).map(String::from)
+                      .unwrap_or_else(|| settings.border2_color.clone());
+        let bw2   = ov.get("border2Width").and_then(|v| v.as_f64()).map(|v| v as f32)
+                      .unwrap_or(settings.border2_width);
         let sx    = ov.get("shadowOffsetX").and_then(|v| v.as_f64()).map(|v| v as f32)
                       .unwrap_or(settings.shadow_offset_x);
         let sy    = ov.get("shadowOffsetY").and_then(|v| v.as_f64()).map(|v| v as f32)
@@ -279,25 +285,65 @@ pub fn generate_ass_file(
                       .unwrap_or_else(|| settings.shadow_color.clone());
         let anim  = ov.get("animationStyle").and_then(|v| v.as_str()).map(String::from)
                       .unwrap_or_else(|| settings.animation_style.clone());
-        (tc, ff, fw, fs, bc1, bw1, sx, sy, sb, sc, anim)
+        let hc    = ov.get("highlightColor").and_then(|v| v.as_str()).map(String::from)
+                      .unwrap_or_else(|| settings.highlight_color.clone());
+        let mce   = ov.get("multiColorEnabled").and_then(|v| v.as_bool())
+                      .unwrap_or(settings.multi_color_enabled);
+        let mcm   = ov.get("multiColorMode").and_then(|v| v.as_str()).map(String::from)
+                      .unwrap_or_else(|| settings.multi_color_mode.clone());
+        let cp    = ov.get("colorPalette").and_then(|v| v.as_array())
+                      .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<String>>())
+                      .unwrap_or_else(|| settings.color_palette.clone());
+        let bgc   = ov.get("backgroundColor").and_then(|v| v.as_str()).map(String::from)
+                      .unwrap_or_else(|| settings.background_color.clone());
+        let bge   = ov.get("backgroundEnabled").and_then(|v| v.as_bool())
+                      .unwrap_or(settings.background_enabled);
+        (tc, ff, fw, fs, bc1, bw1, bc2, bw2, sx, sy, sb, sc, anim, hc, mce, mcm, cp, bgc, bge)
     } else {
         (settings.text_color.clone(), settings.font_family.clone(), settings.font_weight,
          settings.font_size, settings.border1_color.clone(), settings.border1_width,
+         settings.border2_color.clone(), settings.border2_width,
          settings.shadow_offset_x, settings.shadow_offset_y, settings.shadow_blur,
-         settings.shadow_color.clone(), settings.animation_style.clone())
+         settings.shadow_color.clone(), settings.animation_style.clone(), 
+         settings.highlight_color.clone(), settings.multi_color_enabled,
+         settings.multi_color_mode.clone(), settings.color_palette.clone(), 
+         settings.background_color.clone(), settings.background_enabled)
     };
+
+    // Create an effective settings object that uses all the overridden values
+    // This is used throughout the rest of the function instead of the base settings
+    let mut eff_settings = settings.clone();
+    eff_settings.text_color = eff_text_color.clone();
+    eff_settings.font_family = eff_font_family.clone();
+    eff_settings.font_weight = eff_font_weight;
+    eff_settings.font_size = eff_font_size;
+    eff_settings.border1_color = eff_border1_color.clone();
+    eff_settings.border1_width = eff_border1_width;
+    eff_settings.border2_color = eff_border2_color.clone();
+    eff_settings.border2_width = eff_border2_width;
+    eff_settings.shadow_offset_x = eff_shadow_x;
+    eff_settings.shadow_offset_y = eff_shadow_y;
+    eff_settings.shadow_blur = eff_shadow_blur;
+    eff_settings.shadow_color = eff_shadow_color.clone();
+    eff_settings.animation_style = eff_animation_style.clone();
+    eff_settings.highlight_color = eff_highlight_color.clone();
+    eff_settings.multi_color_enabled = eff_multi_color_enabled;
+    eff_settings.multi_color_mode = eff_multi_color_mode.clone();
+    eff_settings.color_palette = eff_color_palette.clone();
+    eff_settings.background_color = eff_background_color.clone();
+    eff_settings.background_enabled = eff_background_enabled;
 
     let primary_color = convert_color(&eff_text_color);
     let border1_color = convert_color(&eff_border1_color);
-    let border2_color = convert_color(&settings.border2_color);
-    let _back_color = convert_color(&settings.background_color);
+    let border2_color = convert_color(&eff_border2_color);
+    let _back_color = convert_color(&eff_background_color);
 
     println!(
         "[Rust] Subtitle colors - Text: {}, Border1: {}, Border2: {}, Background: {}",
-        settings.text_color,
-        settings.border1_color,
-        settings.border2_color,
-        settings.background_color
+        eff_text_color,
+        eff_border1_color,
+        eff_border2_color,
+        eff_background_color
     );
     println!(
         "[Rust] ASS colors - Primary: {}, Border1: {}, Border2: {}",
@@ -329,7 +375,7 @@ pub fn generate_ass_file(
     // ASS Outline is entirely outwards. To match the visual thickness of the frontend,
     // we need to divide the stroke width by 2.
     let adjusted_border1_width = eff_border1_width * font_size_scale * 0.5;
-    let adjusted_border2_width = settings.border2_width * font_size_scale * 0.5;
+    let adjusted_border2_width = eff_border2_width * font_size_scale * 0.5;
     // ASS Shadow parameter is an offset depth, calculate from shadow offset X/Y
     // Use the magnitude of the offset vector for proper shadow distance
     let shadow_offset_magnitude =
@@ -362,7 +408,7 @@ pub fn generate_ass_file(
         (50.0, settings.position_percentage as f64, settings.max_width as f64)
     };
 
-    let adjusted_padding = settings.padding * font_size_scale;
+    let adjusted_padding = eff_settings.padding * font_size_scale;
     let box_width_px = play_res_x as f64 * (override_max_width / 100.0);
 
     // Calculate margins to constrain text to box_width - 2*padding
@@ -373,13 +419,13 @@ pub fn generate_ass_file(
 
     // Calculate target position for \pos(x,y)
     // X: Center of screen + Offset (percentage of box width)
-    let shift_x_px = box_width_px * (settings.text_offset_x as f64 / 100.0);
+    let shift_x_px = box_width_px * (eff_settings.text_offset_x as f64 / 100.0);
     let _target_x = (play_res_x as f64 / 2.0) + shift_x_px;
 
     // Y: Position% of screen + Offset (percentage of height)
     // We approximate height as 2 lines + padding for the offset calculation
     let approx_height = (adjusted_font_size as f64 * 2.0) + (adjusted_padding as f64 * 2.0);
-    let shift_y_px = approx_height * (settings.text_offset_y as f64 / 100.0);
+    let shift_y_px = approx_height * (eff_settings.text_offset_y as f64 / 100.0);
 
     // NOTE: Removed vertical_correction - the frontend doesn't apply any correction,
     // so we shouldn't either to match the preview exactly
@@ -390,7 +436,7 @@ pub fn generate_ass_file(
     // Middle row: 4=left, 5=center, 6=right
     // Top row: 7=left, 8=center, 9=right
     // We use middle row (4/5/6) to match vertical centering
-    let (alignment, adjusted_target_x) = match settings.text_align.as_str() {
+    let (alignment, adjusted_target_x) = match eff_settings.text_align.as_str() {
         "left" => {
             // Alignment 4 = Middle Left
             // Position at left edge of text box (side_margin + padding)
@@ -440,7 +486,7 @@ pub fn generate_ass_file(
     let total_border_width = adjusted_border1_width + adjusted_border2_width;
 
     // Use shadow_color for BackColour (which controls Shadow color in BorderStyle=1)
-    let shadow_color_ass = convert_color(&settings.shadow_color);
+    let shadow_color_ass = convert_color(&eff_shadow_color);
 
     // Calculate word spacing separator
     // Frontend uses flex gap which replaces the space character.
@@ -449,7 +495,7 @@ pub fn generate_ass_file(
     // Target width = word_spacing * font_size
     // Required spacing = Target width - Estimated space width
     let space_glyph_width = adjusted_font_size * 0.25;
-    let target_word_gap = settings.word_spacing * adjusted_font_size;
+    let target_word_gap = eff_settings.word_spacing * adjusted_font_size;
     let space_char_spacing = (target_word_gap - space_glyph_width).max(0.0);
 
     // Separator: Set spacing for space char, then space char, then reset spacing for next word
@@ -674,7 +720,7 @@ pub fn generate_ass_file(
                     "single-word" => {
                         // Only show the active word, hide others
                         // Get the color for this word (supports multi-color mode)
-                        let word_color = get_word_color(active_idx, settings);
+                        let word_color = get_word_color(active_idx, &eff_settings);
                         let ass_color = convert_hex_to_ass_color(&word_color);
                         format!("{{\\c{}}}{}{}", ass_color, weight_tag, active_word.word)
                     }
@@ -731,7 +777,7 @@ pub fn generate_ass_file(
                         // Pop: active word scales up more aggressively with highlight color
                         let scale_up_end = word_start_in_interval + anim_duration_ms;
                         let mut positioned_text_parts = Vec::new();
-                        let highlight_ass_color = convert_hex_to_ass_color(&settings.highlight_color);
+                        let highlight_ass_color = convert_hex_to_ass_color(&eff_settings.highlight_color);
                         
                         for (k, word) in chunk.iter().enumerate() {
                             if k == active_idx {
@@ -749,7 +795,7 @@ pub fn generate_ass_file(
                         // Zoom: slower scale-up effect with highlight color
                         let scale_up_end = word_start_in_interval + (anim_duration_ms * 2);
                         let mut positioned_text_parts = Vec::new();
-                        let highlight_ass_color = convert_hex_to_ass_color(&settings.highlight_color);
+                        let highlight_ass_color = convert_hex_to_ass_color(&eff_settings.highlight_color);
                         
                         for (k, word) in chunk.iter().enumerate() {
                             if k == active_idx {
@@ -768,8 +814,8 @@ pub fn generate_ass_file(
                         let scale_up_end = word_start_in_interval + anim_duration_ms;
                         let mut positioned_text_parts = Vec::new();
                         
-                        // Get highlight color for karaoke effect (from settings.highlight_color)
-                        let highlight_ass_color = convert_hex_to_ass_color(&settings.highlight_color);
+                        // Get highlight color for karaoke effect
+                        let highlight_ass_color = convert_hex_to_ass_color(&eff_settings.highlight_color);
                         
                         for (k, word) in chunk.iter().enumerate() {
                             if k == active_idx {

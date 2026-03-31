@@ -232,6 +232,11 @@ const router = createRouter({
         },
       ],
     },
+    {
+      path: '/orgs/:slug',
+      name: 'org-public-profile',
+      component: () => import('@/pages/OrgPublicProfilePage.vue'),
+    },
     // Unified VODs page for all streaming platforms
     {
       path: '/vods',

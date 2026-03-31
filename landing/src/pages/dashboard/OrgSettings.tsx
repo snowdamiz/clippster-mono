@@ -24,10 +24,15 @@ import {
   X
 } from 'lucide-react'
 import type { OrganizationRestrictionDefaults } from '@/types/organization'
+import { SPECIALTY_TAGS } from '@/services/clipperApi'
 
 interface EditData {
   name: string
   description: string
+  bio: string
+  website_url: string
+  public_contact_email: string
+  content_type_tags: string[]
   settings: { allow_ai: boolean }
   restriction_defaults: Required<OrganizationRestrictionDefaults>
 }
@@ -57,6 +62,10 @@ export function OrgSettings() {
   const [editData, setEditData] = useState<EditData>({
     name: '',
     description: '',
+    bio: '',
+    website_url: '',
+    public_contact_email: '',
+    content_type_tags: [],
     settings: { allow_ai: true },
     restriction_defaults: { ...DEFAULT_RESTRICTIONS }
   })
@@ -78,6 +87,10 @@ export function OrgSettings() {
       setEditData({
         name: organization.name,
         description: organization.description || '',
+        bio: organization.bio || '',
+        website_url: organization.website_url || '',
+        public_contact_email: organization.public_contact_email || '',
+        content_type_tags: organization.content_type_tags || [],
         settings: { allow_ai: orgSettings.allow_ai !== false },
         restriction_defaults: {
           allow_ai: rd.allow_ai !== false,
@@ -121,6 +134,10 @@ export function OrgSettings() {
     return (
       editData.name !== organization.name ||
       editData.description !== (organization.description || '') ||
+      editData.bio !== (organization.bio || '') ||
+      editData.website_url !== (organization.website_url || '') ||
+      editData.public_contact_email !== (organization.public_contact_email || '') ||
+      JSON.stringify(editData.content_type_tags) !== JSON.stringify(organization.content_type_tags || []) ||
       editData.settings.allow_ai !== currentAllowAi ||
       restrictionsChanged
     )
@@ -195,16 +212,23 @@ export function OrgSettings() {
       titleComponent={hasMultipleOrgs ? <OrganizationSelector /> : undefined}
       description="Manage your organization profile and preferences"
       actions={
-        hasChanges && (
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-2 h-8 px-3.5 text-xs font-semibold rounded-md bg-cyan-400 text-[#0a0a0b] border-none cursor-pointer transition-opacity duration-150 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
-        )
+        <div className="flex items-center gap-2">
+          {organization?.slug && (
+            <a href={`/orgs/${organization.slug}`} className="flex items-center gap-2 h-8 px-3.5 text-xs font-semibold rounded-md border border-zinc-700 text-zinc-200 no-underline">
+              Preview Public Profile
+            </a>
+          )}
+          {hasChanges && (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="flex items-center gap-2 h-8 px-3.5 text-xs font-semibold rounded-md bg-cyan-400 text-[#0a0a0b] border-none cursor-pointer transition-opacity duration-150 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          )}
+        </div>
       }
     >
       <div className="w-full max-w-[900px] mx-auto p-6 flex flex-col gap-8">
@@ -307,6 +331,52 @@ export function OrgSettings() {
                   placeholder="A brief description of your organization..."
                   className="w-full px-4 py-3 text-sm bg-zinc-800/50 border border-zinc-800 rounded-lg text-white placeholder-zinc-600 resize-y min-h-[100px] leading-relaxed transition-all duration-150 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/15"
                 />
+              </div>
+            </div>
+            <div className="p-5 border-t border-zinc-800">
+              <div className="flex flex-col gap-2.5">
+                <label className="flex items-center gap-2 text-sm font-medium text-white">Bio</label>
+                <textarea value={editData.bio} onChange={(e) => setEditData((prev) => ({ ...prev, bio: e.target.value }))} rows={4} className="w-full px-4 py-3 text-sm bg-zinc-800/50 border border-zinc-800 rounded-lg text-white" />
+              </div>
+            </div>
+            <div className="p-5 border-t border-zinc-800">
+              <div className="flex flex-col gap-2.5">
+                <label className="flex items-center gap-2 text-sm font-medium text-white">Website URL</label>
+                <input value={editData.website_url} onChange={(e) => setEditData((prev) => ({ ...prev, website_url: e.target.value }))} className="w-full px-4 py-3 text-sm bg-zinc-800/50 border border-zinc-800 rounded-lg text-white" />
+              </div>
+            </div>
+            <div className="p-5 border-t border-zinc-800">
+              <div className="flex flex-col gap-2.5">
+                <label className="flex items-center gap-2 text-sm font-medium text-white">Public Contact Email</label>
+                <input value={editData.public_contact_email} onChange={(e) => setEditData((prev) => ({ ...prev, public_contact_email: e.target.value }))} className="w-full px-4 py-3 text-sm bg-zinc-800/50 border border-zinc-800 rounded-lg text-white" />
+              </div>
+            </div>
+            <div className="p-5 border-t border-zinc-800">
+              <div className="flex flex-col gap-2.5">
+                <label className="flex items-center gap-2 text-sm font-medium text-white">Content Type</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {SPECIALTY_TAGS.map((tag) => (
+                    <button
+                      key={tag.value}
+                      type="button"
+                      onClick={() =>
+                        setEditData((prev) => ({
+                          ...prev,
+                          content_type_tags: prev.content_type_tags.includes(tag.value)
+                            ? prev.content_type_tags.filter((v) => v !== tag.value)
+                            : [...prev.content_type_tags, tag.value]
+                        }))
+                      }
+                      className={`px-2.5 py-1 rounded-full border text-xs cursor-pointer transition-all ${
+                        editData.content_type_tags.includes(tag.value)
+                          ? 'bg-cyan-400/15 border-cyan-400 text-cyan-400'
+                          : 'border-zinc-700 bg-transparent text-zinc-400 hover:border-zinc-500'
+                      }`}
+                    >
+                      {tag.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>

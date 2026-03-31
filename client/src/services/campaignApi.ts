@@ -13,6 +13,7 @@ export interface CampaignOrganization {
   id: number;
   name: string;
   logo_url: string | null;
+  slug?: string | null;
 }
 
 export interface CampaignAsset {

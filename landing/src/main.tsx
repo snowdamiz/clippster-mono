@@ -25,6 +25,7 @@ const OAuthCallbackPage = lazy(() => import('./pages/auth/OAuthCallbackPage').th
 
 // Public pages
 const ClipperPublicProfilePage = lazy(() => import('./pages/ClipperPublicProfilePage').then(m => ({ default: m.ClipperPublicProfilePage })))
+const OrgPublicProfilePage = lazy(() => import('./pages/OrgPublicProfilePage').then(m => ({ default: m.OrgPublicProfilePage })))
 
 // Dashboard layout
 const DashboardLayout = lazy(() => import('./layouts/DashboardLayout').then(m => ({ default: m.DashboardLayout })))
@@ -118,6 +119,7 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />
                 <Route path="/clippers/:slug" element={<ClipperPublicProfilePage />} />
+                <Route path="/orgs/:slug" element={<OrgPublicProfilePage />} />
 
                 {/* Auth pages */}
                 <Route path="/login" element={<LoginPage />} />

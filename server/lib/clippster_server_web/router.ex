@@ -230,6 +230,7 @@ defmodule ClippsterServerWeb.Router do
 
     # Public clipper profile (shareable links)
     get("/clippers/:slug", ClipperProfilesController, :show)
+    get("/orgs/:slug", OrganizationPublicProfilesController, :show)
 
     get(
       "/clippers/:slug/portfolio-clips/:clip_id/presigned-url",

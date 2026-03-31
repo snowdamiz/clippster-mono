@@ -6,7 +6,11 @@ defmodule ClippsterServer.Organizations.Organization do
     field :name, :string
     field :slug, :string
     field :description, :string
+    field :bio, :string
     field :logo_url, :string
+    field :website_url, :string
+    field :public_contact_email, :string
+    field :content_type_tags, {:array, :string}, default: []
     field :settings, :map, default: %{}
 
     # Instagram scheduling settings
@@ -75,7 +79,11 @@ defmodule ClippsterServer.Organizations.Organization do
     |> cast(attrs, [
       :name,
       :description,
+      :bio,
       :logo_url,
+      :website_url,
+      :public_contact_email,
+      :content_type_tags,
       :owner_id,
       :settings,
       :allow_personal_instagram,
@@ -84,6 +92,7 @@ defmodule ClippsterServer.Organizations.Organization do
     |> validate_required([:name, :owner_id])
     |> validate_length(:name, min: 2, max: 100)
     |> validate_length(:description, max: 500)
+    |> validate_length(:bio, max: 2000)
     |> generate_slug()
     |> unique_constraint(:slug)
     |> foreign_key_constraint(:owner_id)
@@ -97,7 +106,11 @@ defmodule ClippsterServer.Organizations.Organization do
     |> cast(attrs, [
       :name,
       :description,
+      :bio,
       :logo_url,
+      :website_url,
+      :public_contact_email,
+      :content_type_tags,
       :settings,
       :allow_personal_instagram,
       :scheduling_enabled,
@@ -105,6 +118,7 @@ defmodule ClippsterServer.Organizations.Organization do
     ])
     |> validate_length(:name, min: 2, max: 100)
     |> validate_length(:description, max: 500)
+    |> validate_length(:bio, max: 2000)
     |> maybe_regenerate_slug()
   end
 

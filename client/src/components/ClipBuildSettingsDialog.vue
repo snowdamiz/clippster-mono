@@ -1211,12 +1211,18 @@
   }
 
   // Open POI editor for a specific ratio
-  function openPOIEditorForRatio(ratio: string) {
+  async function openPOIEditorForRatio(ratio: string) {
     editingAspectRatio.value = ratio;
     const config = getConfigForRatio(ratio);
     console.log('[ClipBuildSettingsDialog] Opening POI editor for ratio:', ratio);
     console.log('[ClipBuildSettingsDialog] Config for ratio:', config);
     console.log('[ClipBuildSettingsDialog] All manualFramingConfigs:', manualFramingConfigs.value);
+    
+    // Ensure video path is loaded before opening POI editor
+    if (!videoPath.value) {
+      await loadVideoFrame();
+    }
+    
     showManualPOIEditor.value = true;
   }
   const introButtonRef = ref<HTMLElement | null>(null);
@@ -1454,33 +1460,106 @@
   }
 
   // Handle subtitle settings change from POI editor (animation style, colors, borders, etc.)
-  function onSubtitleSettingsChange(settings: SubtitleSettings) {
+  async function onSubtitleSettingsChange(settings: SubtitleSettings) {
     console.log('[ClipBuildSettingsDialog] onSubtitleSettingsChange called:', {
       animationStyle: settings.animationStyle,
       border1Width: settings.border1Width,
       border2Width: settings.border2Width,
       highlightColor: settings.highlightColor,
-      fontSize: settings.fontSize
+      fontSize: settings.fontSize,
+      multiColorEnabled: settings.multiColorEnabled,
+      selectedPresetId: settings.selectedPresetId,
+      ratio: editingAspectRatio.value
     });
     
     // Update the local subtitle settings
     localSubtitleSettings.value = { ...settings };
     
-    // Also update the override for this ratio to preserve the changes
+    // Update the override for this specific ratio
     const ratio = editingAspectRatio.value;
     const existingOverride = subtitleOverrides.value[ratio as keyof SubtitleOverrides] || {};
     
+    // Store ALL visual properties that changed so Rust can apply them via per_ratio_override JSON
+    // The Rust code reads these fields from the JSON even though TypeScript SubtitleOverride doesn't define them
     subtitleOverrides.value = {
       ...subtitleOverrides.value,
       [ratio]: {
         ...existingOverride,
+        // Standard SubtitleOverride fields
         fontSize: settings.fontSize,
-        // Store other relevant settings that might be changed
+        positionPercentage: settings.positionPercentage,
+        maxWidth: settings.maxWidth,
+        presetId: settings.selectedPresetId || undefined,
+        // Extended fields for visual styling (read by Rust generate_ass_file)
         animationStyle: settings.animationStyle,
+        textColor: settings.textColor,
+        fontFamily: settings.fontFamily,
+        fontWeight: settings.fontWeight,
+        border1Width: settings.border1Width,
+        border1Color: settings.border1Color,
+        border2Width: settings.border2Width,
+        border2Color: settings.border2Color,
         highlightColor: settings.highlightColor,
         multiColorEnabled: settings.multiColorEnabled,
-      },
+        colorPalette: settings.colorPalette,
+        multiColorMode: settings.multiColorMode,
+        shadowOffsetX: settings.shadowOffsetX,
+        shadowOffsetY: settings.shadowOffsetY,
+        shadowBlur: settings.shadowBlur,
+        shadowColor: settings.shadowColor,
+        backgroundColor: settings.backgroundColor,
+        backgroundEnabled: settings.backgroundEnabled,
+      } as any, // Cast to any since we're extending SubtitleOverride with extra fields
     };
+    
+    // Save per-ratio override to database (don't overwrite base settings!)
+    if (props.clip?.id) {
+      try {
+        const { getClip, saveSubtitleSettings } = await import('@/services/database/clips');
+        
+        // Load current clip data from database to get existing subtitle_settings
+        const dbClip = await getClip(props.clip.id);
+        let currentSettings: any = null;
+        
+        if (dbClip?.subtitle_settings) {
+          currentSettings = typeof dbClip.subtitle_settings === 'string' 
+            ? JSON.parse(dbClip.subtitle_settings)
+            : dbClip.subtitle_settings;
+        }
+        
+        console.log('[ClipBuildSettingsDialog] Current settings from DB:', {
+          hasSettings: !!currentSettings,
+          baseAnimationStyle: currentSettings?.animationStyle,
+          hasPerRatioConfigs: !!currentSettings?.perRatioConfigs,
+          existingRatios: currentSettings?.perRatioConfigs ? Object.keys(currentSettings.perRatioConfigs) : []
+        });
+        
+        // Build perRatioConfigs by merging existing with new overrides
+        const perRatioConfigs: Record<string, any> = {
+          ...(currentSettings?.perRatioConfigs || {}),
+          ...subtitleOverrides.value,
+        };
+        
+        // If we have current settings, use them as base; otherwise use the incoming settings
+        const baseSettings = currentSettings || settings;
+        
+        const settingsToSave = {
+          ...baseSettings,
+          perRatioConfigs: Object.keys(perRatioConfigs).length > 0 ? perRatioConfigs : undefined,
+        };
+        
+        await saveSubtitleSettings(props.clip.id, settingsToSave);
+        console.log('[ClipBuildSettingsDialog] Saved per-ratio subtitle override to database:', {
+          clipId: props.clip.id,
+          ratio,
+          presetId: settings.selectedPresetId,
+          animationStyle: settings.animationStyle,
+          perRatioConfigKeys: Object.keys(perRatioConfigs),
+        });
+      } catch (error) {
+        console.error('[ClipBuildSettingsDialog] Failed to save subtitle settings:', error);
+      }
+    }
   }
 
   // Load a frame from the video for the POI editor preview

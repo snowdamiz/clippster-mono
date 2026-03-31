@@ -10,6 +10,14 @@
       <OrganizationBreadcrumb />
     </template>
     <template #actions>
+      <router-link
+        v-if="organization?.slug"
+        :to="`/orgs/${organization.slug}`"
+        class="org-settings__action-btn"
+        style="background: transparent; color: var(--sidebar-text); border: 1px solid var(--sidebar-border); margin-right: .5rem;"
+      >
+        Preview Public Profile
+      </router-link>
       <button
         v-if="hasChanges"
         type="button"
@@ -113,6 +121,39 @@
                   class="org-settings__form-textarea"
                   placeholder="A brief description of your organization..."
                 ></textarea>
+              </div>
+            </div>
+            <div class="org-settings__form-row">
+              <div class="org-settings__form-group">
+                <label class="org-settings__form-label">Bio</label>
+                <textarea v-model="editData.bio" rows="4" class="org-settings__form-textarea" placeholder="Public organization bio..." />
+              </div>
+            </div>
+            <div class="org-settings__form-row">
+              <div class="org-settings__form-group">
+                <label class="org-settings__form-label">Website URL</label>
+                <input v-model="editData.website_url" type="text" class="org-settings__form-input" placeholder="https://..." />
+              </div>
+            </div>
+            <div class="org-settings__form-row">
+              <div class="org-settings__form-group">
+                <label class="org-settings__form-label">Public Contact Email</label>
+                <input v-model="editData.public_contact_email" type="email" class="org-settings__form-input" placeholder="contact@yourorg.com" />
+              </div>
+            </div>
+            <div class="org-settings__form-row">
+              <div class="org-settings__form-group">
+                <label class="org-settings__form-label">Content Type</label>
+                <div class="hw__tags">
+                  <button
+                    v-for="tag in SPECIALTY_TAGS"
+                    :key="tag.value"
+                    type="button"
+                    class="hw__tag"
+                    :class="{ 'hw__tag--selected': editData.content_type_tags.includes(tag.value) }"
+                    @click="toggleArrayTag(tag.value)"
+                  >{{ tag.label }}</button>
+                </div>
               </div>
             </div>
           </div>
@@ -466,6 +507,7 @@
   import PageLayout from '@/components/PageLayout.vue';
   import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import { useOrganization } from '@/composables/useOrganization';
+  import { SPECIALTY_TAGS } from '@/services/clipperProfilesApi';
 
   const { organization, isOwner, updateOrganization, deleteOrganization, uploadLogo } = useOrganization();
 
@@ -476,6 +518,10 @@
   const editData = ref({
     name: '',
     description: '',
+    bio: '',
+    website_url: '',
+    public_contact_email: '',
+    content_type_tags: [] as string[],
     settings: {
       allow_ai: true,
     },
@@ -508,6 +554,10 @@
         editData.value = {
           name: org.name,
           description: org.description || '',
+          bio: org.bio || '',
+          website_url: org.website_url || '',
+          public_contact_email: org.public_contact_email || '',
+          content_type_tags: org.content_type_tags || [],
           settings: {
             allow_ai: orgSettings.allow_ai !== false,
           },
@@ -551,10 +601,21 @@
     return (
       editData.value.name !== organization.value.name ||
       editData.value.description !== (organization.value.description || '') ||
+      editData.value.bio !== (organization.value.bio || '') ||
+      editData.value.website_url !== (organization.value.website_url || '') ||
+      editData.value.public_contact_email !== (organization.value.public_contact_email || '') ||
+      JSON.stringify(editData.value.content_type_tags) !== JSON.stringify(organization.value.content_type_tags || []) ||
       editData.value.settings.allow_ai !== currentAllowAi ||
       restrictionsChanged
     );
   });
+
+  function toggleArrayTag(value: string) {
+    const tags = editData.value.content_type_tags;
+    const idx = tags.indexOf(value);
+    if (idx >= 0) tags.splice(idx, 1);
+    else tags.push(value);
+  }
 
   async function handleUpdateOrganization() {
     if (!hasChanges.value) return;

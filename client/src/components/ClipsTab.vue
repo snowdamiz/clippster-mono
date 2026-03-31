@@ -2807,13 +2807,11 @@
       // perRatioConfigs from clip editor takes precedence (user configured in editor)
       let finalSubtitleOverrides = settings.subtitleOverrides || null;
       if (effectiveSubtitleSettings?.perRatioConfigs) {
-        const editorOverrides: Record<string, { fontSize: number; positionPercentage: number; maxWidth?: number }> = {};
+        const editorOverrides: Record<string, any> = {};
         for (const [ratio, config] of Object.entries(effectiveSubtitleSettings.perRatioConfigs)) {
-          editorOverrides[ratio] = {
-            fontSize: config.fontSize,
-            positionPercentage: config.position?.y ?? config.positionPercentage,
-            maxWidth: config.maxWidth,
-          };
+          // Include ALL properties from perRatioConfigs, not just position/size
+          // The Rust code can read any property from the per_ratio_override JSON
+          editorOverrides[ratio] = { ...config };
         }
         finalSubtitleOverrides = {
           ...(settings.subtitleOverrides || {}),
@@ -2834,6 +2832,34 @@
           }
         }
       }
+
+      console.log('[ClipsTab] Subtitle payload before build invoke:', {
+        clipId: clip.id,
+        baseAnimationStyle: effectiveSubtitleSettings?.animationStyle,
+        baseFontFamily: effectiveSubtitleSettings?.fontFamily,
+        baseTextColor: effectiveSubtitleSettings?.textColor,
+        hasPerRatioConfigs: !!effectiveSubtitleSettings?.perRatioConfigs,
+        perRatioConfigKeys: effectiveSubtitleSettings?.perRatioConfigs
+          ? Object.keys(effectiveSubtitleSettings.perRatioConfigs)
+          : [],
+        overrideKeys: finalSubtitleOverrides ? Object.keys(finalSubtitleOverrides) : [],
+        overridePreview: finalSubtitleOverrides
+          ? Object.fromEntries(
+              Object.entries(finalSubtitleOverrides).map(([ratio, ov]) => {
+                const v = ov as any;
+                return [ratio, {
+                  animationStyle: v?.animationStyle,
+                  fontFamily: v?.fontFamily,
+                  textColor: v?.textColor,
+                  fontSize: v?.fontSize,
+                  positionPercentage: v?.positionPercentage,
+                  maxWidth: v?.maxWidth,
+                  hasPalette: Array.isArray(v?.colorPalette) && v.colorPalette.length > 0,
+                }];
+              })
+            )
+          : null,
+      });
 
       // ── Per-Target Build Loop ──────────────────────────────────────────────
       // Each target group gets its own branding resolution and Rust invoke.

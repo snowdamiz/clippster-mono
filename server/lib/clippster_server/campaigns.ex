@@ -20,7 +20,7 @@ defmodule ClippsterServer.Campaigns do
     ClipperPaymentMethod
   }
 
-  alias ClippsterServer.Social.Platforms.Twitter
+  alias ClippsterServer.Social.Providers.PostForMe
 
   # ============================================================================
   # Campaign CRUD
@@ -693,39 +693,86 @@ defmodule ClippsterServer.Campaigns do
   def fetch_and_update_submission_metadata(%CampaignSubmission{} = submission) do
     case submission.platform do
       platform when platform in ["x", "twitter"] ->
-        fetch_twitter_metadata(submission)
+        fetch_metadata_via_postforme(submission, "x")
 
-      # Add other platforms as needed
-      _ ->
-        Logger.debug("[Campaigns] No metadata fetcher for platform: #{submission.platform}")
+      "instagram" ->
+        fetch_metadata_via_postforme(submission, "instagram")
+
+      "tiktok" ->
+        fetch_metadata_via_postforme(submission, "tiktok")
+
+      "youtube" ->
+        fetch_metadata_via_postforme(submission, "youtube")
+
+      platform ->
+        Logger.debug("[Campaigns] No metadata fetcher for platform: #{platform}")
         {:ok, submission}
     end
   end
 
-  defp fetch_twitter_metadata(%CampaignSubmission{} = submission) do
-    case Twitter.extract_tweet_id(submission.clip_url) do
-      {:ok, tweet_id} ->
-        case Twitter.get_tweet_analytics(tweet_id) do
-          {:ok, analytics} ->
-            update_submission_metadata(submission, %{
-              view_count: analytics[:view_count] || 0,
-              like_count: analytics[:like_count] || 0,
-              comment_count: analytics[:comment_count] || 0,
-              author_username: analytics[:author_username],
-              author_name: analytics[:author_name],
-              author_profile_image: analytics[:author_profile_image],
-              caption: analytics[:text],
-              platform_post_id: tweet_id
-            })
+  defp fetch_metadata_via_postforme(%CampaignSubmission{} = submission, platform) do
+    # Load social account if not loaded
+    submission = 
+      case submission.social_account do
+        %Ecto.Association.NotLoaded{} ->
+          Repo.preload(submission, :social_account)
+        _ ->
+          submission
+      end
+
+    # Check if we have a social account with provider_account_id
+    case submission.social_account do
+      nil ->
+        Logger.warning("[Campaigns] No social account linked for submission #{submission.id}")
+        {:error, :no_social_account}
+
+      %ClipperSocialAccount{provider_account_id: nil} ->
+        Logger.warning("[Campaigns] Social account has no provider_account_id for submission #{submission.id}")
+        {:error, :no_provider_account_id}
+
+      %ClipperSocialAccount{provider_account_id: provider_account_id} ->
+        # Extract post ID from URL for matching
+        case extract_post_identifier(platform, submission.clip_url) do
+          {:ok, post_id} ->
+            # Fetch feed from PostForMe with metrics expanded
+            case PostForMe.get_social_account_feed(provider_account_id, %{limit: 50, expand: ["metrics"]}) do
+              {:ok, %{data: feed_items}} when is_list(feed_items) ->
+                # Find matching post in feed by post ID
+                case find_post_in_feed(feed_items, post_id) do
+                  {:ok, post_data} ->
+                    analytics = extract_feed_analytics(platform, post_data)
+                    
+                    update_submission_metadata(submission, %{
+                      view_count: analytics[:view_count] || 0,
+                      like_count: analytics[:like_count] || 0,
+                      comment_count: analytics[:comment_count] || 0,
+                      share_count: analytics[:share_count] || 0,
+                      save_count: analytics[:save_count] || 0,
+                      author_username: get_in(post_data, ["author", "username"]),
+                      author_name: get_in(post_data, ["author", "name"]),
+                      author_profile_image: get_in(post_data, ["author", "profile_picture"]),
+                      caption: post_data["text"] || post_data["caption"],
+                      platform_post_id: post_id
+                    })
+
+                  {:error, :not_found} ->
+                    Logger.warning("[Campaigns] Post #{post_id} not found in PostForMe feed for platform #{platform}")
+                    {:error, :post_not_in_feed}
+                end
+
+              {:error, reason} ->
+                Logger.warning("[Campaigns] Failed to fetch PostForMe feed: #{inspect(reason)}")
+                {:error, reason}
+
+              other ->
+                Logger.warning("[Campaigns] Unexpected PostForMe feed response: #{inspect(other)}")
+                {:error, :unexpected_response}
+            end
 
           {:error, reason} ->
-            Logger.warning("[Campaigns] Failed to fetch Twitter metadata: #{inspect(reason)}")
+            Logger.warning("[Campaigns] Failed to extract post ID from URL: #{inspect(reason)}")
             {:error, reason}
         end
-
-      {:error, reason} ->
-        Logger.warning("[Campaigns] Failed to extract tweet ID: #{inspect(reason)}")
-        {:error, reason}
     end
   end
 
@@ -737,6 +784,128 @@ defmodule ClippsterServer.Campaigns do
     |> Ecto.Changeset.change(attrs)
     |> Repo.update()
   end
+
+  # ============================================================================
+  # PostForMe Analytics Helpers
+  # ============================================================================
+
+  # Extract platform-specific identifier from post URL
+  defp extract_post_identifier(platform, url) when platform in ["x", "twitter"] and is_binary(url) do
+    case Regex.run(~r{(?:twitter\.com|x\.com)/.+/status/(\d+)}, url) do
+      [_, tweet_id] -> {:ok, tweet_id}
+      _ -> {:error, :invalid_url}
+    end
+  end
+
+  defp extract_post_identifier("instagram", url) when is_binary(url) do
+    case Regex.run(~r{instagram\.com/(?:p|reel|tv)/([A-Za-z0-9_-]+)}, url) do
+      [_, shortcode] -> {:ok, shortcode}
+      _ -> {:error, :invalid_url}
+    end
+  end
+
+  defp extract_post_identifier("tiktok", url) when is_binary(url) do
+    case Regex.run(~r{tiktok\.com/.+/video/(\d+)}, url) do
+      [_, video_id] -> {:ok, video_id}
+      _ -> {:error, :invalid_url}
+    end
+  end
+
+  defp extract_post_identifier("youtube", url) when is_binary(url) do
+    cond do
+      String.contains?(url, "/shorts/") ->
+        case Regex.run(~r{youtube\.com/shorts/([A-Za-z0-9_-]+)}, url) do
+          [_, video_id] -> {:ok, video_id}
+          _ -> {:error, :invalid_url}
+        end
+
+      String.contains?(url, "youtu.be/") ->
+        case Regex.run(~r{youtu\.be/([A-Za-z0-9_-]+)}, url) do
+          [_, video_id] -> {:ok, video_id}
+          _ -> {:error, :invalid_url}
+        end
+
+      true ->
+        {:error, :invalid_url}
+    end
+  end
+
+  defp extract_post_identifier(_platform, _url), do: {:error, :unsupported_platform}
+
+  # Find a post in the PostForMe feed by matching the platform post ID
+  defp find_post_in_feed(feed_items, post_id) when is_list(feed_items) do
+    result =
+      Enum.find(feed_items, fn item ->
+        # Check various possible ID fields in the feed item
+        item_id = item["id"] || item["platform_post_id"] || get_in(item, ["platform_data", "id"])
+
+        # Convert to string for comparison
+        item_id_str = to_string(item_id)
+        post_id_str = to_string(post_id)
+
+        item_id_str == post_id_str
+      end)
+
+    case result do
+      nil -> {:error, :not_found}
+      item -> {:ok, item}
+    end
+  end
+
+  # Extract analytics from PostForMe feed item based on platform
+  defp extract_feed_analytics(platform, item) when platform in ["x", "twitter"] do
+    m = item["metrics"] || %{}
+    pm = m["public_metrics"] || %{}
+
+    %{
+      view_count: pm["impression_count"] || 0,
+      like_count: pm["like_count"] || 0,
+      comment_count: pm["reply_count"] || 0,
+      share_count: pm["retweet_count"] || 0,
+      impressions_count: pm["impression_count"] || 0
+    }
+  end
+
+  defp extract_feed_analytics("instagram", item) do
+    m = item["metrics"] || %{}
+    i = m["insights"] || %{}
+
+    %{
+      view_count: i["plays"] || i["video_views"] || i["impressions"] || 0,
+      like_count: i["likes"] || 0,
+      comment_count: i["comments"] || 0,
+      share_count: i["shares"] || 0,
+      save_count: i["saves"] || 0,
+      reach_count: i["reach"] || 0
+    }
+  end
+
+  defp extract_feed_analytics("tiktok", item) do
+    m = item["metrics"] || %{}
+
+    # TikTok consumer: like_count, comment_count, share_count, view_count
+    # TikTok Business: likes, comments, shares, favorites, reach, video_views
+    %{
+      view_count: m["view_count"] || m["video_views"] || 0,
+      like_count: m["like_count"] || m["likes"] || 0,
+      comment_count: m["comment_count"] || m["comments"] || 0,
+      share_count: m["share_count"] || m["shares"] || 0,
+      save_count: m["favorites"] || 0,
+      reach_count: m["reach"] || 0
+    }
+  end
+
+  defp extract_feed_analytics("youtube", item) do
+    m = item["metrics"] || %{}
+
+    %{
+      view_count: m["views"] || 0,
+      like_count: m["likes"] || 0,
+      comment_count: m["comments"] || 0
+    }
+  end
+
+  defp extract_feed_analytics(_platform, _item), do: %{}
 
   @doc """
   Creates a campaign submission directly (used for published posts).

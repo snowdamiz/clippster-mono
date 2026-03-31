@@ -338,3 +338,6 @@ export async function updateClipFullSubtitleSettings(
   }
 }
 
+// Backward-compatible alias used by ClipBuildSettingsDialog dynamic import
+export { updateClipFullSubtitleSettings as saveSubtitleSettings };
+

@@ -1098,8 +1098,7 @@ pub async fn build_single_segment_clip_with_settings(
             let sub_arg = sub_path
                 .to_string_lossy()
                 .replace("\\", "/")
-                .replace(":", "\\:")
-                .replace("'", "\\'");
+                .replace(":", "\\:");
 
             // Build ass filter without fontsdir parameter to avoid path escaping issues
             // libass will use system fonts by default
@@ -1269,15 +1268,13 @@ pub async fn build_single_segment_clip_with_settings(
         let path_str = path
             .to_string_lossy()
             .replace("\\", "/")
-            .replace(":", "\\:")
-            .replace("'", "\\'");
+            .replace(":", "\\:");
         // Add fonts directory parameter to ass filter
         if let Some(ref fdir) = fonts_dir {
             let fonts_dir_str = fdir
                 .to_string_lossy()
                 .replace("\\", "/")
-                .replace(":", "\\:")
-                .replace("'", "\\'");
+                .replace(":", "\\:");
             vf_parts.push(format!("ass='{}':fontsdir='{}'", path_str, fonts_dir_str));
         } else {
             vf_parts.push(format!("ass='{}'", path_str));
@@ -1765,8 +1762,7 @@ pub async fn build_multi_segment_clip_with_settings(
         let sub_arg = sub_path
             .to_string_lossy()
             .replace("\\", "/")
-            .replace(":", "\\:")
-            .replace("'", "\\'");
+            .replace(":", "\\:");
 
         // Build ass filter without fontsdir parameter to avoid path escaping issues
         // Force RGB24 for accurate subtitle color rendering
@@ -3882,8 +3878,7 @@ async fn burn_subtitles_to_video(
     let sub_arg = subtitle_path
         .to_string_lossy()
         .replace("\\", "/")
-        .replace(":", "\\:")
-        .replace("'", "\\'");
+        .replace(":", "\\:");
     
     // Build ass filter without fontsdir parameter to avoid path escaping issues
     // libass will use system fonts by default

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { 
   Megaphone, 
   Building2, 
@@ -195,10 +195,13 @@ export default function CampaignDetailPage() {
 
                 <div className="flex items-center gap-4 text-sm text-gray-400">
                   {campaign.organization && (
-                    <span className="flex items-center gap-2">
+                    <Link
+                      to={campaign.organization.slug ? `/orgs/${campaign.organization.slug}` : '#'}
+                      className="flex items-center gap-2 no-underline text-inherit"
+                    >
                       <Building2 size={14} />
                       {campaign.organization.name}
-                    </span>
+                    </Link>
                   )}
                   {campaign.starts_at && (
                     <span className="flex items-center gap-2">

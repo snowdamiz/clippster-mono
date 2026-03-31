@@ -26,6 +26,9 @@ defmodule ClippsterServer.Organizations do
 
   alias ClippsterServer.{Emails, Mailer}
   alias ClippsterServer.Storage
+  alias ClippsterServer.Campaigns.Campaign
+  alias ClippsterServer.Organizations.HiringPost
+  alias ClippsterServer.Social.SocialAccount
 
   # ============================================================================
   # Organization CRUD
@@ -108,6 +111,80 @@ defmodule ClippsterServer.Organizations do
   """
   def get_organization_by_slug(slug) do
     Repo.get_by(Organization, slug: slug)
+  end
+
+  @doc """
+  Gets a public organization profile payload by slug.
+  """
+  def get_public_profile_by_slug(slug) when is_binary(slug) do
+    case Repo.get_by(Organization, slug: slug) do
+      nil ->
+        nil
+
+      organization ->
+        campaign_total =
+          from(c in Campaign, where: c.organization_id == ^organization.id, select: count(c.id))
+          |> Repo.one()
+
+        campaign_running =
+          from(c in Campaign,
+            where: c.organization_id == ^organization.id and c.status == "active",
+            select: count(c.id)
+          )
+          |> Repo.one()
+
+        campaign_completed =
+          from(c in Campaign,
+            where: c.organization_id == ^organization.id and c.status == "completed",
+            select: count(c.id)
+          )
+          |> Repo.one()
+
+        clippers_count =
+          from(m in OrganizationMember,
+            where: m.organization_id == ^organization.id and m.role == "member",
+            select: count(m.id)
+          )
+          |> Repo.one()
+
+        streamers =
+          from(p in OrganizationCreatorProfile,
+            where:
+              p.organization_id == ^organization.id and p.scope == "streamer" and p.disabled == false,
+            preload: [:platform_links],
+            order_by: [desc: p.inserted_at]
+          )
+          |> Repo.all()
+
+        social_accounts =
+          from(a in SocialAccount,
+            where: a.organization_id == ^organization.id and a.is_active == true,
+            order_by: [desc: a.connected_at]
+          )
+          |> Repo.all()
+
+        hiring_post =
+          from(h in HiringPost,
+            where:
+              h.organization_id == ^organization.id and h.status == "active" and h.is_public == true,
+            limit: 1
+          )
+          |> Repo.one()
+
+        %{
+          organization: organization,
+          stats: %{
+            campaigns_total: campaign_total || 0,
+            campaigns_running: campaign_running || 0,
+            campaigns_completed: campaign_completed || 0,
+            clippers_count: clippers_count || 0,
+            streamers_count: length(streamers)
+          },
+          streamers: streamers,
+          social_accounts: social_accounts,
+          hiring_post: hiring_post
+        }
+    end
   end
 
   @doc """

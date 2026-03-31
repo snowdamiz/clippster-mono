@@ -59,6 +59,42 @@ pub struct SubtitleOverride {
     pub max_width: Option<f32>,
     #[serde(default)]
     pub preset_id: Option<String>,
+    #[serde(default)]
+    pub animation_style: Option<String>,
+    #[serde(default)]
+    pub text_color: Option<String>,
+    #[serde(default)]
+    pub font_family: Option<String>,
+    #[serde(default)]
+    pub font_weight: Option<u32>,
+    #[serde(default)]
+    pub border1_width: Option<f32>,
+    #[serde(default)]
+    pub border1_color: Option<String>,
+    #[serde(default)]
+    pub border2_width: Option<f32>,
+    #[serde(default)]
+    pub border2_color: Option<String>,
+    #[serde(default)]
+    pub highlight_color: Option<String>,
+    #[serde(default)]
+    pub multi_color_enabled: Option<bool>,
+    #[serde(default)]
+    pub color_palette: Option<Vec<String>>,
+    #[serde(default)]
+    pub multi_color_mode: Option<String>,
+    #[serde(default)]
+    pub shadow_offset_x: Option<f32>,
+    #[serde(default)]
+    pub shadow_offset_y: Option<f32>,
+    #[serde(default)]
+    pub shadow_blur: Option<f32>,
+    #[serde(default)]
+    pub shadow_color: Option<String>,
+    #[serde(default)]
+    pub background_color: Option<String>,
+    #[serde(default)]
+    pub background_enabled: Option<bool>,
 }
 
 // Map of aspect ratio string to subtitle override

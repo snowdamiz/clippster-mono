@@ -90,8 +90,13 @@ export interface OrganizationRestrictionDefaults {
 export interface Organization {
   id: number;
   name: string;
+  slug?: string;
   description?: string;
+  bio?: string;
   logo_url?: string;
+  website_url?: string;
+  public_contact_email?: string;
+  content_type_tags?: string[];
   settings?: {
     allow_ai?: boolean;
   };
@@ -425,11 +430,7 @@ export function useOrganization(orgIdOverride?: string) {
   }
 
   // Update organization settings
-  async function updateOrganization(data: {
-    name: string;
-    description: string;
-    settings: { allow_ai: boolean };
-  }) {
+  async function updateOrganization(data: Record<string, any>) {
     if (!organizationId.value) return { success: false, error: 'No organization ID' };
 
     try {
