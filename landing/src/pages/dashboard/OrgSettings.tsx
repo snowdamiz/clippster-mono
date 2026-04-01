@@ -10,7 +10,6 @@ import {
   Save,
   Building2,
   Type,
-  FileText,
   Sparkles,
   Zap,
   Archive,
