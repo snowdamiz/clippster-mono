@@ -460,21 +460,28 @@ jobs:
         run: |
           $ffmpegDevDir = "client/src-tauri/ffmpeg-dev"
           New-Item -ItemType Directory -Force -Path $ffmpegDevDir | Out-Null
-          Write-Host "Downloading FFmpeg shared build for dev libraries..."
+          Write-Host "Downloading FFmpeg 8.0 shared build for dev libraries..."
           $zipPath = "$env:RUNNER_TEMP/ffmpeg-shared.zip"
-          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-shared-8.1.zip" -OutFile $zipPath
+          # Pinned to a specific immutable autobuild tag (the last BtbN release containing the n8.0
+          # branch before it was dropped). Do NOT change to "latest" — the rolling latest tag now
+          # ships FFmpeg 8.1 headers which break the ffmpeg-the-third 4.x crate (FFmpeg 8.0 only).
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-03-29-13-01/ffmpeg-n8.0.1-76-gfa4ee7ab3c-win64-gpl-shared-8.0.zip" -OutFile $zipPath
           Expand-Archive -Path $zipPath -DestinationPath $ffmpegDevDir -Force
           Remove-Item $zipPath
-          $extractedDir = Get-ChildItem $ffmpegDevDir -Directory | Select-Object -First 1
-          Write-Host "FFmpeg dev libs installed at: $($extractedDir.FullName)"
+          $extractedDir = (Get-ChildItem $ffmpegDevDir -Directory | Select-Object -First 1).FullName
+          Write-Host "FFmpeg dev libs installed at: $extractedDir"
+
+          # Export paths dynamically so the build step doesn't need a hardcoded folder name
+          "FFMPEG_DIR=$extractedDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "FFMPEG_INCLUDE_DIR=$extractedDir/include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "FFMPEG_LIB_DIR=$extractedDir/lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           # Bundle FFmpeg shared libraries (DLLs) for runtime
           Write-Host "=== Bundling FFmpeg DLLs for runtime ==="
           $ffmpegLibsDir = "client/src-tauri/ffmpeg-libs"
           New-Item -ItemType Directory -Force -Path $ffmpegLibsDir | Out-Null
 
-          # Copy all FFmpeg DLLs from bin directory
-          $binDir = Get-ChildItem "$ffmpegDevDir" -Directory | Select-Object -First 1 | ForEach-Object { "$($_.FullName)/bin" }
+          $binDir = "$extractedDir/bin"
           if (Test-Path $binDir) {
             Copy-Item "$binDir/*.dll" $ffmpegLibsDir -Force
             Write-Host "Bundled FFmpeg DLLs:"
@@ -532,9 +539,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          FFMPEG_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-dev/ffmpeg-n8.1-latest-win64-gpl-shared-8.1
-          FFMPEG_INCLUDE_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-dev/ffmpeg-n8.1-latest-win64-gpl-shared-8.1/include
-          FFMPEG_LIB_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-dev/ffmpeg-n8.1-latest-win64-gpl-shared-8.1/lib
+          FFMPEG_DIR: ${{ env.FFMPEG_DIR }}
+          FFMPEG_INCLUDE_DIR: ${{ env.FFMPEG_INCLUDE_DIR }}
+          FFMPEG_LIB_DIR: ${{ env.FFMPEG_LIB_DIR }}
         with:
           projectPath: client
           args: ${{ matrix.args }}
