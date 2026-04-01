@@ -913,6 +913,81 @@ defmodule ClippsterServerWeb.OrganizationController do
     end
   end
 
+  @doc """
+  Returns Stripe invoices for the organization's subscription.
+  Fetches directly from Stripe so the initial setup payment and all recurring
+  charges are always visible, regardless of whether they were recorded locally.
+  """
+  def get_subscription_invoices(conn, %{"organization_id" => org_id_raw}) do
+    user = conn.assigns.current_user
+
+    if Organizations.is_admin?(org_id_raw, user.id) do
+      org_id = if is_binary(org_id_raw), do: String.to_integer(org_id_raw), else: org_id_raw
+
+      case Repo.get(ClippsterServer.Organizations.Organization, org_id) do
+        nil ->
+          conn
+          |> put_status(404)
+          |> json(%{success: false, error: "Organization not found"})
+
+        %{stripe_customer_id: nil, stripe_subscription_id: nil} ->
+          json(conn, %{success: true, invoices: []})
+
+        org ->
+          customer_id = org.stripe_customer_id
+          subscription_id = org.stripe_subscription_id
+
+          stripe_params =
+            %{limit: 50}
+            |> then(fn p -> if customer_id, do: Map.put(p, :customer, customer_id), else: p end)
+            |> then(fn p ->
+              if subscription_id, do: Map.put(p, :subscription, subscription_id), else: p
+            end)
+
+          case Stripe.Invoice.list(stripe_params) do
+            {:ok, %{data: invoices}} ->
+              formatted =
+                Enum.map(invoices, fn inv ->
+                  %{
+                    id: safe_get(inv, :id),
+                    number: safe_get(inv, :number),
+                    status: safe_get(inv, :status),
+                    amount_paid: safe_get(inv, :amount_paid),
+                    amount_due: safe_get(inv, :amount_due),
+                    currency: safe_get(inv, :currency),
+                    created: safe_get(inv, :created),
+                    period_start: safe_get(inv, :period_start),
+                    period_end: safe_get(inv, :period_end),
+                    hosted_invoice_url: safe_get(inv, :hosted_invoice_url),
+                    invoice_pdf: safe_get(inv, :invoice_pdf),
+                    description: safe_get(inv, :description)
+                  }
+                end)
+
+              json(conn, %{success: true, invoices: formatted})
+
+            {:error, %Stripe.Error{message: msg}} ->
+              conn
+              |> put_status(500)
+              |> json(%{success: false, error: msg})
+          end
+      end
+    else
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Only admins can view invoices"})
+    end
+  end
+
+  defp safe_get(obj, key) when is_struct(obj) do
+    Map.get(obj, key)
+  rescue
+    _ -> nil
+  end
+
+  defp safe_get(obj, key) when is_map(obj), do: Map.get(obj, key)
+  defp safe_get(_, _), do: nil
+
   defp format_transaction(transaction) do
     %{
       id: transaction.id,

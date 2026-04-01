@@ -50,7 +50,7 @@
                 <p class="org-setup-dialog__alert-text">{{ error }}</p>
               </div>
 
-              <p class="org-setup-dialog__note">You'll be redirected to Stripe to set up recurring billing.</p>
+              <p class="org-setup-dialog__note">Stripe will open in your browser to set up recurring billing.</p>
             </div>
 
             <!-- Footer -->
@@ -61,7 +61,7 @@
                 class="org-setup-dialog__btn org-setup-dialog__btn--primary"
               >
                 <Loader2 v-if="loading" :size="16" class="org-setup-dialog__spinner" />
-                {{ loading ? 'Redirecting...' : 'Pay Now & Activate' }}
+                {{ loading ? 'Waiting for payment...' : 'Pay Now & Activate' }}
               </button>
             </div>
           </div>
@@ -74,6 +74,8 @@
 <script setup lang="ts">
   import { ref, watch } from 'vue';
   import { Loader2, CreditCard, AlertCircle } from 'lucide-vue-next';
+  import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
   import api from '@/services/api';
 
   interface Organization {
@@ -102,24 +104,60 @@
 
   const handleProceed = async () => {
     if (!props.organization?.id || loading.value) return;
-    
+
     loading.value = true;
     error.value = null;
 
     try {
       const response = await api.post(`/organizations/${props.organization.id}/payments/stripe/setup`);
-      
-      if (response.data.success) {
-        if (response.data.url) {
-          // Redirect to Stripe checkout
-          window.location.href = response.data.url;
-        } else if (response.data.redirect_to) {
-          // Free org case - reload to refresh data
-          await new Promise(resolve => setTimeout(resolve, 500));
-          emit('setup-complete');
-        }
-      } else {
+
+      if (!response.data.success) {
         throw new Error(response.data.error || 'Failed to create payment session');
+      }
+
+      if (response.data.redirect_to) {
+        // Free org — no payment needed, just mark complete
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        emit('setup-complete');
+        return;
+      }
+
+      if (response.data.url) {
+        // Open Stripe in the system browser (keeps the Tauri window intact and
+        // avoids the transparency rendering issue that occurs when navigating
+        // the app's transparent WebView to an external URL).
+        const orgId = props.organization!.id;
+
+        const unlisten = await listen('stripe-payment-complete', async (event: any) => {
+          unlisten();
+          const sessionId: string | undefined = event.payload?.session_id;
+
+          if (!event.payload?.success) {
+            // User cancelled — reset so they can try again
+            loading.value = false;
+            return;
+          }
+
+          // Confirm the payment server-side using the session ID so the DB is
+          // updated immediately, without waiting for the Stripe webhook (which
+          // requires a forwarding tunnel in dev and can have delays in prod).
+          if (sessionId) {
+            try {
+              await api.post(
+                `/organizations/${orgId}/payments/stripe/confirm-setup`,
+                { session_id: sessionId }
+              );
+            } catch (err) {
+              console.warn('[OrgSetup] confirm-setup call failed, webhook will handle it:', err);
+            }
+          }
+
+          loading.value = false;
+          emit('setup-complete');
+        });
+
+        await invoke('open_stripe_payment_window', { checkoutUrl: response.data.url });
+        // Button stays in loading state until stripe-payment-complete fires.
       }
     } catch (err) {
       console.error('Failed to open Stripe setup:', err);

@@ -140,6 +140,9 @@ const stateCache = new Map<
     transactionsTotal: Ref<number>;
     transactionsPage: Ref<number>;
     transactionsLoaded: Ref<boolean>;
+    invoices: Ref<any[]>;
+    invoicesLoading: Ref<boolean>;
+    invoicesLoaded: Ref<boolean>;
   }
 >();
 
@@ -169,6 +172,9 @@ function getOrCreateState(orgId: string) {
       transactionsTotal: ref(0),
       transactionsPage: ref(1),
       transactionsLoaded: ref(false),
+      invoices: ref<any[]>([]),
+      invoicesLoading: ref(false),
+      invoicesLoaded: ref(false),
     });
   }
   return stateCache.get(orgId)!;
@@ -220,6 +226,9 @@ export function useOrganization(orgIdOverride?: string) {
     transactionsTotal,
     transactionsPage,
     transactionsLoaded,
+    invoices,
+    invoicesLoading,
+    invoicesLoaded,
   } = state;
 
   const isAdmin = computed(() => role.value === 'owner' || role.value === 'admin');
@@ -426,6 +435,25 @@ export function useOrganization(orgIdOverride?: string) {
       console.error('[useOrganization] Failed to load transactions:', err);
     } finally {
       transactionsLoading.value = false;
+    }
+  }
+
+  // Load Stripe subscription invoices
+  async function loadInvoices() {
+    const orgId = organizationId.value;
+    if (!orgId || !isAdmin.value) return;
+
+    invoicesLoading.value = true;
+    try {
+      const result = await authStore.getOrganizationInvoices(orgId);
+      if (result.success) {
+        invoices.value = result.invoices ?? [];
+        invoicesLoaded.value = true;
+      }
+    } catch (err: any) {
+      console.error('[useOrganization] Failed to load invoices:', err);
+    } finally {
+      invoicesLoading.value = false;
     }
   }
 
@@ -761,6 +789,9 @@ export function useOrganization(orgIdOverride?: string) {
     transactionsPerPage,
     transactionsLoaded,
     totalTransactionPages,
+    invoices,
+    invoicesLoading,
+    invoicesLoaded,
 
     // Computed
     isAdmin,
@@ -778,6 +809,7 @@ export function useOrganization(orgIdOverride?: string) {
     loadCreatorProfiles,
     loadOrgAssets,
     loadTransactions,
+    loadInvoices,
     updateOrganization,
     cancelInvitation,
     resendInvitation,

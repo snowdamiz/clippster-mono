@@ -6,60 +6,72 @@
       :organization="organization"
       @setup-complete="handleSetupComplete"
     />
-    
-    <!-- Render child routes only if setup is complete OR not required -->
-    <router-view v-if="!showSetupDialog" />
+
+    <!--
+      isReady is a LOCAL ref that starts false on every mount.
+      This prevents the hub from rendering before THIS mount's loadOrganization
+      has finished — even when the shared state cache already has loading=false
+      from a previous visit (back navigation, HMR reload, etc.).
+      showSetupDialog provides a second gate: if setup is still required, the
+      hub never mounts regardless.
+    -->
+    <router-view v-if="isReady && !showSetupDialog" />
   </DashboardLayout>
 </template>
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted } from 'vue';
-  import { useRoute } from 'vue-router';
   import { useOrganization } from '@/composables/useOrganization';
   import DashboardLayout from '@/layouts/DashboardLayout.vue';
   import OrganizationSetupDialog from '@/components/OrganizationSetupDialog.vue';
 
-  const route = useRoute();
   const showSetupDialog = ref(false);
 
+  // isReady is intentionally LOCAL (not from shared state) so it resets to
+  // false on every mount cycle. The hub will never render until we have
+  // fresh confirmation that setup is complete for this navigation.
+  const isReady = ref(false);
+
   const {
-    loading,
     organization,
     role,
     loadOrganization,
   } = useOrganization();
 
-  // Check if setup is required
+  // Treat missing/falsey setup_completed as requiring payment (API may omit field)
   const needsSetup = computed(() => {
-    return (
-      !loading.value &&
-      !(organization.value as any)?.setup_completed &&
-      role.value === 'owner' &&
-      ((organization.value as any)?.admin_price_cents || 0) > 0
-    );
+    const org = organization.value as any;
+    if (!org) return false;
+    const priceCents = org.admin_price_cents ?? 0;
+    const setupDone = org.setup_completed === true;
+    return !setupDone && role.value === 'owner' && priceCents > 0;
   });
 
-  // Watch for setup requirement changes
   watch(needsSetup, (needs) => {
     showSetupDialog.value = needs;
-  }, { immediate: true });
+  });
 
-  // Handle setup completion
   const handleSetupComplete = async () => {
     showSetupDialog.value = false;
-    // Reload organization data to get updated setup_completed status
-    await loadOrganization();
+    await loadOrganization(true);
   };
 
   onMounted(async () => {
-    // Check if returning from Stripe setup
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('setup') === 'complete') {
-      // Clean URL
       window.history.replaceState({}, '', window.location.pathname);
-      // Reload to get fresh org data
+      await loadOrganization(true);
+    } else {
       await loadOrganization();
     }
+
+    // After load: evaluate setup requirement before allowing hub to render
+    if (needsSetup.value) {
+      showSetupDialog.value = true;
+    }
+
+    // Always mark ready AFTER setup check so router-view respects showSetupDialog
+    isReady.value = true;
   });
 </script>
 

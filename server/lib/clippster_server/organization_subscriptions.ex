@@ -125,6 +125,24 @@ defmodule ClippsterServer.OrganizationSubscriptions do
       Repo.transaction(fn ->
         org = Repo.get!(Organization, organization_id)
 
+        # Cancel any pre-existing Stripe subscription to prevent duplicate recurring charges.
+        # Same rationale as user subscriptions: if the org re-subscribed, the old Stripe
+        # subscription is orphaned in the DB and will keep billing indefinitely.
+        if org.stripe_subscription_id && org.subscription_renewal_method == "stripe" &&
+             org.stripe_subscription_id != stripe_subscription_id do
+          case Stripe.Subscription.cancel(org.stripe_subscription_id) do
+            {:ok, _} ->
+              IO.puts(
+                "[OrgSubscriptions] Cancelled previous Stripe subscription #{org.stripe_subscription_id} for org #{organization_id} before creating new one"
+              )
+
+            {:error, reason} ->
+              IO.puts(
+                "[OrgSubscriptions] Warning: Could not cancel previous Stripe subscription #{org.stripe_subscription_id} for org #{organization_id}: #{inspect(reason)}"
+              )
+          end
+        end
+
         start_date = DateTime.utc_now() |> DateTime.truncate(:second)
         end_date = DateTime.add(start_date, @subscription_days, :day)
 
@@ -1178,11 +1196,14 @@ defmodule ClippsterServer.OrganizationSubscriptions do
                      })
                      |> Repo.update() do
                   {:ok, updated_org} ->
-                    # Link org to user
+                    # Link org to user (same as new-owner path: organization account type)
                     case user
-                         |> Ecto.Changeset.change(%{owned_organization_id: updated_org.id})
+                         |> UserSchema.account_type_changeset(%{
+                           account_type: "organization",
+                           owned_organization_id: updated_org.id
+                         })
                          |> Repo.update() do
-                      {:ok, _user} ->
+                      {:ok, updated_owner} ->
                         # Add owner as member
                         case Organizations.add_member(updated_org.id, user.id, "owner") do
                           {:ok, _member} ->
@@ -1219,7 +1240,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
                                   "[OrgSubscriptions] Admin created org for existing user #{user.id}: #{org_name} (org #{updated_org.id})"
                                 )
 
-                                %{organization: updated_org, user: user}
+                                %{organization: updated_org, user: updated_owner}
 
                               {:error, changeset} ->
                                 Repo.rollback({:subscription_history_error, changeset})

@@ -7,11 +7,14 @@
       :class="isCollapsed ? 'ml-12' : 'ml-60'"
     >
       <!-- <DashboardHeader /> -->
-      <!-- Page content -->
+      <!-- Page content: rendered via slot so layouts like OrganizationLayout
+           can inject their own gated router-view instead of this default one. -->
       <div class="flex-1 min-h-0 dashboard-container">
-        <router-view v-slot="{ Component }">
-          <transition name="fade" mode="out-in"><component :is="Component" class="h-full" /></transition>
-        </router-view>
+        <slot>
+          <router-view v-slot="{ Component }">
+            <transition name="fade" mode="out-in"><component :is="Component" class="h-full" /></transition>
+          </router-view>
+        </slot>
       </div>
     </main>
     <!-- Authentication Modal -->
