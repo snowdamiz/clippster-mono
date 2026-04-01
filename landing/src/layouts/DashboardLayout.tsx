@@ -1,4 +1,4 @@
-import { Outlet, useParams, useNavigate } from 'react-router-dom'
+import { Outlet, useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
 import { useOrganization } from '@/hooks/useOrganization'
@@ -6,7 +6,6 @@ import { OrganizationSetupDialog } from '@/components/organization/OrganizationS
 
 export function DashboardLayout() {
   const { id } = useParams()
-  const navigate = useNavigate()
   const { subscription, error, isAdmin, organization, role, loadOrganization } = useOrganization()
   const [showSetupDialog, setShowSetupDialog] = useState(false)
   
