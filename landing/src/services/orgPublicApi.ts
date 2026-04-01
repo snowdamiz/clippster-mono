@@ -30,8 +30,17 @@ export interface OrgPublicProfile {
     platform: string
     username: string | null
     profile_image_url: string | null
+    display_name?: string | null
   }>
-  hiring: { title: string; description: string | null } | null
+  hiring: {
+    title: string
+    description: string | null
+    status?: string | null
+    clipper_slots_filled?: number | null
+    clipper_slots?: number | null
+    experience_level?: string | null
+    payment_type?: string | null
+  } | null
 }
 
 export async function getOrgPublicProfile(slug: string) {
