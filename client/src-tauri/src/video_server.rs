@@ -4,6 +4,17 @@ use warp::{Filter, Reply};
 
 pub static VIDEO_SERVER_PORT: u16 = 48276;
 
+/// On Windows, set CREATE_NO_WINDOW flag to prevent a visible console window.
+#[cfg(target_os = "windows")]
+fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command {
+    cmd.creation_flags(0x08000000) // CREATE_NO_WINDOW
+}
+
+#[cfg(not(target_os = "windows"))]
+fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command {
+    cmd
+}
+
 /// Probe the duration of a .ts file using FFmpeg
 async fn probe_ts_duration(file_path: &Path) -> Result<f64, String> {
     use regex::Regex;
@@ -25,7 +36,10 @@ async fn probe_ts_duration(file_path: &Path) -> Result<f64, String> {
             }
         });
 
-    let output = Command::new(&ffmpeg_path)
+    let mut cmd = Command::new(&ffmpeg_path);
+    no_window(&mut cmd);
+    
+    let output = cmd
         .args(["-i", file_path.to_str().ok_or("Invalid path")?])
         .output()
         .await
