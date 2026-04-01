@@ -123,7 +123,7 @@ export function OrganizationSetupDialog({
           <p className="text-[13px] text-zinc-500 text-center m-0">
             {loading
               ? 'Complete payment in the Stripe tab, then return here.'
-              : 'You'll be redirected to Stripe to set up recurring billing.'}
+              : "You'll be redirected to Stripe to set up recurring billing."}
           </p>
         </div>
 
