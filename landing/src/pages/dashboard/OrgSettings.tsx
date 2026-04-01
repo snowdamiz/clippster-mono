@@ -13,7 +13,6 @@ import {
   FileText,
   Sparkles,
   Zap,
-  Shield,
   Archive,
   CheckCircle,
   UserCircle,
