@@ -29,7 +29,7 @@ use super::{is_build_cancelled, CancellationToken};
 // Helper function to sanitize a clip name for use as a folder name
 fn sanitize_clip_name(name: &str) -> String {
     // Replace invalid filesystem characters with underscores
-    let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+    let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '\''];
     let mut sanitized = name.to_string();
 
     for ch in invalid_chars {
@@ -707,31 +707,28 @@ pub async fn build_clip_internal_simple(
                     // Get fonts directory
                     let fonts_dir = get_fonts_dir(&app).ok();
                     
-                    // Apply per-aspect-ratio overrides if they exist
-                    let effective_settings = if let Some(ref overrides) = subtitle_overrides {
-                        if let Some(override_for_ratio) = overrides.get(&aspect_ratio_str) {
-                            println!("[Rust] Applying subtitle overrides for {}: fontSize={}, positionPercentage={}, maxWidth={:?}", 
-                                     aspect_ratio_str, override_for_ratio.font_size, override_for_ratio.position_percentage, override_for_ratio.max_width);
-                            let mut overridden = settings.clone();
-                            overridden.font_size = override_for_ratio.font_size;
-                            overridden.position_percentage = override_for_ratio.position_percentage;
-                            // Apply max_width override if specified
-                            if let Some(max_width) = override_for_ratio.max_width {
-                                overridden.max_width = max_width;
-                            }
-                            overridden
-                        } else {
-                            settings.clone()
-                        }
-                    } else {
-                        settings.clone()
-                    };
-                    
                     let sub_path = clip_base_dir.join(format!("subtitles_{}.ass", ratio_suffix));
                     // Pass intro_duration as time offset for subtitle timings
                     let subtitle_offset = intro_duration.unwrap_or(0.0);
+                    // Convert subtitle override to JSON Value if available
+                    let per_ratio_override_json = subtitle_overrides
+                        .and_then(|overrides| overrides.get(&aspect_ratio_str).cloned())
+                        .map(|o| serde_json::to_value(o).unwrap());
+                    if let Some(ref override_json) = per_ratio_override_json {
+                        println!(
+                            "[Rust] Using per-ratio subtitle override for {}: {}",
+                            aspect_ratio_str,
+                            override_json
+                        );
+                    } else {
+                        println!(
+                            "[Rust] No per-ratio subtitle override found for {}, using base settings",
+                            aspect_ratio_str
+                        );
+                    }
+                    
                     generate_ass_file(
-                        &effective_settings, 
+                        settings, 
                         words, 
                         &segments, 
                         &sub_path, 
@@ -740,7 +737,8 @@ pub async fn build_clip_internal_simple(
                         video_info.width,
                         video_info.height,
                         fonts_dir.as_deref(),
-                        subtitle_offset
+                        subtitle_offset,
+                        per_ratio_override_json.as_ref()
                     ).map_err(|e| format!("Failed to generate subtitle file: {}", e))?;
                     
                     Some(sub_path)

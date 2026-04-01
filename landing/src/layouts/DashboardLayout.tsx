@@ -1,12 +1,50 @@
-import { Outlet } from 'react-router-dom'
+import { Outlet, useParams, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
 import { useOrganization } from '@/hooks/useOrganization'
+import { OrganizationSetupDialog } from '@/components/organization/OrganizationSetupDialog'
 
 export function DashboardLayout() {
-  const { subscription, error, isAdmin } = useOrganization()
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const { subscription, error, isAdmin, organization, role, loadOrganization } = useOrganization()
+  const [showSetupDialog, setShowSetupDialog] = useState(false)
+  
   const status = subscription?.status
   const isSubscriptionBlocked =
     !isAdmin && (error === 'subscription_required' || status === 'none' || status === 'expired')
+
+  // Check if setup is required
+  const needsSetup =
+    organization &&
+    !(organization as any)?.setup_completed &&
+    role === 'owner' &&
+    ((organization as any)?.admin_price_cents || 0) > 0
+
+  // Show setup dialog when needed
+  useEffect(() => {
+    if (needsSetup) {
+      setShowSetupDialog(true)
+    }
+  }, [needsSetup])
+
+  // Check if returning from Stripe setup
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    if (urlParams.get('setup') === 'complete' && id) {
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname)
+      // Reload organization data
+      loadOrganization(true)
+    }
+  }, [id, loadOrganization])
+
+  // Handle setup completion
+  const handleSetupComplete = async () => {
+    setShowSetupDialog(false)
+    // Reload organization data
+    await loadOrganization(true)
+  }
 
   if (isSubscriptionBlocked) {
     return (
@@ -30,6 +68,13 @@ export function DashboardLayout() {
       <main className="flex-1 flex flex-col min-h-0">
         <Outlet />
       </main>
+
+      {/* Organization Setup Dialog (Blocking) */}
+      <OrganizationSetupDialog
+        show={showSetupDialog}
+        organization={organization}
+        onSetupComplete={handleSetupComplete}
+      />
     </div>
   )
 }

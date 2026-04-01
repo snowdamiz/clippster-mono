@@ -40,7 +40,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
       seats: nil,
       monthly_credits: 100_000,
       usd: 2199.99
-    }
+    },
+    "custom" => %{name: "Custom", seats: nil, monthly_credits: 0, usd: 0}
   }
 
   # Add-on tiers (require base subscription)
@@ -512,7 +513,9 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   # ============================================================================
 
   @doc """
-  Cancels organization subscription. Access continues until end_date.
+  Cancels organization subscription (user-initiated or owner-initiated).
+  IMMEDIATELY cancels in Stripe (base + all add-ons) to prevent future charges.
+  Organization retains access until end_date.
   """
   def cancel_subscription(organization_id) do
     Repo.transaction(fn ->
@@ -522,27 +525,56 @@ defmodule ClippsterServer.OrganizationSubscriptions do
         Repo.rollback(:not_active)
       end
 
-      # Cancel in Stripe if it's a Stripe subscription
+      # IMMEDIATELY cancel base subscription in Stripe to stop future charges
       if org.stripe_subscription_id && org.subscription_renewal_method == "stripe" do
-        case Stripe.Subscription.update(org.stripe_subscription_id, %{cancel_at_period_end: true}) do
+        case Stripe.Subscription.cancel(org.stripe_subscription_id) do
           {:ok, _} ->
             IO.puts(
-              "[OrgSubscriptions] Cancelled Stripe subscription #{org.stripe_subscription_id} for org #{organization_id}"
+              "[OrgSubscriptions] IMMEDIATELY cancelled Stripe base subscription #{org.stripe_subscription_id} for org #{organization_id} - no future charges"
             )
 
           {:error, %Stripe.Error{message: message}} ->
             IO.puts(
-              "[OrgSubscriptions] Failed to cancel Stripe subscription for org #{organization_id}: #{message}"
+              "[OrgSubscriptions] Failed to cancel Stripe base subscription for org #{organization_id}: #{message}"
             )
             # Continue anyway to mark as cancelled in DB
 
           {:error, reason} ->
             IO.puts(
-              "[OrgSubscriptions] Failed to cancel Stripe subscription for org #{organization_id}: #{inspect(reason)}"
+              "[OrgSubscriptions] Failed to cancel Stripe base subscription for org #{organization_id}: #{inspect(reason)}"
             )
             # Continue anyway to mark as cancelled in DB
         end
       end
+
+      # IMMEDIATELY cancel ALL add-ons in Stripe
+      active_addons =
+        OrganizationSubscriptionAddon
+        |> where([a], a.organization_id == ^organization_id and a.status == "active")
+        |> Repo.all()
+
+      Enum.each(active_addons, fn addon ->
+        if addon.stripe_subscription_id do
+          case Stripe.Subscription.cancel(addon.stripe_subscription_id) do
+            {:ok, _} ->
+              IO.puts(
+                "[OrgSubscriptions] IMMEDIATELY cancelled Stripe add-on subscription #{addon.stripe_subscription_id} (#{addon.addon_tier}) for org #{organization_id}"
+              )
+
+            {:error, %Stripe.Error{message: message}} ->
+              IO.puts(
+                "[OrgSubscriptions] Failed to cancel Stripe add-on #{addon.addon_tier} for org #{organization_id}: #{message}"
+              )
+              # Continue with other add-ons
+
+            {:error, reason} ->
+              IO.puts(
+                "[OrgSubscriptions] Failed to cancel Stripe add-on #{addon.addon_tier} for org #{organization_id}: #{inspect(reason)}"
+              )
+              # Continue with other add-ons
+          end
+        end
+      end)
 
       # Update status to cancelled
       {:ok, updated_org} =
@@ -552,12 +584,100 @@ defmodule ClippsterServer.OrganizationSubscriptions do
         })
         |> Repo.update()
 
-      # Cancel active addons
+      # Cancel active addons in database
       OrganizationSubscriptionAddon
       |> where([a], a.organization_id == ^organization_id and a.status == "active")
       |> Repo.update_all(set: [status: "cancelled"])
 
-      IO.puts("[OrgSubscriptions] Cancelled subscription for org #{organization_id}")
+      IO.puts(
+        "[OrgSubscriptions] Cancelled subscription for org #{organization_id}, access until #{org.subscription_end_date}"
+      )
+
+      updated_org
+    end)
+  end
+
+  @doc """
+  Admin-initiated immediate cancellation for organization.
+  IMMEDIATELY cancels base subscription and ALL add-ons in Stripe (stops all future charges).
+  Organization optionally retains access until period end based on database end_date.
+  """
+  def admin_cancel_subscription(organization_id) do
+    Repo.transaction(fn ->
+      org = Repo.get!(Organization, organization_id)
+
+      unless org.subscription_status in ["active", "cancelled"] do
+        Repo.rollback(:not_active)
+      end
+
+      # IMMEDIATELY cancel base subscription in Stripe - no more charges
+      if org.stripe_subscription_id && org.subscription_renewal_method == "stripe" do
+        case Stripe.Subscription.cancel(org.stripe_subscription_id) do
+          {:ok, _} ->
+            IO.puts(
+              "[OrgSubscriptions] ADMIN: IMMEDIATELY cancelled Stripe base subscription #{org.stripe_subscription_id} for org #{organization_id} - no future charges"
+            )
+
+          {:error, %Stripe.Error{message: message}} ->
+            IO.puts(
+              "[OrgSubscriptions] ADMIN: Failed to cancel Stripe base subscription for org #{organization_id}: #{message}"
+            )
+            # For admin cancellations, rollback if Stripe fails
+            Repo.rollback({:stripe_error, message})
+
+          {:error, reason} ->
+            IO.puts(
+              "[OrgSubscriptions] ADMIN: Failed to cancel Stripe base subscription for org #{organization_id}: #{inspect(reason)}"
+            )
+            Repo.rollback({:stripe_error, reason})
+        end
+      end
+
+      # IMMEDIATELY cancel ALL add-ons in Stripe
+      active_addons =
+        OrganizationSubscriptionAddon
+        |> where([a], a.organization_id == ^organization_id and a.status == "active")
+        |> Repo.all()
+
+      Enum.each(active_addons, fn addon ->
+        if addon.stripe_subscription_id do
+          case Stripe.Subscription.cancel(addon.stripe_subscription_id) do
+            {:ok, _} ->
+              IO.puts(
+                "[OrgSubscriptions] ADMIN: IMMEDIATELY cancelled Stripe add-on subscription #{addon.stripe_subscription_id} (#{addon.addon_tier}) for org #{organization_id}"
+              )
+
+            {:error, %Stripe.Error{message: message}} ->
+              IO.puts(
+                "[OrgSubscriptions] ADMIN: Failed to cancel Stripe add-on #{addon.addon_tier} for org #{organization_id}: #{message}"
+              )
+              # For admin, we log but continue with other add-ons
+
+            {:error, reason} ->
+              IO.puts(
+                "[OrgSubscriptions] ADMIN: Failed to cancel Stripe add-on #{addon.addon_tier} for org #{organization_id}: #{inspect(reason)}"
+              )
+              # Continue with other add-ons
+          end
+        end
+      end)
+
+      # Update status to cancelled
+      {:ok, updated_org} =
+        org
+        |> Organization.subscription_changeset(%{
+          subscription_status: "cancelled"
+        })
+        |> Repo.update()
+
+      # Cancel active addons in database
+      OrganizationSubscriptionAddon
+      |> where([a], a.organization_id == ^organization_id and a.status == "active")
+      |> Repo.update_all(set: [status: "cancelled"])
+
+      IO.puts(
+        "[OrgSubscriptions] ADMIN: Cancelled subscription for org #{organization_id}"
+      )
 
       updated_org
     end)
@@ -886,7 +1006,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
                                  admin_price_cents: price_cents,
                                  admin_billing_cycle_day: start_date.day,
                                  created_by_admin_id: admin_id,
-                                 setup_completed: false
+                                 setup_completed: if(price_cents == 0, do: true, else: false)
                                })
                                |> Repo.update() do
                             {:ok, updated_org} ->
@@ -999,6 +1119,148 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   end
 
   @doc """
+  Admin creates an org and assigns an existing user as owner (by user_id).
+  The existing user is NOT modified — their password/email stay the same.
+  setup_completed is set to false so the owner is prompted to pay on first login.
+  """
+  def admin_create_org_account_for_existing_user(attrs) do
+    alias ClippsterServer.Accounts.User, as: UserSchema
+
+    %{
+      org_name: org_name,
+      user_id: user_id,
+      max_seats: max_seats,
+      monthly_credits: monthly_credits,
+      price_cents: price_cents,
+      admin_id: admin_id
+    } = attrs
+
+    tier = Map.get(attrs, :tier, "enterprise_base")
+    days = Map.get(attrs, :days, 30)
+
+    user = Repo.get(UserSchema, user_id)
+
+    cond do
+      is_nil(user) ->
+        {:error, :user_not_found}
+
+      user.owned_organization_id != nil ->
+        {:error, :user_already_owns_org}
+
+      true ->
+        result =
+          Repo.transaction(fn ->
+            # Create the organization
+            case %Organization{}
+                 |> Organization.create_changeset(%{
+                   name: org_name,
+                   description: Map.get(attrs, :description, ""),
+                   owner_id: user.id
+                 })
+                 |> Repo.insert() do
+              {:ok, org} ->
+                start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+                end_date = DateTime.add(start_date, days, :day)
+
+                case org
+                     |> Organization.subscription_changeset(%{
+                       subscription_status: "active",
+                       subscription_tier: tier,
+                       subscription_start_date: start_date,
+                       subscription_end_date: end_date,
+                       subscription_renewal_method: "admin",
+                       max_seats: if(max_seats == 0, do: nil, else: max_seats),
+                       monthly_credits: monthly_credits,
+                       admin_price_cents: price_cents,
+                       admin_billing_cycle_day: start_date.day,
+                       created_by_admin_id: admin_id,
+                       setup_completed: if(price_cents == 0, do: true, else: false)
+                     })
+                     |> Repo.update() do
+                  {:ok, updated_org} ->
+                    # Link org to user
+                    case user
+                         |> Ecto.Changeset.change(%{owned_organization_id: updated_org.id})
+                         |> Repo.update() do
+                      {:ok, _user} ->
+                        # Add owner as member
+                        case Organizations.add_member(updated_org.id, user.id, "owner") do
+                          {:ok, _member} ->
+                            # Grant initial credits if any
+                            if monthly_credits > 0 do
+                              case Organizations.add_organization_credits(
+                                     updated_org.id,
+                                     monthly_credits
+                                   ) do
+                                {:ok, _} -> :ok
+                                {:error, reason} -> Repo.rollback({:credits_error, reason})
+                              end
+                            end
+
+                            # Create subscription history
+                            case %OrganizationSubscription{}
+                                 |> OrganizationSubscription.create_changeset(%{
+                                   organization_id: updated_org.id,
+                                   subscription_type: "base",
+                                   tier: tier,
+                                   status: "active",
+                                   start_date: start_date,
+                                   end_date: end_date,
+                                   seats: if(max_seats == 0, do: nil, else: max_seats),
+                                   credits_granted: Decimal.new(to_string(monthly_credits)),
+                                   payment_method: "admin",
+                                   stripe_subscription_id:
+                                     "admin_create_existing_#{updated_org.id}_#{System.system_time(:second)}",
+                                   amount_usd: Decimal.new(to_string(price_cents / 100))
+                                 })
+                                 |> Repo.insert() do
+                              {:ok, _sub} ->
+                                IO.puts(
+                                  "[OrgSubscriptions] Admin created org for existing user #{user.id}: #{org_name} (org #{updated_org.id})"
+                                )
+
+                                %{organization: updated_org, user: user}
+
+                              {:error, changeset} ->
+                                Repo.rollback({:subscription_history_error, changeset})
+                            end
+
+                          {:error, reason} ->
+                            Repo.rollback({:member_error, reason})
+                        end
+
+                      {:error, changeset} ->
+                        Repo.rollback({:user_org_link_error, changeset})
+                    end
+
+                  {:error, changeset} ->
+                    Repo.rollback({:org_subscription_error, changeset})
+                end
+
+              {:error, changeset} ->
+                Repo.rollback({:org_create_error, changeset})
+            end
+          end)
+
+        case result do
+          {:ok, data} ->
+            {:ok, data}
+
+          {:error, {error_type, reason}} ->
+            IO.puts(
+              "[OrgSubscriptions] Error creating org for existing user: #{inspect(error_type)} - #{inspect(reason)}"
+            )
+
+            {:error, error_type}
+
+          {:error, reason} ->
+            IO.puts("[OrgSubscriptions] Error creating org for existing user: #{inspect(reason)}")
+            {:error, reason}
+        end
+    end
+  end
+
+  @doc """
   Admin updates an existing org's subscription settings.
   Changes take effect at next billing cycle (stored as pending).
   If immediate is true, changes apply immediately.
@@ -1073,13 +1335,6 @@ defmodule ClippsterServer.OrganizationSubscriptions do
     org
     |> Organization.subscription_changeset(%{max_seats: max_seats})
     |> Repo.update()
-  end
-
-  @doc """
-  Admin cancels an organization's subscription.
-  """
-  def admin_cancel_subscription(organization_id) do
-    cancel_subscription(organization_id)
   end
 
   # ============================================================================

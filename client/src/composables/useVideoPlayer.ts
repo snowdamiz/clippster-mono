@@ -13,6 +13,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   // Video player state
   const videoElement = ref<HTMLVideoElement | null>(null);
   const videoSrc = ref<string | null>(null);
+  const currentFilePath = ref<string | null>(null); // Track the original file path
   const videoLoading = ref(false);
   const videoError = ref<string | null>(null);
   const isPlaying = ref(false);
@@ -337,6 +338,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     videoError.value =
       'Failed to load video. The file may be corrupted or in an unsupported format.';
     videoSrc.value = null;
+    currentFilePath.value = null;
   }
 
   async function loadVideos() {
@@ -350,6 +352,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   async function loadVideoForProject() {
     if (!project.value) {
       videoSrc.value = null;
+      currentFilePath.value = null;
       currentVideo.value = null;
       videoError.value = null;
       videoLoading.value = false;
@@ -389,6 +392,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
 
       if (!videoPath) {
         videoSrc.value = null;
+        currentFilePath.value = null;
         videoLoading.value = false;
         return;
       }
@@ -407,10 +411,14 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
         videoSrc.value = `http://localhost:${port}/video/${encodedPath}`;
       }
 
+      // Track the original file path for comparison
+      currentFilePath.value = videoPath;
+
       videoLoading.value = false;
     } catch (error) {
       videoError.value = 'Failed to connect to video server. Please try again.';
       videoSrc.value = null;
+      currentFilePath.value = null;
       videoLoading.value = false;
     }
   }
@@ -421,6 +429,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
       videoElement.value.currentTime = 0;
     }
     videoSrc.value = null;
+    currentFilePath.value = null;
     currentVideo.value = null;
     videoError.value = null;
     isPlaying.value = false;
@@ -461,11 +470,15 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
         videoSrc.value = `http://localhost:${port}/video/${encodedPath}`;
       }
 
+      // Track the original file path for comparison
+      currentFilePath.value = filePath;
+
       videoLoading.value = false;
       return true;
     } catch (error) {
       videoError.value = 'Failed to load video. Please try again.';
       videoSrc.value = null;
+      currentFilePath.value = null;
       videoLoading.value = false;
       return false;
     }
@@ -647,6 +660,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     // State
     videoElement,
     videoSrc,
+    currentFilePath,
     videoLoading,
     videoError,
     isPlaying,

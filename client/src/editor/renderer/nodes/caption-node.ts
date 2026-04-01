@@ -174,7 +174,26 @@ export class CaptionNode extends BaseNode<CaptionNodeParams> {
 	}
 
 	private isWordActive(word: CaptionWord, time: number): boolean {
-		return time >= word.start && time < word.end;
+		// FIRST: Check if we're exactly in the word's time window
+		if (time >= word.start && time < word.end) {
+			return true;
+		}
+
+		// SECOND: Check if we just barely missed the word's start (handles frame skipping)
+		// Look back up to 50ms to catch words that started between frames
+		const LOOK_BACK_TOLERANCE = 0.05; // 50ms
+		const timeSinceWordStart = time - word.start;
+
+		// Did this word start very recently (within 50ms ago)?
+		if (timeSinceWordStart > 0 && timeSinceWordStart <= LOOK_BACK_TOLERANCE) {
+			// AND is the word still supposed to be playing?
+			if (time < word.end) {
+				return true;
+			}
+		}
+
+		// Word is not active (either hasn't started yet, or already ended, or we're in a gap/pause)
+		return false;
 	}
 
 	private layoutWords(

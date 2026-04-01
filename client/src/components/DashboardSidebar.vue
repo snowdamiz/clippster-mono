@@ -207,6 +207,15 @@
                 <Settings class="w-4 h-4 mr-2" />
                 Admin
               </DropdownMenuItem>
+              <!-- Moderator Link (conditional) -->
+              <DropdownMenuItem
+                v-if="authStore.user?.is_moderator && !authStore.user?.is_admin"
+                class="sidebar-dropdown__item"
+                @click="router.push('/admin')"
+              >
+                <Settings class="w-4 h-4 mr-2" />
+                Moderator
+              </DropdownMenuItem>
               <!-- Bug Report -->
               <DropdownMenuItem class="sidebar-dropdown__item" @click="showBugReportDialog = true">
                 <Bug class="w-4 h-4 mr-2" />

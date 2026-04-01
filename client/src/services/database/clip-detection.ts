@@ -493,41 +493,58 @@ export async function persistClipDetectionResults(
   projectId: string,
   prompt: string,
   detectionResults: {
-    clips: any[];
-    transcript?: any;
-    validation?: any;
+    clips?: any[];
+    jobId?: string;
   },
-  options?: {
-    detectionModel?: string;
-    serverResponseId?: string;
+  metadata?: {
     processingTimeMs?: number;
-    videoFilePath?: string;
-    rawVideoId?: string;
-  }
+    detectionModel?: string;
+    serverResponseId?: string | null;
+    multimodal?: boolean;
+  },
+  subtitleSettings?: { enabled: boolean; presetId: string } | null
 ): Promise<string> {
   const startTime = Date.now();
+  
+  console.log('[Database] persistClipDetectionResults called with:', {
+    projectId,
+    detectionResultsKeys: Object.keys(detectionResults),
+    clipsType: typeof detectionResults.clips,
+    clipsIsArray: Array.isArray(detectionResults.clips),
+    clipsLength: Array.isArray(detectionResults.clips) ? detectionResults.clips.length : 'N/A',
+  });
+  
   // Check for nested structure in clips property
   if (
     detectionResults.clips &&
     typeof detectionResults.clips === 'object' &&
     (detectionResults.clips as any).clips
   ) {
+    console.log('[Database] Found nested clips structure, unwrapping...');
     (detectionResults as any).clips = (detectionResults.clips as any).clips;
   }
 
   // Double-check if clips might be in a different property
   if (!detectionResults.clips || (detectionResults.clips as any[]).length === 0) {
+    console.log('[Database] No clips found in clips property, searching other properties...');
     for (const key of Object.keys(detectionResults)) {
       const value = detectionResults[key as keyof typeof detectionResults];
       if (Array.isArray(value) && value.length > 0) {
         // Check if this looks like clips data
         if ((value[0] as any)?.id || (value[0] as any)?.title || (value[0] as any)?.segments) {
+          console.log(`[Database] Found clips in property: ${key}`);
           (detectionResults as any).clips = value;
           break;
         }
       }
     }
   }
+  
+  console.log('[Database] After extraction - clips:', {
+    hasClips: !!detectionResults.clips,
+    isArray: Array.isArray(detectionResults.clips),
+    length: Array.isArray(detectionResults.clips) ? detectionResults.clips.length : 'N/A',
+  });
 
   // Ensure clip versioning tables exist before proceeding
   await ensureClipVersioningTables();
@@ -655,11 +672,11 @@ export async function persistClipDetectionResults(
 
   // Create detection session
   const sessionId = await createClipDetectionSession(projectId, prompt, {
-    detectionModel: options?.detectionModel || 'claude-3.5-sonnet',
-    serverResponseId: options?.serverResponseId,
+    detectionModel: metadata?.detectionModel || 'claude-3.5-sonnet',
+    serverResponseId: metadata?.serverResponseId,
     qualityScore: detectionResults.validation?.qualityScore,
     totalClipsDetected: detectionResults.clips?.length || 0,
-    processingTimeMs: options?.processingTimeMs || Date.now() - startTime,
+    processingTimeMs: metadata?.processingTimeMs || Date.now() - startTime,
     validationData: detectionResults.validation,
   });
 
@@ -710,12 +727,12 @@ export async function persistClipDetectionResults(
 
     // Generate thumbnail at the midpoint of the clip
     let thumbnailPath: string | undefined;
-    if (options?.videoFilePath && startTime !== undefined && endTime !== undefined) {
+    if (metadata?.videoFilePath && startTime !== undefined && endTime !== undefined) {
       try {
         const midpoint = startTime + (endTime - startTime) / 2;
         const clipId = generateId(); // Pre-generate ID for thumbnail filename
         thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
-          videoPath: options.videoFilePath,
+          videoPath: metadata.videoFilePath,
           timestampSeconds: midpoint,
           outputFilename: `clip_${clipId}`,
         });
@@ -733,7 +750,7 @@ export async function persistClipDetectionResults(
         projectId,
         sessionId,
         clipInfo,
-        options?.videoFilePath,
+        metadata?.videoFilePath,
         thumbnailPath
       );
     } catch (e) {

@@ -207,6 +207,7 @@
   import InviteMemberDialog from '@/components/InviteMemberDialog.vue';
   import OrganizationSelector from '@/components/OrganizationSelector.vue';
   import { useOrganizationSelector } from '@/composables/useOrganizationSelector';
+  import api from '@/services/api';
 
   const router = useRouter();
   const showInviteDialog = ref(false);
@@ -230,7 +231,6 @@
     assetsLoaded,
     loadOrgAssets,
   } = useOrganization();
-
   // Load profile and asset counts for display
   const profilesCount = computed(() => creatorProfiles.value.length);
   const assetsCount = computed(() => orgAssets.value.length);

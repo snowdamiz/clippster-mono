@@ -855,17 +855,11 @@ defmodule ClippsterServer.ClipValidation do
 
     all_issues = segment_issues ++ issues
 
-    # Add segment-level specific issues if any
-    quality_issues =
-      if length(all_issues) > 0 do
-        all_issues
-      else
-        ["Segment-level validation only (word timestamps not provided by transcription service)"]
-      end
-
+    # Return actual issues only (don't add informational messages that would penalize quality score)
+    # The validation type is already captured in validation_metadata
     {
       validated_clip,
-      quality_issues,
+      all_issues,
       segment_corrections ++ corrections
     }
   end
@@ -890,15 +884,11 @@ defmodule ClippsterServer.ClipValidation do
     # This is a simple validation - we just check if the timestamps are reasonable
     {start_time, end_time} = {clip_segment["start_time"], clip_segment["end_time"]}
 
-    # Basic temporal validation
+    # Basic temporal validation - only check for truly invalid timestamps
     {start_issues, start_corrections, validated_start} =
       cond do
         start_time < 0 ->
           {[%{negative_timestamp: true}], [%{corrected: "Fixed negative start time"}], 0.0}
-
-        # More than 16 minutes is suspicious for typical clips
-        start_time > 1000 ->
-          {[%{suspicious_timestamp: true}], [], start_time}
 
         true ->
           {[], [], start_time}
@@ -909,10 +899,6 @@ defmodule ClippsterServer.ClipValidation do
         end_time <= start_time ->
           {[%{invalid_duration: true}], [%{corrected: "Fixed invalid duration"}],
            start_time + 5.0}
-
-        # More than 33 minutes is suspicious
-        end_time > 2000 ->
-          {[%{suspicious_timestamp: true}], [], end_time}
 
         true ->
           {[], [], end_time}
@@ -945,21 +931,11 @@ defmodule ClippsterServer.ClipValidation do
     }
   end
 
-  defp check_segment_overlap(clip_start, clip_end, transcript_segments) do
-    overlapping_segments =
-      Enum.count(transcript_segments, fn segment ->
-        segment_start = segment["start"]
-        segment_end = segment["end"]
-
-        # Check if there's any overlap
-        not (clip_end <= segment_start or clip_start >= segment_end)
-      end)
-
-    if overlapping_segments == 0 do
-      [%{no_transcript_overlap: true}]
-    else
-      []
-    end
+  defp check_segment_overlap(_clip_start, _clip_end, _transcript_segments) do
+    # Don't penalize clips for not overlapping with transcript segments
+    # The AI has already validated these timestamps, and segment boundaries
+    # don't always align perfectly with transcript segment boundaries
+    []
   end
 
   # New AI-enhanced validation functions

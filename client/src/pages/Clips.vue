@@ -926,6 +926,7 @@
   import { getStoragePath } from '@/services/storage';
   import { useFormatters } from '@/composables/useFormatters';
   import { useAuthStore } from '@/stores/auth';
+  import { useClipThumbnailStore } from '@/stores/clipThumbnails';
   import PageLayout from '@/components/PageLayout.vue';
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
@@ -1001,8 +1002,7 @@
   const showVideoPlayer = ref(false);
   const clipToPlay = ref<RawVideo | null>(null);
   const playerWatermarkSettings = ref<WatermarkSettings | null>(null);
-  const thumbnailCache = ref<Map<string, string>>(new Map());
-  const buildThumbnailCache = ref<Map<string, string>>(new Map());
+  const thumbnailStore = useClipThumbnailStore();
   const rawVideoCache = ref<Map<string, (RawVideo & { thumbnail_path: string | null })[]>>(new Map());
   const projectCache = ref<Map<string, Project>>(new Map());
   const { getRelativeTime, formatDuration } = useFormatters();
@@ -1223,7 +1223,7 @@
       if ((clip as any).source === 'video_editor' && clip.build_status === 'completed' && clip.built_file_path) {
         const filePath = clip.built_file_path;
         const aspectRatio = extractAspectRatioFromPath(filePath);
-        const thumbnailUrl = buildThumbnailCache.value.get(filePath) || clipThumbnailUrl;
+        const thumbnailUrl = thumbnailStore.getBuildThumbnail(filePath) || clipThumbnailUrl;
 
         // Create a fake build object for video editor exports
         const fakeBuild: ClipBuild = {
@@ -1288,10 +1288,6 @@
 
               // Look up thumbnail by file path first (each aspect ratio has its own thumbnail)
               // Then fall back to build's thumbnail_path, then to clip thumbnail
-              const fileSpecificThumbnail = buildThumbnailCache.value.get(filePath);
-              const buildThumbnail = buildThumbnailCache.value.get(build.id);
-              const thumbnailUrl = fileSpecificThumbnail || buildThumbnail || clipThumbnailUrl;
-
               console.log(`[Clips] Creating displayable build: ${filePath} | AR: ${aspectRatio} | Build#${build.build_number} | Type: ${build.branding_type} | Campaign: ${build.campaign_name || 'null'} | Org: ${build.organization_name || 'null'}`);
 
               builds.push({
@@ -1302,7 +1298,7 @@
                 clipName,
                 projectName,
                 projectId: clip.project_id,
-                thumbnailUrl,
+                thumbnailUrl: thumbnailStore.getBuildThumbnail(filePath) || thumbnailStore.getBuildThumbnail(build.id) || clipThumbnailUrl,
                 createdAt: build.completed_at || build.created_at,
                 filePath,
                 aspectRatio,
@@ -1635,12 +1631,6 @@
               const filePath = outputPaths[i];
               const aspectRatio = extractAspectRatioFromPath(filePath);
 
-              // Look up thumbnail by file path first (each aspect ratio has its own thumbnail)
-              // Then fall back to build's thumbnail_path, then to clip thumbnail
-              const fileSpecificThumbnail = buildThumbnailCache.value.get(filePath);
-              const buildThumbnail = buildThumbnailCache.value.get(build.id);
-              const thumbnailUrl = fileSpecificThumbnail || buildThumbnail || clipThumbnailUrl;
-
               builds.push({
                 id: outputPaths.length > 1 ? `${build.id}-${i}` : build.id,
                 build,
@@ -1648,7 +1638,7 @@
                 clipName,
                 projectName: folderProject.value!.name,
                 projectId: clip.project_id,
-                thumbnailUrl,
+                thumbnailUrl: thumbnailStore.getBuildThumbnail(filePath) || thumbnailStore.getBuildThumbnail(build.id) || clipThumbnailUrl,
                 createdAt: build.completed_at || build.created_at,
                 filePath,
                 aspectRatio,
@@ -2024,10 +2014,11 @@
       // Load which clips have transcripts (for untranscribed detection)
       await loadTranscribedClipIds();
 
-      // Load thumbnails, project info, and raw videos for all clips
-      for (const clip of clips.value) {
-        await loadClipThumbnail(clip);
+      // Batch load clip thumbnails using the persistent store (much faster!)
+      await thumbnailStore.loadThumbnails(clips.value);
 
+      // Load project info and raw videos for all clips
+      for (const clip of clips.value) {
         // Load project info if clip has a project
         if (clip.project_id) {
           await getProjectInfo(clip.project_id);
@@ -2126,6 +2117,11 @@
   }
 
   async function loadClipThumbnail(clip: Clip) {
+    // Skip if already in cache
+    if (thumbnailStore.hasThumbnail(clip.id)) {
+      return;
+    }
+
     try {
       // Try multiple sources for thumbnail in order of preference:
       // 1. Clip's built_thumbnail_path (set by Rust backend during build)
@@ -2150,7 +2146,7 @@
           const fileExists = await invoke<boolean>('check_file_exists', { path: thumbnailPath });
           if (fileExists) {
             const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbnailPath });
-            thumbnailCache.value.set(clip.id, dataUrl);
+            thumbnailStore.setThumbnail(clip.id, dataUrl);
             return;
           }
         } catch {
@@ -2183,7 +2179,7 @@
   // Load thumbnail for a specific output file path and cache it
   async function loadThumbnailForOutputFile(filePath: string): Promise<void> {
     // Skip if already cached
-    if (buildThumbnailCache.value.has(filePath)) {
+    if (thumbnailStore.hasBuildThumbnail(filePath)) {
       return;
     }
 
@@ -2210,7 +2206,7 @@
         const dataUrl = await invoke<string>('read_file_as_data_url', {
           filePath: thumbnailPath,
         });
-        buildThumbnailCache.value.set(filePath, dataUrl);
+        thumbnailStore.setBuildThumbnail(filePath, dataUrl);
         console.log(`[Clips] Loaded existing thumbnail for ${filePath}`);
       } else {
         // Thumbnail doesn't exist - regenerate it from the video file
@@ -2239,7 +2235,7 @@
             const dataUrl = await invoke<string>('read_file_as_data_url', {
               filePath: newThumbnailPath,
             });
-            buildThumbnailCache.value.set(filePath, dataUrl);
+            thumbnailStore.setBuildThumbnail(filePath, dataUrl);
             console.log(`[Clips] ✅ Successfully regenerated and loaded thumbnail for ${filePath}`);
           } catch (genError) {
             console.error(`[Clips] ❌ Failed to regenerate thumbnail for ${filePath}:`, genError);
@@ -2256,7 +2252,7 @@
   // Legacy function - load a build's thumbnail from its thumbnail_path field
   async function loadBuildThumbnail(build: ClipBuild): Promise<void> {
     // Skip if no thumbnail path or already cached
-    if (!build.thumbnail_path || buildThumbnailCache.value.has(build.id)) {
+    if (!build.thumbnail_path || thumbnailStore.hasBuildThumbnail(build.id)) {
       return;
     }
 
@@ -2270,7 +2266,7 @@
         const dataUrl = await invoke<string>('read_file_as_data_url', {
           filePath: build.thumbnail_path,
         });
-        buildThumbnailCache.value.set(build.id, dataUrl);
+        thumbnailStore.setBuildThumbnail(build.id, dataUrl);
       }
     } catch (error) {
       console.warn(`Failed to load thumbnail for build ${build.id}:`, error);
@@ -2300,8 +2296,8 @@
   }
 
   function getThumbnailUrl(clip: Clip): string | null {
-    // First try to get clip-specific thumbnail
-    const clipThumbnail = thumbnailCache.value.get(clip.id);
+    // First try to get clip-specific thumbnail from persistent store
+    const clipThumbnail = thumbnailStore.getThumbnail(clip.id);
     if (clipThumbnail) {
       return clipThumbnail;
     }

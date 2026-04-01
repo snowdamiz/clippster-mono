@@ -836,44 +836,28 @@ defmodule ClippsterServerWeb.SubscriptionController do
   """
   def cancel(conn, _params) do
     with {:ok, user_id} <- get_user_id_from_token(conn),
-         {:ok, user} <- get_user(user_id) do
-      # If Stripe subscription, cancel via Stripe
-      if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
-        case Stripe.Subscription.update(user.stripe_subscription_id, %{cancel_at_period_end: true}) do
-          {:ok, _} ->
-            {:ok, updated_user} = Subscriptions.cancel_subscription(user_id)
-            status = Subscriptions.get_subscription_status(user_id)
+         {:ok, _user} <- get_user(user_id) do
+      # Use the subscription service which now immediately cancels in Stripe
+      case Subscriptions.cancel_subscription(user_id) do
+        {:ok, updated_user} ->
+          status = Subscriptions.get_subscription_status(user_id)
 
-            json(conn, %{
-              success: true,
-              message:
-                "Subscription cancelled. Access continues until #{DateTime.to_iso8601(updated_user.subscription_end_date)}",
-              subscription: status
-            })
+          json(conn, %{
+            success: true,
+            message:
+              "Subscription cancelled. Access continues until #{DateTime.to_iso8601(updated_user.subscription_end_date)}",
+            subscription: status
+          })
 
-          {:error, %Stripe.Error{message: message}} ->
-            conn
-            |> put_status(500)
-            |> json(%{success: false, error: "Failed to cancel subscription: #{message}"})
-        end
-      else
-        # Crypto or other subscription - just mark as cancelled
-        case Subscriptions.cancel_subscription(user_id) do
-          {:ok, updated_user} ->
-            status = Subscriptions.get_subscription_status(user_id)
+        {:error, :not_active} ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "No active subscription to cancel"})
 
-            json(conn, %{
-              success: true,
-              message:
-                "Subscription cancelled. Access continues until #{DateTime.to_iso8601(updated_user.subscription_end_date)}",
-              subscription: status
-            })
-
-          {:error, reason} ->
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: to_string(reason)})
-        end
+        {:error, reason} ->
+          conn
+          |> put_status(500)
+          |> json(%{success: false, error: "Failed to cancel subscription: #{to_string(reason)}"})
       end
     else
       {:error, :unauthorized} ->

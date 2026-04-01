@@ -50,6 +50,10 @@ export async function healSchema(): Promise<void> {
     // --- Migration 092: source on clips (to identify video editor exports) ---
     await addColumnIfMissing(db, 'clips', 'source', "TEXT DEFAULT 'clip_detection'");
 
+    // --- Migration 098: subtitle position columns ---
+    await addColumnIfMissing(db, 'clips', 'subtitle_position_x', 'REAL');
+    await addColumnIfMissing(db, 'clips', 'subtitle_position_y', 'REAL');
+
     // --- Migration 086: source_start_time on audio tracks ---
     await addColumnIfMissing(
       db,

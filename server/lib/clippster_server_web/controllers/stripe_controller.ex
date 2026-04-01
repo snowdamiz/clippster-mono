@@ -94,6 +94,129 @@ defmodule ClippsterServerWeb.StripeController do
   end
 
   @doc """
+  Creates a Stripe Checkout session for an admin-created org's first-time setup payment.
+  The org owner calls this to pay their monthly subscription before accessing the org dashboard.
+  Creates a recurring Stripe Subscription at the admin-set price.
+  """
+  def create_org_setup_checkout(conn, %{"organization_id" => org_id_raw} = params) do
+    with {:ok, user_id} <- get_user_id_from_token(conn),
+         {:ok, user} <- get_user(user_id),
+         {:ok, org} <- get_organization(org_id_raw) do
+      # Only the org owner may trigger setup
+      unless org.owner_id == user_id do
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Only the organization owner can complete setup"})
+      else
+        unless org.setup_completed == false && org.created_by_admin_id != nil do
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "Organization setup is already complete"})
+        else
+          price_cents = org.admin_price_cents || 0
+
+          # If price is $0, mark setup as completed immediately without Stripe
+          if price_cents == 0 do
+            alias ClippsterServer.Organizations.Organization
+            alias ClippsterServer.Repo
+
+            case org
+                 |> Organization.subscription_changeset(%{setup_completed: true})
+                 |> Repo.update() do
+              {:ok, _updated} ->
+                conn
+                |> json(%{
+                  success: true,
+                  message: "Setup completed (no payment required)",
+                  redirect_to: "/dashboard/org/#{org.id}"
+                })
+
+              {:error, _reason} ->
+                conn
+                |> put_status(500)
+                |> json(%{success: false, error: "Failed to complete setup"})
+            end
+          else
+            success_url =
+              StripeReturn.success_url(conn, params)
+              |> StripeReturn.with_query(
+                session_id: "{CHECKOUT_SESSION_ID}",
+                org: to_string(org.id),
+                setup: "complete"
+              )
+
+            cancel_url =
+              StripeReturn.cancel_url(conn, params)
+              |> StripeReturn.with_query(org: to_string(org.id))
+
+            tier_label =
+              case org.subscription_tier do
+                "custom" -> "Custom Plan"
+                tier -> String.replace(tier || "Organization", "_", " ") |> String.capitalize()
+              end
+
+            session_params = %{
+              mode: "subscription",
+              payment_method_types: ["card"],
+              line_items: [
+                %{
+                  price_data: %{
+                    currency: "usd",
+                    product_data: %{
+                      name: "#{org.name} — #{tier_label} Subscription",
+                      description:
+                        "#{org.max_seats || "Unlimited"} seats · #{org.monthly_credits || 0} monthly credits"
+                    },
+                    unit_amount: price_cents,
+                    recurring: %{interval: "month"}
+                  },
+                  quantity: 1
+                }
+              ],
+              metadata: %{
+                user_id: to_string(user_id),
+                organization_id: to_string(org.id),
+                org_setup: "true"
+              },
+              customer_email: user.email,
+              success_url: success_url,
+              cancel_url: cancel_url
+            }
+
+            case Stripe.Checkout.Session.create(session_params) do
+              {:ok, session} ->
+                json(conn, %{
+                  success: true,
+                  session_id: session.id,
+                  url: session.url
+                })
+
+              {:error, %Stripe.Error{message: message}} ->
+                conn
+                |> put_status(500)
+                |> json(%{success: false, error: "Failed to create checkout session: #{message}"})
+
+              {:error, _} ->
+                conn
+                |> put_status(500)
+                |> json(%{success: false, error: "Failed to create checkout session"})
+            end
+          end
+        end
+      end
+    else
+      {:error, :unauthorized} ->
+        conn |> put_status(401) |> json(%{success: false, error: "Unauthorized"})
+
+      {:error, :user_not_found} ->
+        conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+      {:error, :organization_not_found} ->
+        conn |> put_status(404) |> json(%{success: false, error: "Organization not found"})
+    end
+  end
+
+  @doc """
   Creates a Stripe Checkout session for purchasing credits for an organization.
   Only organization admins can purchase credits for the org pool.
   Optionally accepts promo_code parameter.
@@ -293,6 +416,7 @@ defmodule ClippsterServerWeb.StripeController do
     addon_tier = get_metadata_value(metadata, "addon_tier")
     promo_code_id = get_metadata_value(metadata, "promo_code_id")
     affiliate_code = get_metadata_value(metadata, "affiliate_code")
+    org_setup = get_metadata_value(metadata, "org_setup")
 
     session_id = safe_get(session, "id")
     payment_intent = safe_get(session, "payment_intent")
@@ -301,10 +425,18 @@ defmodule ClippsterServerWeb.StripeController do
     amount_total = safe_get(session, "amount_total")
 
     IO.puts(
-      "[Stripe Webhook] User ID: #{user_id}, Org ID: #{organization_id}, Type: #{payment_type}, Sub Type: #{subscription_type}, Tier: #{subscription_tier}, Addon: #{addon_tier}, Pack: #{pack_type}, Hours: #{hours}"
+      "[Stripe Webhook] User ID: #{user_id}, Org ID: #{organization_id}, Type: #{payment_type}, Sub Type: #{subscription_type}, Tier: #{subscription_tier}, Addon: #{addon_tier}, Pack: #{pack_type}, Hours: #{hours}, OrgSetup: #{org_setup}"
     )
 
     cond do
+      # Handle admin-created org first-login setup payment
+      org_setup == "true" && organization_id ->
+        handle_org_setup_checkout(
+          organization_id,
+          stripe_subscription_id,
+          stripe_customer_id
+        )
+
       # Handle organization subscription (base)
       subscription_type == "base" && organization_id && subscription_tier ->
         handle_org_subscription_checkout(
@@ -964,6 +1096,37 @@ defmodule ClippsterServerWeb.StripeController do
 
       {:error, reason} ->
         IO.puts("[Stripe Webhook] Failed to create org subscription: #{inspect(reason)}")
+    end
+  end
+
+  defp handle_org_setup_checkout(organization_id, stripe_subscription_id, stripe_customer_id) do
+    org_id =
+      if is_binary(organization_id), do: String.to_integer(organization_id), else: organization_id
+
+    IO.puts("[Stripe Webhook] Completing org setup payment for org #{org_id}")
+
+    alias ClippsterServer.Organizations.Organization
+    alias ClippsterServer.Repo
+
+    case Repo.get(Organization, org_id) do
+      nil ->
+        IO.puts("[Stripe Webhook] Org not found for setup checkout: #{org_id}")
+
+      org ->
+        case org
+             |> Organization.subscription_changeset(%{
+               setup_completed: true,
+               stripe_subscription_id: stripe_subscription_id,
+               stripe_customer_id: stripe_customer_id,
+               subscription_renewal_method: "stripe"
+             })
+             |> Repo.update() do
+          {:ok, _updated} ->
+            IO.puts("[Stripe Webhook] Org #{org_id} setup completed, Stripe sub linked")
+
+          {:error, reason} ->
+            IO.puts("[Stripe Webhook] Failed to complete org setup: #{inspect(reason)}")
+        end
     end
   end
 

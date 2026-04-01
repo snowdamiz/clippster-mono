@@ -1,5 +1,16 @@
 use tokio::process::Command as AsyncCommand;
 
+/// On Windows, set CREATE_NO_WINDOW flag to prevent a visible console window.
+#[cfg(target_os = "windows")]
+fn no_window(cmd: &mut AsyncCommand) -> &mut AsyncCommand {
+    cmd.creation_flags(0x08000000) // CREATE_NO_WINDOW
+}
+
+#[cfg(not(target_os = "windows"))]
+fn no_window(cmd: &mut AsyncCommand) -> &mut AsyncCommand {
+    cmd
+}
+
 /// Extract a clip segment from a video file using FFmpeg
 pub async fn extract_clip_segment(
     input_path: &str,
@@ -22,7 +33,10 @@ pub async fn extract_clip_segment(
         start_time, end_time, duration
     );
 
-    let output = AsyncCommand::new("ffmpeg")
+    let mut cmd = AsyncCommand::new("ffmpeg");
+    no_window(&mut cmd);
+    
+    let output = cmd
         .arg("-y") // Overwrite output file
         .arg("-ss")
         .arg(start_time.to_string()) // Fast input seeking - MUST be before -i
@@ -70,7 +84,10 @@ pub async fn generate_thumbnail_at_time(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("[FFmpeg] Generating thumbnail at {}s", time);
 
-    let output = AsyncCommand::new("ffmpeg")
+    let mut cmd = AsyncCommand::new("ffmpeg");
+    no_window(&mut cmd);
+    
+    let output = cmd
         .arg("-y") // Overwrite output file
         .arg("-ss")
         .arg(time.to_string())
@@ -105,7 +122,10 @@ pub async fn extract_waveform_data(
     let temp_audio_path = format!("{}.wav", output_path);
 
     // Extract audio
-    let output = AsyncCommand::new("ffmpeg")
+    let mut cmd = AsyncCommand::new("ffmpeg");
+    no_window(&mut cmd);
+    
+    let output = cmd
         .arg("-y")
         .arg("-i")
         .arg(input_path)
@@ -145,7 +165,10 @@ async fn generate_waveform_points(
     // For now, generate a simple waveform using FFmpeg's volumedetect
     // In a more sophisticated implementation, we could use a proper audio analysis library
 
-    let output = AsyncCommand::new("ffmpeg")
+    let mut cmd = AsyncCommand::new("ffmpeg");
+    no_window(&mut cmd);
+    
+    let output = cmd
         .arg("-i")
         .arg(audio_path)
         .arg("-filter:a")

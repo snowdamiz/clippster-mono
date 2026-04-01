@@ -22,6 +22,7 @@ export interface ChunkedDetectionOptions {
   multimodal?: boolean; // Enable multimodal detection (3 models + decider, 2x credits)
   startTime?: number; // Start time in seconds for detection range
   endTime?: number; // End time in seconds for detection range
+  subtitleSettings?: { enabled: boolean; presetId: string } | null;
 }
 
 export interface DetectionProgress {
@@ -65,6 +66,9 @@ export function useChunkedClipDetection() {
 
   // Track multimodal mode for enhanced detection
   let currentMultimodal: boolean = false;
+
+  // Track subtitle settings for clip persistence
+  let currentSubtitleSettings: { enabled: boolean; presetId: string } | null = null;
 
   // Cancel the current detection process and request server-side refund
   async function cancelDetection() {
@@ -159,6 +163,7 @@ export function useChunkedClipDetection() {
       console.log('[ChunkedClipDetection] options.multimodal value:', options.multimodal);
       currentMultimodal = options.multimodal ?? false;
       console.log('[ChunkedClipDetection] Multimodal mode set to:', currentMultimodal);
+      currentSubtitleSettings = options.subtitleSettings ?? null;
 
       isProcessing.value = true;
       progress.value = {
@@ -551,11 +556,18 @@ export function useChunkedClipDetection() {
       };
 
       // Store results in database
-      const sessionId = await persistClipDetectionResults(projectId, prompt, result, {
-        processingTimeMs: 0, // Cached processing is fast
-        detectionModel: 'claude-3.5-sonnet-chunked',
-        serverResponseId: result.jobId || null,
-      });
+      const sessionId = await persistClipDetectionResults(
+        projectId,
+        prompt,
+        result,
+        {
+          processingTimeMs: 0, // Cached processing is fast
+          detectionModel: 'claude-3.5-sonnet-chunked',
+          serverResponseId: result.jobId || null,
+          multimodal: currentMultimodal,
+        },
+        currentSubtitleSettings
+      );
 
       // IMPORTANT: When using cached chunks, the full transcript isn't part of the response.
       // We need to stitch the chunked transcripts together and save it as the project transcript
@@ -671,6 +683,8 @@ export function useChunkedClipDetection() {
 
       return { success: true, sessionId };
     } catch (error) {
+      console.error('[ChunkedClipDetection] processWithCachedChunks FAILED:', error);
+      console.error('[ChunkedClipDetection] Error stack:', error instanceof Error ? error.stack : 'no stack');
       const errorMessage = error instanceof Error ? error.message : String(error);
       return { success: false, error: errorMessage };
     }

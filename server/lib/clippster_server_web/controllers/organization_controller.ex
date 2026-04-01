@@ -97,7 +97,17 @@ defmodule ClippsterServerWeb.OrganizationController do
 
       organization ->
         attrs =
-          Map.take(params, ["name", "description", "logo_url", "settings", "restriction_defaults"])
+          Map.take(params, [
+            "name",
+            "description",
+            "bio",
+            "logo_url",
+            "website_url",
+            "public_contact_email",
+            "content_type_tags",
+            "settings",
+            "restriction_defaults"
+          ])
 
         case Organizations.update_organization(organization, attrs, user) do
           {:ok, updated_org} ->
@@ -947,11 +957,21 @@ defmodule ClippsterServerWeb.OrganizationController do
       name: org.name,
       slug: org.slug,
       description: org.description,
+      bio: org.bio,
       logo_url: maybe_presign_url(org.logo_url),
+      website_url: org.website_url,
+      public_contact_email: org.public_contact_email,
+      content_type_tags: org.content_type_tags || [],
       owner_id: org.owner_id,
       created_at: org.inserted_at,
       settings: org.settings || %{},
-      restriction_defaults: org.restriction_defaults || %{}
+      restriction_defaults: org.restriction_defaults || %{},
+      setup_completed: org.setup_completed,
+      admin_price_cents: org.admin_price_cents,
+      subscription_tier: org.subscription_tier,
+      subscription_status: org.subscription_status,
+      monthly_credits: org.monthly_credits,
+      max_seats: org.max_seats
     }
   end
 

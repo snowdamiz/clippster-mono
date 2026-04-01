@@ -1,14 +1,25 @@
 export interface Organization {
   id: number
   name: string
+  slug?: string
   description?: string
+  bio?: string
   logo_url?: string
+  website_url?: string
+  public_contact_email?: string
+  content_type_tags?: string[]
   settings?: {
     allow_ai?: boolean
   }
   restriction_defaults?: OrganizationRestrictionDefaults
   inserted_at?: string
   updated_at?: string
+  setup_completed?: boolean
+  admin_price_cents?: number
+  subscription_tier?: string
+  subscription_status?: string
+  monthly_credits?: number
+  max_seats?: number
 }
 
 export interface OrganizationMember {
@@ -242,7 +253,7 @@ export interface Campaign {
   assigned_streamer_ids: number[]
   inserted_at: string
   updated_at: string
-  organization?: { id: number; name: string; logo_url: string | null }
+  organization?: { id: number; name: string; logo_url: string | null; slug?: string | null }
   creator_profile?: CampaignCreatorProfile | null
   creator_profiles?: CampaignCreatorProfile[]
   participants_count?: number

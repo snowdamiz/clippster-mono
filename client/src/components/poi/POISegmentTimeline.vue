@@ -31,11 +31,11 @@
       <!-- Timeline track -->
       <div 
         ref="timelineRef"
-        class="relative h-12 bg-zinc-900/50 rounded-lg border border-zinc-800/50 overflow-hidden"
+        class="relative h-12 bg-zinc-900/50 rounded-lg border border-zinc-800/50"
         @click="onTimelineClick"
       >
-        <!-- Filmstrip background -->
-        <div class="absolute inset-0 bg-black/20">
+        <!-- Filmstrip background (with overflow-hidden for rounded corners) -->
+        <div class="absolute inset-0 bg-black/20 rounded-lg overflow-hidden">
           <canvas
             v-if="videoUrl"
             ref="filmstripCanvasRef"
@@ -119,13 +119,17 @@
             title="Drag to adjust end time"
           />
 
-          <!-- Delete button -->
+          <!-- Delete button - shown on hover or when active -->
           <button
             @click.stop="deleteSegment(segment.segmentId)"
-            class="absolute -top-7 left-1/2 -translate-x-1/2 w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all shadow-lg hover:scale-110 z-30"
+            class="absolute -top-8 left-1/2 -translate-x-1/2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white transition-all shadow-lg hover:scale-110 z-30"
+            :class="{
+              'opacity-100': activeSegmentId === segment.segmentId,
+              'opacity-0 group-hover:opacity-100': activeSegmentId !== segment.segmentId
+            }"
             title="Delete segment"
           >
-            <XIcon class="w-3 h-3" />
+            <XIcon class="w-3.5 h-3.5" />
           </button>
         </div>
 
