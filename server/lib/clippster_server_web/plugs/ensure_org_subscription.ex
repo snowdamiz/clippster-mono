@@ -78,7 +78,25 @@ defmodule ClippsterServerWeb.EnsureOrgSubscription do
 
       org ->
         cond do
-          # Organization admins/owners can always access org routes
+          # Admin-provisioned org with a positive price that the owner has not yet
+          # paid: block ALL users (including the owner) from dashboard API routes.
+          # Only the bare org-show GET and subscription/payment paths are allowed
+          # so the OrganizationSetupDialog can display plan details and redirect
+          # to Stripe. The client-side layout (isReady + showSetupDialog) also
+          # prevents the hub from rendering, but this server gate is the hard wall.
+          admin_billing_setup_pending?(org) && !setup_allowed_path?(conn) ->
+            conn
+            |> put_status(:forbidden)
+            |> Phoenix.Controller.json(%{
+              success: false,
+              error: "payment_setup_required",
+              message:
+                "Complete organization billing setup before accessing this resource."
+            })
+            |> halt()
+
+          # Organization admins/owners can always access org routes once setup
+          # is complete (or if it was free / not required).
           org_admin?(conn, org_id_int) ->
             conn
 
@@ -105,6 +123,28 @@ defmodule ClippsterServerWeb.EnsureOrgSubscription do
             |> halt()
         end
     end
+  end
+
+  defp admin_billing_setup_pending?(org) do
+    not is_nil(org.created_by_admin_id) &&
+      org.setup_completed != true &&
+      (org.admin_price_cents || 0) > 0
+  end
+
+  # Paths allowed before Stripe setup is complete:
+  #   1. Subscription/payment-related segments (checkout, payments, etc.)
+  #   2. GET /api/organizations/:id — bare org show, needed by the setup dialog
+  #      to display plan name, price, seat count, and credits.
+  defp setup_allowed_path?(conn) do
+    exempt_path?(conn.request_path) or org_show_request?(conn)
+  end
+
+  defp org_show_request?(conn) do
+    conn.method == "GET" and
+      match?(
+        ["api", "organizations", _id],
+        conn.request_path |> String.split("/", trim: true) |> Enum.reject(&(&1 == ""))
+      )
   end
 
   defp org_admin?(conn, org_id) do

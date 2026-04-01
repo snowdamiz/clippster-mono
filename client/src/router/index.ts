@@ -660,8 +660,12 @@ router.beforeEach(async (to, _from, next) => {
   if (to.meta.requiredTier && authStore.isAuthenticated) {
     const tierHierarchy: Record<string, number> = { free: 0, starter: 1, creator: 2, pro: 3 };
     const user = authStore.user;
-    // Admins and org-created users bypass tier checks
-    if (!user?.is_admin && !user?.created_by_organization_id) {
+    // Admins, org-created users, and org owners bypass personal tier checks
+    if (
+      !user?.is_admin &&
+      !user?.created_by_organization_id &&
+      !user?.owned_organization_id
+    ) {
       const userTier = user?.subscription?.tier || 'free';
       const userLevel = tierHierarchy[userTier] ?? 0;
       const requiredLevel = tierHierarchy[to.meta.requiredTier as string] ?? 0;

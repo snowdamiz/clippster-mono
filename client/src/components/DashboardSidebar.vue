@@ -349,7 +349,12 @@
   });
 
   const useOrganizationSidebar = computed(() => {
-    return !authStore.user?.is_admin && isOrgAccountOwner.value && !!orgSidebarOrganizationId.value;
+    if (authStore.user?.is_admin) return false;
+    if (!isOrgAccountOwner.value || !orgSidebarOrganizationId.value) return false;
+    // If admin granted a personal subscription, prefer personal nav
+    const personalSubStatus = (authStore.user as any)?.subscription?.status;
+    if (personalSubStatus === 'active') return false;
+    return true;
   });
 
   const orgNavigationGroups = computed<SidebarNavigationGroup[]>(() => {

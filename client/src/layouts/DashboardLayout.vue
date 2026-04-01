@@ -7,11 +7,14 @@
       :class="isCollapsed ? 'ml-12' : 'ml-60'"
     >
       <!-- <DashboardHeader /> -->
-      <!-- Page content -->
+      <!-- Page content: rendered via slot so layouts like OrganizationLayout
+           can inject their own gated router-view instead of this default one. -->
       <div class="flex-1 min-h-0 dashboard-container">
-        <router-view v-slot="{ Component }">
-          <transition name="fade" mode="out-in"><component :is="Component" class="h-full" /></transition>
-        </router-view>
+        <slot>
+          <router-view v-slot="{ Component }">
+            <transition name="fade" mode="out-in"><component :is="Component" class="h-full" /></transition>
+          </router-view>
+        </slot>
       </div>
     </main>
     <!-- Authentication Modal -->
@@ -32,9 +35,11 @@
   const authStore = useAuthStore();
   const { isCollapsed } = useSidebarState();
   const showAuthModal = ref(false);
-  const isOrgOnlyAccount = computed(
-    () => authStore.user?.account_type === 'organization' || !!authStore.user?.owned_organization_id
-  );
+  const isOrgOnlyAccount = computed(() => {
+    const personalSubStatus = (authStore.user as any)?.subscription?.status;
+    if (personalSubStatus === 'active') return false;
+    return authStore.user?.account_type === 'organization' || !!authStore.user?.owned_organization_id;
+  });
 
   // Compute sidebar disabled state based on subscription gate
   const sidebarDisabled = computed(() => {
@@ -44,7 +49,9 @@
     if (authStore.user?.created_by_organization_id) return false;
 
     const hasSelectedPlan = localStorage.getItem('has_selected_plan');
-    const subscriptionStatus = (authStore.user as any)?.subscription_status;
+    const u = authStore.user as any;
+    // /auth/me nests status under subscription; flat subscription_status is set by fetchSubscriptionStatus
+    const subscriptionStatus = u?.subscription_status ?? u?.subscription?.status;
 
     // Users with active or cancelled subscriptions bypass the gate
     if (subscriptionStatus === 'active' || subscriptionStatus === 'cancelled') {

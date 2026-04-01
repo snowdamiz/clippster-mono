@@ -121,7 +121,9 @@ export function OrganizationSetupDialog({
           )}
 
           <p className="text-[13px] text-zinc-500 text-center m-0">
-            You'll be redirected to Stripe to set up recurring billing.
+            {loading
+              ? 'Complete payment in the Stripe tab, then return here.'
+              : 'You'll be redirected to Stripe to set up recurring billing.'}
           </p>
         </div>
 
@@ -133,7 +135,7 @@ export function OrganizationSetupDialog({
             className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 text-[15px] font-semibold rounded-[10px] border-none cursor-pointer bg-gradient-to-r from-cyan-400 to-cyan-500 text-white transition-all duration-150 hover:opacity-90 hover:-translate-y-px disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
           >
             {loading && <Loader2 size={16} className="animate-spin" />}
-            {loading ? 'Redirecting...' : 'Pay Now & Activate'}
+            {loading ? 'Waiting for payment...' : 'Pay Now & Activate'}
           </button>
         </div>
       </div>

@@ -217,6 +217,93 @@ defmodule ClippsterServerWeb.StripeController do
   end
 
   @doc """
+  Confirms an org setup payment using the Stripe Checkout session ID returned
+  from the success redirect.  Called by the desktop client immediately after the
+  stripe-payment-complete Tauri event fires, so setup_completed is written to
+  the DB without waiting for the webhook (which requires a forwarding tunnel in
+  development).  Idempotent — safe to call even if the webhook already ran.
+  """
+  def confirm_org_setup(
+        conn,
+        %{"organization_id" => org_id_raw, "session_id" => session_id}
+      ) do
+    with {:ok, user_id} <- get_user_id_from_token(conn),
+         {:ok, _user} <- get_user(user_id),
+         {:ok, org} <- get_organization(org_id_raw) do
+      if org.owner_id != user_id do
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Only the organization owner can confirm setup"})
+      else
+        case Stripe.Checkout.Session.retrieve(session_id, %{}) do
+          {:ok, session} ->
+            payment_status = safe_get(session, :payment_status)
+            subscription_id = safe_get(session, :subscription)
+            customer_id = safe_get(session, :customer)
+            meta_org_id = get_in_metadata(session, "organization_id")
+
+            # Verify this session actually belongs to this org
+            if meta_org_id && meta_org_id != to_string(org.id) do
+              conn
+              |> put_status(400)
+              |> json(%{success: false, error: "Session does not belong to this organization"})
+            else
+              # Accept "paid" or "no_payment_required"; for subscriptions the
+              # initial invoice may still be "unpaid" briefly — trust the session
+              # existing and the subscription_id being present as confirmation.
+              is_paid = payment_status in ["paid", "no_payment_required"] || !is_nil(subscription_id)
+
+              if is_paid do
+                alias ClippsterServer.Organizations.Organization
+                alias ClippsterServer.Repo
+
+                changeset_attrs =
+                  %{setup_completed: true}
+                  |> then(fn m ->
+                    if subscription_id, do: Map.put(m, :stripe_subscription_id, subscription_id), else: m
+                  end)
+                  |> then(fn m ->
+                    if customer_id, do: Map.put(m, :stripe_customer_id, customer_id), else: m
+                  end)
+                  |> Map.put(:subscription_renewal_method, "stripe")
+
+                case org
+                     |> Organization.subscription_changeset(changeset_attrs)
+                     |> Repo.update() do
+                  {:ok, _updated} ->
+                    json(conn, %{success: true, message: "Organization setup confirmed"})
+
+                  {:error, reason} ->
+                    conn
+                    |> put_status(500)
+                    |> json(%{success: false, error: "Failed to update org: #{inspect(reason)}"})
+                end
+              else
+                conn
+                |> put_status(402)
+                |> json(%{success: false, error: "Payment not yet confirmed by Stripe"})
+              end
+            end
+
+          {:error, %Stripe.Error{message: message}} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed to retrieve session: #{message}"})
+        end
+      end
+    else
+      {:error, :unauthorized} ->
+        conn |> put_status(401) |> json(%{success: false, error: "Unauthorized"})
+
+      {:error, :user_not_found} ->
+        conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+      {:error, :organization_not_found} ->
+        conn |> put_status(404) |> json(%{success: false, error: "Organization not found"})
+    end
+  end
+
+  @doc """
   Creates a Stripe Checkout session for purchasing credits for an organization.
   Only organization admins can purchase credits for the org pool.
   Optionally accepts promo_code parameter.
@@ -1198,6 +1285,14 @@ defmodule ClippsterServerWeb.StripeController do
   defp get_metadata_value(metadata, key) when is_map(metadata) do
     # Handle both string and atom keys
     Map.get(metadata, key) || Map.get(metadata, String.to_atom(key))
+  end
+
+  # Retrieves a value from the :metadata field of a Stripe struct or map.
+  defp get_in_metadata(obj, key) do
+    case safe_get(obj, :metadata) do
+      nil -> nil
+      meta -> get_metadata_value(meta, key)
+    end
   end
 
   defp parse_decimal(nil), do: nil

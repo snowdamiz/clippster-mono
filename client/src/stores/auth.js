@@ -1304,6 +1304,22 @@ export const useAuthStore = defineStore('auth', {
     },
 
     /**
+     * Get Stripe subscription invoices for an organization
+     */
+    async getOrganizationInvoices(orgId) {
+      try {
+        const url = `${API_BASE}/api/organizations/${orgId}/subscription/invoices`;
+        const response = await fetch(url, {
+          headers: { Authorization: `Bearer ${this.getAuthToken()}` },
+        });
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
      * Get organization transaction history
      */
     async getOrganizationTransactions(orgId, options = {}) {
