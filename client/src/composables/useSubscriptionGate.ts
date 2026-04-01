@@ -66,8 +66,12 @@ export function useSubscriptionGate() {
     // Fetch latest subscription status
     await fetchSubscriptionStatus();
 
-    // Check if user is admin or org-created (always has access)
-    if (authStore.user?.is_admin || authStore.user?.created_by_organization_id) {
+    // Check if user is admin, org-created, or org owner (organization billing)
+    if (
+      authStore.user?.is_admin ||
+      authStore.user?.created_by_organization_id ||
+      authStore.user?.owned_organization_id
+    ) {
       return true;
     }
 

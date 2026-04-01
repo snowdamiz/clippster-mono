@@ -442,6 +442,7 @@ defmodule ClippsterServerWeb.Router do
     )
 
     get("/organizations/:organization_id/transactions", OrganizationController, :get_transactions)
+    get("/organizations/:organization_id/subscription/invoices", OrganizationController, :get_subscription_invoices)
 
     # Organization restriction settings
     get(
@@ -474,6 +475,12 @@ defmodule ClippsterServerWeb.Router do
       "/organizations/:organization_id/payments/stripe/setup",
       StripeController,
       :create_org_setup_checkout
+    )
+
+    post(
+      "/organizations/:organization_id/payments/stripe/confirm-setup",
+      StripeController,
+      :confirm_org_setup
     )
 
     post(

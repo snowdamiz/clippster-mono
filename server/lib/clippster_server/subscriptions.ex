@@ -72,6 +72,25 @@ defmodule ClippsterServer.Subscriptions do
       Repo.transaction(fn ->
         user = Repo.get!(User, user_id)
 
+        # Cancel any pre-existing Stripe subscription to prevent duplicate recurring charges.
+        # This handles the case where a user subscribed multiple times during testing or
+        # re-subscribed after a failed attempt — the old subscription must be killed in Stripe
+        # or it will keep billing silently (the DB no longer tracks it after this update).
+        if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" &&
+             user.stripe_subscription_id != stripe_subscription_id do
+          case Stripe.Subscription.cancel(user.stripe_subscription_id) do
+            {:ok, _} ->
+              IO.puts(
+                "[Subscriptions] Cancelled previous Stripe subscription #{user.stripe_subscription_id} for user #{user_id} before creating new one"
+              )
+
+            {:error, reason} ->
+              IO.puts(
+                "[Subscriptions] Warning: Could not cancel previous Stripe subscription #{user.stripe_subscription_id} for user #{user_id}: #{inspect(reason)}"
+              )
+          end
+        end
+
         start_date = DateTime.utc_now() |> DateTime.truncate(:second)
         subscription_days = if billing_interval == "yearly", do: 365, else: @subscription_days
         end_date = DateTime.add(start_date, subscription_days, :day)
@@ -527,6 +546,10 @@ defmodule ClippsterServer.Subscriptions do
       not is_nil(user.created_by_organization_id) ->
         true
 
+      # Org owners access via organization subscription / billing
+      not is_nil(user.owned_organization_id) ->
+        true
+
       # Check subscription status and expiry
       user.subscription_status in ["active", "cancelled"] ->
         if user.subscription_end_date do
@@ -543,12 +566,13 @@ defmodule ClippsterServer.Subscriptions do
 
   @doc """
   Checks if a user needs a personal subscription.
-  Returns false for admins, org-created users, and users with active subscriptions.
+  Returns false for admins, org-created users, org owners, and users with active subscriptions.
   """
   def needs_subscription?(user) when is_map(user) do
     cond do
       user.is_admin -> false
       not is_nil(user.created_by_organization_id) -> false
+      not is_nil(user.owned_organization_id) -> false
       user.subscription_status in ["active", "cancelled"] -> false
       true -> true
     end
