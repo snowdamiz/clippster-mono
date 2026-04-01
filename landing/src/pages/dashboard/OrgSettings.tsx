@@ -24,10 +24,15 @@ import {
   X
 } from 'lucide-react'
 import type { OrganizationRestrictionDefaults } from '@/types/organization'
+import { SPECIALTY_TAGS } from '@/services/clipperApi'
 
 interface EditData {
   name: string
   description: string
+  bio: string
+  website_url: string
+  public_contact_email: string
+  content_type_tags: string[]
   settings: { allow_ai: boolean }
   restriction_defaults: Required<OrganizationRestrictionDefaults>
 }
@@ -57,6 +62,10 @@ export function OrgSettings() {
   const [editData, setEditData] = useState<EditData>({
     name: '',
     description: '',
+    bio: '',
+    website_url: '',
+    public_contact_email: '',
+    content_type_tags: [],
     settings: { allow_ai: true },
     restriction_defaults: { ...DEFAULT_RESTRICTIONS }
   })
@@ -78,6 +87,10 @@ export function OrgSettings() {
       setEditData({
         name: organization.name,
         description: organization.description || '',
+        bio: organization.bio || '',
+        website_url: organization.website_url || '',
+        public_contact_email: organization.public_contact_email || '',
+        content_type_tags: organization.content_type_tags || [],
         settings: { allow_ai: orgSettings.allow_ai !== false },
         restriction_defaults: {
           allow_ai: rd.allow_ai !== false,
@@ -121,6 +134,10 @@ export function OrgSettings() {
     return (
       editData.name !== organization.name ||
       editData.description !== (organization.description || '') ||
+      editData.bio !== (organization.bio || '') ||
+      editData.website_url !== (organization.website_url || '') ||
+      editData.public_contact_email !== (organization.public_contact_email || '') ||
+      JSON.stringify(editData.content_type_tags) !== JSON.stringify(organization.content_type_tags || []) ||
       editData.settings.allow_ai !== currentAllowAi ||
       restrictionsChanged
     )
@@ -195,40 +212,31 @@ export function OrgSettings() {
       titleComponent={hasMultipleOrgs ? <OrganizationSelector /> : undefined}
       description="Manage your organization profile and preferences"
       actions={
-        hasChanges && (
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-2 h-8 px-3.5 text-xs font-semibold rounded-md bg-cyan-400 text-[#0a0a0b] border-none cursor-pointer transition-opacity duration-150 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
-        )
+        <div className="flex items-center gap-2">
+          {organization?.slug && (
+            <a href={`/orgs/${organization.slug}`} className="flex items-center gap-2 h-8 px-3.5 text-xs font-semibold rounded-md border border-zinc-700 text-zinc-200 no-underline">
+              Preview Public Profile
+            </a>
+          )}
+          {hasChanges && (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="flex items-center gap-2 h-8 px-3.5 text-xs font-semibold rounded-md bg-cyan-400 text-[#0a0a0b] border-none cursor-pointer transition-opacity duration-150 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          )}
+        </div>
       }
     >
-      <div className="w-full max-w-[900px] mx-auto p-6 flex flex-col gap-8">
-        {/* Page Heading */}
-        <div className="mb-2">
-          <h1 className="text-2xl font-bold text-white tracking-tight m-0 mb-1.5">Configure Organization</h1>
-          <p className="text-sm text-zinc-500 m-0 leading-relaxed">
-            Update your organization's profile information and manage feature settings
-          </p>
-        </div>
+      <div className="w-full max-w-3xl mx-auto space-y-8 pt-4">
 
         {/* ===== Organization Profile Section ===== */}
-        <section className="flex flex-col gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="flex items-center justify-center w-10 h-10 rounded-[10px] bg-cyan-500/15 text-cyan-400 shrink-0">
-              <Building2 className="w-5 h-5" />
-            </div>
-            <div className="flex-1">
-              <h2 className="text-[1.0625rem] font-semibold text-white m-0 tracking-tight">Organization Profile</h2>
-              <p className="text-xs text-zinc-500 m-0 mt-0.5">Basic information about your organization</p>
-            </div>
-          </div>
-
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden">
+        <section className="space-y-4">
+          <h3 className="text-lg font-semibold text-foreground">Basic Information</h3>
+          <div className="bg-card border border-border/60 rounded-xl overflow-hidden">
             {/* Logo Row */}
             <div className="p-5 border-b border-zinc-800">
               <div className="flex flex-col gap-2.5">
@@ -265,7 +273,7 @@ export function OrgSettings() {
                       type="button"
                       onClick={() => logoInputRef.current?.click()}
                       disabled={uploadingLogo}
-                      className="flex items-center gap-2 self-start px-4 py-2.5 text-sm font-medium text-white bg-zinc-800/50 border border-zinc-800 rounded-lg cursor-pointer transition-all duration-150 hover:bg-zinc-800 hover:border-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex items-center gap-2 self-start px-4 py-2.5 text-sm font-medium text-foreground bg-muted/40 border border-border rounded-lg cursor-pointer transition-all duration-150 hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Upload className="w-4 h-4" />
                       {organization?.logo_url ? 'Change Logo' : 'Upload Logo'}
@@ -288,7 +296,7 @@ export function OrgSettings() {
                   onChange={(e) => setEditData((prev) => ({ ...prev, name: e.target.value }))}
                   type="text"
                   placeholder="Enter organization name"
-                  className="w-full px-4 py-3 text-sm bg-zinc-800/50 border border-zinc-800 rounded-lg text-white placeholder-zinc-600 transition-all duration-150 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/15"
+                  className="w-full px-4 py-3 text-sm bg-muted/30 border border-border rounded-lg text-foreground placeholder:text-muted-foreground transition-all duration-150 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
                 />
               </div>
             </div>
@@ -305,27 +313,65 @@ export function OrgSettings() {
                   onChange={(e) => setEditData((prev) => ({ ...prev, description: e.target.value }))}
                   rows={3}
                   placeholder="A brief description of your organization..."
-                  className="w-full px-4 py-3 text-sm bg-zinc-800/50 border border-zinc-800 rounded-lg text-white placeholder-zinc-600 resize-y min-h-[100px] leading-relaxed transition-all duration-150 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/15"
+                  className="w-full px-4 py-3 text-sm bg-muted/30 border border-border rounded-lg text-foreground placeholder:text-muted-foreground resize-y min-h-[100px] leading-relaxed transition-all duration-150 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
                 />
+              </div>
+            </div>
+            <div className="p-5 border-t border-zinc-800">
+              <div className="flex flex-col gap-2.5">
+                <label className="flex items-center gap-2 text-sm font-medium text-white">Bio</label>
+                <textarea value={editData.bio} onChange={(e) => setEditData((prev) => ({ ...prev, bio: e.target.value }))} rows={4} className="w-full px-4 py-3 text-sm bg-muted/30 border border-border rounded-lg text-foreground placeholder:text-muted-foreground" />
+              </div>
+            </div>
+            <div className="p-5 border-t border-zinc-800">
+              <div className="flex flex-col gap-2.5">
+                <label className="flex items-center gap-2 text-sm font-medium text-white">Website URL</label>
+                <input value={editData.website_url} onChange={(e) => setEditData((prev) => ({ ...prev, website_url: e.target.value }))} className="w-full px-4 py-3 text-sm bg-muted/30 border border-border rounded-lg text-foreground placeholder:text-muted-foreground" />
+              </div>
+            </div>
+            <div className="p-5 border-t border-zinc-800">
+              <div className="flex flex-col gap-2.5">
+                <label className="flex items-center gap-2 text-sm font-medium text-white">Public Contact Email</label>
+                <input value={editData.public_contact_email} onChange={(e) => setEditData((prev) => ({ ...prev, public_contact_email: e.target.value }))} className="w-full px-4 py-3 text-sm bg-muted/30 border border-border rounded-lg text-foreground placeholder:text-muted-foreground" />
+              </div>
+            </div>
+            <div className="p-5 border-t border-zinc-800">
+              <div className="flex flex-col gap-2.5">
+                <label className="flex items-center gap-2 text-sm font-medium text-white">Content Type</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {SPECIALTY_TAGS.map((tag) => (
+                    <button
+                      key={tag.value}
+                      type="button"
+                      onClick={() =>
+                        setEditData((prev) => ({
+                          ...prev,
+                          content_type_tags: prev.content_type_tags.includes(tag.value)
+                            ? prev.content_type_tags.filter((v) => v !== tag.value)
+                            : [...prev.content_type_tags, tag.value]
+                        }))
+                      }
+                      className={`px-2.5 py-1 rounded-full border text-xs cursor-pointer transition-all ${
+                        editData.content_type_tags.includes(tag.value)
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-muted/40 text-muted-foreground border-border hover:bg-muted'
+                      }`}
+                    >
+                      {tag.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
         </section>
 
         {/* ===== AI Features Section ===== */}
-        <section className="flex flex-col gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="flex items-center justify-center w-10 h-10 rounded-[10px] bg-purple-500/15 text-purple-500 shrink-0">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div className="flex-1">
-              <h2 className="text-[1.0625rem] font-semibold text-white m-0 tracking-tight">AI Features</h2>
-              <p className="text-xs text-zinc-500 m-0 mt-0.5">Control AI-powered functionality for all members</p>
-            </div>
-          </div>
+        <section className="space-y-4">
+          <h3 className="text-lg font-semibold text-foreground">AI Features</h3>
 
           <div
-            className="bg-zinc-900/50 border border-zinc-800 rounded-xl cursor-pointer transition-all duration-200 hover:border-purple-500/30 hover:shadow-[0_4px_20px_rgba(0,0,0,0.15)]"
+            className="bg-card border border-border/60 rounded-xl cursor-pointer transition-all duration-200 hover:border-border hover:bg-muted/10"
             onClick={() =>
               setEditData((prev) => ({ ...prev, settings: { ...prev.settings, allow_ai: !prev.settings.allow_ai } }))
             }
@@ -333,25 +379,25 @@ export function OrgSettings() {
             <div className="flex items-start gap-4 p-5">
               <div
                 className={`flex items-center justify-center w-11 h-11 rounded-[10px] shrink-0 transition-all duration-200 ${
-                  editData.settings.allow_ai ? 'bg-purple-500/15 text-purple-500' : 'bg-zinc-500/15 text-zinc-500'
+                  editData.settings.allow_ai ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'
                 }`}
               >
                 <Zap className="w-[22px] h-[22px]" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-[0.9375rem] font-semibold text-white mb-1.5">Enable AI Features</div>
-                <div className="text-[0.8125rem] text-zinc-500 leading-relaxed mb-3">
+                <div className="text-[0.9375rem] font-semibold text-foreground mb-1.5">Enable AI Features</div>
+                <div className="text-[0.8125rem] text-muted-foreground leading-relaxed mb-3">
                   Allow members to use AI-powered features like auto-captions, clip finder, smart transcription, and
                   more
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <span className="inline-flex px-2 py-1 rounded-[5px] text-[0.6875rem] font-medium bg-zinc-800/50 text-zinc-500">
+                  <span className="inline-flex px-2 py-1 rounded-[5px] text-[0.6875rem] font-medium bg-muted/40 text-muted-foreground">
                     Auto-Captions
                   </span>
-                  <span className="inline-flex px-2 py-1 rounded-[5px] text-[0.6875rem] font-medium bg-zinc-800/50 text-zinc-500">
+                  <span className="inline-flex px-2 py-1 rounded-[5px] text-[0.6875rem] font-medium bg-muted/40 text-muted-foreground">
                     Clip Finder
                   </span>
-                  <span className="inline-flex px-2 py-1 rounded-[5px] text-[0.6875rem] font-medium bg-zinc-800/50 text-zinc-500">
+                  <span className="inline-flex px-2 py-1 rounded-[5px] text-[0.6875rem] font-medium bg-muted/40 text-muted-foreground">
                     Smart Transcription
                   </span>
                 </div>
@@ -370,20 +416,8 @@ export function OrgSettings() {
         </section>
 
         {/* ===== Restricted Member Settings Section ===== */}
-        <section className="flex flex-col gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="flex items-center justify-center w-10 h-10 rounded-[10px] bg-green-500/15 text-green-500 shrink-0">
-              <Shield className="w-5 h-5" />
-            </div>
-            <div className="flex-1">
-              <h2 className="text-[1.0625rem] font-semibold text-white m-0 tracking-tight">
-                Restricted Member Settings
-              </h2>
-              <p className="text-xs text-zinc-500 m-0 mt-0.5">
-                Default permissions for accounts created by your organization
-              </p>
-            </div>
-          </div>
+        <section className="space-y-4">
+          <h3 className="text-lg font-semibold text-foreground">Restricted Member Settings</h3>
 
           <div
             className="grid grid-cols-1 sm:grid-cols-2 gap-4"

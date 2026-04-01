@@ -90,12 +90,23 @@ export interface OrganizationRestrictionDefaults {
 export interface Organization {
   id: number;
   name: string;
+  slug?: string;
   description?: string;
+  bio?: string;
   logo_url?: string;
+  website_url?: string;
+  public_contact_email?: string;
+  content_type_tags?: string[];
   settings?: {
     allow_ai?: boolean;
   };
   restriction_defaults?: OrganizationRestrictionDefaults;
+  setup_completed?: boolean;
+  admin_price_cents?: number;
+  subscription_tier?: string;
+  subscription_status?: string;
+  monthly_credits?: number;
+  max_seats?: number;
 }
 
 // Cache duration: 2 minutes before background refresh
@@ -419,11 +430,7 @@ export function useOrganization(orgIdOverride?: string) {
   }
 
   // Update organization settings
-  async function updateOrganization(data: {
-    name: string;
-    description: string;
-    settings: { allow_ai: boolean };
-  }) {
+  async function updateOrganization(data: Record<string, any>) {
     if (!organizationId.value) return { success: false, error: 'No organization ID' };
 
     try {

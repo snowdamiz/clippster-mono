@@ -232,6 +232,18 @@ const router = createRouter({
         },
       ],
     },
+    {
+      path: '/orgs',
+      name: 'orgs',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: ':slug',
+          name: 'org-public-profile',
+          component: () => import('@/pages/OrgPublicProfilePage.vue'),
+        },
+      ],
+    },
     // Unified VODs page for all streaming platforms
     {
       path: '/vods',
@@ -489,7 +501,7 @@ const router = createRouter({
     {
       path: '/organization/:id',
       name: 'organization-detail',
-      component: () => import('@/layouts/DashboardLayout.vue'),
+      component: () => import('@/layouts/OrganizationLayout.vue'),
       meta: { requiresAuth: true, requiresOrgSubscription: true },
       children: [
         {

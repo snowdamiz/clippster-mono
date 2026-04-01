@@ -162,14 +162,70 @@
                     <label class="admin-orgs__modal-label">Organization Name *</label>
                     <input v-model="createOrgForm.org_name" type="text" required class="admin-orgs__modal-input" placeholder="Acme Corp" />
                   </div>
+
+                  <!-- Owner Mode Toggle -->
                   <div class="admin-orgs__modal-field">
-                    <label class="admin-orgs__modal-label">Owner Email *</label>
-                    <input v-model="createOrgForm.email" type="email" required class="admin-orgs__modal-input" placeholder="owner@example.com" />
+                    <label class="admin-orgs__modal-label">Owner Account</label>
+                    <div class="admin-orgs__mode-toggle">
+                      <button type="button" :class="['admin-orgs__mode-btn', createOrgMode === 'new' ? 'admin-orgs__mode-btn--active' : '']" @click="createOrgMode = 'new'; selectedExistingUser = null; existingUserSearch = ''">
+                        Create New User
+                      </button>
+                      <button type="button" :class="['admin-orgs__mode-btn', createOrgMode === 'existing' ? 'admin-orgs__mode-btn--active' : '']" @click="createOrgMode = 'existing'; createOrgForm.email = ''; createOrgForm.password = ''">
+                        Assign Existing User
+                      </button>
+                    </div>
                   </div>
-                  <div class="admin-orgs__modal-field">
-                    <label class="admin-orgs__modal-label">Owner Password *</label>
-                    <input v-model="createOrgForm.password" type="text" required class="admin-orgs__modal-input" placeholder="Temporary password" />
-                  </div>
+
+                  <!-- New User Fields -->
+                  <template v-if="createOrgMode === 'new'">
+                    <div class="admin-orgs__modal-field">
+                      <label class="admin-orgs__modal-label">Owner Email *</label>
+                      <input v-model="createOrgForm.email" type="email" class="admin-orgs__modal-input" placeholder="owner@example.com" />
+                    </div>
+                    <div class="admin-orgs__modal-field">
+                      <label class="admin-orgs__modal-label">Owner Password *</label>
+                      <input v-model="createOrgForm.password" type="text" class="admin-orgs__modal-input" placeholder="Temporary password" />
+                    </div>
+                  </template>
+
+                  <!-- Existing User Search -->
+                  <template v-else>
+                    <div class="admin-orgs__modal-field" style="position:relative">
+                      <label class="admin-orgs__modal-label">Search by Email *</label>
+                      <input
+                        v-model="existingUserSearch"
+                        type="email"
+                        class="admin-orgs__modal-input"
+                        placeholder="Type at least 3 characters..."
+                        @input="onExistingUserInput"
+                        autocomplete="off"
+                      />
+                      <!-- Selected user chip -->
+                      <div v-if="selectedExistingUser" class="admin-orgs__user-chip">
+                        <span class="admin-orgs__user-chip-name">{{ selectedExistingUser.name || selectedExistingUser.email }}</span>
+                        <span class="admin-orgs__user-chip-email">{{ selectedExistingUser.email }}</span>
+                        <button type="button" class="admin-orgs__user-chip-clear" @click="selectedExistingUser = null; existingUserSearch = ''">&times;</button>
+                      </div>
+                      <!-- Dropdown results -->
+                      <div v-if="!selectedExistingUser && existingUserResults.length > 0" class="admin-orgs__user-dropdown">
+                        <button
+                          v-for="u in existingUserResults"
+                          :key="u.id"
+                          type="button"
+                          class="admin-orgs__user-option"
+                          :disabled="u.owned_organization_id != null"
+                          @click="selectExistingUser(u)"
+                        >
+                          <span class="admin-orgs__user-option-email">{{ u.email }}</span>
+                          <span class="admin-orgs__user-option-name">{{ u.name || '(no name)' }}</span>
+                          <span v-if="u.owned_organization_id" class="admin-orgs__user-option-tag">Has org</span>
+                        </button>
+                        <p v-if="searchingUsers" class="admin-orgs__user-searching">Searching...</p>
+                      </div>
+                      <p v-if="!selectedExistingUser && existingUserSearch.length >= 3 && !searchingUsers && existingUserResults.length === 0" class="admin-orgs__modal-hint">No users found</p>
+                    </div>
+                  </template>
+
                   <div class="admin-orgs__modal-field">
                     <label class="admin-orgs__modal-label">Tier</label>
                     <CustomDropdown
@@ -181,7 +237,7 @@
                   </div>
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
                     <div class="admin-orgs__modal-field">
-                      <label class="admin-orgs__modal-label">Max Seats</label>
+                      <label class="admin-orgs__modal-label">Max Seats <span style="opacity:0.6;font-size:0.7rem">(0 = unlimited)</span></label>
                       <input v-model.number="createOrgForm.max_seats" type="number" min="0" class="admin-orgs__modal-input" placeholder="0 = unlimited" />
                     </div>
                     <div class="admin-orgs__modal-field">
@@ -611,6 +667,53 @@
     price_dollars: 0,
   });
 
+  // Existing user assignment state
+  const createOrgMode = ref<'new' | 'existing'>('new');
+  const existingUserSearch = ref('');
+  const existingUserResults = ref<Array<{ id: number; email: string; name: string | null; avatar_url: string | null; owned_organization_id: number | null }>>([]);
+  const selectedExistingUser = ref<{ id: number; email: string; name: string | null } | null>(null);
+  const searchingUsers = ref(false);
+  let userSearchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  const searchExistingUsers = async (query: string) => {
+    if (query.length < 3) {
+      existingUserResults.value = [];
+      return;
+    }
+    searchingUsers.value = true;
+    try {
+      const response = await api.get('/admin/users/search', { params: { email: query } });
+      if (response.data.success) {
+        existingUserResults.value = response.data.users;
+      }
+    } catch {
+      existingUserResults.value = [];
+    } finally {
+      searchingUsers.value = false;
+    }
+  };
+
+  const onExistingUserInput = () => {
+    selectedExistingUser.value = null;
+    if (userSearchTimeout) clearTimeout(userSearchTimeout);
+    userSearchTimeout = setTimeout(() => searchExistingUsers(existingUserSearch.value), 300);
+  };
+
+  const selectExistingUser = (user: { id: number; email: string; name: string | null; avatar_url: string | null; owned_organization_id: number | null }) => {
+    selectedExistingUser.value = user;
+    existingUserSearch.value = user.email;
+    existingUserResults.value = [];
+  };
+
+  const resetCreateOrgDialog = () => {
+    createOrgForm.value = { org_name: '', email: '', password: '', tier: 'enterprise_base', max_seats: 5, monthly_credits: 0, price_dollars: 0 };
+    createOrgMode.value = 'new';
+    existingUserSearch.value = '';
+    existingUserResults.value = [];
+    selectedExistingUser.value = null;
+    createOrgError.value = null;
+  };
+
   // Reset Owner Password
   const showResetPwDialog = ref(false);
   const resetPwOrg = ref<Organization | null>(null);
@@ -721,6 +824,7 @@
     { value: 'enterprise_base', label: 'Enterprise Base ($349.99)' },
     { value: 'enterprise_ai', label: 'Enterprise AI ($549.99)' },
     { value: 'enterprise_unlimited', label: 'Enterprise Unlimited ($2199.99)' },
+    { value: 'custom', label: 'Custom (Admin-Defined)' },
   ];
 
   const getTierDisplayName = (tierValue: string) => {
@@ -815,21 +919,38 @@
 
   // Create Org Account
   const createOrgAccount = async () => {
-    creatingOrg.value = true;
     createOrgError.value = null;
+
+    if (createOrgMode.value === 'existing' && !selectedExistingUser.value) {
+      createOrgError.value = 'Please select an existing user from the search results.';
+      return;
+    }
+    if (createOrgMode.value === 'new' && (!createOrgForm.value.email || !createOrgForm.value.password)) {
+      createOrgError.value = 'Email and password are required for new user accounts.';
+      return;
+    }
+
+    creatingOrg.value = true;
     try {
-      const response = await api.post('/admin/organizations/create-account', {
+      const payload: Record<string, unknown> = {
         org_name: createOrgForm.value.org_name,
-        email: createOrgForm.value.email,
-        password: createOrgForm.value.password,
         tier: createOrgForm.value.tier,
         max_seats: createOrgForm.value.max_seats,
         monthly_credits: createOrgForm.value.monthly_credits,
         price_cents: Math.round(createOrgForm.value.price_dollars * 100),
-      });
+      };
+
+      if (createOrgMode.value === 'existing') {
+        payload.existing_user_id = selectedExistingUser.value!.id;
+      } else {
+        payload.email = createOrgForm.value.email;
+        payload.password = createOrgForm.value.password;
+      }
+
+      const response = await api.post('/admin/organizations/create-account', payload);
       if (response.data.success) {
         showCreateOrgDialog.value = false;
-        createOrgForm.value = { org_name: '', email: '', password: '', tier: 'enterprise_base', max_seats: 5, monthly_credits: 0, price_dollars: 0 };
+        resetCreateOrgDialog();
         fetchOrganizations();
       } else {
         throw new Error(response.data.error);
@@ -1930,5 +2051,146 @@
     font-size: 0.8125rem;
     line-height: 1.5;
     margin: 0;
+  }
+
+  /* ===== Owner mode toggle ===== */
+  .admin-orgs__mode-toggle {
+    display: flex;
+    gap: 0.25rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    padding: 3px;
+  }
+
+  .admin-orgs__mode-btn {
+    flex: 1;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    background: transparent;
+    color: var(--sidebar-text-muted);
+    transition: all 120ms ease;
+  }
+
+  .admin-orgs__mode-btn--active {
+    background-color: var(--sidebar-surface);
+    color: var(--sidebar-text);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+
+  .admin-orgs__mode-btn:hover:not(.admin-orgs__mode-btn--active) {
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Existing user search dropdown ===== */
+  .admin-orgs__user-dropdown {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    z-index: 100;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .admin-orgs__user-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.625rem 0.875rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 100ms ease;
+  }
+
+  .admin-orgs__user-option:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+  }
+
+  .admin-orgs__user-option:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .admin-orgs__user-option-email {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text);
+    font-weight: 500;
+  }
+
+  .admin-orgs__user-option-name {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .admin-orgs__user-option-tag {
+    margin-left: auto;
+    font-size: 0.6875rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  .admin-orgs__user-searching {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    padding: 0.5rem 0.875rem;
+    margin: 0;
+  }
+
+  /* ===== Selected user chip ===== */
+  .admin-orgs__user-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background-color: rgba(6, 182, 212, 0.1);
+    border: 1px solid rgba(6, 182, 212, 0.25);
+    border-radius: 6px;
+  }
+
+  .admin-orgs__user-chip-name {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #22d3ee;
+  }
+
+  .admin-orgs__user-chip-email {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .admin-orgs__user-chip-clear {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 0.25rem;
+  }
+
+  .admin-orgs__user-chip-clear:hover {
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Hint text ===== */
+  .admin-orgs__modal-hint {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.375rem 0 0;
   }
 </style>

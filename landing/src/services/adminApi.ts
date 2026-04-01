@@ -673,10 +673,18 @@ export async function setOrganizationCredits(orgId: number, hoursRemaining: numb
   )
 }
 
+export async function searchUsersByEmail(email: string) {
+  return assertSuccess(
+    await api.get<{ success: boolean; users: Array<{ id: number; email: string; name: string | null; avatar_url: string | null; owned_organization_id: number | null }> }>('/admin/users/search', { params: { email } }),
+    'Failed to search users',
+  )
+}
+
 export async function createOrganizationAccount(payload: {
   org_name: string
-  email: string
-  password: string
+  email?: string
+  password?: string
+  existing_user_id?: number
   owner_name?: string
   description?: string
   max_seats: number

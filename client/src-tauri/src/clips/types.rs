@@ -23,6 +23,14 @@ pub struct SubtitleSettings {
     pub position_percentage: f32,
     pub max_width: f32,
     pub animation_style: String,
+    #[serde(default = "default_highlight_color")]
+    pub highlight_color: String,
+    #[serde(default)]
+    pub multi_color_enabled: bool,
+    #[serde(default = "default_multi_color_mode")]
+    pub multi_color_mode: String,
+    #[serde(default)]
+    pub color_palette: Vec<String>,
     pub line_height: f32,
     pub letter_spacing: f32,
     pub text_align: String,
@@ -33,6 +41,14 @@ pub struct SubtitleSettings {
     pub word_spacing: f32,
 }
 
+fn default_highlight_color() -> String {
+    "#FFFD03".to_string()
+}
+
+fn default_multi_color_mode() -> String {
+    "default".to_string()
+}
+
 // Per-aspect-ratio subtitle override (size, position, and width)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +57,44 @@ pub struct SubtitleOverride {
     pub position_percentage: f32,
     #[serde(default)]
     pub max_width: Option<f32>,
+    #[serde(default)]
+    pub preset_id: Option<String>,
+    #[serde(default)]
+    pub animation_style: Option<String>,
+    #[serde(default)]
+    pub text_color: Option<String>,
+    #[serde(default)]
+    pub font_family: Option<String>,
+    #[serde(default)]
+    pub font_weight: Option<u32>,
+    #[serde(default)]
+    pub border1_width: Option<f32>,
+    #[serde(default)]
+    pub border1_color: Option<String>,
+    #[serde(default)]
+    pub border2_width: Option<f32>,
+    #[serde(default)]
+    pub border2_color: Option<String>,
+    #[serde(default)]
+    pub highlight_color: Option<String>,
+    #[serde(default)]
+    pub multi_color_enabled: Option<bool>,
+    #[serde(default)]
+    pub color_palette: Option<Vec<String>>,
+    #[serde(default)]
+    pub multi_color_mode: Option<String>,
+    #[serde(default)]
+    pub shadow_offset_x: Option<f32>,
+    #[serde(default)]
+    pub shadow_offset_y: Option<f32>,
+    #[serde(default)]
+    pub shadow_blur: Option<f32>,
+    #[serde(default)]
+    pub shadow_color: Option<String>,
+    #[serde(default)]
+    pub background_color: Option<String>,
+    #[serde(default)]
+    pub background_enabled: Option<bool>,
 }
 
 // Map of aspect ratio string to subtitle override

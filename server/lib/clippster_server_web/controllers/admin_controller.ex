@@ -811,13 +811,13 @@ defmodule ClippsterServerWeb.AdminController do
   def cancel_user_subscription(conn, %{"user_id" => user_id_string}) do
     case parse_integer(user_id_string) do
       {:ok, user_id} ->
-        case Subscriptions.cancel_subscription(user_id) do
+        case Subscriptions.admin_cancel_subscription(user_id) do
           {:ok, _user} ->
             subscription_info = Subscriptions.get_subscription_status(user_id)
 
             json(conn, %{
               success: true,
-              message: "Successfully cancelled subscription for user",
+              message: "Successfully cancelled subscription for user (immediate - no future charges)",
               subscription: subscription_info
             })
 
@@ -825,6 +825,11 @@ defmodule ClippsterServerWeb.AdminController do
             conn
             |> put_status(400)
             |> json(%{success: false, error: "User does not have an active subscription"})
+
+          {:error, {:stripe_error, message}} ->
+            conn
+            |> put_status(502)
+            |> json(%{success: false, error: "Failed to cancel in Stripe: #{inspect(message)}"})
 
           {:error, reason} ->
             conn
@@ -1292,8 +1297,94 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   @doc """
-  Admin creates a new org account with email/password, custom seats/credits/price.
+  Admin creates a new org account.
+  Supports two modes:
+  - New user: requires email + password
+  - Existing user: requires existing_user_id (email/password not needed)
   """
+  def create_org_account(conn, %{"existing_user_id" => existing_user_id_raw} = params) do
+    admin_id = conn.assigns[:current_user_id]
+
+    case require_param(params, "org_name") do
+      {:ok, org_name} ->
+        max_seats = parse_int_param(params, "max_seats", 0)
+        monthly_credits = parse_int_param(params, "monthly_credits", 0)
+        price_cents = parse_int_param(params, "price_cents", 0)
+        tier = Map.get(params, "tier", "enterprise_base")
+        days = parse_int_param(params, "days", 30)
+
+        user_id =
+          case existing_user_id_raw do
+            id when is_integer(id) -> id
+            id when is_binary(id) -> String.to_integer(id)
+          end
+
+        attrs = %{
+          org_name: org_name,
+          user_id: user_id,
+          max_seats: max_seats,
+          monthly_credits: monthly_credits,
+          price_cents: price_cents,
+          admin_id: admin_id,
+          tier: tier,
+          days: days,
+          description: Map.get(params, "description", "")
+        }
+
+        case OrganizationSubscriptions.admin_create_org_account_for_existing_user(attrs) do
+          {:ok, %{organization: org, user: user}} ->
+            json(conn, %{
+              success: true,
+              message: "Organization account created",
+              organization: %{
+                id: org.id,
+                name: org.name,
+                subscription_status: org.subscription_status,
+                subscription_tier: org.subscription_tier,
+                max_seats: org.max_seats,
+                monthly_credits: org.monthly_credits,
+                admin_price_cents: org.admin_price_cents
+              },
+              user: %{
+                id: user.id,
+                email: user.email
+              }
+            })
+
+          {:error, :user_not_found} ->
+            conn
+            |> put_status(404)
+            |> json(%{success: false, error: "User not found"})
+
+          {:error, :user_already_owns_org} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "This user already owns an organization"})
+
+          {:error, :org_create_error} ->
+            conn
+            |> put_status(400)
+            |> json(%{
+              success: false,
+              error: "Failed to create organization. Please check organization name."
+            })
+
+          {:error, :member_error} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed to add owner as organization member"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed to create org account: #{inspect(reason)}"})
+        end
+
+      {:error, reason} ->
+        conn |> put_status(400) |> json(%{success: false, error: reason})
+    end
+  end
+
   def create_org_account(conn, params) do
     admin_id = conn.assigns[:current_user_id]
 
@@ -1375,6 +1466,30 @@ defmodule ClippsterServerWeb.AdminController do
       {:error, reason} ->
         conn |> put_status(400) |> json(%{success: false, error: reason})
     end
+  end
+
+  @doc """
+  Search users by email prefix for admin org assignment.
+  Returns up to 10 matching users.
+  """
+  def search_users_by_email(conn, %{"email" => email_query}) when byte_size(email_query) >= 3 do
+    alias ClippsterServer.Accounts.User, as: UserSchema
+    import Ecto.Query, warn: false
+
+    pattern = "%#{String.downcase(email_query)}%"
+
+    users =
+      UserSchema
+      |> where([u], ilike(u.email, ^pattern))
+      |> limit(10)
+      |> select([u], %{id: u.id, email: u.email, name: u.name, avatar_url: u.avatar_url, owned_organization_id: u.owned_organization_id})
+      |> ClippsterServer.Repo.all()
+
+    json(conn, %{success: true, users: users})
+  end
+
+  def search_users_by_email(conn, _params) do
+    json(conn, %{success: true, users: []})
   end
 
   @doc """
@@ -1474,10 +1589,15 @@ defmodule ClippsterServerWeb.AdminController do
         case OrganizationSubscriptions.admin_cancel_subscription(org_id) do
           {:ok, _org} ->
             status = OrganizationSubscriptions.get_subscription_status(org_id)
-            json(conn, %{success: true, message: "Subscription cancelled", subscription: status})
+            json(conn, %{success: true, message: "Subscription cancelled (immediate - no future charges)", subscription: status})
 
           {:error, :not_active} ->
             conn |> put_status(400) |> json(%{success: false, error: "No active subscription"})
+
+          {:error, {:stripe_error, message}} ->
+            conn
+            |> put_status(502)
+            |> json(%{success: false, error: "Failed to cancel in Stripe: #{inspect(message)}"})
 
           {:error, reason} ->
             conn
@@ -1491,12 +1611,13 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   defp validate_org_tier(tier)
-       when tier in ["solo", "enterprise_base", "enterprise_ai", "enterprise_unlimited"], do: :ok
+       when tier in ["solo", "enterprise_base", "enterprise_ai", "enterprise_unlimited", "custom"],
+       do: :ok
 
   defp validate_org_tier(_),
     do:
       {:error,
-       "Invalid tier - must be one of: solo, enterprise_base, enterprise_ai, enterprise_unlimited"}
+       "Invalid tier - must be one of: solo, enterprise_base, enterprise_ai, enterprise_unlimited, custom"}
 
   defp require_param(params, key) do
     case Map.get(params, key) do

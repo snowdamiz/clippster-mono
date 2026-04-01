@@ -227,6 +227,22 @@ defmodule ClippsterServerWeb.Router do
 
     # Waitlist signup (public)
     post("/waitlist", WaitlistController, :create)
+
+    # Public clipper profile (shareable links)
+    get("/clippers/:slug", ClipperProfilesController, :show)
+    get("/orgs/:slug", OrganizationPublicProfilesController, :show)
+
+    get(
+      "/clippers/:slug/portfolio-clips/:clip_id/presigned-url",
+      ClipperProfilesController,
+      :public_portfolio_clip_presigned_url
+    )
+
+    get(
+      "/clippers/:slug/portfolio-clips/:clip_id/thumbnail-presigned-url",
+      ClipperProfilesController,
+      :public_portfolio_clip_thumbnail_presigned_url
+    )
   end
 
   # Protected routes (require authentication)
@@ -454,6 +470,12 @@ defmodule ClippsterServerWeb.Router do
     )
 
     # Organization payments (Stripe)
+    post(
+      "/organizations/:organization_id/payments/stripe/setup",
+      StripeController,
+      :create_org_setup_checkout
+    )
+
     post(
       "/organizations/:organization_id/payments/stripe/create-session",
       StripeController,
@@ -948,23 +970,10 @@ defmodule ClippsterServerWeb.Router do
     )
 
     # ============================================================================
-    # Clipper Directory - Public Profiles
+    # Clipper Directory - Authenticated Only
     # ============================================================================
     get("/clippers", ClipperProfilesController, :index)
     get("/clippers/leaderboard", ClipperProfilesController, :leaderboard)
-    get("/clippers/:slug", ClipperProfilesController, :show)
-
-    get(
-      "/clippers/:slug/portfolio-clips/:clip_id/presigned-url",
-      ClipperProfilesController,
-      :public_portfolio_clip_presigned_url
-    )
-
-    get(
-      "/clippers/:slug/portfolio-clips/:clip_id/thumbnail-presigned-url",
-      ClipperProfilesController,
-      :public_portfolio_clip_thumbnail_presigned_url
-    )
 
     post("/clippers/:slug/endorsements", ClipperProfilesController, :create_endorsement)
 
@@ -1240,6 +1249,9 @@ defmodule ClippsterServerWeb.Router do
     put("/admin/users/:user_id/subscription/tier", AdminController, :change_subscription_tier)
     post("/admin/users/:user_id/subscription/cancel", AdminController, :cancel_user_subscription)
     get("/admin/users/:user_id/subscription/history", AdminController, :get_subscription_history)
+
+    # Admin user search (for org assignment)
+    get("/admin/users/search", AdminController, :search_users_by_email)
 
     # Admin organization management
     get("/admin/organizations", AdminController, :list_organizations)

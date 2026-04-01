@@ -59,10 +59,14 @@
                   </div>
                 </div>
                 <div class="profile-meta-row">
-                  <span v-if="campaign.organization" class="profile-visibility">
+                  <router-link
+                    v-if="campaign.organization"
+                    :to="campaign.organization.slug ? `/orgs/${campaign.organization.slug}` : '#'"
+                    class="profile-visibility"
+                  >
                     <Building2 :size="14" />
                     {{ campaign.organization.name }}
-                  </span>
+                  </router-link>
                   <span v-if="campaign.starts_at" class="profile-last-active">
                     <Calendar :size="14" />
                     {{ formatDate(campaign.starts_at) }} - {{ campaign.ends_at ? formatDate(campaign.ends_at) : 'Ongoing' }}

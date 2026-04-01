@@ -1317,6 +1317,7 @@
     hasTranscriptForProject,
   } from '@/services/database';
   import { useInEditorClips } from '@/stores/useInEditorClips';
+  import { useClipThumbnailStore } from '@/stores/clipThumbnails';
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { extractMintId } from '@/services/pumpfun';
   import { useFormatters } from '@/composables/useFormatters';
@@ -1388,7 +1389,8 @@
   const projectVideos = ref<Record<string, RawVideo[]>>({});
   const videoEditorProjects = ref<Record<string, VideoEditorProject>>({});
   const thumbnailCache = ref<Map<string, string>>(new Map());
-  const clipThumbnailCache = ref<Map<string, string>>(new Map());
+  // Use persistent clip thumbnail store instead of component-level cache
+  const clipThumbnailStore = useClipThumbnailStore();
   const { getRelativeTime, formatDuration } = useFormatters();
   const { success, error } = useToast();
   const { activeSessions } = useLivestreamMonitoring();
@@ -1446,10 +1448,12 @@
   }
 
   async function openVodPresetEditor(project: Project) {
+    console.log('[Projects] Opening VodPresetEditor for project:', project.id, 'parent_id:', project.parent_id);
     vodPresetProject.value = project;
     // Load existing config
     try {
       const config = await getProjectVodPresetConfig(project.id);
+      console.log('[Projects] VodPresetEditor loaded existing config:', config ? `found (${config.targetAspectRatio})` : 'not found');
       vodPresetInitialConfig.value = config;
     } catch (e) {
       console.warn('[Projects] Failed to load VOD preset config:', e);
@@ -1461,9 +1465,11 @@
   async function onVodPresetConfirmed(config: ActiveVodPresetConfig) {
     if (!vodPresetProject.value) return;
     const projectId = vodPresetProject.value.id;
+    console.log('[Projects] Saving VOD preset to project:', projectId, 'aspect ratio:', config.targetAspectRatio);
     try {
       await setProjectVodPreset(projectId, config.presetId, config);
       vodPresetConfigs.value[projectId] = config;
+      console.log('[Projects] VOD preset saved successfully to project:', projectId);
       success('VOD pre-edit settings applied');
     } catch (e) {
       console.error('[Projects] Failed to save VOD preset:', e);
@@ -1982,8 +1988,8 @@
 
   // Get thumbnail URL for a clip - uses cached data URLs
   function getClipThumbnailUrl(clip: ClipWithVersionAndSegment): string | null {
-    // Check clip thumbnail cache first
-    const cachedThumbnail = clipThumbnailCache.value.get(clip.id);
+    // Check persistent clip thumbnail cache first
+    const cachedThumbnail = clipThumbnailStore.getThumbnail(clip.id);
     if (cachedThumbnail) {
       return cachedThumbnail;
     }
@@ -2300,25 +2306,8 @@
 
   // Load existing clip thumbnails in parallel (fast - just reading files)
   async function loadClipThumbnailsInParallel() {
-    const clipsWithThumbnails = folderClips.value.filter(
-      (clip) => clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
-    );
-
-    if (clipsWithThumbnails.length === 0) return;
-
-    // Load all thumbnails in parallel
-    await Promise.all(
-      clipsWithThumbnails.map(async (clip) => {
-        try {
-          const dataUrl = await invoke<string>('read_file_as_data_url', {
-            filePath: clip.built_thumbnail_path,
-          });
-          clipThumbnailCache.value.set(clip.id, dataUrl);
-        } catch (err) {
-          console.warn('Failed to load clip thumbnail:', clip.id, err);
-        }
-      })
-    );
+    // Use persistent store's batch loading method - it handles deduplication and caching
+    await clipThumbnailStore.loadThumbnails(folderClips.value);
   }
 
   // Track which projects have had thumbnails generated to avoid re-generation
@@ -2406,7 +2395,7 @@
             const dataUrl = await invoke<string>('read_file_as_data_url', {
               filePath: thumbnailPath,
             });
-            clipThumbnailCache.value.set(clip.id, dataUrl);
+            clipThumbnailStore.setThumbnail(clip.id, dataUrl);
 
             // Update the clip's thumbnail path
             clip.built_thumbnail_path = thumbnailPath;
@@ -5012,6 +5001,7 @@
   }
 
   function openWorkspace(project: Project, initialClipId?: string | null) {
+    console.log('[Projects] Opening workspace for project:', project.id, 'parent_id:', project.parent_id);
     workspaceProject.value = project;
     workspaceInitialClipId.value = initialClipId || null;
     showWorkspaceDialog.value = true;
@@ -5556,7 +5546,8 @@
     organizationId: number | null = null,
     multimodal: boolean = false,
     startTime: number = 0,
-    endTime: number = 0
+    endTime: number = 0,
+    subtitleSettings: { enabled: boolean; presetId: string } | null = null
   ) {
     if (!projectToDetect.value || segmentsToDetect.value.length === 0) {
       return;
@@ -5607,6 +5598,7 @@
               multimodal: multimodal,
               startTime: startTime,
               endTime: endTime,
+              subtitleSettings: subtitleSettings,
             });
 
             if (result.success) {

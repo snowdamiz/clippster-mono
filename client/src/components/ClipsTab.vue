@@ -648,7 +648,7 @@
       :default-intro="creatorDefaultIntro"
       :default-outro="creatorDefaultOutro"
       :thumbnail-url="videoThumbnailUrl"
-      :subtitle-settings="subtitleSettings"
+      :subtitle-settings="derivedSubtitleSettings ?? subtitleSettings"
       :initial-aspect-ratios="savedAspectRatios"
       :initial-framing-mode="savedFramingMode"
       :initial-framing-configs="savedFramingConfigs"
@@ -692,9 +692,11 @@
   } from 'lucide-vue-next';
   import { useAIPermission } from '@/composables/useAIPermission';
   import { useInEditorClips } from '@/stores/useInEditorClips';
+  import { useClipThumbnailStore } from '@/stores/clipThumbnails';
   import ClipBuildSettingsDialog, { type BuildSettings, type BuildTarget, type IntroOutroItem } from './ClipBuildSettingsDialog.vue';
   import FramedThumbnail from './FramedThumbnail.vue';
   import type { SubtitleSettings, WatermarkSettings, IntroOutroRef } from '@/types';
+  import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import type { AnalyzeSpeakersResponse } from '@/services/speaker-detection-api';
   import type { FramingStrategy as DbFramingStrategy, ParsedStrategyData } from '@/services/database/speaker-detection';
@@ -923,12 +925,111 @@
   const inEditorStore = useInEditorClips();
   inEditorStore.hydrate();
 
+  // Persistent thumbnail cache store
+  const thumbnailStore = useClipThumbnailStore();
+
   // State
   const hoveredClipId = ref<string | null>(null);
   const clipsScrollContainer = ref<HTMLElement | null>(null);
   const clipElements = ref<Map<string, HTMLElement>>(new Map());
   const showBuildSettingsDialog = ref(false);
   const clipToBuild = ref<ClipWithVersion | null>(null);
+
+  // Derive SubtitleSettings from the clip being built (reads preset from DB data on the clip)
+  const derivedSubtitleSettings = computed((): SubtitleSettings | null => {
+    const clip = clipToBuild.value as any;
+    console.log('[ClipsTab] derivedSubtitleSettings computed, clip:', {
+      clipId: clip?.id,
+      clipName: clip?.name,
+      subtitle_enabled: clip?.subtitle_enabled,
+      subtitle_preset_id: clip?.subtitle_preset_id,
+      has_subtitle_settings: !!clip?.subtitle_settings,
+      subtitle_settings_type: typeof clip?.subtitle_settings,
+      subtitle_settings_length: clip?.subtitle_settings?.length
+    });
+    
+    if (!clip?.subtitle_enabled || !clip?.subtitle_preset_id) {
+      console.log('[ClipsTab] No subtitles enabled or no preset ID, returning null');
+      return null;
+    }
+    
+    // First, try to load full settings from database if they exist
+    if (clip.subtitle_settings) {
+      try {
+        console.log('[ClipsTab] Raw subtitle_settings from clip:', {
+          type: typeof clip.subtitle_settings,
+          value: clip.subtitle_settings,
+          clipId: clip.id,
+          clipName: clip.name
+        });
+        const savedSettings = typeof clip.subtitle_settings === 'string' 
+          ? JSON.parse(clip.subtitle_settings) 
+          : clip.subtitle_settings;
+        console.log('[ClipsTab] Using saved subtitle settings from database for clip build:', {
+          animationStyle: savedSettings.animationStyle,
+          border1Width: savedSettings.border1Width,
+          border1Color: savedSettings.border1Color,
+          border2Width: savedSettings.border2Width,
+          border2Color: savedSettings.border2Color,
+          fontSize: savedSettings.fontSize,
+          fontFamily: savedSettings.fontFamily,
+          textColor: savedSettings.textColor,
+          highlightColor: savedSettings.highlightColor
+        });
+        return savedSettings;
+      } catch (error) {
+        console.error('[ClipsTab] Failed to parse subtitle_settings JSON:', error);
+        // Fall back to preset below
+      }
+    } else {
+      console.log('[ClipsTab] No subtitle_settings in clip, falling back to preset:', clip.subtitle_preset_id);
+    }
+    
+    // Fall back to preset if no full settings saved
+    const preset = CAPTION_PRESETS.find((p) => p.id === clip.subtitle_preset_id);
+    if (!preset) return null;
+    const fontWeightMap: Record<string, number> = {
+      normal: 400, bold: 700,
+      '100': 100, '200': 200, '300': 300, '400': 400,
+      '500': 500, '600': 600, '700': 700, '800': 800, '900': 900,
+    };
+    const animMap: Record<string, SubtitleSettings['animationStyle']> = {
+      none: 'none', karaoke: 'karaoke', 'karaoke-scale': 'karaoke',
+      zoom: 'zoom', pop: 'pop', glow: 'glow',
+      'box-highlight': 'box-highlight', typewriter: 'typewriter', wave: 'wave',
+    };
+    return {
+      enabled: true,
+      selectedPresetId: preset.id,
+      fontFamily: preset.fontFamily,
+      fontSize: preset.fontSize,
+      fontWeight: fontWeightMap[String(preset.fontWeight)] ?? 700,
+      textColor: preset.color,
+      backgroundColor: preset.backgroundColor,
+      backgroundEnabled: preset.backgroundColor !== 'transparent',
+      position: 'bottom' as const,
+      positionPercentage: clip.subtitle_position_y ?? 85,
+      maxWidth: clip.subtitle_position_width ?? 90,
+      animationStyle: animMap[preset.highlightStyle] ?? 'none',
+      highlightColor: preset.highlightColor,
+      border1Width: preset.stroke?.width ?? 0,
+      border1Color: preset.stroke?.color ?? '#000000',
+      border2Width: 0,
+      border2Color: '#000000',
+      shadowBlur: preset.shadow?.blur ?? 0,
+      shadowOffsetX: preset.shadow?.offsetX ?? 0,
+      shadowOffsetY: preset.shadow?.offsetY ?? 0,
+      shadowColor: preset.shadow?.color ?? '#000000',
+      lineHeight: preset.lineHeight,
+      letterSpacing: preset.letterSpacing,
+      textAlign: 'center' as const,
+      textOffsetX: 0,
+      textOffsetY: 0,
+      padding: 0,
+      borderRadius: 0,
+      wordSpacing: 0.35,
+    };
+  });
   const openDownloadDropdownId = ref<string | null>(null);
   const dropdownButtonRefs = ref<Map<string, HTMLElement>>(new Map());
 
@@ -941,8 +1042,8 @@
   const savedFramingMode = ref<'auto' | 'manual' | null>(null);
   const savedFramingConfigs = ref<import('@/types').ManualFramingConfigs | null>(null);
 
-  // Thumbnail cache for clip cards
-  const clipThumbnailCache = ref<Map<string, string>>(new Map());
+  // Use persistent thumbnail cache from store (no longer component-scoped)
+  // const clipThumbnailCache = ref<Map<string, string>>(new Map()); // REMOVED - now using store
 
   // Track if thumbnails are being loaded
   const isLoadingThumbnails = ref(false);
@@ -954,7 +1055,7 @@
   const allThumbnailsReady = computed(() => {
     if (props.clips.length === 0) return true;
     // All clips should either have a thumbnail in cache, or not need one (no built_thumbnail_path)
-    return props.clips.every((clip) => clipThumbnailCache.value.has(clip.id) || !clip.built_thumbnail_path);
+    return props.clips.every((clip) => thumbnailStore.hasThumbnail(clip.id) || !clip.built_thumbnail_path);
   });
 
   // Close dropdowns when clicking outside
@@ -989,10 +1090,10 @@
       // Only reload thumbnails if clips actually changed (new clips added or clips modified)
       const hasNewClips = !oldClips || newClips.length !== oldClips.length;
       const hasClipsWithNewThumbnails = newClips.some(
-        (clip) => clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
+        (clip) => clip.built_thumbnail_path && !thumbnailStore.hasThumbnail(clip.id)
       );
       const hasClipsNeedingThumbnails = newClips.some(
-        (clip) => !clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
+        (clip) => !clip.built_thumbnail_path && !thumbnailStore.hasThumbnail(clip.id)
       );
 
       if (hasNewClips || hasClipsWithNewThumbnails || hasClipsNeedingThumbnails) {
@@ -1015,43 +1116,10 @@
     { deep: true, immediate: true }
   );
 
-  // Load clip thumbnails into cache
+  // Load clip thumbnails into persistent cache
   async function loadClipThumbnails() {
-    const clipsWithThumbnails = props.clips.filter(
-      (clip) => clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
-    );
-
-    // Load existing thumbnails if there are any
-    if (clipsWithThumbnails.length > 0) {
-      const { invoke } = await import('@tauri-apps/api/core');
-
-      let hasNewThumbnails = false;
-
-      // Load thumbnails in parallel (max 5 at a time)
-      const batchSize = 5;
-      for (let i = 0; i < clipsWithThumbnails.length; i += batchSize) {
-        const batch = clipsWithThumbnails.slice(i, i + batchSize);
-        await Promise.all(
-          batch.map(async (clip) => {
-            try {
-              const dataUrl = await invoke<string>('read_file_as_data_url', {
-                filePath: clip.built_thumbnail_path,
-              });
-              clipThumbnailCache.value.set(clip.id, dataUrl);
-              hasNewThumbnails = true;
-            } catch (err) {
-              console.warn(`[ClipsTab] Failed to load thumbnail for clip ${clip.id}:`, err);
-            }
-          })
-        );
-      }
-
-      // Trigger Vue reactivity by replacing the Map reference
-      // This is necessary because Map.set() mutations don't trigger re-renders
-      if (hasNewThumbnails) {
-        clipThumbnailCache.value = new Map(clipThumbnailCache.value);
-      }
-    }
+    // Use store's batch loading method - it handles deduplication and caching
+    await thumbnailStore.loadThumbnails(props.clips);
 
     // Generate missing thumbnails sequentially (one at a time) for clips without built_thumbnail_path.
     // This covers cases where ProjectWorkspaceDialog is opened directly without going through Projects.vue.
@@ -1113,7 +1181,7 @@
     if (thumbnailGenerationInProgress) return;
 
     const clipsWithoutThumbnails = props.clips.filter(
-      (clip) => !clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
+      (clip) => !clip.built_thumbnail_path && !thumbnailStore.hasThumbnail(clip.id)
     );
 
     if (clipsWithoutThumbnails.length === 0) return;
@@ -1178,11 +1246,8 @@
             const dataUrl = await invoke<string>('read_file_as_data_url', {
               filePath: thumbnailPath,
             });
-            clipThumbnailCache.value.set(clip.id, dataUrl);
+            thumbnailStore.setThumbnail(clip.id, dataUrl);
             hasNewThumbnails = true;
-
-            // Trigger Vue reactivity after each thumbnail so they appear incrementally
-            clipThumbnailCache.value = new Map(clipThumbnailCache.value);
 
             // Persist to database (non-blocking)
             updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
@@ -1199,15 +1264,12 @@
       thumbnailGenerationInProgress = false;
     }
 
-    // Final reactivity trigger in case the incremental ones were batched
-    if (hasNewThumbnails) {
-      clipThumbnailCache.value = new Map(clipThumbnailCache.value);
-    }
+    // No need for final reactivity trigger - store handles it
   }
 
   // Get thumbnail URL for a clip
   function getClipThumbnail(clipId: string): string | null {
-    return clipThumbnailCache.value.get(clipId) || null;
+    return thumbnailStore.getThumbnail(clipId);
   }
 
   // Check if VOD preset has framing regions configured
@@ -2014,6 +2076,26 @@
     savedFramingMode.value = null;
     savedFramingConfigs.value = null;
 
+    // CRITICAL: Fetch subtitle_settings from database and merge with the existing clip object
+    // The clip object passed in has segments and timing data, but might not have subtitle_settings
+    try {
+      const { getClip } = await import('@/services/database/clips');
+      const dbClip = await getClip(clip.id);
+      if (dbClip && dbClip.subtitle_settings) {
+        // Merge subtitle_settings from database into the existing clip object
+        clip.subtitle_settings = dbClip.subtitle_settings;
+        console.log('[ClipsTab] Merged subtitle_settings from database:', {
+          clipId: clip.id,
+          hasSubtitleSettings: !!clip.subtitle_settings,
+          subtitleSettingsType: typeof clip.subtitle_settings,
+          subtitleSettingsLength: clip.subtitle_settings ? clip.subtitle_settings.length : 0,
+          presetId: clip.subtitle_preset_id
+        });
+      }
+    } catch (error) {
+      console.warn('[ClipsTab] Failed to load subtitle_settings from database:', error);
+    }
+
     // Open dialog immediately (don't wait for async operations)
     clipToBuild.value = clip;
     showBuildSettingsDialog.value = true;
@@ -2681,27 +2763,103 @@
         }
       }
 
+      // Effective subtitle settings: prefer derived (from clip DB columns) over prop
+      const effectiveSubtitleSettings = derivedSubtitleSettings.value ?? props.subtitleSettings ?? null;
+
+      // Helper: build SubtitleSettings from a CAPTION_PRESETS id
+      function buildSettingsFromPresetId(presetId: string): Partial<SubtitleSettings> | null {
+        const preset = CAPTION_PRESETS.find((p) => p.id === presetId);
+        if (!preset) return null;
+        const fontWeightMap: Record<string, number> = {
+          normal: 400, bold: 700,
+          '100': 100, '200': 200, '300': 300, '400': 400,
+          '500': 500, '600': 600, '700': 700, '800': 800, '900': 900,
+        };
+        const animMap: Record<string, SubtitleSettings['animationStyle']> = {
+          none: 'none', karaoke: 'karaoke', 'karaoke-scale': 'karaoke',
+          zoom: 'zoom', pop: 'pop', glow: 'glow',
+          'box-highlight': 'box-highlight', typewriter: 'typewriter', wave: 'wave',
+        };
+        return {
+          selectedPresetId: preset.id,
+          fontFamily: preset.fontFamily,
+          fontSize: preset.fontSize,
+          fontWeight: fontWeightMap[String(preset.fontWeight)] ?? 700,
+          textColor: preset.color,
+          backgroundColor: preset.backgroundColor,
+          backgroundEnabled: preset.backgroundColor !== 'transparent',
+          animationStyle: animMap[preset.highlightStyle] ?? 'none',
+          highlightColor: preset.highlightColor,
+          border1Width: preset.stroke?.width ?? 0,
+          border1Color: preset.stroke?.color ?? '#000000',
+          shadowBlur: preset.shadow?.blur ?? 0,
+          shadowOffsetX: preset.shadow?.offsetX ?? 0,
+          shadowOffsetY: preset.shadow?.offsetY ?? 0,
+          shadowColor: preset.shadow?.color ?? '#000000',
+          lineHeight: preset.lineHeight,
+          letterSpacing: preset.letterSpacing,
+          wordSpacing: 0.35,
+        };
+      }
+
       // Pass all build settings to the backend (including build number for filename)
-      // Subtitle settings come directly from SubtitlesTab via props
       // Merge perRatioConfigs from clip editor with subtitleOverrides from build settings
       // perRatioConfigs from clip editor takes precedence (user configured in editor)
       let finalSubtitleOverrides = settings.subtitleOverrides || null;
-      if (props.subtitleSettings?.perRatioConfigs) {
-        const editorOverrides: Record<string, { fontSize: number; positionPercentage: number; maxWidth?: number }> = {};
-        for (const [ratio, config] of Object.entries(props.subtitleSettings.perRatioConfigs)) {
-          editorOverrides[ratio] = {
-            fontSize: config.fontSize,
-            positionPercentage: config.position?.y ?? config.positionPercentage, // Use Y position as the vertical position percentage
-            maxWidth: config.maxWidth,
-          };
+      if (effectiveSubtitleSettings?.perRatioConfigs) {
+        const editorOverrides: Record<string, any> = {};
+        for (const [ratio, config] of Object.entries(effectiveSubtitleSettings.perRatioConfigs)) {
+          // Include ALL properties from perRatioConfigs, not just position/size
+          // The Rust code can read any property from the per_ratio_override JSON
+          editorOverrides[ratio] = { ...config };
         }
-        // Merge: editor configs override build settings configs
         finalSubtitleOverrides = {
           ...(settings.subtitleOverrides || {}),
           ...editorOverrides,
         };
-        console.log('[ClipsTab] Merged subtitle overrides from clip editor:', finalSubtitleOverrides);
       }
+
+      // Apply per-ratio presetId overrides: if a ratio has a presetId, merge those preset's
+      // visual fields into that ratio's override JSON so Rust uses them via per_ratio_override.
+      if (finalSubtitleOverrides) {
+        for (const [ratio, override] of Object.entries(finalSubtitleOverrides)) {
+          const ov = override as any;
+          if (ov?.presetId) {
+            const presetOverride = buildSettingsFromPresetId(ov.presetId);
+            if (presetOverride) {
+              (finalSubtitleOverrides as any)[ratio] = { ...ov, ...presetOverride };
+            }
+          }
+        }
+      }
+
+      console.log('[ClipsTab] Subtitle payload before build invoke:', {
+        clipId: clip.id,
+        baseAnimationStyle: effectiveSubtitleSettings?.animationStyle,
+        baseFontFamily: effectiveSubtitleSettings?.fontFamily,
+        baseTextColor: effectiveSubtitleSettings?.textColor,
+        hasPerRatioConfigs: !!effectiveSubtitleSettings?.perRatioConfigs,
+        perRatioConfigKeys: effectiveSubtitleSettings?.perRatioConfigs
+          ? Object.keys(effectiveSubtitleSettings.perRatioConfigs)
+          : [],
+        overrideKeys: finalSubtitleOverrides ? Object.keys(finalSubtitleOverrides) : [],
+        overridePreview: finalSubtitleOverrides
+          ? Object.fromEntries(
+              Object.entries(finalSubtitleOverrides).map(([ratio, ov]) => {
+                const v = ov as any;
+                return [ratio, {
+                  animationStyle: v?.animationStyle,
+                  fontFamily: v?.fontFamily,
+                  textColor: v?.textColor,
+                  fontSize: v?.fontSize,
+                  positionPercentage: v?.positionPercentage,
+                  maxWidth: v?.maxWidth,
+                  hasPalette: Array.isArray(v?.colorPalette) && v.colorPalette.length > 0,
+                }];
+              })
+            )
+          : null,
+      });
 
       // ── Per-Target Build Loop ──────────────────────────────────────────────
       // Each target group gets its own branding resolution and Rust invoke.
@@ -2752,7 +2910,7 @@
           quality: settings.quality,
           frameRate: settings.frameRate,
           outputFormat: settings.format,
-          includeSubtitles: props.subtitleSettings?.enabled ?? false,
+          includeSubtitles: effectiveSubtitleSettings?.enabled ?? false,
           organizationId: tg.organizationId || null,
           organizationName: tg.target?.type === 'org' 
             ? (tg.target as any).name
@@ -3397,7 +3555,7 @@
         clipName: clip.current_version_name || clip.name || 'Untitled',
         videoPath: projectVideo.file_path,
         segments: segments,
-        subtitleSettings: props.subtitleSettings,
+        subtitleSettings: effectiveSubtitleSettings,
         subtitleOverrides: finalSubtitleOverrides,
         transcriptWords: transcriptWords,
         transcriptSegments: transcriptSegments,

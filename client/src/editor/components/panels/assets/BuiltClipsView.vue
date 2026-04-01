@@ -11,6 +11,7 @@ import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
 import { buildVideoElement } from "../../../lib/timeline/element-utils";
 import { usePointerDrag } from "../../../composables/usePointerDrag";
 import type { CreateTimelineElement } from "../../../types/timeline";
+import { useClipThumbnailStore } from "@/stores/clipThumbnails";
 
 // Build entry combines clip info with specific build info
 interface BuildEntry {
@@ -21,6 +22,7 @@ interface BuildEntry {
 
 const { editor, version } = useEditor();
 const { startDrag, wasDragCompleted } = usePointerDrag();
+const thumbnailStore = useClipThumbnailStore();
 
 const clips = ref<Clip[]>([]);
 const allBuilds = ref<BuildEntry[]>([]); // Flattened list of all builds
@@ -28,7 +30,6 @@ const loading = ref(false);
 const addingIds = ref<Set<string>>(new Set());
 const addedIds = ref<Set<string>>(new Set());
 const searchQuery = ref("");
-const thumbnailCache = ref<Map<string, string>>(new Map());
 const addedMediaIds = ref<Map<string, string>>(new Map()); // buildId → mediaAssetId
 
 const activeProject = computed(() => {
@@ -56,8 +57,8 @@ const filteredBuilds = computed(() => {
 });
 
 function getCachedThumbnail(buildId: string, clipId: string): string | undefined {
-	// Try build-specific thumbnail first, then fall back to clip thumbnail
-	return thumbnailCache.value.get(buildId) || thumbnailCache.value.get(clipId);
+	// Try build-specific thumbnail first, then fall back to clip thumbnail from store
+	return thumbnailStore.getBuildThumbnail(buildId) || thumbnailStore.getThumbnail(clipId) || undefined;
 }
 
 function getClipName(clip: Clip): string {
@@ -182,31 +183,23 @@ async function loadBuilds() {
 }
 
 async function loadThumbnails() {
-	const buildsNeedingThumbs = allBuilds.value.filter(
-		(entry) => entry.build.thumbnail_path && !thumbnailCache.value.has(entry.build.id),
-	);
-	if (buildsNeedingThumbs.length === 0) return;
+	// First, batch load clip thumbnails using the store (it handles caching and deduplication)
+	await thumbnailStore.loadThumbnails(clips.value);
 
-	let hasNew = false;
-	const batchSize = 5;
-	for (let i = 0; i < buildsNeedingThumbs.length; i += batchSize) {
-		const batch = buildsNeedingThumbs.slice(i, i + batchSize);
-		await Promise.all(
-			batch.map(async (entry) => {
-				try {
-					const dataUrl = await invoke<string>("read_file_as_data_url", {
-						filePath: entry.build.thumbnail_path,
-					});
-					thumbnailCache.value.set(entry.build.id, dataUrl);
-					hasNew = true;
-				} catch (err) {
-					console.warn(`[BuiltClipsView] Failed to load thumbnail for build ${entry.build.id}:`, err);
-				}
-			}),
-		);
+	// Then collect and batch load build-specific thumbnails (for builds with custom thumbnails)
+	const buildsToLoad: Array<{ key: string; thumbnailPath: string }> = [];
+	
+	for (const entry of allBuilds.value) {
+		if (entry.build.thumbnail_path && !thumbnailStore.hasBuildThumbnail(entry.build.id)) {
+			buildsToLoad.push({
+				key: entry.build.id,
+				thumbnailPath: entry.build.thumbnail_path,
+			});
+		}
 	}
-	if (hasNew) {
-		thumbnailCache.value = new Map(thumbnailCache.value);
+
+	if (buildsToLoad.length > 0) {
+		await thumbnailStore.loadBuildThumbnails(buildsToLoad);
 	}
 }
 

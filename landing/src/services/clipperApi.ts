@@ -19,7 +19,24 @@ export interface ClipperProfile {
   total_clips_delivered: number
   total_endorsements: number
   total_campaigns_completed: number
-  portfolio_clips?: { id: number; thumbnail_url: string | null; title?: string }[]
+  portfolio_clips?: { id: number; thumbnail_url: string | null; title?: string; video_url?: string }[]
+  timezone?: string | null
+  is_affiliate?: boolean
+  total_views?: number
+  endorsements?: Array<{
+    id: number
+    content: string | null
+    rating: number | null
+    organization?: { id: number; name: string } | null
+    endorsed_by?: { id: number; name: string } | null
+  }>
+  social_accounts?: Array<{
+    platform: string
+    username: string
+    profile_url: string | null
+    profile_image_url: string | null
+    is_verified: boolean
+  }>
 }
 
 export interface LeaderboardEntry {
@@ -136,6 +153,10 @@ export async function listClippers(filters?: DirectoryFilters) {
     ...response,
     profiles: (response.profiles || []).filter(isDirectoryVisibleProfile),
   }
+}
+
+export async function getClipperBySlug(slug: string) {
+  return api.get<{ success: boolean; profile: ClipperProfile; error?: string }>(`/clippers/${slug}`)
 }
 
 export async function getLeaderboard(period: 'weekly' | 'monthly' = 'weekly') {

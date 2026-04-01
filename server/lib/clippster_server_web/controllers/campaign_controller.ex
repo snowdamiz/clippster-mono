@@ -1087,6 +1087,7 @@ defmodule ClippsterServerWeb.CampaignController do
           do: %{
             id: campaign.organization.id,
             name: campaign.organization.name,
+            slug: campaign.organization.slug,
             logo_url: maybe_presign_url(campaign.organization.logo_url)
           },
           else: nil

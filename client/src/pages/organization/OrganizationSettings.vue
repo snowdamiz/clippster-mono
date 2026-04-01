@@ -10,6 +10,18 @@
       <OrganizationBreadcrumb />
     </template>
     <template #actions>
+      <router-link
+        v-if="organization?.slug"
+        :to="`/orgs/${organization.slug}`"
+        class="org-settings__action-btn"
+        style="background: transparent; color: var(--sidebar-text); border: 1px solid var(--sidebar-border); margin-right: .5rem;"
+      >
+        Preview Public Profile
+      </router-link>
+      <button type="button" class="edit-btn" @click="showEditProfileDialog = true">
+        <Pencil class="edit-btn__icon" />
+        Edit Profile
+      </button>
       <button
         v-if="hasChanges"
         type="button"
@@ -23,113 +35,88 @@
       </button>
     </template>
 
-    <div class="org-settings">
-      <!-- Page Heading -->
-      <div class="org-settings__heading">
-        <h1 class="org-settings__title">Configure Organization</h1>
-        <p class="org-settings__subtitle">Update your organization's profile information and manage feature settings</p>
-      </div>
-
-      <!-- Organization Profile Section -->
-      <section class="org-settings__section">
-        <div class="org-settings__section-header">
-          <div class="org-settings__section-header-icon org-settings__section-header-icon--profile">
-            <Building2 />
+    <div class="clipper-profile">
+      <div class="profile-page">
+      <div class="profile-header-card">
+        <div class="profile-header-bg"></div>
+        <div class="profile-header-content">
+          <div class="profile-header-main">
+            <div class="profile-avatar">
+              <img v-if="organization?.logo_url && !logoLoadError" :src="organization.logo_url" class="profile-avatar__img" />
+              <Building2 v-else class="profile-avatar__fallback" />
+            </div>
+            <div class="profile-info">
+              <div class="profile-name-row">
+                <h1 class="profile-name">{{ organization?.name || 'Organization' }}</h1>
+              </div>
+              <p class="profile-bio">{{ editData.bio || editData.description || 'Add your organization info for members and applicants.' }}</p>
+              <div v-if="editData.content_type_tags?.length" class="profile-tags">
+                <span v-for="tag in editData.content_type_tags.slice(0, 8)" :key="tag" class="profile-tag">{{ SPECIALTY_TAGS.find((t) => t.value === tag)?.label || tag }}</span>
+              </div>
+            </div>
           </div>
-          <div class="org-settings__section-header-text">
-            <h2 class="org-settings__section-title">Organization Profile</h2>
-            <p class="org-settings__section-subtitle">Basic information about your organization</p>
+          <div class="profile-stats-grid">
+            <div class="profile-stat-card">
+              <div class="profile-stat-card__icon profile-stat-card__icon--purple"><Megaphone :size="18" /></div>
+              <div class="profile-stat-card__content">
+                <span class="profile-stat-card__value">0</span>
+                <span class="profile-stat-card__label">Campaigns</span>
+              </div>
+            </div>
+            <div class="profile-stat-card">
+              <div class="profile-stat-card__icon profile-stat-card__icon--cyan"><Users :size="18" /></div>
+              <div class="profile-stat-card__content">
+                <span class="profile-stat-card__value">0</span>
+                <span class="profile-stat-card__label">Members</span>
+              </div>
+            </div>
+            <div class="profile-stat-card">
+              <div class="profile-stat-card__icon profile-stat-card__icon--green"><CheckCircle :size="18" /></div>
+              <div class="profile-stat-card__content">
+                <span class="profile-stat-card__value">{{ editData.content_type_tags.length }}</span>
+                <span class="profile-stat-card__label">Content Types</span>
+              </div>
+            </div>
           </div>
         </div>
+      </div>
 
-        <form @submit.prevent="handleUpdateOrganization" class="org-settings__form">
-          <div class="org-settings__form-card">
-            <div class="org-settings__form-row">
-              <div class="org-settings__form-group">
-                <label class="org-settings__form-label">
-                  <Building2 class="org-settings__label-icon" />
-                  Organization Logo
-                </label>
-                <div class="org-settings__logo-row">
-                  <div class="org-settings__logo-preview">
-                    <img
-                      v-if="organization?.logo_url && !logoLoadError"
-                      :src="organization.logo_url"
-                      class="org-settings__logo-img"
-                      @error="logoLoadError = true"
-                    />
-                    <Building2 v-else class="org-settings__logo-placeholder" />
-                    <div v-if="uploadingLogo" class="org-settings__logo-loading">
-                      <Loader2 class="org-settings__logo-spinner" />
-                    </div>
-                  </div>
-                  <div class="org-settings__logo-actions">
-                    <input
-                      ref="logoInputRef"
-                      type="file"
-                      accept="image/jpeg,image/png,image/gif,image/webp"
-                      class="org-settings__file-input"
-                      @change="handleLogoUpload"
-                    />
-                    <button
-                      type="button"
-                      @click="($refs.logoInputRef as HTMLInputElement)?.click()"
-                      :disabled="uploadingLogo"
-                      class="org-settings__upload-btn"
-                    >
-                      <Upload class="org-settings__upload-icon" />
-                      {{ organization?.logo_url ? 'Change Logo' : 'Upload Logo' }}
-                    </button>
-                    <p class="org-settings__logo-hint">JPEG, PNG, GIF, or WebP. Max 5MB.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+      <nav class="tabs-nav">
+        <div class="tabs-container">
+          <button class="tab-button" :class="{ 'tab-button--active': activeTab === 'basic' }" @click="activeTab = 'basic'"><div class="tab-button__icon"><Type /></div><span class="tab-button__label">Basic</span></button>
+          <button class="tab-button" :class="{ 'tab-button--active': activeTab === 'ai' }" @click="activeTab = 'ai'"><div class="tab-button__icon"><Sparkles /></div><span class="tab-button__label">AI</span></button>
+          <button class="tab-button" :class="{ 'tab-button--active': activeTab === 'restrictions' }" @click="activeTab = 'restrictions'"><div class="tab-button__icon"><Shield /></div><span class="tab-button__label">Restrictions</span></button>
+          <button v-if="isOwner" class="tab-button" :class="{ 'tab-button--active': activeTab === 'danger' }" @click="activeTab = 'danger'"><div class="tab-button__icon"><AlertTriangle /></div><span class="tab-button__label">Danger</span></button>
+        </div>
+      </nav>
+      <main class="content">
 
-            <div class="org-settings__form-row">
-              <div class="org-settings__form-group">
-                <label class="org-settings__form-label">
-                  <Type class="org-settings__label-icon" />
-                  Organization Name
-                </label>
-                <input
-                  v-model="editData.name"
-                  type="text"
-                  class="org-settings__form-input"
-                  placeholder="Enter organization name"
-                />
+      <!-- Organization Profile Section -->
+      <section v-show="activeTab === 'basic'" class="org-settings__section">
+        <h3 class="org-settings__clipper-title">Basic Information</h3>
+        <div class="org-settings__form-card">
+          <div class="org-settings__form-row">
+            <div class="org-basic-preview">
+              <div class="org-basic-preview__avatar">
+                <img v-if="organization?.logo_url && !logoLoadError" :src="organization.logo_url" class="org-basic-preview__avatar-img" @error="logoLoadError = true" />
+                <Building2 v-else class="org-basic-preview__avatar-fallback" />
               </div>
-            </div>
-
-            <div class="org-settings__form-row">
-              <div class="org-settings__form-group">
-                <label class="org-settings__form-label">
-                  <FileText class="org-settings__label-icon" />
-                  Description
-                </label>
-                <textarea
-                  v-model="editData.description"
-                  rows="3"
-                  class="org-settings__form-textarea"
-                  placeholder="A brief description of your organization..."
-                ></textarea>
+              <div class="org-basic-preview__info">
+                <div class="org-basic-preview__name">{{ editData.name || 'Organization' }}</div>
+                <div class="org-basic-preview__desc">{{ editData.description || 'No description yet' }}</div>
               </div>
+              <button type="button" class="profile-action-btn profile-action-btn--primary" @click="showEditProfileDialog = true">
+                <Pencil :size="14" />
+                Edit Profile
+              </button>
             </div>
           </div>
-        </form>
+        </div>
       </section>
 
       <!-- AI Features Section -->
-      <section class="org-settings__section">
-        <div class="org-settings__section-header">
-          <div class="org-settings__section-header-icon org-settings__section-header-icon--ai">
-            <Sparkles />
-          </div>
-          <div class="org-settings__section-header-text">
-            <h2 class="org-settings__section-title">AI Features</h2>
-            <p class="org-settings__section-subtitle">Control AI-powered functionality for all members</p>
-          </div>
-        </div>
+      <section v-show="activeTab === 'ai'" class="org-settings__section">
+        <h3 class="org-settings__clipper-title">AI Features</h3>
 
         <div class="org-settings__feature-card" @click="editData.settings.allow_ai = !editData.settings.allow_ai">
           <div class="org-settings__feature-inner">
@@ -163,16 +150,8 @@
       </section>
 
       <!-- Restricted Member Settings Section -->
-      <section class="org-settings__section">
-        <div class="org-settings__section-header">
-          <div class="org-settings__section-header-icon org-settings__section-header-icon--restrictions">
-            <Shield />
-          </div>
-          <div class="org-settings__section-header-text">
-            <h2 class="org-settings__section-title">Restricted Member Settings</h2>
-            <p class="org-settings__section-subtitle">Default permissions for accounts created by your organization</p>
-          </div>
-        </div>
+      <section v-show="activeTab === 'restrictions'" class="org-settings__section">
+        <h3 class="org-settings__clipper-title">Restricted Member Settings</h3>
 
         <div class="org-settings__restrictions-grid">
           <div class="org-settings__restrictions-card">
@@ -340,16 +319,8 @@
       </Transition>
 
       <!-- Danger Zone (Owner Only) -->
-      <section v-if="isOwner" class="org-settings__section org-settings__section--danger">
-        <div class="org-settings__section-header">
-          <div class="org-settings__section-header-icon org-settings__section-header-icon--danger">
-            <AlertTriangle />
-          </div>
-          <div class="org-settings__section-header-text">
-            <h2 class="org-settings__section-title org-settings__section-title--danger">Danger Zone</h2>
-            <p class="org-settings__section-subtitle">Irreversible and destructive actions</p>
-          </div>
-        </div>
+      <section v-if="isOwner" v-show="activeTab === 'danger'" class="org-settings__section org-settings__section--danger">
+        <h3 class="org-settings__clipper-title org-settings__clipper-title--danger">Danger Zone</h3>
 
         <div class="org-settings__danger-card">
           <div class="org-settings__danger-inner">
@@ -371,9 +342,105 @@
           </div>
         </div>
       </section>
+      </main>
+      </div>
     </div>
 
     <!-- Delete Confirmation Modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showEditProfileDialog" class="org-dialog__overlay" @click.self="showEditProfileDialog = false">
+          <Transition name="dialog" appear>
+            <div class="org-dialog">
+              <div class="org-dialog__header">
+                <button class="org-dialog__close" @click="showEditProfileDialog = false" :disabled="saving" title="Close">
+                  <X :size="18" />
+                </button>
+                <div class="org-dialog__icon"><Building2 :size="24" /></div>
+                <h2 class="org-dialog__title">Edit Organization Profile</h2>
+                <p class="org-dialog__subtitle">Update your public organization information</p>
+              </div>
+              <div class="org-dialog__content">
+                <!-- Basic Information Section -->
+                <div class="org-dialog__section">
+                  <h3 class="org-dialog__section-title">Basic Information</h3>
+                  
+                  <div class="org-settings__form-group">
+                    <label class="org-settings__form-label">Organization Logo</label>
+                    <div class="org-settings__logo-row">
+                      <div class="org-settings__logo-preview">
+                        <img v-if="organization?.logo_url && !logoLoadError" :src="organization.logo_url" class="org-settings__logo-img" @error="logoLoadError = true" />
+                        <Building2 v-else class="org-settings__logo-placeholder" />
+                        <div v-if="uploadingLogo" class="org-settings__logo-loading"><Loader2 class="org-settings__logo-spinner" /></div>
+                      </div>
+                      <div class="org-settings__logo-actions">
+                        <input ref="logoInputRef" type="file" accept="image/jpeg,image/png,image/gif,image/webp" class="org-settings__file-input" @change="handleLogoUpload" />
+                        <button type="button" @click="($refs.logoInputRef as HTMLInputElement)?.click()" :disabled="uploadingLogo" class="org-settings__upload-btn">
+                          <Upload class="org-settings__upload-icon" />
+                          {{ organization?.logo_url ? 'Change Logo' : 'Upload Logo' }}
+                        </button>
+                        <p class="org-settings__logo-hint">JPEG, PNG, GIF, or WebP. Max 5MB.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="org-settings__form-group">
+                    <label class="org-settings__form-label">Organization Name</label>
+                    <input v-model="editData.name" type="text" class="org-settings__form-input" placeholder="Enter organization name" />
+                  </div>
+
+                  <div class="org-settings__form-group">
+                    <label class="org-settings__form-label">Bio</label>
+                    <textarea v-model="editData.bio" rows="4" class="org-settings__form-textarea" placeholder="Tell clippers about your organization..." />
+                    <p class="org-settings__form-hint">{{ (editData.bio || '').length }}/500 characters</p>
+                  </div>
+                </div>
+
+                <!-- Contact & Details Section -->
+                <div class="org-dialog__section">
+                  <h3 class="org-dialog__section-title">Contact & Details</h3>
+                  
+                  <div class="org-settings__form-group">
+                    <label class="org-settings__form-label">Website URL</label>
+                    <input v-model="editData.website_url" type="text" class="org-settings__form-input" placeholder="https://yourwebsite.com" />
+                  </div>
+
+                  <div class="org-settings__form-group">
+                    <label class="org-settings__form-label">Public Contact Email</label>
+                    <input v-model="editData.public_contact_email" type="email" class="org-settings__form-input" placeholder="contact@yourorg.com" />
+                  </div>
+
+                  <div class="org-settings__form-group">
+                    <label class="org-settings__form-label">Description</label>
+                    <textarea v-model="editData.description" rows="3" class="org-settings__form-textarea" placeholder="A brief description for internal use..." />
+                  </div>
+                </div>
+
+                <!-- Content Type Section -->
+                <div class="org-dialog__section">
+                  <h3 class="org-dialog__section-title">Content Specialties</h3>
+                  
+                  <div class="org-settings__form-group">
+                    <label class="org-settings__form-label">Content Types</label>
+                    <div class="hw__tags">
+                      <button v-for="tag in SPECIALTY_TAGS" :key="tag.value" type="button" class="hw__tag" :class="{ 'hw__tag--selected': editData.content_type_tags.includes(tag.value) }" @click="toggleArrayTag(tag.value)">{{ tag.label }}</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="org-dialog__footer">
+                <button class="org-dialog__btn org-dialog__btn--secondary" @click="showEditProfileDialog = false" :disabled="saving">Cancel</button>
+                <button class="org-dialog__btn org-dialog__btn--primary" @click="saveAndCloseProfileDialog" :disabled="saving">
+                  <Loader2 v-if="saving" class="org-dialog__btn-spinner" />
+                  {{ saving ? 'Saving...' : 'Save Profile' }}
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
     <Teleport to="body">
       <Transition name="modal">
         <div v-if="showDeleteConfirm" class="org-dialog__overlay" @click.self="showDeleteConfirm = false">
@@ -453,6 +520,7 @@
     Loader2,
     Settings,
     Save,
+    Pencil,
     Type,
     FileText,
     Zap,
@@ -462,10 +530,12 @@
     Archive,
     UserCircle,
     Upload,
+    Megaphone,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import { useOrganization } from '@/composables/useOrganization';
+  import { SPECIALTY_TAGS } from '@/services/clipperProfilesApi';
 
   const { organization, isOwner, updateOrganization, deleteOrganization, uploadLogo } = useOrganization();
 
@@ -476,6 +546,10 @@
   const editData = ref({
     name: '',
     description: '',
+    bio: '',
+    website_url: '',
+    public_contact_email: '',
+    content_type_tags: [] as string[],
     settings: {
       allow_ai: true,
     },
@@ -495,8 +569,10 @@
   const saving = ref(false);
   const saveSuccess = ref(false);
   const showDeleteConfirm = ref(false);
+  const showEditProfileDialog = ref(false);
   const deleteConfirmInput = ref('');
   const deleting = ref(false);
+  const activeTab = ref<'basic' | 'ai' | 'restrictions' | 'danger'>('basic');
 
   // Populate edit form when organization data loads
   watch(
@@ -508,6 +584,10 @@
         editData.value = {
           name: org.name,
           description: org.description || '',
+          bio: org.bio || '',
+          website_url: org.website_url || '',
+          public_contact_email: org.public_contact_email || '',
+          content_type_tags: org.content_type_tags || [],
           settings: {
             allow_ai: orgSettings.allow_ai !== false,
           },
@@ -551,10 +631,21 @@
     return (
       editData.value.name !== organization.value.name ||
       editData.value.description !== (organization.value.description || '') ||
+      editData.value.bio !== (organization.value.bio || '') ||
+      editData.value.website_url !== (organization.value.website_url || '') ||
+      editData.value.public_contact_email !== (organization.value.public_contact_email || '') ||
+      JSON.stringify(editData.value.content_type_tags) !== JSON.stringify(organization.value.content_type_tags || []) ||
       editData.value.settings.allow_ai !== currentAllowAi ||
       restrictionsChanged
     );
   });
+
+  function toggleArrayTag(value: string) {
+    const tags = editData.value.content_type_tags;
+    const idx = tags.indexOf(value);
+    if (idx >= 0) tags.splice(idx, 1);
+    else tags.push(value);
+  }
 
   async function handleUpdateOrganization() {
     if (!hasChanges.value) return;
@@ -571,6 +662,11 @@
         saveSuccess.value = false;
       }, 3000);
     }
+  }
+
+  async function saveAndCloseProfileDialog() {
+    await handleUpdateOrganization();
+    if (!saving.value) showEditProfileDialog.value = false;
   }
 
   function confirmDeleteOrganization() {
@@ -623,15 +719,146 @@
 </script>
 
 <style scoped>
-  /* ===== Container ===== */
-  .org-settings {
+  .clipper-profile {
     width: 100%;
-    max-width: 900px;
-    margin: 0 auto;
-    padding: 1.5rem;
+    min-height: 100%;
+    background: var(--sidebar-bg);
+  }
+
+  .profile-page {
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 0;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+    padding: 1.5rem;
+  }
+
+  .profile-header-card {
+    position: relative;
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+  }
+  .profile-header-bg {
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 120px;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
+    opacity: 0.5;
+  }
+  .profile-header-content {
+    position: relative;
+    padding: 2rem 2rem 1.5rem;
+  }
+  .profile-header-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+  .profile-avatar {
+    width: 96px; height: 96px; border-radius: 20px; overflow: hidden; flex-shrink: 0;
+    background: var(--sidebar-hover); border: 3px solid var(--sidebar-surface); box-shadow: 0 4px 12px rgba(0,0,0,.15);
+  }
+  .profile-avatar__img { width: 100%; height: 100%; object-fit: cover; }
+  .profile-avatar__fallback { width: 100%; height: 100%; padding: 20px; color: var(--sidebar-text-muted); }
+  .profile-info { flex: 1; min-width: 0; }
+  .profile-name-row { display: flex; align-items: center; gap: .75rem; margin-bottom: .5rem; }
+  .profile-name { font-size: 1.75rem; font-weight: 700; color: var(--sidebar-text); margin: 0; letter-spacing: -.03em; line-height: 1.2; }
+  .profile-bio { font-size: .9375rem; color: var(--sidebar-text-muted); margin: 0 0 .75rem; line-height: 1.6; max-width: 600px; }
+  .profile-tags { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .profile-tag { padding: .375rem .625rem; background: rgba(6,182,212,.12); border-radius: 6px; font-size: .6875rem; font-weight: 600; color: var(--sidebar-accent); }
+  .profile-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+  .profile-action-btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+  .profile-action-btn--primary:hover { opacity: 0.9; transform: translateY(-1px); }
+  .edit-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 32px;
+    padding: 0 0.875rem;
+    border-radius: 6px;
+    border: none;
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 150ms ease;
+  }
+  .edit-btn:hover { opacity: 0.9; }
+  .edit-btn__icon { width: 14px; height: 14px; }
+  .org-basic-preview { display: flex; align-items: center; gap: .875rem; }
+  .org-basic-preview__avatar { width: 44px; height: 44px; border-radius: 10px; overflow: hidden; background: var(--sidebar-hover); border: 1px solid var(--sidebar-border); flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .org-basic-preview__avatar-img { width: 100%; height: 100%; object-fit: cover; }
+  .org-basic-preview__avatar-fallback { width: 20px; height: 20px; color: var(--sidebar-text-muted); }
+  .org-basic-preview__info { flex: 1; min-width: 0; }
+  .org-basic-preview__name { font-size: .9375rem; color: var(--sidebar-text); font-weight: 600; }
+  .org-basic-preview__desc { font-size: .75rem; color: var(--sidebar-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .profile-stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1.5rem; }
+  .profile-stat-card { display: flex; align-items: center; gap: 1rem; padding: 1.25rem; background: var(--sidebar-hover); border: 1px solid var(--sidebar-border); border-radius: 12px; transition: all 200ms ease; }
+  .profile-stat-card:hover { border-color: rgba(255, 255, 255, 0.12); transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15); }
+  .profile-stat-card__icon { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 12px; flex-shrink: 0; }
+  .profile-stat-card__icon--purple { background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%); color: #a78bfa; }
+  .profile-stat-card__icon--cyan { background: linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(8, 145, 178, 0.2) 100%); color: #06b6d4; }
+  .profile-stat-card__icon--green { background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%); color: #10b981; }
+  .profile-stat-card__content { display: flex; flex-direction: column; gap: 0.25rem; }
+  .profile-stat-card__value { font-size: 1.75rem; font-weight: 700; color: var(--sidebar-text); letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .profile-stat-card__label { font-size: 0.75rem; color: var(--sidebar-text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  .tabs-nav {
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    padding: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .tabs-container { display: flex; gap: .375rem; overflow-x: auto; scrollbar-width: none; }
+  .tabs-container::-webkit-scrollbar { display: none; }
+  .tab-button {
+    display: flex; align-items: center; gap: .5rem; padding: .75rem 1.125rem; background: transparent;
+    border: none; border-radius: 8px; font-size: .8125rem; font-weight: 600; color: var(--sidebar-text-muted);
+    cursor: pointer; transition: all 180ms ease; white-space: nowrap;
+  }
+  .tab-button:hover:not(.tab-button--active) { background: var(--sidebar-hover); color: var(--sidebar-text); }
+  .tab-button--active {
+    background: linear-gradient(135deg, rgba(6,182,212,.15) 0%, rgba(139,92,246,.15) 100%);
+    color: var(--sidebar-accent);
+    box-shadow: 0 2px 8px rgba(6,182,212,.2);
+  }
+  .tab-button__icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; }
+  .tab-button__icon svg { width: 100%; height: 100%; }
+
+  .content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    padding-bottom: 4rem;
+  }
+
+  @media (max-width: 640px) {
+    .profile-header-main { flex-direction: column; align-items: center; text-align: center; }
+    .profile-stats-grid { grid-template-columns: 1fr; }
+    .tab-button__label { display: none; }
+    .tab-button { padding: .75rem; }
   }
 
   /* ===== Action Button ===== */
@@ -669,31 +896,23 @@
     animation: spin 0.8s linear infinite;
   }
 
-  /* ===== Page Heading ===== */
-  .org-settings__heading {
-    margin-bottom: 0.5rem;
-  }
-
-  .org-settings__title {
-    font-size: 1.5rem;
-    font-weight: 700;
+  .org-settings__clipper-title {
+    font-size: 1.125rem;
+    font-weight: 600;
     color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
-    letter-spacing: -0.025em;
+    margin: 0;
+    letter-spacing: -0.01em;
   }
 
-  .org-settings__subtitle {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    line-height: 1.5;
+  .org-settings__clipper-title--danger {
+    color: #f87171;
   }
 
   /* ===== Section ===== */
   .org-settings__section {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.875rem;
   }
 
   .org-settings__section-header {
@@ -759,7 +978,7 @@
   /* ===== Form Card ===== */
   .org-settings__form-card {
     background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
+    border: 1px solid color-mix(in srgb, var(--sidebar-border) 75%, transparent);
     border-radius: 12px;
     overflow: hidden;
   }
@@ -925,7 +1144,7 @@
   /* ===== Feature Card ===== */
   .org-settings__feature-card {
     background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
+    border: 1px solid color-mix(in srgb, var(--sidebar-border) 75%, transparent);
     border-radius: 12px;
     cursor: pointer;
     transition: all 200ms ease;
@@ -1265,6 +1484,28 @@
     padding: 0 1.5rem;
   }
 
+  .org-dialog__section {
+    margin-bottom: 2rem;
+  }
+
+  .org-dialog__section:last-child {
+    margin-bottom: 0;
+  }
+
+  .org-dialog__section-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 1rem;
+    letter-spacing: -0.01em;
+  }
+
+  .org-settings__form-hint {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.375rem 0 0;
+  }
+
   .org-dialog__preview-card {
     display: flex;
     align-items: center;
@@ -1385,6 +1626,15 @@
     border-color: rgba(255, 255, 255, 0.1);
   }
 
+  .org-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .org-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
   .org-dialog__btn--danger {
     background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
     color: white;
@@ -1461,7 +1711,7 @@
 
   .org-settings__restrictions-card {
     background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
+    border: 1px solid color-mix(in srgb, var(--sidebar-border) 75%, transparent);
     border-radius: 12px;
     padding: 1.25rem;
     display: flex;
@@ -1512,6 +1762,35 @@
     font-size: 0.6875rem;
     color: var(--sidebar-text-muted);
     line-height: 1.4;
+  }
+
+  .hw__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .hw__tag {
+    border: 1px solid var(--sidebar-border);
+    background: color-mix(in srgb, var(--sidebar-hover) 70%, transparent);
+    color: var(--sidebar-text-muted);
+    border-radius: 999px;
+    font-size: 0.75rem;
+    line-height: 1;
+    padding: 0.45rem 0.7rem;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .hw__tag:hover {
+    background: var(--sidebar-hover);
+    border-color: color-mix(in srgb, var(--sidebar-text-muted) 45%, var(--sidebar-border));
+  }
+
+  .hw__tag--selected {
+    background: rgba(6, 182, 212, 0.16);
+    border-color: rgba(6, 182, 212, 0.45);
+    color: var(--sidebar-accent);
   }
 
   @keyframes spin {

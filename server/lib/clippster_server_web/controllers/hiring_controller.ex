@@ -373,6 +373,7 @@ defmodule ClippsterServerWeb.HiringController do
           do: %{
             id: post.organization.id,
             name: post.organization.name,
+            slug: post.organization.slug,
             logo_url: post.organization.logo_url
           },
           else: nil

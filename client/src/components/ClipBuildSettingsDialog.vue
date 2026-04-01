@@ -309,59 +309,9 @@
                       </Transition>
                     </div>
 
-                    <!-- Subtitle Adjustments -->
-                    <div
-                      v-if="subtitleSettings?.enabled && selectedRatios.length > 0"
-                      class="build-dialog__subtitle-section"
-                      :class="{ 'build-dialog__subtitle-section--with-border': hasPortraitRatio }"
-                    >
-                      <div class="build-dialog__section-header">
-                        <Type class="build-dialog__section-icon" />
-                        <h4 class="build-dialog__section-title">Subtitle Positioning</h4>
-                      </div>
-
-                      <p class="build-dialog__subtitle-hint">
-                        Fine-tune subtitle size and position for each aspect ratio
-                      </p>
-
-                      <div class="build-dialog__subtitle-list">
-                        <button
-                          v-for="ratio in selectedRatios"
-                          :key="ratio"
-                          @click="openSubtitleEditorForRatio(ratio)"
-                          class="build-dialog__ratio-config"
-                          :class="{ 'build-dialog__ratio-config--configured': hasSubtitleOverride(ratio) }"
-                        >
-                          <div class="build-dialog__ratio-config-left">
-                            <div
-                              class="build-dialog__ratio-preview"
-                              :class="{ 'build-dialog__ratio-preview--configured': hasSubtitleOverride(ratio) }"
-                              :style="{
-                                aspectRatio: ratio.replace(':', '/'),
-                                height: ratio === '1:1' ? '1.5rem' : '2rem',
-                                width: ratio === '1:1' ? '1.5rem' : 'auto',
-                              }"
-                            ></div>
-                            <span class="build-dialog__ratio-label">{{ ratio }}</span>
-                          </div>
-                          <div class="build-dialog__ratio-config-right">
-                            <span
-                              v-if="hasSubtitleOverride(ratio)"
-                              class="build-dialog__ratio-status build-dialog__ratio-status--configured"
-                            >
-                              ✓ {{ getSubtitleOverrideForRatio(ratio).fontSize }}px @
-                              {{ getSubtitleOverrideForRatio(ratio).positionPercentage }}%
-                            </span>
-                            <span v-else class="build-dialog__ratio-status">Click to adjust</span>
-                            <ChevronRightIcon class="build-dialog__ratio-chevron" />
-                          </div>
-                        </button>
-                      </div>
-                    </div>
-
                     <!-- Empty state when no content to show -->
                     <div
-                      v-if="!hasPortraitRatio && !(subtitleSettings?.enabled && selectedRatios.length > 0)"
+                      v-if="!hasPortraitRatio"
                       class="build-dialog__empty-state"
                     >
                       <p class="build-dialog__empty-text">No framing options needed for your selected formats.</p>
@@ -854,7 +804,13 @@
       :watermark-settings="watermarkSettings"
       :layout-overlays="vodPresetConfig?.layoutOverlays"
       :overlay-preview-urls="overlayPreviewUrls"
+      :subtitle-settings="effectiveSubtitleSettings"
+      :subtitle-position-override="getSubtitlePositionForRatio(editingAspectRatio)"
+      :transcript-words="transcriptWords"
+      :transcript-segments="transcriptSegments"
       @confirm="onManualConfigConfirm"
+      @subtitlePositionChange="onSubtitlePositionChange"
+      @subtitleSettingsChange="onSubtitleSettingsChange"
     />
 
     <!-- Subtitle Adjustment Dialog -->
@@ -873,7 +829,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+  import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import {
     WrenchIcon,
     CheckIcon,
@@ -899,6 +855,7 @@
   import { resolveOverlayImagePath } from '@/services/database/watermarks';
   import { useAuthStore } from '@/stores/auth';
   import { useFreeTierLimits } from '@/composables/useFreeTierLimits';
+  import { useTranscriptData } from '@/composables/useTranscriptData';
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
   import SubtitleAdjustmentDialog from './SubtitleAdjustmentDialog.vue';
   import {
@@ -1077,10 +1034,71 @@
   // Overlay preview state for ManualPOIEditor
   const overlayPreviewUrls = ref<Record<string, string>>({});
 
+  // Use transcript data composable for the clip's project
+  const clipProjectId = computed(() => props.clip?.project_id || null);
+  const { transcriptData } = useTranscriptData(clipProjectId);
+
+  // Get transcript words and segments for the current clip (filtered and adjusted)
+  const transcriptWords = computed(() => {
+    if (!transcriptData.value?.words || !props.clip) return [];
+    
+    const clipStart = props.clip.current_version_start_time || 0;
+    const clipEnd = props.clip.current_version_end_time || clipStart + (props.clip.duration || 0);
+    
+    // Filter and adjust word timestamps to be relative to clip start
+    return transcriptData.value.words
+      .filter(w => w.start >= clipStart && w.end <= clipEnd)
+      .map(w => ({
+        ...w,
+        start: w.start - clipStart,
+        end: w.end - clipStart
+      }));
+  });
+
+  const transcriptSegments = computed(() => {
+    if (!transcriptData.value?.whisperSegments || !props.clip) return [];
+    
+    const clipStart = props.clip.current_version_start_time || 0;
+    const clipEnd = props.clip.current_version_end_time || clipStart + (props.clip.duration || 0);
+    
+    // Filter and adjust segment timestamps to be relative to clip start
+    return transcriptData.value.whisperSegments
+      .filter(s => s.start >= clipStart && s.end <= clipEnd)
+      .map(s => ({
+        ...s,
+        start: s.start - clipStart,
+        end: s.end - clipStart,
+        words: s.words?.map(w => ({
+          ...w,
+          start: w.start - clipStart,
+          end: w.end - clipStart
+        }))
+      }));
+  });
+
   // Subtitle override state - stores per-ratio customizations
   const subtitleOverrides = ref<SubtitleOverrides>({});
   const showSubtitleAdjustmentDialog = ref(false);
   const editingSubtitleRatio = ref<string>('16:9');
+  
+  // Local mutable copy of subtitle settings (can be updated from ManualPOIEditor)
+  const localSubtitleSettings = ref<SubtitleSettings | null>(null);
+  
+  // Initialize and sync local subtitle settings from prop
+  watch(() => props.subtitleSettings, (settings) => {
+    if (settings) {
+      // Always sync from prop to ensure we have latest data
+      localSubtitleSettings.value = { ...settings };
+      console.log('[ClipBuildSettingsDialog] Synced local subtitle settings from prop:', {
+        animationStyle: localSubtitleSettings.value.animationStyle,
+        border1Width: localSubtitleSettings.value.border1Width,
+        border2Width: localSubtitleSettings.value.border2Width
+      });
+    }
+  }, { immediate: true, deep: true });
+  
+  // Use local settings if available, otherwise fall back to prop
+  const effectiveSubtitleSettings = computed(() => localSubtitleSettings.value || props.subtitleSettings);
 
   // Clip timing for video preview
   const clipStartTime = computed(() => props.clip?.current_version_start_time || 0);
@@ -1094,7 +1112,7 @@
 
   // Check if subtitles need configuration
   const hasSubtitlesEnabled = computed(() => {
-    return props.subtitleSettings?.enabled && selectedRatios.value.length > 0;
+    return effectiveSubtitleSettings.value?.enabled && selectedRatios.value.length > 0;
   });
 
   // Visible steps (framing step shown when portrait ratios selected OR subtitles enabled)
@@ -1194,12 +1212,18 @@
   }
 
   // Open POI editor for a specific ratio
-  function openPOIEditorForRatio(ratio: string) {
+  async function openPOIEditorForRatio(ratio: string) {
     editingAspectRatio.value = ratio;
     const config = getConfigForRatio(ratio);
     console.log('[ClipBuildSettingsDialog] Opening POI editor for ratio:', ratio);
     console.log('[ClipBuildSettingsDialog] Config for ratio:', config);
     console.log('[ClipBuildSettingsDialog] All manualFramingConfigs:', manualFramingConfigs.value);
+    
+    // Ensure video path is loaded before opening POI editor
+    if (!videoPath.value) {
+      await loadVideoFrame();
+    }
+    
     showManualPOIEditor.value = true;
   }
   const introButtonRef = ref<HTMLElement | null>(null);
@@ -1370,14 +1394,33 @@
     }
     // Return defaults from project subtitle settings
     return {
-      fontSize: props.subtitleSettings?.fontSize ?? 32,
-      positionPercentage: props.subtitleSettings?.positionPercentage ?? 85,
+      fontSize: effectiveSubtitleSettings.value?.fontSize ?? 32,
+      positionPercentage: effectiveSubtitleSettings.value?.positionPercentage ?? 85,
     };
   }
 
   // Check if a ratio has custom subtitle overrides
   function hasSubtitleOverride(ratio: string): boolean {
     return !!subtitleOverrides.value[ratio as keyof SubtitleOverrides];
+  }
+
+  // Get subtitle position for POI editor (returns position object)
+  function getSubtitlePositionForRatio(ratio: string): { x: number; y: number; width?: number } {
+    const override = subtitleOverrides.value[ratio as keyof SubtitleOverrides];
+    if (override?.position) {
+      return {
+        x: override.position.x,
+        y: override.position.y,
+        width: override.maxWidth,
+      };
+    }
+    
+    // Return defaults
+    return {
+      x: 50,
+      y: 85,
+      width: 80,
+    };
   }
 
   // Open subtitle adjustment dialog for a specific ratio
@@ -1393,7 +1436,131 @@
       ...subtitleOverrides.value,
       [ratio]: override,
     };
-    console.log('[BuildSettings] Subtitle override updated for', ratio, ':', override);
+  }
+
+  // Handle subtitle position change from POI editor (also carries optional presetId for per-ratio style)
+  function onSubtitlePositionChange(position: { x: number; y: number; width?: number; presetId?: string }) {
+    const ratio = editingAspectRatio.value;
+    const existingOverride = subtitleOverrides.value[ratio as keyof SubtitleOverrides] || {
+      fontSize: effectiveSubtitleSettings.value?.fontSize ?? 32,
+      positionPercentage: 85,
+      position: { x: 50, y: 85 },
+      maxWidth: 80,
+    };
+
+    subtitleOverrides.value = {
+      ...subtitleOverrides.value,
+      [ratio]: {
+        ...existingOverride,
+        position: { x: position.x, y: position.y },
+        maxWidth: position.width ?? existingOverride.maxWidth,
+        positionPercentage: position.y,
+        ...(position.presetId ? { presetId: position.presetId } : {}),
+      },
+    };
+  }
+
+  // Handle subtitle settings change from POI editor (animation style, colors, borders, etc.)
+  async function onSubtitleSettingsChange(settings: SubtitleSettings) {
+    console.log('[ClipBuildSettingsDialog] onSubtitleSettingsChange called:', {
+      animationStyle: settings.animationStyle,
+      border1Width: settings.border1Width,
+      border2Width: settings.border2Width,
+      highlightColor: settings.highlightColor,
+      fontSize: settings.fontSize,
+      multiColorEnabled: settings.multiColorEnabled,
+      selectedPresetId: settings.selectedPresetId,
+      ratio: editingAspectRatio.value
+    });
+    
+    // Update the local subtitle settings
+    localSubtitleSettings.value = { ...settings };
+    
+    // Update the override for this specific ratio
+    const ratio = editingAspectRatio.value;
+    const existingOverride = subtitleOverrides.value[ratio as keyof SubtitleOverrides] || {};
+    
+    // Store ALL visual properties that changed so Rust can apply them via per_ratio_override JSON
+    // The Rust code reads these fields from the JSON even though TypeScript SubtitleOverride doesn't define them
+    subtitleOverrides.value = {
+      ...subtitleOverrides.value,
+      [ratio]: {
+        ...existingOverride,
+        // Standard SubtitleOverride fields
+        fontSize: settings.fontSize,
+        positionPercentage: settings.positionPercentage,
+        maxWidth: settings.maxWidth,
+        presetId: settings.selectedPresetId || undefined,
+        // Extended fields for visual styling (read by Rust generate_ass_file)
+        animationStyle: settings.animationStyle,
+        textColor: settings.textColor,
+        fontFamily: settings.fontFamily,
+        fontWeight: settings.fontWeight,
+        border1Width: settings.border1Width,
+        border1Color: settings.border1Color,
+        border2Width: settings.border2Width,
+        border2Color: settings.border2Color,
+        highlightColor: settings.highlightColor,
+        multiColorEnabled: settings.multiColorEnabled,
+        colorPalette: settings.colorPalette,
+        multiColorMode: settings.multiColorMode,
+        shadowOffsetX: settings.shadowOffsetX,
+        shadowOffsetY: settings.shadowOffsetY,
+        shadowBlur: settings.shadowBlur,
+        shadowColor: settings.shadowColor,
+        backgroundColor: settings.backgroundColor,
+        backgroundEnabled: settings.backgroundEnabled,
+      } as any, // Cast to any since we're extending SubtitleOverride with extra fields
+    };
+    
+    // Save per-ratio override to database (don't overwrite base settings!)
+    if (props.clip?.id) {
+      try {
+        const { getClip, saveSubtitleSettings } = await import('@/services/database/clips');
+        
+        // Load current clip data from database to get existing subtitle_settings
+        const dbClip = await getClip(props.clip.id);
+        let currentSettings: any = null;
+        
+        if (dbClip?.subtitle_settings) {
+          currentSettings = typeof dbClip.subtitle_settings === 'string' 
+            ? JSON.parse(dbClip.subtitle_settings)
+            : dbClip.subtitle_settings;
+        }
+        
+        console.log('[ClipBuildSettingsDialog] Current settings from DB:', {
+          hasSettings: !!currentSettings,
+          baseAnimationStyle: currentSettings?.animationStyle,
+          hasPerRatioConfigs: !!currentSettings?.perRatioConfigs,
+          existingRatios: currentSettings?.perRatioConfigs ? Object.keys(currentSettings.perRatioConfigs) : []
+        });
+        
+        // Build perRatioConfigs by merging existing with new overrides
+        const perRatioConfigs: Record<string, any> = {
+          ...(currentSettings?.perRatioConfigs || {}),
+          ...subtitleOverrides.value,
+        };
+        
+        // If we have current settings, use them as base; otherwise use the incoming settings
+        const baseSettings = currentSettings || settings;
+        
+        const settingsToSave = {
+          ...baseSettings,
+          perRatioConfigs: Object.keys(perRatioConfigs).length > 0 ? perRatioConfigs : undefined,
+        };
+        
+        await saveSubtitleSettings(props.clip.id, settingsToSave);
+        console.log('[ClipBuildSettingsDialog] Saved per-ratio subtitle override to database:', {
+          clipId: props.clip.id,
+          ratio,
+          presetId: settings.selectedPresetId,
+          animationStyle: settings.animationStyle,
+          perRatioConfigKeys: Object.keys(perRatioConfigs),
+        });
+      } catch (error) {
+        console.error('[ClipBuildSettingsDialog] Failed to save subtitle settings:', error);
+      }
+    }
   }
 
   // Load a frame from the video for the POI editor preview
@@ -1510,7 +1677,7 @@
     const minDropdownHeight = 80; // minimum usable height
     const viewportHeight = window.innerHeight;
     const viewportWidth = window.innerWidth;
-    const spacing = 4;
+    const spacing = 8;
 
     // Calculate available space
     const spaceBelow = viewportHeight - rect.bottom - spacing;
@@ -1519,13 +1686,14 @@
     let top: string;
     let maxHeight: string;
 
-    // Prefer showing below, but switch to above if not enough space below and more space above
-    const showAbove = spaceBelow < minDropdownHeight && spaceAbove > spaceBelow;
+    // Show above if there's not enough space below for at least 150px (enough for ~3 items)
+    // OR if there's more space above than below
+    const showAbove = spaceBelow < 150 || (spaceBelow < maxDropdownHeight && spaceAbove > spaceBelow);
 
     if (showAbove) {
       // Show above the button
       const availableHeight = Math.min(maxDropdownHeight, spaceAbove);
-      maxHeight = `${availableHeight}px`;
+      maxHeight = `${Math.max(availableHeight, minDropdownHeight)}px`;
       top = `${rect.top - availableHeight - spacing}px`;
     } else {
       // Show below the button
@@ -1556,19 +1724,57 @@
     };
   }
 
-  function toggleIntroDropdown() {
-    if (introButtonRef.value) {
-      introDropdownPosition.value = calculateDropdownPosition(introButtonRef.value);
+  async function toggleIntroDropdown() {
+    console.log('[ClipBuildSettingsDialog] toggleIntroDropdown called');
+    console.log('[ClipBuildSettingsDialog] hasOrgOrCampaignSelected:', hasOrgOrCampaignSelected.value);
+    console.log('[ClipBuildSettingsDialog] intros.value.length:', intros.value.length);
+    
+    // Wait for next tick to ensure button ref is available after template renders
+    await nextTick();
+    
+    if (!introButtonRef.value) {
+      console.warn('[ClipBuildSettingsDialog] Intro button ref not available');
+      return;
     }
+    
+    console.log('[ClipBuildSettingsDialog] Calculating intro dropdown position...');
+    introDropdownPosition.value = calculateDropdownPosition(introButtonRef.value);
+    console.log('[ClipBuildSettingsDialog] Intro dropdown position:', {
+      top: introDropdownPosition.value.top,
+      left: introDropdownPosition.value.left,
+      width: introDropdownPosition.value.width,
+      maxHeight: introDropdownPosition.value.maxHeight
+    });
+    
     showIntroDropdown.value = !showIntroDropdown.value;
+    console.log('[ClipBuildSettingsDialog] showIntroDropdown.value:', showIntroDropdown.value);
     showOutroDropdown.value = false;
   }
 
-  function toggleOutroDropdown() {
-    if (outroButtonRef.value) {
-      outroDropdownPosition.value = calculateDropdownPosition(outroButtonRef.value);
+  async function toggleOutroDropdown() {
+    console.log('[ClipBuildSettingsDialog] toggleOutroDropdown called');
+    console.log('[ClipBuildSettingsDialog] hasOrgOrCampaignSelected:', hasOrgOrCampaignSelected.value);
+    console.log('[ClipBuildSettingsDialog] outros.value.length:', outros.value.length);
+    
+    // Wait for next tick to ensure button ref is available after template renders
+    await nextTick();
+    
+    if (!outroButtonRef.value) {
+      console.warn('[ClipBuildSettingsDialog] Outro button ref not available');
+      return;
     }
+    
+    console.log('[ClipBuildSettingsDialog] Calculating outro dropdown position...');
+    outroDropdownPosition.value = calculateDropdownPosition(outroButtonRef.value);
+    console.log('[ClipBuildSettingsDialog] Outro dropdown position:', {
+      top: outroDropdownPosition.value.top,
+      left: outroDropdownPosition.value.left,
+      width: outroDropdownPosition.value.width,
+      maxHeight: outroDropdownPosition.value.maxHeight
+    });
+    
     showOutroDropdown.value = !showOutroDropdown.value;
+    console.log('[ClipBuildSettingsDialog] showOutroDropdown.value:', showOutroDropdown.value);
     showIntroDropdown.value = false;
   }
 
@@ -1843,7 +2049,15 @@
   const hasOrgOrCampaignSelected = computed(() => {
     const hasSelectedOrg = availableOrgs.value.some(org => org.selected);
     const hasSelectedCampaign = availableCampaignSelections.value.some(c => c.selected);
-    return hasSelectedOrg || hasSelectedCampaign;
+    const result = hasSelectedOrg || hasSelectedCampaign;
+    console.log('[ClipBuildSettingsDialog] hasOrgOrCampaignSelected computed:', {
+      hasSelectedOrg,
+      hasSelectedCampaign,
+      result,
+      availableOrgs: availableOrgs.value.map(o => ({ name: o.profile.name, selected: o.selected })),
+      availableCampaigns: availableCampaignSelections.value.map(c => ({ title: c.campaign.title, selected: c.selected }))
+    });
+    return result;
   });
   
   // Get total number of builds that will be created
@@ -2166,6 +2380,7 @@
     color: var(--sidebar-text-muted);
     cursor: pointer;
     transition: all 150ms ease;
+    z-index: 10;
   }
 
   .build-dialog__close:hover {
@@ -3210,7 +3425,7 @@
     border-radius: 8px;
     padding: 0.25rem;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-    z-index: 9999;
+    z-index: 10001;
     overflow-y: auto;
   }
 

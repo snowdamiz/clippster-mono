@@ -237,6 +237,8 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
           current_version_change_type: row.current_version_change_type,
           current_version_created_at: row.current_version_created_at,
           current_version_segments: [], // Will be loaded separately
+          subtitle_enabled: row.subtitle_enabled,
+          subtitle_preset_id: row.subtitle_preset_id,
         };
       });
 

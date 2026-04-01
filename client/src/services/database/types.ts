@@ -119,6 +119,13 @@ export interface Clip {
   detection_session_id: string | null;
   // Campaign integration
   campaign_id: number | null;
+  // Subtitle settings
+  subtitle_enabled?: number;
+  subtitle_preset_id?: string | null;
+  subtitle_position_x?: number | null;
+  subtitle_position_y?: number | null;
+  subtitle_position_width?: number | null;
+  subtitle_settings?: string | null; // JSON string of full subtitle settings
   created_at: number;
   updated_at: number;
 }
@@ -316,6 +323,12 @@ export interface ClipWithVersion extends Clip {
   current_version_segments?: ClipSegment[];
   // Multiple builds support
   builds?: ClipBuild[];
+  // Subtitle settings
+  subtitle_enabled?: number;
+  subtitle_preset_id?: string;
+  subtitle_position_x?: number;
+  subtitle_position_y?: number;
+  subtitle_position_width?: number;
 }
 
 // Clip with version data plus segment (child project) info for folder-level view

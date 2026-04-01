@@ -295,7 +295,9 @@ defmodule ClippsterServer.Subscriptions do
   # ============================================================================
 
   @doc """
-  Cancels a subscription. Access continues until end_date.
+  Cancels a subscription (user-initiated).
+  IMMEDIATELY cancels billing in Stripe to prevent future charges.
+  User retains access until end_date.
   """
   def cancel_subscription(user_id) do
     Repo.transaction(fn ->
@@ -305,12 +307,12 @@ defmodule ClippsterServer.Subscriptions do
         Repo.rollback(:not_active)
       end
 
-      # Cancel in Stripe if it's a Stripe subscription
+      # IMMEDIATELY cancel in Stripe to stop all future charges
       if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
-        case Stripe.Subscription.update(user.stripe_subscription_id, %{cancel_at_period_end: true}) do
+        case Stripe.Subscription.cancel(user.stripe_subscription_id) do
           {:ok, _} ->
             IO.puts(
-              "[Subscriptions] Cancelled Stripe subscription #{user.stripe_subscription_id} for user #{user_id}"
+              "[Subscriptions] IMMEDIATELY cancelled Stripe subscription #{user.stripe_subscription_id} for user #{user_id} - no future charges"
             )
 
           {:error, %Stripe.Error{message: message}} ->
@@ -343,6 +345,65 @@ defmodule ClippsterServer.Subscriptions do
 
       IO.puts(
         "[Subscriptions] Cancelled subscription for user #{user_id}, access until #{user.subscription_end_date}"
+      )
+
+      updated_user
+    end)
+  end
+
+  @doc """
+  Admin-initiated immediate cancellation.
+  IMMEDIATELY cancels the subscription in Stripe (stops all future charges).
+  User optionally retains access until period end based on database end_date.
+  """
+  def admin_cancel_subscription(user_id) do
+    Repo.transaction(fn ->
+      user = Repo.get!(User, user_id)
+
+      unless user.subscription_status in ["active", "cancelled"] do
+        Repo.rollback(:not_active)
+      end
+
+      # IMMEDIATELY cancel in Stripe - no more charges
+      if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
+        case Stripe.Subscription.cancel(user.stripe_subscription_id) do
+          {:ok, _} ->
+            IO.puts(
+              "[Subscriptions] ADMIN: IMMEDIATELY cancelled Stripe subscription #{user.stripe_subscription_id} for user #{user_id} - no future charges"
+            )
+
+          {:error, %Stripe.Error{message: message}} ->
+            IO.puts(
+              "[Subscriptions] ADMIN: Failed to cancel Stripe subscription for user #{user_id}: #{message}"
+            )
+            # For admin cancellations, we should rollback if Stripe fails
+            # to ensure database doesn't get out of sync
+            Repo.rollback({:stripe_error, message})
+
+          {:error, reason} ->
+            IO.puts(
+              "[Subscriptions] ADMIN: Failed to cancel Stripe subscription for user #{user_id}: #{inspect(reason)}"
+            )
+            Repo.rollback({:stripe_error, reason})
+        end
+      end
+
+      # Update user status to cancelled
+      {:ok, updated_user} =
+        user
+        |> User.subscription_changeset(%{
+          subscription_status: "cancelled"
+        })
+        |> Repo.update()
+
+      # Update active subscription record
+      Subscription
+      |> where([s], s.user_id == ^user_id)
+      |> where([s], s.status == "active")
+      |> Repo.update_all(set: [status: "cancelled"])
+
+      IO.puts(
+        "[Subscriptions] ADMIN: Cancelled subscription for user #{user_id}"
       )
 
       updated_user

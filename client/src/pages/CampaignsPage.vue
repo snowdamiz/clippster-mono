@@ -110,7 +110,12 @@
                     <Sparkles class="campaign-card__org-icon" />
                     <span class="campaign-card__org-name">Clippster Campaign</span>
                   </div>
-                  <div v-else-if="campaign.organization" class="campaign-card__org-badge">
+                  <router-link
+                    v-else-if="campaign.organization"
+                    :to="campaign.organization.slug ? `/orgs/${campaign.organization.slug}` : '#'"
+                    class="campaign-card__org-badge"
+                    @click.stop
+                  >
                     <img
                       v-if="campaign.organization.logo_url"
                       :src="campaign.organization.logo_url"
@@ -118,7 +123,7 @@
                     />
                     <Building2 v-else class="campaign-card__org-icon" />
                     <span class="campaign-card__org-name">{{ campaign.organization.name }}</span>
-                  </div>
+                  </router-link>
 
                   <!-- CPM Badge -->
                   <div class="campaign-card__cpm-badge">

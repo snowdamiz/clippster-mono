@@ -1095,27 +1095,14 @@ pub async fn build_single_segment_clip_with_settings(
         if let Some(sub_path) = subtitle_path {
             println!("[Rust] Burning subtitles with hardware acceleration...");
 
-            // Get fonts directory
-            let fonts_dir_for_burn = get_fonts_dir(app).ok();
-
             let sub_arg = sub_path
                 .to_string_lossy()
                 .replace("\\", "/")
                 .replace(":", "\\:");
 
-            // Build ass filter with fontsdir parameter
-            let vf_arg = if let Some(fdir) = fonts_dir_for_burn {
-                let fonts_dir_str = fdir
-                    .to_string_lossy()
-                    .replace("\\", "/")
-                    .replace(":", "\\:");
-                format!(
-                    "format=rgb24,ass='{}':fontsdir='{}'",
-                    sub_arg, fonts_dir_str
-                )
-            } else {
-                format!("format=rgb24,ass='{}'", sub_arg)
-            };
+            // Build ass filter without fontsdir parameter to avoid path escaping issues
+            // libass will use system fonts by default
+            let vf_arg = format!("format=rgb24,ass='{}'", sub_arg);
 
             // Set fontconfig path for FFmpeg to find our custom fonts
             let fontconfig_path = paths.temp.join("fonts.conf");
@@ -1772,28 +1759,15 @@ pub async fn build_multi_segment_clip_with_settings(
     if let Some(sub_path) = subtitle_path {
         println!("[Rust] Burning subtitles with hardware acceleration...");
 
-        // Get fonts directory for multi-segment path
-        let fonts_dir_for_burn = get_fonts_dir(app).ok();
-
         let sub_arg = sub_path
             .to_string_lossy()
             .replace("\\", "/")
             .replace(":", "\\:");
 
-        // Build ass filter with fontsdir parameter
+        // Build ass filter without fontsdir parameter to avoid path escaping issues
         // Force RGB24 for accurate subtitle color rendering
-        let vf_arg = if let Some(fdir) = fonts_dir_for_burn {
-            let fonts_dir_str = fdir
-                .to_string_lossy()
-                .replace("\\", "/")
-                .replace(":", "\\:");
-            format!(
-                "format=rgb24,ass='{}':fontsdir='{}'",
-                sub_arg, fonts_dir_str
-            )
-        } else {
-            format!("format=rgb24,ass='{}'", sub_arg)
-        };
+        // libass will use system fonts by default
+        let vf_arg = format!("format=rgb24,ass='{}'", sub_arg);
 
         // Set fontconfig path for FFmpeg to find our custom fonts
         let fontconfig_path = paths.temp.join("fonts.conf");
@@ -1971,8 +1945,10 @@ pub async fn prepare_intro_outro_for_concat(
 
     // Build scale + pad filter to fit intro/outro within target dimensions
     // This maintains aspect ratio and adds black bars if needed (letterbox/pillarbox)
+    // Use trunc(iw/2)*2 to force even dimensions — scale with force_original_aspect_ratio=decrease
+    // can round up by 1px, causing pad to fail with "padded dimensions cannot be smaller than input"
     let scale_pad_filter = format!(
-        "scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black",
+        "scale={}:{}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black",
         crop_w, crop_h, crop_w, crop_h
     );
 
@@ -3903,6 +3879,9 @@ async fn burn_subtitles_to_video(
         .to_string_lossy()
         .replace("\\", "/")
         .replace(":", "\\:");
+    
+    // Build ass filter without fontsdir parameter to avoid path escaping issues
+    // libass will use system fonts by default
     let vf_arg = format!("format=rgb24,ass='{}'", sub_arg);
 
     let paths = crate::storage::init_storage_dirs()

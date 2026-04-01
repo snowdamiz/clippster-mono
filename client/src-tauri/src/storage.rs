@@ -484,7 +484,6 @@ pub async fn generate_thumbnail(
     video_path: String,
 ) -> Result<String, String> {
     use std::path::Path;
-    use tauri_plugin_shell::ShellExt;
 
     let video = Path::new(&video_path);
 
@@ -512,12 +511,11 @@ pub async fn generate_thumbnail(
     let thumbnail_filename = format!("{}_{}_thumb.jpg", parent_dir, video_stem);
     let thumbnail_path = paths.thumbnails.join(&thumbnail_filename);
 
-    // Use ffmpeg sidecar to generate thumbnail at 1 second mark
-    let command = app
-        .shell()
-        .sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
+    // Use ffmpeg with hidden console window on Windows
+    let thumbnail_path_str = thumbnail_path.to_str().ok_or("Invalid thumbnail path")?;
+    let output = crate::ffmpeg_sidecar::run_ffmpeg(
+        &app,
+        &[
             "-nostdin",
             "-hwaccel",
             "auto",
@@ -530,13 +528,10 @@ pub async fn generate_thumbnail(
             "-vf",
             "scale=320:-1",
             "-y",
-            thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
-        ]);
-
-    let output = command
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+            thumbnail_path_str,
+        ],
+    )
+    .await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -556,7 +551,6 @@ pub async fn generate_thumbnail_at_timestamp(
     output_filename: Option<String>,
 ) -> Result<String, String> {
     use std::path::Path;
-    use tauri_plugin_shell::ShellExt;
 
     let video = Path::new(&video_path);
 
@@ -598,12 +592,11 @@ pub async fn generate_thumbnail_at_timestamp(
     let seconds = timestamp_seconds % 60.0;
     let timestamp_str = format!("{:02}:{:02}:{:06.3}", hours, minutes, seconds);
 
-    // Use ffmpeg sidecar to generate thumbnail at specified timestamp
-    let command = app
-        .shell()
-        .sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
+    // Use ffmpeg with hidden console window on Windows
+    let thumbnail_path_str = thumbnail_path.to_str().ok_or("Invalid thumbnail path")?;
+    let output = crate::ffmpeg_sidecar::run_ffmpeg(
+        &app,
+        &[
             "-nostdin",
             "-hwaccel",
             "auto",
@@ -616,13 +609,10 @@ pub async fn generate_thumbnail_at_timestamp(
             "-vf",
             "scale=320:-1",
             "-y",
-            thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
-        ]);
-
-    let output = command
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+            thumbnail_path_str,
+        ],
+    )
+    .await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

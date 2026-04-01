@@ -223,10 +223,21 @@ export function parseTranscriptToWords(rawJson: string): WordInfo[] {
       // Segments format with words inside
       console.log('[parseTranscriptToWords] Found segments array, count:', data.segments.length);
       data.segments.forEach((segment: any) => {
-        if (segment.words && Array.isArray(segment.words)) {
+        if (segment.words && Array.isArray(segment.words) && segment.words.length > 0) {
+          // Detect chunk-relative word timestamps: if first word is >1s away from segment start,
+          // the words were saved without the chunk start_time offset applied.
+          const firstWord = segment.words[0];
+          const firstWordStart = firstWord.start ?? firstWord.startTime ?? firstWord.begin;
+          const segStart = segment.start;
+          const offset = (typeof segStart === 'number' && typeof firstWordStart === 'number' && Math.abs(segStart - firstWordStart) > 1)
+            ? segStart - firstWordStart
+            : 0;
+
           segment.words.forEach((wordObj: any) => {
             const word = extractWord(wordObj);
-            if (word) words.push(word);
+            if (word) {
+              words.push(offset !== 0 ? { ...word, start: word.start + offset, end: word.end + offset } : word);
+            }
           });
         }
       });
