@@ -246,7 +246,7 @@ export function customPresetToSettings(preset: CustomSubtitlePreset): SubtitleSe
         | 'box-highlight'
         | 'typewriter'
         | 'wave') || 'none',
-    highlightColor: preset.highlight_color || '#FFFF00',
+    highlightColor: preset.highlight_color || '#0ea5e9',
     lineHeight: preset.line_height,
     letterSpacing: preset.letter_spacing,
     textAlign: preset.text_align as 'left' | 'center' | 'right',

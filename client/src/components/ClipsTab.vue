@@ -2076,24 +2076,27 @@
     savedFramingMode.value = null;
     savedFramingConfigs.value = null;
 
-    // CRITICAL: Fetch subtitle_settings from database and merge with the existing clip object
-    // The clip object passed in has segments and timing data, but might not have subtitle_settings
+    // CRITICAL: Fetch latest subtitle columns from DB so the build dialog matches what was saved
     try {
       const { getClip } = await import('@/services/database/clips');
       const dbClip = await getClip(clip.id);
-      if (dbClip && dbClip.subtitle_settings) {
-        // Merge subtitle_settings from database into the existing clip object
-        clip.subtitle_settings = dbClip.subtitle_settings;
-        console.log('[ClipsTab] Merged subtitle_settings from database:', {
+      if (dbClip) {
+        const c = clip as any;
+        c.subtitle_settings = dbClip.subtitle_settings;
+        c.subtitle_preset_id = dbClip.subtitle_preset_id;
+        c.subtitle_enabled = dbClip.subtitle_enabled;
+        c.subtitle_position_x = dbClip.subtitle_position_x;
+        c.subtitle_position_y = dbClip.subtitle_position_y;
+        c.subtitle_position_width = dbClip.subtitle_position_width;
+        console.log('[ClipsTab] Merged subtitle fields from database:', {
           clipId: clip.id,
           hasSubtitleSettings: !!clip.subtitle_settings,
           subtitleSettingsType: typeof clip.subtitle_settings,
-          subtitleSettingsLength: clip.subtitle_settings ? clip.subtitle_settings.length : 0,
-          presetId: clip.subtitle_preset_id
+          presetId: c.subtitle_preset_id,
         });
       }
     } catch (error) {
-      console.warn('[ClipsTab] Failed to load subtitle_settings from database:', error);
+      console.warn('[ClipsTab] Failed to load subtitle fields from database:', error);
     }
 
     // Open dialog immediately (don't wait for async operations)
@@ -2147,6 +2150,23 @@
     isBuildInProgress.value = true;
 
     try {
+      // Refresh clip subtitle payload from DB so build uses latest saved editor state (not stale in-memory clip)
+      try {
+        const { getClip } = await import('@/services/database/clips');
+        const fresh = await getClip(clip.id);
+        if (fresh) {
+          const c = clip as any;
+          c.subtitle_settings = fresh.subtitle_settings;
+          c.subtitle_preset_id = fresh.subtitle_preset_id;
+          c.subtitle_enabled = fresh.subtitle_enabled;
+          c.subtitle_position_x = fresh.subtitle_position_x;
+          c.subtitle_position_y = fresh.subtitle_position_y;
+          c.subtitle_position_width = fresh.subtitle_position_width;
+        }
+      } catch (e) {
+        console.warn('[ClipsTab] Could not refresh clip before build invoke:', e);
+      }
+
       console.log('[ClipsTab] Starting clip build for:', clip.id, 'with settings:', settings);
       console.log('[ClipsTab] Aspect ratios received:', settings.aspectRatios);
 
@@ -2763,8 +2783,33 @@
         }
       }
 
-      // Effective subtitle settings: prefer derived (from clip DB columns) over prop
-      const effectiveSubtitleSettings = derivedSubtitleSettings.value ?? props.subtitleSettings ?? null;
+      // Refresh clip data from database to get latest subtitle settings
+      // (user may have changed settings in POI editor during this session)
+      const { getClip } = await import('@/services/database/clips');
+      const freshClipData = await getClip(clip.id);
+      let effectiveSubtitleSettings: SubtitleSettings | null = null;
+      
+      if (freshClipData?.subtitle_settings) {
+        try {
+          const savedSettings = typeof freshClipData.subtitle_settings === 'string'
+            ? JSON.parse(freshClipData.subtitle_settings)
+            : freshClipData.subtitle_settings;
+          effectiveSubtitleSettings = savedSettings;
+          console.log('[ClipsTab] Loaded FRESH subtitle settings from database:', {
+            animationStyle: savedSettings.animationStyle,
+            hasPerRatioConfigs: !!savedSettings.perRatioConfigs,
+            perRatioKeys: savedSettings.perRatioConfigs ? Object.keys(savedSettings.perRatioConfigs) : [],
+          });
+        } catch (error) {
+          console.error('[ClipsTab] Failed to parse fresh subtitle_settings:', error);
+        }
+      }
+      
+      // Fall back to derived settings or prop if fresh load failed
+      if (!effectiveSubtitleSettings) {
+        effectiveSubtitleSettings = derivedSubtitleSettings.value ?? props.subtitleSettings ?? null;
+        console.log('[ClipsTab] Using fallback subtitle settings (derived or prop)');
+      }
 
       // Helper: build SubtitleSettings from a CAPTION_PRESETS id
       function buildSettingsFromPresetId(presetId: string): Partial<SubtitleSettings> | null {
@@ -2819,15 +2864,18 @@
         };
       }
 
-      // Apply per-ratio presetId overrides: if a ratio has a presetId, merge those preset's
-      // visual fields into that ratio's override JSON so Rust uses them via per_ratio_override.
+      // Apply per-ratio presetId overrides: if a ratio has a presetId, use preset as BASE
+      // and let user's custom settings override the preset defaults.
+      // IMPORTANT: User's settings (...ov) must come AFTER preset (...presetOverride)
+      // so that user's custom animationStyle, colors, etc. take precedence.
       if (finalSubtitleOverrides) {
         for (const [ratio, override] of Object.entries(finalSubtitleOverrides)) {
           const ov = override as any;
           if (ov?.presetId) {
             const presetOverride = buildSettingsFromPresetId(ov.presetId);
             if (presetOverride) {
-              (finalSubtitleOverrides as any)[ratio] = { ...ov, ...presetOverride };
+              // Preset is BASE, user's settings override
+              (finalSubtitleOverrides as any)[ratio] = { ...presetOverride, ...ov };
             }
           }
         }
@@ -2838,6 +2886,9 @@
         baseAnimationStyle: effectiveSubtitleSettings?.animationStyle,
         baseFontFamily: effectiveSubtitleSettings?.fontFamily,
         baseTextColor: effectiveSubtitleSettings?.textColor,
+        baseHighlightColor: effectiveSubtitleSettings?.highlightColor,
+        baseBorder1Width: effectiveSubtitleSettings?.border1Width,
+        baseFontSize: effectiveSubtitleSettings?.fontSize,
         hasPerRatioConfigs: !!effectiveSubtitleSettings?.perRatioConfigs,
         perRatioConfigKeys: effectiveSubtitleSettings?.perRatioConfigs
           ? Object.keys(effectiveSubtitleSettings.perRatioConfigs)
@@ -2851,7 +2902,9 @@
                   animationStyle: v?.animationStyle,
                   fontFamily: v?.fontFamily,
                   textColor: v?.textColor,
+                  highlightColor: v?.highlightColor,
                   fontSize: v?.fontSize,
+                  border1Width: v?.border1Width,
                   positionPercentage: v?.positionPercentage,
                   maxWidth: v?.maxWidth,
                   hasPalette: Array.isArray(v?.colorPalette) && v.colorPalette.length > 0,
@@ -3549,6 +3602,119 @@
         hasIntroOutroPerRatio: Object.keys(introOutroPerRatio).length > 0,
       });
 
+      // Pre-render subtitles to PNG for pixel-perfect export (if subtitles enabled)
+      let subtitleOverlays: Record<string, Array<{ imagePath: string; startTime: number; endTime: number; positionX: number; positionY: number }>> | null = null;
+      
+      if (effectiveSubtitleSettings?.enabled && transcriptWords.length > 0) {
+        console.log('[ClipsTab] Pre-rendering subtitles for pixel-perfect export...');
+        console.log('[ClipsTab] transcriptWords count:', transcriptWords.length);
+        console.log('[ClipsTab] segments for subtitle render:', segments.map(s => ({ start: s.start_time, end: s.end_time })));
+        try {
+          const { preRenderSubtitleOverlays } = await import('@/services/subtitle-renderer');
+          subtitleOverlays = {};
+          
+          // Transform segments to the format expected by subtitle renderer
+          const subtitleSegments = segments.map(s => ({
+            start: s.start_time,
+            end: s.end_time,
+            transcript: s.transcript || '',
+          }));
+          
+          for (const ratio of targetRatios) {
+            // Calculate output dimensions based on aspect ratio
+            // IMPORTANT: Must match Rust backend calculation in video_processor.rs
+            // Rust uses width=1080 as base: output_w = 1080, output_h = 1080 * (h/w)
+            const [w, h] = ratio.split(':').map(Number);
+            const canvasWidth = 1080;
+            const canvasHeight = Math.round((canvasWidth * h) / w);
+            // Ensure even dimensions (required by H.264)
+            const evenCanvasHeight = canvasHeight % 2 === 0 ? canvasHeight : canvasHeight + 1;
+            
+            // Get the intro offset for this ratio (subtitles need to start after intro)
+            const ratioIntroConfig = introOutroPerRatio[ratio];
+            const introOffset = ratioIntroConfig?.introDuration ?? introDuration ?? 0;
+            
+            // Get per-ratio settings if available
+            const ratioOverride = finalSubtitleOverrides?.[ratio];
+            const mergedSettings = ratioOverride 
+              ? { ...effectiveSubtitleSettings, ...ratioOverride }
+              : effectiveSubtitleSettings;
+            
+            console.log('[ClipsTab] Calling preRenderSubtitleOverlays for', ratio, 'with', {
+              canvasWidth,
+              canvasHeight: evenCanvasHeight,
+              wordsCount: transcriptWords.length,
+              segmentsCount: subtitleSegments.length,
+              animationStyle: mergedSettings.animationStyle,
+              maxWords: props.maxWordsForAspectRatio || 4,
+              hasRatioOverride: !!ratioOverride,
+              ratioOverrideAnimationStyle: ratioOverride?.animationStyle,
+              ratioOverrideMultiColorEnabled: ratioOverride?.multiColorEnabled,
+              position: mergedSettings.position,
+              positionPercentage: mergedSettings.positionPercentage,
+              fontSize: mergedSettings.fontSize,
+              highlightColor: mergedSettings.highlightColor,
+              border1Width: mergedSettings.border1Width,
+              multiColorEnabled: mergedSettings.multiColorEnabled,
+            });
+            
+            // Debug: log the sources of the merge with FULL values
+            const dialogOv = (settings.subtitleOverrides as any)?.[ratio];
+            const dbOv = (effectiveSubtitleSettings?.perRatioConfigs as any)?.[ratio];
+            console.log('[ClipsTab] DEBUG merge sources for', ratio, ':', {
+              fromDialogOverrides: dialogOv ? {
+                animationStyle: dialogOv.animationStyle,
+                multiColorEnabled: dialogOv.multiColorEnabled,
+                position: dialogOv.position,
+                fontSize: dialogOv.fontSize,
+                highlightColor: dialogOv.highlightColor,
+              } : 'NO DIALOG OVERRIDE',
+              fromDbPerRatioConfigs: dbOv ? {
+                animationStyle: dbOv.animationStyle,
+                multiColorEnabled: dbOv.multiColorEnabled,
+                position: dbOv.position,
+                fontSize: dbOv.fontSize,
+                highlightColor: dbOv.highlightColor,
+              } : 'NO DB OVERRIDE',
+              finalOverrideValues: ratioOverride ? {
+                animationStyle: (ratioOverride as any).animationStyle,
+                multiColorEnabled: (ratioOverride as any).multiColorEnabled,
+                position: (ratioOverride as any).position,
+                fontSize: (ratioOverride as any).fontSize,
+                highlightColor: (ratioOverride as any).highlightColor,
+              } : 'NO FINAL OVERRIDE',
+            });
+            
+            // Also log what's in finalSubtitleOverrides for this ratio
+            console.log('[ClipsTab] finalSubtitleOverrides[' + ratio + '] =', finalSubtitleOverrides?.[ratio]);
+            
+            // Log the position specifically
+            console.log('[ClipsTab] Position for', ratio, ':', {
+              mergedPosition: mergedSettings.position,
+              mergedPositionPercentage: mergedSettings.positionPercentage,
+              isPositionObject: typeof mergedSettings.position === 'object' && mergedSettings.position !== null,
+            });
+            
+            const overlays = await preRenderSubtitleOverlays({
+              settings: mergedSettings,
+              words: transcriptWords,
+              segments: subtitleSegments,
+              maxWords: props.maxWordsForAspectRatio || 4,
+              canvasWidth,
+              canvasHeight: evenCanvasHeight,
+              aspectRatio: ratio,
+              introOffset,
+            });
+            
+            subtitleOverlays[ratio] = overlays;
+            console.log(`[ClipsTab] Pre-rendered ${overlays.length} subtitle frames for ${ratio}`);
+          }
+        } catch (err) {
+          console.warn('[ClipsTab] Failed to pre-render subtitles, falling back to ASS:', err);
+          subtitleOverlays = null;
+        }
+      }
+
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,
@@ -3557,6 +3723,7 @@
         segments: segments,
         subtitleSettings: effectiveSubtitleSettings,
         subtitleOverrides: finalSubtitleOverrides,
+        subtitleOverlays: subtitleOverlays,
         transcriptWords: transcriptWords,
         transcriptSegments: transcriptSegments,
         maxWords: props.maxWordsForAspectRatio,

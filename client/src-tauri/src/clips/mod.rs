@@ -45,6 +45,7 @@ pub async fn build_clip_from_segments(
     segments: Vec<serde_json::Value>,
     subtitle_settings: Option<SubtitleSettings>,
     subtitle_overrides: Option<SubtitleOverrides>,
+    subtitle_overlays: Option<std::collections::HashMap<String, Vec<SubtitleOverlaySettings>>>,
     transcript_words: Option<Vec<WordInfo>>,
     transcript_segments: Option<Vec<WhisperSegment>>,
     max_words: Option<usize>,
@@ -94,6 +95,11 @@ pub async fn build_clip_from_segments(
         subtitle_overrides
             .as_ref()
             .map(|o| o.keys().collect::<Vec<_>>())
+    );
+    println!(
+        "[Rust]   subtitle_overlays: {} aspect ratios with {} total frames",
+        subtitle_overlays.as_ref().map(|o| o.len()).unwrap_or(0),
+        subtitle_overlays.as_ref().map(|o| o.values().map(|v| v.len()).sum::<usize>()).unwrap_or(0)
     );
     println!("[Rust]   max words: {}", max_words.unwrap_or(0));
     println!("[Rust]   aspect_ratios: {:?}", aspect_ratios);
@@ -191,6 +197,7 @@ pub async fn build_clip_from_segments(
     let segments_clone = segments.clone();
     let subtitle_settings_clone = subtitle_settings.clone();
     let subtitle_overrides_clone = subtitle_overrides.clone();
+    let subtitle_overlays_clone = subtitle_overlays.clone();
     let transcript_words_clone = transcript_words.clone();
     let transcript_segments_clone = transcript_segments.clone();
     let aspect_ratios_clone = aspect_ratios.clone();
@@ -245,6 +252,7 @@ pub async fn build_clip_from_segments(
             &segments_clone,
             subtitle_settings_clone,
             subtitle_overrides_clone,
+            subtitle_overlays_clone,
             transcript_words_clone,
             transcript_segments_clone,
             max_words,
@@ -390,4 +398,32 @@ pub async fn is_clip_build_active(clip_id: String) -> Result<bool, String> {
 // Helper function to check if a build has been cancelled
 pub fn is_build_cancelled(cancel_rx: &CancellationToken) -> bool {
     *cancel_rx.borrow()
+}
+
+/// Save a pre-rendered subtitle overlay PNG to a temp file for FFmpeg compositing.
+/// The frontend renders subtitles with all effects (borders, shadows, highlights)
+/// to a transparent PNG on canvas, then passes the bytes here to save to disk.
+/// Returns the absolute path to the saved PNG file.
+#[tauri::command]
+pub async fn save_subtitle_overlay_png(
+    png_bytes: Vec<u8>,
+    aspect_ratio: String,
+    frame_index: usize,
+) -> Result<String, String> {
+    let temp_dir = std::env::temp_dir().join("clippster_subtitle_overlays");
+    std::fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;
+
+    let file_name = format!("subtitle_{}_{}.png", aspect_ratio, frame_index);
+    let file_path = temp_dir.join(&file_name);
+
+    std::fs::write(&file_path, &png_bytes)
+        .map_err(|e| format!("Failed to write subtitle overlay PNG: {}", e))?;
+
+    println!(
+        "[Rust] Saved subtitle overlay PNG: {} ({} bytes)",
+        file_path.display(),
+        png_bytes.len()
+    );
+
+    Ok(file_path.to_string_lossy().to_string())
 }
