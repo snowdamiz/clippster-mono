@@ -42,7 +42,7 @@ pub struct SubtitleSettings {
 }
 
 fn default_highlight_color() -> String {
-    "#FFFD03".to_string()
+    "#0ea5e9".to_string()
 }
 
 fn default_multi_color_mode() -> String {
@@ -1232,6 +1232,23 @@ pub struct StickerSettings {
     /// Per-aspect-ratio configurations (key is ratio like "16:9", "9:16")
     #[serde(default)]
     pub per_ratio_configs: Option<std::collections::HashMap<String, StickerRatioConfig>>,
+}
+
+/// Pre-rendered subtitle overlay settings for pixel-perfect export.
+/// Each overlay represents a single subtitle frame (rendered from frontend Canvas).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubtitleOverlaySettings {
+    /// Path to the pre-rendered PNG file
+    pub image_path: String,
+    /// Start time in seconds (relative to video timeline)
+    pub start_time: f64,
+    /// End time in seconds (relative to video timeline)
+    pub end_time: f64,
+    /// X position (center of text) as percentage of video width (0-100)
+    pub position_x: f64,
+    /// Y position (center of text) as percentage of video height (0-100)
+    pub position_y: f64,
 }
 
 /// Per-aspect-ratio position config for a layout overlay

@@ -293,7 +293,7 @@
                       fontWeight: props.subtitleSettings.fontWeight,
                       fontSize: subtitleTextStyle.fontSize,
                       fill: (props.subtitleSettings.animationStyle === 'karaoke' && isCurrentWord(wordInfo)) 
-                        ? (props.subtitleSettings.highlightColor || '#FFFF00')
+                        ? (props.subtitleSettings.highlightColor || '#0ea5e9')
                         : (props.subtitleSettings.animationStyle === 'single-word' 
                             ? getWordColor(getWordIndexInTranscript(wordInfo))
                             : (props.subtitleSettings.textColor || '#FFFFFF')),

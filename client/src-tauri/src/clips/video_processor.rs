@@ -4722,6 +4722,134 @@ pub async fn apply_rendered_text_overlays_to_video(
     Ok(())
 }
 
+/// Apply pre-rendered subtitle overlay images to a video file
+/// This handles pixel-perfect subtitle rendering by compositing pre-rendered PNG frames
+pub async fn apply_subtitle_overlays_to_video(
+    app: &tauri::AppHandle,
+    input_path: &std::path::Path,
+    subtitle_overlays: &[super::types::SubtitleOverlaySettings],
+    quality: &str,
+) -> Result<(), String> {
+    if subtitle_overlays.is_empty() {
+        return Ok(());
+    }
+
+    println!(
+        "[Rust] Applying {} pre-rendered subtitle overlays to video (pixel-perfect mode)",
+        subtitle_overlays.len()
+    );
+
+    // Detect hardware encoder
+    let encoder = detect_hardware_encoder(app, quality).await;
+
+    // Create temporary output path
+    let temp_output = input_path.with_extension("subtitles.mp4");
+
+    // Build filter complex for subtitle overlays
+    let mut filter_parts: Vec<String> = Vec::new();
+    let mut input_count = 1; // Start from 1 (0 is the main video)
+    let mut overlay_inputs: Vec<String> = Vec::new();
+
+    // Label the main video
+    filter_parts.push("[0:v]null[base]".to_string());
+    let mut current_label = "base".to_string();
+
+    // Process each subtitle overlay frame
+    for (idx, overlay) in subtitle_overlays.iter().enumerate() {
+        // Subtitle overlays are full-frame PNGs already positioned correctly
+        // The text is already rendered at the correct position within the PNG
+
+        let sub_label = format!("sub{}", idx);
+        let next_label = format!("so{}", idx);
+
+        // Prepare the subtitle image (ensure RGBA format)
+        let sub_filter = format!("[{}:v]format=rgba[{}]", input_count, sub_label);
+        filter_parts.push(sub_filter);
+
+        // Overlay with timing - subtitle PNGs are full-frame so we position at 0,0
+        // The PNG already contains the positioned text on a transparent background
+        let overlay_filter = format!(
+            "[{}][{}]overlay=x=0:y=0:enable='between(t,{:.3},{:.3})'[{}]",
+            current_label,
+            sub_label,
+            overlay.start_time,
+            overlay.end_time,
+            next_label
+        );
+
+        filter_parts.push(overlay_filter);
+        current_label = next_label;
+
+        overlay_inputs.push(overlay.image_path.clone());
+        input_count += 1;
+    }
+
+    // If we have no filters, return early
+    if filter_parts.len() <= 1 {
+        return Ok(());
+    }
+
+    // Build FFmpeg args
+    let mut args = vec!["-i".to_string(), input_path.to_string_lossy().to_string()];
+
+    // Add subtitle image inputs
+    for image_path in &overlay_inputs {
+        args.push("-i".to_string());
+        args.push(image_path.clone());
+    }
+
+    // Build filter complex string
+    let filter_complex = filter_parts.join(";");
+    let filter_complex_len = filter_complex.len();
+
+    args.extend(vec![
+        "-filter_complex".to_string(),
+        filter_complex,
+        "-map".to_string(),
+        format!("[{}]", current_label),
+        "-map".to_string(),
+        "0:a?".to_string(), // Map audio if present
+        "-c:v".to_string(),
+        encoder.codec.clone(),
+    ]);
+
+    // Add preset if applicable
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+
+    // Add quality parameter
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+
+    // Add audio settings
+    args.push("-c:a".to_string());
+    args.push("copy".to_string());
+    args.push("-y".to_string());
+    args.push(temp_output.to_string_lossy().to_string());
+
+    println!(
+        "[Rust] FFmpeg command for subtitle overlays: {} inputs, filter_complex length: {}",
+        overlay_inputs.len() + 1,
+        filter_complex_len
+    );
+
+    // Use fallback helper for hardware encoder resilience
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, None)
+        .await
+        .map_err(|e| format!("FFmpeg subtitle overlay failed: {}", e))?;
+
+    // Replace original with subtitled version
+    std::fs::remove_file(input_path)
+        .map_err(|e| format!("Failed to remove original file: {}", e))?;
+    std::fs::rename(&temp_output, input_path)
+        .map_err(|e| format!("Failed to rename subtitle overlay output: {}", e))?;
+
+    println!("[Rust] Pre-rendered subtitle overlays applied successfully");
+    Ok(())
+}
+
 /// Segment definition for preview generation
 #[derive(Debug, serde::Deserialize)]
 pub struct PreviewSegment {

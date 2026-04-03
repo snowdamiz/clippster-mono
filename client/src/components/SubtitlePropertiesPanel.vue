@@ -479,7 +479,7 @@ function getStyleDefaults(styleId: string): Partial<SubtitleSettings> {
       border2Width: 0,
       border2Color: '#000000',
       shadowBlur: 0,
-      highlightColor: '#FACC15',
+      highlightColor: '#0ea5e9',
       backgroundEnabled: false,
       backgroundColor: 'transparent',
     },

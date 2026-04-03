@@ -366,25 +366,19 @@ pub fn generate_ass_file(
         1.0 // Wide formats (16:9, 21:9)
     };
 
-    // NOTE: The frontend uses videoScaleFactor (containerHeight / 1080) for dynamic scaling
-    // based on actual viewport size. In export, we work with fixed PlayResY=1080,
-    // so we don't need additional scaling - the font size is already relative to 1080p.
-    
+    // PlayResY=1080 matches the frontend's 1080p reference. libass scales to output video size.
+    // Font size uses the same aspect-ratio scale as VideoPlayer.vue (finalFontSizeScale minus viewport factor).
     let adjusted_font_size = (eff_font_size * font_size_scale).round();
-    // CSS WebkitTextStroke is centered on the path, so only half extends outwards.
-    // ASS Outline is entirely outwards. To match the visual thickness of the frontend,
-    // we need to divide the stroke width by 2.
-    let adjusted_border1_width = eff_border1_width * font_size_scale * 0.5;
-    let adjusted_border2_width = eff_border2_width * font_size_scale * 0.5;
-    // ASS Shadow parameter is an offset depth, calculate from shadow offset X/Y
-    // Use the magnitude of the offset vector for proper shadow distance
+    // Preview uses SVG stroke centered on the glyph: strokeWidth = border * 2 * scale, so outward
+    // thickness = border * scale. ASS Outline extends outward by the full value — match that.
+    let adjusted_border1_width = eff_border1_width * font_size_scale;
+    let adjusted_border2_width = eff_border2_width * font_size_scale;
+    // ASS Shadow depth + BackColour approximate SVG feDropShadow (offset + soft edge).
     let shadow_offset_magnitude =
-        ((eff_shadow_x.powi(2) + eff_shadow_y.powi(2)).sqrt())
-            * font_size_scale;
-    let adjusted_shadow = shadow_offset_magnitude;
+        ((eff_shadow_x.powi(2) + eff_shadow_y.powi(2)).sqrt()) * font_size_scale;
+    let blur_contribution = eff_shadow_blur * font_size_scale * 0.45;
+    let adjusted_shadow = (shadow_offset_magnitude + blur_contribution).max(0.0);
     let adjusted_letter_spacing = settings.letter_spacing * font_size_scale;
-    // Suppress unused variable warnings for effective fields used downstream
-    let _ = eff_shadow_blur; let _ = eff_shadow_color;
     let _ = &eff_animation_style;
 
     println!(
