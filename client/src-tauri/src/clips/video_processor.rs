@@ -2762,10 +2762,19 @@ pub async fn build_multi_region_clip(
         let scaled_h = make_even((base_h * transform.scale) as u32);
         
         // Calculate position in output canvas (centered + offset)
+        // The x/y values are now normalized (-1 to 1 relative to container dimensions)
+        // We scale them to output video dimensions
         let center_x = (output_w as f64 - scaled_w as f64) / 2.0;
         let center_y = (output_h as f64 - scaled_h as f64) / 2.0;
-        let final_x = center_x + transform.x;
-        let final_y = center_y + transform.y;
+        let offset_x = transform.x * output_w as f64;
+        let offset_y = transform.y * output_h as f64;
+        let final_x = center_x + offset_x;
+        let final_y = center_y + offset_y;
+        
+        println!(
+            "[Rust] Source transform normalized offsets: x={:.4}, y={:.4} -> pixel offsets: ({:.1}, {:.1})",
+            transform.x, transform.y, offset_x, offset_y
+        );
         
         println!(
             "[Rust] Source transform: base {}x{} -> scaled {}x{} @ ({}, {})",

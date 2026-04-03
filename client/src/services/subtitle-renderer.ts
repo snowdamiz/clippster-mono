@@ -24,7 +24,7 @@ export interface SubtitleSettings {
   shadowOffsetY: number;
   shadowBlur: number;
   shadowColor: string;
-  position: 'top' | 'middle' | 'bottom';
+  position: 'top' | 'middle' | 'bottom' | { x: number; y: number };
   positionPercentage: number;
   maxWidth: number;
   animationStyle: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave' | 'single-word';
@@ -97,7 +97,14 @@ export async function preRenderSubtitleOverlays({
   const overlays: SubtitleOverlay[] = [];
   const frames = computeSubtitleFrames(settings, words, segments, maxWords);
 
-  console.log(`[SubtitleRenderer] Pre-rendering ${frames.length} subtitle frames for ${aspectRatio}`);
+  console.log(`[SubtitleRenderer] Pre-rendering ${frames.length} subtitle frames for ${aspectRatio}`, {
+    position: settings.position,
+    positionPercentage: settings.positionPercentage,
+    maxWidth: settings.maxWidth,
+    fontSize: settings.fontSize,
+    animationStyle: settings.animationStyle,
+    highlightColor: settings.highlightColor,
+  });
 
   for (let i = 0; i < frames.length; i++) {
     const frame = frames[i];
@@ -288,11 +295,73 @@ async function renderSubtitleFrame({
   totalWidth += wordSpacing * (wordTexts.length - 1);
 
   // Calculate position
+  // Handle per-ratio position override (from ManualPOIEditor)
+  // The position can be either:
+  // 1. An object { x: number, y: number } with percentages from per-ratio override
+  // 2. A string ('top', 'middle', 'bottom') with positionPercentage for Y
   const maxWidthPx = (canvasWidth * settings.maxWidth) / 100;
   const actualWidth = Math.min(totalWidth, maxWidthPx);
   
-  const positionX = canvasWidth / 2 + (settings.textOffsetX || 0) * scaleFactor;
-  const positionY = (canvasHeight * settings.positionPercentage) / 100 + (settings.textOffsetY || 0) * scaleFactor;
+  let positionX: number;
+  let positionY: number;
+  
+  if (typeof settings.position === 'object' && settings.position !== null && 'x' in settings.position) {
+    // Per-ratio override with explicit x,y percentages
+    positionX = (canvasWidth * settings.position.x) / 100 + (settings.textOffsetX || 0) * scaleFactor;
+    positionY = (canvasHeight * settings.position.y) / 100 + (settings.textOffsetY || 0) * scaleFactor;
+    console.log('[SubtitleRenderer] Using position object:', {
+      positionObj: settings.position,
+      calculatedX: positionX,
+      calculatedY: positionY,
+    });
+  } else {
+    // Default centered X with positionPercentage for Y
+    positionX = canvasWidth / 2 + (settings.textOffsetX || 0) * scaleFactor;
+    console.log('[SubtitleRenderer] Using default position (centered X, positionPercentage for Y):', {
+      positionPercentage: settings.positionPercentage,
+      calculatedX: positionX,
+    });
+    positionY = (canvasHeight * settings.positionPercentage) / 100 + (settings.textOffsetY || 0) * scaleFactor;
+  }
+
+  // Clamp position to ensure text stays within canvas bounds
+  // The text is centered at positionX, so we need padding of half the text width on each side
+  const halfTextWidth = totalWidth / 2;
+  const edgePadding = 5 * scaleFactor; // Small padding from edge
+  
+  // Calculate bounds - ensure text doesn't extend past canvas edges
+  const minX = halfTextWidth + edgePadding;
+  const maxX = canvasWidth - halfTextWidth - edgePadding;
+  
+  // Only clamp if valid bounds exist (text fits in canvas)
+  if (maxX > minX) {
+    if (positionX < minX) {
+      console.log('[SubtitleRenderer] Clamping X from', positionX, 'to', minX, '(text would extend past left edge)');
+      positionX = minX;
+    } else if (positionX > maxX) {
+      console.log('[SubtitleRenderer] Clamping X from', positionX, 'to', maxX, '(text would extend past right edge)');
+      positionX = maxX;
+    }
+  } else {
+    // Text is wider than canvas - center it
+    console.log('[SubtitleRenderer] Text wider than canvas, centering. totalWidth:', totalWidth, 'canvasWidth:', canvasWidth);
+    positionX = canvasWidth / 2;
+  }
+  
+  // Also clamp Y position
+  const halfTextHeight = fontSize / 2;
+  const minY = halfTextHeight + edgePadding;
+  const maxY = canvasHeight - halfTextHeight - edgePadding;
+  
+  if (maxY > minY) {
+    if (positionY < minY) {
+      console.log('[SubtitleRenderer] Clamping Y from', positionY, 'to', minY);
+      positionY = minY;
+    } else if (positionY > maxY) {
+      console.log('[SubtitleRenderer] Clamping Y from', positionY, 'to', maxY);
+      positionY = maxY;
+    }
+  }
 
   // Draw background if enabled
   if (settings.backgroundEnabled && settings.backgroundColor && settings.backgroundColor !== 'transparent') {

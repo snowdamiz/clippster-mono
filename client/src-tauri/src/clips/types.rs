@@ -760,9 +760,9 @@ pub struct ManualRegion {
 pub struct SourceTransform {
     /// Scale factor (0.5 to 3.0)
     pub scale: f64,
-    /// X offset (normalized 0-1)
+    /// X offset (normalized relative to container width, can be negative)
     pub x: f64,
-    /// Y offset (normalized 0-1)
+    /// Y offset (normalized relative to container height, can be negative)
     pub y: f64,
 }
 

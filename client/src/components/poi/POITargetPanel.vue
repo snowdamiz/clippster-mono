@@ -222,7 +222,7 @@
         >
           <!-- Drag body -->
           <div
-            class="w-full h-full flex items-center justify-center cursor-move select-none"
+            class="w-full h-full flex items-center justify-center cursor-move select-none overflow-hidden"
             :class="isDraggingSubtitles ? 'ring-2 ring-purple-400' : 'ring-1 ring-purple-500/60 hover:ring-purple-400'"
             style="border-radius: 4px; background: rgba(88,28,135,0.15);"
             @mousedown.prevent="startDragSubtitles"
@@ -315,8 +315,9 @@
             </div>
           </div>
 
-          <!-- Corner resize handles -->
+          <!-- Corner resize handles (hidden for single-word style since width is auto) -->
           <div
+            v-if="subtitleSettings?.animationStyle !== 'single-word'"
             v-for="corner in ['nw','ne','sw','se']"
             :key="corner"
             class="absolute w-2.5 h-2.5 bg-purple-500 border border-white pointer-events-auto z-30"
@@ -505,9 +506,22 @@
   });
 
   // Watch for source frame transform changes and emit to parent
+  // We normalize the x/y offsets to be relative to the container dimensions
+  // so the Rust backend can scale them correctly to the output video resolution.
+  // The x/y values are stored as raw pixels in sourceFrameTransform for local UI,
+  // but emitted as normalized values relative to container dimensions.
   watch(sourceFrameTransform, (transform) => {
-    if (showSourceFrame.value) {
-      emit('updateSourceTransform', { ...transform });
+    if (showSourceFrame.value && containerWidth.value > 0 && containerHeight.value > 0) {
+      // Normalize x/y offsets relative to container dimensions
+      // This makes them resolution-independent
+      const normalizedX = transform.x / containerWidth.value;
+      const normalizedY = transform.y / containerHeight.value;
+      
+      emit('updateSourceTransform', { 
+        scale: transform.scale,
+        x: normalizedX,
+        y: normalizedY,
+      });
     }
   }, { deep: true });
 
@@ -704,12 +718,30 @@
     };
   });
 
+  // Calculate appropriate box width based on animation style
+  const computedSubtitleBoxWidth = computed(() => {
+    const baseWidth = localSubtitlePosition.value.width ?? 80;
+    
+    if (!props.subtitleSettings) return baseWidth;
+    
+    // For single-word style, use a smaller width to fit just one word
+    if (props.subtitleSettings.animationStyle === 'single-word') {
+      // Single word boxes should be narrower - around 35-45% depending on font size
+      // Larger fonts need slightly wider boxes
+      const fontSize = props.subtitleSettings.fontSize || 65;
+      const singleWordWidth = Math.min(50, Math.max(30, 25 + (fontSize / 10)));
+      return singleWordWidth;
+    }
+    
+    return baseWidth;
+  });
+
   // Subtitle box — positioned as absolute rect using x/y as center, width as %
   const subtitleBoxStyle = computed(() => {
     const pos = localSubtitlePosition.value;
-    const w = pos.width ?? 80;
-    // Height is fixed at ~12% of container to give enough drag area
-    const h = 12;
+    const w = computedSubtitleBoxWidth.value;
+    // Height is fixed at ~10% of container to give enough drag area
+    const h = 10;
     // x/y are center percentages → convert to left/top
     const left = pos.x - w / 2;
     const top = pos.y - h / 2;
@@ -721,15 +753,19 @@
     };
   });
 
-  // Subtitle text style — scaled down for the small POI preview canvas
+  // Subtitle text style — scaled for the POI preview canvas
+  // Container is ~214px wide for 9:16, ~240px for 16:9
   const subtitleTextStyle = computed(() => {
     if (!props.subtitleSettings) return {};
     const settings = props.subtitleSettings;
     const aspect = parseAspectRatio(props.targetAspectRatio);
     const ar = aspect.width / aspect.height;
-    // Scale font down for the small preview canvas (container is ~200px wide)
-    const scale = ar < 0.9 ? 0.28 : ar < 1.2 ? 0.32 : 0.22;
-    const fs = Math.max(8, Math.round(settings.fontSize * scale));
+    // Scale font for preview canvas
+    // For portrait (9:16): container ~214px wide, output 1080px → scale ~0.20
+    // For landscape (16:9): container ~240px wide, output 1920px → scale ~0.125
+    // For square (1:1): container ~240px wide, output 1080px → scale ~0.22
+    const scale = ar < 0.9 ? 0.20 : ar < 1.2 ? 0.22 : 0.125;
+    const fs = Math.max(9, Math.round(settings.fontSize * scale));
     const stroke = settings.border1Width > 0
       ? `${settings.border1Color} 0 0 0 ${settings.border1Width * scale}px`
       : undefined;
@@ -944,13 +980,14 @@
   }
 
   // Calculate container style to maintain target aspect ratio
+  // Sized to fit well within the panel while being large enough for accurate preview
   const containerStyle = computed(() => {
     const aspect = parseAspectRatio(props.targetAspectRatio);
     const aspectRatio = aspect.width / aspect.height;
 
-    // For portrait ratios, use height-based sizing
-    const maxWidth = 200;
-    const maxHeight = 350;
+    // Balanced sizes - large enough for accurate preview, small enough to fit
+    const maxWidth = 240;
+    const maxHeight = 380;
 
     let width: number;
     let height: number;
@@ -1094,9 +1131,21 @@
     const newX = ((event.clientX - subtitleDragOffset.value.x - rect.left) / rect.width) * 100;
     const newY = ((event.clientY - subtitleDragOffset.value.y - rect.top) / rect.height) * 100;
     
-    // Constrain to container bounds
-    const constrainedX = Math.max(10, Math.min(90, newX));
-    const constrainedY = Math.max(10, Math.min(90, newY));
+    // Use computed box width (accounts for animation style)
+    const boxWidth = computedSubtitleBoxWidth.value;
+    const halfBoxWidth = boxWidth / 2;
+    
+    // Constrain X so the text box doesn't extend past canvas edges
+    // The box is centered at x, so ensure x - halfWidth >= 0 and x + halfWidth <= 100
+    const minX = halfBoxWidth + 1; // 1% padding from edge
+    const maxX = 100 - halfBoxWidth - 1;
+    
+    // Constrain Y with reasonable bounds
+    const minY = 6;
+    const maxY = 94;
+    
+    const constrainedX = Math.max(minX, Math.min(maxX, newX));
+    const constrainedY = Math.max(minY, Math.min(maxY, newY));
     
     localSubtitlePosition.value = {
       ...localSubtitlePosition.value,
@@ -1155,10 +1204,14 @@
       const widthRatio = newWidth / startWidth;
       const newFontSize = Math.round(Math.max(12, Math.min(120, startFontSize * widthRatio)));
 
+      // Clamp width to leave margin at edges (max 96% to leave 2% on each side)
+      const clampedWidth = Math.min(newWidth, 96);
+      const halfWidth = clampedWidth / 2;
+      
       localSubtitlePosition.value = {
         ...localSubtitlePosition.value,
-        x: Math.max(newWidth / 2, Math.min(100 - newWidth / 2, newCenterX)),
-        width: newWidth,
+        x: Math.max(halfWidth + 2, Math.min(100 - halfWidth - 2, newCenterX)),
+        width: clampedWidth,
       };
       
       // Emit both position and settings changes

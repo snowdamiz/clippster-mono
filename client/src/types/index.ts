@@ -671,8 +671,8 @@ export interface ManualFramingConfig {
   // Global source frame transform (for scaling/positioning entire source)
   sourceTransform?: {
     scale: number; // Scale factor (1.0 = no scale)
-    x: number; // X offset (normalized 0-1)
-    y: number; // Y offset (normalized 0-1)
+    x: number; // X offset (normalized relative to container width, can be negative)
+    y: number; // Y offset (normalized relative to container height, can be negative)
   };
 }
 

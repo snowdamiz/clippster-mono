@@ -804,7 +804,7 @@
       :watermark-settings="watermarkSettings"
       :layout-overlays="vodPresetConfig?.layoutOverlays"
       :overlay-preview-urls="overlayPreviewUrls"
-      :subtitle-settings="effectiveSubtitleSettings"
+      :subtitle-settings="subtitleSettingsForPOIEditor"
       :subtitle-position-override="getSubtitlePositionForRatio(editingAspectRatio)"
       :transcript-words="transcriptWords"
       :transcript-segments="transcriptSegments"
@@ -1099,6 +1099,30 @@
   
   // Use local settings if available, otherwise fall back to prop
   const effectiveSubtitleSettings = computed(() => localSubtitleSettings.value || props.subtitleSettings);
+  
+  // Compute subtitle settings for POI editor, merging per-ratio overrides
+  // This ensures the POI editor shows the correct settings for the current ratio
+  const subtitleSettingsForPOIEditor = computed(() => {
+    const base = effectiveSubtitleSettings.value;
+    if (!base) return null;
+    
+    const ratio = editingAspectRatio.value;
+    const ratioOverride = subtitleOverrides.value[ratio as keyof SubtitleOverrides];
+    
+    if (ratioOverride) {
+      // Merge per-ratio override into base settings
+      const merged = { ...base, ...ratioOverride };
+      console.log('[ClipBuildSettingsDialog] subtitleSettingsForPOIEditor merged for', ratio, ':', {
+        baseAnimationStyle: base.animationStyle,
+        overrideAnimationStyle: (ratioOverride as any).animationStyle,
+        resultAnimationStyle: merged.animationStyle,
+        overrideMultiColorEnabled: (ratioOverride as any).multiColorEnabled,
+      });
+      return merged;
+    }
+    
+    return base;
+  });
 
   // Clip timing for video preview
   const clipStartTime = computed(() => props.clip?.current_version_start_time || 0);
@@ -1439,7 +1463,7 @@
   }
 
   // Handle subtitle position change from POI editor (also carries optional presetId for per-ratio style)
-  function onSubtitlePositionChange(position: { x: number; y: number; width?: number; presetId?: string }) {
+  async function onSubtitlePositionChange(position: { x: number; y: number; width?: number; presetId?: string }) {
     const ratio = editingAspectRatio.value;
     const existingOverride = subtitleOverrides.value[ratio as keyof SubtitleOverrides] || {
       fontSize: effectiveSubtitleSettings.value?.fontSize ?? 32,
@@ -1448,16 +1472,58 @@
       maxWidth: 80,
     };
 
+    const newOverride = {
+      ...existingOverride,
+      position: { x: position.x, y: position.y },
+      maxWidth: position.width ?? existingOverride.maxWidth,
+      positionPercentage: position.y,
+      ...(position.presetId ? { presetId: position.presetId } : {}),
+    };
+
     subtitleOverrides.value = {
       ...subtitleOverrides.value,
-      [ratio]: {
-        ...existingOverride,
-        position: { x: position.x, y: position.y },
-        maxWidth: position.width ?? existingOverride.maxWidth,
-        positionPercentage: position.y,
-        ...(position.presetId ? { presetId: position.presetId } : {}),
-      },
+      [ratio]: newOverride,
     };
+    
+    // Save position to database so it persists
+    if (props.clip?.id) {
+      try {
+        const { getClip, saveSubtitleSettings } = await import('@/services/database/clips');
+        const dbClip = await getClip(props.clip.id);
+        let currentSettings: any = null;
+        
+        if (dbClip?.subtitle_settings) {
+          currentSettings = typeof dbClip.subtitle_settings === 'string' 
+            ? JSON.parse(dbClip.subtitle_settings)
+            : dbClip.subtitle_settings;
+        }
+        
+        // Merge position into perRatioConfigs
+        const perRatioConfigs: Record<string, any> = {
+          ...(currentSettings?.perRatioConfigs || {}),
+        };
+        perRatioConfigs[ratio] = {
+          ...(perRatioConfigs[ratio] || {}),
+          position: newOverride.position,
+          positionPercentage: newOverride.positionPercentage,
+          maxWidth: newOverride.maxWidth,
+        };
+        
+        const settingsToSave = {
+          ...(currentSettings || effectiveSubtitleSettings.value || {}),
+          perRatioConfigs,
+        };
+        
+        await saveSubtitleSettings(props.clip.id, settingsToSave);
+        console.log('[ClipBuildSettingsDialog] Saved subtitle position to database:', {
+          clipId: props.clip.id,
+          ratio,
+          position: newOverride.position,
+        });
+      } catch (error) {
+        console.error('[ClipBuildSettingsDialog] Failed to save subtitle position:', error);
+      }
+    }
   }
 
   // Handle subtitle settings change from POI editor (animation style, colors, borders, etc.)
@@ -1482,14 +1548,19 @@
     
     // Store ALL visual properties that changed so Rust can apply them via per_ratio_override JSON
     // The Rust code reads these fields from the JSON even though TypeScript SubtitleOverride doesn't define them
+    // IMPORTANT: Preserve position/maxWidth from existing override if user dragged the subtitle
+    // (settings object has default values for position, which would overwrite user's dragged position)
     subtitleOverrides.value = {
       ...subtitleOverrides.value,
       [ratio]: {
         ...existingOverride,
         // Standard SubtitleOverride fields
         fontSize: settings.fontSize,
-        positionPercentage: settings.positionPercentage,
-        maxWidth: settings.maxWidth,
+        // Only update position fields if NOT already set by user dragging
+        // (existingOverride.position indicates user has dragged the subtitle)
+        positionPercentage: existingOverride.position ? existingOverride.positionPercentage : settings.positionPercentage,
+        maxWidth: existingOverride.maxWidth ?? settings.maxWidth,
+        position: existingOverride.position, // Preserve user's dragged position
         presetId: settings.selectedPresetId || undefined,
         // Extended fields for visual styling (read by Rust generate_ass_file)
         animationStyle: settings.animationStyle,
