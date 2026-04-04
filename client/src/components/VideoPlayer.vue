@@ -153,14 +153,13 @@
 
             <svg class="absolute inset-0 w-full h-full overflow-visible" style="pointer-events: none">
               <defs>
-                <!-- Filter for drop shadow that can apply to the stroke -->
+                <!-- Drop shadow for subtitle stack (applied to bottom visible layer) -->
                 <filter :id="`shadow-${index}`" x="-50%" y="-50%" width="200%" height="200%">
                   <feDropShadow
-                    v-if="subtitleSettings?.shadowBlur > 0"
-                    :dx="subtitleSettings.shadowOffsetX * finalFontSizeScale"
-                    :dy="subtitleSettings.shadowOffsetY * finalFontSizeScale"
-                    :stdDeviation="subtitleSettings.shadowBlur * finalFontSizeScale"
-                    :flood-color="subtitleSettings.shadowColor"
+                    :dx="(subtitleSettings?.shadowOffsetX ?? 0) * finalFontSizeScale"
+                    :dy="(subtitleSettings?.shadowOffsetY ?? 0) * finalFontSizeScale"
+                    :stdDeviation="Math.max((subtitleSettings?.shadowBlur ?? 0) * finalFontSizeScale, 0)"
+                    :flood-color="subtitleSettings?.shadowColor || '#000000'"
                   />
                 </filter>
               </defs>
@@ -173,6 +172,7 @@
                   y="55%"
                   dominant-baseline="middle"
                   text-anchor="middle"
+                  :filter="subtitleShadowFilterUrl(index)"
                   :style="{
                     fontFamily: subtitleSettings.fontFamily,
                     fontWeight: subtitleSettings.fontWeight,
@@ -197,6 +197,7 @@
                   y="55%"
                   dominant-baseline="middle"
                   text-anchor="middle"
+                  :filter="subtitleSettings.border2Width <= 0 ? subtitleShadowFilterUrl(index) : undefined"
                   :style="{
                     fontFamily: subtitleSettings.fontFamily,
                     fontWeight: subtitleSettings.fontWeight,
@@ -222,6 +223,7 @@
                   y="55%"
                   dominant-baseline="middle"
                   text-anchor="middle"
+                  :filter="subtitleSettings && subtitleSettings.border1Width <= 0 && subtitleSettings.border2Width <= 0 ? subtitleShadowFilterUrl(index) : undefined"
                   :class="{ 'current-word-text': isCurrentWord(wordInfo) }"
                   :style="{
                     fontFamily: subtitleSettings.fontFamily,
@@ -229,7 +231,7 @@
                     fontSize: getTextStyle.fontSize,
                     letterSpacing: svgLetterSpacing,
                     fill: (subtitleSettings?.animationStyle === 'karaoke' && isCurrentWord(wordInfo)) 
-                      ? (subtitleSettings?.highlightColor || '#FFFF00')
+                      ? (subtitleSettings?.highlightColor || DEFAULT_SUBTITLE_HIGHLIGHT)
                       : (subtitleSettings?.animationStyle === 'single-word' 
                           ? getWordColor(getWordIndexInTranscript(wordInfo))
                           : (subtitleSettings?.textColor || '#FFFFFF')),
@@ -249,7 +251,7 @@
                   width="100%"
                   height="80%"
                   rx="4"
-                  :fill="subtitleSettings?.highlightColor || '#FFFF00'"
+                  :fill="subtitleSettings?.highlightColor || DEFAULT_SUBTITLE_HIGHLIGHT"
                   :style="{ opacity: 0.3 }"
                 />
               </g>
@@ -405,7 +407,10 @@
       positionPercentage: 97,
       maxWidth: 90,
       animationStyle: 'none',
-      highlightColor: '#00FF00',
+      highlightColor: '#0ea5e9',
+      multiColorEnabled: false,
+      multiColorMode: 'default' as const,
+      colorPalette: [] as string[],
       lineHeight: 1.2,
       letterSpacing: 0,
       textAlign: 'center',
@@ -1062,6 +1067,20 @@
 
     return fontSizeScale * videoScaleFactor;
   });
+
+  /** App cyan — default karaoke / highlight fallback (matches SubtitlePropertiesPanel presets) */
+  const DEFAULT_SUBTITLE_HIGHLIGHT = '#0ea5e9';
+
+  /** SVG filter url for subtitle drop shadow; undefined when shadow is fully off */
+  function subtitleShadowFilterUrl(wordIndex: number): string | undefined {
+    const s = props.subtitleSettings;
+    if (!s) return undefined;
+    const blur = s.shadowBlur ?? 0;
+    const dx = s.shadowOffsetX ?? 0;
+    const dy = s.shadowOffsetY ?? 0;
+    if (blur <= 0 && dx === 0 && dy === 0) return undefined;
+    return `url(#shadow-${wordIndex})`;
+  }
 
   // Style for text layer (top layer)
   const getTextStyle = computed(() => {

@@ -83,6 +83,10 @@ export interface Campaign {
   creator_profile?: CampaignCreatorProfile | null;
   global_intro?: CampaignAsset | null;
   global_outro?: CampaignAsset | null;
+  global_watermarks?: Record<string, number | null> | null;
+  require_watermark?: boolean;
+  require_intro?: boolean;
+  require_outro?: boolean;
   creator_profiles?: CampaignCreatorProfile[];
   branding_profile?: CampaignCreatorProfile | null;
   participants_count?: number;
@@ -156,6 +160,8 @@ export interface CampaignSubmission {
     id: number;
     email: string;
     display_name: string | null;
+    avatar_url?: string | null;
+    username?: string | null;
   };
   campaign?: {
     id: number;

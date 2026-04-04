@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 /// Global flag to signal cancellation of audio extraction
 static AUDIO_EXTRACTION_CANCELLED: AtomicBool = AtomicBool::new(false);
 
@@ -29,9 +32,10 @@ fn kill_all_active_ffmpeg() {
             #[cfg(target_os = "windows")]
             {
                 // On Windows, use taskkill to force-kill the process tree
-                let _ = std::process::Command::new("taskkill")
-                    .args(["/F", "/T", "/PID", &pid.to_string()])
-                    .output();
+                let mut cmd = std::process::Command::new("taskkill");
+                cmd.args(["/F", "/T", "/PID", &pid.to_string()]);
+                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                let _ = cmd.output();
             }
             #[cfg(not(target_os = "windows"))]
             {

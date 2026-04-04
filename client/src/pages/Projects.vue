@@ -1318,6 +1318,7 @@
   } from '@/services/database';
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { useClipThumbnailStore } from '@/stores/clipThumbnails';
+  import { persistentCache } from '@/utils/persistentCache';
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { extractMintId } from '@/services/pumpfun';
   import { useFormatters } from '@/composables/useFormatters';
@@ -1641,136 +1642,45 @@
       }
       console.log('[Projects] Loaded video editor projects:', allVideoEditorProjects.length);
 
-      // Load clip counts and video thumbnails for each project
-      for (const project of projects.value) {
+      // Parallelize clip counts and video loading for all projects
+      const clipCountPromises = projects.value.map(async (project) => {
         const clips = await getClipsWithVersionsByProjectId(project.id);
-        clipCounts.value[project.id] = clips.length;
+        return { projectId: project.id, count: clips.length };
+      });
 
-        // Load videos for this project
+      const videoPromises = projects.value.map(async (project) => {
         const videos = await getRawVideosByProjectId(project.id);
-        projectVideos.value[project.id] = videos;
+        return { projectId: project.id, videos };
+      });
 
-        // Load project thumbnail or use first video's thumbnail
-        // If we're doing a background refresh, we might want to re-verify thumbnails for modified projects
-        // But checking !has() is usually enough if we clear the cache for modified projects before calling this
-        if (!thumbnailCache.value.has(project.id)) {
-          if (project.thumbnail_path) {
-            // Use project's stored thumbnail if available
-            try {
-              const dataUrl = await invoke<string>('read_file_as_data_url', {
-                filePath: project.thumbnail_path,
-              });
-              thumbnailCache.value.set(project.id, dataUrl);
-            } catch (error) {
-              console.warn('Failed to load project thumbnail:', project.id, error);
-            }
-          } else if (videos.length > 0 && videos[0].thumbnail_path) {
-            // Fall back to first video's thumbnail
-            try {
-              // Update the project object in memory
-              project.thumbnail_path = videos[0].thumbnail_path;
+      // Load clips and videos in parallel
+      const [clipResults, videoResults] = await Promise.all([
+        Promise.all(clipCountPromises),
+        Promise.all(videoPromises),
+      ]);
 
-              const dataUrl = await invoke<string>('read_file_as_data_url', {
-                filePath: videos[0].thumbnail_path,
-              });
-              thumbnailCache.value.set(project.id, dataUrl);
+      // Populate clip counts and project videos
+      for (const result of clipResults) {
+        clipCounts.value[result.projectId] = result.count;
+      }
 
-              // Save this thumbnail to the project for future use
-              await updateProject(project.id, undefined, undefined, videos[0].thumbnail_path);
-            } catch (error) {
-              console.warn('Failed to load video thumbnail for project:', project.id, error);
-            }
-          } else {
-            // Try to get thumbnail from first clip (for auto-detected clip projects)
-            try {
-              const { getClipsWithBuildStatus } = await import('@/services/database/clip-build');
-              const clips = await getClipsWithBuildStatus(project.id);
-              
-              if (clips.length > 0) {
-                let clipThumb = clips[0].built_thumbnail_path;
-                
-                // If no built_thumbnail_path, try to generate from the clip's video file
-                if (!clipThumb && clips[0].file_path) {
-                  try {
-                    // Generate thumbnail from the clip's video file
-                    const thumbnailPath = await invoke<string>('generate_video_thumbnail', {
-                      videoPath: clips[0].file_path,
-                      outputDir: null, // Use default temp directory
-                    });
-                    clipThumb = thumbnailPath;
-                  } catch (thumbError) {
-                    console.warn('Failed to generate thumbnail from clip video:', thumbError);
-                  }
-                }
-                
-                if (clipThumb) {
-                  project.thumbnail_path = clipThumb;
+      for (const result of videoResults) {
+        projectVideos.value[result.projectId] = result.videos;
+      }
 
-                  const dataUrl = await invoke<string>('read_file_as_data_url', {
-                    filePath: clipThumb,
-                  });
-                  thumbnailCache.value.set(project.id, dataUrl);
+      // Load thumbnails for first 20 projects immediately, rest in background
+      const projectsNeedingThumbs = projects.value.filter(p => !thumbnailCache.value.has(p.id));
+      const visibleProjects = projectsNeedingThumbs.slice(0, 20);
+      const remainingProjects = projectsNeedingThumbs.slice(20);
 
-                  // Save this thumbnail to the project for future use
-                  await updateProject(project.id, undefined, undefined, clipThumb);
-                }
-              }
-              
-              if (!project.thumbnail_path) {
-                // Check if it's a parent project and try to get thumbnail from children
-                // This handles auto-segmented projects that have child projects but no direct videos yet
-                const children = projects.value.filter((p) => p.parent_id === project.id);
-                if (children.length > 0) {
-                  // Found children, try to get a thumbnail from one of them
-                  for (const child of children) {
-                    // Try to find thumbnail from child project directly
-                    let childThumb = child.thumbnail_path;
+      // Load visible project thumbnails immediately
+      await loadProjectThumbnailsBatch(visibleProjects);
 
-                    // If not on project, check if we have videos for this child already loaded
-                    if (!childThumb && projectVideos.value[child.id]?.length > 0) {
-                      childThumb = projectVideos.value[child.id][0].thumbnail_path;
-                    }
-
-                    if (childThumb) {
-                      // Set thumbnail on the parent project object in memory
-                      project.thumbnail_path = childThumb;
-
-                      const dataUrl = await invoke<string>('read_file_as_data_url', {
-                        filePath: childThumb,
-                      });
-                      thumbnailCache.value.set(project.id, dataUrl);
-
-                      // Save to parent in DB if not already set
-                      await updateProject(project.id, undefined, undefined, childThumb);
-                      break;
-                    } else {
-                      // Force fetch child videos if not yet loaded (rare race condition fallback)
-                      try {
-                        const childVideos = await getRawVideosByProjectId(child.id);
-                        projectVideos.value[child.id] = childVideos;
-
-                        if (childVideos.length > 0 && childVideos[0].thumbnail_path) {
-                          childThumb = childVideos[0].thumbnail_path;
-                          project.thumbnail_path = childThumb;
-                          const dataUrl = await invoke<string>('read_file_as_data_url', {
-                            filePath: childThumb,
-                          });
-                          thumbnailCache.value.set(project.id, dataUrl);
-                          await updateProject(project.id, undefined, undefined, childThumb);
-                          break;
-                        }
-                      } catch (e) {
-                        console.warn('Failed to fetch child videos for thumbnail propagation', e);
-                      }
-                    }
-                  }
-                }
-              }
-            } catch (error) {
-              console.warn('Failed to load thumbnail from clips or children for project:', project.id, error);
-            }
-          }
-        }
+      // Defer remaining thumbnails to after initial render
+      if (remainingProjects.length > 0) {
+        setTimeout(() => {
+          loadProjectThumbnailsBatch(remainingProjects);
+        }, 100);
       }
       // Load transcript statuses for all projects (non-blocking)
       const allProjectIds = projects.value.map((p) => p.id);
@@ -1782,6 +1692,93 @@
       console.error('Failed to load projects:', error);
     } finally {
       loading.value = false;
+    }
+  }
+
+  // Helper function to load thumbnails for a batch of projects
+  async function loadProjectThumbnailsBatch(projectList: Project[]) {
+    const batchSize = 5;
+    for (let i = 0; i < projectList.length; i += batchSize) {
+      const batch = projectList.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map(async (project) => {
+          // Check persistent cache first
+          try {
+            const cached = await persistentCache.get<string>('thumbnails', `project-${project.id}`);
+            if (cached) {
+              thumbnailCache.value.set(project.id, cached);
+              return;
+            }
+          } catch (error) {
+            console.warn('[Projects] Failed to read thumbnail from cache:', error);
+          }
+
+          const videos = projectVideos.value[project.id] || [];
+          
+          if (project.thumbnail_path) {
+            try {
+              const dataUrl = await invoke<string>('read_file_as_data_url', {
+                filePath: project.thumbnail_path,
+              });
+              thumbnailCache.value.set(project.id, dataUrl);
+              // Save to persistent cache (24 hours TTL)
+              persistentCache.set('thumbnails', `project-${project.id}`, dataUrl, 86400000).catch(() => {});
+            } catch (error) {
+              console.warn('[Projects] Failed to load project thumbnail:', project.id, error);
+            }
+          } else if (videos.length > 0 && videos[0].thumbnail_path) {
+            try {
+              project.thumbnail_path = videos[0].thumbnail_path;
+              const dataUrl = await invoke<string>('read_file_as_data_url', {
+                filePath: videos[0].thumbnail_path,
+              });
+              thumbnailCache.value.set(project.id, dataUrl);
+              persistentCache.set('thumbnails', `project-${project.id}`, dataUrl, 86400000).catch(() => {});
+              await updateProject(project.id, undefined, undefined, videos[0].thumbnail_path);
+            } catch (error) {
+              console.warn('[Projects] Failed to load video thumbnail:', project.id, error);
+            }
+          } else {
+            // Try to get thumbnail from first clip or children (deferred complex logic)
+            await loadThumbnailFromClipsOrChildren(project);
+          }
+        })
+      );
+    }
+  }
+
+  // Helper function for complex thumbnail fallback logic
+  async function loadThumbnailFromClipsOrChildren(project: Project) {
+    try {
+      const { getClipsWithBuildStatus } = await import('@/services/database/clip-build');
+      const clips = await getClipsWithBuildStatus(project.id);
+      
+      if (clips.length > 0 && clips[0].built_thumbnail_path) {
+        project.thumbnail_path = clips[0].built_thumbnail_path;
+        const dataUrl = await invoke<string>('read_file_as_data_url', {
+          filePath: clips[0].built_thumbnail_path,
+        });
+        thumbnailCache.value.set(project.id, dataUrl);
+        persistentCache.set('thumbnails', `project-${project.id}`, dataUrl, 86400000).catch(() => {});
+        await updateProject(project.id, undefined, undefined, clips[0].built_thumbnail_path);
+        return;
+      }
+      
+      // Try children as last resort
+      const children = projects.value.filter((p) => p.parent_id === project.id);
+      for (const child of children) {
+        const childThumb = child.thumbnail_path || projectVideos.value[child.id]?.[0]?.thumbnail_path;
+        if (childThumb) {
+          project.thumbnail_path = childThumb;
+          const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: childThumb });
+          thumbnailCache.value.set(project.id, dataUrl);
+          persistentCache.set('thumbnails', `project-${project.id}`, dataUrl, 86400000).catch(() => {});
+          await updateProject(project.id, undefined, undefined, childThumb);
+          break;
+        }
+      }
+    } catch (error) {
+      console.warn('[Projects] Failed to load thumbnail from clips/children:', project.id, error);
     }
   }
 

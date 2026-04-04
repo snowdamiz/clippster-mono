@@ -2479,7 +2479,7 @@
       positionPercentage: clip.subtitle_position_y ?? 85, // Use saved position
       maxWidth: clip.subtitle_position_width ?? 90, // Use saved width
       animationStyle: animationStyleMap[preset.highlightStyle || 'none'] || 'none',
-      highlightColor: preset.highlightColor || '#FFFD03',
+      highlightColor: preset.highlightColor || '#0ea5e9',
       multiColorEnabled: false,
       multiColorMode: 'default',
       colorPalette: [],

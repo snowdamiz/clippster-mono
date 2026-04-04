@@ -100,6 +100,8 @@
     containerWidth: number; // Container width in pixels
     containerHeight: number; // Container height in pixels
     aspectRatioLocked?: boolean; // Lock aspect ratio during resize (default true)
+    snapToCenter?: boolean; // Enable snap-to-center behavior
+    snapThreshold?: number; // Snap threshold in pixels
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -111,6 +113,8 @@
     minWidth: 0.05,
     minHeight: 0.05,
     aspectRatioLocked: true,
+    snapToCenter: true,
+    snapThreshold: 8,
   });
 
   const emit = defineEmits<{
@@ -119,6 +123,7 @@
     select: [];
     dragStart: [];
     dragEnd: [];
+    centerGuide: [{ vertical: boolean; horizontal: boolean }];
   }>();
 
   const regionRef = ref<HTMLElement | null>(null);
@@ -170,7 +175,7 @@
     document.addEventListener('mouseup', onDragEnd);
   }
 
-  // Handle dragging
+  // Handle dragging with snap-to-center
   function onDrag(event: MouseEvent) {
     if (!isDragging.value) return;
 
@@ -178,8 +183,27 @@
     const deltaY = (event.clientY - startMouseY.value) / props.containerHeight;
 
     // Calculate new position, clamped to container bounds
-    const newX = clamp(startRect.value.x + deltaX, 0, 1 - props.rect.width);
-    const newY = clamp(startRect.value.y + deltaY, 0, 1 - props.rect.height);
+    let newX = clamp(startRect.value.x + deltaX, 0, 1 - props.rect.width);
+    let newY = clamp(startRect.value.y + deltaY, 0, 1 - props.rect.height);
+
+    // Center values (where element would be perfectly centered)
+    const centerX = (1 - props.rect.width) / 2;
+    const centerY = (1 - props.rect.height) / 2;
+    
+    // Convert snap threshold from pixels to percentage
+    const snapThresholdX = props.snapThreshold / props.containerWidth;
+    const snapThresholdY = props.snapThreshold / props.containerHeight;
+    
+    // Check proximity to center
+    const nearVerticalCenter = props.snapToCenter && Math.abs(newX - centerX) < snapThresholdX;
+    const nearHorizontalCenter = props.snapToCenter && Math.abs(newY - centerY) < snapThresholdY;
+    
+    // Snap to center if close
+    if (nearVerticalCenter) newX = centerX;
+    if (nearHorizontalCenter) newY = centerY;
+    
+    // Emit center guide visibility
+    emit('centerGuide', { vertical: nearVerticalCenter, horizontal: nearHorizontalCenter });
 
     emit('update', {
       ...props.rect,
@@ -192,6 +216,7 @@
   function onDragEnd() {
     isDragging.value = false;
     emit('dragEnd');
+    emit('centerGuide', { vertical: false, horizontal: false });
     document.removeEventListener('mousemove', onDrag);
     document.removeEventListener('mouseup', onDragEnd);
   }

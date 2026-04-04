@@ -230,6 +230,25 @@ export interface SubtitleOverride {
   position?: { x: number; y: number }; // Override position as x,y coordinates (0-100)
   maxWidth?: number; // Override max width for this aspect ratio
   presetId?: string; // Override subtitle style preset for this aspect ratio
+  // Extended visual styling fields (read by Rust generate_ass_file)
+  animationStyle?: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave' | 'single-word';
+  textColor?: string;
+  fontFamily?: string;
+  fontWeight?: number;
+  border1Width?: number;
+  border1Color?: string;
+  border2Width?: number;
+  border2Color?: string;
+  highlightColor?: string;
+  multiColorEnabled?: boolean;
+  colorPalette?: string[];
+  multiColorMode?: 'default' | 'custom';
+  shadowOffsetX?: number;
+  shadowOffsetY?: number;
+  shadowBlur?: number;
+  shadowColor?: string;
+  backgroundColor?: string;
+  backgroundEnabled?: boolean;
 }
 
 // Map of aspect ratio to subtitle overrides
@@ -238,6 +257,7 @@ export interface SubtitleOverrides {
   '9:16'?: SubtitleOverride;
   '1:1'?: SubtitleOverride;
   '4:5'?: SubtitleOverride;
+  [key: string]: SubtitleOverride | undefined;
 }
 
 // Watermark position for a specific aspect ratio
@@ -340,7 +360,7 @@ export interface MusicTrackSettings {
 }
 
 export interface MediaPanelEmits {
-  (e: 'clipHover', clipId: string): void;
+  (e: 'clipHover', clipId: string | null): void;
   (e: 'clipLeave'): void;
   (e: 'detectClips'): void;
   (e: 'cancelDetection'): void;
@@ -661,6 +681,19 @@ export interface SegmentRegionConfig {
   regions: ManualRegion[]; // Region configuration for this time segment
 }
 
+/** How the 16:9 source is framed in the target preview (e.g. 9:16) */
+export type ManualSourceFrameMode = 'none' | 'scale' | 'use16x9';
+
+/** Normalized x/y like sourceTransform; emitted from POITargetPanel */
+export interface ManualSourceFramingPayload {
+  mode: ManualSourceFrameMode;
+  blurEnabled: boolean;
+  blurAmount: number;
+  scale: number;
+  x: number;
+  y: number;
+}
+
 export interface ManualFramingConfig {
   mode: 'manual';
   regions: ManualRegion[]; // Default/fallback regions
@@ -668,11 +701,17 @@ export interface ManualFramingConfig {
   sourceAspectRatio?: string; // "16:9" typically
   // Segment-based configurations (for dynamic camera position changes)
   segmentConfigs?: SegmentRegionConfig[];
+  /** Mutually exclusive with "scale" in UI: blur letterbox vs scaled source frame */
+  sourceFrameMode?: ManualSourceFrameMode;
+  /** Blur on scaled 16:9 frame, or on Use 16:9 background */
+  blurEnabled?: boolean;
+  /** Approximate CSS px; mapped to FFmpeg blur in export */
+  blurAmount?: number;
   // Global source frame transform (for scaling/positioning entire source)
   sourceTransform?: {
     scale: number; // Scale factor (1.0 = no scale)
-    x: number; // X offset (normalized 0-1)
-    y: number; // Y offset (normalized 0-1)
+    x: number; // X offset (normalized relative to container width, can be negative)
+    y: number; // Y offset (normalized relative to container height, can be negative)
   };
 }
 

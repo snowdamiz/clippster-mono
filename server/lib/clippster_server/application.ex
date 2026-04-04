@@ -80,6 +80,8 @@ defmodule ClippsterServer.Application do
       ClippsterServer.ClipperProfiles.ResponseTimeWorker,
       # Campaign submission view sync worker
       ClippsterServer.Campaigns.SubmissionViewSyncWorker,
+      # Campaign completion worker (marks expired campaigns as completed)
+      ClippsterServer.Campaigns.CampaignCompletionWorker,
       # News poller for breaking news feed
       ClippsterServer.News.NewsPoller,
       # Start to serve requests, typically the last entry

@@ -66,6 +66,14 @@
       ]
     },
     {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        {
+          "path": "$TEMP/**"
+        }
+      ]
+    },
+    {
       "identifier": "opener:allow-reveal-item-in-dir",
       "allow": [
         {

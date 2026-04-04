@@ -32,9 +32,22 @@
       <p class="campaigns__empty-text">Create your first campaign to start working with clippers</p>
     </div>
 
-    <!-- Campaigns Grid -->
-    <div v-else class="campaigns__grid">
-      <div v-for="campaign in campaigns" :key="campaign.id" class="campaigns__card">
+    <!-- Main Content - Sections -->
+    <div v-else class="campaigns__sections">
+      <!-- Active & Draft Campaigns Section -->
+      <div v-if="activeCampaigns.length > 0" class="campaigns__section">
+        <div class="campaigns__section-header">
+          <div class="campaigns__section-title-wrapper">
+            <Play class="campaigns__section-icon" />
+            <h2 class="campaigns__section-title">Active & Draft Campaigns</h2>
+          </div>
+          <div class="campaigns__item-count">
+            {{ activeCampaigns.length }} {{ activeCampaigns.length === 1 ? 'campaign' : 'campaigns' }}
+          </div>
+        </div>
+
+        <div class="campaigns__grid">
+          <div v-for="campaign in activeCampaigns" :key="campaign.id" class="campaigns__card">
         <!-- Cover Image -->
         <div class="campaigns__cover">
           <img v-if="campaign.cover_image_url" :src="campaign.cover_image_url" class="campaigns__cover-img" />
@@ -265,8 +278,253 @@
       </div>
     </div>
 
+      <!-- Completed Campaigns Section -->
+      <div v-if="completedCampaigns.length > 0" class="campaigns__section">
+        <div class="campaigns__section-header">
+          <div class="campaigns__section-title-wrapper">
+            <CheckCircle class="campaigns__section-icon" />
+            <h2 class="campaigns__section-title">Completed Campaigns</h2>
+          </div>
+          <div class="campaigns__item-count">
+            {{ completedCampaigns.length }} {{ completedCampaigns.length === 1 ? 'campaign' : 'campaigns' }}
+          </div>
+        </div>
+
+        <div class="campaigns__grid">
+          <div v-for="campaign in completedCampaigns" :key="campaign.id" class="campaigns__card">
+        <!-- Cover Image -->
+        <div class="campaigns__cover">
+          <img v-if="campaign.cover_image_url" :src="campaign.cover_image_url" class="campaigns__cover-img" />
+          <div v-else class="campaigns__cover-fallback">
+            <Megaphone class="campaigns__cover-icon" />
+          </div>
+          <!-- Badges on Cover -->
+          <div class="campaigns__cover-badges">
+            <!-- Status Badge -->
+            <div
+              class="campaigns__status"
+              :class="{
+                'campaigns__status--active': campaign.status === 'active',
+                'campaigns__status--paused': campaign.status === 'paused',
+                'campaigns__status--completed': campaign.status === 'completed',
+                'campaigns__status--draft': campaign.status === 'draft',
+              }"
+            >
+              {{ campaign.status }}
+            </div>
+            <!-- Join Type Badge -->
+            <span
+              class="campaigns__join-type"
+              :class="{
+                'campaigns__join-type--open': campaign.join_type === 'open',
+                'campaigns__join-type--application': campaign.join_type === 'application_required',
+              }"
+            >
+              <UserCheck v-if="campaign.join_type === 'open'" class="campaigns__join-type-icon" />
+              <ShieldCheck v-else class="campaigns__join-type-icon" />
+              {{ campaign.join_type === 'open' ? 'Open' : 'Apply' }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Card Content -->
+        <div class="campaigns__card-content">
+          <!-- Campaign Info -->
+          <div class="campaigns__info">
+            <h3 class="campaigns__name">{{ campaign.title }}</h3>
+            <p v-if="campaign.description" class="campaigns__desc">{{ campaign.description }}</p>
+
+            <!-- Meta Row -->
+            <div v-if="campaign.starts_at || campaign.ends_at || (campaign.status === 'active' && getDaysRemaining(campaign) !== null)" class="campaigns__meta">
+              <span v-if="campaign.starts_at || campaign.ends_at" class="campaigns__meta-item">
+                <Calendar class="campaigns__meta-icon" />
+                <template v-if="campaign.starts_at">{{ formatDate(campaign.starts_at) }}</template>
+                <template v-if="campaign.starts_at && campaign.ends_at">–</template>
+                <template v-if="campaign.ends_at">{{ formatDate(campaign.ends_at) }}</template>
+              </span>
+              <!-- Days Remaining -->
+              <span
+                v-if="campaign.status === 'active' && getDaysRemaining(campaign) !== null"
+                class="campaigns__meta-item campaigns__meta-item--highlight"
+              >
+                <Clock class="campaigns__meta-icon" />
+                <template v-if="getDaysRemaining(campaign)! > 0">
+                  {{ getDaysRemaining(campaign) }}d left
+                </template>
+                <template v-else>Ending today</template>
+              </span>
+            </div>
+
+            <!-- Platform Icons & Creator Avatars Row -->
+            <div class="campaigns__platforms-creators">
+              <!-- Platform Icons -->
+              <div v-if="campaign.allowed_platforms?.length" class="campaigns__platforms">
+                <span
+                  v-for="platform in campaign.allowed_platforms"
+                  :key="platform"
+                  class="campaigns__platform-badge"
+                  :class="getPlatformClass(platform)"
+                  :title="getPlatformDisplayName(platform)"
+                >
+                  <Instagram v-if="platform === 'instagram'" class="campaigns__platform-icon" />
+                  <Youtube v-else-if="platform === 'youtube'" class="campaigns__platform-icon" />
+                  <svg
+                    v-else-if="platform === 'tiktok'"
+                    viewBox="0 0 24 24"
+                    class="campaigns__platform-icon campaigns__platform-icon--tiktok"
+                  >
+                    <path
+                      fill="currentColor"
+                      d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"
+                    />
+                  </svg>
+                  <svg
+                    v-else-if="isXPlatform(platform)"
+                    viewBox="0 0 24 24"
+                    class="campaigns__platform-icon campaigns__platform-icon--x"
+                  >
+                    <path
+                      fill="currentColor"
+                      d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+                    />
+                  </svg>
+                  <component v-else :is="getPlatformIcon(platform)" class="campaigns__platform-icon" />
+                </span>
+              </div>
+
+              <!-- Creator Profiles Avatars -->
+              <div v-if="campaign.creator_profiles?.length" class="campaigns__creators">
+                <div
+                  v-for="profile in campaign.creator_profiles.slice(0, 3)"
+                  :key="profile.id"
+                  class="campaigns__creator-avatar"
+                  :title="profile.name"
+                >
+                  <img
+                    v-if="profile.profile_image_url"
+                    :src="profile.profile_image_url"
+                    class="campaigns__creator-img"
+                    @error="handleImageError"
+                  />
+                  <div v-else class="campaigns__creator-fallback">
+                    {{ profile.name?.charAt(0) }}
+                  </div>
+                </div>
+                <span v-if="campaign.creator_profiles.length > 3" class="campaigns__creator-more">
+                  +{{ campaign.creator_profiles.length - 3 }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Stats Row -->
+          <div class="campaigns__stats">
+            <div class="campaigns__stat">
+              <DollarSign class="campaigns__stat-icon" />
+              <div class="campaigns__stat-data">
+                <span class="campaigns__stat-value">${{ formatCpm(campaign.cpm) }}</span>
+                <span class="campaigns__stat-label">per {{ formatViews(campaign.cpm_views || 1000) }}</span>
+              </div>
+            </div>
+            <div class="campaigns__stat">
+              <Wallet class="campaigns__stat-icon" />
+              <div class="campaigns__stat-data">
+                <span class="campaigns__stat-value">${{ formatBudget(campaign.budget) }}</span>
+                <span class="campaigns__stat-label">budget</span>
+              </div>
+            </div>
+            <div class="campaigns__stat">
+              <Users class="campaigns__stat-icon" />
+              <div class="campaigns__stat-data">
+                <span class="campaigns__stat-value">{{ campaign.participants_count || 0 }}</span>
+                <span class="campaigns__stat-label">clippers</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Budget Progress -->
+          <div class="campaigns__budget-progress">
+            <div class="campaigns__budget-bar">
+              <div
+                class="campaigns__budget-fill"
+                :style="{ width: getBudgetPercentage(campaign) + '%' }"
+                :class="{
+                  'campaigns__budget-fill--low': getBudgetPercentage(campaign) < 50,
+                  'campaigns__budget-fill--medium': getBudgetPercentage(campaign) >= 50 && getBudgetPercentage(campaign) < 80,
+                  'campaigns__budget-fill--high': getBudgetPercentage(campaign) >= 80,
+                }"
+              ></div>
+            </div>
+            <span class="campaigns__budget-text">
+              ${{ formatBudget(campaign.spent_budget || 0) }} spent / ${{ formatBudget(campaign.budget) }} total
+            </span>
+          </div>
+
+          <!-- Actions -->
+          <div class="campaigns__actions">
+            <button title="View" class="campaigns__action-btn" @click.stop="viewCampaign(campaign)">
+              <Eye class="campaigns__action-icon" />
+            </button>
+            <button title="Edit" v-if="isAdmin" class="campaigns__action-btn" @click.stop="editCampaign(campaign)">
+              <Pencil class="campaigns__action-icon" />
+            </button>
+            <DropdownMenu v-if="isAdmin">
+              <DropdownMenuTrigger as-child>
+                <button title="Menu" class="campaigns__action-btn" @click.stop>
+                  <MoreVertical class="campaigns__action-icon" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="campaigns__dropdown">
+                <DropdownMenuItem
+                  v-if="campaign.status === 'draft'"
+                  @click="activateCampaignAction(campaign)"
+                  class="campaigns__dropdown-item"
+                >
+                  <Play class="campaigns__dropdown-icon" />
+                  Activate
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  v-if="campaign.status === 'active'"
+                  @click="pauseCampaignAction(campaign)"
+                  class="campaigns__dropdown-item"
+                >
+                  <Pause class="campaigns__dropdown-icon" />
+                  Pause
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  v-if="campaign.status === 'paused'"
+                  @click="activateCampaignAction(campaign)"
+                  class="campaigns__dropdown-item"
+                >
+                  <Play class="campaigns__dropdown-icon" />
+                  Resume
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  v-if="campaign.status !== 'completed'"
+                  @click="completeCampaignAction(campaign)"
+                  class="campaigns__dropdown-item"
+                >
+                  <CheckCircle class="campaigns__dropdown-icon" />
+                  Complete
+                </DropdownMenuItem>
+                <DropdownMenuSeparator class="campaigns__dropdown-sep" />
+                <DropdownMenuItem
+                  @click="confirmDeleteCampaign(campaign)"
+                  class="campaigns__dropdown-item campaigns__dropdown-item--danger"
+                >
+                  <Trash2 class="campaigns__dropdown-icon" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Create/Edit Campaign Wizard -->
-    <Teleport to="body">
       <Transition name="modal">
         <div
           v-if="showCampaignDialog"
@@ -2131,6 +2389,15 @@
     return globalProfiles.map((p) => ({ label: p.name, value: p.id }));
   });
 
+  // Filtered campaigns based on status
+  const activeCampaigns = computed(() => {
+    return campaigns.value.filter(c => c.status !== 'completed');
+  });
+
+  const completedCampaigns = computed(() => {
+    return campaigns.value.filter(c => c.status === 'completed');
+  });
+
   const campaignForm = reactive({
     title: '',
     description: '',
@@ -3037,6 +3304,56 @@
     color: var(--sidebar-text-muted);
     margin: 0;
     line-height: 1.5;
+  }
+
+  /* ===== Sections ===== */
+  .campaigns__sections {
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+  }
+
+  .campaigns__section {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .campaigns__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .campaigns__section-title-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .campaigns__section-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--sidebar-accent);
+  }
+
+  .campaigns__section-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.025em;
+  }
+
+  .campaigns__item-count {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background-color: var(--sidebar-hover);
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.5rem;
   }
 
   /* ===== Campaigns Grid ===== */

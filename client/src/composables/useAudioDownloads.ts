@@ -158,6 +158,10 @@ export function useAudioDownloads() {
   async function handleComplete(event: AudioDownloadResult) {
     console.log('[useAudioDownloads] Download complete event received:', event);
     console.log('[useAudioDownloads] Platform value:', event.platform);
+    
+    // Remove from active downloads first
+    activeDownloads.value.delete(event.download_id);
+    
     if (event.success && event.file_path && event.title && event.platform) {
       // Save to database
       try {
@@ -175,13 +179,15 @@ export function useAudioDownloads() {
         );
         console.log('[useAudioDownloads] Saved downloaded audio to database:', event.title);
         console.log('[useAudioDownloads] Saved with platform:', event.platform);
+        
+        // Emit a custom event that the UI can listen to AFTER database save is complete
+        window.dispatchEvent(new CustomEvent('audio-library-updated', { 
+          detail: { audioId: event.download_id, title: event.title } 
+        }));
       } catch (error) {
         console.error('[useAudioDownloads] Failed to save downloaded audio to database:', error);
       }
     }
-
-    // Remove from active downloads
-    activeDownloads.value.delete(event.download_id);
   }
 
   // Initialize event listeners only once (singleton pattern)

@@ -32,6 +32,7 @@ const showRenameDialog = ref(false);
 const showShortcutsDialog = ref(false);
 const showAspectMenu = ref(false);
 const showSocialMenu = ref(false);
+const showDropdown = ref(false);
 const isFullscreen = ref(false);
 const aspectButtonRef = ref<HTMLButtonElement | null>(null);
 const socialButtonRef = ref<HTMLButtonElement | null>(null);
@@ -145,29 +146,33 @@ async function loadVodInfo() {
 			vodInfo.value = null;
 			return;
 		}
+		const sourceId = source.source_id;
+		if (!sourceId) { vodInfo.value = null; return; }
 		if (source.source_type === "clip") {
-			const clip = await getClip(source.source_id);
-			if (!clip) { vodInfo.value = null; return; }
+			const clip = await getClip(sourceId);
+			if (!clip || !clip.project_id) { vodInfo.value = null; return; }
 			const project = await getProject(clip.project_id);
-			if (!project || !project.platform || project.platform === "Manual") {
+			const platform = project?.platform;
+			if (!project || !platform || platform === "Manual") {
 				vodInfo.value = null;
 				return;
 			}
 			const rawVideos = await getRawVideosByProjectId(project.id);
 			vodInfo.value = {
-				platform: normalizePlatformKey(project.platform),
+				platform: normalizePlatformKey(platform),
 				streamerName: rawVideos[0]?.source_mint_id ?? null,
 			};
 		} else {
-			const rawVideo = await getRawVideo(source.source_id);
-			if (!rawVideo) { vodInfo.value = null; return; }
+			const rawVideo = await getRawVideo(sourceId);
+			if (!rawVideo || !rawVideo.project_id) { vodInfo.value = null; return; }
 			const project = await getProject(rawVideo.project_id);
-			if (!project || !project.platform || project.platform === "Manual") {
+			const platform = project?.platform;
+			if (!project || !platform || platform === "Manual") {
 				vodInfo.value = null;
 				return;
 			}
 			vodInfo.value = {
-				platform: normalizePlatformKey(project.platform),
+				platform: normalizePlatformKey(platform),
 				streamerName: rawVideo.source_mint_id ?? null,
 			};
 		}

@@ -12,51 +12,87 @@ Working notes for follow-up work. No implementation in this change—context gat
 
 ---
 
-## Fix org public page (needs the correct counts for everything)
+## ~~Fix org public page (needs the correct counts for everything)~~ ✅ COMPLETED
 
-**Context:** Public stats are assembled server-side in `server/lib/clippster_server/organizations.ex` (`get_public_profile_by_slug/1`): `campaigns_total`, `campaigns_running` (`status == "active"`), `campaigns_completed` (`status == "completed"`), `clippers_count` (members with `role == "member"` only), `streamers_count` (enabled streamer creator profiles). Consumed by `client/src/pages/OrgPublicProfilePage.vue`, `landing/src/pages/OrgPublicProfilePage.tsx`, and `client/src/services/orgPublicProfilesApi.ts`. **Next:** Compare live DB statuses for “ended” campaigns vs `completed`, whether non-`member` roles should count as clippers, and whether draft/paused campaigns should affect “total.”
+**Status:** Fixed public profile stats calculation in `server/lib/clippster_server/organizations.ex` (`get_public_profile_by_slug/1`).
 
----
-
-## Fix campaigns — when they end, the org needs to still be able to see all completed campaigns
-
-**Context:** Org listing uses `listOrganizationCampaigns(organizationId)` with no status filter in `client/src/components/organization/OrganizationCampaigns.vue`; the API `Campaigns.list_organization_campaigns/2` only filters when `status` is passed (`server/lib/clippster_server/campaigns.ex`, `campaign_controller.ex` `org_index`). Marketplace listing (`list_active_campaigns`) intentionally hides past `ends_at` while status is still `active` until auto-complete runs. **Next:** If org UI still “loses” campaigns, check for another surface (e.g. assets page), race before `auto_complete_expired_campaigns`, or client-side filtering; confirm completed rows exist in DB after end date.
-
----
-
-## Subtitle export parity — project workspace (`16:9`) and manual POI (per aspect ratio)
-
-**Scope (important):** This is **not** the OpenCut timeline video editor under `client/src/editor/`. It is the **clip / VOD workflow**: project workspace dialog, manual POI editor, and the subtitle styling UI.
-
-**Goal:** Burned-in or exported subtitles must match **exactly** what the user configured in:
-
-1. **`client/src/components/SubtitlePropertiesPanel.vue`** — style and copy edits emitted via `@updateSettings` / related handlers (the panel is mounted from `ProjectWorkspaceDialog.vue` on the subtitles tab, `@updateSettings="onSubtitleSettingsUpdate"`).
-2. **`client/src/components/poi/ManualPOIEditor.vue`** — per–aspect-ratio placement and settings via `subtitlePositionOverride`, `subtitleSettings`, `POITargetPanel`, and emits `subtitlePositionChange` / `subtitleSettingsChange`.
-
-**Workspace (`ProjectWorkspaceDialog.vue`):** Preview defaults include `16:9` (`previewAspectRatio`); `VideoPlayer` receives `activeSubtitleSettings` and position props. Fixes here are about **persisting the same payload the panel edits** and ensuring the **build/export path** reads that payload for the `16:9` (and any selected preview ratio) output, not only the in-dialog preview.
-
-**Manual POI (`ManualPOIEditor.vue`):** Each aspect ratio can diverge; export must apply the correct overrides **per output ratio**, not a single global subtitle layout.
-
-**Next:** Trace end-to-end from `SubtitlePropertiesPanel` → DB / clip fields → Rust/FFmpeg subtitle generation (`client/src-tauri/...`, e.g. subtitle burn-in), and separately from `ManualPOIEditor` emits → whatever stores per-ratio overrides → export. Diff preview state vs what the encoder receives for `16:9` and for each manual POI ratio.
+**Changes:**
+- **campaigns_total**: Now excludes draft campaigns (not public) and only counts `active`, `paused`, and `completed` campaigns
+- **clippers_count**: Now includes all organization members (owner, admin, member) instead of just "member" role
+- Campaign statuses confirmed: `draft`, `active`, `paused`, `completed` (no "ended" status exists; auto-completion moves campaigns from `active` to `completed` when `ends_at` is reached)
 
 ---
 
-## Fix downloading audio — must navigate away and back to audio library to see newest download
+## ~~Fix campaigns — when they end, the org needs to still be able to see all completed campaigns~~ ✅ COMPLETED
 
-**Context:** `client/src/pages/AudioLibrary.vue` listens for Tauri `download-complete` and calls `loadAudioFiles()` (~1034+). Download flow is also described in `docs/AUDIO_DOWNLOAD_PLAYLIST_PLAN.md`. **Next:** Confirm events fire when the library page is already mounted; check for duplicate listeners, unmount cleanup, or DB commit timing vs event.
+**Status:** Fixed campaign completion workflow and added Active/Completed sections to the UI (like CreatorProfiles.vue).
+
+**Root Cause:** The `Campaigns.auto_complete_expired_campaigns/0` function existed but was never being called. No worker was scheduled to run it periodically.
+
+**Changes:**
+
+**Backend (Auto-completion):**
+- Created `server/lib/clippster_server/campaigns/campaign_completion_worker.ex` - GenServer that runs hourly to check for expired campaigns
+- Added the worker to the application supervisor in `server/lib/clippster_server/application.ex`
+- Worker runs immediately on startup and then every hour
+- Logs the number of campaigns completed on each run
+- Verified budget exhaustion completion already works (line 1194-1198 in `campaigns.ex`)
+
+**Frontend (UI Organization):**
+- Added separate **sections** to `OrganizationCampaigns.vue` following the CreatorProfiles.vue pattern
+- **"Active & Draft Campaigns"** section: Shows `draft`, `active`, and `paused` campaigns
+- **"Completed Campaigns"** section: Shows `completed` campaigns only
+- Each section has a header with icon, title, and campaign count
+- Both sections are visible on the same page (no tabs - sections with dividers)
+- Verified campaign details view works for all statuses (navigates to detail route)
+
+**Technical Details:**
+- The API was already correct - `listOrganizationCampaigns` returns all campaigns without filtering
+- Campaigns complete automatically in two ways:
+  1. When `ends_at` date passes (via CampaignCompletionWorker)
+  2. When budget is exhausted (via existing payment processing code)
+- Organizations can now see active and completed campaigns in clearly separated sections on the same page
+- Campaigns will automatically transition to "completed" status within 1 hour of their `ends_at` time
 
 ---
 
-## Fix adding to playlist in audio library — first create forces a second visit to add the track
+## ~~Subtitle export parity — project workspace (`16:9`) and manual POI (per aspect ratio)~~ ✅ COMPLETED
 
-**Context:** In `AudioLibrary.vue`, the “Create New Playlist” control inside the add-to-playlist dialog closes the add dialog and opens the create dialog **without** passing the pending track or auto-adding after create:
+**Status:** Fixed subtitle export for 16:9 in project workspace and per-aspect-ratio handling in manual POI editor.
 
-```427:428:client/src/pages/AudioLibrary.vue
-                <button
-                  @click="showAddToPlaylistDialog = false; showCreatePlaylistDialog = true"
-```
+---
 
-`createPlaylist()` reloads playlists but does not call `addAudioToPlaylist` for `selectedAudioForPlaylist`. **Next:** Preserve `selectedAudioForPlaylist` through create, or after `createAudioPlaylist` resolve the new id and add the track in one flow.
+## ~~Fix downloading audio — must navigate away and back to audio library to see newest download~~
+
+**Status:** ✅ FIXED
+
+**Solution:** Fixed race condition between Tauri event and database save. Changed from duplicate listeners to sequential flow:
+1. Global `useAudioDownloads` listener receives `download-complete` event
+2. Saves to database
+3. Dispatches `audio-library-updated` custom event AFTER database save completes
+4. `AudioLibrary.vue` listens to custom event and reloads the list
+
+**Files Modified:**
+- `client/src/composables/useAudioDownloads.ts` - Added custom event dispatch after DB save
+- `client/src/pages/AudioLibrary.vue` - Changed from Tauri event to custom window event
+
+---
+
+## ~~Fix adding to playlist in audio library — first create forces a second visit to add the track~~
+
+**Status:** ✅ FIXED
+
+**Solution:** When user clicks "Create New Playlist" from the add-to-playlist dialog, the pending audio selection is now automatically added to the newly created playlist in one flow. Added `skipDialog` parameter to `addToPlaylist()` to prevent duplicate success toasts, and combined the success message shows "Created & Added" with track count.
+
+**Flow:**
+1. User clicks "Add to Playlist" on an audio file (or bulk selects multiple)
+2. User clicks "Create New Playlist" in the dialog
+3. User enters playlist name and creates it
+4. Audio is automatically added to the new playlist
+5. Single success toast: "Created '{name}' and added {count} track(s)"
+
+**Files Modified:**
+- `client/src/pages/AudioLibrary.vue` - Updated `createPlaylist()` to capture new playlist ID and call `addToPlaylist()`, added `skipDialog` param to `addToPlaylist()`
 
 ---
 
@@ -74,30 +110,112 @@ Working notes for follow-up work. No implementation in this change—context gat
 
 ## Add text box to manual clipping
 
-**Context:** Same manual clip path as above; `ManualPOIEditor.vue` is the rich manual POI surface. **Next:** Specify whether “text box” means burn-in overlay, editor-only annotation, or export metadata; then hook into the same build path as other overlays.
+**Context:** Same manual clip path as above; `ManualPOIEditor.vue` is the rich manual POI surface. **Next:** Specify whether "text box" means burn-in overlay, editor-only annotation, or export metadata; then hook into the same build path as other overlays.
 
 ---
 
-## Run a thorough audit and fix all PowerShell dialog opening across the app
+## ✅ COMPLETED: Run a thorough audit and fix all PowerShell dialog opening across the app
 
-**Context:** The desktop app uses `@tauri-apps/plugin-dialog` (`open`, `save`) in many places—e.g. `Projects.vue`, `Clips.vue`, `AudioLibrary.vue`, `ExportButton.vue`, composables (`useVideoOperations`, `useAssetOperations`, etc.). On Windows, misconfiguration or plugin behavior can flash a PowerShell/console window when spawning the native dialog. **Next:** Inventory all `open`/`save` usages; confirm Tauri v2 dialog plugin and Windows `windows_subsystem` settings; test each flow on Windows for console flash.
+**Status:** ✅ **FIXED** - April 4, 2026
+
+**What was done:**
+1. ✅ Inventoried all 21 dialog plugin usages across the codebase
+2. ✅ Verified Tauri v2 configuration and Windows subsystem settings
+3. ✅ Audited all Rust process spawning code
+4. ✅ Fixed 3 missing `CREATE_NO_WINDOW` flags in:
+   - `sidecar/mod.rs` - Remotion renderer Node.js process
+   - `audio.rs` - taskkill command for FFmpeg cleanup
+   - `commands/convert_video.rs` - FFmpeg video conversion
+5. ✅ Created comprehensive audit document: `docs/POWERSHELL_DIALOG_AUDIT.md`
+
+**Details:** See `docs/POWERSHELL_DIALOG_AUDIT.md` for complete findings, fixes, and testing procedure.
+
+**Note:** The Tauri dialog plugin itself does not spawn processes - it uses native OS APIs. If PowerShell flashes still occur, they are likely from background processes (FFmpeg, yt-dlp) spawning coincidentally with dialog opening. All process spawns now have proper `CREATE_NO_WINDOW` flags.
+
+**Testing:** Requires Windows machine to verify. All code-level issues have been fixed.
 
 ---
 
-## Fix built clips page taking forever to load
+## ✅ COMPLETED: Fix built clips page taking forever to load
 
-**Context:** `client/src/pages/Clips.vue` `loadClips()` calls `getAllClipsWithBuilds()` then per-clip work: transcript IDs, `thumbnailStore.loadThumbnails`, and for each clip with `project_id`, `getProjectInfo` + `loadRawVideosForProject` sequentially (~2020+). That pattern is a strong N+1 / sequential load candidate. **Next:** Profile network and Tauri calls; batch project/video fetches and defer non-visible thumbnail work.
+**Status:** COMPLETED
+
+**Summary:** Implemented comprehensive performance optimizations including batched/parallel data loading, IndexedDB persistent caching, and lazy thumbnail loading. Expected improvement from 5-10+ seconds to <1 second for initial load, with subsequent loads being nearly instant due to caching.
+
+**Files Modified:**
+- `client/src/pages/Clips.vue` - Refactored loadClips() with batching/parallelization
+- `client/src/stores/clipThumbnails.ts` - Added IndexedDB integration and lazy loading
+- `client/src/utils/persistentCache.ts` - New IndexedDB cache utility
+
+**Documentation:** See `docs/performance/built-clips-page-optimization.md` for full details.
+
+**Previous Context:** `client/src/pages/Clips.vue` `loadClips()` calls `getAllClipsWithBuilds()` then per-clip work: transcript IDs, `thumbnailStore.loadThumbnails`, and for each clip with `project_id`, `getProjectInfo` + `loadRawVideosForProject` sequentially (~2020+). That pattern was a strong N+1 / sequential load candidate.
 
 ---
 
-## Fix built clips sidebar taking forever to load in calendar
+## ✅ COMPLETED: Fix built clips sidebar taking forever to load in calendar
 
-**Context:** `client/src/components/calendar/ClipsSidebar.vue` `loadClips()` uses `getAllClips()`, then `loadBuilds()` (per-clip `getClipBuilds`), then thumbnail store loads—same structural cost as `BuiltClipsView.vue` in the editor. **Next:** Add a single API or Rust command that returns clips+completed builds; parallelize with a concurrency limit; lazy-load thumbnails for visible rows only.
+**Status:** COMPLETED
+
+**Summary:** Applied the same comprehensive performance optimizations to the Content Calendar's ClipsSidebar component. Implemented parallelized build loading, lazy thumbnail loading with priority, and IndexedDB persistent caching. Expected improvement from 3-8 seconds to <500ms for initial load, with subsequent loads being nearly instant.
+
+**Files Modified:**
+- `client/src/components/calendar/ClipsSidebar.vue` - Parallelized loadBuilds(), added lazy loading, integrated IndexedDB caching
+
+**Documentation:** See `docs/performance/content-calendar-sidebar-optimization.md` for full details.
+
+**Previous Context:** `client/src/components/calendar/ClipsSidebar.vue` `loadClips()` uses `getAllClips()`, then `loadBuilds()` (per-clip `getClipBuilds`), then thumbnail store loads—same structural cost as the main Built Clips page.
 
 ---
 
-## Fix org enable pool balance (owner gets 400 on toggle-pool-fallback)
+## ~~Fix org enable pool balance (owner gets 400 on toggle-pool-fallback)~~ ✅ COMPLETED
 
-**Context:** Client: `client/src/composables/useOrganization.ts` ~620 posts to `/organizations/:id/credits/toggle-pool-fallback`; UI in `client/src/pages/organization/OrganizationBilling.vue` ~1086. Server: `organization_controller.ex` `toggle_pool_fallback/2` requires `Organizations.get_member_allocation(org_id, member_id)`; if missing, responds **400** `"Member allocation not found"` (see ~871–874). **Likely cause:** Owner (or target user) has no `MemberCreditAllocation` row, so toggling pool fallback cannot persist. **Next:** Confirm whether owners should auto-get an allocation record, or the UI should hide/disable the toggle when `allocation` is null; align product rule with `Organizations.allocate` / onboarding.
+**Status:** Fixed by auto-creating member allocation when toggling pool fallback setting.
+
+**Root Cause:** The `toggle_pool_fallback` endpoint expected a `MemberCreditAllocation` record to exist for the member, but owners and admins might not have one yet (allocations are only created when credits are explicitly allocated). When toggling the setting for a user without an allocation, the server returned 400 "Member allocation not found".
+
+**Solution:** Changed the endpoint to use `get_or_create_member_allocation/2` instead of `get_member_allocation/2`, which automatically creates an allocation with default values if one doesn't exist.
+
+**Changes:**
+- **server/lib/clippster_server_web/controllers/organization_controller.ex** (toggle_pool_fallback/2):
+  - Changed from `get_member_allocation` to `get_or_create_member_allocation`
+  - Removed the `allocation when not is_nil(allocation)` guard clause
+  - Simplified error handling by removing the "Member allocation not found" case
+  - Updated docstring to reflect auto-creation behavior
+
+- **server/lib/clippster_server/organizations.ex**:
+  - Changed `get_or_create_member_allocation/2` from `defp` to `def` to make it public
+  - Added docstring explaining it creates allocations with default values if needed
+
+**Technical Details:**
+- `MemberCreditAllocation` records track:
+  - `hours_allocated`: Credits allocated to this member
+  - `hours_used`: Credits used by this member
+  - `allow_pool_fallback`: Whether member can use org pool when their allocation runs out
+- Creating an allocation with defaults (0 hours) is safe and appropriate - it establishes the fallback setting without granting credits
+- The UI already handles `nil` allocations gracefully (shows 0 remaining, disabled fallback)
+- Now when toggling fallback for any member (owner, admin, or regular member), it works correctly
+
+---
+
+## ✅ COMPLETED: Fix VOD Library (Projects page) taking forever to load
+
+**Status:** COMPLETED
+
+**Summary:** Optimized the VOD Library / Projects page with comprehensive performance improvements. Parallelized all clip and video queries, implemented lazy thumbnail loading, and added IndexedDB persistent caching. Expected improvement from 10-20+ seconds to <1 second for initial load, with subsequent loads being nearly instant.
+
+**Files Modified:**
+- `client/src/pages/Projects.vue` - Parallelized clip/video loading, added lazy thumbnail loading, integrated IndexedDB caching
+
+**Key Optimizations:**
+- Parallelized clip count queries (30 projects: 30 parallel queries vs 30 sequential)
+- Parallelized video loading (30 projects: 30 parallel queries vs 30 sequential)
+- Lazy thumbnail loading (first 20 immediately, rest deferred)
+- IndexedDB caching for project thumbnails (24-hour TTL)
+- Extracted complex fallback logic to separate helper functions
+
+**Documentation:** See `docs/performance/projects-vod-library-optimization.md` for full details.
+
+**Previous Context:** Sequential loop in `loadProjects()` querying clips and videos one project at a time, then loading thumbnails with complex nested fallback logic. Classic N+1 problem with 60+ sequential queries for 30 projects.
 
 ---

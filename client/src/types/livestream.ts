@@ -29,6 +29,14 @@ export interface LiveStatus {
   raw?: Record<string, any>;
 }
 
+export interface LiveSessionSegment {
+  segmentNumber: number;
+  filePath: string;
+  startTime: number;
+  duration: number;
+  endTime: number;
+}
+
 export interface LiveSession {
   sessionId: string;
   streamerId: string;
@@ -48,6 +56,8 @@ export interface LiveSession {
   segmentDurationMinutes?: number;
   promptId?: string;
   promptContent?: string;
+  // Real-time detection segments
+  segments?: LiveSessionSegment[];
 }
 
 export interface SegmentEventPayload {

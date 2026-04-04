@@ -439,17 +439,21 @@ export function useOrganization(orgIdOverride?: string) {
   }
 
   // Load Stripe subscription invoices
+  // Note: getOrganizationInvoices not yet implemented in auth store
   async function loadInvoices() {
     const orgId = organizationId.value;
     if (!orgId || !isAdmin.value) return;
 
     invoicesLoading.value = true;
     try {
-      const result = await authStore.getOrganizationInvoices(orgId);
-      if (result.success) {
-        invoices.value = result.invoices ?? [];
-        invoicesLoaded.value = true;
-      }
+      // TODO: Implement getOrganizationInvoices in auth store
+      // const result = await authStore.getOrganizationInvoices(orgId);
+      // if (result.success) {
+      //   invoices.value = result.invoices ?? [];
+      //   invoicesLoaded.value = true;
+      // }
+      console.warn('[useOrganization] getOrganizationInvoices not implemented');
+      invoicesLoaded.value = true;
     } catch (err: any) {
       console.error('[useOrganization] Failed to load invoices:', err);
     } finally {

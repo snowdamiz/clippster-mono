@@ -545,7 +545,6 @@
   import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { useRouter } from 'vue-router';
   import { open } from '@tauri-apps/plugin-dialog';
-  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import PageLayout from '@/components/PageLayout.vue';
   import DownloadCard from '@/components/DownloadCard.vue';
@@ -613,8 +612,6 @@
   const dragOverTrackIndex = ref<number | null>(null);
   const isDragging = ref(false);
   
-  let downloadCompleteUnlisten: UnlistenFn | null = null;
-
   const filteredAudio = computed(() => {
     let filtered = audioFiles.value;
     
@@ -771,14 +768,35 @@
     if (!newPlaylistName.value.trim()) return;
 
     try {
-      await createAudioPlaylist(newPlaylistName.value.trim(), newPlaylistDescription.value.trim() || undefined);
-      success('Created', `Created playlist: ${newPlaylistName.value}`);
+      const newPlaylistId = await createAudioPlaylist(newPlaylistName.value.trim(), newPlaylistDescription.value.trim() || undefined);
+      const playlistName = newPlaylistName.value;
       
       newPlaylistName.value = '';
       newPlaylistDescription.value = '';
       showCreatePlaylistDialog.value = false;
       
       await loadPlaylists();
+
+      // If there's a pending audio selection or bulk selection, automatically add to the new playlist
+      if (selectedAudioForPlaylist.value || selectedAudioIds.value.size > 0) {
+        try {
+          await addToPlaylist(newPlaylistId, true); // skipDialog = true to avoid duplicate success message
+          
+          // Show combined success message
+          if (selectedAudioIds.value.size > 0) {
+            success('Created & Added', `Created "${playlistName}" and added ${selectedAudioIds.value.size} tracks`);
+          } else {
+            success('Created & Added', `Created "${playlistName}" and added track`);
+          }
+        } catch (error) {
+          console.error('Failed to add audio to new playlist:', error);
+          success('Created', `Created playlist: ${playlistName}`);
+          showError('Add Failed', 'Playlist created but failed to add track(s)');
+        }
+      } else {
+        // No pending selection, just show create success
+        success('Created', `Created playlist: ${playlistName}`);
+      }
     } catch (error) {
       console.error('Create playlist error:', error);
       showError('Create Failed', error instanceof Error ? error.message : String(error));
@@ -912,7 +930,7 @@
     showAddToPlaylistDialog.value = true;
   }
 
-  async function addToPlaylist(playlistId: string) {
+  async function addToPlaylist(playlistId: string, skipDialog = false) {
     try {
       // Check if we're doing bulk add
       if (selectedAudioIds.value.size > 0) {
@@ -920,12 +938,16 @@
         for (const audioId of selectedAudioIds.value) {
           await addAudioToPlaylist(playlistId, audioId);
         }
-        success('Added', `Added ${selectedAudioIds.value.size} tracks to playlist`);
+        if (!skipDialog) {
+          success('Added', `Added ${selectedAudioIds.value.size} tracks to playlist`);
+        }
         clearSelection();
       } else if (selectedAudioForPlaylist.value) {
         // Single add
         await addAudioToPlaylist(playlistId, selectedAudioForPlaylist.value.id.toString());
-        success('Added', `Added to playlist`);
+        if (!skipDialog) {
+          success('Added', `Added to playlist`);
+        }
         selectedAudioForPlaylist.value = null;
       }
       
@@ -1030,23 +1052,19 @@
       loadPlaylists(),
     ]);
 
-    // Listen for download complete events to refresh the library
-    downloadCompleteUnlisten = await listen<AudioDownloadResult>('download-complete', async (event) => {
-      console.log('[AudioLibrary] Received download-complete event:', event.payload);
-      if (event.payload.success) {
-        console.log('[AudioLibrary] Download completed successfully, reloading audio files');
-        await loadAudioFiles();
-        console.log('[AudioLibrary] Audio files reloaded, count:', audioFiles.value.length);
-      } else {
-        console.log('[AudioLibrary] Download failed:', event.payload.error);
-      }
-    });
+    // Listen for audio library updates (after database save is complete)
+    window.addEventListener('audio-library-updated', handleAudioLibraryUpdate);
   });
 
+  function handleAudioLibraryUpdate(event: Event) {
+    const customEvent = event as CustomEvent;
+    console.log('[AudioLibrary] Audio library updated:', customEvent.detail);
+    // Reload audio files after database has been updated
+    loadAudioFiles();
+  }
+
   onUnmounted(() => {
-    if (downloadCompleteUnlisten) {
-      downloadCompleteUnlisten();
-    }
+    window.removeEventListener('audio-library-updated', handleAudioLibraryUpdate);
   });
 </script>
 

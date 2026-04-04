@@ -495,12 +495,16 @@ export async function persistClipDetectionResults(
   detectionResults: {
     clips?: any[];
     jobId?: string;
+    transcript?: any;
+    validation?: any;
   },
   metadata?: {
     processingTimeMs?: number;
     detectionModel?: string;
     serverResponseId?: string | null;
     multimodal?: boolean;
+    videoFilePath?: string;
+    rawVideoId?: string;
   },
   subtitleSettings?: { enabled: boolean; presetId: string } | null
 ): Promise<string> {
@@ -673,7 +677,7 @@ export async function persistClipDetectionResults(
   // Create detection session
   const sessionId = await createClipDetectionSession(projectId, prompt, {
     detectionModel: metadata?.detectionModel || 'claude-3.5-sonnet',
-    serverResponseId: metadata?.serverResponseId,
+    serverResponseId: metadata?.serverResponseId ?? undefined,
     qualityScore: detectionResults.validation?.qualityScore,
     totalClipsDetected: detectionResults.clips?.length || 0,
     processingTimeMs: metadata?.processingTimeMs || Date.now() - startTime,

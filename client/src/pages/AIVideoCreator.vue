@@ -425,7 +425,7 @@
   const chatSession = useAIChatSession();
 
   // Project picker state
-  const savedSessions = ref<Array<{ id: number; name: string | null; status: string; updated_at: string; inserted_at: string }>>([]);
+  const savedSessions = ref<Array<{ id: number; name: string | null; status: string; updated_at: string; inserted_at: string; thumbnail_url?: string | null }>>([]);
   const isLoadingSessions = ref(false);
   const showProjectPicker = computed(() => !chatSession.session.value);
 

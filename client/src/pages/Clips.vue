@@ -927,6 +927,7 @@
   import { useFormatters } from '@/composables/useFormatters';
   import { useAuthStore } from '@/stores/auth';
   import { useClipThumbnailStore } from '@/stores/clipThumbnails';
+  import { persistentCache } from '@/utils/persistentCache';
   import PageLayout from '@/components/PageLayout.vue';
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
@@ -2011,43 +2012,82 @@
       // Load all clips with their builds
       clips.value = await getAllClipsWithBuilds();
 
-      // Load which clips have transcripts (for untranscribed detection)
-      await loadTranscribedClipIds();
-
-      // Batch load clip thumbnails using the persistent store (much faster!)
-      await thumbnailStore.loadThumbnails(clips.value);
-
-      // Load project info and raw videos for all clips
-      for (const clip of clips.value) {
-        // Load project info if clip has a project
+      // Collect unique project IDs for batch loading
+      const uniqueProjectIds = new Set<string>();
+      clips.value.forEach(clip => {
         if (clip.project_id) {
-          await getProjectInfo(clip.project_id);
-          // Load raw videos for this project to use as fallback thumbnails
-          await loadRawVideosForProject(clip.project_id);
+          uniqueProjectIds.add(clip.project_id);
         }
+      });
 
-        // Load build thumbnails for this clip - load for each output file
+      // Start all critical operations in parallel
+      await Promise.all([
+        // Load which clips have transcripts (for untranscribed detection)
+        loadTranscribedClipIds(),
+        
+        // Lazy load only first batch of clip thumbnails (visible ones)
+        // The rest will load on demand via Intersection Observer
+        thumbnailStore.loadThumbnailsLazy(clips.value.slice(0, 20), 'high'),
+        
+        // Batch load all project info in parallel
+        Promise.all(Array.from(uniqueProjectIds).map(projectId => getProjectInfo(projectId))),
+      ]);
+
+      // Defer non-critical operations (raw videos and build thumbnails) to after initial render
+      // This allows the page to show the basic clip list immediately
+      setTimeout(() => {
+        loadDeferredData(uniqueProjectIds);
+      }, 100);
+
+      // Continue loading remaining thumbnails in background
+      if (clips.value.length > 20) {
+        setTimeout(() => {
+          thumbnailStore.loadThumbnailsLazy(clips.value.slice(20), 'low');
+        }, 500);
+      }
+    } catch (error) {
+      console.error('Failed to load clips:', error);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function loadDeferredData(projectIds: Set<string>) {
+    try {
+      // Load raw videos for all projects in parallel (batched)
+      await Promise.all(
+        Array.from(projectIds).map(projectId => loadRawVideosForProject(projectId))
+      );
+
+      // Collect all build thumbnail tasks
+      const buildThumbnailTasks: Promise<void>[] = [];
+      for (const clip of clips.value) {
         if (clip.builds && clip.builds.length > 0) {
           for (const build of clip.builds) {
             if (build.status === 'completed') {
               // Load thumbnails for each output file (each aspect ratio has its own thumbnail)
               const outputPaths = getOutputPathsFromBuild(build);
               for (const outputPath of outputPaths) {
-                await loadThumbnailForOutputFile(outputPath);
+                buildThumbnailTasks.push(loadThumbnailForOutputFile(outputPath));
               }
 
               // Also load legacy thumbnail_path if available
               if (build.thumbnail_path) {
-                await loadBuildThumbnail(build);
+                buildThumbnailTasks.push(loadBuildThumbnail(build));
               }
             }
           }
         }
       }
+
+      // Load all build thumbnails in parallel batches
+      const batchSize = 10;
+      for (let i = 0; i < buildThumbnailTasks.length; i += batchSize) {
+        const batch = buildThumbnailTasks.slice(i, i + batchSize);
+        await Promise.all(batch);
+      }
     } catch (error) {
-      console.error('Failed to load clips:', error);
-    } finally {
-      loading.value = false;
+      console.error('Failed to load deferred data:', error);
     }
   }
 
@@ -2067,15 +2107,29 @@
   }
 
   async function loadRawVideosForProject(projectId: string): Promise<void> {
-    // Check cache first
+    // Check memory cache first
     if (rawVideoCache.value.has(projectId)) {
       return;
+    }
+
+    // Check persistent cache (30 minutes TTL)
+    try {
+      const cached = await persistentCache.get<(RawVideo & { thumbnail_path: string | null })[]>(
+        'rawVideos',
+        projectId
+      );
+      if (cached && cached.length > 0) {
+        rawVideoCache.value.set(projectId, cached);
+        return;
+      }
+    } catch (error) {
+      console.warn('Failed to read raw videos from persistent cache:', error);
     }
 
     try {
       const rawVideos = await getRawVideosByProjectId(projectId);
 
-      // Convert raw video thumbnails to data URLs for caching
+      // Convert raw video thumbnails to data URLs for caching (batched)
       const processedRawVideos = await Promise.all(
         rawVideos.map(async (video) => {
           let thumbnailDataUrl = null;
@@ -2111,6 +2165,11 @@
       );
 
       rawVideoCache.value.set(projectId, processedRawVideos);
+      
+      // Save to persistent cache (30 minutes TTL)
+      persistentCache.set('rawVideos', projectId, processedRawVideos, 1800000).catch(err => {
+        console.warn('Failed to save raw videos to persistent cache:', err);
+      });
     } catch (error) {
       console.error('Failed to load raw videos for project:', error);
     }
@@ -2274,15 +2333,31 @@
   }
 
   async function getProjectInfo(projectId: string): Promise<Project | null> {
-    // Check cache first
+    // Check memory cache first
     if (projectCache.value.has(projectId)) {
       return projectCache.value.get(projectId) || null;
+    }
+
+    // Check persistent cache (1 hour TTL)
+    try {
+      const cached = await persistentCache.get<Project>('projects', projectId);
+      if (cached) {
+        projectCache.value.set(projectId, cached);
+        return cached;
+      }
+    } catch (error) {
+      console.warn('Failed to read from persistent cache:', error);
     }
 
     try {
       const project = await getProject(projectId);
       if (project) {
         projectCache.value.set(projectId, project);
+        
+        // Save to persistent cache (1 hour TTL)
+        persistentCache.set('projects', projectId, project, 3600000).catch(err => {
+          console.warn('Failed to save to persistent cache:', err);
+        });
 
         // Recursively load parent if exists
         if (project.parent_id) {
