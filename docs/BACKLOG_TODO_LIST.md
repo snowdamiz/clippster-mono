@@ -62,22 +62,37 @@ Working notes for follow-up work. No implementation in this change—context gat
 
 ---
 
-## Fix downloading audio — must navigate away and back to audio library to see newest download
+## ~~Fix downloading audio — must navigate away and back to audio library to see newest download~~
 
-**Context:** `client/src/pages/AudioLibrary.vue` listens for Tauri `download-complete` and calls `loadAudioFiles()` (~1034+). Download flow is also described in `docs/AUDIO_DOWNLOAD_PLAYLIST_PLAN.md`. **Next:** Confirm events fire when the library page is already mounted; check for duplicate listeners, unmount cleanup, or DB commit timing vs event.
+**Status:** ✅ FIXED
+
+**Solution:** Fixed race condition between Tauri event and database save. Changed from duplicate listeners to sequential flow:
+1. Global `useAudioDownloads` listener receives `download-complete` event
+2. Saves to database
+3. Dispatches `audio-library-updated` custom event AFTER database save completes
+4. `AudioLibrary.vue` listens to custom event and reloads the list
+
+**Files Modified:**
+- `client/src/composables/useAudioDownloads.ts` - Added custom event dispatch after DB save
+- `client/src/pages/AudioLibrary.vue` - Changed from Tauri event to custom window event
 
 ---
 
-## Fix adding to playlist in audio library — first create forces a second visit to add the track
+## ~~Fix adding to playlist in audio library — first create forces a second visit to add the track~~
 
-**Context:** In `AudioLibrary.vue`, the "Create New Playlist" control inside the add-to-playlist dialog closes the add dialog and opens the create dialog **without** passing the pending track or auto-adding after create:
+**Status:** ✅ FIXED
 
-```427:428:client/src/pages/AudioLibrary.vue
-                <button
-                  @click="showAddToPlaylistDialog = false; showCreatePlaylistDialog = true"
-```
+**Solution:** When user clicks "Create New Playlist" from the add-to-playlist dialog, the pending audio selection is now automatically added to the newly created playlist in one flow. Added `skipDialog` parameter to `addToPlaylist()` to prevent duplicate success toasts, and combined the success message shows "Created & Added" with track count.
 
-`createPlaylist()` reloads playlists but does not call `addAudioToPlaylist` for `selectedAudioForPlaylist`. **Next:** Preserve `selectedAudioForPlaylist` through create, or after `createAudioPlaylist` resolve the new id and add the track in one flow.
+**Flow:**
+1. User clicks "Add to Playlist" on an audio file (or bulk selects multiple)
+2. User clicks "Create New Playlist" in the dialog
+3. User enters playlist name and creates it
+4. Audio is automatically added to the new playlist
+5. Single success toast: "Created '{name}' and added {count} track(s)"
+
+**Files Modified:**
+- `client/src/pages/AudioLibrary.vue` - Updated `createPlaylist()` to capture new playlist ID and call `addToPlaylist()`, added `skipDialog` param to `addToPlaylist()`
 
 ---
 
