@@ -30,17 +30,20 @@
       </div>
     </template>
 
-    <OrganizationClippersComponent :active-view="activeView" />
+    <OrganizationClippersComponent :active-view="activeView" :organization-id="organizationId" />
   </PageLayout>
 </template>
 
 <script setup lang="ts">
   import { ref } from 'vue';
+  import { useRoute } from 'vue-router';
   import { Search, Users, Trophy } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import OrganizationClippersComponent from '@/components/organization/OrganizationClippers.vue';
 
+  const route = useRoute();
+  const organizationId = route.params.organizationId as string;
   const activeView = ref<'directory' | 'leaderboard'>('directory');
 </script>
 

@@ -77,6 +77,34 @@ async fn read_video_file(file_path: String) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+/// Save uploaded POI region media to a temp file (real path for FFmpeg export).
+#[tauri::command]
+async fn save_temp_media_file(file_name: String, data: Vec<u8>) -> Result<String, String> {
+    use std::fs;
+
+    let temp_dir = std::env::temp_dir().join("clippster_media");
+    fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+
+    let safe_name = std::path::Path::new(&file_name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("upload.bin");
+
+    let unique_name = format!("{}_{}", timestamp, safe_name);
+    let file_path = temp_dir.join(&unique_name);
+
+    fs::write(&file_path, &data).map_err(|e| format!("Failed to write temp media: {}", e))?;
+
+    let path_str = file_path.to_string_lossy().to_string();
+    println!("[Rust] Saved temp media file: {}", path_str);
+    Ok(path_str)
+}
+
 /// Create an always-on-top PIP window with video and controls
 #[tauri::command]
 async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> {
@@ -1254,6 +1282,7 @@ commands::file_utils::generate_video_thumbnail,
             // File operations
             copy_file,
             read_video_file,
+            save_temp_media_file,
 
     // PIP control window commands
     create_pip_control_window,

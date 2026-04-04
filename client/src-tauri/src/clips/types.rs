@@ -795,6 +795,13 @@ pub struct ManualFramingConfig {
     /// Global source frame transform
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_transform: Option<SourceTransform>,
+    /// "none" | "scale" | "use16x9" — blur letterbox vs scaled source
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_frame_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blur_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blur_amount: Option<f64>,
     /// Segment-based region configurations
     #[serde(skip_serializing_if = "Option::is_none")]
     pub segment_configs: Option<Vec<SegmentRegionConfig>>,

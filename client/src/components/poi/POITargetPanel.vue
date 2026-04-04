@@ -1,38 +1,105 @@
 <template>
   <div class="poi-target-panel flex flex-col h-full">
-    <!-- Header -->
-    <div class="flex items-center justify-between px-3 py-2 border-b border-zinc-700/50">
-      <div class="flex items-center gap-2">
-        <div class="text-xs font-medium text-zinc-300">Output Preview</div>
+    <!-- Header - single row -->
+    <div class="flex items-center gap-3 px-3 py-2 border-b border-zinc-700/50">
+      <!-- Output Preview label + aspect ratio -->
+      <div class="flex items-center gap-1.5 shrink-0">
+        <span class="text-xs font-medium text-zinc-300">Output Preview</span>
         <span class="text-[10px] text-zinc-500 font-mono">{{ targetAspectRatio }}</span>
       </div>
-      <div class="flex items-center gap-2">
-        <label class="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer border-2"
-          :class="showSourceFrame 
-            ? 'bg-gradient-to-r from-purple-600/20 to-blue-600/20 border-purple-500/50 text-purple-200 hover:border-purple-400' 
-            : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:bg-zinc-700/50 hover:border-zinc-600 hover:text-zinc-200'"
-        >
-          <input
-            type="checkbox"
-            v-model="showSourceFrame"
-            class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-purple-500 focus:ring-purple-500 focus:ring-offset-0"
-          />
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <rect x="2" y="5" width="20" height="14" rx="2" stroke-width="2"/>
-            <path d="M2 10h20M2 15h20" stroke-width="2"/>
-          </svg>
-          <span>Scale 16:9 Source</span>
-        </label>
+
+      <!-- Scale 16:9 checkbox -->
+      <label class="flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium rounded transition-all cursor-pointer shrink-0"
+        :class="showSourceFrame 
+          ? 'bg-purple-500/20 text-purple-300' 
+          : 'text-zinc-400 hover:text-zinc-200'"
+      >
+        <input
+          type="checkbox"
+          :checked="showSourceFrame"
+          class="w-3 h-3 rounded border-zinc-600 bg-zinc-700 text-purple-500 focus:ring-purple-500 focus:ring-offset-0"
+          @change="onToggleScale16"
+        />
+        <span>Scale 16:9</span>
+      </label>
+
+      <!-- Use 16:9 checkbox -->
+      <label class="flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium rounded transition-all cursor-pointer shrink-0"
+        :class="use16x9Mode 
+          ? 'bg-cyan-500/20 text-cyan-300' 
+          : 'text-zinc-400 hover:text-zinc-200'"
+      >
+        <input
+          type="checkbox"
+          :checked="use16x9Mode"
+          class="w-3 h-3 rounded border-zinc-600 bg-zinc-700 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-0"
+          @change="onToggleUse16x9"
+        />
+        <span>Use 16:9</span>
+      </label>
+
+      <!-- Blur dropdown (when Scale or Use 16:9 is enabled) -->
+      <div
+        v-if="showSourceFrame || use16x9Mode"
+        class="relative shrink-0"
+        ref="blurDropdownRef"
+      >
         <button
-          @click="autoArrangeVertical"
-          class="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700/50 rounded transition-colors"
-          title="Stack regions vertically"
-          :disabled="regions.length === 0"
+          @click="showBlurDropdown = !showBlurDropdown"
+          class="flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded transition-all"
+          :class="blurEnabled 
+            ? 'bg-purple-500/20 text-purple-300' 
+            : 'text-zinc-400 hover:text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700/50'"
         >
-          <LayoutGridIcon class="w-3 h-3" />
-          Stack
+          <span>Blur{{ blurEnabled ? `: ${blurAmount}` : '' }}</span>
+          <svg 
+            class="w-3 h-3 transition-transform" 
+            :class="{ 'rotate-180': showBlurDropdown }"
+            fill="none" 
+            stroke="currentColor" 
+            viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
         </button>
+        <!-- Dropdown panel -->
+        <div
+          v-if="showBlurDropdown"
+          class="absolute top-full left-0 mt-1 p-2 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 min-w-[140px]"
+          @click.stop
+        >
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[10px] text-zinc-400">Blur</span>
+            <span class="text-[10px] text-zinc-300 font-mono">{{ blurAmount }}</span>
+          </div>
+          <input
+            v-model.number="blurAmount"
+            type="range"
+            min="0"
+            max="30"
+            step="1"
+            class="w-full h-1.5 accent-purple-500 cursor-pointer"
+          />
+          <div class="flex justify-between mt-1 text-[9px] text-zinc-500">
+            <span>Off</span>
+            <span>Max</span>
+          </div>
+        </div>
       </div>
+
+      <!-- Spacer -->
+      <div class="flex-1"></div>
+
+      <!-- Stack button -->
+      <button
+        @click="autoArrangeVertical"
+        class="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700/50 rounded transition-colors shrink-0"
+        title="Stack regions vertically"
+        :disabled="regions.length === 0"
+      >
+        <LayoutGridIcon class="w-3 h-3" />
+        Stack
+      </button>
     </div>
 
     <!-- Canvas Area -->
@@ -55,6 +122,91 @@
           <div class="absolute h-full border-l border-white/5" style="left: 66.66%" />
         </div>
 
+        <!-- Center alignment guides (show when element is near center) -->
+        <div class="absolute inset-0 pointer-events-none z-[100]">
+          <!-- Vertical center line -->
+          <div 
+            v-if="showVerticalCenterGuide"
+            class="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-yellow-400/80"
+          />
+          <!-- Horizontal center line -->
+          <div 
+            v-if="showHorizontalCenterGuide"
+            class="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[2px] bg-yellow-400/80"
+          />
+        </div>
+
+        <!-- Use 16:9: blurred full-frame background (scale cover) -->
+        <div
+          v-if="use16x9Mode"
+          class="absolute inset-0 overflow-hidden z-[0]"
+        >
+          <video
+            v-if="videoUrl"
+            ref="use16x9BgVideoRef"
+            :key="`u9bg-${videoUrl}-${videoCacheBuster}`"
+            :src="videoUrl"
+            class="absolute inset-0 w-full h-full object-cover scale-[1.08] pointer-events-none"
+            :style="{ filter: `blur(${use16x9BgBlurPx}px)` }"
+            preload="metadata"
+            muted
+            playsinline
+            @loadedmetadata="(e) => onVideoLoaded(e.target as HTMLVideoElement)"
+          />
+          <img
+            v-else-if="thumbnailUrl"
+            :key="`u9bg-img-${thumbnailUrl}-${videoCacheBuster}`"
+            :src="thumbnailUrl"
+            class="absolute inset-0 w-full h-full object-cover scale-[1.08] pointer-events-none"
+            :style="{ filter: `blur(${use16x9BgBlurPx}px)` }"
+            alt=""
+            draggable="false"
+          />
+        </div>
+
+        <!-- Use 16:9: sharp letterboxed 16:9 foreground (draggable / resizable) -->
+        <div
+          v-if="use16x9Mode"
+          class="absolute border-2 border-cyan-400 cursor-move z-[4]"
+          :style="sourceFrameStyle"
+          @mousedown="startDragSourceFrame"
+        >
+          <video
+            v-if="videoUrl"
+            ref="use16x9SharpVideoRef"
+            :key="`u9fg-${videoUrl}-${videoCacheBuster}`"
+            :src="videoUrl"
+            class="absolute inset-0 w-full h-full object-contain pointer-events-none"
+            preload="metadata"
+            muted
+            playsinline
+            @loadedmetadata="(e) => onVideoLoaded(e.target as HTMLVideoElement)"
+          />
+          <img
+            v-else-if="thumbnailUrl"
+            :key="`u9fg-img-${thumbnailUrl}-${videoCacheBuster}`"
+            :src="thumbnailUrl"
+            class="absolute inset-0 w-full h-full object-contain pointer-events-none"
+            alt=""
+            draggable="false"
+          />
+          <div class="absolute top-0 left-0 -translate-y-full px-2 py-1 bg-cyan-600 text-white text-[10px] font-medium rounded-t whitespace-nowrap">
+            16:9 (sharp) — drag / corners to scale
+          </div>
+          <div
+            v-for="corner in ['nw', 'ne', 'sw', 'se']"
+            :key="`u9-${corner}`"
+            class="absolute w-3 h-3 bg-cyan-500 border border-white pointer-events-auto"
+            :class="{
+              'top-0 left-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize': corner === 'nw',
+              'top-0 right-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize': corner === 'ne',
+              'bottom-0 left-0 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize': corner === 'sw',
+              'bottom-0 right-0 translate-x-1/2 translate-y-1/2 cursor-nwse-resize': corner === 'se',
+            }"
+            @mousedown.stop="(e) => startResizeSourceFrame(e, corner)"
+          />
+        </div>
+
         <!-- 16:9 Source Frame Overlay (when Scale 16:9 is enabled) -->
         <div
           v-if="showSourceFrame"
@@ -69,6 +221,7 @@
             :key="`${videoUrl}-${videoCacheBuster}`"
             :src="videoUrl"
             class="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-50"
+            :style="scaleSourceBlurStyle"
             preload="metadata"
             muted
             playsinline
@@ -79,6 +232,7 @@
             :key="`${thumbnailUrl}-${videoCacheBuster}`"
             :src="thumbnailUrl"
             class="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-50"
+            :style="scaleSourceBlurStyle"
             alt="Source frame"
             draggable="false"
           />
@@ -122,6 +276,7 @@
         <!-- Region previews (showing source content in output position) -->
         <div
           v-for="region in regions"
+          v-show="!use16x9Mode"
           :key="region.id"
           class="absolute overflow-hidden z-[5]"
           :style="getRegionPreviewStyle(region)"
@@ -129,7 +284,7 @@
           <!-- Uploaded image media -->
           <img
             v-if="region.mediaAssetId && region.mediaType === 'image'"
-            :src="region.mediaAssetId"
+            :src="regionMediaSrc(region.mediaAssetId)"
             class="absolute inset-0 w-full h-full object-cover pointer-events-none"
             alt=""
             draggable="false"
@@ -138,7 +293,7 @@
           <video
             v-else-if="region.mediaAssetId && region.mediaType === 'video'"
             :ref="(el) => setVideoRef(region.id, el as HTMLVideoElement)"
-            :src="region.mediaAssetId"
+            :src="regionMediaSrc(region.mediaAssetId)"
             class="absolute inset-0 w-full h-full object-cover pointer-events-none"
             preload="metadata"
             muted
@@ -180,7 +335,7 @@
         <!-- Draggable output regions (on top of previews) - hidden while playing -->
         <POIRegion
           v-for="region in regions"
-          v-show="!isPlaying"
+          v-show="!isPlaying && !use16x9Mode"
           :key="`output-${region.id}`"
           :rect="region.output"
           :color="region.color"
@@ -193,10 +348,13 @@
           :show-controls="false"
           :show-resize-handles="true"
           :aspect-ratio-locked="region.aspectRatioLocked !== false"
+          :snap-to-center="true"
+          :snap-threshold="SNAP_THRESHOLD"
           @update="(rect) => updateRegionOutput(region.id, rect)"
           @select="selectRegion(region.id)"
           @drag-start="onDragStart"
           @drag-end="onDragEnd"
+          @center-guide="onCenterGuide"
         />
 
         <!-- Watermark preview overlay -->
@@ -232,77 +390,79 @@
               v-if="visibleWords.length > 0"
               class="flex flex-wrap items-center justify-center gap-2 px-2 pointer-events-none"
             >
-              <span
-                v-for="(wordInfo, index) in visibleWords"
-                :key="`subtitle-word-${wordInfo.start}-${index}`"
-                class="relative inline-block"
-              >
-                <!-- Use SVG for proper border rendering -->
-                <span class="invisible select-none" :style="subtitleTextStyle">{{ props.subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}</span>
-                <svg class="absolute inset-0 w-full h-full overflow-visible" style="pointer-events: none">
-                  <!-- Border 2 (Outer) -->
-                  <text
-                    v-if="props.subtitleSettings.border2Width > 0"
-                    x="50%"
-                    y="55%"
-                    dominant-baseline="middle"
-                    text-anchor="middle"
-                    :style="{
-                      fontFamily: props.subtitleSettings.fontFamily,
-                      fontWeight: props.subtitleSettings.fontWeight,
-                      fontSize: subtitleTextStyle.fontSize,
-                      stroke: props.subtitleSettings.border2Color,
-                      strokeWidth: (props.subtitleSettings.border1Width + props.subtitleSettings.border2Width) * 2 + 'px',
-                      strokeLinejoin: 'round',
-                      strokeLinecap: 'round',
-                      fill: 'none',
-                    }"
-                  >
-                    {{ props.subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
-                  </text>
+              <template v-if="subtitleSettings">
+                <span
+                  v-for="(wordInfo, index) in visibleWords"
+                  :key="`subtitle-word-${wordInfo.start}-${index}`"
+                  class="relative inline-block"
+                >
+                  <!-- Use SVG for proper border rendering -->
+                  <span class="invisible select-none" :style="subtitleTextStyle">{{ subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}</span>
+                  <svg class="absolute inset-0 w-full h-full overflow-visible" style="pointer-events: none">
+                    <!-- Border 2 (Outer) -->
+                    <text
+                      v-if="subtitleSettings.border2Width > 0"
+                      x="50%"
+                      y="55%"
+                      dominant-baseline="middle"
+                      text-anchor="middle"
+                      :style="{
+                        fontFamily: subtitleSettings.fontFamily,
+                        fontWeight: subtitleSettings.fontWeight,
+                        fontSize: subtitleTextStyle.fontSize,
+                        stroke: subtitleSettings.border2Color,
+                        strokeWidth: (subtitleSettings.border1Width + subtitleSettings.border2Width) * 2 + 'px',
+                        strokeLinejoin: 'round',
+                        strokeLinecap: 'round',
+                        fill: 'none',
+                      }"
+                    >
+                      {{ subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
+                    </text>
 
-                  <!-- Border 1 (Inner) -->
-                  <text
-                    v-if="props.subtitleSettings.border1Width > 0"
-                    x="50%"
-                    y="55%"
-                    dominant-baseline="middle"
-                    text-anchor="middle"
-                    :style="{
-                      fontFamily: props.subtitleSettings.fontFamily,
-                      fontWeight: props.subtitleSettings.fontWeight,
-                      fontSize: subtitleTextStyle.fontSize,
-                      stroke: props.subtitleSettings.border1Color,
-                      strokeWidth: props.subtitleSettings.border1Width * 2 + 'px',
-                      strokeLinejoin: 'round',
-                      strokeLinecap: 'round',
-                      fill: 'none',
-                    }"
-                  >
-                    {{ props.subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
-                  </text>
+                    <!-- Border 1 (Inner) -->
+                    <text
+                      v-if="subtitleSettings.border1Width > 0"
+                      x="50%"
+                      y="55%"
+                      dominant-baseline="middle"
+                      text-anchor="middle"
+                      :style="{
+                        fontFamily: subtitleSettings.fontFamily,
+                        fontWeight: subtitleSettings.fontWeight,
+                        fontSize: subtitleTextStyle.fontSize,
+                        stroke: subtitleSettings.border1Color,
+                        strokeWidth: subtitleSettings.border1Width * 2 + 'px',
+                        strokeLinejoin: 'round',
+                        strokeLinecap: 'round',
+                        fill: 'none',
+                      }"
+                    >
+                      {{ subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
+                    </text>
 
-                  <!-- Fill Text -->
-                  <text
-                    x="50%"
-                    y="55%"
-                    dominant-baseline="middle"
-                    text-anchor="middle"
-                    :style="{
-                      fontFamily: props.subtitleSettings.fontFamily,
-                      fontWeight: props.subtitleSettings.fontWeight,
-                      fontSize: subtitleTextStyle.fontSize,
-                      fill: (props.subtitleSettings.animationStyle === 'karaoke' && isCurrentWord(wordInfo)) 
-                        ? (props.subtitleSettings.highlightColor || '#0ea5e9')
-                        : (props.subtitleSettings.animationStyle === 'single-word' 
-                            ? getWordColor(getWordIndexInTranscript(wordInfo))
-                            : (props.subtitleSettings.textColor || '#FFFFFF')),
-                    }"
-                  >
-                    {{ props.subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
-                  </text>
-                </svg>
-              </span>
+                    <!-- Fill Text -->
+                    <text
+                      x="50%"
+                      y="55%"
+                      dominant-baseline="middle"
+                      text-anchor="middle"
+                      :style="{
+                        fontFamily: subtitleSettings.fontFamily,
+                        fontWeight: subtitleSettings.fontWeight,
+                        fontSize: subtitleTextStyle.fontSize,
+                        fill: (subtitleSettings.animationStyle === 'karaoke' && isCurrentWord(wordInfo))
+                          ? (subtitleSettings.highlightColor || '#0ea5e9')
+                          : (subtitleSettings.animationStyle === 'single-word'
+                              ? getWordColor(getWordIndexInTranscript(wordInfo))
+                              : (subtitleSettings.textColor || '#FFFFFF')),
+                      }"
+                    >
+                      {{ subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
+                    </text>
+                  </svg>
+                </span>
+              </template>
             </div>
 
             <!-- Sample text (when no transcript) -->
@@ -332,7 +492,7 @@
         </div>
 
         <!-- Empty state -->
-        <div v-if="regions.length === 0" class="absolute inset-0 flex items-center justify-center">
+        <div v-if="regions.length === 0 && !use16x9Mode" class="absolute inset-0 flex items-center justify-center">
           <div class="text-center">
             <LayoutIcon class="w-6 h-6 text-zinc-600 mx-auto mb-1" />
             <p class="text-[10px] text-zinc-500">Add regions in the source panel</p>
@@ -345,10 +505,11 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+  import { convertFileSrc } from '@tauri-apps/api/core';
   import { LayoutGridIcon, LayoutIcon } from 'lucide-vue-next';
   import POIRegion from './POIRegion.vue';
   import MediaPreview from '@/components/MediaPreview.vue';
-  import type { ManualRegion, ManualRegionRect, SubtitleSettings } from '@/types';
+  import type { ManualRegion, ManualRegionRect, SubtitleSettings, ManualSourceFramingPayload } from '@/types';
 
   interface WatermarkPreview {
     filePath?: string;
@@ -405,6 +566,8 @@
     // Optional transcript data for subtitle rendering
     transcriptWords?: WordInfo[];
     transcriptSegments?: WhisperSegment[];
+    /** Hydrate Scale / Use 16:9 / blur from saved config (normalized x,y) */
+    initialSourceFraming?: ManualSourceFramingPayload | null;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -419,12 +582,13 @@
     subtitlePositioningEnabled: false,
     transcriptWords: () => [],
     transcriptSegments: () => [],
+    initialSourceFraming: null,
   });
 
   const emit = defineEmits<{
     updateRegion: [id: string, region: Partial<ManualRegion>];
     selectRegion: [id: string | null];
-    updateSourceTransform: [transform: { scale: number; x: number; y: number }];
+    updateSourceTransform: [payload: ManualSourceFramingPayload];
     subtitlePositionChange: [position: { x: number; y: number; width?: number }];
     subtitleSettingsChange: [settings: SubtitleSettings];
   }>();
@@ -435,14 +599,33 @@
 
   // Source frame scaling state
   const showSourceFrame = ref(false);
+  const use16x9Mode = ref(false);
+  const blurAmount = ref(12);
+  const showBlurDropdown = ref(false);
+  const blurDropdownRef = ref<HTMLElement | null>(null);
+  // Blur is enabled when amount > 0
+  const blurEnabled = computed(() => blurAmount.value > 0);
   const sourceFrameTransform = ref({
     scale: 1,
     x: 0,
     y: 0,
   });
+  let lastHydratedFramingJson = '';
   const isDraggingSourceFrame = ref(false);
   const dragStartPos = ref({ x: 0, y: 0 });
   const dragStartTransform = ref({ x: 0, y: 0 });
+
+  // Center alignment guides state
+  const showVerticalCenterGuide = ref(false);
+  const showHorizontalCenterGuide = ref(false);
+  const SNAP_THRESHOLD = 8; // pixels within which to snap to center
+
+  // Close blur dropdown when clicking outside
+  function handleClickOutsideBlur(e: MouseEvent) {
+    if (showBlurDropdown.value && blurDropdownRef.value && !blurDropdownRef.value.contains(e.target as Node)) {
+      showBlurDropdown.value = false;
+    }
+  }
 
   // Subtitle dragging state
   const isDraggingSubtitles = ref(false);
@@ -462,22 +645,116 @@
     { deep: true }
   );
 
-  // Watch for Scale 16:9 checkbox - auto-fit when enabled
-  watch(showSourceFrame, (enabled) => {
-    if (enabled) {
-      // Start at scale 1.0 - entire 16:9 frame visible, centered in 9:16
-      // User can then drag corners to zoom in and drag body to reposition
-      sourceFrameTransform.value.scale = 1.0;
-      sourceFrameTransform.value.x = 0;
-      sourceFrameTransform.value.y = 0;
+  function resetSourceFrameToCentered() {
+    sourceFrameTransform.value.scale = 1.0;
+    sourceFrameTransform.value.x = 0;
+    sourceFrameTransform.value.y = 0;
+  }
+
+  function onToggleScale16(ev: Event) {
+    const checked = (ev.target as HTMLInputElement).checked;
+    showSourceFrame.value = checked;
+    if (checked) {
+      use16x9Mode.value = false;
+      resetSourceFrameToCentered();
     }
+    emitSourceFraming();
+  }
+
+  function onToggleUse16x9(ev: Event) {
+    const checked = (ev.target as HTMLInputElement).checked;
+    use16x9Mode.value = checked;
+    if (checked) {
+      showSourceFrame.value = false;
+      resetSourceFrameToCentered();
+    }
+    emitSourceFraming();
+  }
+
+  const use16x9BgBlurPx = computed(() => {
+    if (!use16x9Mode.value) return 0;
+    return blurAmount.value; // 0 = no blur, >0 = blur with that amount
   });
+
+  const scaleSourceBlurStyle = computed(() => {
+    if (!showSourceFrame.value || !blurEnabled.value) return {};
+    return { filter: `blur(${blurAmount.value}px)` };
+  });
+
+  function regionMediaSrc(assetId?: string | null): string {
+    if (!assetId) return '';
+    if (
+      assetId.startsWith('blob:') ||
+      assetId.startsWith('http://') ||
+      assetId.startsWith('https://') ||
+      assetId.startsWith('asset:')
+    ) {
+      return assetId;
+    }
+    try {
+      return convertFileSrc(assetId);
+    } catch {
+      return assetId;
+    }
+  }
+
+  function emitSourceFraming() {
+    if (containerWidth.value <= 0 || containerHeight.value <= 0) return;
+    const mode = use16x9Mode.value ? 'use16x9' : showSourceFrame.value ? 'scale' : 'none';
+    const t = sourceFrameTransform.value;
+    emit('updateSourceTransform', {
+      mode,
+      blurEnabled: blurEnabled.value,
+      blurAmount: blurAmount.value,
+      scale: t.scale,
+      x: t.x / containerWidth.value,
+      y: t.y / containerHeight.value,
+    });
+  }
+
+  watch(
+    () => props.initialSourceFraming,
+    (v) => {
+      if (v == null) lastHydratedFramingJson = '';
+    }
+  );
+
+  watch(
+    [() => props.initialSourceFraming, containerWidth, containerHeight],
+    () => {
+      const init = props.initialSourceFraming;
+      if (!init || containerWidth.value <= 0 || containerHeight.value <= 0) return;
+      const sig = JSON.stringify(init);
+      if (sig === lastHydratedFramingJson) return;
+      lastHydratedFramingJson = sig;
+      use16x9Mode.value = init.mode === 'use16x9';
+      showSourceFrame.value = init.mode === 'scale';
+      // Set blur amount based on enabled state (0 = disabled, >0 = enabled)
+      blurAmount.value = init.blurEnabled ? init.blurAmount : 0;
+      sourceFrameTransform.value = {
+        scale: init.scale,
+        x: init.x * containerWidth.value,
+        y: init.y * containerHeight.value,
+      };
+    },
+    { deep: true }
+  );
+
+  watch(
+    [showSourceFrame, use16x9Mode, blurEnabled, blurAmount, sourceFrameTransform],
+    () => emitSourceFraming(),
+    { deep: true }
+  );
+
+  watch([containerWidth, containerHeight], () => emitSourceFraming());
 
   // Video refs for each region
   const videoRefs = ref<Map<string, HTMLVideoElement>>(new Map());
   
   // Source frame video ref
   const sourceFrameVideoRef = ref<HTMLVideoElement | null>(null);
+  const use16x9BgVideoRef = ref<HTMLVideoElement | null>(null);
+  const use16x9SharpVideoRef = ref<HTMLVideoElement | null>(null);
   
   // Cache buster for forcing video reload
   const videoCacheBuster = ref(Date.now());
@@ -492,38 +769,37 @@
       if (sourceFrameVideoRef.value) {
         sourceFrameVideoRef.value.load();
       }
+      if (use16x9BgVideoRef.value) {
+        use16x9BgVideoRef.value.load();
+      }
+      if (use16x9SharpVideoRef.value) {
+        use16x9SharpVideoRef.value.load();
+      }
     }
   });
 
-  // Watch for source frame video ref changes and add to videoRefs map
-  watch(sourceFrameVideoRef, (newVideo, oldVideo) => {
-    if (oldVideo) {
+  watch(
+    [sourceFrameVideoRef, use16x9SharpVideoRef, showSourceFrame, use16x9Mode],
+    () => {
       videoRefs.value.delete('__sourceFrame__');
-    }
-    if (newVideo) {
-      videoRefs.value.set('__sourceFrame__', newVideo);
-    }
-  });
+      let v: HTMLVideoElement | null = null;
+      if (showSourceFrame.value) v = sourceFrameVideoRef.value;
+      else if (use16x9Mode.value) v = use16x9SharpVideoRef.value;
+      if (v) videoRefs.value.set('__sourceFrame__', v);
+    },
+    { immediate: true }
+  );
 
-  // Watch for source frame transform changes and emit to parent
-  // We normalize the x/y offsets to be relative to the container dimensions
-  // so the Rust backend can scale them correctly to the output video resolution.
-  // The x/y values are stored as raw pixels in sourceFrameTransform for local UI,
-  // but emitted as normalized values relative to container dimensions.
-  watch(sourceFrameTransform, (transform) => {
-    if (showSourceFrame.value && containerWidth.value > 0 && containerHeight.value > 0) {
-      // Normalize x/y offsets relative to container dimensions
-      // This makes them resolution-independent
-      const normalizedX = transform.x / containerWidth.value;
-      const normalizedY = transform.y / containerHeight.value;
-      
-      emit('updateSourceTransform', { 
-        scale: transform.scale,
-        x: normalizedX,
-        y: normalizedY,
-      });
-    }
-  }, { deep: true });
+  watch(
+    [use16x9BgVideoRef, use16x9Mode],
+    () => {
+      videoRefs.value.delete('__use16x9Bg__');
+      if (use16x9Mode.value && use16x9BgVideoRef.value) {
+        videoRefs.value.set('__use16x9Bg__', use16x9BgVideoRef.value);
+      }
+    },
+    { immediate: true }
+  );
 
   // Compute source frame style (16:9 frame positioned in 9:16 container)
   const sourceFrameStyle = computed(() => {
@@ -569,20 +845,37 @@
     document.addEventListener('mouseup', stopDragSourceFrame);
   }
 
-  // Handle source frame drag
+  // Handle source frame drag with snap-to-center
   function onDragSourceFrame(e: MouseEvent) {
     if (!isDraggingSourceFrame.value) return;
     
     const deltaX = e.clientX - dragStartPos.value.x;
     const deltaY = e.clientY - dragStartPos.value.y;
     
-    sourceFrameTransform.value.x = dragStartTransform.value.x + deltaX;
-    sourceFrameTransform.value.y = dragStartTransform.value.y + deltaY;
+    let newX = dragStartTransform.value.x + deltaX;
+    let newY = dragStartTransform.value.y + deltaY;
+    
+    // Check for center snap (x=0 means horizontally centered, y=0 means vertically centered)
+    const nearVerticalCenter = Math.abs(newX) < SNAP_THRESHOLD;
+    const nearHorizontalCenter = Math.abs(newY) < SNAP_THRESHOLD;
+    
+    // Snap to center if close
+    if (nearVerticalCenter) newX = 0;
+    if (nearHorizontalCenter) newY = 0;
+    
+    // Show/hide center guides
+    showVerticalCenterGuide.value = nearVerticalCenter;
+    showHorizontalCenterGuide.value = nearHorizontalCenter;
+    
+    sourceFrameTransform.value.x = newX;
+    sourceFrameTransform.value.y = newY;
   }
 
   // Stop dragging source frame
   function stopDragSourceFrame() {
     isDraggingSourceFrame.value = false;
+    showVerticalCenterGuide.value = false;
+    showHorizontalCenterGuide.value = false;
     document.removeEventListener('mousemove', onDragSourceFrame);
     document.removeEventListener('mouseup', stopDragSourceFrame);
   }
@@ -1099,6 +1392,12 @@
     isDragging.value = false;
   }
 
+  // Handle center guide visibility from child components
+  function onCenterGuide(guide: { vertical: boolean; horizontal: boolean }) {
+    showVerticalCenterGuide.value = guide.vertical;
+    showHorizontalCenterGuide.value = guide.horizontal;
+  }
+
   // Subtitle dragging functions
   function startDragSubtitles(event: MouseEvent) {
     if (!containerRef.value) return;
@@ -1128,8 +1427,8 @@
     const rect = containerRef.value.getBoundingClientRect();
     
     // Calculate new position as percentage
-    const newX = ((event.clientX - subtitleDragOffset.value.x - rect.left) / rect.width) * 100;
-    const newY = ((event.clientY - subtitleDragOffset.value.y - rect.top) / rect.height) * 100;
+    let newX = ((event.clientX - subtitleDragOffset.value.x - rect.left) / rect.width) * 100;
+    let newY = ((event.clientY - subtitleDragOffset.value.y - rect.top) / rect.height) * 100;
     
     // Use computed box width (accounts for animation style)
     const boxWidth = computedSubtitleBoxWidth.value;
@@ -1144,8 +1443,20 @@
     const minY = 6;
     const maxY = 94;
     
-    const constrainedX = Math.max(minX, Math.min(maxX, newX));
-    const constrainedY = Math.max(minY, Math.min(maxY, newY));
+    let constrainedX = Math.max(minX, Math.min(maxX, newX));
+    let constrainedY = Math.max(minY, Math.min(maxY, newY));
+    
+    // Snap to center (50% for subtitles)
+    const snapThresholdPercent = (SNAP_THRESHOLD / rect.width) * 100;
+    const nearVerticalCenter = Math.abs(constrainedX - 50) < snapThresholdPercent;
+    const nearHorizontalCenter = Math.abs(constrainedY - 50) < snapThresholdPercent;
+    
+    if (nearVerticalCenter) constrainedX = 50;
+    if (nearHorizontalCenter) constrainedY = 50;
+    
+    // Show/hide center guides
+    showVerticalCenterGuide.value = nearVerticalCenter;
+    showHorizontalCenterGuide.value = nearHorizontalCenter;
     
     localSubtitlePosition.value = {
       ...localSubtitlePosition.value,
@@ -1159,6 +1470,8 @@
 
   function onSubtitleDragEnd() {
     isDraggingSubtitles.value = false;
+    showVerticalCenterGuide.value = false;
+    showHorizontalCenterGuide.value = false;
     document.removeEventListener('mousemove', onSubtitleDragMove);
     document.removeEventListener('mouseup', onSubtitleDragEnd);
   }
@@ -1166,7 +1479,8 @@
   // Resize subtitle box by dragging corners
   function startResizeSubtitles(event: MouseEvent, corner: string) {
     console.log('[POITargetPanel] startResizeSubtitles called:', { corner, containerExists: !!containerRef.value });
-    if (!containerRef.value || !props.subtitleSettings) return;
+    const subtitleSettingsSnapshot = props.subtitleSettings;
+    if (!containerRef.value || !subtitleSettingsSnapshot) return;
     isResizingSubtitles.value = true;
 
     const rect = containerRef.value.getBoundingClientRect();
@@ -1174,7 +1488,7 @@
     const startY = event.clientY;
     const startWidth = localSubtitlePosition.value.width ?? 80;
     const startCenterX = localSubtitlePosition.value.x;
-    const startFontSize = props.subtitleSettings.fontSize || 32;
+    const startFontSize = subtitleSettingsSnapshot.fontSize || 32;
 
     console.log('[POITargetPanel] Resize started:', {
       corner,
@@ -1218,7 +1532,7 @@
       emit('subtitlePositionChange', { ...localSubtitlePosition.value });
       
       const updatedSettings = {
-        ...props.subtitleSettings,
+        ...subtitleSettingsSnapshot,
         fontSize: newFontSize
       };
       emit('subtitleSettingsChange', updatedSettings);
@@ -1253,6 +1567,9 @@
       resizeObserver = new ResizeObserver(updateContainerDimensions);
       resizeObserver.observe(containerRef.value);
     }
+
+    // Click outside handler for blur dropdown
+    document.addEventListener('click', handleClickOutsideBlur);
   });
 
   onUnmounted(() => {
@@ -1262,6 +1579,8 @@
     // Clean up subtitle drag listeners
     document.removeEventListener('mousemove', onSubtitleDragMove);
     document.removeEventListener('mouseup', onSubtitleDragEnd);
+    // Clean up blur dropdown click handler
+    document.removeEventListener('click', handleClickOutsideBlur);
   });
 
   // Watch for subtitle position prop changes

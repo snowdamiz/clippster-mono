@@ -233,7 +233,7 @@ const activeCropPresetLabel = computed(() => {
 
 const nativePresetLabel = computed(() => {
 	const asset = editor.media.getAssets().find((a) => a.id === props.element.mediaId);
-	if (!asset) return null;
+	if (!asset || !asset.width || !asset.height) return null;
 	const srcAR = asset.width / asset.height;
 	for (const p of cropPresets) {
 		if (p.ratio[0] === 0) continue;
@@ -963,7 +963,7 @@ function formatTime(seconds: number): string {
 					<!-- Enabled -->
 					<div class="flex items-center justify-between">
 						<span class="text-[11px] text-zinc-500">Enabled</span>
-						<Switch :checked="chromakey.enabled" @update:checked="(val) => updateChromakey({ enabled: val })" />
+						<Switch :checked="chromakey.enabled" @update:checked="(val: boolean) => updateChromakey({ enabled: val })" />
 					</div>
 
 					<template v-if="chromakey.enabled">
@@ -1016,7 +1016,7 @@ function formatTime(seconds: number): string {
 				<!-- Mute -->
 				<div class="flex items-center justify-between border-t border-white/[0.05] pt-4">
 					<span class="text-[11px] text-zinc-500">Mute</span>
-					<Switch :checked="element.muted" @update:checked="(val) => update({ muted: val })" />
+					<Switch :checked="element.muted" @update:checked="(val: boolean) => update({ muted: val })" />
 				</div>
 			</div>
 		</div>

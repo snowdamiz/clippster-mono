@@ -2,7 +2,8 @@
 import { ref, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { CAPTION_PRESETS, getPresetById } from "../../../constants/caption-constants";
-import type { CaptionPreset, CaptionPresetId } from "../../../constants/caption-constants";
+import type { CaptionPreset } from "../../../constants/caption-constants";
+import type { CaptionPresetId } from "../../../types/timeline";
 import { buildCaptionElement } from "../../../lib/timeline/element-utils";
 import type { CaptionLine, CaptionWord, VideoElement, UploadAudioElement } from "../../../types/timeline";
 import { Button } from "@/components/ui/button";

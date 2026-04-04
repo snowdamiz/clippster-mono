@@ -3,7 +3,29 @@
     <!-- Header -->
     <div class="flex items-center justify-between px-3 py-2 border-b border-zinc-700/50">
       <div class="flex items-center gap-2">
-        <div class="text-xs font-medium text-zinc-300">Source Video</div>
+        <!-- View tabs: Clip vs Uploaded Media -->
+        <div class="flex items-center gap-1 bg-zinc-800/50 rounded-lg p-0.5">
+          <button
+            @click="activeSourceView = 'clip'"
+            class="px-2 py-1 text-[10px] font-medium rounded-md transition-colors"
+            :class="activeSourceView === 'clip'
+              ? 'bg-zinc-700 text-zinc-100'
+              : 'text-zinc-400 hover:text-zinc-200'"
+          >
+            Clip
+          </button>
+          <button
+            v-if="selectedRegionHasMedia"
+            @click="activeSourceView = 'media'"
+            class="px-2 py-1 text-[10px] font-medium rounded-md transition-colors flex items-center gap-1"
+            :class="activeSourceView === 'media'
+              ? 'bg-blue-600/80 text-blue-100'
+              : 'text-blue-400 hover:text-blue-300 bg-blue-500/10'"
+          >
+            <ImageIcon class="w-3 h-3" />
+            Media
+          </button>
+        </div>
         <span class="text-[10px] text-zinc-500 font-mono">{{ sourceAspectRatio }}</span>
       </div>
       <div class="flex items-center gap-2">
@@ -32,99 +54,162 @@
       v-if="selectedRegion"
       class="px-3 py-2 border-b border-zinc-700/50 bg-zinc-900/30"
     >
-      <label class="flex items-center gap-2 cursor-pointer group">
-        <input
-          type="checkbox"
-          :checked="selectedRegion.aspectRatioLocked !== false"
-          @change="toggleAspectRatioLock"
-          class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0"
-        />
-        <LockIcon
-          v-if="selectedRegion.aspectRatioLocked !== false"
-          class="w-3.5 h-3.5 text-emerald-400"
-        />
-        <UnlockIcon
-          v-else
-          class="w-3.5 h-3.5 text-amber-400"
-        />
-        <span class="text-xs font-medium group-hover:text-zinc-200 transition-colors"
-          :class="selectedRegion.aspectRatioLocked !== false ? 'text-emerald-300' : 'text-amber-300'"
+      <div class="flex items-center justify-between gap-3">
+        <label class="flex items-center gap-2 cursor-pointer group">
+          <input
+            type="checkbox"
+            :checked="selectedRegion.aspectRatioLocked !== false"
+            @change="toggleAspectRatioLock"
+            class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0"
+          />
+          <LockIcon
+            v-if="selectedRegion.aspectRatioLocked !== false"
+            class="w-3.5 h-3.5 text-emerald-400"
+          />
+          <UnlockIcon
+            v-else
+            class="w-3.5 h-3.5 text-amber-400"
+          />
+          <span class="text-xs font-medium group-hover:text-zinc-200 transition-colors"
+            :class="selectedRegion.aspectRatioLocked !== false ? 'text-emerald-300' : 'text-amber-300'"
+          >
+            {{ selectedRegion.aspectRatioLocked !== false ? 'Aspect Ratio Locked' : 'Aspect Ratio Unlocked' }}
+          </span>
+          <span class="text-[10px] text-zinc-500">
+            ({{ selectedRegion.aspectRatioLocked !== false ? 'maintains proportions' : 'free resize' }})
+          </span>
+        </label>
+        
+        <!-- Delete Media button (only shown when region has uploaded media) -->
+        <button
+          v-if="selectedRegionHasMedia"
+          @click="deleteMedia"
+          class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded-md transition-colors"
+          title="Remove uploaded media from this region"
         >
-          {{ selectedRegion.aspectRatioLocked !== false ? 'Aspect Ratio Locked' : 'Aspect Ratio Unlocked' }}
-        </span>
-        <span class="text-[10px] text-zinc-500">
-          ({{ selectedRegion.aspectRatioLocked !== false ? 'maintains proportions' : 'free resize' }})
-        </span>
-      </label>
+          <TrashIcon class="w-3 h-3" />
+          Delete Media
+        </button>
+      </div>
     </div>
 
     <!-- Canvas Area -->
     <div class="flex-1 p-3 flex items-center justify-center bg-zinc-950/50">
       <div ref="containerRef" class="relative bg-black rounded-lg overflow-hidden shadow-lg" :style="containerStyle">
-        <!-- Video element (when available) -->
-        <video
-          v-if="videoUrl"
-          ref="videoRef"
-          :src="videoUrl"
-          class="absolute inset-0 w-full h-full object-cover"
-          preload="metadata"
-          muted
-          playsinline
-          @timeupdate="onVideoTimeUpdate"
-          @loadedmetadata="onVideoLoaded"
-        />
+        <!-- ===== CLIP VIEW ===== -->
+        <template v-if="activeSourceView === 'clip'">
+          <!-- Video element (when available) -->
+          <video
+            v-if="videoUrl"
+            ref="videoRef"
+            :src="videoUrl"
+            class="absolute inset-0 w-full h-full object-cover"
+            preload="metadata"
+            muted
+            playsinline
+            @timeupdate="onVideoTimeUpdate"
+            @loadedmetadata="onVideoLoaded"
+          />
 
-        <!-- Thumbnail Image (fallback when no video) -->
-        <img
-          v-else-if="thumbnailUrl"
-          :src="thumbnailUrl"
-          class="absolute inset-0 w-full h-full object-cover"
-          alt="Video thumbnail"
-          draggable="false"
-        />
+          <!-- Thumbnail Image (fallback when no video) -->
+          <img
+            v-else-if="thumbnailUrl"
+            :src="thumbnailUrl"
+            class="absolute inset-0 w-full h-full object-cover"
+            alt="Video thumbnail"
+            draggable="false"
+          />
 
-        <!-- Placeholder when no thumbnail or video -->
-        <div v-else class="absolute inset-0 flex items-center justify-center bg-zinc-900">
-          <div class="text-center">
-            <VideoIcon class="w-8 h-8 text-zinc-600 mx-auto mb-2" />
-            <span class="text-xs text-zinc-500">No preview available</span>
+          <!-- Placeholder when no thumbnail or video -->
+          <div v-else class="absolute inset-0 flex items-center justify-center bg-zinc-900">
+            <div class="text-center">
+              <VideoIcon class="w-8 h-8 text-zinc-600 mx-auto mb-2" />
+              <span class="text-xs text-zinc-500">No preview available</span>
+            </div>
           </div>
-        </div>
 
-        <!-- Grid overlay for visual guidance -->
-        <div class="absolute inset-0 pointer-events-none">
-          <div class="w-full h-full grid grid-cols-3 grid-rows-3">
-            <div v-for="i in 9" :key="i" class="border border-white/5" />
+          <!-- Grid overlay for visual guidance -->
+          <div class="absolute inset-0 pointer-events-none">
+            <div class="w-full h-full grid grid-cols-3 grid-rows-3">
+              <div v-for="i in 9" :key="i" class="border border-white/5" />
+            </div>
           </div>
-        </div>
 
-        <!-- POI Regions -->
-        <POIRegion
-          v-for="region in regions"
-          :key="region.id"
-          :rect="region.source"
-          :color="region.color"
-          :label="region.label || `Region ${getRegionIndex(region.id) + 1}`"
-          :is-selected="selectedRegionId === region.id"
-          :container-width="containerWidth"
-          :container-height="containerHeight"
-          :resizable="true"
-          :draggable="true"
-          :aspect-ratio-locked="region.aspectRatioLocked !== false"
-          @update="(rect) => updateRegionSource(region.id, rect)"
-          @delete="deleteRegion(region.id)"
-          @select="selectRegion(region.id)"
-          @drag-start="onDragStart"
-          @drag-end="onDragEnd"
-        />
+          <!-- POI Regions -->
+          <POIRegion
+            v-for="region in regions"
+            :key="region.id"
+            :rect="region.source"
+            :color="region.color"
+            :label="region.label || `Region ${getRegionIndex(region.id) + 1}`"
+            :is-selected="selectedRegionId === region.id"
+            :container-width="containerWidth"
+            :container-height="containerHeight"
+            :resizable="true"
+            :draggable="true"
+            :aspect-ratio-locked="region.aspectRatioLocked !== false"
+            @update="(rect) => updateRegionSource(region.id, rect)"
+            @delete="deleteRegion(region.id)"
+            @select="selectRegion(region.id)"
+            @drag-start="onDragStart"
+            @drag-end="onDragEnd"
+          />
 
-        <!-- Click to add region hint (when empty) -->
-        <div v-if="regions.length === 0" class="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div class="text-center bg-black/60 backdrop-blur-sm rounded-lg px-4 py-3">
-            <PlusCircleIcon class="w-6 h-6 text-zinc-400 mx-auto mb-1" />
-            <p class="text-xs text-zinc-400">Click "Add Region" to define crop areas</p>
+          <!-- Click to add region hint (when empty) -->
+          <div v-if="regions.length === 0" class="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div class="text-center bg-black/60 backdrop-blur-sm rounded-lg px-4 py-3">
+              <PlusCircleIcon class="w-6 h-6 text-zinc-400 mx-auto mb-1" />
+              <p class="text-xs text-zinc-400">Click "Add Region" to define crop areas</p>
+            </div>
           </div>
-        </div>
+        </template>
+
+        <!-- ===== MEDIA VIEW (uploaded region media) ===== -->
+        <template v-else-if="activeSourceView === 'media' && selectedRegionMediaSrc">
+          <!-- Video preview for video media -->
+          <video
+            v-if="selectedRegionMediaType === 'video'"
+            :src="selectedRegionMediaSrc"
+            class="absolute inset-0 w-full h-full object-contain bg-zinc-900"
+            controls
+            muted
+            playsinline
+          />
+          <!-- Image preview for image media -->
+          <img
+            v-else
+            :src="selectedRegionMediaSrc"
+            class="absolute inset-0 w-full h-full object-contain bg-zinc-900"
+            alt="Uploaded region media"
+            draggable="false"
+          />
+
+          <!-- Media info overlay -->
+          <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+            <div class="flex items-center gap-2">
+              <div
+                class="w-3 h-3 rounded-sm"
+                :style="{ backgroundColor: selectedRegion?.color }"
+              />
+              <span class="text-xs text-zinc-300 font-medium">
+                {{ selectedRegion?.label || `Region ${getRegionIndex(selectedRegionId || '') + 1}` }}
+              </span>
+              <span class="text-[10px] text-zinc-500">
+                {{ selectedRegionMediaType === 'video' ? 'Video' : 'Image' }} media
+              </span>
+            </div>
+          </div>
+        </template>
+
+        <!-- Fallback if media view but no media -->
+        <template v-else-if="activeSourceView === 'media'">
+          <div class="absolute inset-0 flex items-center justify-center bg-zinc-900">
+            <div class="text-center">
+              <ImageIcon class="w-8 h-8 text-zinc-600 mx-auto mb-2" />
+              <span class="text-xs text-zinc-500">No media uploaded for this region</span>
+            </div>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -152,7 +237,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-  import { PlusIcon, VideoIcon, PlusCircleIcon, ImageIcon, LockIcon, UnlockIcon } from 'lucide-vue-next';
+  import { PlusIcon, VideoIcon, PlusCircleIcon, ImageIcon, LockIcon, UnlockIcon, TrashIcon } from 'lucide-vue-next';
   import Hls from 'hls.js';
   import POIRegion from './POIRegion.vue';
   import type { ManualRegion, ManualRegionRect } from '@/types';
@@ -191,6 +276,74 @@
   const videoRef = ref<HTMLVideoElement | null>(null);
   const containerWidth = ref(0);
   const containerHeight = ref(0);
+
+  // View toggle: 'clip' shows source video, 'media' shows uploaded region media
+  const activeSourceView = ref<'clip' | 'media'>('clip');
+
+  // Check if selected region has uploaded media
+  const selectedRegionHasMedia = computed(() => {
+    if (!props.selectedRegionId) return false;
+    const region = props.regions.find(r => r.id === props.selectedRegionId);
+    return !!region?.mediaAssetId;
+  });
+
+  // Get the selected region
+  const selectedRegion = computed(() => {
+    if (!props.selectedRegionId) return null;
+    return props.regions.find(r => r.id === props.selectedRegionId) || null;
+  });
+
+  // Reactive media src (computed can't be async, so we use a ref + watcher)
+  const selectedRegionMediaSrc = ref<string | null>(null);
+
+  // Watch for changes to selected region's media and update the src
+  watch(
+    () => selectedRegion.value?.mediaAssetId,
+    async (assetId) => {
+      if (!assetId) {
+        selectedRegionMediaSrc.value = null;
+        return;
+      }
+      // If it's a blob URL, use directly
+      if (assetId.startsWith('blob:')) {
+        selectedRegionMediaSrc.value = assetId;
+        return;
+      }
+      // If it's a file path (from save_temp_media_file), use convertFileSrc
+      if (assetId.includes('/') || assetId.includes('\\')) {
+        try {
+          const { convertFileSrc } = await import('@tauri-apps/api/core');
+          selectedRegionMediaSrc.value = convertFileSrc(assetId);
+        } catch {
+          // Fallback for non-Tauri environment
+          selectedRegionMediaSrc.value = assetId;
+        }
+        return;
+      }
+      selectedRegionMediaSrc.value = assetId;
+    },
+    { immediate: true }
+  );
+
+  // Get the media type for the selected region
+  const selectedRegionMediaType = computed(() => {
+    return selectedRegion.value?.mediaType || 'image';
+  });
+
+  // Watch for region selection changes to auto-switch view
+  watch(() => props.selectedRegionId, (newId) => {
+    if (newId) {
+      const region = props.regions.find(r => r.id === newId);
+      // If selecting a region with media, auto-switch to media view
+      if (region?.mediaAssetId && activeSourceView.value === 'clip') {
+        // Don't auto-switch, let user control it
+      }
+    }
+    // If deselecting or selecting region without media, switch back to clip view
+    if (!newId || !selectedRegionHasMedia.value) {
+      activeSourceView.value = 'clip';
+    }
+  });
 
   // HLS.js instance for proper MPEG-TS (.ts) file playback with A/V sync
   let hlsInstance: Hls | null = null;
@@ -339,11 +492,6 @@
     };
   });
 
-  // Get selected region
-  const selectedRegion = computed(() => {
-    return props.regions.find(r => r.id === props.selectedRegionId) || null;
-  });
-
   // Get region index for labeling
   function getRegionIndex(id: string): number {
     return props.regions.findIndex((r) => r.id === id);
@@ -355,6 +503,20 @@
     
     const newLockState = !(selectedRegion.value.aspectRatioLocked !== false);
     emit('updateRegion', selectedRegion.value.id, { aspectRatioLocked: newLockState });
+  }
+
+  // Delete uploaded media from selected region
+  function deleteMedia() {
+    if (!selectedRegion.value) return;
+    
+    // Clear mediaAssetId and mediaType from the region
+    emit('updateRegion', selectedRegion.value.id, { 
+      mediaAssetId: undefined, 
+      mediaType: undefined 
+    });
+    
+    // Switch back to clip view since media is gone
+    activeSourceView.value = 'clip';
   }
 
   // Get next available color
