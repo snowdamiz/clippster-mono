@@ -11,6 +11,7 @@ import { getTwitchVods, extractChannelName, checkTwitchLivestream, type TwitchVo
 import { getYouTubeVods, extractYouTubeChannel, type YouTubeVod } from '@/services/youtube';
 import { getRumbleVods, extractRumbleChannel, checkRumbleLivestream, type RumbleVod } from '@/services/rumble';
 import { extractTwitterBroadcastId, validateTwitterUrl, getTwitterBroadcastInfo } from '@/services/twitter';
+import { cache } from '@/utils/persistentCache';
 
 // Unified clip type that works across platforms
 export interface PlatformClip {
@@ -786,6 +787,39 @@ export const usePlatformStore = defineStore('platform', {
           urlToFetch = `https://rumble.com/${channelPath}/${tab === 'streams' ? 'livestreams' : 'videos'}`;
         }
         
+        // Check cache first (5 minute TTL)
+        const cacheKey = `rumble_${tab}_${channelName}_${limit}`;
+        const cached = cache.get<RumbleVod[]>(cacheKey);
+        if (cached && cached.length > 0) {
+          console.log('[Platform Store] Using cached Rumble', tab, '- found', cached.length, 'items');
+          // Apply the same filtering logic to cached data
+          let filteredVods = tab === 'streams' 
+            ? cached.filter(vod => vod.isLive)
+            : cached.filter(vod => !vod.isLive);
+          
+          const clips: PlatformClip[] = filteredVods.map((vod: RumbleVod) => {
+            const createdAt = this.parseRumbleDate(vod.uploadDate);
+            return {
+              clipId: vod.videoId,
+              title: vod.title || `Video ${vod.videoId}`,
+              duration: vod.duration || 0,
+              thumbnailUrl: vod.thumbnailUrl,
+              playlistUrl: vod.url,
+              mp4Url: vod.url,
+              clipType: 'COMPLETE' as const,
+              createdAt,
+              views: vod.viewCount ?? undefined,
+            };
+          });
+          return {
+            success: true,
+            clips,
+            hasMore: clips.length >= limit,
+            total: clips.length,
+            actualTab: tab,
+          };
+        }
+        
         console.log('[Platform Store] Fetching Rumble', tab, 'from:', urlToFetch);
         const vods = await getRumbleVods(urlToFetch, limit);
         
@@ -816,20 +850,15 @@ export const usePlatformStore = defineStore('platform', {
           }
         }
         
+        // Cache the raw VODs (not filtered) so we can use them for both tabs
+        if (vods.length > 0) {
+          cache.set(cacheKey, vods, 5 * 60 * 1000);
+        }
+        
         const clips: PlatformClip[] = filteredVods.map((vod: RumbleVod) => {
           // upload_date from yt-dlp is YYYYMMDD — convert to ISO
-          let createdAt: string | undefined;
-          if (vod.uploadDate) {
-            const raw = vod.uploadDate;
-            if (/^\d{8}$/.test(raw)) {
-              createdAt = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
-            } else if (/^\d{9,13}$/.test(raw)) {
-              const ms = raw.length <= 10 ? Number(raw) * 1000 : Number(raw);
-              createdAt = new Date(ms).toISOString();
-            } else {
-              createdAt = raw;
-            }
-          }
+          const createdAt = this.parseRumbleDate(vod.uploadDate);
+          
           return {
             clipId: vod.videoId,
             title: vod.title || `Video ${vod.videoId}`,
@@ -860,6 +889,21 @@ export const usePlatformStore = defineStore('platform', {
         };
       }
     },
+    
+    // Helper to parse Rumble date formats
+    parseRumbleDate(uploadDate?: string): string | undefined {
+      if (!uploadDate) return undefined;
+      
+      const raw = uploadDate;
+      if (/^\d{8}$/.test(raw)) {
+        return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+      } else if (/^\d{9,13}$/.test(raw)) {
+        const ms = raw.length <= 10 ? Number(raw) * 1000 : Number(raw);
+        return new Date(ms).toISOString();
+      } else {
+        return raw;
+      }
+    },
 
     // Helper to convert YouTube VODs to PlatformClip format
     async getYouTubeClips(channelId: string, limit: number = 20, tab: 'streams' | 'videos' = 'streams'): Promise<{
@@ -873,6 +917,32 @@ export const usePlatformStore = defineStore('platform', {
     }> {
       try {
         console.log('[Platform Store] getYouTubeClips - channelId:', channelId, 'tab:', tab);
+        
+        // Check cache first (5 minute TTL)
+        const cacheKey = `youtube_${tab}_${channelId}_${limit}`;
+        const cached = cache.get<YouTubeVod[]>(cacheKey);
+        if (cached && cached.length > 0) {
+          console.log('[Platform Store] Using cached YouTube', tab, '- found', cached.length, 'items');
+          const clips: PlatformClip[] = cached.map((vod: YouTubeVod) => ({
+            clipId: vod.videoId,
+            title: vod.title || `Video ${vod.videoId}`,
+            duration: vod.duration || 0,
+            thumbnailUrl: vod.thumbnailUrl,
+            playlistUrl: vod.url,
+            mp4Url: vod.url,
+            clipType: 'COMPLETE' as const,
+            createdAt: this.parseYouTubeDate(vod.uploadDate),
+            views: vod.viewCount ?? undefined,
+          }));
+          return {
+            success: true,
+            clips,
+            hasMore: clips.length >= limit,
+            total: clips.length,
+            actualTab: tab,
+          };
+        }
+        
         // Import getYouTubeVideos dynamically
         const { getYouTubeVideos } = await import('@/services/youtube');
         
@@ -900,37 +970,16 @@ export const usePlatformStore = defineStore('platform', {
           }
         }
         
-        const clips: PlatformClip[] = vods.map((vod: YouTubeVod, index: number) => {
-          // Log first item to debug date fields
-          if (index === 0) {
-            console.log('[Platform Store] First VOD data:', vod);
-          }
+        // Cache the results (5 minute TTL)
+        if (vods.length > 0) {
+          const cacheKey = `youtube_${actualTab}_${channelId}_${limit}`;
+          cache.set(cacheKey, vods, 5 * 60 * 1000);
+        }
+        
+        const clips: PlatformClip[] = vods.map((vod: YouTubeVod) => {
+          // Parse date
+          const createdAt = this.parseYouTubeDate(vod.uploadDate);
           
-          // yt-dlp flat-playlist returns timestamp as Unix epoch string (e.g. "1737014400")
-          // or upload_date as "YYYYMMDD" — normalize both to ISO 8601
-          let createdAt: string | undefined;
-          if (vod.uploadDate) {
-            const raw = vod.uploadDate;
-            if (/^\d{8}$/.test(raw)) {
-              // YYYYMMDD → YYYY-MM-DD
-              createdAt = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
-              if (index === 0) {
-                console.log('[Platform Store] Parsed YYYYMMDD date:', raw, '→', createdAt);
-              }
-            } else if (/^\d{9,13}$/.test(raw)) {
-              // Unix epoch seconds or milliseconds → ISO string
-              const ms = raw.length <= 10 ? Number(raw) * 1000 : Number(raw);
-              createdAt = new Date(ms).toISOString();
-              if (index === 0) {
-                console.log('[Platform Store] Parsed epoch date:', raw, '→', createdAt);
-              }
-            } else {
-              createdAt = raw;
-              if (index === 0) {
-                console.log('[Platform Store] Using raw date:', raw);
-              }
-            }
-          }
           return {
             clipId: vod.videoId,
             title: vod.title || `Video ${vod.videoId}`,
@@ -959,6 +1008,23 @@ export const usePlatformStore = defineStore('platform', {
           total: 0,
           error: error instanceof Error ? error.message : 'Failed to fetch YouTube VODs',
         };
+      }
+    },
+    
+    // Helper to parse YouTube date formats
+    parseYouTubeDate(uploadDate?: string): string | undefined {
+      if (!uploadDate) return undefined;
+      
+      const raw = uploadDate;
+      if (/^\d{8}$/.test(raw)) {
+        // YYYYMMDD → YYYY-MM-DD
+        return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+      } else if (/^\d{9,13}$/.test(raw)) {
+        // Unix epoch seconds or milliseconds → ISO string
+        const ms = raw.length <= 10 ? Number(raw) * 1000 : Number(raw);
+        return new Date(ms).toISOString();
+      } else {
+        return raw;
       }
     },
 

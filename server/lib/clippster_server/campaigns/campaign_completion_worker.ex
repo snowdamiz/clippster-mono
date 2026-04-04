@@ -26,16 +26,12 @@ defmodule ClippsterServer.Campaigns.CampaignCompletionWorker do
   def handle_info(:check_campaigns, state) do
     Logger.info("[CampaignCompletionWorker] Checking for expired campaigns")
 
-    case Campaigns.auto_complete_expired_campaigns() do
-      {:ok, count} ->
-        if count > 0 do
-          Logger.info("[CampaignCompletionWorker] Completed #{count} expired campaign(s)")
-        else
-          Logger.debug("[CampaignCompletionWorker] No expired campaigns found")
-        end
+    {:ok, count} = Campaigns.auto_complete_expired_campaigns()
 
-      {:error, reason} ->
-        Logger.error("[CampaignCompletionWorker] Error completing campaigns: #{inspect(reason)}")
+    if count > 0 do
+      Logger.info("[CampaignCompletionWorker] Completed #{count} expired campaign(s)")
+    else
+      Logger.debug("[CampaignCompletionWorker] No expired campaigns found")
     end
 
     schedule_next_check()

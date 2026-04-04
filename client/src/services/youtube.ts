@@ -196,6 +196,8 @@ export async function getSingleYouTubeVideo(videoUrl: string): Promise<YouTubeVo
 /**
  * Get VODs (past live streams) for a YouTube channel
  * Also supports direct video URLs
+ * 
+ * Performance optimization: Fetch durations in parallel for VODs missing duration data
  */
 export async function getYouTubeVods(channel: string, limit: number = 20): Promise<YouTubeVod[]> {
   try {
@@ -203,15 +205,31 @@ export async function getYouTubeVods(channel: string, limit: number = 20): Promi
     const result = await invoke<string>('get_youtube_vods', { channel: channel.trim(), limit });
     const vods: YouTubeVod[] = JSON.parse(result);
     
-    // If yt-dlp didn't return duration, try ffprobe
-    for (const vod of vods) {
-      if (!vod.duration || vod.duration === 0) {
-        console.log('[YouTube] VOD missing duration, trying ffprobe:', vod.videoId);
-        const duration = await getYouTubeVodDuration(vod.url);
-        if (duration) {
-          vod.duration = duration;
+    // Find VODs missing duration
+    const vodsMissingDuration = vods.filter(v => !v.duration || v.duration === 0);
+    
+    if (vodsMissingDuration.length > 0) {
+      console.log(`[YouTube] ${vodsMissingDuration.length} VODs missing duration, fetching in parallel via ffprobe...`);
+      
+      // Fetch durations in parallel (much faster than sequential)
+      const durationPromises = vodsMissingDuration.map(async (vod) => {
+        try {
+          const duration = await getYouTubeVodDuration(vod.url);
+          if (duration) {
+            vod.duration = duration;
+          }
+          return { videoId: vod.videoId, duration };
+        } catch (error) {
+          console.warn(`[YouTube] Failed to get duration for ${vod.videoId}:`, error);
+          return { videoId: vod.videoId, duration: undefined };
         }
-      }
+      });
+      
+      // Wait for all duration fetches to complete (parallel execution)
+      await Promise.all(durationPromises);
+      
+      const successCount = vodsMissingDuration.filter(v => v.duration && v.duration > 0).length;
+      console.log(`[YouTube] Successfully fetched ${successCount}/${vodsMissingDuration.length} durations via ffprobe`);
     }
     
     return vods;
@@ -224,6 +242,8 @@ export async function getYouTubeVods(channel: string, limit: number = 20): Promi
 /**
  * Get regular videos (not live streams) for a YouTube channel
  * Also supports direct video URLs
+ * 
+ * Performance optimization: Fetch durations in parallel for videos missing duration data
  */
 export async function getYouTubeVideos(channel: string, limit: number = 20): Promise<YouTubeVod[]> {
   try {
@@ -231,15 +251,31 @@ export async function getYouTubeVideos(channel: string, limit: number = 20): Pro
     const result = await invoke<string>('get_youtube_videos', { channel: channel.trim(), limit });
     const videos: YouTubeVod[] = JSON.parse(result);
     
-    // If yt-dlp didn't return duration, try ffprobe
-    for (const video of videos) {
-      if (!video.duration || video.duration === 0) {
-        console.log('[YouTube] Video missing duration, trying ffprobe:', video.videoId);
-        const duration = await getYouTubeVodDuration(video.url);
-        if (duration) {
-          video.duration = duration;
+    // Find videos missing duration
+    const videosMissingDuration = videos.filter(v => !v.duration || v.duration === 0);
+    
+    if (videosMissingDuration.length > 0) {
+      console.log(`[YouTube] ${videosMissingDuration.length} videos missing duration, fetching in parallel via ffprobe...`);
+      
+      // Fetch durations in parallel (much faster than sequential)
+      const durationPromises = videosMissingDuration.map(async (video) => {
+        try {
+          const duration = await getYouTubeVodDuration(video.url);
+          if (duration) {
+            video.duration = duration;
+          }
+          return { videoId: video.videoId, duration };
+        } catch (error) {
+          console.warn(`[YouTube] Failed to get duration for ${video.videoId}:`, error);
+          return { videoId: video.videoId, duration: undefined };
         }
-      }
+      });
+      
+      // Wait for all duration fetches to complete (parallel execution)
+      await Promise.all(durationPromises);
+      
+      const successCount = videosMissingDuration.filter(v => v.duration && v.duration > 0).length;
+      console.log(`[YouTube] Successfully fetched ${successCount}/${videosMissingDuration.length} durations via ffprobe`);
     }
     
     return videos;

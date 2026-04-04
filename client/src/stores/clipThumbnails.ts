@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { persistentCache } from '@/utils/persistentCache';
 
 /**
  * Persistent thumbnail cache store
@@ -46,6 +47,18 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
       return thumbnailCache.value.get(clipId)!;
     }
 
+    // Check persistent cache first
+    try {
+      const cached = await persistentCache.get<string>('thumbnails', clipId);
+      if (cached) {
+        thumbnailCache.value.set(clipId, cached);
+        thumbnailCache.value = new Map(thumbnailCache.value);
+        return cached;
+      }
+    } catch (error) {
+      console.warn(`[ClipThumbnailStore] Failed to read from persistent cache for clip ${clipId}:`, error);
+    }
+
     // Skip if already loading
     if (loadingThumbnails.value.has(clipId)) {
       return null;
@@ -62,6 +75,11 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
       
       // Trigger Vue reactivity
       thumbnailCache.value = new Map(thumbnailCache.value);
+
+      // Save to persistent cache (24 hours TTL)
+      persistentCache.set('thumbnails', clipId, dataUrl, 86400000).catch(err => {
+        console.warn(`[ClipThumbnailStore] Failed to save to persistent cache for clip ${clipId}:`, err);
+      });
 
       return dataUrl;
     } catch (error) {
@@ -96,6 +114,14 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
       await Promise.all(
         batch.map(async (clip) => {
           try {
+            // Check persistent cache first
+            const cached = await persistentCache.get<string>('thumbnails', clip.id);
+            if (cached) {
+              thumbnailCache.value.set(clip.id, cached);
+              hasNewThumbnails = true;
+              return;
+            }
+
             loadingThumbnails.value.add(clip.id);
 
             const dataUrl = await invoke<string>('read_file_as_data_url', {
@@ -104,6 +130,11 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
 
             thumbnailCache.value.set(clip.id, dataUrl);
             hasNewThumbnails = true;
+
+            // Save to persistent cache (24 hours TTL)
+            persistentCache.set('thumbnails', clip.id, dataUrl, 86400000).catch(err => {
+              console.warn(`[ClipThumbnailStore] Failed to save to persistent cache for clip ${clip.id}:`, err);
+            });
           } catch (error) {
             console.warn(`[ClipThumbnailStore] Failed to load thumbnail for clip ${clip.id}:`, error);
           } finally {
@@ -120,11 +151,53 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
   }
 
   /**
+   * Load thumbnails lazily (only for visible items)
+   * Returns immediately with cached thumbnails, loads missing ones in background
+   */
+  async function loadThumbnailsLazy(
+    clips: Array<{ id: string; built_thumbnail_path: string | null }>,
+    priority: 'high' | 'low' = 'low'
+  ): Promise<void> {
+    const clipsToLoad = clips.filter(
+      (clip) =>
+        clip.built_thumbnail_path &&
+        !thumbnailCache.value.has(clip.id) &&
+        !loadingThumbnails.value.has(clip.id)
+    );
+
+    if (clipsToLoad.length === 0) return;
+
+    // High priority: load immediately in small batches
+    // Low priority: load with delay in larger batches
+    const batchSize = priority === 'high' ? 3 : 10;
+    const batchDelay = priority === 'high' ? 0 : 50;
+
+    for (let i = 0; i < clipsToLoad.length; i += batchSize) {
+      if (batchDelay > 0 && i > 0) {
+        await new Promise(resolve => setTimeout(resolve, batchDelay));
+      }
+
+      const batch = clipsToLoad.slice(i, i + batchSize);
+
+      Promise.all(
+        batch.map(clip => loadThumbnail(clip.id, clip.built_thumbnail_path!))
+      ).catch(err => {
+        console.warn('[ClipThumbnailStore] Failed to load lazy thumbnails:', err);
+      });
+    }
+  }
+
+  /**
    * Set a thumbnail directly (used after generation)
    */
   function setThumbnail(clipId: string, dataUrl: string): void {
     thumbnailCache.value.set(clipId, dataUrl);
     thumbnailCache.value = new Map(thumbnailCache.value);
+
+    // Save to persistent cache
+    persistentCache.set('thumbnails', clipId, dataUrl, 86400000).catch(err => {
+      console.warn(`[ClipThumbnailStore] Failed to save to persistent cache for clip ${clipId}:`, err);
+    });
   }
 
   /**
@@ -135,6 +208,11 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
       thumbnailCache.value.delete(clipId);
       thumbnailCache.value = new Map(thumbnailCache.value);
     }
+
+    // Remove from persistent cache
+    persistentCache.delete('thumbnails', clipId).catch(err => {
+      console.warn(`[ClipThumbnailStore] Failed to remove from persistent cache for clip ${clipId}:`, err);
+    });
   }
 
   /**
@@ -213,6 +291,11 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
     loadingThumbnails.value.clear();
     thumbnailCache.value = new Map();
     buildThumbnailCache.value = new Map();
+
+    // Clear persistent cache
+    persistentCache.clear('thumbnails').catch(err => {
+      console.warn('[ClipThumbnailStore] Failed to clear persistent cache:', err);
+    });
   }
 
   /**
@@ -224,6 +307,11 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
       if (thumbnailCache.value.has(clipId)) {
         thumbnailCache.value.delete(clipId);
         hasChanges = true;
+
+        // Remove from persistent cache
+        persistentCache.delete('thumbnails', clipId).catch(err => {
+          console.warn(`[ClipThumbnailStore] Failed to remove from persistent cache for clip ${clipId}:`, err);
+        });
       }
     }
     if (hasChanges) {
@@ -239,6 +327,7 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
     isLoading,
     loadThumbnail,
     loadThumbnails,
+    loadThumbnailsLazy,
     setThumbnail,
     removeThumbnail,
     getBuildThumbnail,
