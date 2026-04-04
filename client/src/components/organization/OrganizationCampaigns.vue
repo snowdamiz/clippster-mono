@@ -275,8 +275,9 @@
             </DropdownMenu>
           </div>
         </div>
+          </div>
+        </div>
       </div>
-    </div>
 
       <!-- Completed Campaigns Section -->
       <div v-if="completedCampaigns.length > 0" class="campaigns__section">
@@ -525,6 +526,7 @@
     </div>
 
     <!-- Create/Edit Campaign Wizard -->
+    <Teleport to="body">
       <Transition name="modal">
         <div
           v-if="showCampaignDialog"
