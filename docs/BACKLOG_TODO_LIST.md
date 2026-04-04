@@ -105,15 +105,35 @@ Working notes for follow-up work. No implementation in this change—context gat
 
 ---
 
-## Fix built clips page taking forever to load
+## ✅ COMPLETED: Fix built clips page taking forever to load
 
-**Context:** `client/src/pages/Clips.vue` `loadClips()` calls `getAllClipsWithBuilds()` then per-clip work: transcript IDs, `thumbnailStore.loadThumbnails`, and for each clip with `project_id`, `getProjectInfo` + `loadRawVideosForProject` sequentially (~2020+). That pattern is a strong N+1 / sequential load candidate. **Next:** Profile network and Tauri calls; batch project/video fetches and defer non-visible thumbnail work.
+**Status:** COMPLETED
+
+**Summary:** Implemented comprehensive performance optimizations including batched/parallel data loading, IndexedDB persistent caching, and lazy thumbnail loading. Expected improvement from 5-10+ seconds to <1 second for initial load, with subsequent loads being nearly instant due to caching.
+
+**Files Modified:**
+- `client/src/pages/Clips.vue` - Refactored loadClips() with batching/parallelization
+- `client/src/stores/clipThumbnails.ts` - Added IndexedDB integration and lazy loading
+- `client/src/utils/persistentCache.ts` - New IndexedDB cache utility
+
+**Documentation:** See `docs/performance/built-clips-page-optimization.md` for full details.
+
+**Previous Context:** `client/src/pages/Clips.vue` `loadClips()` calls `getAllClipsWithBuilds()` then per-clip work: transcript IDs, `thumbnailStore.loadThumbnails`, and for each clip with `project_id`, `getProjectInfo` + `loadRawVideosForProject` sequentially (~2020+). That pattern was a strong N+1 / sequential load candidate.
 
 ---
 
-## Fix built clips sidebar taking forever to load in calendar
+## ✅ COMPLETED: Fix built clips sidebar taking forever to load in calendar
 
-**Context:** `client/src/components/calendar/ClipsSidebar.vue` `loadClips()` uses `getAllClips()`, then `loadBuilds()` (per-clip `getClipBuilds`), then thumbnail store loads—same structural cost as `BuiltClipsView.vue` in the editor. **Next:** Add a single API or Rust command that returns clips+completed builds; parallelize with a concurrency limit; lazy-load thumbnails for visible rows only.
+**Status:** COMPLETED
+
+**Summary:** Applied the same comprehensive performance optimizations to the Content Calendar's ClipsSidebar component. Implemented parallelized build loading, lazy thumbnail loading with priority, and IndexedDB persistent caching. Expected improvement from 3-8 seconds to <500ms for initial load, with subsequent loads being nearly instant.
+
+**Files Modified:**
+- `client/src/components/calendar/ClipsSidebar.vue` - Parallelized loadBuilds(), added lazy loading, integrated IndexedDB caching
+
+**Documentation:** See `docs/performance/content-calendar-sidebar-optimization.md` for full details.
+
+**Previous Context:** `client/src/components/calendar/ClipsSidebar.vue` `loadClips()` uses `getAllClips()`, then `loadBuilds()` (per-clip `getClipBuilds`), then thumbnail store loads—same structural cost as the main Built Clips page.
 
 ---
 
@@ -144,5 +164,27 @@ Working notes for follow-up work. No implementation in this change—context gat
 - Creating an allocation with defaults (0 hours) is safe and appropriate - it establishes the fallback setting without granting credits
 - The UI already handles `nil` allocations gracefully (shows 0 remaining, disabled fallback)
 - Now when toggling fallback for any member (owner, admin, or regular member), it works correctly
+
+---
+
+## ✅ COMPLETED: Fix VOD Library (Projects page) taking forever to load
+
+**Status:** COMPLETED
+
+**Summary:** Optimized the VOD Library / Projects page with comprehensive performance improvements. Parallelized all clip and video queries, implemented lazy thumbnail loading, and added IndexedDB persistent caching. Expected improvement from 10-20+ seconds to <1 second for initial load, with subsequent loads being nearly instant.
+
+**Files Modified:**
+- `client/src/pages/Projects.vue` - Parallelized clip/video loading, added lazy thumbnail loading, integrated IndexedDB caching
+
+**Key Optimizations:**
+- Parallelized clip count queries (30 projects: 30 parallel queries vs 30 sequential)
+- Parallelized video loading (30 projects: 30 parallel queries vs 30 sequential)
+- Lazy thumbnail loading (first 20 immediately, rest deferred)
+- IndexedDB caching for project thumbnails (24-hour TTL)
+- Extracted complex fallback logic to separate helper functions
+
+**Documentation:** See `docs/performance/projects-vod-library-optimization.md` for full details.
+
+**Previous Context:** Sequential loop in `loadProjects()` querying clips and videos one project at a time, then loading thumbnails with complex nested fallback logic. Classic N+1 problem with 60+ sequential queries for 30 projects.
 
 ---

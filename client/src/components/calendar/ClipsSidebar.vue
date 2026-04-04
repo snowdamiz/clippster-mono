@@ -163,6 +163,7 @@ import { getStoragePath } from '@/services/storage';
 import type { Clip, ClipBuild } from '@/services/database/types';
 import { invoke } from '@tauri-apps/api/core';
 import { useClipThumbnailStore } from '@/stores/clipThumbnails';
+import { persistentCache } from '@/utils/persistentCache';
 
 // Build entry combines clip info with specific build info
 interface BuildEntry {
@@ -349,19 +350,81 @@ async function loadClips() {
   loading.value = true;
   try {
     clips.value = await getAllClips();
-    await loadBuilds();
+    
+    // Load builds and thumbnails in parallel
+    await Promise.all([
+      loadBuilds(),
+      // Load clip thumbnails lazily (first 20 immediately, rest in background)
+      thumbnailStore.loadThumbnailsLazy(clips.value.slice(0, 20), 'high'),
+    ]);
+    
     console.log('[ClipsSidebar] Loaded builds:', allBuilds.value.length);
     
-    // Batch load clip thumbnails using the persistent store
-    await thumbnailStore.loadThumbnails(clips.value);
+    // Defer non-critical thumbnail loading to after initial render
+    setTimeout(() => {
+      // Continue loading remaining clip thumbnails
+      if (clips.value.length > 20) {
+        thumbnailStore.loadThumbnailsLazy(clips.value.slice(20), 'low');
+      }
+      
+      // Load build-specific thumbnails in background
+      loadThumbnailsDeferred();
+    }, 100);
     
-    // Load build-specific thumbnails
-    await loadThumbnails();
-    console.log('[ClipsSidebar] Thumbnails loaded');
+    console.log('[ClipsSidebar] Initial load complete');
   } catch (error) {
     console.error('[ClipsSidebar] Failed to load clips:', error);
   } finally {
     loading.value = false;
+  }
+}
+
+// Deferred thumbnail loading for builds
+async function loadThumbnailsDeferred() {
+  try {
+    const buildsNeedingThumbs = allBuilds.value.filter(
+      (entry) => !thumbnailStore.hasBuildThumbnail(entry.build.id)
+    );
+    console.log('[ClipsSidebar] Builds needing thumbnails:', buildsNeedingThumbs.length);
+    
+    if (buildsNeedingThumbs.length === 0) return;
+    
+    // Load first batch immediately (visible ones), rest with lower priority
+    const visibleBuilds = buildsNeedingThumbs.slice(0, 10);
+    const remainingBuilds = buildsNeedingThumbs.slice(10);
+    
+    // Load visible builds first
+    await loadThumbnailBatch(visibleBuilds, 3);
+    
+    // Load remaining builds in background with delays
+    if (remainingBuilds.length > 0) {
+      setTimeout(() => {
+        loadThumbnailBatch(remainingBuilds, 10);
+      }, 500);
+    }
+    
+    console.log('[ClipsSidebar] Thumbnail loading complete');
+  } catch (error) {
+    console.error('[ClipsSidebar] Failed to load deferred thumbnails:', error);
+  }
+}
+
+// Load thumbnails in batches
+async function loadThumbnailBatch(builds: BuildEntry[], batchSize: number) {
+  for (let i = 0; i < builds.length; i += batchSize) {
+    const batch = builds.slice(i, i + batchSize);
+    await Promise.all(
+      batch.map(async (entry) => {
+        try {
+          const dataUrl = await loadBuildThumbnail(entry);
+          if (dataUrl) {
+            thumbnailStore.setBuildThumbnail(entry.build.id, dataUrl);
+          }
+        } catch (err) {
+          // Silently skip
+        }
+      })
+    );
   }
 }
 
@@ -392,12 +455,16 @@ function extractAspectRatioFromPath(filePath: string): string | null {
   return match ? match[1].replace('-', ':') : null;
 }
 
-// Load all builds for all clips
+// Load all builds for all clips - parallelized
 async function loadBuilds() {
   const entries: BuildEntry[] = [];
-  for (const clip of clips.value) {
+  
+  // Load builds for all clips in parallel
+  const buildPromises = clips.value.map(async (clip) => {
     try {
       const builds = await getClipBuilds(clip.id);
+      const clipEntries: BuildEntry[] = [];
+      
       for (const build of builds) {
         if (build.status === 'completed') {
           const outputPaths = getOutputPathsFromBuild(build);
@@ -407,7 +474,7 @@ async function loadBuilds() {
             const filePath = outputPaths[i];
             const aspectRatio = extractAspectRatioFromPath(filePath);
             
-            entries.push({
+            clipEntries.push({
               clip,
               build,
               filePath,
@@ -417,10 +484,22 @@ async function loadBuilds() {
           }
         }
       }
+      
+      return clipEntries;
     } catch (error) {
       console.warn(`[ClipsSidebar] Failed to load builds for clip ${clip.id}:`, error);
+      return [];
     }
+  });
+  
+  // Wait for all builds to load in parallel
+  const allClipEntries = await Promise.all(buildPromises);
+  
+  // Flatten and combine all entries
+  for (const clipEntries of allClipEntries) {
+    entries.push(...clipEntries);
   }
+  
   // Sort by created_at descending (newest first)
   entries.sort((a, b) => (b.build.created_at || 0) - (a.build.created_at || 0));
   allBuilds.value = entries;
@@ -473,56 +552,70 @@ async function loadThumbnails() {
   console.log('[ClipsSidebar] Thumbnail loading complete');
 }
 
-// Load thumbnail for a single build - tries multiple sources
+// Load thumbnail for a single build - tries multiple sources with caching
 async function loadBuildThumbnail(entry: BuildEntry): Promise<string | null> {
   const { clip, build } = entry;
   
+  // Check persistent cache first (24 hour TTL)
+  try {
+    const cached = await persistentCache.get<string>('thumbnails', `build-${build.id}`);
+    if (cached) {
+      return cached;
+    }
+  } catch (error) {
+    console.warn(`[ClipsSidebar] Failed to read build thumbnail from cache for ${build.id}:`, error);
+  }
+  
+  let dataUrl: string | null = null;
+  
   // Source 1: Build's thumbnail_path
-  if (build.thumbnail_path) {
+  if (build.thumbnail_path && !dataUrl) {
     try {
       const exists = await invoke<boolean>('check_file_exists', { path: build.thumbnail_path });
       if (exists) {
-        return await invoke<string>('read_file_as_data_url', { filePath: build.thumbnail_path });
+        dataUrl = await invoke<string>('read_file_as_data_url', { filePath: build.thumbnail_path });
       }
     } catch { /* try next source */ }
   }
   
   // Source 2: Derive thumbnail path from entry's specific file_path
-  if (entry.filePath) {
+  if (entry.filePath && !dataUrl) {
     const derivedPath = await getThumbnailPathForVideoFile(entry.filePath);
     if (derivedPath) {
       try {
         const exists = await invoke<boolean>('check_file_exists', { path: derivedPath });
         if (exists) {
-          return await invoke<string>('read_file_as_data_url', { filePath: derivedPath });
+          dataUrl = await invoke<string>('read_file_as_data_url', { filePath: derivedPath });
         }
       } catch { /* try next source */ }
     }
   }
 
   // Source 3: Clip's built_thumbnail_path field
-  if (clip.built_thumbnail_path) {
+  if (clip.built_thumbnail_path && !dataUrl) {
     try {
       const exists = await invoke<boolean>('check_file_exists', { path: clip.built_thumbnail_path });
       if (exists) {
-        return await invoke<string>('read_file_as_data_url', { filePath: clip.built_thumbnail_path });
+        dataUrl = await invoke<string>('read_file_as_data_url', { filePath: clip.built_thumbnail_path });
       }
     } catch { /* try next source */ }
   }
 
   // Source 4: Thumbnails table
-  try {
-    const thumbnail = await getThumbnailByClipId(clip.id);
-    if (thumbnail?.file_path) {
-      const exists = await invoke<boolean>('check_file_exists', { path: thumbnail.file_path });
-      if (exists) {
-        return await invoke<string>('read_file_as_data_url', { filePath: thumbnail.file_path });
+  if (!dataUrl) {
+    try {
+      const thumbnail = await getThumbnailByClipId(clip.id);
+      if (thumbnail?.file_path) {
+        const exists = await invoke<boolean>('check_file_exists', { path: thumbnail.file_path });
+        if (exists) {
+          dataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbnail.file_path });
+        }
       }
-    }
-  } catch { /* try regeneration */ }
+    } catch { /* try regeneration */ }
+  }
 
   // Source 5: Regenerate from video file
-  if (entry.filePath) {
+  if (!dataUrl && entry.filePath) {
     try {
       const videoExists = await invoke<boolean>('check_file_exists', { path: entry.filePath });
       if (videoExists) {
@@ -531,14 +624,21 @@ async function loadBuildThumbnail(entry: BuildEntry): Promise<string | null> {
           timestampSeconds: 1.0,
           outputFilename: null,
         });
-        return await invoke<string>('read_file_as_data_url', { filePath: newThumbnailPath });
+        dataUrl = await invoke<string>('read_file_as_data_url', { filePath: newThumbnailPath });
       }
     } catch (err) {
       console.warn(`[ClipsSidebar] Failed to regenerate thumbnail for build ${build.id}:`, err);
     }
   }
+  
+  // Save to persistent cache if we got a thumbnail (24 hours TTL)
+  if (dataUrl) {
+    persistentCache.set('thumbnails', `build-${build.id}`, dataUrl, 86400000).catch(err => {
+      console.warn(`[ClipsSidebar] Failed to save build thumbnail to cache for ${build.id}:`, err);
+    });
+  }
 
-  return null;
+  return dataUrl;
 }
 
 onMounted(() => {
