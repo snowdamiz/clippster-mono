@@ -830,6 +830,7 @@ defmodule ClippsterServerWeb.OrganizationController do
   @doc """
   Toggle allow_pool_fallback for a member.
   Only admins can toggle this setting.
+  Creates a member allocation if one doesn't exist yet.
   """
   def toggle_pool_fallback(conn, %{
         "organization_id" => org_id,
@@ -839,9 +840,10 @@ defmodule ClippsterServerWeb.OrganizationController do
     user = conn.assigns.current_user
 
     if Organizations.is_admin?(org_id, user.id) do
-      with true <- Organizations.is_member?(org_id, member_id),
-           allocation when not is_nil(allocation) <-
-             Organizations.get_member_allocation(org_id, member_id) do
+      with true <- Organizations.is_member?(org_id, member_id) do
+        # Get or create allocation - this ensures the member has an allocation record
+        allocation = Organizations.get_or_create_member_allocation(org_id, member_id)
+
         case allocation
              |> ClippsterServer.Organizations.MemberCreditAllocation.changeset(%{
                allow_pool_fallback: allow_fallback
@@ -867,16 +869,6 @@ defmodule ClippsterServerWeb.OrganizationController do
           conn
           |> put_status(400)
           |> json(%{success: false, error: "User is not a member of this organization"})
-
-        nil ->
-          conn
-          |> put_status(400)
-          |> json(%{success: false, error: "Member allocation not found"})
-
-        {:error, reason} ->
-          conn
-          |> put_status(400)
-          |> json(%{success: false, error: "Failed to update setting: #{inspect(reason)}"})
       end
     else
       conn

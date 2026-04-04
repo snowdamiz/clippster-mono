@@ -122,8 +122,12 @@ defmodule ClippsterServer.Organizations do
         nil
 
       organization ->
+        # Total campaigns excludes draft (not public) and includes active, paused, and completed
         campaign_total =
-          from(c in Campaign, where: c.organization_id == ^organization.id, select: count(c.id))
+          from(c in Campaign,
+            where: c.organization_id == ^organization.id and c.status in ["active", "paused", "completed"],
+            select: count(c.id)
+          )
           |> Repo.one()
 
         campaign_running =
@@ -140,9 +144,10 @@ defmodule ClippsterServer.Organizations do
           )
           |> Repo.one()
 
+        # Clippers count includes all members (member, admin, owner)
         clippers_count =
           from(m in OrganizationMember,
-            where: m.organization_id == ^organization.id and m.role == "member",
+            where: m.organization_id == ^organization.id,
             select: count(m.id)
           )
           |> Repo.one()
@@ -1145,7 +1150,11 @@ defmodule ClippsterServer.Organizations do
     Repo.get_by(MemberCreditAllocation, organization_id: organization_id, user_id: user_id)
   end
 
-  defp get_or_create_member_allocation(organization_id, user_id) do
+  @doc """
+  Gets or creates a member credit allocation.
+  Returns the existing allocation if found, otherwise creates a new one with default values.
+  """
+  def get_or_create_member_allocation(organization_id, user_id) do
     case get_member_allocation(organization_id, user_id) do
       nil ->
         {:ok, allocation} =
