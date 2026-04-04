@@ -1028,6 +1028,9 @@
       padding: 0,
       borderRadius: 0,
       wordSpacing: 0.35,
+      multiColorEnabled: false,
+      multiColorMode: 'default' as const,
+      colorPalette: [],
     };
   });
   const openDownloadDropdownId = ref<string | null>(null);

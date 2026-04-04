@@ -84,6 +84,7 @@
                     :subtitle-positioning-enabled="subtitlePositioningEnabled"
                     :transcript-words="transcriptWords"
                     :transcript-segments="transcriptSegments"
+                    :initial-source-framing="targetPanelInitialFraming"
                     @update-region="updateRegion"
                     @select-region="selectRegion"
                     @update-source-transform="handleSourceTransformUpdate"
@@ -286,12 +287,12 @@
             <!-- Footer -->
             <div class="flex items-center justify-between px-4 py-2.5 border-t border-zinc-800 bg-zinc-900/50">
               <div class="text-sm text-zinc-400">
-                <span v-if="regions.length === 0 && !sourceTransform" class="text-amber-400">
+                <span v-if="!canApplyFraming" class="text-amber-400">
                   <AlertCircleIcon class="w-4 h-4 inline mr-1" />
-                  Add at least one region or enable source frame scaling
+                  Add at least one region or enable Scale 16:9 / Use 16:9
                 </span>
-                <span v-else-if="sourceTransform && regions.length === 0" class="text-zinc-500">
-                  Source frame scaling configured
+                <span v-else-if="sourceFrameMode !== 'none' && regions.length === 0" class="text-zinc-500">
+                  {{ sourceFrameMode === 'use16x9' ? 'Use 16:9' : 'Scale 16:9' }} configured
                 </span>
                 <span v-else class="text-zinc-500">
                   {{ regions.length }} region{{ regions.length !== 1 ? 's' : '' }} configured
@@ -301,8 +302,8 @@
                 <button
                   @click="resetRegions"
                   class="px-3 py-1.5 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
-                  :disabled="regions.length === 0 && !sourceTransform"
-                  :class="{ 'opacity-50 cursor-not-allowed': regions.length === 0 && !sourceTransform }"
+                  :disabled="!canApplyFraming"
+                  :class="{ 'opacity-50 cursor-not-allowed': !canApplyFraming }"
                 >
                   Reset
                 </button>
@@ -314,16 +315,16 @@
                 </button>
                 <button
                   @click="confirmConfig"
-                  :disabled="regions.length === 0 && !sourceTransform"
+                  :disabled="!canApplyFraming"
                   class="flex items-center gap-2 px-4 py-1.5 text-sm font-semibold rounded-lg transition-all relative overflow-hidden group"
                   :class="
-                    regions.length === 0 && !sourceTransform
+                    !canApplyFraming
                       ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
                       : 'bg-gradient-to-r from-blue-600 to-violet-600 text-white hover:from-blue-500 hover:to-violet-500'
                   "
                 >
                   <div
-                    v-if="regions.length > 0 || sourceTransform"
+                    v-if="canApplyFraming"
                     class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
                   />
                   <CheckIcon class="h-4 w-4 relative" />
@@ -356,7 +357,16 @@
   import POISourcePanel from './POISourcePanel.vue';
   import POITargetPanel from './POITargetPanel.vue';
   import POISegmentTimeline from './POISegmentTimeline.vue';
-  import type { ManualRegion, ManualFramingConfig, WatermarkSettings, LayoutOverlay, SegmentRegionConfig, SubtitleSettings } from '@/types';
+  import type {
+    ManualRegion,
+    ManualFramingConfig,
+    ManualSourceFramingPayload,
+    ManualSourceFrameMode,
+    WatermarkSettings,
+    LayoutOverlay,
+    SegmentRegionConfig,
+    SubtitleSettings,
+  } from '@/types';
   import { utf8ToBase64 } from '@/utils/encoding';
 
   // Animation styles shown in the subtitle section (matches SubtitlePropertiesPanel)
@@ -471,8 +481,33 @@
   const segmentConfigs = ref<SegmentRegionConfig[]>([]);
   const activeSegmentId = ref<string | null>(null);
 
-  // Source frame transform (16:9 scaling in 9:16)
+  // Source frame transform (16:9 scaling in 9:16) + mode / blur (synced from POITargetPanel)
   const sourceTransform = ref<{ scale: number; x: number; y: number } | null>(null);
+  const sourceFrameMode = ref<ManualSourceFrameMode>('none');
+  const poiBlurEnabled = ref(false);
+  const poiBlurAmount = ref(12);
+
+  const canApplyFraming = computed(
+    () =>
+      regions.value.length > 0 ||
+      baseRegions.value.length > 0 ||
+      sourceFrameMode.value !== 'none'
+  );
+
+  const targetPanelInitialFraming = computed((): ManualSourceFramingPayload | null => {
+    if (!props.modelValue || !props.initialConfig) return null;
+    const c = props.initialConfig;
+    const mode = c.sourceFrameMode ?? 'none';
+    const st = c.sourceTransform;
+    return {
+      mode,
+      blurEnabled: c.blurEnabled ?? false,
+      blurAmount: c.blurAmount ?? 12,
+      scale: st?.scale ?? 1,
+      x: st?.x ?? 0,
+      y: st?.y ?? 0,
+    };
+  });
 
   // Video playback state
   const isPlaying = ref(false);
@@ -827,6 +862,25 @@
           segmentConfigs.value = [];
           activeSegmentId.value = null;
         }
+
+        if (props.initialConfig) {
+          sourceFrameMode.value = props.initialConfig.sourceFrameMode ?? 'none';
+          poiBlurEnabled.value = props.initialConfig.blurEnabled ?? false;
+          poiBlurAmount.value = props.initialConfig.blurAmount ?? 12;
+          if (props.initialConfig.sourceTransform) {
+            sourceTransform.value = { ...props.initialConfig.sourceTransform };
+          } else if (sourceFrameMode.value !== 'none') {
+            sourceTransform.value = { scale: 1, x: 0, y: 0 };
+          } else {
+            sourceTransform.value = null;
+          }
+        } else {
+          sourceFrameMode.value = 'none';
+          poiBlurEnabled.value = false;
+          poiBlurAmount.value = 12;
+          sourceTransform.value = null;
+        }
+
         selectedRegionId.value = regions.value.length > 0 ? regions.value[0].id : null;
 
         // Reset playback state
@@ -860,6 +914,10 @@
         videoUrl.value = null;
         // Reset subtitle positioning state
         subtitlePositioningEnabled.value = false;
+        sourceFrameMode.value = 'none';
+        poiBlurEnabled.value = false;
+        poiBlurAmount.value = 12;
+        sourceTransform.value = null;
       }
     },
     { immediate: true }
@@ -894,40 +952,51 @@
     selectedRegionId.value = id;
   }
 
-  // Handle source transform updates from POITargetPanel
-  function handleSourceTransformUpdate(transform: { scale: number; x: number; y: number }) {
-    sourceTransform.value = { ...transform };
+  // Handle source framing updates from POITargetPanel (scale / use16x9 / blur / transform)
+  function handleSourceTransformUpdate(payload: ManualSourceFramingPayload) {
+    sourceFrameMode.value = payload.mode;
+    poiBlurEnabled.value = payload.blurEnabled;
+    poiBlurAmount.value = payload.blurAmount;
+    if (payload.mode === 'none') {
+      sourceTransform.value = null;
+    } else {
+      sourceTransform.value = {
+        scale: payload.scale,
+        x: payload.x,
+        y: payload.y,
+      };
+    }
   }
 
   // Handle media upload for a region
   async function handleMediaUpload(regionId: string) {
-    // Create file input element
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*,video/*';
-    
+
     input.onchange = async (e: Event) => {
       const target = e.target as HTMLInputElement;
       const file = target.files?.[0];
       if (!file) return;
 
       try {
-        // For now, store the file URL directly
-        // TODO: Integrate with editor asset system when available in POI context
-        const fileUrl = URL.createObjectURL(file);
+        const buf = new Uint8Array(await file.arrayBuffer());
+        const { invoke } = await import('@tauri-apps/api/core');
+        const tempPath = await invoke<string>('save_temp_media_file', {
+          fileName: file.name,
+          data: Array.from(buf),
+        });
         const mediaType = file.type.startsWith('image/') ? 'image' : 'video';
-        
         updateRegion(regionId, {
-          mediaAssetId: fileUrl, // Temporary: using object URL
+          mediaAssetId: tempPath,
           mediaType: mediaType as 'image' | 'video',
         });
-        
-        console.log('[ManualPOIEditor] Media uploaded for region:', regionId, mediaType);
+        console.log('[ManualPOIEditor] Media saved for region:', regionId, tempPath);
       } catch (error) {
-        console.error('[ManualPOIEditor] Failed to upload media:', error);
+        console.error('[ManualPOIEditor] Failed to save media:', error);
       }
     };
-    
+
     input.click();
   }
 
@@ -1288,8 +1357,7 @@
 
   // Confirm and emit the configuration
   function confirmConfig() {
-    // Allow applying if we have regions OR source transform
-    if (regions.value.length === 0 && baseRegions.value.length === 0 && !sourceTransform.value) return;
+    if (!canApplyFraming.value) return;
 
     // Save current regions
     if (activeSegmentId.value) {
@@ -1314,7 +1382,18 @@
       sourceAspectRatio: props.sourceAspectRatio,
       segmentConfigs: segmentConfigs.value.length > 0 ? JSON.parse(JSON.stringify(segmentConfigs.value)) : undefined,
       sourceTransform: sourceTransform.value ? JSON.parse(JSON.stringify(sourceTransform.value)) : undefined,
+      sourceFrameMode: sourceFrameMode.value !== 'none' ? sourceFrameMode.value : undefined,
+      blurEnabled: sourceFrameMode.value !== 'none' ? poiBlurEnabled.value : undefined,
+      blurAmount: sourceFrameMode.value !== 'none' ? poiBlurAmount.value : undefined,
     };
+
+    console.log('[ManualPOIEditor] confirmAndClose - final config:', {
+      sourceFrameMode: config.sourceFrameMode,
+      blurEnabled: config.blurEnabled,
+      blurAmount: config.blurAmount,
+      sourceTransform: config.sourceTransform,
+      regions: config.regions.length,
+    });
 
     emit('confirm', config);
     close();

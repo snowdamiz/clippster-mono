@@ -416,7 +416,7 @@
     emit('playClip', clip);
   }
 
-  function onClipHover(clipId: string) {
+  function onClipHover(clipId: string | null) {
     emit('clipHover', clipId);
   }
 

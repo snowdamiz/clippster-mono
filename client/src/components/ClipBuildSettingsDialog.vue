@@ -1102,7 +1102,7 @@
   
   // Compute subtitle settings for POI editor, merging per-ratio overrides
   // This ensures the POI editor shows the correct settings for the current ratio
-  const subtitleSettingsForPOIEditor = computed(() => {
+  const subtitleSettingsForPOIEditor = computed((): SubtitleSettings | null => {
     const base = effectiveSubtitleSettings.value;
     if (!base) return null;
     
@@ -1110,8 +1110,9 @@
     const ratioOverride = subtitleOverrides.value[ratio as keyof SubtitleOverrides];
     
     if (ratioOverride) {
-      // Merge per-ratio override into base settings
-      const merged = { ...base, ...ratioOverride };
+      // Merge per-ratio override into base settings, excluding position (different types)
+      const { position: _xyPos, ...overrideWithoutPosition } = ratioOverride;
+      const merged: SubtitleSettings = { ...base, ...overrideWithoutPosition };
       console.log('[ClipBuildSettingsDialog] subtitleSettingsForPOIEditor merged for', ratio, ':', {
         baseAnimationStyle: base.animationStyle,
         overrideAnimationStyle: (ratioOverride as any).animationStyle,
@@ -1544,7 +1545,7 @@
     
     // Update the override for this specific ratio
     const ratio = editingAspectRatio.value;
-    const existingOverride = subtitleOverrides.value[ratio as keyof SubtitleOverrides] || {};
+    const existingOverride: Partial<SubtitleOverride> = subtitleOverrides.value[ratio as keyof SubtitleOverrides] || {};
     
     // Store ALL visual properties that changed so Rust can apply them via per_ratio_override JSON
     // The Rust code reads these fields from the JSON even though TypeScript SubtitleOverride doesn't define them

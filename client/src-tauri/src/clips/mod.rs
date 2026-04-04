@@ -166,6 +166,20 @@ pub async fn build_clip_from_segments(
             .as_ref()
             .map(|c| c.keys().collect::<Vec<_>>())
     );
+    // Debug: Show manual framing config details
+    if let Some(ref configs) = manual_framing_configs {
+        for (ratio, cfg) in configs {
+            println!(
+                "[Rust]   manual_framing_config[{}]: source_frame_mode={:?}, blur_enabled={:?}, blur_amount={:?}, regions={}, source_transform={:?}",
+                ratio,
+                cfg.source_frame_mode,
+                cfg.blur_enabled,
+                cfg.blur_amount,
+                cfg.regions.len(),
+                cfg.source_transform
+            );
+        }
+    }
     println!(
         "[Rust]   layout_overlays count: {}",
         layout_overlays.as_ref().map(|v| v.len()).unwrap_or(0)
