@@ -12,32 +12,53 @@ Working notes for follow-up work. No implementation in this change—context gat
 
 ---
 
-## Fix org public page (needs the correct counts for everything)
+## ~~Fix org public page (needs the correct counts for everything)~~ ✅ COMPLETED
 
-**Context:** Public stats are assembled server-side in `server/lib/clippster_server/organizations.ex` (`get_public_profile_by_slug/1`): `campaigns_total`, `campaigns_running` (`status == "active"`), `campaigns_completed` (`status == "completed"`), `clippers_count` (members with `role == "member"` only), `streamers_count` (enabled streamer creator profiles). Consumed by `client/src/pages/OrgPublicProfilePage.vue`, `landing/src/pages/OrgPublicProfilePage.tsx`, and `client/src/services/orgPublicProfilesApi.ts`. **Next:** Compare live DB statuses for “ended” campaigns vs `completed`, whether non-`member` roles should count as clippers, and whether draft/paused campaigns should affect “total.”
+**Status:** Fixed public profile stats calculation in `server/lib/clippster_server/organizations.ex` (`get_public_profile_by_slug/1`).
+
+**Changes:**
+- **campaigns_total**: Now excludes draft campaigns (not public) and only counts `active`, `paused`, and `completed` campaigns
+- **clippers_count**: Now includes all organization members (owner, admin, member) instead of just "member" role
+- Campaign statuses confirmed: `draft`, `active`, `paused`, `completed` (no "ended" status exists; auto-completion moves campaigns from `active` to `completed` when `ends_at` is reached)
 
 ---
 
-## Fix campaigns — when they end, the org needs to still be able to see all completed campaigns
+## ~~Fix campaigns — when they end, the org needs to still be able to see all completed campaigns~~ ✅ COMPLETED
 
-**Context:** Org listing uses `listOrganizationCampaigns(organizationId)` with no status filter in `client/src/components/organization/OrganizationCampaigns.vue`; the API `Campaigns.list_organization_campaigns/2` only filters when `status` is passed (`server/lib/clippster_server/campaigns.ex`, `campaign_controller.ex` `org_index`). Marketplace listing (`list_active_campaigns`) intentionally hides past `ends_at` while status is still `active` until auto-complete runs. **Next:** If org UI still “loses” campaigns, check for another surface (e.g. assets page), race before `auto_complete_expired_campaigns`, or client-side filtering; confirm completed rows exist in DB after end date.
+**Status:** Fixed campaign completion workflow and added Active/Completed sections to the UI (like CreatorProfiles.vue).
+
+**Root Cause:** The `Campaigns.auto_complete_expired_campaigns/0` function existed but was never being called. No worker was scheduled to run it periodically.
+
+**Changes:**
+
+**Backend (Auto-completion):**
+- Created `server/lib/clippster_server/campaigns/campaign_completion_worker.ex` - GenServer that runs hourly to check for expired campaigns
+- Added the worker to the application supervisor in `server/lib/clippster_server/application.ex`
+- Worker runs immediately on startup and then every hour
+- Logs the number of campaigns completed on each run
+- Verified budget exhaustion completion already works (line 1194-1198 in `campaigns.ex`)
+
+**Frontend (UI Organization):**
+- Added separate **sections** to `OrganizationCampaigns.vue` following the CreatorProfiles.vue pattern
+- **"Active & Draft Campaigns"** section: Shows `draft`, `active`, and `paused` campaigns
+- **"Completed Campaigns"** section: Shows `completed` campaigns only
+- Each section has a header with icon, title, and campaign count
+- Both sections are visible on the same page (no tabs - sections with dividers)
+- Verified campaign details view works for all statuses (navigates to detail route)
+
+**Technical Details:**
+- The API was already correct - `listOrganizationCampaigns` returns all campaigns without filtering
+- Campaigns complete automatically in two ways:
+  1. When `ends_at` date passes (via CampaignCompletionWorker)
+  2. When budget is exhausted (via existing payment processing code)
+- Organizations can now see active and completed campaigns in clearly separated sections on the same page
+- Campaigns will automatically transition to "completed" status within 1 hour of their `ends_at` time
 
 ---
 
-## Subtitle export parity — project workspace (`16:9`) and manual POI (per aspect ratio)
+## ~~Subtitle export parity — project workspace (`16:9`) and manual POI (per aspect ratio)~~ ✅ COMPLETED
 
-**Scope (important):** This is **not** the OpenCut timeline video editor under `client/src/editor/`. It is the **clip / VOD workflow**: project workspace dialog, manual POI editor, and the subtitle styling UI.
-
-**Goal:** Burned-in or exported subtitles must match **exactly** what the user configured in:
-
-1. **`client/src/components/SubtitlePropertiesPanel.vue`** — style and copy edits emitted via `@updateSettings` / related handlers (the panel is mounted from `ProjectWorkspaceDialog.vue` on the subtitles tab, `@updateSettings="onSubtitleSettingsUpdate"`).
-2. **`client/src/components/poi/ManualPOIEditor.vue`** — per–aspect-ratio placement and settings via `subtitlePositionOverride`, `subtitleSettings`, `POITargetPanel`, and emits `subtitlePositionChange` / `subtitleSettingsChange`.
-
-**Workspace (`ProjectWorkspaceDialog.vue`):** Preview defaults include `16:9` (`previewAspectRatio`); `VideoPlayer` receives `activeSubtitleSettings` and position props. Fixes here are about **persisting the same payload the panel edits** and ensuring the **build/export path** reads that payload for the `16:9` (and any selected preview ratio) output, not only the in-dialog preview.
-
-**Manual POI (`ManualPOIEditor.vue`):** Each aspect ratio can diverge; export must apply the correct overrides **per output ratio**, not a single global subtitle layout.
-
-**Next:** Trace end-to-end from `SubtitlePropertiesPanel` → DB / clip fields → Rust/FFmpeg subtitle generation (`client/src-tauri/...`, e.g. subtitle burn-in), and separately from `ManualPOIEditor` emits → whatever stores per-ratio overrides → export. Diff preview state vs what the encoder receives for `16:9` and for each manual POI ratio.
+**Status:** Fixed subtitle export for 16:9 in project workspace and per-aspect-ratio handling in manual POI editor.
 
 ---
 
@@ -49,7 +70,7 @@ Working notes for follow-up work. No implementation in this change—context gat
 
 ## Fix adding to playlist in audio library — first create forces a second visit to add the track
 
-**Context:** In `AudioLibrary.vue`, the “Create New Playlist” control inside the add-to-playlist dialog closes the add dialog and opens the create dialog **without** passing the pending track or auto-adding after create:
+**Context:** In `AudioLibrary.vue`, the "Create New Playlist" control inside the add-to-playlist dialog closes the add dialog and opens the create dialog **without** passing the pending track or auto-adding after create:
 
 ```427:428:client/src/pages/AudioLibrary.vue
                 <button
@@ -74,7 +95,7 @@ Working notes for follow-up work. No implementation in this change—context gat
 
 ## Add text box to manual clipping
 
-**Context:** Same manual clip path as above; `ManualPOIEditor.vue` is the rich manual POI surface. **Next:** Specify whether “text box” means burn-in overlay, editor-only annotation, or export metadata; then hook into the same build path as other overlays.
+**Context:** Same manual clip path as above; `ManualPOIEditor.vue` is the rich manual POI surface. **Next:** Specify whether "text box" means burn-in overlay, editor-only annotation, or export metadata; then hook into the same build path as other overlays.
 
 ---
 
@@ -96,8 +117,32 @@ Working notes for follow-up work. No implementation in this change—context gat
 
 ---
 
-## Fix org enable pool balance (owner gets 400 on toggle-pool-fallback)
+## ~~Fix org enable pool balance (owner gets 400 on toggle-pool-fallback)~~ ✅ COMPLETED
 
-**Context:** Client: `client/src/composables/useOrganization.ts` ~620 posts to `/organizations/:id/credits/toggle-pool-fallback`; UI in `client/src/pages/organization/OrganizationBilling.vue` ~1086. Server: `organization_controller.ex` `toggle_pool_fallback/2` requires `Organizations.get_member_allocation(org_id, member_id)`; if missing, responds **400** `"Member allocation not found"` (see ~871–874). **Likely cause:** Owner (or target user) has no `MemberCreditAllocation` row, so toggling pool fallback cannot persist. **Next:** Confirm whether owners should auto-get an allocation record, or the UI should hide/disable the toggle when `allocation` is null; align product rule with `Organizations.allocate` / onboarding.
+**Status:** Fixed by auto-creating member allocation when toggling pool fallback setting.
+
+**Root Cause:** The `toggle_pool_fallback` endpoint expected a `MemberCreditAllocation` record to exist for the member, but owners and admins might not have one yet (allocations are only created when credits are explicitly allocated). When toggling the setting for a user without an allocation, the server returned 400 "Member allocation not found".
+
+**Solution:** Changed the endpoint to use `get_or_create_member_allocation/2` instead of `get_member_allocation/2`, which automatically creates an allocation with default values if one doesn't exist.
+
+**Changes:**
+- **server/lib/clippster_server_web/controllers/organization_controller.ex** (toggle_pool_fallback/2):
+  - Changed from `get_member_allocation` to `get_or_create_member_allocation`
+  - Removed the `allocation when not is_nil(allocation)` guard clause
+  - Simplified error handling by removing the "Member allocation not found" case
+  - Updated docstring to reflect auto-creation behavior
+
+- **server/lib/clippster_server/organizations.ex**:
+  - Changed `get_or_create_member_allocation/2` from `defp` to `def` to make it public
+  - Added docstring explaining it creates allocations with default values if needed
+
+**Technical Details:**
+- `MemberCreditAllocation` records track:
+  - `hours_allocated`: Credits allocated to this member
+  - `hours_used`: Credits used by this member
+  - `allow_pool_fallback`: Whether member can use org pool when their allocation runs out
+- Creating an allocation with defaults (0 hours) is safe and appropriate - it establishes the fallback setting without granting credits
+- The UI already handles `nil` allocations gracefully (shows 0 remaining, disabled fallback)
+- Now when toggling fallback for any member (owner, admin, or regular member), it works correctly
 
 ---
