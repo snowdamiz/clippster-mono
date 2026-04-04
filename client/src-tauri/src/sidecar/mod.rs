@@ -4,6 +4,9 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 /// Get the target triple for the current platform (matches Tauri's sidecar naming)
 fn get_target_triple() -> &'static str {
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
@@ -182,11 +185,18 @@ impl RemotionSidecar {
             resolve_node_binary().map_err(|e| format!("Failed to resolve node binary: {}", e))?;
 
         // Run with bundled Node.js
-        let mut process = Command::new(&node_path)
-            .arg(&bundle_path)
+        let mut cmd = Command::new(&node_path);
+        cmd.arg(&bundle_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        {
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+
+        let mut process = cmd
             .spawn()
             .map_err(|e| format!("Failed to spawn sidecar (node={}): {}", node_path, e))?;
 
