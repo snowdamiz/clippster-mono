@@ -98,13 +98,6 @@ export function AcceptInvitationPage() {
     navigate('/login', { state: { from: `/accept-invitation/${token}` } })
   }
 
-  const handleSignupRedirect = () => {
-    if (token) {
-      localStorage.setItem('pending_invite_token', token)
-    }
-    navigate('/signup')
-  }
-
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case 'owner':
@@ -259,7 +252,7 @@ export function AcceptInvitationPage() {
           ) : (
             <div className="space-y-3">
               <p className="text-sm text-zinc-500 text-center mb-4">
-                Sign in or create an account to accept this invitation
+                Please sign in to your existing account to accept this invitation
               </p>
 
               <button
@@ -267,13 +260,6 @@ export function AcceptInvitationPage() {
                 className="w-full bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-semibold rounded-lg px-4 py-3 transition-all duration-200 flex items-center justify-center gap-2"
               >
                 Sign in to accept
-              </button>
-
-              <button
-                onClick={handleSignupRedirect}
-                className="w-full bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg px-4 py-3 transition-colors flex items-center justify-center gap-2 text-sm font-medium"
-              >
-                Create an account
               </button>
             </div>
           )}

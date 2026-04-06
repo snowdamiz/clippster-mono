@@ -586,6 +586,33 @@ defmodule ClippsterServerWeb.OrganizationController do
   end
 
   @doc """
+  Decline an invitation (requires authentication).
+  """
+  def decline_invitation(conn, %{"id" => invitation_id}) do
+    user = conn.assigns.current_user
+
+    case Organizations.decline_invitation(invitation_id, user) do
+      {:ok, _} ->
+        json(conn, %{success: true, message: "Invitation declined"})
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Invitation not found"})
+
+      {:error, :already_processed} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invitation already processed"})
+
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Not authorized to decline this invitation"})
+    end
+  end
+
+  @doc """
   Invite a user to join the organization by user_id (for Clipper Directory).
   """
   def invite_user(conn, %{"organization_id" => org_id, "user_id" => user_id} = params) do
