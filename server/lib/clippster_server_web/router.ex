@@ -232,6 +232,10 @@ defmodule ClippsterServerWeb.Router do
     # Placed in public scope for route ordering, but controller will enforce auth
     get("/clippers/leaderboard", ClipperProfilesController, :leaderboard)
 
+    # Public org name availability check (for signup/admin forms)
+    # MUST be defined before /orgs/:slug to avoid the slug param matching "check-name"
+    get("/orgs/check-name", OrganizationPublicProfilesController, :check_name)
+
     # Public clipper profile (shareable links)
     get("/clippers/:slug", ClipperProfilesController, :show)
     get("/orgs/:slug", OrganizationPublicProfilesController, :show)
@@ -367,6 +371,7 @@ defmodule ClippsterServerWeb.Router do
       only: [:index, :create, :show, :update, :delete]
     )
 
+    get("/organizations/check-name", OrganizationController, :check_name)
     post("/organizations/:id/logo", OrganizationController, :upload_logo)
 
     # Organization members

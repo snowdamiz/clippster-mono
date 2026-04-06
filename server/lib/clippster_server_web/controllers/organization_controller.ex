@@ -57,6 +57,22 @@ defmodule ClippsterServerWeb.OrganizationController do
   end
 
   @doc """
+  Check if an organization name is available.
+  Optionally pass exclude_org_id to exclude a specific org (for updates).
+  """
+  def check_name(conn, %{"name" => name} = params) do
+    exclude_org_id =
+      case Map.get(params, "exclude_org_id") do
+        nil -> nil
+        id when is_binary(id) -> String.to_integer(id)
+        id when is_integer(id) -> id
+      end
+
+    {:ok, available} = Organizations.is_org_name_available?(name, exclude_org_id)
+    json(conn, %{success: true, available: available})
+  end
+
+  @doc """
   Get a specific organization with members.
   """
   def show(conn, %{"id" => id}) do
@@ -104,6 +120,8 @@ defmodule ClippsterServerWeb.OrganizationController do
             "logo_url",
             "website_url",
             "public_contact_email",
+            "public_discord",
+            "public_telegram",
             "content_type_tags",
             "settings",
             "restriction_defaults"
@@ -1102,6 +1120,8 @@ defmodule ClippsterServerWeb.OrganizationController do
       logo_url: maybe_presign_url(org.logo_url),
       website_url: org.website_url,
       public_contact_email: org.public_contact_email,
+      public_discord: org.public_discord,
+      public_telegram: org.public_telegram,
       content_type_tags: org.content_type_tags || [],
       owner_id: org.owner_id,
       created_at: org.inserted_at,

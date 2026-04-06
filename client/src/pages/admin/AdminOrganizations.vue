@@ -614,6 +614,7 @@
   import PageLayout from '@/components/PageLayout.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import api from '@/services/api';
+  import { checkOrgNameAvailable } from '@/services/organizationsApi';
 
   interface Organization {
     id: number;
@@ -921,6 +922,10 @@
   const createOrgAccount = async () => {
     createOrgError.value = null;
 
+    if (!createOrgForm.value.org_name.trim()) {
+      createOrgError.value = 'Organization name is required.';
+      return;
+    }
     if (createOrgMode.value === 'existing' && !selectedExistingUser.value) {
       createOrgError.value = 'Please select an existing user from the search results.';
       return;
@@ -932,6 +937,14 @@
 
     creatingOrg.value = true;
     try {
+      // Check if org name is available
+      const nameCheck = await checkOrgNameAvailable(createOrgForm.value.org_name.trim());
+      if (!nameCheck.success || !nameCheck.available) {
+        createOrgError.value = 'An organization with this name already exists. Please choose a different name.';
+        creatingOrg.value = false;
+        return;
+      }
+
       const payload: Record<string, unknown> = {
         org_name: createOrgForm.value.org_name,
         tier: createOrgForm.value.tier,

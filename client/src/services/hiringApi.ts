@@ -12,6 +12,7 @@ import api from './api';
 export interface HiringPostOrganization {
   id: number;
   name: string;
+  slug: string | null;
   logo_url: string | null;
 }
 
