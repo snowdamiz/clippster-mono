@@ -57,8 +57,25 @@
         <div class="org-clippers__empty-icon-wrapper">
           <Trophy class="org-clippers__empty-icon" />
         </div>
-        <h3 class="org-clippers__empty-title">No leaderboard data yet</h3>
-        <p class="org-clippers__empty-text">Clipper rankings will appear here once data is available</p>
+        <h3 class="org-clippers__empty-title">
+          {{ leaderboardError ? 'Unable to load leaderboard' : 'No leaderboard data yet' }}
+        </h3>
+        <p class="org-clippers__empty-text">
+          {{
+            leaderboardError
+              ? leaderboardError.toLowerCase().includes('profile not found')
+                ? 'Leaderboard data is currently unavailable. This feature may require additional setup.'
+                : leaderboardError
+              : 'Clipper rankings will appear here once data is available'
+          }}
+        </p>
+        <button
+          v-if="leaderboardError"
+          @click="loadLeaderboard"
+          class="org-clippers__empty-retry-btn"
+        >
+          Try Again
+        </button>
       </div>
 
       <!-- Leaderboard List -->
@@ -574,7 +591,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, computed, onMounted } from 'vue';
+  import { ref, reactive, computed, onMounted, watch } from 'vue';
   import { useRouter } from 'vue-router';
   import { useToast } from '@/composables/useToast';
   import {
@@ -655,6 +672,7 @@
   const loadingLeaderboard = ref(true);
   const leaderboardPeriod = ref<'weekly' | 'monthly'>('weekly');
   const leaderboardEntries = ref<LeaderboardEntry[]>([]);
+  const leaderboardError = ref<string | null>(null);
 
   interface LeaderboardEntry {
     id: number;
@@ -689,6 +707,7 @@
 
   const loadLeaderboard = async () => {
     loadingLeaderboard.value = true;
+    leaderboardError.value = null;
     try {
       const response = await getLeaderboard(leaderboardPeriod.value);
       if (response.success) {
@@ -696,10 +715,24 @@
           ...entry,
           total_views: entry.total_views || 0,
           rank: index + 1,
+          clipper_profile: entry.profile || entry.clipper_profile,
         }));
+      } else {
+        const errorMsg = response.error || 'Failed to load leaderboard';
+        showToast(errorMsg, 'error');
+        leaderboardError.value = errorMsg;
+        leaderboardEntries.value = [];
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load leaderboard:', error);
+      const errorMessage = error?.response?.data?.error || error?.message || 'Failed to load leaderboard';
+      leaderboardError.value = errorMessage;
+      
+      // Only show toast if it's not a "Profile not found" error (which is expected for users without profiles)
+      if (!errorMessage.toLowerCase().includes('profile not found')) {
+        showToast(errorMessage, 'error');
+      }
+      leaderboardEntries.value = [];
     } finally {
       loadingLeaderboard.value = false;
     }
@@ -906,7 +939,17 @@
 
   onMounted(() => {
     loadClippers();
-    loadLeaderboard();
+    // Only load leaderboard if we're on the leaderboard view
+    if (activeView.value === 'leaderboard') {
+      loadLeaderboard();
+    }
+  });
+
+  // Watch for view changes and load leaderboard when switching to it
+  watch(activeView, (newView) => {
+    if (newView === 'leaderboard' && leaderboardEntries.value.length === 0) {
+      loadLeaderboard();
+    }
   });
 </script>
 
@@ -1878,6 +1921,24 @@
     color: var(--sidebar-text-muted);
     margin: 0;
     max-width: 300px;
+  }
+
+  .org-clippers__empty-retry-btn {
+    margin-top: 1rem;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-clippers__empty-retry-btn:hover {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.15);
   }
 
   /* ===== Skeleton Loading ===== */

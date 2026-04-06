@@ -228,6 +228,10 @@ defmodule ClippsterServerWeb.Router do
     # Waitlist signup (public)
     post("/waitlist", WaitlistController, :create)
 
+    # Clipper leaderboard - MUST come before /clippers/:slug to avoid route collision
+    # Placed in public scope for route ordering, but controller will enforce auth
+    get("/clippers/leaderboard", ClipperProfilesController, :leaderboard)
+
     # Public clipper profile (shareable links)
     get("/clippers/:slug", ClipperProfilesController, :show)
     get("/orgs/:slug", OrganizationPublicProfilesController, :show)
@@ -285,7 +289,7 @@ defmodule ClippsterServerWeb.Router do
     post("/clips/detect-chunked", ClipsController, :detect_chunked)
     post("/clips/detect-realtime", ClipsController, :detect_realtime)
     post("/clips/transcribe", ClipsController, :transcribe)
-    
+
     # Real-time detection credit deduction
     post("/credits/deduct", ClipsController, :deduct_realtime_credits)
 
@@ -445,7 +449,12 @@ defmodule ClippsterServerWeb.Router do
     )
 
     get("/organizations/:organization_id/transactions", OrganizationController, :get_transactions)
-    get("/organizations/:organization_id/subscription/invoices", OrganizationController, :get_subscription_invoices)
+
+    get(
+      "/organizations/:organization_id/subscription/invoices",
+      OrganizationController,
+      :get_subscription_invoices
+    )
 
     # Organization restriction settings
     get(
@@ -983,7 +992,7 @@ defmodule ClippsterServerWeb.Router do
     # Clipper Directory - Authenticated Only
     # ============================================================================
     get("/clippers", ClipperProfilesController, :index)
-    get("/clippers/leaderboard", ClipperProfilesController, :leaderboard)
+    # Note: /clippers/leaderboard is in public scope above for route ordering
 
     post("/clippers/:slug/endorsements", ClipperProfilesController, :create_endorsement)
 
@@ -1295,8 +1304,17 @@ defmodule ClippsterServerWeb.Router do
     delete("/admin/organizations/:id", AdminController, :delete_organization)
 
     # Admin org feature flags
-    post("/admin/organizations/:organization_id/campaigns", AdminController, :enable_org_campaigns)
-    delete("/admin/organizations/:organization_id/campaigns", AdminController, :disable_org_campaigns)
+    post(
+      "/admin/organizations/:organization_id/campaigns",
+      AdminController,
+      :enable_org_campaigns
+    )
+
+    delete(
+      "/admin/organizations/:organization_id/campaigns",
+      AdminController,
+      :disable_org_campaigns
+    )
 
     # Admin bug report management (delete route only - index/update in mod scope)
     delete("/admin/bug-reports/:id", BugReportsController, :delete)
@@ -1364,12 +1382,27 @@ defmodule ClippsterServerWeb.Router do
     post("/admin/platform-campaigns", PlatformCampaignController, :create_campaign)
     put("/admin/platform-campaigns/:id", PlatformCampaignController, :update_campaign)
     delete("/admin/platform-campaigns/:id", PlatformCampaignController, :delete_campaign)
-    get("/admin/platform-campaigns/:campaign_id/rewards", PlatformCampaignController, :get_campaign_rewards)
+
+    get(
+      "/admin/platform-campaigns/:campaign_id/rewards",
+      PlatformCampaignController,
+      :get_campaign_rewards
+    )
 
     # Revenue allocation settings
     get("/admin/revenue-allocation/settings", PlatformCampaignController, :get_revenue_settings)
-    put("/admin/revenue-allocation/settings", PlatformCampaignController, :update_revenue_settings)
-    get("/admin/revenue-allocation/transactions", PlatformCampaignController, :get_revenue_transactions)
+
+    put(
+      "/admin/revenue-allocation/settings",
+      PlatformCampaignController,
+      :update_revenue_settings
+    )
+
+    get(
+      "/admin/revenue-allocation/transactions",
+      PlatformCampaignController,
+      :get_revenue_transactions
+    )
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
