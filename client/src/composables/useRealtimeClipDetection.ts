@@ -131,13 +131,14 @@ function isDuplicateOfRecentClip(pending: PendingClip): boolean {
     
     const titleSimilarity = calculateWordSimilarity(pending.title, recent.title);
     
-    // Duplicate if: significant time overlap AND similar titles
-    // OR very high time overlap alone (>70%)
-    // OR very high title similarity with any overlap (>60% title sim + >10% overlap)
+    // Duplicate if: (tightened thresholds to prevent near-duplicates)
+    // - 50%+ time overlap alone
+    // - 20%+ overlap with 40%+ title similarity
+    // - 50%+ title similarity with any overlap (>10%)
     const isDuplicate = 
-      (overlap > OVERLAP_THRESHOLD && titleSimilarity > TITLE_SIMILARITY_THRESHOLD) ||
-      (overlap > 0.7) ||
-      (titleSimilarity > 0.6 && overlap > 0.1);
+      (overlap > 0.5) ||
+      (overlap > 0.2 && titleSimilarity > 0.4) ||
+      (titleSimilarity > 0.5 && overlap > 0.1);
     
     if (isDuplicate) {
       console.log(`[RealtimeClipDetection] Duplicate detected: "${pending.title}" (overlap=${Math.round(overlap * 100)}%, titleSim=${Math.round(titleSimilarity * 100)}%) with recently saved "${recent.title}"`);
@@ -328,6 +329,7 @@ export function useRealtimeClipDetection() {
 
     // Analyze audio peaks from segments to detect loud/exciting moments
     let audioContext = '';
+    let absolutePeakTimes: number[] = []; // Peak times in absolute stream time for dead zone detection
     try {
       if (state.value.segments.length > 0) {
         console.log('[RealtimeClipDetection] Analyzing audio peaks from segments...');
@@ -348,14 +350,14 @@ export function useRealtimeClipDetection() {
           });
 
           if (peaks.length > 0) {
-            // Map peaks to transcript time range
-            const peakTimes = peaks
+            // Map peaks to absolute stream time
+            absolutePeakTimes = peaks
               .map(p => latestSegment.startTime + p.time)
-              .filter(t => t >= transcript.start && t <= transcript.end)
-              .map(t => Math.round(t));
+              .filter(t => t >= transcript.start && t <= transcript.end);
 
-            if (peakTimes.length > 0) {
-              audioContext = `AUDIO ANALYSIS: Detected ${peakTimes.length} volume spike(s) at ${peakTimes.join('s, ')}s (loud moments/screaming/excitement)`;
+            if (absolutePeakTimes.length > 0) {
+              const peakTimesRounded = absolutePeakTimes.map(t => Math.round(t));
+              audioContext = `AUDIO ANALYSIS: Detected ${peakTimesRounded.length} volume spike(s) at ${peakTimesRounded.join('s, ')}s (loud moments/screaming/excitement)`;
               console.log('[RealtimeClipDetection]', audioContext);
             }
           }
@@ -402,6 +404,32 @@ export function useRealtimeClipDetection() {
       const pendingClipData = result.pending_clip;
 
       console.log('[RealtimeClipDetection] Context change:', contextChange);
+
+      // Dead zone detection - truncate clips when audio energy drops for extended period
+      if (pendingClipData && state.value.pendingClip && absolutePeakTimes.length > 0) {
+        const currentDuration = pendingClipData.end_time - state.value.pendingClip.startTime;
+        
+        // For clips > 60s, check for dead zones in audio
+        if (currentDuration > 60) {
+          const clipPeaks = absolutePeakTimes.filter(t => 
+            t >= state.value.pendingClip!.startTime && 
+            t <= pendingClipData.end_time
+          );
+          
+          if (clipPeaks.length > 0) {
+            const lastPeakTime = Math.max(...clipPeaks);
+            const silenceDuration = pendingClipData.end_time - lastPeakTime;
+            
+            // If 20+ seconds of no energy at end, truncate and force save
+            if (silenceDuration > 20) {
+              console.log(`[RealtimeClipDetection] Dead zone detected: ${Math.round(silenceDuration)}s silence after last peak, truncating clip`);
+              state.value.pendingClip.endTime = lastPeakTime + 3; // +3s buffer
+              await savePendingClip();
+              // pendingClip is now null, let the new detection become fresh pending clip
+            }
+          }
+        }
+      }
 
       // If context changed, save the current pending clip
       if (contextChange && state.value.pendingClip) {
