@@ -736,9 +736,14 @@ defmodule ClippsterServer.Organizations do
 
   @doc """
   Declines a pending invitation (user declining their own invitation).
+  Returns the invitation with organization and inviter preloaded for notification purposes.
   """
   def decline_invitation(invitation_id, %User{} = user) do
-    invitation = Repo.get(OrganizationInvitation, invitation_id)
+    invitation =
+      OrganizationInvitation
+      |> where([i], i.id == ^invitation_id)
+      |> preload([:organization, :invited_by_user])
+      |> Repo.one()
 
     cond do
       is_nil(invitation) ->
@@ -751,9 +756,84 @@ defmodule ClippsterServer.Organizations do
         {:error, :unauthorized}
 
       true ->
-        invitation
-        |> OrganizationInvitation.cancel_changeset()
-        |> Repo.update()
+        case invitation
+             |> OrganizationInvitation.cancel_changeset()
+             |> Repo.update() do
+          {:ok, updated_invitation} ->
+            # Return invitation with preloads for the controller to create in-app notification
+            {:ok, Repo.preload(updated_invitation, [:organization, :invited_by_user])}
+
+          error ->
+            error
+        end
+    end
+  end
+
+  @doc """
+  Accepts an invitation by ID (for in-app acceptance by authenticated users).
+  This is used when the user accepts via the app's notification dialog.
+  """
+  def accept_invitation_by_id(invitation_id, %User{} = user) do
+    invitation =
+      OrganizationInvitation
+      |> where([i], i.id == ^invitation_id)
+      |> where([i], i.status == "pending")
+      |> preload([:organization, :invited_by_user])
+      |> Repo.one()
+
+    cond do
+      is_nil(invitation) ->
+        {:error, :not_found}
+
+      OrganizationInvitation.expired?(invitation) ->
+        {:error, :invitation_expired}
+
+      invitation.email != user.email ->
+        {:error, :unauthorized}
+
+      user.subscription_tier == "basic" ->
+        {:error, :basic_tier_cannot_join}
+
+      is_member?(invitation.organization_id, user.id) ->
+        # Already a member, just mark invitation as accepted
+        case invitation
+             |> OrganizationInvitation.accept_changeset()
+             |> Repo.update() do
+          {:ok, updated_invitation} ->
+            {:ok, Repo.preload(updated_invitation, [:organization, :invited_by_user])}
+
+          error ->
+            error
+        end
+
+      true ->
+        case Repo.transaction(fn ->
+               # Add as member
+               {:ok, _member} = add_member(invitation.organization_id, user.id, invitation.role)
+
+               # Initialize credit allocation
+               {:ok, _allocation} =
+                 %MemberCreditAllocation{}
+                 |> MemberCreditAllocation.changeset(%{
+                   organization_id: invitation.organization_id,
+                   user_id: user.id
+                 })
+                 |> Repo.insert()
+
+               # Mark invitation as accepted
+               {:ok, updated_invitation} =
+                 invitation
+                 |> OrganizationInvitation.accept_changeset()
+                 |> Repo.update()
+
+               updated_invitation
+             end) do
+          {:ok, updated_invitation} ->
+            {:ok, Repo.preload(updated_invitation, [:organization, :invited_by_user])}
+
+          error ->
+            error
+        end
     end
   end
 

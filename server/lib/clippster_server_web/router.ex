@@ -413,6 +413,9 @@ defmodule ClippsterServerWeb.Router do
 
     post("/invitations/:token/accept", OrganizationController, :accept_invitation)
 
+    # Accept invitation by ID (for in-app acceptance)
+    post("/invitations/:id/accept-by-id", OrganizationController, :accept_invitation_by_id)
+
     # Decline invitation (user declining their own invitation)
     delete("/invitations/:id", OrganizationController, :decline_invitation)
 

@@ -586,14 +586,61 @@ defmodule ClippsterServerWeb.OrganizationController do
   end
 
   @doc """
+  Accept an invitation by ID (for in-app acceptance).
+  """
+  def accept_invitation_by_id(conn, %{"id" => invitation_id}) do
+    user = conn.assigns.current_user
+
+    case Organizations.accept_invitation_by_id(invitation_id, user) do
+      {:ok, invitation} ->
+        json(conn, %{
+          success: true,
+          message: "Welcome to #{invitation.organization.name}!",
+          organization_id: invitation.organization_id
+        })
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Invitation not found or already processed"})
+
+      {:error, :invitation_expired} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "This invitation has expired"})
+
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "This invitation was sent to a different account"})
+
+      {:error, :basic_tier_cannot_join} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Upgrade to Starter or higher to join organizations"})
+    end
+  end
+
+  @doc """
   Decline an invitation (requires authentication).
+  Returns organization info so the client can create an in-app notification.
   """
   def decline_invitation(conn, %{"id" => invitation_id}) do
     user = conn.assigns.current_user
 
     case Organizations.decline_invitation(invitation_id, user) do
-      {:ok, _} ->
-        json(conn, %{success: true, message: "Invitation declined"})
+      {:ok, invitation} ->
+        # Return info for in-app notification to org owner
+        json(conn, %{
+          success: true,
+          message: "Invitation declined",
+          notification: %{
+            organization_id: invitation.organization_id,
+            organization_name: invitation.organization.name,
+            inviter_user_id: invitation.invited_by,
+            declined_by_name: user.name || user.email
+          }
+        })
 
       {:error, :not_found} ->
         conn
