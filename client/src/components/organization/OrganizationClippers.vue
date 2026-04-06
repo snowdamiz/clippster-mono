@@ -498,47 +498,78 @@
     </template>
 
     <!-- Organization Invite Confirmation Dialog -->
-    <Dialog v-model:open="showInviteDialog">
-      <DialogContent class="org-clippers__dialog">
-        <DialogHeader>
-          <DialogTitle>Invite to Organization</DialogTitle>
-          <DialogDescription>
-            Invite {{ selectedClipperForInvite?.display_name }} to join your organization as a member
-          </DialogDescription>
-        </DialogHeader>
-        <div class="org-clippers__dialog-body">
-          <div v-if="selectedClipperForInvite" class="org-clippers__invite-info">
-            <div class="flex items-center gap-3 mb-4">
-              <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
-                <img
-                  v-if="selectedClipperForInvite.avatar_url"
-                  :src="selectedClipperForInvite.avatar_url"
-                  class="w-full h-full object-cover"
-                />
-                <UserCircle v-else class="w-6 h-6 text-primary" />
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showInviteDialog" class="org-invite-modal__overlay" @click.self="showInviteDialog = false">
+          <Transition name="dialog" appear>
+            <div v-if="showInviteDialog" class="org-invite-modal" role="dialog" aria-modal="true">
+              <!-- Accent bar -->
+              <div class="org-invite-modal__accent"></div>
+
+              <!-- Header -->
+              <div class="org-invite-modal__header">
+                <button class="org-invite-modal__close" @click="showInviteDialog = false" title="Close">
+                  <X :size="18" />
+                </button>
+                <div class="org-invite-modal__icon">
+                  <Send :size="24" />
+                </div>
+                <h2 class="org-invite-modal__title">Invite to Organization</h2>
+                <p class="org-invite-modal__subtitle">
+                  Invite {{ selectedClipperForInvite?.display_name }} to join your organization
+                </p>
               </div>
-              <div>
-                <div class="font-semibold text-foreground">{{ selectedClipperForInvite.display_name }}</div>
-                <div class="text-sm text-muted-foreground">
-                  {{ selectedClipperForInvite.experience_level || 'Clipper' }}
+
+              <!-- Content -->
+              <div class="org-invite-modal__content">
+                <div v-if="selectedClipperForInvite" class="org-invite-modal__clipper-card">
+                  <div class="org-invite-modal__clipper-info">
+                    <div class="org-invite-modal__avatar">
+                      <img
+                        v-if="selectedClipperForInvite.avatar_url"
+                        :src="selectedClipperForInvite.avatar_url"
+                        class="org-invite-modal__avatar-img"
+                      />
+                      <UserCircle v-else :size="24" />
+                    </div>
+                    <div class="org-invite-modal__clipper-details">
+                      <div class="org-invite-modal__clipper-name">{{ selectedClipperForInvite.display_name }}</div>
+                      <div class="org-invite-modal__clipper-role">
+                        {{ selectedClipperForInvite.experience_level || 'Clipper' }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="org-invite-modal__message">
+                  <p>This will send an invitation email to the clipper. They will be able to accept or decline the invitation.</p>
                 </div>
               </div>
+
+              <!-- Footer -->
+              <div class="org-invite-modal__footer">
+                <button
+                  @click="showInviteDialog = false"
+                  class="org-invite-modal__btn org-invite-modal__btn--secondary"
+                  :disabled="inviteSending"
+                >
+                  Cancel
+                </button>
+                <button
+                  @click="sendOrganizationInvite"
+                  :disabled="inviteSending"
+                  class="org-invite-modal__btn org-invite-modal__btn--primary"
+                >
+                  <Loader2 v-if="inviteSending" :size="16" class="org-invite-modal__spinner" />
+                  <Send v-else :size="16" />
+                  Send Invitation
+                </button>
+              </div>
             </div>
-            <p class="text-sm text-muted-foreground">
-              This will send an invitation email to the clipper. They will be able to accept or decline the invitation.
-            </p>
-          </div>
+          </Transition>
         </div>
-        <DialogFooter>
-          <Button variant="outline" @click="showInviteDialog = false">Cancel</Button>
-          <Button @click="sendOrganizationInvite" :disabled="inviteSending">
-            <Loader2 v-if="inviteSending" class="w-4 h-4 animate-spin mr-2" />
-            <Send v-else class="org-clippers__btn-icon" />
-            Send Invitation
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -574,15 +605,6 @@
     DropdownMenuSeparator,
     DropdownMenuTrigger,
   } from '@/components/ui/dropdown-menu';
-  import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogDescription,
-    DialogFooter,
-  } from '@/components/ui/dialog';
-  import { Button } from '@/components/ui/button';
   import {
     listClippers,
     getLeaderboard,
@@ -2129,6 +2151,264 @@
     100% {
       background-position: -200% 0;
     }
+  }
+
+  /* ===== Organization Invite Modal ===== */
+  .org-invite-modal__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+
+  .org-invite-modal {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 440px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  .org-invite-modal__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  .org-invite-modal__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .org-invite-modal__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-invite-modal__close:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .org-invite-modal__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .org-invite-modal__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .org-invite-modal__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  .org-invite-modal__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+
+  .org-invite-modal__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .org-invite-modal__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .org-invite-modal__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .org-invite-modal__clipper-card {
+    padding: 1rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    margin-bottom: 1rem;
+  }
+
+  .org-invite-modal__clipper-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .org-invite-modal__avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .org-invite-modal__avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .org-invite-modal__clipper-details {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .org-invite-modal__clipper-name {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin-bottom: 0.125rem;
+  }
+
+  .org-invite-modal__clipper-role {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-invite-modal__message {
+    padding: 0.875rem;
+    background-color: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    border-radius: 8px;
+  }
+
+  .org-invite-modal__message p {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .org-invite-modal__footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .org-invite-modal__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-invite-modal__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .org-invite-modal__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .org-invite-modal__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .org-invite-modal__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .org-invite-modal__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .org-invite-modal__spinner {
+    animation: org-invite-modal-spin 0.8s linear infinite;
+  }
+
+  @keyframes org-invite-modal-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Modal transitions */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 200ms ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  .dialog-enter-active {
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 150ms ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
   }
 </style>
 

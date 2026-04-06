@@ -409,6 +409,9 @@ defmodule ClippsterServerWeb.Router do
 
     post("/invitations/:token/accept", OrganizationController, :accept_invitation)
 
+    # Decline invitation (user declining their own invitation)
+    delete("/invitations/:id", OrganizationController, :decline_invitation)
+
     # Invite user by user_id (for Clipper Directory)
     post(
       "/organizations/:organization_id/invite-user",
