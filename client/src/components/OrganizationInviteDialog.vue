@@ -97,7 +97,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed } from 'vue';
+  import { ref, watch } from 'vue';
   import { X, Users, Building2, UserCircle, Clock, Check, Loader2 } from 'lucide-vue-next';
   import type { OrganizationInvitation } from '@/services/organizationsApi';
 
@@ -116,6 +116,13 @@
   const emit = defineEmits<Emits>();
 
   const isProcessing = ref(false);
+
+  // Reset processing state when dialog closes
+  watch(() => props.modelValue, (open) => {
+    if (!open) {
+      isProcessing.value = false;
+    }
+  });
 
   const close = () => {
     if (!isProcessing.value) {

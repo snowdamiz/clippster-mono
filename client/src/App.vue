@@ -15,7 +15,7 @@
   import FloatingChat from '@/components/chat/FloatingChat.vue';
   import AudioPlayer from '@/components/AudioPlayer.vue';
   import { useAnnouncements } from '@/composables/useAnnouncements';
-  import { listMyInvitations, acceptInvitation, declineInvitation, type OrganizationInvitation } from '@/services/organizationsApi';
+  import { listMyInvitations, acceptInvitationById, declineInvitation, type OrganizationInvitation } from '@/services/organizationsApi';
   import {
     initDatabase,
     seedDefaultPrompt,
@@ -109,7 +109,7 @@
 
   // Handle invitation acceptance
   const handleAcceptInvitation = async (invitation: OrganizationInvitation) => {
-    const result = await acceptInvitation(invitation.id.toString());
+    const result = await acceptInvitationById(invitation.id);
     
     if (result.success) {
       success(`You've joined ${invitation.organization_name}!`);
