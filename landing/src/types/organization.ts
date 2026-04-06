@@ -7,6 +7,8 @@ export interface Organization {
   logo_url?: string
   website_url?: string
   public_contact_email?: string
+  public_discord?: string | null
+  public_telegram?: string | null
   content_type_tags?: string[]
   settings?: {
     allow_ai?: boolean

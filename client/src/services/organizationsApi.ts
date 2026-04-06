@@ -1,5 +1,35 @@
 import api from './api';
 
+export interface CheckOrgNameResponse {
+  success: boolean;
+  available?: boolean;
+  error?: string;
+}
+
+/**
+ * Check if an organization name is available (case-insensitive).
+ * Optionally pass excludeOrgId to exclude a specific org (for updates).
+ */
+export async function checkOrgNameAvailable(
+  name: string,
+  excludeOrgId?: number
+): Promise<CheckOrgNameResponse> {
+  try {
+    const params: Record<string, string> = { name };
+    if (excludeOrgId) {
+      params.exclude_org_id = String(excludeOrgId);
+    }
+    const response = await api.get<CheckOrgNameResponse>('/organizations/check-name', { params });
+    return response.data;
+  } catch (error: any) {
+    console.error('[OrganizationsApi] Failed to check org name:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to check name availability',
+    };
+  }
+}
+
 export interface UploadLogoResponse {
   success: boolean;
   logo_url?: string;

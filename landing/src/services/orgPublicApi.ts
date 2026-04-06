@@ -10,6 +10,8 @@ export interface OrgPublicProfile {
   logo_url: string | null
   website_url: string | null
   public_contact_email: string | null
+  public_discord?: string | null
+  public_telegram?: string | null
   content_type_tags: string[]
   stats: {
     campaigns_total: number
@@ -17,12 +19,14 @@ export interface OrgPublicProfile {
     campaigns_completed: number
     clippers_count: number
     streamers_count: number
+    total_views: number
   }
   streamers: Array<{
     id: number
     name: string | null
     profile_image_url: string | null
     platform: string | null
+    platform_id: string | null
     display_name: string | null
   }>
   social_accounts: Array<{

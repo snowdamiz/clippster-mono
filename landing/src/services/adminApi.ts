@@ -680,6 +680,17 @@ export async function searchUsersByEmail(email: string) {
   )
 }
 
+export async function checkOrgNameAvailable(name: string, excludeOrgId?: number) {
+  const params: Record<string, string> = { name }
+  if (excludeOrgId) {
+    params.exclude_org_id = String(excludeOrgId)
+  }
+  return assertSuccess(
+    await api.get<{ success: boolean; available?: boolean; error?: string }>('/organizations/check-name', { params }),
+    'Failed to check org name availability',
+  )
+}
+
 export async function createOrganizationAccount(payload: {
   org_name: string
   email?: string

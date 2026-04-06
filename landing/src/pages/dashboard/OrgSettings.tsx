@@ -34,6 +34,8 @@ interface EditData {
   bio: string
   website_url: string
   public_contact_email: string
+  public_discord: string
+  public_telegram: string
   content_type_tags: string[]
   settings: { allow_ai: boolean }
   restriction_defaults: Required<OrganizationRestrictionDefaults>
@@ -69,6 +71,8 @@ export function OrgSettings() {
     bio: '',
     website_url: '',
     public_contact_email: '',
+    public_discord: '',
+    public_telegram: '',
     content_type_tags: [],
     settings: { allow_ai: true },
     restriction_defaults: { ...DEFAULT_RESTRICTIONS }
@@ -95,6 +99,8 @@ export function OrgSettings() {
         bio: organization.bio || '',
         website_url: organization.website_url || '',
         public_contact_email: organization.public_contact_email || '',
+        public_discord: organization.public_discord || '',
+        public_telegram: organization.public_telegram || '',
         content_type_tags: organization.content_type_tags || [],
         settings: { allow_ai: orgSettings.allow_ai !== false },
         restriction_defaults: {
@@ -141,6 +147,8 @@ export function OrgSettings() {
       editData.bio !== (organization.bio || '') ||
       editData.website_url !== (organization.website_url || '') ||
       editData.public_contact_email !== (organization.public_contact_email || '') ||
+      editData.public_discord !== (organization.public_discord || '') ||
+      editData.public_telegram !== (organization.public_telegram || '') ||
       JSON.stringify(editData.content_type_tags) !== JSON.stringify(organization.content_type_tags || []) ||
       editData.settings.allow_ai !== currentAllowAi ||
       restrictionsChanged
@@ -703,6 +711,30 @@ export function OrgSettings() {
                     onChange={(e) => setEditData((prev) => ({ ...prev, public_contact_email: e.target.value }))}
                     type="email"
                     placeholder="contact@yourorg.com"
+                    className="w-full px-4 py-3 text-sm bg-zinc-800/50 border border-zinc-800 rounded-lg text-white placeholder-zinc-600/50 transition-all duration-150 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/15"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2.5 mb-4">
+                  <label className="text-sm font-medium text-white">Discord</label>
+                  <input
+                    value={editData.public_discord}
+                    onChange={(e) => setEditData((prev) => ({ ...prev, public_discord: e.target.value }))}
+                    type="text"
+                    maxLength={500}
+                    placeholder="Invite link (discord.gg/…), server URL, or invite code"
+                    className="w-full px-4 py-3 text-sm bg-zinc-800/50 border border-zinc-800 rounded-lg text-white placeholder-zinc-600/50 transition-all duration-150 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/15"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2.5 mb-4">
+                  <label className="text-sm font-medium text-white">Telegram</label>
+                  <input
+                    value={editData.public_telegram}
+                    onChange={(e) => setEditData((prev) => ({ ...prev, public_telegram: e.target.value }))}
+                    type="text"
+                    maxLength={500}
+                    placeholder="@username or https://t.me/username"
                     className="w-full px-4 py-3 text-sm bg-zinc-800/50 border border-zinc-800 rounded-lg text-white placeholder-zinc-600/50 transition-all duration-150 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/15"
                   />
                 </div>
