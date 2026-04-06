@@ -3657,6 +3657,23 @@ defmodule ClippsterServerWeb.ClipsController do
             - Multiple volume spikes in short time = very likely clip-worthy moment
             - Volume spikes + intense/emotional words = high-value clip
             - Use audio context to identify moments the transcript alone might miss
+
+            CLIP LENGTH GUIDANCE:
+            - DEFAULT: Find SHORT discrete moments (30-90 seconds)
+            - Most viral clips are 30-60 seconds - punchy, shareable, immediate payoff
+            - ONLY extend beyond 90s if the content REQUIRES full context:
+              - Complete story with setup → climax → resolution that can't be cut
+              - Sustained rant where cutting mid-thought loses all impact
+              - Dramatic reveal that needs the full buildup
+            - If you're unsure whether to extend or create a new clip, prefer SHORTER
+            - A tight 45-second clip beats a bloated 3-minute one every time
+
+            WHEN TO SET context_change=true (create NEW clip instead of extending):
+            - Topic shifts to something unrelated
+            - Energy drops significantly for 15+ seconds then spikes again (new moment)
+            - Natural break/transition in the stream
+            - Pending clip is already 60+ seconds AND current moment could work standalone
+            - Current moment has a strong hook that deserves its own clip
             
             WHAT QUALIFIES AS 85+ SCORE (CLIP-WORTHY):
             
@@ -3819,26 +3836,28 @@ defmodule ClippsterServerWeb.ClipsController do
                   
                   # Both exist - compare them
                   true ->
-                    # Check if pending clip has exceeded max duration
-                    pending_duration = Map.get(pending_clip, "end_time", 0) - Map.get(pending_clip, "start_time", 0)
-                    
-                    if pending_duration >= max_clip_duration do
-                      # Clip is too long - force save it and start new one
-                      Logger.info("[ClipsController] Pending clip exceeded max duration (#{pending_duration}s >= #{max_clip_duration}s), forcing save")
-                      {true, ai_pending_clip}
-                    else
-                      case should_merge_clips?(pending_clip, ai_pending_clip) do
-                        {:merge, reason} ->
-                          # Similar enough - merge/extend the pending clip
-                          merged = merge_pending_clips(pending_clip, ai_pending_clip)
+                    # FIRST check if clips should merge (check duration AFTER merge, not before)
+                    case should_merge_clips?(pending_clip, ai_pending_clip) do
+                      {:merge, reason} ->
+                        # Similar enough - merge/extend the pending clip
+                        merged = merge_pending_clips(pending_clip, ai_pending_clip)
+                        merged_duration = Map.get(merged, "end_time", 0) - Map.get(merged, "start_time", 0)
+                        
+                        # THEN check duration AFTER merge - cap at max_clip_duration
+                        if merged_duration >= max_clip_duration do
+                          # Cap the clip at max duration and force save
+                          Logger.info("[ClipsController] Merged clip exceeded max duration (#{merged_duration}s >= #{max_clip_duration}s), capping at #{max_clip_duration}s")
+                          capped_clip = Map.put(merged, "end_time", Map.get(merged, "start_time", 0) + max_clip_duration)
+                          {true, capped_clip}
+                        else
                           Logger.info("[ClipsController] Merging clips (#{reason}): #{merged["start_time"]}s - #{merged["end_time"]}s")
                           {false, merged}
-                        
-                        {:different, reason} ->
-                          # Truly different context - save existing, start new
-                          Logger.info("[ClipsController] Context change (#{reason})! Saving: '#{pending_clip["title"]}' -> Starting: '#{ai_pending_clip["title"]}'")
-                          {true, ai_pending_clip}
-                      end
+                        end
+                      
+                      {:different, reason} ->
+                        # Truly different context - save existing, start new
+                        Logger.info("[ClipsController] Context change (#{reason})! Saving: '#{pending_clip["title"]}' -> Starting: '#{ai_pending_clip["title"]}'")
+                        {true, ai_pending_clip}
                     end
                 end
 
