@@ -136,3 +136,19 @@ export async function acceptInvitation(token: string): Promise<{ success: boolea
     };
   }
 }
+
+/**
+ * Decline an organization invitation.
+ */
+export async function declineInvitation(invitationId: number): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const response = await api.delete(`/invitations/${invitationId}`);
+    return response.data;
+  } catch (error: any) {
+    console.error('[OrganizationsApi] Failed to decline invitation:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to decline invitation',
+    };
+  }
+}

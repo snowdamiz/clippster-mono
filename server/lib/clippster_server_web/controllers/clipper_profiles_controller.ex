@@ -196,7 +196,10 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
         {:error, :duplicate_social_account} ->
           conn
           |> put_status(:conflict)
-          |> json(%{success: false, error: "This account is already connected as a social account"})
+          |> json(%{
+            success: false,
+            error: "This account is already connected as a social account"
+          })
 
         {:error, reason} ->
           Logger.error("[ClipperProfiles] create_channel_link error: #{inspect(reason)}")
@@ -610,6 +613,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   GET /api/clippers/leaderboard
   Get the clipper leaderboard.
   Accepts: period (weekly|monthly), type (posts|campaigns)
+  Public endpoint - no authentication required.
   """
   def leaderboard(conn, params) do
     period_type = params["period"] || "weekly"
@@ -848,7 +852,9 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
           do: %{
             id: entry.clipper_profile.id,
             user_id: entry.clipper_profile.user_id,
-            display_name: entry.clipper_profile.display_name || (entry.clipper_profile.user && entry.clipper_profile.user.name),
+            display_name:
+              entry.clipper_profile.display_name ||
+                (entry.clipper_profile.user && entry.clipper_profile.user.name),
             avatar_url: maybe_presign_avatar(entry.clipper_profile.avatar_url),
             slug: entry.clipper_profile.slug,
             is_verified: entry.clipper_profile.is_verified,

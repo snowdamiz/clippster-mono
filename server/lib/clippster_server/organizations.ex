@@ -735,6 +735,29 @@ defmodule ClippsterServer.Organizations do
   end
 
   @doc """
+  Declines a pending invitation (user declining their own invitation).
+  """
+  def decline_invitation(invitation_id, %User{} = user) do
+    invitation = Repo.get(OrganizationInvitation, invitation_id)
+
+    cond do
+      is_nil(invitation) ->
+        {:error, :not_found}
+
+      invitation.status != "pending" ->
+        {:error, :already_processed}
+
+      invitation.email != user.email ->
+        {:error, :unauthorized}
+
+      true ->
+        invitation
+        |> OrganizationInvitation.cancel_changeset()
+        |> Repo.update()
+    end
+  end
+
+  @doc """
   Resends an invitation email.
   Generates a new token and updates the expiry date.
   """

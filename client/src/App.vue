@@ -15,7 +15,7 @@
   import FloatingChat from '@/components/chat/FloatingChat.vue';
   import AudioPlayer from '@/components/AudioPlayer.vue';
   import { useAnnouncements } from '@/composables/useAnnouncements';
-  import { listMyInvitations, acceptInvitation, type OrganizationInvitation } from '@/services/organizationsApi';
+  import { listMyInvitations, acceptInvitation, declineInvitation, type OrganizationInvitation } from '@/services/organizationsApi';
   import {
     initDatabase,
     seedDefaultPrompt,
@@ -61,6 +61,7 @@
   const pendingInvitations = ref<OrganizationInvitation[]>([]);
   const currentInvitation = ref<OrganizationInvitation | null>(null);
   const showInviteDialog = ref(false);
+  let invitationPollInterval: number | null = null;
 
   // Fetch pending organization invitations
   const fetchPendingInvitations = async () => {
@@ -68,12 +69,41 @@
     
     const response = await listMyInvitations();
     if (response.success && response.invitations.length > 0) {
+      // Check if there are new invitations
+      const newInvitations = response.invitations.filter(
+        invite => !pendingInvitations.value.some(existing => existing.id === invite.id)
+      );
+      
       pendingInvitations.value = response.invitations;
-      // Show the first invitation
+      
+      // Show the first invitation if dialog is not already showing
       if (!showInviteDialog.value && pendingInvitations.value.length > 0) {
         currentInvitation.value = pendingInvitations.value[0];
         showInviteDialog.value = true;
       }
+    } else {
+      pendingInvitations.value = [];
+    }
+  };
+
+  // Start polling for new invitations (every 30 seconds)
+  const startInvitationPolling = () => {
+    if (invitationPollInterval) return; // Already polling
+    
+    // Fetch immediately
+    fetchPendingInvitations();
+    
+    // Then poll every 30 seconds
+    invitationPollInterval = window.setInterval(() => {
+      fetchPendingInvitations();
+    }, 30000); // 30 seconds
+  };
+
+  // Stop polling for invitations
+  const stopInvitationPolling = () => {
+    if (invitationPollInterval) {
+      clearInterval(invitationPollInterval);
+      invitationPollInterval = null;
     }
   };
 
@@ -103,7 +133,13 @@
   };
 
   // Handle invitation decline
-  const handleDeclineInvitation = (invitation: OrganizationInvitation) => {
+  const handleDeclineInvitation = async (invitation: OrganizationInvitation) => {
+    const result = await declineInvitation(invitation.id);
+    
+    if (result.success) {
+      success('Invitation declined');
+    }
+    
     // Remove from pending list
     pendingInvitations.value = pendingInvitations.value.filter(inv => inv.id !== invitation.id);
     showInviteDialog.value = false;
@@ -266,14 +302,15 @@
       await fetchAndEnqueue();
       subscribeToChannel(authStore.user?.account_type ?? 'personal');
       
-      // Fetch pending organization invitations
-      await fetchPendingInvitations();
+      // Start polling for organization invitations
+      startInvitationPolling();
     } else if (!event.detail?.userId) {
       // User logged out — clear announcement queue and leave channel
       unsubscribe();
       // Clear plan selection flag
       localStorage.removeItem('has_selected_plan');
-      // Clear pending invitations
+      // Stop polling and clear pending invitations
+      stopInvitationPolling();
       pendingInvitations.value = [];
       currentInvitation.value = null;
       showInviteDialog.value = false;
@@ -435,6 +472,8 @@
           subscribeToChannel(authStore.user?.account_type ?? 'personal');
           // Initialize global messaging socket for floating chat
           messagingStore.initializeGlobal().catch((e) => console.error('[App] Failed to init global messaging:', e));
+          // Start polling for organization invitations
+          startInvitationPolling();
         }
       })().catch((error) => {
         console.error('[App] Failed to check authentication:', error);
@@ -523,6 +562,9 @@
 
     // Cleanup global clip build event handler
     cleanupClipBuildEventHandler();
+    
+    // Stop invitation polling
+    stopInvitationPolling();
   });
 </script>
 
