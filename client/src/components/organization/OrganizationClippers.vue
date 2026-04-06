@@ -517,71 +517,103 @@
     <!-- Organization Invite Confirmation Dialog -->
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="showInviteDialog" class="org-invite-modal__overlay" @click.self="showInviteDialog = false">
+        <div v-if="showInviteDialog" class="org-invite-modal__overlay" @click.self="closeInviteDialog">
           <Transition name="dialog" appear>
             <div v-if="showInviteDialog" class="org-invite-modal" role="dialog" aria-modal="true">
               <!-- Accent bar -->
-              <div class="org-invite-modal__accent"></div>
+              <div class="org-invite-modal__accent" :class="{ 'org-invite-modal__accent--success': inviteSent }"></div>
 
-              <!-- Header -->
-              <div class="org-invite-modal__header">
-                <button class="org-invite-modal__close" @click="showInviteDialog = false" title="Close">
-                  <X :size="18" />
-                </button>
-                <div class="org-invite-modal__icon">
-                  <Send :size="24" />
+              <!-- Success State -->
+              <template v-if="inviteSent">
+                <div class="org-invite-modal__header">
+                  <button class="org-invite-modal__close" @click="closeInviteDialog" title="Close">
+                    <X :size="18" />
+                  </button>
+                  <div class="org-invite-modal__icon org-invite-modal__icon--success">
+                    <CheckCircle :size="24" />
+                  </div>
+                  <h2 class="org-invite-modal__title">Invitation Sent!</h2>
+                  <p class="org-invite-modal__subtitle">
+                    {{ selectedClipperForInvite?.display_name }} will receive a notification to join your organization
+                  </p>
                 </div>
-                <h2 class="org-invite-modal__title">Invite to Organization</h2>
-                <p class="org-invite-modal__subtitle">
-                  Invite {{ selectedClipperForInvite?.display_name }} to join your organization
-                </p>
-              </div>
 
-              <!-- Content -->
-              <div class="org-invite-modal__content">
-                <div v-if="selectedClipperForInvite" class="org-invite-modal__clipper-card">
-                  <div class="org-invite-modal__clipper-info">
-                    <div class="org-invite-modal__avatar">
-                      <img
-                        v-if="selectedClipperForInvite.avatar_url"
-                        :src="selectedClipperForInvite.avatar_url"
-                        class="org-invite-modal__avatar-img"
-                      />
-                      <UserCircle v-else :size="24" />
-                    </div>
-                    <div class="org-invite-modal__clipper-details">
-                      <div class="org-invite-modal__clipper-name">{{ selectedClipperForInvite.display_name }}</div>
-                      <div class="org-invite-modal__clipper-role">
-                        {{ selectedClipperForInvite.experience_level || 'Clipper' }}
-                      </div>
-                    </div>
+                <div class="org-invite-modal__content">
+                  <div class="org-invite-modal__success-message">
+                    <p>The clipper will see an invitation dialog in their app. They can accept or decline the invitation.</p>
+                    <p class="org-invite-modal__success-note">You'll be notified when they respond.</p>
                   </div>
                 </div>
 
-                <div class="org-invite-modal__message">
-                  <p>This will send an invitation email to the clipper. They will be able to accept or decline the invitation.</p>
+                <div class="org-invite-modal__footer">
+                  <button
+                    @click="closeInviteDialog"
+                    class="org-invite-modal__btn org-invite-modal__btn--primary"
+                  >
+                    Done
+                  </button>
                 </div>
-              </div>
+              </template>
 
-              <!-- Footer -->
-              <div class="org-invite-modal__footer">
-                <button
-                  @click="showInviteDialog = false"
-                  class="org-invite-modal__btn org-invite-modal__btn--secondary"
-                  :disabled="inviteSending"
-                >
-                  Cancel
-                </button>
-                <button
-                  @click="sendOrganizationInvite"
-                  :disabled="inviteSending"
-                  class="org-invite-modal__btn org-invite-modal__btn--primary"
-                >
-                  <Loader2 v-if="inviteSending" :size="16" class="org-invite-modal__spinner" />
-                  <Send v-else :size="16" />
-                  Send Invitation
-                </button>
-              </div>
+              <!-- Initial State - Confirm Send -->
+              <template v-else>
+                <div class="org-invite-modal__header">
+                  <button class="org-invite-modal__close" @click="closeInviteDialog" title="Close">
+                    <X :size="18" />
+                  </button>
+                  <div class="org-invite-modal__icon">
+                    <Send :size="24" />
+                  </div>
+                  <h2 class="org-invite-modal__title">Invite to Organization</h2>
+                  <p class="org-invite-modal__subtitle">
+                    Invite {{ selectedClipperForInvite?.display_name }} to join your organization
+                  </p>
+                </div>
+
+                <div class="org-invite-modal__content">
+                  <div v-if="selectedClipperForInvite" class="org-invite-modal__clipper-card">
+                    <div class="org-invite-modal__clipper-info">
+                      <div class="org-invite-modal__avatar">
+                        <img
+                          v-if="selectedClipperForInvite.avatar_url"
+                          :src="selectedClipperForInvite.avatar_url"
+                          class="org-invite-modal__avatar-img"
+                        />
+                        <UserCircle v-else :size="24" />
+                      </div>
+                      <div class="org-invite-modal__clipper-details">
+                        <div class="org-invite-modal__clipper-name">{{ selectedClipperForInvite.display_name }}</div>
+                        <div class="org-invite-modal__clipper-role">
+                          {{ selectedClipperForInvite.experience_level || 'Clipper' }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="org-invite-modal__message">
+                    <p>This will send an invitation to the clipper. They will be able to accept or decline the invitation.</p>
+                  </div>
+                </div>
+
+                <div class="org-invite-modal__footer">
+                  <button
+                    @click="closeInviteDialog"
+                    class="org-invite-modal__btn org-invite-modal__btn--secondary"
+                    :disabled="inviteSending"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    @click="sendOrganizationInvite"
+                    :disabled="inviteSending"
+                    class="org-invite-modal__btn org-invite-modal__btn--primary"
+                  >
+                    <Loader2 v-if="inviteSending" :size="16" class="org-invite-modal__spinner" />
+                    <Send v-else :size="16" />
+                    Send Invitation
+                  </button>
+                </div>
+              </template>
             </div>
           </Transition>
         </div>
@@ -667,6 +699,7 @@
   const showInviteDialog = ref(false);
   const selectedClipperForInvite = ref<ClipperProfile | null>(null);
   const inviteSending = ref(false);
+  const inviteSent = ref(false);
 
   // Leaderboard state
   const loadingLeaderboard = ref(true);
@@ -909,11 +942,26 @@
     event.preventDefault();
     event.stopPropagation();
     selectedClipperForInvite.value = clipper;
+    inviteSent.value = false;
     showInviteDialog.value = true;
   };
 
+  const closeInviteDialog = () => {
+    if (inviteSending.value) return;
+    showInviteDialog.value = false;
+    inviteSent.value = false;
+    selectedClipperForInvite.value = null;
+  };
+
   const sendOrganizationInvite = async () => {
-    if (!selectedClipperForInvite.value || !props.organizationId) return;
+    if (!selectedClipperForInvite.value || !props.organizationId) {
+      console.error('Missing clipper or organization ID:', {
+        clipper: selectedClipperForInvite.value,
+        orgId: props.organizationId
+      });
+      showToast('Unable to send invitation - missing information', 'error');
+      return;
+    }
     
     inviteSending.value = true;
     try {
@@ -924,8 +972,7 @@
       );
       
       if (result.success) {
-        showToast(`Invitation sent to ${selectedClipperForInvite.value.display_name}`, 'success');
-        showInviteDialog.value = false;
+        inviteSent.value = true;
       } else {
         showToast(result.error || 'Failed to send invitation', 'error');
       }
@@ -2246,6 +2293,10 @@
     flex-shrink: 0;
   }
 
+  .org-invite-modal__accent--success {
+    background: linear-gradient(90deg, #10b981, rgba(16, 185, 129, 0.5));
+  }
+
   .org-invite-modal__header {
     position: relative;
     display: flex;
@@ -2285,6 +2336,12 @@
     height: 52px;
     border-radius: 12px;
     background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .org-invite-modal__icon--success {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
     color: var(--sidebar-accent);
     margin-bottom: 0.875rem;
   }
@@ -2384,6 +2441,28 @@
     color: var(--sidebar-text-muted);
     line-height: 1.5;
     margin: 0;
+  }
+
+  .org-invite-modal__success-message {
+    padding: 1rem;
+    background-color: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.15);
+    border-radius: 8px;
+    text-align: center;
+  }
+
+  .org-invite-modal__success-message p {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .org-invite-modal__success-note {
+    margin-top: 0.5rem !important;
+    font-size: 0.75rem !important;
+    color: #10b981 !important;
+    font-weight: 500;
   }
 
   .org-invite-modal__footer {

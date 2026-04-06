@@ -122,7 +122,7 @@ export async function listMyInvitations(): Promise<ListInvitationsResponse> {
 }
 
 /**
- * Accept an organization invitation.
+ * Accept an organization invitation by token (for email link acceptance).
  */
 export async function acceptInvitation(token: string): Promise<{ success: boolean; message?: string; organization_id?: number; error?: string }> {
   try {
@@ -138,9 +138,33 @@ export async function acceptInvitation(token: string): Promise<{ success: boolea
 }
 
 /**
- * Decline an organization invitation.
+ * Accept an organization invitation by ID (for in-app acceptance).
  */
-export async function declineInvitation(invitationId: number): Promise<{ success: boolean; message?: string; error?: string }> {
+export async function acceptInvitationById(invitationId: number): Promise<{ success: boolean; message?: string; organization_id?: number; error?: string }> {
+  try {
+    const response = await api.post(`/invitations/${invitationId}/accept-by-id`);
+    return response.data;
+  } catch (error: any) {
+    console.error('[OrganizationsApi] Failed to accept invitation:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to accept invitation',
+    };
+  }
+}
+
+export interface DeclineNotification {
+  organization_id: number;
+  organization_name: string;
+  inviter_user_id: number;
+  declined_by_name: string;
+}
+
+/**
+ * Decline an organization invitation.
+ * Returns notification data so the app can notify the org owner.
+ */
+export async function declineInvitation(invitationId: number): Promise<{ success: boolean; message?: string; notification?: DeclineNotification; error?: string }> {
   try {
     const response = await api.delete(`/invitations/${invitationId}`);
     return response.data;

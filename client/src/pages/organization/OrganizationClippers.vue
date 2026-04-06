@@ -43,7 +43,7 @@
   import OrganizationClippersComponent from '@/components/organization/OrganizationClippers.vue';
 
   const route = useRoute();
-  const organizationId = route.params.organizationId as string;
+  const organizationId = route.params.id as string;
   const activeView = ref<'directory' | 'leaderboard'>('directory');
 </script>
 
