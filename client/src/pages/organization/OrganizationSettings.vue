@@ -37,59 +37,71 @@
 
     <div class="clipper-profile">
       <div class="profile-page">
-      <div class="profile-header-card">
-        <div class="profile-header-bg"></div>
-        <div class="profile-header-content">
-          <div class="profile-header-main">
-            <div class="profile-avatar">
-              <img v-if="organization?.logo_url && !logoLoadError" :src="organization.logo_url" class="profile-avatar__img" />
-              <Building2 v-else class="profile-avatar__fallback" />
-            </div>
-            <div class="profile-info">
-              <div class="profile-name-row">
-                <h1 class="profile-name">{{ organization?.name || 'Organization' }}</h1>
+        <div class="org-profile org-profile--settings">
+          <div class="org-hero">
+            <div class="org-hero__banner"></div>
+            <div class="org-hero__content">
+              <div class="org-hero__avatar">
+                <img
+                  v-if="organization?.logo_url && !logoLoadError"
+                  :src="organization.logo_url"
+                  class="org-hero__avatar-img"
+                  @error="logoLoadError = true"
+                />
+                <Building2 v-else class="org-hero__avatar-fallback" />
               </div>
-              <p class="profile-bio">{{ editData.description || 'Add a short description of your organization.' }}</p>
-              <div v-if="editData.content_type_tags?.length" class="profile-tags">
-                <span v-for="tag in editData.content_type_tags.slice(0, 8)" :key="tag" class="profile-tag">{{ SPECIALTY_TAGS.find((t) => t.value === tag)?.label || tag }}</span>
-              </div>
-            </div>
-          </div>
-          <div class="profile-stats-grid">
-            <div class="profile-stat-card">
-              <div class="profile-stat-card__icon profile-stat-card__icon--purple"><Megaphone :size="18" /></div>
-              <div class="profile-stat-card__content">
-                <span class="profile-stat-card__value">0</span>
-                <span class="profile-stat-card__label">Campaigns</span>
-              </div>
-            </div>
-            <div class="profile-stat-card">
-              <div class="profile-stat-card__icon profile-stat-card__icon--cyan"><Users :size="18" /></div>
-              <div class="profile-stat-card__content">
-                <span class="profile-stat-card__value">0</span>
-                <span class="profile-stat-card__label">Members</span>
-              </div>
-            </div>
-            <div class="profile-stat-card">
-              <div class="profile-stat-card__icon profile-stat-card__icon--green"><CheckCircle :size="18" /></div>
-              <div class="profile-stat-card__content">
-                <span class="profile-stat-card__value">{{ editData.content_type_tags.length }}</span>
-                <span class="profile-stat-card__label">Content Types</span>
+              <div class="org-hero__info">
+                <h1 class="org-hero__name">{{ organization?.name || 'Organization' }}</h1>
+                <p class="org-hero__tagline">{{ editData.description || 'Add a short description of your organization.' }}</p>
+                <div v-if="editData.content_type_tags?.length" class="org-hero__tags">
+                  <span v-for="tag in editData.content_type_tags.slice(0, 8)" :key="tag" class="org-hero__tag">{{
+                    SPECIALTY_TAGS.find((t) => t.value === tag)?.label || tag
+                  }}</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <nav class="tabs-nav">
-        <div class="tabs-container">
-          <button class="tab-button" :class="{ 'tab-button--active': activeTab === 'basic' }" @click="activeTab = 'basic'"><div class="tab-button__icon"><Type /></div><span class="tab-button__label">Basic</span></button>
-          <button class="tab-button" :class="{ 'tab-button--active': activeTab === 'ai' }" @click="activeTab = 'ai'"><div class="tab-button__icon"><Sparkles /></div><span class="tab-button__label">AI</span></button>
-          <button class="tab-button" :class="{ 'tab-button--active': activeTab === 'restrictions' }" @click="activeTab = 'restrictions'"><div class="tab-button__icon"><Shield /></div><span class="tab-button__label">Restrictions</span></button>
-          <button v-if="isOwner" class="tab-button" :class="{ 'tab-button--active': activeTab === 'danger' }" @click="activeTab = 'danger'"><div class="tab-button__icon"><AlertTriangle /></div><span class="tab-button__label">Danger</span></button>
+          <div class="org-stats-grid org-stats-grid--settings">
+            <div class="org-stat-card">
+              <div class="org-stat-card__icon org-stat-card__icon--violet">
+                <Megaphone :size="18" />
+              </div>
+              <div class="org-stat-card__content">
+                <span class="org-stat-card__value">0</span>
+                <span class="org-stat-card__label">Campaigns</span>
+              </div>
+            </div>
+            <div class="org-stat-card">
+              <div class="org-stat-card__icon org-stat-card__icon--cyan">
+                <Users :size="18" />
+              </div>
+              <div class="org-stat-card__content">
+                <span class="org-stat-card__value">0</span>
+                <span class="org-stat-card__label">Members</span>
+              </div>
+            </div>
+            <div class="org-stat-card">
+              <div class="org-stat-card__icon org-stat-card__icon--green">
+                <CheckCircle :size="18" />
+              </div>
+              <div class="org-stat-card__content">
+                <span class="org-stat-card__value">{{ editData.content_type_tags.length }}</span>
+                <span class="org-stat-card__label">Content Types</span>
+              </div>
+            </div>
+          </div>
         </div>
-      </nav>
-      <main class="content">
+
+        <nav class="tabs-nav">
+          <div class="tabs-container">
+            <button class="tab-button" :class="{ 'tab-button--active': activeTab === 'basic' }" @click="activeTab = 'basic'"><div class="tab-button__icon"><Type /></div><span class="tab-button__label">Basic</span></button>
+            <button class="tab-button" :class="{ 'tab-button--active': activeTab === 'ai' }" @click="activeTab = 'ai'"><div class="tab-button__icon"><Sparkles /></div><span class="tab-button__label">AI</span></button>
+            <button class="tab-button" :class="{ 'tab-button--active': activeTab === 'restrictions' }" @click="activeTab = 'restrictions'"><div class="tab-button__icon"><Shield /></div><span class="tab-button__label">Restrictions</span></button>
+            <button v-if="isOwner" class="tab-button" :class="{ 'tab-button--active': activeTab === 'danger' }" @click="activeTab = 'danger'"><div class="tab-button__icon"><AlertTriangle /></div><span class="tab-button__label">Danger</span></button>
+          </div>
+        </nav>
+        <main class="content">
 
       <!-- Organization Profile Section -->
       <section v-show="activeTab === 'basic'" class="org-settings__section">
@@ -342,7 +354,7 @@
           </div>
         </div>
       </section>
-      </main>
+        </main>
       </div>
     </div>
 
@@ -594,6 +606,7 @@
     UserCircle,
     Upload,
     Megaphone,
+    Users,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
@@ -798,49 +811,207 @@
     display: flex;
     flex-direction: column;
     gap: 0;
-    max-width: 1400px;
+    max-width: 1100px;
     margin: 0 auto;
     width: 100%;
     padding: 1.5rem;
   }
 
-  .profile-header-card {
-    position: relative;
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 16px;
-    overflow: hidden;
-    margin-bottom: 1.5rem;
+  /* Match public org profile hero + stats (OrgPublicProfilePage) */
+  .org-profile--settings {
+    max-width: none;
+    margin: 0;
+    padding: 0 0 0.25rem 0;
   }
-  .profile-header-bg {
-    position: absolute;
-    inset: 0 0 auto 0;
+
+  .org-hero {
+    position: relative;
+    margin-bottom: 0;
+    padding-bottom: 1.75rem;
+  }
+
+  .org-hero__banner {
     height: 120px;
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
-    opacity: 0.5;
-  }
-  .profile-header-content {
+    background: linear-gradient(135deg, #0891b2 0%, #06b6d4 25%, #22d3ee 50%, #0891b2 75%, #164e63 100%);
+    background-size: 200% 200%;
+    border-radius: 14px 14px 0 0;
     position: relative;
-    padding: 2rem 2rem 1.5rem;
+    overflow: hidden;
   }
-  .profile-header-main {
+
+  .org-hero__banner::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 100%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+      radial-gradient(ellipse 60% 40% at 80% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 40%);
+  }
+
+  .org-hero__banner::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 52px;
+    background: linear-gradient(to top, var(--sidebar-surface) 0%, transparent 100%);
+  }
+
+  .org-hero__content {
     display: flex;
     align-items: flex-start;
-    gap: 1.5rem;
-    margin-bottom: 2rem;
+    gap: 1.25rem;
+    padding: 0 1.5rem;
+    margin-top: -48px;
+    position: relative;
+    z-index: 1;
   }
-  .profile-avatar {
-    width: 96px; height: 96px; border-radius: 20px; overflow: hidden; flex-shrink: 0;
-    background: var(--sidebar-hover); border: 3px solid var(--sidebar-surface); box-shadow: 0 4px 12px rgba(0,0,0,.15);
+
+  .org-hero__avatar {
+    width: 96px;
+    height: 96px;
+    border-radius: 14px;
+    background: var(--sidebar-surface);
+    border: 4px solid var(--sidebar-surface);
+    overflow: hidden;
+    flex-shrink: 0;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   }
-  .profile-avatar__img { width: 100%; height: 100%; object-fit: cover; }
-  .profile-avatar__fallback { width: 100%; height: 100%; padding: 20px; color: var(--sidebar-text-muted); }
-  .profile-info { flex: 1; min-width: 0; }
-  .profile-name-row { display: flex; align-items: center; gap: .75rem; margin-bottom: .5rem; }
-  .profile-name { font-size: 1.75rem; font-weight: 700; color: var(--sidebar-text); margin: 0; letter-spacing: -.03em; line-height: 1.2; }
-  .profile-bio { font-size: .9375rem; color: var(--sidebar-text-muted); margin: 0 0 .75rem; line-height: 1.6; max-width: 600px; }
-  .profile-tags { display: flex; flex-wrap: wrap; gap: .5rem; }
-  .profile-tag { padding: .375rem .625rem; background: rgba(6,182,212,.12); border-radius: 6px; font-size: .6875rem; font-weight: 600; color: var(--sidebar-accent); }
+
+  .org-hero__avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .org-hero__avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+    padding: 24px;
+  }
+
+  .org-hero__info {
+    flex: 1;
+    min-width: 0;
+    padding-top: 0.375rem;
+    padding-bottom: 0.25rem;
+  }
+
+  .org-hero__name {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.25rem;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  .org-hero__tagline {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 0.625rem;
+    line-height: 1.5;
+  }
+
+  .org-hero__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .org-hero__tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.625rem;
+    background: rgba(34, 211, 238, 0.1);
+    border: 1px solid rgba(34, 211, 238, 0.2);
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: #22d3ee;
+    letter-spacing: 0.01em;
+  }
+
+  .org-stats-grid {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .org-stats-grid--settings {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .org-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: var(--sidebar-surface);
+    border: 1px solid rgba(34, 211, 238, 0.15);
+    border-radius: 12px;
+    transition: all 200ms ease;
+  }
+
+  .org-stat-card:hover {
+    border-color: rgba(34, 211, 238, 0.4);
+    box-shadow: 0 0 20px rgba(34, 211, 238, 0.1);
+  }
+
+  .org-stat-card__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+
+  .org-stat-card__icon--cyan {
+    background: rgba(34, 211, 238, 0.15);
+    color: #22d3ee;
+  }
+
+  .org-stat-card__icon--green {
+    background: rgba(52, 211, 153, 0.15);
+    color: #34d399;
+  }
+
+  .org-stat-card__icon--violet {
+    background: rgba(167, 139, 250, 0.15);
+    color: #a78bfa;
+  }
+
+  .org-stat-card__content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .org-stat-card__value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .org-stat-card__label {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-weight: 500;
+    white-space: nowrap;
+  }
   .profile-action-btn {
     display: inline-flex;
     align-items: center;
@@ -882,23 +1053,18 @@
   .org-basic-preview__info { flex: 1; min-width: 0; }
   .org-basic-preview__name { font-size: .9375rem; color: var(--sidebar-text); font-weight: 600; }
   .org-basic-preview__desc { font-size: .75rem; color: var(--sidebar-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .profile-stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1.5rem; }
-  .profile-stat-card { display: flex; align-items: center; gap: 1rem; padding: 1.25rem; background: var(--sidebar-hover); border: 1px solid var(--sidebar-border); border-radius: 12px; transition: all 200ms ease; }
-  .profile-stat-card:hover { border-color: rgba(255, 255, 255, 0.12); transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15); }
-  .profile-stat-card__icon { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 12px; flex-shrink: 0; }
-  .profile-stat-card__icon--purple { background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%); color: #a78bfa; }
-  .profile-stat-card__icon--cyan { background: linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(8, 145, 178, 0.2) 100%); color: #06b6d4; }
-  .profile-stat-card__icon--green { background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%); color: #10b981; }
-  .profile-stat-card__content { display: flex; flex-direction: column; gap: 0.25rem; }
-  .profile-stat-card__value { font-size: 1.75rem; font-weight: 700; color: var(--sidebar-text); letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
-  .profile-stat-card__label { font-size: 0.75rem; color: var(--sidebar-text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
 
   .tabs-nav {
     background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
+    border: 1px solid rgba(34, 211, 238, 0.15);
+    border-radius: 14px;
     padding: 0.5rem;
     margin-bottom: 1.5rem;
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  .tabs-nav:hover {
+    border-color: rgba(34, 211, 238, 0.25);
   }
   .tabs-container { display: flex; gap: .375rem; overflow-x: auto; scrollbar-width: none; }
   .tabs-container::-webkit-scrollbar { display: none; }
@@ -923,9 +1089,51 @@
     padding-bottom: 4rem;
   }
 
+  @media (max-width: 900px) {
+    .org-stats-grid--settings {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
   @media (max-width: 640px) {
-    .profile-header-main { flex-direction: column; align-items: center; text-align: center; }
-    .profile-stats-grid { grid-template-columns: 1fr; }
+    .org-hero {
+      padding-bottom: 1.5rem;
+    }
+
+    .org-hero__banner {
+      height: 100px;
+    }
+
+    .org-hero__content {
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin-top: -40px;
+      padding: 0 1rem;
+    }
+
+    .org-hero__avatar {
+      width: 88px;
+      height: 88px;
+    }
+
+    .org-hero__info {
+      padding-top: 0.5rem;
+      padding-bottom: 0;
+    }
+
+    .org-hero__name {
+      font-size: 1.25rem;
+    }
+
+    .org-hero__tags {
+      justify-content: center;
+    }
+
+    .org-stats-grid--settings {
+      grid-template-columns: 1fr;
+    }
+
     .tab-button__label { display: none; }
     .tab-button { padding: .75rem; }
   }
@@ -1047,9 +1255,15 @@
   /* ===== Form Card ===== */
   .org-settings__form-card {
     background-color: var(--sidebar-surface);
-    border: 1px solid color-mix(in srgb, var(--sidebar-border) 75%, transparent);
-    border-radius: 12px;
+    border: 1px solid rgba(34, 211, 238, 0.15);
+    border-radius: 14px;
     overflow: hidden;
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  .org-settings__form-card:hover {
+    border-color: rgba(34, 211, 238, 0.3);
+    box-shadow: 0 0 24px rgba(34, 211, 238, 0.08);
   }
 
   .org-settings__form-row {
@@ -1213,15 +1427,15 @@
   /* ===== Feature Card ===== */
   .org-settings__feature-card {
     background-color: var(--sidebar-surface);
-    border: 1px solid color-mix(in srgb, var(--sidebar-border) 75%, transparent);
-    border-radius: 12px;
+    border: 1px solid rgba(34, 211, 238, 0.15);
+    border-radius: 14px;
     cursor: pointer;
     transition: all 200ms ease;
   }
 
   .org-settings__feature-card:hover {
-    border-color: rgba(168, 85, 247, 0.3);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    border-color: rgba(34, 211, 238, 0.35);
+    box-shadow: 0 0 24px rgba(34, 211, 238, 0.1);
   }
 
   .org-settings__feature-inner {
@@ -1848,12 +2062,18 @@
 
   .org-settings__restrictions-card {
     background-color: var(--sidebar-surface);
-    border: 1px solid color-mix(in srgb, var(--sidebar-border) 75%, transparent);
-    border-radius: 12px;
+    border: 1px solid rgba(34, 211, 238, 0.15);
+    border-radius: 14px;
     padding: 1.25rem;
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  .org-settings__restrictions-card:hover {
+    border-color: rgba(34, 211, 238, 0.3);
+    box-shadow: 0 0 20px rgba(34, 211, 238, 0.06);
   }
 
   .org-settings__restrictions-header {
@@ -1861,7 +2081,7 @@
     align-items: center;
     gap: 0.625rem;
     padding-bottom: 0.75rem;
-    border-bottom: 1px solid var(--sidebar-border);
+    border-bottom: 1px solid rgba(34, 211, 238, 0.1);
   }
 
   .org-settings__restrictions-icon {
