@@ -7,6 +7,7 @@ import { api } from '@/lib/api'
 export interface HiringPostOrganization {
   id: number
   name: string
+  slug: string | null
   logo_url: string | null
 }
 

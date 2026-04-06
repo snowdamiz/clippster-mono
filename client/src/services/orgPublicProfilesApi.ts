@@ -44,6 +44,8 @@ export interface OrgPublicProfile {
   logo_url: string | null;
   website_url: string | null;
   public_contact_email: string | null;
+  public_discord?: string | null;
+  public_telegram?: string | null;
   content_type_tags: string[];
   stats: {
     campaigns_total: number;
@@ -51,6 +53,7 @@ export interface OrgPublicProfile {
     campaigns_completed: number;
     clippers_count: number;
     streamers_count: number;
+    total_views: number;
   };
   streamers: OrgPublicStreamer[];
   social_accounts: OrgPublicSocial[];

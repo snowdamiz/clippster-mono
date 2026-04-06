@@ -19,6 +19,22 @@ defmodule ClippsterServerWeb.OrganizationPublicProfilesController do
     end
   end
 
+  @doc """
+  Public endpoint to check if an organization name is available.
+  Used by signup forms and admin org creation.
+  """
+  def check_name(conn, %{"name" => name} = params) do
+    exclude_org_id =
+      case Map.get(params, "exclude_org_id") do
+        nil -> nil
+        id when is_binary(id) -> String.to_integer(id)
+        id when is_integer(id) -> id
+      end
+
+    {:ok, available} = Organizations.is_org_name_available?(name, exclude_org_id)
+    json(conn, %{success: true, available: available})
+  end
+
   defp serialize_public_profile(payload) do
     org = payload.organization
 
@@ -31,6 +47,8 @@ defmodule ClippsterServerWeb.OrganizationPublicProfilesController do
       logo_url: maybe_presign_url(org.logo_url),
       website_url: org.website_url,
       public_contact_email: org.public_contact_email,
+      public_discord: org.public_discord,
+      public_telegram: org.public_telegram,
       content_type_tags: org.content_type_tags || [],
       stats: payload.stats,
       streamers: Enum.map(payload.streamers, &serialize_streamer/1),

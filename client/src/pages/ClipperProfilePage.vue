@@ -454,7 +454,14 @@
                 <div v-for="campaign in myCampaigns" :key="campaign.id" class="campaign-row">
                   <div class="campaign-row__main">
                     <h3 class="campaign-row__title">{{ campaign.title }}</h3>
-                    <span class="campaign-row__org">{{ campaign.organization?.name || 'Unknown' }}</span>
+                    <router-link
+                      v-if="campaign.organization?.slug"
+                      :to="{ path: `/orgs/${campaign.organization.slug}`, query: { from: $route.fullPath } }"
+                      class="campaign-row__org campaign-row__org--link"
+                    >
+                      {{ campaign.organization.name }}
+                    </router-link>
+                    <span v-else class="campaign-row__org">{{ campaign.organization?.name || 'Unknown' }}</span>
                   </div>
                   <span class="cpm-badge">${{ formatCpm(campaign.cpm) }}/1K</span>
                   <span class="status-badge" :class="`status-badge--${campaign.status}`">{{ campaign.status }}</span>
@@ -663,10 +670,27 @@
                 <div class="hiring-tab__apps-list">
                   <div v-for="app in myHiringApplications" :key="app.id" class="hiring-tab__app-card">
                     <div class="hiring-tab__app-header">
-                      <img v-if="app.hiring_post?.organization?.logo_url" :src="app.hiring_post.organization.logo_url" class="hiring-tab__org-logo" />
-                      <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      <router-link
+                        v-if="app.hiring_post?.organization?.slug"
+                        :to="{ path: `/orgs/${app.hiring_post.organization.slug}`, query: { from: $route.fullPath } }"
+                        class="hiring-tab__org-block hiring-tab__org-block--link"
+                      >
+                        <img v-if="app.hiring_post.organization.logo_url" :src="app.hiring_post.organization.logo_url" class="hiring-tab__org-logo" />
+                        <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      </router-link>
+                      <template v-else>
+                        <img v-if="app.hiring_post?.organization?.logo_url" :src="app.hiring_post.organization.logo_url" class="hiring-tab__org-logo" />
+                        <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      </template>
                       <div class="hiring-tab__app-info">
-                        <div class="hiring-tab__app-org">{{ app.hiring_post?.organization?.name || 'Organization' }}</div>
+                        <router-link
+                          v-if="app.hiring_post?.organization?.slug"
+                          :to="{ path: `/orgs/${app.hiring_post.organization.slug}`, query: { from: $route.fullPath } }"
+                          class="hiring-tab__app-org hiring-tab__app-org--link"
+                        >
+                          {{ app.hiring_post.organization.name }}
+                        </router-link>
+                        <div v-else class="hiring-tab__app-org">{{ app.hiring_post?.organization?.name || 'Organization' }}</div>
                         <div class="hiring-tab__app-title">{{ app.hiring_post?.title }}</div>
                       </div>
                       <span
@@ -710,10 +734,27 @@
                 <div v-else class="hiring-tab__grid">
                   <div v-for="post in hiringPosts" :key="post.id" class="hiring-tab__card">
                     <div class="hiring-tab__card-header">
-                      <img v-if="post.organization?.logo_url" :src="post.organization.logo_url" class="hiring-tab__org-logo" />
-                      <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      <router-link
+                        v-if="post.organization?.slug"
+                        :to="{ path: `/orgs/${post.organization.slug}`, query: { from: $route.fullPath } }"
+                        class="hiring-tab__org-block hiring-tab__org-block--link"
+                      >
+                        <img v-if="post.organization.logo_url" :src="post.organization.logo_url" class="hiring-tab__org-logo" />
+                        <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      </router-link>
+                      <template v-else>
+                        <img v-if="post.organization?.logo_url" :src="post.organization.logo_url" class="hiring-tab__org-logo" />
+                        <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      </template>
                       <div class="hiring-tab__card-org">
-                        <div class="hiring-tab__card-org-name">{{ post.organization?.name }}</div>
+                        <router-link
+                          v-if="post.organization?.slug"
+                          :to="{ path: `/orgs/${post.organization.slug}`, query: { from: $route.fullPath } }"
+                          class="hiring-tab__card-org-name hiring-tab__card-org-name--link"
+                        >
+                          {{ post.organization.name }}
+                        </router-link>
+                        <div v-else class="hiring-tab__card-org-name">{{ post.organization?.name }}</div>
                         <div class="hiring-tab__card-title">{{ post.title }}</div>
                       </div>
                     </div>
@@ -4144,6 +4185,15 @@
     color: var(--sidebar-text-muted);
   }
 
+  .campaign-row__org--link {
+    color: var(--sidebar-accent);
+    text-decoration: none;
+  }
+
+  .campaign-row__org--link:hover {
+    text-decoration: underline;
+  }
+
   .campaign-row__date {
     font-size: 0.6875rem;
     color: var(--sidebar-text-muted);
@@ -4858,10 +4908,38 @@
     border: 1px solid var(--sidebar-border); background: var(--sidebar-hover);
   }
   .hiring-tab__app-header { display: flex; align-items: center; gap: 0.75rem; }
+  .hiring-tab__org-block {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    border-radius: 6px;
+  }
+
+  .hiring-tab__org-block--link {
+    text-decoration: none;
+    color: inherit;
+    transition: opacity 0.15s;
+  }
+
+  .hiring-tab__org-block--link:hover {
+    opacity: 0.85;
+  }
+
   .hiring-tab__org-logo { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
   .hiring-tab__org-logo-placeholder { width: 32px; height: 32px; color: var(--sidebar-text-muted); flex-shrink: 0; }
   .hiring-tab__app-info { flex: 1; min-width: 0; }
   .hiring-tab__app-org { font-size: 0.75rem; color: var(--sidebar-text-muted); }
+
+  .hiring-tab__app-org--link {
+    display: inline-block;
+    color: var(--sidebar-accent);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .hiring-tab__app-org--link:hover {
+    text-decoration: underline;
+  }
   .hiring-tab__app-title { font-size: 0.875rem; font-weight: 600; color: var(--sidebar-text); }
   .hiring-tab__status {
     padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.625rem;
@@ -4893,6 +4971,17 @@
   .hiring-tab__card-header { display: flex; align-items: center; gap: 0.75rem; }
   .hiring-tab__card-org { flex: 1; min-width: 0; }
   .hiring-tab__card-org-name { font-size: 0.75rem; color: var(--sidebar-text-muted); }
+
+  .hiring-tab__card-org-name--link {
+    display: inline-block;
+    color: var(--sidebar-accent);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .hiring-tab__card-org-name--link:hover {
+    text-decoration: underline;
+  }
   .hiring-tab__card-title { font-size: 0.9375rem; font-weight: 600; color: var(--sidebar-text); }
   .hiring-tab__card-desc {
     font-size: 0.8125rem; color: var(--sidebar-text-muted); line-height: 1.5;

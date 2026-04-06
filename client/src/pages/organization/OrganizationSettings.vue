@@ -49,7 +49,7 @@
               <div class="profile-name-row">
                 <h1 class="profile-name">{{ organization?.name || 'Organization' }}</h1>
               </div>
-              <p class="profile-bio">{{ editData.bio || editData.description || 'Add your organization info for members and applicants.' }}</p>
+              <p class="profile-bio">{{ editData.description || 'Add a short description of your organization.' }}</p>
               <div v-if="editData.content_type_tags?.length" class="profile-tags">
                 <span v-for="tag in editData.content_type_tags.slice(0, 8)" :key="tag" class="profile-tag">{{ SPECIALTY_TAGS.find((t) => t.value === tag)?.label || tag }}</span>
               </div>
@@ -346,92 +346,155 @@
       </div>
     </div>
 
-    <!-- Delete Confirmation Modal -->
+    <!-- Edit organization profile (matches BugReportDialog layout) -->
     <Teleport to="body">
       <Transition name="modal">
         <div v-if="showEditProfileDialog" class="org-dialog__overlay" @click.self="showEditProfileDialog = false">
           <Transition name="dialog" appear>
-            <div class="org-dialog">
+            <div
+              v-if="showEditProfileDialog"
+              class="org-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="org-edit-profile-title"
+            >
+              <div class="org-dialog__accent org-dialog__accent--default"></div>
               <div class="org-dialog__header">
                 <button class="org-dialog__close" @click="showEditProfileDialog = false" :disabled="saving" title="Close">
                   <X :size="18" />
                 </button>
-                <div class="org-dialog__icon"><Building2 :size="24" /></div>
-                <h2 class="org-dialog__title">Edit Organization Profile</h2>
+                <div class="org-dialog__icon org-dialog__icon--accent">
+                  <Building2 :size="24" />
+                </div>
+                <h2 id="org-edit-profile-title" class="org-dialog__title">Edit Organization Profile</h2>
                 <p class="org-dialog__subtitle">Update your public organization information</p>
               </div>
-              <div class="org-dialog__content">
-                <!-- Basic Information Section -->
-                <div class="org-dialog__section">
-                  <h3 class="org-dialog__section-title">Basic Information</h3>
-                  
-                  <div class="org-settings__form-group">
-                    <label class="org-settings__form-label">Organization Logo</label>
-                    <div class="org-settings__logo-row">
-                      <div class="org-settings__logo-preview">
-                        <img v-if="organization?.logo_url && !logoLoadError" :src="organization.logo_url" class="org-settings__logo-img" @error="logoLoadError = true" />
-                        <Building2 v-else class="org-settings__logo-placeholder" />
-                        <div v-if="uploadingLogo" class="org-settings__logo-loading"><Loader2 class="org-settings__logo-spinner" /></div>
+              <div class="org-dialog__content org-dialog__content--scroll">
+                <form class="org-dialog__form" @submit.prevent="saveAndCloseProfileDialog">
+                  <!-- Basic Information -->
+                  <div class="org-dialog__section">
+                    <h3 class="org-dialog__section-title">Basic Information</h3>
+
+                    <div class="org-dialog__field">
+                      <span class="org-dialog__label">Organization Logo</span>
+                      <div class="org-settings__logo-row">
+                        <div class="org-settings__logo-preview">
+                          <img v-if="organization?.logo_url && !logoLoadError" :src="organization.logo_url" class="org-settings__logo-img" @error="logoLoadError = true" />
+                          <Building2 v-else class="org-settings__logo-placeholder" />
+                          <div v-if="uploadingLogo" class="org-settings__logo-loading"><Loader2 class="org-settings__logo-spinner" /></div>
+                        </div>
+                        <div class="org-settings__logo-actions">
+                          <input ref="logoInputRef" type="file" accept="image/jpeg,image/png,image/gif,image/webp" class="org-settings__file-input" @change="handleLogoUpload" />
+                          <button type="button" @click="($refs.logoInputRef as HTMLInputElement)?.click()" :disabled="uploadingLogo" class="org-settings__upload-btn">
+                            <Upload class="org-settings__upload-icon" />
+                            {{ organization?.logo_url ? 'Change Logo' : 'Upload Logo' }}
+                          </button>
+                          <p class="org-settings__logo-hint">JPEG, PNG, GIF, or WebP. Max 5MB.</p>
+                        </div>
                       </div>
-                      <div class="org-settings__logo-actions">
-                        <input ref="logoInputRef" type="file" accept="image/jpeg,image/png,image/gif,image/webp" class="org-settings__file-input" @change="handleLogoUpload" />
-                        <button type="button" @click="($refs.logoInputRef as HTMLInputElement)?.click()" :disabled="uploadingLogo" class="org-settings__upload-btn">
-                          <Upload class="org-settings__upload-icon" />
-                          {{ organization?.logo_url ? 'Change Logo' : 'Upload Logo' }}
+                    </div>
+
+                    <div class="org-dialog__field">
+                      <label for="org-edit-name" class="org-dialog__label">Organization Name</label>
+                      <input id="org-edit-name" v-model="editData.name" type="text" class="org-dialog__input" placeholder="Enter organization name" />
+                    </div>
+
+                    <div class="org-dialog__field">
+                      <label for="org-edit-description" class="org-dialog__label">Short Description</label>
+                      <textarea
+                        id="org-edit-description"
+                        v-model="editData.description"
+                        rows="3"
+                        class="org-dialog__input org-dialog__textarea org-dialog__textarea--sm"
+                        :maxlength="200"
+                        placeholder="A short tagline for your organization..."
+                      />
+                      <p class="org-dialog__hint">{{ (editData.description || '').length }}/200 characters</p>
+                    </div>
+                  </div>
+
+                  <!-- Contact & Details -->
+                  <div class="org-dialog__section">
+                    <h3 class="org-dialog__section-title">Contact & Details</h3>
+
+                    <div class="org-dialog__field">
+                      <label for="org-edit-website" class="org-dialog__label">Website URL</label>
+                      <input id="org-edit-website" v-model="editData.website_url" type="text" class="org-dialog__input" placeholder="https://yourwebsite.com" />
+                    </div>
+
+                    <div class="org-dialog__field">
+                      <label for="org-edit-email" class="org-dialog__label">Public Contact Email</label>
+                      <input id="org-edit-email" v-model="editData.public_contact_email" type="email" class="org-dialog__input" placeholder="contact@yourorg.com" />
+                    </div>
+
+                    <div class="org-dialog__field">
+                      <label for="org-edit-discord" class="org-dialog__label">Discord</label>
+                      <input
+                        id="org-edit-discord"
+                        v-model="editData.public_discord"
+                        type="text"
+                        class="org-dialog__input"
+                        placeholder="Invite link (discord.gg/…), server URL, or invite code"
+                        maxlength="500"
+                      />
+                    </div>
+
+                    <div class="org-dialog__field">
+                      <label for="org-edit-telegram" class="org-dialog__label">Telegram</label>
+                      <input
+                        id="org-edit-telegram"
+                        v-model="editData.public_telegram"
+                        type="text"
+                        class="org-dialog__input"
+                        placeholder="@username or https://t.me/username"
+                        maxlength="500"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- About -->
+                  <div class="org-dialog__section">
+                    <h3 class="org-dialog__section-title">About</h3>
+
+                    <div class="org-dialog__field">
+                      <label for="org-edit-bio" class="org-dialog__label">Bio</label>
+                      <textarea
+                        id="org-edit-bio"
+                        v-model="editData.bio"
+                        rows="6"
+                        class="org-dialog__input org-dialog__textarea"
+                        placeholder="Tell clippers more about your organization, your mission, what kind of content you create..."
+                      />
+                      <p class="org-dialog__hint">{{ (editData.bio || '').length }}/1200 characters · Displayed as a section on your public profile</p>
+                    </div>
+                  </div>
+
+                  <!-- Content specialties -->
+                  <div class="org-dialog__section">
+                    <h3 class="org-dialog__section-title">Content Specialties</h3>
+
+                    <div class="org-dialog__field">
+                      <span class="org-dialog__label">Content Types</span>
+                      <div class="hw__tags">
+                        <button
+                          v-for="tag in SPECIALTY_TAGS"
+                          :key="tag.value"
+                          type="button"
+                          class="hw__tag"
+                          :class="{ 'hw__tag--selected': editData.content_type_tags.includes(tag.value) }"
+                          @click="toggleArrayTag(tag.value)"
+                        >
+                          {{ tag.label }}
                         </button>
-                        <p class="org-settings__logo-hint">JPEG, PNG, GIF, or WebP. Max 5MB.</p>
                       </div>
                     </div>
                   </div>
-
-                  <div class="org-settings__form-group">
-                    <label class="org-settings__form-label">Organization Name</label>
-                    <input v-model="editData.name" type="text" class="org-settings__form-input" placeholder="Enter organization name" />
-                  </div>
-
-                  <div class="org-settings__form-group">
-                    <label class="org-settings__form-label">Bio</label>
-                    <textarea v-model="editData.bio" rows="4" class="org-settings__form-textarea" placeholder="Tell clippers about your organization..." />
-                    <p class="org-settings__form-hint">{{ (editData.bio || '').length }}/500 characters</p>
-                  </div>
-                </div>
-
-                <!-- Contact & Details Section -->
-                <div class="org-dialog__section">
-                  <h3 class="org-dialog__section-title">Contact & Details</h3>
-                  
-                  <div class="org-settings__form-group">
-                    <label class="org-settings__form-label">Website URL</label>
-                    <input v-model="editData.website_url" type="text" class="org-settings__form-input" placeholder="https://yourwebsite.com" />
-                  </div>
-
-                  <div class="org-settings__form-group">
-                    <label class="org-settings__form-label">Public Contact Email</label>
-                    <input v-model="editData.public_contact_email" type="email" class="org-settings__form-input" placeholder="contact@yourorg.com" />
-                  </div>
-
-                  <div class="org-settings__form-group">
-                    <label class="org-settings__form-label">Description</label>
-                    <textarea v-model="editData.description" rows="3" class="org-settings__form-textarea" placeholder="A brief description for internal use..." />
-                  </div>
-                </div>
-
-                <!-- Content Type Section -->
-                <div class="org-dialog__section">
-                  <h3 class="org-dialog__section-title">Content Specialties</h3>
-                  
-                  <div class="org-settings__form-group">
-                    <label class="org-settings__form-label">Content Types</label>
-                    <div class="hw__tags">
-                      <button v-for="tag in SPECIALTY_TAGS" :key="tag.value" type="button" class="hw__tag" :class="{ 'hw__tag--selected': editData.content_type_tags.includes(tag.value) }" @click="toggleArrayTag(tag.value)">{{ tag.label }}</button>
-                    </div>
-                  </div>
-                </div>
+                </form>
               </div>
               <div class="org-dialog__footer">
-                <button class="org-dialog__btn org-dialog__btn--secondary" @click="showEditProfileDialog = false" :disabled="saving">Cancel</button>
-                <button class="org-dialog__btn org-dialog__btn--primary" @click="saveAndCloseProfileDialog" :disabled="saving">
-                  <Loader2 v-if="saving" class="org-dialog__btn-spinner" />
+                <button type="button" class="org-dialog__btn org-dialog__btn--secondary" @click="showEditProfileDialog = false" :disabled="saving">Cancel</button>
+                <button type="button" class="org-dialog__btn org-dialog__btn--primary" :disabled="saving" @click="saveAndCloseProfileDialog">
+                  <Loader2 v-if="saving" :size="16" class="org-dialog__btn-spinner" />
                   {{ saving ? 'Saving...' : 'Save Profile' }}
                 </button>
               </div>
@@ -445,7 +508,7 @@
       <Transition name="modal">
         <div v-if="showDeleteConfirm" class="org-dialog__overlay" @click.self="showDeleteConfirm = false">
           <Transition name="dialog" appear>
-            <div class="org-dialog org-dialog--red">
+            <div v-if="showDeleteConfirm" class="org-dialog org-dialog--red" role="dialog" aria-modal="true">
               <div class="org-dialog__accent org-dialog__accent--red"></div>
               <div class="org-dialog__header">
                 <button class="org-dialog__close" @click="showDeleteConfirm = false" title="Close" :disabled="deleting">
@@ -549,6 +612,8 @@
     bio: '',
     website_url: '',
     public_contact_email: '',
+    public_discord: '',
+    public_telegram: '',
     content_type_tags: [] as string[],
     settings: {
       allow_ai: true,
@@ -587,6 +652,8 @@
           bio: org.bio || '',
           website_url: org.website_url || '',
           public_contact_email: org.public_contact_email || '',
+          public_discord: org.public_discord || '',
+          public_telegram: org.public_telegram || '',
           content_type_tags: org.content_type_tags || [],
           settings: {
             allow_ai: orgSettings.allow_ai !== false,
@@ -634,6 +701,8 @@
       editData.value.bio !== (organization.value.bio || '') ||
       editData.value.website_url !== (organization.value.website_url || '') ||
       editData.value.public_contact_email !== (organization.value.public_contact_email || '') ||
+      editData.value.public_discord !== (organization.value.public_discord || '') ||
+      editData.value.public_telegram !== (organization.value.public_telegram || '') ||
       JSON.stringify(editData.value.content_type_tags) !== JSON.stringify(organization.value.content_type_tags || []) ||
       editData.value.settings.allow_ai !== currentAllowAi ||
       restrictionsChanged
@@ -1374,7 +1443,7 @@
     animation: spin 0.8s linear infinite;
   }
 
-  /* ===== Dialog Overlay ===== */
+  /* ===== Dialog Overlay (aligned with BugReportDialog) ===== */
   .org-dialog__overlay {
     position: fixed;
     inset: 0;
@@ -1383,7 +1452,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 60;
+    z-index: 9999;
   }
 
   /* ===== Dialog Container ===== */
@@ -1392,7 +1461,7 @@
     border: 1px solid var(--sidebar-border);
     border-radius: 12px;
     width: 100%;
-    max-width: 440px;
+    max-width: 480px;
     margin: 1rem;
     max-height: 85vh;
     display: flex;
@@ -1405,6 +1474,10 @@
   .org-dialog__accent {
     height: 3px;
     flex-shrink: 0;
+  }
+
+  .org-dialog__accent--default {
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
   }
 
   .org-dialog__accent--red {
@@ -1458,6 +1531,11 @@
     margin-bottom: 0.875rem;
   }
 
+  .org-dialog__icon--accent {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
   .org-dialog__icon--red {
     background-color: rgba(239, 68, 68, 0.15);
     color: #f87171;
@@ -1484,19 +1562,100 @@
     padding: 0 1.5rem;
   }
 
-  .org-dialog__section {
-    margin-bottom: 2rem;
+  .org-dialog__content--scroll {
+    padding: 0.5rem 1.5rem 1.5rem;
   }
 
-  .org-dialog__section:last-child {
-    margin-bottom: 0;
+  .org-dialog__content--scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .org-dialog__content--scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .org-dialog__content--scroll::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .org-dialog__form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .org-dialog__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .org-dialog__label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .org-dialog__hint {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .org-dialog__input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .org-dialog__input::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .org-dialog__input:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .org-dialog--red .org-dialog__input:focus {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15);
+  }
+
+  .org-dialog__textarea {
+    resize: none;
+    min-height: 80px;
+    line-height: 1.5;
+  }
+
+  .org-dialog__textarea--sm {
+    min-height: 60px;
+  }
+
+  .org-dialog__section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin: 0;
   }
 
   .org-dialog__section-title {
-    font-size: 1rem;
+    font-size: 0.875rem;
     font-weight: 600;
     color: var(--sidebar-text);
-    margin: 0 0 1rem;
+    margin: 0;
     letter-spacing: -0.01em;
   }
 
@@ -1564,35 +1723,13 @@
     color: var(--sidebar-text);
   }
 
-  .org-dialog__input {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .org-dialog__input::placeholder {
-    color: var(--sidebar-text-muted);
-    opacity: 0.5;
-  }
-
-  .org-dialog__input:focus {
-    outline: none;
-    border-color: #ef4444;
-    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15);
-  }
-
   /* ===== Dialog Footer ===== */
   .org-dialog__footer {
     display: flex;
     gap: 0.625rem;
     padding: 1.25rem 1.5rem;
     border-top: 1px solid var(--sidebar-border);
-    margin-top: 1rem;
+    flex-shrink: 0;
   }
 
   .org-dialog__btn {
