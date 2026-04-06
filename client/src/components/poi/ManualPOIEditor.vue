@@ -36,9 +36,41 @@
             <!-- Main Content - Side by Side Panels -->
             <div class="flex-1 overflow-hidden flex flex-col">
               <div class="flex-1 flex overflow-hidden">
-                <!-- Source Panel (Left) -->
-                <div class="flex-1 border-r border-zinc-800">
+                <!-- Source Panel (Left) — swapped for text box settings when editing -->
+                <div class="flex-1 border-r border-zinc-800 min-h-0 flex flex-col overflow-hidden">
+                  <template v-if="textBoxSettingsMode && clipTextLocal">
+                    <div
+                      class="flex items-center justify-between gap-2 px-3 py-2 border-b border-zinc-800 shrink-0 bg-zinc-900/80"
+                    >
+                      <span class="text-sm font-medium text-white">Text box</span>
+                      <div class="flex items-center gap-2">
+                        <button
+                          type="button"
+                          class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600 text-zinc-300 hover:bg-zinc-800"
+                          @click="cancelTextBoxSettings"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          class="px-2.5 py-1 text-xs rounded-lg bg-amber-600 text-white hover:bg-amber-500"
+                          @click="doneTextBoxSettings"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    </div>
+                    <ClipTextBoxPropertiesPanel
+                      class="flex-1 min-h-0 overflow-hidden"
+                      variant="embedded"
+                      :state="clipTextLocal"
+                      :clip-duration="clipDuration"
+                      @update-state="onClipTextPanelPatch"
+                      @close="doneTextBoxSettings"
+                    />
+                  </template>
                   <POISourcePanel
+                    v-else
                     :regions="regions"
                     :selected-region-id="selectedRegionId"
                     :thumbnail-url="thumbnailUrl"
@@ -85,11 +117,14 @@
                     :transcript-words="transcriptWords"
                     :transcript-segments="transcriptSegments"
                     :initial-source-framing="targetPanelInitialFraming"
+                    :clip-text-box-display="clipTextBoxForTarget"
+                    :clip-text-box-positioning-enabled="clipTextBoxPositioningActive"
                     @update-region="updateRegion"
                     @select-region="selectRegion"
                     @update-source-transform="handleSourceTransformUpdate"
                     @subtitlePositionChange="onSubtitlePositionChange"
                     @subtitleSettingsChange="onSubtitleSettingsChange"
+                    @clipTextBoxPositionChange="onClipTextBoxPositionChange"
                   />
                 </div>
               </div>
@@ -284,12 +319,41 @@
               </div>
             </div>
 
+            <!-- Clip text box (per-clip pill) — optional POI authoring -->
+            <div v-if="clipId" class="border-t border-zinc-800">
+              <div class="px-4 py-2 bg-zinc-900/50">
+                <div class="flex items-center gap-3">
+                  <input
+                    v-model="clipTextPositioningEnabled"
+                    type="checkbox"
+                    :disabled="!clipTextLocal?.enabled"
+                    class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-amber-500 focus:ring-amber-500 focus:ring-offset-0 shrink-0"
+                  />
+                  <Type class="h-4 w-4 text-amber-400 shrink-0" />
+                  <div class="flex-1 min-w-0">
+                    <span class="text-sm font-medium text-white">Clip text box</span>
+                    <span v-if="clipTextPositioningActive" class="text-[10px] text-zinc-400 ml-2">
+                      · Drag on export preview · corners resize width
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    class="shrink-0 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-600"
+                    @click="openTextBoxSettings"
+                  >
+                    {{ clipTextLocal?.enabled ? 'Edit…' : 'Add text' }}
+                  </button>
+                  <span class="text-[10px] text-zinc-500 shrink-0 font-mono">{{ targetAspectRatio }}</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Footer -->
             <div class="flex items-center justify-between px-4 py-2.5 border-t border-zinc-800 bg-zinc-900/50">
               <div class="text-sm text-zinc-400">
                 <span v-if="!canApplyFraming" class="text-amber-400">
                   <AlertCircleIcon class="w-4 h-4 inline mr-1" />
-                  Add at least one region or enable Scale 16:9 / Use 16:9
+                  Add a region, enable Scale 16:9 / Use 16:9, or enable the clip text box
                 </span>
                 <span v-else-if="sourceFrameMode !== 'none' && regions.length === 0" class="text-zinc-500">
                   {{ sourceFrameMode === 'use16x9' ? 'Use 16:9' : 'Scale 16:9' }} configured
@@ -352,11 +416,13 @@
     RotateCcwIcon,
     CaptionsIcon,
     ChevronDownIcon,
+    Type,
   } from 'lucide-vue-next';
   import Hls from 'hls.js';
   import POISourcePanel from './POISourcePanel.vue';
   import POITargetPanel from './POITargetPanel.vue';
   import POISegmentTimeline from './POISegmentTimeline.vue';
+  import ClipTextBoxPropertiesPanel from '@/components/ClipTextBoxPropertiesPanel.vue';
   import type {
     ManualRegion,
     ManualFramingConfig,
@@ -368,6 +434,14 @@
     SubtitleSettings,
   } from '@/types';
   import { utf8ToBase64 } from '@/utils/encoding';
+  import type { ClipTextBoxState } from '@/utils/clipTextBox';
+  import {
+    createDefaultClipTextBoxState,
+    mergeClipTextBoxForRatio,
+    parseClipTextOverlayJson,
+    serializeClipTextBoxState,
+    upsertClipTextPerRatioGeometry,
+  } from '@/utils/clipTextBox';
 
   // Animation styles shown in the subtitle section (matches SubtitlePropertiesPanel)
   const ANIMATION_STYLES = [
@@ -449,6 +523,9 @@
     // Optional transcript data for subtitle rendering
     transcriptWords?: WordInfo[];
     transcriptSegments?: WhisperSegment[];
+    clipId?: string | null;
+    /** Raw JSON from clips.clip_text_overlay */
+    clipTextOverlayJson?: string | null;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -461,6 +538,8 @@
     subtitlePositionOverride: null,
     transcriptWords: () => [],
     transcriptSegments: () => [],
+    clipId: null,
+    clipTextOverlayJson: null,
   });
 
   const emit = defineEmits<{
@@ -468,6 +547,7 @@
     confirm: [config: ManualFramingConfig];
     subtitlePositionChange: [position: { x: number; y: number; width?: number; presetId?: string }];
     subtitleSettingsChange: [settings: SubtitleSettings];
+    clipTextOverlayChange: [json: string | null];
   }>();
 
   // Local state
@@ -491,7 +571,37 @@
     () =>
       regions.value.length > 0 ||
       baseRegions.value.length > 0 ||
-      sourceFrameMode.value !== 'none'
+      sourceFrameMode.value !== 'none' ||
+      Boolean(clipTextLocal.value?.enabled)
+  );
+
+  const textBoxSettingsMode = ref(false);
+  const textBoxRevertJson = ref<string | null>(null);
+  const clipTextLocal = ref<ClipTextBoxState | null>(null);
+  const clipTextPositioningEnabled = ref(false);
+
+  const clipTextBoxForTarget = computed(() => {
+    if (!clipTextLocal.value?.enabled) return null;
+    return mergeClipTextBoxForRatio(clipTextLocal.value, props.targetAspectRatio);
+  });
+
+  const clipTextBoxPositioningActive = computed(
+    () => Boolean(clipTextLocal.value?.enabled && clipTextPositioningEnabled.value)
+  );
+
+  watch(
+    () => [props.modelValue, props.clipTextOverlayJson] as const,
+    ([open, raw]) => {
+      if (!open) {
+        textBoxSettingsMode.value = false;
+        return;
+      }
+      clipTextLocal.value = parseClipTextOverlayJson(raw);
+      if (clipTextLocal.value?.enabled) {
+        clipTextPositioningEnabled.value = true;
+      }
+    },
+    { immediate: true }
   );
 
   const targetPanelInitialFraming = computed((): ManualSourceFramingPayload | null => {
@@ -1016,6 +1126,72 @@
     emit('subtitleSettingsChange', { ...settings });
   }
 
+  async function persistClipTextToDb() {
+    if (!props.clipId || !clipTextLocal.value) return;
+    const { updateClipTextOverlay } = await import('@/services/database/clips');
+    await updateClipTextOverlay(props.clipId, clipTextLocal.value);
+    emit('clipTextOverlayChange', serializeClipTextBoxState(clipTextLocal.value));
+  }
+
+  async function persistClipTextClearDb() {
+    if (!props.clipId) return;
+    const { updateClipTextOverlay } = await import('@/services/database/clips');
+    await updateClipTextOverlay(props.clipId, null);
+    emit('clipTextOverlayChange', null);
+  }
+
+  function onClipTextPanelPatch(patch: Partial<ClipTextBoxState>) {
+    if (!clipTextLocal.value) return;
+    const cur = clipTextLocal.value;
+    const mergedStyle = patch.style
+      ? ({ ...cur.style, ...patch.style } as import('@/types').TextOverlayStyle)
+      : cur.style;
+    clipTextLocal.value = { ...cur, ...patch, style: mergedStyle };
+    void persistClipTextToDb();
+  }
+
+  function onClipTextBoxPositionChange(payload: {
+    x: number;
+    y: number;
+    widthPct: number;
+    fontSize?: number;
+  }) {
+    if (!clipTextLocal.value) return;
+    clipTextLocal.value = upsertClipTextPerRatioGeometry(
+      clipTextLocal.value,
+      props.targetAspectRatio,
+      payload
+    );
+    void persistClipTextToDb();
+  }
+
+  async function openTextBoxSettings() {
+    textBoxRevertJson.value =
+      clipTextLocal.value == null ? null : serializeClipTextBoxState(clipTextLocal.value);
+    if (!clipTextLocal.value) {
+      clipTextLocal.value = createDefaultClipTextBoxState(clipDuration.value);
+    }
+    textBoxSettingsMode.value = true;
+    clipTextPositioningEnabled.value = true;
+    await persistClipTextToDb();
+  }
+
+  function doneTextBoxSettings() {
+    textBoxSettingsMode.value = false;
+  }
+
+  async function cancelTextBoxSettings() {
+    const revert = textBoxRevertJson.value;
+    if (revert == null) {
+      clipTextLocal.value = null;
+      await persistClipTextClearDb();
+    } else {
+      clipTextLocal.value = parseClipTextOverlayJson(revert);
+      if (clipTextLocal.value) await persistClipTextToDb();
+    }
+    textBoxSettingsMode.value = false;
+  }
+
   // Get default settings for a specific animation style
   function getStyleDefaults(styleId: string): Partial<SubtitleSettings> {
     const defaults: Record<string, Partial<SubtitleSettings>> = {
@@ -1352,6 +1528,7 @@
 
   // Close the dialog
   function close() {
+    textBoxSettingsMode.value = false;
     emit('update:modelValue', false);
   }
 

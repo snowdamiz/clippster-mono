@@ -2459,6 +2459,8 @@
 
       // Load audio settings for the project
       const { getProjectAudioSettings, getFullClipEdit } = await import('@/services/database');
+      const { getClip } = await import('@/services/database/clips');
+      const { parseClipTextOverlayJson, clipTextBoxToExportPayload } = await import('@/utils/clipTextBox');
       let audioSettings = null;
       let videoFilterSegments = null; // Time-based video filter segments from clip editor
       let textOverlaysForExport: Array<{
@@ -2614,6 +2616,16 @@
             perRatioConfigs: overlay.per_ratio_configs_data ? JSON.parse(overlay.per_ratio_configs_data) : undefined,
           }));
           console.log('[ClipsTab] Loaded text overlays for export:', textOverlaysForExport.length);
+        }
+
+        const clipRowForText = await getClip(clip.id);
+        const clipTextBoxState = parseClipTextOverlayJson(clipRowForText?.clip_text_overlay);
+        if (clipTextBoxState?.enabled) {
+          const clipBoxPayload = clipTextBoxToExportPayload(clip.id, clipTextBoxState);
+          textOverlaysForExport = textOverlaysForExport
+            ? [...textOverlaysForExport, clipBoxPayload]
+            : [clipBoxPayload];
+          console.log('[ClipsTab] Merged workspace/POI clip text box for export');
         }
 
         // Extract stickers for burning into video
@@ -2788,7 +2800,7 @@
 
       // Refresh clip data from database to get latest subtitle settings
       // (user may have changed settings in POI editor during this session)
-      const { getClip } = await import('@/services/database/clips');
+      // getClip already imported above in this function (clip edit / text overlay load)
       const freshClipData = await getClip(clip.id);
       let effectiveSubtitleSettings: SubtitleSettings | null = null;
       

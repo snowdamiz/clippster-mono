@@ -50,6 +50,11 @@ pub fn needs_advanced_rendering(overlay: &TextOverlaySettings, aspect_ratio: &st
                 return true;
             }
         }
+
+        // Filled rounded box (ASS path does not match pill preview reliably)
+        if s.background_enabled {
+            return true;
+        }
     }
 
     false

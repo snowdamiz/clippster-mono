@@ -808,9 +808,12 @@
       :subtitle-position-override="getSubtitlePositionForRatio(editingAspectRatio)"
       :transcript-words="transcriptWords"
       :transcript-segments="transcriptSegments"
+      :clip-id="clip?.id ?? null"
+      :clip-text-overlay-json="clipTextOverlayRaw"
       @confirm="onManualConfigConfirm"
       @subtitlePositionChange="onSubtitlePositionChange"
       @subtitleSettingsChange="onSubtitleSettingsChange"
+      @clip-text-overlay-change="onClipTextOverlayChange"
     />
 
     <!-- Subtitle Adjustment Dialog -->
@@ -857,6 +860,7 @@
   import { useFreeTierLimits } from '@/composables/useFreeTierLimits';
   import { useTranscriptData } from '@/composables/useTranscriptData';
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
+  import { parseClipTextOverlayJson } from '@/utils/clipTextBox';
   import SubtitleAdjustmentDialog from './SubtitleAdjustmentDialog.vue';
   import {
     getMyGlobalBrandingCampaigns,
@@ -1026,6 +1030,8 @@
   const framingMode = ref<'auto' | 'manual'>('manual');
   const manualFramingConfigs = ref<import('@/types').ManualFramingConfigs>({});
   const showManualPOIEditor = ref(false);
+  /** Synced from DB on dialog open; updated when POI editor persists clip text box */
+  const clipTextOverlayRaw = ref<string | null>(null);
   const editingAspectRatio = ref<string>('9:16');
   const videoFrameUrl = ref<string | null>(null);
   const loadingVideoFrame = ref(false);
@@ -1140,11 +1146,20 @@
     return effectiveSubtitleSettings.value?.enabled && selectedRatios.value.length > 0;
   });
 
-  // Visible steps (framing step shown when portrait ratios selected OR subtitles enabled)
+  const hasClipTextBoxEnabled = computed(() => {
+    const s = parseClipTextOverlayJson(clipTextOverlayRaw.value);
+    return Boolean(s?.enabled);
+  });
+
+  // Visible steps (framing step shown when portrait ratios selected OR subtitles OR clip text box)
   const visibleSteps = computed(() => {
     return allSteps.filter((step) => {
       if (step.id === 'framing') {
-        return hasPortraitRatio.value || hasSubtitlesEnabled.value;
+        return (
+          hasPortraitRatio.value ||
+          hasSubtitlesEnabled.value ||
+          hasClipTextBoxEnabled.value
+        );
       }
       return true;
     });
@@ -1335,6 +1350,17 @@
         subtitleOverrides.value = {};
         showSubtitleAdjustmentDialog.value = false;
 
+        clipTextOverlayRaw.value = null;
+        if (props.clip?.id) {
+          try {
+            const { getClip } = await import('@/services/database/clips');
+            const row = await getClip(props.clip.id);
+            clipTextOverlayRaw.value = row?.clip_text_overlay ?? null;
+          } catch (e) {
+            console.warn('[ClipBuildSettingsDialog] Failed to load clip_text_overlay:', e);
+          }
+        }
+
         if (intros.value.length === 0 && outros.value.length === 0) {
           await loadIntroOutros();
         }
@@ -1402,7 +1428,8 @@
 
   // Handle case where framing step becomes hidden while user is on it
   watch(
-    () => hasPortraitRatio.value || hasSubtitlesEnabled.value,
+    () =>
+      hasPortraitRatio.value || hasSubtitlesEnabled.value || hasClipTextBoxEnabled.value,
     (showFramingStep) => {
       if (!showFramingStep && currentStep.value === 'framing') {
         // Skip to export step if framing step is no longer needed
@@ -1410,6 +1437,10 @@
       }
     }
   );
+
+  function onClipTextOverlayChange(json: string | null) {
+    clipTextOverlayRaw.value = json;
+  }
 
   // Get subtitle override for a specific ratio, falling back to project defaults
   function getSubtitleOverrideForRatio(ratio: string): SubtitleOverride {

@@ -431,6 +431,9 @@ export function useClipBuildPipeline() {
         completeUnlisten();
       }
 
+      const { getClipTextBoxOverlaysForExport } = await import('@/utils/clipTextBox');
+      const textOverlaysFromClipBox = await getClipTextBoxOverlaysForExport(clipId);
+
       const buildCompletePromise = new Promise<void>((resolve, reject) => {
         listen<{
           clip_id: string;
@@ -512,7 +515,7 @@ export function useClipBuildPipeline() {
         manualFramingConfigs: settings.manualFramingConfigs || null,
         segmentFramingConfigs: null,
         videoFilterSegments: null,
-        textOverlays: null,
+        textOverlays: textOverlaysFromClipBox,
         stickers: null,
         clipWatermarks: null,
         clipEffects: null,
