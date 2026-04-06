@@ -19,6 +19,7 @@ import {
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import {
   cancelOrganizationSubscription,
+  checkOrgNameAvailable,
   createOrganizationAccount,
   deleteOrganization,
   grantOrganizationSubscription,
@@ -286,6 +287,10 @@ export function AdminOrganizationsPage() {
     event?.preventDefault()
     setCreateOrgError(null)
 
+    if (!createOrgForm.org_name.trim()) {
+      setCreateOrgError('Organization name is required.')
+      return
+    }
     if (createOrgMode === 'existing' && !selectedExistingUser) {
       setCreateOrgError('Please select an existing user from the search results.')
       return
@@ -297,6 +302,14 @@ export function AdminOrganizationsPage() {
 
     setCreatingOrg(true)
     try {
+      // Check if org name is available
+      const nameCheck = await checkOrgNameAvailable(createOrgForm.org_name.trim())
+      if (!nameCheck.available) {
+        setCreateOrgError('An organization with this name already exists. Please choose a different name.')
+        setCreatingOrg(false)
+        return
+      }
+
       const payload: Parameters<typeof createOrganizationAccount>[0] = {
         org_name: createOrgForm.org_name,
         tier: createOrgForm.tier,

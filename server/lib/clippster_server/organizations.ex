@@ -26,9 +26,9 @@ defmodule ClippsterServer.Organizations do
 
   alias ClippsterServer.{Emails, Mailer}
   alias ClippsterServer.Storage
-  alias ClippsterServer.Campaigns.Campaign
+  alias ClippsterServer.Campaigns.{Campaign, CampaignSubmission}
   alias ClippsterServer.Organizations.HiringPost
-  alias ClippsterServer.Social.SocialAccount
+  alias ClippsterServer.Social.{ExternalPostSubmission, PostSubmission, SocialAccount}
 
   # ============================================================================
   # Organization CRUD
@@ -114,6 +114,29 @@ defmodule ClippsterServer.Organizations do
   end
 
   @doc """
+  Checks if an organization name is available (case-insensitive).
+  Returns {:ok, true} if available, {:ok, false} if taken.
+  Optionally excludes an org_id from the check (for updates).
+  """
+  def is_org_name_available?(name, exclude_org_id \\ nil) do
+    normalized = name |> String.trim() |> String.downcase()
+
+    query =
+      from(o in Organization,
+        where: fragment("lower(?)", o.name) == ^normalized
+      )
+
+    query =
+      if exclude_org_id do
+        from(o in query, where: o.id != ^exclude_org_id)
+      else
+        query
+      end
+
+    {:ok, !Repo.exists?(query)}
+  end
+
+  @doc """
   Gets a public organization profile payload by slug.
   """
   def get_public_profile_by_slug(slug) when is_binary(slug) do
@@ -176,6 +199,42 @@ defmodule ClippsterServer.Organizations do
           )
           |> Repo.one()
 
+        # Match client PostSubmissionsList.vue loadSummary():
+        # - published scheduled posts (PostSubmission), same window as get_analytics_summary/2 (default 30 days)
+        # - all external link submissions for the org (view_count sum)
+        # - all campaign submissions for the org's campaigns (view_count sum)
+        since_30d = DateTime.utc_now() |> DateTime.add(-30, :day)
+
+        scheduled_post_views =
+          from(p in PostSubmission,
+            where: p.organization_id == ^organization.id,
+            where: p.status == "published",
+            where: p.posted_at >= ^since_30d,
+            select: sum(p.view_count)
+          )
+          |> Repo.one()
+
+        org_external_post_views =
+          from(e in ExternalPostSubmission,
+            where: e.organization_id == ^organization.id,
+            select: sum(e.view_count)
+          )
+          |> Repo.one()
+
+        campaign_submission_views =
+          from(s in CampaignSubmission,
+            join: c in Campaign,
+            on: s.campaign_id == c.id,
+            where: c.organization_id == ^organization.id,
+            select: sum(s.view_count)
+          )
+          |> Repo.one()
+
+        total_views =
+          (scheduled_post_views || 0) +
+            (org_external_post_views || 0) +
+            (campaign_submission_views || 0)
+
         %{
           organization: organization,
           stats: %{
@@ -183,7 +242,8 @@ defmodule ClippsterServer.Organizations do
             campaigns_running: campaign_running || 0,
             campaigns_completed: campaign_completed || 0,
             clippers_count: clippers_count || 0,
-            streamers_count: length(streamers)
+            streamers_count: length(streamers),
+            total_views: total_views
           },
           streamers: streamers,
           social_accounts: social_accounts,
@@ -731,6 +791,109 @@ defmodule ClippsterServer.Organizations do
         invitation
         |> OrganizationInvitation.cancel_changeset()
         |> Repo.update()
+    end
+  end
+
+  @doc """
+  Declines a pending invitation (user declining their own invitation).
+  Returns the invitation with organization and inviter preloaded for notification purposes.
+  """
+  def decline_invitation(invitation_id, %User{} = user) do
+    invitation =
+      OrganizationInvitation
+      |> where([i], i.id == ^invitation_id)
+      |> preload([:organization, :invited_by_user])
+      |> Repo.one()
+
+    cond do
+      is_nil(invitation) ->
+        {:error, :not_found}
+
+      invitation.status != "pending" ->
+        {:error, :already_processed}
+
+      invitation.email != user.email ->
+        {:error, :unauthorized}
+
+      true ->
+        case invitation
+             |> OrganizationInvitation.cancel_changeset()
+             |> Repo.update() do
+          {:ok, updated_invitation} ->
+            # Return invitation with preloads for the controller to create in-app notification
+            {:ok, Repo.preload(updated_invitation, [:organization, :invited_by_user])}
+
+          error ->
+            error
+        end
+    end
+  end
+
+  @doc """
+  Accepts an invitation by ID (for in-app acceptance by authenticated users).
+  This is used when the user accepts via the app's notification dialog.
+  """
+  def accept_invitation_by_id(invitation_id, %User{} = user) do
+    invitation =
+      OrganizationInvitation
+      |> where([i], i.id == ^invitation_id)
+      |> where([i], i.status == "pending")
+      |> preload([:organization, :invited_by_user])
+      |> Repo.one()
+
+    cond do
+      is_nil(invitation) ->
+        {:error, :not_found}
+
+      OrganizationInvitation.expired?(invitation) ->
+        {:error, :invitation_expired}
+
+      invitation.email != user.email ->
+        {:error, :unauthorized}
+
+      user.subscription_tier == "basic" ->
+        {:error, :basic_tier_cannot_join}
+
+      is_member?(invitation.organization_id, user.id) ->
+        # Already a member, just mark invitation as accepted
+        case invitation
+             |> OrganizationInvitation.accept_changeset()
+             |> Repo.update() do
+          {:ok, updated_invitation} ->
+            {:ok, Repo.preload(updated_invitation, [:organization, :invited_by_user])}
+
+          error ->
+            error
+        end
+
+      true ->
+        case Repo.transaction(fn ->
+               # Add as member
+               {:ok, _member} = add_member(invitation.organization_id, user.id, invitation.role)
+
+               # Initialize credit allocation
+               {:ok, _allocation} =
+                 %MemberCreditAllocation{}
+                 |> MemberCreditAllocation.changeset(%{
+                   organization_id: invitation.organization_id,
+                   user_id: user.id
+                 })
+                 |> Repo.insert()
+
+               # Mark invitation as accepted
+               {:ok, updated_invitation} =
+                 invitation
+                 |> OrganizationInvitation.accept_changeset()
+                 |> Repo.update()
+
+               updated_invitation
+             end) do
+          {:ok, updated_invitation} ->
+            {:ok, Repo.preload(updated_invitation, [:organization, :invited_by_user])}
+
+          error ->
+            error
+        end
     end
   end
 

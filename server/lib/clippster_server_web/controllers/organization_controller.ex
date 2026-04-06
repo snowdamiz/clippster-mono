@@ -57,6 +57,22 @@ defmodule ClippsterServerWeb.OrganizationController do
   end
 
   @doc """
+  Check if an organization name is available.
+  Optionally pass exclude_org_id to exclude a specific org (for updates).
+  """
+  def check_name(conn, %{"name" => name} = params) do
+    exclude_org_id =
+      case Map.get(params, "exclude_org_id") do
+        nil -> nil
+        id when is_binary(id) -> String.to_integer(id)
+        id when is_integer(id) -> id
+      end
+
+    {:ok, available} = Organizations.is_org_name_available?(name, exclude_org_id)
+    json(conn, %{success: true, available: available})
+  end
+
+  @doc """
   Get a specific organization with members.
   """
   def show(conn, %{"id" => id}) do
@@ -104,6 +120,8 @@ defmodule ClippsterServerWeb.OrganizationController do
             "logo_url",
             "website_url",
             "public_contact_email",
+            "public_discord",
+            "public_telegram",
             "content_type_tags",
             "settings",
             "restriction_defaults"
@@ -586,6 +604,80 @@ defmodule ClippsterServerWeb.OrganizationController do
   end
 
   @doc """
+  Accept an invitation by ID (for in-app acceptance).
+  """
+  def accept_invitation_by_id(conn, %{"id" => invitation_id}) do
+    user = conn.assigns.current_user
+
+    case Organizations.accept_invitation_by_id(invitation_id, user) do
+      {:ok, invitation} ->
+        json(conn, %{
+          success: true,
+          message: "Welcome to #{invitation.organization.name}!",
+          organization_id: invitation.organization_id
+        })
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Invitation not found or already processed"})
+
+      {:error, :invitation_expired} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "This invitation has expired"})
+
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "This invitation was sent to a different account"})
+
+      {:error, :basic_tier_cannot_join} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Upgrade to Starter or higher to join organizations"})
+    end
+  end
+
+  @doc """
+  Decline an invitation (requires authentication).
+  Returns organization info so the client can create an in-app notification.
+  """
+  def decline_invitation(conn, %{"id" => invitation_id}) do
+    user = conn.assigns.current_user
+
+    case Organizations.decline_invitation(invitation_id, user) do
+      {:ok, invitation} ->
+        # Return info for in-app notification to org owner
+        json(conn, %{
+          success: true,
+          message: "Invitation declined",
+          notification: %{
+            organization_id: invitation.organization_id,
+            organization_name: invitation.organization.name,
+            inviter_user_id: invitation.invited_by,
+            declined_by_name: user.name || user.email
+          }
+        })
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Invitation not found"})
+
+      {:error, :already_processed} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invitation already processed"})
+
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Not authorized to decline this invitation"})
+    end
+  end
+
+  @doc """
   Invite a user to join the organization by user_id (for Clipper Directory).
   """
   def invite_user(conn, %{"organization_id" => org_id, "user_id" => user_id} = params) do
@@ -1028,6 +1120,8 @@ defmodule ClippsterServerWeb.OrganizationController do
       logo_url: maybe_presign_url(org.logo_url),
       website_url: org.website_url,
       public_contact_email: org.public_contact_email,
+      public_discord: org.public_discord,
+      public_telegram: org.public_telegram,
       content_type_tags: org.content_type_tags || [],
       owner_id: org.owner_id,
       created_at: org.inserted_at,

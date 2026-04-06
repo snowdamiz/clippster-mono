@@ -18,7 +18,19 @@
               <h2 class="campaign-dialog__title">
                 {{ campaign?.title || 'Campaign Details' }}
               </h2>
-              <p v-if="campaign?.organization" class="campaign-dialog__subtitle">by {{ campaign.organization.name }}</p>
+              <p v-if="headerOrganization" class="campaign-dialog__subtitle">
+                <template v-if="headerOrganization.slug">
+                  by
+                  <router-link
+                    :to="{ path: `/orgs/${headerOrganization.slug}`, query: { from: route.fullPath } }"
+                    class="campaign-dialog__org-link"
+                    @click.stop
+                  >
+                    {{ headerOrganization.name }}
+                  </router-link>
+                </template>
+                <template v-else>by {{ headerOrganization.name }}</template>
+              </p>
             </div>
 
             <!-- Content -->
@@ -354,6 +366,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
+  import { useRoute } from 'vue-router';
   import {
     Megaphone,
     Loader2,
@@ -403,6 +416,7 @@
 
   const { toast } = useToast();
   const authStore = useAuthStore();
+  const route = useRoute();
 
   const loading = ref(false);
   const joining = ref(false);
@@ -414,6 +428,10 @@
   const showSubmitForm = ref(false);
   const applicationNote = ref('');
   const clipUrl = ref('');
+
+  const headerOrganization = computed(
+    () => campaignDetails.value?.organization ?? props.campaign?.organization ?? null
+  );
 
   const detectedPlatform = computed(() => {
     if (!clipUrl.value) return null;
@@ -723,6 +741,16 @@
     font-size: 0.8125rem;
     color: var(--sidebar-text-muted);
     margin: 0.25rem 0 0;
+  }
+
+  .campaign-dialog__org-link {
+    color: var(--sidebar-accent);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .campaign-dialog__org-link:hover {
+    text-decoration: underline;
   }
 
   /* ===== Content ===== */
