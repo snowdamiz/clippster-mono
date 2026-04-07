@@ -2620,12 +2620,27 @@
 
         const clipRowForText = await getClip(clip.id);
         const clipTextBoxState = parseClipTextOverlayJson(clipRowForText?.clip_text_overlay);
+        console.log('[ClipsTab] Clip text box state from DB:', {
+          clipId: clip.id,
+          hasClipTextOverlay: !!clipRowForText?.clip_text_overlay,
+          rawLength: clipRowForText?.clip_text_overlay?.length ?? 0,
+          parsed: clipTextBoxState,
+          enabled: clipTextBoxState?.enabled,
+        });
         if (clipTextBoxState?.enabled) {
           const clipBoxPayload = clipTextBoxToExportPayload(clip.id, clipTextBoxState);
           textOverlaysForExport = textOverlaysForExport
             ? [...textOverlaysForExport, clipBoxPayload]
             : [clipBoxPayload];
-          console.log('[ClipsTab] Merged workspace/POI clip text box for export');
+          console.log('[ClipsTab] Merged workspace/POI clip text box for export:', {
+            text: clipBoxPayload.text,
+            startTime: clipBoxPayload.startTime,
+            endTime: clipBoxPayload.endTime,
+            positionX: clipBoxPayload.positionX,
+            positionY: clipBoxPayload.positionY,
+            hasPerRatioConfigs: !!clipBoxPayload.perRatioConfigs,
+            perRatioKeys: clipBoxPayload.perRatioConfigs ? Object.keys(clipBoxPayload.perRatioConfigs) : [],
+          });
         }
 
         // Extract stickers for burning into video
@@ -3730,6 +3745,20 @@
         }
       }
 
+      console.log('[ClipsTab] Text overlays being sent to Rust:', {
+        count: textOverlaysForExport?.length ?? 0,
+        overlays: textOverlaysForExport?.map(o => ({
+          id: o.id,
+          text: o.text?.substring(0, 50),
+          startTime: o.startTime,
+          endTime: o.endTime,
+          positionX: o.positionX,
+          positionY: o.positionY,
+          hasPerRatioConfigs: !!o.perRatioConfigs,
+          perRatioKeys: o.perRatioConfigs ? Object.keys(o.perRatioConfigs) : [],
+        })),
+      });
+      
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,

@@ -269,13 +269,22 @@
           />
         </div>
       </div>
+
+      <button
+        type="button"
+        class="flex items-center justify-center gap-2 w-full rounded-lg border border-red-500/35 bg-red-950/20 px-3 py-2.5 text-sm font-medium text-red-300 hover:bg-red-950/40 hover:border-red-500/50 transition-colors"
+        @click="$emit('delete')"
+      >
+        <Trash2 :size="16" class="shrink-0 opacity-90" />
+        Remove text box
+      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
   import { computed, onMounted, onUnmounted, ref } from 'vue';
-  import { ChevronDown, ChevronLeft } from 'lucide-vue-next';
+  import { ChevronDown, ChevronLeft, Trash2 } from 'lucide-vue-next';
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
   import type { TextOverlayStyle } from '@/types';
 
@@ -292,6 +301,7 @@
   const emit = defineEmits<{
     close: [];
     updateState: [patch: Partial<ClipTextBoxState>];
+    delete: [];
   }>();
 
   const fontChoices = ['Montserrat', 'Inter', 'Arial', 'Helvetica Neue', 'Georgia', 'Impact'];

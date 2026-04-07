@@ -4827,6 +4827,7 @@ pub async fn apply_rendered_text_overlays_to_video(
     rendered_overlays: &[(String, super::types::TextOverlaySettings)], // (image_path, overlay_settings)
     aspect_ratio: &str,
     quality: &str,
+    time_offset: f64, // Intro duration offset for timing
 ) -> Result<(), String> {
     if rendered_overlays.is_empty() {
         return Ok(());
@@ -4878,14 +4879,17 @@ pub async fn apply_rendered_text_overlays_to_video(
         filter_parts.push(text_filter);
 
         // Overlay with timing and center-anchor positioning
+        // Add time_offset (intro duration) to timing so overlays appear at correct time
+        let adjusted_start = overlay.start_time + time_offset;
+        let adjusted_end = overlay.end_time + time_offset;
         let overlay_filter = format!(
             "[{}][{}]overlay=x={}-(overlay_w/2):y={}-(overlay_h/2):enable='between(t,{:.3},{:.3})'[{}]",
             current_label,
             text_label,
             pos_x,
             pos_y,
-            overlay.start_time,
-            overlay.end_time,
+            adjusted_start,
+            adjusted_end,
             next_label
         );
 
@@ -4912,6 +4916,7 @@ pub async fn apply_rendered_text_overlays_to_video(
 
     // Build filter complex string
     let filter_complex = filter_parts.join(";");
+    println!("[Rust] TEXT OVERLAY FILTER: {}", filter_complex);
 
     args.extend(vec![
         "-filter_complex".to_string(),
@@ -4944,6 +4949,7 @@ pub async fn apply_rendered_text_overlays_to_video(
         "[Rust] Applying {} rendered text overlays to video",
         rendered_overlays.len()
     );
+    println!("[Rust] TEXT OVERLAY ARGS: {:?}", args);
 
     // Use fallback helper for hardware encoder resilience
     run_ffmpeg_with_fallback(app, args, &encoder, quality, None)

@@ -103,11 +103,17 @@ pub fn render_text_overlay_to_png(
     aspect_ratio: &str,
     output_dir: &Path,
 ) -> Result<String, String> {
+    println!("[Rust] render_text_overlay_to_png: id={}, text='{}', aspect={}, video={}x{}", 
+        overlay.id, overlay.text, aspect_ratio, video_width, video_height);
+    
     // Get style for this aspect ratio
     let style = get_style_for_ratio(overlay, aspect_ratio).ok_or("No style found for overlay")?;
+    println!("[Rust] Got style: font={}, size={}, bg_enabled={}", 
+        style.font_family, style.font_size, style.background_enabled);
 
     // Generate SVG for this text overlay
     let svg_content = generate_text_svg(overlay, &style, video_width, video_height)?;
+    println!("[Rust] Generated SVG content ({} bytes)", svg_content.len());
 
     // Render SVG to PNG using resvg
     let output_path = output_dir.join(format!(
@@ -116,6 +122,16 @@ pub fn render_text_overlay_to_png(
         aspect_ratio.replace(":", "x")
     ));
     render_svg_to_png(&svg_content, &output_path, video_width, video_height)?;
+    
+    // Verify file exists
+    if output_path.exists() {
+        let metadata = std::fs::metadata(&output_path);
+        println!("[Rust] PNG file created: {} (size: {} bytes)", 
+            output_path.display(), 
+            metadata.map(|m| m.len()).unwrap_or(0));
+    } else {
+        println!("[Rust] WARNING: PNG file not found after render: {}", output_path.display());
+    }
 
     Ok(output_path.to_string_lossy().to_string())
 }

@@ -433,6 +433,11 @@ export function useClipBuildPipeline() {
 
       const { getClipTextBoxOverlaysForExport } = await import('@/utils/clipTextBox');
       const textOverlaysFromClipBox = await getClipTextBoxOverlaysForExport(clipId);
+      console.log('[BuildPipeline] Text overlays from clip box:', {
+        clipId,
+        count: textOverlaysFromClipBox?.length ?? 0,
+        overlays: textOverlaysFromClipBox,
+      });
 
       const buildCompletePromise = new Promise<void>((resolve, reject) => {
         listen<{

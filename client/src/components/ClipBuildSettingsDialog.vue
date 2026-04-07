@@ -1560,6 +1560,7 @@
 
   // Handle subtitle settings change from POI editor (animation style, colors, borders, etc.)
   async function onSubtitleSettingsChange(settings: SubtitleSettings) {
+    const ratio = editingAspectRatio.value;
     console.log('[ClipBuildSettingsDialog] onSubtitleSettingsChange called:', {
       animationStyle: settings.animationStyle,
       border1Width: settings.border1Width,
@@ -1568,14 +1569,16 @@
       fontSize: settings.fontSize,
       multiColorEnabled: settings.multiColorEnabled,
       selectedPresetId: settings.selectedPresetId,
-      ratio: editingAspectRatio.value
+      ratio,
     });
     
-    // Update the local subtitle settings
-    localSubtitleSettings.value = { ...settings };
+    // IMPORTANT: Only update localSubtitleSettings (base settings) if editing 16:9
+    // For other ratios, we only update the per-ratio override to preserve base settings
+    if (ratio === '16:9') {
+      localSubtitleSettings.value = { ...settings };
+    }
     
     // Update the override for this specific ratio
-    const ratio = editingAspectRatio.value;
     const existingOverride: Partial<SubtitleOverride> = subtitleOverrides.value[ratio as keyof SubtitleOverrides] || {};
     
     // Store ALL visual properties that changed so Rust can apply them via per_ratio_override JSON

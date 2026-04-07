@@ -244,6 +244,7 @@
                   :clip-duration="selectedClipDurationForTextBox"
                   @close="onCloseClipTextPanel"
                   @updateState="onClipTextBoxPanelPatch"
+                  @delete="onClipTextBoxDelete"
                 />
 
                 <!-- Transcript Tab -->
@@ -1264,6 +1265,18 @@
   }
 
   function onCloseClipTextPanel() {
+    rightPanelTab.value = 'clips';
+  }
+
+  async function onClipTextBoxDelete() {
+    const clipId = selectedClipId.value;
+    if (!clipId) return;
+    if (clipTextPersistTimer) {
+      clearTimeout(clipTextPersistTimer);
+      clipTextPersistTimer = null;
+    }
+    activeClipTextBox.value = null;
+    await persistClipTextBoxToDb(clipId, null);
     rightPanelTab.value = 'clips';
   }
 

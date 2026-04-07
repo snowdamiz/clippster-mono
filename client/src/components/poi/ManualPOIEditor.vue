@@ -66,6 +66,7 @@
                       :state="clipTextLocal"
                       :clip-duration="clipDuration"
                       @update-state="onClipTextPanelPatch"
+                      @delete="onClipTextPanelDelete"
                       @close="doneTextBoxSettings"
                     />
                   </template>
@@ -332,7 +333,7 @@
                   <Type class="h-4 w-4 text-amber-400 shrink-0" />
                   <div class="flex-1 min-w-0">
                     <span class="text-sm font-medium text-white">Clip text box</span>
-                    <span v-if="clipTextPositioningActive" class="text-[10px] text-zinc-400 ml-2">
+                    <span v-if="clipTextBoxPositioningActive" class="text-[10px] text-zinc-400 ml-2">
                       · Drag on export preview · corners resize width
                     </span>
                   </div>
@@ -1138,6 +1139,11 @@
     const { updateClipTextOverlay } = await import('@/services/database/clips');
     await updateClipTextOverlay(props.clipId, null);
     emit('clipTextOverlayChange', null);
+  }
+
+  async function onClipTextPanelDelete() {
+    clipTextLocal.value = null;
+    await persistClipTextClearDb();
   }
 
   function onClipTextPanelPatch(patch: Partial<ClipTextBoxState>) {

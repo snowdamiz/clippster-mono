@@ -779,6 +779,11 @@ pub async fn build_clip_internal_simple(
             // Handle text overlays - partition into simple (ASS) and advanced (image-based)
             let mut rendered_text_images: Vec<(String, TextOverlaySettings)> = Vec::new();
             let final_subtitle_file = if let Some(overlays) = &text_overlays {
+                println!("[Rust] TEXT OVERLAY DEBUG: Received {} text overlays for {}", overlays.len(), aspect_ratio_str);
+                for (i, ovl) in overlays.iter().enumerate() {
+                    println!("[Rust] TEXT OVERLAY [{}]: id={}, text='{}', start={}, end={}, pos=({}, {}), bg_enabled={}", 
+                        i, ovl.id, ovl.text, ovl.start_time, ovl.end_time, ovl.position_x, ovl.position_y, ovl.style.background_enabled);
+                }
                 if !overlays.is_empty() {
                     let subtitle_offset = intro_duration.unwrap_or(0.0);
                     
@@ -1169,13 +1174,15 @@ pub async fn build_clip_internal_simple(
 
             // Apply rendered text overlays (advanced styling: chat bubbles, gradients, glows)
             if !rendered_text_images.is_empty() {
-                println!("[Rust] Applying {} rendered text overlays to {} clip", rendered_text_images.len(), aspect_ratio_str);
+                let text_overlay_offset = intro_duration.unwrap_or(0.0);
+                println!("[Rust] Applying {} rendered text overlays to {} clip (time offset: {})", rendered_text_images.len(), aspect_ratio_str, text_overlay_offset);
                 apply_rendered_text_overlays_to_video(
                     &app,
                     &output_path,
                     &rendered_text_images,
                     &aspect_ratio_str,
-                    &quality
+                    &quality,
+                    text_overlay_offset
                 ).await?;
             }
 
