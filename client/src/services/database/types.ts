@@ -612,6 +612,40 @@ export interface DownloadedAudio {
   updated_at: number;
 }
 
+export interface SpaceParticipant {
+  id: string;
+  name: string;
+  avatar_url: string | null;
+  role: 'host' | 'speaker' | 'listener' | 'guest' | 'unknown';
+}
+
+export interface SpaceSpeakerSegment {
+  id: string;
+  speaker_id: string;
+  start: number;
+  end: number;
+}
+
+/** On-stage roster at playlist time `t` (seconds), from HLS ID3 when available. */
+export interface SpaceStageSnapshot {
+  id: string;
+  t: number;
+  on_stage_user_ids: string[];
+}
+
+export interface DownloadedSpaceMetadata {
+  id: string;
+  audio_id: string;
+  source_url: string | null;
+  title: string | null;
+  participants_json: string | null;
+  speaker_segments_json: string | null;
+  stage_snapshots_json: string | null;
+  user_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface AudioPlaylist {
   id: string;
   name: string;

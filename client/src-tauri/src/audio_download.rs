@@ -185,11 +185,77 @@ pub async fn download_youtube_audio(
         let stderr_lines_writer = stderr_lines.clone();
         let app_progress = app_clone.clone();
         let download_id_progress = download_id_clone.clone();
+        let app_progress_stderr = app_progress.clone();
+        let download_id_progress_stderr = download_id_progress.clone();
 
         let stderr_task = tokio::spawn(async move {
+            let mut total_duration_seconds: Option<f64> = None;
             let mut reader = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = reader.next_line().await {
                 println!("[AudioDownload] yt-dlp stderr: {}", line);
+                
+                // Parse ffmpeg duration line:
+                // "Duration: 01:10:39.68, ..."
+                if total_duration_seconds.is_none() && line.contains("Duration:") {
+                    if let Some(duration_part) = line.split("Duration:").nth(1) {
+                        let raw = duration_part.split(',').next().unwrap_or("").trim();
+                        let parts: Vec<&str> = raw.split(':').collect();
+                        if parts.len() == 3 {
+                            let hours = parts[0].parse::<f64>().ok().unwrap_or(0.0);
+                            let minutes = parts[1].parse::<f64>().ok().unwrap_or(0.0);
+                            let seconds = parts[2].parse::<f64>().ok().unwrap_or(0.0);
+                            let total = (hours * 3600.0) + (minutes * 60.0) + seconds;
+                            if total > 0.0 {
+                                total_duration_seconds = Some(total);
+                            }
+                        }
+                    }
+                }
+
+                // Parse ffmpeg processing time updates:
+                // "... time=00:00:12.34 ..."
+                if line.contains("time=") {
+                    if let Some(time_part) = line.split("time=").nth(1) {
+                        let token = time_part.split_whitespace().next().unwrap_or("").trim();
+                        let parts: Vec<&str> = token.split(':').collect();
+                        if parts.len() == 3 {
+                            let hours = parts[0].parse::<f64>().ok().unwrap_or(0.0);
+                            let minutes = parts[1].parse::<f64>().ok().unwrap_or(0.0);
+                            let seconds = parts[2].parse::<f64>().ok().unwrap_or(0.0);
+                            let current = (hours * 3600.0) + (minutes * 60.0) + seconds;
+
+                            let progress = if let Some(total) = total_duration_seconds {
+                                if total > 0.0 {
+                                    ((current / total) * 100.0).clamp(0.0, 99.9)
+                                } else {
+                                    0.0
+                                }
+                            } else {
+                                0.0
+                            };
+
+                            let _ = app_progress_stderr.emit("download-progress", DownloadProgress {
+                                download_id: download_id_progress_stderr.clone(),
+                                progress,
+                                current_time: Some(current),
+                                total_time: total_duration_seconds,
+                                status: "Downloading audio stream...".to_string(),
+                            });
+                        }
+                    }
+                }
+
+                // Surface meaningful status even when no percent is available.
+                if line.contains("[download] Destination:") {
+                    let _ = app_progress_stderr.emit("download-progress", DownloadProgress {
+                        download_id: download_id_progress_stderr.clone(),
+                        progress: 1.0,
+                        current_time: None,
+                        total_time: total_duration_seconds,
+                        status: "Download started...".to_string(),
+                    });
+                }
+
                 stderr_lines_writer.lock().await.push(line);
             }
         });
@@ -278,12 +344,17 @@ pub async fn download_youtube_audio(
                         } else {
                             error_msg
                         };
+                        let failure_platform = if channel_name_clone == "twitter_space" {
+                            "Twitter".to_string()
+                        } else {
+                            "YouTube".to_string()
+                        };
                         let _ = app_clone.emit("download-complete", DownloadResult {
                             download_id: download_id_clone,
                             success: false,
                             file_path: None,
                             title: Some(title_clone.clone()),
-                            platform: Some("YouTube".to_string()),
+                            platform: Some(failure_platform),
                             source_url: Some(vod_url_clone.clone()),
                             duration: None,
                             file_size: None,
@@ -300,12 +371,17 @@ pub async fn download_youtube_audio(
                 let _ = stdout_task.abort();
                 let _ = stderr_task.abort();
                 cleanup_download();
+                let cancel_platform = if channel_name_clone == "twitter_space" {
+                    "Twitter".to_string()
+                } else {
+                    "YouTube".to_string()
+                };
                 let _ = app_clone.emit("download-complete", DownloadResult {
                     download_id: download_id_clone,
                     success: false,
                     file_path: None,
                     title: Some(title_clone),
-                    platform: Some("YouTube".to_string()),
+                    platform: Some(cancel_platform),
                     source_url: Some(vod_url_clone),
                     duration: None,
                     file_size: None,

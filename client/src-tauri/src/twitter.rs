@@ -1,11 +1,12 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::PathBuf,
     sync::{Arc, Mutex},
 };
 
 use once_cell::sync::Lazy;
 use serde::Serialize;
+use serde_json::Value;
 use tauri::Emitter;
 use tokio::sync::oneshot;
 use crate::storage;
@@ -26,6 +27,584 @@ fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command 
 #[cfg(not(target_os = "windows"))]
 fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command {
     cmd
+}
+
+/// Same public OAuth2 bearer yt-dlp uses for guest X API access (`TwitterBaseIE._AUTH`).
+const TWITTER_PUBLIC_BEARER: &str = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
+const TWITTER_API_V11: &str = "https://api.x.com/1.1/";
+/// Document hash changes when X updates the query; keep aligned with yt-dlp `TwitterSpacesIE`.
+const TWITTER_AUDIO_SPACE_GQL: &str =
+    "https://x.com/i/api/graphql/HPEisOmj1epUNLCWTYhUWw/AudioSpaceById";
+
+static TWITTER_HTTP: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        .build()
+        .expect("twitter HTTP client")
+});
+
+async fn twitter_guest_token() -> Result<String, String> {
+    let url = format!("{}guest/activate.json", TWITTER_API_V11);
+    let resp = TWITTER_HTTP
+        .post(url)
+        .header(
+            "Authorization",
+            format!("Bearer {}", TWITTER_PUBLIC_BEARER),
+        )
+        .body("")
+        .send()
+        .await
+        .map_err(|e| format!("Twitter guest activate failed: {}", e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let t = resp.text().await.unwrap_or_default();
+        return Err(format!(
+            "Twitter guest activate HTTP {}: {}",
+            status,
+            t.chars().take(300).collect::<String>()
+        ));
+    }
+    let v: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Twitter guest token JSON: {}", e))?;
+    v.get("guest_token")
+        .and_then(|x| x.as_str())
+        .map(String::from)
+        .ok_or_else(|| "Twitter guest_token missing".to_string())
+}
+
+fn audio_space_gql_variables(space_id: &str) -> Value {
+    serde_json::json!({
+        "id": space_id,
+        "isMetatagsQuery": true,
+        "withDownvotePerspective": false,
+        "withReactionsMetadata": false,
+        "withReactionsPerspective": false,
+        "withReplays": true,
+        "withSuperFollowsUserFields": true,
+        "withSuperFollowsTweetFields": true,
+    })
+}
+
+fn audio_space_gql_features() -> Value {
+    serde_json::json!({
+        "dont_mention_me_view_api_enabled": true,
+        "interactive_text_enabled": true,
+        "responsive_web_edit_tweet_api_enabled": true,
+        "responsive_web_enhance_cards_enabled": true,
+        "responsive_web_uc_gql_enabled": true,
+        "spaces_2022_h2_clipping": true,
+        "spaces_2022_h2_spaces_communities": false,
+        "standardized_nudges_misinfo": true,
+        "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": false,
+        "vibe_api_enabled": true,
+    })
+}
+
+fn slugify_participant_id(display: &str) -> String {
+    let s: String = display
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect();
+    let trimmed = s.trim_matches('_').to_string();
+    if trimmed.is_empty() {
+        "speaker".to_string()
+    } else {
+        trimmed
+    }
+}
+
+fn participant_rest_id(obj: &serde_json::Map<String, Value>) -> Option<String> {
+    if let Some(s) = obj.get("rest_id").and_then(|v| v.as_str()) {
+        return Some(s.to_string());
+    }
+    if let Some(n) = obj.get("rest_id").and_then(|v| v.as_i64()) {
+        return Some(n.to_string());
+    }
+    if let Some(u) = obj.get("user_results") {
+        if let Some(r) = u.get("result") {
+            if let Some(s) = r.get("rest_id").and_then(|v| v.as_str()) {
+                return Some(s.to_string());
+            }
+            if let Some(n) = r.get("rest_id").and_then(|v| v.as_i64()) {
+                return Some(n.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn participant_screen_name(obj: &serde_json::Map<String, Value>) -> Option<String> {
+    if let Some(s) = obj.get("twitter_screen_name").and_then(|v| v.as_str()) {
+        return Some(s.trim_start_matches('@').to_string());
+    }
+    if let Some(s) = obj.get("screen_name").and_then(|v| v.as_str()) {
+        return Some(s.trim_start_matches('@').to_string());
+    }
+    obj.get("user_results")?
+        .get("result")?
+        .get("legacy")?
+        .get("screen_name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim_start_matches('@').to_string())
+}
+
+fn participant_avatar_url(obj: &serde_json::Map<String, Value>) -> Option<String> {
+    if let Some(s) = obj.get("avatar_url").and_then(|v| v.as_str()) {
+        return Some(s.replace("_normal", "_400x400"));
+    }
+    let nested = obj
+        .get("user_results")?
+        .get("result")?
+        .pointer("/legacy/profile_image_url_https")
+        .and_then(|v| v.as_str())?;
+    Some(nested.replace("_normal", "_400x400"))
+}
+
+fn participant_from_audio_space_row(
+    obj: &serde_json::Map<String, Value>,
+    role: &str,
+) -> Option<Value> {
+    let screen = participant_screen_name(obj).unwrap_or_default();
+    let rest = participant_rest_id(obj).unwrap_or_default();
+    let display = obj
+        .get("display_name")
+        .or_else(|| obj.get("displayName"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| {
+            if !screen.is_empty() {
+                Some(screen.clone())
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            if !rest.is_empty() {
+                Some(format!("User {}", rest))
+            } else {
+                None
+            }
+        })?;
+    let id = if !rest.is_empty() {
+        rest
+    } else if !screen.is_empty() {
+        screen.clone()
+    } else {
+        slugify_participant_id(&display)
+    };
+    let name = if !screen.is_empty() {
+        format!("@{}", screen)
+    } else {
+        display.clone()
+    };
+    let mut out = serde_json::Map::new();
+    out.insert("id".into(), Value::String(id));
+    out.insert("name".into(), Value::String(name));
+    out.insert("display_name".into(), Value::String(display.to_string()));
+    if !screen.is_empty() {
+        out.insert("username".into(), Value::String(screen));
+    }
+    out.insert(
+        "role".into(),
+        Value::String(
+            if role == "admins" {
+                "host"
+            } else if role == "speakers" {
+                "speaker"
+            } else {
+                role
+            }
+            .to_string(),
+        ),
+    );
+    if let Some(a) = participant_avatar_url(obj) {
+        out.insert("avatar_url".into(), Value::String(a));
+    }
+    Some(Value::Object(out))
+}
+
+fn push_audio_space_role(
+    participants_root: Option<&Value>,
+    key: &str,
+    role_key: &str,
+    out: &mut Vec<Value>,
+    seen: &mut HashSet<String>,
+) {
+    let Some(arr) = participants_root
+        .and_then(|p| p.get(key))
+        .and_then(|a| a.as_array())
+    else {
+        return;
+    };
+    for item in arr {
+        let Some(obj) = item.as_object() else {
+            continue;
+        };
+        let Some(entry) = participant_from_audio_space_row(obj, role_key) else {
+            continue;
+        };
+        let id = entry
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        if id.is_empty() || seen.contains(&id) {
+            continue;
+        }
+        seen.insert(id);
+        out.push(entry);
+    }
+}
+
+/// Rich data returned from AudioSpaceById + live_video_stream/status
+struct AudioSpaceFullData {
+    participants: Vec<Value>,
+    /// media_key — e.g. "1_12345678901234567" — needed for live_video_stream/status
+    media_key: Option<String>,
+    /// Unix SECONDS when the space started; used to compute relative speaker-join times
+    started_at_secs: Option<i64>,
+    /// (participant_id, join_time_secs) for admins + speakers; `start` field from GraphQL (Unix secs)
+    stage_join_times: Vec<(String, i64)>,
+    /// chatToken from live_video_stream/status — used to access Periscope replay events
+    chat_token: Option<String>,
+}
+
+/// Fetch full AudioSpaceById data and live_video_stream/status in one call.
+async fn fetch_audio_space_full(space_id: &str) -> Result<AudioSpaceFullData, String> {
+    let guest = twitter_guest_token().await?;
+    let variables = audio_space_gql_variables(space_id);
+    let features = audio_space_gql_features();
+    let resp = TWITTER_HTTP
+        .get(TWITTER_AUDIO_SPACE_GQL)
+        .header("Authorization", format!("Bearer {}", TWITTER_PUBLIC_BEARER))
+        .header("x-guest-token", &guest)
+        .header("x-twitter-client-language", "en")
+        .header("x-twitter-active-user", "no")
+        .header("Origin", "https://x.com")
+        .header("Referer", format!("https://x.com/i/spaces/{}", space_id))
+        .query(&[
+            ("variables", variables.to_string()),
+            ("features", features.to_string()),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("AudioSpace GraphQL request failed: {}", e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let t = resp.text().await.unwrap_or_default();
+        return Err(format!(
+            "AudioSpace GraphQL HTTP {}: {}",
+            status,
+            t.chars().take(400).collect::<String>()
+        ));
+    }
+    let root: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("AudioSpace GraphQL JSON: {}", e))?;
+    if let Some(errs) = root.get("errors").and_then(|e| e.as_array()) {
+        if !errs.is_empty() {
+            let msg: String = errs
+                .iter()
+                .filter_map(|e| e.get("message").and_then(|m| m.as_str()))
+                .collect::<Vec<_>>()
+                .join("; ");
+            if !msg.is_empty() {
+                return Err(format!("Twitter GraphQL: {}", msg));
+            }
+        }
+    }
+    let space = root
+        .pointer("/data/audioSpace")
+        .ok_or_else(|| "AudioSpace response missing data.audioSpace".to_string())?;
+
+    // Log the top-level keys inside metadata so we know the exact field names
+    if let Some(meta_obj) = space.get("metadata").and_then(|v| v.as_object()) {
+        let keys: Vec<&str> = meta_obj.keys().map(String::as_str).collect();
+        println!("[Twitter] AudioSpace metadata keys: {:?}", keys);
+    }
+
+    // ---- extract media_key: GraphQL uses camelCase "mediaKey" ----
+    let media_key = space
+        .pointer("/metadata/mediaKey")    // camelCase — what X GraphQL actually returns
+        .or_else(|| space.pointer("/metadata/media_key"))  // snake_case fallback
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    // ---- started_at: GraphQL may return camelCase or snake_case; value is Unix SECONDS ----
+    let started_at_secs = space
+        .pointer("/metadata/started_at")
+        .or_else(|| space.pointer("/metadata/startedAt"))
+        .or_else(|| space.pointer("/metadata/created_at"))
+        .or_else(|| space.pointer("/metadata/createdAt"))
+        .and_then(|v| v.as_i64());
+
+    println!(
+        "[Twitter] AudioSpace media_key={:?} started_at_secs={:?}",
+        media_key, started_at_secs
+    );
+
+    // ---- extract stage-join times for admins + speakers ----
+    // X GraphQL `start` field on participants = Unix SECONDS when they joined the stage.
+    let mut stage_join_times: Vec<(String, i64)> = Vec::new();
+    for role_key in ["admins", "speakers"] {
+        if let Some(arr) = space
+            .pointer(&format!("/participants/{}", role_key))
+            .and_then(|v| v.as_array())
+        {
+            for item in arr {
+                let obj = match item.as_object() { Some(o) => o, None => continue };
+                let id = participant_rest_id(obj)
+                    .or_else(|| {
+                        participant_screen_name(obj)
+                            .map(|s| s.to_lowercase().replace(|c: char| !c.is_alphanumeric(), "_"))
+                    })
+                    .unwrap_or_default();
+                if id.is_empty() { continue; }
+                // `start` is Unix seconds; fall back to space start if absent
+                let join_secs = obj.get("start").and_then(|v| v.as_i64())
+                    .unwrap_or(started_at_secs.unwrap_or(0));
+                println!("[Twitter] Participant stage-join: id={} join_secs={}", id, join_secs);
+                stage_join_times.push((id, join_secs));
+            }
+        }
+    }
+
+    // ---- build participant roster ----
+    let participants_root = space.get("participants");
+    let mut roster = Vec::new();
+    let mut seen = HashSet::new();
+    push_audio_space_role(participants_root, "admins", "admins", &mut roster, &mut seen);
+    push_audio_space_role(participants_root, "speakers", "speakers", &mut roster, &mut seen);
+    push_audio_space_role_capped(participants_root, "listeners", "listener", &mut roster, &mut seen, 50);
+
+    // ---- try live_video_stream/status to get chatToken ----
+    let chat_token = if let Some(ref mk) = media_key {
+        match fetch_live_video_stream_status(mk, &guest).await {
+            Ok(stream_status) => {
+                // Log all top-level keys so we can see what the stream status returns
+                if let Some(obj) = stream_status.as_object() {
+                    let keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+                    println!("[Twitter] live_video_stream/status keys: {:?}", keys);
+                }
+                let token = stream_status
+                    .get("chatToken")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                println!("[Twitter] live_video_stream chatToken present={}", token.is_some());
+                token
+            }
+            Err(e) => {
+                println!("[Twitter] live_video_stream/status failed (non-fatal): {}", e);
+                None
+            }
+        }
+    } else {
+        println!("[Twitter] No media_key — skipping live_video_stream/status");
+        None
+    };
+
+    Ok(AudioSpaceFullData {
+        participants: roster,
+        media_key,
+        started_at_secs,
+        stage_join_times,
+        chat_token,
+    })
+}
+
+/// Thin wrapper kept for call-site backwards compat
+async fn fetch_audio_space_participants(space_id: &str) -> Result<Vec<Value>, String> {
+    fetch_audio_space_full(space_id).await.map(|d| d.participants)
+}
+
+/// GET /1.1/live_video_stream/status/{media_key}
+async fn fetch_live_video_stream_status(media_key: &str, guest_token: &str) -> Result<Value, String> {
+    let url = format!(
+        "https://twitter.com/i/api/1.1/live_video_stream/status/{}",
+        media_key
+    );
+    let resp = TWITTER_HTTP
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", TWITTER_PUBLIC_BEARER))
+        .header("x-guest-token", guest_token)
+        .header("x-twitter-client-language", "en")
+        .header("x-twitter-active-user", "no")
+        .header("Origin", "https://x.com")
+        .header("Referer", format!("https://x.com/i/spaces/{}", media_key))
+        .send()
+        .await
+        .map_err(|e| format!("live_video_stream/status request failed: {}", e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let t = resp.text().await.unwrap_or_default();
+        return Err(format!(
+            "live_video_stream/status HTTP {}: {}",
+            status,
+            t.chars().take(300).collect::<String>()
+        ));
+    }
+    resp.json().await.map_err(|e| format!("live_video_stream/status JSON: {}", e))
+}
+
+/// Extract `typing_active` (speaking) events from Periscope chat replay.
+/// Returns Vec<(offset_secs, participant_id)>.
+async fn fetch_periscope_speaking_events(
+    media_key: &str,
+    chat_token: &str,
+    started_at_ms: i64,
+) -> Vec<(f64, String)> {
+    // Derive the numeric Periscope broadcast_id from the media_key (format: "1_NNNNN")
+    let broadcast_id = media_key
+        .split_once('_')
+        .map(|(_, n)| n)
+        .unwrap_or(media_key);
+
+    // Try proxsee Periscope broadcastComments (includes typing_active events in full event log)
+    let url = format!(
+        "https://proxsee.pscp.tv/api/v2/broadcastComments?broadcast_id={}&count=5000&start=0",
+        broadcast_id
+    );
+    let resp = match TWITTER_HTTP
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", chat_token))
+        .header("Origin", "https://x.com")
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            println!("[Twitter] Periscope broadcastComments request failed: {}", e);
+            return Vec::new();
+        }
+    };
+
+    if !resp.status().is_success() {
+        println!("[Twitter] Periscope broadcastComments HTTP {}", resp.status());
+        return Vec::new();
+    }
+
+    let data: Value = match resp.json().await {
+        Ok(v) => v,
+        Err(e) => {
+            println!("[Twitter] Periscope broadcastComments JSON: {}", e);
+            return Vec::new();
+        }
+    };
+
+    println!("[Twitter] Periscope broadcastComments keys: {:?}",
+        data.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+
+    let mut events: Vec<(f64, String)> = Vec::new();
+
+    // Events may be nested at different paths depending on API version
+    let comment_arrays: Vec<&Vec<Value>> = [
+        data.get("comments"),
+        data.get("events"),
+        data.get("results"),
+    ]
+    .iter()
+    .filter_map(|opt| opt.and_then(|v| v.as_array()))
+    .collect();
+
+    for comments in comment_arrays {
+        for comment in comments {
+            // Log first few entries to understand format
+            if events.len() < 3 {
+                println!("[Twitter] Periscope event sample: {:?}", comment);
+            }
+
+            let is_speaking_event = [
+                comment.get("type").and_then(|v| v.as_str()),
+                comment.get("kind").and_then(|v| v.as_str()),
+                comment.get("event_type").and_then(|v| v.as_str()),
+            ]
+            .iter()
+            .any(|t| matches!(*t, Some("typing_active") | Some("speaking") | Some("speaker_active") | Some("SPEAKING")));
+
+            // Also check inside a JSON-encoded body
+            let body_speaking = comment
+                .get("body")
+                .and_then(|b| b.as_str())
+                .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                .map(|bv| {
+                    bv.get("type").and_then(|v| v.as_str()).map(|t| {
+                        matches!(t, "typing_active" | "speaking" | "speaker_active")
+                    }).unwrap_or(false)
+                })
+                .unwrap_or(false);
+
+            if !is_speaking_event && !body_speaking {
+                continue;
+            }
+
+            // Extract timestamp (absolute ms) and convert to offset secs
+            let ts_ms = comment
+                .get("timestamp_ms").and_then(|v| v.as_i64())
+                .or_else(|| comment.get("offset_ms").and_then(|v| v.as_i64()))
+                .or_else(|| comment.get("created_at_ms").and_then(|v| v.as_i64()));
+
+            let offset_secs = match ts_ms {
+                Some(abs_ms) if abs_ms > 1_000_000_000_000 => {
+                    // Absolute unix ms → relative to space start
+                    (abs_ms - started_at_ms).max(0) as f64 / 1000.0
+                }
+                Some(rel_ms) => rel_ms as f64 / 1000.0,
+                None => continue,
+            };
+
+            // Extract user_id from the event or nested body
+            let uid = comment
+                .get("user_id").and_then(|v| v.as_str())
+                .or_else(|| comment.pointer("/user/id").and_then(|v| v.as_str()))
+                .or_else(|| comment.pointer("/sender/id").and_then(|v| v.as_str()))
+                .map(String::from);
+
+            if let Some(uid) = uid {
+                events.push((offset_secs, uid));
+            }
+        }
+    }
+
+    println!("[Twitter] Periscope speaking events found: {}", events.len());
+    events
+}
+
+/// Like `push_audio_space_role` but stops after `cap` entries (listeners can be unbounded).
+fn push_audio_space_role_capped(
+    participants_root: Option<&Value>,
+    key: &str,
+    role_key: &str,
+    out: &mut Vec<Value>,
+    seen: &mut HashSet<String>,
+    cap: usize,
+) {
+    let Some(arr) = participants_root
+        .and_then(|p| p.get(key))
+        .and_then(|a| a.as_array())
+    else {
+        return;
+    };
+    let mut added = 0usize;
+    for item in arr {
+        if added >= cap {
+            break;
+        }
+        let Some(obj) = item.as_object() else { continue };
+        let Some(entry) = participant_from_audio_space_row(obj, role_key) else { continue };
+        let id = entry.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if id.is_empty() || seen.contains(&id) {
+            continue;
+        }
+        seen.insert(id);
+        out.push(entry);
+        added += 1;
+    }
 }
 
 // Recording state management
@@ -505,9 +1084,297 @@ pub async fn get_twitter_broadcast_info(url: String) -> Result<String, String> {
     }
     
     println!("[Twitter] Successfully fetched metadata ({} bytes)", stdout.len());
-    
-    // Return the JSON metadata
-    Ok(stdout.to_string())
+
+    let mut metadata: Value = serde_json::from_str(stdout.trim()).map_err(|e| {
+        format!("yt-dlp returned invalid JSON: {}", e)
+    })?;
+
+    // Spaces: enrich metadata with GraphQL roster + build speaker timeline.
+    if normalized_url.contains("/i/spaces/") {
+        if let Ok(space_id) = extract_broadcast_id(&normalized_url) {
+
+            // ── Resolve media_key unconditionally from HLS URL first ─────────────────
+            // This works even if the GraphQL call below fails.
+            // yt-dlp always gives us the HLS URL in `url` field containing
+            // `playlist_{broadcast_id}.m3u8`.  We construct `1_{broadcast_id}` as the
+            // Periscope/Twitter media_key needed for live_video_stream/status.
+            let hls_derived_media_key: Option<String> = {
+                let hls_url = metadata
+                    .get("url").or_else(|| metadata.get("manifest_url"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                hls_url.find("playlist_").and_then(|pos| {
+                    let rest = &hls_url[pos + 9..];
+                    let end = rest.find('.').unwrap_or(rest.len());
+                    let numeric = &rest[..end];
+                    if numeric.chars().all(|c| c.is_ascii_digit()) && !numeric.is_empty() {
+                        let mk = format!("1_{}", numeric);
+                        println!("[Twitter] HLS-derived media_key: {}", mk);
+                        Some(mk)
+                    } else {
+                        None
+                    }
+                })
+            };
+
+            // ── Resolve started_at_secs from yt-dlp (no GraphQL needed) ──────────────
+            let ytdlp_started_at_secs: i64 = metadata
+                .get("timestamp").and_then(|v| v.as_i64())
+                .or_else(|| metadata.get("release_timestamp").and_then(|v| v.as_i64()))
+                .unwrap_or(0);
+            println!("[Twitter] yt-dlp started_at_secs: {}", ytdlp_started_at_secs);
+
+            // Inject media_key now so it's always present in the returned JSON
+            if let Some(ref mk) = hls_derived_media_key {
+                metadata["mediaKey"] = Value::String(mk.clone());
+            }
+
+            match fetch_audio_space_full(&space_id).await {
+                Ok(space_data) => {
+                    if !space_data.participants.is_empty() {
+                        println!(
+                            "[Twitter] Merged AudioSpace GraphQL roster: {} participants",
+                            space_data.participants.len()
+                        );
+                        metadata["participants"] = Value::Array(space_data.participants);
+                    } else {
+                        println!("[Twitter] AudioSpace GraphQL returned empty participant lists");
+                    }
+
+                    // Prefer GraphQL started_at; fall back to yt-dlp value
+                    let started_at_secs = space_data.started_at_secs
+                        .unwrap_or(ytdlp_started_at_secs);
+                    println!("[Twitter] started_at_secs resolved to: {}", started_at_secs);
+
+                    // Prefer GraphQL media_key; fall back to HLS-derived one (already set above)
+                    let effective_media_key = space_data.media_key.clone()
+                        .or_else(|| hls_derived_media_key.clone());
+                    println!("[Twitter] effective_media_key={:?}", effective_media_key);
+
+                    // Duration from yt-dlp metadata (seconds); may be null for Spaces
+                    let duration_secs = metadata
+                        .get("duration")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
+                    let total_duration = if duration_secs > 0.0 { duration_secs } else { 3600.0 };
+
+                    let mut speaker_timeline: Vec<Value> = Vec::new();
+
+                    // ── Priority 1: Periscope chat replay (typing_active events) ────────────
+                    let chat_token_for_periscope = space_data.chat_token.clone().or_else(|| {
+                        // If GraphQL chatToken wasn't obtained (no media_key at that point),
+                        // try fetching live_video_stream now that we have the effective_media_key.
+                        None // async call not possible here without re-awaiting; handled below
+                    });
+
+                    if let (Some(ref mk), Some(ref tok)) = (&effective_media_key, &chat_token_for_periscope) {
+                        let events = fetch_periscope_speaking_events(mk, tok, started_at_secs * 1000).await;
+                        if !events.is_empty() {
+                            println!("[Twitter] Building timeline from {} Periscope speaking events", events.len());
+                            let mut prev_speaker: Option<String> = None;
+                            let mut seg_start = 0.0_f64;
+                            let mut segments: Vec<(f64, f64, String)> = Vec::new();
+                            for (t, uid) in &events {
+                                if prev_speaker.as_deref() != Some(uid.as_str()) {
+                                    if let Some(prev) = prev_speaker.take() {
+                                        segments.push((seg_start, *t, prev));
+                                    }
+                                    prev_speaker = Some(uid.clone());
+                                    seg_start = *t;
+                                }
+                            }
+                            if let Some(last) = prev_speaker {
+                                segments.push((seg_start, total_duration, last));
+                            }
+                            for (i, (start, end, uid)) in segments.iter().enumerate() {
+                                speaker_timeline.push(serde_json::json!({
+                                    "id": format!("ps-{}", i),
+                                    "speakerId": uid,
+                                    "start": start,
+                                    "end": end,
+                                }));
+                            }
+                        }
+                    }
+
+                    // ── Priority 2: Try live_video_stream/status if we now have a media_key
+                    //    but didn't have a chatToken from the GraphQL call ──────────────────
+                    if speaker_timeline.is_empty() {
+                        if let (Some(ref mk), None) = (&effective_media_key, &space_data.chat_token) {
+                            // We have media_key but no chatToken yet — try fetching it now
+                            let guest = twitter_guest_token().await.unwrap_or_default();
+                            if !guest.is_empty() {
+                                if let Ok(stream_status) = fetch_live_video_stream_status(mk, &guest).await {
+                                    if let Some(tok) = stream_status.get("chatToken").and_then(|v| v.as_str()) {
+                                        println!("[Twitter] Got chatToken from live_video_stream (retry)");
+                                        let events = fetch_periscope_speaking_events(mk, tok, started_at_secs * 1000).await;
+                                        if !events.is_empty() {
+                                            let mut prev: Option<String> = None;
+                                            let mut seg_start = 0.0_f64;
+                                            let mut segs: Vec<(f64, f64, String)> = Vec::new();
+                                            for (t, uid) in &events {
+                                                if prev.as_deref() != Some(uid.as_str()) {
+                                                    if let Some(p) = prev.take() { segs.push((seg_start, *t, p)); }
+                                                    prev = Some(uid.clone());
+                                                    seg_start = *t;
+                                                }
+                                            }
+                                            if let Some(p) = prev { segs.push((seg_start, total_duration, p)); }
+                                            for (i, (s, e, uid)) in segs.iter().enumerate() {
+                                                speaker_timeline.push(serde_json::json!({
+                                                    "id": format!("rt-{}", i), "speakerId": uid,
+                                                    "start": s, "end": e,
+                                                }));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Priority 3: Stage-join timestamps (GraphQL `start` field) ──────────
+                    if speaker_timeline.is_empty() && !space_data.stage_join_times.is_empty() {
+                        println!("[Twitter] Falling back to stage-join timestamps ({} participants)", space_data.stage_join_times.len());
+                        let mut joins = space_data.stage_join_times.clone();
+                        joins.sort_by(|a, b| a.1.cmp(&b.1));
+
+                        let base_secs = if started_at_secs > 0 {
+                            started_at_secs
+                        } else {
+                            joins.first().map(|(_, t)| *t).unwrap_or(0)
+                        };
+
+                        // Detect whether all join times are identical (start field missing from API)
+                        let all_same = joins.windows(2).all(|w| w[0].1 == w[1].1);
+                        if all_same {
+                            // Equal-width distribution — at least each participant gets airtime
+                            println!("[Twitter] All join_secs identical — distributing equally");
+                            let seg_dur = total_duration / joins.len() as f64;
+                            for (i, (uid, _)) in joins.iter().enumerate() {
+                                let start = i as f64 * seg_dur;
+                                let end = ((i + 1) as f64 * seg_dur).min(total_duration);
+                                speaker_timeline.push(serde_json::json!({
+                                    "id": format!("sj-{}", i),
+                                    "speakerId": uid,
+                                    "start": start,
+                                    "end": end,
+                                }));
+                            }
+                        } else {
+                            for (i, (uid, join_secs)) in joins.iter().enumerate() {
+                                let start = ((join_secs - base_secs).max(0) as f64).min(total_duration);
+                                let exclusive_end = joins
+                                    .get(i + 1)
+                                    .map(|(_, next)| ((next - base_secs).max(0) as f64).min(total_duration))
+                                    .unwrap_or(total_duration);
+                                println!("[Twitter] Stage-join segment: id={} start={:.1} end={:.1}", uid, start, exclusive_end);
+                                if exclusive_end > start {
+                                    speaker_timeline.push(serde_json::json!({
+                                        "id": format!("sj-{}", i),
+                                        "speakerId": uid,
+                                        "start": start,
+                                        "end": exclusive_end,
+                                    }));
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Priority 4: Equal distribution from known participants (last resort) ─
+                    if speaker_timeline.is_empty() {
+                        // If we have GraphQL participants but no timing data at all,
+                        // build equal-width segments so UI shows SOMETHING accurate.
+                        let on_stage_ids: Vec<String> = metadata
+                            .get("participants")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter(|p| {
+                                        let role = p.get("role").and_then(|r| r.as_str()).unwrap_or("");
+                                        role != "listener"
+                                    })
+                                    .filter_map(|p| p.get("id").and_then(|id| id.as_str()).map(String::from))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        if !on_stage_ids.is_empty() {
+                            println!("[Twitter] Using equal-distribution fallback for {} on-stage participants", on_stage_ids.len());
+                            let seg_dur = total_duration / on_stage_ids.len() as f64;
+                            for (i, uid) in on_stage_ids.iter().enumerate() {
+                                let start = i as f64 * seg_dur;
+                                let end = ((i + 1) as f64 * seg_dur).min(total_duration);
+                                speaker_timeline.push(serde_json::json!({
+                                    "id": format!("eq-{}", i),
+                                    "speakerId": uid,
+                                    "start": start,
+                                    "end": end,
+                                }));
+                            }
+                        }
+                    }
+
+                    if !speaker_timeline.is_empty() {
+                        println!("[Twitter] Speaker timeline: {} segments", speaker_timeline.len());
+                        metadata["speakerTimeline"] = Value::Array(speaker_timeline);
+                    } else {
+                        println!("[Twitter] No speaker timeline could be built");
+                    }
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[Twitter] AudioSpace GraphQL enrich failed (continuing with yt-dlp only): {}",
+                        e
+                    );
+                    // Even without GraphQL, try Periscope using HLS-derived media_key.
+                    // We also attempt live_video_stream/status to obtain a chatToken.
+                    if let Some(ref mk) = hls_derived_media_key {
+                        let guest_token = twitter_guest_token().await.unwrap_or_default();
+                        if let Ok(stream_status) = fetch_live_video_stream_status(mk, &guest_token).await {
+                            let chat_token = stream_status
+                                .get("chatToken").or_else(|| stream_status.get("chat_token"))
+                                .and_then(|v| v.as_str())
+                                .map(String::from);
+                            if let Some(ref tok) = chat_token {
+                                let events = fetch_periscope_speaking_events(mk, tok, ytdlp_started_at_secs * 1000).await;
+                                if !events.is_empty() {
+                                    println!("[Twitter] (fallback) Building timeline from {} Periscope events", events.len());
+                                    let duration_secs = metadata.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                    let total_duration = if duration_secs > 0.0 { duration_secs } else { 3600.0 };
+                                    let mut prev_speaker: Option<String> = None;
+                                    let mut seg_start = 0.0_f64;
+                                    let mut segments: Vec<(f64, f64, String)> = Vec::new();
+                                    for (t, uid) in &events {
+                                        if prev_speaker.as_deref() != Some(uid.as_str()) {
+                                            if let Some(prev) = prev_speaker.take() {
+                                                segments.push((seg_start, *t, prev));
+                                            }
+                                            prev_speaker = Some(uid.clone());
+                                            seg_start = *t;
+                                        }
+                                    }
+                                    if let Some(last) = prev_speaker {
+                                        if let Some(&(last_t, _)) = events.last() {
+                                            segments.push((seg_start, (last_t + 30.0).min(total_duration), last));
+                                        }
+                                    }
+                                    if !segments.is_empty() {
+                                        let timeline: Vec<Value> = segments.iter().enumerate().map(|(i, (s, end, uid))| {
+                                            serde_json::json!({ "id": format!("p-{}", i), "speakerId": uid, "start": s, "end": end })
+                                        }).collect();
+                                        metadata["speakerTimeline"] = Value::Array(timeline);
+                                        println!("[Twitter] (fallback) speakerTimeline injected: {} segments", segments.len());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    serde_json::to_string(&metadata).map_err(|e| format!("metadata serialize: {}", e))
 }
 
 /// Get duration for a Twitter broadcast using yt-dlp + ffprobe

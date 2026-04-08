@@ -2,6 +2,21 @@ import { ref, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { createDownloadedAudio } from '@/services/database/downloaded-audio';
+import {
+  extractSpaceSpeakerTimelineFromHls,
+  getTwitterBroadcastInfo,
+} from '@/services/twitter';
+import {
+  upsertDownloadedSpaceMetadata,
+  type SpaceMetadataPayload,
+} from '@/services/database/downloaded-space-metadata';
+import type { SpaceParticipant, SpaceStageSnapshot } from '@/services/database/types';
+
+function normalizeRole(role: string | undefined): SpaceParticipant['role'] {
+  return role === 'host' || role === 'speaker' || role === 'listener' || role === 'guest' || role === 'unknown'
+    ? role
+    : 'unknown';
+}
 
 export interface AudioDownloadProgress {
   download_id: string;
@@ -165,7 +180,7 @@ export function useAudioDownloads() {
     if (event.success && event.file_path && event.title && event.platform) {
       // Save to database
       try {
-        await createDownloadedAudio(
+        const createdAudioId = await createDownloadedAudio(
           event.title,
           event.platform === 'YouTube' ? 'youtube' : 'twitter',
           event.file_path,
@@ -177,6 +192,13 @@ export function useAudioDownloads() {
           event.channels,
           event.thumbnail_url
         );
+
+        if (event.platform === 'Twitter') {
+          const spaceMetadata = await buildSpaceMetadata(event, createdAudioId);
+          if (spaceMetadata) {
+            await upsertDownloadedSpaceMetadata(spaceMetadata);
+          }
+        }
         console.log('[useAudioDownloads] Saved downloaded audio to database:', event.title);
         console.log('[useAudioDownloads] Saved with platform:', event.platform);
         
@@ -188,6 +210,157 @@ export function useAudioDownloads() {
         console.error('[useAudioDownloads] Failed to save downloaded audio to database:', error);
       }
     }
+  }
+
+  async function buildSpaceMetadata(
+    event: AudioDownloadResult,
+    audioId: string
+  ): Promise<SpaceMetadataPayload | null> {
+    const sourceUrl = event.source_url;
+    if (!sourceUrl) return null;
+
+    try {
+      const info = await getTwitterBroadcastInfo(sourceUrl);
+      const uploaderName = info.uploader || info.username?.replace('@', '') || 'Host';
+      const hostId = `host-${uploaderName.toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'speaker'}`;
+      let participants = (info.participants && info.participants.length > 0
+        ? info.participants.map((participant) => ({
+            id: participant.id,
+            name: participant.name,
+            avatar_url: participant.avatarUrl || null,
+            role: normalizeRole(participant.role),
+          }))
+        : [{
+            id: hostId,
+            name: uploaderName,
+            avatar_url: info.avatarUrl || null,
+            role: 'host' as const,
+          }]);
+
+      const duration = event.duration || info.duration || 0;
+      const onStageIds = participants
+        .filter((p) => p.role === 'host' || p.role === 'speaker' || p.role === 'unknown')
+        .map((p) => p.id);
+      let speakerSegments =
+        duration > 0 && onStageIds.length > 0
+          ? buildSeedSpeakerSegments(onStageIds, duration)
+          : [];
+
+      let hlsStageSnapshots: SpaceStageSnapshot[] | undefined;
+
+      // ── Priority 1: X API speaker timeline (Periscope events or stage-join times) ──
+      if (info.speakerTimeline && info.speakerTimeline.length > 0) {
+        console.log(
+          `[useAudioDownloads] Using X API speaker timeline (${info.speakerTimeline.length} segments)`
+        );
+        speakerSegments = info.speakerTimeline.map((seg) => ({
+          id: seg.id,
+          speaker_id: seg.speakerId,
+          start: seg.start,
+          end: seg.end,
+        }));
+        // Ensure any IDs that appear only in the timeline are present in participants
+        participants = mergeParticipantsWithTimeline(participants, speakerSegments);
+      } else if (info.manifestUrl && duration > 0) {
+        // ── Priority 2: HLS ID3 metadata (fallback) ──
+        try {
+          const hls = await extractSpaceSpeakerTimelineFromHls(info.manifestUrl, duration);
+          hlsStageSnapshots = (hls.stageSnapshots ?? []).map((s) => ({
+            id: s.id,
+            t: s.t,
+            on_stage_user_ids: s.onStageUserIds ?? [],
+          }));
+
+          if (hls.speakerSegments.length > 0) {
+            speakerSegments = hls.speakerSegments.map((seg) => ({
+              id: seg.id,
+              speaker_id: seg.speakerId,
+              start: seg.start,
+              end: seg.end,
+            }));
+            participants = mergeParticipantsWithTimeline(participants, speakerSegments);
+          }
+
+          if (hlsStageSnapshots.length > 0) {
+            participants = mergeParticipantsWithTimeline(
+              participants,
+              hlsStageSnapshots.flatMap((snap) =>
+                snap.on_stage_user_ids.map((id) => ({ speaker_id: id }))
+              )
+            );
+          }
+        } catch (timelineErr) {
+          hlsStageSnapshots = undefined;
+          console.warn(
+            '[useAudioDownloads] HLS speaker timeline extraction failed (using seed timeline):',
+            timelineErr
+          );
+        }
+      }
+
+      const payload: SpaceMetadataPayload = {
+        audioId,
+        sourceUrl,
+        title: info.title || event.title || undefined,
+        participants,
+        speakerSegments,
+      };
+      if (hlsStageSnapshots !== undefined) {
+        payload.stageSnapshots = hlsStageSnapshots;
+      }
+      return payload;
+    } catch (error) {
+      console.warn('[useAudioDownloads] Failed to enrich space metadata:', error);
+      return {
+        audioId,
+        sourceUrl,
+        title: event.title || undefined,
+        participants: [],
+        speakerSegments: [],
+      };
+    }
+  }
+
+  function mergeParticipantsWithTimeline(
+    participants: SpaceParticipant[],
+    segments: Array<{ speaker_id: string }>
+  ) {
+    const seen = new Set(participants.map((p) => p.id));
+    const out = [...participants];
+    for (const seg of segments) {
+      if (seen.has(seg.speaker_id)) continue;
+      seen.add(seg.speaker_id);
+      out.push({
+        id: seg.speaker_id,
+        name: `Speaker ${seg.speaker_id}`,
+        avatar_url: null,
+        role: 'unknown' as const,
+      });
+    }
+    return out;
+  }
+
+  function buildSeedSpeakerSegments(speakerIds: string[], totalDuration: number) {
+    if (speakerIds.length === 0 || totalDuration <= 0) return [];
+
+    // Seed timeline for UI: rotate speakers in 18s blocks until diarization is available.
+    const block = 18;
+    const segments: Array<{ id: string; speaker_id: string; start: number; end: number }> = [];
+    let cursor = 0;
+    let idx = 0;
+    while (cursor < totalDuration) {
+      const speakerId = speakerIds[idx % speakerIds.length];
+      const end = Math.min(totalDuration, cursor + block);
+      segments.push({
+        id: `${speakerId}-${Math.floor(cursor)}`,
+        speaker_id: speakerId,
+        start: cursor,
+        end,
+      });
+      cursor = end;
+      idx += 1;
+    }
+    return segments;
   }
 
   // Initialize event listeners only once (singleton pattern)
