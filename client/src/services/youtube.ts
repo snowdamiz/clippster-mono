@@ -155,10 +155,30 @@ export interface YouTubeChannelInfo {
 }
 
 export async function getYouTubeChannelInfo(channel: string): Promise<YouTubeChannelInfo | null> {
+  const channelId = extractYouTubeChannel(channel) || channel.trim();
+
+  // Try Tauri command first (desktop app)
   try {
-    const channelId = extractYouTubeChannel(channel) || channel.trim();
     const result = await invoke<string>('get_youtube_channel_info', { channel: channelId });
-    return JSON.parse(result);
+    const parsed = JSON.parse(result) as YouTubeChannelInfo;
+    if (parsed?.profileImageUrl || parsed?.displayName || parsed?.channelName) {
+      return parsed;
+    }
+  } catch (error: unknown) {
+    console.warn('[YouTube] Tauri channel info failed, trying API fallback:', error);
+  }
+
+  // Fallback for browser/org flows
+  try {
+    const response = await fetch(`/api/youtube/channels/${encodeURIComponent(channelId)}`);
+    if (!response.ok) return null;
+    const data = (await response.json()) as any;
+    return {
+      channelId: data.channelId || channelId,
+      channelName: data.channelName,
+      displayName: data.displayName,
+      profileImageUrl: data.profileImageUrl,
+    };
   } catch (error: unknown) {
     console.error('[YouTube] Failed to fetch channel info:', error);
     return null;
