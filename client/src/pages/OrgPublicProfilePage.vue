@@ -173,7 +173,22 @@
                   </div>
                   <div class="org-account__info">
                     <span class="org-account__name">{{ a.display_name || a.username || a.platform }}</span>
-                    <span class="org-account__platform">{{ a.platform }}</span>
+                    <div class="org-account__platform-row">
+                      <span
+                        class="org-account__platform-chip"
+                        :title="a.platform ? platformTitle(a.platform) : 'No platform linked'"
+                      >
+                        <img
+                          v-if="a.platform && getPlatformIcon(a.platform)"
+                          :src="getPlatformIcon(a.platform)"
+                          class="org-account__platform-icon"
+                          :style="{ filter: getPlatformFilter(a.platform) }"
+                          alt=""
+                        />
+                        <Link v-else class="org-account__platform-empty" />
+                      </span>
+                      <span class="org-account__platform">{{ a.platform ? platformTitle(a.platform) : 'Unknown' }}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -341,8 +356,12 @@ function getPlatformIcon(platform: string): string {
     kick: '/kick.svg',
     twitch: '/twitch.svg',
     youtube: '/youtube.svg',
+    x: '/x.svg',
+    twitter: '/x.svg',
+    tiktok: '/tiktok.svg',
+    rumble: '/rumble.svg',
   };
-  return icons[platform] || '/capsule.svg';
+  return icons[platform] || '';
 }
 
 function getPlatformFilter(platform: string): string {
@@ -360,6 +379,11 @@ const platformLabels: Record<string, string> = {
   twitch: 'Twitch',
   youtube: 'YouTube',
   pumpfun: 'Pump.fun',
+  x: 'X',
+  twitter: 'X',
+  tiktok: 'TikTok',
+  instagram: 'Instagram',
+  rumble: 'Rumble',
 };
 
 function platformTitle(platform: string): string {
@@ -1037,6 +1061,35 @@ function formatStatNumber(n: number): string {
   font-size: 0.6875rem;
   color: var(--sidebar-text-muted);
   text-transform: capitalize;
+}
+
+.org-account__platform-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.org-account__platform-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 0.3125rem;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.org-account__platform-icon {
+  width: 0.75rem;
+  height: 0.75rem;
+  object-fit: contain;
+}
+
+.org-account__platform-empty {
+  width: 0.6875rem;
+  height: 0.6875rem;
+  color: var(--sidebar-text-muted);
+  opacity: 0.7;
 }
 
 /* ===== Contact Items ===== */
