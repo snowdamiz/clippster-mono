@@ -1,6 +1,7 @@
 import { ref, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { useToast } from '@/composables/useToast';
 import { createDownloadedAudio } from '@/services/database/downloaded-audio';
 import {
   extractSpaceSpeakerTimelineFromHls,
@@ -39,6 +40,9 @@ export interface AudioDownloadResult {
   channels?: number;
   thumbnail_url?: string;
   error?: string;
+  /** Pre-merged yt-dlp + GraphQL + optional diarization JSON from the Rust download pipeline. */
+  twitter_space_metadata_json?: string;
+  diarization_warning?: string;
 }
 
 export interface ActiveAudioDownload {
@@ -58,6 +62,7 @@ let completeUnlisten: UnlistenFn | null = null;
 let isInitialized = false;
 
 export function useAudioDownloads() {
+  const { warning: toastWarning } = useToast();
 
   async function startYouTubeAudioDownload(
     downloadId: string,
@@ -194,9 +199,22 @@ export function useAudioDownloads() {
         );
 
         if (event.platform === 'Twitter') {
-          const spaceMetadata = await buildSpaceMetadata(event, createdAudioId);
+          let spaceMetadata: SpaceMetadataPayload | null = null;
+          if (event.twitter_space_metadata_json) {
+            spaceMetadata = buildSpaceMetadataFromRustPipelineJson(
+              event,
+              createdAudioId,
+              event.twitter_space_metadata_json
+            );
+          }
+          if (!spaceMetadata) {
+            spaceMetadata = await buildSpaceMetadata(event, createdAudioId);
+          }
           if (spaceMetadata) {
             await upsertDownloadedSpaceMetadata(spaceMetadata);
+          }
+          if (event.diarization_warning) {
+            toastWarning('Speaker timeline', event.diarization_warning);
           }
         }
         console.log('[useAudioDownloads] Saved downloaded audio to database:', event.title);
@@ -210,6 +228,101 @@ export function useAudioDownloads() {
         console.error('[useAudioDownloads] Failed to save downloaded audio to database:', error);
       }
     }
+  }
+
+  /**
+   * Maps Rust `get_twitter_broadcast_info`-shaped JSON (already merged + optionally diarized)
+   * into DB payload without a second `getTwitterBroadcastInfo` round-trip.
+   */
+  function buildSpaceMetadataFromRustPipelineJson(
+    event: AudioDownloadResult,
+    audioId: string,
+    jsonStr: string
+  ): SpaceMetadataPayload | null {
+    const sourceUrl = event.source_url;
+    if (!sourceUrl) return null;
+    let raw: Record<string, unknown>;
+    try {
+      raw = JSON.parse(jsonStr) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+
+    const uploaderName =
+      (typeof raw.uploader === 'string' && raw.uploader) ||
+      (typeof raw.uploader_id === 'string' && raw.uploader_id) ||
+      'Host';
+    const hostId = `host-${uploaderName.toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'speaker'}`;
+
+    const rawParticipants = Array.isArray(raw.participants) ? raw.participants : [];
+    let participants: SpaceParticipant[] =
+      rawParticipants.length > 0
+        ? (rawParticipants as Array<Record<string, unknown>>).map((p) => ({
+            id: String(p.id ?? ''),
+            name: String(p.name ?? p.id ?? ''),
+            avatar_url:
+              (typeof p.avatar_url === 'string' ? p.avatar_url : null) ??
+              (typeof p.avatarUrl === 'string' ? p.avatarUrl : null),
+            role: normalizeRole(typeof p.role === 'string' ? p.role : undefined),
+          }))
+        : [
+            {
+              id: hostId,
+              name: uploaderName,
+              avatar_url:
+                typeof raw.avatarUrl === 'string'
+                  ? raw.avatarUrl
+                  : typeof raw.thumbnail === 'string'
+                    ? raw.thumbnail
+                    : null,
+              role: 'host' as const,
+            },
+          ];
+
+    const duration =
+      (event.duration ??
+        (typeof raw.duration === 'number'
+          ? raw.duration
+          : typeof raw.duration === 'string'
+            ? parseFloat(raw.duration)
+            : 0)) || 0;
+
+    const timeline = Array.isArray(raw.speakerTimeline) ? raw.speakerTimeline : [];
+    let speakerSegments =
+      timeline.length > 0
+        ? (timeline as Array<Record<string, unknown>>).map((seg, i) => ({
+            id: String(seg.id ?? `dz-${i}`),
+            speaker_id: String(seg.speakerId ?? seg.speaker_id ?? ''),
+            start: Number(seg.start ?? 0),
+            end: Number(seg.end ?? 0),
+          }))
+        : [];
+
+    if (speakerSegments.length > 0) {
+      participants = mergeParticipantsWithTimeline(participants, speakerSegments);
+    } else {
+      const onStageIds = participants
+        .filter((p) => p.role === 'host' || p.role === 'speaker' || p.role === 'unknown')
+        .map((p) => p.id);
+      speakerSegments =
+        duration > 0 && onStageIds.length > 0
+          ? buildSeedSpeakerSegments(onStageIds, duration)
+          : [];
+    }
+
+    const title =
+      (typeof raw.title === 'string' && raw.title) ||
+      (typeof raw.fulltitle === 'string' && raw.fulltitle) ||
+      event.title ||
+      undefined;
+
+    return {
+      audioId,
+      sourceUrl,
+      title,
+      participants,
+      speakerSegments,
+    };
   }
 
   async function buildSpaceMetadata(

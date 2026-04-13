@@ -12,6 +12,7 @@ mod clip_extractor_commands;
 mod clips;
 mod commands;
 mod downloads;
+mod diarization;
 mod dvr;
 mod ffmpeg_sidecar;
 mod ffmpeg_utils;
@@ -1196,9 +1197,11 @@ commands::file_utils::generate_video_thumbnail,
             // Audio download commands
             audio_download::download_youtube_audio,
             audio_download::download_twitter_space_audio,
+            diarization::diarize_space_audio,
             audio_download::upload_audio_file,
             audio_download::cancel_audio_download,
             space_hls_speaker_timeline::extract_space_speaker_timeline_from_hls_manifest,
+            space_hls_speaker_timeline::dump_hls_id3_debug,
 
             // Waveform commands
             waveform::extract_audio_waveform,

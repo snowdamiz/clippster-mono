@@ -151,6 +151,23 @@ fn participant_screen_name(obj: &serde_json::Map<String, Value>) -> Option<Strin
         .map(|s| s.trim_start_matches('@').to_string())
 }
 
+/// Canonical ID shared by **roster JSON** and **speaker timeline** so Vue can match
+/// `segment.speakerId` to `participant.id` for highlighting.
+///
+/// - Prefer numeric `rest_id` (stable; matches Periscope user id when that path is used).
+/// - Otherwise the same lowercase slug used for stage-join times (never raw mixed-case handles).
+fn space_participant_stable_id(obj: &serde_json::Map<String, Value>) -> String {
+    if let Some(r) = participant_rest_id(obj) {
+        if !r.is_empty() {
+            return r;
+        }
+    }
+    participant_screen_name(obj)
+        .map(|s| s.to_lowercase().replace(|c: char| !c.is_alphanumeric(), "_"))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_default()
+}
+
 fn participant_avatar_url(obj: &serde_json::Map<String, Value>) -> Option<String> {
     if let Some(s) = obj.get("avatar_url").and_then(|v| v.as_str()) {
         return Some(s.replace("_normal", "_400x400"));
@@ -190,13 +207,10 @@ fn participant_from_audio_space_row(
                 None
             }
         })?;
-    let id = if !rest.is_empty() {
-        rest
-    } else if !screen.is_empty() {
-        screen.clone()
-    } else {
-        slugify_participant_id(&display)
-    };
+    let mut id = space_participant_stable_id(obj);
+    if id.is_empty() {
+        id = slugify_participant_id(&display);
+    }
     let name = if !screen.is_empty() {
         format!("@{}", screen)
     } else {
@@ -336,13 +350,16 @@ async fn fetch_audio_space_full(space_id: &str) -> Result<AudioSpaceFullData, St
         .and_then(|v| v.as_str())
         .map(String::from);
 
-    // ---- started_at: GraphQL may return camelCase or snake_case; value is Unix SECONDS ----
+    // ---- started_at: GraphQL returns milliseconds; normalise to Unix SECONDS ----
+    // X GraphQL `startedAt` / `started_at` is epoch-milliseconds (13 digits).
+    // yt-dlp `timestamp` is epoch-seconds (10 digits). Normalise everything to seconds.
     let started_at_secs = space
         .pointer("/metadata/started_at")
         .or_else(|| space.pointer("/metadata/startedAt"))
         .or_else(|| space.pointer("/metadata/created_at"))
         .or_else(|| space.pointer("/metadata/createdAt"))
-        .and_then(|v| v.as_i64());
+        .and_then(|v| v.as_i64())
+        .map(|v| if v > 1_000_000_000_000 { v / 1000 } else { v }); // ms → s if needed
 
     println!(
         "[Twitter] AudioSpace media_key={:?} started_at_secs={:?}",
@@ -359,15 +376,12 @@ async fn fetch_audio_space_full(space_id: &str) -> Result<AudioSpaceFullData, St
         {
             for item in arr {
                 let obj = match item.as_object() { Some(o) => o, None => continue };
-                let id = participant_rest_id(obj)
-                    .or_else(|| {
-                        participant_screen_name(obj)
-                            .map(|s| s.to_lowercase().replace(|c: char| !c.is_alphanumeric(), "_"))
-                    })
-                    .unwrap_or_default();
+                let id = space_participant_stable_id(obj);
                 if id.is_empty() { continue; }
-                // `start` is Unix seconds; fall back to space start if absent
+                // `start` is the epoch-ms when the participant joined the stage.
+                // Normalise to seconds for consistent arithmetic with started_at_secs.
                 let join_secs = obj.get("start").and_then(|v| v.as_i64())
+                    .map(|v| if v > 1_000_000_000_000 { v / 1000 } else { v })
                     .unwrap_or(started_at_secs.unwrap_or(0));
                 println!("[Twitter] Participant stage-join: id={} join_secs={}", id, join_secs);
                 stage_join_times.push((id, join_secs));
@@ -383,29 +397,22 @@ async fn fetch_audio_space_full(space_id: &str) -> Result<AudioSpaceFullData, St
     push_audio_space_role(participants_root, "speakers", "speakers", &mut roster, &mut seen);
     push_audio_space_role_capped(participants_root, "listeners", "listener", &mut roster, &mut seen, 50);
 
-    // ---- try live_video_stream/status to get chatToken ----
+    // ---- try Periscope accessVideoPublic to get access_token (no Twitter auth needed) ----
+    // Pass the Space ID as the primary broadcast_id candidate — it's what the Periscope
+    // API actually wants for Twitter Spaces replays.
     let chat_token = if let Some(ref mk) = media_key {
-        match fetch_live_video_stream_status(mk, &guest).await {
-            Ok(stream_status) => {
-                // Log all top-level keys so we can see what the stream status returns
-                if let Some(obj) = stream_status.as_object() {
-                    let keys: Vec<&str> = obj.keys().map(String::as_str).collect();
-                    println!("[Twitter] live_video_stream/status keys: {:?}", keys);
-                }
-                let token = stream_status
-                    .get("chatToken")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                println!("[Twitter] live_video_stream chatToken present={}", token.is_some());
-                token
+        match fetch_periscope_access_video(mk, Some(space_id)).await {
+            Ok(tok) => {
+                println!("[Twitter] Got Periscope access_token for space_id={}", space_id);
+                Some(tok)
             }
             Err(e) => {
-                println!("[Twitter] live_video_stream/status failed (non-fatal): {}", e);
+                println!("[Twitter] Periscope accessVideoPublic failed (non-fatal): {}", e);
                 None
             }
         }
     } else {
-        println!("[Twitter] No media_key — skipping live_video_stream/status");
+        println!("[Twitter] No media_key — skipping Periscope accessVideoPublic");
         None
     };
 
@@ -418,161 +425,522 @@ async fn fetch_audio_space_full(space_id: &str) -> Result<AudioSpaceFullData, St
     })
 }
 
-/// Thin wrapper kept for call-site backwards compat
-async fn fetch_audio_space_participants(space_id: &str) -> Result<Vec<Value>, String> {
-    fetch_audio_space_full(space_id).await.map(|d| d.participants)
-}
+/// Fetch a Periscope replay access token using the public `accessVideoPublic` endpoint.
+/// Requires NO Twitter authentication — works for any publicly available Space replay.
+/// Tries the Twitter Space ID first, then the full media_key and its numeric variant.
+async fn fetch_periscope_access_video(media_key: &str, space_id: Option<&str>) -> Result<String, String> {
+    let numeric_id = media_key
+        .split_once('_')
+        .map(|(_, n)| n.to_string())
+        .unwrap_or_else(|| media_key.to_string());
 
-/// GET /1.1/live_video_stream/status/{media_key}
-async fn fetch_live_video_stream_status(media_key: &str, guest_token: &str) -> Result<Value, String> {
-    let url = format!(
-        "https://twitter.com/i/api/1.1/live_video_stream/status/{}",
-        media_key
-    );
-    let resp = TWITTER_HTTP
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", TWITTER_PUBLIC_BEARER))
-        .header("x-guest-token", guest_token)
-        .header("x-twitter-client-language", "en")
-        .header("x-twitter-active-user", "no")
-        .header("Origin", "https://x.com")
-        .header("Referer", format!("https://x.com/i/spaces/{}", media_key))
-        .send()
-        .await
-        .map_err(|e| format!("live_video_stream/status request failed: {}", e))?;
-    let status = resp.status();
-    if !status.is_success() {
-        let t = resp.text().await.unwrap_or_default();
-        return Err(format!(
-            "live_video_stream/status HTTP {}: {}",
-            status,
-            t.chars().take(300).collect::<String>()
-        ));
+    // Build candidate list: Space ID first (most likely to work), then HLS-derived keys
+    let mut candidates: Vec<String> = Vec::new();
+    if let Some(sid) = space_id {
+        if !sid.is_empty() {
+            candidates.push(sid.to_string());
+        }
     }
-    resp.json().await.map_err(|e| format!("live_video_stream/status JSON: {}", e))
+    candidates.push(media_key.to_string());
+    if numeric_id != media_key {
+        candidates.push(numeric_id.clone());
+    }
+    candidates.dedup();
+
+    let candidates: Vec<&str> = candidates.iter().map(String::as_str).collect();
+
+    let mut last_err = String::new();
+    for &broadcast_id in &candidates {
+        let url = format!(
+            "https://proxsee.pscp.tv/api/v2/accessVideoPublic?broadcast_id={}",
+            broadcast_id
+        );
+        let resp = match TWITTER_HTTP
+            .get(&url)
+            .header("Origin", "https://x.com")
+            .header("Referer", "https://x.com/")
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                last_err = format!("request failed: {}", e);
+                println!("[Twitter] accessVideoPublic {}", last_err);
+                continue;
+            }
+        };
+
+        let http_status = resp.status();
+        if !http_status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            last_err = format!(
+                "HTTP {} for broadcast_id={}: {}",
+                http_status,
+                broadcast_id,
+                &body[..body.len().min(300)]
+            );
+            println!("[Twitter] accessVideoPublic {}", last_err);
+            continue;
+        }
+
+        let data: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                last_err = format!("JSON parse error: {}", e);
+                println!("[Twitter] accessVideoPublic {}", last_err);
+                continue;
+            }
+        };
+
+        println!(
+            "[Twitter] accessVideoPublic keys (broadcast_id={}): {:?}",
+            broadcast_id,
+            data.as_object().map(|o| o.keys().collect::<Vec<_>>())
+        );
+
+        if let Some(tok) = data
+            .get("access_token")
+            .or_else(|| data.get("chatToken"))
+            .or_else(|| data.get("chat_token"))
+            .and_then(|v| v.as_str())
+        {
+            println!(
+                "[Twitter] Got Periscope access_token (broadcast_id={})",
+                broadcast_id
+            );
+            return Ok(tok.to_string());
+        }
+
+        last_err = format!("no access_token field in response for broadcast_id={}", broadcast_id);
+        println!("[Twitter] accessVideoPublic: {}", last_err);
+    }
+
+    Err(format!("accessVideoPublic: {}", last_err))
 }
 
-/// Extract `typing_active` (speaking) events from Periscope chat replay.
-/// Returns Vec<(offset_secs, participant_id)>.
+/// Fetch all speaker/stage events from Periscope broadcastComments (paginated).
+/// `access_token` must come from `fetch_periscope_access_video`.
+/// Returns Vec<(offset_secs_from_space_start, user_id)>.
 async fn fetch_periscope_speaking_events(
     media_key: &str,
-    chat_token: &str,
+    access_token: &str,
     started_at_ms: i64,
 ) -> Vec<(f64, String)> {
-    // Derive the numeric Periscope broadcast_id from the media_key (format: "1_NNNNN")
-    let broadcast_id = media_key
+    let numeric_id = media_key
         .split_once('_')
-        .map(|(_, n)| n)
-        .unwrap_or(media_key);
+        .map(|(_, n)| n.to_string())
+        .unwrap_or_else(|| media_key.to_string());
 
-    // Try proxsee Periscope broadcastComments (includes typing_active events in full event log)
-    let url = format!(
-        "https://proxsee.pscp.tv/api/v2/broadcastComments?broadcast_id={}&count=5000&start=0",
-        broadcast_id
-    );
-    let resp = match TWITTER_HTTP
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", chat_token))
-        .header("Origin", "https://x.com")
-        .send()
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            println!("[Twitter] Periscope broadcastComments request failed: {}", e);
-            return Vec::new();
+    for broadcast_id in &[media_key.to_string(), numeric_id] {
+        let events =
+            fetch_broadcast_comments_paged(broadcast_id, access_token, started_at_ms).await;
+        if !events.is_empty() {
+            return events;
         }
-    };
-
-    if !resp.status().is_success() {
-        println!("[Twitter] Periscope broadcastComments HTTP {}", resp.status());
-        return Vec::new();
     }
+    Vec::new()
+}
 
-    let data: Value = match resp.json().await {
-        Ok(v) => v,
-        Err(e) => {
-            println!("[Twitter] Periscope broadcastComments JSON: {}", e);
-            return Vec::new();
+/// Fetch and parse all pages of broadcastComments for one broadcast_id.
+async fn fetch_broadcast_comments_paged(
+    broadcast_id: &str,
+    access_token: &str,
+    started_at_ms: i64,
+) -> Vec<(f64, String)> {
+    let mut all_events: Vec<(f64, String)> = Vec::new();
+    let mut cursor = String::new();
+    let mut page = 0usize;
+
+    loop {
+        let mut query: Vec<(&str, String)> = vec![
+            ("broadcast_id", broadcast_id.to_string()),
+            ("access_token", access_token.to_string()),
+            ("limit", "500".to_string()),
+        ];
+        if !cursor.is_empty() {
+            query.push(("cursor", cursor.clone()));
         }
-    };
 
-    println!("[Twitter] Periscope broadcastComments keys: {:?}",
-        data.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+        let resp = match TWITTER_HTTP
+            .get("https://proxsee.pscp.tv/api/v2/broadcastComments")
+            .query(&query)
+            .header("Origin", "https://x.com")
+            .header("Referer", "https://x.com/")
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                println!(
+                    "[Twitter] broadcastComments fetch failed (page {}, broadcast_id={}): {}",
+                    page, broadcast_id, e
+                );
+                break;
+            }
+        };
 
-    let mut events: Vec<(f64, String)> = Vec::new();
+        let http_status = resp.status();
+        if !http_status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            println!(
+                "[Twitter] broadcastComments HTTP {} (page {}, broadcast_id={}): {}",
+                http_status,
+                page,
+                broadcast_id,
+                &body[..body.len().min(300)]
+            );
+            break;
+        }
 
-    // Events may be nested at different paths depending on API version
-    let comment_arrays: Vec<&Vec<Value>> = [
-        data.get("comments"),
-        data.get("events"),
-        data.get("results"),
-    ]
-    .iter()
-    .filter_map(|opt| opt.and_then(|v| v.as_array()))
-    .collect();
+        let data: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                println!(
+                    "[Twitter] broadcastComments JSON error (page {}, broadcast_id={}): {}",
+                    page, broadcast_id, e
+                );
+                break;
+            }
+        };
 
-    for comments in comment_arrays {
-        for comment in comments {
-            // Log first few entries to understand format
-            if events.len() < 3 {
-                println!("[Twitter] Periscope event sample: {:?}", comment);
+        if page == 0 {
+            println!(
+                "[Twitter] broadcastComments keys (broadcast_id={}): {:?}",
+                broadcast_id,
+                data.as_object().map(|o| o.keys().collect::<Vec<_>>())
+            );
+        }
+
+        // On the first page, log every unique event type to understand what's available
+        if page == 0 {
+            let empty2 = vec![];
+            let all_comments_for_types = data
+                .get("comments")
+                .or_else(|| data.get("events"))
+                .or_else(|| data.get("results"))
+                .and_then(|v| v.as_array())
+                .unwrap_or(&empty2);
+            let mut type_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            for c in all_comments_for_types {
+                let t = c.get("type")
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "?".to_string());
+                *type_counts.entry(t).or_insert(0) += 1;
+            }
+            let mut sorted_types: Vec<(String, usize)> = type_counts.into_iter().collect();
+            sorted_types.sort_by(|a, b| b.1.cmp(&a.1));
+            println!(
+                "[Twitter] broadcastComments event type distribution (broadcast_id={}): {:?}",
+                broadcast_id, sorted_types
+            );
+        }
+
+        let empty = vec![];
+        let comments = data
+            .get("comments")
+            .or_else(|| data.get("events"))
+            .or_else(|| data.get("results"))
+            .and_then(|v| v.as_array())
+            .unwrap_or(&empty);
+
+        let page_count = comments.len();
+        let mut page_events = 0usize;
+
+        for (i, comment) in comments.iter().enumerate() {
+            if i < 5 && page == 0 {
+                println!("[Twitter] Periscope event sample [{}]: {:?}", i, comment);
             }
 
-            let is_speaking_event = [
-                comment.get("type").and_then(|v| v.as_str()),
-                comment.get("kind").and_then(|v| v.as_str()),
-                comment.get("event_type").and_then(|v| v.as_str()),
-            ]
-            .iter()
-            .any(|t| matches!(*t, Some("typing_active") | Some("speaking") | Some("speaker_active") | Some("SPEAKING")));
+            // Periscope events use either string names or integer type codes.
+            // Integer codes (from Periscope open protocol):
+            //   1 = chat, 2 = share, 3 = ping/heartbeat, 4 = participant_join,
+            //   5 = participant_leave, 6 = verified_chat, 7 = screenshot,
+            //   8 = ??, 9 = speaker_active/typing_active, 17 = host_speak,
+            //   18 = admin_speak, 19 = guest_speak, 20 = mute, 21 = unmute
+            let type_int = comment.get("type").and_then(|v| v.as_i64());
+            let type_str = comment
+                .get("type")
+                .and_then(|v| v.as_str())
+                .or_else(|| comment.get("kind").and_then(|v| v.as_str()))
+                .or_else(|| comment.get("event_type").and_then(|v| v.as_str()))
+                .unwrap_or("");
 
-            // Also check inside a JSON-encoded body
-            let body_speaking = comment
-                .get("body")
-                .and_then(|b| b.as_str())
-                .and_then(|s| serde_json::from_str::<Value>(s).ok())
-                .map(|bv| {
-                    bv.get("type").and_then(|v| v.as_str()).map(|t| {
-                        matches!(t, "typing_active" | "speaking" | "speaker_active")
-                    }).unwrap_or(false)
-                })
-                .unwrap_or(false);
+            // Join events are stage presence, not "who is talking" — including them
+            // smears the timeline. Keep only speak/active-style events.
+            let is_speaking_str = matches!(
+                type_str,
+                "typing_active"
+                    | "speaking"
+                    | "speaker_active"
+                    | "SPEAKING"
+                    | "speaker_join"
+                    | "SPEAKER_JOIN"
+            );
+            // 9 = speaker_active / typing_active, 17–19 = host/admin/guest speak; 21 = unmute (weak signal)
+            let is_speaking_int = matches!(type_int, Some(9) | Some(17) | Some(18) | Some(19) | Some(21));
 
-            if !is_speaking_event && !body_speaking {
+            if !is_speaking_str && !is_speaking_int {
                 continue;
             }
 
-            // Extract timestamp (absolute ms) and convert to offset secs
             let ts_ms = comment
-                .get("timestamp_ms").and_then(|v| v.as_i64())
+                .get("timestamp_ms")
+                .and_then(|v| v.as_i64())
                 .or_else(|| comment.get("offset_ms").and_then(|v| v.as_i64()))
-                .or_else(|| comment.get("created_at_ms").and_then(|v| v.as_i64()));
+                .or_else(|| comment.get("created_at_ms").and_then(|v| v.as_i64()))
+                .or_else(|| comment.get("timestamp").and_then(|v| v.as_i64()));
 
             let offset_secs = match ts_ms {
                 Some(abs_ms) if abs_ms > 1_000_000_000_000 => {
-                    // Absolute unix ms → relative to space start
                     (abs_ms - started_at_ms).max(0) as f64 / 1000.0
                 }
                 Some(rel_ms) => rel_ms as f64 / 1000.0,
                 None => continue,
             };
 
-            // Extract user_id from the event or nested body
-            let uid = comment
-                .get("user_id").and_then(|v| v.as_str())
-                .or_else(|| comment.pointer("/user/id").and_then(|v| v.as_str()))
-                .or_else(|| comment.pointer("/sender/id").and_then(|v| v.as_str()))
-                .map(String::from);
+            let uid = periscope_comment_user_id(comment);
 
             if let Some(uid) = uid {
-                events.push((offset_secs, uid));
+                all_events.push((offset_secs, uid));
+                page_events += 1;
             }
+        }
+
+        println!(
+            "[Twitter] broadcastComments page {} (broadcast_id={}): {} total, {} speaker events",
+            page, broadcast_id, page_count, page_events
+        );
+
+        let next_cursor = data
+            .get("cursor")
+            .or_else(|| data.get("next_cursor"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .unwrap_or_default();
+
+        if next_cursor.is_empty() || page_count == 0 {
+            break;
+        }
+        cursor = next_cursor;
+        page += 1;
+
+        if page > 50 {
+            println!("[Twitter] broadcastComments: safety limit (50 pages) reached");
+            break;
         }
     }
 
-    println!("[Twitter] Periscope speaking events found: {}", events.len());
-    events
+    println!(
+        "[Twitter] broadcastComments done (broadcast_id={}): {} total speaking events",
+        broadcast_id,
+        all_events.len()
+    );
+    all_events.sort_by(|a, b| {
+        a.0.total_cmp(&b.0)
+            .then_with(|| a.1.cmp(&b.1))
+    });
+    all_events
+}
+
+/// Convert Periscope (offset_secs, user_id) events into JSON timeline segments.
+///
+/// - Sorts and **clusters** events whose timestamps fall within `COALESCE_SECS` of the
+///   cluster start (handles simultaneous speakers → **overlapping** segments).
+/// - Merges adjacent intervals for the **same** user so we do not fragment needlessly.
+fn build_speaker_timeline_from_events(
+    events: &[(f64, String)],
+    total_duration: f64,
+    id_prefix: &str,
+) -> Vec<Value> {
+    if events.is_empty() || !total_duration.is_finite() || total_duration <= 0.0 {
+        return Vec::new();
+    }
+    /// Events within this span of the cluster anchor are treated as one instant (crosstalk).
+    const COALESCE_SECS: f64 = 0.12;
+
+    let mut sorted: Vec<(f64, String)> = events.to_vec();
+    sorted.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+
+    // Time-cluster: anchor at sorted[i].0; absorb all events with t - anchor <= COALESCE_SECS
+    let mut groups: Vec<(f64, Vec<String>)> = Vec::new();
+    let mut i = 0usize;
+    while i < sorted.len() {
+        let anchor = sorted[i].0;
+        let mut seen = std::collections::HashSet::<String>::new();
+        let mut users: Vec<String> = Vec::new();
+        let mut j = i;
+        while j < sorted.len() && sorted[j].0 - anchor <= COALESCE_SECS {
+            if seen.insert(sorted[j].1.clone()) {
+                users.push(sorted[j].1.clone());
+            }
+            j += 1;
+        }
+        if !users.is_empty() {
+            groups.push((anchor, users));
+        }
+        i = j;
+    }
+
+    if groups.is_empty() {
+        return Vec::new();
+    }
+
+    let mut raw: Vec<(f64, f64, String)> = Vec::new();
+    for (idx, (t_start, uids)) in groups.iter().enumerate() {
+        let t_start = t_start.clamp(0.0, total_duration);
+        let t_end = groups
+            .get(idx + 1)
+            .map(|(next_t, _)| next_t.clamp(0.0, total_duration))
+            .unwrap_or(total_duration)
+            .max(t_start)
+            .min(total_duration);
+        for uid in uids {
+            raw.push((t_start, t_end, uid.clone()));
+        }
+    }
+
+    raw.sort_by(|a, b| {
+        a.0.total_cmp(&b.0)
+            .then_with(|| a.2.cmp(&b.2))
+            .then_with(|| a.1.total_cmp(&b.1))
+    });
+
+    let mut merged: Vec<(f64, f64, String)> = Vec::new();
+    for (s, e, u) in raw {
+        let s = s.clamp(0.0, total_duration);
+        let e = e.clamp(s, total_duration);
+        if e <= s {
+            continue;
+        }
+        if let Some(last) = merged.last_mut() {
+            if last.2 == u && s <= last.1 + 1e-3 {
+                last.1 = last.1.max(e);
+                continue;
+            }
+        }
+        merged.push((s, e, u));
+    }
+
+    merged
+        .iter()
+        .enumerate()
+        .map(|(i, (start, end, uid))| {
+            serde_json::json!({
+                "id": format!("{}-{}", id_prefix, i),
+                "speakerId": uid,
+                "start": start,
+                "end": end,
+            })
+        })
+        .collect()
+}
+
+fn json_value_to_id_string(v: &Value) -> Option<String> {
+    v.as_str()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| v.as_i64().map(|n| n.to_string()))
+        .or_else(|| v.as_u64().map(|n| n.to_string()))
+}
+
+/// Pull a stable user key from a Periscope broadcastComments row (numeric id preferred).
+fn periscope_comment_user_id(comment: &Value) -> Option<String> {
+    comment
+        .get("user_id")
+        .and_then(json_value_to_id_string)
+        .or_else(|| comment.get("sender_user_id").and_then(json_value_to_id_string))
+        .or_else(|| comment.pointer("/user/id_str").and_then(json_value_to_id_string))
+        .or_else(|| comment.pointer("/user/id").and_then(json_value_to_id_string))
+        .or_else(|| comment.pointer("/sender/id").and_then(json_value_to_id_string))
+        .or_else(|| comment.pointer("/payload/user/user_id").and_then(json_value_to_id_string))
+        .or_else(|| comment.pointer("/payload/user/id").and_then(json_value_to_id_string))
+        .or_else(|| {
+            comment
+                .pointer("/user/legacy/screen_name")
+                .or_else(|| comment.pointer("/user/screen_name"))
+                .and_then(|v| v.as_str())
+                .map(|s| {
+                    s.trim_start_matches('@')
+                        .to_lowercase()
+                        .chars()
+                        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+                        .collect::<String>()
+                })
+        })
+}
+
+fn slugify_handle_for_match(s: &str) -> String {
+    s.trim()
+        .trim_start_matches('@')
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string()
+}
+
+/// Map a Periscope / raw timeline `speakerId` onto `participants[].id` when possible.
+fn resolve_timeline_speaker_id(raw: &str, participants: &[Value]) -> Option<String> {
+    let raw_trim = raw.trim();
+    if raw_trim.is_empty() {
+        return None;
+    }
+    let raw_slug = slugify_handle_for_match(raw_trim);
+
+    for p in participants {
+        let Some(id) = p.get("id").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if id == raw_trim {
+            return Some(id.to_string());
+        }
+        if let Some(u) = p.get("username").and_then(|v| v.as_str()) {
+            if u.eq_ignore_ascii_case(raw_trim) {
+                return Some(id.to_string());
+            }
+            if slugify_handle_for_match(u) == raw_slug {
+                return Some(id.to_string());
+            }
+        }
+        if let Some(name) = p.get("name").and_then(|v| v.as_str()) {
+            let handle = name.strip_prefix('@').unwrap_or(name).trim();
+            if handle.eq_ignore_ascii_case(raw_trim) {
+                return Some(id.to_string());
+            }
+            if slugify_handle_for_match(handle) == raw_slug {
+                return Some(id.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Align timeline segment `speakerId` with GraphQL roster ids for correct UI highlighting.
+pub(crate) fn remap_timeline_speaker_ids_to_roster(timeline: &mut [Value], participants: &[Value]) {
+    if participants.is_empty() {
+        return;
+    }
+    let roster_ids: std::collections::HashSet<&str> = participants
+        .iter()
+        .filter_map(|p| p.get("id").and_then(|v| v.as_str()))
+        .collect();
+    for seg in timeline.iter_mut() {
+        let Some(obj) = seg.as_object_mut() else {
+            continue;
+        };
+        let Some(raw) = obj.get("speakerId").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if roster_ids.contains(raw) {
+            continue;
+        }
+        if let Some(resolved) = resolve_timeline_speaker_id(raw, participants) {
+            obj.insert("speakerId".into(), Value::String(resolved));
+        }
+    }
 }
 
 /// Like `push_audio_space_role` but stops after `cap` entries (listeners can be unbounded).
@@ -1160,75 +1528,33 @@ pub async fn get_twitter_broadcast_info(url: String) -> Result<String, String> {
 
                     let mut speaker_timeline: Vec<Value> = Vec::new();
 
-                    // ── Priority 1: Periscope chat replay (typing_active events) ────────────
-                    let chat_token_for_periscope = space_data.chat_token.clone().or_else(|| {
-                        // If GraphQL chatToken wasn't obtained (no media_key at that point),
-                        // try fetching live_video_stream now that we have the effective_media_key.
-                        None // async call not possible here without re-awaiting; handled below
-                    });
-
-                    if let (Some(ref mk), Some(ref tok)) = (&effective_media_key, &chat_token_for_periscope) {
-                        let events = fetch_periscope_speaking_events(mk, tok, started_at_secs * 1000).await;
+                    // ── Priority 1: Periscope broadcastComments speaker events ──────────────
+                    // access_token was obtained via accessVideoPublic (no Twitter auth needed)
+                    // during fetch_audio_space_full and stored in space_data.chat_token.
+                    if let (Some(ref mk), Some(ref tok)) = (&effective_media_key, &space_data.chat_token) {
+                        let events =
+                            fetch_periscope_speaking_events(mk, tok, started_at_secs * 1000).await;
                         if !events.is_empty() {
-                            println!("[Twitter] Building timeline from {} Periscope speaking events", events.len());
-                            let mut prev_speaker: Option<String> = None;
-                            let mut seg_start = 0.0_f64;
-                            let mut segments: Vec<(f64, f64, String)> = Vec::new();
-                            for (t, uid) in &events {
-                                if prev_speaker.as_deref() != Some(uid.as_str()) {
-                                    if let Some(prev) = prev_speaker.take() {
-                                        segments.push((seg_start, *t, prev));
-                                    }
-                                    prev_speaker = Some(uid.clone());
-                                    seg_start = *t;
-                                }
-                            }
-                            if let Some(last) = prev_speaker {
-                                segments.push((seg_start, total_duration, last));
-                            }
-                            for (i, (start, end, uid)) in segments.iter().enumerate() {
-                                speaker_timeline.push(serde_json::json!({
-                                    "id": format!("ps-{}", i),
-                                    "speakerId": uid,
-                                    "start": start,
-                                    "end": end,
-                                }));
-                            }
+                            println!(
+                                "[Twitter] Building timeline from {} Periscope speaking events",
+                                events.len()
+                            );
+                            speaker_timeline =
+                                build_speaker_timeline_from_events(&events, total_duration, "ps");
                         }
                     }
 
-                    // ── Priority 2: Try live_video_stream/status if we now have a media_key
-                    //    but didn't have a chatToken from the GraphQL call ──────────────────
+                    // ── Priority 2: accessVideoPublic retry if no chatToken yet ──────────────
+                    // Happens when fetch_audio_space_full didn't have a media_key yet
+                    // (GraphQL failed to return it) but we do now via hls_derived_media_key.
                     if speaker_timeline.is_empty() {
                         if let (Some(ref mk), None) = (&effective_media_key, &space_data.chat_token) {
-                            // We have media_key but no chatToken yet — try fetching it now
-                            let guest = twitter_guest_token().await.unwrap_or_default();
-                            if !guest.is_empty() {
-                                if let Ok(stream_status) = fetch_live_video_stream_status(mk, &guest).await {
-                                    if let Some(tok) = stream_status.get("chatToken").and_then(|v| v.as_str()) {
-                                        println!("[Twitter] Got chatToken from live_video_stream (retry)");
-                                        let events = fetch_periscope_speaking_events(mk, tok, started_at_secs * 1000).await;
-                                        if !events.is_empty() {
-                                            let mut prev: Option<String> = None;
-                                            let mut seg_start = 0.0_f64;
-                                            let mut segs: Vec<(f64, f64, String)> = Vec::new();
-                                            for (t, uid) in &events {
-                                                if prev.as_deref() != Some(uid.as_str()) {
-                                                    if let Some(p) = prev.take() { segs.push((seg_start, *t, p)); }
-                                                    prev = Some(uid.clone());
-                                                    seg_start = *t;
-                                                }
-                                            }
-                                            if let Some(p) = prev { segs.push((seg_start, total_duration, p)); }
-                                            for (i, (s, e, uid)) in segs.iter().enumerate() {
-                                                speaker_timeline.push(serde_json::json!({
-                                                    "id": format!("rt-{}", i), "speakerId": uid,
-                                                    "start": s, "end": e,
-                                                }));
-                                            }
-                                        }
-                                    }
-                                }
+                            if let Ok(tok) = fetch_periscope_access_video(mk, Some(&space_id)).await {
+                                println!("[Twitter] Got Periscope access_token (Priority 2 retry)");
+                                let events =
+                                    fetch_periscope_speaking_events(mk, &tok, started_at_secs * 1000).await;
+                                speaker_timeline =
+                                    build_speaker_timeline_from_events(&events, total_duration, "rt");
                             }
                         }
                     }
@@ -1314,7 +1640,32 @@ pub async fn get_twitter_broadcast_info(url: String) -> Result<String, String> {
                         }
                     }
 
+                    // Hints for diarization: map pyannote labels → roster IDs using stage-join order.
+                    if !space_data.stage_join_times.is_empty() {
+                        let mut joins = space_data.stage_join_times.clone();
+                        joins.sort_by(|a, b| a.1.cmp(&b.1));
+                        let base_secs = if started_at_secs > 0 {
+                            started_at_secs
+                        } else {
+                            joins.first().map(|(_, t)| *t).unwrap_or(0)
+                        };
+                        let hints: Vec<Value> = joins
+                            .iter()
+                            .map(|(uid, join_secs)| {
+                                let approx = (*join_secs - base_secs).max(0) as f64;
+                                serde_json::json!({
+                                    "speakerId": uid,
+                                    "approxJoinSec": approx,
+                                })
+                            })
+                            .collect();
+                        metadata["stageJoinHints"] = Value::Array(hints);
+                    }
+
                     if !speaker_timeline.is_empty() {
+                        if let Some(arr) = metadata.get("participants").and_then(|v| v.as_array()) {
+                            remap_timeline_speaker_ids_to_roster(&mut speaker_timeline, arr);
+                        }
                         println!("[Twitter] Speaker timeline: {} segments", speaker_timeline.len());
                         metadata["speakerTimeline"] = Value::Array(speaker_timeline);
                     } else {
@@ -1327,44 +1678,36 @@ pub async fn get_twitter_broadcast_info(url: String) -> Result<String, String> {
                         e
                     );
                     // Even without GraphQL, try Periscope using HLS-derived media_key.
-                    // We also attempt live_video_stream/status to obtain a chatToken.
+                    // accessVideoPublic requires no Twitter auth — works for any public replay.
                     if let Some(ref mk) = hls_derived_media_key {
-                        let guest_token = twitter_guest_token().await.unwrap_or_default();
-                        if let Ok(stream_status) = fetch_live_video_stream_status(mk, &guest_token).await {
-                            let chat_token = stream_status
-                                .get("chatToken").or_else(|| stream_status.get("chat_token"))
-                                .and_then(|v| v.as_str())
-                                .map(String::from);
-                            if let Some(ref tok) = chat_token {
-                                let events = fetch_periscope_speaking_events(mk, tok, ytdlp_started_at_secs * 1000).await;
-                                if !events.is_empty() {
-                                    println!("[Twitter] (fallback) Building timeline from {} Periscope events", events.len());
-                                    let duration_secs = metadata.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                                    let total_duration = if duration_secs > 0.0 { duration_secs } else { 3600.0 };
-                                    let mut prev_speaker: Option<String> = None;
-                                    let mut seg_start = 0.0_f64;
-                                    let mut segments: Vec<(f64, f64, String)> = Vec::new();
-                                    for (t, uid) in &events {
-                                        if prev_speaker.as_deref() != Some(uid.as_str()) {
-                                            if let Some(prev) = prev_speaker.take() {
-                                                segments.push((seg_start, *t, prev));
-                                            }
-                                            prev_speaker = Some(uid.clone());
-                                            seg_start = *t;
-                                        }
+                        if let Ok(tok) = fetch_periscope_access_video(mk, Some(&space_id)).await {
+                            let events = fetch_periscope_speaking_events(
+                                mk,
+                                &tok,
+                                ytdlp_started_at_secs * 1000,
+                            )
+                            .await;
+                            if !events.is_empty() {
+                                let duration_secs =
+                                    metadata.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                let total_duration =
+                                    if duration_secs > 0.0 { duration_secs } else { 3600.0 };
+                                let mut timeline = build_speaker_timeline_from_events(
+                                    &events,
+                                    total_duration,
+                                    "p",
+                                );
+                                if !timeline.is_empty() {
+                                    if let Some(arr) =
+                                        metadata.get("participants").and_then(|v| v.as_array())
+                                    {
+                                        remap_timeline_speaker_ids_to_roster(&mut timeline, arr);
                                     }
-                                    if let Some(last) = prev_speaker {
-                                        if let Some(&(last_t, _)) = events.last() {
-                                            segments.push((seg_start, (last_t + 30.0).min(total_duration), last));
-                                        }
-                                    }
-                                    if !segments.is_empty() {
-                                        let timeline: Vec<Value> = segments.iter().enumerate().map(|(i, (s, end, uid))| {
-                                            serde_json::json!({ "id": format!("p-{}", i), "speakerId": uid, "start": s, "end": end })
-                                        }).collect();
-                                        metadata["speakerTimeline"] = Value::Array(timeline);
-                                        println!("[Twitter] (fallback) speakerTimeline injected: {} segments", segments.len());
-                                    }
+                                    println!(
+                                        "[Twitter] (fallback) speakerTimeline injected: {} segments",
+                                        timeline.len()
+                                    );
+                                    metadata["speakerTimeline"] = Value::Array(timeline);
                                 }
                             }
                         }
@@ -1796,9 +2139,11 @@ fn normalize_twitter_url(url: &str) -> String {
 
 /// Extract broadcast or space ID from URL
 fn extract_broadcast_id(url: &str) -> Result<String, String> {
-    if let Some(broadcast_part) = url.split("/i/broadcasts/").nth(1) {
+    // Strip query string and fragment before extracting the ID segment
+    let clean = url.split('?').next().unwrap_or(url).split('#').next().unwrap_or(url);
+    if let Some(broadcast_part) = clean.split("/i/broadcasts/").nth(1) {
         Ok(broadcast_part.split('/').next().unwrap_or("").to_string())
-    } else if let Some(space_part) = url.split("/i/spaces/").nth(1) {
+    } else if let Some(space_part) = clean.split("/i/spaces/").nth(1) {
         Ok(space_part.split('/').next().unwrap_or("").to_string())
     } else {
         Err("Could not extract broadcast/space ID from URL".to_string())

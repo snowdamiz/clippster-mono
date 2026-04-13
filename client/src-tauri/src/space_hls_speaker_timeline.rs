@@ -712,6 +712,66 @@ fn merge_events(mut events: Vec<(f64, String)>, total_duration: f64) -> Vec<Spac
     out
 }
 
+/// Diagnostic: fetch the first `n_segments` of the HLS playlist and dump every raw ID3 string
+/// to stdout.  Call from the frontend temporarily to understand the actual JSON schema in the
+/// stream, then use that to improve the parser.
+#[tauri::command]
+pub async fn dump_hls_id3_debug(manifest_url: String, n_segments: usize) -> Result<Vec<String>, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let start_url = Url::parse(&manifest_url).map_err(|e| format!("Bad manifest URL: {}", e))?;
+    let (parsed, media_sequence_start) = resolve_to_media_playlist(&client, &start_url).await?;
+
+    let take = n_segments.min(parsed.segments.len());
+    let mut output: Vec<String> = Vec::new();
+    let key_state: Arc<KeyState> = if let Some((ref key_url, ref iv)) = parsed.key_template {
+        match fetch_aes_key(&client, key_url).await {
+            Ok(k) => Arc::new(KeyState { key: Some(k), iv: iv.clone() }),
+            Err(_) => Arc::new(KeyState::default()),
+        }
+    } else {
+        Arc::new(KeyState::default())
+    };
+
+    let mut cumulative = 0.0_f64;
+    for (idx, (uri, dur)) in parsed.segments.iter().enumerate().take(take) {
+        let seg_start = cumulative;
+        cumulative += dur;
+        let seq = media_sequence_start.saturating_add(idx as u64);
+
+        let mut raw = match fetch_bytes_range(&client, uri, SEGMENT_HEAD_BYTES).await {
+            Ok(b) => b,
+            Err(e) => {
+                output.push(format!("[seg {idx}@{seg_start:.1}s] FETCH ERROR: {e}"));
+                continue;
+            }
+        };
+        if let Some(ref key) = key_state.key {
+            let iv = iv_for_segment(seq, &key_state.iv);
+            if let Some(pt) = aes128_cbc_decrypt_segment(&raw, key, &iv) {
+                raw = pt;
+            }
+        }
+
+        let strings = collect_id3_strings(&raw);
+        if strings.is_empty() {
+            output.push(format!("[seg {idx}@{seg_start:.1}s] NO ID3 STRINGS FOUND"));
+        } else {
+            for (si, s) in strings.iter().enumerate() {
+                let preview = if s.len() > 2000 { format!("{}…(+{})", &s[..2000], s.len() - 2000) } else { s.clone() };
+                let line = format!("[seg {idx}@{seg_start:.1}s str {si}] {preview}");
+                println!("[SpaceHls dump] {}", &line);
+                output.push(line);
+            }
+        }
+    }
+    Ok(output)
+}
+
 /// Walks the Space replay HLS manifest and collects ID3 hints: talking timeline + on-stage roster cues.
 #[tauri::command]
 pub async fn extract_space_speaker_timeline_from_hls_manifest(

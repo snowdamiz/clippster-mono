@@ -401,6 +401,21 @@ jobs:
             echo "WARNING: yt-dlp binary not found: $YTDLP_BINARY"
           fi
 
+          # diarize: PyInstaller one-file (same entitlements profile as yt-dlp); skip tiny placeholders
+          DIARIZE_BINARY="client/src-tauri/binaries/diarize-${TRIPLE}"
+          DIARIZE_ENTITLEMENTS="client/src-tauri/entitlements/diarize.entitlements.plist"
+          if [ -f "$DIARIZE_BINARY" ]; then
+            SZ=$(wc -c < "$DIARIZE_BINARY" | tr -d ' ')
+            if [ "${SZ:-0}" -ge 1048576 ]; then
+              echo "Signing diarize with entitlements: $DIARIZE_BINARY ($SZ bytes)"
+              codesign --force --options runtime --timestamp --entitlements "$DIARIZE_ENTITLEMENTS" --sign "$IDENTITY" "$DIARIZE_BINARY"
+            else
+              echo "WARNING: diarize at $DIARIZE_BINARY is ${SZ}b (placeholder) — skipping entitlements codesign"
+            fi
+          else
+            echo "WARNING: diarize binary not found: $DIARIZE_BINARY"
+          fi
+
           echo "=== All signing complete ==="
 
       # Install build tools for FFmpeg static compilation (ffmpeg-the-third crate with build feature)
@@ -685,6 +700,7 @@ jobs:
           # Entitlements paths
           NODE_ENTITLEMENTS="client/src-tauri/entitlements/node.entitlements.plist"
           YTDLP_ENTITLEMENTS="client/src-tauri/entitlements/yt-dlp.entitlements.plist"
+          DIARIZE_ENTITLEMENTS="client/src-tauri/entitlements/diarize.entitlements.plist"
 
           # Apple-recommended inside-out signing order:
           # Sign all inner binaries first (deepest first), then sign the outer .app last.
@@ -695,8 +711,8 @@ jobs:
           echo "=== Signing inner binaries (no special entitlements) ==="
           for bin in "$MACOS_DIR"/*; do
             name=$(basename "$bin")
-            # Skip node and yt-dlp - they get signed with entitlements below
-            if [ "$name" = "node" ] || [ "$name" = "yt-dlp" ]; then
+            # Skip node, yt-dlp, diarize — signed with entitlements below
+            if [ "$name" = "node" ] || [ "$name" = "yt-dlp" ] || [ "$name" = "diarize" ]; then
               continue
             fi
             if [ -f "$bin" ] && [ -x "$bin" ]; then
@@ -726,6 +742,19 @@ jobs:
             codesign --force --options runtime --timestamp --entitlements "$YTDLP_ENTITLEMENTS" --sign "$IDENTITY" "$MACOS_DIR/yt-dlp"
           else
             echo "WARNING: yt-dlp binary not found at $MACOS_DIR/yt-dlp"
+          fi
+
+          # STEP 5: Sign diarize (PyInstaller) — only when a real bundle is present (not build.rs text stub)
+          if [ -f "$MACOS_DIR/diarize" ]; then
+            SZ=$(wc -c < "$MACOS_DIR/diarize" | tr -d ' ')
+            if [ "${SZ:-0}" -ge 1048576 ]; then
+              echo "Signing diarize with entitlements ($SZ bytes)"
+              codesign --force --options runtime --timestamp --entitlements "$DIARIZE_ENTITLEMENTS" --sign "$IDENTITY" "$MACOS_DIR/diarize"
+            else
+              echo "WARNING: diarize is too small (${SZ}b) — likely placeholder; publish diarize-sidecar assets then rebuild"
+            fi
+          else
+            echo "WARNING: diarize binary not found at $MACOS_DIR/diarize"
           fi
 
           # Re-sign the outer .app wrapper to update the seal after modifying inner binaries.
@@ -765,6 +794,18 @@ jobs:
           else
             echo "ERROR: yt-dlp sidecar missing at $MACOS_DIR/yt-dlp"
             exit 1
+          fi
+
+          if [ -f "$MACOS_DIR/diarize" ]; then
+            SZ=$(wc -c < "$MACOS_DIR/diarize" | tr -d ' ')
+            if [ "${SZ:-0}" -ge 1048576 ]; then
+              verify_entitlement "$MACOS_DIR/diarize" "com.apple.security.cs.disable-library-validation"
+              verify_entitlement "$MACOS_DIR/diarize" "com.apple.security.cs.allow-unsigned-executable-memory"
+            else
+              echo "WARNING: skipping diarize entitlement checks (placeholder binary)"
+            fi
+          else
+            echo "WARNING: diarize sidecar missing at $MACOS_DIR/diarize"
           fi
           echo "=== Verifying bundle signature ==="
           codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE" 2>&1 || true

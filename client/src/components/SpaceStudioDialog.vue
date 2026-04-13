@@ -65,6 +65,13 @@
                 >
                   {{ syncingSpeakers ? 'Syncing...' : 'Sync Speakers' }}
                 </button>
+                <button
+                  class="space-studio__btn space-studio__btn--secondary"
+                  :disabled="dumpingId3"
+                  @click="dumpId3Debug"
+                >
+                  {{ dumpingId3 ? 'Dumping...' : 'Dump ID3 Debug' }}
+                </button>
                 <button class="space-studio__btn space-studio__btn--primary" @click="openAiVideo">
                   Open in AI Video
                 </button>
@@ -109,7 +116,7 @@
                     <div
                       class="space-studio__avatar-wrap"
                       :class="{
-                        'space-studio__avatar-wrap--active': activeSpeakerId === speaker.id,
+                        'space-studio__avatar-wrap--active': activeSpeakerIds.has(speaker.id),
                         'space-studio__avatar-wrap--selected': selectedSpeakerId === speaker.id,
                         'space-studio__avatar-wrap--offstage':
                           onStageUserIdsAtPlayhead !== null &&
@@ -184,6 +191,7 @@ import {
   parseSpaceStageSnapshots,
   upsertDownloadedSpaceMetadata,
 } from '@/services/database/downloaded-space-metadata';
+import { invoke } from '@tauri-apps/api/core';
 import {
   extractSpaceSpeakerTimelineFromHls,
   getTwitterBroadcastInfo,
@@ -225,9 +233,11 @@ const currentTime = ref(0);
 const duration = ref(0);
 const clipStart = ref(0);
 const clipEnd = ref(30);
-const activeSpeakerId = ref<string | null>(null);
+/** All speakers whose timeline segments contain the playhead (supports overlapping segments). */
+const activeSpeakerIds = ref<Set<string>>(new Set());
 const aiSuggestions = ref<ClipSuggestion[]>([]);
 const syncingSpeakers = ref(false);
+const dumpingId3 = ref(false);
 const selectedSpeakerId = ref<string | null>(null);
 
 const speakers = ref<Speaker[]>([]);
@@ -276,8 +286,13 @@ watch(
 );
 
 watch(currentTime, (time) => {
-  const active = speakerSegments.value.find((segment) => time >= segment.start && time <= segment.end);
-  activeSpeakerId.value = active?.speakerId ?? null;
+  const ids = new Set<string>();
+  for (const segment of speakerSegments.value) {
+    if (time >= segment.start && time <= segment.end) {
+      ids.add(segment.speakerId);
+    }
+  }
+  activeSpeakerIds.value = ids;
 });
 
 async function initializeSpaceData() {
@@ -293,7 +308,7 @@ async function initializeSpaceData() {
   stageSnapshots.value = parseSpaceStageSnapshots(metadata?.stage_snapshots_json ?? null);
 
   if (savedParticipants.length > 0) {
-    speakers.value = savedParticipants.map((participant) => ({
+    const mapped = savedParticipants.map((participant) => ({
       id: participant.id,
       name: participant.name,
       role: participant.role ?? 'unknown',
@@ -301,17 +316,19 @@ async function initializeSpaceData() {
         participant.avatar_url ||
         `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(participant.id)}`,
     }));
+    speakers.value = mergeDuplicateSpeakerRows(mapped);
   } else {
     speakers.value = buildSpeakerGrid();
   }
 
   if (savedSegments.length > 0) {
-    speakerSegments.value = savedSegments.map((segment) => ({
+    const rawSegs = savedSegments.map((segment) => ({
       id: segment.id,
       speakerId: segment.speaker_id,
       start: segment.start,
       end: segment.end,
     }));
+    speakerSegments.value = reconcileSegmentSpeakerIds(rawSegs, speakers.value);
   } else {
     // Seed timeline only for on-stage participants — listeners never contribute audio.
     const onStageForSeed = speakers.value.filter((s) => s.role !== 'listener');
@@ -375,9 +392,10 @@ function handleLoadedMetadata(event: Event) {
 
 function segmentStyle(segment: SpeakerSegment) {
   const total = duration.value || 1;
+  const t = currentTime.value;
   const left = (segment.start / total) * 100;
   const width = ((segment.end - segment.start) / total) * 100;
-  const isActive = activeSpeakerId.value === segment.speakerId;
+  const isActive = t >= segment.start && t <= segment.end;
 
   return {
     left: `${left}%`,
@@ -479,18 +497,179 @@ function normalizeSpaceRole(role: string | undefined): SpaceParticipant['role'] 
     : 'unknown';
 }
 
+/** Match Rust stage-join slugify & legacy mixed-case handles. */
+function slugifyHandle(s: string): string {
+  return s
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '_')
+    .replace(/_+/g, '_');
+}
+
+function speakerRowQuality(s: Speaker): number {
+  let q = 0;
+  if (s.avatarUrl && !s.avatarUrl.includes('dicebear')) q += 20;
+  if (s.name.startsWith('@')) q += 10;
+  if (/^\d+$/.test(s.id)) q += 5;
+  return q;
+}
+
+function speakersToParticipants(speakers: Speaker[]): SpaceParticipant[] {
+  return speakers.map((s) => ({
+    id: s.id,
+    name: s.name,
+    avatar_url: s.avatarUrl,
+    role: s.role,
+  }));
+}
+
+function handleSlugFromParticipant(p: Pick<Speaker | SpaceParticipant, 'id' | 'name'>): string {
+  const bare = p.name.replace(/^@/, '').trim();
+  if (bare) return slugifyHandle(bare);
+  return slugifyHandle(p.id);
+}
+
+/** Map timeline / Periscope raw keys onto an existing roster `id` (exact, slug, or handle prefix). */
+function resolveRawSpeakerKeyToParticipantId(
+  raw: string,
+  participants: SpaceParticipant[]
+): string | null {
+  const r = raw.trim();
+  if (!r) return null;
+  const rSlug = slugifyHandle(r);
+
+  for (const p of participants) {
+    if (p.id === r) return p.id;
+  }
+  for (const p of participants) {
+    if (slugifyHandle(p.id) === rSlug) return p.id;
+  }
+  for (const p of participants) {
+    const hs = handleSlugFromParticipant(p);
+    if (hs && hs === rSlug) return p.id;
+  }
+  for (const p of participants) {
+    const hs = handleSlugFromParticipant(p);
+    if (!hs) continue;
+    const [short, long] = rSlug.length <= hs.length ? [rSlug, hs] : [hs, rSlug];
+    if (short.length >= 4 && long.startsWith(short)) return p.id;
+  }
+  return null;
+}
+
+/** Collapse duplicate rows (e.g. @GoldenRuleFLC + display-name "GoldenRule") using slug prefix clustering. */
+function mergeDuplicateSpeakerRows(speakers: Speaker[]): Speaker[] {
+  const n = speakers.length;
+  if (n <= 1) return speakers;
+
+  const slugOf = (i: number) => {
+    const s = speakers[i];
+    const h = s.name.replace(/^@/, '').trim();
+    if (h) return slugifyHandle(h);
+    return slugifyHandle(s.id);
+  };
+
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (x: number): number => {
+    if (parent[x] !== x) parent[x] = find(parent[x]);
+    return parent[x];
+  };
+  const union = (a: number, b: number) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[rb] = ra;
+  };
+
+  const prefixRelated = (a: string, b: string) => {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const [x, y] = a.length <= b.length ? [a, b] : [b, a];
+    return x.length >= 4 && y.startsWith(x);
+  };
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const si = slugOf(i);
+      const sj = slugOf(j);
+      const idi = slugifyHandle(speakers[i].id);
+      const idj = slugifyHandle(speakers[j].id);
+      if (si && sj && (si === sj || prefixRelated(si, sj))) union(i, j);
+      else if (idi && sj && prefixRelated(idi, sj)) union(i, j);
+      else if (idj && si && prefixRelated(idj, si)) union(i, j);
+      else if (idi && idj && (idi === idj || prefixRelated(idi, idj))) union(i, j);
+    }
+  }
+
+  const buckets = new Map<number, Speaker[]>();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    const arr = buckets.get(r) ?? [];
+    arr.push(speakers[i]);
+    buckets.set(r, arr);
+  }
+
+  const out: Speaker[] = [];
+  for (const group of buckets.values()) {
+    if (group.length === 1) out.push(group[0]);
+    else {
+      const sorted = [...group].sort((a, b) => speakerRowQuality(b) - speakerRowQuality(a));
+      out.push(sorted[0]);
+    }
+  }
+  return out;
+}
+
+function buildSpeakerIdAliasMap(speakers: Speaker[]): Map<string, string> {
+  const aliases = new Map<string, string>();
+  const add = (key: string, canon: string) => {
+    if (!key) return;
+    if (!aliases.has(key)) aliases.set(key, canon);
+  };
+  for (const sp of speakers) {
+    const canon = sp.id;
+    add(canon, canon);
+    add(canon.toLowerCase(), canon);
+    add(slugifyHandle(canon), canon);
+    const bare = sp.name.replace(/^@/, '').trim();
+    if (bare) {
+      add(bare, canon);
+      add(bare.toLowerCase(), canon);
+      add(slugifyHandle(bare), canon);
+    }
+  }
+  return aliases;
+}
+
+/** Align timeline speakerId with roster ids (exact aliases + fuzzy handle prefix). */
+function reconcileSegmentSpeakerIds(segments: SpeakerSegment[], speakers: Speaker[]): SpeakerSegment[] {
+  const parts = speakersToParticipants(speakers);
+  const aliases = buildSpeakerIdAliasMap(speakers);
+  return segments.map((seg) => {
+    const fast =
+      aliases.get(seg.speakerId) ??
+      aliases.get(seg.speakerId.toLowerCase()) ??
+      aliases.get(slugifyHandle(seg.speakerId));
+    if (fast) return { ...seg, speakerId: fast };
+    const fuzzy = resolveRawSpeakerKeyToParticipantId(seg.speakerId, parts);
+    return { ...seg, speakerId: fuzzy ?? seg.speakerId };
+  });
+}
+
 function mergeParticipantsWithTimelineSegments(
   participants: SpaceParticipant[],
   segments: Array<{ speaker_id: string }>
 ): SpaceParticipant[] {
-  const seen = new Set(participants.map((p) => p.id));
   const out = [...participants];
+  const seen = new Set(out.map((p) => p.id));
   for (const seg of segments) {
-    if (seen.has(seg.speaker_id)) continue;
-    seen.add(seg.speaker_id);
+    const canon = resolveRawSpeakerKeyToParticipantId(seg.speaker_id, out);
+    const eff = canon ?? seg.speaker_id;
+    if (seen.has(eff)) continue;
+    seen.add(eff);
+    if (canon) continue;
     out.push({
-      id: seg.speaker_id,
-      name: `Speaker ${seg.speaker_id}`,
+      id: eff,
+      name: `Speaker ${eff}`,
       avatar_url: null,
       role: 'unknown',
     });
@@ -498,11 +677,33 @@ function mergeParticipantsWithTimelineSegments(
   return out;
 }
 
+/** Rewrite segment speaker_id to roster ids before merge (avoids phantom grid rows). */
+function normalizeSyncedSegmentSpeakerIds(
+  segments: Array<{ id: string; speaker_id: string; start: number; end: number }>,
+  participants: SpaceParticipant[]
+): void {
+  for (const seg of segments) {
+    const canon = resolveRawSpeakerKeyToParticipantId(seg.speaker_id, participants);
+    if (canon) seg.speaker_id = canon;
+  }
+}
+
 async function syncSpeakers() {
   if (!props.audio?.source_url || syncingSpeakers.value) return;
   syncingSpeakers.value = true;
   try {
+    const metadataBeforeSync = props.audio
+      ? await getDownloadedSpaceMetadata(props.audio.id)
+      : null;
+    const participantsBeforeSync = parseSpaceParticipants(metadataBeforeSync?.participants_json ?? null);
+
     const info = await getTwitterBroadcastInfo(props.audio.source_url);
+    if (info.error) {
+      console.warn('[SpaceStudio] Sync Speakers skipped (fetch failed); keeping saved roster:', info.error);
+      await initializeSpaceData();
+      return;
+    }
+
     let participants: SpaceParticipant[] = (info.participants || []).map((participant) => ({
       id: participant.id,
       name: participant.name,
@@ -542,6 +743,7 @@ async function syncSpeakers() {
         start: seg.start,
         end: seg.end,
       }));
+      normalizeSyncedSegmentSpeakerIds(syncedSegments, participants);
       participants = mergeParticipantsWithTimelineSegments(participants, syncedSegments);
     } else if (info.manifestUrl && totalDuration > 0) {
       // ── Priority 2: HLS ID3 metadata (fallback) ──
@@ -563,6 +765,7 @@ async function syncSpeakers() {
             start: seg.start,
             end: seg.end,
           }));
+          normalizeSyncedSegmentSpeakerIds(syncedSegments, participants);
           participants = mergeParticipantsWithTimelineSegments(participants, syncedSegments);
         }
 
@@ -595,6 +798,14 @@ async function syncSpeakers() {
       role: normalizeSpaceRole(participants.find((p) => p.id === speaker.id)?.role),
     }));
 
+    if (uiParticipants.length === 0 && participantsBeforeSync.length > 0) {
+      console.warn(
+        '[SpaceStudio] Sync produced no participants; refusing to overwrite saved metadata.'
+      );
+      await initializeSpaceData();
+      return;
+    }
+
     await upsertDownloadedSpaceMetadata({
       audioId: props.audio.id,
       sourceUrl: props.audio.source_url || undefined,
@@ -607,6 +818,32 @@ async function syncSpeakers() {
     await initializeSpaceData();
   } finally {
     syncingSpeakers.value = false;
+  }
+}
+
+async function dumpId3Debug() {
+  if (!props.audio?.source_url || dumpingId3.value) return;
+  dumpingId3.value = true;
+  try {
+    const info = await getTwitterBroadcastInfo(props.audio.source_url);
+    if (!info.manifestUrl) {
+      console.error('[SpaceStudio] No manifestUrl available for ID3 dump');
+      return;
+    }
+    console.log('[SpaceStudio] Dumping ID3 debug from:', info.manifestUrl);
+    const lines = await invoke<string[]>('dump_hls_id3_debug', {
+      manifestUrl: info.manifestUrl,
+      nSegments: 20,
+    });
+    console.group('[SpaceStudio] === ID3 DEBUG DUMP (first 20 segments) ===');
+    for (const line of lines) {
+      console.log(line);
+    }
+    console.groupEnd();
+  } catch (e) {
+    console.error('[SpaceStudio] ID3 dump failed:', e);
+  } finally {
+    dumpingId3.value = false;
   }
 }
 

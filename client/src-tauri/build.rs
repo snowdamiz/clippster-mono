@@ -120,6 +120,14 @@ fn main() {
     // Download yt-dlp (standalone binaries for all platforms)
     download_ytdlp(&binaries_dir, &target_os, &target_arch);
 
+    // Diarize sidecar (PyInstaller): try download from pinned GitHub release, then placeholders.
+    println!("cargo:rerun-if-env-changed=CLIPSTER_DIARIZE_URL");
+    println!("cargo:rerun-if-env-changed=CLIPSTER_DIARIZE_DOWNLOAD_BASE");
+    download_diarize_sidecar(&binaries_dir, &target_os, &target_arch);
+
+    // Tauri externalBin requires paths to exist; fill any missing triples with text stubs.
+    ensure_diarize_sidecar_placeholders(&binaries_dir);
+
     // Generate migrations
     generate_migrations(&manifest_dir);
 
@@ -851,6 +859,118 @@ fn download_ytdlp(binaries_dir: &Path, target_os: &str, target_arch: &str) {
                 download_url
             );
             println!("cargo:warning=Place at: {:?}", ytdlp_path);
+        }
+    }
+}
+
+/// Pre-built diarize assets (same public releases repo as the app).
+/// Publish with `.github/workflows/diarize-sidecar.yml` before expecting downloads to succeed.
+const DIARIZE_RELEASE_REPO: &str = "snowdamiz/clippster-releases";
+const DIARIZE_RELEASE_TAG: &str = "diarize-sidecar-v0.1.0";
+
+fn diarize_filename_for_target(target_os: &str, target_arch: &str) -> Option<&'static str> {
+    match (target_os, target_arch) {
+        ("windows", "x86_64") => Some("diarize-x86_64-pc-windows-msvc.exe"),
+        ("macos", "x86_64") => Some("diarize-x86_64-apple-darwin"),
+        ("macos", "aarch64") => Some("diarize-aarch64-apple-darwin"),
+        ("linux", "x86_64") => Some("diarize-x86_64-unknown-linux-gnu"),
+        _ => None,
+    }
+}
+
+/// Download the PyInstaller `diarize` sidecar for the **current** build target when missing or stub.
+fn download_diarize_sidecar(binaries_dir: &Path, target_os: &str, target_arch: &str) {
+    let Some(filename) = diarize_filename_for_target(target_os, target_arch) else {
+        println!(
+            "cargo:warning=No prebuilt diarize for {}-{}; placeholder only",
+            target_os, target_arch
+        );
+        return;
+    };
+    let dest = binaries_dir.join(filename);
+    if dest.exists() {
+        if let Ok(meta) = fs::metadata(&dest) {
+            if meta.len() >= 512 {
+                println!(
+                    "cargo:warning=diarize sidecar already present ({}, {} bytes), skip download",
+                    dest.display(),
+                    meta.len()
+                );
+                return;
+            }
+        }
+    }
+
+    let mut urls: Vec<String> = Vec::new();
+    if let Ok(u) = env::var("CLIPSTER_DIARIZE_URL") {
+        let t = u.trim().to_string();
+        if !t.is_empty() {
+            urls.push(t);
+        }
+    }
+    if let Ok(base) = env::var("CLIPSTER_DIARIZE_DOWNLOAD_BASE") {
+        let b = base.trim_end_matches('/').to_string();
+        if !b.is_empty() {
+            urls.push(format!("{}/{}", b, filename));
+        }
+    }
+    urls.push(format!(
+        "https://github.com/{}/releases/download/{}/{}",
+        DIARIZE_RELEASE_REPO, DIARIZE_RELEASE_TAG, filename
+    ));
+
+    for url in urls {
+        println!("cargo:warning=Fetching diarize from {} …", url);
+        match download_binary(&url, &dest) {
+            Ok(_) => {
+                println!(
+                    "cargo:warning=Installed diarize sidecar to {:?}",
+                    dest.display()
+                );
+                return;
+            }
+            Err(e) => println!("cargo:warning=diarize fetch failed: {}", e),
+        }
+    }
+    println!(
+        "cargo:warning=diarize not downloaded — publish {} on {} or set CLIPSTER_DIARIZE_URL (see sidecars/diarize/README.md)",
+        DIARIZE_RELEASE_TAG, DIARIZE_RELEASE_REPO
+    );
+}
+
+/// Stub files so `externalBin` paths exist until PyInstaller builds real diarize binaries.
+fn ensure_diarize_sidecar_placeholders(binaries_dir: &Path) {
+    const NAMES: &[&str] = &[
+        "diarize-x86_64-pc-windows-msvc.exe",
+        "diarize-x86_64-apple-darwin",
+        "diarize-aarch64-apple-darwin",
+        "diarize-x86_64-unknown-linux-gnu",
+    ];
+    const MSG: &[u8] = b"Clippster diarize PLACEHOLDER (not executable). Replace with PyInstaller output; see sidecars/diarize/README.md\n";
+
+    for name in NAMES {
+        let p = binaries_dir.join(name);
+        if p.exists() {
+            continue;
+        }
+        match fs::write(&p, MSG) {
+            Ok(_) => println!(
+                "cargo:warning=Wrote diarize placeholder at {:?} — build real sidecar for speaker analysis",
+                p
+            ),
+            Err(e) => println!(
+                "cargo:warning=Could not write diarize placeholder {:?}: {}",
+                p, e
+            ),
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = fs::metadata(&p) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o755);
+                let _ = fs::set_permissions(&p, perms);
+            }
         }
     }
 }

@@ -34,6 +34,12 @@ pub struct DownloadResult {
     pub channels: Option<u32>,
     pub thumbnail_url: Option<String>,
     pub error: Option<String>,
+    /// Full Twitter Space metadata JSON (participants, speakerTimeline, …) after optional diarization.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub twitter_space_metadata_json: Option<String>,
+    /// Shown when diarization failed but download still succeeded with approximate timeline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diarization_warning: Option<String>,
 }
 
 /// Get the downloaded audio directory
@@ -115,6 +121,10 @@ pub async fn download_youtube_audio(
     let title_clone = title.clone();
     let vod_url_clone = vod_url.clone();
     let channel_name_clone = channel_name.clone();
+    let is_twitter_space_dl = channel_name_clone == "twitter_space";
+    // Only scale yt-dlp progress to 0-70% when diarization will actually run after download.
+    let scale_progress_for_diarize =
+        is_twitter_space_dl && crate::diarization::is_diarize_available();
 
     // Send initial progress
     let _ = app.emit("download-progress", DownloadProgress {
@@ -172,6 +182,8 @@ pub async fn download_youtube_audio(
                     channels: None,
                     thumbnail_url: None,
                     error: Some(format!("Failed to spawn yt-dlp: {}", e)),
+                    twitter_space_metadata_json: None,
+                    diarization_warning: None,
                 });
                 return;
             }
@@ -187,6 +199,7 @@ pub async fn download_youtube_audio(
         let download_id_progress = download_id_clone.clone();
         let app_progress_stderr = app_progress.clone();
         let download_id_progress_stderr = download_id_progress.clone();
+        let scale_for_stderr = scale_progress_for_diarize;
 
         let stderr_task = tokio::spawn(async move {
             let mut total_duration_seconds: Option<f64> = None;
@@ -233,6 +246,11 @@ pub async fn download_youtube_audio(
                             } else {
                                 0.0
                             };
+                            let progress = if scale_for_stderr {
+                                (progress * 0.7).min(69.9)
+                            } else {
+                                progress
+                            };
 
                             let _ = app_progress_stderr.emit("download-progress", DownloadProgress {
                                 download_id: download_id_progress_stderr.clone(),
@@ -247,9 +265,10 @@ pub async fn download_youtube_audio(
 
                 // Surface meaningful status even when no percent is available.
                 if line.contains("[download] Destination:") {
+                    let p = if scale_for_stderr { 0.7_f64 } else { 1.0 };
                     let _ = app_progress_stderr.emit("download-progress", DownloadProgress {
                         download_id: download_id_progress_stderr.clone(),
-                        progress: 1.0,
+                        progress: p,
                         current_time: None,
                         total_time: total_duration_seconds,
                         status: "Download started...".to_string(),
@@ -261,6 +280,7 @@ pub async fn download_youtube_audio(
         });
 
         // Monitor stdout for progress
+        let scale_for_stdout = scale_progress_for_diarize;
         let stdout_task = tokio::spawn(async move {
             let mut reader = BufReader::new(stdout).lines();
             while let Ok(Some(line)) = reader.next_line().await {
@@ -270,9 +290,14 @@ pub async fn download_youtube_audio(
                         .find(|s| s.ends_with('%'))
                         .and_then(|s| s.trim_end_matches('%').parse::<f64>().ok())
                     {
+                        let pct = if scale_for_stdout {
+                            (percent_str * 0.7).min(69.9)
+                        } else {
+                            percent_str
+                        };
                         let _ = app_progress.emit("download-progress", DownloadProgress {
                             download_id: download_id_progress.clone(),
-                            progress: percent_str,
+                            progress: pct,
                             current_time: None,
                             total_time: None,
                             status: "Downloading audio...".to_string(),
@@ -314,7 +339,100 @@ pub async fn download_youtube_audio(
                         } else {
                             "YouTube".to_string()
                         };
-                        
+
+                        let mut twitter_space_metadata_json: Option<String> = None;
+                        let mut diarization_warning: Option<String> = None;
+
+                        // Only run the Rust-side enrichment pipeline when the diarize sidecar
+                        // is a real PyInstaller binary.  Otherwise the frontend's existing
+                        // `buildSpaceMetadata` path (with HLS extraction, retries, etc.) is
+                        // strictly better — don't override it.
+                        if is_twitter_space_dl && crate::diarization::is_diarize_available() {
+                            let _ = app_clone.emit("download-progress", DownloadProgress {
+                                download_id: download_id_clone.clone(),
+                                progress: 70.0,
+                                current_time: None,
+                                total_time: None,
+                                status: "Fetching speaker info...".to_string(),
+                            });
+
+                            match crate::twitter::get_twitter_broadcast_info(vod_url_clone.clone()).await
+                            {
+                                Ok(meta_str) => {
+                                    match serde_json::from_str::<serde_json::Value>(&meta_str) {
+                                        Ok(mut meta_val) => {
+                                            let n_speakers = meta_val
+                                                .get("participants")
+                                                .and_then(|v| v.as_array())
+                                                .map(|arr| {
+                                                    arr.iter()
+                                                        .filter(|p| {
+                                                            let role = p
+                                                                .get("role")
+                                                                .and_then(|r| r.as_str())
+                                                                .unwrap_or("");
+                                                            role != "listener"
+                                                        })
+                                                        .count()
+                                                })
+                                                .filter(|&c| c > 0);
+
+                                            let _ = app_clone.emit("download-progress", DownloadProgress {
+                                                download_id: download_id_clone.clone(),
+                                                progress: 75.0,
+                                                current_time: None,
+                                                total_time: None,
+                                                status: "Analyzing speakers...".to_string(),
+                                            });
+
+                                            match crate::diarization::run_twitter_space_diarization(
+                                                &app_clone,
+                                                &download_id_clone,
+                                                &output_file_str,
+                                                &mut meta_val,
+                                                n_speakers,
+                                            )
+                                            .await
+                                            {
+                                                Ok(true) => {
+                                                    // Diarization ran and enriched the metadata
+                                                    twitter_space_metadata_json =
+                                                        serde_json::to_string(&meta_val).ok();
+                                                }
+                                                Ok(false) => {
+                                                    // Skipped (placeholder) — frontend handles enrichment
+                                                }
+                                                Err(e) => {
+                                                    diarization_warning = Some(format!(
+                                                        "Speaker analysis failed — using approximate timeline. ({})",
+                                                        e
+                                                    ));
+                                                }
+                                            }
+
+                                            let _ = app_clone.emit("download-progress", DownloadProgress {
+                                                download_id: download_id_clone.clone(),
+                                                progress: 98.0,
+                                                current_time: None,
+                                                total_time: None,
+                                                status: "Finalizing speaker timeline...".to_string(),
+                                            });
+                                        }
+                                        Err(e) => {
+                                            diarization_warning = Some(format!(
+                                                "Could not parse Space metadata JSON: {}",
+                                                e
+                                            ));
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    diarization_warning =
+                                        Some(format!("Could not fetch Space metadata: {}", e));
+                                }
+                            }
+                        }
+
                         let _ = app_clone.emit("download-complete", DownloadResult {
                             download_id: download_id_clone,
                             success: true,
@@ -328,6 +446,8 @@ pub async fn download_youtube_audio(
                             channels: metadata.as_ref().and_then(|m| m.channels),
                             thumbnail_url,
                             error: None,
+                            twitter_space_metadata_json,
+                            diarization_warning,
                         });
                     }
                     _ => {
@@ -362,6 +482,8 @@ pub async fn download_youtube_audio(
                             channels: None,
                             thumbnail_url: None,
                             error: Some(error),
+                            twitter_space_metadata_json: None,
+                            diarization_warning: None,
                         });
                     }
                 }
@@ -389,6 +511,8 @@ pub async fn download_youtube_audio(
                     channels: None,
                     thumbnail_url: None,
                     error: Some("Download cancelled".to_string()),
+                    twitter_space_metadata_json: None,
+                    diarization_warning: None,
                 });
             }
         }
@@ -536,6 +660,8 @@ pub async fn upload_audio_file(
         channels: metadata.as_ref().and_then(|m| m.channels),
         thumbnail_url: None,
         error: None,
+        twitter_space_metadata_json: None,
+        diarization_warning: None,
     })
 }
 

@@ -1,0 +1,5 @@
+# Pin loosely for PyInstaller bundle; adjust in CI if needed.
+pyannote.audio>=3.1.0,<4
+torch>=2.0.0
+soundfile>=0.12.0
+numpy>=1.24.0

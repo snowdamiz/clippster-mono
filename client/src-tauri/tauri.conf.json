@@ -73,7 +73,8 @@
       "binaries/ffmpeg",
       "binaries/ffprobe",
       "binaries/node",
-      "binaries/yt-dlp"
+      "binaries/yt-dlp",
+      "binaries/diarize"
     ],
     "windows": {
       "nsis": {

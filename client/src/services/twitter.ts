@@ -291,11 +291,46 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
   uploadDate?: string;
   error?: string;
 }> {
+  const cacheKey = url.trim().toLowerCase();
+  const cached = _broadcastInfoCache.get(cacheKey);
+  if (cached) {
+    console.log('[Twitter] Returning cached broadcast info for:', url);
+    return cached;
+  }
+
   try {
-    const result = await invoke<string>('get_twitter_broadcast_info', { url });
+    // yt-dlp often fails transiently with "Bad guest token"; a short backoff retry helps.
+    let result = '';
+    let gotResult = false;
+    let lastInvokeError: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        result = await invoke<string>('get_twitter_broadcast_info', { url });
+        gotResult = true;
+        break;
+      } catch (e) {
+        lastInvokeError = e;
+        const msg = e instanceof Error ? e.message : String(e);
+        if (attempt < 2 && /guest token|Bad guest/i.test(msg)) {
+          console.warn(
+            `[Twitter] get_twitter_broadcast_info attempt ${attempt + 1} failed; retrying after guest-token error`
+          );
+          await new Promise((r) => setTimeout(r, 600 + attempt * 500));
+          continue;
+        }
+        throw e;
+      }
+    }
+    if (!gotResult) {
+      throw lastInvokeError ?? new Error('get_twitter_broadcast_info failed');
+    }
+
     const metadata = JSON.parse(result);
     
     console.log('[Twitter] Raw metadata from yt-dlp:', metadata);
+    console.log('[Twitter] Raw metadata keys:', Object.keys(metadata));
+    console.log('[Twitter] speakerTimeline in raw metadata:', metadata.speakerTimeline);
+    console.log('[Twitter] mediaKey in raw metadata:', metadata.mediaKey);
     
     // Try multiple thumbnail fields
     let thumbnailUrl = metadata.thumbnail || 
