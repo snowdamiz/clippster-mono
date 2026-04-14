@@ -1190,6 +1190,104 @@ function formatStatNumber(n: number): string {
 }
 
 /* ===== Responsive ===== */
+@media (max-width: 900px) {
+  .org-grid {
+    gap: 1rem;
+  }
+
+  .org-stats-grid {
+    gap: 0.625rem;
+  }
+
+  .org-stat-card {
+    padding: 0.875rem;
+    gap: 0.625rem;
+  }
+
+  .org-stat-card__icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .org-stat-card__value {
+    font-size: 1.125rem;
+  }
+
+  .org-stat-card__label {
+    font-size: 0.625rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .profile-header-actions {
+    width: 100%;
+  }
+
+  .profile-action-btn {
+    flex: 1;
+    justify-content: center;
+    font-size: 0.75rem;
+    height: 32px;
+    padding: 0 0.75rem;
+  }
+
+  .profile-action-btn__icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .org-card__body--streamers {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.875rem;
+  }
+
+  .creator-card__banner {
+    height: 48px;
+  }
+
+  .creator-card__content {
+    padding: 0 0.875rem 1rem;
+    margin-top: -28px;
+  }
+
+  .creator-card__avatar {
+    width: 56px;
+    height: 56px;
+    margin-bottom: 0.625rem;
+  }
+
+  .creator-card__name {
+    font-size: 0.875rem;
+  }
+
+  .creator-card__platform {
+    min-width: 2rem;
+    min-height: 2rem;
+    padding: 0.3125rem;
+  }
+
+  .creator-card__platform-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .org-card__header {
+    padding: 0.875rem 1rem;
+  }
+
+  .org-card__body {
+    padding: 1rem;
+  }
+
+  .org-card--compact .org-card__header {
+    padding: 0.75rem 0.875rem;
+  }
+
+  .org-card--compact .org-card__body {
+    padding: 0.875rem;
+  }
+}
+
 @media (max-width: 640px) {
   .org-profile {
     padding: 0 1rem 1.5rem;
@@ -1201,6 +1299,7 @@ function formatStatNumber(n: number): string {
 
   .org-hero__banner {
     height: 100px;
+    border-radius: 12px 12px 0 0;
   }
 
   .org-hero__content {
@@ -1231,10 +1330,306 @@ function formatStatNumber(n: number): string {
 
   .org-stats-grid {
     margin-top: 0.5rem;
+    gap: 0.5rem;
   }
 
-  .org-card__body--grid {
+  .org-stat-card {
+    padding: 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .org-stat-card__icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .org-stat-card__value {
+    font-size: 1rem;
+  }
+
+  .org-card__body--grid,
+  .org-card__body--streamers {
     grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .org-card__header {
+    padding: 0.75rem 0.875rem;
+    gap: 0.5rem;
+  }
+
+  .org-card__body {
+    padding: 0.875rem;
+  }
+
+  .org-card--compact .org-card__header {
+    padding: 0.625rem 0.75rem;
+  }
+
+  .org-card--compact .org-card__body {
+    padding: 0.75rem;
+  }
+
+  .org-account {
+    padding: 0.375rem;
+  }
+
+  .org-contact {
+    padding: 0.375rem 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .org-contact__value {
+    text-align: left;
+  }
+
+  .org-hiring__meta {
+    gap: 0.25rem;
+  }
+
+  .org-hiring__row {
+    padding: 0.3125rem 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .org-profile {
+    padding: 0 0.75rem 1rem;
+  }
+
+  .profile-header-actions {
+    gap: 0.375rem;
+  }
+
+  .profile-action-btn {
+    font-size: 0.6875rem;
+    height: 28px;
+    padding: 0 0.625rem;
+  }
+
+  .profile-action-btn__icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  .org-hero {
+    padding-bottom: 1.25rem;
+  }
+
+  .org-hero__banner {
+    height: 80px;
+    border-radius: 10px 10px 0 0;
+  }
+
+  .org-hero__content {
+    margin-top: -36px;
+    padding: 0 0.75rem;
+  }
+
+  .org-hero__avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 12px;
+  }
+
+  .org-hero__name {
+    font-size: 1.125rem;
+  }
+
+  .org-hero__tagline {
+    font-size: 0.8125rem;
+  }
+
+  .org-hero__tag {
+    font-size: 0.625rem;
+    padding: 0.1875rem 0.5rem;
+  }
+
+  .org-stats-grid {
+    margin-top: 0.375rem;
+    margin-bottom: 1rem;
+    gap: 0.375rem;
+  }
+
+  .org-stat-card {
+    padding: 0.625rem;
+    gap: 0.375rem;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .org-stat-card__icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .org-stat-card__value {
+    font-size: 0.9375rem;
+  }
+
+  .org-stat-card__label {
+    font-size: 0.5625rem;
+  }
+
+  .org-grid {
+    gap: 0.75rem;
+  }
+
+  .org-card {
+    border-radius: 12px;
+  }
+
+  .org-card__header {
+    padding: 0.625rem 0.75rem;
+    gap: 0.375rem;
+  }
+
+  .org-card__header-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .org-card__title {
+    font-size: 0.875rem;
+  }
+
+  .org-card__count {
+    font-size: 0.6875rem;
+    padding: 0.125rem 0.375rem;
+  }
+
+  .org-card__badge {
+    font-size: 0.625rem;
+    padding: 0.1875rem 0.5rem;
+  }
+
+  .org-card__body {
+    padding: 0.75rem;
+  }
+
+  .org-card__text {
+    font-size: 0.8125rem;
+  }
+
+  .org-card--compact .org-card__header {
+    padding: 0.5rem 0.625rem;
+  }
+
+  .org-card--compact .org-card__body {
+    padding: 0.625rem;
+  }
+
+  .org-card--empty {
+    padding: 2rem 1rem;
+  }
+
+  .org-card__empty-icon {
+    width: 32px;
+    height: 32px;
+    margin-bottom: 0.5rem;
+  }
+
+  .org-card__empty-text {
+    font-size: 0.8125rem;
+  }
+
+  .creator-card {
+    border-radius: 12px;
+  }
+
+  .creator-card__banner {
+    height: 40px;
+  }
+
+  .creator-card__content {
+    padding: 0 0.75rem 0.875rem;
+    margin-top: -24px;
+  }
+
+  .creator-card__avatar {
+    width: 48px;
+    height: 48px;
+    border-width: 2px;
+    margin-bottom: 0.5rem;
+  }
+
+  .creator-card__name {
+    font-size: 0.8125rem;
+    margin-bottom: 0.3125rem;
+  }
+
+  .creator-card__platform {
+    min-width: 1.75rem;
+    min-height: 1.75rem;
+    padding: 0.25rem;
+    border-radius: 8px;
+  }
+
+  .creator-card__platform-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .creator-card__platform-empty {
+    width: 16px;
+    height: 16px;
+  }
+
+  .org-account {
+    padding: 0.3125rem;
+  }
+
+  .org-account__avatar {
+    width: 28px;
+    height: 28px;
+  }
+
+  .org-account__name {
+    font-size: 0.75rem;
+  }
+
+  .org-account__platform {
+    font-size: 0.625rem;
+  }
+
+  .org-account__platform-chip {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 0.25rem;
+  }
+
+  .org-account__platform-icon {
+    width: 0.625rem;
+    height: 0.625rem;
+  }
+
+  .org-contact {
+    padding: 0.3125rem 0;
+  }
+
+  .org-contact__label {
+    font-size: 0.6875rem;
+  }
+
+  .org-contact__value {
+    font-size: 0.75rem;
+  }
+
+  .org-hiring__title {
+    font-size: 0.875rem;
+    margin-bottom: 0.3125rem;
+  }
+
+  .org-hiring__desc {
+    font-size: 0.75rem;
+    margin-bottom: 0.625rem;
+  }
+
+  .org-hiring__row {
+    font-size: 0.6875rem;
+    padding: 0.25rem 0;
   }
 }
 </style>
