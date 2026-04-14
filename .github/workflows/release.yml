@@ -462,10 +462,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path $ffmpegDevDir | Out-Null
           Write-Host "Downloading FFmpeg 8.0 shared build for dev libraries..."
           $zipPath = "$env:RUNNER_TEMP/ffmpeg-shared.zip"
-          # Pinned to a specific immutable autobuild tag (the last BtbN release containing the n8.0
-          # branch before it was dropped). Do NOT change to "latest" — the rolling latest tag now
-          # ships FFmpeg 8.1 headers which break the ffmpeg-the-third 4.x crate (FFmpeg 8.0 only).
-          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-03-29-13-01/ffmpeg-n8.0.1-76-gfa4ee7ab3c-win64-gpl-shared-8.0.zip" -OutFile $zipPath
+          # Pinned to a specific immutable autobuild tag (autobuild-2025-09-30-13-19).
+          # Do NOT change to "latest" — the rolling latest tag now ships FFmpeg 8.1+ headers
+          # which break the ffmpeg-the-third 4.x crate (FFmpeg 8.0 only).
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2025-09-30-13-19/ffmpeg-n8.0-16-gd8605a6b55-win64-gpl-shared-8.0.zip" -OutFile $zipPath
           Expand-Archive -Path $zipPath -DestinationPath $ffmpegDevDir -Force
           Remove-Item $zipPath
           $extractedDir = (Get-ChildItem $ffmpegDevDir -Directory | Select-Object -First 1).FullName
