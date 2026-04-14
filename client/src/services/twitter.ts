@@ -222,12 +222,69 @@ export async function checkTwitterLivestream(urlOrUsername: string): Promise<Twi
 /**
  * Get metadata for a Twitter broadcast/space
  */
+/** CamelCase from Rust `serde(rename_all = "camelCase")` */
+export interface SpaceHlsSpeakerSegmentInvoke {
+  id: string;
+  speakerId: string;
+  start: number;
+  end: number;
+}
+
+export interface SpaceHlsStageSnapshotInvoke {
+  id: string;
+  t: number;
+  onStageUserIds: string[];
+}
+
+export interface SpaceHlsMetadataInvokeResult {
+  speakerSegments: SpaceHlsSpeakerSegmentInvoke[];
+  stageSnapshots: SpaceHlsStageSnapshotInvoke[];
+}
+
+/** HLS replay manifest (m3u8) — used to extract ID3 speaker timeline; not the Space page URL. */
+export async function extractSpaceSpeakerTimelineFromHls(
+  manifestUrl: string,
+  durationSecs?: number
+): Promise<SpaceHlsMetadataInvokeResult> {
+  return invoke('extract_space_speaker_timeline_from_hls_manifest', {
+    manifestUrl,
+    durationSecs: durationSecs ?? null,
+  });
+}
+
+/** A speaker segment derived from the X API (Periscope or stage-join data). */
+export interface SpaceSpeakerTimelineSegment {
+  id: string;
+  speakerId: string;
+  start: number;
+  end: number;
+}
+
+// Cache broadcast info by normalized URL so the post-download metadata enrichment
+// call reuses the result fetched during the pre-download search, avoiding a second
+// yt-dlp + GraphQL round-trip that often fails once the guest token has gone stale.
+const _broadcastInfoCache = new Map<string, Awaited<ReturnType<typeof getTwitterBroadcastInfo>>>();
+
 export async function getTwitterBroadcastInfo(url: string): Promise<{
   title?: string;
   duration?: number;
   thumbnail?: string;
   uploader?: string;
   username?: string;
+  /** Direct HLS playlist URL from yt-dlp (replay speaker timeline). */
+  manifestUrl?: string;
+  participants?: Array<{
+    id: string;
+    name: string;
+    avatarUrl?: string;
+    role?: 'host' | 'speaker' | 'guest' | 'unknown';
+  }>;
+  /**
+   * Speaker timeline built from X API data (Periscope typing_active events or
+   * stage-join timestamps from AudioSpaceById).  More accurate than HLS ID3 parsing.
+   */
+  speakerTimeline?: SpaceSpeakerTimelineSegment[];
+  mediaKey?: string;
   description?: string;
   avatarUrl?: string;
   timestamp?: string;
@@ -378,17 +435,56 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
       uploadDate,
     });
     
-    return {
+    const participants = extractParticipantsFromTwitterMetadata(metadata, avatarUrl);
+
+    const manifestUrl: string | undefined =
+      typeof metadata.manifest_url === 'string' && metadata.manifest_url.length > 0
+        ? metadata.manifest_url
+        : typeof metadata.url === 'string' && metadata.url.includes('.m3u8')
+          ? metadata.url
+          : undefined;
+
+    // Speaker timeline from X API (injected by Rust into metadata JSON)
+    let speakerTimeline: SpaceSpeakerTimelineSegment[] | undefined =
+      Array.isArray(metadata.speakerTimeline) && metadata.speakerTimeline.length > 0
+        ? (metadata.speakerTimeline as SpaceSpeakerTimelineSegment[])
+        : undefined;
+
+    if (speakerTimeline) {
+      console.log(`[Twitter] speakerTimeline from X API: ${speakerTimeline.length} segments`);
+    } else if (participants && participants.length > 0 && duration && duration > 0) {
+      // Rust GraphQL/Periscope call didn't produce a timeline — build an
+      // equal-distribution fallback from the participants we already have.
+      const onStage = participants.filter(p => p.role !== 'listener');
+      if (onStage.length > 0) {
+        const segDur = duration / onStage.length;
+        speakerTimeline = onStage.map((p, i) => ({
+          id: `eq-${i}`,
+          speakerId: p.id,
+          start: i * segDur,
+          end: Math.min((i + 1) * segDur, duration),
+        }));
+        console.log(`[Twitter] Built equal-distribution fallback speakerTimeline: ${speakerTimeline.length} segments`);
+      }
+    }
+
+    const broadcastResult = {
       title: metadata.title || metadata.fulltitle,
       duration,
       thumbnail,
       uploader,
       username,
+      manifestUrl,
+      participants,
+      speakerTimeline,
+      mediaKey: typeof metadata.mediaKey === 'string' ? metadata.mediaKey : undefined,
       description: metadata.description,
       avatarUrl,
       timestamp,
       uploadDate,
     };
+    _broadcastInfoCache.set(cacheKey, broadcastResult);
+    return broadcastResult;
   } catch (error) {
     console.error('[Twitter] Failed to get broadcast info:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -401,4 +497,114 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
       error: errorMessage,
     };
   }
+}
+
+function extractParticipantsFromTwitterMetadata(
+  metadata: any,
+  hostAvatarUrl?: string
+): Array<{ id: string; name: string; avatarUrl?: string; role?: 'host' | 'speaker' | 'guest' | 'unknown' }> {
+  const participants: Array<{ id: string; name: string; avatarUrl?: string; role?: 'host' | 'speaker' | 'guest' | 'unknown' }> = [];
+  const seen = new Set<string>();
+
+  const pushParticipant = (
+    rawId: string | undefined,
+    rawName: string | undefined,
+    role: 'host' | 'speaker' | 'guest' | 'unknown',
+    avatarUrl?: string
+  ) => {
+    const name = (rawName || rawId || '').trim();
+    if (!name) return;
+    const id = (rawId || name).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    participants.push({ id, name, avatarUrl, role });
+  };
+
+  const hostName =
+    metadata?.uploader ||
+    metadata?.channel ||
+    metadata?.uploader_id ||
+    metadata?.creator;
+  const hostId = metadata?.uploader_id || hostName;
+
+  // Spaces: backend merges AudioSpace GraphQL roster into `participants` (includes hosts in `admins`).
+  // Do not prepend yt-dlp uploader separately — IDs differ (screen name vs rest_id) and would duplicate.
+  const hasStructuredRoster =
+    Array.isArray(metadata?.participants) && metadata.participants.length > 0;
+  if (!hasStructuredRoster) {
+    pushParticipant(hostId, hostName, 'host', hostAvatarUrl);
+  }
+
+  const candidateArrays = [
+    metadata?.participants,
+    metadata?.speakers,
+    metadata?.speaker_ids,
+    metadata?.speaker_names,
+    metadata?.hosts,
+    metadata?.host_ids,
+    metadata?.guest_list,
+    metadata?.guests,
+  ].filter(Boolean);
+
+  for (const candidate of candidateArrays) {
+    if (!Array.isArray(candidate)) continue;
+    for (const item of candidate) {
+      if (typeof item === 'string') {
+        pushParticipant(item, item, 'speaker');
+        continue;
+      }
+      if (item && typeof item === 'object') {
+        pushParticipant(
+          item.id || item.user_id || item.username || item.handle,
+          item.name || item.display_name || item.username || item.handle,
+          (item.role as 'host' | 'speaker' | 'guest' | 'unknown') || 'speaker',
+          item.avatar_url || item.profile_image_url || item.profile_image || item.avatar
+        );
+      }
+    }
+  }
+
+  // yt-dlp always encodes the stage roster in this sentence even when GraphQL JSON is sparse for replays.
+  const descriptionNames = parseTwitterSpaceParticipatedByNames(metadata?.description);
+  for (const name of descriptionNames) {
+    pushParticipant(undefined, name, 'speaker');
+  }
+
+  // Host is often omitted from the "participated by" line but should still appear in the grid.
+  const isSpace =
+    metadata?.extractor === 'twitter:spaces' ||
+    metadata?.extractor_key === 'TwitterSpaces';
+  if (isSpace && hostName) {
+    const uname = String(metadata?.uploader_id ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/^@/, '');
+    const hostLabel = String(hostName).trim().replace(/^@/, '').toLowerCase();
+    const hasHost = participants.some((p) => {
+      const pname = p.name.replace(/^@/, '').trim().toLowerCase();
+      const pid = p.id.toLowerCase();
+      return (
+        (uname.length > 0 && (pid === uname || pname === uname)) ||
+        (hostLabel.length > 0 && pname === hostLabel)
+      );
+    });
+    if (!hasHost) {
+      pushParticipant(hostId, hostName, 'host', hostAvatarUrl);
+    }
+  }
+
+  return participants;
+}
+
+/** Names after "Twitter Space participated by …" from yt-dlp / X replay metadata. */
+function parseTwitterSpaceParticipatedByNames(description: unknown): string[] {
+  if (typeof description !== 'string' || description.length === 0) return [];
+  const m = description.match(/Twitter Space participated by\s+(.+)/i);
+  if (!m?.[1]) return [];
+  const body = m[1].trim();
+  if (!body || /^nobody yet$/i.test(body)) return [];
+  return body
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 }

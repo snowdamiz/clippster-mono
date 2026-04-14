@@ -1,6 +1,6 @@
 [package]
 name = "clippster-ui"
-version = "0.1.207"
+version = "0.1.208"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -70,6 +70,10 @@ ffmpeg-the-third = { version = "4.0", default-features = false, features = ["cod
 lru = "0.12"
 image = "0.25"
 parking_lot = "0.12"
+aes = "0.8"
+cbc = "0.1"
+cipher = "0.4"
+hex = "0.4"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"

@@ -117,7 +117,7 @@
               v-for="audio in filteredAudio"
               :key="audio.id"
               class="project-card project-card--audio"
-              @click="playAudio(audio)"
+              @click="handleAudioCardClick(audio)"
             >
               <!-- Selection Checkbox -->
               <div
@@ -301,6 +301,12 @@
         </div>
       </div>
     </PageLayout>
+
+    <SpaceStudioDialog
+      :open="showSpaceStudioDialog"
+      :audio="selectedSpaceAudio"
+      @close="closeSpaceStudio"
+    />
 
     <!-- Create Playlist Dialog -->
     <Teleport to="body">
@@ -548,6 +554,7 @@
   import { convertFileSrc } from '@tauri-apps/api/core';
   import PageLayout from '@/components/PageLayout.vue';
   import DownloadCard from '@/components/DownloadCard.vue';
+  import SpaceStudioDialog from '@/components/SpaceStudioDialog.vue';
   import { useAudioDownloads } from '@/composables/useAudioDownloads';
   import { useAudioPlayer } from '@/composables/useAudioPlayer';
   import { useToast } from '@/composables/useToast';
@@ -599,7 +606,9 @@
   const showAddToPlaylistDialog = ref(false);
   const showPlaylistDetailDialog = ref(false);
   const showEditPlaylistDialog = ref(false);
+  const showSpaceStudioDialog = ref(false);
   const selectedAudioForPlaylist = ref<DownloadedAudio | null>(null);
+  const selectedSpaceAudio = ref<DownloadedAudio | null>(null);
   const selectedPlaylist = ref<AudioPlaylist | null>(null);
   const playlistTracks = ref<Array<DownloadedAudio & { playlist_item_id: string }>>([]);
   const newPlaylistName = ref('');
@@ -824,6 +833,21 @@
       duration: audio.duration ?? undefined,
       platform: audio.platform ?? undefined,
     });
+  }
+
+  function handleAudioCardClick(audio: DownloadedAudio) {
+    if (activeTab.value === 'spaces') {
+      selectedSpaceAudio.value = audio;
+      showSpaceStudioDialog.value = true;
+      return;
+    }
+
+    playAudio(audio);
+  }
+
+  function closeSpaceStudio() {
+    showSpaceStudioDialog.value = false;
+    selectedSpaceAudio.value = null;
   }
 
   async function playPlaylist(playlist: AudioPlaylist) {
