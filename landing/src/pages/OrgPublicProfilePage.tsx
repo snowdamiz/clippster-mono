@@ -5,7 +5,6 @@ import {
   Building2,
   CheckCircle2,
   Eye,
-  FileText,
   Globe,
   Link,
   Loader2,
@@ -207,7 +206,7 @@ export function OrgPublicProfilePage() {
                             {s.profile_image_url ? <img src={s.profile_image_url} className="creator-card__avatar-img" /> : <UserCircle className="creator-card__avatar-fallback" />}
                           </div>
                           <span className="creator-card__name">{s.display_name || s.name || 'Streamer'}</span>
-                          <div className="creator-card__platform" title={s.platform ? platformTitle(s.platform) : 'No platform linked'}>
+                          <div className="creator-card__platform" title={s.platform ? platformLabel(s.platform) : 'No platform linked'}>
                             {s.platform && getPlatformIcon(s.platform) ? <img src={getPlatformIcon(s.platform) || ''} className="creator-card__platform-icon" style={{ filter: getPlatformFilter(s.platform) }} /> : <Link className="creator-card__platform-empty" />}
                           </div>
                         </div>
@@ -230,7 +229,7 @@ export function OrgPublicProfilePage() {
                       <div className="org-account__info">
                         <span className="org-account__name">{a.display_name || a.username || a.platform}</span>
                         <div className="org-account__platform-row">
-                          <span className="org-account__platform-chip" title={a.platform ? platformTitle(a.platform) : 'No platform linked'}>
+                          <span className="org-account__platform-chip" title={a.platform ? platformLabel(a.platform) : 'No platform linked'}>
                             {a.platform && getPlatformIcon(a.platform) ? <img src={getPlatformIcon(a.platform) || ''} className="org-account__platform-icon" style={{ filter: getPlatformFilter(a.platform) }} /> : <Link className="org-account__platform-empty" />}
                           </span>
                           <span className="org-account__platform">{platformLabel(a.platform)}</span>
