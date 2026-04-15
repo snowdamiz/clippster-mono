@@ -25,6 +25,14 @@ export type BuildSceneParams = {
 	transitions?: Transition[];
 };
 
+type TransitionExtendableNode = BaseNode & {
+	setTransitionExtension: (extension: { before?: number; after?: number }) => void;
+};
+
+function isTransitionExtendableNode(node: BaseNode): node is TransitionExtendableNode {
+	return typeof (node as { setTransitionExtension?: unknown }).setTransitionExtension === "function";
+}
+
 export function buildScene(params: BuildSceneParams) {
 	const { tracks, mediaAssets, duration, canvasSize, background, transitions } = params;
 
@@ -155,11 +163,20 @@ export function buildScene(params: BuildSceneParams) {
 				const incomingNode = elementNodeMap.get(element.id);
 
 				if (outgoingNode && incomingNode) {
+					const halfDuration = transition.duration / 2;
 					const transitionNode = new TransitionNode({
 						type: transition.type,
 						duration: transition.duration,
-						transitionStart: element.startTime,
+						junctionTime: element.startTime,
 					});
+
+					if (isTransitionExtendableNode(outgoingNode)) {
+						outgoingNode.setTransitionExtension({ after: halfDuration });
+					}
+					if (isTransitionExtendableNode(incomingNode)) {
+						incomingNode.setTransitionExtension({ before: halfDuration });
+					}
+
 					transitionNode.outgoingNode = outgoingNode;
 					transitionNode.incomingNode = incomingNode;
 					contentNodes.push(transitionNode);

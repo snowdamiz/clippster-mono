@@ -58,8 +58,9 @@
       return false;
     }
 
-    // Disable sidebar if no plan selected OR subscription expired
-    return !hasSelectedPlan || subscriptionStatus === 'expired';
+    // Disable sidebar only if no plan selected (including free tier)
+    // If user has selected free tier, allow access even if subscription expired
+    return !hasSelectedPlan;
   });
 
   // Check if user needs to select account type

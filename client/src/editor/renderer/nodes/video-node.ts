@@ -45,21 +45,38 @@ export interface VideoNodeParams {
 
 export class VideoNode extends BaseNode<VideoNodeParams> {
 	private prefetchedFrame: import("mediabunny").WrappedCanvas | null = null;
+	private transitionExtension: { before: number; after: number } = { before: 0, after: 0 };
+
+	setTransitionExtension(extension: { before?: number; after?: number }) {
+		this.transitionExtension = {
+			before: Math.max(this.transitionExtension.before, extension.before ?? 0),
+			after: Math.max(this.transitionExtension.after, extension.after ?? 0),
+		};
+	}
 
 	private isInRange(time: number) {
 		const elapsed = time - this.params.timeOffset;
-		return elapsed >= -VIDEO_EPSILON && elapsed < this.params.duration;
+		return (
+			elapsed >= -(this.transitionExtension.before + VIDEO_EPSILON) &&
+			elapsed < this.params.duration + this.transitionExtension.after
+		);
+	}
+
+	private getClampedElapsed(time: number) {
+		const elapsed = time - this.params.timeOffset;
+		return Math.max(0, Math.min(this.params.duration, elapsed));
 	}
 
 	private getSourceTime(time: number) {
 		const speed = this.params.speed ?? 1;
-		const elapsed = time - this.params.timeOffset;
+		const elapsed = this.getClampedElapsed(time);
+		const trimEnd = this.params.trimEnd ?? (this.params.trimStart + this.params.duration * speed);
+
 		if (this.params.reversed) {
-			// Play backwards: start from the end of the trimmed region
-			const trimEnd = this.params.trimStart + this.params.duration * speed;
-			return trimEnd - elapsed * speed;
+			return Math.max(this.params.trimStart, trimEnd - elapsed * speed);
 		}
-		return this.params.trimStart + elapsed * speed;
+
+		return Math.min(trimEnd, this.params.trimStart + elapsed * speed);
 	}
 
 	async prefetch({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
@@ -92,7 +109,8 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			renderer.context.save();
 
 			// Resolve keyframed values
-			const elapsed = time - this.params.timeOffset;
+			const elapsed = this.getClampedElapsed(time);
+			const effectiveTime = this.params.timeOffset + elapsed;
 			const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
 			const kf = this.params.keyframes;
 
@@ -237,7 +255,7 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			// Apply post-draw effects (pixelate, sharpen, vignette, colorShift, glitch, wave, zoomPulse, flash)
 			if (fx && fx.length > 0 && hasPostDrawEffects(fx)) {
 				renderer.context.restore();
-				applyCanvasEffects(renderer.context, renderer.width, renderer.height, fx, time, this.params.timeOffset);
+				applyCanvasEffects(renderer.context, renderer.width, renderer.height, fx, effectiveTime, this.params.timeOffset);
 			} else {
 				renderer.context.restore();
 			}

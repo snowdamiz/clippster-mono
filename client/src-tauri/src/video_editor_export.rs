@@ -223,6 +223,14 @@ pub struct BrandingOverlay {
     pub is_full_frame: bool,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct TransitionData {
+    pub transition_type: String,
+    pub duration: f64,
+    pub target_element_index: usize,
+    pub junction_time: f64,
+}
+
 #[derive(Debug, Deserialize)]
 
 pub struct ExportConfig {
@@ -236,8 +244,7 @@ pub struct ExportConfig {
 
     pub effect_overlays: Option<Vec<EffectOverlay>>,
 
-    #[allow(dead_code)]
-    pub transitions: Option<Vec<serde_json::Value>>,
+    pub transitions: Option<Vec<TransitionData>>,
 
     pub output_path: String,
 
@@ -993,6 +1000,26 @@ pub async fn export_video_editor_project(
         effect_filters.join(",")
     }
 
+    fn map_transition_type(editor_type: &str) -> &str {
+        match editor_type {
+            "crossfade" | "dissolve" => "fade",
+            "fadeToBlack" => "fadeblack",
+            "fadeToWhite" => "fadewhite",
+            "wipeLeft" => "wipeleft",
+            "wipeRight" => "wiperight",
+            "wipeUp" => "wipeup",
+            "wipeDown" => "wipedown",
+            "slideLeft" => "slideleft",
+            "slideRight" => "slideright",
+            "slideUp" => "slideup",
+            "slideDown" => "slidedown",
+            "circleWipe" => "circleopen",
+            "diamondWipe" => "diagtl",
+            "clockWipe" => "radial",
+            _ => "fade",
+        }
+    }
+
     // Process video sources - concat if multiple, trim to timeline positions
 
     if config.video_sources.is_empty() {
@@ -1098,17 +1125,33 @@ pub async fn export_video_editor_project(
             ));
         }
     } else if config.video_sources.len() > 1 {
-        // Concat multiple video sources
+        // Multi-source timeline: support per-junction transitions with centered overlap.
+        // We extend clip drawable ranges by half-duration on each side (clone edge frames)
+        // so centered transitions don't cut to black when handles are missing.
 
-        let mut concat_inputs = String::new();
+        let source_count = config.video_sources.len();
+        let mut before_ext = vec![0.0_f64; source_count];
+        let mut after_ext = vec![0.0_f64; source_count];
 
-        for i in 0..config.video_sources.len() {
+        let mut transitions = config.transitions.clone().unwrap_or_default();
+        transitions.sort_by_key(|t| t.target_element_index);
+
+        for t in &transitions {
+            if t.target_element_index == 0 || t.target_element_index >= source_count {
+                continue;
+            }
+            let half = (t.duration / 2.0).max(0.0);
+            let incoming_idx = t.target_element_index;
+            let outgoing_idx = incoming_idx - 1;
+            before_ext[incoming_idx] = before_ext[incoming_idx].max(half);
+            after_ext[outgoing_idx] = after_ext[outgoing_idx].max(half);
+        }
+
+        for i in 0..source_count {
             let source = &config.video_sources[i];
 
             let trim_start = source.trim_start.unwrap_or(0.0);
-
             let duration = source.end_time - source.start_time;
-
             let transform = build_video_transform_filter(source, config.width, config.height);
 
             let effects_str = source
@@ -1123,48 +1166,87 @@ pub async fn export_video_editor_project(
                 format!(",{}", effects_str)
             };
 
-            // Trim each segment from trim_start, apply transforms + effects
+            let mut chain = format!(
+                "[{}:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}{}",
+                i, trim_start, duration, transform, effects_suffix
+            );
 
-            filters.push(format!(
-                "[{}:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}{}[v{}]",
-                i, trim_start, duration, transform, effects_suffix, i
-            ));
+            let before = before_ext[i];
+            let after = after_ext[i];
+            if before > 0.0001 || after > 0.0001 {
+                chain.push_str(&format!(
+                    ",tpad=start_mode=clone:start_duration={}:stop_mode=clone:stop_duration={}",
+                    before, after
+                ));
+            }
 
-            concat_inputs.push_str(&format!("[v{}]", i));
+            chain.push_str(&format!("[v{}]", i));
+            filters.push(chain);
         }
 
-        // Concat all video segments, then pad with black if needed
+        let has_transitions = !transitions.is_empty();
+        if has_transitions {
+            let mut current_stream = "[v0]".to_string();
 
-        if needs_black_padding {
-            filters.push(format!(
-                "{}concat=n={}:v=1:a=0,tpad=stop_mode=add:stop_duration={}:color=black[v]",
-                concat_inputs,
-                config.video_sources.len(),
-                black_padding_duration
-            ));
+            for i in 1..source_count {
+                let transition = transitions
+                    .iter()
+                    .find(|t| t.target_element_index == i && t.duration > 0.0);
+
+                let output_label = if i == source_count - 1 {
+                    "[v_chain]".to_string()
+                } else {
+                    format!("[v_chain{}]", i)
+                };
+
+                if let Some(t) = transition {
+                    let ffmpeg_transition = map_transition_type(&t.transition_type);
+                    let offset = (t.junction_time - t.duration / 2.0).max(0.0);
+
+                    filters.push(format!(
+                        "{}[v{}]xfade=transition={}:duration={}:offset={}{}",
+                        current_stream, i, ffmpeg_transition, t.duration, offset, output_label
+                    ));
+                } else {
+                    filters.push(format!(
+                        "{}[v{}]concat=n=2:v=1:a=0{}",
+                        current_stream, i, output_label
+                    ));
+                }
+
+                current_stream = output_label;
+            }
+
+            if needs_black_padding {
+                filters.push(format!(
+                    "{}tpad=stop_mode=add:stop_duration={}:color=black[v]",
+                    current_stream, black_padding_duration
+                ));
+            } else {
+                filters.push(format!("{}copy[v]", current_stream));
+            }
         } else {
-            filters.push(format!(
-                "{}concat=n={}:v=1:a=0[v]",
-                concat_inputs,
-                config.video_sources.len()
-            ));
+            let concat_inputs: String = (0..source_count).map(|i| format!("[v{}]", i)).collect();
+            if needs_black_padding {
+                filters.push(format!(
+                    "{}concat=n={}:v=1:a=0,tpad=stop_mode=add:stop_duration={}:color=black[v]",
+                    concat_inputs, source_count, black_padding_duration
+                ));
+            } else {
+                filters.push(format!("{}concat=n={}:v=1:a=0[v]", concat_inputs, source_count));
+            }
         }
 
-        // Handle audio from video sources
-
+        // Handle audio from video sources (still concatenated; transition audio crossfade is TODO)
         let mut audio_concat_inputs = String::new();
 
-        for i in 0..config.video_sources.len() {
+        for i in 0..source_count {
             let source = &config.video_sources[i];
 
             let trim_start = source.trim_start.unwrap_or(0.0);
-
             let duration = source.end_time - source.start_time;
-
             let is_muted = source.is_muted.unwrap_or(false);
-
             let vol = source.volume.unwrap_or(1.0);
-
             let spd = source.speed.unwrap_or(1.0);
 
             let mut audio_extras = String::new();
@@ -1172,7 +1254,6 @@ pub async fn export_video_editor_project(
             if is_muted {
                 audio_extras.push_str(",volume=0");
             } else {
-                // Check for volume keyframes
                 let vol_kf = source.keyframes.as_ref().and_then(|tracks| {
                     tracks
                         .iter()
@@ -1204,8 +1285,6 @@ pub async fn export_video_editor_project(
                     i, trim_start, duration, audio_extras, i
                 ));
             } else {
-                // No audio stream in this video source — generate silent audio
-
                 filters.push(format!(
                     "anullsrc=r=48000:cl=stereo,atrim=duration={}[va{}]",
                     duration, i
@@ -1217,8 +1296,7 @@ pub async fn export_video_editor_project(
 
         filters.push(format!(
             "{}concat=n={}:v=0:a=1[va]",
-            audio_concat_inputs,
-            config.video_sources.len()
+            audio_concat_inputs, source_count
         ));
     }
 

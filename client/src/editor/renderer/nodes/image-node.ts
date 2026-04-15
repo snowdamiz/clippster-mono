@@ -40,10 +40,18 @@ export interface ImageNodeParams {
 export class ImageNode extends BaseNode<ImageNodeParams> {
 	private image?: HTMLImageElement;
 	private readyPromise: Promise<void>;
+	private transitionExtension: { before: number; after: number } = { before: 0, after: 0 };
 
 	constructor(params: ImageNodeParams) {
 		super(params);
 		this.readyPromise = this.load();
+	}
+
+	setTransitionExtension(extension: { before?: number; after?: number }) {
+		this.transitionExtension = {
+			before: Math.max(this.transitionExtension.before, extension.before ?? 0),
+			after: Math.max(this.transitionExtension.after, extension.after ?? 0),
+		};
 	}
 
 	private async load() {
@@ -57,15 +65,16 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		});
 	}
 
-	private getImageTime(time: number) {
-		return time - this.params.timeOffset + this.params.trimStart;
+	private getClampedElapsed(time: number) {
+		const elapsed = time - this.params.timeOffset;
+		return Math.max(0, Math.min(this.params.duration, elapsed));
 	}
 
 	private isInRange(time: number) {
-		const imageTime = this.getImageTime(time);
+		const elapsed = time - this.params.timeOffset;
 		return (
-			imageTime >= this.params.trimStart - IMAGE_EPSILON &&
-			imageTime < this.params.trimStart + this.params.duration
+			elapsed >= -(this.transitionExtension.before + IMAGE_EPSILON) &&
+			elapsed < this.params.duration + this.transitionExtension.after
 		);
 	}
 
@@ -85,7 +94,8 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		renderer.context.save();
 
 		// Resolve keyframed values
-		const elapsed = time - this.params.timeOffset;
+		const elapsed = this.getClampedElapsed(time);
+		const effectiveTime = this.params.timeOffset + elapsed;
 		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
 		const kf = this.params.keyframes;
 
@@ -220,7 +230,7 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		// Apply post-draw effects (pixelate, sharpen, vignette, colorShift, glitch, wave, zoomPulse, flash)
 		if (fx && fx.length > 0 && hasPostDrawEffects(fx)) {
 			renderer.context.restore();
-			applyCanvasEffects(renderer.context, renderer.width, renderer.height, fx, time, this.params.timeOffset);
+			applyCanvasEffects(renderer.context, renderer.width, renderer.height, fx, effectiveTime, this.params.timeOffset);
 		} else {
 			renderer.context.restore();
 		}
