@@ -8,8 +8,6 @@
       'sidebar--disabled': disabled,
     }"
   >
-    <!-- Disabled Overlay -->
-    <div v-if="disabled" class="sidebar-disabled-overlay"></div>
     <!-- Bug Report Dialog -->
     <BugReportDialog
       :show="showBugReportDialog"
@@ -892,18 +890,6 @@
     animation: spin 0.8s linear infinite;
   }
 
-  /* Disabled state */
-  .sidebar--disabled {
-    opacity: 0.5;
-    pointer-events: none;
-  }
-
-  .sidebar-disabled-overlay {
-    position: absolute;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.3);
-    z-index: 50;
-    pointer-events: all;
-    cursor: not-allowed;
-  }
+  /* Disabled state removed - free tier users have full sidebar access */
+  /* Individual features are gated via feature flags, not the entire sidebar */
 </style>

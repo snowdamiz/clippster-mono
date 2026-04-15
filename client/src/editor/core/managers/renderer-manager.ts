@@ -143,6 +143,7 @@ interface TauriTransitionData {
 	transition_type: string;
 	duration: number;
 	target_element_index: number;
+	junction_time: number;
 }
 
 interface TauriExportConfig {
@@ -310,6 +311,7 @@ export class RendererManager {
 		brandingExport: BrandingExportData;
 	}): TauriExportConfig {
 		const videoSources: TauriVideoSource[] = [];
+		const videoSourceElementIndex = new Map<string, number>();
 		const audioTracks: TauriAudioTrack[] = [];
 
 		const effectOverlays: TauriEffectOverlay[] = [];
@@ -362,6 +364,7 @@ export class RendererManager {
 							animation_loop: serializeAnimation(imgEl.animationLoop),
 							keyframes: serializeKeyframes(imgEl.keyframes),
 						});
+						videoSourceElementIndex.set(imgEl.id, videoSources.length - 1);
 					} else {
 						const videoEl = el as VideoElement;
 						videoSources.push({
@@ -398,6 +401,7 @@ export class RendererManager {
 							animation_loop: serializeAnimation(videoEl.animationLoop),
 							keyframes: serializeKeyframes(videoEl.keyframes),
 						});
+						videoSourceElementIndex.set(videoEl.id, videoSources.length - 1);
 					}
 				}
 			} else if (track.type === "sticker") {
@@ -465,24 +469,19 @@ export class RendererManager {
 			const scene = this.editor.scenes.getActiveScene();
 			if (scene?.transitions) {
 				for (const t of scene.transitions) {
-					// Find the index of the target element in videoSources
-					const targetIdx = videoSources.findIndex(
-						(vs) => {
-							// Match by finding the video element with this ID on the track
-							const track = tracks.find((tr) => tr.id === t.trackId);
-							if (!track) return false;
-							const el = track.elements.find((e) => e.id === t.targetElementId);
-							if (!el) return false;
-							return Math.abs(vs.start_time - el.startTime) < 0.001;
-						},
-					);
-					if (targetIdx > 0) {
-						transitionData.push({
-							transition_type: t.type,
-							duration: t.duration,
-							target_element_index: targetIdx,
-						});
-					}
+					const targetIdx = videoSourceElementIndex.get(t.targetElementId);
+					if (targetIdx === undefined || targetIdx <= 0) continue;
+
+					const targetTrack = tracks.find((tr) => tr.id === t.trackId);
+					const targetElement = targetTrack?.elements.find((el) => el.id === t.targetElementId);
+					if (!targetElement) continue;
+
+					transitionData.push({
+						transition_type: t.type,
+						duration: t.duration,
+						target_element_index: targetIdx,
+						junction_time: targetElement.startTime,
+					});
 				}
 			}
 		} catch {

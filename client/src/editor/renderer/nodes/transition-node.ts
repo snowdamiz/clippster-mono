@@ -7,8 +7,8 @@ export interface TransitionNodeParams {
 	type: TransitionType;
 	/** Duration of the transition overlap in seconds */
 	duration: number;
-	/** Timeline time where the transition starts (= incoming element startTime) */
-	transitionStart: number;
+	/** Timeline time where clips meet (incoming element startTime) */
+	junctionTime: number;
 }
 
 /**
@@ -23,8 +23,8 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 	incomingNode: BaseNode | null = null;
 
 	private isInTransition(time: number): boolean {
-		const start = this.params.transitionStart;
-		const end = start + this.params.duration;
+		const start = this.params.junctionTime - this.params.duration / 2;
+		const end = this.params.junctionTime + this.params.duration / 2;
 		return time >= start && time < end;
 	}
 
@@ -45,7 +45,8 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 
 		const w = renderer.width;
 		const h = renderer.height;
-		const progress = (time - this.params.transitionStart) / this.params.duration;
+		const transitionStart = this.params.junctionTime - this.params.duration / 2;
+		const progress = (time - transitionStart) / this.params.duration;
 
 		// Use OffscreenCanvas if available (matches renderer), fall back to regular canvas
 		let outCanvas: HTMLCanvasElement | OffscreenCanvas;
