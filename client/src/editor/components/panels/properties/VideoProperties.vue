@@ -335,6 +335,17 @@ function toggleOpacityKeyframe() {
 	}
 }
 
+function toggleSpeedKeyframe() {
+	if (hasKf('speed')) {
+		clearPropertyKeyframes('speed');
+	} else {
+		const currentTime = editor.playback.getCurrentTime();
+		const elapsed = currentTime - props.element.startTime;
+		const offset = props.element.duration > 0 ? elapsed / props.element.duration : 0;
+		addKeyframe('speed', clamp(offset, 0, 1), props.element.speed ?? 1);
+	}
+}
+
 // --- Opacity ---
 function handleOpacitySlider(e: Event) {
 	const val = Number((e.target as HTMLInputElement).value);
@@ -1023,8 +1034,9 @@ function formatTime(seconds: number): string {
 
 		<!-- ══════ Speed Tab ══════ -->
 		<div v-else-if="activeTab === 'speed'" class="flex-1 overflow-y-auto p-3">
-			<div class="flex items-center border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
+			<div class="flex items-center justify-between border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
 				<span class="text-sm text-zinc-400">Speed</span>
+				<KeyframeToggle :active="hasKf('speed')" label="speed" @toggle="toggleSpeedKeyframe" />
 			</div>
 			<div class="flex items-center gap-2">
 				<input type="range" :value="currentSpeed * 10" min="1" max="100" step="1" class="flex-1" @input="(e) => changeSpeed(Number((e.target as HTMLInputElement).value) / 10)" />

@@ -334,7 +334,7 @@
 
   /**
    * Existing transitions rendered as badges on the timeline between segments.
-   * Each entry: { trackId, xPx, label, transitionId, targetElementId }
+   * Includes a duration span centered at the clip junction.
    */
   const existingTransitionBadges = computed(() => {
     void version.value;
@@ -346,7 +346,14 @@
     }
     if (!scene?.transitions?.length) return [];
 
-    const result: { trackId: string; xPx: number; label: string; targetElementId: string }[] = [];
+    const result: {
+      trackId: string;
+      xPx: number;
+      startPx: number;
+      widthPx: number;
+      label: string;
+      targetElementId: string;
+    }[] = [];
     const pps = TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value;
 
     for (const transition of scene.transitions) {
@@ -354,10 +361,16 @@
       if (!track) continue;
       const targetEl = track.elements.find((e) => e.id === transition.targetElementId);
       if (!targetEl) continue;
-      // Badge sits at the junction (start of the right element)
+
+      const xPx = targetEl.startTime * pps;
+      const widthPx = Math.max(8, transition.duration * pps);
+      const startPx = xPx - widthPx / 2;
+
       result.push({
         trackId: transition.trackId,
-        xPx: targetEl.startTime * pps,
+        xPx,
+        startPx,
+        widthPx,
         label: transition.type,
         targetElementId: transition.targetElementId,
       });
@@ -920,6 +933,19 @@
                   />
                   <!-- Existing transition badges -->
                   <template v-for="badge in existingTransitionBadges" :key="badge.targetElementId">
+                    <div
+                      v-if="badge.trackId === track.id"
+                      class="pointer-events-none absolute z-35"
+                      :style="{
+                        left: `${badge.startPx}px`,
+                        width: `${badge.widthPx}px`,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        height: '14px',
+                      }"
+                    >
+                      <div class="h-full w-full rounded-full border border-[#E040FB]/30 bg-[#E040FB]/12" />
+                    </div>
                     <div
                       v-if="badge.trackId === track.id"
                       class="pointer-events-none absolute top-0 z-40"

@@ -559,9 +559,23 @@ pub async fn export_video_editor_project(
 
         let temperature = source.temperature.unwrap_or(0.0);
 
-        // Speed via setpts (video only, audio handled separately)
+        // Speed via setpts (video only, audio handled separately).
+        // If speed keyframes exist, use a piecewise speed expression.
+        let speed_kf = source.keyframes.as_ref().and_then(|tracks| {
+            tracks
+                .iter()
+                .find(|t| t.property == "speed" && !t.keyframes.is_empty())
+        });
 
-        if (speed - 1.0).abs() > 0.001 {
+        if let Some(kf_track) = speed_kf {
+            if let Some(speed_expr) = build_keyframe_expression(&kf_track.keyframes, source.end_time - source.start_time, speed) {
+                // Approximate variable speed by applying reciprocal instantaneous speed.
+                // (A full integral mapping can be added later for exact parity.)
+                transform_filters.push(format!("setpts='(1/({}))*PTS'", speed_expr));
+            } else if (speed - 1.0).abs() > 0.001 {
+                transform_filters.push(format!("setpts={}*PTS", 1.0 / speed));
+            }
+        } else if (speed - 1.0).abs() > 0.001 {
             transform_filters.push(format!("setpts={}*PTS", 1.0 / speed));
         }
 
@@ -1237,67 +1251,157 @@ pub async fn export_video_editor_project(
             }
         }
 
-        // Handle audio from video sources (still concatenated; transition audio crossfade is TODO)
-        let mut audio_concat_inputs = String::new();
+        // Handle audio from video sources.
+        // With transitions: build timeline-positioned streams + centered fade envelopes and mix.
+        // Without transitions: keep concat behavior.
+        if has_transitions {
+            let mut audio_mix_inputs = String::new();
 
-        for i in 0..source_count {
-            let source = &config.video_sources[i];
+            for i in 0..source_count {
+                let source = &config.video_sources[i];
 
-            let trim_start = source.trim_start.unwrap_or(0.0);
-            let duration = source.end_time - source.start_time;
-            let is_muted = source.is_muted.unwrap_or(false);
-            let vol = source.volume.unwrap_or(1.0);
-            let spd = source.speed.unwrap_or(1.0);
+                let trim_start = source.trim_start.unwrap_or(0.0);
+                let base_duration = source.end_time - source.start_time;
+                let is_muted = source.is_muted.unwrap_or(false);
+                let vol = source.volume.unwrap_or(1.0);
+                let spd = source.speed.unwrap_or(1.0);
 
-            let mut audio_extras = String::new();
+                let before = before_ext[i].min(source.start_time.max(0.0));
+                let after = after_ext[i].max(0.0);
 
-            if is_muted {
-                audio_extras.push_str(",volume=0");
-            } else {
-                let vol_kf = source.keyframes.as_ref().and_then(|tracks| {
-                    tracks
-                        .iter()
-                        .find(|t| t.property == "volume" && !t.keyframes.is_empty())
-                });
-                if let Some(kf_track) = vol_kf {
-                    let expr = build_keyframe_expression(&kf_track.keyframes, duration, vol);
-                    if let Some(expr_str) = expr {
-                        audio_extras.push_str(&format!(",volume='{}'", expr_str));
+                let effective_start = (source.start_time - before).max(0.0);
+                let effective_duration = (base_duration + before + after).max(0.0);
+
+                let mut audio_extras = String::new();
+
+                if is_muted {
+                    audio_extras.push_str(",volume=0");
+                } else {
+                    let vol_kf = source.keyframes.as_ref().and_then(|tracks| {
+                        tracks
+                            .iter()
+                            .find(|t| t.property == "volume" && !t.keyframes.is_empty())
+                    });
+                    if let Some(kf_track) = vol_kf {
+                        let expr = build_keyframe_expression(&kf_track.keyframes, base_duration, vol);
+                        if let Some(expr_str) = expr {
+                            audio_extras.push_str(&format!(",volume='{}'", expr_str));
+                        } else if (vol - 1.0).abs() > 0.01 {
+                            audio_extras.push_str(&format!(",volume={}", vol));
+                        }
                     } else if (vol - 1.0).abs() > 0.01 {
                         audio_extras.push_str(&format!(",volume={}", vol));
                     }
-                } else if (vol - 1.0).abs() > 0.01 {
-                    audio_extras.push_str(&format!(",volume={}", vol));
                 }
+
+                if (spd - 1.0).abs() > 0.001 {
+                    audio_extras.push_str(&format!(",atempo={}", spd));
+                }
+
+                if source.is_reversed.unwrap_or(false) {
+                    audio_extras.push_str(",areverse");
+                }
+
+                let delay_ms = (effective_start * 1000.0).round().max(0.0) as i64;
+                let mut chain = if source_has_audio[i] {
+                    format!(
+                        "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}",
+                        i, trim_start, effective_duration, audio_extras
+                    )
+                } else {
+                    format!(
+                        "anullsrc=r=48000:cl=stereo,atrim=duration={},asetpts=PTS-STARTPTS",
+                        effective_duration
+                    )
+                };
+
+                if delay_ms > 0 {
+                    chain.push_str(&format!(",adelay={}|{}:all=1", delay_ms, delay_ms));
+                }
+
+                if before > 0.0001 {
+                    let fade_duration = before * 2.0;
+                    let fade_start = (source.start_time - before).max(0.0);
+                    chain.push_str(&format!(",afade=t=in:st={}:d={}", fade_start, fade_duration));
+                }
+
+                if after > 0.0001 {
+                    let fade_duration = after * 2.0;
+                    let fade_start = (source.end_time - after).max(0.0);
+                    chain.push_str(&format!(",afade=t=out:st={}:d={}", fade_start, fade_duration));
+                }
+
+                chain.push_str(&format!("[va{}]", i));
+                filters.push(chain);
+                audio_mix_inputs.push_str(&format!("[va{}]", i));
             }
 
-            if (spd - 1.0).abs() > 0.001 {
-                audio_extras.push_str(&format!(",atempo={}", spd));
+            filters.push(format!(
+                "{}amix=inputs={}:duration=longest:dropout_transition=0[va]",
+                audio_mix_inputs, source_count
+            ));
+        } else {
+            let mut audio_concat_inputs = String::new();
+
+            for i in 0..source_count {
+                let source = &config.video_sources[i];
+
+                let trim_start = source.trim_start.unwrap_or(0.0);
+                let duration = source.end_time - source.start_time;
+                let is_muted = source.is_muted.unwrap_or(false);
+                let vol = source.volume.unwrap_or(1.0);
+                let spd = source.speed.unwrap_or(1.0);
+
+                let mut audio_extras = String::new();
+
+                if is_muted {
+                    audio_extras.push_str(",volume=0");
+                } else {
+                    let vol_kf = source.keyframes.as_ref().and_then(|tracks| {
+                        tracks
+                            .iter()
+                            .find(|t| t.property == "volume" && !t.keyframes.is_empty())
+                    });
+                    if let Some(kf_track) = vol_kf {
+                        let expr = build_keyframe_expression(&kf_track.keyframes, duration, vol);
+                        if let Some(expr_str) = expr {
+                            audio_extras.push_str(&format!(",volume='{}'", expr_str));
+                        } else if (vol - 1.0).abs() > 0.01 {
+                            audio_extras.push_str(&format!(",volume={}", vol));
+                        }
+                    } else if (vol - 1.0).abs() > 0.01 {
+                        audio_extras.push_str(&format!(",volume={}", vol));
+                    }
+                }
+
+                if (spd - 1.0).abs() > 0.001 {
+                    audio_extras.push_str(&format!(",atempo={}", spd));
+                }
+
+                if source.is_reversed.unwrap_or(false) {
+                    audio_extras.push_str(",areverse");
+                }
+
+                if source_has_audio[i] {
+                    filters.push(format!(
+                        "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}[va{}]",
+                        i, trim_start, duration, audio_extras, i
+                    ));
+                } else {
+                    filters.push(format!(
+                        "anullsrc=r=48000:cl=stereo,atrim=duration={}[va{}]",
+                        duration, i
+                    ));
+                }
+
+                audio_concat_inputs.push_str(&format!("[va{}]", i));
             }
 
-            if source.is_reversed.unwrap_or(false) {
-                audio_extras.push_str(",areverse");
-            }
-
-            if source_has_audio[i] {
-                filters.push(format!(
-                    "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}[va{}]",
-                    i, trim_start, duration, audio_extras, i
-                ));
-            } else {
-                filters.push(format!(
-                    "anullsrc=r=48000:cl=stereo,atrim=duration={}[va{}]",
-                    duration, i
-                ));
-            }
-
-            audio_concat_inputs.push_str(&format!("[va{}]", i));
+            filters.push(format!(
+                "{}concat=n={}:v=0:a=1[va]",
+                audio_concat_inputs, source_count
+            ));
         }
-
-        filters.push(format!(
-            "{}concat=n={}:v=0:a=1[va]",
-            audio_concat_inputs, source_count
-        ));
     }
 
     // Process audio tracks - mix with video audio

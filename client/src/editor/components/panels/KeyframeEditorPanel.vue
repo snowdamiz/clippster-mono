@@ -45,6 +45,7 @@ const PROPERTIES: { key: KeyframableProperty; label: string; defaultValue: numbe
 	{ key: "positionY", label: "Position Y", defaultValue: 0, min: -1000, max: 1000, step: 1 },
 	{ key: "rotation", label: "Rotation", defaultValue: 0, min: -360, max: 360, step: 1 },
 	{ key: "volume", label: "Volume", defaultValue: 1, min: 0, max: 2, step: 0.01 },
+	{ key: "speed", label: "Speed", defaultValue: 1, min: 0.1, max: 10, step: 0.01 },
 ];
 
 const expandedProperties = ref<Set<KeyframableProperty>>(new Set());
@@ -115,8 +116,9 @@ const applicableProperties = computed(() => {
 	if (!elementRef.value) return [];
 	const type = elementRef.value.type;
 	if (type === "audio") return PROPERTIES.filter((p) => p.key === "volume");
-	if (type === "video" || type === "image") return PROPERTIES.filter((p) => p.key !== "volume");
-	return PROPERTIES.filter((p) => p.key !== "volume");
+	if (type === "video") return PROPERTIES.filter((p) => p.key !== "volume");
+	if (type === "image") return PROPERTIES.filter((p) => p.key !== "volume" && p.key !== "speed");
+	return PROPERTIES.filter((p) => p.key !== "volume" && p.key !== "speed");
 });
 </script>
 

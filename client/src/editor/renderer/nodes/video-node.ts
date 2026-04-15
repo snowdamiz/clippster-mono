@@ -4,7 +4,7 @@ import { videoCache } from "../../video-cache/service";
 import type { Transform, FlipState, ColorAdjustments, CropRect } from "../../types/timeline";
 import type { VideoEffect } from "../../types/effects";
 import type { ElementKeyframes } from "../../types/keyframes";
-import { getKeyframedValue } from "../../types/keyframes";
+import { evaluateKeyframeTrack, getKeyframedValue } from "../../types/keyframes";
 import { buildFilterString, hasPostDrawEffects, applyCanvasEffects, applyAdvancedColorAdjustments } from "../effects/canvas-effects";
 import { applyChromakey } from "../effects/canvas-chromakey";
 import type { ChromakeySettings } from "../../types/chromakey";
@@ -67,16 +67,38 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 		return Math.max(0, Math.min(this.params.duration, elapsed));
 	}
 
-	private getSourceTime(time: number) {
-		const speed = this.params.speed ?? 1;
-		const elapsed = this.getClampedElapsed(time);
-		const trimEnd = this.params.trimEnd ?? (this.params.trimStart + this.params.duration * speed);
+	private getIntegratedSourceOffset(elapsed: number) {
+		const speedTrack = this.params.keyframes?.tracks?.speed;
+		const fallbackSpeed = Math.max(0.1, Math.min(10, this.params.speed ?? 1));
 
-		if (this.params.reversed) {
-			return Math.max(this.params.trimStart, trimEnd - elapsed * speed);
+		if (!speedTrack || speedTrack.keyframes.length === 0 || elapsed <= 0) {
+			return elapsed * fallbackSpeed;
 		}
 
-		return Math.min(trimEnd, this.params.trimStart + elapsed * speed);
+		const stepCount = Math.max(1, Math.min(200, Math.ceil(elapsed * 24)));
+		const dt = elapsed / stepCount;
+		let sourceOffset = 0;
+
+		for (let i = 0; i < stepCount; i++) {
+			const sampleElapsed = (i + 0.5) * dt;
+			const normalizedTime = this.params.duration > 0 ? sampleElapsed / this.params.duration : 0;
+			const sampleSpeed = Math.max(0.1, Math.min(10, evaluateKeyframeTrack(speedTrack, normalizedTime)));
+			sourceOffset += sampleSpeed * dt;
+		}
+
+		return sourceOffset;
+	}
+
+	private getSourceTime(time: number) {
+		const elapsed = this.getClampedElapsed(time);
+		const sourceOffset = this.getIntegratedSourceOffset(elapsed);
+		const trimEnd = this.params.trimEnd ?? (this.params.trimStart + this.params.duration * (this.params.speed ?? 1));
+
+		if (this.params.reversed) {
+			return Math.max(this.params.trimStart, trimEnd - sourceOffset);
+		}
+
+		return Math.min(trimEnd, this.params.trimStart + sourceOffset);
 	}
 
 	async prefetch({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
