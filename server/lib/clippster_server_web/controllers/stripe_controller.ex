@@ -626,81 +626,25 @@ defmodule ClippsterServerWeb.StripeController do
     end
   end
 
-  # Handle successful invoice payment (subscription renewal)
+  # Handle successful invoice payment (subscription renewal or initial creation fallback)
   defp handle_event(%{type: "invoice.payment_succeeded", data: %{object: invoice}}) do
     IO.puts("[Stripe Webhook] Processing invoice.payment_succeeded")
 
     stripe_subscription_id = safe_get(invoice, "subscription")
     billing_reason = safe_get(invoice, "billing_reason")
+    stripe_customer_id = safe_get(invoice, "customer")
 
-    # Only process renewal invoices, not initial subscription
-    if stripe_subscription_id && billing_reason in ["subscription_cycle", "subscription_update"] do
-      # Try user subscription first
-      case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
-        nil ->
-          # Try organization subscription
-          case ClippsterServer.OrganizationSubscriptions.get_by_stripe_subscription(
-                 stripe_subscription_id
-               ) do
-            nil ->
-              IO.puts(
-                "[Stripe Webhook] No user or org found for subscription #{stripe_subscription_id}"
-              )
+    cond do
+      # Handle subscription renewals
+      stripe_subscription_id && billing_reason in ["subscription_cycle", "subscription_update"] ->
+        handle_invoice_renewal(stripe_subscription_id, invoice)
 
-            org ->
-              case ClippsterServer.OrganizationSubscriptions.renew_subscription(org.id) do
-                {:ok, _result} ->
-                  IO.puts("[Stripe Webhook] Renewed org subscription for org #{org.id}")
+      # Handle initial subscription creation as fallback (in case checkout.session.completed failed)
+      stripe_subscription_id && billing_reason == "subscription_create" ->
+        handle_invoice_subscription_create_fallback(stripe_subscription_id, stripe_customer_id, invoice)
 
-                {:error, reason} ->
-                  IO.puts("[Stripe Webhook] Failed to renew org subscription: #{inspect(reason)}")
-              end
-          end
-
-        user ->
-          case Subscriptions.renew_subscription(user.id) do
-            {:ok, _result} ->
-              IO.puts("[Stripe Webhook] Renewed subscription for user #{user.id}")
-
-              # Apply pending tier change (downgrade) if any
-              case Subscriptions.apply_pending_tier_change(user.id) do
-                {:ok, %{type: "downgrade_applied"}} ->
-                  IO.puts("[Stripe Webhook] Applied pending downgrade for user #{user.id}")
-
-                _ ->
-                  :ok
-              end
-
-              # Record affiliate recurring commission
-              amount_total = safe_get(invoice, "amount_paid") || 0
-              amount_usd = Decimal.div(Decimal.new(amount_total), Decimal.new(100))
-
-              case Affiliates.record_recurring_commission(user.id, amount_usd) do
-                {:ok, _} ->
-                  IO.puts(
-                    "[Stripe Webhook] Recorded affiliate recurring commission for user #{user.id}"
-                  )
-
-                _ ->
-                  :ok
-              end
-
-              # Allocate revenue to platform fund if enabled
-              case Subscriptions.get_active_subscription(user.id) do
-                nil -> :ok
-                subscription ->
-                  ClippsterServer.PlatformCampaigns.allocate_subscription_revenue(
-                    subscription.id,
-                    amount_usd
-                  )
-              end
-
-            {:error, reason} ->
-              IO.puts("[Stripe Webhook] Failed to renew subscription: #{inspect(reason)}")
-          end
-      end
-    else
-      IO.puts("[Stripe Webhook] Skipping invoice - billing_reason: #{billing_reason}")
+      true ->
+        IO.puts("[Stripe Webhook] Skipping invoice - billing_reason: #{billing_reason}")
     end
   end
 
@@ -896,8 +840,33 @@ defmodule ClippsterServerWeb.StripeController do
               {:error, reason} -> IO.puts("[Stripe Webhook] Failed to expire: #{inspect(reason)}")
             end
 
+          status == "active" && user.subscription_status != "active" ->
+            # Stripe says active but our DB says otherwise - reactivate
+            IO.puts(
+              "[Stripe Webhook] Subscription status mismatch: Stripe=active, DB=#{user.subscription_status} for user #{user.id}"
+            )
+
+            case Subscriptions.reactivate_subscription(user.id) do
+              {:ok, _} ->
+                IO.puts("[Stripe Webhook] Reactivated subscription for user #{user.id}")
+
+              {:error, reason} ->
+                IO.puts("[Stripe Webhook] Failed to reactivate: #{inspect(reason)}")
+            end
+
           true ->
-            IO.puts("[Stripe Webhook] Subscription update - status: #{status}")
+            # Check for pending tier change
+            if user.pending_subscription_tier do
+              case Subscriptions.apply_pending_tier_change(user.id) do
+                {:ok, %{type: "downgrade_applied"}} ->
+                  IO.puts("[Stripe Webhook] Applied pending tier change for user #{user.id}")
+
+                _ ->
+                  :ok
+              end
+            else
+              IO.puts("[Stripe Webhook] Subscription update - status: #{status}")
+            end
         end
     end
   end
@@ -907,6 +876,155 @@ defmodule ClippsterServerWeb.StripeController do
   end
 
   defp handle_event(_), do: :ok
+
+  # Handle subscription renewal from invoice.payment_succeeded
+  defp handle_invoice_renewal(stripe_subscription_id, invoice) do
+    # Try user subscription first
+    case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
+      nil ->
+        # Try organization subscription
+        case ClippsterServer.OrganizationSubscriptions.get_by_stripe_subscription(
+               stripe_subscription_id
+             ) do
+          nil ->
+            IO.puts(
+              "[Stripe Webhook] No user or org found for subscription #{stripe_subscription_id}"
+            )
+
+          org ->
+            case ClippsterServer.OrganizationSubscriptions.renew_subscription(org.id) do
+              {:ok, _result} ->
+                IO.puts("[Stripe Webhook] Renewed org subscription for org #{org.id}")
+
+              {:error, reason} ->
+                IO.puts("[Stripe Webhook] Failed to renew org subscription: #{inspect(reason)}")
+            end
+        end
+
+      user ->
+        case Subscriptions.renew_subscription(user.id) do
+          {:ok, _result} ->
+            IO.puts("[Stripe Webhook] Renewed subscription for user #{user.id}")
+
+            # Apply pending tier change (downgrade) if any
+            case Subscriptions.apply_pending_tier_change(user.id) do
+              {:ok, %{type: "downgrade_applied"}} ->
+                IO.puts("[Stripe Webhook] Applied pending downgrade for user #{user.id}")
+
+              _ ->
+                :ok
+            end
+
+            # Record affiliate recurring commission
+            amount_total = safe_get(invoice, "amount_paid") || 0
+            amount_usd = Decimal.div(Decimal.new(amount_total), Decimal.new(100))
+
+            case Affiliates.record_recurring_commission(user.id, amount_usd) do
+              {:ok, _} ->
+                IO.puts(
+                  "[Stripe Webhook] Recorded affiliate recurring commission for user #{user.id}"
+                )
+
+              _ ->
+                :ok
+            end
+
+            # Allocate revenue to platform fund if enabled
+            case Subscriptions.get_active_subscription(user.id) do
+              nil -> :ok
+              subscription ->
+                ClippsterServer.PlatformCampaigns.allocate_subscription_revenue(
+                  subscription.id,
+                  amount_usd
+                )
+            end
+
+          {:error, reason} ->
+            IO.puts("[Stripe Webhook] Failed to renew subscription: #{inspect(reason)}")
+        end
+    end
+  end
+
+  # Fallback handler for subscription_create billing reason
+  # This ensures subscriptions are created even if checkout.session.completed webhook failed
+  defp handle_invoice_subscription_create_fallback(stripe_subscription_id, stripe_customer_id, _invoice) do
+    IO.puts("[Stripe Webhook] Processing subscription_create fallback for #{stripe_subscription_id}")
+
+    # Check if subscription already exists (checkout.session.completed already handled it)
+    case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
+      nil ->
+        # Subscription not created yet - try to find user by customer ID and fetch subscription details from Stripe
+        case Subscriptions.get_user_by_stripe_customer(stripe_customer_id) do
+          nil ->
+            IO.puts(
+              "[Stripe Webhook] subscription_create fallback: No user found for customer #{stripe_customer_id}"
+            )
+
+          user ->
+            # User exists but subscription wasn't created - fetch subscription from Stripe to get tier
+            case Stripe.Subscription.retrieve(stripe_subscription_id) do
+              {:ok, stripe_sub} ->
+                metadata = stripe_sub.metadata || %{}
+                tier = Map.get(metadata, "subscription_tier") || Map.get(metadata, :subscription_tier)
+                billing_interval = Map.get(metadata, "billing_interval") || Map.get(metadata, :billing_interval) || "monthly"
+
+                if tier do
+                  IO.puts(
+                    "[Stripe Webhook] subscription_create fallback: Creating #{tier} subscription for user #{user.id}"
+                  )
+
+                  case Subscriptions.create_stripe_subscription(
+                         user.id,
+                         tier,
+                         stripe_subscription_id,
+                         stripe_customer_id,
+                         billing_interval
+                       ) do
+                    {:ok, _result} ->
+                      IO.puts(
+                        "[Stripe Webhook] subscription_create fallback: Successfully created subscription for user #{user.id}"
+                      )
+
+                    {:error, reason} ->
+                      IO.puts(
+                        "[Stripe Webhook] subscription_create fallback: Failed to create subscription: #{inspect(reason)}"
+                      )
+                  end
+                else
+                  IO.puts(
+                    "[Stripe Webhook] subscription_create fallback: No tier in subscription metadata for user #{user.id}"
+                  )
+                end
+
+              {:error, reason} ->
+                IO.puts(
+                  "[Stripe Webhook] subscription_create fallback: Failed to retrieve subscription from Stripe: #{inspect(reason)}"
+                )
+            end
+        end
+
+      user ->
+        # Subscription already exists - verify it's active
+        if user.subscription_status != "active" do
+          IO.puts(
+            "[Stripe Webhook] subscription_create fallback: User #{user.id} has subscription but status is #{user.subscription_status}, activating..."
+          )
+
+          # Reactivate the subscription
+          case Subscriptions.reactivate_subscription(user.id) do
+            {:ok, _} ->
+              IO.puts("[Stripe Webhook] subscription_create fallback: Reactivated subscription for user #{user.id}")
+
+            {:error, reason} ->
+              IO.puts("[Stripe Webhook] subscription_create fallback: Failed to reactivate: #{inspect(reason)}")
+          end
+        else
+          IO.puts(
+            "[Stripe Webhook] subscription_create fallback: Subscription already active for user #{user.id}"
+          )
+        end
+    end
+  end
 
   # Handle subscription checkout completion
   defp handle_subscription_checkout(

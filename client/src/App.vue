@@ -209,12 +209,9 @@
       return true;
     }
 
-    // If plan was selected but subscription is now expired, show gate again
-    if (subscriptionStatus === 'expired') {
-      console.log('[App] Subscription expired, showing subscription gate');
-      return true;
-    }
-
+    // If plan was selected (including free tier), allow access even if subscription expired
+    // User has explicitly chosen to continue with free tier
+    console.log('[App] Plan selected (including free tier), bypassing gate');
     return false;
   });
 

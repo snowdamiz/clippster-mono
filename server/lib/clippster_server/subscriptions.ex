@@ -430,6 +430,62 @@ defmodule ClippsterServer.Subscriptions do
   end
 
   @doc """
+  Reactivates an expired or cancelled subscription.
+  Called when payment succeeds but subscription was marked expired/cancelled.
+  Extends end_date from now and sets status to active.
+  """
+  def reactivate_subscription(user_id) do
+    Repo.transaction(fn ->
+      user = Repo.get!(User, user_id)
+      tier = user.subscription_tier
+      tier_info = get_tier_info(tier)
+
+      unless tier_info do
+        Repo.rollback(:invalid_tier)
+      end
+
+      start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+      end_date = DateTime.add(start_date, @subscription_days, :day)
+
+      # Update user subscription to active
+      {:ok, updated_user} =
+        user
+        |> User.subscription_changeset(%{
+          subscription_status: "active",
+          subscription_start_date: start_date,
+          subscription_end_date: end_date
+        })
+        |> Repo.update()
+
+      # Create subscription history record
+      {:ok, _subscription} =
+        %Subscription{}
+        |> Subscription.create_changeset(%{
+          user_id: user_id,
+          status: "active",
+          subscription_tier: tier,
+          start_date: start_date,
+          end_date: end_date,
+          hours_included: Decimal.new("0"),
+          credits_granted: Decimal.new(to_string(tier_info.monthly_credits)),
+          payment_method: user.subscription_renewal_method || "stripe",
+          stripe_subscription_id: user.stripe_subscription_id,
+          amount_usd: Decimal.new(to_string(tier_info.usd))
+        })
+        |> Repo.insert()
+
+      # Grant monthly credits
+      {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
+
+      IO.puts(
+        "[Subscriptions] Reactivated #{tier} subscription for user #{user_id}, granted #{tier_info.monthly_credits} credits"
+      )
+
+      updated_user
+    end)
+  end
+
+  @doc """
   Expires a subscription (called when end_date passes or payment fails).
   """
   def expire_subscription(user_id) do
