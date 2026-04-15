@@ -1,172 +1,140 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="open && audio" class="space-studio__overlay" @click.self="emit('close')">
-        <div class="space-studio">
-          <div class="space-studio__accent"></div>
-          <div class="space-studio__header">
-            <button class="space-studio__close" @click="emit('close')" title="Close">
+      <div v-if="open && audio" class="xs" @click.self="emit('close')">
+        <div class="xs__card">
+          <!-- Top bar -->
+          <div class="xs__topbar">
+            <div class="xs__badge">REPLAY</div>
+            <button class="xs__close" @click="emit('close')" title="Close">
               <X :size="18" />
             </button>
-            <div class="space-studio__title-wrap">
-              <h2 class="space-studio__title">X Space Studio</h2>
-              <p class="space-studio__subtitle">{{ audio.title }}</p>
+          </div>
+
+          <!-- Title -->
+          <h2 class="xs__title">{{ audio.title }}</h2>
+
+          <!-- Speaker grid -->
+          <div class="xs__speakers">
+            <TransitionGroup name="speaker-fade">
+              <div
+                v-for="speaker in onStageParticipants"
+                :key="speaker.id"
+                class="xs__speaker"
+                :class="{ 'xs__speaker--offstage': onStageUserIdsAtPlayhead !== null && !onStageUserIdsAtPlayhead.has(speaker.id) }"
+                @click="selectedSpeakerId = speaker.id"
+              >
+                <div
+                  class="xs__ring"
+                  :class="{
+                    'xs__ring--talking': activeSpeakerIds.has(speaker.id),
+                    // Avoid stacking two cyan glows when the selected row is also the active talker.
+                    'xs__ring--selected':
+                      selectedSpeakerId === speaker.id && !activeSpeakerIds.has(speaker.id),
+                  }"
+                  :style="activeSpeakerIds.has(speaker.id) ? { '--ring-color': speakerColor(speaker.id) } : {}"
+                >
+                  <img
+                    :src="speaker.avatarUrl"
+                    :alt="speaker.name"
+                    class="xs__avatar"
+                    @error="(e: Event) => { (e.target as HTMLImageElement).src = `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(speaker.id)}` }"
+                  />
+                </div>
+                <span class="xs__name" :title="speaker.name">{{ speaker.name }}</span>
+                <span class="xs__role" :class="speaker.role === 'host' ? 'xs__role--host' : ''">
+                  {{ speaker.role === 'host' ? 'Host' : 'Speaker' }}
+                </span>
+              </div>
+            </TransitionGroup>
+          </div>
+
+          <!-- Listeners row -->
+          <div v-if="listenerParticipants.length > 0" class="xs__listeners">
+            <span class="xs__listeners-label">{{ listenerParticipants.length }} listening</span>
+            <div class="xs__listeners-row">
+              <img
+                v-for="listener in listenerParticipants.slice(0, 12)"
+                :key="listener.id"
+                :src="listener.avatarUrl"
+                :alt="listener.name"
+                :title="listener.name"
+                class="xs__listener-avatar"
+                @error="(e: Event) => { (e.target as HTMLImageElement).src = `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(listener.id)}` }"
+              />
+              <span v-if="listenerParticipants.length > 12" class="xs__listener-more">
+                +{{ listenerParticipants.length - 12 }}
+              </span>
             </div>
           </div>
 
-          <div class="space-studio__content">
-            <div class="space-studio__left">
-              <div class="space-studio__player-wrap">
-                <audio
-                  ref="audioRef"
-                  class="space-studio__player"
-                  controls
-                  :src="audioSrc"
-                  @timeupdate="handleTimeUpdate"
-                  @loadedmetadata="handleLoadedMetadata"
-                />
-              </div>
-
-              <div class="space-studio__timeline">
-                <div class="space-studio__timeline-header">
-                  <span>Talking Timeline</span>
-                  <span>{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
-                </div>
-                <div class="space-studio__timeline-track">
-                  <div
-                    v-for="segment in speakerSegments"
-                    :key="segment.id"
-                    class="space-studio__segment"
-                    :class="{ 'space-studio__segment--editable': !!selectedSpeakerId }"
-                    :style="segmentStyle(segment)"
-                    @click="assignSegmentSpeaker(segment.id)"
-                  />
-                  <div class="space-studio__playhead" :style="{ left: `${playheadPercent}%` }"></div>
-                </div>
-              </div>
-
-              <div class="space-studio__clip-controls">
-                <button class="space-studio__btn space-studio__btn--secondary" @click="setClipStart">
-                  Mark Clip Start
-                </button>
-                <button class="space-studio__btn space-studio__btn--secondary" @click="setClipEnd">
-                  Mark Clip End
-                </button>
-                <button class="space-studio__btn space-studio__btn--primary" @click="createManualClip">
-                  Manual Clip
-                </button>
-                <button class="space-studio__btn space-studio__btn--primary" @click="createAiClipSuggestions">
-                  AI Detect Clips
-                </button>
-                <button
-                  class="space-studio__btn space-studio__btn--secondary"
-                  :disabled="syncingSpeakers"
-                  @click="syncSpeakers"
-                >
-                  {{ syncingSpeakers ? 'Syncing...' : 'Sync Speakers' }}
-                </button>
-                <button
-                  class="space-studio__btn space-studio__btn--secondary"
-                  :disabled="dumpingId3"
-                  @click="dumpId3Debug"
-                >
-                  {{ dumpingId3 ? 'Dumping...' : 'Dump ID3 Debug' }}
-                </button>
-                <button class="space-studio__btn space-studio__btn--primary" @click="openAiVideo">
-                  Open in AI Video
-                </button>
-                <button class="space-studio__btn space-studio__btn--primary" @click="openEditorMp4">
-                  Open Editor (MP4)
-                </button>
-              </div>
-
-              <div class="space-studio__clip-range">
-                Clip Range: {{ formatTime(clipStart) }} - {{ formatTime(clipEnd) }}
-              </div>
-
-              <div v-if="aiSuggestions.length > 0" class="space-studio__suggestions">
-                <div class="space-studio__suggestions-title">AI Suggestions</div>
-                <button
-                  v-for="suggestion in aiSuggestions"
-                  :key="suggestion.id"
-                  class="space-studio__suggestion"
-                  @click="seekToSuggestion(suggestion)"
-                >
-                  <span>{{ suggestion.label }}</span>
-                  <span>{{ formatTime(suggestion.start) }} - {{ formatTime(suggestion.end) }}</span>
-                </button>
-              </div>
+          <!-- Speaker timeline -->
+          <div class="xs__timeline">
+            <div class="xs__timeline-bar" ref="timelineBarRef" @click="seekTimeline">
+              <div
+                v-for="segment in speakerSegments"
+                :key="segment.id"
+                class="xs__seg"
+                :class="{ 'xs__seg--editable': !!selectedSpeakerId }"
+                :style="timelineSegmentStyle(segment)"
+                :title="speakerNameById(segment.speakerId)"
+                @click.stop="selectedSpeakerId ? assignSegmentSpeaker(segment.id) : seekTimeline($event)"
+              />
+              <div class="xs__playhead" :style="{ left: `${playheadPercent}%` }"></div>
             </div>
+          </div>
 
-            <div class="space-studio__right">
-              <div class="space-studio__hint">
-                Select a speaker, then click timeline blocks to reassign talking segments.
-              </div>
+          <!-- Audio player -->
+          <audio
+            ref="audioRef"
+            :src="audioSrc"
+            @timeupdate="handleTimeUpdate"
+            @loadedmetadata="handleLoadedMetadata"
+            @play="isPlaying = true"
+            @pause="isPlaying = false"
+            style="display:none"
+          />
 
-              <!-- Hosts & Speakers -->
-              <template v-if="onStageParticipants.length > 0">
-                <div class="space-studio__section-label">On Stage</div>
-                <div class="space-studio__grid">
-                  <div
-                    v-for="speaker in onStageParticipants"
-                    :key="speaker.id"
-                    class="space-studio__speaker"
-                    @click="selectedSpeakerId = speaker.id"
-                  >
-                    <div
-                      class="space-studio__avatar-wrap"
-                      :class="{
-                        'space-studio__avatar-wrap--active': activeSpeakerIds.has(speaker.id),
-                        'space-studio__avatar-wrap--selected': selectedSpeakerId === speaker.id,
-                        'space-studio__avatar-wrap--offstage':
-                          onStageUserIdsAtPlayhead !== null &&
-                          !onStageUserIdsAtPlayhead.has(speaker.id),
-                      }"
-                    >
-                      <img
-                        :src="speaker.avatarUrl"
-                        :alt="speaker.name"
-                        class="space-studio__avatar"
-                        @error="(e) => { (e.target as HTMLImageElement).src = `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(speaker.id)}` }"
-                      />
-                    </div>
-                    <div class="space-studio__speaker-name" :title="speaker.name">{{ speaker.name }}</div>
-                    <div
-                      class="space-studio__role-badge"
-                      :class="`space-studio__role-badge--${speaker.role === 'host' ? 'host' : 'speaker'}`"
-                    >
-                      {{ speaker.role === 'host' ? 'Host' : 'Speaker' }}
-                    </div>
-                  </div>
-                </div>
-              </template>
-
-              <!-- Listeners -->
-              <template v-if="listenerParticipants.length > 0">
-                <div class="space-studio__section-label space-studio__section-label--listeners">
-                  Listeners <span class="space-studio__section-count">{{ listenerParticipants.length }}</span>
-                </div>
-                <div class="space-studio__grid space-studio__grid--listeners">
-                  <div
-                    v-for="listener in listenerParticipants"
-                    :key="listener.id"
-                    class="space-studio__speaker space-studio__speaker--listener"
-                  >
-                    <div class="space-studio__avatar-wrap space-studio__avatar-wrap--listener">
-                      <img
-                        :src="listener.avatarUrl"
-                        :alt="listener.name"
-                        class="space-studio__avatar"
-                        @error="(e) => { (e.target as HTMLImageElement).src = `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(listener.id)}` }"
-                      />
-                    </div>
-                    <div class="space-studio__speaker-name" :title="listener.name">{{ listener.name }}</div>
-                    <div class="space-studio__role-badge space-studio__role-badge--listener">Listener</div>
-                  </div>
-                </div>
-              </template>
-
+          <!-- Custom controls -->
+          <div class="xs__controls">
+            <button class="xs__play" @click="togglePlay">
+              <svg v-if="!isPlaying" viewBox="0 0 24 24" fill="currentColor" class="xs__play-icon"><path d="M8 5v14l11-7z"/></svg>
+              <svg v-else viewBox="0 0 24 24" fill="currentColor" class="xs__play-icon"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+            <span class="xs__time">{{ formatTime(currentTime) }}</span>
+            <div class="xs__seek" @click="seekFromBar">
+              <div class="xs__seek-bg"></div>
+              <div class="xs__seek-fill" :style="{ width: `${playheadPercent}%` }"></div>
             </div>
+            <span class="xs__time">{{ formatTime(duration) }}</span>
+          </div>
+
+          <!-- Actions -->
+          <div class="xs__actions">
+            <button class="xs__btn" @click="setClipStart">In</button>
+            <button class="xs__btn" @click="setClipEnd">Out</button>
+            <span class="xs__clip-range">{{ formatTime(clipStart) }} – {{ formatTime(clipEnd) }}</span>
+            <button class="xs__btn xs__btn--accent" @click="createManualClip">Clip</button>
+            <button class="xs__btn xs__btn--accent" @click="createAiClipSuggestions">AI Clips</button>
+            <div class="xs__spacer"></div>
+            <button class="xs__btn" :disabled="syncingSpeakers" @click="syncSpeakers">
+              {{ syncingSpeakers ? 'Syncing…' : 'Sync' }}
+            </button>
+            <button class="xs__btn xs__btn--accent" @click="openAiVideo">AI Video</button>
+            <button class="xs__btn xs__btn--accent" @click="openEditorMp4">Editor</button>
+          </div>
+
+          <!-- AI Suggestions -->
+          <div v-if="aiSuggestions.length > 0" class="xs__suggestions">
+            <button
+              v-for="suggestion in aiSuggestions"
+              :key="suggestion.id"
+              class="xs__suggestion-btn"
+              @click="seekToSuggestion(suggestion)"
+            >
+              <span>{{ suggestion.label }}</span>
+              <span class="xs__suggestion-time">{{ formatTime(suggestion.start) }} – {{ formatTime(suggestion.end) }}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -175,7 +143,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, onBeforeUnmount, TransitionGroup } from 'vue';
 import { useRouter } from 'vue-router';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { X } from 'lucide-vue-next';
@@ -193,9 +161,16 @@ import {
 } from '@/services/database/downloaded-space-metadata';
 import { invoke } from '@tauri-apps/api/core';
 import {
+  clearTwitterBroadcastInfoCache,
   extractSpaceSpeakerTimelineFromHls,
   getTwitterBroadcastInfo,
 } from '@/services/twitter';
+
+const SPEAKER_PALETTE = [
+  '#22d3ee', '#0ea5e9', '#00BA7C', '#F91880',
+  '#FFD400', '#FF7A00', '#E23636', '#00D5CD',
+  '#34D399', '#5B8DEF', '#A78BFA', '#FB7185',
+];
 
 interface Speaker {
   id: string;
@@ -229,11 +204,12 @@ const emit = defineEmits<{
 
 const router = useRouter();
 const audioRef = ref<HTMLAudioElement | null>(null);
+const timelineBarRef = ref<HTMLDivElement | null>(null);
 const currentTime = ref(0);
 const duration = ref(0);
 const clipStart = ref(0);
 const clipEnd = ref(30);
-/** All speakers whose timeline segments contain the playhead (supports overlapping segments). */
+const isPlaying = ref(false);
 const activeSpeakerIds = ref<Set<string>>(new Set());
 const aiSuggestions = ref<ClipSuggestion[]>([]);
 const syncingSpeakers = ref(false);
@@ -243,6 +219,80 @@ const selectedSpeakerId = ref<string | null>(null);
 const speakers = ref<Speaker[]>([]);
 const speakerSegments = ref<SpeakerSegment[]>([]);
 const stageSnapshots = ref<SpaceStageSnapshot[]>([]);
+
+const speakerColorMap = computed(() => {
+  const map = new Map<string, string>();
+  const onStage = speakers.value.filter(s => s.role !== 'listener');
+  onStage.forEach((s, i) => map.set(s.id, SPEAKER_PALETTE[i % SPEAKER_PALETTE.length]));
+  return map;
+});
+
+function speakerColor(id: string): string {
+  return speakerColorMap.value.get(id) ?? SPEAKER_PALETTE[0];
+}
+
+function speakerNameById(id: string): string {
+  return speakers.value.find(s => s.id === id)?.name ?? id;
+}
+
+function togglePlay() {
+  if (!audioRef.value) return;
+  if (audioRef.value.paused) audioRef.value.play();
+  else audioRef.value.pause();
+}
+
+function seekTimeline(e: MouseEvent) {
+  const bar = timelineBarRef.value;
+  if (!bar || !audioRef.value || !duration.value) return;
+  const rect = bar.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  audioRef.value.currentTime = pct * duration.value;
+}
+
+function seekFromBar(e: MouseEvent) {
+  const target = (e.currentTarget as HTMLElement);
+  if (!target || !audioRef.value || !duration.value) return;
+  const rect = target.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  audioRef.value.currentTime = pct * duration.value;
+}
+
+function timelineSegmentStyle(segment: SpeakerSegment) {
+  const total = duration.value || 1;
+  const left = (segment.start / total) * 100;
+  const width = ((segment.end - segment.start) / total) * 100;
+  const color = speakerColor(segment.speakerId);
+  const t = currentTime.value;
+  const active = t >= segment.start && t <= segment.end;
+  return {
+    left: `${left}%`,
+    width: `${Math.max(0.15, width)}%`,
+    background: active ? color : `${color}44`,
+    boxShadow: active ? `0 0 8px ${color}88` : 'none',
+  };
+}
+
+let rafId = 0;
+function startRaf() {
+  const tick = () => {
+    if (audioRef.value && !audioRef.value.paused) {
+      currentTime.value = audioRef.value.currentTime;
+    }
+    rafId = requestAnimationFrame(tick);
+  };
+  rafId = requestAnimationFrame(tick);
+}
+function stopRaf() {
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = 0;
+}
+
+watch(isPlaying, (playing) => {
+  if (playing) startRaf();
+  else stopRaf();
+});
+
+onBeforeUnmount(() => stopRaf());
 
 /** When ID3 stage rosters exist: who is on stage at the playhead; `null` = no roster data (no dimming). */
 const onStageUserIdsAtPlayhead = computed(() => {
@@ -286,13 +336,22 @@ watch(
 );
 
 watch(currentTime, (time) => {
-  const ids = new Set<string>();
-  for (const segment of speakerSegments.value) {
-    if (time >= segment.start && time <= segment.end) {
-      ids.add(segment.speakerId);
-    }
+  const hits = speakerSegments.value.filter(
+    (segment) => time >= segment.start && time <= segment.end
+  );
+  if (hits.length === 0) {
+    activeSpeakerIds.value = new Set();
+    return;
   }
-  activeSpeakerIds.value = ids;
+  // One avatar lit at a time (like X). Overlapping segments from bad/stale data otherwise
+  // highlight multiple people; prefer the segment that started most recently at this playhead.
+  hits.sort((a, b) => {
+    if (b.start !== a.start) return b.start - a.start;
+    const spanA = a.end - a.start;
+    const spanB = b.end - b.start;
+    return spanA - spanB;
+  });
+  activeSpeakerIds.value = new Set([hits[0].speakerId]);
 });
 
 async function initializeSpaceData() {
@@ -330,12 +389,12 @@ async function initializeSpaceData() {
     }));
     speakerSegments.value = reconcileSegmentSpeakerIds(rawSegs, speakers.value);
   } else {
-    // Seed timeline only for on-stage participants — listeners never contribute audio.
-    const onStageForSeed = speakers.value.filter((s) => s.role !== 'listener');
-    speakerSegments.value = buildSpeakerSegments(
-      onStageForSeed.length > 0 ? onStageForSeed : speakers.value,
-      duration.value || 3600
-    );
+    speakerSegments.value = [];
+    // Auto-sync to fetch real speaker data (HLS ID3) when none is saved yet
+    if (props.audio?.source_url && !syncingSpeakers.value) {
+      console.log('[SpaceStudio] No saved speaker segments — auto-syncing for real data');
+      syncSpeakers();
+    }
   }
 
   selectedSpeakerId.value = onStageParticipants.value[0]?.id ?? null;
@@ -391,18 +450,7 @@ function handleLoadedMetadata(event: Event) {
 }
 
 function segmentStyle(segment: SpeakerSegment) {
-  const total = duration.value || 1;
-  const t = currentTime.value;
-  const left = (segment.start / total) * 100;
-  const width = ((segment.end - segment.start) / total) * 100;
-  const isActive = t >= segment.start && t <= segment.end;
-
-  return {
-    left: `${left}%`,
-    width: `${Math.max(0.3, width)}%`,
-    background: isActive ? 'rgba(34, 211, 238, 0.95)' : 'rgba(39, 39, 42, 0.9)',
-    borderColor: isActive ? 'rgba(103, 232, 249, 1)' : 'rgba(82, 82, 91, 1)',
-  };
+  return timelineSegmentStyle(segment);
 }
 
 function setClipStart() {
@@ -692,6 +740,7 @@ async function syncSpeakers() {
   if (!props.audio?.source_url || syncingSpeakers.value) return;
   syncingSpeakers.value = true;
   try {
+    clearTwitterBroadcastInfoCache();
     const metadataBeforeSync = props.audio
       ? await getDownloadedSpaceMetadata(props.audio.id)
       : null;
@@ -712,29 +761,12 @@ async function syncSpeakers() {
     }));
 
     const totalDuration = duration.value || props.audio.duration || 0;
-    // Only on-stage participants contribute to the talking timeline seed.
-    const onStage = participants.filter((p) => p.role === 'host' || p.role === 'speaker' || p.role === 'unknown');
-    const rosterForSeed = onStage.map((participant) => ({
-      id: participant.id,
-      name: participant.name,
-      role: participant.role,
-      avatarUrl:
-        participant.avatar_url ||
-        `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(participant.id)}`,
-    }));
 
-    let syncedSegments = buildSpeakerSegments(rosterForSeed, totalDuration || 3600).map(
-      (segment) => ({
-        id: segment.id,
-        speaker_id: segment.speakerId,
-        start: segment.start,
-        end: segment.end,
-      })
-    );
-
+    // Start empty — only fill from REAL data sources (never fabricate).
+    let syncedSegments: Array<{ id: string; speaker_id: string; start: number; end: number }> = [];
     let hlsStageSnapshots: SpaceStageSnapshot[] | undefined;
 
-    // ── Priority 1: X API speaker timeline (accurate) ──
+    // Priority 1: X API speaker timeline from Periscope speaking events (most accurate)
     if (info.speakerTimeline && info.speakerTimeline.length > 0) {
       console.log(`[SpaceStudio] Sync using X API speaker timeline (${info.speakerTimeline.length} segments)`);
       syncedSegments = info.speakerTimeline.map((seg) => ({
@@ -745,8 +777,10 @@ async function syncSpeakers() {
       }));
       normalizeSyncedSegmentSpeakerIds(syncedSegments, participants);
       participants = mergeParticipantsWithTimelineSegments(participants, syncedSegments);
-    } else if (info.manifestUrl && totalDuration > 0) {
-      // ── Priority 2: HLS ID3 metadata (fallback) ──
+    }
+
+    // Priority 2: HLS ID3 extraction — real metadata embedded in the stream
+    if (info.manifestUrl && totalDuration > 0) {
       try {
         const hls = await extractSpaceSpeakerTimelineFromHls(
           info.manifestUrl,
@@ -758,7 +792,8 @@ async function syncSpeakers() {
           on_stage_user_ids: s.onStageUserIds ?? [],
         }));
 
-        if (hls.speakerSegments.length > 0) {
+        if (syncedSegments.length === 0 && hls.speakerSegments.length > 0) {
+          console.log(`[SpaceStudio] Using HLS ID3 speaker segments (${hls.speakerSegments.length} segments)`);
           syncedSegments = hls.speakerSegments.map((seg) => ({
             id: seg.id,
             speaker_id: seg.speakerId,
@@ -781,6 +816,36 @@ async function syncSpeakers() {
         hlsStageSnapshots = undefined;
         console.warn('[SpaceStudio] HLS speaker timeline failed during sync:', e);
       }
+    }
+
+    // Priority 3: Speaker diarization — analyze the downloaded audio with pyannote
+    if (syncedSegments.length === 0 && props.audio?.file_path && props.audio?.source_url) {
+      console.log('[SpaceStudio] No API/HLS speaker data — running diarization on downloaded audio...');
+      try {
+        const metaJson: string = await invoke('diarize_space_audio', {
+          downloadId: props.audio.id,
+          audioPath: props.audio.file_path,
+          spaceUrl: props.audio.source_url,
+        });
+        const diarizedMeta = JSON.parse(metaJson);
+        if (Array.isArray(diarizedMeta.speakerTimeline) && diarizedMeta.speakerTimeline.length > 0) {
+          console.log(`[SpaceStudio] Diarization produced ${diarizedMeta.speakerTimeline.length} segments`);
+          syncedSegments = diarizedMeta.speakerTimeline.map((seg: any, i: number) => ({
+            id: seg.id ?? `dz-${i}`,
+            speaker_id: seg.speakerId ?? seg.speaker_id ?? '',
+            start: Number(seg.start ?? 0),
+            end: Number(seg.end ?? 0),
+          }));
+          normalizeSyncedSegmentSpeakerIds(syncedSegments, participants);
+          participants = mergeParticipantsWithTimelineSegments(participants, syncedSegments);
+        }
+      } catch (diarizeErr) {
+        console.warn('[SpaceStudio] Diarization failed:', diarizeErr);
+      }
+    }
+
+    if (syncedSegments.length === 0) {
+      console.warn('[SpaceStudio] No speaker data from any source (API, HLS, diarization)');
     }
 
     const participantRoster = participants.map((participant) => ({
@@ -885,366 +950,422 @@ async function persistCurrentMetadata() {
 </script>
 
 <style scoped>
-.space-studio__overlay {
+/* ── X Spaces Replay ── */
+.xs {
   position: fixed;
   inset: 0;
   z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(0, 0, 0, 0.74);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(12px);
 }
 
-.space-studio {
-  width: min(1200px, 96vw);
-  max-height: 92vh;
-  overflow: hidden;
-  border: 1px solid var(--sidebar-border);
-  border-radius: 14px;
-  background: var(--sidebar-surface);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+.xs__card {
+  width: min(680px, 94vw);
+  max-height: 94vh;
+  overflow-y: auto;
+  border-radius: 24px;
+  background: linear-gradient(165deg, #0c1a1f 0%, #0a0e12 40%, #090b0e 100%);
+  border: 1px solid rgba(34, 211, 238, 0.10);
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.6), 0 0 120px rgba(34, 211, 238, 0.04);
+  padding: 1.5rem 1.8rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
-.space-studio__accent {
-  height: 3px;
-  background: linear-gradient(90deg, #22d3ee, rgba(34, 211, 238, 0.5));
+/* Top bar */
+.xs__topbar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
 }
 
-.space-studio__header {
-  position: relative;
-  padding: 1.1rem 1.2rem 1rem;
-  border-bottom: 1px solid var(--sidebar-border);
+.xs__badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #67e8f9;
+  background: rgba(34, 211, 238, 0.12);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  border-radius: 6px;
+  padding: 2px 10px;
 }
 
-.space-studio__close {
-  position: absolute;
-  right: 0.9rem;
-  top: 0.9rem;
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
+.xs__close {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
   border: none;
-  color: var(--sidebar-text-muted);
-  background: transparent;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+  transition: background 150ms;
+}
+.xs__close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
 }
 
-.space-studio__close:hover {
-  background: var(--sidebar-hover);
-  color: var(--sidebar-text);
+/* Title */
+.xs__title {
+  margin: 0 0 1.4rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #e8f0f6;
+  text-align: center;
+  line-height: 1.4;
+  max-width: 90%;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.space-studio__title {
-  margin: 0;
-  font-size: 1.1rem;
-  color: var(--sidebar-text);
+/* ── Speaker grid ── */
+.xs__speakers {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.2rem 1.6rem;
+  margin-bottom: 1rem;
+  min-height: 100px;
 }
 
-.space-studio__subtitle {
-  margin: 0.3rem 0 0;
-  color: var(--sidebar-text-muted);
-  font-size: 0.8rem;
+.xs__speaker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+  transition: opacity 300ms ease, transform 300ms ease;
+}
+.xs__speaker--offstage {
+  opacity: 0.3;
+  filter: grayscale(0.4);
+}
+
+/* Avatar ring — idle */
+.xs__ring {
+  --ring-color: #22d3ee;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  padding: 3px;
+  border: 3px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+  position: relative;
+}
+
+/* Avatar ring — talking (pulsing glow) */
+.xs__ring--talking {
+  border-color: var(--ring-color);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--ring-color) 25%, transparent),
+    0 0 28px color-mix(in srgb, var(--ring-color) 55%, transparent);
+  animation: xs-pulse 1.8s ease-in-out infinite;
+}
+
+/* Avatar ring — selected for reassignment */
+.xs__ring--selected {
+  border-color: #5eead4;
+  box-shadow: 0 0 0 3px rgba(94, 234, 212, 0.25), 0 0 16px rgba(94, 234, 212, 0.35);
+}
+
+@keyframes xs-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--ring-color) 25%, transparent),
+      0 0 28px color-mix(in srgb, var(--ring-color) 55%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 8px color-mix(in srgb, var(--ring-color) 18%, transparent),
+      0 0 44px color-mix(in srgb, var(--ring-color) 70%, transparent);
+  }
+}
+
+.xs__avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #1a1a24;
+}
+
+.xs__name {
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.85);
+  max-width: 80px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 85%;
+  text-align: center;
 }
 
-.space-studio__content {
-  display: grid;
-  grid-template-columns: 1.35fr 1fr;
-  gap: 1rem;
-  padding: 1rem;
-  max-height: calc(92vh - 110px);
+.xs__role {
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(103, 232, 249, 0.65);
+  text-transform: uppercase;
+}
+.xs__role--host {
+  color: #fbbf24;
 }
 
-.space-studio__left,
-.space-studio__right {
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.space-studio__player-wrap {
-  border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
-  padding: 0.9rem;
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.space-studio__player {
+/* ── Listeners ── */
+.xs__listeners {
   width: 100%;
-}
-
-.space-studio__timeline {
-  margin-top: 1rem;
-}
-
-.space-studio__timeline-header {
   display: flex;
-  justify-content: space-between;
-  font-size: 0.73rem;
-  color: var(--sidebar-text-muted);
-  margin-bottom: 0.35rem;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-.space-studio__timeline-track {
+.xs__listeners-label {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.35);
+  white-space: nowrap;
+}
+
+.xs__listeners-row {
+  display: flex;
+  align-items: center;
+  gap: -4px;
+}
+
+.xs__listener-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #0d0d14;
+  margin-left: -6px;
+  background: #1a1a24;
+}
+.xs__listener-avatar:first-child { margin-left: 0; }
+
+.xs__listener-more {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.3);
+  margin-left: 4px;
+}
+
+/* ── Timeline ── */
+.xs__timeline {
+  width: 100%;
+  margin-bottom: 0.6rem;
+}
+
+.xs__timeline-bar {
   position: relative;
   width: 100%;
-  height: 34px;
-  border-radius: 8px;
-  border: 1px solid var(--sidebar-border);
-  background: rgba(9, 9, 11, 0.7);
-  overflow: hidden;
-}
-
-.space-studio__segment {
-  position: absolute;
-  top: 4px;
-  height: 24px;
+  height: 28px;
   border-radius: 6px;
-  border: 1px solid transparent;
-  transition: background-color 120ms ease;
-}
-
-.space-studio__segment--editable {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
   cursor: pointer;
 }
 
-.space-studio__playhead {
+.xs__seg {
+  position: absolute;
+  top: 3px;
+  height: 20px;
+  border-radius: 4px;
+  transition: background 100ms ease, box-shadow 100ms ease;
+}
+.xs__seg--editable {
+  cursor: pointer;
+}
+
+.xs__playhead {
   position: absolute;
   top: 0;
   width: 2px;
   height: 100%;
-  background: #e4e4e7;
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.7);
+  background: #fff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+  z-index: 2;
+  pointer-events: none;
 }
 
-.space-studio__clip-controls {
-  margin-top: 1rem;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.space-studio__btn {
-  border-radius: 7px;
-  border: 1px solid var(--sidebar-border);
-  padding: 0.48rem 0.7rem;
-  font-size: 0.74rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.space-studio__btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.space-studio__btn--secondary {
-  background: var(--sidebar-hover);
-  color: var(--sidebar-text);
-}
-
-.space-studio__btn--primary {
-  background: rgba(34, 211, 238, 0.18);
-  border-color: rgba(34, 211, 238, 0.35);
-  color: #67e8f9;
-}
-
-.space-studio__clip-range {
-  margin-top: 0.55rem;
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-}
-
-.space-studio__suggestions {
-  margin-top: 1rem;
-}
-
-.space-studio__suggestions-title {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--sidebar-text-muted);
-  margin-bottom: 0.45rem;
-}
-
-.space-studio__suggestion {
+/* ── Custom controls ── */
+.xs__controls {
   width: 100%;
-  margin-bottom: 0.4rem;
-  padding: 0.5rem 0.6rem;
-  border-radius: 8px;
-  border: 1px solid var(--sidebar-border);
-  background: rgba(0, 0, 0, 0.2);
-  color: var(--sidebar-text);
   display: flex;
-  justify-content: space-between;
-  font-size: 0.72rem;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+
+.xs__play {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: #0ea5e9;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 150ms;
+}
+.xs__play:hover { background: #22b8cf; }
+
+.xs__play-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.xs__time {
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.45);
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+  flex-shrink: 0;
+}
+
+.xs__seek {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  position: relative;
   cursor: pointer;
 }
 
-.space-studio__suggestion:hover {
-  border-color: rgba(34, 211, 238, 0.4);
+.xs__seek-bg {
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
 }
 
-.space-studio__hint {
-  font-size: 0.7rem;
-  color: var(--sidebar-text-muted);
-  margin-bottom: 0.75rem;
+.xs__seek-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 3px;
+  background: #0ea5e9;
+  transition: width 80ms linear;
 }
 
-.space-studio__section-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: var(--sidebar-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: 0.6rem;
-  margin-top: 0.25rem;
+/* ── Actions ── */
+.xs__actions {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
 }
 
-.space-studio__section-label--listeners {
-  margin-top: 1rem;
-  color: rgba(161, 161, 170, 0.65);
-}
+.xs__spacer { flex: 1; }
 
-.space-studio__section-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: rgba(82, 82, 91, 0.5);
+.xs__clip-range {
   font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin: 0 0.3rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.xs__btn {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.35rem 0.65rem;
+  font-size: 0.68rem;
   font-weight: 600;
-  color: var(--sidebar-text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
 }
-
-.space-studio__grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.75rem;
-  margin-bottom: 0.25rem;
+.xs__btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
 }
-
-.space-studio__grid--listeners {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.5rem;
-}
-
-.space-studio__speaker {
-  text-align: center;
-}
-
-.space-studio__speaker--listener {
-  opacity: 0.8;
-}
-
-.space-studio__role-badge {
-  display: inline-block;
-  margin-top: 0.2rem;
-  font-size: 0.62rem;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 4px;
-  letter-spacing: 0.02em;
-}
-
-.space-studio__role-badge--host {
-  background: rgba(234, 179, 8, 0.18);
-  color: #fbbf24;
-  border: 1px solid rgba(234, 179, 8, 0.35);
-}
-
-.space-studio__role-badge--speaker {
-  background: rgba(34, 211, 238, 0.12);
-  color: #67e8f9;
-  border: 1px solid rgba(34, 211, 238, 0.25);
-}
-
-.space-studio__role-badge--listener {
-  background: rgba(82, 82, 91, 0.35);
-  color: rgba(161, 161, 170, 0.8);
-  border: 1px solid rgba(82, 82, 91, 0.5);
-}
-
-.space-studio__avatar-wrap {
-  width: 64px;
-  height: 64px;
-  margin: 0 auto 0.4rem;
-  border-radius: 999px;
-  padding: 2px;
-  border: 2px solid rgba(82, 82, 91, 0.8);
-  box-shadow: 0 0 0 rgba(34, 211, 238, 0);
-  transition: all 120ms ease;
-}
-
-.space-studio__avatar-wrap--active {
-  border-color: #22d3ee;
-  box-shadow:
-    0 0 0 4px rgba(34, 211, 238, 0.22),
-    0 0 22px rgba(34, 211, 238, 0.72);
-}
-
-.space-studio__avatar-wrap--selected {
-  border-color: #5eead4;
-  box-shadow:
-    0 0 0 3px rgba(94, 234, 212, 0.28),
-    0 0 16px rgba(45, 212, 191, 0.45);
-}
-
-.space-studio__avatar-wrap--offstage {
+.xs__btn:disabled {
   opacity: 0.4;
-  filter: grayscale(0.35);
+  cursor: not-allowed;
 }
 
-.space-studio__avatar-wrap--offstage.space-studio__avatar-wrap--active {
-  opacity: 1;
-  filter: none;
+.xs__btn--accent {
+  background: rgba(34, 211, 238, 0.10);
+  border-color: rgba(34, 211, 238, 0.25);
+  color: #67e8f9;
+}
+.xs__btn--accent:hover {
+  background: rgba(34, 211, 238, 0.18);
+  border-color: rgba(34, 211, 238, 0.4);
 }
 
-.space-studio__avatar-wrap--listener {
-  width: 44px;
-  height: 44px;
-  border-color: rgba(82, 82, 91, 0.5);
-  box-shadow: none;
-  cursor: default;
-}
-
-.space-studio__avatar {
+/* ── Suggestions ── */
+.xs__suggestions {
   width: 100%;
-  height: 100%;
-  border-radius: 999px;
-  object-fit: cover;
-  background: #1f2937;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
-.space-studio__speaker-name {
+.xs__suggestion-btn {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(255, 255, 255, 0.75);
   font-size: 0.7rem;
-  color: var(--sidebar-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: border-color 120ms;
+}
+.xs__suggestion-btn:hover {
+  border-color: rgba(34, 211, 238, 0.35);
 }
 
+.xs__suggestion-time {
+  color: rgba(255, 255, 255, 0.35);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Transitions ── */
 .modal-enter-active,
 .modal-leave-active {
-  transition: opacity 180ms ease;
+  transition: opacity 200ms ease;
 }
-
 .modal-enter-from,
 .modal-leave-to {
   opacity: 0;
 }
 
-@media (max-width: 1024px) {
-  .space-studio__content {
-    grid-template-columns: 1fr;
-  }
+.speaker-fade-enter-active {
+  transition: opacity 400ms ease, transform 400ms ease;
+}
+.speaker-fade-leave-active {
+  transition: opacity 250ms ease, transform 250ms ease;
+}
+.speaker-fade-enter-from {
+  opacity: 0;
+  transform: scale(0.8);
+}
+.speaker-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.8);
 }
 </style>

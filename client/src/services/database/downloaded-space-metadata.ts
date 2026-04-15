@@ -23,7 +23,9 @@ export async function upsertDownloadedSpaceMetadata(payload: SpaceMetadataPayloa
   const existing = await getDownloadedSpaceMetadata(payload.audioId);
 
   const participantsJson = payload.participants ? JSON.stringify(payload.participants) : null;
-  const speakerSegmentsJson = payload.speakerSegments ? JSON.stringify(payload.speakerSegments) : null;
+  // `[]` must clear saved segments; only `undefined` preserves the existing column.
+  const speakerSegmentsJson =
+    payload.speakerSegments !== undefined ? JSON.stringify(payload.speakerSegments) : null;
   const stageSnapshotsJson =
     payload.stageSnapshots === undefined
       ? undefined

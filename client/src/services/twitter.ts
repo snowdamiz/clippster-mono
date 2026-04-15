@@ -265,6 +265,11 @@ export interface SpaceSpeakerTimelineSegment {
 // yt-dlp + GraphQL round-trip that often fails once the guest token has gone stale.
 const _broadcastInfoCache = new Map<string, Awaited<ReturnType<typeof getTwitterBroadcastInfo>>>();
 
+/** Drop cached `getTwitterBroadcastInfo` results (e.g. before re-sync so stale speakerTimeline is not reused). */
+export function clearTwitterBroadcastInfoCache(): void {
+  _broadcastInfoCache.clear();
+}
+
 export async function getTwitterBroadcastInfo(url: string): Promise<{
   title?: string;
   duration?: number;
@@ -487,20 +492,11 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
 
     if (speakerTimeline) {
       console.log(`[Twitter] speakerTimeline from X API: ${speakerTimeline.length} segments`);
-    } else if (participants && participants.length > 0 && duration && duration > 0) {
-      // Rust GraphQL/Periscope call didn't produce a timeline — build an
-      // equal-distribution fallback from the participants we already have.
-      const onStage = participants.filter(p => p.role !== 'listener');
-      if (onStage.length > 0) {
-        const segDur = duration / onStage.length;
-        speakerTimeline = onStage.map((p, i) => ({
-          id: `eq-${i}`,
-          speakerId: p.id,
-          start: i * segDur,
-          end: Math.min((i + 1) * segDur, duration),
-        }));
-        console.log(`[Twitter] Built equal-distribution fallback speakerTimeline: ${speakerTimeline.length} segments`);
-      }
+    } else {
+      // No fabricated timeline — equal slices are not who-spoke-when.
+      console.info(
+        '[Twitter] No speakerTimeline from backend; callers should use HLS ID3 or diarization'
+      );
     }
 
     const broadcastResult = {

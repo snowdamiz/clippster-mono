@@ -1,0 +1,13 @@
+{
+  "name": "diarize",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "diarize": "node diarize-node.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.0.1",
+    "wavefile": "^11.0.0"
+  }
+}

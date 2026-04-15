@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '@/composables/useToast';
 import { createDownloadedAudio } from '@/services/database/downloaded-audio';
 import {
+  clearTwitterBroadcastInfoCache,
   extractSpaceSpeakerTimelineFromHls,
   getTwitterBroadcastInfo,
 } from '@/services/twitter';
@@ -300,15 +301,8 @@ export function useAudioDownloads() {
 
     if (speakerSegments.length > 0) {
       participants = mergeParticipantsWithTimeline(participants, speakerSegments);
-    } else {
-      const onStageIds = participants
-        .filter((p) => p.role === 'host' || p.role === 'speaker' || p.role === 'unknown')
-        .map((p) => p.id);
-      speakerSegments =
-        duration > 0 && onStageIds.length > 0
-          ? buildSeedSpeakerSegments(onStageIds, duration)
-          : [];
     }
+    // No fake seed segments — leave empty until real data (HLS ID3 / diarization) is available.
 
     const title =
       (typeof raw.title === 'string' && raw.title) ||
@@ -316,12 +310,27 @@ export function useAudioDownloads() {
       event.title ||
       undefined;
 
+    // Pass through stageSnapshots from Rust pipeline if present
+    const rawSnapshots = Array.isArray(raw.stageSnapshots) ? raw.stageSnapshots : [];
+    const stageSnapshots = rawSnapshots.length > 0
+      ? (rawSnapshots as Array<Record<string, unknown>>).map((s, i) => ({
+          id: String(s.id ?? `stage-${i}`),
+          t: Number(s.t ?? 0),
+          on_stage_user_ids: Array.isArray(s.onStageUserIds)
+            ? (s.onStageUserIds as unknown[]).map(String)
+            : Array.isArray(s.on_stage_user_ids)
+              ? (s.on_stage_user_ids as unknown[]).map(String)
+              : [],
+        }))
+      : undefined;
+
     return {
       audioId,
       sourceUrl,
       title,
       participants,
       speakerSegments,
+      ...(stageSnapshots ? { stageSnapshots } : {}),
     };
   }
 
@@ -333,6 +342,7 @@ export function useAudioDownloads() {
     if (!sourceUrl) return null;
 
     try {
+      clearTwitterBroadcastInfoCache();
       const info = await getTwitterBroadcastInfo(sourceUrl);
       const uploaderName = info.uploader || info.username?.replace('@', '') || 'Host';
       const hostId = `host-${uploaderName.toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'speaker'}`;
@@ -351,14 +361,12 @@ export function useAudioDownloads() {
           }]);
 
       const duration = event.duration || info.duration || 0;
-      const onStageIds = participants
-        .filter((p) => p.role === 'host' || p.role === 'speaker' || p.role === 'unknown')
-        .map((p) => p.id);
-      let speakerSegments =
-        duration > 0 && onStageIds.length > 0
-          ? buildSeedSpeakerSegments(onStageIds, duration)
-          : [];
-
+      let speakerSegments: Array<{
+        id: string;
+        speaker_id: string;
+        start: number;
+        end: number;
+      }> = [];
       let hlsStageSnapshots: SpaceStageSnapshot[] | undefined;
 
       // ── Priority 1: X API speaker timeline (Periscope events or stage-join times) ──
@@ -405,7 +413,7 @@ export function useAudioDownloads() {
         } catch (timelineErr) {
           hlsStageSnapshots = undefined;
           console.warn(
-            '[useAudioDownloads] HLS speaker timeline extraction failed (using seed timeline):',
+            '[useAudioDownloads] HLS speaker timeline extraction failed (timeline left empty):',
             timelineErr
           );
         }
@@ -451,29 +459,6 @@ export function useAudioDownloads() {
       });
     }
     return out;
-  }
-
-  function buildSeedSpeakerSegments(speakerIds: string[], totalDuration: number) {
-    if (speakerIds.length === 0 || totalDuration <= 0) return [];
-
-    // Seed timeline for UI: rotate speakers in 18s blocks until diarization is available.
-    const block = 18;
-    const segments: Array<{ id: string; speaker_id: string; start: number; end: number }> = [];
-    let cursor = 0;
-    let idx = 0;
-    while (cursor < totalDuration) {
-      const speakerId = speakerIds[idx % speakerIds.length];
-      const end = Math.min(totalDuration, cursor + block);
-      segments.push({
-        id: `${speakerId}-${Math.floor(cursor)}`,
-        speaker_id: speakerId,
-        start: cursor,
-        end,
-      });
-      cursor = end;
-      idx += 1;
-    }
-    return segments;
   }
 
   // Initialize event listeners only once (singleton pattern)

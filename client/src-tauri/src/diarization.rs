@@ -68,9 +68,115 @@ pub fn is_diarize_available() -> bool {
     }
 }
 
+/// Find a working Node.js interpreter (bundled or system).
+fn find_node() -> Option<String> {
+    // Try the bundled node binary first
+    if let Ok(bin) = crate::sidecar::resolve_node_binary() {
+        let p = Path::new(&bin);
+        if p.is_file() {
+            return Some(bin);
+        }
+    }
+    // System PATH fallback
+    for name in ["node", "node.exe"] {
+        let check = std::process::Command::new(name)
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        if let Ok(s) = check {
+            if s.success() {
+                return Some(name.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Locate `diarize-node.mjs` relative to the executable.
+fn find_diarize_node_script() -> Option<PathBuf> {
+    find_sidecar_file("diarize-node.mjs")
+}
+
+/// Find a working Python interpreter on the system (python3 or python).
+fn find_python() -> Option<String> {
+    for name in ["python3", "python"] {
+        let check = std::process::Command::new(name)
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        if let Ok(s) = check {
+            if s.success() {
+                return Some(name.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Locate `diarize.py` relative to the executable.
+fn find_diarize_py() -> Option<PathBuf> {
+    find_sidecar_file("diarize.py")
+}
+
+/// Generic: locate a file inside sidecars/diarize/ by walking up from the exe.
+fn find_sidecar_file(filename: &str) -> Option<PathBuf> {
+    let candidates = [
+        std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(|p| p.to_path_buf()))
+            .map(|p| p.join(format!("../../../sidecars/diarize/{}", filename))),
+        Some(PathBuf::from(format!(
+            "client/src-tauri/sidecars/diarize/{}",
+            filename
+        ))),
+        std::env::current_exe().ok().and_then(|e| {
+            let mut p = e;
+            for _ in 0..10 {
+                p = match p.parent() {
+                    Some(parent) => parent.to_path_buf(),
+                    None => return None,
+                };
+                let candidate = p.join(format!("sidecars/diarize/{}", filename));
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+                let candidate2 =
+                    p.join(format!("client/src-tauri/sidecars/diarize/{}", filename));
+                if candidate2.is_file() {
+                    return Some(candidate2);
+                }
+            }
+            None
+        }),
+    ];
+    for c in candidates.into_iter().flatten() {
+        let canon = std::fs::canonicalize(&c).unwrap_or(c);
+        if canon.is_file() {
+            return Some(canon);
+        }
+    }
+    None
+}
+
+/// Check if the required Python packages for diarization are available.
+async fn check_python_deps(python: &str) -> bool {
+    let check = tokio::process::Command::new(python)
+        .args(["-c", "import pyannote.audio; print('ok')"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await;
+    match check {
+        Ok(o) => o.status.success(),
+        Err(_) => false,
+    }
+}
+
 /// Run pyannote sidecar and replace `metadata["speakerTimeline"]` when successful.
 /// Returns `Ok(true)` when diarization ran and modified the metadata,
-/// `Ok(false)` when it was skipped (binary missing/placeholder),
+/// `Ok(false)` when it was skipped (binary missing/placeholder AND python fallback unavailable),
 /// `Err(...)` when it failed.
 pub async fn run_twitter_space_diarization(
     app: &tauri::AppHandle,
@@ -79,27 +185,62 @@ pub async fn run_twitter_space_diarization(
     metadata: &mut Value,
     preferred_num_speakers: Option<usize>,
 ) -> Result<bool, String> {
-    let bin = crate::youtube::resolve_sidecar_binary("diarize")
-        .map_err(|e| format!("resolve diarize: {}", e))?;
-    if !Path::new(&bin).is_file() {
-        return Err(format!(
-            "diarize sidecar not found (expected bundled binary): {}",
-            bin
-        ));
-    }
-    if !diarize_binary_is_real_bundle(&bin) {
-        println!(
-            "[diarize] skipping speaker analysis — binary missing or build placeholder at {}",
-            bin
-        );
-        return Ok(false);
-    }
-
     let audio = PathBuf::from(audio_path);
     let out_json = audio.with_extension("diarize_raw.json");
 
-    let mut cmd = tokio::process::Command::new(&bin);
-    no_window(&mut cmd);
+    // Priority: 1) PyInstaller sidecar  2) Node.js + diarize-node.mjs  3) Python + diarize.py
+    let use_sidecar = match crate::youtube::resolve_sidecar_binary("diarize") {
+        Ok(ref bin) if diarize_binary_is_real_bundle(bin) => true,
+        _ => false,
+    };
+
+    // Resolve ffmpeg path for the Node script
+    let ffmpeg_path = crate::youtube::resolve_sidecar_binary("ffmpeg").ok();
+
+    let mut cmd = if use_sidecar {
+        let bin = crate::youtube::resolve_sidecar_binary("diarize").unwrap();
+        println!("[diarize] using sidecar binary: {}", bin);
+        let mut c = tokio::process::Command::new(&bin);
+        no_window(&mut c);
+        c
+    } else if let (Some(node), Some(script)) = (find_node(), find_diarize_node_script()) {
+        // Node.js fallback — uses @huggingface/transformers with pyannote ONNX model
+        println!(
+            "[diarize] sidecar binary unavailable — using Node.js: {} {}",
+            node,
+            script.display()
+        );
+        let mut c = tokio::process::Command::new(&node);
+        no_window(&mut c);
+        c.arg(script.to_string_lossy().as_ref());
+        if let Some(ref ff) = ffmpeg_path {
+            c.arg("--ffmpeg").arg(ff);
+        }
+        c
+    } else if let (Some(python), Some(script)) = (find_python(), find_diarize_py()) {
+        // Python fallback
+        println!(
+            "[diarize] Node.js unavailable — falling back to Python: {} {}",
+            python,
+            script.display()
+        );
+        if !check_python_deps(&python).await {
+            return Err(format!(
+                "pyannote.audio not installed for {}. Run: {} -m pip install pyannote.audio",
+                python, python
+            ));
+        }
+        let mut c = tokio::process::Command::new(&python);
+        no_window(&mut c);
+        c.arg(script.to_string_lossy().as_ref());
+        c
+    } else {
+        return Err(
+            "No diarization backend available: need Node.js (bundled or system) or Python with pyannote.audio"
+                .to_string(),
+        );
+    };
+
     cmd.arg("--audio")
         .arg(audio_path)
         .arg("--output")
@@ -200,74 +341,63 @@ fn map_diarization_to_speaker_timeline(
     Ok(out)
 }
 
+/// Build diarization label → participant ID mapping.
+///
+/// Strategy (in priority order):
+/// 1. If an existing `speakerTimeline` from HLS ID3 data exists, compute overlap between
+///    each diarization label's time spans and each participant's ID3 time spans.  The label
+///    with the highest temporal overlap with a participant gets assigned to that participant.
+/// 2. If `stageJoinHints` exist, use first-speech-time proximity as before.
+/// 3. Fall back to participant list ordering with synthetic timing.
+///
+/// This overlap-based approach is far more accurate than pure first-appearance timing because
+/// it leverages the ground-truth speaker IDs embedded in HLS ID3 metadata.
 fn build_label_to_participant_map(segments: &[RawSegment], metadata: &Value) -> HashMap<String, String> {
-    let mut first: HashMap<String, f64> = HashMap::new();
+    // Collect per-label stats: first speech time + total duration
+    let mut label_first: HashMap<String, f64> = HashMap::new();
+    let mut label_duration: HashMap<String, f64> = HashMap::new();
+    let mut label_spans: HashMap<String, Vec<(f64, f64)>> = HashMap::new();
     for s in segments {
-        first
+        label_first
             .entry(s.speaker.clone())
             .and_modify(|t| *t = (*t).min(s.start))
             .or_insert(s.start);
-    }
-    let mut labels_sorted: Vec<(String, f64)> = first.into_iter().collect();
-    labels_sorted.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    let mut participants_with_t: Vec<(String, f64)> = metadata
-        .get("stageJoinHints")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|h| {
-                    let id = h.get("speakerId")?.as_str()?.to_string();
-                    let t = h.get("approxJoinSec")?.as_f64()?;
-                    Some((id, t))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    if participants_with_t.is_empty() {
-        participants_with_t = metadata
-            .get("speakerTimeline")
-            .and_then(|v| v.as_array())
-            .map(|segs| {
-                let mut m: HashMap<String, f64> = HashMap::new();
-                for seg in segs {
-                    let sid = seg.get("speakerId").and_then(|x| x.as_str()).unwrap_or("");
-                    let st = seg.get("start").and_then(|x| x.as_f64()).unwrap_or(0.0);
-                    if sid.is_empty() {
-                        continue;
-                    }
-                    m.entry(sid.to_string())
-                        .and_modify(|t| *t = (*t).min(st))
-                        .or_insert(st);
-                }
-                let mut v: Vec<_> = m.into_iter().collect();
-                v.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-                v
-            })
-            .unwrap_or_default();
+        *label_duration.entry(s.speaker.clone()).or_insert(0.0) += s.end - s.start;
+        label_spans.entry(s.speaker.clone()).or_default().push((s.start, s.end));
     }
 
-    if participants_with_t.is_empty() {
-        participants_with_t = metadata
-            .get("participants")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .enumerate()
-                    .filter_map(|(i, p)| {
-                        let role = p.get("role").and_then(|r| r.as_str()).unwrap_or("");
-                        if role == "listener" {
-                            return None;
-                        }
-                        let id = p.get("id")?.as_str()?.to_string();
-                        Some((id, i as f64 * 30.0))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+    // Sort labels by total speech duration (most talkative first → better matching)
+    let mut labels_sorted: Vec<(String, f64)> = label_first.into_iter().collect();
+    labels_sorted.sort_by(|a, b| {
+        let dur_b = label_duration.get(&b.0).unwrap_or(&0.0);
+        let dur_a = label_duration.get(&a.0).unwrap_or(&0.0);
+        dur_b.partial_cmp(dur_a).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Try overlap-based matching against existing speakerTimeline (HLS ID3 ground truth)
+    let id3_timeline = metadata.get("speakerTimeline").and_then(|v| v.as_array());
+    if let Some(tl) = id3_timeline {
+        let mut pid_spans: HashMap<String, Vec<(f64, f64)>> = HashMap::new();
+        for seg in tl {
+            let sid = seg.get("speakerId").and_then(|x| x.as_str()).unwrap_or("");
+            let st = seg.get("start").and_then(|x| x.as_f64()).unwrap_or(0.0);
+            let en = seg.get("end").and_then(|x| x.as_f64()).unwrap_or(0.0);
+            if !sid.is_empty() && en > st {
+                pid_spans.entry(sid.to_string()).or_default().push((st, en));
+            }
+        }
+
+        if !pid_spans.is_empty() {
+            let map = overlap_match(&labels_sorted, &label_spans, &pid_spans, segments, metadata);
+            if !map.is_empty() {
+                println!("[diarize] overlap-matched {} labels to participants", map.len());
+                return map;
+            }
+        }
     }
 
+    // Fallback: stageJoinHints or participant-list proximity
+    let participants_with_t = build_participant_timing(metadata);
     let mut map = HashMap::new();
     let mut used: HashSet<String> = HashSet::new();
 
@@ -288,6 +418,124 @@ fn build_label_to_participant_map(segments: &[RawSegment], metadata: &Value) -> 
         }
     }
 
+    apply_fallback(&mut map, segments, metadata);
+    map
+}
+
+/// Compute temporal overlap between diarization label spans and ID3 participant spans.
+/// Returns a mapping assigning each label to the participant with the highest overlap.
+fn overlap_match(
+    labels_sorted: &[(String, f64)],
+    label_spans: &HashMap<String, Vec<(f64, f64)>>,
+    pid_spans: &HashMap<String, Vec<(f64, f64)>>,
+    segments: &[RawSegment],
+    metadata: &Value,
+) -> HashMap<String, String> {
+    let pids: Vec<String> = pid_spans.keys().cloned().collect();
+    let mut scores: Vec<(String, String, f64)> = Vec::new();
+
+    for (lab, _) in labels_sorted {
+        let lab_s = match label_spans.get(lab) {
+            Some(s) => s,
+            None => continue,
+        };
+        for pid in &pids {
+            let pid_s = match pid_spans.get(pid) {
+                Some(s) => s,
+                None => continue,
+            };
+            let mut overlap = 0.0_f64;
+            for &(ls, le) in lab_s {
+                for &(ps, pe) in pid_s {
+                    let o = (le.min(pe) - ls.max(ps)).max(0.0);
+                    overlap += o;
+                }
+            }
+            if overlap > 0.0 {
+                scores.push((lab.clone(), pid.clone(), overlap));
+            }
+        }
+    }
+
+    scores.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut map = HashMap::new();
+    let mut used_labels: HashSet<String> = HashSet::new();
+    let mut used_pids: HashSet<String> = HashSet::new();
+
+    for (lab, pid, _score) in &scores {
+        if used_labels.contains(lab) || used_pids.contains(pid) {
+            continue;
+        }
+        map.insert(lab.clone(), pid.clone());
+        used_labels.insert(lab.clone());
+        used_pids.insert(pid.clone());
+    }
+
+    apply_fallback(&mut map, segments, metadata);
+    map
+}
+
+/// Gather participant timing from stageJoinHints, speakerTimeline, or participant order.
+fn build_participant_timing(metadata: &Value) -> Vec<(String, f64)> {
+    let from_hints: Vec<(String, f64)> = metadata
+        .get("stageJoinHints")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|h| {
+                    let id = h.get("speakerId")?.as_str()?.to_string();
+                    let t = h.get("approxJoinSec")?.as_f64()?;
+                    Some((id, t))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if !from_hints.is_empty() {
+        return from_hints;
+    }
+
+    let from_tl: Vec<(String, f64)> = metadata
+        .get("speakerTimeline")
+        .and_then(|v| v.as_array())
+        .map(|segs| {
+            let mut m: HashMap<String, f64> = HashMap::new();
+            for seg in segs {
+                let sid = seg.get("speakerId").and_then(|x| x.as_str()).unwrap_or("");
+                let st = seg.get("start").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                if !sid.is_empty() {
+                    m.entry(sid.to_string()).and_modify(|t| *t = (*t).min(st)).or_insert(st);
+                }
+            }
+            let mut v: Vec<_> = m.into_iter().collect();
+            v.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+            v
+        })
+        .unwrap_or_default();
+
+    if !from_tl.is_empty() {
+        return from_tl;
+    }
+
+    metadata
+        .get("participants")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .enumerate()
+                .filter_map(|(i, p)| {
+                    let role = p.get("role").and_then(|r| r.as_str()).unwrap_or("");
+                    if role == "listener" { return None; }
+                    let id = p.get("id")?.as_str()?.to_string();
+                    Some((id, i as f64 * 30.0))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn apply_fallback(map: &mut HashMap<String, String>, segments: &[RawSegment], metadata: &Value) {
     let fallback = metadata
         .get("participants")
         .and_then(|v| v.as_array())
@@ -305,8 +553,6 @@ fn build_label_to_participant_map(segments: &[RawSegment], metadata: &Value) -> 
             map.insert(lab, fallback.clone());
         }
     }
-
-    map
 }
 
 /// Manual re-run: fetch Space metadata, run diarization on disk, return updated metadata JSON.
