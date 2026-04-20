@@ -97,7 +97,14 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 	private getSourceTime(time: number) {
 		const elapsed = this.getClampedElapsed(time);
 		const sourceOffset = this.getIntegratedSourceOffset(elapsed);
-		const trimEnd = this.params.trimEnd ?? (this.params.trimStart + this.params.duration * (this.params.speed ?? 1));
+		const computedTrimEnd =
+			this.params.trimStart + this.params.duration * (this.params.speed ?? 1);
+		// `trimEnd` is often persisted as `0` when unset (e.g. bridge imports). `??` does not
+		// treat `0` as missing, which would clamp every decode request to media time 0.
+		const trimEnd =
+			this.params.trimEnd != null && this.params.trimEnd > this.params.trimStart
+				? this.params.trimEnd
+				: computedTrimEnd;
 
 		if (this.params.reversed) {
 			return Math.max(this.params.trimStart, trimEnd - sourceOffset);
@@ -126,11 +133,13 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 		}
 
 		// Use pre-decoded frame from prefetch() if available, otherwise decode inline
-		const frame = this.prefetchedFrame ?? await videoCache.getFrameAt({
+		const prefetched = this.prefetchedFrame;
+		this.prefetchedFrame = null;
+		const frame = prefetched ?? (await videoCache.getFrameAt({
 			sinkKey: this.params.elementId,
 			file: this.params.file,
 			time: this.getSourceTime(time),
-		});
+		}));
 
 		if (frame) {
 			renderer.context.save();

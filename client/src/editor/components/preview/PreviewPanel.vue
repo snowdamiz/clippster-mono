@@ -125,13 +125,18 @@ useRafLoop(() => {
 
 	if (frame !== lastFrame || renderTree !== lastScene) {
 		rendering = true;
-		lastScene = renderTree;
-		lastFrame = frame;
-		r.renderToCanvas({ node: renderTree, time: renderTime, targetCanvas: canvas })
+		const commitFrame = frame;
+		const commitTree = renderTree;
+		const commitTime = renderTime;
+		r.renderToCanvas({ node: commitTree, time: commitTime, targetCanvas: canvas })
 			.then(() => {
+				lastFrame = commitFrame;
+				lastScene = commitTree;
 				rendering = false;
 			})
-			.catch(() => { rendering = false; });
+			.catch(() => {
+				rendering = false;
+			});
 	}
 });
 

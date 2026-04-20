@@ -1,5 +1,11 @@
 import type { VideoEffect } from "../../types/effects";
-import type { ColorAdjustments, ColorCurves, ColorCurvePoint, ColorWheels } from "../../types/timeline";
+import type {
+	ColorAdjustments,
+	ColorCurves,
+	ColorCurvePoint,
+	ColorWheels,
+	ColorWheelValues,
+} from "../../types/timeline";
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -1295,12 +1301,25 @@ export function applyColorCurves(ctx: Ctx, width: number, height: number, curves
 	ctx.putImageData(imageData, 0, 0);
 }
 
+/** True when a wheel range has a non-identity adjustment (not just `{}` or all zeros). */
+function colorWheelRangeHasEffect(w?: ColorWheelValues): boolean {
+	if (!w) return false;
+	return (
+		Math.abs(w.hue) > 0.5 ||
+		Math.abs(w.saturation) > 0.0001 ||
+		Math.abs(w.luminance) > 0.0001
+	);
+}
+
 /**
  * Apply three-way color correction (lift/gamma/gain) via pixel manipulation.
  * Converts RGB → HSL, adjusts per tonal range, converts back.
  */
 export function applyColorWheels(ctx: Ctx, width: number, height: number, wheels: ColorWheels): void {
-	const hasAny = wheels.shadows || wheels.midtones || wheels.highlights;
+	const hasAny =
+		colorWheelRangeHasEffect(wheels.shadows) ||
+		colorWheelRangeHasEffect(wheels.midtones) ||
+		colorWheelRangeHasEffect(wheels.highlights);
 	if (!hasAny) return;
 
 	const imageData = ctx.getImageData(0, 0, width, height);

@@ -134,6 +134,18 @@ export function useFilmstrip({
 			return;
 		}
 
+		const desiredKeys = new Set(allTimestamps.map((ts) => String(roundTs(ts))));
+		for (const key of [...frameMap.value.keys()]) {
+			if (!desiredKeys.has(key)) {
+				const frame = frameMap.value.get(key);
+				if (frame) {
+					URL.revokeObjectURL(frame.objectUrl);
+					objectUrls.delete(frame.objectUrl);
+				}
+				frameMap.value.delete(key);
+			}
+		}
+
 		/**
 		 * Zoom de-duplication: only request timestamps that aren't already in
 		 * the frame map. When the user zooms slightly, tiles already decoded at
@@ -152,13 +164,6 @@ export function useFilmstrip({
 		// Cancel previous extraction
 		if (currentController) {
 			currentController.abort();
-		}
-
-		// Revoke old object URLs and clear the map before a full re-extraction
-		// (i.e. when element/media changed, not just a zoom tile fill-in)
-		const isFullReset = missingTimestamps.length === allTimestamps.length;
-		if (isFullReset) {
-			revokeAllUrls();
 		}
 
 		isLoading.value = true;

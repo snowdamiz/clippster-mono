@@ -44,7 +44,13 @@ export const TIMELINE_CONSTANTS = {
 	DEFAULT_ELEMENT_DURATION: 5,
 	PADDING_TOP_PX: 0,
 	ZOOM_MIN: 0.1,
-	ZOOM_MAX: 100,
+	/**
+	 * User-facing max (slider right, wheel, +/-). ~18× ≈ 30 px/frame @ 30 fps — aligns slider 100%
+	 * with the “5f / 10f ruler” zoom shown in QA; higher breaks filmstrip/waveform.
+	 */
+	ZOOM_MAX: 18,
+	/** Ceiling for zoom-to-fit / min-zoom math on very short timelines (independent of ZOOM_MAX). */
+	ZOOM_FIT_COMPUTE_CAP: 100,
 	ZOOM_BUTTON_FACTOR: 1.7,
 	ZOOM_ANCHOR_PLAYHEAD_THRESHOLD: 0.15,
 } as const;

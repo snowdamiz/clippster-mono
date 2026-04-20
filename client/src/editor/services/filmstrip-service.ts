@@ -2,6 +2,8 @@ import { filmstripCacheGet, filmstripCachePut } from "./filmstrip-cache";
 
 const THUMBNAIL_HEIGHT = 54;
 const DEFAULT_ASPECT_RATIO = 16 / 9;
+/** Max decoded samples per clip for timeline filmstrip (zoomed-in width / thumb width, capped). */
+const MAX_FILMSTRIP_FRAMES = 120;
 const MAX_CACHE_ENTRIES = 600;
 const WORKER_COUNT = 2;
 
@@ -327,7 +329,7 @@ export class FilmstripService {
 		const ar = aspectRatio ?? DEFAULT_ASPECT_RATIO;
 		const thumbWidth = THUMBNAIL_HEIGHT * ar;
 		const numFrames = Math.max(1, Math.ceil(elementWidthPx / thumbWidth));
-		const cappedFrames = Math.min(numFrames, 60);
+		const cappedFrames = Math.min(numFrames, MAX_FILMSTRIP_FRAMES);
 		const sourceDuration = duration * speed;
 		const timestamps: number[] = [];
 

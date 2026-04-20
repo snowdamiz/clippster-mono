@@ -188,7 +188,7 @@ const imageUrl = computed(() => {
 
 const isVideoElement = computed(() => props.element.type === "video");
 
-const { frames: filmstripFrames, thumbnailWidth: filmstripThumbWidth } = useFilmstrip({
+const { frames: filmstripFrames } = useFilmstrip({
 	element: toRef(props, "element"),
 	mediaAsset,
 	zoomLevel: toRef(props, "zoomLevel"),
@@ -261,10 +261,13 @@ const videoWaveformSvgRef = ref<SVGSVGElement | null>(null);
 
 const {
 	isVisible: volumeEnvelopeVisible,
+	showEnvelopeChrome: volumeEnvelopeChromeVisible,
 	envelopePath,
 	envelopeFillPath,
 	handles: volumeHandles,
 	isDragging: volumeIsDragging,
+	onStripPointerEnter: onVolumeStripPointerEnter,
+	onStripPointerLeave: onVolumeStripPointerLeave,
 	onStripPointerDown: onVolumeStripPointerDown,
 	onHandleDblClick: onVolumeHandleDblClick,
 } = useVolumeEnvelope({
@@ -387,7 +390,7 @@ const elementTooltip = computed(() => {
 					<canvas
 						ref="audioWaveformCanvas"
 						class="absolute inset-0 w-full h-full pointer-events-none"
-						style="mix-blend-mode: normal; z-index: 5"
+						style="mix-blend-mode: normal; z-index: 5; image-rendering: crisp-edges"
 					/>
 					<!-- Volume rubber-band envelope overlay -->
 					<svg
@@ -398,10 +401,14 @@ const elementTooltip = computed(() => {
 						viewBox="0 0 100 100"
 						preserveAspectRatio="none"
 						:style="{ cursor: volumeIsDragging ? 'ns-resize' : 'crosshair', pointerEvents: 'all' }"
+						@pointerenter="onVolumeStripPointerEnter"
+						@pointerleave="onVolumeStripPointerLeave"
 						@pointerdown.stop="(e) => audioSvgRef && onVolumeStripPointerDown(e, audioSvgRef, 0)"
 					>
+						<rect x="0" y="0" width="100" height="100" fill="transparent" pointer-events="all" />
 						<!-- Fill area -->
 						<path
+							v-if="volumeEnvelopeChromeVisible"
 							:d="envelopeFillPath"
 							fill="rgba(250,204,21,0.08)"
 							stroke="none"
@@ -409,6 +416,7 @@ const elementTooltip = computed(() => {
 						/>
 						<!-- Envelope line -->
 						<path
+							v-if="volumeEnvelopeChromeVisible"
 							:d="envelopePath"
 							fill="none"
 							stroke="rgba(250,204,21,0.7)"
@@ -445,13 +453,19 @@ const elementTooltip = computed(() => {
 					<div v-else-if="hasFilmstrip" class="absolute inset-0">
 						<!-- Filmstrip area: below the 16px title bar, above the waveform -->
 						<div :class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']" style="top: 16px; bottom: 35%;">
-							<div class="absolute inset-0 flex pointer-events-none">
+							<div
+								class="absolute inset-0 grid pointer-events-none h-full"
+								:style="{
+									gridTemplateColumns: filmstripFrames.length
+										? `repeat(${filmstripFrames.length}, minmax(0, 1fr))`
+										: undefined,
+								}"
+							>
 								<div
-									v-for="frame in filmstripFrames"
-									:key="frame.timestamp"
-									class="h-full flex-shrink-0"
+									v-for="(frame, idx) in filmstripFrames"
+									:key="`${frame.timestamp}-${idx}`"
+									class="min-h-0 min-w-0 h-full"
 									:style="{
-										width: `${filmstripThumbWidth}px`,
 										backgroundImage: `url(${frame.objectUrl})`,
 										backgroundSize: 'cover',
 										backgroundPosition: 'center',
@@ -464,7 +478,7 @@ const elementTooltip = computed(() => {
 						v-if="!isMuted"
 						ref="videoWaveformCanvas"
 						class="absolute right-0 left-0 w-full pointer-events-none"
-						style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal;"
+						style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal; image-rendering: crisp-edges"
 					/>
 					<!-- Volume rubber-band envelope overlay (video waveform strip) -->
 					<svg
@@ -475,10 +489,26 @@ const elementTooltip = computed(() => {
 						viewBox="0 0 100 100"
 						preserveAspectRatio="none"
 						:style="{ cursor: volumeIsDragging ? 'ns-resize' : 'crosshair', pointerEvents: 'all' }"
+						@pointerenter="onVolumeStripPointerEnter"
+						@pointerleave="onVolumeStripPointerLeave"
 						@pointerdown.stop="(e) => videoWaveformSvgRef && onVolumeStripPointerDown(e, videoWaveformSvgRef, 0)"
 					>
-						<path :d="envelopeFillPath" fill="rgba(250,204,21,0.08)" stroke="none" vector-effect="non-scaling-stroke" />
-						<path :d="envelopePath" fill="none" stroke="rgba(250,204,21,0.7)" stroke-width="1.5" vector-effect="non-scaling-stroke" />
+						<rect x="0" y="0" width="100" height="100" fill="transparent" pointer-events="all" />
+						<path
+							v-if="volumeEnvelopeChromeVisible"
+							:d="envelopeFillPath"
+							fill="rgba(250,204,21,0.08)"
+							stroke="none"
+							vector-effect="non-scaling-stroke"
+						/>
+						<path
+							v-if="volumeEnvelopeChromeVisible"
+							:d="envelopePath"
+							fill="none"
+							stroke="rgba(250,204,21,0.7)"
+							stroke-width="1.5"
+							vector-effect="non-scaling-stroke"
+						/>
 						<g v-for="h in volumeHandles" :key="h.id">
 							<circle
 								:cx="h.x" :cy="h.y" r="4"
@@ -517,7 +547,7 @@ const elementTooltip = computed(() => {
 						v-if="isVideoElement && !isMuted"
 						ref="videoWaveformCanvas"
 						class="absolute right-0 left-0 w-full pointer-events-none"
-						style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal;"
+						style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal; image-rendering: crisp-edges"
 					/>
 					<!-- Volume rubber-band envelope overlay (video fallback thumbnail) -->
 					<svg
@@ -528,10 +558,26 @@ const elementTooltip = computed(() => {
 						viewBox="0 0 100 100"
 						preserveAspectRatio="none"
 						:style="{ cursor: volumeIsDragging ? 'ns-resize' : 'crosshair', pointerEvents: 'all' }"
+						@pointerenter="onVolumeStripPointerEnter"
+						@pointerleave="onVolumeStripPointerLeave"
 						@pointerdown.stop="(e) => videoWaveformSvgRef && onVolumeStripPointerDown(e, videoWaveformSvgRef, 0)"
 					>
-						<path :d="envelopeFillPath" fill="rgba(250,204,21,0.08)" stroke="none" vector-effect="non-scaling-stroke" />
-						<path :d="envelopePath" fill="none" stroke="rgba(250,204,21,0.7)" stroke-width="1.5" vector-effect="non-scaling-stroke" />
+						<rect x="0" y="0" width="100" height="100" fill="transparent" pointer-events="all" />
+						<path
+							v-if="volumeEnvelopeChromeVisible"
+							:d="envelopeFillPath"
+							fill="rgba(250,204,21,0.08)"
+							stroke="none"
+							vector-effect="non-scaling-stroke"
+						/>
+						<path
+							v-if="volumeEnvelopeChromeVisible"
+							:d="envelopePath"
+							fill="none"
+							stroke="rgba(250,204,21,0.7)"
+							stroke-width="1.5"
+							vector-effect="non-scaling-stroke"
+						/>
 						<g v-for="h in volumeHandles" :key="h.id">
 							<circle
 								:cx="h.x" :cy="h.y" r="4"

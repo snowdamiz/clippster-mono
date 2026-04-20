@@ -418,11 +418,6 @@ async fn fetch_audio_space_full(space_id: &str) -> Result<AudioSpaceFullData, St
     })
 }
 
-/// Thin wrapper kept for call-site backwards compat
-async fn fetch_audio_space_participants(space_id: &str) -> Result<Vec<Value>, String> {
-    fetch_audio_space_full(space_id).await.map(|d| d.participants)
-}
-
 /// GET /1.1/live_video_stream/status/{media_key}
 async fn fetch_live_video_stream_status(media_key: &str, guest_token: &str) -> Result<Value, String> {
     let url = format!(

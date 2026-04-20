@@ -353,14 +353,22 @@ async function buildTimelineTracks(
 		const duration = source.end_time - source.start_time;
 		if (duration <= 0) continue;
 
+		const trimStart = source.trim_start || 0;
+		// DB often omits trim_end; `?? 0` produced `trimEnd === 0`, which breaks preview decode
+		// (`0 ?? fallback` keeps 0 in VideoNode). Default to the natural media out-point.
+		const trimEnd =
+			source.trim_end != null && source.trim_end > trimStart
+				? source.trim_end
+				: trimStart + duration;
+
 		videoElements.push({
 			id: generateUUID(),
 			type: "video",
 			name: source.source_name || "Video",
 			startTime: currentTime,
 			duration,
-			trimStart: source.trim_start || 0,
-			trimEnd: source.trim_end ?? 0,
+			trimStart,
+			trimEnd,
 			mediaId: source.id,
 			muted: false,
 			hidden: false,

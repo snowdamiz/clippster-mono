@@ -3,7 +3,9 @@
  *
  * Renders an interactive SVG overlay on the audio waveform strip that lets
  * users add/drag/remove volume keyframes directly on the clip — similar to
- * CapCut and OpenCut's in-timeline volume editing.
+ * CapCut and OpenCut's in-timeline volume editing. The line/fill/handles stay
+ * hidden until the strip is hovered or the user is dragging (automation still
+ * applies on playback/export when not visible).
  *
  * Coordinate system:
  *   x  = offset (0–1) mapped to 0–elementWidthPx
@@ -38,6 +40,8 @@ export function useVolumeEnvelope({
 
 	const isDragging = ref(false);
 	const draggingKeyframeId = ref<string | null>(null);
+	/** True while pointer is over the volume strip (so we can show rubber-band before any keyframes). */
+	const stripHovered = ref(false);
 
 	/** Sorted volume keyframes from the element. */
 	const volumeKeyframes = computed((): Keyframe[] => {
@@ -53,6 +57,17 @@ export function useVolumeEnvelope({
 		if (elementWidthPx.value < MIN_WIDTH_PX) return false;
 		return true;
 	});
+
+	/** Line/fill/handles: only while hovering the strip or dragging a handle. */
+	const showEnvelopeChrome = computed(() => isDragging.value || stripHovered.value);
+
+	function onStripPointerEnter() {
+		stripHovered.value = true;
+	}
+
+	function onStripPointerLeave() {
+		if (!isDragging.value) stripHovered.value = false;
+	}
 
 	/** Convert volume value (0–VOL_MAX) to Y percentage (0% = top = max). */
 	function volToYPct(vol: number): number {
@@ -150,6 +165,7 @@ export function useVolumeEnvelope({
 		stripHeightPx: number,
 	) {
 		event.stopPropagation();
+		stripHovered.value = true;
 
 		const rect = svgElement.getBoundingClientRect();
 		const localX = event.clientX - rect.left;
@@ -178,6 +194,7 @@ export function useVolumeEnvelope({
 		svgHeight: number,
 	) {
 		isDragging.value = true;
+		stripHovered.value = true;
 		draggingKeyframeId.value = keyframeId;
 
 		const rect = svgElement.getBoundingClientRect();
@@ -213,11 +230,14 @@ export function useVolumeEnvelope({
 
 	return {
 		isVisible,
+		showEnvelopeChrome,
 		volumeKeyframes,
 		envelopePath,
 		envelopeFillPath,
 		handles,
 		isDragging,
+		onStripPointerEnter,
+		onStripPointerLeave,
 		onStripPointerDown,
 		onHandleDblClick,
 		volToYPct,

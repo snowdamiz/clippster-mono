@@ -103,6 +103,8 @@ pub struct VideoSource {
 
     pub animation_out: Option<AnimationData>,
 
+    /// Deserialized from frontend; loop presets are not mapped to FFmpeg yet.
+    #[allow(dead_code)]
     pub animation_loop: Option<AnimationData>,
 
     pub keyframes: Option<Vec<KeyframeTrack>>,
