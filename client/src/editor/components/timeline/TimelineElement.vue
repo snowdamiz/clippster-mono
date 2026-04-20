@@ -4,6 +4,7 @@ import { useEditor } from "../../composables/useEditor";
 import { useTimelineElementResize } from "../../composables/timeline/element/useElementResize";
 import { useElementFade } from "../../composables/timeline/element/useElementFade";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
+import { useVolumeEnvelope } from "../../composables/timeline/element/useVolumeEnvelope";
 import { useFilmstrip } from "../../composables/timeline/useFilmstrip";
 import { useAudioWaveform } from "../../composables/timeline/useAudioWaveform";
 import type { SnapPoint } from "../../composables/timeline/useTimelineSnapping";
@@ -255,6 +256,23 @@ const { fadeState, currentFadeIn, currentFadeOut, handleFadeStart } = useElement
 	zoomLevel: toRef(props, "zoomLevel"),
 });
 
+const audioSvgRef = ref<SVGSVGElement | null>(null);
+const videoWaveformSvgRef = ref<SVGSVGElement | null>(null);
+
+const {
+	isVisible: volumeEnvelopeVisible,
+	envelopePath,
+	envelopeFillPath,
+	handles: volumeHandles,
+	isDragging: volumeIsDragging,
+	onStripPointerDown: onVolumeStripPointerDown,
+	onHandleDblClick: onVolumeHandleDblClick,
+} = useVolumeEnvelope({
+	elementRef: toRef(props, "element"),
+	trackRef: toRef(props, "track"),
+	elementWidthPx: elementWidth,
+});
+
 const isFading = computed(() => fadeState.value !== null);
 
 const fadeInPx = computed(() => {
@@ -364,20 +382,64 @@ const elementTooltip = computed(() => {
 					<!-- Sticker element -->
 					<div v-else-if="element.type === 'sticker'" class="size-full" />
 
-					<!-- Audio element with waveform -->
-					<div v-else-if="element.type === 'audio'" class="relative w-full h-full">
-						<canvas
-							ref="audioWaveformCanvas"
-							class="absolute inset-0 w-full h-full pointer-events-none"
-							style="mix-blend-mode: normal; z-index: 5"
+				<!-- Audio element with waveform -->
+				<div v-else-if="element.type === 'audio'" class="relative w-full h-full">
+					<canvas
+						ref="audioWaveformCanvas"
+						class="absolute inset-0 w-full h-full pointer-events-none"
+						style="mix-blend-mode: normal; z-index: 5"
+					/>
+					<!-- Volume rubber-band envelope overlay -->
+					<svg
+						v-if="volumeEnvelopeVisible"
+						ref="audioSvgRef"
+						class="absolute inset-0 w-full h-full overflow-visible"
+						style="z-index: 10; top: 16px; height: calc(100% - 16px);"
+						viewBox="0 0 100 100"
+						preserveAspectRatio="none"
+						:style="{ cursor: volumeIsDragging ? 'ns-resize' : 'crosshair', pointerEvents: 'all' }"
+						@pointerdown.stop="(e) => audioSvgRef && onVolumeStripPointerDown(e, audioSvgRef, 0)"
+					>
+						<!-- Fill area -->
+						<path
+							:d="envelopeFillPath"
+							fill="rgba(250,204,21,0.08)"
+							stroke="none"
+							vector-effect="non-scaling-stroke"
 						/>
-						<div
-							v-if="waveformLoading"
-							class="absolute inset-0 flex items-center justify-center"
+						<!-- Envelope line -->
+						<path
+							:d="envelopePath"
+							fill="none"
+							stroke="rgba(250,204,21,0.7)"
+							stroke-width="1.5"
+							vector-effect="non-scaling-stroke"
+						/>
+						<!-- Keyframe handles -->
+						<g
+							v-for="h in volumeHandles"
+							:key="h.id"
 						>
-							<div class="text-[9px] text-white/40">Loading...</div>
-						</div>
+							<circle
+								:cx="h.x"
+								:cy="h.y"
+								r="4"
+								fill="#facc15"
+								stroke="#a16207"
+								stroke-width="1"
+								vector-effect="non-scaling-stroke"
+								style="cursor: ns-resize; pointer-events: all"
+								@dblclick.stop="(e) => onVolumeHandleDblClick(e as any, h.id)"
+							/>
+						</g>
+					</svg>
+					<div
+						v-if="waveformLoading"
+						class="absolute inset-0 flex items-center justify-center"
+					>
+						<div class="text-[9px] text-white/40">Loading...</div>
 					</div>
+				</div>
 
 					<!-- Video filmstrip (actual frames at correct timestamps) -->
 					<div v-else-if="hasFilmstrip" class="absolute inset-0">
@@ -397,44 +459,90 @@ const elementTooltip = computed(() => {
 								/>
 							</div>
 						</div>
-						<!-- Audio waveform: fills the entire bottom section (hidden when muted/audio extracted) -->
-						<canvas
-							v-if="!isMuted"
-							ref="videoWaveformCanvas"
-							class="absolute right-0 left-0 w-full pointer-events-none"
-							style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal;"
-						/>
-						<div
-							v-if="!isMuted && waveformLoading && !waveformLoaded"
-							class="absolute right-0 left-0 flex items-center justify-center pointer-events-none"
-							style="bottom: 0; height: 35%; z-index: 26;"
-						>
-							<div class="text-[8px] text-white/30">Loading waveform...</div>
-						</div>
-					</div>
-
-					<!-- Video/Image fallback thumbnail (before filmstrip loads) -->
-					<div v-else-if="imageUrl" class="absolute inset-0">
-						<div :class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']" style="top: 16px; bottom: 35%;">
-							<div
-								class="absolute inset-0"
-								:style="{
-									backgroundImage: `url(${imageUrl})`,
-									backgroundRepeat: 'repeat-x',
-									backgroundSize: `${tileWidth}px 100%`,
-									backgroundPosition: 'left center',
-									pointerEvents: 'none',
-								}"
+					<!-- Audio waveform: fills the entire bottom section (hidden when muted/audio extracted) -->
+					<canvas
+						v-if="!isMuted"
+						ref="videoWaveformCanvas"
+						class="absolute right-0 left-0 w-full pointer-events-none"
+						style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal;"
+					/>
+					<!-- Volume rubber-band envelope overlay (video waveform strip) -->
+					<svg
+						v-if="!isMuted && volumeEnvelopeVisible"
+						ref="videoWaveformSvgRef"
+						class="absolute right-0 left-0 w-full overflow-visible"
+						style="bottom: 0; height: 35%; z-index: 30;"
+						viewBox="0 0 100 100"
+						preserveAspectRatio="none"
+						:style="{ cursor: volumeIsDragging ? 'ns-resize' : 'crosshair', pointerEvents: 'all' }"
+						@pointerdown.stop="(e) => videoWaveformSvgRef && onVolumeStripPointerDown(e, videoWaveformSvgRef, 0)"
+					>
+						<path :d="envelopeFillPath" fill="rgba(250,204,21,0.08)" stroke="none" vector-effect="non-scaling-stroke" />
+						<path :d="envelopePath" fill="none" stroke="rgba(250,204,21,0.7)" stroke-width="1.5" vector-effect="non-scaling-stroke" />
+						<g v-for="h in volumeHandles" :key="h.id">
+							<circle
+								:cx="h.x" :cy="h.y" r="4"
+								fill="#facc15" stroke="#a16207" stroke-width="1"
+								vector-effect="non-scaling-stroke"
+								style="cursor: ns-resize; pointer-events: all"
+								@dblclick.stop="(e) => onVolumeHandleDblClick(e as any, h.id)"
 							/>
-						</div>
-						<!-- Audio waveform: fills the entire bottom section (hidden when muted/audio extracted) -->
-						<canvas
-							v-if="isVideoElement && !isMuted"
-							ref="videoWaveformCanvas"
-							class="absolute right-0 left-0 w-full pointer-events-none"
-							style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal;"
+						</g>
+					</svg>
+					<div
+						v-if="!isMuted && waveformLoading && !waveformLoaded"
+						class="absolute right-0 left-0 flex items-center justify-center pointer-events-none"
+						style="bottom: 0; height: 35%; z-index: 26;"
+					>
+						<div class="text-[8px] text-white/30">Loading waveform...</div>
+					</div>
+				</div>
+
+				<!-- Video/Image fallback thumbnail (before filmstrip loads) -->
+				<div v-else-if="imageUrl" class="absolute inset-0">
+					<div :class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']" style="top: 16px; bottom: 35%;">
+						<div
+							class="absolute inset-0"
+							:style="{
+								backgroundImage: `url(${imageUrl})`,
+								backgroundRepeat: 'repeat-x',
+								backgroundSize: `${tileWidth}px 100%`,
+								backgroundPosition: 'left center',
+								pointerEvents: 'none',
+							}"
 						/>
 					</div>
+					<!-- Audio waveform: fills the entire bottom section (hidden when muted/audio extracted) -->
+					<canvas
+						v-if="isVideoElement && !isMuted"
+						ref="videoWaveformCanvas"
+						class="absolute right-0 left-0 w-full pointer-events-none"
+						style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal;"
+					/>
+					<!-- Volume rubber-band envelope overlay (video fallback thumbnail) -->
+					<svg
+						v-if="isVideoElement && !isMuted && volumeEnvelopeVisible"
+						ref="videoWaveformSvgRef"
+						class="absolute right-0 left-0 w-full overflow-visible"
+						style="bottom: 0; height: 35%; z-index: 30;"
+						viewBox="0 0 100 100"
+						preserveAspectRatio="none"
+						:style="{ cursor: volumeIsDragging ? 'ns-resize' : 'crosshair', pointerEvents: 'all' }"
+						@pointerdown.stop="(e) => videoWaveformSvgRef && onVolumeStripPointerDown(e, videoWaveformSvgRef, 0)"
+					>
+						<path :d="envelopeFillPath" fill="rgba(250,204,21,0.08)" stroke="none" vector-effect="non-scaling-stroke" />
+						<path :d="envelopePath" fill="none" stroke="rgba(250,204,21,0.7)" stroke-width="1.5" vector-effect="non-scaling-stroke" />
+						<g v-for="h in volumeHandles" :key="h.id">
+							<circle
+								:cx="h.x" :cy="h.y" r="4"
+								fill="#facc15" stroke="#a16207" stroke-width="1"
+								vector-effect="non-scaling-stroke"
+								style="cursor: ns-resize; pointer-events: all"
+								@dblclick.stop="(e) => onVolumeHandleDblClick(e as any, h.id)"
+							/>
+						</g>
+					</svg>
+				</div>
 
 					<!-- Fallback -->
 					<div v-else class="size-full" />

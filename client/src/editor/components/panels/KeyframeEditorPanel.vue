@@ -6,8 +6,9 @@ import { useKeyframes } from "../../composables/useKeyframes";
 import { EASING_PRESETS } from "../../constants/easing-constants";
 import type { KeyframableProperty, KeyframeInterpolation } from "../../types/keyframes";
 import type { TimelineTrack, TimelineElement } from "../../types/timeline";
-import { Diamond, Plus, Trash2, ChevronDown, X } from "lucide-vue-next";
+import { Diamond, Plus, Trash2, ChevronDown, X, List, BarChart2 } from "lucide-vue-next";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import KeyframeGraphEditor from "./KeyframeGraphEditor.vue";
 
 const { editor, version } = useEditor();
 const { selectedElements } = useElementSelection();
@@ -49,6 +50,7 @@ const PROPERTIES: { key: KeyframableProperty; label: string; defaultValue: numbe
 ];
 
 const expandedProperties = ref<Set<KeyframableProperty>>(new Set());
+const showGraph = ref(false);
 
 function toggleExpand(prop: KeyframableProperty) {
 	if (expandedProperties.value.has(prop)) {
@@ -128,6 +130,24 @@ const applicableProperties = computed(() => {
 		<div class="flex items-center gap-1.5 border-b border-white/10 px-4 py-2">
 			<Diamond class="size-3.5 text-zinc-500" />
 			<span class="text-xs font-medium text-zinc-400">Keyframes</span>
+			<div class="ml-auto flex items-center gap-0.5">
+				<button
+					class="flex size-5 items-center justify-center rounded text-zinc-500 transition-colors"
+					:class="!showGraph ? 'bg-white/10 text-zinc-200' : 'hover:bg-white/5 hover:text-zinc-300'"
+					title="List view"
+					@click="showGraph = false"
+				>
+					<List class="size-3" />
+				</button>
+				<button
+					class="flex size-5 items-center justify-center rounded text-zinc-500 transition-colors"
+					:class="showGraph ? 'bg-white/10 text-zinc-200' : 'hover:bg-white/5 hover:text-zinc-300'"
+					title="Graph view"
+					@click="showGraph = true"
+				>
+					<BarChart2 class="size-3" />
+				</button>
+			</div>
 		</div>
 
 		<!-- No element selected -->
@@ -136,7 +156,16 @@ const applicableProperties = computed(() => {
 			<p class="text-xs text-zinc-500">Select an element to edit keyframes</p>
 		</div>
 
-		<!-- Keyframe editor -->
+		<!-- Graph view -->
+		<div v-else-if="showGraph" class="flex-1 overflow-y-auto">
+			<KeyframeGraphEditor
+				:track-ref="toRef(() => trackRef)"
+				:element-ref="toRef(() => elementRef)"
+				:applicable-properties="applicableProperties"
+			/>
+		</div>
+
+		<!-- List view -->
 		<div v-else class="flex-1 overflow-y-auto p-3 space-y-1">
 			<div
 				v-for="prop in applicableProperties"

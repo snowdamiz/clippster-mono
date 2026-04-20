@@ -94,57 +94,65 @@ export function buildScene(params: BuildSceneParams) {
 				}
 
 				let node: BaseNode | null = null;
-				if (mediaAsset.type === "video") {
-					const videoEl = element as VideoElement;
-					node = new VideoNode({
-						mediaId: mediaAsset.id,
-						elementId: videoEl.id,
-						url: mediaAsset.url,
-						file: mediaAsset.file,
-						duration: videoEl.duration,
-						timeOffset: videoEl.startTime,
-						trimStart: videoEl.trimStart,
-						trimEnd: videoEl.trimEnd,
-						opacity: videoEl.opacity,
-						transform: videoEl.transform,
-						flip: videoEl.flip,
-						crop: videoEl.crop,
-						colorAdjustments: videoEl.colorAdjustments,
-						speed: videoEl.speed,
-						reversed: videoEl.reversed,
-						fadeIn: videoEl.fadeIn,
-						fadeOut: videoEl.fadeOut,
-						keyframes: videoEl.keyframes,
-						effects: videoEl.effects,
-						chromakey: videoEl.chromakey,
-						animationIn: videoEl.animationIn,
-						animationOut: videoEl.animationOut,
-						animationLoop: videoEl.animationLoop,
-					});
-				}
-				if (mediaAsset.type === "image") {
-					const imageEl = element as ImageElement;
-					node = new ImageNode({
-						url: mediaAsset.url,
-						duration: imageEl.duration,
-						timeOffset: imageEl.startTime,
-						trimStart: imageEl.trimStart,
-						trimEnd: imageEl.trimEnd,
-						opacity: imageEl.opacity,
-						transform: imageEl.transform,
-						flip: imageEl.flip,
-						crop: imageEl.crop,
-						colorAdjustments: imageEl.colorAdjustments,
-						fadeIn: imageEl.fadeIn,
-						fadeOut: imageEl.fadeOut,
-						keyframes: imageEl.keyframes,
-						effects: imageEl.effects,
-						chromakey: imageEl.chromakey,
-						animationIn: imageEl.animationIn,
-						animationOut: imageEl.animationOut,
-						animationLoop: imageEl.animationLoop,
-					});
-				}
+			if (mediaAsset.type === "video") {
+				const videoEl = element as VideoElement;
+			node = new VideoNode({
+				mediaId: mediaAsset.id,
+				elementId: videoEl.id,
+				url: mediaAsset.url,
+				file: mediaAsset.file,
+				duration: videoEl.duration,
+				timeOffset: videoEl.startTime,
+				trimStart: videoEl.trimStart,
+				trimEnd: videoEl.trimEnd,
+				opacity: videoEl.opacity,
+				transform: videoEl.transform,
+				flip: videoEl.flip,
+				crop: videoEl.crop,
+				colorAdjustments: videoEl.colorAdjustments,
+				colorCurves: videoEl.colorCurves,
+				colorWheels: videoEl.colorWheels,
+				blendMode: videoEl.blendMode,
+				speed: videoEl.speed,
+				reversed: videoEl.reversed,
+				fadeIn: videoEl.fadeIn,
+				fadeOut: videoEl.fadeOut,
+				keyframes: videoEl.keyframes,
+				effects: videoEl.effects,
+				chromakey: videoEl.chromakey,
+				animationIn: videoEl.animationIn,
+				animationOut: videoEl.animationOut,
+				animationLoop: videoEl.animationLoop,
+				masks: videoEl.masks,
+			});
+		}
+		if (mediaAsset.type === "image") {
+			const imageEl = element as ImageElement;
+			node = new ImageNode({
+				url: mediaAsset.url,
+				duration: imageEl.duration,
+				timeOffset: imageEl.startTime,
+				trimStart: imageEl.trimStart,
+				trimEnd: imageEl.trimEnd,
+				opacity: imageEl.opacity,
+				transform: imageEl.transform,
+				flip: imageEl.flip,
+				crop: imageEl.crop,
+				colorAdjustments: imageEl.colorAdjustments,
+				colorCurves: imageEl.colorCurves,
+				colorWheels: imageEl.colorWheels,
+				blendMode: imageEl.blendMode,
+				fadeIn: imageEl.fadeIn,
+				fadeOut: imageEl.fadeOut,
+				keyframes: imageEl.keyframes,
+				effects: imageEl.effects,
+				chromakey: imageEl.chromakey,
+				animationIn: imageEl.animationIn,
+				animationOut: imageEl.animationOut,
+				animationLoop: imageEl.animationLoop,
+				masks: imageEl.masks,
+			});
+		}
 				if (node) {
 					elementNodeMap.set(element.id, node);
 				}
@@ -208,22 +216,23 @@ export function buildScene(params: BuildSceneParams) {
 
 			if (element.type === "sticker") {
 				contentNodes.push(
-					new StickerNode({
-						iconName: element.iconName,
-						duration: element.duration,
-						timeOffset: element.startTime,
-						trimStart: element.trimStart,
-						trimEnd: element.trimEnd,
-						transform: element.transform,
-						opacity: element.opacity,
-						color: element.color,
-						fadeIn: element.fadeIn,
-						fadeOut: element.fadeOut,
-						keyframes: element.keyframes,
-						animationIn: element.animationIn,
-						animationOut: element.animationOut,
-						animationLoop: element.animationLoop,
-					}),
+			new StickerNode({
+					iconName: element.iconName,
+					duration: element.duration,
+					timeOffset: element.startTime,
+					trimStart: element.trimStart,
+					trimEnd: element.trimEnd,
+					transform: element.transform,
+					opacity: element.opacity,
+					color: element.color,
+					fadeIn: element.fadeIn,
+					fadeOut: element.fadeOut,
+					keyframes: element.keyframes,
+					animationIn: element.animationIn,
+					animationOut: element.animationOut,
+					animationLoop: element.animationLoop,
+					blendMode: element.blendMode,
+				}),
 				);
 			}
 

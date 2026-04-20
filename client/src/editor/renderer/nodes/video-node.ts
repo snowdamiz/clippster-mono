@@ -1,15 +1,16 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
 import { videoCache } from "../../video-cache/service";
-import type { Transform, FlipState, ColorAdjustments, CropRect } from "../../types/timeline";
+import type { Transform, FlipState, ColorAdjustments, CropRect, ColorCurves, ColorWheels, BlendMode, MaskShape } from "../../types/timeline";
 import type { VideoEffect } from "../../types/effects";
 import type { ElementKeyframes } from "../../types/keyframes";
 import { evaluateKeyframeTrack, getKeyframedValue } from "../../types/keyframes";
-import { buildFilterString, hasPostDrawEffects, applyCanvasEffects, applyAdvancedColorAdjustments } from "../effects/canvas-effects";
+import { buildFilterString, hasPostDrawEffects, applyCanvasEffects, applyAdvancedColorAdjustments, applyColorCurves, applyColorWheels } from "../effects/canvas-effects";
 import { applyChromakey } from "../effects/canvas-chromakey";
 import type { ChromakeySettings } from "../../types/chromakey";
 import type { ElementAnimation } from "../../types/animations";
 import { computeAnimationTransforms, applyAnimationToContext } from "../effects/canvas-animations";
+import { hasMasks, setupMaskClip } from "./mask-compositor";
 
 const VIDEO_EPSILON = 1 / 1000;
 
@@ -41,6 +42,10 @@ export interface VideoNodeParams {
 	animationIn?: ElementAnimation;
 	animationOut?: ElementAnimation;
 	animationLoop?: ElementAnimation;
+	colorCurves?: ColorCurves;
+	colorWheels?: ColorWheels;
+	blendMode?: BlendMode;
+	masks?: MaskShape[];
 }
 
 export class VideoNode extends BaseNode<VideoNodeParams> {
@@ -130,6 +135,11 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 		if (frame) {
 			renderer.context.save();
 
+			// Apply blend mode (composite operation)
+			if (this.params.blendMode && this.params.blendMode !== "normal") {
+				renderer.context.globalCompositeOperation = this.params.blendMode as GlobalCompositeOperation;
+			}
+
 			// Resolve keyframed values
 			const elapsed = this.getClampedElapsed(time);
 			const effectiveTime = this.params.timeOffset + elapsed;
@@ -158,6 +168,11 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 				{ elapsed, elementDuration: this.params.duration, canvasWidth: renderer.width, canvasHeight: renderer.height },
 			);
 			applyAnimationToContext(renderer.context, animResult, renderer.width / 2, renderer.height / 2);
+
+			// Apply shape masks (clip path) before drawing
+			if (hasMasks(this.params.masks)) {
+				setupMaskClip(renderer.context, this.params.masks!, renderer.width, renderer.height);
+			}
 
 			// Apply transform (scale, position, rotation) with keyframe overrides
 			const transform = this.params.transform;
@@ -287,10 +302,18 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 				applyAdvancedColorAdjustments(renderer.context, renderer.width, renderer.height, ca);
 			}
 
-			// Apply chromakey (green screen removal)
-			if (this.params.chromakey?.enabled) {
-				applyChromakey(renderer.context, renderer.width, renderer.height, this.params.chromakey);
-			}
+		// Apply chromakey (green screen removal)
+		if (this.params.chromakey?.enabled) {
+			applyChromakey(renderer.context, renderer.width, renderer.height, this.params.chromakey);
+		}
+
+		// Apply color grading: curves then wheels
+		if (this.params.colorCurves) {
+			applyColorCurves(renderer.context, renderer.width, renderer.height, this.params.colorCurves);
+		}
+		if (this.params.colorWheels) {
+			applyColorWheels(renderer.context, renderer.width, renderer.height, this.params.colorWheels);
 		}
 	}
+}
 }

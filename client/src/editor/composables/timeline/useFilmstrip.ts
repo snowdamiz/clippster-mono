@@ -1,4 +1,4 @@
-import { ref, watch, onUnmounted, type Ref, computed } from "vue";
+import { ref, watch, computed, onUnmounted, type Ref } from "vue";
 import { filmstripService } from "../../services/filmstrip-service";
 import type { TimelineElement as TimelineElementType } from "../../types/timeline";
 import type { MediaAsset } from "../../types/assets";
@@ -27,6 +27,11 @@ function getConversionCanvas(width: number, height: number): { canvas: HTMLCanva
 	return { canvas: sharedConversionCanvas, ctx };
 }
 
+/** Round timestamp to the same precision used by the service cache key. */
+function roundTs(ts: number): number {
+	return Math.round(ts * 100) / 100;
+}
+
 export function useFilmstrip({
 	element,
 	mediaAsset,
@@ -42,19 +47,26 @@ export function useFilmstrip({
 	thumbnailWidth: Ref<number>;
 	isLoading: Ref<boolean>;
 } {
-	const frames = ref<FilmstripFrame[]>([]);
+	/**
+	 * Map<roundedTsKey, FilmstripFrame> as the primary reactive store.
+	 * Vue 3 tracks Map mutations (set/delete) via its Proxy-based reactivity.
+	 * This avoids the per-frame O(n log n) array rebuild that the old ref<[]> caused.
+	 */
+	const frameMap = ref(new Map<string, FilmstripFrame>());
+
+	/**
+	 * Sorted array computed once from the Map. Only re-runs when the Map changes,
+	 * not on every frame's individual sort call.
+	 */
+	const frames = computed<FilmstripFrame[]>(() =>
+		[...frameMap.value.values()].sort((a, b) => a.timestamp - b.timestamp),
+	);
+
 	const isLoading = ref(false);
 	const objectUrls = new Set<string>();
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let currentController: AbortController | null = null;
-	// Monotonically-increasing counter. Incremented before each requestFilmstrip call.
-	// Each onFrame closure captures its own generation so that:
-	//   - Synchronously-delivered cached frames (delivered before requestFilmstrip returns
-	//     and before currentController is updated) are NOT falsely treated as stale.
-	//   - Callbacks from a superseded extraction are correctly discarded.
 	let extractionGeneration = 0;
-
-	const taskKey = computed(() => element.value.id);
 
 	const thumbnailWidth = computed(() => {
 		const asset = mediaAsset.value;
@@ -67,7 +79,7 @@ export function useFilmstrip({
 
 		const ar = asset.width && asset.height
 			? asset.width / asset.height
-			: filmstripService.getAspectRatio({ mediaId: el.mediaId });
+			: filmstripService.getAspectRatio({ mediaId: (el as any).mediaId });
 		return THUMBNAIL_HEIGHT * ar;
 	});
 
@@ -76,6 +88,8 @@ export function useFilmstrip({
 			URL.revokeObjectURL(url);
 		}
 		objectUrls.clear();
+		// Clear the frame map so stale frames aren't shown on remount
+		frameMap.value.clear();
 	}
 
 	function requestExtraction() {
@@ -83,7 +97,7 @@ export function useFilmstrip({
 		const asset = mediaAsset.value;
 
 		if (!asset || !asset.file || (el.type !== "video" && el.type !== "image")) {
-			frames.value = [];
+			revokeAllUrls();
 			return;
 		}
 
@@ -94,20 +108,20 @@ export function useFilmstrip({
 
 		const widthPx = elementWidth.value;
 		if (widthPx <= 0) {
-			frames.value = [];
+			revokeAllUrls();
 			return;
 		}
 
-		const mediaId = el.mediaId;
-		const trimStart = el.trimStart ?? 0;
+		const mediaId = (el as any).mediaId as string;
+		const trimStart = (el as any).trimStart ?? 0;
 		const duration = el.duration;
-		const speed = el.speed ?? 1;
+		const speed = (el as any).speed ?? 1;
 
 		const ar = asset.width && asset.height
 			? asset.width / asset.height
 			: DEFAULT_ASPECT_RATIO;
 
-		const timestamps = filmstripService.computeTimestamps({
+		const allTimestamps = filmstripService.computeTimestamps({
 			trimStart,
 			duration,
 			speed,
@@ -115,8 +129,23 @@ export function useFilmstrip({
 			aspectRatio: ar,
 		});
 
-		if (timestamps.length === 0) {
-			frames.value = [];
+		if (allTimestamps.length === 0) {
+			revokeAllUrls();
+			return;
+		}
+
+		/**
+		 * Zoom de-duplication: only request timestamps that aren't already in
+		 * the frame map. When the user zooms slightly, tiles already decoded at
+		 * those exact timestamps are reused instantly without re-decoding.
+		 */
+		const missingTimestamps = allTimestamps.filter(
+			(ts) => !frameMap.value.has(String(roundTs(ts))),
+		);
+
+		// If all timestamps are already decoded, just mark loading done.
+		if (missingTimestamps.length === 0) {
+			isLoading.value = false;
 			return;
 		}
 
@@ -125,36 +154,29 @@ export function useFilmstrip({
 			currentController.abort();
 		}
 
-		// Revoke old object URLs to free memory before starting new extraction
-		revokeAllUrls();
+		// Revoke old object URLs and clear the map before a full re-extraction
+		// (i.e. when element/media changed, not just a zoom tile fill-in)
+		const isFullReset = missingTimestamps.length === allTimestamps.length;
+		if (isFullReset) {
+			revokeAllUrls();
+		}
 
 		isLoading.value = true;
-
-		// Collect new frames progressively
-		const newFrames: FilmstripFrame[] = [];
 
 		// Serialize canvas write + toBlob operations so the shared canvas is never
 		// overwritten before the previous toBlob callback fires.
 		let conversionQueue: Promise<void> = Promise.resolve();
 
-		// Increment generation BEFORE calling requestFilmstrip. The service may
-		// deliver cached frames synchronously (inside requestFilmstrip, before it
-		// returns). If we used currentController for the abort check, those frames
-		// would see the OLD (already-aborted) controller and be silently dropped —
-		// causing blank thumbnails on zoom-out when timestamps are cache-hits.
-		// The generation counter is captured in the closure before the call, so
-		// synchronous and asynchronous frames are treated identically.
 		const myGeneration = ++extractionGeneration;
 
 		currentController = filmstripService.requestFilmstrip({
-			taskKey: taskKey.value,
+			taskKey: el.id,
 			mediaId,
 			file: asset.file,
-			timestamps,
+			timestamps: missingTimestamps,
 			onFrame: (timestamp: number, bitmap: ImageBitmap) => {
 				if (extractionGeneration !== myGeneration) return;
 
-				// Chain onto the queue so only one drawImage+toBlob runs at a time.
 				conversionQueue = conversionQueue.then(
 					() =>
 						new Promise<void>((resolve) => {
@@ -173,14 +195,13 @@ export function useFilmstrip({
 
 							conversion.ctx.drawImage(bitmap, 0, 0);
 							conversion.canvas.toBlob((blob) => {
-								resolve(); // always advance the queue
+								resolve();
 								if (!blob || extractionGeneration !== myGeneration) return;
 								const objectUrl = URL.createObjectURL(blob);
 								objectUrls.add(objectUrl);
-								newFrames.push({ timestamp, bitmap, objectUrl });
-								// Sort by timestamp and update reactively
-								newFrames.sort((a, b) => a.timestamp - b.timestamp);
-								frames.value = [...newFrames];
+								const key = String(roundTs(timestamp));
+								// Map.set triggers Vue reactivity — O(1) update, no full array rebuild
+								frameMap.value.set(key, { timestamp, bitmap, objectUrl });
 							}, "image/jpeg", 0.7);
 						}),
 				);
@@ -200,7 +221,9 @@ export function useFilmstrip({
 		}, DEBOUNCE_MS);
 	}
 
-	// Watch for changes that require re-extraction
+	// Watch for changes that require re-extraction.
+	// When element identity/trim/speed/media changes, we do a full reset.
+	// When only zoom/width changes, requestExtraction() filters already-cached timestamps.
 	watch(
 		[
 			() => element.value.id,
@@ -208,14 +231,20 @@ export function useFilmstrip({
 			() => (element.value as any).trimStart,
 			() => (element.value as any).speed,
 			() => mediaAsset.value?.id,
-			zoomLevel,
-			elementWidth,
 		],
 		() => {
+			// Force full reset on identity change
+			extractionGeneration++;
+			if (currentController) currentController.abort();
+			revokeAllUrls();
 			debouncedRequest();
 		},
-		{ immediate: true },
 	);
+
+	// Zoom/width changes only trigger incremental fill-in (not a full reset)
+	watch([zoomLevel, elementWidth], () => {
+		debouncedRequest();
+	}, { immediate: true });
 
 	onUnmounted(() => {
 		if (debounceTimer) {
@@ -224,12 +253,12 @@ export function useFilmstrip({
 		if (currentController) {
 			currentController.abort();
 		}
-		filmstripService.cancelExtraction({ taskKey: taskKey.value });
+		filmstripService.cancelExtraction({ taskKey: element.value.id });
 		revokeAllUrls();
 	});
 
 	return {
-		frames,
+		frames: frames as unknown as Ref<FilmstripFrame[]>,
 		thumbnailWidth,
 		isLoading,
 	};

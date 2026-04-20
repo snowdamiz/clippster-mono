@@ -2,7 +2,17 @@ import { invoke } from "@tauri-apps/api/core";
 import type { EditorCore } from "../../core";
 import type { RootNode } from "../../renderer/nodes/root-node";
 import type { ExportOptions, ExportResult } from "../../types/export";
-import type { TimelineTrack, VideoElement, ImageElement, TextElement, AudioElement, StickerElement, EffectElement, CaptionElement } from "../../types/timeline";
+import type {
+	TimelineTrack,
+	VideoTrack,
+	VideoElement,
+	ImageElement,
+	TextElement,
+	AudioElement,
+	StickerElement,
+	EffectElement,
+	CaptionElement,
+} from "../../types/timeline";
 import type { MediaAsset } from "../../types/assets";
 import type { VideoEffect } from "../../types/effects";
 import type { AspectRatioId } from "../../types/project";
@@ -16,6 +26,18 @@ import { useBrandingConfig } from "../../composables/useBrandingConfig";
 import { resolveWatermarkById, resolveOverlayImagePath } from "@/services/database/watermarks";
 import { resolveIntroOutroById } from "@/services/database/intro-outros";
 import { base64ToUtf8 } from "@/utils/encoding";
+
+/** True if any two [start,end) segments overlap (for FFmpeg layer compositing). */
+function videoSegmentsOverlap(segments: { start: number; end: number }[]): boolean {
+	for (let i = 0; i < segments.length; i++) {
+		for (let j = i + 1; j < segments.length; j++) {
+			if (segments[i].start < segments[j].end && segments[j].start < segments[i].end) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
 
 interface TauriAnimationData {
 	anim_type: string;
@@ -56,6 +78,28 @@ interface TauriVideoSource {
 	animation_out: TauriAnimationData | null;
 	animation_loop: TauriAnimationData | null;
 	keyframes: TauriKeyframeTrack[] | null;
+	// Phase 3: Color grading
+	color_curves_master: [number, number][] | null;
+	color_curves_red: [number, number][] | null;
+	color_curves_green: [number, number][] | null;
+	color_curves_blue: [number, number][] | null;
+	color_wheels_shadows_hue: number | null;
+	color_wheels_shadows_saturation: number | null;
+	color_wheels_shadows_luminance: number | null;
+	color_wheels_midtones_hue: number | null;
+	color_wheels_midtones_saturation: number | null;
+	color_wheels_midtones_luminance: number | null;
+	color_wheels_highlights_hue: number | null;
+	color_wheels_highlights_saturation: number | null;
+	color_wheels_highlights_luminance: number | null;
+	lut_path: string | null;
+	// Phase 5: Audio pan
+	pan: number | null;
+	// Phase 8: Blend mode
+	blend_mode: string | null;
+	/** Main video track = bottom layer when compositing overlapping clips */
+	track_is_main: boolean;
+	order_index: number;
 }
 
 interface TauriKeyframe {
@@ -91,6 +135,7 @@ interface TauriAudioTrack {
 	fade_in: number;
 	fade_out: number;
 	audio_effects: TauriAudioEffect[] | null;
+	pan: number | null;
 }
 
 interface TauriTextOverlay {
@@ -310,100 +355,204 @@ export class RendererManager {
 		captionOverlays: TauriTextOverlay[];
 		brandingExport: BrandingExportData;
 	}): TauriExportConfig {
-		const videoSources: TauriVideoSource[] = [];
 		const videoSourceElementIndex = new Map<string, number>();
+		const collectedVideos: {
+			source: TauriVideoSource;
+			elementId: string;
+			start_time: number;
+			end_time: number;
+			isMain: boolean;
+			orderIndex: number;
+		}[] = [];
+
 		const audioTracks: TauriAudioTrack[] = [];
 
 		const effectOverlays: TauriEffectOverlay[] = [];
 
+		const videoTracksAll = tracks.filter((t): t is VideoTrack => t.type === "video");
+		const orderedVideoTracks = [
+			...videoTracksAll.filter((t) => t.isMain),
+			...videoTracksAll.filter((t) => !t.isMain),
+		];
+
+		for (const track of orderedVideoTracks) {
+			const sortedElements = [...track.elements].sort((a, b) => {
+				const ao = a.orderIndex ?? 0;
+				const bo = b.orderIndex ?? 0;
+				if (ao !== bo) return ao - bo;
+				if (a.startTime !== b.startTime) return a.startTime - b.startTime;
+				return a.id.localeCompare(b.id);
+			});
+
+			for (const el of sortedElements) {
+				const isImage = el.type === "image";
+				const mediaId = isImage ? (el as ImageElement).mediaId : (el as VideoElement).mediaId;
+				const asset = mediaAssets.find((a) => a.id === mediaId);
+				if (!asset) continue;
+
+				const sourcePath = asset.filePath || (asset.url ? this.resolveFilePath(asset.url) : null);
+				if (!sourcePath) continue;
+
+				const orderIndex = el.orderIndex ?? 0;
+				const trackIsMain = track.isMain;
+
+				if (isImage) {
+					const imgEl = el as ImageElement;
+					const start_time = imgEl.startTime;
+					const end_time = imgEl.startTime + imgEl.duration;
+					const source: TauriVideoSource = {
+						source_path: sourcePath,
+						start_time,
+						end_time,
+						trim_start: null,
+						trim_end: null,
+						opacity: imgEl.opacity ?? 1,
+						scale: imgEl.transform?.scale ?? 1,
+						position_x: imgEl.transform?.position?.x ?? 0,
+						position_y: imgEl.transform?.position?.y ?? 0,
+						rotation: imgEl.transform?.rotate ?? 0,
+						is_muted: true,
+						volume: 0,
+						speed: 1,
+						fade_in: imgEl.fadeIn ?? 0,
+						fade_out: imgEl.fadeOut ?? 0,
+						flip_horizontal: imgEl.flip?.horizontal ?? false,
+						flip_vertical: imgEl.flip?.vertical ?? false,
+						crop_top: imgEl.crop?.top ?? 0,
+						crop_right: imgEl.crop?.right ?? 0,
+						crop_bottom: imgEl.crop?.bottom ?? 0,
+						crop_left: imgEl.crop?.left ?? 0,
+						brightness: imgEl.colorAdjustments?.brightness ?? 0,
+						contrast: imgEl.colorAdjustments?.contrast ?? 0,
+						saturation: imgEl.colorAdjustments?.saturation ?? 0,
+						temperature: imgEl.colorAdjustments?.temperature ?? 0,
+						effects: serializeEffects(imgEl.effects),
+						is_image: true,
+						is_reversed: false,
+						animation_in: serializeAnimation(imgEl.animationIn),
+						animation_out: serializeAnimation(imgEl.animationOut),
+						animation_loop: serializeAnimation(imgEl.animationLoop),
+						keyframes: serializeKeyframes(imgEl.keyframes),
+						color_curves_master: serializeCurvePoints(imgEl.colorCurves?.master),
+						color_curves_red: serializeCurvePoints(imgEl.colorCurves?.red),
+						color_curves_green: serializeCurvePoints(imgEl.colorCurves?.green),
+						color_curves_blue: serializeCurvePoints(imgEl.colorCurves?.blue),
+						color_wheels_shadows_hue: imgEl.colorWheels?.shadows?.hue ?? null,
+						color_wheels_shadows_saturation: imgEl.colorWheels?.shadows?.saturation ?? null,
+						color_wheels_shadows_luminance: imgEl.colorWheels?.shadows?.luminance ?? null,
+						color_wheels_midtones_hue: imgEl.colorWheels?.midtones?.hue ?? null,
+						color_wheels_midtones_saturation: imgEl.colorWheels?.midtones?.saturation ?? null,
+						color_wheels_midtones_luminance: imgEl.colorWheels?.midtones?.luminance ?? null,
+						color_wheels_highlights_hue: imgEl.colorWheels?.highlights?.hue ?? null,
+						color_wheels_highlights_saturation: imgEl.colorWheels?.highlights?.saturation ?? null,
+						color_wheels_highlights_luminance: imgEl.colorWheels?.highlights?.luminance ?? null,
+						lut_path: imgEl.lutPath ?? null,
+						pan: null,
+						blend_mode: imgEl.blendMode ?? null,
+						track_is_main: trackIsMain,
+						order_index: orderIndex,
+					};
+					collectedVideos.push({
+						source,
+						elementId: imgEl.id,
+						start_time,
+						end_time,
+						isMain: trackIsMain,
+						orderIndex,
+					});
+				} else {
+					const videoEl = el as VideoElement;
+					const start_time = videoEl.startTime;
+					const end_time = videoEl.startTime + videoEl.duration;
+					const source: TauriVideoSource = {
+						source_path: sourcePath,
+						start_time,
+						end_time,
+						trim_start: videoEl.trimStart || null,
+						trim_end: videoEl.trimEnd || null,
+						opacity: videoEl.opacity ?? 1,
+						scale: videoEl.transform?.scale ?? 1,
+						position_x: videoEl.transform?.position?.x ?? 0,
+						position_y: videoEl.transform?.position?.y ?? 0,
+						rotation: videoEl.transform?.rotate ?? 0,
+						is_muted: videoEl.muted ?? false,
+						volume: videoEl.volume ?? 1,
+						speed: videoEl.speed ?? 1,
+						fade_in: videoEl.fadeIn ?? 0,
+						fade_out: videoEl.fadeOut ?? 0,
+						flip_horizontal: videoEl.flip?.horizontal ?? false,
+						flip_vertical: videoEl.flip?.vertical ?? false,
+						crop_top: videoEl.crop?.top ?? 0,
+						crop_right: videoEl.crop?.right ?? 0,
+						crop_bottom: videoEl.crop?.bottom ?? 0,
+						crop_left: videoEl.crop?.left ?? 0,
+						brightness: videoEl.colorAdjustments?.brightness ?? 0,
+						contrast: videoEl.colorAdjustments?.contrast ?? 0,
+						saturation: videoEl.colorAdjustments?.saturation ?? 0,
+						temperature: videoEl.colorAdjustments?.temperature ?? 0,
+						effects: serializeEffects(videoEl.effects),
+						is_image: false,
+						is_reversed: videoEl.reversed ?? false,
+						animation_in: serializeAnimation(videoEl.animationIn),
+						animation_out: serializeAnimation(videoEl.animationOut),
+						animation_loop: serializeAnimation(videoEl.animationLoop),
+						keyframes: serializeKeyframes(videoEl.keyframes),
+						color_curves_master: serializeCurvePoints(videoEl.colorCurves?.master),
+						color_curves_red: serializeCurvePoints(videoEl.colorCurves?.red),
+						color_curves_green: serializeCurvePoints(videoEl.colorCurves?.green),
+						color_curves_blue: serializeCurvePoints(videoEl.colorCurves?.blue),
+						color_wheels_shadows_hue: videoEl.colorWheels?.shadows?.hue ?? null,
+						color_wheels_shadows_saturation: videoEl.colorWheels?.shadows?.saturation ?? null,
+						color_wheels_shadows_luminance: videoEl.colorWheels?.shadows?.luminance ?? null,
+						color_wheels_midtones_hue: videoEl.colorWheels?.midtones?.hue ?? null,
+						color_wheels_midtones_saturation: videoEl.colorWheels?.midtones?.saturation ?? null,
+						color_wheels_midtones_luminance: videoEl.colorWheels?.midtones?.luminance ?? null,
+						color_wheels_highlights_hue: videoEl.colorWheels?.highlights?.hue ?? null,
+						color_wheels_highlights_saturation: videoEl.colorWheels?.highlights?.saturation ?? null,
+						color_wheels_highlights_luminance: videoEl.colorWheels?.highlights?.luminance ?? null,
+						lut_path: videoEl.lutPath ?? null,
+						pan: videoEl.pan ?? null,
+						blend_mode: videoEl.blendMode ?? null,
+						track_is_main: trackIsMain,
+						order_index: orderIndex,
+					};
+					collectedVideos.push({
+						source,
+						elementId: videoEl.id,
+						start_time,
+						end_time,
+						isMain: trackIsMain,
+						orderIndex,
+					});
+				}
+			}
+		}
+
+		const overlap =
+			collectedVideos.length > 1 &&
+			videoSegmentsOverlap(collectedVideos.map((c) => ({ start: c.start_time, end: c.end_time })));
+		if (overlap) {
+			collectedVideos.sort((a, b) => {
+				if (a.isMain !== b.isMain) return a.isMain ? -1 : 1;
+				if (a.orderIndex !== b.orderIndex) return a.orderIndex - b.orderIndex;
+				if (a.start_time !== b.start_time) return a.start_time - b.start_time;
+				return a.elementId.localeCompare(b.elementId);
+			});
+		} else {
+			collectedVideos.sort((a, b) => {
+				if (a.start_time !== b.start_time) return a.start_time - b.start_time;
+				return a.elementId.localeCompare(b.elementId);
+			});
+		}
+
+		const videoSources: TauriVideoSource[] = collectedVideos.map((c) => c.source);
+		collectedVideos.forEach((c, i) => {
+			videoSourceElementIndex.set(c.elementId, i);
+		});
+
 		for (const track of tracks) {
 			if (track.type === "video") {
-				for (const el of track.elements) {
-					const isImage = el.type === "image";
-					const mediaId = isImage ? (el as ImageElement).mediaId : (el as VideoElement).mediaId;
-					const asset = mediaAssets.find((a) => a.id === mediaId);
-					if (!asset) continue;
-
-					// Use filePath from SQLite storage, fall back to URL-based extraction
-					const sourcePath = asset.filePath || (asset.url ? this.resolveFilePath(asset.url) : null);
-					if (!sourcePath) continue;
-
-					if (isImage) {
-						const imgEl = el as ImageElement;
-						videoSources.push({
-							source_path: sourcePath,
-							start_time: imgEl.startTime,
-							end_time: imgEl.startTime + imgEl.duration,
-							trim_start: null,
-							trim_end: null,
-							opacity: imgEl.opacity ?? 1,
-							scale: imgEl.transform?.scale ?? 1,
-							position_x: imgEl.transform?.position?.x ?? 0,
-							position_y: imgEl.transform?.position?.y ?? 0,
-							rotation: imgEl.transform?.rotate ?? 0,
-							is_muted: true,
-							volume: 0,
-							speed: 1,
-							fade_in: imgEl.fadeIn ?? 0,
-							fade_out: imgEl.fadeOut ?? 0,
-							flip_horizontal: imgEl.flip?.horizontal ?? false,
-							flip_vertical: imgEl.flip?.vertical ?? false,
-							crop_top: imgEl.crop?.top ?? 0,
-							crop_right: imgEl.crop?.right ?? 0,
-							crop_bottom: imgEl.crop?.bottom ?? 0,
-							crop_left: imgEl.crop?.left ?? 0,
-							brightness: imgEl.colorAdjustments?.brightness ?? 0,
-							contrast: imgEl.colorAdjustments?.contrast ?? 0,
-							saturation: imgEl.colorAdjustments?.saturation ?? 0,
-							temperature: imgEl.colorAdjustments?.temperature ?? 0,
-							effects: serializeEffects(imgEl.effects),
-							is_image: true,
-							is_reversed: false,
-							animation_in: serializeAnimation(imgEl.animationIn),
-							animation_out: serializeAnimation(imgEl.animationOut),
-							animation_loop: serializeAnimation(imgEl.animationLoop),
-							keyframes: serializeKeyframes(imgEl.keyframes),
-						});
-						videoSourceElementIndex.set(imgEl.id, videoSources.length - 1);
-					} else {
-						const videoEl = el as VideoElement;
-						videoSources.push({
-							source_path: sourcePath,
-							start_time: videoEl.startTime,
-							end_time: videoEl.startTime + videoEl.duration,
-							trim_start: videoEl.trimStart || null,
-							trim_end: videoEl.trimEnd || null,
-							opacity: videoEl.opacity ?? 1,
-							scale: videoEl.transform?.scale ?? 1,
-							position_x: videoEl.transform?.position?.x ?? 0,
-							position_y: videoEl.transform?.position?.y ?? 0,
-							rotation: videoEl.transform?.rotate ?? 0,
-							is_muted: videoEl.muted ?? false,
-							volume: videoEl.volume ?? 1,
-							speed: videoEl.speed ?? 1,
-							fade_in: videoEl.fadeIn ?? 0,
-							fade_out: videoEl.fadeOut ?? 0,
-							flip_horizontal: videoEl.flip?.horizontal ?? false,
-							flip_vertical: videoEl.flip?.vertical ?? false,
-							crop_top: videoEl.crop?.top ?? 0,
-							crop_right: videoEl.crop?.right ?? 0,
-							crop_bottom: videoEl.crop?.bottom ?? 0,
-							crop_left: videoEl.crop?.left ?? 0,
-							brightness: videoEl.colorAdjustments?.brightness ?? 0,
-							contrast: videoEl.colorAdjustments?.contrast ?? 0,
-							saturation: videoEl.colorAdjustments?.saturation ?? 0,
-							temperature: videoEl.colorAdjustments?.temperature ?? 0,
-							effects: serializeEffects(videoEl.effects),
-							is_image: false,
-							is_reversed: videoEl.reversed ?? false,
-							animation_in: serializeAnimation(videoEl.animationIn),
-							animation_out: serializeAnimation(videoEl.animationOut),
-							animation_loop: serializeAnimation(videoEl.animationLoop),
-							keyframes: serializeKeyframes(videoEl.keyframes),
-						});
-						videoSourceElementIndex.set(videoEl.id, videoSources.length - 1);
-					}
-				}
+				continue;
 			} else if (track.type === "sticker") {
 				// Stickers are pre-rendered to PNGs by preRenderStickerOverlays — skip here
 			} else if (track.type === "effect") {
@@ -445,17 +594,18 @@ export class RendererManager {
 									})
 							: null;
 
-					audioTracks.push({
-						file_path: filePath,
-						start_time: audioEl.startTime,
-						end_time: audioEl.startTime + audioEl.duration,
-						volume: audioEl.volume ?? 1,
-						is_muted: audioEl.muted ?? false,
-						speed: audioEl.speed ?? 1,
-						fade_in: audioEl.fadeIn ?? 0,
-						fade_out: audioEl.fadeOut ?? 0,
-						audio_effects: serializedAudioEffects,
-					});
+				audioTracks.push({
+					file_path: filePath,
+					start_time: audioEl.startTime,
+					end_time: audioEl.startTime + audioEl.duration,
+					volume: audioEl.volume ?? 1,
+					is_muted: audioEl.muted ?? false,
+					speed: audioEl.speed ?? 1,
+					fade_in: audioEl.fadeIn ?? 0,
+					fade_out: audioEl.fadeOut ?? 0,
+					audio_effects: serializedAudioEffects,
+					pan: audioEl.pan ?? null,
+				});
 				}
 				// Text tracks are handled by preRenderTextOverlays — skip here
 			}
@@ -1060,8 +1210,22 @@ export class RendererManager {
 				}
 			}
 
-			// Generate thumbnail from the exported video at 1 second
-			const thumbnailTimestamp = Math.min(1.0, duration / 2);
+			// Prefer actual muxed duration (matches intro/outro concat and any encoder drift)
+			let clipDuration = duration;
+			try {
+				const meta = await invoke<{ duration: number; width: number; height: number }>(
+					"get_video_metadata",
+					{ videoPath: outputPath },
+				);
+				if (meta.duration > 0.05) {
+					clipDuration = meta.duration;
+				}
+			} catch (err) {
+				console.warn("[RendererManager] Failed to probe exported file duration:", err);
+			}
+
+			// Generate thumbnail — sample early in the file (after intro, duration already includes intro)
+			const thumbnailTimestamp = Math.min(1.0, Math.max(0.05, clipDuration / 2));
 			let thumbnailPath: string | null = null;
 
 			try {
@@ -1074,13 +1238,10 @@ export class RendererManager {
 				// Non-fatal - clip will be created without thumbnail
 			}
 
-			// Get file size
 			let fileSize: number | null = null;
 			try {
-				const metadata = await invoke<{ size: number }>("get_video_metadata", {
-					videoPath: outputPath,
-				});
-				fileSize = metadata.size;
+				const info = await invoke<{ size: number }>("get_file_info", { path: outputPath });
+				fileSize = info.size;
 			} catch (err) {
 				console.warn("[RendererManager] Failed to get file size:", err);
 			}
@@ -1102,14 +1263,14 @@ export class RendererManager {
 					sourceProjectId,
 					projectName,
 					outputPath,
-					duration,
+					clipDuration,
 					0,
-					duration,
+					clipDuration,
 					'generated', // Mark as generated so it shows in Built Clips
 					'completed', // Mark build as completed
 					outputPath,
 					thumbnailPath,
-					duration,
+					clipDuration,
 					fileSize,
 					now,
 					now,
@@ -1164,6 +1325,13 @@ function serializeEffects(effects?: VideoEffect[]): TauriVideoEffect[] {
 				params,
 			};
 		});
+}
+
+function serializeCurvePoints(
+	pts?: import("../../types/timeline").ColorCurvePoint[],
+): [number, number][] | null {
+	if (!pts || pts.length < 2) return null;
+	return pts.map((p) => [p.x, p.y] as [number, number]);
 }
 
 function serializeKeyframes(kf?: import("../../types/keyframes").ElementKeyframes): TauriKeyframeTrack[] | null {

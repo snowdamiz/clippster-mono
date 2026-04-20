@@ -12,6 +12,7 @@ import { getLastFrameTime } from "../../lib/time";
 import type { TimelineTrack } from "../../types/timeline";
 import PreviewOverlay from "./PreviewOverlay.vue";
 import SocialOverlay from "./SocialOverlay.vue";
+import GuideOverlay from "./GuideOverlay.vue";
 
 const { editor, version } = useEditor({
 	subscribe: {
@@ -288,6 +289,11 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					:style="{ background: canvasBackground }"
 				/>
 				<PreviewOverlay
+					:canvas-ref="canvasRef"
+					:canvas-width="canvasWidth"
+					:canvas-height="canvasHeight"
+				/>
+				<GuideOverlay
 					:canvas-ref="canvasRef"
 					:canvas-width="canvasWidth"
 					:canvas-height="canvasHeight"

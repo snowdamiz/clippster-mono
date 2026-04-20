@@ -166,6 +166,7 @@ export interface AudioClipSource {
 	fadeIn: number;
 	fadeOut: number;
 	audioEffects?: import("../../types/audio-effects").AudioEffect[];
+	pan?: number; // -1 (left) to +1 (right), 0 = center
 }
 
 async function fetchLibraryAudioSource({
@@ -292,6 +293,7 @@ function collectMediaAudioClip({
 		fadeIn,
 		fadeOut,
 		audioEffects: (element as any).audioEffects,
+		pan: (element as any).pan,
 	};
 }
 

@@ -307,7 +307,17 @@ export class AudioManager {
 		// Per-clip GainNode for volume + fade envelope
 		const clipGain = audioContext.createGain();
 		clipGain.gain.value = clip.volume;
-		clipGain.connect(this.masterGain ?? audioContext.destination);
+
+		// Stereo pan node (if pan is non-zero)
+		const panVal = clip.pan ?? 0;
+		if (Math.abs(panVal) > 0.01 && typeof StereoPannerNode !== "undefined") {
+			const panNode = audioContext.createStereoPanner();
+			panNode.pan.value = Math.max(-1, Math.min(1, panVal));
+			clipGain.connect(panNode);
+			panNode.connect(this.masterGain ?? audioContext.destination);
+		} else {
+			clipGain.connect(this.masterGain ?? audioContext.destination);
+		}
 
 		for await (const { buffer, timestamp } of iterator) {
 			if (!this.editor.playback.getIsPlaying()) return;
@@ -436,7 +446,17 @@ export class AudioManager {
 		// Per-clip GainNode for volume + fade envelope
 		const clipGain = audioContext.createGain();
 		clipGain.gain.value = clip.volume;
-		clipGain.connect(this.masterGain ?? audioContext.destination);
+
+		// Stereo pan node
+		const panVal2 = clip.pan ?? 0;
+		if (Math.abs(panVal2) > 0.01 && typeof StereoPannerNode !== "undefined") {
+			const panNode = audioContext.createStereoPanner();
+			panNode.pan.value = Math.max(-1, Math.min(1, panVal2));
+			clipGain.connect(panNode);
+			panNode.connect(this.masterGain ?? audioContext.destination);
+		} else {
+			clipGain.connect(this.masterGain ?? audioContext.destination);
+		}
 
 		const node = audioContext.createBufferSource();
 		node.buffer = audioBuffer;
