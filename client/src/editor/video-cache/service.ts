@@ -17,6 +17,8 @@ interface VideoSinkData {
 	prefetchPromise: Promise<void> | null;
 }
 
+const SEEK_PREROLL_SEC = 0.5;
+
 export class VideoCache {
 	private sinks = new Map<string, VideoSinkData>();
 	private initPromises = new Map<string, Promise<void>>();
@@ -162,32 +164,38 @@ export class VideoCache {
 			}
 
 			sinkData.nextFrame = null;
-			sinkData.iterator = sinkData.sink.canvases(time);
-			sinkData.lastTime = time;
+			// Decode from a small preroll window before the requested time. Seeking exactly
+			// to `time` can make the first decodable frame land *after* the target (GOP/keyframe
+			// boundaries), and the old code would smear that future frame backward to `time`.
+			// Around a split clip transition, that collapses outgoing/incoming sides onto the
+			// same decoded frame, making composited transitions look like no-op.
+			const seekStart = Math.max(0, time - SEEK_PREROLL_SEC);
+			sinkData.iterator = sinkData.sink.canvases(seekStart);
+			sinkData.lastTime = seekStart;
+			sinkData.currentFrame = null;
+			sinkData.currentFrameStartTime = 0;
 
-			// Fetch current frame
-			const { value: frame } = await sinkData.iterator.next();
-
+			const frame = await this.iterateToTime({ sinkData, targetTime: time });
 			if (frame) {
-				sinkData.currentFrame = frame;
-				// Some media starts with its first decodable frame after the requested
-				// time (for example at ~0.5s). Hold that frame from the seek target so
-				// playback can reuse it instead of re-seeking on every tick until the
-				// decoder catches up.
-				sinkData.currentFrameStartTime = Math.min(time, frame.timestamp);
-
-				// Aggressively fetch next frame immediately to fill buffer
-				// This matches the mediaplayer example which fetches 2 frames on start
-				try {
-					const { value: next } = await sinkData.iterator.next();
-					if (next) {
-						sinkData.nextFrame = next;
+				if (!sinkData.nextFrame) {
+					try {
+						const { value: next } = await sinkData.iterator.next();
+						if (next) {
+							sinkData.nextFrame = next;
+						}
+					} catch (e) {
+						console.warn("Failed to pre-fetch next frame on seek:", e);
 					}
-				} catch (e) {
-					console.warn("Failed to pre-fetch next frame on seek:", e);
 				}
-
 				return frame;
+			}
+
+			// Startup streams can legitimately have their first decodable frame after 0. In that
+			// case preserve the previous behavior as a narrow fallback so the beginning of a clip
+			// does not render black while the decoder catches up.
+			if (seekStart === 0 && sinkData.currentFrame) {
+				sinkData.currentFrameStartTime = Math.min(time, sinkData.currentFrame.timestamp);
+				return sinkData.currentFrame;
 			}
 		} catch (error) {
 			console.warn("Failed to seek video:", error);

@@ -27,6 +27,7 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 const containerRef = ref<HTMLDivElement | null>(null);
 let lastFrame = -1;
 let lastScene: any = null;
+let lastRenderedTime = Number.NEGATIVE_INFINITY;
 let rendering = false;
 
 // Register canvas on editor core so freeze-frame can capture it
@@ -51,9 +52,13 @@ const background = computed(() => activeProject.value?.settings?.background ?? {
 const renderer = shallowRef<CanvasRenderer | null>(null);
 
 watch([canvasWidth, canvasHeight, fps], ([w, h, f]) => {
-	renderer.value = new CanvasRenderer({ width: w, height: h, fps: f });
+	// Use a DOM canvas-backed renderer for preview. Several transition effects rely on
+	// alpha/clip compositing that is unreliable when the destination context is OffscreenCanvas
+	// in Chromium/Electron, which makes wipes/crossfades appear as no-ops in preview.
+	renderer.value = new CanvasRenderer({ width: w, height: h, fps: f, preferOffscreen: false });
 	lastFrame = -1;
 	lastScene = null;
+	lastRenderedTime = Number.NEGATIVE_INFINITY;
 }, { immediate: true });
 
 // Rebuild render tree when tracks/media/settings change
@@ -122,8 +127,14 @@ useRafLoop(() => {
 	const lastFrameTime = getLastFrameTime({ duration: renderTree.duration, fps: r.fps });
 	const renderTime = Math.min(time, lastFrameTime);
 	const frame = Math.floor(renderTime * r.fps);
+	const isPlaying = editor.playback.getIsPlaying();
+	// Re-render when the frame index changes, the tree changes, or time moves meaningfully while
+	// playing (avoids missing short transitions if rAF and playback timers rarely align on the
+	// same floor(time*fps) tick). When paused, small scrubs still update via frame index.
+	const timeMoved =
+		isPlaying && Math.abs(renderTime - lastRenderedTime) >= 1 / Math.max(24, r.fps * 2);
 
-	if (frame !== lastFrame || renderTree !== lastScene) {
+	if (frame !== lastFrame || renderTree !== lastScene || timeMoved) {
 		rendering = true;
 		const commitFrame = frame;
 		const commitTree = renderTree;
@@ -132,6 +143,7 @@ useRafLoop(() => {
 			.then(() => {
 				lastFrame = commitFrame;
 				lastScene = commitTree;
+				lastRenderedTime = commitTime;
 				rendering = false;
 			})
 			.catch(() => {

@@ -11,7 +11,9 @@ import StickerProperties from "./properties/StickerProperties.vue";
 import EffectProperties from "./properties/EffectProperties.vue";
 import CaptionProperties from "./properties/CaptionProperties.vue";
 import KeyframeEditorPanel from "./KeyframeEditorPanel.vue";
+import TransitionProperties from "./properties/TransitionProperties.vue";
 import { Settings } from "lucide-vue-next";
+import type { Transition } from "../../types/transitions";
 
 const { editor, version } = useEditor();
 const { selectedElements } = useElementSelection();
@@ -19,6 +21,18 @@ const { selectedElements } = useElementSelection();
 const elementsWithTracks = computed(() => {
 	void version.value;
 	return editor.timeline.getElementsWithTracks({ elements: selectedElements.value });
+});
+
+const selectedTransition = computed((): Transition | null => {
+	void version.value;
+	const id = editor.selection.getSelectedTransitionId();
+	if (!id) return null;
+	try {
+		const scene = editor.scenes.getActiveScene();
+		return scene?.transitions?.find((t) => t.id === id) ?? null;
+	} catch {
+		return null;
+	}
 });
 </script>
 
@@ -75,8 +89,21 @@ const elementsWithTracks = computed(() => {
 			</div>
 
 			<!-- Keyframe editor — fixed height panel below element properties -->
-			<div class="h-56 flex-shrink-0 border-t border-white/10">
+			<div v-if="selectedElements.length === 1" class="h-56 flex-shrink-0 border-t border-white/10">
 				<KeyframeEditorPanel />
+			</div>
+		</template>
+
+		<!-- Junction transition selected from timeline badge (not mixed with clip inspector) -->
+		<template v-else-if="selectedTransition">
+			<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+				<div class="shrink-0 border-b border-white/10 px-3 py-2">
+					<p class="text-xs font-medium text-zinc-300">Transition</p>
+					<p class="text-[10px] text-zinc-500">Between clips on this track</p>
+				</div>
+				<div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3">
+					<TransitionProperties :transition="selectedTransition" />
+				</div>
 			</div>
 		</template>
 

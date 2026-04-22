@@ -39,6 +39,7 @@ import { getRawVideosByProjectId } from "@/services/database/raw-videos";
 import { getCreatorProfileByProjectId } from "@/services/database/creator-profiles";
 import { resolveBrandingProfile } from "@/composables/useBrandingProfileSelection";
 import { useBrandingConfig } from "../composables/useBrandingConfig";
+import { healOrphanVideoMediaReferences } from "../lib/timeline/heal-orphan-video-media";
 
 const DEFAULT_TRANSFORM: Transform = {
 	scale: 1,
@@ -173,6 +174,13 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 			}
 		} catch {
 			// Non-fatal — dimensions will fall back to canvas size
+		}
+
+		// Re-run after bridge asset refresh: loadProject may have healed, but setAssets / dimensions
+		// can leave timeline pointing at unusable video rows; persist so a second /editor load
+		// does not resurrect stale mediaIds from SQLite.
+		if (healOrphanVideoMediaReferences({ editor, projectId })) {
+			await editor.project.saveCurrentProject();
 		}
 
 		return editor;

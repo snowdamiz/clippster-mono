@@ -99,22 +99,24 @@ function timelinePeakCount(cssWidth: number): number {
 	return Math.max(300, Math.min(w, WAVEFORM_MAX_BACKING_EDGE));
 }
 
-/** Lift quiet samples so thin timeline lanes (audio ~25px) still show a clear envelope. */
+/**
+ * Gentle lift for thin timeline lanes — preserves relative level between samples so we do not
+ * paint thousands of identical magnitudes (that reads as a solid horizontal line on the baseline).
+ * True silence stays at zero.
+ */
 function liftPeaksForThinLane(
 	peaks: { min: number; max: number }[],
 	cssHeight: number,
 ): { min: number; max: number }[] {
-	const minMag = cssHeight < 30 ? 0.11 : cssHeight < 44 ? 0.075 : 0.045;
+	const targetFloor = cssHeight < 30 ? 0.055 : cssHeight < 44 ? 0.04 : 0.028;
 	return peaks.map((p) => {
 		const mag = Math.max(Math.abs(p.min), Math.abs(p.max));
-		if (mag >= minMag) return { min: p.min, max: p.max };
-		if (mag <= 1e-8) {
-			return { min: -minMag * 0.4, max: minMag * 0.4 };
-		}
-		const s = minMag / mag;
+		if (mag <= 1e-8) return { min: 0, max: 0 };
+		if (mag >= targetFloor) return { min: p.min, max: p.max };
+		const scale = Math.min(2.4, targetFloor / mag);
 		return {
-			min: Math.max(-1, Math.min(1, p.min * s)),
-			max: Math.max(-1, Math.min(1, p.max * s)),
+			min: Math.max(-1, Math.min(1, p.min * scale)),
+			max: Math.max(-1, Math.min(1, p.max * scale)),
 		};
 	});
 }
@@ -276,6 +278,8 @@ export function useAudioWaveform({
 					style: "bars",
 					useGradientColors: true,
 					amplitude: 1,
+					// Avoid Math.max(1, …) per column — that draws a full-width cyan hairline on the baseline.
+					minBarHeight: 0,
 				},
 			);
 		} catch (error) {

@@ -2,7 +2,7 @@ import { Command } from "../../../../lib/commands/base-command";
 import type { TimelineTrack } from "../../../../types/timeline";
 import { generateUUID } from "../../../../utils/id";
 import { EditorCore } from "../../../../core";
-import { isMainTrack } from "../../../../lib/timeline";
+import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
 
 /**
  * Atomically ripple-deletes a time range from all video tracks.
@@ -109,7 +109,8 @@ export class RippleDeleteTimeRangeCommand extends Command {
 			return { ...track, elements: result } as typeof track;
 		});
 
-		editor.timeline.updateTracks(updatedTracks);
+		const fps = editor.project.getActive()?.settings?.fps ?? 30;
+		editor.timeline.updateTracks(collapseMainVideoTracksIfPresent(updatedTracks, fps));
 	}
 
 	undo(): void {

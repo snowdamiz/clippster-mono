@@ -662,6 +662,7 @@
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
   import { formatDateTime } from '@/utils/dateTimeUtils';
+  import { utf8ToBase64Url } from '@/utils/encoding';
   import type { ClipWithVersion, ClipBuild, Prompt } from '@/services/database';
   import {
     PlayIcon,
@@ -1297,7 +1298,7 @@
     const cachedPath = rawVideoPathCache.value.get(projectId);
     if (cachedPath) {
       // Return a video server URL with base64-encoded file path
-      const encodedPath = btoa(cachedPath);
+      const encodedPath = utf8ToBase64Url(cachedPath);
       return `http://localhost:48276/video/${encodedPath}`;
     }
     

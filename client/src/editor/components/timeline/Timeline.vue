@@ -34,7 +34,6 @@
   import TimelineScrollbar from './TimelineScrollbar.vue';
   import TimelineContextMenu from './TimelineContextMenu.vue';
   import KeyframePopup from './KeyframePopup.vue';
-  import { ScrollArea } from '@/components/ui/scroll-area';
   import {
     Lock,
     Unlock,
@@ -60,9 +59,12 @@
   const { editor, version } = useEditor({
     subscribe: {
       playback: false,
+      timeline: true,
+      scenes: true,
+      selection: true,
     },
   });
-  const { clearElementSelection, setElementSelection, selectedElements, selectAllInTrack } = useElementSelection();
+  const { clearElementSelection, setElementSelection, selectedElements, selectedTransitionId, selectAllInTrack, selectTransition } = useElementSelection();
 
   // Context menu state
   const contextMenuPos = ref<{ x: number; y: number } | null>(null);
@@ -348,6 +350,7 @@
 
     const result: {
       trackId: string;
+      transitionId: string;
       xPx: number;
       startPx: number;
       widthPx: number;
@@ -368,6 +371,7 @@
 
       result.push({
         trackId: transition.trackId,
+        transitionId: transition.id,
         xPx,
         startPx,
         widthPx,
@@ -932,7 +936,7 @@
                     @keyframe-click="handleKeyframeClick"
                   />
                   <!-- Existing transition badges -->
-                  <template v-for="badge in existingTransitionBadges" :key="badge.targetElementId">
+                  <template v-for="badge in existingTransitionBadges" :key="badge.transitionId">
                     <div
                       v-if="badge.trackId === track.id"
                       class="pointer-events-none absolute z-35"
@@ -959,7 +963,13 @@
                     </div>
                     <button
                       v-if="badge.trackId === track.id"
-                      class="absolute z-50 flex items-center gap-0.5 rounded-full border border-[#E040FB]/50 bg-[#1a0a1e] px-1.5 py-0.5 text-[9px] font-medium text-[#E040FB] shadow-md hover:bg-[#E040FB]/20 transition-colors"
+                      type="button"
+                      class="absolute z-50 flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px] font-medium shadow-md transition-colors"
+                      :class="
+                        selectedTransitionId === badge.transitionId
+                          ? 'border-[#E040FB] bg-[#E040FB]/25 text-white ring-1 ring-[#E040FB]/40'
+                          : 'border-[#E040FB]/50 bg-[#1a0a1e] text-[#E040FB] hover:bg-[#E040FB]/20'
+                      "
                       :style="{
                         left: `${badge.xPx}px`,
                         top: '50%',
@@ -967,9 +977,7 @@
                         pointerEvents: 'auto',
                       }"
                       :title="`Transition: ${badge.label} — click to edit`"
-                      @click.stop="
-                        handleElementClick({ event: $event, element: { id: badge.targetElementId } as any, track })
-                      "
+                      @click.stop="selectTransition({ transitionId: badge.transitionId })"
                     >
                       <ArrowRightLeft class="size-2.5" />
                       <span class="max-w-[40px] truncate capitalize">{{ badge.label }}</span>

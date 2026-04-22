@@ -74,6 +74,12 @@ export interface WaveformRenderOptions {
 
   // Opacity for dimming (0-1, default 1)
   opacity?: number;
+
+  /**
+   * Minimum bar height in logical (layout) pixels. Default 1 matches legacy behavior.
+   * Use 0 on the timeline so quiet audio does not draw a solid cyan hairline on the baseline.
+   */
+  minBarHeight?: number;
 }
 
 // ============================================================================
@@ -105,6 +111,7 @@ export function renderWaveform(canvas: HTMLCanvasElement, options: WaveformRende
     useGradientColors = true,
     baseline = 1, // Default: bars grow upward from bottom
     opacity = 1,
+    minBarHeight = 1,
   } = options;
 
   // Device pixel ratio + cap backing store (timeline zoom makes CSS width huge; too small a
@@ -178,6 +185,7 @@ export function renderWaveform(canvas: HTMLCanvasElement, options: WaveformRende
         baseColor,
         playedColor,
         useGradientColors,
+        minBarHeight,
       });
       break;
   }
@@ -202,6 +210,7 @@ interface BarsRenderParams {
   baseColor: string;
   playedColor: string;
   useGradientColors: boolean;
+  minBarHeight: number;
 }
 
 function renderBarsStyle(ctx: CanvasRenderingContext2D, params: BarsRenderParams): void {
@@ -215,6 +224,7 @@ function renderBarsStyle(ctx: CanvasRenderingContext2D, params: BarsRenderParams
     baseColor,
     playedColor,
     useGradientColors,
+    minBarHeight,
   } = params;
 
   if (peaks.length === 0) return;
@@ -224,12 +234,21 @@ function renderBarsStyle(ctx: CanvasRenderingContext2D, params: BarsRenderParams
   // Use the smaller of requested barWidth or step size (minus 1px gap) to avoid overlapping
   const actualBarWidth = Math.max(1, Math.min(barWidth, step - 1));
 
+  /** Timeline mode: skip sub-pixel bars so thousands of columns do not fuse into one baseline line. */
+  const minDrawPx = minBarHeight <= 0 ? 0.35 : 0;
+
   for (let i = 0; i < peaks.length; i++) {
     const x = Math.floor(i * step);
 
     const peak = peaks[i];
     const magnitude = Math.max(Math.abs(peak.min), Math.abs(peak.max));
-    const barHeight = Math.max(1, magnitude * maxBarHeight);
+    const rawHeight = magnitude * maxBarHeight;
+    if (rawHeight <= 0) continue;
+
+    const barHeight =
+      minBarHeight > 0 ? Math.max(minBarHeight, rawHeight) : rawHeight;
+    if (minBarHeight <= 0 && barHeight < minDrawPx) continue;
+
     const yTop = Math.floor(baselineY - barHeight);
 
     // Determine color based on playhead position
@@ -248,7 +267,8 @@ function renderBarsStyle(ctx: CanvasRenderingContext2D, params: BarsRenderParams
     );
 
     ctx.fillStyle = fillStyle;
-    ctx.fillRect(x, yTop, actualBarWidth, Math.ceil(barHeight));
+    const h = minBarHeight > 0 ? Math.ceil(barHeight) : barHeight;
+    ctx.fillRect(x, yTop, actualBarWidth, h);
   }
 }
 

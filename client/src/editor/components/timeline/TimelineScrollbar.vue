@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, toRef } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch, toRef } from 'vue';
 
 const props = defineProps<{
 	scrollContainer: HTMLDivElement | null;
@@ -25,7 +25,7 @@ const thumbWidth = computed(() => {
 	}
 
 	const ratio = clientWidth.value / scrollWidth.value;
-	return Math.max(40, ratio * trackW);
+	return Math.max(48, ratio * trackW);
 });
 
 const thumbLeft = computed(() => {
@@ -51,8 +51,8 @@ function onThumbMouseDown(e: MouseEvent) {
 	isDragging.value = true;
 	dragStartX.value = e.clientX;
 	dragStartScrollLeft.value = scrollLeft.value;
-	document.addEventListener("mousemove", onMouseMove);
-	document.addEventListener("mouseup", onMouseUp);
+	document.addEventListener('mousemove', onMouseMove);
+	document.addEventListener('mouseup', onMouseUp);
 }
 
 function onMouseMove(e: MouseEvent) {
@@ -71,8 +71,8 @@ function onMouseMove(e: MouseEvent) {
 
 function onMouseUp() {
 	isDragging.value = false;
-	document.removeEventListener("mousemove", onMouseMove);
-	document.removeEventListener("mouseup", onMouseUp);
+	document.removeEventListener('mousemove', onMouseMove);
+	document.removeEventListener('mouseup', onMouseUp);
 }
 
 function onTrackClick(e: MouseEvent) {
@@ -111,7 +111,7 @@ function cleanupObservers() {
 function setupObservers(el: HTMLDivElement) {
 	cleanupObservers();
 
-	el.addEventListener("scroll", syncFromContainer, { passive: true });
+	el.addEventListener('scroll', syncFromContainer, { passive: true });
 
 	resizeObserver = new ResizeObserver(() => scheduleSync());
 	resizeObserver.observe(el);
@@ -125,23 +125,26 @@ function setupObservers(el: HTMLDivElement) {
 	syncFromContainer();
 }
 
-// Watch for scrollContainer changes (e.g., when template ref is set after mount)
 let currentEl: HTMLDivElement | null = null;
-watch(toRef(props, "scrollContainer"), (el, oldEl) => {
-	if (oldEl) {
-		oldEl.removeEventListener("scroll", syncFromContainer);
-	}
-	if (el) {
-		currentEl = el;
-		setupObservers(el);
-		return;
-	}
+watch(
+	toRef(props, 'scrollContainer'),
+	(el, oldEl) => {
+		if (oldEl) {
+			oldEl.removeEventListener('scroll', syncFromContainer);
+		}
+		if (el) {
+			currentEl = el;
+			setupObservers(el);
+			return;
+		}
 
-	currentEl = null;
-	scrollLeft.value = 0;
-	scrollWidth.value = 0;
-	clientWidth.value = 0;
-}, { immediate: true });
+		currentEl = null;
+		scrollLeft.value = 0;
+		scrollWidth.value = 0;
+		clientWidth.value = 0;
+	},
+	{ immediate: true }
+);
 
 onMounted(() => {
 	if (props.scrollContainer && !currentEl) {
@@ -152,39 +155,42 @@ onMounted(() => {
 
 onUnmounted(() => {
 	if (currentEl) {
-		currentEl.removeEventListener("scroll", syncFromContainer);
+		currentEl.removeEventListener('scroll', syncFromContainer);
 	}
 	cleanupObservers();
 	if (rafId !== null) cancelAnimationFrame(rafId);
-	document.removeEventListener("mousemove", onMouseMove);
-	document.removeEventListener("mouseup", onMouseUp);
+	document.removeEventListener('mousemove', onMouseMove);
+	document.removeEventListener('mouseup', onMouseUp);
 });
 </script>
 
 <template>
 	<div
-		class="flex h-5 shrink-0 items-center border-t border-white/10 bg-[#1e1e22]"
+		class="timeline-hscroll-bar flex min-h-[32px] shrink-0 items-center gap-2 border-t border-white/15 bg-[#141416] px-2"
+		role="scrollbar"
+		aria-orientation="horizontal"
+		aria-label="Timeline horizontal scroll"
+		:data-overflow="hasOverflow ? 'true' : 'false'"
 	>
 		<!-- Spacer matching track labels width -->
 		<div class="shrink-0 border-r border-white/10" :style="{ width: `${trackLabelsWidth}px` }" />
 
-		<!-- Scrollbar track -->
+		<!-- Scrollbar track: always visible; thumb fills width when no overflow -->
 		<div
 			ref="trackRef"
-			class="relative mx-1 h-2.5 flex-1 rounded-full bg-white/[0.08]"
+			class="relative h-3 min-h-[12px] flex-1 rounded-md bg-zinc-700/80"
 			:class="hasOverflow ? 'cursor-pointer' : 'cursor-default'"
 			@mousedown="onTrackClick"
 		>
-			<!-- Scrollbar thumb -->
 			<div
 				ref="thumbRef"
-				class="absolute top-0 h-full rounded-full transition-colors duration-150"
+				class="absolute top-0 h-full rounded-md shadow-sm transition-[background-color] duration-150"
 				:class="[
 					!hasOverflow
-						? 'bg-white/20'
+						? 'bg-zinc-500/50'
 						: isDragging
-						? 'bg-white/60'
-						: 'bg-white/40 hover:bg-white/50',
+							? 'bg-zinc-200'
+							: 'bg-zinc-400 hover:bg-zinc-300',
 				]"
 				:style="{
 					width: `${thumbWidth}px`,

@@ -34,9 +34,8 @@ export class BaseNode<Params extends BaseNodeParams = BaseNodeParams> {
 		time: number;
 	}): Promise<void> {
 		if (this.children.length > 0) {
-			await Promise.all(
-				this.children.map((child) => child.prefetch({ renderer, time })),
-			);
+			const unique = [...new Set(this.children)];
+			await Promise.all(unique.map((child) => child.prefetch({ renderer, time })));
 		}
 	}
 

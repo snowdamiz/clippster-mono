@@ -29,21 +29,80 @@ pub async fn extract_clip_segment(
     }
 
     println!(
-        "[FFmpeg] Extracting frame-accurate segment: {}s - {}s (duration: {}s)",
+        "[FFmpeg] Extracting segment: {}s - {}s (duration: {}s)",
         start_time, end_time, duration
     );
 
+    const MIN_OK_BYTES: u64 = 512;
+
+    // 1) `-ss` *before* `-i` seeks in the demuxer (fast on long VODs). `-ss` *after* `-i` decodes
+    // from t=0 to start_time (very slow for 30+ min offsets) — only use as fallback when fast seek
+    // fails or yields a near-empty file (moov-at-end / fragmented MP4 edge cases).
+    match run_extract_ffmpeg(input_path, output_path, start_time, duration, true).await {
+        Ok(()) => {
+            if let Ok(meta) = std::fs::metadata(output_path) {
+                if meta.len() >= MIN_OK_BYTES {
+                    println!("[FFmpeg] Used input-side seek (fast path)");
+                    return Ok(());
+                }
+            }
+            let _ = std::fs::remove_file(output_path);
+        }
+        Err(e) => {
+            println!(
+                "[FFmpeg] Fast input-side seek failed ({}); trying accurate seek",
+                e
+            );
+            let _ = std::fs::remove_file(output_path);
+        }
+    }
+
+    println!("[FFmpeg] Retrying with accurate output-side seek (slow path)");
+    run_extract_ffmpeg(
+        input_path,
+        output_path,
+        start_time,
+        duration,
+        false,
+    )
+    .await?;
+
+    if let Ok(meta) = std::fs::metadata(output_path) {
+        if meta.len() < MIN_OK_BYTES {
+            let _ = std::fs::remove_file(output_path);
+            return Err(
+                "FFmpeg produced a near-empty file with both seek strategies; source may be wrong or unsupported."
+                    .into(),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// `input_seek_first`: true → `-ss` before `-i` (fast). false → `-ss` after `-i` (accurate, slow on long files).
+async fn run_extract_ffmpeg(
+    input_path: &str,
+    output_path: &str,
+    start_time: f64,
+    duration: f64,
+    input_seek_first: bool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut cmd = AsyncCommand::new("ffmpeg");
     no_window(&mut cmd);
-    
+    cmd.arg("-y");
+
+    if input_seek_first {
+        cmd.arg("-ss").arg(start_time.to_string());
+        cmd.arg("-i").arg(input_path);
+        cmd.arg("-t").arg(duration.to_string());
+    } else {
+        cmd.arg("-i").arg(input_path);
+        cmd.arg("-ss").arg(start_time.to_string());
+        cmd.arg("-t").arg(duration.to_string());
+    }
+
     let output = cmd
-        .arg("-y") // Overwrite output file
-        .arg("-ss")
-        .arg(start_time.to_string()) // Fast input seeking - MUST be before -i
-        .arg("-i")
-        .arg(input_path)
-        .arg("-t")
-        .arg(duration.to_string())
         .arg("-map")
         .arg("0:v:0")
         .arg("-map")

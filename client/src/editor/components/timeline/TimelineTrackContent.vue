@@ -79,9 +79,10 @@ function onTrackMouseDown(event: MouseEvent) {
 </script>
 
 <template>
-	<button
+	<!-- div (not button): TimelineElement uses an inner <button>; nested buttons are invalid HTML and break hit-testing/cursor in browsers -->
+	<div
 		:class="['size-full', hasSelectedElements && 'bg-white/5', razorMode && 'cursor-crosshair']"
-		type="button"
+		role="presentation"
 		@click="onTrackClick"
 		@mousedown="onTrackMouseDown"
 	>
@@ -111,5 +112,5 @@ function onTrackMouseDown(event: MouseEvent) {
 				@keyframe-click="(payload) => emit('keyframeClick', payload)"
 			/>
 		</div>
-	</button>
+	</div>
 </template>

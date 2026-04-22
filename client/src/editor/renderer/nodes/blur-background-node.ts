@@ -16,6 +16,16 @@ export class BlurBackgroundNode extends BaseNode<BlurBackgroundNodeParams> {
 		this.contentNodes = params.contentNodes;
 	}
 
+	async prefetch({
+		renderer,
+		time,
+	}: {
+		renderer: CanvasRenderer;
+		time: number;
+	}): Promise<void> {
+		await Promise.all(this.contentNodes.map((node) => node.prefetch({ renderer, time })));
+	}
+
 	async render({
 		renderer,
 		time,

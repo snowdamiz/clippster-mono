@@ -95,7 +95,15 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 	}
 
 	private getSourceTime(time: number) {
-		const elapsed = this.getClampedElapsed(time);
+		// During a transition, allow elapsed to peek slightly before 0 (incoming pre-roll) or
+		// past duration (outgoing post-roll). If we clamp to [0, duration] here, a split clip
+		// pair renders the *exact same* source frame on both sides of the cut and pixel-blend
+		// transitions (crossfade / wipe / dissolve / circle / diamond / clock wipe) look invisible.
+		const rawElapsed = time - this.params.timeOffset;
+		const minElapsed = -this.transitionExtension.before;
+		const maxElapsed = this.params.duration + this.transitionExtension.after;
+		const elapsed = Math.max(minElapsed, Math.min(maxElapsed, rawElapsed));
+
 		const sourceOffset = this.getIntegratedSourceOffset(elapsed);
 		const computedTrimEnd =
 			this.params.trimStart + this.params.duration * (this.params.speed ?? 1);
@@ -106,11 +114,24 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 				? this.params.trimEnd
 				: computedTrimEnd;
 
+		// Extend the source-time clamp window by the transition extension so the decoded frame
+		// actually advances through the source during the transition instead of freezing at the
+		// trim boundary.
+		const speed = Math.max(0.1, Math.min(10, this.params.speed ?? 1));
+		const beforeSource = this.transitionExtension.before * speed;
+		const afterSource = this.transitionExtension.after * speed;
+
 		if (this.params.reversed) {
-			return Math.max(this.params.trimStart, trimEnd - sourceOffset);
+			return Math.max(
+				Math.max(0, this.params.trimStart - afterSource),
+				Math.min(trimEnd + beforeSource, trimEnd - sourceOffset),
+			);
 		}
 
-		return Math.min(trimEnd, this.params.trimStart + sourceOffset);
+		return Math.max(
+			Math.max(0, this.params.trimStart - beforeSource),
+			Math.min(trimEnd + afterSource, this.params.trimStart + sourceOffset),
+		);
 	}
 
 	async prefetch({ renderer, time }: { renderer: CanvasRenderer; time: number }) {

@@ -5,6 +5,7 @@
 import { useActionHandler } from "./useActionHandler";
 import { useEditor } from "../useEditor";
 import { useElementSelection } from "../timeline/element/useElementSelection";
+import { SetTransitionCommand } from "../../lib/commands/scene";
 import { getElementsAtTime } from "../../lib/timeline";
 import { isMainTrack } from "../../lib/timeline/track-utils";
 import { getMainTrackMagnet } from "../timeline/useTimelineTools";
@@ -137,6 +138,23 @@ export function useEditorActions() {
 	});
 
 	useActionHandler("delete-selected", () => {
+		const transitionId = editor.selection.getSelectedTransitionId();
+		if (transitionId) {
+			let scene;
+			try {
+				scene = editor.scenes.getActiveScene();
+			} catch {
+				return;
+			}
+			const tr = scene?.transitions?.find((t) => t.id === transitionId);
+			if (tr) {
+				const command = new SetTransitionCommand(null, tr.targetElementId);
+				editor.command.execute({ command });
+			}
+			clearElementSelection();
+			return;
+		}
+
 		if (selectedElements.value.length === 0) return;
 
 		const tracks = editor.timeline.getTracks();

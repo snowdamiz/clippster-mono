@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, toRef } from "vue";
+import { ref, computed, toRef, watch } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { useKeyframes } from "../../composables/useKeyframes";
@@ -8,10 +8,20 @@ import type { KeyframableProperty, KeyframeInterpolation } from "../../types/key
 import type { TimelineTrack, TimelineElement } from "../../types/timeline";
 import { Diamond, Plus, Trash2, ChevronDown, X, List, BarChart2 } from "lucide-vue-next";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import KeyframeGraphEditor from "./KeyframeGraphEditor.vue";
+import { useEditorUIState } from "../../composables/useEditorUIState";
 
 const { editor, version } = useEditor();
+const { timelineKeyframePlacementActive, setTimelineKeyframePlacementActive } = useEditorUIState();
 const { selectedElements } = useElementSelection();
+
+watch(
+	() => selectedElements.value.length,
+	(len) => {
+		if (len !== 1 && timelineKeyframePlacementActive.value) setTimelineKeyframePlacementActive(false);
+	},
+);
 
 const selectedData = computed(() => {
 	void version.value;
@@ -118,7 +128,7 @@ const applicableProperties = computed(() => {
 	if (!elementRef.value) return [];
 	const type = elementRef.value.type;
 	if (type === "audio") return PROPERTIES.filter((p) => p.key === "volume");
-	if (type === "video") return PROPERTIES.filter((p) => p.key !== "volume");
+	if (type === "video") return PROPERTIES;
 	if (type === "image") return PROPERTIES.filter((p) => p.key !== "volume" && p.key !== "speed");
 	return PROPERTIES.filter((p) => p.key !== "volume" && p.key !== "speed");
 });
@@ -130,6 +140,19 @@ const applicableProperties = computed(() => {
 		<div class="flex items-center gap-1.5 border-b border-white/10 px-4 py-2">
 			<Diamond class="size-3.5 text-zinc-500" />
 			<span class="text-xs font-medium text-zinc-400">Keyframes</span>
+			<div
+				v-if="selectedData && (elementRef.type === 'video' || elementRef.type === 'audio')"
+				class="flex items-center gap-1.5 rounded border border-white/10 bg-white/[0.02] px-2 py-0.5"
+				title="When on, the cursor becomes a crosshair over clips and you can click the timeline to drop keyframes (video: picture area = opacity, waveform = volume; audio: waveform = volume). When off, clicks only select and move clips."
+			>
+				<span class="text-[10px] font-medium text-zinc-500">Click timeline to add</span>
+				<!-- Reka SwitchRoot uses modelValue / update:modelValue (not checked / update:checked) -->
+				<Switch
+					:model-value="timelineKeyframePlacementActive"
+					class="scale-90"
+					@update:model-value="setTimelineKeyframePlacementActive"
+				/>
+			</div>
 			<div class="ml-auto flex items-center gap-0.5">
 				<button
 					class="flex size-5 items-center justify-center rounded text-zinc-500 transition-colors"

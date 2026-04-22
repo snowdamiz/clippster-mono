@@ -15,28 +15,15 @@ import { useKeyframes } from "../../../composables/useKeyframes";
 import { toRef } from "vue";
 import KeyframeToggle from "./KeyframeToggle.vue";
 import AnimationProperties from "./AnimationProperties.vue";
-import TransitionProperties from "./TransitionProperties.vue";
 import ColorCurvesPanel from "./ColorCurvesPanel.vue";
 import ColorWheelsPanel from "./ColorWheelsPanel.vue";
 import LutPanel from "./LutPanel.vue";
-import type { Transition } from "../../../types/transitions";
 import { Switch } from '@/components/ui/switch';
 
 const props = defineProps<{
 	element: VideoElement;
 	trackId: string;
 }>();
-
-const activeTransition = computed<Transition | null>(() => {
-	void version.value;
-	try {
-		const scene = editor.scenes.getActiveScene();
-		if (!scene?.transitions) return null;
-		return scene.transitions.find((t) => t.targetElementId === props.element.id) ?? null;
-	} catch {
-		return null;
-	}
-});
 
 type TopTab = 'video' | 'audio' | 'speed' | 'adjust' | 'grading' | 'animate' | 'masks';
 const activeTab = ref<TopTab>('video');
@@ -497,13 +484,14 @@ function formatTime(seconds: number): string {
 </script>
 
 <template>
-	<div class="flex h-full flex-row">
+	<div class="flex h-full min-h-0 flex-row">
 		<!-- ══════ Content Area ══════ -->
-		<div class="flex flex-1 min-w-0 flex-col overflow-hidden">
-
+		<div class="flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden">
+		<!-- One scroll region for the active tab + transition block -->
+		<div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
 		<!-- ══════ Video Tab ══════ -->
 		<template v-if="activeTab === 'video'">
-			<div class="flex-1 overflow-y-auto">
+			<div>
 				<!-- ── Basic ── -->
 				<button
 					class="flex w-full items-center justify-between border-b border-white/10 px-3 py-2 text-xs font-medium transition-colors"
@@ -1015,7 +1003,7 @@ function formatTime(seconds: number): string {
 					<!-- Enabled -->
 					<div class="flex items-center justify-between">
 						<span class="text-[11px] text-zinc-500">Enabled</span>
-						<Switch :checked="chromakey.enabled" @update:checked="(val: boolean) => updateChromakey({ enabled: val })" />
+						<Switch :model-value="chromakey.enabled" @update:model-value="(val: boolean) => updateChromakey({ enabled: val })" />
 					</div>
 
 					<template v-if="chromakey.enabled">
@@ -1048,7 +1036,7 @@ function formatTime(seconds: number): string {
 		</template>
 
 		<!-- ══════ Audio Tab ══════ -->
-		<div v-else-if="activeTab === 'audio'" class="flex-1 overflow-y-auto p-3">
+		<div v-else-if="activeTab === 'audio'" class="p-3">
 			<div class="flex items-center border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
 				<span class="text-sm text-zinc-400">Audio</span>
 			</div>
@@ -1099,13 +1087,13 @@ function formatTime(seconds: number): string {
 				<!-- Mute -->
 				<div class="flex items-center justify-between border-t border-white/[0.05] pt-4">
 					<span class="text-[11px] text-zinc-500">Mute</span>
-					<Switch :checked="element.muted" @update:checked="(val: boolean) => update({ muted: val })" />
+					<Switch :model-value="!!element.muted" @update:model-value="(val: boolean) => update({ muted: val })" />
 				</div>
 			</div>
 		</div>
 
 		<!-- ══════ Speed Tab ══════ -->
-		<div v-else-if="activeTab === 'speed'" class="flex-1 overflow-y-auto p-3">
+		<div v-else-if="activeTab === 'speed'" class="p-3">
 			<div class="flex items-center justify-between border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
 				<span class="text-sm text-zinc-400">Speed</span>
 				<KeyframeToggle :active="hasKf('speed')" label="speed" @toggle="toggleSpeedKeyframe" />
@@ -1127,11 +1115,11 @@ function formatTime(seconds: number): string {
 		</div>
 
 		<!-- ══════ Animate Tab ══════ -->
-		<div v-else-if="activeTab === 'animate'" class="flex flex-col flex-1 overflow-hidden">
+		<div v-else-if="activeTab === 'animate'" class="flex flex-col">
 			<div class="flex shrink-0 items-center border-b border-white/10 px-3 py-1.5">
 				<span class="text-sm text-zinc-400">Animate</span>
 			</div>
-			<div class="flex-1 overflow-y-auto">
+			<div class="p-3">
 				<AnimationProperties
 					:element-id="element.id"
 					:track-id="trackId"
@@ -1144,7 +1132,7 @@ function formatTime(seconds: number): string {
 		</div>
 
 		<!-- ══════ Masks Tab ══════ -->
-		<div v-else-if="activeTab === 'masks'" class="flex-1 overflow-y-auto">
+		<div v-else-if="activeTab === 'masks'">
 			<div class="flex shrink-0 items-center border-b border-white/10 px-3 py-1.5">
 				<span class="text-sm text-zinc-400">Masks</span>
 			</div>
@@ -1152,7 +1140,7 @@ function formatTime(seconds: number): string {
 		</div>
 
 		<!-- ══════ Adjust Tab ══════ -->
-		<div v-else-if="activeTab === 'adjust'" class="flex-1 overflow-y-auto p-3">
+		<div v-else-if="activeTab === 'adjust'" class="p-3">
 			<div class="flex items-center border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
 				<span class="text-sm text-zinc-400">Adjust</span>
 			</div>
@@ -1215,7 +1203,7 @@ function formatTime(seconds: number): string {
 		</div>
 
 		<!-- ══════ Color Grading Tab ══════ -->
-		<div v-else-if="activeTab === 'grading'" class="flex-1 overflow-y-auto p-3 space-y-5">
+		<div v-else-if="activeTab === 'grading'" class="space-y-5 p-3">
 			<!-- RGB Curves -->
 			<div class="space-y-2">
 				<div class="flex items-center justify-between">
@@ -1245,9 +1233,6 @@ function formatTime(seconds: number): string {
 			</div>
 		</div>
 
-		<!-- ══════ Transition (shown at bottom if element has one) ══════ -->
-		<div v-if="activeTransition" class="shrink-0 border-t border-white/10 p-3">
-			<TransitionProperties :transition="activeTransition" />
 		</div>
 		</div>
 

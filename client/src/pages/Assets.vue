@@ -641,6 +641,7 @@
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import { getStoragePath } from '@/services/storage';
   import { invoke } from '@tauri-apps/api/core';
+  import { utf8ToBase64Url } from '@/utils/encoding';
   import { Button } from '@/components/ui/button';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
@@ -1312,7 +1313,7 @@
         } else {
           // For local assets, use local video server
           const port = await invoke<number>('get_video_server_port');
-          const encodedPath = btoa(unescape(encodeURIComponent((audio as AudioAsset).file_path)));
+          const encodedPath = utf8ToBase64Url((audio as AudioAsset).file_path);
           audioUrl = `http://localhost:${port}/video/${encodedPath}`;
         }
 

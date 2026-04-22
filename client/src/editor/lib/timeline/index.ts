@@ -1,6 +1,7 @@
 import type { TimelineTrack } from "../../types/timeline";
 
 export * from "./track-utils";
+export * from "./main-track-layout";
 export * from "./element-utils";
 export * from "./zoom-utils";
 export * from "./ruler-utils";

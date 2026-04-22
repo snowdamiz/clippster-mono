@@ -26,6 +26,7 @@ import { useBrandingConfig } from "../../composables/useBrandingConfig";
 import { resolveWatermarkById, resolveOverlayImagePath } from "@/services/database/watermarks";
 import { resolveIntroOutroById } from "@/services/database/intro-outros";
 import { base64ToUtf8 } from "@/utils/encoding";
+import { resolveTransitionMediaPair } from "../../lib/timeline/transition-pairing";
 
 /** True if any two [start,end) segments overlap (for FFmpeg layer compositing). */
 function videoSegmentsOverlap(segments: { start: number; end: number }[]): boolean {
@@ -619,18 +620,24 @@ export class RendererManager {
 			const scene = this.editor.scenes.getActiveScene();
 			if (scene?.transitions) {
 				for (const t of scene.transitions) {
-					const targetIdx = videoSourceElementIndex.get(t.targetElementId);
-					if (targetIdx === undefined || targetIdx <= 0) continue;
+					// Resolve track by element id — transition.trackId can drift after timeline edits.
+					const targetTrack = tracks.find((tr) =>
+						tr.elements.some((el) => el.id === t.targetElementId),
+					);
+					if (!targetTrack || targetTrack.type !== "video") continue;
 
-					const targetTrack = tracks.find((tr) => tr.id === t.trackId);
-					const targetElement = targetTrack?.elements.find((el) => el.id === t.targetElementId);
-					if (!targetElement) continue;
+					const pair = resolveTransitionMediaPair({ transition: t, track: targetTrack });
+					if (!pair) continue;
+
+					const incomingId = pair.incoming.id;
+					const targetIdx = videoSourceElementIndex.get(incomingId);
+					if (targetIdx === undefined || targetIdx <= 0) continue;
 
 					transitionData.push({
 						transition_type: t.type,
 						duration: t.duration,
 						target_element_index: targetIdx,
-						junction_time: targetElement.startTime,
+						junction_time: pair.incoming.startTime,
 					});
 				}
 			}

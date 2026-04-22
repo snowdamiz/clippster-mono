@@ -281,6 +281,8 @@ pub struct TransitionData {
     pub transition_type: String,
     pub duration: f64,
     pub target_element_index: usize,
+    /// Timeline cut position from the editor (export uses padded segment lengths for xfade offset).
+    #[allow(dead_code)]
     pub junction_time: f64,
 }
 
@@ -1399,20 +1401,52 @@ pub async fn export_video_editor_project(
 
     fn map_transition_type(editor_type: &str) -> &str {
         match editor_type {
-            "crossfade" | "dissolve" => "fade",
+            // Fades
+            "crossfade" => "fade",
+            "dissolve" => "dissolve",
             "fadeToBlack" => "fadeblack",
             "fadeToWhite" => "fadewhite",
+
+            // Wipes
             "wipeLeft" => "wipeleft",
             "wipeRight" => "wiperight",
             "wipeUp" => "wipeup",
             "wipeDown" => "wipedown",
+
+            // Slides
             "slideLeft" => "slideleft",
             "slideRight" => "slideright",
             "slideUp" => "slideup",
             "slideDown" => "slidedown",
+
+            // Push (preview uses the same motion as slide in canvas-transitions)
+            "pushLeft" => "slideleft",
+            "pushRight" => "slideright",
+            "pushUp" => "slideup",
+            "pushDown" => "slidedown",
+
+            // Cover / reveal (named cover/reveal in xfade)
+            "coverLeft" => "coverleft",
+            "coverRight" => "coverright",
+            "revealLeft" => "revealleft",
+            "revealRight" => "revealright",
+
+            // Shape wipes
             "circleWipe" => "circleopen",
             "diamondWipe" => "diagtl",
             "clockWipe" => "radial",
+
+            // Zoom — xfade only defines zoomin; map zoomOut to the complementary iris
+            "zoomIn" => "zoomin",
+            "zoomOut" => "circleclose",
+
+            // Stylize — closest xfade analogues (not pixel-identical to the canvas preview)
+            "blur" => "hblur",
+            "rotateIn" => "circleopen",
+            "flipHorizontal" => "horzopen",
+            "flipVertical" => "vertopen",
+            "glitch" => "pixelize",
+
             _ => "fade",
         }
     }
@@ -1767,6 +1801,14 @@ pub async fn export_video_editor_project(
         let has_transitions = !transitions.is_empty();
         if has_transitions {
             let mut current_stream = "[v0]".to_string();
+            // xfade `offset` is measured on the *first* input stream (the accumulated chain).
+            // Using global `junction_time` breaks after the first transition and desyncs A/V.
+            let segment_video_len = |idx: usize| -> f64 {
+                let s = &config.video_sources[idx];
+                let d = s.end_time - s.start_time;
+                d + before_ext[idx] + after_ext[idx]
+            };
+            let mut cur_v_len = segment_video_len(0);
 
             for i in 1..source_count {
                 let transition = transitions
@@ -1781,17 +1823,19 @@ pub async fn export_video_editor_project(
 
                 if let Some(t) = transition {
                     let ffmpeg_transition = map_transition_type(&t.transition_type);
-                    let offset = (t.junction_time - t.duration / 2.0).max(0.0);
+                    let offset = (cur_v_len - t.duration).max(0.0);
 
                     filters.push(format!(
                         "{}[v{}]xfade=transition={}:duration={}:offset={}{}",
                         current_stream, i, ffmpeg_transition, t.duration, offset, output_label
                     ));
+                    cur_v_len = cur_v_len + segment_video_len(i) - t.duration;
                 } else {
                     filters.push(format!(
                         "{}[v{}]concat=n=2:v=1:a=0{}",
                         current_stream, i, output_label
                     ));
+                    cur_v_len += segment_video_len(i);
                 }
 
                 current_stream = output_label;
@@ -1818,11 +1862,11 @@ pub async fn export_video_editor_project(
         }
 
         // Handle audio from video sources.
-        // With transitions: build timeline-positioned streams + centered fade envelopes and mix.
+        // With transitions: chain per-clip streams with `acrossfade` at each transition (matches
+        // sequential `xfade` video). Timeline `adelay` + `amix` summed overlapping program audio
+        // (echo) and drifted vs chained video.
         // Without transitions: keep concat behavior.
         if has_transitions {
-            let mut audio_mix_inputs = String::new();
-
             for i in 0..source_count {
                 let source = &config.video_sources[i];
 
@@ -1835,8 +1879,10 @@ pub async fn export_video_editor_project(
                 let before = before_ext[i].min(source.start_time.max(0.0));
                 let after = after_ext[i].max(0.0);
 
-                let effective_start = (source.start_time - before).max(0.0);
                 let effective_duration = (base_duration + before + after).max(0.0);
+                let video_pad_len = before_ext[i] + after_ext[i];
+                let audio_pad_len = before + after;
+                let leading_silence = (video_pad_len - audio_pad_len).max(0.0);
 
                 let mut audio_extras = String::new();
 
@@ -1877,44 +1923,59 @@ pub async fn export_video_editor_project(
                     }
                 }
 
-                let delay_ms = (effective_start * 1000.0).round().max(0.0) as i64;
-                let mut chain = if source_has_audio[i] {
+                let body_label = format!("[va_body{}]", i);
+                let body_chain = if source_has_audio[i] {
                     format!(
-                        "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}",
-                        i, trim_start, effective_duration, audio_extras
+                        "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}{}",
+                        i, trim_start, effective_duration, audio_extras, body_label
                     )
                 } else {
                     format!(
-                        "anullsrc=r=48000:cl=stereo,atrim=duration={},asetpts=PTS-STARTPTS",
-                        effective_duration
+                        "anullsrc=r=48000:cl=stereo,atrim=duration={},asetpts=PTS-STARTPTS{}",
+                        effective_duration, body_label
                     )
                 };
+                filters.push(body_chain);
 
-                if delay_ms > 0 {
-                    chain.push_str(&format!(",adelay={}|{}:all=1", delay_ms, delay_ms));
+                if leading_silence > 0.0001 {
+                    let gap_label = format!("[va_gap{}]", i);
+                    filters.push(format!(
+                        "anullsrc=r=48000:cl=stereo,atrim=duration={:.6},asetpts=PTS-STARTPTS{}",
+                        leading_silence, gap_label
+                    ));
+                    filters.push(format!(
+                        "{}{}concat=n=2:v=0:a=1[va{}]",
+                        gap_label, body_label, i
+                    ));
+                } else {
+                    filters.push(format!("{}anull[va{}]", body_label, i));
                 }
-
-                if before > 0.0001 {
-                    let fade_duration = before * 2.0;
-                    let fade_start = (source.start_time - before).max(0.0);
-                    chain.push_str(&format!(",afade=t=in:st={}:d={}", fade_start, fade_duration));
-                }
-
-                if after > 0.0001 {
-                    let fade_duration = after * 2.0;
-                    let fade_start = (source.end_time - after).max(0.0);
-                    chain.push_str(&format!(",afade=t=out:st={}:d={}", fade_start, fade_duration));
-                }
-
-                chain.push_str(&format!("[va{}]", i));
-                filters.push(chain);
-                audio_mix_inputs.push_str(&format!("[va{}]", i));
             }
 
-            filters.push(format!(
-                "{}amix=inputs={}:duration=longest:dropout_transition=0[va]",
-                audio_mix_inputs, source_count
-            ));
+            let mut current_audio = "[va0]".to_string();
+            for i in 1..source_count {
+                let transition = transitions
+                    .iter()
+                    .find(|t| t.target_element_index == i && t.duration > 0.0);
+                let next_in = format!("[va{}]", i);
+                let out_label = if i == source_count - 1 {
+                    "[va]".to_string()
+                } else {
+                    format!("[va_xc{}]", i)
+                };
+                if let Some(t) = transition {
+                    filters.push(format!(
+                        "{}{}acrossfade=d={:.6}:c1=tri:c2=tri{}",
+                        current_audio, next_in, t.duration, out_label
+                    ));
+                } else {
+                    filters.push(format!(
+                        "{}{}concat=n=2:v=0:a=1{}",
+                        current_audio, next_in, out_label
+                    ));
+                }
+                current_audio = out_label;
+            }
         } else {
             let mut audio_concat_inputs = String::new();
 

@@ -18,6 +18,7 @@ import {
 	getDefaultInsertIndexForTrack,
 	validateElementTrackCompatibility,
 } from "../../../../lib/timeline/track-utils";
+import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
 import type { MediaAsset } from "../../../../types/assets";
 import { TIMELINE_CONSTANTS } from "../../../../constants/timeline-constants";
 
@@ -110,7 +111,9 @@ export class InsertElementCommand extends Command {
 			}
 		}
 
-		editor.timeline.updateTracks(updatedTracks);
+		const fps = editor.project.getActive()?.settings?.fps ?? 30;
+		const packedTracks = collapseMainVideoTracksIfPresent(updatedTracks, fps);
+		editor.timeline.updateTracks(packedTracks);
 	}
 
 	undo(): void {

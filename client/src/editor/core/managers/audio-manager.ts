@@ -46,6 +46,8 @@ export class AudioManager {
 			this.editor.playback.subscribe(this.handlePlaybackChange),
 			this.editor.timeline.subscribe(this.handleTimelineChange),
 			this.editor.media.subscribe(this.handleTimelineChange),
+			// Scene-only updates (e.g. heal orphan mediaIds) must refresh audio clip resolution
+			this.editor.scenes.subscribe(this.handleTimelineChange),
 		);
 		if (typeof window !== "undefined") {
 			window.addEventListener("playback-seek", this.handleSeek);
@@ -242,9 +244,25 @@ export class AudioManager {
 		const cacheVersion = this.clipCacheVersion;
 		const tracks = this.editor.timeline.getTracks();
 		const mediaAssets = this.editor.media.getAssets();
+		const timelineExpectsMedia = tracks.some((t) =>
+			(t.elements ?? []).some((el) => {
+				if (el.type === "video") return true;
+				if (el.type === "audio" && "sourceType" in el && (el as { sourceType: string }).sourceType === "upload")
+					return true;
+				return false;
+			}),
+		);
+
 		const clipLoadPromise = collectAudioClips({ tracks, mediaAssets })
 			.then((clips) => {
 				if (cacheVersion !== this.clipCacheVersion) {
+					return this.clips;
+				}
+
+				// Do not lock in an empty clip list while the timeline references media but assets
+				// are not loaded yet (e.g. notify between clearAllAssets and loadProjectMedia).
+				if (mediaAssets.length === 0 && timelineExpectsMedia) {
+					this.clipLoadPromise = null;
 					return this.clips;
 				}
 

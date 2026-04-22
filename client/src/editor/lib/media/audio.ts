@@ -359,6 +359,12 @@ export async function collectAudioClips({
 	mediaAssets: MediaAsset[];
 }): Promise<AudioClipSource[]> {
 	const clips: AudioClipSource[] = [];
+	// During project load, listeners can fire before media rows exist — avoid bogus warnings and
+	// poisoning clip caches with unresolved references.
+	if (mediaAssets.length === 0) {
+		return [];
+	}
+
 	const mediaMap = new Map<string, MediaAsset>(
 		mediaAssets.map((asset) => [asset.id, asset]),
 	);

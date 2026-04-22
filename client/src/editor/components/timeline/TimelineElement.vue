@@ -8,7 +8,7 @@ import { useVolumeEnvelope } from "../../composables/timeline/element/useVolumeE
 import { useFilmstrip } from "../../composables/timeline/useFilmstrip";
 import { useAudioWaveform } from "../../composables/timeline/useAudioWaveform";
 import type { SnapPoint } from "../../composables/timeline/useTimelineSnapping";
-import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
+import { TIMELINE_CONSTANTS, VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT } from "../../constants/timeline-constants";
 import {
 	getTrackClasses,
 	getTrackBorderColor,
@@ -22,7 +22,10 @@ import type {
 	TimelineElement as TimelineElementType,
 	TimelineTrack,
 	ElementDragState,
+	VideoElement,
 } from "../../types/timeline";
+import { useEditorUIState } from "../../composables/useEditorUIState";
+import { useKeyframes } from "../../composables/useKeyframes";
 import type { MediaAsset } from "../../types/assets";
 import { mediaSupportsAudio } from "../../lib/media/media-utils";
 
@@ -59,6 +62,25 @@ const { editor, version } = useEditor({
 	},
 });
 const { selectedElements } = useElementSelection();
+const { timelineKeyframePlacementActive } = useEditorUIState();
+
+const trackRefForKeyframes = toRef(() => props.track);
+const elementRefForKeyframes = toRef(() => props.element);
+const { addKeyframe, getResolvedValue } = useKeyframes({
+	trackRef: trackRefForKeyframes,
+	elementRef: elementRefForKeyframes,
+});
+
+function onVideoBodyKeyframePaintPointerDown(ev: PointerEvent) {
+	if (!timelineKeyframePlacementActive.value || props.element.type !== "video") return;
+	ev.stopPropagation();
+	const target = ev.currentTarget as HTMLElement;
+	const rect = target.getBoundingClientRect();
+	const localX = ev.clientX - rect.left;
+	const offset = Math.max(0, Math.min(1, localX / Math.max(1, rect.width)));
+	const video = props.element as VideoElement;
+	addKeyframe("opacity", offset, getResolvedValue("opacity", offset, video.opacity));
+}
 
 const mediaAssets = computed(() => {
 	void version.value;
@@ -261,11 +283,9 @@ const videoWaveformSvgRef = ref<SVGSVGElement | null>(null);
 
 const {
 	isVisible: volumeEnvelopeVisible,
-	showEnvelopeChrome: volumeEnvelopeChromeVisible,
-	envelopePath,
-	envelopeFillPath,
 	handles: volumeHandles,
 	isDragging: volumeIsDragging,
+	showEnvelopeGraphics: volumeShowEnvelopeGraphics,
 	onStripPointerEnter: onVolumeStripPointerEnter,
 	onStripPointerLeave: onVolumeStripPointerLeave,
 	onStripPointerDown: onVolumeStripPointerDown,
@@ -330,7 +350,11 @@ const elementTooltip = computed(() => {
 
 <template>
 	<div
-		:class="['absolute top-0 h-full select-none', isBeingDragged ? 'z-30' : 'z-10']"
+		:class="[
+			'absolute top-0 h-full select-none',
+			isBeingDragged ? 'z-30' : 'z-10',
+			(isVideoElement || isAudioElement) && timelineKeyframePlacementActive && 'cursor-crosshair',
+		]"
 		:style="{
 			left: `${elementLeft}px`,
 			width: `${elementWidth}px`,
@@ -341,7 +365,8 @@ const elementTooltip = computed(() => {
 		<!-- Element inner -->
 		<div
 			:class="[
-				'group relative h-full cursor-pointer overflow-hidden border-2',
+				'group relative h-full overflow-hidden border-2',
+				(isVideoElement || isAudioElement) && timelineKeyframePlacementActive ? 'cursor-crosshair' : 'cursor-pointer',
 				(track.type === 'text' || track.type === 'audio' || track.type === 'sticker' || track.type === 'caption' || track.type === 'effect') ? 'rounded-[3px]' : 'rounded-[0.5rem]',
 				trackClasses,
 				isBeingDragged ? 'z-30' : 'z-10',
@@ -367,7 +392,8 @@ const elementTooltip = computed(() => {
 
 			<button
 				type="button"
-				class="absolute inset-0 size-full cursor-pointer"
+				class="absolute inset-0 size-full"
+				:class="(isVideoElement || isAudioElement) && timelineKeyframePlacementActive ? 'cursor-crosshair' : 'cursor-pointer'"
 				@click="emit('elementClick', $event, element)"
 				@mousedown="emit('elementMouseDown', $event, element)"
 				@contextmenu.prevent="emit('elementContextMenu', $event, element)"
@@ -392,7 +418,7 @@ const elementTooltip = computed(() => {
 						class="absolute inset-0 w-full h-full pointer-events-none"
 						style="mix-blend-mode: normal; z-index: 5; image-rendering: crisp-edges"
 					/>
-					<!-- Volume rubber-band envelope overlay -->
+					<!-- Volume keyframe strip (handles only — no curve on waveform) -->
 					<svg
 						v-if="volumeEnvelopeVisible"
 						ref="audioSvgRef"
@@ -400,35 +426,18 @@ const elementTooltip = computed(() => {
 						style="z-index: 10; top: 16px; height: calc(100% - 16px);"
 						viewBox="0 0 100 100"
 						preserveAspectRatio="none"
-						:style="{ cursor: volumeIsDragging ? 'ns-resize' : 'crosshair', pointerEvents: 'all' }"
+						:class="[
+							!timelineKeyframePlacementActive && 'pointer-events-none',
+							volumeIsDragging ? 'cursor-ns-resize' : timelineKeyframePlacementActive ? 'cursor-crosshair' : '',
+						]"
 						@pointerenter="onVolumeStripPointerEnter"
 						@pointerleave="onVolumeStripPointerLeave"
 						@pointerdown.stop="(e) => audioSvgRef && onVolumeStripPointerDown(e, audioSvgRef, 0)"
 					>
-						<rect x="0" y="0" width="100" height="100" fill="transparent" pointer-events="all" />
-						<!-- Fill area -->
-						<path
-							v-if="volumeEnvelopeChromeVisible"
-							:d="envelopeFillPath"
-							fill="rgba(250,204,21,0.08)"
-							stroke="none"
-							vector-effect="non-scaling-stroke"
-						/>
-						<!-- Envelope line -->
-						<path
-							v-if="volumeEnvelopeChromeVisible"
-							:d="envelopePath"
-							fill="none"
-							stroke="rgba(250,204,21,0.7)"
-							stroke-width="1.5"
-							vector-effect="non-scaling-stroke"
-						/>
-						<!-- Keyframe handles -->
-						<g
-							v-for="h in volumeHandles"
-							:key="h.id"
-						>
+						<g v-if="volumeShowEnvelopeGraphics">
 							<circle
+								v-for="h in volumeHandles"
+								:key="h.id"
 								:cx="h.x"
 								:cy="h.y"
 								r="4"
@@ -452,7 +461,10 @@ const elementTooltip = computed(() => {
 					<!-- Video filmstrip (actual frames at correct timestamps) -->
 					<div v-else-if="hasFilmstrip" class="absolute inset-0">
 						<!-- Filmstrip area: below the 16px title bar, above the waveform -->
-						<div :class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']" style="top: 16px; bottom: 35%;">
+						<div
+							:class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']"
+							:style="{ top: '16px', bottom: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%` }"
+						>
 							<div
 								class="absolute inset-0 grid pointer-events-none h-full"
 								:style="{
@@ -473,44 +485,49 @@ const elementTooltip = computed(() => {
 								/>
 							</div>
 						</div>
+						<div
+							v-if="isVideoElement && timelineKeyframePlacementActive"
+							class="absolute right-0 left-0 z-[27] cursor-crosshair"
+							:style="{ top: '16px', bottom: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%` }"
+							@pointerdown.stop="onVideoBodyKeyframePaintPointerDown"
+						/>
 					<!-- Audio waveform: fills the entire bottom section (hidden when muted/audio extracted) -->
 					<canvas
 						v-if="!isMuted"
 						ref="videoWaveformCanvas"
 						class="absolute right-0 left-0 w-full pointer-events-none"
-						style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal; image-rendering: crisp-edges"
+						:style="{
+							bottom: 0,
+							height: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%`,
+							zIndex: 25,
+							mixBlendMode: 'normal',
+							imageRendering: 'crisp-edges',
+						}"
 					/>
-					<!-- Volume rubber-band envelope overlay (video waveform strip) -->
+					<!-- Volume keyframe strip (video waveform — handles only) -->
 					<svg
 						v-if="!isMuted && volumeEnvelopeVisible"
 						ref="videoWaveformSvgRef"
 						class="absolute right-0 left-0 w-full overflow-visible"
-						style="bottom: 0; height: 35%; z-index: 30;"
 						viewBox="0 0 100 100"
 						preserveAspectRatio="none"
-						:style="{ cursor: volumeIsDragging ? 'ns-resize' : 'crosshair', pointerEvents: 'all' }"
+						:style="{
+							bottom: 0,
+							height: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%`,
+							zIndex: 30,
+						}"
+						:class="[
+							!timelineKeyframePlacementActive && 'pointer-events-none',
+							volumeIsDragging ? 'cursor-ns-resize' : timelineKeyframePlacementActive ? 'cursor-crosshair' : '',
+						]"
 						@pointerenter="onVolumeStripPointerEnter"
 						@pointerleave="onVolumeStripPointerLeave"
 						@pointerdown.stop="(e) => videoWaveformSvgRef && onVolumeStripPointerDown(e, videoWaveformSvgRef, 0)"
 					>
-						<rect x="0" y="0" width="100" height="100" fill="transparent" pointer-events="all" />
-						<path
-							v-if="volumeEnvelopeChromeVisible"
-							:d="envelopeFillPath"
-							fill="rgba(250,204,21,0.08)"
-							stroke="none"
-							vector-effect="non-scaling-stroke"
-						/>
-						<path
-							v-if="volumeEnvelopeChromeVisible"
-							:d="envelopePath"
-							fill="none"
-							stroke="rgba(250,204,21,0.7)"
-							stroke-width="1.5"
-							vector-effect="non-scaling-stroke"
-						/>
-						<g v-for="h in volumeHandles" :key="h.id">
+						<g v-if="volumeShowEnvelopeGraphics">
 							<circle
+								v-for="h in volumeHandles"
+								:key="h.id"
 								:cx="h.x" :cy="h.y" r="4"
 								fill="#facc15" stroke="#a16207" stroke-width="1"
 								vector-effect="non-scaling-stroke"
@@ -522,7 +539,7 @@ const elementTooltip = computed(() => {
 					<div
 						v-if="!isMuted && waveformLoading && !waveformLoaded"
 						class="absolute right-0 left-0 flex items-center justify-center pointer-events-none"
-						style="bottom: 0; height: 35%; z-index: 26;"
+						:style="{ bottom: 0, height: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%`, zIndex: 26 }"
 					>
 						<div class="text-[8px] text-white/30">Loading waveform...</div>
 					</div>
@@ -530,7 +547,10 @@ const elementTooltip = computed(() => {
 
 				<!-- Video/Image fallback thumbnail (before filmstrip loads) -->
 				<div v-else-if="imageUrl" class="absolute inset-0">
-					<div :class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']" style="top: 16px; bottom: 35%;">
+					<div
+						:class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']"
+						:style="{ top: '16px', bottom: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%` }"
+					>
 						<div
 							class="absolute inset-0"
 							:style="{
@@ -542,44 +562,49 @@ const elementTooltip = computed(() => {
 							}"
 						/>
 					</div>
+						<div
+							v-if="isVideoElement && timelineKeyframePlacementActive"
+							class="absolute right-0 left-0 z-[27] cursor-crosshair"
+							:style="{ top: '16px', bottom: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%` }"
+							@pointerdown.stop="onVideoBodyKeyframePaintPointerDown"
+						/>
 					<!-- Audio waveform: fills the entire bottom section (hidden when muted/audio extracted) -->
 					<canvas
 						v-if="isVideoElement && !isMuted"
 						ref="videoWaveformCanvas"
 						class="absolute right-0 left-0 w-full pointer-events-none"
-						style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal; image-rendering: crisp-edges"
+						:style="{
+							bottom: 0,
+							height: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%`,
+							zIndex: 25,
+							mixBlendMode: 'normal',
+							imageRendering: 'crisp-edges',
+						}"
 					/>
-					<!-- Volume rubber-band envelope overlay (video fallback thumbnail) -->
+					<!-- Volume keyframe strip (video fallback — handles only) -->
 					<svg
 						v-if="isVideoElement && !isMuted && volumeEnvelopeVisible"
 						ref="videoWaveformSvgRef"
 						class="absolute right-0 left-0 w-full overflow-visible"
-						style="bottom: 0; height: 35%; z-index: 30;"
 						viewBox="0 0 100 100"
 						preserveAspectRatio="none"
-						:style="{ cursor: volumeIsDragging ? 'ns-resize' : 'crosshair', pointerEvents: 'all' }"
+						:style="{
+							bottom: 0,
+							height: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%`,
+							zIndex: 30,
+						}"
+						:class="[
+							!timelineKeyframePlacementActive && 'pointer-events-none',
+							volumeIsDragging ? 'cursor-ns-resize' : timelineKeyframePlacementActive ? 'cursor-crosshair' : '',
+						]"
 						@pointerenter="onVolumeStripPointerEnter"
 						@pointerleave="onVolumeStripPointerLeave"
 						@pointerdown.stop="(e) => videoWaveformSvgRef && onVolumeStripPointerDown(e, videoWaveformSvgRef, 0)"
 					>
-						<rect x="0" y="0" width="100" height="100" fill="transparent" pointer-events="all" />
-						<path
-							v-if="volumeEnvelopeChromeVisible"
-							:d="envelopeFillPath"
-							fill="rgba(250,204,21,0.08)"
-							stroke="none"
-							vector-effect="non-scaling-stroke"
-						/>
-						<path
-							v-if="volumeEnvelopeChromeVisible"
-							:d="envelopePath"
-							fill="none"
-							stroke="rgba(250,204,21,0.7)"
-							stroke-width="1.5"
-							vector-effect="non-scaling-stroke"
-						/>
-						<g v-for="h in volumeHandles" :key="h.id">
+						<g v-if="volumeShowEnvelopeGraphics">
 							<circle
+								v-for="h in volumeHandles"
+								:key="h.id"
 								:cx="h.x" :cy="h.y" r="4"
 								fill="#facc15" stroke="#a16207" stroke-width="1"
 								vector-effect="non-scaling-stroke"

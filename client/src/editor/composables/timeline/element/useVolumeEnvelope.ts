@@ -1,11 +1,6 @@
 /**
- * Composable for the in-timeline volume rubber-band envelope.
- *
- * Renders an interactive SVG overlay on the audio waveform strip that lets
- * users add/drag/remove volume keyframes directly on the clip — similar to
- * CapCut and OpenCut's in-timeline volume editing. The line/fill/handles stay
- * hidden until the strip is hovered or the user is dragging (automation still
- * applies on playback/export when not visible).
+ * In-timeline volume keyframes on the waveform strip (handles only — no curve/fill
+ * overlay so waveforms stay readable).
  *
  * Coordinate system:
  *   x  = offset (0–1) mapped to 0–elementWidthPx
@@ -40,7 +35,7 @@ export function useVolumeEnvelope({
 
 	const isDragging = ref(false);
 	const draggingKeyframeId = ref<string | null>(null);
-	/** True while pointer is over the volume strip (so we can show rubber-band before any keyframes). */
+	/** True while pointer is over the volume strip (so we can hide the flat line until hover). */
 	const stripHovered = ref(false);
 
 	/** Sorted volume keyframes from the element. */
@@ -58,16 +53,11 @@ export function useVolumeEnvelope({
 		return true;
 	});
 
-	/** Line/fill/handles: only while hovering the strip or dragging a handle. */
-	const showEnvelopeChrome = computed(() => isDragging.value || stripHovered.value);
-
-	function onStripPointerEnter() {
-		stripHovered.value = true;
-	}
-
-	function onStripPointerLeave() {
-		if (!isDragging.value) stripHovered.value = false;
-	}
+	/** Keyframe handles — show when there are keyframes, while dragging, or on strip hover. */
+	const showEnvelopeGraphics = computed(
+		() =>
+			volumeKeyframes.value.length > 0 || isDragging.value || stripHovered.value,
+	);
 
 	/** Convert volume value (0–VOL_MAX) to Y percentage (0% = top = max). */
 	function volToYPct(vol: number): number {
@@ -88,58 +78,6 @@ export function useVolumeEnvelope({
 	function xToOffset(x: number): number {
 		return Math.max(0, Math.min(1, x / elementWidthPx.value));
 	}
-
-	/**
-	 * SVG polyline points string for the envelope path.
-	 * Always starts at (0, baseY) and ends at (width, baseY) so the line
-	 * spans the full clip even without keyframes.
-	 */
-	const envelopePath = computed((): string => {
-		const w = elementWidthPx.value;
-		const kfs = volumeKeyframes.value;
-		const baseVol = (elementRef.value as any).volume ?? 1;
-		const baseY = volToYPct(baseVol);
-
-		if (kfs.length === 0) {
-			return `M 0 ${baseY} L ${w} ${baseY}`;
-		}
-
-		const points: string[] = [];
-		// Leading segment from clip start to first keyframe
-		const first = kfs[0];
-		const firstX = offsetToX(first.offset);
-		const firstY = volToYPct(first.value);
-		points.push(`M 0 ${firstY}`);
-		points.push(`L ${firstX} ${firstY}`);
-
-		// Segments between keyframes
-		for (let i = 0; i < kfs.length - 1; i++) {
-			const cur = kfs[i];
-			const next = kfs[i + 1];
-			const curX = offsetToX(cur.offset);
-			const nextX = offsetToX(next.offset);
-			const curY = volToYPct(cur.value);
-			const nextY = volToYPct(next.value);
-			// Use linear for now (curves are complex in SVG with multiple properties)
-			points.push(`L ${curX} ${curY}`);
-			points.push(`L ${nextX} ${nextY}`);
-		}
-
-		// Trailing segment from last keyframe to clip end
-		const last = kfs[kfs.length - 1];
-		const lastX = offsetToX(last.offset);
-		const lastY = volToYPct(last.value);
-		points.push(`L ${lastX} ${lastY}`);
-		points.push(`L ${w} ${lastY}`);
-
-		return points.join(" ");
-	});
-
-	/** Filled area under the envelope path (for visual fill). */
-	const envelopeFillPath = computed((): string => {
-		const w = elementWidthPx.value;
-		return `${envelopePath.value} L ${w} 100 L 0 100 Z`;
-	});
 
 	/** Handle positions for each keyframe diamond. */
 	const handles = computed(() =>
@@ -194,7 +132,6 @@ export function useVolumeEnvelope({
 		svgHeight: number,
 	) {
 		isDragging.value = true;
-		stripHovered.value = true;
 		draggingKeyframeId.value = keyframeId;
 
 		const rect = svgElement.getBoundingClientRect();
@@ -228,14 +165,20 @@ export function useVolumeEnvelope({
 		kf.removeKeyframe("volume", keyframeId);
 	}
 
+	function onStripPointerEnter() {
+		stripHovered.value = true;
+	}
+
+	function onStripPointerLeave() {
+		stripHovered.value = false;
+	}
+
 	return {
 		isVisible,
-		showEnvelopeChrome,
 		volumeKeyframes,
-		envelopePath,
-		envelopeFillPath,
 		handles,
 		isDragging,
+		showEnvelopeGraphics,
 		onStripPointerEnter,
 		onStripPointerLeave,
 		onStripPointerDown,

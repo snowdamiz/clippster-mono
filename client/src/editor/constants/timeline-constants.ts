@@ -29,13 +29,19 @@ export const TRACK_COLORS: Record<TrackType, { background: string; border: strin
 } as const;
 
 export const TRACK_HEIGHTS: Record<TrackType, number> = {
-	video: 80,
+	video: 96,
 	text: 25,
-	audio: 25,
+	audio: 36,
 	sticker: 25,
 	effect: 25,
 	caption: 25,
 } as const;
+
+/**
+ * Share of each video/image clip’s height used for the linked audio waveform (filmstrip uses the rest below the title).
+ * Raising this grows the waveform at the expense of the filmstrip.
+ */
+export const VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT = 42;
 
 export const TRACK_GAP = 4;
 
