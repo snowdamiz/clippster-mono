@@ -78,6 +78,21 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 		return this.useWidenedLayerSpread() ? this.getSampleHalfWidth() : d / 2;
 	}
 
+	private getClipTimelineBounds(node: BaseNode | null): { start: number; end: number } | null {
+		if (!node) return null;
+		const p = (node as { params?: { timeOffset?: number; duration?: number } }).params;
+		if (
+			p &&
+			typeof p.timeOffset === "number" &&
+			typeof p.duration === "number" &&
+			Number.isFinite(p.timeOffset) &&
+			Number.isFinite(p.duration)
+		) {
+			return { start: p.timeOffset, end: p.timeOffset + p.duration };
+		}
+		return null;
+	}
+
 	/** Only valid when {@link isInTransition} is true for `time`. */
 	private getTransitionLayerDecodeTimes(time: number): { outgoingTime: number; incomingTime: number } {
 		const d = Math.max(1e-6, this.params.duration);
@@ -85,10 +100,20 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 		const progress = Math.max(0, Math.min(1, (time - transitionStart) / d));
 		const spreadHalf = this.getLayerSpreadHalf();
 		const offset = spreadHalf * (1 - progress);
-		return {
-			outgoingTime: time - offset,
-			incomingTime: time + offset,
-		};
+		let outgoingTime = time - offset;
+		let incomingTime = time + offset;
+
+		const outB = this.getClipTimelineBounds(this.outgoingNode);
+		const inB = this.getClipTimelineBounds(this.incomingNode);
+		const j = this.params.junctionTime;
+		if (outB && inB) {
+			// Widened same-file spread can push `incomingTime` well past the cut at progress≈0,
+			// so wipes/crossfades looked like they started seconds early. Keep samples on-segment.
+			outgoingTime = Math.min(Math.max(outgoingTime, outB.start), Math.min(outB.end, j));
+			incomingTime = Math.max(Math.min(incomingTime, inB.end), Math.max(inB.start, j));
+		}
+
+		return { outgoingTime, incomingTime };
 	}
 
 	private isInPeerTransitionWindow(time: number): boolean {
@@ -106,6 +131,8 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 
 	async prefetch({ renderer, time }: { renderer: CanvasRenderer; time: number }): Promise<void> {
 		const inTransition = this.isInTransition(time);
+		// Mirror render(): another transition owns this timeline instant — do not prefetch our
+		// children at `time` (would stomp the shared middle clip's prefetchedFrame before it renders).
 		if (!inTransition && this.isInPeerTransitionWindow(time)) {
 			return;
 		}
@@ -113,22 +140,16 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 		const { outgoingTime, incomingTime } = inTransition
 			? this.getTransitionLayerDecodeTimes(time)
 			: { outgoingTime: time, incomingTime: time };
-		const promises: Promise<void>[] = [];
+
 		if (inTransition) {
-			if (this.outgoingNode) {
-				promises.push(this.outgoingNode.prefetch({ renderer, time: outgoingTime }));
-			}
-			if (this.incomingNode) {
-				promises.push(this.incomingNode.prefetch({ renderer, time: incomingTime }));
-			}
+			const outP = this.outgoingNode?.prefetch({ renderer, time: outgoingTime }) ?? Promise.resolve();
+			const inP = this.incomingNode?.prefetch({ renderer, time: incomingTime }) ?? Promise.resolve();
+			await Promise.all([outP, inP]);
 		} else if (time < this.params.junctionTime) {
-			if (this.outgoingNode) {
-				promises.push(this.outgoingNode.prefetch({ renderer, time }));
-			}
+			if (this.outgoingNode) await this.outgoingNode.prefetch({ renderer, time });
 		} else if (this.incomingNode && !this.params.suppressIncomingOutsideWindow) {
-			promises.push(this.incomingNode.prefetch({ renderer, time }));
+			await this.incomingNode.prefetch({ renderer, time });
 		}
-		await Promise.all(promises);
 	}
 
 	async render({ renderer, time }: { renderer: CanvasRenderer; time: number }): Promise<void> {

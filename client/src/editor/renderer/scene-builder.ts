@@ -243,12 +243,27 @@ export function buildScene(params: BuildSceneParams) {
 		}
 
 		for (const plan of transitionPlans) {
+			const selfHalf = plan.duration / 2;
+			const selfStart = plan.junctionTime - selfHalf;
+			const selfEnd = plan.junctionTime + selfHalf;
+
+			// Peer windows must overlap *this* transition in time. Using another cut's full
+			// [junction ± d/2] often starts before this cut's junction (long transition on a later
+			// clip). isInPeerTransitionWindow then skipped drawing the outgoing clip while the playhead
+			// was still upstream — black / "early" transition glitches and extra decode churn on the
+			// middle segment. Only the intersection of the two windows can actually double-paint.
 			const peerWindows = transitionPlans
 				.filter((p) => p !== plan)
-				.map((p) => ({
-					start: p.junctionTime - p.duration / 2,
-					end: p.junctionTime + p.duration / 2,
-				}));
+				.map((p) => {
+					const ph = p.duration / 2;
+					const pStart = p.junctionTime - ph;
+					const pEnd = p.junctionTime + ph;
+					const start = Math.max(selfStart, pStart);
+					const end = Math.min(selfEnd, pEnd);
+					if (start >= end - 1e-6) return null;
+					return { start, end };
+				})
+				.filter((w): w is { start: number; end: number } => w != null);
 
 			// Middle segment (incoming of this cut) must not use "incoming-only" fallback when it
 			// is the outgoing side of a later cut — otherwise both TransitionNodes paint that clip

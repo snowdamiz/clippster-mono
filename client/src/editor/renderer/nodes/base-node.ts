@@ -46,20 +46,11 @@ export class BaseNode<Params extends BaseNodeParams = BaseNodeParams> {
 		renderer: CanvasRenderer;
 		time: number;
 	}): Promise<void> {
-		// Phase 1: prefetch all children in parallel (video frame decoding)
-		if (this.children.length > 1) {
-			await this.prefetch({ renderer, time });
-		}
-
-		// Phase 2: render children sequentially (compositing order matters)
-		if (this.children.length > 1) {
-			for (const child of this.children) {
-				await child.render({ renderer, time });
-			}
-		} else {
-			for (const child of this.children) {
-				await child.render({ renderer, time });
-			}
+		// Prefetch immediately before each child renders so a later sibling cannot overwrite a
+		// shared VideoNode prefetched frame (chained transitions reuse the middle clip).
+		for (const child of this.children) {
+			await child.prefetch({ renderer, time });
+			await child.render({ renderer, time });
 		}
 	}
 }
