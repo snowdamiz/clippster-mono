@@ -243,27 +243,26 @@ export function buildScene(params: BuildSceneParams) {
 		}
 
 		for (const plan of transitionPlans) {
-			const selfHalf = plan.duration / 2;
-			const selfStart = plan.junctionTime - selfHalf;
-			const selfEnd = plan.junctionTime + selfHalf;
-
-			// Peer windows must overlap *this* transition in time. Using another cut's full
-			// [junction ± d/2] often starts before this cut's junction (long transition on a later
-			// clip). isInPeerTransitionWindow then skipped drawing the outgoing clip while the playhead
-			// was still upstream — black / "early" transition glitches and extra decode churn on the
-			// middle segment. Only the intersection of the two windows can actually double-paint.
+			// Peer suppression: while `time` is inside another transition's composite window, this node
+			// must not run simple outgoing/incoming draws (avoids stomping shared VideoNode state).
+			//
+			// - For *earlier* peers (p.junction < this.junction): use their **full** window so this
+			//   later cut stays idle during the earlier composite (regression if we only intersected:
+			//   adjacent windows rarely overlap, so the 2nd TransitionNode drew B on top and hid T1).
+			// - For *later* peers (p.junction > this.junction): clip **start** to this junction so a
+			//   long later transition does not suppress this cut's outgoing clip while still on the
+			//   left-hand segment (upstream black / false "early" transition).
 			const peerWindows = transitionPlans
 				.filter((p) => p !== plan)
 				.map((p) => {
 					const ph = p.duration / 2;
-					const pStart = p.junctionTime - ph;
-					const pEnd = p.junctionTime + ph;
-					const start = Math.max(selfStart, pStart);
-					const end = Math.min(selfEnd, pEnd);
-					if (start >= end - 1e-6) return null;
+					let start = p.junctionTime - ph;
+					const end = p.junctionTime + ph;
+					if (p.junctionTime > plan.junctionTime + 1e-9) {
+						start = Math.max(start, plan.junctionTime);
+					}
 					return { start, end };
-				})
-				.filter((w): w is { start: number; end: number } => w != null);
+				});
 
 			// Middle segment (incoming of this cut) must not use "incoming-only" fallback when it
 			// is the outgoing side of a later cut — otherwise both TransitionNodes paint that clip

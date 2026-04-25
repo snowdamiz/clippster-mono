@@ -1181,6 +1181,7 @@ commands::file_utils::generate_video_thumbnail,
             downloads::download_pumpfun_vod_segment,
             downloads::download_kick_vod,
             downloads::download_kick_vod_segment,
+            downloads::probe_kick_vod_duration,
             twitch::download_twitch_vod,
             twitch::download_twitch_vod_segment,
 

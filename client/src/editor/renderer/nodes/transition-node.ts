@@ -58,7 +58,7 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 			this.scratchIn.width = w;
 			this.scratchIn.height = h;
 		}
-		return { out: this.scratchOut, in: this.scratchIn };
+		return { out: this.scratchOut!, in: this.scratchIn! };
 	}
 
 	private getSampleHalfWidth(): number {
@@ -93,8 +93,18 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 		return null;
 	}
 
+	private isWithinClipTimelineBounds(node: BaseNode | null, time: number): boolean {
+		const bounds = this.getClipTimelineBounds(node);
+		if (!bounds) return true;
+		return time >= bounds.start && time < bounds.end;
+	}
+
 	/** Only valid when {@link isInTransition} is true for `time`. */
 	private getTransitionLayerDecodeTimes(time: number): { outgoingTime: number; incomingTime: number } {
+		if (!this.useWidenedLayerSpread()) {
+			return { outgoingTime: time, incomingTime: time };
+		}
+
 		const d = Math.max(1e-6, this.params.duration);
 		const transitionStart = this.params.junctionTime - d / 2;
 		const progress = Math.max(0, Math.min(1, (time - transitionStart) / d));
@@ -146,8 +156,14 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 			const inP = this.incomingNode?.prefetch({ renderer, time: incomingTime }) ?? Promise.resolve();
 			await Promise.all([outP, inP]);
 		} else if (time < this.params.junctionTime) {
-			if (this.outgoingNode) await this.outgoingNode.prefetch({ renderer, time });
-		} else if (this.incomingNode && !this.params.suppressIncomingOutsideWindow) {
+			if (this.outgoingNode && this.isWithinClipTimelineBounds(this.outgoingNode, time)) {
+				await this.outgoingNode.prefetch({ renderer, time });
+			}
+		} else if (
+			this.incomingNode &&
+			!this.params.suppressIncomingOutsideWindow &&
+			this.isWithinClipTimelineBounds(this.incomingNode, time)
+		) {
 			await this.incomingNode.prefetch({ renderer, time });
 		}
 	}
@@ -158,8 +174,14 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 				return;
 			}
 			if (time < this.params.junctionTime) {
-				if (this.outgoingNode) await this.outgoingNode.render({ renderer, time });
-			} else if (this.incomingNode && !this.params.suppressIncomingOutsideWindow) {
+				if (this.outgoingNode && this.isWithinClipTimelineBounds(this.outgoingNode, time)) {
+					await this.outgoingNode.render({ renderer, time });
+				}
+			} else if (
+				this.incomingNode &&
+				!this.params.suppressIncomingOutsideWindow &&
+				this.isWithinClipTimelineBounds(this.incomingNode, time)
+			) {
 				await this.incomingNode.render({ renderer, time });
 			}
 			return;
