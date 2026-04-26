@@ -305,6 +305,8 @@ pub struct ExportConfig {
 
     pub total_duration: f64,
 
+    pub fps: i32,
+
     pub width: i32,
 
     pub height: i32,
@@ -1433,7 +1435,6 @@ pub async fn export_video_editor_project(
 
             // Shape wipes
             "circleWipe" => "circleopen",
-            "diamondWipe" => "diagtl",
             "clockWipe" => "radial",
 
             // Zoom — xfade only defines zoomin; map zoomOut to the complementary iris
@@ -1451,13 +1452,34 @@ pub async fn export_video_editor_project(
         }
     }
 
+    fn diamond_wipe_expr(duration: f64, fps: i32) -> String {
+        let transition_frames = (duration.max(0.0) * (fps.max(1) as f64)).ceil().max(2.0);
+        let completion_floor = (2.0 / transition_frames).min(0.5);
+        let u = format!("((1-P)/(1-{completion_floor:.12}))");
+        let reveal = format!(
+            "if(lte({u},0.5),sqrt({u}*2),2-sqrt((1-{u})*2))",
+            u = u
+        );
+        format!(
+            "if(gte(P,1),A,if(lte(P,{completion_floor:.12}),B,if(lte(abs((X-W/2)/(W/2))+abs((Y-H/2)/(H/2)),{reveal}),B,A)))",
+            completion_floor = completion_floor,
+            reveal = reveal
+        )
+    }
+
     // Process video sources - concat if multiple, trim to timeline positions
+
+    const EXPORT_OVERLAP_EPSILON_SEC: f64 = 0.001;
+    const TRANSITION_TIME_SLACK: f64 = 1.0 / 30.0;
 
     let video_sources_overlap = if config.video_sources.len() > 1 {
         let s = &config.video_sources;
         (0..s.len()).any(|i| {
             (i + 1..s.len())
-                .any(|j| s[i].start_time < s[j].end_time && s[j].start_time < s[i].end_time)
+                .any(|j| {
+                    s[i].start_time < s[j].end_time - EXPORT_OVERLAP_EPSILON_SEC
+                        && s[j].start_time < s[i].end_time - EXPORT_OVERLAP_EPSILON_SEC
+                })
         })
     } else {
         false
@@ -1634,7 +1656,7 @@ pub async fn export_video_editor_project(
                 orig_i, trim_start, clip_dur, transform, effects_suffix
             );
             vf.push_str(&format!(
-                ",tpad=start_mode=black:start_duration={}:stop_mode=black:stop_duration={}[vlp{}]",
+                ",tpad=start_mode=add:start_duration={}:stop_mode=add:stop_duration={}:color=black[vlp{}]",
                 st, pad_end, orig_i
             ));
             filters.push(vf);
@@ -1757,8 +1779,13 @@ pub async fn export_video_editor_project(
             let half = (t.duration / 2.0).max(0.0);
             let incoming_idx = t.target_element_index;
             let outgoing_idx = incoming_idx - 1;
-            before_ext[incoming_idx] = before_ext[incoming_idx].max(half);
-            after_ext[outgoing_idx] = after_ext[outgoing_idx].max(half);
+            let gap_after = (
+                config.video_sources[incoming_idx].start_time
+                    - config.video_sources[outgoing_idx].end_time
+            )
+            .max(0.0);
+            before_ext[incoming_idx] = before_ext[incoming_idx].max(half + TRANSITION_TIME_SLACK);
+            after_ext[outgoing_idx] = after_ext[outgoing_idx].max(half + gap_after + TRANSITION_TIME_SLACK);
         }
 
         for i in 0..source_count {
@@ -1780,19 +1807,27 @@ pub async fn export_video_editor_project(
                 format!(",{}", effects_str)
             };
 
+            let before = before_ext[i].min(source.start_time.max(0.0));
+            let after = after_ext[i].max(0.0);
+            let effective_duration = (duration + before + after).max(0.0);
+            let padding_suffix = if after > 0.0001 {
+                format!(
+                    ",tpad=stop_mode=clone:stop_duration={:.6},trim=duration={:.6}",
+                    after, effective_duration
+                )
+            } else {
+                String::new()
+            };
+
             let mut chain = format!(
-                "[{}:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}{}",
-                i, trim_start, duration, transform, effects_suffix
+                "[{}:v]trim=start={}:duration={},setpts=PTS-STARTPTS{},{}{}",
+                i, trim_start, effective_duration, padding_suffix, transform, effects_suffix
             );
 
-            let before = before_ext[i];
-            let after = after_ext[i];
-            if before > 0.0001 || after > 0.0001 {
-                chain.push_str(&format!(
-                    ",tpad=start_mode=clone:start_duration={}:stop_mode=clone:stop_duration={}",
-                    before, after
-                ));
-            }
+            chain.push_str(&format!(
+                ",fps={},settb=AVTB,setsar=1,format=yuv420p",
+                config.fps
+            ));
 
             chain.push_str(&format!("[v{}]", i));
             filters.push(chain);
@@ -1806,7 +1841,9 @@ pub async fn export_video_editor_project(
             let segment_video_len = |idx: usize| -> f64 {
                 let s = &config.video_sources[idx];
                 let d = s.end_time - s.start_time;
-                d + before_ext[idx] + after_ext[idx]
+                let before = before_ext[idx].min(s.start_time.max(0.0));
+                let after = after_ext[idx].max(0.0);
+                d + before + after
             };
             let mut cur_v_len = segment_video_len(0);
 
@@ -1822,13 +1859,26 @@ pub async fn export_video_editor_project(
                 };
 
                 if let Some(t) = transition {
-                    let ffmpeg_transition = map_transition_type(&t.transition_type);
                     let offset = (cur_v_len - t.duration).max(0.0);
 
-                    filters.push(format!(
-                        "{}[v{}]xfade=transition={}:duration={}:offset={}{}",
-                        current_stream, i, ffmpeg_transition, t.duration, offset, output_label
-                    ));
+                    if t.transition_type == "diamondWipe" {
+                        let diamond_expr = diamond_wipe_expr(t.duration, config.fps);
+                        filters.push(format!(
+                            "{}[v{}]xfade=transition=custom:duration={}:offset={}:expr='{}'{}",
+                            current_stream,
+                            i,
+                            t.duration,
+                            offset,
+                            diamond_expr,
+                            output_label
+                        ));
+                    } else {
+                        let ffmpeg_transition = map_transition_type(&t.transition_type);
+                        filters.push(format!(
+                            "{}[v{}]xfade=transition={}:duration={}:offset={}{}",
+                            current_stream, i, ffmpeg_transition, t.duration, offset, output_label
+                        ));
+                    }
                     cur_v_len = cur_v_len + segment_video_len(i) - t.duration;
                 } else {
                     filters.push(format!(
@@ -1867,6 +1917,8 @@ pub async fn export_video_editor_project(
         // (echo) and drifted vs chained video.
         // Without transitions: keep concat behavior.
         if has_transitions {
+            let mut audio_mix_inputs = String::new();
+
             for i in 0..source_count {
                 let source = &config.video_sources[i];
 
@@ -1880,9 +1932,9 @@ pub async fn export_video_editor_project(
                 let after = after_ext[i].max(0.0);
 
                 let effective_duration = (base_duration + before + after).max(0.0);
-                let video_pad_len = before_ext[i] + after_ext[i];
-                let audio_pad_len = before + after;
-                let leading_silence = (video_pad_len - audio_pad_len).max(0.0);
+                let effective_start = (source.start_time - before).max(0.0);
+                let effective_end = source.start_time + base_duration + after;
+                let tail_pad = (config.total_duration - effective_end).max(0.0);
 
                 let mut audio_extras = String::new();
 
@@ -1914,7 +1966,6 @@ pub async fn export_video_editor_project(
                     audio_extras.push_str(",areverse");
                 }
 
-                // Pan/balance per clip
                 if let Some(pan_val) = source.pan {
                     if pan_val.abs() > 0.01 {
                         let left = ((1.0 - pan_val) / 2.0).clamp(0.0, 1.0);
@@ -1923,59 +1974,58 @@ pub async fn export_video_editor_project(
                     }
                 }
 
-                let body_label = format!("[va_body{}]", i);
-                let body_chain = if source_has_audio[i] {
+                let incoming_transition = transitions
+                    .iter()
+                    .find(|t| t.target_element_index == i && t.duration > 0.0)
+                    .map(|t| t.duration)
+                    .unwrap_or(0.0);
+                let outgoing_transition = transitions
+                    .iter()
+                    .find(|t| t.target_element_index == i + 1 && t.duration > 0.0)
+                    .map(|t| t.duration)
+                    .unwrap_or(0.0);
+
+                let delay_ms = (effective_start * 1000.0).round().max(0.0) as i64;
+                let mut chain = if source_has_audio[i] {
                     format!(
-                        "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}{}",
-                        i, trim_start, effective_duration, audio_extras, body_label
+                        "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}",
+                        i, trim_start, effective_duration, audio_extras
                     )
                 } else {
                     format!(
                         "anullsrc=r=48000:cl=stereo,atrim=duration={},asetpts=PTS-STARTPTS{}",
-                        effective_duration, body_label
+                        effective_duration, audio_extras
                     )
                 };
-                filters.push(body_chain);
 
-                if leading_silence > 0.0001 {
-                    let gap_label = format!("[va_gap{}]", i);
-                    filters.push(format!(
-                        "anullsrc=r=48000:cl=stereo,atrim=duration={:.6},asetpts=PTS-STARTPTS{}",
-                        leading_silence, gap_label
-                    ));
-                    filters.push(format!(
-                        "{}{}concat=n=2:v=0:a=1[va{}]",
-                        gap_label, body_label, i
-                    ));
-                } else {
-                    filters.push(format!("{}anull[va{}]", body_label, i));
+                if incoming_transition > 0.0001 {
+                    chain.push_str(&format!(",afade=t=in:st=0:d={:.6}", incoming_transition));
                 }
-            }
 
-            let mut current_audio = "[va0]".to_string();
-            for i in 1..source_count {
-                let transition = transitions
-                    .iter()
-                    .find(|t| t.target_element_index == i && t.duration > 0.0);
-                let next_in = format!("[va{}]", i);
-                let out_label = if i == source_count - 1 {
-                    "[va]".to_string()
-                } else {
-                    format!("[va_xc{}]", i)
-                };
-                if let Some(t) = transition {
-                    filters.push(format!(
-                        "{}{}acrossfade=d={:.6}:c1=tri:c2=tri{}",
-                        current_audio, next_in, t.duration, out_label
-                    ));
-                } else {
-                    filters.push(format!(
-                        "{}{}concat=n=2:v=0:a=1{}",
-                        current_audio, next_in, out_label
+                if outgoing_transition > 0.0001 {
+                    let fade_start = (effective_duration - outgoing_transition).max(0.0);
+                    chain.push_str(&format!(
+                        ",afade=t=out:st={:.6}:d={:.6}",
+                        fade_start, outgoing_transition
                     ));
                 }
-                current_audio = out_label;
+
+                if delay_ms > 0 {
+                    chain.push_str(&format!(",adelay={}|{}:all=1", delay_ms, delay_ms));
+                }
+                if tail_pad > 0.0001 {
+                    chain.push_str(&format!(",apad=pad_dur={}", tail_pad));
+                }
+
+                chain.push_str(&format!("[va{}]", i));
+                filters.push(chain);
+                audio_mix_inputs.push_str(&format!("[va{}]", i));
             }
+
+            filters.push(format!(
+                "{}amix=inputs={}:duration=longest:dropout_transition=0[va]",
+                audio_mix_inputs, source_count
+            ));
         } else {
             let mut audio_concat_inputs = String::new();
 
@@ -2593,7 +2643,7 @@ pub async fn export_video_editor_project(
     // Optional intro + outro: concatenate after the full composite ([vout]/[aout])
     let w = config.width;
     let h = config.height;
-    let fps = 30;
+    let fps = config.fps.max(1);
 
     let mut final_video_map = "[vout]".to_string();
     let mut final_audio_map = "[aout]".to_string();

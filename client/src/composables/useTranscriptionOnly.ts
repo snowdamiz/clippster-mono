@@ -20,6 +20,13 @@ export interface TranscriptionOptions {
   organizationId?: number | null;
 }
 
+interface UseTranscriptionOnlyOptions {
+  showSuccessToast?: boolean;
+  showErrorToast?: boolean;
+  showChunkCompletionToast?: boolean;
+  showCacheReuseToast?: boolean;
+}
+
 export interface TranscriptionProgress {
   stage:
     | 'initializing'
@@ -36,7 +43,7 @@ export interface TranscriptionProgress {
   error?: string;
 }
 
-export function useTranscriptionOnly() {
+export function useTranscriptionOnly(options: UseTranscriptionOnlyOptions = {}) {
   const isProcessing = ref(false);
   const isCancelled = ref(false);
   const progress = ref<TranscriptionProgress>({
@@ -45,8 +52,14 @@ export function useTranscriptionOnly() {
     message: '',
   });
   const { success: showSuccess, error: showError } = useToast();
+  const shouldShowSuccessToast = options.showSuccessToast ?? true;
+  const shouldShowErrorToast = options.showErrorToast ?? true;
 
-  const transcriptCache = useChunkedTranscriptCache();
+  const transcriptCache = useChunkedTranscriptCache({
+    showCompletionToast: options.showChunkCompletionToast ?? true,
+    showCacheReuseToast: options.showCacheReuseToast ?? true,
+    showErrorToast: options.showErrorToast ?? true,
+  });
   let abortController: AbortController | null = null;
   let currentOrganizationId: number | null = null;
 
@@ -190,7 +203,9 @@ export function useTranscriptionOnly() {
         error: errorMessage,
       };
 
-      showError('Transcription failed', errorMessage, undefined, 'clips');
+      if (shouldShowErrorToast) {
+        showError('Transcription failed', errorMessage, undefined, 'clips');
+      }
       return { success: false, error: errorMessage };
     } finally {
       isProcessing.value = false;
@@ -334,7 +349,9 @@ export function useTranscriptionOnly() {
         message: 'Transcript ready!',
       };
       dispatchTranscriptUpdated(projectId);
-      showSuccess('Transcription complete', 'Transcript is ready for viewing', undefined, 'clips');
+      if (shouldShowSuccessToast) {
+        showSuccess('Transcription complete', 'Transcript is ready for viewing', undefined, 'clips');
+      }
       return { success: true, alreadyTranscribed: true };
     }
 
@@ -407,7 +424,9 @@ export function useTranscriptionOnly() {
     };
 
     dispatchTranscriptUpdated(projectId);
-    showSuccess('Transcription complete', 'Transcript is ready for viewing');
+    if (shouldShowSuccessToast) {
+      showSuccess('Transcription complete', 'Transcript is ready for viewing');
+    }
 
     return { success: true };
   }

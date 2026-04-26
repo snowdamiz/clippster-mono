@@ -46,8 +46,6 @@ export class BaseNode<Params extends BaseNodeParams = BaseNodeParams> {
 		renderer: CanvasRenderer;
 		time: number;
 	}): Promise<void> {
-		// Prefetch immediately before each child renders so a later sibling cannot overwrite a
-		// shared VideoNode prefetched frame (chained transitions reuse the middle clip).
 		for (const child of this.children) {
 			await child.prefetch({ renderer, time });
 			await child.render({ renderer, time });

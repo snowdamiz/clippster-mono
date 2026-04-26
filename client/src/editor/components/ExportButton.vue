@@ -761,7 +761,12 @@ async function transcribeExportedVideo(clipId: string, videoPath: string) {
 		showToast("Generating transcript for exported video...", "info", "clips");
 
 		// Start transcription in the background (non-blocking)
-		const { transcribeProject } = useTranscriptionOnly();
+		const { transcribeProject } = useTranscriptionOnly({
+			showSuccessToast: false,
+			showErrorToast: false,
+			showChunkCompletionToast: false,
+			showCacheReuseToast: false,
+		});
 		const result = await transcribeProject(tempProjectId, {
 			organizationId: null, // Use user's own transcription
 		});
@@ -855,7 +860,7 @@ async function handleCleanupProject() {
 
 	// Show confirmation dialog
 	const confirmed = await confirm(
-		"Remove Editor Project?\n\nThis will delete the editor project and source files. The exported video will remain in Built Clips."
+		"Close and Remove Editor Project?\n\nThis will close this project in the video editor and permanently remove its editable project files. After this, it can no longer be modified in the video editor. The exported video will remain in Built Clips."
 	);
 
 	if (!confirmed) return;
@@ -883,7 +888,7 @@ async function handleCleanupProject() {
 		// Show success toast
 		const { useToast } = await import("@/composables/useToast");
 		const { showToast } = useToast();
-		showToast("Project files cleaned up", "success", "projects");
+		showToast("Editor project removed", "success", "projects");
 
 		// Close dialog and navigate to video editor projects page
 		isOpen.value = false;
@@ -894,7 +899,7 @@ async function handleCleanupProject() {
 		console.error("[ExportButton] Failed to clean up project:", err);
 		const { useToast } = await import("@/composables/useToast");
 		const { showToast } = useToast();
-		showToast(err instanceof Error ? err.message : "Failed to clean up project", "error", "projects");
+		showToast(err instanceof Error ? err.message : "Failed to remove editor project", "error", "projects");
 	}
 }
 
@@ -1029,7 +1034,7 @@ function handlePublishNow() {
 											</button>
 											<button class="export-dialog__success-btn export-dialog__success-btn--warning" @click="handleCleanupProject">
 												<Trash2 :size="16" />
-												Clean Up Project Files
+												Close and Permanently Remove Editor Project
 											</button>
 											<button class="export-dialog__success-btn" @click="handleClose">
 												Close

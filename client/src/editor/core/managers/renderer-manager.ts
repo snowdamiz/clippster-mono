@@ -201,6 +201,7 @@ interface TauriExportConfig {
 	transitions: TauriTransitionData[] | null;
 	output_path: string;
 	total_duration: number;
+	fps: number;
 	width: number;
 	height: number;
 	cover_timestamp: number | null;
@@ -293,11 +294,13 @@ export class RendererManager {
 			onProgress?.({ progress: 0.18 });
 
 			// Build export config from timeline data
+			const exportFps = Math.max(1, Math.round(options.fps ?? 30));
 			const config = this.buildExportConfig({
 				tracks,
 				mediaAssets,
 				outputPath,
 				duration,
+				fps: exportFps,
 				canvasSize,
 				textOverlays,
 				stickerOverlays,
@@ -317,7 +320,6 @@ export class RendererManager {
 				outputPath,
 				duration,
 				projectName: activeProject.metadata.name,
-				sourceProjectId: activeProject.settings?.sourceProjectId ?? activeProject.metadata.id,
 			});
 
 			onProgress?.({ progress: 1.0 });
@@ -340,6 +342,7 @@ export class RendererManager {
 		mediaAssets,
 		outputPath,
 		duration,
+		fps,
 		canvasSize,
 		textOverlays,
 		stickerOverlays,
@@ -350,6 +353,7 @@ export class RendererManager {
 		mediaAssets: MediaAsset[];
 		outputPath: string;
 		duration: number;
+		fps: number;
 		canvasSize: { width: number; height: number };
 		textOverlays: TauriTextOverlay[];
 		stickerOverlays: TauriStickerOverlay[];
@@ -662,6 +666,7 @@ export class RendererManager {
 			transitions: transitionData.length > 0 ? transitionData : null,
 			output_path: outputPath,
 			total_duration: duration,
+			fps,
 			width: canvasSize.width,
 			height: canvasSize.height,
 			cover_timestamp: adjustedCoverTimestamp,
@@ -1177,12 +1182,10 @@ export class RendererManager {
 		outputPath,
 		duration,
 		projectName,
-		sourceProjectId,
 	}: {
 		outputPath: string;
 		duration: number;
 		projectName: string;
-		sourceProjectId: string;
 	}): Promise<void> {
 		try {
 			const { getDatabase, generateId, timestamp, getCurrentUserId } = await import("@/services/database/core");
@@ -1191,31 +1194,12 @@ export class RendererManager {
 			// Validate that the project_id exists in the projects table
 			// The clips table has a FOREIGN KEY constraint on project_id
 			const db = await getDatabase();
-			const projectExists = await db.select<{ id: string }[]>(
-				'SELECT id FROM projects WHERE id = ?',
-				[sourceProjectId]
-			);
 
-			// If project doesn't exist (e.g., video editor project), create it
-			if (!projectExists || projectExists.length === 0) {
-				console.log(
-					`[RendererManager] Project '${sourceProjectId}' not found in projects table, creating it for video editor export`
-				);
-				
-				const userId = getCurrentUserId();
-				const now = timestamp();
-				
-				try {
-					await db.execute(
-						`INSERT INTO projects (id, name, created_at, updated_at, user_id) VALUES (?, ?, ?, ?, ?)`,
-						[sourceProjectId, projectName, now, now, userId]
-					);
-					console.log(`[RendererManager] Created project entry for video editor project: ${sourceProjectId}`);
-				} catch (err) {
-					console.error(`[RendererManager] Failed to create project entry:`, err);
-					return;
-				}
-			}
+			await db.execute(
+				`UPDATE clips
+				 SET project_name = COALESCE(project_name, name), project_id = NULL
+				 WHERE source = 'video_editor' AND project_id IS NOT NULL`
+			);
 
 			// Prefer actual muxed duration (matches intro/outro concat and any encoder drift)
 			let clipDuration = duration;
@@ -1261,13 +1245,14 @@ export class RendererManager {
 
 			await db.execute(
 				`INSERT INTO clips (
-					id, project_id, name, file_path, duration, start_time, end_time,
+					id, project_id, project_name, name, file_path, duration, start_time, end_time,
 					status, build_status, built_file_path, built_thumbnail_path,
 					built_duration, built_file_size, built_at, created_at, updated_at, user_id, source
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				[
 					clipId,
-					sourceProjectId,
+					null,
+					projectName,
 					projectName,
 					outputPath,
 					clipDuration,

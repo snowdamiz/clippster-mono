@@ -388,19 +388,31 @@ function renderDiamondWipe(
 	ctx: Ctx, w: number, h: number,
 	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
 ): void {
-	const eased = easeInOutCubic(t);
-	const maxSize = Math.max(w, h);
-	const size = maxSize * eased;
+	const u = Math.max(0, Math.min(1, t));
+	if (u <= 0) {
+		ctx.drawImage(outgoing, 0, 0, w, h);
+		return;
+	}
+	if (u >= 1) {
+		ctx.drawImage(incoming, 0, 0, w, h);
+		return;
+	}
 	const cx = w / 2;
 	const cy = h / 2;
+	const areaRatio = u;
+	const reveal = areaRatio <= 0.5
+		? Math.sqrt(areaRatio * 2)
+		: 2 - Math.sqrt((1 - areaRatio) * 2);
+	const halfW = (w / 2) * reveal;
+	const halfH = (h / 2) * reveal;
 
 	ctx.drawImage(outgoing, 0, 0, w, h);
 	ctx.save();
 	ctx.beginPath();
-	ctx.moveTo(cx, cy - size);
-	ctx.lineTo(cx + size, cy);
-	ctx.lineTo(cx, cy + size);
-	ctx.lineTo(cx - size, cy);
+	ctx.moveTo(cx, cy - halfH);
+	ctx.lineTo(cx + halfW, cy);
+	ctx.lineTo(cx, cy + halfH);
+	ctx.lineTo(cx - halfW, cy);
 	ctx.closePath();
 	ctx.clip();
 	ctx.drawImage(incoming, 0, 0, w, h);
@@ -411,12 +423,20 @@ function renderClockWipe(
 	ctx: Ctx, w: number, h: number,
 	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
 ): void {
-	const eased = easeInOutCubic(t);
+	const u = Math.max(0, Math.min(1, t));
+	if (u <= 0) {
+		ctx.drawImage(outgoing, 0, 0, w, h);
+		return;
+	}
+	if (u >= 1) {
+		ctx.drawImage(incoming, 0, 0, w, h);
+		return;
+	}
 	const cx = w / 2;
 	const cy = h / 2;
 	const maxRadius = Math.sqrt(w * w + h * h);
 	const startAngle = -Math.PI / 2;
-	const endAngle = startAngle + Math.PI * 2 * eased;
+	const endAngle = startAngle + Math.PI * 2 * u;
 
 	ctx.drawImage(outgoing, 0, 0, w, h);
 	ctx.save();

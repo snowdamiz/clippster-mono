@@ -34,11 +34,20 @@ export interface ChunkedTranscriptSession {
   error: string | null;
 }
 
-export function useChunkedTranscriptCache() {
+interface UseChunkedTranscriptCacheOptions {
+  showCompletionToast?: boolean;
+  showCacheReuseToast?: boolean;
+  showErrorToast?: boolean;
+}
+
+export function useChunkedTranscriptCache(options: UseChunkedTranscriptCacheOptions = {}) {
   const currentSession = ref<ChunkedTranscriptSession | null>(null);
   const isProcessing = ref(false);
   const error = ref<string | null>(null);
   const { success: showSuccess, error: showError } = useToast();
+  const shouldShowCompletionToast = options.showCompletionToast ?? true;
+  const shouldShowCacheReuseToast = options.showCacheReuseToast ?? true;
+  const shouldShowErrorToast = options.showErrorToast ?? true;
 
   // Computed properties
   const sessionProgress = computed(() => currentSession.value?.progress || 0);
@@ -67,7 +76,9 @@ export function useChunkedTranscriptCache() {
         // But for initialization, if we have a record, let's return it.
         // If it's complete, return success.
         if (existingChunked.is_complete) {
-          showSuccess('Transcript cached', 'Using existing chunked transcript for this video');
+          if (shouldShowCacheReuseToast) {
+            showSuccess('Transcript cached', 'Using existing chunked transcript for this video');
+          }
           return { success: true, sessionId: existingChunked.id };
         }
 
@@ -136,7 +147,9 @@ export function useChunkedTranscriptCache() {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       error.value = errorMessage;
-      showError('Initialization failed', errorMessage);
+      if (shouldShowErrorToast) {
+        showError('Initialization failed', errorMessage);
+      }
       return { success: false, error: errorMessage };
     } finally {
       isProcessing.value = false;
@@ -198,10 +211,12 @@ export function useChunkedTranscriptCache() {
       // Update session status if complete
       if (currentSession.value.completedChunks >= currentSession.value.totalChunks) {
         currentSession.value.status = 'completed';
-        showSuccess(
-          'Transcription complete',
-          `All ${currentSession.value.totalChunks} chunks transcribed and cached`
-        );
+        if (shouldShowCompletionToast) {
+          showSuccess(
+            'Transcription complete',
+            `All ${currentSession.value.totalChunks} chunks transcribed and cached`
+          );
+        }
       }
 
       return { success: true };

@@ -59,6 +59,11 @@ export class VideoCache {
 			return sinkData.currentFrame;
 		}
 
+		const eofFrame: WrappedCanvas | null = sinkData.currentFrame;
+		if (eofFrame && !sinkData.iterator && eofFrame.timestamp <= time) {
+			return eofFrame;
+		}
+
 		if (
 			sinkData.iterator &&
 			sinkData.currentFrame &&
@@ -90,6 +95,11 @@ export class VideoCache {
 	}): boolean {
 		return time >= frameStartTime && time < frame.timestamp + frame.duration;
 	}
+
+	private getFrameTimestamp(frame: WrappedCanvas | null): number | null {
+		return frame ? frame.timestamp : null;
+	}
+
 	private async iterateToTime({
 		sinkData,
 		targetTime,
@@ -106,6 +116,8 @@ export class VideoCache {
 					await sinkData.prefetchPromise;
 				}
 
+				if (!sinkData.iterator) break;
+
 				// Check if the nextFrame (which might have just arrived) is what we need
 				if (
 					sinkData.prefetchedFrames.length > 0 &&
@@ -115,9 +127,14 @@ export class VideoCache {
 					sinkData.currentFrame = prefetchedFrame;
 					sinkData.currentFrameStartTime = prefetchedFrame.timestamp;
 				} else {
-					const { value: frame, done } = await sinkData.iterator.next();
+					const iterator = sinkData.iterator;
+					if (!iterator) break;
+					const { value: frame, done } = await iterator.next();
 
-					if (done || !frame) break;
+					if (done || !frame) {
+						sinkData.iterator = null;
+						break;
+					}
 
 					sinkData.currentFrame = frame;
 					sinkData.currentFrameStartTime = frame.timestamp;
@@ -153,6 +170,8 @@ export class VideoCache {
 		time: number;
 	}): Promise<WrappedCanvas | null> {
 		try {
+			const previousFrame: WrappedCanvas | null = sinkData.currentFrame;
+			const previousFrameTimestamp = previousFrame?.timestamp ?? null;
 			if (sinkData.prefetching && sinkData.prefetchPromise) {
 				await sinkData.prefetchPromise;
 			}
@@ -177,6 +196,23 @@ export class VideoCache {
 			const frame = await this.iterateToTime({ sinkData, targetTime: time });
 			if (frame) {
 				return frame;
+			}
+
+			const exhaustedFrame: WrappedCanvas | null = sinkData.currentFrame;
+			const exhaustedFrameTimestamp = this.getFrameTimestamp(exhaustedFrame);
+			if (
+				exhaustedFrame &&
+				exhaustedFrameTimestamp != null &&
+				!sinkData.iterator &&
+				exhaustedFrameTimestamp <= time
+			) {
+				return exhaustedFrame;
+			}
+
+			if (previousFrame && previousFrameTimestamp != null && previousFrameTimestamp <= time) {
+				sinkData.currentFrame = previousFrame;
+				sinkData.currentFrameStartTime = previousFrameTimestamp;
+				return previousFrame;
 			}
 
 			// Startup streams can legitimately have their first decodable frame after 0. In that
@@ -207,6 +243,20 @@ export class VideoCache {
 		sinkData.prefetchPromise = this.prefetchNextFrames({ sinkData });
 	}
 
+	private queuePrefetchTopUp({ sinkData }: { sinkData: VideoSinkData }): void {
+		queueMicrotask(() => {
+			if (
+				sinkData.prefetching ||
+				!sinkData.iterator ||
+				sinkData.prefetchedFrames.length >= PREFETCH_QUEUE_SIZE
+			) {
+				return;
+			}
+
+			this.startPrefetch({ sinkData });
+		});
+	}
+
 	private async prefetchNextFrames({
 		sinkData,
 	}: {
@@ -225,13 +275,21 @@ export class VideoCache {
 			) {
 				const { value: frame, done } = await sinkData.iterator.next();
 
-				if (!done && frame) {
+				if (done) {
+					sinkData.iterator = null;
+				} else if (frame) {
 					sinkData.prefetchedFrames.push(frame);
 				}
 			}
 
 			sinkData.prefetching = false;
 			sinkData.prefetchPromise = null;
+			if (
+				sinkData.iterator &&
+				sinkData.prefetchedFrames.length < PREFETCH_QUEUE_SIZE
+			) {
+				this.queuePrefetchTopUp({ sinkData });
+			}
 		} catch (error) {
 			console.warn("Prefetch failed:", error);
 			sinkData.prefetching = false;

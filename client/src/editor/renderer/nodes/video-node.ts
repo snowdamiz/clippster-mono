@@ -13,6 +13,21 @@ import { computeAnimationTransforms, applyAnimationToContext } from "../effects/
 import { hasMasks, setupMaskClip } from "./mask-compositor";
 
 const VIDEO_EPSILON = 1 / 1000;
+const TRANSITION_DEBUG_KEY = "__clippsterTransitionDebug" as const;
+
+type TransitionDebugContext = {
+	transitionType: string;
+	layer: "outgoing" | "incoming";
+	phase: "prefetch" | "render";
+	timelineTime: number;
+	progress: number;
+	outgoingTime: number;
+	incomingTime: number;
+};
+
+type DebugRenderer = CanvasRenderer & {
+	[TRANSITION_DEBUG_KEY]?: TransitionDebugContext;
+};
 
 export interface VideoNodeParams {
 	url: string;
@@ -51,6 +66,25 @@ export interface VideoNodeParams {
 export class VideoNode extends BaseNode<VideoNodeParams> {
 	private prefetchedFrame: import("mediabunny").WrappedCanvas | null = null;
 	private transitionExtension: { before: number; after: number } = { before: 0, after: 0 };
+
+	private getDebugContext(renderer: CanvasRenderer): TransitionDebugContext | undefined {
+		return (renderer as DebugRenderer)[TRANSITION_DEBUG_KEY];
+	}
+
+	private logDebug(
+		renderer: CanvasRenderer,
+		event: string,
+		payload: Record<string, unknown>,
+	): void {
+		const context = this.getDebugContext(renderer);
+		if (!context || context.transitionType !== "diamondWipe") return;
+		console.log(`[TransitionDebug][VideoNode.${event}]`, {
+			elementId: this.params.elementId,
+			mediaId: this.params.mediaId,
+			...context,
+			...payload,
+		});
+	}
 
 	setTransitionExtension(extension: { before?: number; after?: number }) {
 		this.transitionExtension = {
@@ -103,8 +137,6 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 		const minElapsed = -this.transitionExtension.before;
 		const maxElapsed = this.params.duration + this.transitionExtension.after;
 		const elapsed = Math.max(minElapsed, Math.min(maxElapsed, rawElapsed));
-
-		const sourceOffset = this.getIntegratedSourceOffset(elapsed);
 		const computedTrimEnd =
 			this.params.trimStart + this.params.duration * (this.params.speed ?? 1);
 		// `trimEnd` is often persisted as `0` when unset (e.g. bridge imports). `??` does not
@@ -122,27 +154,38 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 		const afterSource = this.transitionExtension.after * speed;
 
 		if (this.params.reversed) {
+			const sourceOffset = this.getIntegratedSourceOffset(elapsed);
 			return Math.max(
 				Math.max(0, this.params.trimStart - afterSource),
 				Math.min(trimEnd + beforeSource, trimEnd - sourceOffset),
 			);
 		}
 
+		const sourceElapsed = Math.max(0, elapsed + this.transitionExtension.before);
+		const sourceOffset = this.getIntegratedSourceOffset(sourceElapsed);
+
 		return Math.max(
-			Math.max(0, this.params.trimStart - beforeSource),
-			Math.min(trimEnd + afterSource, this.params.trimStart + sourceOffset),
+			Math.max(0, this.params.trimStart),
+			Math.min(trimEnd + beforeSource + afterSource, this.params.trimStart + sourceOffset),
 		);
 	}
 
 	async prefetch({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
-		this.prefetchedFrame = null;
 		if (!this.isInRange(time)) return;
 
 		const videoTime = this.getSourceTime(time);
+		const started = performance.now();
 		this.prefetchedFrame = await videoCache.getFrameAt({
 			sinkKey: this.params.elementId,
 			file: this.params.file,
 			time: videoTime,
+		});
+		this.logDebug(renderer, "prefetch", {
+			requestedTimelineTime: time,
+			videoTime,
+			durationMs: performance.now() - started,
+			frameTimestamp: this.prefetchedFrame?.timestamp ?? null,
+			frameDuration: this.prefetchedFrame?.duration ?? null,
 		});
 	}
 
@@ -153,16 +196,27 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			return;
 		}
 
-		// Use pre-decoded frame from prefetch() if available, otherwise decode inline
 		const prefetched = this.prefetchedFrame;
 		this.prefetchedFrame = null;
+		const videoTime = this.getSourceTime(time);
+		const fetchStarted = performance.now();
 		const frame = prefetched ?? (await videoCache.getFrameAt({
 			sinkKey: this.params.elementId,
 			file: this.params.file,
-			time: this.getSourceTime(time),
+			time: videoTime,
 		}));
+		const fetchDurationMs = performance.now() - fetchStarted;
+		this.logDebug(renderer, "render-fetch", {
+			requestedTimelineTime: time,
+			videoTime,
+			usedPrefetchedFrame: !!prefetched,
+			fetchDurationMs,
+			frameTimestamp: frame?.timestamp ?? null,
+			frameDuration: frame?.duration ?? null,
+		});
 
 		if (frame) {
+			const renderStarted = performance.now();
 			renderer.context.save();
 
 			// Apply blend mode (composite operation)
@@ -326,24 +380,26 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			} else {
 				renderer.context.restore();
 			}
+			this.logDebug(renderer, "render-draw", {
+				requestedTimelineTime: time,
+				videoTime,
+				drawDurationMs: performance.now() - renderStarted,
+			});
 
-			// Apply advanced color adjustments that require post-draw compositing
 			if (ca) {
 				applyAdvancedColorAdjustments(renderer.context, renderer.width, renderer.height, ca);
 			}
 
-		// Apply chromakey (green screen removal)
-		if (this.params.chromakey?.enabled) {
-			applyChromakey(renderer.context, renderer.width, renderer.height, this.params.chromakey);
-		}
+			if (this.params.chromakey?.enabled) {
+				applyChromakey(renderer.context, renderer.width, renderer.height, this.params.chromakey);
+			}
 
-		// Apply color grading: curves then wheels
-		if (this.params.colorCurves) {
-			applyColorCurves(renderer.context, renderer.width, renderer.height, this.params.colorCurves);
-		}
-		if (this.params.colorWheels) {
-			applyColorWheels(renderer.context, renderer.width, renderer.height, this.params.colorWheels);
+			if (this.params.colorCurves) {
+				applyColorCurves(renderer.context, renderer.width, renderer.height, this.params.colorCurves);
+			}
+			if (this.params.colorWheels) {
+				applyColorWheels(renderer.context, renderer.width, renderer.height, this.params.colorWheels);
+			}
 		}
 	}
-}
 }

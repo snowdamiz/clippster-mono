@@ -4,9 +4,11 @@ import type {
 	TimelineElement,
 	TimelineTrack,
 } from "../../types/timeline";
+import type { Transition } from "../../types/transitions";
 import type { MediaAsset } from "../../types/assets";
 import { canElementHaveAudio } from "../../lib/timeline/element-utils";
 import { canTracktHaveAudio } from "../../lib/timeline";
+import { resolveTransitionMediaPair } from "../../lib/timeline/transition-pairing";
 import { mediaSupportsAudio } from "../../lib/media/media-utils";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
@@ -165,9 +167,20 @@ export interface AudioClipSource {
 	speed: number;
 	fadeIn: number;
 	fadeOut: number;
+	transitionExtensionBefore?: number;
+	transitionExtensionAfter?: number;
+	transitionFadeInDuration?: number;
+	transitionFadeOutDuration?: number;
 	audioEffects?: import("../../types/audio-effects").AudioEffect[];
 	pan?: number; // -1 (left) to +1 (right), 0 = center
 }
+
+type AudioTransitionTiming = {
+	before: number;
+	after: number;
+	fadeInDuration: number;
+	fadeOutDuration: number;
+};
 
 async function fetchLibraryAudioSource({
 	element,
@@ -270,6 +283,7 @@ function collectMediaAudioClip({
 	speed,
 	fadeIn,
 	fadeOut,
+	transitionTiming,
 }: {
 	element: TimelineElement;
 	mediaAsset: MediaAsset;
@@ -278,6 +292,7 @@ function collectMediaAudioClip({
 	speed: number;
 	fadeIn: number;
 	fadeOut: number;
+	transitionTiming?: AudioTransitionTiming;
 }): AudioClipSource {
 	return {
 		id: element.id,
@@ -292,9 +307,61 @@ function collectMediaAudioClip({
 		speed,
 		fadeIn,
 		fadeOut,
+		transitionExtensionBefore: transitionTiming?.before,
+		transitionExtensionAfter: transitionTiming?.after,
+		transitionFadeInDuration: transitionTiming?.fadeInDuration,
+		transitionFadeOutDuration: transitionTiming?.fadeOutDuration,
 		audioEffects: (element as any).audioEffects,
 		pan: (element as any).pan,
 	};
+}
+
+function buildAudioTransitionTimingMap({
+	tracks,
+	transitions,
+}: {
+	tracks: TimelineTrack[];
+	transitions?: Transition[];
+}): Map<string, AudioTransitionTiming> {
+	const timingByElementId = new Map<string, AudioTransitionTiming>();
+
+	for (const track of tracks) {
+		if (track.type !== "video") continue;
+
+		for (const transition of transitions ?? []) {
+			if (!track.elements.some((element) => element.id === transition.targetElementId)) {
+				continue;
+			}
+
+			const pair = resolveTransitionMediaPair({ transition, track });
+			if (!pair) continue;
+
+			const duration = Math.max(0, transition.duration);
+			const halfDuration = duration / 2;
+
+			const outgoingTiming = timingByElementId.get(pair.outgoing.id) ?? {
+				before: 0,
+				after: 0,
+				fadeInDuration: 0,
+				fadeOutDuration: 0,
+			};
+			outgoingTiming.after = Math.max(outgoingTiming.after, halfDuration);
+			outgoingTiming.fadeOutDuration = Math.max(outgoingTiming.fadeOutDuration, duration);
+			timingByElementId.set(pair.outgoing.id, outgoingTiming);
+
+			const incomingTiming = timingByElementId.get(pair.incoming.id) ?? {
+				before: 0,
+				after: 0,
+				fadeInDuration: 0,
+				fadeOutDuration: 0,
+			};
+			incomingTiming.before = Math.max(incomingTiming.before, halfDuration);
+			incomingTiming.fadeInDuration = Math.max(incomingTiming.fadeInDuration, duration);
+			timingByElementId.set(pair.incoming.id, incomingTiming);
+		}
+	}
+
+	return timingByElementId;
 }
 
 export async function collectAudioMixSources({
@@ -354,9 +421,11 @@ export async function collectAudioMixSources({
 export async function collectAudioClips({
 	tracks,
 	mediaAssets,
+	transitions,
 }: {
 	tracks: TimelineTrack[];
 	mediaAssets: MediaAsset[];
+	transitions?: Transition[];
 }): Promise<AudioClipSource[]> {
 	const clips: AudioClipSource[] = [];
 	// During project load, listeners can fire before media rows exist — avoid bogus warnings and
@@ -368,6 +437,10 @@ export async function collectAudioClips({
 	const mediaMap = new Map<string, MediaAsset>(
 		mediaAssets.map((asset) => [asset.id, asset]),
 	);
+	const transitionTimingByElementId = buildAudioTransitionTimingMap({
+		tracks,
+		transitions,
+	});
 	const pendingLibraryClips: Array<Promise<AudioClipSource | null>> = [];
 
 	for (const track of tracks) {
@@ -387,6 +460,9 @@ export async function collectAudioClips({
 				const speed = element.speed ?? 1;
 				const fadeIn = element.fadeIn ?? 0;
 				const fadeOut = element.fadeOut ?? 0;
+				const transitionTiming = element.linkedElementId
+					? transitionTimingByElementId.get(element.linkedElementId)
+					: undefined;
 				if (element.sourceType === "upload") {
 					const mediaAsset = mediaMap.get(element.mediaId);
 					if (!mediaAsset) continue;
@@ -400,6 +476,7 @@ export async function collectAudioClips({
 							speed,
 							fadeIn,
 							fadeOut,
+							transitionTiming,
 						}),
 					);
 				} else {
@@ -425,6 +502,7 @@ export async function collectAudioClips({
 							speed: element.speed ?? 1,
 							fadeIn: element.fadeIn ?? 0,
 							fadeOut: element.fadeOut ?? 0,
+							transitionTiming: transitionTimingByElementId.get(element.id),
 						}),
 					);
 				} else {
