@@ -441,6 +441,12 @@ function formatStatNumber(n: number): string {
 </script>
 
 <style scoped>
+/* Profile accent: matches sampled hero blue (#14b8db) — all borders, glows, tags, and links. */
+.org-profile {
+  --org-profile-accent: #14b8db;
+  --org-profile-accent-rgb: 20, 184, 219;
+}
+
 /* ===== Header Actions ===== */
 .profile-header-actions {
   display: flex;
@@ -466,8 +472,8 @@ function formatStatNumber(n: number): string {
 
 .profile-action-btn:hover {
   background: var(--sidebar-hover);
-  border-color: #22d3ee;
-  color: #22d3ee;
+  border-color: #14b8db;
+  color: #14b8db;
 }
 
 .profile-action-btn__icon {
@@ -501,7 +507,7 @@ function formatStatNumber(n: number): string {
 .loading-spinner__icon {
   width: 32px;
   height: 32px;
-  color: #22d3ee;
+  color: #14b8db;
   animation: spin 1s linear infinite;
 }
 
@@ -567,7 +573,7 @@ function formatStatNumber(n: number): string {
 
 .org-hero__banner {
   height: 120px;
-  background: linear-gradient(135deg, #0891b2 0%, #06b6d4 25%, #22d3ee 50%, #0891b2 75%, #164e63 100%);
+  background: linear-gradient(135deg, #0e7490 0%, #0ea0c0 25%, #14b8db 50%, #0b9fbf 75%, #164e63 100%);
   background-size: 200% 200%;
   border-radius: 14px 14px 0 0;
   position: relative;
@@ -665,12 +671,12 @@ function formatStatNumber(n: number): string {
   display: inline-flex;
   align-items: center;
   padding: 0.25rem 0.625rem;
-  background: rgba(34, 211, 238, 0.1);
-  border: 1px solid rgba(34, 211, 238, 0.2);
+  background: rgba(20, 184, 219, 0.1);
+  border: 1px solid rgba(20, 184, 219, 0.2);
   border-radius: 6px;
   font-size: 0.6875rem;
   font-weight: 500;
-  color: #22d3ee;
+  color: #14b8db;
   letter-spacing: 0.01em;
 }
 
@@ -701,14 +707,21 @@ function formatStatNumber(n: number): string {
   gap: 0.75rem;
   padding: 1rem;
   background: var(--sidebar-surface);
-  border: 1px solid rgba(34, 211, 238, 0.15);
+  border: 1px solid rgba(20, 184, 219, 0.22);
   border-radius: 12px;
   transition: all 200ms ease;
+  box-shadow:
+    inset 0 1px 0 0 rgba(20, 184, 219, 0.2),
+    0 0 0 1px rgba(0, 0, 0, 0.12),
+    0 0 18px rgba(20, 184, 219, 0.1);
 }
 
 .org-stat-card:hover {
-  border-color: rgba(34, 211, 238, 0.54);
-  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.28), 0 0 16px rgba(34, 211, 238, 0.14);
+  border-color: rgba(20, 184, 219, 0.55);
+  box-shadow:
+    inset 0 1px 0 0 rgba(20, 184, 219, 0.4),
+    0 0 0 1px rgba(20, 184, 219, 0.32),
+    0 0 20px rgba(20, 184, 219, 0.18);
 }
 
 .org-stat-card__icon {
@@ -722,8 +735,8 @@ function formatStatNumber(n: number): string {
 }
 
 .org-stat-card__icon--cyan {
-  background: rgba(34, 211, 238, 0.15);
-  color: #22d3ee;
+  background: rgba(20, 184, 219, 0.15);
+  color: #14b8db;
 }
 
 .org-stat-card__icon--green {
@@ -806,15 +819,22 @@ function formatStatNumber(n: number): string {
 /* ===== Cards ===== */
 .org-card {
   background: var(--sidebar-surface);
-  border: 1px solid rgba(34, 211, 238, 0.15);
+  border: 1px solid rgba(20, 184, 219, 0.24);
   border-radius: 14px;
   overflow: hidden;
   transition: border-color 200ms ease, box-shadow 200ms ease;
+  box-shadow:
+    inset 0 1px 0 0 rgba(20, 184, 219, 0.3),
+    0 0 0 1px rgba(0, 0, 0, 0.15),
+    0 0 24px rgba(20, 184, 219, 0.12);
 }
 
 .org-card:hover {
-  border-color: rgba(34, 211, 238, 0.54);
-  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.3), 0 0 18px rgba(34, 211, 238, 0.15);
+  border-color: rgba(20, 184, 219, 0.55);
+  box-shadow:
+    inset 0 1px 0 0 rgba(20, 184, 219, 0.45),
+    0 0 0 1px rgba(20, 184, 219, 0.35),
+    0 0 30px rgba(20, 184, 219, 0.2);
 }
 
 .org-card--compact .org-card__header {
@@ -837,7 +857,7 @@ function formatStatNumber(n: number): string {
 .org-card__empty-icon {
   width: 40px;
   height: 40px;
-  color: #22d3ee;
+  color: #14b8db;
   opacity: 0.35;
   margin-bottom: 0.75rem;
 }
@@ -853,14 +873,14 @@ function formatStatNumber(n: number): string {
   align-items: center;
   gap: 0.625rem;
   padding: 1rem 1.25rem;
-  border-bottom: 1px solid rgba(34, 211, 238, 0.1);
-  background: linear-gradient(90deg, rgba(34, 211, 238, 0.05) 0%, transparent 50%);
+  border-bottom: 1px solid rgba(20, 184, 219, 0.1);
+  background: linear-gradient(90deg, rgba(20, 184, 219, 0.05) 0%, transparent 50%);
 }
 
 .org-card__header-icon {
   width: 18px;
   height: 18px;
-  color: #22d3ee;
+  color: #14b8db;
 }
 
 .org-card__title {
@@ -874,8 +894,8 @@ function formatStatNumber(n: number): string {
 .org-card__count {
   font-size: 0.75rem;
   font-weight: 500;
-  color: #22d3ee;
-  background: rgba(34, 211, 238, 0.1);
+  color: #14b8db;
+  background: rgba(20, 184, 219, 0.1);
   padding: 0.1875rem 0.5rem;
   border-radius: 6px;
 }
@@ -883,9 +903,9 @@ function formatStatNumber(n: number): string {
 .org-card__badge {
   font-size: 0.6875rem;
   font-weight: 600;
-  color: #10b981;
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  color: #14b8db;
+  background: rgba(20, 184, 219, 0.12);
+  border: 1px solid rgba(20, 184, 219, 0.28);
   padding: 0.25rem 0.625rem;
   border-radius: 6px;
   text-transform: capitalize;
@@ -921,10 +941,14 @@ function formatStatNumber(n: number): string {
   display: flex;
   flex-direction: column;
   background: var(--sidebar-surface);
-  border: 1px solid rgba(34, 211, 238, 0.15);
+  border: 1px solid rgba(20, 184, 219, 0.22);
   border-radius: 14px;
   overflow: hidden;
   transition: all 200ms ease;
+  box-shadow:
+    inset 0 1px 0 0 rgba(20, 184, 219, 0.25),
+    0 0 0 1px rgba(0, 0, 0, 0.12),
+    0 0 20px rgba(20, 184, 219, 0.1);
 }
 
 .creator-card--link {
@@ -934,33 +958,69 @@ function formatStatNumber(n: number): string {
 }
 
 .creator-card:hover {
-  border-color: rgba(34, 211, 238, 0.54);
+  border-color: rgba(20, 184, 219, 0.55);
   transform: translateY(-3px);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(34, 211, 238, 0.28), 0 0 18px rgba(34, 211, 238, 0.15);
+  box-shadow:
+    inset 0 1px 0 0 rgba(20, 184, 219, 0.4),
+    0 12px 28px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(20, 184, 219, 0.32),
+    0 0 26px rgba(20, 184, 219, 0.2);
 }
 
+/* Streamer strip: same treatment as .org-hero__banner (gradient, radial, fade to surface) */
 .creator-card__banner {
-  height: 56px;
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.2) 0%, rgba(34, 211, 238, 0.1) 50%, transparent 100%);
+  flex-shrink: 0;
+  height: 48px;
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: 14px 14px 0 0;
+  background: linear-gradient(135deg, #0e7490 0%, #0ea0c0 25%, #14b8db 50%, #0b9fbf 75%, #164e63 100%);
+  background-size: 200% 200%;
+}
+
+.creator-card__banner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: 
+    radial-gradient(ellipse 80% 50% at 20% 100%, rgba(255,255,255,0.1) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 40% at 80% 20%, rgba(255,255,255,0.08) 0%, transparent 40%);
+}
+
+.creator-card__banner::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 43.33%;
+  background: linear-gradient(to top, var(--sidebar-surface) 0%, transparent 100%);
+  pointer-events: none;
 }
 
 .creator-card__content {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
   padding: 0 1rem 1.25rem;
-  margin-top: -32px;
+  margin-top: -24px;
 }
 
 .creator-card__avatar {
+  position: relative;
+  z-index: 2;
   width: 64px;
   height: 64px;
   border-radius: 50%;
   overflow: hidden;
   background: var(--sidebar-hover);
   border: 3px solid var(--sidebar-surface);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(34, 211, 238, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(20, 184, 219, 0.2);
   margin-bottom: 0.75rem;
 }
 
@@ -1125,7 +1185,7 @@ function formatStatNumber(n: number): string {
 
 .org-contact__value--link {
   text-decoration: none;
-  color: #22d3ee;
+  color: #14b8db;
   transition: opacity 150ms ease;
 }
 
@@ -1135,17 +1195,20 @@ function formatStatNumber(n: number): string {
 
 /* ===== Hiring Card ===== */
 .org-card--hiring {
-  border-color: rgba(16, 185, 129, 0.2);
+  border-color: rgba(20, 184, 219, 0.2);
 }
 
 .org-card--hiring:hover {
-  border-color: rgba(16, 185, 129, 0.54);
-  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.3), 0 0 18px rgba(16, 185, 129, 0.15);
+  border-color: rgba(20, 184, 219, 0.52);
+  box-shadow:
+    inset 0 1px 0 0 rgba(20, 184, 219, 0.35),
+    0 0 0 1px rgba(20, 184, 219, 0.3),
+    0 0 20px rgba(20, 184, 219, 0.14);
 }
 
 .org-card--hiring .org-card__header {
-  background: linear-gradient(90deg, rgba(16, 185, 129, 0.06) 0%, transparent 50%);
-  border-bottom-color: rgba(16, 185, 129, 0.12);
+  background: linear-gradient(90deg, rgba(20, 184, 219, 0.07) 0%, transparent 50%);
+  border-bottom-color: rgba(20, 184, 219, 0.12);
 }
 
 .org-hiring__title {

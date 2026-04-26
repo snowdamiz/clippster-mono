@@ -15,7 +15,11 @@ import type { SavedSoundsData, SavedSound, SoundEffect } from "../types/sounds";
 import type { TimelineTrack, TScene } from "../types/timeline";
 import { getProjectDurationFromScenes } from "../lib/scenes";
 import { getDatabase, getCurrentUserId } from "@/services/database/core";
-import { base64ToUtf8 } from "@/utils/encoding";
+import { base64ToUtf8, utf8ToBase64Url } from "@/utils/encoding";
+import {
+	editorMediaDestinationFilename,
+	playbackFileLabel,
+} from "@/utils/fsNames";
 
 // ==========================================
 // Serialization Helpers
@@ -31,6 +35,7 @@ function serializeProject(project: TProject): SerializedProject {
 		name: scene.name,
 		isMain: scene.isMain,
 		tracks: stripAudioBuffers({ tracks: scene.tracks }),
+		transitions: scene.transitions ?? [],
 		bookmarks: scene.bookmarks,
 		createdAt: scene.createdAt.toISOString(),
 		updatedAt: scene.updatedAt.toISOString(),
@@ -63,6 +68,7 @@ function deserializeProject(serialized: SerializedProject): TProject {
 				? { ...track, isMain: track.isMain ?? false }
 				: track,
 		),
+		transitions: scene.transitions ?? [],
 		bookmarks: scene.bookmarks ?? [],
 		createdAt: new Date(scene.createdAt),
 		updatedAt: new Date(scene.updatedAt),
@@ -308,7 +314,11 @@ class TauriStorageService {
 
 		const row = rows[0];
 		try {
-			const file = await this.fileFromPath(row.file_path, row.name);
+			const file = await this.fileFromPath(
+				row.file_path,
+				row.name,
+				row.type as "video" | "audio" | "image",
+			);
 			const url = URL.createObjectURL(file);
 
 			// Resolve thumbnail: stored value may be a filesystem path, dead blob URL, or data URL
@@ -322,6 +332,7 @@ class TauriStorageService {
 			return {
 				id: row.id,
 				name: row.name,
+
 				type: row.type as "image" | "video" | "audio",
 				file,
 				url,
@@ -353,7 +364,11 @@ class TauriStorageService {
 		const assets: MediaAsset[] = [];
 		for (const row of rows) {
 			try {
-				const file = await this.fileFromPath(row.file_path, row.name);
+				const file = await this.fileFromPath(
+					row.file_path,
+					row.name,
+					row.type as "video" | "audio" | "image",
+				);
 				const url = URL.createObjectURL(file);
 
 				// Resolve thumbnail: stored value may be a filesystem path, dead blob URL, or data URL
@@ -588,7 +603,12 @@ class TauriStorageService {
 	 * For large files (>50MB), the server requires Range requests,
 	 * so we use HEAD first to determine size and avoid 416 errors.
 	 */
-	private async fileFromPath(filePath: string, name: string): Promise<File> {
+	private async fileFromPath(
+		filePath: string,
+		displayName: string,
+		kind: "video" | "audio" | "image",
+	): Promise<File> {
+		const fileLabel = playbackFileLabel(filePath, displayName, kind);
 		const { invoke } = await import("@tauri-apps/api/core");
 		let videoServerPort: number;
 		try {
@@ -597,10 +617,7 @@ class TauriStorageService {
 			videoServerPort = 8642;
 		}
 
-		const encodedPath = btoa(filePath)
-			.replace(/\+/g, '-')
-			.replace(/\//g, '_')
-			.replace(/=/g, '');
+		const encodedPath = utf8ToBase64Url(filePath);
 		const serverUrl = `http://localhost:${videoServerPort}/video/${encodedPath}`;
 
 		// Use HEAD to determine file size before fetching
@@ -613,7 +630,8 @@ class TauriStorageService {
 			throw new Error(`Cannot determine file size for: ${filePath}`);
 		}
 
-		const mimeType = this.mimeFromPath(filePath);
+		const mimeType = this.mimeFromPath(filePath, kind);
+
 		const MAX_SIMPLE_SIZE = 50 * 1024 * 1024; // 50MB
 
 		// Small files: simple fetch
@@ -623,7 +641,7 @@ class TauriStorageService {
 				throw new Error(`Failed to load file from video server (${response.status}): ${filePath}`);
 			}
 			const blob = await response.blob();
-			return new File([blob], name, {
+			return new File([blob], fileLabel, {
 				type: blob.type || mimeType,
 				lastModified: Date.now(),
 			});
@@ -645,14 +663,16 @@ class TauriStorageService {
 		}
 
 		const fullBlob = new Blob(chunks, { type: mimeType });
-		return new File([fullBlob], name, {
+		return new File([fullBlob], fileLabel, {
 			type: mimeType,
 			lastModified: Date.now(),
 		});
 	}
 
-	private mimeFromPath(filePath: string): string {
-		const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+	private mimeFromPath(filePath: string, kind?: "video" | "audio" | "image"): string {
+		const fromPath = filePath.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase() ?? "";
+		const ext = fromPath || "";
+
 		const map: Record<string, string> = {
 			mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime",
 			avi: "video/x-msvideo", mkv: "video/x-matroska",
@@ -661,7 +681,11 @@ class TauriStorageService {
 			jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
 			gif: "image/gif", webp: "image/webp",
 		};
-		return map[ext] || "application/octet-stream";
+		if (map[ext]) return map[ext];
+		if (kind === "video") return "video/mp4";
+		if (kind === "audio") return "audio/mpeg";
+		if (kind === "image") return "image/png";
+		return "application/octet-stream";
 	}
 
 	/**
@@ -679,12 +703,21 @@ class TauriStorageService {
 		// If the file has a path property (from Tauri file picker), copy it to the
 		// project's managed media directory so the asset persists after reload.
 		const fileWithPath = mediaAsset.file as File & { path?: string };
-		if (fileWithPath.path) {
+		const diskSource =
+			mediaAsset.diskImportPath?.trim() ||
+			(typeof fileWithPath.path === "string" ? fileWithPath.path.trim() : "");
+		if (diskSource) {
 			const { invoke } = await import("@tauri-apps/api/core");
+			const fileName = editorMediaDestinationFilename({
+				id: mediaAsset.id,
+				displayName: mediaAsset.name,
+				sourcePathHint: diskSource,
+				kind: mediaAsset.type,
+			});
 			return await invoke<string>("copy_file_to_project_media", {
-				sourcePath: fileWithPath.path,
+				sourcePath: diskSource,
 				projectId: _projectId,
-				fileName: `${mediaAsset.id}_${mediaAsset.name}`,
+				fileName,
 			});
 		}
 
@@ -711,9 +744,15 @@ class TauriStorageService {
 		// For uploaded files without a path, save to editor-media via Rust command
 		const { invoke } = await import("@tauri-apps/api/core");
 		const arrayBuffer = await mediaAsset.file.arrayBuffer();
+		const fileName = editorMediaDestinationFilename({
+			id: mediaAsset.id,
+			displayName: mediaAsset.name,
+			sourcePathHint: mediaAsset.file.name,
+			kind: mediaAsset.type,
+		});
 		const filePath = await invoke<string>("save_editor_media_file", {
 			projectId: _projectId,
-			fileName: `${mediaAsset.id}_${mediaAsset.name}`,
+			fileName,
 			bytes: Array.from(new Uint8Array(arrayBuffer)),
 		});
 		return filePath;

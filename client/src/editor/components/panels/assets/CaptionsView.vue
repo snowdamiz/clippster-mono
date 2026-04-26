@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { utf8ToBase64Url } from "@/utils/encoding";
 import { ref, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { CAPTION_PRESETS, getPresetById } from "../../../constants/caption-constants";
@@ -284,7 +285,7 @@ async function handleGenerateSubtitles() {
 					const { invoke } = await import("@tauri-apps/api/core");
 					let port: number;
 					try { port = await invoke<number>("get_video_server_port"); } catch { port = 8642; }
-					const serverUrl = `http://localhost:${port}/video/${btoa(elem.filePath)}`;
+					const serverUrl = `http://localhost:${port}/video/${utf8ToBase64Url(elem.filePath)}`;
 					const resp = await fetch(serverUrl);
 					if (!resp.ok) throw new Error(`Video server returned ${resp.status} for ${elem.filePath}`);
 					const blob = await resp.blob();

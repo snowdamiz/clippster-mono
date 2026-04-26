@@ -1,10 +1,13 @@
 import type { ChromakeySettings } from "../../types/chromakey";
+import { applyChromakeyGPU } from "./webgl-chromakey";
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
 /**
  * Apply chromakey (green screen) removal to the canvas.
- * Pixels matching the key color become transparent.
+ *
+ * Tries the WebGL2 GPU path first (much faster for HD/4K frames).
+ * Falls back to the CPU getImageData pixel loop if WebGL2 is unavailable.
  */
 export function applyChromakey(
 	ctx: Ctx,
@@ -14,6 +17,22 @@ export function applyChromakey(
 ): void {
 	if (!settings.enabled) return;
 
+	// ── GPU fast path (WebGL2) ────────────────────────────────────────────
+	// Only available on CanvasRenderingContext2D (not OffscreenCanvas workers).
+	if (ctx instanceof CanvasRenderingContext2D) {
+		// Normalise settings: the GPU shader expects 0-1 ranges
+		const gpuSettings: ChromakeySettings = {
+			...settings,
+			similarity: settings.similarity / 100,
+			smoothness: settings.smoothness / 100,
+			spillReduction: (settings.spillReduction ?? 0) / 100,
+		};
+		const gpuOk = applyChromakeyGPU(ctx, w, h, gpuSettings);
+		if (gpuOk) return;
+		// Fall through to CPU path on failure
+	}
+
+	// ── CPU fallback path ─────────────────────────────────────────────────
 	const keyColor = hexToRgb(settings.color);
 	if (!keyColor) return;
 

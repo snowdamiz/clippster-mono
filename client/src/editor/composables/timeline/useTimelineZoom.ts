@@ -35,6 +35,22 @@ export function useTimelineZoom({
 			: minZoomValue.value,
 	);
 	let previousZoom = zoomLevel.value;
+
+	// Saved projects / older builds may have zoomLevel above ZOOM_MAX; keep state clamped.
+	watch(
+		minZoomValue,
+		() => {
+			const clamped = Math.max(
+				minZoomValue.value,
+				Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, zoomLevel.value),
+			);
+			if (clamped !== zoomLevel.value) {
+				zoomLevel.value = clamped;
+				previousZoom = clamped;
+			}
+		},
+		{ immediate: true },
+	);
 	let hasRestoredScroll = false;
 	let hasRestoredPlayhead = false;
 	let scrollSaveTimeout: ReturnType<typeof setTimeout> | null = null;

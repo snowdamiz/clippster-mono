@@ -93,6 +93,10 @@ function handleVolumeBlur() {
 	update({ volume: pct / 100 });
 }
 
+function updatePan(value: number) {
+	update({ pan: Math.round(value * 100) / 100 });
+}
+
 function handleFadeIn(value: string) {
 	fadeInInput.value = value;
 	const parsed = parseFloat(value);
@@ -194,6 +198,37 @@ function formatTime(seconds: number): string {
 			<div class="flex items-center gap-2">
 				<input type="range" :value="element.volume * 100" min="0" max="200" step="1" class="flex-1" @input="handleVolumeSlider" />
 				<input type="number" :value="volumeInput" min="0" max="200" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handleVolumeInput((e.target as HTMLInputElement).value)" @blur="handleVolumeBlur" />
+			</div>
+		</div>
+
+		<!-- Pan -->
+		<div class="space-y-1.5">
+			<div class="flex items-center justify-between">
+				<label class="text-xs text-zinc-500">Pan</label>
+				<div class="flex items-center gap-1.5">
+					<span class="text-[10px] text-zinc-600">L</span>
+					<span class="min-w-[28px] text-center text-[10px] text-zinc-400">
+						{{ (element.pan ?? 0) === 0 ? 'C' : (element.pan ?? 0) > 0 ? `R${Math.round(Math.abs(element.pan ?? 0) * 100)}` : `L${Math.round(Math.abs(element.pan ?? 0) * 100)}` }}
+					</span>
+					<span class="text-[10px] text-zinc-600">R</span>
+				</div>
+			</div>
+			<div class="flex items-center gap-2">
+				<input
+					type="range"
+					:value="(element.pan ?? 0) * 100"
+					min="-100"
+					max="100"
+					step="1"
+					class="flex-1"
+					@input="(e) => updatePan(Number((e.target as HTMLInputElement).value) / 100)"
+				/>
+				<button
+					class="rounded border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-zinc-400 transition-colors hover:text-zinc-200"
+					@click="updatePan(0)"
+				>
+					C
+				</button>
 			</div>
 		</div>
 

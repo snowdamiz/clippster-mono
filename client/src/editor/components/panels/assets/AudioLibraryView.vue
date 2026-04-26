@@ -21,11 +21,11 @@ const newPlaylistName = ref('');
 const newPlaylistDescription = ref('');
 
 const filteredAudio = computed(() => {
-	if (!searchQuery.value) return audioFiles.value;
+	// Match standalone Audio Library: X Spaces (Twitter) live only under X Spaces, not Audio
+	let filtered = audioFiles.value.filter(audio => audio.platform !== 'Twitter');
+	if (!searchQuery.value) return filtered;
 	const query = searchQuery.value.toLowerCase();
-	return audioFiles.value.filter(audio =>
-		audio.title.toLowerCase().includes(query)
-	);
+	return filtered.filter(audio => audio.title.toLowerCase().includes(query));
 });
 
 async function loadAudioFiles() {
@@ -44,23 +44,25 @@ async function openPlaylist(playlist: AudioPlaylist) {
 	selectedPlaylist.value = playlist;
 	try {
 		const items = await getPlaylistItemsWithAudio(playlist.id);
-		playlistTracks.value = items.map((item: any) => ({
-			id: item.audio_id,
-			title: item.audio_title,
-			source: item.audio_source,
-			platform: item.audio_platform,
-			source_url: item.audio_source_url,
-			file_path: item.audio_file_path,
-			duration: item.audio_duration,
-			file_size: item.audio_file_size,
-			sample_rate: item.audio_sample_rate,
-			channels: item.audio_channels,
-			thumbnail_url: item.audio_thumbnail_url,
-			user_id: item.audio_user_id,
-			created_at: item.audio_created_at,
-			updated_at: item.audio_updated_at,
-			playlist_item_id: item.id,
-		}));
+		playlistTracks.value = items
+			.map((item: any) => ({
+				id: item.audio_id,
+				title: item.audio_title,
+				source: item.audio_source,
+				platform: item.audio_platform,
+				source_url: item.audio_source_url,
+				file_path: item.audio_file_path,
+				duration: item.audio_duration,
+				file_size: item.audio_file_size,
+				sample_rate: item.audio_sample_rate,
+				channels: item.audio_channels,
+				thumbnail_url: item.audio_thumbnail_url,
+				user_id: item.audio_user_id,
+				created_at: item.audio_created_at,
+				updated_at: item.audio_updated_at,
+				playlist_item_id: item.id,
+			}))
+			.filter((track: DownloadedAudio) => track.platform !== 'Twitter');
 	} catch (error) {
 		console.error('Failed to load playlist tracks:', error);
 	}

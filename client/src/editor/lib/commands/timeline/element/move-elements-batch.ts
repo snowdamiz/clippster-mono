@@ -1,6 +1,7 @@
 import { Command } from "../../../../lib/commands/base-command";
 import { EditorCore } from "../../../../core";
 import type { TimelineTrack } from "../../../../types/timeline";
+import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
 
 /**
  * Move multiple elements on the same track by a time delta.
@@ -34,7 +35,8 @@ export class MoveElementsBatchCommand extends Command {
 			return { ...track, elements } as typeof track;
 		});
 
-		editor.timeline.updateTracks(updatedTracks);
+		const fps = editor.project.getActive()?.settings?.fps ?? 30;
+		editor.timeline.updateTracks(collapseMainVideoTracksIfPresent(updatedTracks, fps));
 	}
 
 	undo(): void {

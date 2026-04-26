@@ -2,6 +2,44 @@ import type { TransitionType } from "../../types/transitions";
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
+/** Map persisted / UI strings to canonical transition keys so preview never silently falls through to crossfade. */
+function normalizeTransitionType(type: string): TransitionType {
+	const compact = String(type).trim().replace(/[\s_-]+/g, "").toLowerCase();
+	const aliases: Record<string, TransitionType> = {
+		crossfade: "crossfade",
+		fadetoblack: "fadeToBlack",
+		fadetowhite: "fadeToWhite",
+		dissolve: "dissolve",
+		slideleft: "slideLeft",
+		slideright: "slideRight",
+		slideup: "slideUp",
+		slidedown: "slideDown",
+		wipeleft: "wipeLeft",
+		wiperight: "wipeRight",
+		wipeup: "wipeUp",
+		wipedown: "wipeDown",
+		zoomin: "zoomIn",
+		zoomout: "zoomOut",
+		blur: "blur",
+		circlewipe: "circleWipe",
+		diamondwipe: "diamondWipe",
+		clockwipe: "clockWipe",
+		pushleft: "pushLeft",
+		pushright: "pushRight",
+		pushup: "pushUp",
+		pushdown: "pushDown",
+		coverleft: "coverLeft",
+		coverright: "coverRight",
+		revealleft: "revealLeft",
+		revealright: "revealRight",
+		rotatein: "rotateIn",
+		fliphorizontal: "flipHorizontal",
+		flipvertical: "flipVertical",
+		glitch: "glitch",
+	};
+	return aliases[compact] ?? (type as TransitionType);
+}
+
 /**
  * Render a transition between two frames.
  * @param ctx - Target canvas context
@@ -21,9 +59,16 @@ export function renderTransition(
 	progress: number,
 	type: TransitionType,
 ): void {
-	const t = Math.max(0, Math.min(1, progress));
+	ctx.save();
+	ctx.setTransform(1, 0, 0, 1, 0, 0);
+	ctx.globalAlpha = 1;
+	ctx.globalCompositeOperation = "source-over";
+	ctx.filter = "none";
 
-	switch (type) {
+	const t = Math.max(0, Math.min(1, progress));
+	const normalized = normalizeTransitionType(String(type));
+
+	switch (normalized) {
 		case "crossfade":
 			renderCrossfade(ctx, w, h, outgoing, incoming, t);
 			break;
@@ -117,6 +162,8 @@ export function renderTransition(
 		default:
 			renderCrossfade(ctx, w, h, outgoing, incoming, t);
 	}
+
+	ctx.restore();
 }
 
 function renderCrossfade(
@@ -162,21 +209,20 @@ function renderDissolve(
 	// Draw outgoing
 	ctx.drawImage(outgoing, 0, 0, w, h);
 
-	// Draw incoming with random pixel dissolve pattern
-	// Use a deterministic pattern based on position
-	const blockSize = 8;
+	// Deterministic block dissolve. Block size scales with resolution so we never run tens
+	// of thousands of drawImage calls per frame (that froze the preview at 1080p+).
+	const maxBlocks = 900;
+	const blockSize = Math.max(16, Math.ceil(Math.sqrt((w * h) / maxBlocks)));
 	ctx.save();
 	for (let y = 0; y < h; y += blockSize) {
 		for (let x = 0; x < w; x += blockSize) {
-			// Simple hash for deterministic randomness
+			const bw = Math.min(blockSize, w - x);
+			const bh = Math.min(blockSize, h - y);
+			if (bw <= 0 || bh <= 0) continue;
 			const hash = ((x * 73856093) ^ (y * 19349663)) & 0xffff;
 			const threshold = hash / 0xffff;
 			if (threshold < t) {
-				ctx.drawImage(
-					incoming,
-					x, y, blockSize, blockSize,
-					x, y, blockSize, blockSize,
-				);
+				ctx.drawImage(incoming, x, y, bw, bh, x, y, bw, bh);
 			}
 		}
 	}
@@ -219,27 +265,35 @@ function renderWipe(
 	outgoing: CanvasImageSource, incoming: CanvasImageSource,
 	t: number, direction: "left" | "right" | "up" | "down",
 ): void {
-	const eased = easeInOutCubic(t);
+	// Linear progress: strong easing keeps the wipe edge barely moving near the
+	// endpoints (and can sit entirely in letterboxing), which reads as "broken".
+	const u = Math.max(0, Math.min(1, t));
 
 	// Draw outgoing as base
 	ctx.drawImage(outgoing, 0, 0, w, h);
 
-	// Clip incoming to the wipe region
+	// Clip incoming to the wipe region (device pixels; caller should use identity CTM)
 	ctx.save();
 	ctx.beginPath();
 	switch (direction) {
 		case "right":
-			ctx.rect(0, 0, w * eased, h);
+			ctx.rect(0, 0, w * u, h);
 			break;
 		case "left":
-			ctx.rect(w * (1 - eased), 0, w * eased, h);
+			ctx.rect(w * (1 - u), 0, w * u, h);
 			break;
 		case "down":
-			ctx.rect(0, 0, w, h * eased);
+			ctx.rect(0, 0, w, h * u);
 			break;
-		case "up":
-			ctx.rect(0, h * (1 - eased), w, h * eased);
+		case "up": {
+			// Incoming revealed from the bottom edge upward (matches FFmpeg xfade wipeup).
+			// Do not round y/rh: Math.round + integer h often zeroes stripe height for small u,
+			// so the clip is empty and the wipe looks "broken" while crossfade/slide still work.
+			const stripeH = h * u;
+			const y = h - stripeH;
+			ctx.rect(0, y, w, Math.max(0, stripeH));
 			break;
+		}
 	}
 	ctx.clip();
 	ctx.drawImage(incoming, 0, 0, w, h);
@@ -334,19 +388,31 @@ function renderDiamondWipe(
 	ctx: Ctx, w: number, h: number,
 	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
 ): void {
-	const eased = easeInOutCubic(t);
-	const maxSize = Math.max(w, h);
-	const size = maxSize * eased;
+	const u = Math.max(0, Math.min(1, t));
+	if (u <= 0) {
+		ctx.drawImage(outgoing, 0, 0, w, h);
+		return;
+	}
+	if (u >= 1) {
+		ctx.drawImage(incoming, 0, 0, w, h);
+		return;
+	}
 	const cx = w / 2;
 	const cy = h / 2;
+	const areaRatio = u;
+	const reveal = areaRatio <= 0.5
+		? Math.sqrt(areaRatio * 2)
+		: 2 - Math.sqrt((1 - areaRatio) * 2);
+	const halfW = (w / 2) * reveal;
+	const halfH = (h / 2) * reveal;
 
 	ctx.drawImage(outgoing, 0, 0, w, h);
 	ctx.save();
 	ctx.beginPath();
-	ctx.moveTo(cx, cy - size);
-	ctx.lineTo(cx + size, cy);
-	ctx.lineTo(cx, cy + size);
-	ctx.lineTo(cx - size, cy);
+	ctx.moveTo(cx, cy - halfH);
+	ctx.lineTo(cx + halfW, cy);
+	ctx.lineTo(cx, cy + halfH);
+	ctx.lineTo(cx - halfW, cy);
 	ctx.closePath();
 	ctx.clip();
 	ctx.drawImage(incoming, 0, 0, w, h);
@@ -357,12 +423,20 @@ function renderClockWipe(
 	ctx: Ctx, w: number, h: number,
 	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
 ): void {
-	const eased = easeInOutCubic(t);
+	const u = Math.max(0, Math.min(1, t));
+	if (u <= 0) {
+		ctx.drawImage(outgoing, 0, 0, w, h);
+		return;
+	}
+	if (u >= 1) {
+		ctx.drawImage(incoming, 0, 0, w, h);
+		return;
+	}
 	const cx = w / 2;
 	const cy = h / 2;
 	const maxRadius = Math.sqrt(w * w + h * h);
 	const startAngle = -Math.PI / 2;
-	const endAngle = startAngle + Math.PI * 2 * eased;
+	const endAngle = startAngle + Math.PI * 2 * u;
 
 	ctx.drawImage(outgoing, 0, 0, w, h);
 	ctx.save();

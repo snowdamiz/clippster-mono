@@ -1,5 +1,11 @@
 import type { VideoEffect } from "../../types/effects";
-import type { ColorAdjustments } from "../../types/timeline";
+import type {
+	ColorAdjustments,
+	ColorCurves,
+	ColorCurvePoint,
+	ColorWheels,
+	ColorWheelValues,
+} from "../../types/timeline";
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -1217,4 +1223,189 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
 		g: parseInt(h.substring(2, 4), 16) || 0,
 		b: parseInt(h.substring(4, 6), 16) || 0,
 	};
+}
+
+// ── Color Grading ──
+
+/**
+ * Evaluate a piecewise Catmull-Rom spline through the given control points at
+ * a normalized input x (0–1). Returns a clamped output value (0–1).
+ */
+function evalCurveSpline(points: ColorCurvePoint[], x: number): number {
+	if (!points || points.length < 2) return x;
+	const sorted = points.slice().sort((a, b) => a.x - b.x);
+	if (x <= sorted[0].x) return sorted[0].y;
+	if (x >= sorted[sorted.length - 1].x) return sorted[sorted.length - 1].y;
+
+	for (let i = 0; i < sorted.length - 1; i++) {
+		const p0 = sorted[i];
+		const p1 = sorted[i + 1];
+		if (x < p0.x || x > p1.x) continue;
+		const dt = p1.x - p0.x;
+		const t = dt === 0 ? 0 : (x - p0.x) / dt;
+		const prevY = i > 0 ? sorted[i - 1].y : p0.y;
+		const nextY = i < sorted.length - 2 ? sorted[i + 2].y : p1.y;
+		const m0 = (p1.y - prevY) / 2;
+		const m1 = (nextY - p0.y) / 2;
+		const t2 = t * t;
+		const t3 = t2 * t;
+		const y = (2 * t3 - 3 * t2 + 1) * p0.y + (t3 - 2 * t2 + t) * m0 + (-2 * t3 + 3 * t2) * p1.y + (t3 - t2) * m1;
+		return Math.min(1, Math.max(0, y));
+	}
+	return x;
+}
+
+/**
+ * Build a 256-entry lookup table from a curve channel (or identity if undefined).
+ */
+function buildLut(points: ColorCurvePoint[] | undefined): Uint8Array {
+	const lut = new Uint8Array(256);
+	for (let i = 0; i < 256; i++) {
+		if (!points || points.length < 2) {
+			lut[i] = i;
+		} else {
+			lut[i] = Math.round(evalCurveSpline(points, i / 255) * 255);
+		}
+	}
+	return lut;
+}
+
+/**
+ * Apply RGB curves to the canvas via ImageData pixel manipulation.
+ * Only performs ImageData work when the curves are non-identity.
+ */
+export function applyColorCurves(ctx: Ctx, width: number, height: number, curves: ColorCurves): void {
+	const hasAny =
+		(curves.master && curves.master.length >= 2) ||
+		(curves.red && curves.red.length >= 2) ||
+		(curves.green && curves.green.length >= 2) ||
+		(curves.blue && curves.blue.length >= 2);
+	if (!hasAny) return;
+
+	const masterLut = buildLut(curves.master);
+	const redLut = buildLut(curves.red);
+	const greenLut = buildLut(curves.green);
+	const blueLut = buildLut(curves.blue);
+
+	const imageData = ctx.getImageData(0, 0, width, height);
+	const data = imageData.data;
+
+	for (let i = 0; i < data.length; i += 4) {
+		// Apply master then per-channel
+		data[i] = redLut[masterLut[data[i]]];
+		data[i + 1] = greenLut[masterLut[data[i + 1]]];
+		data[i + 2] = blueLut[masterLut[data[i + 2]]];
+		// alpha unchanged
+	}
+
+	ctx.putImageData(imageData, 0, 0);
+}
+
+/** True when a wheel range has a non-identity adjustment (not just `{}` or all zeros). */
+function colorWheelRangeHasEffect(w?: ColorWheelValues): boolean {
+	if (!w) return false;
+	return (
+		Math.abs(w.hue) > 0.5 ||
+		Math.abs(w.saturation) > 0.0001 ||
+		Math.abs(w.luminance) > 0.0001
+	);
+}
+
+/**
+ * Apply three-way color correction (lift/gamma/gain) via pixel manipulation.
+ * Converts RGB → HSL, adjusts per tonal range, converts back.
+ */
+export function applyColorWheels(ctx: Ctx, width: number, height: number, wheels: ColorWheels): void {
+	const hasAny =
+		colorWheelRangeHasEffect(wheels.shadows) ||
+		colorWheelRangeHasEffect(wheels.midtones) ||
+		colorWheelRangeHasEffect(wheels.highlights);
+	if (!hasAny) return;
+
+	const imageData = ctx.getImageData(0, 0, width, height);
+	const data = imageData.data;
+
+	const shadow = wheels.shadows ?? { hue: 0, saturation: 0, luminance: 0 };
+	const mid = wheels.midtones ?? { hue: 0, saturation: 0, luminance: 0 };
+	const high = wheels.highlights ?? { hue: 0, saturation: 0, luminance: 0 };
+
+	for (let i = 0; i < data.length; i += 4) {
+		let r = data[i] / 255;
+		let g = data[i + 1] / 255;
+		let b = data[i + 2] / 255;
+
+		// Luminance of pixel (BT.709)
+		const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+		// Shadow weight: peaks at lum=0, falloff by lum=0.5
+		const sw = Math.max(0, 1 - lum * 2);
+		// Highlight weight: peaks at lum=1, falloff by lum=0.5
+		const hw = Math.max(0, lum * 2 - 1);
+		// Midtone weight: remainder
+		const mw = Math.max(0, 1 - sw - hw);
+
+		// Blend hue rotation and saturation per range
+		const totalHue = shadow.hue * sw + mid.hue * mw + high.hue * hw;
+		const totalSat = shadow.saturation * sw + mid.saturation * mw + high.saturation * hw;
+		const totalLum = shadow.luminance * sw + mid.luminance * mw + high.luminance * hw;
+
+		// Apply luminance offset
+		r = Math.min(1, Math.max(0, r + totalLum));
+		g = Math.min(1, Math.max(0, g + totalLum));
+		b = Math.min(1, Math.max(0, b + totalLum));
+
+		// Apply hue rotation if non-zero
+		if (Math.abs(totalHue) > 0.5) {
+			const [h, s, l] = rgbToHsl(r, g, b);
+			const newH = (h + totalHue / 360 + 1) % 1;
+			const newS = Math.min(1, Math.max(0, s + totalSat));
+			const [nr, ng, nb] = hslToRgb(newH, newS, l);
+			r = nr; g = ng; b = nb;
+		} else if (Math.abs(totalSat) > 0.01) {
+			const [h, s, l] = rgbToHsl(r, g, b);
+			const newS = Math.min(1, Math.max(0, s + totalSat));
+			const [nr, ng, nb] = hslToRgb(h, newS, l);
+			r = nr; g = ng; b = nb;
+		}
+
+		data[i] = Math.round(r * 255);
+		data[i + 1] = Math.round(g * 255);
+		data[i + 2] = Math.round(b * 255);
+	}
+
+	ctx.putImageData(imageData, 0, 0);
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+	const max = Math.max(r, g, b);
+	const min = Math.min(r, g, b);
+	const l = (max + min) / 2;
+	if (max === min) return [0, 0, l];
+	const d = max - min;
+	const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+	let h: number;
+	if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+	else if (max === g) h = (b - r) / d + 2;
+	else h = (r - g) / d + 4;
+	return [h / 6, s, l];
+}
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+	if (s === 0) return [l, l, l];
+	const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+	const p = 2 * l - q;
+	const r = hueToRgb(p, q, h + 1 / 3);
+	const g = hueToRgb(p, q, h);
+	const b = hueToRgb(p, q, h - 1 / 3);
+	return [r, g, b];
+}
+
+function hueToRgb(p: number, q: number, t: number): number {
+	let tt = t;
+	if (tt < 0) tt += 1;
+	if (tt > 1) tt -= 1;
+	if (tt < 1 / 6) return p + (q - p) * 6 * tt;
+	if (tt < 1 / 2) return q;
+	if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
+	return p;
 }

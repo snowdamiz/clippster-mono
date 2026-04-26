@@ -10,6 +10,12 @@ import TransitionPreviewCanvas from "./TransitionPreviewCanvas.vue";
 import { generateUUID } from "../../../utils/id";
 import { usePointerDrag } from "../../../composables/usePointerDrag";
 import type { TransitionDragData } from "../../../types/drag";
+import {
+	findTransitionForTrackElement,
+	removeTransitionTargetsInvolvingElement,
+	resolveTransitionIncomingElementId,
+} from "../../../lib/timeline/transition-pairing";
+import { useToast } from "@/composables/useToast";
 
 const { startDrag, wasDragCompleted } = usePointerDrag();
 
@@ -26,6 +32,7 @@ function handlePointerDown(e: PointerEvent, preset: TransitionPreset) {
 
 const { editor } = useEditor();
 const { selectedElements } = useElementSelection();
+const { toast } = useToast();
 
 const searchQuery = ref("");
 
@@ -61,7 +68,11 @@ const existingTransitions = computed(() => {
 const activeTransition = computed(() => {
 	const sel = selectedElement.value;
 	if (!sel) return null;
-	return existingTransitions.value.find((t) => t.targetElementId === sel.element.id) ?? null;
+	return findTransitionForTrackElement({
+		transitions: existingTransitions.value,
+		track: sel.track,
+		elementId: sel.element.id,
+	});
 });
 
 function applyTransition(preset: TransitionPreset) {
@@ -72,13 +83,27 @@ function applyTransition(preset: TransitionPreset) {
 	try { scene = editor.scenes.getActiveScene(); } catch { return; }
 	if (!scene) return;
 
+	const incomingId = resolveTransitionIncomingElementId({
+		track: sel.track,
+		selectedElementId: sel.element.id,
+	});
+	if (!incomingId) {
+		toast({
+			title: "No adjacent video cut",
+			description:
+				"Transitions sit between two video (or image) clips on the same track. Select a clip that touches the next or previous one within about a second, or split/move clips until they meet.",
+			type: "warning",
+		});
+		return;
+	}
+
 	const currentTransitions = [...(scene.transitions ?? [])];
-	const filtered = currentTransitions.filter((t) => t.targetElementId !== sel.element.id);
+	const filtered = currentTransitions.filter((t) => t.targetElementId !== incomingId);
 	filtered.push({
 		id: generateUUID(),
 		type: preset.type,
 		duration: preset.defaultDuration,
-		targetElementId: sel.element.id,
+		targetElementId: incomingId,
 		trackId: sel.trackId,
 	});
 
@@ -95,7 +120,11 @@ function removeTransition() {
 	try { scene = editor.scenes.getActiveScene(); } catch { return; }
 	if (!scene) return;
 
-	const filtered = (scene.transitions ?? []).filter((t) => t.targetElementId !== sel.element.id);
+	const filtered = removeTransitionTargetsInvolvingElement({
+		transitions: scene.transitions,
+		track: sel.track,
+		elementId: sel.element.id,
+	});
 	const updatedScene = { ...scene, transitions: filtered };
 	const scenes = editor.scenes.getScenes().map((s) => s.id === scene.id ? updatedScene : s);
 	editor.scenes.setScenes({ scenes, activeSceneId: scene.id });

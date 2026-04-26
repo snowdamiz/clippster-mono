@@ -10,6 +10,7 @@ import {
 	isMainTrack,
 	validateElementTrackCompatibility,
 } from "../../../../lib/timeline/track-utils";
+import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
 
 export class MoveElementCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;
@@ -117,7 +118,8 @@ export class MoveElementCommand extends Command {
 			}
 		}
 
-		editor.timeline.updateTracks(updatedTracks);
+		const fps = editor.project.getActive()?.settings?.fps ?? 30;
+		editor.timeline.updateTracks(collapseMainVideoTracksIfPresent(updatedTracks, fps));
 	}
 
 	/**

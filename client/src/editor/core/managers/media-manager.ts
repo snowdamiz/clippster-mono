@@ -5,6 +5,7 @@ import { generateUUID } from "../../utils/id";
 import { videoCache } from "../../video-cache/service";
 import { filmstripService } from "../../services/filmstrip-service";
 import { hasMediaId } from "../../lib/timeline/element-utils";
+import { healOrphanVideoMediaReferences } from "../../lib/timeline/heal-orphan-video-media";
 import { waveformService } from "@/services/waveformService";
 
 export class MediaManager {
@@ -99,14 +100,19 @@ export class MediaManager {
 	}
 
 	async loadProjectMedia({ projectId }: { projectId: string }): Promise<void> {
+		// Do NOT notify() here: assets are still [] (see clearAllAssets) while scenes already
+		// reference mediaIds — audio would run collectAudioClips on an empty map and spam warnings,
+		// and clip cache can stay wrong for the rest of the session.
 		this.isLoading = true;
-		this.notify();
 
 		try {
 			const mediaAssets = await storageService.loadAllMediaAssets({
 				projectId,
 			});
 			this.assets = mediaAssets;
+			// Run before notify(): listeners (audio) call collectAudioClips immediately and need
+			// orphan mediaId aliases / timeline rewires applied first — project-manager heal was too late.
+			healOrphanVideoMediaReferences({ editor: this.editor, projectId });
 			this.notify();
 		} catch (error) {
 			console.error("Failed to load media assets:", error);

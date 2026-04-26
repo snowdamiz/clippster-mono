@@ -1,6 +1,6 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode, type BaseNodeParams } from "./base-node";
-import type { Transform } from "../../types/timeline";
+import type { Transform, BlendMode } from "../../types/timeline";
 import type { ElementKeyframes } from "../../types/keyframes";
 import { getKeyframedValue } from "../../types/keyframes";
 import type { ElementAnimation } from "../../types/animations";
@@ -23,6 +23,7 @@ export type StickerNodeParams = BaseNodeParams & {
 	animationIn?: ElementAnimation;
 	animationOut?: ElementAnimation;
 	animationLoop?: ElementAnimation;
+	blendMode?: BlendMode;
 };
 
 export class StickerNode extends BaseNode<StickerNodeParams> {
@@ -99,6 +100,10 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 
 		renderer.context.save();
 		renderer.context.globalAlpha = resolvedOpacity;
+
+		if (this.params.blendMode && this.params.blendMode !== "normal") {
+			renderer.context.globalCompositeOperation = this.params.blendMode as GlobalCompositeOperation;
+		}
 
 		// Apply element animations (in/out/loop)
 		const animResult = computeAnimationTransforms(

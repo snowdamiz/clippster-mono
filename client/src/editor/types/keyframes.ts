@@ -41,7 +41,8 @@ export type KeyframableProperty =
 	| "positionX"
 	| "positionY"
 	| "rotation"
-	| "volume";
+	| "volume"
+	| "speed";
 
 /** A keyframe track for a single property on a single element */
 export interface KeyframeTrack<T = number> {

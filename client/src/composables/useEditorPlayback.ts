@@ -4,6 +4,7 @@ import { useTimelineRenderer, type ActiveVideoSource, type ActiveAudioTrack } fr
 import { useAudioMixer } from './useAudioMixer';
 import { useProxyWorkflow } from './useProxyWorkflow';
 import type { VideoEditorSource, AudioTrack } from '@/types';
+import { utf8ToBase64Url } from '@/utils/encoding';
 
 export type { VideoEditorSource };
 
@@ -260,7 +261,7 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
     if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
       return filePath;
     }
-    const encodedPath = btoa(unescape(encodeURIComponent(filePath)));
+    const encodedPath = utf8ToBase64Url(filePath);
     return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
   }
 
@@ -272,7 +273,7 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
     if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
       return filePath;
     }
-    const encodedPath = btoa(unescape(encodeURIComponent(filePath)));
+    const encodedPath = utf8ToBase64Url(filePath);
     return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
   }
 

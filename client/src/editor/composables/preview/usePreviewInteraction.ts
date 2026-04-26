@@ -11,6 +11,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, type Ref }
 import { useEditor } from "../useEditor";
 import { useElementSelection } from "../timeline/element/useElementSelection";
 import { usePreviewFocus } from "./usePreviewFocus";
+import { useGuideLines } from "./useGuideLines";
 import type {
 	TimelineTrack,
 	TimelineElement,
@@ -103,6 +104,7 @@ export function usePreviewInteraction({
 	const showCenterGuideX = ref(false); // vertical line (element centered horizontally)
 	const showCenterGuideY = ref(false); // horizontal line (element centered vertically)
 	const CENTER_SNAP_THRESHOLD = 6; // pixels in canvas coords
+	const { snapToGuide } = useGuideLines();
 
 	const tracks = computed(() => {
 		void version.value;
@@ -476,6 +478,20 @@ export function usePreviewInteraction({
 			if (snappedY) newY = 0;
 			showCenterGuideX.value = snappedX;
 			showCenterGuideY.value = snappedY;
+
+			// Snap to custom/thirds/safe guide lines when not already snapped to center
+			if (!snappedX) {
+				const cw = canvasWidth.value;
+				const normalizedX = (newX + cw / 2) / cw;
+				const guideSnapX = snapToGuide("x", normalizedX);
+				if (guideSnapX !== null) newX = guideSnapX * cw - cw / 2;
+			}
+			if (!snappedY) {
+				const ch = canvasHeight.value;
+				const normalizedY = (newY + ch / 2) / ch;
+				const guideSnapY = snapToGuide("y", normalizedY);
+				if (guideSnapY !== null) newY = guideSnapY * ch - ch / 2;
+			}
 
 			const newTransform: Transform = {
 				...ds.originalTransform,

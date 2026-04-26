@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { generateId } from '@/services/database';
 import { useToast } from '@/composables/useToast';
-import { utf8ToBase64 } from '@/utils/encoding';
+import { utf8ToBase64Url } from '@/utils/encoding';
 
 // Event emitter for upload completion notifications
 const completionCallbacks = new Set<() => void>();
@@ -215,7 +215,7 @@ export function useAssetOperations() {
       // Get video server port
       const port = await invoke<number>('get_video_server_port');
       // Encode file path as base64 for URL (using utf8ToBase64 to handle Unicode)
-      const encodedPath = utf8ToBase64(asset.file_path);
+      const encodedPath = utf8ToBase64Url(asset.file_path);
       return `http://localhost:${port}/video/${encodedPath}`;
     } catch (err) {
       throw err;

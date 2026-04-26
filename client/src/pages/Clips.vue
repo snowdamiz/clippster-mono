@@ -188,7 +188,7 @@
                         (build, filePath) => playBuild(build, filePath || item.filePath, item.clipName, item.projectId)
                       "
                       @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
-                      @delete="confirmDeleteBuild"
+                      @delete="() => confirmDeleteBuild(item.build)"
                       @openProject="(build) => openProjectForClip(build, item.clip)"
                       @publish="
                         (build, filePath) => initiatePublish(build, filePath || item.filePath, item.thumbnailUrl, item.clip)
@@ -640,7 +640,7 @@
       :show="showDeleteBuildDialog"
       title="Delete Build"
       :message="'Are you sure you want to delete build'"
-      :item-name="buildToDelete ? `#${buildToDelete.build_number}` : 'this build'"
+      :item-name="buildToDelete ? buildToDelete.clipName : 'this build'"
       suffix="? The video file will be permanently removed."
       confirm-text="Delete Build"
       variant="destructive"
@@ -909,6 +909,7 @@
   import {
     getAllClipsWithBuilds,
     deleteClipBuild,
+    deleteClip,
     getThumbnailByClipId,
     getProject,
     getRawVideosByProjectId,
@@ -1011,7 +1012,7 @@
 
   // Build deletion state
   const showDeleteBuildDialog = ref(false);
-  const buildToDelete = ref<ClipBuild | null>(null);
+  const buildToDelete = ref<DisplayableBuild | null>(null);
 
   // View state
   const viewMode = ref<'folders' | 'list'>('list');
@@ -1837,6 +1838,10 @@
   function getFolderBuildsCount(clips: ClipWithBuilds[]): number {
     let count = 0;
     for (const clip of clips) {
+      if ((clip as any).source === 'video_editor' && clip.build_status === 'completed' && clip.built_file_path) {
+        count += 1;
+        continue;
+      }
       if (clip.builds) {
         for (const build of clip.builds) {
           if (build.status === 'completed') {
@@ -1951,6 +1956,27 @@
     selectedFolderDialogBuilds.value = new Set(selectedFolderDialogBuilds.value);
   }
 
+  function isVideoEditorDisplayBuild(item: DisplayableBuild): boolean {
+    return (item.clip as any).source === 'video_editor';
+  }
+
+  async function deleteDisplayableBuild(item: DisplayableBuild): Promise<void> {
+    if (isVideoEditorDisplayBuild(item)) {
+      await deleteClip(item.clip.id);
+    } else {
+      await deleteClipBuild(item.build.id);
+    }
+
+    const pathToDelete = item.filePath || item.build.file_path;
+    if (!pathToDelete) return;
+
+    try {
+      await invoke('delete_file', { path: pathToDelete });
+    } catch (fileError) {
+      console.warn('Could not delete build file:', fileError);
+    }
+  }
+
   function confirmBulkDeleteFolderDialogBuilds() {
     if (selectedFolderDialogBuilds.value.size > 0) {
       showBulkDeleteFolderDialogBuildsDialog.value = true;
@@ -1971,12 +1997,7 @@
         const buildItem = folderBuilds.value.find((b) => b.id === buildId);
         if (!buildItem) continue;
 
-        await deleteClipBuild(buildItem.build.id);
-        try {
-          await invoke('delete_file', { path: buildItem.build.file_path });
-        } catch (fileError) {
-          console.warn('Could not delete build file:', fileError);
-        }
+        await deleteDisplayableBuild(buildItem);
         deletedCount++;
       }
 
@@ -2506,7 +2527,12 @@
   }
 
   function confirmDeleteBuild(build: ClipBuild) {
-    buildToDelete.value = build;
+    const buildItem = displayableBuilds.value.find((item) => item.id === build.id)
+      ?? folderBuilds.value.find((item) => item.id === build.id)
+      ?? displayableBuilds.value.find((item) => item.build.id === build.id)
+      ?? folderBuilds.value.find((item) => item.build.id === build.id)
+      ?? null;
+    buildToDelete.value = buildItem;
     showDeleteBuildDialog.value = true;
   }
 
@@ -2519,16 +2545,7 @@
     if (!buildToDelete.value) return;
 
     try {
-      // Delete the build record from database
-      await deleteClipBuild(buildToDelete.value.id);
-
-      // Try to delete the actual file
-      try {
-        await invoke('delete_file', { path: buildToDelete.value.file_path });
-      } catch (fileError) {
-        console.warn('Could not delete build file:', fileError);
-        // Don't fail the whole operation if file deletion fails
-      }
+      await deleteDisplayableBuild(buildToDelete.value);
 
       await loadClips();
 
@@ -2679,6 +2696,17 @@
 
           // Delete all builds in this folder
           for (const clip of folder.clips) {
+            if ((clip as any).source === 'video_editor' && clip.build_status === 'completed' && clip.built_file_path) {
+              await deleteClip(clip.id);
+              try {
+                await invoke('delete_file', { path: clip.built_file_path });
+              } catch (fileError) {
+                console.warn('Could not delete build file:', fileError);
+              }
+              deletedCount++;
+              continue;
+            }
+
             if (clip.builds) {
               for (const build of clip.builds) {
                 if (build.status === 'completed' && build.file_path) {
@@ -2702,12 +2730,7 @@
           const buildItem = displayableBuilds.value.find((b) => b.id === buildId);
           if (!buildItem) continue;
 
-          await deleteClipBuild(buildItem.build.id);
-          try {
-            await invoke('delete_file', { path: buildItem.build.file_path });
-          } catch (fileError) {
-            console.warn('Could not delete build file:', fileError);
-          }
+          await deleteDisplayableBuild(buildItem);
           deletedCount++;
         }
         selectedBuilds.value.clear();

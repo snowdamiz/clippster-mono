@@ -26,6 +26,7 @@ import type { TrackType, DropTarget, ElementType } from "../../types/timeline";
 import type { TimelineDragData, MediaDragData, TextDragData, StickerDragData, EffectDragData, TransitionDragData } from "../../types/drag";
 import { generateUUID } from "../../utils/id";
 import { SetTransitionCommand } from "../../lib/commands/scene";
+import { isAdjacentMediaCuts } from "../../lib/timeline/transition-pairing";
 
 interface UseTimelineDragDropProps {
 	containerRef: Ref<HTMLDivElement | null>;
@@ -320,8 +321,14 @@ export function useTimelineDragDrop({
 				const left = sorted[i];
 				const right = sorted[i + 1];
 				const junctionTime = left.startTime + left.duration;
-				// Only consider junctions where elements are adjacent (gap < 0.1s)
-				if (Math.abs(right.startTime - junctionTime) > 0.1) continue;
+				if (
+					!isAdjacentMediaCuts({
+						outgoingEnd: junctionTime,
+						incomingStart: right.startTime,
+					})
+				) {
+					continue;
+				}
 				const dist = Math.abs(timeAtCursor - junctionTime);
 				if (dist < bestDist && dist < SNAP_THRESHOLD) {
 					bestDist = dist;

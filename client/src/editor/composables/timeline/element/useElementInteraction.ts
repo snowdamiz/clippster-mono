@@ -5,8 +5,9 @@
 import { ref, watch, onUnmounted, computed, type Ref } from "vue";
 import { useEditor } from "../../useEditor";
 import { useElementSelection } from "./useElementSelection";
-import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
+import { TIMELINE_CONSTANTS, VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT } from "../../../constants/timeline-constants";
 import { computeDropTarget } from "../../../lib/timeline/drop-utils";
+import { isMainTrack } from "../../../lib/timeline/track-utils";
 import { generateUUID } from "../../../utils/id";
 import { useTimelineSnapping, type SnapPoint } from "../useTimelineSnapping";
 import type {
@@ -26,6 +27,46 @@ interface UseElementInteractionProps {
 	headerRef?: Ref<HTMLElement | null>;
 	snappingEnabled: Ref<boolean>;
 	onSnapPointChange?: (snapPoint: SnapPoint | null) => void;
+}
+
+const TITLE_BAR_PX = 16;
+
+/** Sole full-width media clip on the main timeline row — stays at t=0 and cannot change tracks. */
+function isMainTrackSolePrimaryMediaClip(track: TimelineTrack, element: TimelineElement): boolean {
+	return (
+		isMainTrack(track) &&
+		track.elements.length === 1 &&
+		(element.type === "video" || element.type === "image")
+	);
+}
+
+/**
+ * Clicks on the linked-audio waveform strip (or audio-only waveform) should not start a move drag;
+ * use the title bar or filmstrip / thumbnail area instead.
+ */
+function shouldSuppressTimelineElementDragStart(
+	event: MouseEvent,
+	element: TimelineElement,
+	_track: TimelineTrack,
+): boolean {
+	const current = event.currentTarget as HTMLElement | null;
+	if (!current || event.button !== 0) return false;
+	const rect = current.getBoundingClientRect();
+	const y = event.clientY - rect.top;
+	const h = rect.height;
+	if (h <= 0) return false;
+
+	if (element.type === "audio") {
+		return y > TITLE_BAR_PX;
+	}
+
+	if (element.type === "video" || element.type === "image") {
+		const wfFrac = VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT / 100;
+		const waveformTop = h * (1 - wfFrac);
+		return y >= waveformTop - 1;
+	}
+
+	return false;
 }
 
 const initialDragState: ElementDragState = {
@@ -278,7 +319,14 @@ export function useElementInteraction({
 					zoomLevel: zoomLevel.value,
 					scrollLeft,
 				});
-				const adjustedTime = Math.max(0, mouseTime - pendingDrag.clickOffsetTime);
+				let adjustedTime = Math.max(0, mouseTime - pendingDrag.clickOffsetTime);
+				let currentMouseY = clientY;
+				const srcTr = tracks.value.find((t) => t.id === pendingDrag.trackId);
+				const movEl = srcTr?.elements.find((e) => e.id === pendingDrag.elementId);
+				if (srcTr && movEl && isMainTrackSolePrimaryMediaClip(srcTr, movEl)) {
+					adjustedTime = 0;
+					currentMouseY = pendingDrag.startMouseY;
+				}
 
 				dragState.value = {
 					isDragging: true,
@@ -289,7 +337,7 @@ export function useElementInteraction({
 					startElementTime: pendingDrag.startElementTime,
 					clickOffsetTime: pendingDrag.clickOffsetTime,
 					currentTime: adjustedTime,
-					currentMouseY: clientY,
+					currentMouseY,
 				};
 				startedDragThisEvent = true;
 				pendingDrag = null;
@@ -325,6 +373,13 @@ export function useElementInteraction({
 		const movingElement = sourceTrack?.elements.find(({ id }) => id === ds.elementId);
 		const { snappedTime, snapPoint } = getDragSnapResult({ frameSnappedTime, movingElement, sourceTrackId: ds.trackId ?? undefined });
 
+		if (sourceTrack && movingElement && isMainTrackSolePrimaryMediaClip(sourceTrack, movingElement)) {
+			dragState.value = { ...ds, currentTime: 0, currentMouseY: ds.startMouseY };
+			dragDropTarget.value = null;
+			onSnapPointChange?.(null);
+			return;
+		}
+
 		dragState.value = { ...ds, currentTime: snappedTime, currentMouseY: clientY };
 		onSnapPointChange?.(snapPoint);
 
@@ -352,6 +407,16 @@ export function useElementInteraction({
 		const ds = dragState.value;
 
 		if (!ds.elementId || !ds.trackId) return;
+
+		const sourceTrackEarly = tracks.value.find(({ id }) => id === ds.trackId);
+		const movingElEarly = sourceTrackEarly?.elements.find(({ id }) => id === ds.elementId);
+		if (sourceTrackEarly && movingElEarly && isMainTrackSolePrimaryMediaClip(sourceTrackEarly, movingElEarly)) {
+			dragState.value = { ...initialDragState };
+			dragDropTarget.value = null;
+			mouseDownLocation = null;
+			onSnapPointChange?.(null);
+			return;
+		}
 
 		if (mouseDownLocation) {
 			const deltaX = Math.abs(clientX - mouseDownLocation.x);
@@ -528,8 +593,7 @@ export function useElementInteraction({
 			return;
 		}
 
-			event.stopPropagation();
-		mouseDownLocation = { x: event.clientX, y: event.clientY };
+		event.stopPropagation();
 
 		const isMultiSelect = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
 		const alreadySelected = isElementSelected({ trackId: track.id, elementId: element.id });
@@ -543,6 +607,13 @@ export function useElementInteraction({
 			// keep the multi-selection intact so dragging moves them all.
 			selectElement({ trackId: track.id, elementId: element.id });
 		}
+
+		// Waveform strip: volume editing / inspection only — no move drag. Sole main clip: fixed in place.
+		if (shouldSuppressTimelineElementDragStart(event, element, track) || isMainTrackSolePrimaryMediaClip(track, element)) {
+			return;
+		}
+
+		mouseDownLocation = { x: event.clientX, y: event.clientY };
 
 		const clickOffset = getClickOffsetTime({
 			clientX: event.clientX,

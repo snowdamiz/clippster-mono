@@ -4,6 +4,7 @@ export type CanvasRendererParams = {
 	width: number;
 	height: number;
 	fps: number;
+	preferOffscreen?: boolean;
 };
 
 export class CanvasRenderer {
@@ -13,14 +14,20 @@ export class CanvasRenderer {
 	height: number;
 	fps: number;
 
-	constructor({ width, height, fps }: CanvasRendererParams) {
+	constructor({ width, height, fps, preferOffscreen = true }: CanvasRendererParams) {
 		this.width = width;
 		this.height = height;
 		this.fps = fps;
 
-		try {
-			this.canvas = new OffscreenCanvas(width, height);
-		} catch {
+		if (preferOffscreen) {
+			try {
+				this.canvas = new OffscreenCanvas(width, height);
+			} catch {
+				this.canvas = document.createElement("canvas");
+				this.canvas.width = width;
+				this.canvas.height = height;
+			}
+		} else {
 			this.canvas = document.createElement("canvas");
 			this.canvas.width = width;
 			this.canvas.height = height;
