@@ -84,6 +84,31 @@
                     <svg class="clip-selector__spinner" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
                     Loading preview...
                   </div>
+                  <!-- Volume control (bottom-left, shown on hover) -->
+                  <div
+                    class="clip-selector__volume-ctrl"
+                    @click.stop
+                    @mouseenter="showVolumeSlider = true"
+                    @mouseleave="showVolumeSlider = false"
+                  >
+                    <button class="clip-selector__volume-btn" @click="toggleMute" :title="isMuted ? 'Unmute' : 'Mute'">
+                      <VolumeX v-if="isMuted || volume === 0" :size="14" />
+                      <Volume2 v-else :size="14" />
+                    </button>
+                    <Transition name="volume-slider">
+                      <input
+                        v-if="showVolumeSlider"
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.02"
+                        :value="isMuted ? 0 : volume"
+                        class="clip-selector__volume-slider"
+                        @input="onVolumeSliderChange"
+                      />
+                    </Transition>
+                  </div>
+
                   <!-- Time badge -->
                   <div class="clip-selector__time-badge">
                     {{ formatTime(currentPlaybackTime) }} / {{ formatTime(maxDuration) }}
@@ -199,7 +224,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { formatTime as formatTimeUtil } from '@/utils/dateTimeUtils';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-  import { Scissors, X, Check, AlertCircle, Share2, Play, Pause } from 'lucide-vue-next';
+  import { Scissors, X, Check, AlertCircle, Share2, Play, Pause, Volume2, VolumeX } from 'lucide-vue-next';
   import { createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
   import { createClipVersion } from '@/services/database/clip-versions';
   import { updateClip } from '@/services/database/clips';
@@ -271,6 +296,44 @@
   const currentPlaybackTime = ref(0);
   const vodPlaylistPath = ref<string | null>(null);
   let hlsInstance: Hls | null = null;
+
+  // Volume state (persisted to localStorage)
+  const VOLUME_KEY = 'livestreamClipSelector.volume';
+  const MUTED_KEY = 'livestreamClipSelector.muted';
+  const volume = ref<number>(parseFloat(localStorage.getItem(VOLUME_KEY) ?? '1'));
+  const isMuted = ref<boolean>(localStorage.getItem(MUTED_KEY) === 'true');
+  const showVolumeSlider = ref(false);
+
+  // Sync volume/mute to video element and localStorage
+  watch([volume, isMuted], ([vol, muted]) => {
+    if (previewVideoRef.value) {
+      previewVideoRef.value.volume = vol;
+      previewVideoRef.value.muted = muted;
+    }
+    localStorage.setItem(VOLUME_KEY, String(vol));
+    localStorage.setItem(MUTED_KEY, String(muted));
+  });
+
+  function applyVolumeToVideo() {
+    if (previewVideoRef.value) {
+      previewVideoRef.value.volume = volume.value;
+      previewVideoRef.value.muted = isMuted.value;
+    }
+  }
+
+  function toggleMute() {
+    isMuted.value = !isMuted.value;
+  }
+
+  function onVolumeSliderChange(e: Event) {
+    const val = parseFloat((e.target as HTMLInputElement).value);
+    volume.value = val;
+    if (val === 0) {
+      isMuted.value = true;
+    } else if (isMuted.value) {
+      isMuted.value = false;
+    }
+  }
 
   // Clip selection (in seconds from start of the 3-minute window)
   // These will be initialized in onMounted to default to the last 30 seconds
@@ -393,12 +456,21 @@
 
         // Seek to the start of the selected range and auto-play
         if (previewVideoRef.value) {
+          applyVolumeToVideo();
           previewVideoRef.value.currentTime = startTime.value;
           previewVideoRef.value.play().then(() => {
             isPreviewPlaying.value = true;
           }).catch((err) => {
             console.warn('[ClipSelector] Auto-play failed:', err);
-            isPreviewPlaying.value = false;
+            // Browsers may require muted for autoplay — mute and retry once
+            if (previewVideoRef.value) {
+              previewVideoRef.value.muted = true;
+              previewVideoRef.value.play().then(() => {
+                isPreviewPlaying.value = true;
+              }).catch(() => {
+                isPreviewPlaying.value = false;
+              });
+            }
           });
         }
       });
@@ -1071,6 +1143,55 @@
     width: 16px;
     height: 16px;
     animation: clip-selector-spin 0.8s linear infinite;
+  }
+
+  /* ===== Volume Control ===== */
+  .clip-selector__volume-ctrl {
+    position: absolute;
+    bottom: 0.5rem;
+    left: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    z-index: 5;
+  }
+
+  .clip-selector__volume-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background-color: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px);
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 150ms ease;
+  }
+
+  .clip-selector__volume-btn:hover {
+    background-color: rgba(0, 0, 0, 0.85);
+  }
+
+  .clip-selector__volume-slider {
+    width: 72px;
+    height: 4px;
+    accent-color: var(--sidebar-accent);
+    cursor: pointer;
+  }
+
+  .volume-slider-enter-active,
+  .volume-slider-leave-active {
+    transition: opacity 150ms ease, transform 150ms ease;
+  }
+
+  .volume-slider-enter-from,
+  .volume-slider-leave-to {
+    opacity: 0;
+    transform: translateX(-6px);
   }
 
   .clip-selector__time-badge {

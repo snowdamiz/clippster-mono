@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex};
 use tauri_plugin_shell::ShellExt;
 
 use super::encoder::{
-    build_hwaccel_args, detect_hardware_encoder, get_quality_settings, run_ffmpeg_with_fallback,
+    build_hwaccel_args, detect_hardware_encoder, get_quality_settings, get_software_encoder,
+    remove_hwaccel_flags, replace_encoder_in_args, run_ffmpeg_with_fallback,
 };
 use super::font_manager::get_fonts_dir;
 use super::types::{
@@ -1891,6 +1892,112 @@ pub async fn build_multi_segment_clip_with_settings(
     Ok(())
 }
 
+/// Returns true if the file has at least one video stream (ffprobe).
+async fn probe_file_has_video_stream(
+    app: &tauri::AppHandle,
+    path: &std::path::Path,
+) -> Result<bool, String> {
+    let path_str = path.to_string_lossy().to_string();
+    let output = app
+        .shell()
+        .sidecar("ffprobe")
+        .map_err(|e| format!("Failed to get ffprobe sidecar: {}", e))?
+        .args([
+            "-v",
+            "quiet",
+            "-select_streams",
+            "v",
+            "-show_entries",
+            "stream=index",
+            "-of",
+            "csv=p=0",
+            &path_str,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("ffprobe failed for {}: {}", path_str, e))?;
+    Ok(!String::from_utf8_lossy(&output.stdout).trim().is_empty())
+}
+
+async fn probe_file_has_audio_stream(
+    app: &tauri::AppHandle,
+    path: &std::path::Path,
+) -> Result<bool, String> {
+    let path_str = path.to_string_lossy().to_string();
+    let output = app
+        .shell()
+        .sidecar("ffprobe")
+        .map_err(|e| format!("Failed to get ffprobe sidecar: {}", e))?
+        .args([
+            "-v",
+            "quiet",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=index",
+            "-of",
+            "csv=p=0",
+            &path_str,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("ffprobe failed for {}: {}", path_str, e))?;
+    Ok(!String::from_utf8_lossy(&output.stdout).trim().is_empty())
+}
+
+/// Mux silent stereo AAC under the existing video stream (same duration as video).
+/// Used so concat with intro/outro (which always have AAC) sees matching stream counts/codecs.
+async fn mux_silent_stereo_aac_under_video(
+    app: &tauri::AppHandle,
+    input: &std::path::Path,
+    output: &std::path::Path,
+) -> Result<(), String> {
+    let shell = app.shell();
+    // -map 0:v: first video stream (0:v:0 fails when stream #0 is not video, e.g. odd containers).
+    // Large probes: short MP4s from NVENC may lack moov at start until fully parsed.
+    let out = shell
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args([
+            "-nostdin",
+            "-y",
+            "-probesize",
+            "100M",
+            "-analyzeduration",
+            "100M",
+            "-i",
+            &input.to_string_lossy(),
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=48000:cl=stereo",
+            "-map",
+            "0:v",
+            "-map",
+            "1:a:0",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+            "-shortest",
+            &output.to_string_lossy(),
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to mux silent audio: {}", e))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("FFmpeg silent-audio mux failed: {}", stderr));
+    }
+    Ok(())
+}
+
 // Helper function to prepare intro/outro for concatenation with the main clip
 // This processes the intro/outro to match the aspect ratio, frame rate, and resolution
 // Includes caching to avoid re-processing the same intro/outro multiple times
@@ -2789,13 +2896,45 @@ pub async fn build_multi_region_clip(
     video_filter_segments: Option<&Vec<VideoFilterSegment>>,
     effects_filter_chain: Option<&str>,
 ) -> Result<(), String> {
-    // Build combined filter string (color grading + effects)
-    let video_filter_str =
-        build_combined_filter_string(video_filter_segments, effects_filter_chain);
     let _shell = app.shell();
     let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
     let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
     let duration = end_time - start_time;
+    if duration <= 0.001 {
+        return Err(format!(
+            "Clip segment has invalid duration ({:.6}s): start={:.3} end={:.3}",
+            duration, start_time, end_time
+        ));
+    }
+
+    // Time-based color filters use output time `t` in [0, duration]. Stored segments use
+    // full-VOD times — same rebasing as multi-segment export (`get_overlapping_filter_segments`).
+    let overlapping_filters =
+        get_overlapping_filter_segments(video_filter_segments, start_time, end_time);
+    let video_filter_str = match (
+        overlapping_filters
+            .as_ref()
+            .and_then(|segs| build_time_based_filter_string(segs)),
+        effects_filter_chain,
+    ) {
+        (Some(vf), Some(ef)) => Some(format!("{},{}", vf, ef)),
+        (Some(vf), None) => Some(vf),
+        (None, Some(ef)) => Some(ef.to_string()),
+        (None, None) => None,
+    };
+    if video_filter_segments.is_some() {
+        println!(
+            "[Rust] Multi-region: clip window {:.3}s..{:.3}s (duration {:.3}s); graded filters: {}",
+            start_time,
+            end_time,
+            duration,
+            if video_filter_str.is_some() {
+                "yes"
+            } else {
+                "no"
+            }
+        );
+    }
 
     // Parse target aspect ratio
     let aspect =
@@ -3347,10 +3486,67 @@ pub async fn build_multi_region_clip(
 
     println!("[Rust] Running FFmpeg multi-region build...");
 
-    // Use fallback helper for hardware encoder resilience
+    // CUDA hwdecode + complex filter can exit 0 while writing an empty / streamless MP4
+    // (e.g. frame=0, Lsize=0). Clone args so we can retry once with CPU decode.
+    let args_cpu_fallback = args.clone();
     run_ffmpeg_with_fallback(app, args, &encoder, quality, None)
         .await
         .map_err(|e| format!("FFmpeg multi-region build failed: {}", e))?;
+
+    let has_video = probe_file_has_video_stream(app, output_path)
+        .await
+        .unwrap_or(false);
+    let out_bytes = std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);
+    const MIN_MP4_BYTES: u64 = 4096;
+    if !has_video || out_bytes < MIN_MP4_BYTES {
+        println!(
+            "[Rust] Multi-region first pass produced invalid output (video_stream={}, {} bytes); retrying without hwaccel",
+            has_video, out_bytes
+        );
+        let mut retry_args = args_cpu_fallback.clone();
+        remove_hwaccel_flags(&mut retry_args);
+        run_ffmpeg_with_fallback(app, retry_args, &encoder, quality, None)
+            .await
+            .map_err(|e| format!("FFmpeg multi-region CPU-decode retry failed: {}", e))?;
+        let has_video_retry = probe_file_has_video_stream(app, output_path)
+            .await
+            .unwrap_or(false);
+        let out_bytes_retry = std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);
+        if !has_video_retry || out_bytes_retry < MIN_MP4_BYTES {
+            println!(
+                "[Rust] Multi-region: CPU-decode retry still invalid (video_stream={}, {} bytes); trying libx264",
+                has_video_retry, out_bytes_retry
+            );
+            let mut soft_args = args_cpu_fallback.clone();
+            remove_hwaccel_flags(&mut soft_args);
+            replace_encoder_in_args(&mut soft_args, quality);
+            let sw_enc = get_software_encoder(quality);
+            run_ffmpeg_with_fallback(app, soft_args, &sw_enc, quality, None)
+                .await
+                .map_err(|e| format!("FFmpeg multi-region libx264 retry failed: {}", e))?;
+            let has_sw = probe_file_has_video_stream(app, output_path)
+                .await
+                .unwrap_or(false);
+            let out_sw = std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);
+            if !has_sw || out_sw < MIN_MP4_BYTES {
+                return Err(format!(
+                    "Multi-region export produced no usable video ({} bytes). \
+                     The source file is fine; FFmpeg wrote an empty or broken output. \
+                     Try turning off clip color grades for this export, or a different quality preset.",
+                    out_sw
+                ));
+            }
+            println!(
+                "[Rust] Multi-region libx264 retry OK ({} bytes, video_stream={})",
+                out_sw, has_sw
+            );
+        } else {
+            println!(
+                "[Rust] Multi-region CPU-decode retry OK ({} bytes, video_stream={})",
+                out_bytes_retry, has_video_retry
+            );
+        }
+    }
 
     println!("[Rust] Multi-region clip built successfully");
     Ok(())
@@ -3613,6 +3809,30 @@ pub async fn build_clip_with_framing_strategy(
                 std::fs::copy(output_path, &main_clip_temp)
                     .map_err(|e| format!("Failed to copy main clip: {}", e))?;
 
+                // Intro/outro from prepare_intro_outro_for_concat always include AAC audio.
+                // Multi-region main may be video-only (-map 0:a? when source has no audio).
+                // FFmpeg concat + stream copy requires compatible streams across all parts.
+                let mut main_for_concat = main_clip_temp.clone();
+                let main_has_audio = match probe_file_has_audio_stream(app, &main_for_concat).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        println!(
+                            "[Rust] MultiRegion: ffprobe could not detect audio ({}); assuming main has audio",
+                            e
+                        );
+                        true
+                    }
+                };
+                if !main_has_audio {
+                    println!(
+                        "[Rust] MultiRegion: main clip has no audio stream; muxing silent AAC for concat compatibility"
+                    );
+                    let main_with_audio = temp_dir.join("main_clip_with_silent_aac.mp4");
+                    mux_silent_stereo_aac_under_video(app, &main_for_concat, &main_with_audio)
+                        .await?;
+                    main_for_concat = main_with_audio;
+                }
+
                 // Build concat list
                 let concat_list_path = temp_dir.join("concat_list.txt");
                 let mut concat_content = String::new();
@@ -3621,7 +3841,7 @@ pub async fn build_clip_with_framing_strategy(
                     concat_content.push_str(&format!("file '{}'\n", intro.to_string_lossy().replace("\\", "/")));
                 }
 
-                concat_content.push_str(&format!("file '{}'\n", main_clip_temp.to_string_lossy().replace("\\", "/")));
+                concat_content.push_str(&format!("file '{}'\n", main_for_concat.to_string_lossy().replace("\\", "/")));
 
                 if let Some(ref outro) = outro_file {
                     concat_content.push_str(&format!("file '{}'\n", outro.to_string_lossy().replace("\\", "/")));
@@ -3630,8 +3850,10 @@ pub async fn build_clip_with_framing_strategy(
                 std::fs::write(&concat_list_path, concat_content)
                     .map_err(|e| format!("Failed to write concat list: {}", e))?;
 
-                // Run FFmpeg concat
+                // Run FFmpeg concat (stream copy first — fast when codecs align)
                 println!("[Rust] MultiRegion: Concatenating intro/main/outro...");
+                let concat_list_str = concat_list_path.to_string_lossy().to_string();
+                let output_str = output_path.to_string_lossy().to_string();
                 let output = app
                     .shell()
                     .sidecar("ffmpeg")
@@ -3643,21 +3865,64 @@ pub async fn build_clip_with_framing_strategy(
                         "-safe",
                         "0",
                         "-i",
-                        &concat_list_path.to_string_lossy(),
+                        &concat_list_str,
                         "-c",
                         "copy",
                         "-movflags",
                         "+faststart",
                         "-y",
-                        &output_path.to_string_lossy(),
+                        &output_str,
                     ])
                     .output()
                     .await
                     .map_err(|e| format!("Failed to run ffmpeg concat: {}", e))?;
 
                 if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    return Err(format!("FFmpeg concat failed: {}", stderr));
+                    let stderr_copy = String::from_utf8_lossy(&output.stderr);
+                    println!(
+                        "[Rust] MultiRegion: concat -c copy failed; retrying with re-encode. First error: {}",
+                        stderr_copy
+                    );
+                    let output2 = app
+                        .shell()
+                        .sidecar("ffmpeg")
+                        .unwrap()
+                        .args([
+                            "-nostdin",
+                            "-f",
+                            "concat",
+                            "-safe",
+                            "0",
+                            "-i",
+                            &concat_list_str,
+                            "-c:v",
+                            "libx264",
+                            "-preset",
+                            "veryfast",
+                            "-crf",
+                            "18",
+                            "-c:a",
+                            "aac",
+                            "-b:a",
+                            "192k",
+                            "-ar",
+                            "48000",
+                            "-ac",
+                            "2",
+                            "-pix_fmt",
+                            "yuv420p",
+                            "-movflags",
+                            "+faststart",
+                            "-y",
+                            &output_str,
+                        ])
+                        .output()
+                        .await
+                        .map_err(|e| format!("Failed to run ffmpeg concat (re-encode): {}", e))?;
+                    if !output2.status.success() {
+                        let stderr = String::from_utf8_lossy(&output2.stderr);
+                        return Err(format!("FFmpeg concat failed: {}", stderr));
+                    }
                 }
 
                 println!("[Rust] MultiRegion: Concatenation complete");

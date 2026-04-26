@@ -222,6 +222,7 @@
                   @editClip="onEditClip"
                   @addClip="onAddClip"
                   @publishNow="onPublishNow"
+                  @buildDialogOpen="onBuildDialogOpen"
                   @transcribeProject="onTranscribeProject"
                   @cancelTranscription="onCancelTranscription"
                   @viewTranscript="rightPanelTab = 'transcript'"
@@ -3435,6 +3436,16 @@
     showExistingProjectDialog.value = false;
     existingProjectForClip.value = null;
     pendingClipToEdit.value = null;
+  }
+
+  // Pause video when the clip build settings dialog opens
+  function onBuildDialogOpen(open: boolean) {
+    if (open && isPlaying.value) {
+      togglePlayPause();
+    }
+    if (open && isPlayingSegments.value) {
+      stopSegmentedPlayback();
+    }
   }
 
   // Handle Publish Now action

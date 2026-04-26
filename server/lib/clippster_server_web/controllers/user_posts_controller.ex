@@ -498,8 +498,8 @@ defmodule ClippsterServerWeb.UserPostsController do
         case PostForMe.list_social_post_results(%{social_post_id: post.id}) do
           {:ok, %{data: results}} when is_list(results) and length(results) > 0 ->
             Enum.each(results, fn result ->
-              if result["success"] == false do
-                Logger.error("[UserPosts] PostForMe publishing failed for post #{post.id}: #{inspect(result["error"])}")
+              if result.success == false do
+                Logger.error("[UserPosts] PostForMe publishing failed for post #{post.id}: #{inspect(result.error)}")
                 Logger.error("[UserPosts] PostForMe result details: #{inspect(result)}")
               else
                 Logger.info("[UserPosts] PostForMe publishing succeeded for post #{post.id}")

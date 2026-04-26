@@ -8,6 +8,26 @@ import {
 } from '@/services/database';
 import { invoke } from '@tauri-apps/api/core';
 import { utf8ToBase64Url } from '@/utils/encoding';
+import { isPlausibleVodSourcePath } from '@/services/clip-vod-extract';
+
+/**
+ * When a project has multiple raw_videos rows (e.g. full VOD + editor/built extract),
+ * `getAllRawVideos` is ordered globally by created_at DESC, so `.find(project_id)` often
+ * picked the newest file — frequently a short built_clips path. Clip segment times stay
+ * on the full-VOD timeline, so playback validation failed. Prefer a plausible VOD path
+ * and the longest known duration among those.
+ */
+function pickBestRawVideoForWorkspacePlayback(rows: RawVideo[]): RawVideo | null {
+  if (!rows.length) return null;
+  const plausible = rows.filter((v) => v.file_path && isPlausibleVodSourcePath(v.file_path));
+  const pool = plausible.length > 0 ? plausible : rows;
+  return pool.reduce((best, v) => {
+    const bestDur = best.duration ?? 0;
+    const vDur = v.duration ?? 0;
+    if (vDur > bestDur) return v;
+    return best;
+  });
+}
 
 export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   // Video player state
@@ -371,7 +391,8 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
 
       // Look for video using project_id relationship
       if (projectData?.id) {
-        const projectVideo = availableVideos.value.find((v) => v.project_id === projectData.id);
+        const forProject = availableVideos.value.filter((v) => v.project_id === projectData.id);
+        const projectVideo = pickBestRawVideoForWorkspacePlayback(forProject);
         if (projectVideo) {
           videoPath = projectVideo.file_path;
           currentVideo.value = projectVideo;

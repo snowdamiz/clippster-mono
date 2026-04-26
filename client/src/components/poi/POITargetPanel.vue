@@ -112,6 +112,12 @@
         <!-- Background fill -->
         <div class="absolute inset-0 bg-zinc-900" />
 
+        <!-- Transparent click-catcher to deselect regions when clicking empty space -->
+        <div
+          class="absolute inset-0 z-[4]"
+          @click="emit('selectRegion', null)"
+        />
+
         <!-- Grid lines for visual guidance -->
         <div class="absolute inset-0 pointer-events-none">
           <!-- Horizontal thirds -->
@@ -350,6 +356,7 @@
           :aspect-ratio-locked="region.aspectRatioLocked !== false"
           :snap-to-center="true"
           :snap-threshold="SNAP_THRESHOLD"
+          :corner-radius-px="getScaledCornerRadius(region)"
           @update="(rect) => updateRegionOutput(region.id, rect)"
           @select="selectRegion(region.id)"
           @drag-start="onDragStart"
@@ -380,15 +387,20 @@
         >
           <!-- Drag body -->
           <div
-            class="w-full h-full flex items-center justify-center cursor-move select-none overflow-hidden"
-            :class="isDraggingSubtitles ? 'ring-2 ring-purple-400' : 'ring-1 ring-purple-500/60 hover:ring-purple-400'"
+            class="w-full h-full flex items-center justify-center cursor-move select-none"
+            :class="[
+              isDraggingSubtitles ? 'ring-2 ring-purple-400' : 'ring-1 ring-purple-500/60 hover:ring-purple-400',
+              subtitleSettings?.animationStyle === 'single-word' ? 'overflow-visible' : 'overflow-hidden',
+            ]"
             style="border-radius: 4px; background: rgba(88,28,135,0.15);"
             @mousedown.prevent="startDragSubtitles"
           >
             <!-- Actual transcript words (when available) -->
             <div
               v-if="visibleWords.length > 0"
-              class="flex flex-wrap items-center justify-center gap-2 px-2 pointer-events-none"
+              :class="subtitleSettings?.animationStyle === 'single-word'
+                ? 'flex items-center justify-center pointer-events-none'
+                : 'flex flex-wrap items-center justify-center gap-2 px-2 pointer-events-none'"
             >
               <template v-if="subtitleSettings">
                 <span
@@ -397,7 +409,13 @@
                   class="relative inline-block"
                 >
                   <!-- Use SVG for proper border rendering -->
-                  <span class="invisible select-none" :style="subtitleTextStyle">{{ subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}</span>
+                  <!-- For single-word, add horizontal padding so stroke isn't clipped at edges -->
+                  <span
+                    class="invisible select-none"
+                    :style="subtitleSettings.animationStyle === 'single-word'
+                      ? { ...subtitleTextStyle, paddingLeft: '0.2em', paddingRight: '0.2em' }
+                      : subtitleTextStyle"
+                  >{{ subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}</span>
                   <svg class="absolute inset-0 w-full h-full overflow-visible" style="pointer-events: none">
                     <!-- Border 2 (Outer) -->
                     <text
@@ -473,6 +491,7 @@
             >
               {{ sampleSubtitleText }}
             </div>
+
           </div>
 
           <!-- Corner resize handles (hidden for single-word style since width is auto) -->
@@ -1542,14 +1561,31 @@
     return props.regions.findIndex((r) => r.id === id);
   }
 
+  // Scale a design-space corner radius (px at 1080px output width) to preview CSS pixels.
+  function getScaledCornerRadius(region: ManualRegion): number {
+    if (!region.cornerRadiusEnabled || !region.cornerRadiusPx) return 0;
+    const previewWidthPx = containerWidth.value * region.output.width;
+    const scaleFactor = previewWidthPx / 1080;
+    return Math.max(1, Math.round(region.cornerRadiusPx * scaleFactor));
+  }
+
   // Get style for region preview container
   function getRegionPreviewStyle(region: ManualRegion) {
-    return {
+    const style: Record<string, string> = {
       left: `${region.output.x * 100}%`,
       top: `${region.output.y * 100}%`,
       width: `${region.output.width * 100}%`,
       height: `${region.output.height * 100}%`,
     };
+    const scaledRadius = getScaledCornerRadius(region);
+    if (scaledRadius > 0) {
+      style.borderRadius = `${scaledRadius}px`;
+      style.overflow = 'hidden';
+      // translateZ(0) forces a GPU compositing layer so Chromium/WebView
+      // correctly clips <video> children to the parent's border-radius
+      style.transform = 'translateZ(0)';
+    }
+    return style;
   }
 
   // Calculate the cropped image/video style to show only the source selection

@@ -91,6 +91,32 @@
           Delete Media
         </button>
       </div>
+
+      <!-- Rounded Corners Control -->
+      <div class="flex items-center gap-3 mt-2">
+        <label class="flex items-center gap-2 cursor-pointer group shrink-0">
+          <input
+            type="checkbox"
+            :checked="selectedRegion.cornerRadiusEnabled === true"
+            @change="toggleCornerRadius"
+            class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-violet-500 focus:ring-violet-500 focus:ring-offset-0"
+          />
+          <RoundCornerIcon class="w-3.5 h-3.5 text-violet-400" />
+          <span class="text-xs font-medium text-zinc-300 group-hover:text-zinc-100 transition-colors">Round Corners</span>
+        </label>
+        <template v-if="selectedRegion.cornerRadiusEnabled">
+          <input
+            type="range"
+            min="0"
+            max="540"
+            step="4"
+            :value="selectedRegion.cornerRadiusPx ?? 0"
+            class="flex-1 h-1 accent-violet-500 cursor-pointer"
+            @input="updateCornerRadius"
+          />
+          <span class="text-[10px] text-zinc-400 font-mono w-7 text-right shrink-0">{{ selectedRegion.cornerRadiusPx ?? 0 }}px</span>
+        </template>
+      </div>
     </div>
 
     <!-- Canvas Area -->
@@ -105,7 +131,8 @@
             :src="videoUrl"
             class="absolute inset-0 w-full h-full object-cover"
             preload="metadata"
-            muted
+            :volume="volume"
+            :muted="isMuted"
             playsinline
             @timeupdate="onVideoTimeUpdate"
             @loadedmetadata="onVideoLoaded"
@@ -148,6 +175,9 @@
             :resizable="true"
             :draggable="true"
             :aspect-ratio-locked="region.aspectRatioLocked !== false"
+            :corner-radius-px="region.cornerRadiusEnabled && region.cornerRadiusPx
+              ? Math.max(1, Math.round(region.cornerRadiusPx * (containerWidth * region.source.width) / 1080))
+              : 0"
             @update="(rect) => updateRegionSource(region.id, rect)"
             @delete="deleteRegion(region.id)"
             @select="selectRegion(region.id)"
@@ -237,7 +267,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-  import { PlusIcon, VideoIcon, PlusCircleIcon, ImageIcon, LockIcon, UnlockIcon, TrashIcon } from 'lucide-vue-next';
+  import { PlusIcon, VideoIcon, PlusCircleIcon, ImageIcon, LockIcon, UnlockIcon, TrashIcon, CircleDotIcon as RoundCornerIcon } from 'lucide-vue-next';
   import Hls from 'hls.js';
   import POIRegion from './POIRegion.vue';
   import type { ManualRegion, ManualRegionRect } from '@/types';
@@ -252,6 +282,8 @@
     videoUrl?: string | null;
     videoTime?: number;
     isPlaying?: boolean;
+    volume?: number;
+    isMuted?: boolean;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -259,6 +291,8 @@
     maxRegions: 8,
     videoTime: 0,
     isPlaying: false,
+    volume: 1,
+    isMuted: false,
   });
 
   const emit = defineEmits<{
@@ -495,6 +529,22 @@
   // Get region index for labeling
   function getRegionIndex(id: string): number {
     return props.regions.findIndex((r) => r.id === id);
+  }
+
+  // Toggle corner radius for selected region
+  function toggleCornerRadius() {
+    if (!selectedRegion.value) return;
+    const newEnabled = !(selectedRegion.value.cornerRadiusEnabled === true);
+    emit('updateRegion', selectedRegion.value.id, {
+      cornerRadiusEnabled: newEnabled,
+      cornerRadiusPx: newEnabled ? (selectedRegion.value.cornerRadiusPx ?? 16) : 0,
+    });
+  }
+
+  function updateCornerRadius(e: Event) {
+    if (!selectedRegion.value) return;
+    const val = parseInt((e.target as HTMLInputElement).value, 10);
+    emit('updateRegion', selectedRegion.value.id, { cornerRadiusPx: val });
   }
 
   // Toggle aspect ratio lock for selected region

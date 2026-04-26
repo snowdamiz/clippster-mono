@@ -152,6 +152,7 @@
       @adjust-clip="onAdjustClip"
       @add-clip="handleAddClip"
       @publish-now="onPublishNow"
+      @build-dialog-open="(open) => emit('buildDialogOpen', open)"
     />
   </div>
 </template>

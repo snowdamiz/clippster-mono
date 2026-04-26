@@ -320,6 +320,19 @@
                                 </div>
                               </button>
 
+                              <div class="clips-tab-dropdown-divider h-px my-1 mx-2"></div>
+                              <button
+                                v-if="clip.build_status !== 'building'"
+                                class="clips-tab-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
+                                @click.stop="
+                                  onBuildClip(clip);
+                                  closeDownloadDropdown();
+                                "
+                              >
+                                <Hammer class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
+                                <span>Rebuild in another format…</span>
+                              </button>
+
                               <!-- Legacy download fallback -->
                               <button
                                 v-if="getDownloadableFilesCount(clip) === 0 && clip.built_file_path"
@@ -409,9 +422,9 @@
                               <!-- Divider -->
                               <div class="clips-tab-dropdown-divider h-px my-1 mx-2"></div>
 
-                              <!-- Build Clip -->
+                              <!-- Build / rebuild clip (new build or different aspect ratio) -->
                               <button
-                                v-if="clip.build_status !== 'building' && !hasCompletedBuilds(clip)"
+                                v-if="clip.build_status !== 'building'"
                                 class="clips-tab-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
                                 @click.stop="
                                   onBuildClip(clip);
@@ -419,7 +432,7 @@
                                 "
                               >
                                 <Hammer class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
-                                <span>Build Clip</span>
+                                <span>{{ hasCompletedBuilds(clip) ? 'Rebuild clip…' : 'Build Clip' }}</span>
                               </button>
 
                               <!-- Publish Now (only for found clips NOT yet built) -->
@@ -917,6 +930,7 @@
     addClip: [];
     adjustClip: [clipId: string];
     publishNow: [clip: ClipWithVersion];
+    buildDialogOpen: [open: boolean];
   }>();
 
   // AI Permission check
@@ -935,6 +949,10 @@
   const clipElements = ref<Map<string, HTMLElement>>(new Map());
   const showBuildSettingsDialog = ref(false);
   const clipToBuild = ref<ClipWithVersion | null>(null);
+
+  watch(showBuildSettingsDialog, (open) => {
+    if (!open) emit('buildDialogOpen', false);
+  });
 
   // Derive SubtitleSettings from the clip being built (reads preset from DB data on the clip)
   const derivedSubtitleSettings = computed((): SubtitleSettings | null => {
@@ -2106,6 +2124,7 @@
     // Open dialog immediately (don't wait for async operations)
     clipToBuild.value = clip;
     showBuildSettingsDialog.value = true;
+    emit('buildDialogOpen', true);
 
     // Load saved aspect framing settings in background (dialog will use defaults until loaded)
     loadSavedAspectSettings(clip.id);

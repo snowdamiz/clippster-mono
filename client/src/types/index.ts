@@ -377,6 +377,7 @@ export interface MediaPanelEmits {
   (e: 'cancelTranscription'): void;
   (e: 'viewTranscript'): void;
   (e: 'publishNow', clip: any): void;
+  (e: 'buildDialogOpen', open: boolean): void;
 }
 
 export interface TimelinePlayheadProps {
@@ -667,6 +668,9 @@ export interface ManualRegion {
   source: ManualRegionRect;
   // Output position (normalized 0-1 coordinates on target canvas)
   output: ManualRegionRect;
+  // Rounded corners
+  cornerRadiusEnabled?: boolean;
+  cornerRadiusPx?: number; // 0-80px at output resolution
   // Media asset reference (use editor asset system)
   mediaAssetId?: string; // Reference to MediaAsset in editor.media
   mediaType?: 'video-crop' | 'image' | 'video'; // Type of content in this region

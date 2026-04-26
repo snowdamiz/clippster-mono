@@ -1,13 +1,11 @@
 <template>
-  <div class="poi-segment-timeline border-t border-zinc-800 bg-zinc-900/70">
+  <!-- shrink-0: parent is flex-col; without this the strip collapses and h-12 becomes a few pixels tall -->
+  <div class="poi-segment-timeline shrink-0 border-t border-zinc-800 bg-zinc-900/70">
     <!-- Header -->
-    <div class="flex items-center justify-between px-3 py-2 border-b border-zinc-700/50">
-      <div class="flex flex-col gap-0.5">
-        <div class="flex items-center gap-2">
-          <div class="text-sm font-semibold text-zinc-200">Time-Based Regions</div>
-          <span class="text-xs text-zinc-500">{{ segments.length }} segment{{ segments.length !== 1 ? 's' : '' }}</span>
-        </div>
-        <div class="text-xs text-zinc-400">Set different regions for specific time periods</div>
+    <div class="flex items-center justify-between px-3 py-1.5 border-b border-zinc-700/50">
+      <div class="flex items-center gap-2">
+        <div class="text-xs font-semibold text-zinc-200">Time-Based Regions</div>
+        <span class="text-[10px] text-zinc-500">{{ segments.length }} segment{{ segments.length !== 1 ? 's' : '' }}</span>
       </div>
       <button
         @click="addSegment"
@@ -21,17 +19,17 @@
     </div>
 
     <!-- Timeline -->
-    <div class="px-4 py-3">
+    <div class="px-3 py-2">
       <!-- Time markers -->
-      <div class="flex items-center justify-between mb-2 px-1">
+      <div class="flex items-center justify-between mb-1 px-1">
         <span class="text-[10px] text-zinc-500 font-mono">0:00</span>
         <span class="text-[10px] text-zinc-500 font-mono">{{ formatTime(duration) }}</span>
       </div>
 
-      <!-- Timeline track -->
+      <!-- Timeline track: fixed min height so filmstrip stays visible; flex parents cannot squash it -->
       <div 
         ref="timelineRef"
-        class="relative h-12 bg-zinc-900/50 rounded-lg border border-zinc-800/50"
+        class="relative h-12 min-h-[3rem] shrink-0 bg-zinc-900/50 rounded-lg border border-zinc-800/50"
         @click="onTimelineClick"
       >
         <!-- Filmstrip background (with overflow-hidden for rounded corners) -->
@@ -163,7 +161,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, ref } from 'vue';
+  import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
   import { PlusIcon, XIcon } from 'lucide-vue-next';
   import type { SegmentRegionConfig, ManualRegion } from '@/types';
 
@@ -202,54 +200,125 @@
 
   const isDraggingPlayhead = ref(false);
 
-  // Generate filmstrip with multiple frames across timeline
+  let filmstripResizeObserver: ResizeObserver | null = null;
+  let filmstripGeneration = 0;
+
+  /** One thumbnail per ~48px of width; each cell uses center-crop (cover) so tiles align cleanly */
   async function generateFilmstrip() {
     if (!filmstripVideoRef.value || !filmstripCanvasRef.value || !timelineRef.value) return;
-    
+
+    const gen = ++filmstripGeneration;
     const video = filmstripVideoRef.value;
     const canvas = filmstripCanvasRef.value;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set canvas size to match timeline
+    await nextTick();
     const rect = timelineRef.value.getBoundingClientRect();
-    canvas.width = rect.width;
-    canvas.height = rect.height;
+    const w = Math.max(1, Math.floor(rect.width));
+    const h = Math.max(1, Math.floor(rect.height));
+    canvas.width = w;
+    canvas.height = h;
 
-    // Use clip start/end times if provided, otherwise use full video duration
-    const clipStart = props.clipStartTime || 0;
-    const clipEnd = props.clipEndTime || video.duration;
-    const clipDuration = clipEnd - clipStart;
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh || !Number.isFinite(video.duration) || video.duration <= 0) {
+      ctx.fillStyle = '#09090b';
+      ctx.fillRect(0, 0, w, h);
+      return;
+    }
 
-    const frameCount = Math.min(40, Math.floor(rect.width / 30)); // One frame every ~30px, max 40 frames
-    const frameWidth = rect.width / frameCount;
+    const clipStart = props.clipStartTime ?? 0;
+    const clipEnd = props.clipEndTime ?? video.duration;
+    const clipDuration = Math.max(0.001, clipEnd - clipStart);
 
-    // Draw frames across the timeline (only from clip portion)
+    const frameCount = Math.max(1, Math.min(48, Math.floor(w / 48)));
+    const cellW = w / frameCount;
+    const cellH = h;
+    const cellAspect = cellW / cellH;
+
+    ctx.fillStyle = '#09090b';
+    ctx.fillRect(0, 0, w, h);
+
     for (let i = 0; i < frameCount; i++) {
-      // Calculate time within the clip range
-      const clipProgress = i / frameCount;
-      const absoluteTime = clipStart + (clipProgress * clipDuration);
-      video.currentTime = absoluteTime;
-      
-      // Wait for seek to complete
+      if (gen !== filmstripGeneration) return;
+
+      const clipProgress = (i + 0.5) / frameCount;
+      const absoluteTime = clipStart + clipProgress * clipDuration;
+      video.currentTime = Math.min(Math.max(absoluteTime, 0), Math.max(0, video.duration - 1e-3));
+
       await new Promise<void>((resolve) => {
+        const t = window.setTimeout(resolve, 500);
         const onSeeked = () => {
+          window.clearTimeout(t);
           video.removeEventListener('seeked', onSeeked);
           resolve();
         };
         video.addEventListener('seeked', onSeeked);
       });
 
-      // Calculate aspect-ratio-preserving dimensions
-      const videoAspect = video.videoWidth / video.videoHeight;
-      const frameHeight = rect.height;
-      const scaledWidth = frameHeight * videoAspect;
-      
-      // Draw this frame
-      const x = i * frameWidth;
-      ctx.drawImage(video, x, 0, scaledWidth, frameHeight);
+      if (gen !== filmstripGeneration) return;
+
+      const dx = i * cellW;
+      const dy = 0;
+      const dW = cellW;
+      const dH = cellH;
+      const videoAspect = vw / vh;
+      let sx = 0;
+      let sy = 0;
+      let sW = vw;
+      let sH = vh;
+      if (videoAspect > cellAspect) {
+        sW = vh * cellAspect;
+        sx = (vw - sW) / 2;
+      } else if (videoAspect < cellAspect) {
+        sH = vw / cellAspect;
+        sy = (vh - sH) / 2;
+      }
+
+      try {
+        ctx.drawImage(video, sx, sy, sW, sH, dx, dy, dW, dH);
+      } catch {
+        // ignore single-frame draw errors
+      }
     }
   }
+
+  function setupFilmstripResizeObserver() {
+    filmstripResizeObserver?.disconnect();
+    filmstripResizeObserver = null;
+    if (!timelineRef.value || !props.videoUrl) return;
+    filmstripResizeObserver = new ResizeObserver(() => {
+      void generateFilmstrip();
+    });
+    filmstripResizeObserver.observe(timelineRef.value);
+  }
+
+  onMounted(() => {
+    void nextTick().then(() => setupFilmstripResizeObserver());
+  });
+
+  onUnmounted(() => {
+    filmstripResizeObserver?.disconnect();
+    filmstripResizeObserver = null;
+  });
+
+  watch(
+    () => [props.videoUrl, props.clipStartTime, props.clipEndTime, props.duration] as const,
+    () => {
+      void nextTick().then(() => {
+        if (!props.videoUrl) {
+          filmstripResizeObserver?.disconnect();
+          filmstripResizeObserver = null;
+          return;
+        }
+        setupFilmstripResizeObserver();
+        if (filmstripVideoRef.value && filmstripVideoRef.value.readyState >= 1) {
+          void generateFilmstrip();
+        }
+      });
+    }
+  );
 
   // Get active segment
   const activeSegment = computed(() => {
@@ -483,6 +552,6 @@
 
 <style scoped>
   .poi-segment-timeline {
-    min-height: 80px;
+    min-height: 7.5rem;
   }
 </style>

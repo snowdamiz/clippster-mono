@@ -659,7 +659,147 @@
                   </div>
                 </Transition>
 
-                <!-- Step 5: Publish -->
+                <!-- Step 5: Subtitles -->
+                <Transition name="step-slide" mode="out-in">
+                  <div v-if="currentStep === 'subtitles'" key="subtitles" class="build-dialog__step-content">
+                    <div class="build-dialog__step-header">
+                      <h3 class="build-dialog__step-title">Subtitles</h3>
+                      <p class="build-dialog__step-subtitle">Add auto-generated subtitles to your clip</p>
+                    </div>
+
+                    <div class="build-dialog__addons-section">
+                      <!-- Toggle -->
+                      <div class="build-dialog__field">
+                        <div class="build-dialog__toggle-box">
+                          <div class="flex items-center justify-between">
+                            <div class="flex-1 min-w-0 pr-3">
+                              <div class="flex items-center gap-2">
+                                <CaptionsIcon :size="15" class="text-purple-400" />
+                                <span class="text-sm font-medium">Include Subtitles</span>
+                              </div>
+                              <p class="text-xs mt-1 opacity-70">Automatically generate and burn subtitles into the video</p>
+                            </div>
+                            <button
+                              type="button"
+                              @click="subtitlesEnabled = !subtitlesEnabled"
+                              class="build-dialog__toggle"
+                              :class="{ 'build-dialog__toggle--active': subtitlesEnabled }"
+                              role="switch"
+                              :aria-checked="subtitlesEnabled"
+                            >
+                              <span class="build-dialog__toggle-thumb" :class="{ 'build-dialog__toggle-thumb--active': subtitlesEnabled }" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Preset cards (shown when enabled) -->
+                      <div v-if="subtitlesEnabled" class="build-dialog__field">
+                        <label class="build-dialog__label" style="margin-bottom: 0.5rem; display: block;">Subtitle Style</label>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
+                          <!-- MrBeast -->
+                          <button
+                            type="button"
+                            @click="selectedSubtitlePreset = 'mr-beast'"
+                            class="detect-clips-dialog__preset-card"
+                            :class="{ 'detect-clips-dialog__preset-card--selected': selectedSubtitlePreset === 'mr-beast' }"
+                          >
+                            <div class="detect-clips-dialog__preset-header">
+                              <span class="font-semibold text-xs">MrBeast</span>
+                              <div v-if="selectedSubtitlePreset === 'mr-beast'" class="detect-clips-dialog__preset-check">
+                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
+                              </div>
+                            </div>
+                            <div class="detect-clips-dialog__preset-sample" style="background: linear-gradient(135deg,#1a1a1c 0%,#2a2a2c 100%);">
+                              <span style="color:#FACC15;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:1.5px;text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000;">SAMPLE</span>
+                            </div>
+                            <p class="text-[10px] text-muted-foreground mt-1">Bold yellow, YouTube style</p>
+                          </button>
+
+                          <!-- TikTok Bold -->
+                          <button
+                            type="button"
+                            @click="selectedSubtitlePreset = 'tiktok-bold'"
+                            class="detect-clips-dialog__preset-card"
+                            :class="{ 'detect-clips-dialog__preset-card--selected': selectedSubtitlePreset === 'tiktok-bold' }"
+                          >
+                            <div class="detect-clips-dialog__preset-header">
+                              <span class="font-semibold text-xs">TikTok Bold</span>
+                              <div v-if="selectedSubtitlePreset === 'tiktok-bold'" class="detect-clips-dialog__preset-check">
+                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
+                              </div>
+                            </div>
+                            <div class="detect-clips-dialog__preset-sample" style="background: linear-gradient(135deg,#1a1a1c 0%,#2a2a2c 100%);">
+                              <span style="color:#fff;font-family:'Montserrat',sans-serif;font-size:14px;font-weight:900;background:rgba(0,0,0,0.8);padding:3px 6px;border-radius:4px;">SAMPLE</span>
+                            </div>
+                            <p class="text-[10px] text-muted-foreground mt-1">White text, thick outline</p>
+                          </button>
+
+                          <!-- Clean Subtitle -->
+                          <button
+                            type="button"
+                            @click="selectedSubtitlePreset = 'subtitle-tutorial'"
+                            class="detect-clips-dialog__preset-card"
+                            :class="{ 'detect-clips-dialog__preset-card--selected': selectedSubtitlePreset === 'subtitle-tutorial' }"
+                          >
+                            <div class="detect-clips-dialog__preset-header">
+                              <span class="font-semibold text-xs">Clean</span>
+                              <div v-if="selectedSubtitlePreset === 'subtitle-tutorial'" class="detect-clips-dialog__preset-check">
+                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
+                              </div>
+                            </div>
+                            <div class="detect-clips-dialog__preset-sample" style="background: linear-gradient(135deg,#1a1a1c 0%,#2a2a2c 100%);">
+                              <span style="color:#fff;font-family:'Roboto',sans-serif;font-size:12px;background:rgba(0,0,0,0.6);padding:3px 6px;border-radius:4px;">Sample</span>
+                            </div>
+                            <p class="text-[10px] text-muted-foreground mt-1">Professional, readable</p>
+                          </button>
+
+                          <!-- Neon Glow -->
+                          <button
+                            type="button"
+                            @click="selectedSubtitlePreset = 'neon-glow'"
+                            class="detect-clips-dialog__preset-card"
+                            :class="{ 'detect-clips-dialog__preset-card--selected': selectedSubtitlePreset === 'neon-glow' }"
+                          >
+                            <div class="detect-clips-dialog__preset-header">
+                              <span class="font-semibold text-xs">Neon Glow</span>
+                              <div v-if="selectedSubtitlePreset === 'neon-glow'" class="detect-clips-dialog__preset-check">
+                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
+                              </div>
+                            </div>
+                            <div class="detect-clips-dialog__preset-sample" style="background: linear-gradient(135deg,#1a1a1c 0%,#2a2a2c 100%);">
+                              <span style="color:#fff;font-family:'Montserrat',sans-serif;font-size:14px;font-weight:bold;text-shadow:0 0 10px #22D3EE,0 0 20px #22D3EE;">SAMPLE</span>
+                            </div>
+                            <p class="text-[10px] text-muted-foreground mt-1">Cyan glow, modern</p>
+                          </button>
+
+                          <!-- Karaoke -->
+                          <button
+                            type="button"
+                            @click="selectedSubtitlePreset = 'karaoke'"
+                            class="detect-clips-dialog__preset-card"
+                            :class="{ 'detect-clips-dialog__preset-card--selected': selectedSubtitlePreset === 'karaoke' }"
+                          >
+                            <div class="detect-clips-dialog__preset-header">
+                              <span class="font-semibold text-xs">Karaoke</span>
+                              <div v-if="selectedSubtitlePreset === 'karaoke'" class="detect-clips-dialog__preset-check">
+                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
+                              </div>
+                            </div>
+                            <div class="detect-clips-dialog__preset-sample" style="background: linear-gradient(135deg,#1a1a1c 0%,#2a2a2c 100%);">
+                              <span style="color:#fff;font-family:'Montserrat',sans-serif;font-size:14px;font-weight:bold;">
+                                <span style="color:#FACC15;">SAM</span>PLE
+                              </span>
+                            </div>
+                            <p class="text-[10px] text-muted-foreground mt-1">Word-by-word highlight</p>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </Transition>
+
+                <!-- Step 6: Publish -->
                 <Transition name="step-slide" mode="out-in">
                   <div v-if="currentStep === 'publish'" key="publish" class="build-dialog__step-content">
                       <form class="build-dialog__form" @submit.prevent="handlePublish">
@@ -1054,6 +1194,7 @@ import {
   FileVideo,
   Building2,
   Globe,
+  CaptionsIcon,
 } from 'lucide-vue-next';
 import XLogo from '@/components/icons/XLogo.vue';
 import TiktokLogo from '@/components/icons/TiktokLogo.vue';
@@ -1115,7 +1256,7 @@ export interface BuildTarget {
   selectedPlatforms: Map<string, string>; // Map of platform ID to account ID (e.g., 'instagram' -> 'org:123')
 }
 
-type StepId = 'platforms' | 'framing' | 'export' | 'addons' | 'publish';
+type StepId = 'platforms' | 'framing' | 'export' | 'addons' | 'subtitles' | 'publish';
 
 interface Step {
   id: StepId;
@@ -1128,6 +1269,7 @@ const allSteps: Step[] = [
   { id: 'framing', label: 'Framing', icon: CropIcon },
   { id: 'export', label: 'Export', icon: SettingsIcon },
   { id: 'addons', label: 'Add-ons', icon: SparkleIcon },
+  { id: 'subtitles', label: 'Subtitles', icon: CaptionsIcon },
   { id: 'publish', label: 'Publish', icon: Share2 },
 ];
 
@@ -1177,6 +1319,10 @@ const outputFormat = ref<'mp4' | 'mov'>('mp4');
 const manualFramingConfigs = ref<ManualFramingConfigs>({});
 const showManualPOIEditor = ref(false);
 const editingAspectRatio = ref<string>('9:16');
+
+// Subtitles step
+const subtitlesEnabled = ref(false);
+const selectedSubtitlePreset = ref<string | null>('neon-glow');
 
 // Add-ons (Step 4)
 const intros = ref<IntroOutroItem[]>([]);
@@ -1299,6 +1445,8 @@ const canProceed = computed(() => {
     case 'framing':
     case 'export':
     case 'addons':
+      return true;
+    case 'subtitles':
       return true;
     case 'publish':
       return selectedPublishPlatforms.value.length > 0;
@@ -1527,19 +1675,30 @@ function goToStep(stepId: StepId) {
   }
 }
 
-function nextStep() {
+async function nextStep() {
   if (!isLastStep.value && canProceed.value) {
     const nextIndex = currentStepIndex.value + 1;
     if (nextIndex < visibleSteps.value.length) {
       const nextStepId = visibleSteps.value[nextIndex].id;
       currentStep.value = nextStepId;
       
-      // Start build when moving to publish step
+      // Save subtitle settings and start build when moving to publish step
       if (nextStepId === 'publish') {
-        startBuildProcess();
+        await saveSubtitleChoiceAndBuild();
       }
     }
   }
+}
+
+async function saveSubtitleChoiceAndBuild() {
+  if (!props.clip?.id) return;
+  const { updateClipSubtitleSettings } = await import('@/services/database/clips');
+  await updateClipSubtitleSettings(
+    props.clip.id,
+    subtitlesEnabled.value,
+    subtitlesEnabled.value ? (selectedSubtitlePreset.value ?? null) : null,
+  );
+  startBuildProcess();
 }
 
 function previousStep() {
@@ -3097,6 +3256,8 @@ watch(
       manualFramingConfigs.value = {};
       selectedIntroId.value = null;
       selectedOutroId.value = null;
+      subtitlesEnabled.value = false;
+      selectedSubtitlePreset.value = 'neon-glow';
       isForCampaign.value = false;
       selectedCampaignId.value = null;
       platformConfigs.value = {};
@@ -5074,5 +5235,99 @@ onUnmounted(() => {
 .build-dialog__badge-icon {
   width: 10px;
   height: 10px;
+}
+
+/* ===== Subtitles step: toggle ===== */
+.build-dialog__toggle-box {
+  background: var(--sidebar-bg, #1e1e22);
+  border: 1px solid var(--sidebar-border, #2d2d33);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.build-dialog__toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  border: none;
+  background: var(--sidebar-border, #3a3a42);
+  cursor: pointer;
+  transition: background 200ms ease;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.build-dialog__toggle--active {
+  background: #8b5cf6;
+}
+
+.build-dialog__toggle-thumb {
+  display: block;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 200ms ease;
+}
+
+.build-dialog__toggle-thumb--active {
+  transform: translateX(16px);
+}
+
+/* ===== Subtitles step: preset cards ===== */
+.detect-clips-dialog__preset-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--sidebar-border, #2d2d33);
+  background: var(--sidebar-bg, #1e1e22);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.detect-clips-dialog__preset-card:hover {
+  border-color: #6d28d9;
+  background: rgba(109, 40, 217, 0.08);
+}
+
+.detect-clips-dialog__preset-card--selected {
+  border-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.12);
+}
+
+.detect-clips-dialog__preset-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.375rem;
+  color: var(--sidebar-text, #e4e4e7);
+}
+
+.detect-clips-dialog__preset-check {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #8b5cf6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.detect-clips-dialog__preset-sample {
+  border-radius: 4px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin-bottom: 0.25rem;
 }
 </style>

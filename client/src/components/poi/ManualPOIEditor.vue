@@ -38,7 +38,34 @@
               <div class="flex-1 flex overflow-hidden">
                 <!-- Source Panel (Left) — swapped for text box settings when editing -->
                 <div class="flex-1 border-r border-zinc-800 min-h-0 flex flex-col overflow-hidden">
-                  <template v-if="textBoxSettingsMode && clipTextLocal">
+                  <!-- Subtitle Settings Mode -->
+                  <template v-if="subtitleSettingsMode && localSubtitleSettings">
+                    <div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-zinc-800 shrink-0 bg-zinc-900/80">
+                      <span class="text-sm font-medium text-white">Subtitles</span>
+                      <div class="flex items-center gap-2">
+                        <button
+                          type="button"
+                          class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600 text-zinc-300 hover:bg-zinc-800"
+                          @click="cancelSubtitleSettings"
+                        >Cancel</button>
+                        <button
+                          type="button"
+                          class="px-2.5 py-1 text-xs rounded-lg bg-purple-600 text-white hover:bg-purple-500"
+                          @click="doneSubtitleSettings"
+                        >Done</button>
+                      </div>
+                    </div>
+                    <SubtitlePropertiesPanel
+                      class="flex-1 min-h-0 overflow-hidden"
+                      variant="embedded"
+                      :settings="localSubtitleSettings"
+                      :segments="transcriptSegments"
+                      :current-time="currentTime"
+                      @updateSettings="onSubtitleSettingsPanelUpdate"
+                      @close="doneSubtitleSettings"
+                    />
+                  </template>
+                  <template v-else-if="textBoxSettingsMode && clipTextLocal">
                     <div
                       class="flex items-center justify-between gap-2 px-3 py-2 border-b border-zinc-800 shrink-0 bg-zinc-900/80"
                     >
@@ -79,6 +106,8 @@
                     :video-url="videoUrl"
                     :video-time="absoluteVideoTime"
                     :is-playing="isPlaying"
+                    :volume="poiVolume"
+                    :is-muted="poiMuted"
                     @add-region="addRegion"
                     @update-region="updateRegion"
                     @delete-region="deleteRegion"
@@ -131,12 +160,12 @@
               </div>
 
               <!-- Video Playback Controls -->
-              <div v-if="clipDuration > 0" class="px-4 py-2 border-t border-zinc-800 bg-zinc-900/70">
-                <div class="flex items-center gap-3">
+              <div v-if="clipDuration > 0" class="px-4 py-1 border-t border-zinc-800 bg-zinc-900/70">
+                <div class="flex items-center gap-2">
                   <!-- Play/Pause button -->
                   <button
                     @click="togglePlayback"
-                    class="w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-500 flex items-center justify-center text-white transition-colors shadow-lg"
+                    class="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-500 flex items-center justify-center text-white transition-colors shadow-lg"
                     :disabled="!videoUrl"
                     :class="{ 'opacity-50 cursor-not-allowed': !videoUrl }"
                   >
@@ -151,7 +180,7 @@
 
                   <!-- Progress bar -->
                   <div class="flex-1 relative group cursor-pointer" ref="progressBarRef" @mousedown="onSeekStart">
-                    <div class="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                    <div class="h-1 bg-zinc-700 rounded-full overflow-hidden">
                       <div
                         class="h-full bg-gradient-to-r from-blue-500 to-violet-500"
                         :class="{ 'transition-all duration-100': !isSeeking }"
@@ -166,6 +195,27 @@
                         'opacity-0 group-hover:opacity-100': !isSeeking && currentTime !== 0 
                       }"
                       :style="{ left: `calc(${(currentTime / clipDuration) * 100}% - 6px)` }"
+                    />
+                  </div>
+
+                  <!-- Volume control -->
+                  <div class="flex items-center gap-1.5 shrink-0">
+                    <button
+                      @click="togglePoiMute"
+                      class="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                      :title="poiMuted ? 'Unmute' : 'Mute'"
+                    >
+                      <VolumeXIcon v-if="poiMuted || poiVolume === 0" class="w-4 h-4" />
+                      <Volume2Icon v-else class="w-4 h-4" />
+                    </button>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.02"
+                      :value="poiMuted ? 0 : poiVolume"
+                      class="w-16 h-1 accent-blue-500 cursor-pointer"
+                      @input="onPoiVolumeChange"
                     />
                   </div>
 
@@ -207,12 +257,12 @@
                 @seek-time="handleSeekTime"
               />
 
-              <!-- Subtitle Controls (only shown when clip has subtitles) -->
+              <!-- Subtitle Controls (shown when clip has subtitle settings) -->
               <div v-if="subtitleSettings" class="border-t border-zinc-800">
-                <!-- Single line: Checkbox + Icon + Label + Drag hint + Karaoke Color OR Multi-color + Style Dropdown + Aspect ratio -->
-                <div class="px-4 py-2 bg-zinc-900/50">
+                <!-- Single line: Checkbox + Icon + Label + Edit button -->
+                <div class="px-4 py-1.5 bg-zinc-900/50">
                   <div class="flex items-center gap-3">
-                    <!-- Checkbox -->
+                    <!-- Checkbox toggles overlay visibility -->
                     <input
                       type="checkbox"
                       v-model="subtitlePositioningEnabled"
@@ -220,7 +270,7 @@
                     />
                     <CaptionsIcon class="h-4 w-4 text-purple-400 shrink-0" />
                     
-                    <!-- Subtitles label + Drag hint -->
+                    <!-- Subtitles label -->
                     <div class="flex-1 min-w-0">
                       <span class="text-sm font-medium text-white">Subtitles</span>
                       <span v-if="subtitlePositioningEnabled" class="text-[10px] text-zinc-400 ml-2">
@@ -228,107 +278,30 @@
                       </span>
                     </div>
 
-                    <!-- Karaoke Color Dropdown (inline, only for karaoke) -->
-                    <div v-if="subtitlePositioningEnabled && localSubtitleSettings.animationStyle === 'karaoke'" class="relative shrink-0" style="min-width: 90px">
-                      <button
-                        @click.stop="showColorDropdown = !showColorDropdown"
-                        class="w-full flex items-center justify-between gap-1.5 px-2.5 py-1.5 text-xs bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700 hover:border-zinc-600 rounded-lg text-zinc-200 transition-all cursor-pointer"
-                      >
-                        <div class="flex items-center gap-1.5">
-                          <div 
-                            class="w-3 h-3 rounded border border-zinc-600 shrink-0"
-                            :style="{ backgroundColor: localSubtitleSettings.highlightColor }"
-                          ></div>
-                          <span class="truncate text-[11px]">{{ getColorName(localSubtitleSettings.highlightColor) }}</span>
-                        </div>
-                        <ChevronDownIcon class="h-3 w-3 shrink-0" />
-                      </button>
-
-                      <!-- Color Dropdown (opens upward) -->
-                      <div
-                        v-if="showColorDropdown"
-                        class="absolute bottom-full left-0 right-0 mb-2 bg-zinc-900 border border-zinc-700 rounded-lg overflow-hidden z-50 shadow-2xl"
-                      >
-                        <button
-                          v-for="color in PRESET_COLORS"
-                          :key="color.value"
-                          @click="onHighlightColorChange(color.value)"
-                          class="w-full text-left px-3 py-2 text-xs transition-colors flex items-center gap-2 border-b border-zinc-800 last:border-b-0"
-                          :class="localSubtitleSettings.highlightColor === color.value
-                            ? 'bg-cyan-500/15 text-cyan-300'
-                            : 'text-zinc-300 hover:bg-zinc-800'"
-                        >
-                          <div 
-                            class="w-3.5 h-3.5 rounded border border-zinc-600 shrink-0"
-                            :style="{ backgroundColor: color.value }"
-                          ></div>
-                          <span>{{ color.name }}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <!-- Single Word Multi-Color Toggle (inline, only for single-word) -->
-                    <div v-if="subtitlePositioningEnabled && localSubtitleSettings.animationStyle === 'single-word'" class="flex items-center gap-2 shrink-0">
-                      <input
-                        type="checkbox"
-                        :checked="localSubtitleSettings.multiColorEnabled"
-                        @change="onMultiColorToggle($event)"
-                        class="w-3.5 h-3.5 rounded border-zinc-600 bg-zinc-700 text-purple-500 focus:ring-purple-500 focus:ring-offset-0"
-                      />
-                      <span class="text-[11px] text-zinc-300 whitespace-nowrap">Multi-Color</span>
-                    </div>
-
-                    <!-- Style Dropdown -->
-                    <div class="relative shrink-0" style="min-width: 135px">
-                      <button
-                        @click.stop="showStyleDropdown = !showStyleDropdown"
-                        class="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-xs bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700 hover:border-zinc-600 rounded-lg text-zinc-200 transition-all cursor-pointer"
-                        :disabled="!subtitlePositioningEnabled"
-                        :class="{ 'opacity-50 cursor-not-allowed': !subtitlePositioningEnabled }"
-                      >
-                        <span class="truncate font-medium">{{ getCurrentStyleName() }}</span>
-                        <ChevronDownIcon
-                          class="h-3.5 w-3.5 shrink-0 transition-transform"
-                          :class="{ 'rotate-180': showStyleDropdown }"
-                        />
-                      </button>
-
-                      <!-- Dropdown Menu (opens UPWARD) -->
-                      <div
-                        v-if="showStyleDropdown && subtitlePositioningEnabled"
-                        class="absolute bottom-full left-0 right-0 mb-2 bg-zinc-900 border border-zinc-700 rounded-lg overflow-hidden z-50 max-h-64 overflow-y-auto shadow-2xl"
-                      >
-                        <button
-                          v-for="style in ANIMATION_STYLES"
-                          :key="style.id"
-                          @click="onStyleChange(style.id)"
-                          class="w-full text-left px-3 py-2.5 text-xs transition-colors border-b border-zinc-800 last:border-b-0"
-                          :class="localSubtitleSettings.animationStyle === style.id
-                            ? 'bg-cyan-500/15 text-cyan-300'
-                            : 'text-zinc-300 hover:bg-zinc-800'"
-                        >
-                          <div class="font-semibold">{{ style.name }}</div>
-                          <div class="text-[10px] text-zinc-500 mt-0.5">{{ style.desc }}</div>
-                        </button>
-                      </div>
-                    </div>
-
-                    <!-- Aspect Ratio Badge -->
+                    <!-- Edit button — opens SubtitlePropertiesPanel in left panel (like text box) -->
+                    <button
+                      type="button"
+                      class="shrink-0 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-600"
+                      @click="openSubtitleSettings"
+                    >
+                      Edit…
+                    </button>
                     <span class="text-[10px] text-zinc-500 shrink-0 font-mono">{{ targetAspectRatio }}</span>
                   </div>
                 </div>
               </div>
+
             </div>
 
             <!-- Clip text box (per-clip pill) — optional POI authoring -->
             <div v-if="clipId" class="border-t border-zinc-800">
-              <div class="px-4 py-2 bg-zinc-900/50">
+              <div class="px-4 py-1.5 bg-zinc-900/50">
                 <div class="flex items-center gap-3">
                   <input
-                    v-model="clipTextPositioningEnabled"
                     type="checkbox"
-                    :disabled="!clipTextLocal?.enabled"
+                    :checked="clipTextLocal?.enabled === true"
                     class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-amber-500 focus:ring-amber-500 focus:ring-offset-0 shrink-0"
+                    @change="toggleClipTextEnabled"
                   />
                   <Type class="h-4 w-4 text-amber-400 shrink-0" />
                   <div class="flex-1 min-w-0">
@@ -418,12 +391,15 @@
     CaptionsIcon,
     ChevronDownIcon,
     Type,
+    Volume2Icon,
+    VolumeXIcon,
   } from 'lucide-vue-next';
   import Hls from 'hls.js';
   import POISourcePanel from './POISourcePanel.vue';
   import POITargetPanel from './POITargetPanel.vue';
   import POISegmentTimeline from './POISegmentTimeline.vue';
   import ClipTextBoxPropertiesPanel from '@/components/ClipTextBoxPropertiesPanel.vue';
+  import SubtitlePropertiesPanel from '@/components/SubtitlePropertiesPanel.vue';
   import type {
     ManualRegion,
     ManualFramingConfig,
@@ -578,6 +554,36 @@
 
   const textBoxSettingsMode = ref(false);
   const textBoxRevertJson = ref<string | null>(null);
+
+  // Subtitle settings mode (left panel swapped to SubtitlePropertiesPanel)
+  const subtitleSettingsMode = ref(false);
+  let subtitleSettingsRevert: SubtitleSettings | null = null;
+
+  function openSubtitleSettings() {
+    if (!localSubtitleSettings.value) return;
+    subtitleSettingsRevert = JSON.parse(JSON.stringify(localSubtitleSettings.value));
+    subtitleSettingsMode.value = true;
+  }
+
+  function doneSubtitleSettings() {
+    subtitleSettingsMode.value = false;
+    subtitleSettingsRevert = null;
+  }
+
+  function cancelSubtitleSettings() {
+    if (subtitleSettingsRevert) {
+      localSubtitleSettings.value = subtitleSettingsRevert;
+      emit('subtitleSettingsChange', subtitleSettingsRevert);
+    }
+    subtitleSettingsMode.value = false;
+    subtitleSettingsRevert = null;
+  }
+
+  function onSubtitleSettingsPanelUpdate(patch: Record<string, unknown>) {
+    if (!localSubtitleSettings.value) return;
+    localSubtitleSettings.value = { ...localSubtitleSettings.value, ...(patch as Partial<SubtitleSettings>) };
+    emit('subtitleSettingsChange', localSubtitleSettings.value);
+  }
   const clipTextLocal = ref<ClipTextBoxState | null>(null);
   const clipTextPositioningEnabled = ref(false);
 
@@ -654,6 +660,28 @@
   let seekMoveListener: ((e: MouseEvent) => void) | null = null;
   let seekUpListener: (() => void) | null = null;
 
+  // Volume state (persisted)
+  const POI_VOLUME_KEY = 'manualPoi.volume';
+  const POI_MUTED_KEY = 'manualPoi.muted';
+  const poiVolume = ref<number>(parseFloat(localStorage.getItem(POI_VOLUME_KEY) ?? '1'));
+  const poiMuted = ref<boolean>(localStorage.getItem(POI_MUTED_KEY) === 'true');
+
+  watch([poiVolume, poiMuted], ([vol, muted]) => {
+    localStorage.setItem(POI_VOLUME_KEY, String(vol));
+    localStorage.setItem(POI_MUTED_KEY, String(muted));
+  });
+
+  function togglePoiMute() {
+    poiMuted.value = !poiMuted.value;
+  }
+
+  function onPoiVolumeChange(e: Event) {
+    const val = parseFloat((e.target as HTMLInputElement).value);
+    poiVolume.value = val;
+    if (val === 0) poiMuted.value = true;
+    else if (poiMuted.value) poiMuted.value = false;
+  }
+
   // HLS.js instance for proper MPEG-TS (.ts) file playback with A/V sync
   let hlsInstance: Hls | null = null;
 
@@ -669,7 +697,7 @@
   }
 
   function constructVideoUrl(filePath: string, port: number): string {
-    const encodedPath = utf8ToBase64Url(filePath);
+    const encodedPath = utf8ToBase64(filePath);
     const isTsFile = filePath.toLowerCase().endsWith('.ts');
     if (isTsFile) {
       return `http://localhost:${port}/ts-hls/${encodedPath}/playlist.m3u8`;
@@ -1171,6 +1199,19 @@
     void persistClipTextToDb();
   }
 
+  async function toggleClipTextEnabled(e: Event) {
+    const checked = (e.target as HTMLInputElement).checked;
+    if (checked) {
+      // Enable — same as clicking "Add text"
+      await openTextBoxSettings();
+    } else {
+      // Disable — clear the text box
+      clipTextLocal.value = null;
+      clipTextPositioningEnabled.value = false;
+      await persistClipTextClearDb();
+    }
+  }
+
   async function openTextBoxSettings() {
     textBoxRevertJson.value =
       clipTextLocal.value == null ? null : serializeClipTextBoxState(clipTextLocal.value);
@@ -1535,6 +1576,7 @@
   // Close the dialog
   function close() {
     textBoxSettingsMode.value = false;
+    subtitleSettingsMode.value = false;
     emit('update:modelValue', false);
   }
 
