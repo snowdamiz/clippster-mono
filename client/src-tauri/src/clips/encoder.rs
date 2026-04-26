@@ -1,4 +1,9 @@
-use tauri_plugin_shell::process::Output;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
+use std::process::Output;
+
+use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 
 // Helper function to get FFmpeg quality settings
@@ -206,10 +211,110 @@ pub fn replace_encoder_in_args(args: &mut Vec<String>, quality: &str) {
 /// * `Err(String)` if both attempts fail
 pub async fn run_ffmpeg_with_fallback(
     app: &tauri::AppHandle,
+    args: Vec<String>,
+    encoder: &EncoderConfig,
+    quality: &str,
+    env_vars: Option<Vec<(&str, String)>>,
+) -> Result<Output, String> {
+    run_ffmpeg_with_fallback_impl(app, args, encoder, quality, env_vars, None).await
+}
+
+/// Same as [`run_ffmpeg_with_fallback`], but aborts in-flight FFmpeg when `cancel` becomes true.
+pub async fn run_ffmpeg_with_fallback_cancellable(
+    app: &tauri::AppHandle,
+    args: Vec<String>,
+    encoder: &EncoderConfig,
+    quality: &str,
+    env_vars: Option<Vec<(&str, String)>>,
+    cancel: &AtomicBool,
+) -> Result<Output, String> {
+    run_ffmpeg_with_fallback_impl(app, args, encoder, quality, env_vars, Some(cancel)).await
+}
+
+/// Message returned when a cancellable FFmpeg run is stopped via `cancel`.
+pub const FFMPEG_OPERATION_CANCELLED: &str = "FFmpeg operation cancelled";
+
+fn output_from_exit_code(code: Option<i32>, stdout: Vec<u8>, stderr: Vec<u8>) -> Output {
+    let code = code.unwrap_or(-1);
+    #[cfg(unix)]
+    let status = {
+        use std::os::unix::process::ExitStatusExt;
+        std::process::ExitStatus::from_raw((code as i32) << 8)
+    };
+    #[cfg(windows)]
+    let status = {
+        use std::os::windows::process::ExitStatusExt;
+        std::process::ExitStatus::from_raw(code as u32)
+    };
+    Output {
+        status,
+        stdout,
+        stderr,
+    }
+}
+
+/// Run ffmpeg sidecar once, optionally watching `cancel` to kill the child.
+pub async fn ffmpeg_sidecar_run_once_cancellable(
+    app: &tauri::AppHandle,
+    args: &[String],
+    env_vars: Option<&[(&str, String)]>,
+    cancel: Option<&AtomicBool>,
+) -> Result<Output, String> {
+    let shell = app.shell();
+    let mut cmd = shell
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?;
+
+    if let Some(vars) = env_vars {
+        for (key, value) in vars {
+            cmd = cmd.env(key, value);
+        }
+    }
+
+    let (mut rx, child) = cmd
+        .args(args)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn ffmpeg: {}", e))?;
+
+    let mut stdout_buf = Vec::new();
+    let mut stderr_buf = Vec::new();
+
+    loop {
+        if matches!(cancel, Some(c) if c.load(Ordering::SeqCst)) {
+            let _ = child.kill();
+            return Err(FFMPEG_OPERATION_CANCELLED.to_string());
+        }
+
+        tokio::select! {
+            ev = rx.recv() => {
+                match ev {
+                    Some(CommandEvent::Stdout(data)) => stdout_buf.extend_from_slice(&data),
+                    Some(CommandEvent::Stderr(data)) => stderr_buf.extend_from_slice(&data),
+                    Some(CommandEvent::Terminated(payload)) => {
+                        return Ok(output_from_exit_code(payload.code, stdout_buf, stderr_buf));
+                    }
+                    Some(CommandEvent::Error(err)) => {
+                        let _ = child.kill();
+                        return Err(format!("FFmpeg process error: {}", err));
+                    }
+                    Some(_) => {}
+                    None => {
+                        return Err("FFmpeg closed without termination".to_string());
+                    }
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_millis(120)) => {}
+        }
+    }
+}
+
+async fn run_ffmpeg_with_fallback_impl(
+    app: &tauri::AppHandle,
     mut args: Vec<String>,
     encoder: &EncoderConfig,
     quality: &str,
     env_vars: Option<Vec<(&str, String)>>,
+    cancel: Option<&AtomicBool>,
 ) -> Result<Output, String> {
     let cpu_count = num_cpus::get().max(1);
     let encode_threads = (cpu_count / 2).clamp(2, 8);
@@ -223,20 +328,6 @@ pub async fn run_ffmpeg_with_fallback(
     args.insert(0, "-filter_threads".to_string());
     args.insert(0, filter_threads.to_string());
     args.insert(0, "-filter_complex_threads".to_string());
-
-    let shell = app.shell();
-
-    // First attempt with original encoder
-    let mut cmd = shell
-        .sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?;
-
-    // Add environment variables if provided
-    if let Some(vars) = &env_vars {
-        for (key, value) in vars {
-            cmd = cmd.env(key, value);
-        }
-    }
 
     println!("[Rust] ========== FFMPEG EXECUTION START ==========");
     println!("[Rust] Encoder: {}", encoder.codec);
@@ -255,11 +346,13 @@ pub async fn run_ffmpeg_with_fallback(
     let preview_args: Vec<String> = args.iter().take(20).cloned().collect();
     println!("[Rust] FFmpeg args (first 20): {:?}", preview_args);
 
-    let output = cmd
-        .args(&args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+    let output = ffmpeg_sidecar_run_once_cancellable(
+        app,
+        &args,
+        env_vars.as_ref().map(|v| v.as_slice()),
+        cancel,
+    )
+    .await?;
 
     // Always log FFmpeg stderr for performance analysis
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -294,25 +387,16 @@ pub async fn run_ffmpeg_with_fallback(
         // Remove hardware acceleration flags
         remove_hwaccel_flags(&mut args);
 
-        // Retry with CPU decode
-        let mut retry_cmd = shell
-            .sidecar("ffmpeg")
-            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?;
-
-        if let Some(vars) = &env_vars {
-            for (key, value) in vars {
-                retry_cmd = retry_cmd.env(key, value);
-            }
-        }
-
         println!("[Rust] ========== RETRY #1: CPU DECODE ==========");
         println!("[Rust] Removed hardware acceleration flags");
         println!("[Rust] Retrying FFmpeg with CPU decode");
-        let retry_output = retry_cmd
-            .args(&args)
-            .output()
-            .await
-            .map_err(|e| format!("Failed to run ffmpeg (retry): {}", e))?;
+        let retry_output = ffmpeg_sidecar_run_once_cancellable(
+            app,
+            &args,
+            env_vars.as_ref().map(|v| v.as_slice()),
+            cancel,
+        )
+        .await?;
 
         if retry_output.status.success() {
             println!("[Rust] ✓ CPU decode succeeded");
@@ -333,21 +417,13 @@ pub async fn run_ffmpeg_with_fallback(
             // Replace encoder with software encoder
             replace_encoder_in_args(&mut args, quality);
 
-            let mut final_retry_cmd = shell
-                .sidecar("ffmpeg")
-                .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?;
-
-            if let Some(vars) = &env_vars {
-                for (key, value) in vars {
-                    final_retry_cmd = final_retry_cmd.env(key, value);
-                }
-            }
-
-            let final_output = final_retry_cmd
-                .args(&args)
-                .output()
-                .await
-                .map_err(|e| format!("Failed to run ffmpeg (final retry): {}", e))?;
+            let final_output = ffmpeg_sidecar_run_once_cancellable(
+                app,
+                &args,
+                env_vars.as_ref().map(|v| v.as_slice()),
+                cancel,
+            )
+            .await?;
 
             if final_output.status.success() {
                 println!("[Rust] ✓ CPU decode + software encoder succeeded");
@@ -383,24 +459,15 @@ pub async fn run_ffmpeg_with_fallback(
         // Replace encoder in args with software encoder
         replace_encoder_in_args(&mut args, quality);
 
-        // Retry with software encoder
-        let mut retry_cmd = shell
-            .sidecar("ffmpeg")
-            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?;
-
-        if let Some(vars) = &env_vars {
-            for (key, value) in vars {
-                retry_cmd = retry_cmd.env(key, value);
-            }
-        }
-
         println!("[Rust] ========== RETRY: SOFTWARE ENCODER ==========");
         println!("[Rust] Switching to libx264 software encoder");
-        let retry_output = retry_cmd
-            .args(&args)
-            .output()
-            .await
-            .map_err(|e| format!("Failed to run ffmpeg (retry): {}", e))?;
+        let retry_output = ffmpeg_sidecar_run_once_cancellable(
+            app,
+            &args,
+            env_vars.as_ref().map(|v| v.as_slice()),
+            cancel,
+        )
+        .await?;
 
         if retry_output.status.success() {
             println!("[Rust] ✓ Software encoder (libx264) succeeded");

@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="!hidden" class="clip-selector__overlay" @click.self="() => handleClose(true)">
+      <div v-if="!hidden" class="clip-selector__overlay">
         <Transition name="dialog" appear>
           <div v-if="!hidden" class="clip-selector" role="dialog" aria-modal="true">
             <!-- Accent bar -->
@@ -39,6 +39,13 @@
                 </div>
                 <p class="clip-selector__state-title">Creating clip...</p>
                 <p class="clip-selector__state-subtitle">{{ progressMessage }}</p>
+                <button
+                  type="button"
+                  class="clip-selector__btn clip-selector__btn--secondary clip-selector__cancel-extract"
+                  @click="requestCancelClipExtraction"
+                >
+                  Cancel extraction
+                </button>
               </div>
 
               <!-- Success State -->
@@ -84,6 +91,34 @@
                     <svg class="clip-selector__spinner" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
                     Loading preview...
                   </div>
+                  <!-- Volume control (bottom-left, shown on hover) -->
+                  <div
+                    class="clip-selector__volume-ctrl"
+                    @click.stop
+                    @mouseenter="showVolumeSlider = true"
+                    @mouseleave="showVolumeSlider = false"
+                  >
+                    <button class="clip-selector__volume-btn" @click="toggleMute" :title="isMuted ? 'Unmute' : 'Mute'">
+                      <VolumeX v-if="isMuted || volume === 0" :size="14" />
+                      <Volume2 v-else :size="14" />
+                    </button>
+                    <Transition name="volume-slider">
+                      <input
+                        v-if="showVolumeSlider"
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.02"
+                        :value="volumeSliderDisplay"
+                        class="clip-selector__volume-slider"
+                        @pointerdown="onVolumeSliderPointerDown"
+                        @input="onVolumeSliderInput"
+                        @change="onVolumeSliderCommit"
+                        @pointercancel="onVolumeSliderCommit"
+                      />
+                    </Transition>
+                  </div>
+
                   <!-- Time badge -->
                   <div class="clip-selector__time-badge">
                     {{ formatTime(currentPlaybackTime) }} / {{ formatTime(maxDuration) }}
@@ -199,7 +234,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { formatTime as formatTimeUtil } from '@/utils/dateTimeUtils';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-  import { Scissors, X, Check, AlertCircle, Share2, Play, Pause } from 'lucide-vue-next';
+  import { Scissors, X, Check, AlertCircle, Share2, Play, Pause, Volume2, VolumeX } from 'lucide-vue-next';
   import { createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
   import { createClipVersion } from '@/services/database/clip-versions';
   import { updateClip } from '@/services/database/clips';
@@ -237,7 +272,7 @@
   interface Emits {
     (e: 'close'): void;
     (e: 'clip-created', clipPath: string, projectId: string): void;
-    (e: 'publish-clip', clipId: string, clipPath: string, projectId: string): void;
+    (e: 'publish-clip', clipId: string, clipPath: string, projectId: string, thumbnailPath: string | null): void;
   }
 
   const props = defineProps<Props>();
@@ -255,6 +290,7 @@
   const createdClipPath = ref<string | null>(null);
   const createdClipId = ref<string | null>(null);
   const createdProjectId = ref<string | null>(null);
+  const createdThumbnailPath = ref<string | null>(null);
   const error = ref<string | null>(null);
 
   // Timeline interaction state
@@ -271,6 +307,118 @@
   const currentPlaybackTime = ref(0);
   const vodPlaylistPath = ref<string | null>(null);
   let hlsInstance: Hls | null = null;
+
+  // Volume state (persisted to localStorage)
+  const VOLUME_KEY = 'livestreamClipSelector.volume';
+  const MUTED_KEY = 'livestreamClipSelector.muted';
+  const volume = ref<number>(parseFloat(localStorage.getItem(VOLUME_KEY) ?? '1'));
+  const isMuted = ref<boolean>(localStorage.getItem(MUTED_KEY) === 'true');
+  const showVolumeSlider = ref(false);
+
+  /** Live value while dragging — avoids syncing :value from Vue on every input (jank in WebView). */
+  const volumeSliderLive = ref<number | null>(null);
+  const volumeSliderDisplay = computed(() => {
+    if (volumeSliderLive.value !== null) return volumeSliderLive.value;
+    return isMuted.value ? 0 : volume.value;
+  });
+
+  let volumePersistTimer: ReturnType<typeof setTimeout> | null = null;
+  let volumeWindowPointerClean: (() => void) | null = null;
+
+  function scheduleVolumePersist() {
+    if (volumePersistTimer) clearTimeout(volumePersistTimer);
+    volumePersistTimer = setTimeout(() => {
+      volumePersistTimer = null;
+      localStorage.setItem(VOLUME_KEY, String(volume.value));
+      localStorage.setItem(MUTED_KEY, String(isMuted.value));
+    }, 200);
+  }
+
+  function teardownVolumeWindowPointerListeners() {
+    volumeWindowPointerClean?.();
+    volumeWindowPointerClean = null;
+  }
+
+  function onVolumeSliderPointerDown() {
+    teardownVolumeWindowPointerListeners();
+    const finish = () => {
+      onVolumeSliderCommit();
+      teardownVolumeWindowPointerListeners();
+    };
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+    volumeWindowPointerClean = () => {
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+    };
+  }
+
+  // Sync volume/mute to video when not dragging the slider; debounce localStorage (sync writes lag the UI).
+  watch([volume, isMuted], ([vol, muted]) => {
+    if (volumeSliderLive.value !== null) return;
+    if (previewVideoRef.value) {
+      previewVideoRef.value.volume = vol;
+      previewVideoRef.value.muted = muted;
+    }
+    scheduleVolumePersist();
+  });
+
+  function applyVolumeToVideo() {
+    if (previewVideoRef.value) {
+      previewVideoRef.value.volume = volume.value;
+      previewVideoRef.value.muted = isMuted.value;
+    }
+  }
+
+  function clipSelectorErrorMessage(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    if (typeof err === 'string') return err;
+    return String(err);
+  }
+
+  /** Signals the backend to kill in-flight FFmpeg for livestream clip extraction. */
+  async function requestCancelClipExtraction() {
+    try {
+      await invoke('cancel_livestream_clip_extraction');
+    } catch (e) {
+      console.warn('[ClipSelector] cancel_livestream_clip_extraction failed:', e);
+    }
+  }
+
+  function toggleMute() {
+    isMuted.value = !isMuted.value;
+  }
+
+  function onVolumeSliderInput(e: Event) {
+    const val = parseFloat((e.target as HTMLInputElement).value);
+    volumeSliderLive.value = val;
+    if (previewVideoRef.value) {
+      previewVideoRef.value.volume = val;
+      previewVideoRef.value.muted = val === 0;
+    }
+    if (val === 0) {
+      isMuted.value = true;
+    } else if (isMuted.value) {
+      isMuted.value = false;
+    }
+  }
+
+  function onVolumeSliderCommit(e?: Event) {
+    teardownVolumeWindowPointerListeners();
+    let next = volumeSliderLive.value;
+    if (next === null && e?.target instanceof HTMLInputElement) {
+      next = parseFloat(e.target.value);
+    }
+    if (next !== null && Number.isFinite(next)) {
+      volume.value = next;
+    }
+    volumeSliderLive.value = null;
+    if (previewVideoRef.value) {
+      previewVideoRef.value.volume = volume.value;
+      previewVideoRef.value.muted = isMuted.value;
+    }
+    scheduleVolumePersist();
+  }
 
   // Clip selection (in seconds from start of the 3-minute window)
   // These will be initialized in onMounted to default to the last 30 seconds
@@ -393,12 +541,21 @@
 
         // Seek to the start of the selected range and auto-play
         if (previewVideoRef.value) {
+          applyVolumeToVideo();
           previewVideoRef.value.currentTime = startTime.value;
           previewVideoRef.value.play().then(() => {
             isPreviewPlaying.value = true;
           }).catch((err) => {
             console.warn('[ClipSelector] Auto-play failed:', err);
-            isPreviewPlaying.value = false;
+            // Browsers may require muted for autoplay — mute and retry once
+            if (previewVideoRef.value) {
+              previewVideoRef.value.muted = true;
+              previewVideoRef.value.play().then(() => {
+                isPreviewPlaying.value = true;
+              }).catch(() => {
+                isPreviewPlaying.value = false;
+              });
+            }
           });
         }
       });
@@ -679,6 +836,7 @@
       const extractionResult = JSON.parse(resultJson) as { clipPath: string; thumbnailPath: string | null };
       const clipFilePath = extractionResult.clipPath;
       const thumbnailFilePath = extractionResult.thumbnailPath;
+      createdThumbnailPath.value = thumbnailFilePath;
 
       // Save clip to database
       let clipId: string | null = null;
@@ -724,8 +882,16 @@
 
       emit('clip-created', clipFilePath, effectiveProjectId);
     } catch (err) {
-      console.error('[ClipSelector] Failed to create clip:', err);
-      error.value = err instanceof Error ? err.message : 'Failed to create clip';
+      const msg = clipSelectorErrorMessage(err);
+      if (msg.includes('FFmpeg operation cancelled')) {
+        progress.value = 0;
+        progressMessage.value = '';
+        error.value = null;
+        applyVolumeToVideo();
+      } else {
+        console.error('[ClipSelector] Failed to create clip:', err);
+        error.value = msg || 'Failed to create clip';
+      }
     } finally {
       isCreating.value = false;
       cleanupProgressListener();
@@ -736,7 +902,7 @@
   function handlePublishNow() {
     const projectId = createdProjectId.value || props.projectId;
     if (createdClipId.value && createdClipPath.value && projectId) {
-      emit('publish-clip', createdClipId.value, createdClipPath.value, projectId);
+      emit('publish-clip', createdClipId.value, createdClipPath.value, projectId, createdThumbnailPath.value);
     }
   }
 
@@ -804,6 +970,11 @@
 
   // Cleanup on unmount
   onUnmounted(() => {
+    teardownVolumeWindowPointerListeners();
+    if (volumePersistTimer) {
+      clearTimeout(volumePersistTimer);
+      volumePersistTimer = null;
+    }
     cleanupProgressListener();
     cleanupVodPlayback();
     if (isDragging.value) {
@@ -956,6 +1127,13 @@
     color: #f87171;
   }
 
+  .clip-selector__cancel-extract {
+    margin-top: 1.25rem;
+    flex: 0 0 auto;
+    min-width: 11rem;
+    max-width: 100%;
+  }
+
   .clip-selector__progress-ring {
     position: relative;
     width: 64px;
@@ -1071,6 +1249,115 @@
     width: 16px;
     height: 16px;
     animation: clip-selector-spin 0.8s linear infinite;
+  }
+
+  /* ===== Volume Control ===== */
+  .clip-selector__volume-ctrl {
+    position: absolute;
+    bottom: 0.5rem;
+    left: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    z-index: 5;
+  }
+
+  .clip-selector__volume-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background-color: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px);
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 150ms ease;
+  }
+
+  .clip-selector__volume-btn:hover {
+    background-color: rgba(0, 0, 0, 0.85);
+  }
+
+  .clip-selector__volume-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 88px;
+    height: 20px;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+    accent-color: var(--sidebar-accent);
+  }
+
+  .clip-selector__volume-slider:focus {
+    outline: none;
+  }
+
+  .clip-selector__volume-slider:focus-visible {
+    outline: 2px solid var(--sidebar-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Track (visible bar) — WebKit */
+  .clip-selector__volume-slider::-webkit-slider-runnable-track {
+    height: 5px;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.55) 0%,
+      rgba(255, 255, 255, 0.28) 100%
+    );
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+  }
+
+  .clip-selector__volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -3.5px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(0, 0, 0, 0.2);
+  }
+
+  /* Track + thumb — Firefox */
+  .clip-selector__volume-slider::-moz-range-track {
+    height: 5px;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.55) 0%,
+      rgba(255, 255, 255, 0.28) 100%
+    );
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+  }
+
+  .clip-selector__volume-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  }
+
+  .volume-slider-enter-active,
+  .volume-slider-leave-active {
+    transition: opacity 150ms ease, transform 150ms ease;
+  }
+
+  .volume-slider-enter-from,
+  .volume-slider-leave-to {
+    opacity: 0;
+    transform: translateX(-6px);
   }
 
   .clip-selector__time-badge {

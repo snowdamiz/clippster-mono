@@ -341,3 +341,25 @@ export async function updateClipFullSubtitleSettings(
 // Backward-compatible alias used by ClipBuildSettingsDialog dynamic import
 export { updateClipFullSubtitleSettings as saveSubtitleSettings };
 
+async function ensureClipTextOverlayColumn(): Promise<void> {
+  const db = await getDatabase();
+  try {
+    const cols = await db.select<{ name: string }[]>('PRAGMA table_info(clips)');
+    const colNames = cols.map((c) => c.name);
+    if (!colNames.includes('clip_text_overlay')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN clip_text_overlay TEXT');
+      console.log('[Clips] Added clip_text_overlay column');
+    }
+  } catch (e) {
+    console.warn('[Clips] Failed to ensure clip_text_overlay column:', e);
+  }
+}
+
+export async function updateClipTextOverlay(clipId: string, state: import('@/utils/clipTextBox').ClipTextBoxState | null): Promise<void> {
+  await ensureClipTextOverlayColumn();
+  const db = await getDatabase();
+  const now = timestamp();
+  const json = state == null ? null : JSON.stringify(state);
+  await db.execute('UPDATE clips SET clip_text_overlay = ?, updated_at = ? WHERE id = ?', [json, now, clipId]);
+}
+

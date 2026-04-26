@@ -173,22 +173,7 @@
                   </div>
                   <div class="org-account__info">
                     <span class="org-account__name">{{ a.display_name || a.username || a.platform }}</span>
-                    <div class="org-account__platform-row">
-                      <span
-                        class="org-account__platform-chip"
-                        :title="a.platform ? platformTitle(a.platform) : 'No platform linked'"
-                      >
-                        <img
-                          v-if="a.platform && getPlatformIcon(a.platform)"
-                          :src="getPlatformIcon(a.platform)"
-                          class="org-account__platform-icon"
-                          :style="{ filter: getPlatformFilter(a.platform) }"
-                          alt=""
-                        />
-                        <Link v-else class="org-account__platform-empty" />
-                      </span>
-                      <span class="org-account__platform">{{ a.platform ? platformTitle(a.platform) : 'Unknown' }}</span>
-                    </div>
+                    <span class="org-account__platform">{{ a.platform ? platformTitle(a.platform) : 'Unknown' }}</span>
                   </div>
                 </div>
               </div>

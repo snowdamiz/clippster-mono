@@ -261,6 +261,48 @@
         </div><!-- end subtitle-selection-box -->
       </div>
 
+      <!-- Clip pill text box (project workspace) -->
+      <div
+        v-if="showClipTextBoxOverlay"
+        class="absolute inset-0 pointer-events-none z-[25]"
+      >
+        <div
+          class="clip-text-selection-box pointer-events-auto"
+          :class="{
+            'is-active': isDraggingClipText || isResizingClipText,
+            'clip-text--passive': !clipTextBoxInteractive,
+          }"
+          :style="clipTextBoxContainerStyle"
+          @mousedown.self="onClipTextBoxOuterMouseDown"
+        >
+          <div
+            v-if="clipTextBoxInteractive"
+            class="clip-text-drag-bar"
+            @mousedown.stop="startDragClipText($event)"
+            @click.stop="emit('clipTextBoxSelected')"
+          >
+            <span class="clip-text-drag-label">⠿ TEXT</span>
+          </div>
+          <template v-if="clipTextBoxInteractive">
+            <div class="resize-handle resize-handle-tl" @mousedown.stop="(e) => startClipTextWidthResize(e, 'tl')" />
+            <div class="resize-handle resize-handle-tr" @mousedown.stop="(e) => startClipTextWidthResize(e, 'tr')" />
+            <div class="resize-handle resize-handle-bl" @mousedown.stop="(e) => startClipTextWidthResize(e, 'bl')" />
+            <div class="resize-handle resize-handle-br" @mousedown.stop="(e) => startClipTextWidthResize(e, 'br')" />
+          </template>
+          <div
+            class="clip-text-pill cursor-move"
+            :class="{ 'cursor-default': !clipTextBoxInteractive }"
+            :style="clipTextPillStyle"
+            @mousedown="clipTextBoxInteractive ? startDragClipText($event) : undefined"
+            @click.stop="emit('clipTextBoxSelected')"
+          >
+            <span class="clip-text-pill-inner whitespace-pre-wrap break-words text-center inline-block max-w-full" :style="clipTextPillTextStyle">
+              {{ displayClipTextBoxText }}
+            </span>
+          </div>
+        </div>
+      </div>
+
       <!-- Watermark Overlay -->
       <div
         v-if="shouldShowWatermark && videoSrc && !videoLoading"
@@ -319,6 +361,7 @@
   import Hls from 'hls.js';
 
   import type { WhisperSegment, WatermarkSettings, PerRatioWatermarkSettings, ManualRegion } from '@/types';
+  import type { ClipTextBoxState } from '@/utils/clipTextBox';
 
   interface WatermarkData {
     dataUrl: string; // Data URL for display
@@ -342,6 +385,13 @@
     audioGainDb?: number; // dB gain (-20 to +20) for audio playback preview
     framingRegions?: ManualRegion[]; // Multi-region framing for VOD preset preview
     subtitleInitialPosition?: { x: number; y: number; width?: number | null } | null;
+    clipTextBoxState?: ClipTextBoxState | null;
+    /** When true, show handles and allow drag/resize */
+    clipTextBoxInteractive?: boolean;
+    /** When true (e.g. workspace Text tab), show enabled box whenever visible flags pass — ignore start/end window so editing works at any playhead. */
+    clipTextBoxIgnoreTiming?: boolean;
+    /** Absolute video time (seconds) where the active clip starts — for clip-local timing */
+    clipAbsoluteStart?: number | null;
   }
 
   interface WordInfo {
@@ -435,6 +485,10 @@
     audioGainDb: 0,
     framingRegions: () => [],
     subtitleInitialPosition: null,
+    clipTextBoxState: null,
+    clipTextBoxInteractive: false,
+    clipTextBoxIgnoreTiming: false,
+    clipAbsoluteStart: null,
   });
 
   interface Emits {
@@ -451,6 +505,8 @@
     (e: 'subtitlePositionChange', position: { x: number; y: number }, width: number): void;
     (e: 'subtitleFontSizeChange', fontSize: number): void;
     (e: 'subtitleSelected'): void;
+    (e: 'clipTextBoxPositionChange', payload: { x: number; y: number; widthPct: number; fontSize?: number }): void;
+    (e: 'clipTextBoxSelected'): void;
   }
 
   const emit = defineEmits<Emits>();
@@ -488,6 +544,180 @@
   watch(() => props.subtitleSettings?.maxWidth, (w) => {
     if (w !== undefined) customSubtitleWidth.value = w;
   });
+
+  // --- Clip text box (pill) ---
+  const customClipTextPosition = ref({ x: 50, y: 50 });
+  const customClipTextWidthPct = ref(72);
+  const customClipTextFontSize = ref(28);
+  const isDraggingClipText = ref(false);
+  const isResizingClipText = ref(false);
+  const clipTextDragOffset = ref({ x: 0, y: 0 });
+  const clipTextResizeStartX = ref(0);
+  const clipTextResizeStartY = ref(0);
+  const clipTextResizeStartFontSize = ref(28);
+  const clipTextResizeCorner = ref<'tl' | 'tr' | 'bl' | 'br'>('br');
+
+  watch(
+    () => props.clipTextBoxState,
+    (s) => {
+      if (!s) return;
+      customClipTextPosition.value = { x: s.positionX, y: s.positionY };
+      customClipTextWidthPct.value = s.widthPct;
+      customClipTextFontSize.value = s.style?.fontSize ?? 28;
+    },
+    { immediate: true, deep: true }
+  );
+
+  const clipTextRelativeTime = computed(() => {
+    const ct = props.currentTime ?? 0;
+    if (props.clipAbsoluteStart != null && props.clipAbsoluteStart !== undefined) {
+      return ct - props.clipAbsoluteStart;
+    }
+    return ct;
+  });
+
+  const showClipTextBoxOverlay = computed(() => {
+    const s = props.clipTextBoxState;
+    if (!s?.enabled || !props.videoSrc || props.videoLoading || props.videoError) return false;
+    if (props.clipTextBoxIgnoreTiming) return true;
+    const t = clipTextRelativeTime.value;
+    const eps = 1e-3;
+    return t + eps >= s.startTime && t <= s.endTime + eps;
+  });
+
+  const clipBoxScale = computed(() => {
+    const videoScaleFactor = containerHeight.value / 1080;
+    const aspectRatioValue = props.aspectRatio.width / props.aspectRatio.height;
+    let fontSizeScale = 1;
+    if (aspectRatioValue <= 0.9) fontSizeScale = 0.65;
+    else if (aspectRatioValue > 0.9 && aspectRatioValue <= 1.1) fontSizeScale = 0.78;
+    return fontSizeScale * videoScaleFactor;
+  });
+
+  const displayClipTextBoxText = computed(() => props.clipTextBoxState?.text ?? '');
+
+  const clipTextBoxContainerStyle = computed(() => {
+    const x = customClipTextPosition.value.x;
+    const y = customClipTextPosition.value.y;
+    const w = Math.min(100, Math.max(12, customClipTextWidthPct.value));
+    return {
+      position: 'absolute' as const,
+      top: `${y}%`,
+      left: `${x}%`,
+      transform: 'translate(-50%, -50%)',
+      width: 'max-content',
+      maxWidth: `${w}%`,
+      boxSizing: 'border-box' as const,
+    };
+  });
+
+  const clipTextPillStyle = computed(() => {
+    const s = props.clipTextBoxState?.style;
+    if (!s) return {};
+    const pad = Math.round((s.padding || 16) * clipBoxScale.value);
+    const rad = Math.round((s.borderRadius || 24) * clipBoxScale.value);
+    const st: Record<string, string> = {
+      borderRadius: `${rad}px`,
+      padding: `${pad}px`,
+      boxSizing: 'border-box',
+      width: 'auto',
+      maxWidth: '100%',
+    };
+    if (s.backgroundEnabled) {
+      st.backgroundColor = s.backgroundColor || '#FFFFFF';
+    }
+    return st;
+  });
+
+  const clipTextPillTextStyle = computed(() => {
+    const s = props.clipTextBoxState?.style;
+    if (!s) return {};
+    const baseFs = customClipTextFontSize.value ?? s.fontSize ?? 28;
+    const fs = Math.round(baseFs * clipBoxScale.value);
+    const tt = s.textTransform || 'none';
+    return {
+      fontFamily: `"${s.fontFamily}", Arial, sans-serif`,
+      fontWeight: String(s.fontWeight ?? 700),
+      fontSize: `${fs}px`,
+      color: s.color || '#000000',
+      textTransform: tt as string,
+      lineHeight: String(s.lineHeight ?? 1.2),
+      letterSpacing: `${(s.letterSpacing || 0) * clipBoxScale.value}px`,
+    };
+  });
+
+  function onClipTextBoxOuterMouseDown(e: MouseEvent) {
+    if (props.clipTextBoxInteractive) startDragClipText(e);
+  }
+
+  function startDragClipText(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!videoContainerRef.value || !props.clipTextBoxInteractive) return;
+    isDraggingClipText.value = true;
+    const containerRect = videoContainerRef.value.getBoundingClientRect();
+    const curX = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+    const curY = ((e.clientY - containerRect.top) / containerRect.height) * 100;
+    const pos = customClipTextPosition.value;
+    clipTextDragOffset.value = { x: curX - pos.x, y: curY - pos.y };
+    document.addEventListener('mousemove', onDragClipText);
+    document.addEventListener('mouseup', stopClipTextInteraction);
+  }
+
+  function onDragClipText(e: MouseEvent) {
+    if (!isDraggingClipText.value || !videoContainerRef.value) return;
+    const containerRect = videoContainerRef.value.getBoundingClientRect();
+    const curX = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+    const curY = ((e.clientY - containerRect.top) / containerRect.height) * 100;
+    customClipTextPosition.value = {
+      x: Math.max(0, Math.min(100, curX - clipTextDragOffset.value.x)),
+      y: Math.max(0, Math.min(100, curY - clipTextDragOffset.value.y)),
+    };
+  }
+
+  /** Corner drag scales font size (same model as subtitle resize), not horizontal stretch. */
+  function startClipTextWidthResize(e: MouseEvent, corner: 'tl' | 'tr' | 'bl' | 'br') {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!props.clipTextBoxInteractive) return;
+    isResizingClipText.value = true;
+    clipTextResizeStartX.value = e.clientX;
+    clipTextResizeStartY.value = e.clientY;
+    clipTextResizeStartFontSize.value = customClipTextFontSize.value;
+    clipTextResizeCorner.value = corner;
+    document.addEventListener('mousemove', onClipTextFontResize);
+    document.addEventListener('mouseup', stopClipTextInteraction);
+  }
+
+  function onClipTextFontResize(e: MouseEvent) {
+    if (!isResizingClipText.value || !videoContainerRef.value) return;
+    const containerRect = videoContainerRef.value.getBoundingClientRect();
+    const dx = e.clientX - clipTextResizeStartX.value;
+    const dy = e.clientY - clipTextResizeStartY.value;
+    const signX = clipTextResizeCorner.value === 'tr' || clipTextResizeCorner.value === 'br' ? 1 : -1;
+    const signY = clipTextResizeCorner.value === 'bl' || clipTextResizeCorner.value === 'br' ? 1 : -1;
+    const delta = (dx * signX + dy * signY) / 2;
+    const scaledDelta = (delta / containerRect.height) * 200;
+    const newSize = Math.max(10, Math.min(120, clipTextResizeStartFontSize.value + scaledDelta));
+    customClipTextFontSize.value = Math.round(newSize);
+  }
+
+  function stopClipTextInteraction() {
+    const was = isDraggingClipText.value || isResizingClipText.value;
+    isDraggingClipText.value = false;
+    isResizingClipText.value = false;
+    document.removeEventListener('mousemove', onDragClipText);
+    document.removeEventListener('mousemove', onClipTextFontResize);
+    document.removeEventListener('mouseup', stopClipTextInteraction);
+    if (was) {
+      emit('clipTextBoxPositionChange', {
+        x: customClipTextPosition.value.x,
+        y: customClipTextPosition.value.y,
+        widthPct: customClipTextWidthPct.value,
+        fontSize: customClipTextFontSize.value,
+      });
+    }
+  }
 
   // Multi-region framing
   const hasFramingRegions = computed(() => (props.framingRegions?.length ?? 0) > 0);
@@ -1859,6 +2089,77 @@
     bottom: -5px;
     right: -5px;
     cursor: nwse-resize;
+  }
+
+  /* Clip text box selection — same chrome as subtitles (blue), shrink-wrap inner pill */
+  .clip-text-selection-box {
+    position: absolute;
+    border: 1px dashed rgba(59, 130, 246, 0.55);
+    border-radius: 6px;
+    box-sizing: border-box;
+    padding: 22px 0 0 0;
+    cursor: move;
+    user-select: none;
+    transition: border-color 0.15s;
+  }
+
+  .clip-text-selection-box:hover,
+  .clip-text-selection-box.is-active {
+    border-color: rgba(59, 130, 246, 0.85);
+    border-width: 2px;
+  }
+
+  /* Passive mode: no chrome, still visible; clicks pass to pill only */
+  .clip-text-selection-box.clip-text--passive {
+    border: none;
+    padding: 0;
+    cursor: default;
+  }
+
+  .clip-text-drag-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: move;
+    border-radius: 4px 4px 0 0;
+    background: rgba(59, 130, 246, 0.85);
+    backdrop-filter: blur(4px);
+    transition: background 0.15s;
+  }
+
+  .clip-text-drag-bar:hover {
+    background: rgba(59, 130, 246, 0.95);
+  }
+
+  .clip-text-drag-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    letter-spacing: 0.1em;
+    pointer-events: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  .clip-text-selection-box:hover .resize-handle,
+  .clip-text-selection-box.is-active .resize-handle {
+    opacity: 1;
+  }
+
+  .clip-text-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2rem;
+    max-width: 100%;
+  }
+
+  .clip-text-pill-inner {
+    max-width: 100%;
   }
 
   /* Subtitle word animation styles */

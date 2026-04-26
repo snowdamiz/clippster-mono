@@ -1,11 +1,32 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Emitter;
-use tauri_plugin_shell::ShellExt;
 
-use super::encoder::{detect_hardware_encoder, run_ffmpeg_with_fallback};
+use super::encoder::{
+    detect_hardware_encoder, ffmpeg_sidecar_run_once_cancellable,
+    run_ffmpeg_with_fallback_cancellable, FFMPEG_OPERATION_CANCELLED,
+};
 use super::types::WatermarkSettings;
 use crate::storage;
+
+/// Set by `cancel_livestream_clip_extraction`; checked by in-flight FFmpeg helpers.
+static LIVESTREAM_CLIP_EXTRACTION_CANCEL: AtomicBool = AtomicBool::new(false);
+
+struct LivestreamClipExtractionCancelGuard;
+
+impl Drop for LivestreamClipExtractionCancelGuard {
+    fn drop(&mut self) {
+        LIVESTREAM_CLIP_EXTRACTION_CANCEL.store(false, Ordering::SeqCst);
+    }
+}
+
+#[tauri::command]
+pub fn cancel_livestream_clip_extraction() -> Result<(), String> {
+    LIVESTREAM_CLIP_EXTRACTION_CANCEL.store(true, Ordering::SeqCst);
+    println!("[Rust] cancel_livestream_clip_extraction: cancellation requested");
+    Ok(())
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -96,6 +117,9 @@ pub async fn extract_livestream_clip(
         }
     }
 
+    LIVESTREAM_CLIP_EXTRACTION_CANCEL.store(false, Ordering::SeqCst);
+    let _cancel_guard = LivestreamClipExtractionCancelGuard;
+
     let _ = app.emit(
         "clip-extraction-progress",
         ClipExtractionProgress {
@@ -137,6 +161,7 @@ pub async fn extract_livestream_clip(
 
     // If single segment, extract directly
     // If multiple segments, we need to concatenate first then extract
+    let cancel = &LIVESTREAM_CLIP_EXTRACTION_CANCEL;
     let extracted_path = if relevant_segments.len() == 1 {
         extract_single_segment_clip(
             &app,
@@ -144,6 +169,7 @@ pub async fn extract_livestream_clip(
             clip_start_time,
             clip_duration,
             &temp_dir,
+            cancel,
         )
         .await?
     } else {
@@ -154,9 +180,15 @@ pub async fn extract_livestream_clip(
             clip_end_time,
             clip_duration,
             &temp_dir,
+            cancel,
         )
         .await?
     };
+
+    if cancel.load(Ordering::SeqCst) {
+        let _ = std::fs::remove_file(&extracted_path);
+        return Err(FFMPEG_OPERATION_CANCELLED.to_string());
+    }
 
     let _ = app.emit(
         "clip-extraction-progress",
@@ -190,8 +222,13 @@ pub async fn extract_livestream_clip(
                 },
             );
 
-            apply_watermark_to_clip(&app, &extracted_path, wm, "high").await?;
+            apply_watermark_to_clip(&app, &extracted_path, wm, "high", cancel).await?;
         }
+    }
+
+    if cancel.load(Ordering::SeqCst) {
+        let _ = std::fs::remove_file(&extracted_path);
+        return Err(FFMPEG_OPERATION_CANCELLED.to_string());
     }
 
     let _ = app.emit(
@@ -201,6 +238,11 @@ pub async fn extract_livestream_clip(
             message: "Finalizing clip...".to_string(),
         },
     );
+
+    if cancel.load(Ordering::SeqCst) {
+        let _ = std::fs::remove_file(&extracted_path);
+        return Err(FFMPEG_OPERATION_CANCELLED.to_string());
+    }
 
     // Move to final output location
     std::fs::copy(&extracted_path, &output_path)
@@ -247,6 +289,11 @@ pub async fn extract_livestream_clip(
                 );
             }
         }
+    }
+
+    if cancel.load(Ordering::SeqCst) {
+        let _ = std::fs::remove_file(&output_path);
+        return Err(FFMPEG_OPERATION_CANCELLED.to_string());
     }
 
     // Generate thumbnail at midpoint of the clip
@@ -383,9 +430,8 @@ async fn extract_single_segment_clip(
     clip_start_time: f64,
     clip_duration: f64,
     temp_dir: &Path,
+    cancel: &AtomicBool,
 ) -> Result<PathBuf, String> {
-    let _shell = app.shell();
-
     // Calculate seek position within this segment
     let seek_in_segment = clip_start_time - segment.start_time;
 
@@ -434,7 +480,7 @@ async fn extract_single_segment_clip(
     println!("[Rust] Running FFmpeg for single segment extraction...");
 
     // Use fallback helper for hardware encoder resilience
-    run_ffmpeg_with_fallback(app, args, &encoder, "high", None)
+    run_ffmpeg_with_fallback_cancellable(app, args, &encoder, "high", None, cancel)
         .await
         .map_err(|e| format!("FFmpeg extraction failed: {}", e))?;
 
@@ -449,9 +495,8 @@ async fn extract_multi_segment_clip(
     _clip_end_time: f64,
     clip_duration: f64,
     temp_dir: &Path,
+    cancel: &AtomicBool,
 ) -> Result<PathBuf, String> {
-    let shell = app.shell();
-
     // First, concatenate all relevant segments
     let concat_list_path = temp_dir.join(format!("concat_{}.txt", uuid::Uuid::new_v4()));
     let concat_output_path = temp_dir.join(format!("concat_{}.mp4", uuid::Uuid::new_v4()));
@@ -487,18 +532,27 @@ async fn extract_multi_segment_clip(
         concat_output_path.to_string_lossy().to_string(),
     ];
 
-    let concat_output = shell
-        .sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(concat_args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg concat: {}", e))?;
+    let concat_output = match ffmpeg_sidecar_run_once_cancellable(
+        app,
+        &concat_args,
+        None,
+        Some(cancel),
+    )
+    .await
+    {
+        Ok(o) => o,
+        Err(e) => {
+            let _ = std::fs::remove_file(&concat_list_path);
+            let _ = std::fs::remove_file(&concat_output_path);
+            return Err(e);
+        }
+    };
 
     if !concat_output.status.success() {
         let stderr = String::from_utf8_lossy(&concat_output.stderr);
         // Cleanup
         let _ = std::fs::remove_file(&concat_list_path);
+        let _ = std::fs::remove_file(&concat_output_path);
         return Err(format!("FFmpeg concat failed: {}", stderr));
     }
 
@@ -558,7 +612,7 @@ async fn extract_multi_segment_clip(
     );
 
     // Use fallback helper for hardware encoder resilience
-    let result = run_ffmpeg_with_fallback(app, args, &encoder, "high", None).await;
+    let result = run_ffmpeg_with_fallback_cancellable(app, args, &encoder, "high", None, cancel).await;
 
     // Cleanup concatenated file
     let _ = std::fs::remove_file(&concat_output_path);
@@ -574,12 +628,11 @@ async fn apply_watermark_to_clip(
     clip_path: &PathBuf,
     watermark: &WatermarkSettings,
     quality: &str,
+    cancel: &AtomicBool,
 ) -> Result<(), String> {
     if !watermark.enabled || watermark.file_path.is_empty() {
         return Ok(());
     }
-
-    let _shell = app.shell();
 
     // Get video info to calculate watermark position
     let video_info = crate::clips::video_info::get_video_info(
@@ -665,9 +718,12 @@ async fn apply_watermark_to_clip(
     println!("[Rust] Applying watermark to clip...");
 
     // Use fallback helper for hardware encoder resilience
-    run_ffmpeg_with_fallback(app, args, &encoder, quality, None)
-        .await
-        .map_err(|e| format!("FFmpeg watermark failed: {}", e))?;
+    if let Err(e) =
+        run_ffmpeg_with_fallback_cancellable(app, args, &encoder, quality, None, cancel).await
+    {
+        let _ = std::fs::remove_file(&temp_output);
+        return Err(format!("FFmpeg watermark failed: {}", e));
+    }
 
     // Replace original with watermarked version
     std::fs::remove_file(clip_path)

@@ -239,6 +239,11 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
           current_version_segments: [], // Will be loaded separately
           subtitle_enabled: row.subtitle_enabled,
           subtitle_preset_id: row.subtitle_preset_id,
+          subtitle_position_x: row.subtitle_position_x ?? null,
+          subtitle_position_y: row.subtitle_position_y ?? null,
+          subtitle_position_width: row.subtitle_position_width ?? null,
+          subtitle_settings: row.subtitle_settings ?? null,
+          clip_text_overlay: row.clip_text_overlay ?? null,
         };
       });
 

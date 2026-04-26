@@ -112,6 +112,12 @@
         <!-- Background fill -->
         <div class="absolute inset-0 bg-zinc-900" />
 
+        <!-- Transparent click-catcher to deselect regions when clicking empty space -->
+        <div
+          class="absolute inset-0 z-[4]"
+          @click="emit('selectRegion', null)"
+        />
+
         <!-- Grid lines for visual guidance -->
         <div class="absolute inset-0 pointer-events-none">
           <!-- Horizontal thirds -->
@@ -350,6 +356,7 @@
           :aspect-ratio-locked="region.aspectRatioLocked !== false"
           :snap-to-center="true"
           :snap-threshold="SNAP_THRESHOLD"
+          :corner-radius-px="getScaledCornerRadius(region)"
           @update="(rect) => updateRegionOutput(region.id, rect)"
           @select="selectRegion(region.id)"
           @drag-start="onDragStart"
@@ -380,15 +387,20 @@
         >
           <!-- Drag body -->
           <div
-            class="w-full h-full flex items-center justify-center cursor-move select-none overflow-hidden"
-            :class="isDraggingSubtitles ? 'ring-2 ring-purple-400' : 'ring-1 ring-purple-500/60 hover:ring-purple-400'"
+            class="w-full h-full flex items-center justify-center cursor-move select-none"
+            :class="[
+              isDraggingSubtitles ? 'ring-2 ring-purple-400' : 'ring-1 ring-purple-500/60 hover:ring-purple-400',
+              subtitleSettings?.animationStyle === 'single-word' ? 'overflow-visible' : 'overflow-hidden',
+            ]"
             style="border-radius: 4px; background: rgba(88,28,135,0.15);"
             @mousedown.prevent="startDragSubtitles"
           >
             <!-- Actual transcript words (when available) -->
             <div
               v-if="visibleWords.length > 0"
-              class="flex flex-wrap items-center justify-center gap-2 px-2 pointer-events-none"
+              :class="subtitleSettings?.animationStyle === 'single-word'
+                ? 'flex items-center justify-center pointer-events-none'
+                : 'flex flex-wrap items-center justify-center gap-2 px-2 pointer-events-none'"
             >
               <template v-if="subtitleSettings">
                 <span
@@ -397,7 +409,13 @@
                   class="relative inline-block"
                 >
                   <!-- Use SVG for proper border rendering -->
-                  <span class="invisible select-none" :style="subtitleTextStyle">{{ subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}</span>
+                  <!-- For single-word, add horizontal padding so stroke isn't clipped at edges -->
+                  <span
+                    class="invisible select-none"
+                    :style="subtitleSettings.animationStyle === 'single-word'
+                      ? { ...subtitleTextStyle, paddingLeft: '0.2em', paddingRight: '0.2em' }
+                      : subtitleTextStyle"
+                  >{{ subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}</span>
                   <svg class="absolute inset-0 w-full h-full overflow-visible" style="pointer-events: none">
                     <!-- Border 2 (Outer) -->
                     <text
@@ -473,6 +491,7 @@
             >
               {{ sampleSubtitleText }}
             </div>
+
           </div>
 
           <!-- Corner resize handles (hidden for single-word style since width is auto) -->
@@ -489,6 +508,44 @@
             }"
             @mousedown.stop.prevent="(e) => startResizeSubtitles(e, corner)"
           />
+        </div>
+
+        <!-- Clip text box (pill) — POI target preview -->
+        <div
+          v-if="showClipTextBoxOverlay"
+          class="absolute z-[21] pointer-events-auto"
+          :style="clipTextBoxContainerStyle"
+        >
+          <div
+            class="inline-flex items-center justify-center select-none overflow-hidden relative"
+            :class="[
+              isDraggingClipText || isResizingClipText ? 'ring-2 ring-blue-500' : 'ring-1 ring-blue-500/60 hover:ring-blue-400',
+              clipTextBoxPositioningEnabled ? 'cursor-move' : 'cursor-default',
+            ]"
+            :style="clipTextPillStyle"
+            @mousedown.prevent="clipTextBoxPositioningEnabled ? startDragClipText($event) : undefined"
+          >
+            <div
+              class="text-center pointer-events-none inline-block max-w-full whitespace-pre-wrap break-words"
+              :style="clipTextPillTextStyle"
+            >
+              {{ clipTextDisplayText }}
+            </div>
+          </div>
+          <template v-if="clipTextBoxPositioningEnabled">
+            <div
+              v-for="corner in ['nw', 'ne', 'sw', 'se']"
+              :key="`ct-${corner}`"
+              class="absolute w-2.5 h-2.5 bg-blue-500 border border-white pointer-events-auto z-30"
+              :class="{
+                'top-0 left-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize': corner === 'nw',
+                'top-0 right-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize': corner === 'ne',
+                'bottom-0 left-0 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize': corner === 'sw',
+                'bottom-0 right-0 translate-x-1/2 translate-y-1/2 cursor-nwse-resize': corner === 'se',
+              }"
+              @mousedown.stop.prevent="(e) => startClipTextResize(e, corner)"
+            />
+          </template>
         </div>
 
         <!-- Empty state -->
@@ -510,6 +567,7 @@
   import POIRegion from './POIRegion.vue';
   import MediaPreview from '@/components/MediaPreview.vue';
   import type { ManualRegion, ManualRegionRect, SubtitleSettings, ManualSourceFramingPayload } from '@/types';
+  import type { ClipTextBoxState } from '@/utils/clipTextBox';
 
   interface WatermarkPreview {
     filePath?: string;
@@ -568,6 +626,9 @@
     transcriptSegments?: WhisperSegment[];
     /** Hydrate Scale / Use 16:9 / blur from saved config (normalized x,y) */
     initialSourceFraming?: ManualSourceFramingPayload | null;
+    /** Merged clip text state for current target ratio (preview + drag) */
+    clipTextBoxDisplay?: ClipTextBoxState | null;
+    clipTextBoxPositioningEnabled?: boolean;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -583,6 +644,8 @@
     transcriptWords: () => [],
     transcriptSegments: () => [],
     initialSourceFraming: null,
+    clipTextBoxDisplay: null,
+    clipTextBoxPositioningEnabled: false,
   });
 
   const emit = defineEmits<{
@@ -591,6 +654,7 @@
     updateSourceTransform: [payload: ManualSourceFramingPayload];
     subtitlePositionChange: [position: { x: number; y: number; width?: number }];
     subtitleSettingsChange: [settings: SubtitleSettings];
+    clipTextBoxPositionChange: [payload: { x: number; y: number; widthPct: number; fontSize?: number }];
   }>();
 
   const containerRef = ref<HTMLElement | null>(null);
@@ -644,6 +708,189 @@
     },
     { deep: true }
   );
+
+  // Clip text box drag/resize (matches VideoPlayer scaling)
+  const isDraggingClipText = ref(false);
+  const isResizingClipText = ref(false);
+  const localClipTextPosition = ref({ x: 50, y: 50, widthPct: 72 });
+  const localClipTextFontSize = ref(28);
+  const clipTextDragOffset = ref({ x: 0, y: 0 });
+  const clipTextResizeStartX = ref(0);
+  const clipTextResizeStartY = ref(0);
+  const clipTextResizeStartFontSize = ref(28);
+  const clipTextResizeCorner = ref<'nw' | 'ne' | 'sw' | 'se'>('se');
+
+  watch(
+    () => props.clipTextBoxDisplay,
+    (d) => {
+      if (!d) return;
+      localClipTextPosition.value = {
+        x: d.positionX,
+        y: d.positionY,
+        widthPct: d.widthPct,
+      };
+      localClipTextFontSize.value = d.style?.fontSize ?? 28;
+    },
+    { immediate: true, deep: true }
+  );
+
+  const clipTextRelativeTime = computed(() => {
+    const absoluteTime = props.videoTime || 0;
+    return absoluteTime - (props.clipStartTime || 0);
+  });
+
+  const showClipTextBoxOverlay = computed(() => {
+    const d = props.clipTextBoxDisplay;
+    if (!d?.enabled) return false;
+    const t = clipTextRelativeTime.value;
+    return t >= d.startTime && t < d.endTime;
+  });
+
+  const clipTextBoxPreviewScale = computed(() => {
+    const ph = props.clipTextBoxDisplay?.previewHeight || 1080;
+    const videoScaleFactor = containerHeight.value > 0 ? containerHeight.value / ph : 0.12;
+    const aspect = parseAspectRatio(props.targetAspectRatio);
+    const aspectRatioValue = aspect.width / aspect.height;
+    let fontSizeScale = 1;
+    if (aspectRatioValue <= 0.9) fontSizeScale = 0.65;
+    else if (aspectRatioValue > 0.9 && aspectRatioValue <= 1.1) fontSizeScale = 0.78;
+    return fontSizeScale * videoScaleFactor;
+  });
+
+  const clipTextDisplayText = computed(() => props.clipTextBoxDisplay?.text ?? '');
+
+  const clipTextBoxContainerStyle = computed(() => {
+    const pos = localClipTextPosition.value;
+    const cap = Math.min(100, Math.max(12, pos.widthPct));
+    return {
+      position: 'absolute' as const,
+      top: `${pos.y}%`,
+      left: `${pos.x}%`,
+      transform: 'translate(-50%, -50%)',
+      width: 'max-content',
+      maxWidth: `${cap}%`,
+      boxSizing: 'border-box' as const,
+    };
+  });
+
+  const clipTextPillStyle = computed(() => {
+    const s = props.clipTextBoxDisplay?.style;
+    if (!s) return {};
+    const pad = Math.round((s.padding || 16) * clipTextBoxPreviewScale.value);
+    const rad = Math.round((s.borderRadius || 24) * clipTextBoxPreviewScale.value);
+    const st: Record<string, string> = {
+      borderRadius: `${rad}px`,
+      padding: `${pad}px`,
+      boxSizing: 'border-box',
+      width: 'auto',
+      maxWidth: '100%',
+    };
+    if (s.backgroundEnabled) {
+      st.backgroundColor = s.backgroundColor || '#FFFFFF';
+    }
+    return st;
+  });
+
+  const clipTextPillTextStyle = computed(() => {
+    const s = props.clipTextBoxDisplay?.style;
+    if (!s) return {};
+    const baseFs = localClipTextFontSize.value ?? s.fontSize ?? 28;
+    const fs = Math.round(baseFs * clipTextBoxPreviewScale.value);
+    const tt = s.textTransform || 'none';
+    return {
+      fontFamily: `"${s.fontFamily}", Arial, sans-serif`,
+      fontWeight: String(s.fontWeight ?? 700),
+      fontSize: `${fs}px`,
+      color: s.color || '#000000',
+      textTransform: tt as string,
+      lineHeight: String(s.lineHeight ?? 1.2),
+      letterSpacing: `${(s.letterSpacing || 0) * clipTextBoxPreviewScale.value}px`,
+    };
+  });
+
+  function startDragClipText(event: MouseEvent) {
+    if (!containerRef.value || !props.clipTextBoxPositioningEnabled) return;
+    isDraggingClipText.value = true;
+    const rect = containerRef.value.getBoundingClientRect();
+    const centerX = rect.left + (rect.width * localClipTextPosition.value.x) / 100;
+    const centerY = rect.top + (rect.height * localClipTextPosition.value.y) / 100;
+    clipTextDragOffset.value = {
+      x: event.clientX - centerX,
+      y: event.clientY - centerY,
+    };
+    document.addEventListener('mousemove', onClipTextDragMove);
+    document.addEventListener('mouseup', onClipTextDragEnd);
+    event.preventDefault();
+  }
+
+  function onClipTextDragMove(event: MouseEvent) {
+    if (!isDraggingClipText.value || !containerRef.value) return;
+    const rect = containerRef.value.getBoundingClientRect();
+    let newX =
+      ((event.clientX - clipTextDragOffset.value.x - rect.left) / rect.width) * 100;
+    let newY =
+      ((event.clientY - clipTextDragOffset.value.y - rect.top) / rect.height) * 100;
+    const halfW = localClipTextPosition.value.widthPct / 2;
+    newX = Math.max(halfW + 1, Math.min(100 - halfW - 1, newX));
+    newY = Math.max(4, Math.min(96, newY));
+    localClipTextPosition.value = {
+      ...localClipTextPosition.value,
+      x: newX,
+      y: newY,
+    };
+  }
+
+  function onClipTextDragEnd() {
+    if (!isDraggingClipText.value) return;
+    isDraggingClipText.value = false;
+    document.removeEventListener('mousemove', onClipTextDragMove);
+    document.removeEventListener('mouseup', onClipTextDragEnd);
+    emit('clipTextBoxPositionChange', {
+      x: localClipTextPosition.value.x,
+      y: localClipTextPosition.value.y,
+      widthPct: localClipTextPosition.value.widthPct,
+      fontSize: localClipTextFontSize.value,
+    });
+  }
+
+  function startClipTextResize(event: MouseEvent, corner: string) {
+    if (!containerRef.value || !props.clipTextBoxPositioningEnabled) return;
+    isResizingClipText.value = true;
+    clipTextResizeStartX.value = event.clientX;
+    clipTextResizeStartY.value = event.clientY;
+    clipTextResizeStartFontSize.value = localClipTextFontSize.value;
+    clipTextResizeCorner.value = corner as 'nw' | 'ne' | 'sw' | 'se';
+    document.addEventListener('mousemove', onClipTextResizeMove);
+    document.addEventListener('mouseup', onClipTextResizeEnd);
+    event.preventDefault();
+  }
+
+  function onClipTextResizeMove(event: MouseEvent) {
+    if (!isResizingClipText.value || !containerRef.value) return;
+    const rect = containerRef.value.getBoundingClientRect();
+    const dx = event.clientX - clipTextResizeStartX.value;
+    const dy = event.clientY - clipTextResizeStartY.value;
+    const c = clipTextResizeCorner.value;
+    const signX = c === 'ne' || c === 'se' ? 1 : -1;
+    const signY = c === 'sw' || c === 'se' ? 1 : -1;
+    const delta = (dx * signX + dy * signY) / 2;
+    const scaledDelta = (delta / rect.height) * 200;
+    const newSize = Math.max(10, Math.min(120, clipTextResizeStartFontSize.value + scaledDelta));
+    localClipTextFontSize.value = Math.round(newSize);
+  }
+
+  function onClipTextResizeEnd() {
+    if (!isResizingClipText.value) return;
+    isResizingClipText.value = false;
+    document.removeEventListener('mousemove', onClipTextResizeMove);
+    document.removeEventListener('mouseup', onClipTextResizeEnd);
+    emit('clipTextBoxPositionChange', {
+      x: localClipTextPosition.value.x,
+      y: localClipTextPosition.value.y,
+      widthPct: localClipTextPosition.value.widthPct,
+      fontSize: localClipTextFontSize.value,
+    });
+  }
 
   function resetSourceFrameToCentered() {
     sourceFrameTransform.value.scale = 1.0;
@@ -1314,14 +1561,31 @@
     return props.regions.findIndex((r) => r.id === id);
   }
 
+  // Scale a design-space corner radius (px at 1080px output width) to preview CSS pixels.
+  function getScaledCornerRadius(region: ManualRegion): number {
+    if (!region.cornerRadiusEnabled || !region.cornerRadiusPx) return 0;
+    const previewWidthPx = containerWidth.value * region.output.width;
+    const scaleFactor = previewWidthPx / 1080;
+    return Math.max(1, Math.round(region.cornerRadiusPx * scaleFactor));
+  }
+
   // Get style for region preview container
   function getRegionPreviewStyle(region: ManualRegion) {
-    return {
+    const style: Record<string, string> = {
       left: `${region.output.x * 100}%`,
       top: `${region.output.y * 100}%`,
       width: `${region.output.width * 100}%`,
       height: `${region.output.height * 100}%`,
     };
+    const scaledRadius = getScaledCornerRadius(region);
+    if (scaledRadius > 0) {
+      style.borderRadius = `${scaledRadius}px`;
+      style.overflow = 'hidden';
+      // translateZ(0) forces a GPU compositing layer so Chromium/WebView
+      // correctly clips <video> children to the parent's border-radius
+      style.transform = 'translateZ(0)';
+    }
+    return style;
   }
 
   // Calculate the cropped image/video style to show only the source selection
@@ -1579,6 +1843,10 @@
     // Clean up subtitle drag listeners
     document.removeEventListener('mousemove', onSubtitleDragMove);
     document.removeEventListener('mouseup', onSubtitleDragEnd);
+    document.removeEventListener('mousemove', onClipTextDragMove);
+    document.removeEventListener('mouseup', onClipTextDragEnd);
+    document.removeEventListener('mousemove', onClipTextResizeMove);
+    document.removeEventListener('mouseup', onClipTextResizeEnd);
     // Clean up blur dropdown click handler
     document.removeEventListener('click', handleClickOutsideBlur);
   });
