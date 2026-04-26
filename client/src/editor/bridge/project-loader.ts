@@ -77,8 +77,7 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 		if (loadedProject?.settings?.brandingConfig) {
 			branding.initFromSavedConfig(loadedProject.settings.brandingConfig);
 		} else {
-			const sources = await getVideoEditorSourcesByProjectId(projectId);
-			await resolveAndInitBranding(sources);
+			branding.reset();
 		}
 
 		try {
@@ -253,9 +252,7 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 	}
 
 	await editor.project.loadProject({ id: projectId });
-
-	// Resolve creator profile for branding config
-	await resolveAndInitBranding(sources);
+	useBrandingConfig().reset();
 
 	// Load transcript data from source project if available
 	if (sourceProjectId) {
@@ -488,80 +485,6 @@ function inferMediaType(filePath: string): "video" | "audio" | "image" {
 	if (["mp3", "wav", "ogg", "aac", "m4a", "flac"].includes(ext)) return "audio";
 	if (["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].includes(ext)) return "image";
 	return "video";
-}
-
-/**
- * Resolve the creator profile from video editor sources and initialize branding config.
- * Chain: source (source_type='clip') → clip → clip.project_id → getCreatorProfileByProjectId()
- * Falls back to admin free tier branding if no creator profile is found.
- */
-async function resolveAndInitBranding(sources: VideoEditorSource[]): Promise<void> {
-	const branding = useBrandingConfig();
-
-	try {
-		// Find the first clip source to trace back to the original project
-		const clipSource = sources.find((s) => s.source_type === "clip" && s.source_id);
-		if (!clipSource?.source_id) {
-			console.log("[bridge] No clip source found, checking for admin branding");
-			await loadAdminBrandingIfFreeTier(branding);
-			return;
-		}
-
-		const clip = await getClip(clipSource.source_id);
-		if (!clip?.project_id) {
-			console.log("[bridge] Clip has no project_id, checking for admin branding");
-			await loadAdminBrandingIfFreeTier(branding);
-			return;
-		}
-
-		const profile = await resolveBrandingProfile(clip.project_id);
-		if (!profile) {
-			console.log("[bridge] No branding profile found for project:", clip.project_id);
-			await loadAdminBrandingIfFreeTier(branding);
-			return;
-		}
-
-		console.log("[bridge] Found creator profile for branding:", profile.name);
-		branding.initFromCreatorProfile(profile);
-	} catch (error) {
-		console.warn("[bridge] Failed to resolve creator profile for branding:", error);
-		await loadAdminBrandingIfFreeTier(branding);
-	}
-}
-
-/**
- * Load admin free tier branding if the user is on the free tier.
- * Applies admin-configured watermark, intro, and outro settings.
- */
-async function loadAdminBrandingIfFreeTier(branding: ReturnType<typeof useBrandingConfig>): Promise<void> {
-	try {
-		const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
-		const { getBrandingIfFreeTier } = useFreeTierBranding();
-		const adminBranding = await getBrandingIfFreeTier();
-		
-		if (!adminBranding) {
-			console.log("[bridge] No admin branding configured for free tier");
-			return;
-		}
-		
-		console.log("[bridge] Loading admin free tier branding");
-		
-		// Create a synthetic creator profile from admin branding
-		const syntheticProfile: any = {
-			id: 'admin-free-tier',
-			name: 'Free Tier Branding',
-			watermark_id: adminBranding.watermark_id,
-			watermark_settings: adminBranding.watermark_settings,
-			intro_ratio_settings: adminBranding.intro_ratio_settings,
-			outro_ratio_settings: adminBranding.outro_ratio_settings,
-			layout_overlays: adminBranding.layout_overlays,
-		};
-		
-		branding.initFromCreatorProfile(syntheticProfile);
-		console.log("[bridge] Admin free tier branding loaded successfully");
-	} catch (error) {
-		console.warn("[bridge] Failed to load admin free tier branding:", error);
-	}
 }
 
 /**

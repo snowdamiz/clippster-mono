@@ -3,24 +3,6 @@ import { BaseNode } from "./base-node";
 import { renderTransition } from "../effects/canvas-transitions";
 import type { TransitionType } from "../../types/transitions";
 
-type TransitionDebugLayer = "outgoing" | "incoming";
-type TransitionDebugPhase = "prefetch" | "render";
-type TransitionDebugContext = {
-	transitionType: TransitionType;
-	layer: TransitionDebugLayer;
-	phase: TransitionDebugPhase;
-	timelineTime: number;
-	progress: number;
-	outgoingTime: number;
-	incomingTime: number;
-};
-
-const TRANSITION_DEBUG_KEY = "__clippsterTransitionDebug" as const;
-
-type DebugRenderer = CanvasRenderer & {
-	[TRANSITION_DEBUG_KEY]?: TransitionDebugContext;
-};
-
 export interface TransitionNodeParams {
 	type: TransitionType;
 	/** Duration of the transition overlap in seconds */
@@ -53,7 +35,6 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 	outgoingNode: BaseNode | null = null;
 	/** The incoming (right) video node */
 	incomingNode: BaseNode | null = null;
-	private lastDebugSample: { time: number; progress: number; outgoingTime: number; incomingTime: number } | null = null;
 	private incomingPrewarmed = false;
 
 	/**
@@ -65,76 +46,6 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 	 */
 	private scratchOut: HTMLCanvasElement | null = null;
 	private scratchIn: HTMLCanvasElement | null = null;
-
-	private isDebugTransition(): boolean {
-		return this.params.type === "diamondWipe";
-	}
-
-	private logDebug(event: string, payload: Record<string, unknown>): void {
-		if (!this.isDebugTransition()) return;
-		console.log(`[TransitionDebug][TransitionNode.${event}]`, {
-			type: this.params.type,
-			...payload,
-		});
-	}
-
-	private async withRendererDebugContext<T>(
-		renderer: CanvasRenderer,
-		context: TransitionDebugContext,
-		run: () => Promise<T>,
-	): Promise<T> {
-		const debugRenderer = renderer as DebugRenderer;
-		const previous = debugRenderer[TRANSITION_DEBUG_KEY];
-		debugRenderer[TRANSITION_DEBUG_KEY] = context;
-		try {
-			return await run();
-		} finally {
-			debugRenderer[TRANSITION_DEBUG_KEY] = previous;
-		}
-	}
-
-	private async runTransitionChild({
-		renderer,
-		layer,
-		phase,
-		timelineTime,
-		progress,
-		sampleTime,
-		outgoingTime,
-		incomingTime,
-		run,
-	}: {
-		renderer: CanvasRenderer;
-		layer: TransitionDebugLayer;
-		phase: TransitionDebugPhase;
-		timelineTime: number;
-		progress: number;
-		sampleTime: number;
-		outgoingTime: number;
-		incomingTime: number;
-		run: () => Promise<void>;
-	}): Promise<void> {
-		const started = performance.now();
-		await this.withRendererDebugContext(
-			renderer,
-			{
-				transitionType: this.params.type,
-				layer,
-				phase,
-				timelineTime,
-				progress,
-				outgoingTime,
-				incomingTime,
-			},
-			run,
-		);
-		this.logDebug(`${phase}-${layer}`, {
-			timelineTime,
-			progress,
-			sampleTime,
-			durationMs: performance.now() - started,
-		});
-	}
 
 	private ensureScratchCanvases(w: number, h: number): {
 		out: HTMLCanvasElement;
@@ -240,43 +151,12 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 			: { outgoingTime: time, incomingTime: time };
 
 		if (inTransition) {
-			const d = Math.max(1e-6, this.params.duration);
-			const transitionStart = this.params.junctionTime - d / 2;
-			const progress = Math.max(0, Math.min(1, (time - transitionStart) / d));
-			const started = performance.now();
 			if (this.outgoingNode) {
-				await this.runTransitionChild({
-					renderer,
-					layer: "outgoing",
-					phase: "prefetch",
-					timelineTime: time,
-					progress,
-					sampleTime: outgoingTime,
-					outgoingTime,
-					incomingTime,
-					run: () => this.outgoingNode!.prefetch({ renderer, time: outgoingTime }),
-				});
+				await this.outgoingNode.prefetch({ renderer, time: outgoingTime });
 			}
 			if (this.incomingNode) {
-				await this.runTransitionChild({
-					renderer,
-					layer: "incoming",
-					phase: "prefetch",
-					timelineTime: time,
-					progress,
-					sampleTime: incomingTime,
-					outgoingTime,
-					incomingTime,
-					run: () => this.incomingNode!.prefetch({ renderer, time: incomingTime }),
-				});
+				await this.incomingNode.prefetch({ renderer, time: incomingTime });
 			}
-			this.logDebug("prefetch", {
-				timelineTime: time,
-				progress,
-				outgoingTime,
-				incomingTime,
-				durationMs: performance.now() - started,
-			});
 		} else if (time < this.params.junctionTime) {
 			const d = Math.max(1e-6, this.params.duration);
 			const transitionStart = this.params.junctionTime - d / 2;
@@ -292,17 +172,7 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 				time >= prewarmStart &&
 				!this.incomingPrewarmed
 			) {
-				await this.runTransitionChild({
-					renderer,
-					layer: "incoming",
-					phase: "prefetch",
-					timelineTime: time,
-					progress: 0,
-					sampleTime: transitionStart,
-					outgoingTime: time,
-					incomingTime: transitionStart,
-					run: () => this.incomingNode!.prefetch({ renderer, time: transitionStart }),
-				});
+				await this.incomingNode.prefetch({ renderer, time: transitionStart });
 				this.incomingPrewarmed = true;
 			}
 		} else if (
@@ -340,8 +210,6 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 		const transitionStart = this.params.junctionTime - d / 2;
 		const progress = (time - transitionStart) / d;
 		const { outgoingTime, incomingTime } = this.getTransitionLayerDecodeTimes(time);
-		const renderStarted = performance.now();
-		const previousSample = this.lastDebugSample;
 
 		const { out: outCanvas, in: inCanvas } = this.ensureScratchCanvases(canvasW, canvasH);
 
@@ -359,39 +227,17 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 		if (this.outgoingNode) {
 			(renderer as any).canvas = outCanvas;
 			(renderer as any).context = outCtx;
-			await this.runTransitionChild({
-				renderer,
-				layer: "outgoing",
-				phase: "render",
-				timelineTime: time,
-				progress,
-				sampleTime: outgoingTime,
-				outgoingTime,
-				incomingTime,
-				run: () => this.outgoingNode!.render({ renderer, time: outgoingTime }),
-			});
+			await this.outgoingNode.render({ renderer, time: outgoingTime });
 		}
 
 		if (this.incomingNode) {
 			(renderer as any).canvas = inCanvas;
 			(renderer as any).context = inCtx;
-			await this.runTransitionChild({
-				renderer,
-				layer: "incoming",
-				phase: "render",
-				timelineTime: time,
-				progress,
-				sampleTime: incomingTime,
-				outgoingTime,
-				incomingTime,
-				run: () => this.incomingNode!.render({ renderer, time: incomingTime }),
-			});
+			await this.incomingNode.render({ renderer, time: incomingTime });
 		}
 
 		(renderer as any).canvas = mainCanvasRef;
 		(renderer as any).context = mainCtx;
-
-		const effectStarted = performance.now();
 		renderTransition(
 			mainCtx as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
 			canvasW,
@@ -401,18 +247,5 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 			progress,
 			this.params.type,
 		);
-		this.logDebug("render", {
-			timelineTime: time,
-			progress,
-			outgoingTime,
-			incomingTime,
-			timelineDelta: previousSample ? time - previousSample.time : null,
-			progressDelta: previousSample ? progress - previousSample.progress : null,
-			outgoingDelta: previousSample ? outgoingTime - previousSample.outgoingTime : null,
-			incomingDelta: previousSample ? incomingTime - previousSample.incomingTime : null,
-			effectMs: performance.now() - effectStarted,
-			totalMs: performance.now() - renderStarted,
-		});
-		this.lastDebugSample = { time, progress, outgoingTime, incomingTime };
 	}
 }

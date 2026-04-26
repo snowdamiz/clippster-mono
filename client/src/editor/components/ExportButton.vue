@@ -697,10 +697,11 @@ async function handleDownload() {
 }
 
 async function transcribeExportedVideo(clipId: string, videoPath: string) {
+	let tempProjectId: string | null = null;
+	let tempRawVideoId: string | null = null;
 	try {
 		console.log("[ExportButton] Starting background transcription for exported video:", clipId, videoPath);
 
-		// Import transcription utilities
 		const { useTranscriptionOnly } = await import("@/composables/useTranscriptionOnly");
 		const { createProject, createRawVideo } = await import("@/services/database");
 		const { getClipWithBuildStatus } = await import("@/services/database/clip-build");
@@ -708,14 +709,14 @@ async function transcribeExportedVideo(clipId: string, videoPath: string) {
 		const { invoke } = await import("@tauri-apps/api/core");
 		const { showToast } = useToast();
 
-		// Get the clip
 		const clip = await getClipWithBuildStatus(clipId);
 		if (!clip) {
 			console.warn("[ExportButton] Could not find clip for transcription");
 			return;
 		}
 
-		// Verify the exported file exists and is accessible
+		const transcriptTargetProjectId = activeProject.value?.metadata.id ?? clip.project_id ?? null;
+
 		try {
 			const fileExists = await invoke<boolean>("file_exists", { path: videoPath });
 			if (!fileExists) {
@@ -727,16 +728,13 @@ async function transcribeExportedVideo(clipId: string, videoPath: string) {
 			throw new Error("Cannot access exported video file");
 		}
 
-		// Create a temporary project for the exported video
-		// This allows the transcription system to process it as a standalone video
-		const tempProjectId = await createProject(
+		tempProjectId = await createProject(
 			`Export Transcript - ${clip.name || 'Untitled'}`,
 			`Temporary project for transcribing exported video`
 		);
 
 		console.log("[ExportButton] Created temp project:", tempProjectId);
 
-		// Get file duration from the exported video
 		let videoDuration = clip.built_duration || clip.duration || 0;
 		try {
 			const metadata = await invoke<{ duration: number }>("get_video_metadata", {
@@ -748,19 +746,16 @@ async function transcribeExportedVideo(clipId: string, videoPath: string) {
 			console.warn("[ExportButton] Failed to get video duration, using clip duration:", err);
 		}
 
-		// Create a raw_video entry for the exported file in the temporary project
-		const rawVideoId = await createRawVideo(videoPath, {
+		tempRawVideoId = await createRawVideo(videoPath, {
 			projectId: tempProjectId,
 			originalFilename: videoPath.split(/[\\/]/).pop() || "export.mp4",
 			duration: videoDuration,
 		});
 
-		console.log("[ExportButton] Created raw_video entry:", rawVideoId);
+		console.log("[ExportButton] Created raw_video entry:", tempRawVideoId);
 
-		// Show toast that transcription is starting
 		showToast("Generating transcript for exported video...", "info", "clips");
 
-		// Start transcription in the background (non-blocking)
 		const { transcribeProject } = useTranscriptionOnly({
 			showSuccessToast: false,
 			showErrorToast: false,
@@ -768,21 +763,17 @@ async function transcribeExportedVideo(clipId: string, videoPath: string) {
 			showCacheReuseToast: false,
 		});
 		const result = await transcribeProject(tempProjectId, {
-			organizationId: null, // Use user's own transcription
+			organizationId: null,
 		});
 
 		if (result.success && !result.alreadyTranscribed) {
 			console.log("[ExportButton] Background transcription completed for clip:", clipId);
-			
-			// Copy the transcript from temp project to the actual clip's project
-			await copyTranscriptToClip(clipId, tempProjectId, clip.project_id);
-			
+			await copyTranscriptToClip(clipId, tempProjectId, transcriptTargetProjectId);
 			showToast("Transcript generated successfully", "success", "clips");
 		} else if (result.alreadyTranscribed) {
 			console.log("[ExportButton] Transcript already exists");
 			showToast("Transcript already exists", "info", "clips");
 		} else {
-			// Check if the error is due to no audio
 			const errorMsg = result.error || "";
 			if (errorMsg.includes("No audio chunks") || errorMsg.includes("no audio")) {
 				console.log("[ExportButton] Video has no audio track - skipping transcription");
@@ -792,11 +783,24 @@ async function transcribeExportedVideo(clipId: string, videoPath: string) {
 			}
 		}
 	} catch (error) {
-		// Don't throw - this is a background operation
 		console.error("[ExportButton] Background transcription error:", error);
 		const { useToast } = await import("@/composables/useToast");
 		const { showToast } = useToast();
 		showToast("Transcription failed: " + (error instanceof Error ? error.message : String(error)), "error", "clips");
+	} finally {
+		if (tempRawVideoId || tempProjectId) {
+			try {
+				const { deleteRawVideo, deleteProject } = await import("@/services/database");
+				if (tempRawVideoId) {
+					await deleteRawVideo(tempRawVideoId);
+				}
+				if (tempProjectId) {
+					await deleteProject(tempProjectId);
+				}
+			} catch (cleanupError) {
+				console.warn("[ExportButton] Failed to clean up temp transcription project:", cleanupError);
+			}
+		}
 	}
 }
 
