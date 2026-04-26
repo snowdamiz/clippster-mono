@@ -15,7 +15,6 @@ import {
   Video,
 } from 'lucide-react'
 import { getOrgPublicProfile, getContentTypeLabel, type OrgPublicProfile } from '@/services/orgPublicApi'
-import './OrgPublicProfilePage.css'
 
 function ensureUrl(url: string): string {
   if (url.startsWith('http://') || url.startsWith('https://')) return url
@@ -91,8 +90,20 @@ export function OrgPublicProfilePage() {
     return buildPublicContactRows(profile)
   }, [profile])
 
-  if (loading) return <div className="min-h-screen grid place-items-center text-zinc-500"><Loader2 className="w-8 h-8 animate-spin" /></div>
-  if (!profile) return <div className="min-h-screen grid place-items-center text-zinc-500">Organization not found</div>
+  if (loading) {
+    return (
+      <div className="org-profile-page org-profile-page--centered">
+        <Loader2 className="org-profile-page__loader" />
+      </div>
+    )
+  }
+  if (!profile) {
+    return (
+      <div className="org-profile-page org-profile-page--centered org-profile-page--not-found">
+        <p>Organization not found</p>
+      </div>
+    )
+  }
 
   const getPlatformIcon = (platform: string | null) => {
     if (!platform) return null
@@ -154,7 +165,7 @@ export function OrgPublicProfilePage() {
   }
 
   return (
-    <div className="profile-content org-profile-page">
+    <div className="org-profile-page">
       <div className="org-profile">
         <div className="org-hero">
           <div className="org-hero__banner" />
@@ -197,9 +208,8 @@ export function OrgPublicProfilePage() {
                 <div className="org-card__body org-card__body--streamers">
                   {profile.streamers.map((s) => {
                     const href = streamerProfileUrl(s.platform, s.platform_id ?? null)
-                    const cardClass = `creator-card ${href ? 'creator-card--link' : ''}`
-                    return (
-                      <a key={s.id} className={cardClass} href={href || undefined} target={href ? '_blank' : undefined} rel={href ? 'noopener noreferrer' : undefined}>
+                    const inner = (
+                      <>
                         <div className="creator-card__banner" />
                         <div className="creator-card__content">
                           <div className="creator-card__avatar">
@@ -210,7 +220,19 @@ export function OrgPublicProfilePage() {
                             {s.platform && getPlatformIcon(s.platform) ? <img src={getPlatformIcon(s.platform) || ''} className="creator-card__platform-icon" style={{ filter: getPlatformFilter(s.platform) }} /> : <Link className="creator-card__platform-empty" />}
                           </div>
                         </div>
-                      </a>
+                      </>
+                    )
+                    if (href) {
+                      return (
+                        <a key={s.id} className="creator-card creator-card--link" href={href} target="_blank" rel="noopener noreferrer">
+                          {inner}
+                        </a>
+                      )
+                    }
+                    return (
+                      <div key={s.id} className="creator-card">
+                        {inner}
+                      </div>
                     )
                   })}
                 </div>
