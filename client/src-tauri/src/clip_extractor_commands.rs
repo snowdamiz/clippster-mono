@@ -16,6 +16,19 @@ pub async fn extract_clip(
     println!("[Rust] Extracting clip: {} -> {}", source_path, output_path);
     println!("[Rust] Time range: {}s - {}s", start_time, end_time);
 
+    let src = Path::new(&source_path);
+    if !src.exists() {
+        return Err(format!(
+            "Source video not found: {}. Use a full absolute path to the VOD file (bare filenames fail unless they exist in the app working directory).",
+            source_path
+        ));
+    }
+    let source_resolved = src
+        .canonicalize()
+        .map_err(|e| format!("Could not resolve source video path: {} ({})", source_path, e))?;
+    let source_path = source_resolved.to_string_lossy().to_string();
+    println!("[Rust] Resolved source path: {}", source_path);
+
     // Ensure output directory exists
     if let Some(parent) = Path::new(&output_path).parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
@@ -27,6 +40,17 @@ pub async fn extract_clip(
     extract_clip_segment(&source_path, &output_path, start_time, end_time)
         .await
         .map_err(|e| format!("FFmpeg extraction failed: {}", e))?;
+
+    if let Ok(meta) = std::fs::metadata(&output_path) {
+        const MIN_EXTRACT_BYTES: u64 = 512;
+        if meta.len() < MIN_EXTRACT_BYTES {
+            let _ = std::fs::remove_file(&output_path);
+            return Err(format!(
+                "Extracted segment is too small ({} bytes). The source file may be wrong, still downloading, or the clip time range is invalid for this VOD.",
+                meta.len()
+            ));
+        }
+    }
 
     println!("[Rust] ✓ Clip extracted successfully: {}", output_path);
     Ok(())

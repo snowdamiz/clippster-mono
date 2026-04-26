@@ -110,3 +110,21 @@ client/src-tauri/pkg-config.zip
 client/src-tauri/ffmpeg-dev/
 .gitnexus/
 .windsurf/skills/gitnexus.ded-note/
+
+# ── GSD baseline (auto-generated) ──
+.gsd-id
+.bg-shell/
+*.code-workspace
+node_modules/
+.next/
+dist/
+build/
+__pycache__/
+*.pyc
+.venv/
+venv/
+target/
+vendor/
+coverage/
+.cache/
+tmp/

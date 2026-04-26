@@ -4,9 +4,25 @@
  */
 import { ref, watch, onUnmounted, type Ref } from "vue";
 import type { TimelineElement, TimelineTrack } from "../../../types/timeline";
-import { snapTimeToFrame } from "../../../lib/time";  // used in handleResizeEnd for final commit
+import { snapTimeToFrame } from "../../../lib/time"; // used in handleResizeEnd for final commit
 import { EditorCore } from "../../../core";
 import { useTimelineSnapping, type SnapPoint } from "../useTimelineSnapping";
+import { getMainTrackMagnet } from "../useTimelineTools";
+
+/**
+ * While trimming an element's **right** edge on a track, exclude same-track `element-end`
+ * snap targets. Snapping the out-handle to another clip's far end pulls the trim across
+ * the entire neighbor clip (and subsequent ripple pushes everything to the timeline end).
+ */
+function filterSnapPointsForRightTrimResize(
+	snapPoints: SnapPoint[],
+	resizingTrackId: string,
+): SnapPoint[] {
+	return snapPoints.filter((sp) => {
+		if (sp.type !== "element-end") return true;
+		return sp.trackId !== resizingTrackId;
+	});
+}
 
 export interface ResizeState {
 	elementId: string;
@@ -118,7 +134,10 @@ export function useTimelineElementResize({
 		if (snappingEnabled.value) {
 			const tracks = editor.timeline.getTracks();
 			const playheadTime = editor.playback.getCurrentTime();
-			const snapPoints = findSnapPoints({ tracks, playheadTime, excludeElementId: element.value.id });
+			let snapPoints = findSnapPoints({ tracks, playheadTime, excludeElementId: element.value.id });
+			if (rs.side === "right") {
+				snapPoints = filterSnapPointsForRightTrimResize(snapPoints, track.value.id);
+			}
 
 			if (rs.side === "left") {
 				const targetStartTime = rs.initialStartTime + deltaTime;
@@ -215,27 +234,34 @@ export function useTimelineElementResize({
 			}
 		}
 
-		// Compute ripple shifts for subsequent elements during right-edge resize
-		// Only push elements that would actually overlap — filling gaps is free
+		// Ripple preview: optionally push overlapping downstream clips (magnet-style).
 		if (rs.side === "right") {
-			const newEndTime = startTimeVal + durationVal;
-			const shifts = new Map<string, number>();
-			const els = [...track.value.elements]
-				.filter((el) => el.id !== element.value.id)
-				.sort((a, b) => a.startTime - b.startTime);
+			if (getMainTrackMagnet()) {
+				const newEndTime = startTimeVal + durationVal;
+				const shifts = new Map<string, number>();
+				// Only consider clips **downstream** of the one being trimmed. Using every
+				// element with startTime < newEnd catches **upstream** clips too (they always
+				// start before a later clip's end), which wrongly shifts them — e.g. shortening
+				// clip 2 moves clip 1 to the ripple boundary during drag.
+				const els = [...track.value.elements]
+					.filter((el) => el.id !== element.value.id)
+					.filter((el) => el.startTime >= rs.initialStartTime - 0.001)
+					.sort((a, b) => a.startTime - b.startTime);
 
-			let pushBoundary = newEndTime;
-			for (const el of els) {
-				// Only push if the element's ORIGINAL start time is before our new end
-				// (i.e., we'd actually overlap it), not if it's already past the gap
-				if (el.startTime < pushBoundary - 0.001) {
-					shifts.set(el.id, pushBoundary);
-					pushBoundary = pushBoundary + el.duration;
-				} else {
-					break;
+				let pushBoundary = newEndTime;
+				for (const el of els) {
+					if (el.startTime < pushBoundary - 0.001) {
+						shifts.set(el.id, pushBoundary);
+						pushBoundary = pushBoundary + el.duration;
+					} else {
+						break;
+					}
 				}
+				rippleShifts.value = shifts;
+			} else {
+				// Rolling trim: adjust length without preview-shoving later clips (esp. away from accidental snap-to-end).
+				rippleShifts.value = new Map();
 			}
-			rippleShifts.value = shifts;
 		} else {
 			rippleShifts.value = new Map();
 		}

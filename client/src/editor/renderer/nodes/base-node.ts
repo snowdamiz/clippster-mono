@@ -34,9 +34,8 @@ export class BaseNode<Params extends BaseNodeParams = BaseNodeParams> {
 		time: number;
 	}): Promise<void> {
 		if (this.children.length > 0) {
-			await Promise.all(
-				this.children.map((child) => child.prefetch({ renderer, time })),
-			);
+			const unique = [...new Set(this.children)];
+			await Promise.all(unique.map((child) => child.prefetch({ renderer, time })));
 		}
 	}
 
@@ -47,20 +46,9 @@ export class BaseNode<Params extends BaseNodeParams = BaseNodeParams> {
 		renderer: CanvasRenderer;
 		time: number;
 	}): Promise<void> {
-		// Phase 1: prefetch all children in parallel (video frame decoding)
-		if (this.children.length > 1) {
-			await this.prefetch({ renderer, time });
-		}
-
-		// Phase 2: render children sequentially (compositing order matters)
-		if (this.children.length > 1) {
-			for (const child of this.children) {
-				await child.render({ renderer, time });
-			}
-		} else {
-			for (const child of this.children) {
-				await child.render({ renderer, time });
-			}
+		for (const child of this.children) {
+			await child.prefetch({ renderer, time });
+			await child.render({ renderer, time });
 		}
 	}
 }

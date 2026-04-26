@@ -367,7 +367,7 @@
     SegmentRegionConfig,
     SubtitleSettings,
   } from '@/types';
-  import { utf8ToBase64 } from '@/utils/encoding';
+  import { utf8ToBase64Url } from '@/utils/encoding';
 
   // Animation styles shown in the subtitle section (matches SubtitlePropertiesPanel)
   const ANIMATION_STYLES = [
@@ -558,7 +558,7 @@
   }
 
   function constructVideoUrl(filePath: string, port: number): string {
-    const encodedPath = utf8ToBase64(filePath);
+    const encodedPath = utf8ToBase64Url(filePath);
     const isTsFile = filePath.toLowerCase().endsWith('.ts');
     if (isTsFile) {
       return `http://localhost:${port}/ts-hls/${encodedPath}/playlist.m3u8`;

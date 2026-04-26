@@ -46,6 +46,8 @@ export class AudioManager {
 			this.editor.playback.subscribe(this.handlePlaybackChange),
 			this.editor.timeline.subscribe(this.handleTimelineChange),
 			this.editor.media.subscribe(this.handleTimelineChange),
+			// Scene-only updates (e.g. heal orphan mediaIds) must refresh audio clip resolution
+			this.editor.scenes.subscribe(this.handleTimelineChange),
 		);
 		if (typeof window !== "undefined") {
 			window.addEventListener("playback-seek", this.handleSeek);
@@ -139,6 +141,58 @@ export class AudioManager {
 		return this.playbackStartTime + elapsed;
 	}
 
+	private getTransitionExtensionBefore(clip: AudioClipSource): number {
+		return Math.max(0, Math.min(clip.transitionExtensionBefore ?? 0, clip.startTime));
+	}
+
+	private getTransitionExtensionAfter(clip: AudioClipSource): number {
+		return Math.max(0, clip.transitionExtensionAfter ?? 0);
+	}
+
+	private getEffectiveClipStart(clip: AudioClipSource): number {
+		return clip.startTime - this.getTransitionExtensionBefore(clip);
+	}
+
+	private getEffectiveClipEnd(clip: AudioClipSource): number {
+		return clip.startTime + clip.duration + this.getTransitionExtensionAfter(clip);
+	}
+
+	private getEffectiveClipElapsed({ clip, timelineTime }: { clip: AudioClipSource; timelineTime: number }): number {
+		return Math.max(0, timelineTime - this.getEffectiveClipStart(clip));
+	}
+
+	private applyClipGainAutomation({
+		clip,
+		clipGain,
+		actualStartTime,
+		timelineTime,
+	}: {
+		clip: AudioClipSource;
+		clipGain: GainNode;
+		actualStartTime: number;
+		timelineTime: number;
+	}): void {
+		const effectiveStart = this.getEffectiveClipStart(clip);
+		const effectiveEnd = this.getEffectiveClipEnd(clip);
+		const elapsedInClip = Math.max(0, timelineTime - effectiveStart);
+		const timeUntilEnd = Math.max(0, effectiveEnd - timelineTime);
+		const naturalFadeIn = clip.fadeIn > 0 ? Math.min(clip.fadeIn, elapsedInClip) / clip.fadeIn : 1;
+		const naturalFadeOut = clip.fadeOut > 0 && timeUntilEnd < clip.fadeOut
+			? Math.max(0, Math.min(1, timeUntilEnd / clip.fadeOut))
+			: 1;
+		const transitionFadeInDuration = Math.max(0, clip.transitionFadeInDuration ?? 0);
+		const transitionFadeOutDuration = Math.max(0, clip.transitionFadeOutDuration ?? 0);
+		const transitionFadeIn = transitionFadeInDuration > 0
+			? Math.max(0, Math.min(1, elapsedInClip / transitionFadeInDuration))
+			: 1;
+		const transitionFadeOut = transitionFadeOutDuration > 0 && timeUntilEnd < transitionFadeOutDuration
+			? Math.max(0, Math.min(1, timeUntilEnd / transitionFadeOutDuration))
+			: 1;
+		const gainFactor = Math.min(naturalFadeIn, naturalFadeOut, transitionFadeIn, transitionFadeOut);
+
+		clipGain.gain.setValueAtTime(clip.volume * gainFactor, actualStartTime);
+	}
+
 	private async startPlayback({ time }: { time: number }): Promise<void> {
 		const audioContext = this.ensureAudioContext();
 		if (!audioContext) return;
@@ -188,9 +242,11 @@ export class AudioManager {
 			if (clip.muted) continue;
 			if (this.activeClipIds.has(clip.id)) continue;
 
-			const clipEnd = clip.startTime + clip.duration;
+			const clipStart = this.getEffectiveClipStart(clip);
+			const clipEnd = this.getEffectiveClipEnd(clip);
 			if (clipEnd <= currentTime) continue;
 			if (clip.startTime > windowEnd) continue;
+			if (clipStart > windowEnd) continue;
 
 			this.activeClipIds.add(clip.id);
 			this.runClipIterator({ clip, startTime: currentTime, sessionId: this.playbackSessionId })
@@ -242,9 +298,31 @@ export class AudioManager {
 		const cacheVersion = this.clipCacheVersion;
 		const tracks = this.editor.timeline.getTracks();
 		const mediaAssets = this.editor.media.getAssets();
-		const clipLoadPromise = collectAudioClips({ tracks, mediaAssets })
+		const timelineExpectsMedia = tracks.some((t) =>
+			(t.elements ?? []).some((el) => {
+				if (el.type === "video") return true;
+				if (el.type === "audio" && "sourceType" in el && (el as { sourceType: string }).sourceType === "upload")
+					return true;
+				return false;
+			}),
+		);
+		let transitions;
+		try {
+			transitions = this.editor.scenes.getActiveScene().transitions;
+		} catch {
+			transitions = undefined;
+		}
+
+		const clipLoadPromise = collectAudioClips({ tracks, mediaAssets, transitions })
 			.then((clips) => {
 				if (cacheVersion !== this.clipCacheVersion) {
+					return this.clips;
+				}
+
+				// Do not lock in an empty clip list while the timeline references media but assets
+				// are not loaded yet (e.g. notify between clearAllAssets and loadProjectMedia).
+				if (mediaAssets.length === 0 && timelineExpectsMedia) {
+					this.clipLoadPromise = null;
 					return this.clips;
 				}
 
@@ -295,11 +373,12 @@ export class AudioManager {
 		}
 
 		const clipStart = clip.startTime;
-		const clipEnd = clip.startTime + clip.duration;
+		const effectiveClipStart = this.getEffectiveClipStart(clip);
+		const clipEnd = this.getEffectiveClipEnd(clip);
 
-		const iteratorStartTime = Math.max(startTime, clipStart);
+		const iteratorStartTime = Math.max(startTime, effectiveClipStart);
 		const sourceStartTime =
-			clip.trimStart + (iteratorStartTime - clip.startTime) * clip.speed;
+			clip.trimStart + this.getEffectiveClipElapsed({ clip, timelineTime: iteratorStartTime }) * clip.speed;
 
 		const iterator = sink.buffers(sourceStartTime);
 		this.clipIterators.set(clip.id, iterator);
@@ -307,13 +386,23 @@ export class AudioManager {
 		// Per-clip GainNode for volume + fade envelope
 		const clipGain = audioContext.createGain();
 		clipGain.gain.value = clip.volume;
-		clipGain.connect(this.masterGain ?? audioContext.destination);
+
+		// Stereo pan node (if pan is non-zero)
+		const panVal = clip.pan ?? 0;
+		if (Math.abs(panVal) > 0.01 && typeof StereoPannerNode !== "undefined") {
+			const panNode = audioContext.createStereoPanner();
+			panNode.pan.value = Math.max(-1, Math.min(1, panVal));
+			clipGain.connect(panNode);
+			panNode.connect(this.masterGain ?? audioContext.destination);
+		} else {
+			clipGain.connect(this.masterGain ?? audioContext.destination);
+		}
 
 		for await (const { buffer, timestamp } of iterator) {
 			if (!this.editor.playback.getIsPlaying()) return;
 			if (sessionId !== this.playbackSessionId) return;
 
-			const timelineTime = clip.startTime + (timestamp - clip.trimStart) / clip.speed;
+			const timelineTime = effectiveClipStart + (timestamp - clip.trimStart) / clip.speed;
 			if (timelineTime >= clipEnd) break;
 
 			const node = audioContext.createBufferSource();
@@ -351,20 +440,12 @@ export class AudioManager {
 				}
 			}
 
-			// Apply fade in/out via gain automation
-			const elapsedInClip = timelineTime - clip.startTime;
-			if (clip.fadeIn > 0 && elapsedInClip < clip.fadeIn) {
-				const fadeProgress = elapsedInClip / clip.fadeIn;
-				clipGain.gain.setValueAtTime(clip.volume * fadeProgress, actualStartTime);
-				const fadeRemaining = clip.fadeIn - elapsedInClip;
-				clipGain.gain.linearRampToValueAtTime(clip.volume, actualStartTime + fadeRemaining);
-			}
-			const timeUntilEnd = clipEnd - timelineTime;
-			if (clip.fadeOut > 0 && timeUntilEnd < clip.fadeOut) {
-				const fadeProgress = timeUntilEnd / clip.fadeOut;
-				clipGain.gain.setValueAtTime(clip.volume * fadeProgress, actualStartTime);
-				clipGain.gain.linearRampToValueAtTime(0, actualStartTime + timeUntilEnd);
-			}
+			this.applyClipGainAutomation({
+				clip,
+				clipGain,
+				actualStartTime,
+				timelineTime,
+			});
 
 			this.queuedSources.add(node);
 			node.addEventListener("ended", () => {
@@ -424,11 +505,13 @@ export class AudioManager {
 		if (!this.editor.playback.getIsPlaying()) return;
 		if (sessionId !== this.playbackSessionId) return;
 
-		const clipEnd = clip.startTime + clip.duration;
-		const iteratorStartTime = Math.max(startTime, clip.startTime);
+		const effectiveClipStart = this.getEffectiveClipStart(clip);
+		const clipEnd = this.getEffectiveClipEnd(clip);
+		const iteratorStartTime = Math.max(startTime, effectiveClipStart);
 
 		// Calculate where in the source audio to start
-		const sourceOffset = clip.trimStart + (iteratorStartTime - clip.startTime) * (clip.speed ?? 1);
+		const sourceOffset =
+			clip.trimStart + this.getEffectiveClipElapsed({ clip, timelineTime: iteratorStartTime }) * (clip.speed ?? 1);
 		const remainingDuration = clipEnd - iteratorStartTime;
 
 		if (remainingDuration <= 0) return;
@@ -436,7 +519,17 @@ export class AudioManager {
 		// Per-clip GainNode for volume + fade envelope
 		const clipGain = audioContext.createGain();
 		clipGain.gain.value = clip.volume;
-		clipGain.connect(this.masterGain ?? audioContext.destination);
+
+		// Stereo pan node
+		const panVal2 = clip.pan ?? 0;
+		if (Math.abs(panVal2) > 0.01 && typeof StereoPannerNode !== "undefined") {
+			const panNode = audioContext.createStereoPanner();
+			panNode.pan.value = Math.max(-1, Math.min(1, panVal2));
+			clipGain.connect(panNode);
+			panNode.connect(this.masterGain ?? audioContext.destination);
+		} else {
+			clipGain.connect(this.masterGain ?? audioContext.destination);
+		}
 
 		const node = audioContext.createBufferSource();
 		node.buffer = audioBuffer;
@@ -471,21 +564,13 @@ export class AudioManager {
 			}
 		}
 
-		// Apply fade in/out
-		const elapsedInClip = iteratorStartTime - clip.startTime;
 		const actualStart = Math.max(contextStartTime, audioContext.currentTime);
-		if (clip.fadeIn > 0 && elapsedInClip < clip.fadeIn) {
-			const fadeProgress = elapsedInClip / clip.fadeIn;
-			clipGain.gain.setValueAtTime(clip.volume * fadeProgress, actualStart);
-			const fadeRemaining = clip.fadeIn - elapsedInClip;
-			clipGain.gain.linearRampToValueAtTime(clip.volume, actualStart + fadeRemaining);
-		}
-		const timeUntilEnd = clipEnd - iteratorStartTime;
-		if (clip.fadeOut > 0) {
-			const fadeOutStart = actualStart + Math.max(0, timeUntilEnd - clip.fadeOut);
-			clipGain.gain.setValueAtTime(clip.volume, fadeOutStart);
-			clipGain.gain.linearRampToValueAtTime(0, actualStart + timeUntilEnd);
-		}
+		this.applyClipGainAutomation({
+			clip,
+			clipGain,
+			actualStartTime: actualStart,
+			timelineTime: iteratorStartTime,
+		});
 
 		this.queuedSources.add(node);
 		node.addEventListener("ended", () => {

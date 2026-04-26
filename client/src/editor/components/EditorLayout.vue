@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useEditorActions } from "../composables/actions/useEditorActions";
 import { useKeybindingsListener } from "../composables/useKeybindings";
 import { useAutoSave } from "../composables/useAutoSave";
@@ -32,7 +32,11 @@ useKeybindingsListener();
 useAutoSave();
 providePointerDrag();
 
-const { selectedElements } = useElementSelection();
+const { selectedElements, selectedTransitionId } = useElementSelection();
+
+const showPropertiesPanel = computed(
+	() => selectedElements.value.length > 0 || selectedTransitionId.value !== null,
+);
 
 const previewPanelRef = ref<InstanceType<typeof PreviewPanel> | null>(null);
 
@@ -154,7 +158,7 @@ onUnmounted(() => {
 			</div>
 
 			<!-- Right panel: Properties -->
-			<div v-if="selectedElements.length > 0" class="w-80 shrink-0 border-l border-white/10 bg-[#18181b] overflow-hidden">
+			<div v-if="showPropertiesPanel" class="w-80 shrink-0 border-l border-white/10 bg-[#18181b] overflow-hidden">
 				<PropertiesPanel />
 			</div>
 		</div>

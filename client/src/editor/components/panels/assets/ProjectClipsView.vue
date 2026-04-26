@@ -2,12 +2,14 @@
 import { ref, computed, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { formatUnixDate } from "@/utils/dateTimeUtils";
-import { appDataDir } from "@tauri-apps/api/path";
 import { useEditor } from "../../../composables/useEditor";
 import { getAllProjects, getChildProjects } from "@/services/database/projects";
-import { getClipsByProjectId } from "@/services/database/clips";
-import { getRawVideosByProjectId } from "@/services/database/raw-videos";
-import type { Project, Clip } from "@/services/database/types";
+import { getClipsWithVersionsByProjectId } from "@/services/database/clip-detection";
+import type { Project, Clip, ClipWithVersion } from "@/services/database/types";
+import {
+	extractUnbuiltClipSegmentToPath,
+	resolveClipTimeRangeForExtraction,
+} from "@/services/clip-vod-extract";
 import type { MediaAsset } from "../../../types/assets";
 import {
 	FolderOpen,
@@ -19,8 +21,10 @@ import {
 	ChevronRight,
 	Plus,
 } from "lucide-vue-next";
+import { utf8ToBase64Url } from "@/utils/encoding";
 import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
 import { buildVideoElement } from "../../../lib/timeline/element-utils";
+import { hydrateVideoFileFromLocalUrl } from "../../../lib/media/hydrate-video-file-from-url";
 import { usePointerDrag } from "../../../composables/usePointerDrag";
 import type { CreateTimelineElement } from "../../../types/timeline";
 
@@ -29,7 +33,7 @@ const { startDrag, wasDragCompleted } = usePointerDrag();
 
 const projects = ref<Project[]>([]);
 const selectedProject = ref<Project | null>(null);
-const projectClips = ref<Clip[]>([]);
+const projectClips = ref<ClipWithVersion[]>([]);
 const loading = ref(false);
 const loadingClips = ref(false);
 const addingIds = ref<Set<string>>(new Set());
@@ -150,10 +154,10 @@ async function selectProject(project: Project) {
 	loadingClips.value = true;
 	try {
 		// Fetch clips from the parent project and all child segment projects
-		const parentClips = await getClipsByProjectId(project.id);
+		const parentClips = await getClipsWithVersionsByProjectId(project.id);
 		const children = await getChildProjects(project.id);
 		const childClipArrays = await Promise.all(
-			children.map((child) => getClipsByProjectId(child.id)),
+			children.map((child) => getClipsWithVersionsByProjectId(child.id)),
 		);
 		projectClips.value = [...parentClips, ...childClipArrays.flat()];
 		await loadThumbnails();
@@ -219,7 +223,7 @@ function addToTimeline(clip: Clip) {
 	editor.timeline.insertElement({ element, placement: { mode: "auto" } });
 }
 
-function handleClipClick(clip: Clip) {
+function handleClipClick(clip: ClipWithVersion) {
 	if (wasDragCompleted.value) return;
 	if (isAlreadyAdded(clip)) {
 		addToTimeline(clip);
@@ -228,7 +232,7 @@ function handleClipClick(clip: Clip) {
 	}
 }
 
-function handlePointerDown(e: PointerEvent, clip: Clip) {
+function handlePointerDown(e: PointerEvent, clip: ClipWithVersion) {
 	if (!isAlreadyAdded(clip)) return;
 	const mediaId = getMediaAssetId(clip);
 	if (!mediaId) return;
@@ -241,7 +245,7 @@ function handlePointerDown(e: PointerEvent, clip: Clip) {
  * in ProjectWorkspaceDialog) so the editor works with a short extracted file
  * rather than seeking through the entire VOD.
  */
-async function addClipToEditor(clip: Clip) {
+async function addClipToEditor(clip: ClipWithVersion) {
 	if (!activeProject.value) return;
 	if (addingIds.value.has(clip.id) || isAlreadyAdded(clip)) return;
 
@@ -256,73 +260,47 @@ async function addClipToEditor(clip: Clip) {
 			videoServerPort = 8642;
 		}
 
-		// Determine clip time range
-		const clipStartTime = clip.start_time ?? 0;
-		const clipEndTime = clip.end_time ?? (clipStartTime + (clip.duration ?? 0));
+		const { startTime: clipStartTime, endTime: clipEndTime } = resolveClipTimeRangeForExtraction(clip);
 		const clipDuration = clipEndTime - clipStartTime;
 
 		if (clipDuration <= 0) {
-			throw new Error("Clip has no valid time range");
+			throw new Error("Clip has no valid time range (check clip version / segment bounds)");
 		}
 
-		// Find the VOD file path from the clip's project
-		let vodPath = "";
-		const projectId = clip.project_id || selectedProject.value?.id;
-		if (projectId) {
-			const rawVideos = await getRawVideosByProjectId(projectId);
-			if (rawVideos.length > 0) {
-				vodPath = rawVideos[0].file_path;
-			}
-		}
-
-		// Fallback: use the clip's own file_path (it references the source video)
-		if (!vodPath && clip.file_path) {
-			vodPath = clip.file_path;
-		}
-
-		if (!vodPath) {
-			throw new Error("Cannot find source video file for clip extraction");
-		}
-
-		// Extract the clip segment from the VOD via FFmpeg
+		// Same VOD resolution + FFmpeg extract as ProjectWorkspaceDialog → createVideoEditorProjectFromClip
 		extractionStatus.value.set(clip.id, "Extracting video...");
-		const baseDir = await appDataDir();
 		const editorProjectId = activeProject.value.metadata.id;
-		const outputDir = `${baseDir}editor-media/${editorProjectId}`;
-		const outputPath = `${outputDir}/clip_${clip.id}.mp4`;
-
-		console.log("[ProjectClipsView] Extracting clip segment:", {
-			vodPath: vodPath.split(/[\\/]/).pop(),
-			startTime: clipStartTime,
-			endTime: clipEndTime,
-			duration: clipDuration,
-			outputPath,
+		const outputPath = await invoke<string>("get_editor_clip_extract_path", {
+			projectId: editorProjectId,
+			clipId: clip.id,
 		});
 
-		await invoke("extract_clip", {
-			sourcePath: vodPath,
+		await extractUnbuiltClipSegmentToPath({
+			clipId: clip.id,
+			clipStartTime,
+			clipEndTime,
 			outputPath,
-			startTime: clipStartTime,
-			endTime: clipEndTime,
+			videoSrc: null,
+			// Prefer DB parent when a child/segment project is selected (same as ProjectWorkspaceDialog parent_id).
+			rawVideoParentProjectId:
+				selectedProject.value?.parent_id ?? selectedProject.value?.id ?? null,
 		});
 
 		console.log("[ProjectClipsView] Clip extracted successfully:", outputPath);
 
 		// Build the media asset from the extracted file
 		extractionStatus.value.set(clip.id, "Adding to editor...");
-		const encodedPath = btoa(outputPath);
+		const encodedPath = utf8ToBase64Url(outputPath);
 		const url = `http://localhost:${videoServerPort}/video/${encodedPath}`;
 
-		const response = await fetch(url);
-		if (!response.ok) {
-			throw new Error(`Failed to load extracted clip (${response.status})`);
-		}
-		const blob = await response.blob();
-		const file = new File([blob], getClipName(clip), {
-			type: blob.type || "video/mp4",
-			lastModified: Date.now(),
+		// Real bytes: scene-builder skips file.size===0 (no VideoNode → black preview); mediabunny /
+		// AudioManager BlobSource and decodeAudioData cannot read Tauri-only `.path` on an empty File.
+		const file = await hydrateVideoFileFromLocalUrl({
+			url,
+			name: getClipName(clip),
+			fallbackType: "video/mp4",
+			diskPath: outputPath,
 		});
-		(file as File & { path?: string }).path = outputPath;
 
 		const asset: Omit<MediaAsset, "id"> = {
 			name: getClipName(clip),
@@ -332,6 +310,7 @@ async function addClipToEditor(clip: Clip) {
 			duration: clipDuration,
 			thumbnailUrl: undefined,
 			ephemeral: false,
+			diskImportPath: outputPath,
 		};
 
 		// Use cached data URL thumbnail if available

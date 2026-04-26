@@ -2,6 +2,7 @@ import { Command } from "../../../../lib/commands/base-command";
 import type { TimelineTrack } from "../../../../types/timeline";
 import { EditorCore } from "../../../../core";
 import { shiftCaptionTimesAfter } from "../../../timeline/caption-sync";
+import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
 
 /**
  * Changes the speed of a timeline element, adjusts its duration, and
@@ -58,6 +59,7 @@ export class ChangeSpeedCommand extends Command {
 			return { ...t, elements: newElements } as typeof t;
 		});
 
+		const fps = editor.project.getActive()?.settings?.fps ?? 30;
 		// Shift caption times when ripple-shifting
 		if (durationDelta !== 0) {
 			const finalTracks = shiftCaptionTimesAfter({
@@ -65,9 +67,9 @@ export class ChangeSpeedCommand extends Command {
 				afterTime: oldEndTime,
 				delta: durationDelta,
 			});
-			editor.timeline.updateTracks(finalTracks);
+			editor.timeline.updateTracks(collapseMainVideoTracksIfPresent(finalTracks, fps));
 		} else {
-			editor.timeline.updateTracks(updatedTracks);
+			editor.timeline.updateTracks(collapseMainVideoTracksIfPresent(updatedTracks, fps));
 		}
 	}
 

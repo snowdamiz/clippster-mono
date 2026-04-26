@@ -1,16 +1,27 @@
 <script setup lang="ts">
-import { ref, computed, toRef } from "vue";
+import { ref, computed, toRef, watch } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { useKeyframes } from "../../composables/useKeyframes";
 import { EASING_PRESETS } from "../../constants/easing-constants";
 import type { KeyframableProperty, KeyframeInterpolation } from "../../types/keyframes";
 import type { TimelineTrack, TimelineElement } from "../../types/timeline";
-import { Diamond, Plus, Trash2, ChevronDown, X } from "lucide-vue-next";
+import { Diamond, Plus, Trash2, ChevronDown, X, List, BarChart2 } from "lucide-vue-next";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import KeyframeGraphEditor from "./KeyframeGraphEditor.vue";
+import { useEditorUIState } from "../../composables/useEditorUIState";
 
 const { editor, version } = useEditor();
+const { timelineKeyframePlacementActive, setTimelineKeyframePlacementActive } = useEditorUIState();
 const { selectedElements } = useElementSelection();
+
+watch(
+	() => selectedElements.value.length,
+	(len) => {
+		if (len !== 1 && timelineKeyframePlacementActive.value) setTimelineKeyframePlacementActive(false);
+	},
+);
 
 const selectedData = computed(() => {
 	void version.value;
@@ -45,9 +56,11 @@ const PROPERTIES: { key: KeyframableProperty; label: string; defaultValue: numbe
 	{ key: "positionY", label: "Position Y", defaultValue: 0, min: -1000, max: 1000, step: 1 },
 	{ key: "rotation", label: "Rotation", defaultValue: 0, min: -360, max: 360, step: 1 },
 	{ key: "volume", label: "Volume", defaultValue: 1, min: 0, max: 2, step: 0.01 },
+	{ key: "speed", label: "Speed", defaultValue: 1, min: 0.1, max: 10, step: 0.01 },
 ];
 
 const expandedProperties = ref<Set<KeyframableProperty>>(new Set());
+const showGraph = ref(false);
 
 function toggleExpand(prop: KeyframableProperty) {
 	if (expandedProperties.value.has(prop)) {
@@ -115,8 +128,9 @@ const applicableProperties = computed(() => {
 	if (!elementRef.value) return [];
 	const type = elementRef.value.type;
 	if (type === "audio") return PROPERTIES.filter((p) => p.key === "volume");
-	if (type === "video" || type === "image") return PROPERTIES.filter((p) => p.key !== "volume");
-	return PROPERTIES.filter((p) => p.key !== "volume");
+	if (type === "video") return PROPERTIES;
+	if (type === "image") return PROPERTIES.filter((p) => p.key !== "volume" && p.key !== "speed");
+	return PROPERTIES.filter((p) => p.key !== "volume" && p.key !== "speed");
 });
 </script>
 
@@ -126,6 +140,37 @@ const applicableProperties = computed(() => {
 		<div class="flex items-center gap-1.5 border-b border-white/10 px-4 py-2">
 			<Diamond class="size-3.5 text-zinc-500" />
 			<span class="text-xs font-medium text-zinc-400">Keyframes</span>
+			<div
+				v-if="selectedData && (elementRef.type === 'video' || elementRef.type === 'audio')"
+				class="flex items-center gap-1.5 rounded border border-white/10 bg-white/[0.02] px-2 py-0.5"
+				title="When on, the cursor becomes a crosshair over clips and you can click the timeline to drop keyframes (video: picture area = opacity, waveform = volume; audio: waveform = volume). When off, clicks only select and move clips."
+			>
+				<span class="text-[10px] font-medium text-zinc-500">Click timeline to add</span>
+				<!-- Reka SwitchRoot uses modelValue / update:modelValue (not checked / update:checked) -->
+				<Switch
+					:model-value="timelineKeyframePlacementActive"
+					class="scale-90"
+					@update:model-value="setTimelineKeyframePlacementActive"
+				/>
+			</div>
+			<div class="ml-auto flex items-center gap-0.5">
+				<button
+					class="flex size-5 items-center justify-center rounded text-zinc-500 transition-colors"
+					:class="!showGraph ? 'bg-white/10 text-zinc-200' : 'hover:bg-white/5 hover:text-zinc-300'"
+					title="List view"
+					@click="showGraph = false"
+				>
+					<List class="size-3" />
+				</button>
+				<button
+					class="flex size-5 items-center justify-center rounded text-zinc-500 transition-colors"
+					:class="showGraph ? 'bg-white/10 text-zinc-200' : 'hover:bg-white/5 hover:text-zinc-300'"
+					title="Graph view"
+					@click="showGraph = true"
+				>
+					<BarChart2 class="size-3" />
+				</button>
+			</div>
 		</div>
 
 		<!-- No element selected -->
@@ -134,7 +179,16 @@ const applicableProperties = computed(() => {
 			<p class="text-xs text-zinc-500">Select an element to edit keyframes</p>
 		</div>
 
-		<!-- Keyframe editor -->
+		<!-- Graph view -->
+		<div v-else-if="showGraph" class="flex-1 overflow-y-auto">
+			<KeyframeGraphEditor
+				:track-ref="toRef(() => trackRef)"
+				:element-ref="toRef(() => elementRef)"
+				:applicable-properties="applicableProperties"
+			/>
+		</div>
+
+		<!-- List view -->
 		<div v-else class="flex-1 overflow-y-auto p-3 space-y-1">
 			<div
 				v-for="prop in applicableProperties"

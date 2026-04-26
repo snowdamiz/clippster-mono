@@ -13,6 +13,7 @@ import { useKeyframes } from "../../../composables/useKeyframes";
 import { toRef } from "vue";
 import KeyframeToggle from "./KeyframeToggle.vue";
 import AnimationProperties from "./AnimationProperties.vue";
+import MasksPanel from "./MasksPanel.vue";
 
 const props = defineProps<{
 	element: ImageElement;
@@ -244,6 +245,29 @@ function formatTime(seconds: number): string {
 				<input type="range" :value="element.opacity * 100" min="0" max="100" step="1" class="flex-1" @input="handleOpacitySlider" />
 				<input type="number" :value="opacityInput" min="0" max="100" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handleOpacityInput((e.target as HTMLInputElement).value)" @blur="handleOpacityBlur" />
 			</div>
+		</div>
+
+		<!-- Blend Mode -->
+		<div class="space-y-1.5">
+			<label class="text-xs text-zinc-500">Blend Mode</label>
+			<select
+				:value="element.blendMode ?? 'normal'"
+				class="w-full rounded-sm border border-white/10 bg-[#1a1a1e] px-2 py-1.5 text-xs text-zinc-200 outline-none"
+				@change="(e) => update({ blendMode: (e.target as HTMLSelectElement).value === 'normal' ? undefined : (e.target as HTMLSelectElement).value })"
+			>
+				<option value="normal">Normal</option>
+				<option value="multiply">Multiply</option>
+				<option value="screen">Screen</option>
+				<option value="overlay">Overlay</option>
+				<option value="soft-light">Soft Light</option>
+				<option value="hard-light">Hard Light</option>
+				<option value="darken">Darken</option>
+				<option value="lighten">Lighten</option>
+				<option value="color-dodge">Color Dodge</option>
+				<option value="color-burn">Color Burn</option>
+				<option value="difference">Difference</option>
+				<option value="exclusion">Exclusion</option>
+			</select>
 		</div>
 
 		<!-- Fade In / Out -->
@@ -757,6 +781,14 @@ function formatTime(seconds: number): string {
 					:animation-loop="element.animationLoop"
 					:element-duration="element.duration"
 				/>
+			</div>
+		</div>
+
+		<!-- Masks -->
+		<div class="space-y-1.5">
+			<label class="text-xs font-medium text-zinc-300">Masks</label>
+			<div class="rounded-md border border-white/5 bg-white/[0.01]">
+				<MasksPanel :element="element" :track-id="trackId" />
 			</div>
 		</div>
 

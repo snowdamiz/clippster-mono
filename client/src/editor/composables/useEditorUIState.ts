@@ -3,6 +3,9 @@ import type { CropRect } from "../types/timeline";
 import type { SocialOverlayPreset } from "../types/social-overlays";
 
 // Shared reactive state for cross-component UI coordination
+/** When true, video/audio clips use a crosshair cursor and accept timeline clicks to add keyframes. When false, clicks select and drag clips normally. */
+const timelineKeyframePlacementActive = ref(false);
+
 const cropPanelRequested = ref(false);
 const isCropMode = ref(false);
 const activeSocialOverlay = ref<SocialOverlayPreset | null>(null);
@@ -59,7 +62,13 @@ export function useEditorUIState() {
 		}
 	}
 
+	function setTimelineKeyframePlacementActive(value: boolean) {
+		timelineKeyframePlacementActive.value = value;
+	}
+
 	return {
+		timelineKeyframePlacementActive,
+		setTimelineKeyframePlacementActive,
 		cropPanelRequested,
 		isCropMode,
 		originalCrop,

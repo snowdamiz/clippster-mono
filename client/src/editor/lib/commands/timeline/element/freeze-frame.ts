@@ -3,6 +3,7 @@ import type { TimelineTrack, ImageElement, CreateImageElement } from "../../../.
 import { generateUUID } from "../../../../utils/id";
 import { EditorCore } from "../../../../core";
 import { shiftCaptionTimesAfter } from "../../../timeline/caption-sync";
+import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
 
 const DEFAULT_FREEZE_DURATION = 3; // seconds, same as CapCut
 
@@ -101,7 +102,8 @@ export class FreezeFrameCommand extends Command {
 			delta: this.freezeDuration,
 		});
 
-		editor.timeline.updateTracks(finalTracks);
+		const fps = editor.project.getActive()?.settings?.fps ?? 30;
+		editor.timeline.updateTracks(collapseMainVideoTracksIfPresent(finalTracks, fps));
 		editor.selection.setSelectedElements({
 			elements: [{ trackId: this.trackId, elementId: this.freezeElementId }],
 		});

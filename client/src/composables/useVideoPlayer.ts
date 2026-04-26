@@ -7,7 +7,7 @@ import {
   type ClipSegment,
 } from '@/services/database';
 import { invoke } from '@tauri-apps/api/core';
-import { utf8ToBase64 } from '@/utils/encoding';
+import { utf8ToBase64Url } from '@/utils/encoding';
 
 export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   // Video player state
@@ -398,7 +398,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
       }
 
       const port = await invoke<number>('get_video_server_port');
-      const encodedPath = utf8ToBase64(videoPath);
+      const encodedPath = utf8ToBase64Url(videoPath);
 
       // Check if this is a .ts file - browsers can't play MPEG-TS natively
       // Use the HLS wrapper endpoint which generates an on-the-fly playlist
@@ -456,7 +456,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
 
     try {
       const port = await invoke<number>('get_video_server_port');
-      const encodedPath = utf8ToBase64(filePath);
+      const encodedPath = utf8ToBase64Url(filePath);
 
       // Check if this is a .ts file - browsers can't play MPEG-TS natively
       // Use the HLS wrapper endpoint which generates an on-the-fly playlist

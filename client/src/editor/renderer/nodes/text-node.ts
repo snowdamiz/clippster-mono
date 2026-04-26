@@ -63,6 +63,10 @@ export class TextNode extends BaseNode<TextNodeParams> {
 		const ctx = renderer.context;
 		ctx.save();
 
+		if (this.params.blendMode && this.params.blendMode !== "normal") {
+			ctx.globalCompositeOperation = this.params.blendMode as GlobalCompositeOperation;
+		}
+
 		const x = this.params.transform.position.x + this.params.canvasCenter.x;
 		const y = this.params.transform.position.y + this.params.canvasCenter.y;
 		ctx.translate(x, y);

@@ -10,6 +10,9 @@
 
 import type { WaveformPeak } from '@/services/waveformService';
 
+/** Timeline / editor waveforms can be very wide; stay under common browser canvas limits. */
+export const WAVEFORM_MAX_BACKING_EDGE = 16384;
+
 // ============================================================================
 // Color Configuration
 // ============================================================================
@@ -71,6 +74,12 @@ export interface WaveformRenderOptions {
 
   // Opacity for dimming (0-1, default 1)
   opacity?: number;
+
+  /**
+   * Minimum bar height in logical (layout) pixels. Default 1 matches legacy behavior.
+   * Use 0 on the timeline so quiet audio does not draw a solid cyan hairline on the baseline.
+   */
+  minBarHeight?: number;
 }
 
 // ============================================================================
@@ -102,15 +111,25 @@ export function renderWaveform(canvas: HTMLCanvasElement, options: WaveformRende
     useGradientColors = true,
     baseline = 1, // Default: bars grow upward from bottom
     opacity = 1,
+    minBarHeight = 1,
   } = options;
 
-  // Handle device pixel ratio for sharp rendering
+  // Device pixel ratio + cap backing store (timeline zoom makes CSS width huge; too small a
+  // bitmap → blurry upscale; too large → blank canvas past browser limits).
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
-  ctx.scale(dpr, dpr);
+  const reqW = width * dpr;
+  const reqH = height * dpr;
+  const shrink = Math.min(1, WAVEFORM_MAX_BACKING_EDGE / reqW, WAVEFORM_MAX_BACKING_EDGE / reqH);
+  const backingW = Math.max(1, Math.floor(reqW * shrink));
+  const backingH = Math.max(1, Math.floor(reqH * shrink));
 
-  // Clear canvas
+  canvas.width = backingW;
+  canvas.height = backingH;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(backingW / width, backingH / height);
+  ctx.imageSmoothingEnabled = false;
+
+  // Clear canvas (logical coordinates after scale)
   ctx.clearRect(0, 0, width, height);
 
   // Apply opacity if specified
@@ -166,12 +185,14 @@ export function renderWaveform(canvas: HTMLCanvasElement, options: WaveformRende
         baseColor,
         playedColor,
         useGradientColors,
+        minBarHeight,
       });
       break;
   }
 
-  // Reset globalAlpha
+  // Reset globalAlpha and transform so follow-up draws (e.g. volume overlay) use pixel space.
   ctx.globalAlpha = 1;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 // ============================================================================
@@ -189,6 +210,7 @@ interface BarsRenderParams {
   baseColor: string;
   playedColor: string;
   useGradientColors: boolean;
+  minBarHeight: number;
 }
 
 function renderBarsStyle(ctx: CanvasRenderingContext2D, params: BarsRenderParams): void {
@@ -202,6 +224,7 @@ function renderBarsStyle(ctx: CanvasRenderingContext2D, params: BarsRenderParams
     baseColor,
     playedColor,
     useGradientColors,
+    minBarHeight,
   } = params;
 
   if (peaks.length === 0) return;
@@ -211,12 +234,22 @@ function renderBarsStyle(ctx: CanvasRenderingContext2D, params: BarsRenderParams
   // Use the smaller of requested barWidth or step size (minus 1px gap) to avoid overlapping
   const actualBarWidth = Math.max(1, Math.min(barWidth, step - 1));
 
+  /** Timeline mode: skip sub-pixel bars so thousands of columns do not fuse into one baseline line. */
+  const minDrawPx = minBarHeight <= 0 ? 0.35 : 0;
+
   for (let i = 0; i < peaks.length; i++) {
-    const x = i * step;
+    const x = Math.floor(i * step);
 
     const peak = peaks[i];
     const magnitude = Math.max(Math.abs(peak.min), Math.abs(peak.max));
-    const barHeight = Math.max(1, magnitude * maxBarHeight);
+    const rawHeight = magnitude * maxBarHeight;
+    if (rawHeight <= 0) continue;
+
+    const barHeight =
+      minBarHeight > 0 ? Math.max(minBarHeight, rawHeight) : rawHeight;
+    if (minBarHeight <= 0 && barHeight < minDrawPx) continue;
+
+    const yTop = Math.floor(baselineY - barHeight);
 
     // Determine color based on playhead position
     const barCenter = x + actualBarWidth / 2;
@@ -234,7 +267,8 @@ function renderBarsStyle(ctx: CanvasRenderingContext2D, params: BarsRenderParams
     );
 
     ctx.fillStyle = fillStyle;
-    ctx.fillRect(x, baselineY - barHeight, actualBarWidth, barHeight);
+    const h = minBarHeight > 0 ? Math.ceil(barHeight) : barHeight;
+    ctx.fillRect(x, yTop, actualBarWidth, h);
   }
 }
 

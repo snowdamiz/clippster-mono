@@ -9,9 +9,11 @@ import type { MediaAsset } from "../../../types/assets";
 import { Film, Plus, Loader2, Check, Search, Briefcase, Building2 } from "lucide-vue-next";
 import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
 import { buildVideoElement } from "../../../lib/timeline/element-utils";
+import { hydrateVideoFileFromLocalUrl } from "../../../lib/media/hydrate-video-file-from-url";
 import { usePointerDrag } from "../../../composables/usePointerDrag";
 import type { CreateTimelineElement } from "../../../types/timeline";
 import { useClipThumbnailStore } from "@/stores/clipThumbnails";
+import { utf8ToBase64Url } from "@/utils/encoding";
 
 // Build entry combines clip info with specific build info
 interface BuildEntry {
@@ -183,8 +185,10 @@ async function loadBuilds() {
 }
 
 async function loadThumbnails() {
-	// First, batch load clip thumbnails using the store (it handles caching and deduplication)
-	await thumbnailStore.loadThumbnails(clips.value);
+	// Only thumbnails for clips that actually have completed builds — not every row from getAllClips()
+	const clipIdsWithBuilds = new Set(allBuilds.value.map((e) => e.clip.id));
+	const clipsToThumb = clips.value.filter((c) => clipIdsWithBuilds.has(c.id));
+	await thumbnailStore.loadThumbnails(clipsToThumb);
 
 	// Then collect and batch load build-specific thumbnails (for builds with custom thumbnails)
 	const buildsToLoad: Array<{ key: string; thumbnailPath: string }> = [];
@@ -217,14 +221,16 @@ async function addBuildToEditor(entry: BuildEntry) {
 			videoServerPort = 8642;
 		}
 
-		const encodedPath = btoa(entry.build.file_path);
+		const encodedPath = utf8ToBase64Url(entry.build.file_path);
 		const url = `http://localhost:${videoServerPort}/video/${encodedPath}`;
 
 		const displayName = getBuildDisplayName(entry);
-		const mimeType = "video/mp4";
-		const file = new File([], displayName, { type: mimeType });
-		// Attach the path so the storage adapter can resolve it
-		(file as File & { path?: string }).path = entry.build.file_path;
+		const file = await hydrateVideoFileFromLocalUrl({
+			url,
+			name: displayName,
+			fallbackType: "video/mp4",
+			diskPath: entry.build.file_path,
+		});
 
 		const asset: Omit<MediaAsset, "id"> = {
 			name: displayName,
@@ -234,6 +240,7 @@ async function addBuildToEditor(entry: BuildEntry) {
 			duration: entry.build.duration ?? entry.clip.duration ?? undefined,
 			thumbnailUrl: undefined,
 			ephemeral: false,
+			diskImportPath: entry.build.file_path,
 		};
 
 		// Use cached data URL thumbnail if available

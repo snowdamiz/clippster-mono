@@ -8,7 +8,11 @@
  */
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, type Ref } from "vue";
 import { waveformService, useWaveform } from "@/services/waveformService";
-import { renderWaveformWithPlayhead, createThrottledRenderer } from "@/utils/waveformRenderer";
+import {
+	renderWaveformWithPlayhead,
+	createThrottledRenderer,
+	WAVEFORM_MAX_BACKING_EDGE,
+} from "@/utils/waveformRenderer";
 import type { TimelineElement, AudioElement, VideoElement } from "../../types/timeline";
 import type { MediaAsset } from "../../types/assets";
 
@@ -20,6 +24,14 @@ interface UseAudioWaveformOptions {
 	canvasRef: Ref<HTMLCanvasElement | null>;
 	/** Current playhead time in seconds (global timeline time) */
 	currentTime: Ref<number>;
+}
+
+/** Minimum vertical scale when clip volume is low (timeline stays readable; playback still uses real volume). */
+const TIMELINE_WAVEFORM_VOLUME_FLOOR = 0.32;
+
+function visualVolumeScale(volume: number): number {
+	const v = Math.max(0, Math.min(1, volume));
+	return TIMELINE_WAVEFORM_VOLUME_FLOOR + (1 - TIMELINE_WAVEFORM_VOLUME_FLOOR) * v;
 }
 
 /**
@@ -54,6 +66,59 @@ function normalizePeaks(peaks: { min: number; max: number }[]): { min: number; m
 		min: peak.min * finalScale,
 		max: peak.max * finalScale,
 	}));
+}
+
+/** Slightly more lift than normalizePeaks so timeline strips stay readable on short tracks. */
+function normalizePeaksForTimeline(peaks: { min: number; max: number }[]): { min: number; max: number }[] {
+	if (peaks.length === 0) return peaks;
+
+	let maxAmplitude = 0;
+	for (const peak of peaks) {
+		const peakMax = Math.max(Math.abs(peak.min), Math.abs(peak.max));
+		if (peakMax > maxAmplitude) maxAmplitude = peakMax;
+	}
+
+	if (maxAmplitude >= 0.62 || maxAmplitude === 0) {
+		return peaks;
+	}
+
+	const targetAmplitude = 0.92;
+	const scaleFactor = targetAmplitude / maxAmplitude;
+	const maxScale = 12;
+	const finalScale = Math.min(scaleFactor, maxScale);
+
+	return peaks.map((peak) => ({
+		min: peak.min * finalScale,
+		max: peak.max * finalScale,
+	}));
+}
+
+/** Ensure sub-pixel peak density never exceeds ~1 column per CSS px (avoids mush when zoomed in). */
+function timelinePeakCount(cssWidth: number): number {
+	const w = Math.ceil(cssWidth);
+	return Math.max(300, Math.min(w, WAVEFORM_MAX_BACKING_EDGE));
+}
+
+/**
+ * Gentle lift for thin timeline lanes — preserves relative level between samples so we do not
+ * paint thousands of identical magnitudes (that reads as a solid horizontal line on the baseline).
+ * True silence stays at zero.
+ */
+function liftPeaksForThinLane(
+	peaks: { min: number; max: number }[],
+	cssHeight: number,
+): { min: number; max: number }[] {
+	const targetFloor = cssHeight < 30 ? 0.055 : cssHeight < 44 ? 0.04 : 0.028;
+	return peaks.map((p) => {
+		const mag = Math.max(Math.abs(p.min), Math.abs(p.max));
+		if (mag <= 1e-8) return { min: 0, max: 0 };
+		if (mag >= targetFloor) return { min: p.min, max: p.max };
+		const scale = Math.min(2.4, targetFloor / mag);
+		return {
+			min: Math.max(-1, Math.min(1, p.min * scale)),
+			max: Math.max(-1, Math.min(1, p.max * scale)),
+		};
+	});
 }
 
 export function useAudioWaveform({
@@ -128,9 +193,9 @@ export function useAudioWaveform({
 			const audioUrl = resolveAudioUrl();
 			if (!audioUrl) return;
 
-			// Limit peak density like TimelineVideoTrack does
-			const MAX_PEAKS = 10000;
-			const requestedPeaks = Math.min(Math.floor(rect.width), MAX_PEAKS);
+			// ~1 peak per CSS px max. Using width×DPR here makes step < 1 when zoomed in, so bars stack
+			// into a hairline; backing-store DPR is handled inside renderWaveform.
+			const requestedPeaks = timelinePeakCount(rect.width);
 
 			// Both audio and video elements have trimStart
 			const trimStart = el.trimStart || 0;
@@ -138,21 +203,25 @@ export function useAudioWaveform({
 			// Source duration = timeline duration * speed
 			const sourceDuration = duration * speed;
 
-			// Use element volume as gain multiplier so waveform visually reflects volume
+			// Use element volume only for *visual* scaling. Peaks are extracted at unity gain so
+			// zoomed-in / quiet clips stay visible; visualVolumeScale() keeps low volume readable.
 			const volume = el.type === "audio" ? ((el as AudioElement).volume ?? 1) : ((el as VideoElement).volume ?? 1);
 
 			const peaks = await waveformService.getPeaksForRange(audioUrl, {
 				startTime: trimStart,
 				endTime: trimStart + sourceDuration,
 				pixelWidth: requestedPeaks,
-				gainMultiplier: volume,
+				gainMultiplier: 1,
 			});
 
 			if (!peaks || peaks.length === 0) return;
 
-			// Only normalize when at full volume — at reduced volume the waveform
-			// should look quieter to give visual feedback
-			let normalizedPeaks = volume >= 1 ? normalizePeaks(peaks) : peaks;
+			const shaped = normalizePeaksForTimeline(normalizePeaks(peaks));
+			const vScale = visualVolumeScale(volume);
+			let normalizedPeaks = shaped.map((p) => ({
+				min: p.min * vScale,
+				max: p.max * vScale,
+			}));
 
 			// Apply fade-in/fade-out tapering so waveform bars visually shrink toward zero
 			const fadeIn = el.fadeIn ?? 0;
@@ -172,6 +241,8 @@ export function useAudioWaveform({
 					return { min: peak.min * multiplier, max: peak.max * multiplier };
 				});
 			}
+
+			normalizedPeaks = liftPeaksForThinLane(normalizedPeaks, rect.height);
 
 			// Calculate playhead ratio relative to this element
 			// currentTime is global timeline time; element occupies [startTime, startTime + duration]
@@ -206,34 +277,11 @@ export function useAudioWaveform({
 				{
 					style: "bars",
 					useGradientColors: true,
+					amplitude: 1,
+					// Avoid Math.max(1, …) per column — that draws a full-width cyan hairline on the baseline.
+					minBarHeight: 0,
 				},
 			);
-
-			// Draw volume keyframe envelope overlay
-			const volumeTrack = el.keyframes?.tracks?.volume;
-			if (volumeTrack && volumeTrack.keyframes.length >= 2) {
-				const ctx = canvas.getContext("2d");
-				if (ctx) {
-					const { evaluateKeyframeTrack } = await import("../../types/keyframes");
-					const dpr = window.devicePixelRatio || 1;
-					const w = rect.width * dpr;
-					const h = rect.height * dpr;
-					ctx.save();
-					ctx.strokeStyle = "rgba(250, 204, 21, 0.8)"; // yellow
-					ctx.lineWidth = 1.5 * dpr;
-					ctx.beginPath();
-					for (let px = 0; px <= w; px++) {
-						const normalizedTime = px / w;
-						const vol = evaluateKeyframeTrack(volumeTrack, normalizedTime);
-						const clampedVol = Math.min(2, Math.max(0, vol));
-						const y = h - (clampedVol / 2) * h;
-						if (px === 0) ctx.moveTo(px, y);
-						else ctx.lineTo(px, y);
-					}
-					ctx.stroke();
-					ctx.restore();
-				}
-			}
 		} catch (error) {
 			console.error("[useAudioWaveform] Error rendering waveform:", error);
 		}

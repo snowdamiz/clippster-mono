@@ -158,6 +158,7 @@
       renderWaveformWithPlayhead(canvas, normalizedPeaks, rect.width, rect.height, props.currentTime, props.duration, {
         style: 'bars',
         useGradientColors: false, // Simple white/teal for this track
+        minBarHeight: 0,
       });
     } catch (error) {
       console.error('[TimelineVideoTrack] Error rendering waveform:', error);
