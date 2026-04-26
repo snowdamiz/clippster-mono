@@ -126,6 +126,8 @@ export interface Clip {
   subtitle_position_y?: number | null;
   subtitle_position_width?: number | null;
   subtitle_settings?: string | null; // JSON string of full subtitle settings
+  /** JSON string: ClipTextBoxState — pill text overlay for workspace + POI */
+  clip_text_overlay?: string | null;
   created_at: number;
   updated_at: number;
 }

@@ -409,9 +409,9 @@
                               <!-- Divider -->
                               <div class="clips-tab-dropdown-divider h-px my-1 mx-2"></div>
 
-                              <!-- Build Clip -->
+                              <!-- Build / rebuild clip (new build or different aspect ratio) -->
                               <button
-                                v-if="clip.build_status !== 'building' && !hasCompletedBuilds(clip)"
+                                v-if="clip.build_status !== 'building'"
                                 class="clips-tab-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
                                 @click.stop="
                                   onBuildClip(clip);
@@ -419,7 +419,7 @@
                                 "
                               >
                                 <Hammer class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
-                                <span>Build Clip</span>
+                                <span>{{ hasCompletedBuilds(clip) ? 'Rebuild Clip' : 'Build Clip' }}</span>
                               </button>
 
                               <!-- Publish Now (only for found clips NOT yet built) -->
@@ -917,6 +917,7 @@
     addClip: [];
     adjustClip: [clipId: string];
     publishNow: [clip: ClipWithVersion];
+    buildDialogOpen: [open: boolean];
   }>();
 
   // AI Permission check
@@ -935,6 +936,10 @@
   const clipElements = ref<Map<string, HTMLElement>>(new Map());
   const showBuildSettingsDialog = ref(false);
   const clipToBuild = ref<ClipWithVersion | null>(null);
+
+  watch(showBuildSettingsDialog, (open) => {
+    if (!open) emit('buildDialogOpen', false);
+  });
 
   // Derive SubtitleSettings from the clip being built (reads preset from DB data on the clip)
   const derivedSubtitleSettings = computed((): SubtitleSettings | null => {
@@ -2106,6 +2111,7 @@
     // Open dialog immediately (don't wait for async operations)
     clipToBuild.value = clip;
     showBuildSettingsDialog.value = true;
+    emit('buildDialogOpen', true);
 
     // Load saved aspect framing settings in background (dialog will use defaults until loaded)
     loadSavedAspectSettings(clip.id);
@@ -2460,6 +2466,8 @@
 
       // Load audio settings for the project
       const { getProjectAudioSettings, getFullClipEdit } = await import('@/services/database');
+      const { getClip } = await import('@/services/database/clips');
+      const { parseClipTextOverlayJson, clipTextBoxToExportPayload } = await import('@/utils/clipTextBox');
       let audioSettings = null;
       let videoFilterSegments = null; // Time-based video filter segments from clip editor
       let textOverlaysForExport: Array<{
@@ -2615,6 +2623,31 @@
             perRatioConfigs: overlay.per_ratio_configs_data ? JSON.parse(overlay.per_ratio_configs_data) : undefined,
           }));
           console.log('[ClipsTab] Loaded text overlays for export:', textOverlaysForExport.length);
+        }
+
+        const clipRowForText = await getClip(clip.id);
+        const clipTextBoxState = parseClipTextOverlayJson(clipRowForText?.clip_text_overlay);
+        console.log('[ClipsTab] Clip text box state from DB:', {
+          clipId: clip.id,
+          hasClipTextOverlay: !!clipRowForText?.clip_text_overlay,
+          rawLength: clipRowForText?.clip_text_overlay?.length ?? 0,
+          parsed: clipTextBoxState,
+          enabled: clipTextBoxState?.enabled,
+        });
+        if (clipTextBoxState?.enabled) {
+          const clipBoxPayload = clipTextBoxToExportPayload(clip.id, clipTextBoxState);
+          textOverlaysForExport = textOverlaysForExport
+            ? [...textOverlaysForExport, clipBoxPayload]
+            : [clipBoxPayload];
+          console.log('[ClipsTab] Merged workspace/POI clip text box for export:', {
+            text: clipBoxPayload.text,
+            startTime: clipBoxPayload.startTime,
+            endTime: clipBoxPayload.endTime,
+            positionX: clipBoxPayload.positionX,
+            positionY: clipBoxPayload.positionY,
+            hasPerRatioConfigs: !!clipBoxPayload.perRatioConfigs,
+            perRatioKeys: clipBoxPayload.perRatioConfigs ? Object.keys(clipBoxPayload.perRatioConfigs) : [],
+          });
         }
 
         // Extract stickers for burning into video
@@ -2789,7 +2822,7 @@
 
       // Refresh clip data from database to get latest subtitle settings
       // (user may have changed settings in POI editor during this session)
-      const { getClip } = await import('@/services/database/clips');
+      // getClip already imported above in this function (clip edit / text overlay load)
       const freshClipData = await getClip(clip.id);
       let effectiveSubtitleSettings: SubtitleSettings | null = null;
       
@@ -3719,6 +3752,20 @@
         }
       }
 
+      console.log('[ClipsTab] Text overlays being sent to Rust:', {
+        count: textOverlaysForExport?.length ?? 0,
+        overlays: textOverlaysForExport?.map(o => ({
+          id: o.id,
+          text: o.text?.substring(0, 50),
+          startTime: o.startTime,
+          endTime: o.endTime,
+          positionX: o.positionX,
+          positionY: o.positionY,
+          hasPerRatioConfigs: !!o.perRatioConfigs,
+          perRatioKeys: o.perRatioConfigs ? Object.keys(o.perRatioConfigs) : [],
+        })),
+      });
+      
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,

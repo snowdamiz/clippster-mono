@@ -54,6 +54,9 @@ export async function healSchema(): Promise<void> {
     await addColumnIfMissing(db, 'clips', 'subtitle_position_x', 'REAL');
     await addColumnIfMissing(db, 'clips', 'subtitle_position_y', 'REAL');
 
+    // --- clip_text_overlay JSON on clips ---
+    await addColumnIfMissing(db, 'clips', 'clip_text_overlay', 'TEXT');
+
     // --- Migration 086: source_start_time on audio tracks ---
     await addColumnIfMissing(
       db,

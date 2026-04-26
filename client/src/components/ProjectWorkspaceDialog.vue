@@ -106,9 +106,13 @@
                     :watermark-data="currentWatermarkData"
                     :subtitle-settings="activeSubtitleSettings"
                     :subtitle-initial-position="activeSubtitlePosition"
-                    :transcript-words="transcriptWords"
-                    :transcript-segments="transcriptSegments"
+                    :transcript-words="videoPlayerTranscriptWords"
+                    :transcript-segments="videoPlayerTranscriptSegments"
                     :current-time="currentTime"
+                    :clip-text-box-state="clipTextBoxForVideoPlayer"
+                    :clip-text-box-interactive="clipTextBoxPlayerInteractive"
+                    :clip-text-box-ignore-timing="rightPanelTab === 'text'"
+                    :clip-absolute-start="clipTextBoxAbsoluteStart"
                     @togglePlayPause="togglePlayPause"
                     @timeUpdate="onTimeUpdate"
                     @loadedMetadata="onLoadedMetadata"
@@ -122,6 +126,8 @@
                     @subtitlePositionChange="onSubtitlePositionChange"
                     @subtitleFontSizeChange="onSubtitleFontSizeChange"
                     @subtitleSelected="onSubtitleSelected"
+                    @clipTextBoxPositionChange="onClipTextBoxPositionChange"
+                    @clipTextBoxSelected="onClipTextBoxSelected"
                   />
                   
                   <!-- Social Platform Overlay -->
@@ -216,6 +222,7 @@
                   @editClip="onEditClip"
                   @addClip="onAddClip"
                   @publishNow="onPublishNow"
+                  @buildDialogOpen="onBuildDialogOpen"
                   @transcribeProject="onTranscribeProject"
                   @cancelTranscription="onCancelTranscription"
                   @viewTranscript="rightPanelTab = 'transcript'"
@@ -230,6 +237,15 @@
                   @close="rightPanelTab = 'clips'"
                   @updateSettings="onSubtitleSettingsUpdate"
                   @updateSegmentText="onSubtitleSegmentTextUpdate"
+                />
+
+                <ClipTextBoxPropertiesPanel
+                  v-if="rightPanelTab === 'text'"
+                  :state="activeClipTextBox"
+                  :clip-duration="selectedClipDurationForTextBox"
+                  @close="onCloseClipTextPanel"
+                  @updateState="onClipTextBoxPanelPatch"
+                  @delete="onClipTextBoxDelete"
                 />
 
                 <!-- Transcript Tab -->
@@ -274,6 +290,7 @@
                 @playFromTime="onPlayFromTime"
                 @editClip="onEditClip"
                 @toggleSubtitles="onToggleSubtitles"
+                @toggleText="onToggleText"
               />
             </div>
           </div>
@@ -375,7 +392,7 @@
   import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
   import { X, Film, Smartphone } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
-  import type { WatermarkSettings } from '@/types';
+  import type { WatermarkSettings, WordInfo, WhisperSegment } from '@/types';
   import VideoPlayer from './VideoPlayer.vue';
   import VideoControls from './VideoControls.vue';
   import MediaPanel from './MediaPanel.vue';
@@ -387,6 +404,7 @@
   import SubtitleEditorDialog from './SubtitleEditorDialog.vue';
   import TranscriptPanel from './TranscriptPanel.vue';
   import SubtitlePropertiesPanel from './SubtitlePropertiesPanel.vue';
+  import ClipTextBoxPropertiesPanel from './ClipTextBoxPropertiesPanel.vue';
   import CustomDropdown from './CustomDropdown.vue';
   import SocialOverlay from '@/editor/components/preview/SocialOverlay.vue';
   import { SOCIAL_OVERLAY_PRESETS } from '@/editor/constants/social-overlay-constants';
@@ -409,7 +427,12 @@
   import { useAuthStore } from '@/stores/auth';
   import { getRawVideosByProjectId } from '@/services/database';
   import { getProjectVodPresetConfig } from '@/services/database/vod-presets';
-  import { updateClipSubtitlePosition } from '@/services/database/clips';
+  import { updateClipSubtitlePosition, updateClipTextOverlay } from '@/services/database/clips';
+  import {
+    parseClipTextOverlayJson,
+    createDefaultClipTextBoxState,
+    type ClipTextBoxState,
+  } from '@/utils/clipTextBox';
   import type { ActiveVodPresetConfig } from '@/types';
   import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
 
@@ -452,7 +475,10 @@
   const showSubtitleEditorDialog = ref(false);
 
   // Right panel tab state
-  const rightPanelTab = ref<'clips' | 'transcript' | 'subtitles'>('clips');
+  const rightPanelTab = ref<'clips' | 'transcript' | 'subtitles' | 'text'>('clips');
+
+  const activeClipTextBox = ref<ClipTextBoxState | null>(null);
+  let clipTextPersistTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Transcription progress state
   const isTranscribing = ref(false);
@@ -489,6 +515,80 @@
 
   // Timeline clips state
   const timelineClips = ref<any[]>([]);
+
+  /**
+   * When false, the loaded file timeline is 0-based (built export). Do not subtract source segment start for clip text timing.
+   * When true, currentTime is absolute in the project source video (normal VOD + manual clip after 0-based segment replace uses start 0).
+   */
+  const workspaceVideoTimeIsSourceAbsolute = ref(true);
+
+  function getTimelineClipById(id: string | null): any | null {
+    if (!id) return null;
+    return timelineClips.value.find((c: any) => c.id === id) ?? null;
+  }
+
+  /** Timeline + DB clips often expose `current_version_segments`; older paths used `segments` only. */
+  function getClipTimelineSegments(clip: any): any[] {
+    const raw = clip?.current_version_segments || clip?.segments;
+    return Array.isArray(raw) && raw.length > 0 ? raw : [];
+  }
+
+  function getClipDurationFromTimelineClip(clip: any): number {
+    const segments = getClipTimelineSegments(clip);
+    if (!segments.length) return Math.max(0.1, Number(clip?.total_duration) || 3);
+    return segments.reduce(
+      (sum: number, s: any) => sum + (s.end_time - s.start_time),
+      0
+    );
+  }
+
+  function getClipAbsoluteStartFromTimelineClip(clip: any): number | null {
+    const segments = getClipTimelineSegments(clip);
+    if (!segments.length) return null;
+    return segments[0].start_time;
+  }
+
+  /** Source-timeline [start, end) for a clip; used to align subtitles with built 0-based playback. */
+  function getClipSourceTimeWindow(clip: any): { start: number; end: number } | null {
+    const segs = getClipTimelineSegments(clip);
+    if (!segs.length) return null;
+    return {
+      start: segs[0].start_time,
+      end: segs[segs.length - 1].end_time,
+    };
+  }
+
+  const textBoxContextClipId = computed(() => {
+    if (rightPanelTab.value === 'text' && selectedClipId.value) return selectedClipId.value;
+    return (
+      currentlyPlayingClipId.value || lastPlayedClipId.value || selectedClipId.value || null
+    );
+  });
+
+  /** Player reads overlay from timeline clip JSON (kept in sync when editing). */
+  const clipTextBoxForVideoPlayer = computed((): ClipTextBoxState | null => {
+    const id = textBoxContextClipId.value;
+    if (!id) return null;
+    const clip = getTimelineClipById(id);
+    if (!clip) return null;
+    return parseClipTextOverlayJson(clip.clip_text_overlay);
+  });
+
+  /** Drag/resize handles whenever the visible clip has an enabled text box (like subtitles). */
+  const clipTextBoxPlayerInteractive = computed(
+    () => Boolean(clipTextBoxForVideoPlayer.value?.enabled)
+  );
+
+  const clipTextBoxAbsoluteStart = computed((): number | null => {
+    if (!workspaceVideoTimeIsSourceAbsolute.value) return null;
+    const clip = getTimelineClipById(textBoxContextClipId.value);
+    return getClipAbsoluteStartFromTimelineClip(clip);
+  });
+
+  const selectedClipDurationForTextBox = computed(() => {
+    const clip = getTimelineClipById(selectedClipId.value);
+    return clip ? getClipDurationFromTimelineClip(clip) : 3;
+  });
 
   // Hover state for bidirectional highlighting
   const hoveredClipId = ref<string | null>(null);
@@ -723,6 +823,61 @@
     const segments = transcriptData.value?.whisperSegments || [];
     console.log('[ProjectWorkspaceDialog] transcriptSegments:', segments.length);
     return segments;
+  });
+
+  /**
+   * For built-clip playback the video is 0-based, but the DB transcript is source-absolute.
+   * Remap words/segments to clip-relative times so VideoPlayer can match `currentTime`.
+   */
+  const videoPlayerTranscriptWords = computed((): WordInfo[] => {
+    const words = transcriptData.value?.words || [];
+    if (workspaceVideoTimeIsSourceAbsolute.value) return words;
+    const clipId = currentlyPlayingClipId.value || lastPlayedClipId.value;
+    const clip = getTimelineClipById(clipId);
+    if (!clip) return words;
+    const win = getClipSourceTimeWindow(clip);
+    if (!win) return words;
+    const { start: c0, end: c1 } = win;
+    const span = c1 - c0;
+    return words
+      .filter((w) => w.end > c0 && w.start < c1)
+      .map((w) => ({
+        ...w,
+        start: Math.max(0, w.start - c0),
+        end: Math.min(span, w.end - c0),
+      }));
+  });
+
+  const videoPlayerTranscriptSegments = computed((): WhisperSegment[] => {
+    const segs = transcriptData.value?.whisperSegments || [];
+    if (workspaceVideoTimeIsSourceAbsolute.value) return segs;
+    const clipId = currentlyPlayingClipId.value || lastPlayedClipId.value;
+    const clip = getTimelineClipById(clipId);
+    if (!clip) return segs;
+    const win = getClipSourceTimeWindow(clip);
+    if (!win) return segs;
+    const { start: c0, end: c1 } = win;
+    const span = c1 - c0;
+    const out: WhisperSegment[] = [];
+    for (const seg of segs) {
+      if (seg.end <= c0 || seg.start >= c1) continue;
+      const ns = Math.max(0, seg.start - c0);
+      const ne = Math.min(span, seg.end - c0);
+      if (ne <= ns) continue;
+      let remappedWords: WordInfo[] | undefined;
+      if (seg.words && seg.words.length > 0) {
+        remappedWords = seg.words
+          .filter((w) => w.end > c0 && w.start < c1)
+          .map((w) => ({
+            ...w,
+            start: Math.max(0, w.start - c0),
+            end: Math.min(span, w.end - c0),
+          }));
+        if (remappedWords.length === 0) remappedWords = undefined;
+      }
+      out.push({ ...seg, start: ns, end: ne, words: remappedWords });
+    }
+    return out;
   });
 
   // Segments scoped to the selected/playing clip for the subtitle properties panel
@@ -1098,6 +1253,182 @@
     }
   }
 
+  function resolveClipAtPlayheadForText(): any | null {
+    const t = currentTime.value;
+    return (
+      timelineClips.value.find((clip: any) => {
+        const segments = getClipTimelineSegments(clip);
+        if (segments.length === 0) return false;
+        const startTime = segments[0].start_time;
+        const endTime = segments[segments.length - 1].end_time;
+        return t >= startTime && t <= endTime;
+      }) ?? null
+    );
+  }
+
+  /**
+   * Which clip should receive the timeline "Text" action. Prefer explicit UI focus (card / timeline
+   * click) over playhead when playback was stopped — otherwise we fall back to clip[0] and keep
+   * editing the wrong clip.
+   */
+  function resolveTargetClipIdForTextAction(): string | null {
+    const focusedId = hoveredClipId.value || hoveredTimelineClipId.value;
+    if (focusedId && getTimelineClipById(focusedId)) return focusedId;
+
+    const atPlayhead = resolveClipAtPlayheadForText();
+    if (atPlayhead) return atPlayhead.id;
+
+    if (currentlyPlayingClipId.value) return currentlyPlayingClipId.value;
+    if (lastPlayedClipId.value) return lastPlayedClipId.value;
+    if (timelineClips.value.length > 0) return timelineClips.value[0].id;
+    return null;
+  }
+
+  function ensureClipTextBoxDraftForClip(clip: any) {
+    const dur = getClipDurationFromTimelineClip(clip);
+    const parsed = parseClipTextOverlayJson(clip.clip_text_overlay);
+    if (parsed) {
+      activeClipTextBox.value = parsed;
+      return;
+    }
+    activeClipTextBox.value = createDefaultClipTextBoxState(dur);
+    clip.clip_text_overlay = JSON.stringify(activeClipTextBox.value);
+    void persistClipTextBoxToDb(clip.id, activeClipTextBox.value);
+  }
+
+  async function persistClipTextBoxToDb(clipId: string, state: ClipTextBoxState | null) {
+    const c = timelineClips.value.find((x: any) => x.id === clipId);
+    if (c) c.clip_text_overlay = state ? JSON.stringify(state) : null;
+    try {
+      await updateClipTextOverlay(clipId, state);
+    } catch (e) {
+      console.error('[ProjectWorkspaceDialog] Failed to save clip text box:', e);
+    }
+  }
+
+  function scheduleClipTextPersist() {
+    const clipId = selectedClipId.value;
+    if (!clipId || !activeClipTextBox.value) return;
+    if (clipTextPersistTimer) clearTimeout(clipTextPersistTimer);
+    clipTextPersistTimer = setTimeout(() => {
+      clipTextPersistTimer = null;
+      void persistClipTextBoxToDb(clipId, activeClipTextBox.value);
+    }, 400);
+  }
+
+  function onToggleText() {
+    if (!authStore.isAuthenticated) {
+      window.dispatchEvent(new CustomEvent('show-auth-modal'));
+      return;
+    }
+    if (timelineClips.value.length === 0) return;
+
+    const targetId = resolveTargetClipIdForTextAction();
+    if (targetId) selectedClipId.value = targetId;
+
+    const clip = getTimelineClipById(selectedClipId.value);
+    if (clip) ensureClipTextBoxDraftForClip(clip);
+  }
+
+  function onCloseClipTextPanel() {
+    rightPanelTab.value = 'clips';
+  }
+
+  async function onClipTextBoxDelete() {
+    const clipId = selectedClipId.value;
+    if (!clipId) return;
+    if (clipTextPersistTimer) {
+      clearTimeout(clipTextPersistTimer);
+      clipTextPersistTimer = null;
+    }
+    activeClipTextBox.value = null;
+    await persistClipTextBoxToDb(clipId, null);
+    rightPanelTab.value = 'clips';
+  }
+
+  function onClipTextBoxPanelPatch(patch: Partial<ClipTextBoxState>) {
+    if (!activeClipTextBox.value || !selectedClipId.value) return;
+    const base = activeClipTextBox.value;
+    const stylePatch = patch.style;
+    const { style: _drop, ...rest } = patch;
+    activeClipTextBox.value = {
+      ...base,
+      ...rest,
+      style: stylePatch ? { ...base.style, ...stylePatch } : base.style,
+    };
+    const clip = getTimelineClipById(selectedClipId.value);
+    if (clip) clip.clip_text_overlay = JSON.stringify(activeClipTextBox.value);
+    scheduleClipTextPersist();
+  }
+
+  async function onClipTextBoxPositionChange(payload: {
+    x: number;
+    y: number;
+    widthPct: number;
+    fontSize?: number;
+  }) {
+    const clipId = textBoxContextClipId.value;
+    if (!clipId) return;
+    const clip = getTimelineClipById(clipId);
+    if (!clip) return;
+    const base = parseClipTextOverlayJson(clip.clip_text_overlay);
+    if (!base) return;
+    const next: ClipTextBoxState = {
+      ...base,
+      positionX: payload.x,
+      positionY: payload.y,
+      widthPct: payload.widthPct,
+      style:
+        payload.fontSize != null
+          ? { ...base.style, fontSize: payload.fontSize }
+          : base.style,
+    };
+    if (selectedClipId.value === clipId) {
+      activeClipTextBox.value = next;
+    }
+    await persistClipTextBoxToDb(clipId, next);
+  }
+
+  function onClipTextBoxSelected() {
+    // Match the clip whose overlay is on-screen (not the highlighted list card).
+    const ctxId =
+      currentlyPlayingClipId.value ||
+      lastPlayedClipId.value ||
+      selectedClipId.value ||
+      resolveTargetClipIdForTextAction();
+    if (ctxId) selectedClipId.value = ctxId;
+    const clip = getTimelineClipById(selectedClipId.value);
+    if (clip) ensureClipTextBoxDraftForClip(clip);
+    rightPanelTab.value = 'text';
+  }
+
+  watch(rightPanelTab, (tab, prev) => {
+    if (prev === 'text' && tab !== 'text') {
+      if (clipTextPersistTimer) {
+        clearTimeout(clipTextPersistTimer);
+        clipTextPersistTimer = null;
+      }
+      const clipId = selectedClipId.value;
+      if (clipId && activeClipTextBox.value) {
+        void persistClipTextBoxToDb(clipId, activeClipTextBox.value);
+      }
+      activeClipTextBox.value = null;
+    }
+  });
+
+  watch(selectedClipId, (newId, oldId) => {
+    if (rightPanelTab.value !== 'text') return;
+    if (oldId && activeClipTextBox.value) {
+      void persistClipTextBoxToDb(oldId, activeClipTextBox.value);
+    }
+    if (newId) {
+      const clip = getTimelineClipById(newId);
+      if (clip) ensureClipTextBoxDraftForClip(clip);
+    } else {
+      activeClipTextBox.value = null;
+    }
+  });
+
   async function onSaveSubtitles(clipIds: string[], presetId: string, applyToAll: boolean) {
     console.log('[ProjectWorkspaceDialog] Saving subtitles:', { clipIds, presetId, applyToAll });
     
@@ -1469,7 +1800,11 @@
   }
 
   // Clip hover event handlers
-  function onClipHover(clipId: string) {
+  function onClipHover(clipId: string | null) {
+    if (clipId == null) {
+      hoveredClipId.value = null;
+      return;
+    }
     // If a clip is currently playing and user selects a different clip, stop playback
     if (currentlyPlayingClipId.value && currentlyPlayingClipId.value !== clipId) {
       stopSegmentedPlayback();
@@ -1674,6 +2009,8 @@
           subtitle_position_x: clip.subtitle_position_x ?? null,
           subtitle_position_y: clip.subtitle_position_y ?? null,
           subtitle_position_width: clip.subtitle_position_width ?? null,
+          subtitle_settings: clip.subtitle_settings ?? null,
+          clip_text_overlay: clip.clip_text_overlay ?? null,
         };
       })
       .filter(Boolean); // Remove any null entries
@@ -2513,6 +2850,8 @@
       segments: clip.segments,
     });
 
+    workspaceVideoTimeIsSourceAbsolute.value = true;
+
     // Set guard flag BEFORE stopping playback to prevent watcher from clearing currentlyPlayingClipId
     skipPlaybackEndedClear = true;
 
@@ -2641,6 +2980,7 @@
       console.log('[ProjectWorkspaceDialog] Loading built clip file:', builtFilePath);
       const loaded = await loadVideoFromPath(builtFilePath);
       if (loaded) {
+        workspaceVideoTimeIsSourceAbsolute.value = false;
         // For built clips, we just play from start - the whole file is the clip
         // Wait for the video element to be ready after loading
         await nextTick();
@@ -2746,7 +3086,14 @@
           socialMediaPost: clip.socialMediaPost || '',
           run_number: clip.run_number,
           run_color: clip.run_color,
-          session_prompt: clip.session_prompt
+          session_prompt: clip.session_prompt,
+          clip_text_overlay: fullClip.clip_text_overlay ?? clip.clip_text_overlay ?? null,
+          subtitle_enabled: fullClip.subtitle_enabled,
+          subtitle_preset_id: fullClip.subtitle_preset_id ?? null,
+          subtitle_position_x: fullClip.subtitle_position_x ?? null,
+          subtitle_position_y: fullClip.subtitle_position_y ?? null,
+          subtitle_position_width: fullClip.subtitle_position_width ?? null,
+          subtitle_settings: fullClip.subtitle_settings ?? null,
         }];
         
         // Clear guard flag
@@ -3154,6 +3501,16 @@
     showExistingProjectDialog.value = false;
     existingProjectForClip.value = null;
     pendingClipToEdit.value = null;
+  }
+
+  // Pause video when the clip build settings dialog opens
+  function onBuildDialogOpen(open: boolean) {
+    if (open && isPlaying.value) {
+      togglePlayPause();
+    }
+    if (open && isPlayingSegments.value) {
+      stopSegmentedPlayback();
+    }
   }
 
   // Handle Publish Now action

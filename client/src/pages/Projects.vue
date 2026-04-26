@@ -4207,6 +4207,9 @@
         }
       }
 
+      const { getClipTextBoxOverlaysForExport } = await import('@/utils/clipTextBox');
+      const textOverlaysFromClipBox = await getClipTextBoxOverlaysForExport(clip.id);
+
       // Start the build using the correct command
       await invoke('build_clip_from_segments', {
         projectId: clip.segment_id,
@@ -4234,7 +4237,7 @@
         audioSettings: null,
         framingStrategy: null,
         videoFilterSegments: null, // No filter segments from folder view
-        textOverlays: null, // No text overlays from folder view
+        textOverlays: textOverlaysFromClipBox,
         stickers: null, // No stickers from folder view
         clipWatermarks: null, // No clip watermarks from folder view
         layoutOverlays: folderCreatorProfile.value?.layout_overlays
@@ -4313,6 +4316,9 @@
         transcript: null,
       }];
     }
+
+    const { getClipTextBoxOverlaysForExport } = await import('@/utils/clipTextBox');
+    const textOverlaysFromClipBoxMulti = await getClipTextBoxOverlaysForExport(clip.id);
     
     // Process each build target sequentially
     for (let i = 0; i < buildTargets.length; i++) {
@@ -4532,7 +4538,7 @@
         manualFramingConfigs: settings.manualFramingConfigs || null,
         segmentFramingConfigs: null,
         videoFilterSegments: null,
-        textOverlays: null,
+        textOverlays: textOverlaysFromClipBoxMulti,
         stickers: null,
         clipWatermarks: null,
         clipEffects: null,

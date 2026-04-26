@@ -5,17 +5,23 @@
     :style="regionStyle"
     @mousedown.stop="onDragStart"
   >
-    <!-- Region border with dashed style -->
+    <!-- Region border with dashed style — only visible when selected or hovered -->
     <div
-      class="absolute inset-0 border border-dashed rounded transition-colors"
-      :style="{ borderColor: color }"
-      :class="{ 'ring-1 ring-white/30': isSelected }"
+      class="absolute inset-0 border border-dashed transition-all"
+      :style="{ borderColor: color, borderRadius: cornerRadiusPx ? `${cornerRadiusPx}px` : undefined }"
+      :class="{
+        'ring-1 ring-white/30': isSelected,
+        'rounded': !cornerRadiusPx,
+        'opacity-0 group-hover:opacity-100': !isSelected,
+        'opacity-100': isSelected,
+      }"
     />
 
-    <!-- Label badge -->
+    <!-- Label badge — visible on hover or when selected -->
     <div
       v-if="label"
-      class="absolute -top-5 left-1 px-1.5 py-0.5 text-[10px] font-medium rounded whitespace-nowrap"
+      class="absolute -top-5 left-1 px-1.5 py-0.5 text-[10px] font-medium rounded whitespace-nowrap transition-opacity"
+      :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
       :style="{ backgroundColor: color, color: getContrastColor(color) }"
     >
       {{ label }}
@@ -32,48 +38,56 @@
       <XIcon class="w-3.5 h-3.5" />
     </button>
 
-    <!-- Resize handles -->
+    <!-- Resize handles — only visible on hover or when selected -->
     <template v-if="resizable && showResizeHandles">
       <!-- Corner handles -->
       <div
-        class="resize-handle absolute -top-1 -left-1 w-2.5 h-2.5 rounded-full cursor-nw-resize"
+        class="resize-handle absolute -top-1 -left-1 w-2.5 h-2.5 rounded-full cursor-nw-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'nw')"
       />
       <div
-        class="resize-handle absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full cursor-ne-resize"
+        class="resize-handle absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full cursor-ne-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'ne')"
       />
       <div
-        class="resize-handle absolute -bottom-1 -left-1 w-2.5 h-2.5 rounded-full cursor-sw-resize"
+        class="resize-handle absolute -bottom-1 -left-1 w-2.5 h-2.5 rounded-full cursor-sw-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'sw')"
       />
       <div
-        class="resize-handle absolute -bottom-1 -right-1 w-2.5 h-2.5 rounded-full cursor-se-resize"
+        class="resize-handle absolute -bottom-1 -right-1 w-2.5 h-2.5 rounded-full cursor-se-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'se')"
       />
 
       <!-- Edge handles -->
       <div
-        class="resize-handle absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-1.5 rounded-full cursor-n-resize"
+        class="resize-handle absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-1.5 rounded-full cursor-n-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'n')"
       />
       <div
-        class="resize-handle absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-4 h-1.5 rounded-full cursor-s-resize"
+        class="resize-handle absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-4 h-1.5 rounded-full cursor-s-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 's')"
       />
       <div
-        class="resize-handle absolute top-1/2 -left-0.5 -translate-y-1/2 w-1.5 h-4 rounded-full cursor-w-resize"
+        class="resize-handle absolute top-1/2 -left-0.5 -translate-y-1/2 w-1.5 h-4 rounded-full cursor-w-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'w')"
       />
       <div
-        class="resize-handle absolute top-1/2 -right-0.5 -translate-y-1/2 w-1.5 h-4 rounded-full cursor-e-resize"
+        class="resize-handle absolute top-1/2 -right-0.5 -translate-y-1/2 w-1.5 h-4 rounded-full cursor-e-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'e')"
       />
@@ -102,6 +116,7 @@
     aspectRatioLocked?: boolean; // Lock aspect ratio during resize (default true)
     snapToCenter?: boolean; // Enable snap-to-center behavior
     snapThreshold?: number; // Snap threshold in pixels
+    cornerRadiusPx?: number; // Rounded corners preview (in px, scaled to container)
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -115,6 +130,7 @@
     aspectRatioLocked: true,
     snapToCenter: true,
     snapThreshold: 8,
+    cornerRadiusPx: 0,
   });
 
   const emit = defineEmits<{

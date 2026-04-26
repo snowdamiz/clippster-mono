@@ -1,7 +1,7 @@
 <template>
-  <div class="sp">
-    <!-- Header -->
-    <div class="sp__header">
+  <div class="sp" :class="{ 'sp--embedded': variant === 'embedded' }">
+    <!-- Header (hidden when embedded — parent provides its own Cancel/Done bar) -->
+    <div v-if="variant !== 'embedded'" class="sp__header">
       <button class="sp__back" @click="$emit('close')" title="Back to Clips">
         <ChevronLeft :size="15" />
       </button>
@@ -366,6 +366,7 @@ interface Props {
   settings: SubtitleSettings;
   segments: TranscriptSegment[];
   currentTime?: number;
+  variant?: 'standalone' | 'embedded';
 }
 
 const props = defineProps<Props>();
@@ -615,6 +616,48 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
   background: var(--sidebar-surface);
   color: var(--sidebar-text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ── Embedded (wizard) overrides ── */
+.sp--embedded {
+  height: auto;
+}
+
+.sp--embedded .sp__body {
+  overflow-y: visible;
+  flex: none;
+}
+
+.sp--embedded .sp__section {
+  padding: 0.875rem 1rem;
+}
+
+.sp--embedded .sp__section--last {
+  padding-bottom: 1rem;
+}
+
+.sp--embedded .sp__section-hd {
+  font-size: 0.6875rem;
+  margin-bottom: 0.5rem;
+  letter-spacing: 0.06em;
+}
+
+.sp--embedded .sp__field {
+  gap: 6px;
+}
+
+.sp--embedded .sp__segments {
+  max-height: 160px;
+  gap: 6px;
+}
+
+.sp--embedded .sp__font-grid {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.375rem;
+}
+
+.sp--embedded .sp__section-hd-row {
+  margin-bottom: 0.5rem;
 }
 
 /* Header */
