@@ -1,6 +1,7 @@
 import { Command } from "../../../../lib/commands/base-command";
 import type { TimelineTrack } from "../../../../types/timeline";
 import { EditorCore } from "../../../../core";
+import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
 
 export class UpdateElementStartTimeCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;
@@ -36,7 +37,8 @@ export class UpdateElementStartTimeCommand extends Command {
 			return { ...track, elements: newElements } as typeof track;
 		});
 
-		editor.timeline.updateTracks(updatedTracks);
+		const fps = editor.project.getActive()?.settings?.fps ?? 30;
+		editor.timeline.updateTracks(collapseMainVideoTracksIfPresent(updatedTracks, fps));
 	}
 
 	undo(): void {

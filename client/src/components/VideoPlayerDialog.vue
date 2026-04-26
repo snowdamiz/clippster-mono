@@ -229,7 +229,7 @@
   import Hls from 'hls.js';
   import type { RawVideo, IntroOutro } from '@/services/database';
   import { X, Loader2, Play, Pause, VolumeX, Volume2, RotateCcw, FolderOpen, Clock } from 'lucide-vue-next';
-  import { utf8ToBase64 } from '@/utils/encoding';
+  import { utf8ToBase64Url } from '@/utils/encoding';
 
   type VideoLike = RawVideo | IntroOutro;
 
@@ -411,7 +411,7 @@
 
   // Helper function to construct video URL with proper endpoint for file type
   function constructVideoUrl(filePath: string, port: number): string {
-    const encodedPath = utf8ToBase64(filePath);
+    const encodedPath = utf8ToBase64Url(filePath);
 
     // Check if this is a .ts file - browsers can't play MPEG-TS natively
     const isTsFile = filePath.toLowerCase().endsWith('.ts');

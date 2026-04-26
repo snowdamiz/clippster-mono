@@ -1364,7 +1364,7 @@
   const { isAIAllowed } = useAIPermission();
   const { gates } = useSubscriptionGate();
   const { fetchSubscriptionStatus } = useSubscription();
-  import { utf8ToBase64 } from '@/utils/encoding';
+  import { utf8ToBase64Url } from '@/utils/encoding';
   import { save } from '@tauri-apps/plugin-dialog';
   import VodPresetEditor from '@/components/VodPresetEditor.vue';
   import {
@@ -2678,7 +2678,7 @@
 
   // Helper function to construct video URL with proper endpoint for file type
   function constructInlineVideoUrl(filePath: string, port: number): string {
-    const encodedPath = utf8ToBase64(filePath);
+    const encodedPath = utf8ToBase64Url(filePath);
 
     // Check if this is a .ts file - browsers can't play MPEG-TS natively
     const isTsFile = filePath.toLowerCase().endsWith('.ts');

@@ -1,6 +1,7 @@
 use tauri_plugin_shell::ShellExt;
 
 use serde::Deserialize;
+use tauri::Runtime;
 
 #[derive(Debug, Deserialize)]
 
@@ -98,17 +99,68 @@ pub struct VideoSource {
 
     pub fade_out: Option<f64>,
 
-    #[allow(dead_code)]
     pub animation_in: Option<AnimationData>,
 
-    #[allow(dead_code)]
     pub animation_out: Option<AnimationData>,
 
+    /// Deserialized from frontend; loop presets are not mapped to FFmpeg yet.
     #[allow(dead_code)]
     pub animation_loop: Option<AnimationData>,
 
-    #[allow(dead_code)]
     pub keyframes: Option<Vec<KeyframeTrack>>,
+
+    // Phase 3: Color grading
+    pub color_curves_master: Option<Vec<[f64; 2]>>,
+    pub color_curves_red: Option<Vec<[f64; 2]>>,
+    pub color_curves_green: Option<Vec<[f64; 2]>>,
+    pub color_curves_blue: Option<Vec<[f64; 2]>>,
+    pub color_wheels_shadows_hue: Option<f64>,
+    pub color_wheels_shadows_saturation: Option<f64>,
+    pub color_wheels_shadows_luminance: Option<f64>,
+    pub color_wheels_midtones_hue: Option<f64>,
+    pub color_wheels_midtones_saturation: Option<f64>,
+    pub color_wheels_midtones_luminance: Option<f64>,
+    pub color_wheels_highlights_hue: Option<f64>,
+    pub color_wheels_highlights_saturation: Option<f64>,
+    pub color_wheels_highlights_luminance: Option<f64>,
+    pub lut_path: Option<String>,
+
+    // Phase 5: Audio pan
+    pub pan: Option<f64>,
+
+    // Phase 8: Blend mode
+    pub blend_mode: Option<String>,
+
+    // Shape masks (rectangle / ellipse, normalised 0–1 coords)
+    pub masks: Option<Vec<MaskShape>>,
+
+    /// True when this clip is on the scene's main video track (bottom layer). Used for overlap compositing order.
+    #[serde(default)]
+    pub track_is_main: Option<bool>,
+
+    /// `orderIndex` within the track (CapCut-style stacking). Lower = further back within the same track tier.
+    #[serde(default)]
+    pub order_index: Option<i32>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct MaskShape {
+    /// "rectangle" or "ellipse"
+    pub mask_type: String,
+    /// Normalised center X (0–1)
+    pub x: f64,
+    /// Normalised center Y (0–1)
+    pub y: f64,
+    /// Normalised width (0–1)
+    pub width: f64,
+    /// Normalised height (0–1)
+    pub height: f64,
+    /// Feather radius in canvas pixels (0 = hard edge)
+    pub feather: f64,
+    /// Invert the mask
+    pub invert: bool,
+    /// Rotation in degrees
+    pub rotation: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,6 +189,8 @@ pub struct AudioTrack {
     pub fade_out: Option<f64>,
 
     pub audio_effects: Option<Vec<AudioEffect>>,
+
+    pub pan: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -206,7 +260,6 @@ pub struct BrandingWatermark {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct BrandingOverlay {
     pub image_path: String,
 
@@ -223,6 +276,16 @@ pub struct BrandingOverlay {
     pub is_full_frame: bool,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct TransitionData {
+    pub transition_type: String,
+    pub duration: f64,
+    pub target_element_index: usize,
+    /// Timeline cut position from the editor (export uses padded segment lengths for xfade offset).
+    #[allow(dead_code)]
+    pub junction_time: f64,
+}
+
 #[derive(Debug, Deserialize)]
 
 pub struct ExportConfig {
@@ -236,12 +299,13 @@ pub struct ExportConfig {
 
     pub effect_overlays: Option<Vec<EffectOverlay>>,
 
-    #[allow(dead_code)]
-    pub transitions: Option<Vec<serde_json::Value>>,
+    pub transitions: Option<Vec<TransitionData>>,
 
     pub output_path: String,
 
     pub total_duration: f64,
+
+    pub fps: i32,
 
     pub width: i32,
 
@@ -253,20 +317,86 @@ pub struct ExportConfig {
 
     pub branding_overlays: Option<Vec<BrandingOverlay>>,
 
-    #[allow(dead_code)]
     pub intro_path: Option<String>,
 
-    #[allow(dead_code)]
     pub intro_duration: Option<f64>,
 
-    #[allow(dead_code)]
     pub outro_path: Option<String>,
 
-    #[allow(dead_code)]
     pub outro_duration: Option<f64>,
 }
 
 /// Full video editor export with audio tracks, text overlays, and effects
+
+/// Map editor blend preset names to FFmpeg `blend` filter `all_mode` values.
+fn map_blend_mode_ffmpeg(mode: &str) -> &'static str {
+    match mode {
+        "multiply" => "multiply",
+        "screen" => "screen",
+        "overlay" => "overlay",
+        "soft-light" => "softlight",
+        "hard-light" => "hardlight",
+        "darken" => "darken",
+        "lighten" => "lighten",
+        "color-dodge" => "colordodge",
+        "color-burn" => "colorburn",
+        "difference" => "difference",
+        "exclusion" => "exclusion",
+        _ => "normal",
+    }
+}
+
+async fn ffprobe_path_has_audio<R: Runtime>(
+    shell: &tauri_plugin_shell::Shell<R>,
+    path: &str,
+) -> Result<bool, String> {
+    let probe_output = shell
+        .sidecar("ffprobe")
+        .map_err(|e| format!("Failed to get ffprobe sidecar: {}", e))?
+        .args(&[
+            "-v",
+            "quiet",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=index",
+            "-of",
+            "csv=p=0",
+            path,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("ffprobe failed for {}: {}", path, e))?;
+    Ok(!String::from_utf8_lossy(&probe_output.stdout)
+        .trim()
+        .is_empty())
+}
+
+async fn ffprobe_format_duration<R: Runtime>(
+    shell: &tauri_plugin_shell::Shell<R>,
+    path: &str,
+) -> Result<Option<f64>, String> {
+    let probe_output = shell
+        .sidecar("ffprobe")
+        .map_err(|e| format!("Failed to get ffprobe sidecar: {}", e))?
+        .args(&[
+            "-v",
+            "quiet",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
+            path,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("ffprobe duration failed for {}: {}", path, e))?;
+    let s = String::from_utf8_lossy(&probe_output.stdout).trim().to_string();
+    if s.is_empty() {
+        return Ok(None);
+    }
+    Ok(s.parse().ok())
+}
 
 #[tauri::command]
 
@@ -430,6 +560,71 @@ pub async fn export_video_editor_project(
         }
     }
 
+    // Optional intro / outro clips (branding) — appended as extra inputs after all compositing inputs
+    let mut next_input_index = config.video_sources.len()
+        + config.audio_tracks.len()
+        + config.text_overlays.len()
+        + config.sticker_overlays.len();
+    if let Some(ref wm) = config.branding_watermark {
+        if Path::new(&wm.image_path).exists() {
+            next_input_index += 1;
+        }
+    }
+    if let Some(ref overlays) = config.branding_overlays {
+        for overlay in overlays {
+            if Path::new(&overlay.image_path).exists() {
+                next_input_index += 1;
+            }
+        }
+    }
+
+    let mut intro_input_idx: Option<usize> = None;
+    let mut outro_input_idx: Option<usize> = None;
+
+    if let Some(ref p) = config.intro_path {
+        if !p.is_empty() && Path::new(p).exists() {
+            args.push("-i".to_string());
+            args.push(p.clone());
+            intro_input_idx = Some(next_input_index);
+            next_input_index += 1;
+            println!("[Rust] Intro clip input index {}", intro_input_idx.unwrap());
+        }
+    }
+    if let Some(ref p) = config.outro_path {
+        if !p.is_empty() && Path::new(p).exists() {
+            args.push("-i".to_string());
+            args.push(p.clone());
+            outro_input_idx = Some(next_input_index);
+            println!("[Rust] Outro clip input index {}", outro_input_idx.unwrap());
+        }
+    }
+
+    let mut intro_duration_sec = config.intro_duration.unwrap_or(0.0);
+    let mut outro_duration_sec = config.outro_duration.unwrap_or(0.0);
+    let mut intro_has_audio = false;
+    let mut outro_has_audio = false;
+
+    if let Some(ref p) = config.intro_path {
+        if !p.is_empty() && Path::new(p).exists() {
+            intro_has_audio = ffprobe_path_has_audio(&shell, p).await.unwrap_or(false);
+            if intro_duration_sec < 0.05 {
+                if let Ok(Some(d)) = ffprobe_format_duration(&shell, p).await {
+                    intro_duration_sec = d;
+                }
+            }
+        }
+    }
+    if let Some(ref p) = config.outro_path {
+        if !p.is_empty() && Path::new(p).exists() {
+            outro_has_audio = ffprobe_path_has_audio(&shell, p).await.unwrap_or(false);
+            if outro_duration_sec < 0.05 {
+                if let Ok(Some(d)) = ffprobe_format_duration(&shell, p).await {
+                    outro_duration_sec = d;
+                }
+            }
+        }
+    }
+
     // Build filter_complex for video and audio processing
 
     let mut filters = Vec::new();
@@ -552,9 +747,23 @@ pub async fn export_video_editor_project(
 
         let temperature = source.temperature.unwrap_or(0.0);
 
-        // Speed via setpts (video only, audio handled separately)
+        // Speed via setpts (video only, audio handled separately).
+        // If speed keyframes exist, use a piecewise speed expression.
+        let speed_kf = source.keyframes.as_ref().and_then(|tracks| {
+            tracks
+                .iter()
+                .find(|t| t.property == "speed" && !t.keyframes.is_empty())
+        });
 
-        if (speed - 1.0).abs() > 0.001 {
+        if let Some(kf_track) = speed_kf {
+            if let Some(speed_expr) = build_keyframe_expression(&kf_track.keyframes, source.end_time - source.start_time, speed) {
+                // Approximate variable speed by applying reciprocal instantaneous speed.
+                // (A full integral mapping can be added later for exact parity.)
+                transform_filters.push(format!("setpts='(1/({}))*PTS'", speed_expr));
+            } else if (speed - 1.0).abs() > 0.001 {
+                transform_filters.push(format!("setpts={}*PTS", 1.0 / speed));
+            }
+        } else if (speed - 1.0).abs() > 0.001 {
             transform_filters.push(format!("setpts={}*PTS", 1.0 / speed));
         }
 
@@ -768,7 +977,206 @@ pub async fn export_video_editor_project(
             transform_filters.push(format!("fade=t=out:st={}:d={}", fade_start, fade_out));
         }
 
+        // Color curves via FFmpeg 'curves' filter
+        let has_curves = source.color_curves_master.as_ref().map_or(false, |v| v.len() >= 2)
+            || source.color_curves_red.as_ref().map_or(false, |v| v.len() >= 2)
+            || source.color_curves_green.as_ref().map_or(false, |v| v.len() >= 2)
+            || source.color_curves_blue.as_ref().map_or(false, |v| v.len() >= 2);
+        if has_curves {
+            let mut curve_parts = Vec::new();
+            if let Some(pts) = &source.color_curves_master {
+                if pts.len() >= 2 {
+                    let s = format_curve_points(pts);
+                    curve_parts.push(format!("master='{}'", s));
+                }
+            }
+            if let Some(pts) = &source.color_curves_red {
+                if pts.len() >= 2 {
+                    let s = format_curve_points(pts);
+                    curve_parts.push(format!("r='{}'", s));
+                }
+            }
+            if let Some(pts) = &source.color_curves_green {
+                if pts.len() >= 2 {
+                    let s = format_curve_points(pts);
+                    curve_parts.push(format!("g='{}'", s));
+                }
+            }
+            if let Some(pts) = &source.color_curves_blue {
+                if pts.len() >= 2 {
+                    let s = format_curve_points(pts);
+                    curve_parts.push(format!("b='{}'", s));
+                }
+            }
+            if !curve_parts.is_empty() {
+                transform_filters.push(format!("curves={}", curve_parts.join(":")));
+            }
+        }
+
+        // Color wheels via FFmpeg 'colorbalance' filter
+        // Shadows=rs/gs/bs, Midtones=rm/gm/bm, Highlights=rh/gh/bh (each -1..1)
+        let has_wheels = source.color_wheels_shadows_hue.is_some()
+            || source.color_wheels_midtones_hue.is_some()
+            || source.color_wheels_highlights_hue.is_some()
+            || source.color_wheels_shadows_luminance.is_some()
+            || source.color_wheels_midtones_luminance.is_some()
+            || source.color_wheels_highlights_luminance.is_some();
+        if has_wheels {
+            // Luminance offsets translate to colorbalance shifts: approximate by splitting across channels
+            let sl = source.color_wheels_shadows_luminance.unwrap_or(0.0);
+            let ml = source.color_wheels_midtones_luminance.unwrap_or(0.0);
+            let hl = source.color_wheels_highlights_luminance.unwrap_or(0.0);
+            let ss = source.color_wheels_shadows_saturation.unwrap_or(0.0);
+            let ms = source.color_wheels_midtones_saturation.unwrap_or(0.0);
+            let hs = source.color_wheels_highlights_saturation.unwrap_or(0.0);
+
+            // Map saturation/luminance to per-channel balance shifts (simplified)
+            let rs = (sl + ss * 0.3).clamp(-1.0, 1.0);
+            let gs = (sl - ss * 0.15).clamp(-1.0, 1.0);
+            let bs = (sl - ss * 0.15).clamp(-1.0, 1.0);
+            let rm = (ml + ms * 0.3).clamp(-1.0, 1.0);
+            let gm = (ml - ms * 0.15).clamp(-1.0, 1.0);
+            let bm = (ml - ms * 0.15).clamp(-1.0, 1.0);
+            let rh = (hl + hs * 0.3).clamp(-1.0, 1.0);
+            let gh = (hl - hs * 0.15).clamp(-1.0, 1.0);
+            let bh = (hl - hs * 0.15).clamp(-1.0, 1.0);
+
+            transform_filters.push(format!(
+                "colorbalance=rs={}:gs={}:bs={}:rm={}:gm={}:bm={}:rh={}:gh={}:bh={}",
+                rs, gs, bs, rm, gm, bm, rh, gh, bh
+            ));
+        }
+
+        // LUT via 'lut3d' filter
+        if let Some(ref lut) = source.lut_path {
+            if !lut.is_empty() {
+                // Escape the path for FFmpeg filter syntax
+                let escaped = lut.replace('\\', "/").replace(':', "\\:");
+                transform_filters.push(format!("lut3d=file='{}'", escaped));
+            }
+        }
+
+        // Animation in/out fade (matches preview canvas fade behaviour)
+        let source_duration = source.end_time - source.start_time;
+        if let Some(ref anim_in) = source.animation_in {
+            if anim_in.anim_type == "fade" && anim_in.duration > 0.01 {
+                transform_filters.push(format!(
+                    "fade=t=in:st=0:d={}:alpha=1",
+                    anim_in.duration
+                ));
+            }
+        }
+        if let Some(ref anim_out) = source.animation_out {
+            if anim_out.anim_type == "fade" && anim_out.duration > 0.01 {
+                let fade_start = (source_duration - anim_out.duration).max(0.0);
+                transform_filters.push(format!(
+                    "fade=t=out:st={}:d={}:alpha=1",
+                    fade_start, anim_out.duration
+                ));
+            }
+        }
+
+        // Opacity keyframes via geq — drives time-varying alpha per-pixel.
+        // Static opacity is already handled by colorchannelmixer in the transform block above.
+        let opacity_kf = source.keyframes.as_ref().and_then(|tracks| {
+            tracks
+                .iter()
+                .find(|t| t.property == "opacity" && !t.keyframes.is_empty())
+        });
+        if let Some(kf_track) = opacity_kf {
+            let base_opacity = source.opacity.unwrap_or(1.0);
+            if let Some(opacity_expr) = build_keyframe_expression(&kf_track.keyframes, source_duration, base_opacity) {
+                // geq evaluates t (seconds from clip start) — matches the piecewise expression
+                transform_filters.push(format!(
+                    "geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':a='alpha(X\\,Y)*min(1\\,max(0\\,{}))'",
+                    opacity_expr
+                ));
+            }
+        }
+
+        // Shape masks: apply alpha mask using geq filter
+        // Each mask modifies the alpha channel to reveal (or punch out) a shape.
+        if let Some(ref masks) = source.masks {
+            for mask in masks {
+                let mask_filter = build_mask_filter(mask, width, height);
+                if !mask_filter.is_empty() {
+                    transform_filters.push(mask_filter);
+                }
+            }
+        }
+
         transform_filters.join(",")
+    }
+
+    fn build_mask_filter(mask: &MaskShape, canvas_w: i32, canvas_h: i32) -> String {
+        let cx = mask.x * canvas_w as f64;
+        let cy = mask.y * canvas_h as f64;
+        let hw = mask.width * canvas_w as f64 / 2.0;
+        let hh = mask.height * canvas_h as f64 / 2.0;
+        let feather = mask.feather.max(0.0);
+        let rot_rad = mask.rotation * std::f64::consts::PI / 180.0;
+        let cos_r = rot_rad.cos();
+        let sin_r = rot_rad.sin();
+
+        // Rotated local coordinates relative to mask center:
+        //   lx = (X-cx)*cos - (Y-cy)*sin
+        //   ly = (X-cx)*sin + (Y-cy)*cos
+        let lx = format!("((X-{cx})*{cos_r}-(Y-{cy})*{sin_r})", cx=cx, cy=cy, cos_r=cos_r, sin_r=sin_r);
+        let ly = format!("((X-{cx})*{sin_r}+(Y-{cy})*{cos_r})", cx=cx, cy=cy, sin_r=sin_r, cos_r=cos_r);
+
+        // Inside expression returns 0.0–1.0 (or 0–255 for hard edge)
+        let inside_expr = if mask.mask_type == "ellipse" {
+            // Ellipse: (lx/rx)^2 + (ly/ry)^2 <= 1
+            if feather > 0.0 {
+                // Smooth feather using distance from ellipse boundary
+                let avg_r = (hw + hh) / 2.0;
+                format!(
+                    "max(0\\,min(255\\,(1-sqrt(pow({lx}/{hw}\\,2)+pow({ly}/{hh}\\,2)))*{scale}))",
+                    lx=lx, ly=ly, hw=hw, hh=hh,
+                    scale = avg_r / feather.max(1.0) * 255.0
+                )
+            } else {
+                format!(
+                    "255*lte(pow({lx}/{hw}\\,2)+pow({ly}/{hh}\\,2)\\,1)",
+                    lx=lx, ly=ly, hw=hw, hh=hh
+                )
+            }
+        } else {
+            // Rectangle: |lx| <= hw && |ly| <= hh
+            if feather > 0.0 {
+                // Linear ramp on each edge
+                format!(
+                    "255*min(min(max(0\\,({lx}+{hw})/{feather})\\,max(0\\,({hw}-{lx})/{feather}))\\,min(max(0\\,({ly}+{hh})/{feather})\\,max(0\\,({hh}-{ly})/{feather})))",
+                    lx=lx, ly=ly, hw=hw, hh=hh, feather=feather.max(1.0)
+                )
+            } else {
+                format!(
+                    "255*between({lx}\\,-{hw}\\,{hw})*between({ly}\\,-{hh}\\,{hh})",
+                    lx=lx, ly=ly, hw=hw, hh=hh
+                )
+            }
+        };
+
+        let alpha_expr = if mask.invert {
+            format!("255-({inside_expr})", inside_expr=inside_expr)
+        } else {
+            inside_expr
+        };
+
+        // geq modifies alpha channel in-place.
+        // Use min with existing alpha so stacked masks intersect correctly.
+        format!(
+            "geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':a='min(alpha(X\\,Y)\\,{})'",
+            alpha_expr
+        )
+    }
+
+    /// Format curve control points as FFmpeg 'curves' point string: "x0/y0:x1/y1:..."
+    fn format_curve_points(pts: &[[f64; 2]]) -> String {
+        pts.iter()
+            .map(|p| format!("{}/{}", p[0].clamp(0.0, 1.0), p[1].clamp(0.0, 1.0)))
+            .collect::<Vec<_>>()
+            .join(":")
     }
 
     fn build_effects_filter(effects: &[VideoEffect]) -> String {
@@ -993,7 +1401,89 @@ pub async fn export_video_editor_project(
         effect_filters.join(",")
     }
 
+    fn map_transition_type(editor_type: &str) -> &str {
+        match editor_type {
+            // Fades
+            "crossfade" => "fade",
+            "dissolve" => "dissolve",
+            "fadeToBlack" => "fadeblack",
+            "fadeToWhite" => "fadewhite",
+
+            // Wipes
+            "wipeLeft" => "wipeleft",
+            "wipeRight" => "wiperight",
+            "wipeUp" => "wipeup",
+            "wipeDown" => "wipedown",
+
+            // Slides
+            "slideLeft" => "slideleft",
+            "slideRight" => "slideright",
+            "slideUp" => "slideup",
+            "slideDown" => "slidedown",
+
+            // Push (preview uses the same motion as slide in canvas-transitions)
+            "pushLeft" => "slideleft",
+            "pushRight" => "slideright",
+            "pushUp" => "slideup",
+            "pushDown" => "slidedown",
+
+            // Cover / reveal (named cover/reveal in xfade)
+            "coverLeft" => "coverleft",
+            "coverRight" => "coverright",
+            "revealLeft" => "revealleft",
+            "revealRight" => "revealright",
+
+            // Shape wipes
+            "circleWipe" => "circleopen",
+            "clockWipe" => "radial",
+
+            // Zoom — xfade only defines zoomin; map zoomOut to the complementary iris
+            "zoomIn" => "zoomin",
+            "zoomOut" => "circleclose",
+
+            // Stylize — closest xfade analogues (not pixel-identical to the canvas preview)
+            "blur" => "hblur",
+            "rotateIn" => "circleopen",
+            "flipHorizontal" => "horzopen",
+            "flipVertical" => "vertopen",
+            "glitch" => "pixelize",
+
+            _ => "fade",
+        }
+    }
+
+    fn diamond_wipe_expr(duration: f64, fps: i32) -> String {
+        let transition_frames = (duration.max(0.0) * (fps.max(1) as f64)).ceil().max(2.0);
+        let completion_floor = (2.0 / transition_frames).min(0.5);
+        let u = format!("((1-P)/(1-{completion_floor:.12}))");
+        let reveal = format!(
+            "if(lte({u},0.5),sqrt({u}*2),2-sqrt((1-{u})*2))",
+            u = u
+        );
+        format!(
+            "if(gte(P,1),A,if(lte(P,{completion_floor:.12}),B,if(lte(abs((X-W/2)/(W/2))+abs((Y-H/2)/(H/2)),{reveal}),B,A)))",
+            completion_floor = completion_floor,
+            reveal = reveal
+        )
+    }
+
     // Process video sources - concat if multiple, trim to timeline positions
+
+    const EXPORT_OVERLAP_EPSILON_SEC: f64 = 0.001;
+    const TRANSITION_TIME_SLACK: f64 = 1.0 / 30.0;
+
+    let video_sources_overlap = if config.video_sources.len() > 1 {
+        let s = &config.video_sources;
+        (0..s.len()).any(|i| {
+            (i + 1..s.len())
+                .any(|j| {
+                    s[i].start_time < s[j].end_time - EXPORT_OVERLAP_EPSILON_SEC
+                        && s[j].start_time < s[i].end_time - EXPORT_OVERLAP_EPSILON_SEC
+                })
+        })
+    } else {
+        false
+    };
 
     if config.video_sources.is_empty() {
         // No video sources — generate black video and silent audio for the full duration
@@ -1084,6 +1574,15 @@ pub async fn export_video_editor_project(
             audio_extras.push_str(",areverse");
         }
 
+        // Pan/balance filter
+        if let Some(pan_val) = source.pan {
+            if pan_val.abs() > 0.01 {
+                let left = ((1.0 - pan_val) / 2.0).clamp(0.0, 1.0);
+                let right = ((1.0 + pan_val) / 2.0).clamp(0.0, 1.0);
+                audio_extras.push_str(&format!(",pan=stereo|c0={}*c0|c1={}*c1", left, right));
+            }
+        }
+
         if source_has_audio[0] {
             filters.push(format!(
                 "[0:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}[va]",
@@ -1097,74 +1596,99 @@ pub async fn export_video_editor_project(
                 duration
             ));
         }
-    } else if config.video_sources.len() > 1 {
-        // Concat multiple video sources
+    } else if config.video_sources.len() > 1 && video_sources_overlap {
+        // Timeline layers overlap in time: composite bottom → top (main track first, then overlays)
+        // using `overlay` for normal blend and `blend` for multiply / screen / etc.
+        let w = config.width;
+        let h = config.height;
+        let td = config.total_duration;
+        let source_count = config.video_sources.len();
 
-        let mut concat_inputs = String::new();
+        let mut perm: Vec<usize> = (0..source_count).collect();
+        perm.sort_by(|&ia, &ib| {
+            let a = &config.video_sources[ia];
+            let b = &config.video_sources[ib];
+            let ma = a.track_is_main.unwrap_or(true);
+            let mb = b.track_is_main.unwrap_or(true);
+            (!ma)
+                .cmp(&(!mb))
+                .then(
+                    a.order_index
+                        .unwrap_or(0)
+                        .cmp(&b.order_index.unwrap_or(0)),
+                )
+                .then(
+                    a.start_time
+                        .partial_cmp(&b.start_time)
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                )
+                .then(ia.cmp(&ib))
+        });
 
-        for i in 0..config.video_sources.len() {
-            let source = &config.video_sources[i];
+        filters.push(format!(
+            "color=c=black:s={}x{}:d={},format=yuv420p[vlay_base]",
+            w, h, td
+        ));
 
+        let mut cur_v = "[vlay_base]".to_string();
+
+        for (layer_idx, &orig_i) in perm.iter().enumerate() {
+            let source = &config.video_sources[orig_i];
             let trim_start = source.trim_start.unwrap_or(0.0);
-
-            let duration = source.end_time - source.start_time;
-
-            let transform = build_video_transform_filter(source, config.width, config.height);
-
+            let clip_dur = source.end_time - source.start_time;
+            let transform = build_video_transform_filter(source, w, h);
             let effects_str = source
                 .effects
                 .as_ref()
                 .map(|fx| build_effects_filter(fx))
                 .unwrap_or_default();
-
             let effects_suffix = if effects_str.is_empty() {
                 String::new()
             } else {
                 format!(",{}", effects_str)
             };
+            let st = source.start_time;
+            let en = source.end_time;
+            let pad_end = (td - en).max(0.0);
 
-            // Trim each segment from trim_start, apply transforms + effects
-
-            filters.push(format!(
-                "[{}:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}{}[v{}]",
-                i, trim_start, duration, transform, effects_suffix, i
+            let mut vf = format!(
+                "[{}:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}{}",
+                orig_i, trim_start, clip_dur, transform, effects_suffix
+            );
+            vf.push_str(&format!(
+                ",tpad=start_mode=add:start_duration={}:stop_mode=add:stop_duration={}:color=black[vlp{}]",
+                st, pad_end, orig_i
             ));
+            filters.push(vf);
 
-            concat_inputs.push_str(&format!("[v{}]", i));
+            let mode = source.blend_mode.as_deref().unwrap_or("normal");
+            let next_v = if layer_idx + 1 == perm.len() {
+                "[v]".to_string()
+            } else {
+                format!("[vlm{}]", layer_idx)
+            };
+
+            let comb = if mode == "normal" || mode.is_empty() {
+                format!("{}[vlp{}]overlay=0:0:format=auto{}", cur_v, orig_i, next_v)
+            } else {
+                let ffm = map_blend_mode_ffmpeg(mode);
+                format!(
+                    "{}[vlp{}]blend=all_mode={}:all_opacity=1{}",
+                    cur_v, orig_i, ffm, next_v
+                )
+            };
+            filters.push(comb);
+            cur_v = next_v;
         }
 
-        // Concat all video segments, then pad with black if needed
-
-        if needs_black_padding {
-            filters.push(format!(
-                "{}concat=n={}:v=1:a=0,tpad=stop_mode=add:stop_duration={}:color=black[v]",
-                concat_inputs,
-                config.video_sources.len(),
-                black_padding_duration
-            ));
-        } else {
-            filters.push(format!(
-                "{}concat=n={}:v=1:a=0[v]",
-                concat_inputs,
-                config.video_sources.len()
-            ));
-        }
-
-        // Handle audio from video sources
-
-        let mut audio_concat_inputs = String::new();
-
-        for i in 0..config.video_sources.len() {
-            let source = &config.video_sources[i];
-
+        // Mix embedded audio from each clip on the global timeline
+        let mut audio_mix_inputs = String::new();
+        for &orig_i in &perm {
+            let source = &config.video_sources[orig_i];
             let trim_start = source.trim_start.unwrap_or(0.0);
-
-            let duration = source.end_time - source.start_time;
-
+            let base_duration = source.end_time - source.start_time;
             let is_muted = source.is_muted.unwrap_or(false);
-
             let vol = source.volume.unwrap_or(1.0);
-
             let spd = source.speed.unwrap_or(1.0);
 
             let mut audio_extras = String::new();
@@ -1172,14 +1696,13 @@ pub async fn export_video_editor_project(
             if is_muted {
                 audio_extras.push_str(",volume=0");
             } else {
-                // Check for volume keyframes
                 let vol_kf = source.keyframes.as_ref().and_then(|tracks| {
                     tracks
                         .iter()
                         .find(|t| t.property == "volume" && !t.keyframes.is_empty())
                 });
                 if let Some(kf_track) = vol_kf {
-                    let expr = build_keyframe_expression(&kf_track.keyframes, duration, vol);
+                    let expr = build_keyframe_expression(&kf_track.keyframes, base_duration, vol);
                     if let Some(expr_str) = expr {
                         audio_extras.push_str(&format!(",volume='{}'", expr_str));
                     } else if (vol - 1.0).abs() > 0.01 {
@@ -1198,28 +1721,373 @@ pub async fn export_video_editor_project(
                 audio_extras.push_str(",areverse");
             }
 
-            if source_has_audio[i] {
-                filters.push(format!(
-                    "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}[va{}]",
-                    i, trim_start, duration, audio_extras, i
-                ));
-            } else {
-                // No audio stream in this video source — generate silent audio
-
-                filters.push(format!(
-                    "anullsrc=r=48000:cl=stereo,atrim=duration={}[va{}]",
-                    duration, i
-                ));
+            if let Some(pan_val) = source.pan {
+                if pan_val.abs() > 0.01 {
+                    let left = ((1.0 - pan_val) / 2.0).clamp(0.0, 1.0);
+                    let right = ((1.0 + pan_val) / 2.0).clamp(0.0, 1.0);
+                    audio_extras.push_str(&format!(",pan=stereo|c0={}*c0|c1={}*c1", left, right));
+                }
             }
 
-            audio_concat_inputs.push_str(&format!("[va{}]", i));
+            let delay_ms = (source.start_time * 1000.0).round().max(0.0) as i64;
+            let tail_pad = (td - source.end_time).max(0.0);
+
+            let mut chain = if source_has_audio[orig_i] {
+                format!(
+                    "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}",
+                    orig_i, trim_start, base_duration, audio_extras
+                )
+            } else {
+                format!(
+                    "anullsrc=r=48000:cl=stereo,atrim=duration={},asetpts=PTS-STARTPTS",
+                    base_duration
+                )
+            };
+
+            if delay_ms > 0 {
+                chain.push_str(&format!(",adelay={}|{}:all=1", delay_ms, delay_ms));
+            }
+            if tail_pad > 0.0001 {
+                chain.push_str(&format!(",apad=pad_dur={}", tail_pad));
+            }
+
+            chain.push_str(&format!("[vaol{}]", orig_i));
+            filters.push(chain);
+            audio_mix_inputs.push_str(&format!("[vaol{}]", orig_i));
         }
 
         filters.push(format!(
-            "{}concat=n={}:v=0:a=1[va]",
-            audio_concat_inputs,
-            config.video_sources.len()
+            "{}amix=inputs={}:duration=longest:dropout_transition=0[va]",
+            audio_mix_inputs, perm.len()
         ));
+    } else if config.video_sources.len() > 1 {
+        // Multi-source timeline: support per-junction transitions with centered overlap.
+        // We extend clip drawable ranges by half-duration on each side (clone edge frames)
+        // so centered transitions don't cut to black when handles are missing.
+
+        let source_count = config.video_sources.len();
+        let mut before_ext = vec![0.0_f64; source_count];
+        let mut after_ext = vec![0.0_f64; source_count];
+
+        let mut transitions = config.transitions.clone().unwrap_or_default();
+        transitions.sort_by_key(|t| t.target_element_index);
+
+        for t in &transitions {
+            if t.target_element_index == 0 || t.target_element_index >= source_count {
+                continue;
+            }
+            let half = (t.duration / 2.0).max(0.0);
+            let incoming_idx = t.target_element_index;
+            let outgoing_idx = incoming_idx - 1;
+            let gap_after = (
+                config.video_sources[incoming_idx].start_time
+                    - config.video_sources[outgoing_idx].end_time
+            )
+            .max(0.0);
+            before_ext[incoming_idx] = before_ext[incoming_idx].max(half + TRANSITION_TIME_SLACK);
+            after_ext[outgoing_idx] = after_ext[outgoing_idx].max(half + gap_after + TRANSITION_TIME_SLACK);
+        }
+
+        for i in 0..source_count {
+            let source = &config.video_sources[i];
+
+            let trim_start = source.trim_start.unwrap_or(0.0);
+            let duration = source.end_time - source.start_time;
+            let transform = build_video_transform_filter(source, config.width, config.height);
+
+            let effects_str = source
+                .effects
+                .as_ref()
+                .map(|fx| build_effects_filter(fx))
+                .unwrap_or_default();
+
+            let effects_suffix = if effects_str.is_empty() {
+                String::new()
+            } else {
+                format!(",{}", effects_str)
+            };
+
+            let before = before_ext[i].min(source.start_time.max(0.0));
+            let after = after_ext[i].max(0.0);
+            let effective_duration = (duration + before + after).max(0.0);
+            let padding_suffix = if after > 0.0001 {
+                format!(
+                    ",tpad=stop_mode=clone:stop_duration={:.6},trim=duration={:.6}",
+                    after, effective_duration
+                )
+            } else {
+                String::new()
+            };
+
+            let mut chain = format!(
+                "[{}:v]trim=start={}:duration={},setpts=PTS-STARTPTS{},{}{}",
+                i, trim_start, effective_duration, padding_suffix, transform, effects_suffix
+            );
+
+            chain.push_str(&format!(
+                ",fps={},settb=AVTB,setsar=1,format=yuv420p",
+                config.fps
+            ));
+
+            chain.push_str(&format!("[v{}]", i));
+            filters.push(chain);
+        }
+
+        let has_transitions = !transitions.is_empty();
+        if has_transitions {
+            let mut current_stream = "[v0]".to_string();
+            // xfade `offset` is measured on the *first* input stream (the accumulated chain).
+            // Using global `junction_time` breaks after the first transition and desyncs A/V.
+            let segment_video_len = |idx: usize| -> f64 {
+                let s = &config.video_sources[idx];
+                let d = s.end_time - s.start_time;
+                let before = before_ext[idx].min(s.start_time.max(0.0));
+                let after = after_ext[idx].max(0.0);
+                d + before + after
+            };
+            let mut cur_v_len = segment_video_len(0);
+
+            for i in 1..source_count {
+                let transition = transitions
+                    .iter()
+                    .find(|t| t.target_element_index == i && t.duration > 0.0);
+
+                let output_label = if i == source_count - 1 {
+                    "[v_chain]".to_string()
+                } else {
+                    format!("[v_chain{}]", i)
+                };
+
+                if let Some(t) = transition {
+                    let offset = (cur_v_len - t.duration).max(0.0);
+
+                    if t.transition_type == "diamondWipe" {
+                        let diamond_expr = diamond_wipe_expr(t.duration, config.fps);
+                        filters.push(format!(
+                            "{}[v{}]xfade=transition=custom:duration={}:offset={}:expr='{}'{}",
+                            current_stream,
+                            i,
+                            t.duration,
+                            offset,
+                            diamond_expr,
+                            output_label
+                        ));
+                    } else {
+                        let ffmpeg_transition = map_transition_type(&t.transition_type);
+                        filters.push(format!(
+                            "{}[v{}]xfade=transition={}:duration={}:offset={}{}",
+                            current_stream, i, ffmpeg_transition, t.duration, offset, output_label
+                        ));
+                    }
+                    cur_v_len = cur_v_len + segment_video_len(i) - t.duration;
+                } else {
+                    filters.push(format!(
+                        "{}[v{}]concat=n=2:v=1:a=0{}",
+                        current_stream, i, output_label
+                    ));
+                    cur_v_len += segment_video_len(i);
+                }
+
+                current_stream = output_label;
+            }
+
+            if needs_black_padding {
+                filters.push(format!(
+                    "{}tpad=stop_mode=add:stop_duration={}:color=black[v]",
+                    current_stream, black_padding_duration
+                ));
+            } else {
+                filters.push(format!("{}copy[v]", current_stream));
+            }
+        } else {
+            let concat_inputs: String = (0..source_count).map(|i| format!("[v{}]", i)).collect();
+            if needs_black_padding {
+                filters.push(format!(
+                    "{}concat=n={}:v=1:a=0,tpad=stop_mode=add:stop_duration={}:color=black[v]",
+                    concat_inputs, source_count, black_padding_duration
+                ));
+            } else {
+                filters.push(format!("{}concat=n={}:v=1:a=0[v]", concat_inputs, source_count));
+            }
+        }
+
+        // Handle audio from video sources.
+        // With transitions: chain per-clip streams with `acrossfade` at each transition (matches
+        // sequential `xfade` video). Timeline `adelay` + `amix` summed overlapping program audio
+        // (echo) and drifted vs chained video.
+        // Without transitions: keep concat behavior.
+        if has_transitions {
+            let mut audio_mix_inputs = String::new();
+
+            for i in 0..source_count {
+                let source = &config.video_sources[i];
+
+                let trim_start = source.trim_start.unwrap_or(0.0);
+                let base_duration = source.end_time - source.start_time;
+                let is_muted = source.is_muted.unwrap_or(false);
+                let vol = source.volume.unwrap_or(1.0);
+                let spd = source.speed.unwrap_or(1.0);
+
+                let before = before_ext[i].min(source.start_time.max(0.0));
+                let after = after_ext[i].max(0.0);
+
+                let effective_duration = (base_duration + before + after).max(0.0);
+                let effective_start = (source.start_time - before).max(0.0);
+                let effective_end = source.start_time + base_duration + after;
+                let tail_pad = (config.total_duration - effective_end).max(0.0);
+
+                let mut audio_extras = String::new();
+
+                if is_muted {
+                    audio_extras.push_str(",volume=0");
+                } else {
+                    let vol_kf = source.keyframes.as_ref().and_then(|tracks| {
+                        tracks
+                            .iter()
+                            .find(|t| t.property == "volume" && !t.keyframes.is_empty())
+                    });
+                    if let Some(kf_track) = vol_kf {
+                        let expr = build_keyframe_expression(&kf_track.keyframes, base_duration, vol);
+                        if let Some(expr_str) = expr {
+                            audio_extras.push_str(&format!(",volume='{}'", expr_str));
+                        } else if (vol - 1.0).abs() > 0.01 {
+                            audio_extras.push_str(&format!(",volume={}", vol));
+                        }
+                    } else if (vol - 1.0).abs() > 0.01 {
+                        audio_extras.push_str(&format!(",volume={}", vol));
+                    }
+                }
+
+                if (spd - 1.0).abs() > 0.001 {
+                    audio_extras.push_str(&format!(",atempo={}", spd));
+                }
+
+                if source.is_reversed.unwrap_or(false) {
+                    audio_extras.push_str(",areverse");
+                }
+
+                if let Some(pan_val) = source.pan {
+                    if pan_val.abs() > 0.01 {
+                        let left = ((1.0 - pan_val) / 2.0).clamp(0.0, 1.0);
+                        let right = ((1.0 + pan_val) / 2.0).clamp(0.0, 1.0);
+                        audio_extras.push_str(&format!(",pan=stereo|c0={}*c0|c1={}*c1", left, right));
+                    }
+                }
+
+                let incoming_transition = transitions
+                    .iter()
+                    .find(|t| t.target_element_index == i && t.duration > 0.0)
+                    .map(|t| t.duration)
+                    .unwrap_or(0.0);
+                let outgoing_transition = transitions
+                    .iter()
+                    .find(|t| t.target_element_index == i + 1 && t.duration > 0.0)
+                    .map(|t| t.duration)
+                    .unwrap_or(0.0);
+
+                let delay_ms = (effective_start * 1000.0).round().max(0.0) as i64;
+                let mut chain = if source_has_audio[i] {
+                    format!(
+                        "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}",
+                        i, trim_start, effective_duration, audio_extras
+                    )
+                } else {
+                    format!(
+                        "anullsrc=r=48000:cl=stereo,atrim=duration={},asetpts=PTS-STARTPTS{}",
+                        effective_duration, audio_extras
+                    )
+                };
+
+                if incoming_transition > 0.0001 {
+                    chain.push_str(&format!(",afade=t=in:st=0:d={:.6}", incoming_transition));
+                }
+
+                if outgoing_transition > 0.0001 {
+                    let fade_start = (effective_duration - outgoing_transition).max(0.0);
+                    chain.push_str(&format!(
+                        ",afade=t=out:st={:.6}:d={:.6}",
+                        fade_start, outgoing_transition
+                    ));
+                }
+
+                if delay_ms > 0 {
+                    chain.push_str(&format!(",adelay={}|{}:all=1", delay_ms, delay_ms));
+                }
+                if tail_pad > 0.0001 {
+                    chain.push_str(&format!(",apad=pad_dur={}", tail_pad));
+                }
+
+                chain.push_str(&format!("[va{}]", i));
+                filters.push(chain);
+                audio_mix_inputs.push_str(&format!("[va{}]", i));
+            }
+
+            filters.push(format!(
+                "{}amix=inputs={}:duration=longest:dropout_transition=0[va]",
+                audio_mix_inputs, source_count
+            ));
+        } else {
+            let mut audio_concat_inputs = String::new();
+
+            for i in 0..source_count {
+                let source = &config.video_sources[i];
+
+                let trim_start = source.trim_start.unwrap_or(0.0);
+                let duration = source.end_time - source.start_time;
+                let is_muted = source.is_muted.unwrap_or(false);
+                let vol = source.volume.unwrap_or(1.0);
+                let spd = source.speed.unwrap_or(1.0);
+
+                let mut audio_extras = String::new();
+
+                if is_muted {
+                    audio_extras.push_str(",volume=0");
+                } else {
+                    let vol_kf = source.keyframes.as_ref().and_then(|tracks| {
+                        tracks
+                            .iter()
+                            .find(|t| t.property == "volume" && !t.keyframes.is_empty())
+                    });
+                    if let Some(kf_track) = vol_kf {
+                        let expr = build_keyframe_expression(&kf_track.keyframes, duration, vol);
+                        if let Some(expr_str) = expr {
+                            audio_extras.push_str(&format!(",volume='{}'", expr_str));
+                        } else if (vol - 1.0).abs() > 0.01 {
+                            audio_extras.push_str(&format!(",volume={}", vol));
+                        }
+                    } else if (vol - 1.0).abs() > 0.01 {
+                        audio_extras.push_str(&format!(",volume={}", vol));
+                    }
+                }
+
+                if (spd - 1.0).abs() > 0.001 {
+                    audio_extras.push_str(&format!(",atempo={}", spd));
+                }
+
+                if source.is_reversed.unwrap_or(false) {
+                    audio_extras.push_str(",areverse");
+                }
+
+                if source_has_audio[i] {
+                    filters.push(format!(
+                        "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}[va{}]",
+                        i, trim_start, duration, audio_extras, i
+                    ));
+                } else {
+                    filters.push(format!(
+                        "anullsrc=r=48000:cl=stereo,atrim=duration={}[va{}]",
+                        duration, i
+                    ));
+                }
+
+                audio_concat_inputs.push_str(&format!("[va{}]", i));
+            }
+
+            filters.push(format!(
+                "{}concat=n={}:v=0:a=1[va]",
+                audio_concat_inputs, source_count
+            ));
+        }
     }
 
     // Process audio tracks - mix with video audio
@@ -1419,6 +2287,15 @@ pub async fn export_video_editor_project(
                             );
                         }
                     }
+                }
+            }
+
+            // Pan/balance for standalone audio track
+            if let Some(pan_val) = audio.pan {
+                if pan_val.abs() > 0.01 {
+                    let left = ((1.0 - pan_val) / 2.0).clamp(0.0, 1.0);
+                    let right = ((1.0 + pan_val) / 2.0).clamp(0.0, 1.0);
+                    extras.push_str(&format!(",pan=stereo|c0={}*c0|c1={}*c1", left, right));
                 }
             }
 
@@ -1727,10 +2604,21 @@ pub async fn export_video_editor_project(
 
                 let scaled_width = (config.width as f64 * overlay.scale / 100.0).round() as i32;
 
-                filters.push(format!(
-                    "[{}:v]scale={}:-1,format=rgba,colorchannelmixer=aa={}[bol{}]",
-                    branding_input_idx, scaled_width, alpha, i
-                ));
+                // Apply rotation if non-zero (requires expand padding to avoid clipping)
+                let has_rotation = overlay.rotation.abs() > 0.5;
+                let rot_rad = overlay.rotation * std::f64::consts::PI / 180.0;
+
+                if has_rotation {
+                    filters.push(format!(
+                        "[{}:v]scale={}:-1,format=rgba,colorchannelmixer=aa={},rotate={}:c=0x00000000:ow=rotw({}):oh=roth({})[bol{}]",
+                        branding_input_idx, scaled_width, alpha, rot_rad, rot_rad, rot_rad, i
+                    ));
+                } else {
+                    filters.push(format!(
+                        "[{}:v]scale={}:-1,format=rgba,colorchannelmixer=aa={}[bol{}]",
+                        branding_input_idx, scaled_width, alpha, i
+                    ));
+                }
 
                 filters.push(format!(
                     "{}[bol{}]overlay=x={}-(overlay_w/2):y={}-(overlay_h/2){}",
@@ -1752,6 +2640,91 @@ pub async fn export_video_editor_project(
         filters.push(format!("{}copy[vout]", video_stream));
     }
 
+    // Optional intro + outro: concatenate after the full composite ([vout]/[aout])
+    let w = config.width;
+    let h = config.height;
+    let fps = config.fps.max(1);
+
+    let mut final_video_map = "[vout]".to_string();
+    let mut final_audio_map = "[aout]".to_string();
+    let mut output_duration_sec = config.total_duration;
+
+    let use_intro = intro_input_idx.is_some() && intro_duration_sec > 0.05;
+    let use_outro = outro_input_idx.is_some() && outro_duration_sec > 0.05;
+
+    if intro_input_idx.is_some() && !use_intro {
+        println!(
+            "[Rust] Intro file present but duration is ~0 — skipping intro concat (set intro_duration or use a valid clip)"
+        );
+    }
+    if outro_input_idx.is_some() && !use_outro {
+        println!(
+            "[Rust] Outro file present but duration is ~0 — skipping outro concat (set outro_duration or use a valid clip)"
+        );
+    }
+
+    if use_intro {
+        let ii = intro_input_idx.unwrap();
+        let d = intro_duration_sec;
+        filters.push(format!(
+            "[{}:v]scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={},trim=duration={},setpts=PTS-STARTPTS[ib_v]",
+            ii, w, h, w, h, fps, d
+        ));
+        if intro_has_audio {
+            filters.push(format!(
+                "[{}:a]atrim=duration={},asetpts=PTS-STARTPTS,aresample=48000[ib_a]",
+                ii, d
+            ));
+        } else {
+            filters.push(format!(
+                "anullsrc=r=48000:cl=stereo,atrim=duration={},asetpts=PTS-STARTPTS[ib_a]",
+                d
+            ));
+        }
+        filters.push(format!(
+            "[ib_v][ib_a]{}{}concat=n=2:v=1:a=1[mid_v][mid_a]",
+            final_video_map, final_audio_map
+        ));
+        final_video_map = "[mid_v]".to_string();
+        final_audio_map = "[mid_a]".to_string();
+        output_duration_sec += d;
+        println!(
+            "[Rust] Prepended intro ({:.2}s), output duration → {:.2}s",
+            d, output_duration_sec
+        );
+    }
+
+    if use_outro {
+        let oi = outro_input_idx.unwrap();
+        let d = outro_duration_sec;
+        filters.push(format!(
+            "[{}:v]scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={},trim=duration={},setpts=PTS-STARTPTS[ob_v]",
+            oi, w, h, w, h, fps, d
+        ));
+        if outro_has_audio {
+            filters.push(format!(
+                "[{}:a]atrim=duration={},asetpts=PTS-STARTPTS,aresample=48000[ob_a]",
+                oi, d
+            ));
+        } else {
+            filters.push(format!(
+                "anullsrc=r=48000:cl=stereo,atrim=duration={},asetpts=PTS-STARTPTS[ob_a]",
+                d
+            ));
+        }
+        filters.push(format!(
+            "{}{}[ob_v][ob_a]concat=n=2:v=1:a=1[fvout][faout]",
+            final_video_map, final_audio_map
+        ));
+        final_video_map = "[fvout]".to_string();
+        final_audio_map = "[faout]".to_string();
+        output_duration_sec += d;
+        println!(
+            "[Rust] Appended outro ({:.2}s), output duration → {:.2}s",
+            d, output_duration_sec
+        );
+    }
+
     // Add filter_complex argument
 
     if !filters.is_empty() {
@@ -1764,11 +2737,11 @@ pub async fn export_video_editor_project(
 
     args.push("-map".to_string());
 
-    args.push("[vout]".to_string());
+    args.push(final_video_map);
 
     args.push("-map".to_string());
 
-    args.push("[aout]".to_string());
+    args.push(final_audio_map);
 
     // Output encoding settings
 
@@ -1810,7 +2783,7 @@ pub async fn export_video_editor_project(
 
     args.push("-t".to_string());
 
-    args.push(config.total_duration.to_string());
+    args.push(output_duration_sec.to_string());
 
     args.push(config.output_path.clone());
 

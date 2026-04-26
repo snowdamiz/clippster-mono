@@ -3,19 +3,21 @@ import { ref, watch, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
 import { useEditorUIState } from "../../../composables/useEditorUIState";
-import type { VideoElement, ColorAdjustments, CropRect } from "../../../types/timeline";
+import type { VideoElement, ColorAdjustments, CropRect, ColorCurves, ColorWheels } from "../../../types/timeline";
 import { DEFAULT_COLOR_ADJUSTMENTS } from "../../../types/timeline";
 import type { VideoEffect } from "../../../types/effects";
 import { getEffectPreset } from "../../../constants/effect-constants";
 import type { ChromakeySettings } from "../../../types/chromakey";
 import { DEFAULT_CHROMAKEY } from "../../../types/chromakey";
-import { Film, Trash2, RotateCcw, VolumeX, Volume2, FlipHorizontal, FlipVertical, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, Crop, RectangleHorizontal, Square, RectangleVertical, Pipette, SlidersHorizontal, Sparkles } from "lucide-vue-next";
+import { Film, Trash2, RotateCcw, VolumeX, Volume2, FlipHorizontal, FlipVertical, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, Crop, RectangleHorizontal, Square, RectangleVertical, Pipette, SlidersHorizontal, Sparkles, Scissors } from "lucide-vue-next";
+import MasksPanel from "./MasksPanel.vue";
 import { useKeyframes } from "../../../composables/useKeyframes";
 import { toRef } from "vue";
 import KeyframeToggle from "./KeyframeToggle.vue";
 import AnimationProperties from "./AnimationProperties.vue";
-import TransitionProperties from "./TransitionProperties.vue";
-import type { Transition } from "../../../types/transitions";
+import ColorCurvesPanel from "./ColorCurvesPanel.vue";
+import ColorWheelsPanel from "./ColorWheelsPanel.vue";
+import LutPanel from "./LutPanel.vue";
 import { Switch } from '@/components/ui/switch';
 
 const props = defineProps<{
@@ -23,18 +25,7 @@ const props = defineProps<{
 	trackId: string;
 }>();
 
-const activeTransition = computed<Transition | null>(() => {
-	void version.value;
-	try {
-		const scene = editor.scenes.getActiveScene();
-		if (!scene?.transitions) return null;
-		return scene.transitions.find((t) => t.targetElementId === props.element.id) ?? null;
-	} catch {
-		return null;
-	}
-});
-
-type TopTab = 'video' | 'audio' | 'speed' | 'adjust' | 'animate';
+type TopTab = 'video' | 'audio' | 'speed' | 'adjust' | 'grading' | 'animate' | 'masks';
 const activeTab = ref<TopTab>('video');
 
 const topTabs: { id: TopTab; label: string; icon: any }[] = [
@@ -42,7 +33,9 @@ const topTabs: { id: TopTab; label: string; icon: any }[] = [
 	{ id: 'audio', label: 'Audio', icon: Volume2 },
 	{ id: 'speed', label: 'Speed', icon: Gauge },
 	{ id: 'adjust', label: 'Adjust', icon: SlidersHorizontal },
+	{ id: 'grading', label: 'Grade', icon: Wand2 },
 	{ id: 'animate', label: 'Animate', icon: Sparkles },
+	{ id: 'masks', label: 'Masks', icon: Scissors },
 ];
 
 const openVideoSections = ref<Set<string>>(new Set(['basic']));
@@ -264,6 +257,18 @@ function updateTransform(partial: Record<string, unknown>) {
 	});
 }
 
+function updateColorCurves(curves: ColorCurves) {
+	update({ colorCurves: Object.keys(curves).length > 0 ? curves : undefined });
+}
+
+function updateColorWheels(wheels: ColorWheels) {
+	update({ colorWheels: Object.keys(wheels).length > 0 ? wheels : undefined });
+}
+
+function updateLutPath(lutPath: string | undefined) {
+	update({ lutPath: lutPath || undefined });
+}
+
 function updateColor(partial: Partial<ColorAdjustments>) {
 	update({
 		colorAdjustments: { ...ca.value, ...partial },
@@ -332,6 +337,17 @@ function toggleOpacityKeyframe() {
 		const elapsed = currentTime - props.element.startTime;
 		const offset = props.element.duration > 0 ? elapsed / props.element.duration : 0;
 		addKeyframe('opacity', clamp(offset, 0, 1), props.element.opacity);
+	}
+}
+
+function toggleSpeedKeyframe() {
+	if (hasKf('speed')) {
+		clearPropertyKeyframes('speed');
+	} else {
+		const currentTime = editor.playback.getCurrentTime();
+		const elapsed = currentTime - props.element.startTime;
+		const offset = props.element.duration > 0 ? elapsed / props.element.duration : 0;
+		addKeyframe('speed', clamp(offset, 0, 1), props.element.speed ?? 1);
 	}
 }
 
@@ -468,13 +484,14 @@ function formatTime(seconds: number): string {
 </script>
 
 <template>
-	<div class="flex h-full flex-row">
+	<div class="flex h-full min-h-0 flex-row">
 		<!-- ══════ Content Area ══════ -->
-		<div class="flex flex-1 min-w-0 flex-col overflow-hidden">
-
+		<div class="flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden">
+		<!-- One scroll region for the active tab + transition block -->
+		<div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
 		<!-- ══════ Video Tab ══════ -->
 		<template v-if="activeTab === 'video'">
-			<div class="flex-1 overflow-y-auto">
+			<div>
 				<!-- ── Basic ── -->
 				<button
 					class="flex w-full items-center justify-between border-b border-white/10 px-3 py-2 text-xs font-medium transition-colors"
@@ -559,22 +576,45 @@ function formatTime(seconds: number): string {
 						<input type="range" :value="element.opacity * 100" min="0" max="100" step="1" class="w-full" @input="handleOpacitySlider" />
 					</div>
 
-					<!-- Fade In / Out -->
-					<div class="space-y-2 border-t border-white/[0.05] pt-4">
-						<label class="text-[11px] text-zinc-500">Fade</label>
-						<div class="flex items-center gap-3">
-							<div class="flex flex-1 flex-col gap-1">
-								<span class="text-[10px] text-zinc-500">In</span>
-								<input type="range" :value="(element.fadeIn ?? 0) * 10" min="0" max="30" step="1" class="w-full" @input="handleFadeInSlider" />
-							</div>
-							<div class="flex flex-1 flex-col gap-1">
-								<span class="text-[10px] text-zinc-500">Out</span>
-								<input type="range" :value="(element.fadeOut ?? 0) * 10" min="0" max="30" step="1" class="w-full" @input="handleFadeOutSlider" />
-							</div>
+				<!-- Blend Mode -->
+				<div class="space-y-1.5 border-t border-white/[0.05] pt-4">
+					<label class="text-[11px] text-zinc-500">Blend Mode</label>
+					<select
+						:value="element.blendMode ?? 'normal'"
+						class="w-full rounded-sm border border-white/10 bg-[#1a1a1e] px-2 py-1.5 text-xs text-zinc-200 outline-none"
+						@change="(e) => update({ blendMode: (e.target as HTMLSelectElement).value === 'normal' ? undefined : (e.target as HTMLSelectElement).value })"
+					>
+						<option value="normal">Normal</option>
+						<option value="multiply">Multiply</option>
+						<option value="screen">Screen</option>
+						<option value="overlay">Overlay</option>
+						<option value="soft-light">Soft Light</option>
+						<option value="hard-light">Hard Light</option>
+						<option value="darken">Darken</option>
+						<option value="lighten">Lighten</option>
+						<option value="color-dodge">Color Dodge</option>
+						<option value="color-burn">Color Burn</option>
+						<option value="difference">Difference</option>
+						<option value="exclusion">Exclusion</option>
+					</select>
+				</div>
+
+				<!-- Fade In / Out -->
+				<div class="space-y-2 border-t border-white/[0.05] pt-4">
+					<label class="text-[11px] text-zinc-500">Fade</label>
+					<div class="flex items-center gap-3">
+						<div class="flex flex-1 flex-col gap-1">
+							<span class="text-[10px] text-zinc-500">In</span>
+							<input type="range" :value="(element.fadeIn ?? 0) * 10" min="0" max="30" step="1" class="w-full" @input="handleFadeInSlider" />
+						</div>
+						<div class="flex flex-1 flex-col gap-1">
+							<span class="text-[10px] text-zinc-500">Out</span>
+							<input type="range" :value="(element.fadeOut ?? 0) * 10" min="0" max="30" step="1" class="w-full" @input="handleFadeOutSlider" />
 						</div>
 					</div>
-
 				</div>
+
+			</div>
 
 				<!-- ── Crop ── -->
 				<button
@@ -963,7 +1003,7 @@ function formatTime(seconds: number): string {
 					<!-- Enabled -->
 					<div class="flex items-center justify-between">
 						<span class="text-[11px] text-zinc-500">Enabled</span>
-						<Switch :checked="chromakey.enabled" @update:checked="(val: boolean) => updateChromakey({ enabled: val })" />
+						<Switch :model-value="chromakey.enabled" @update:model-value="(val: boolean) => updateChromakey({ enabled: val })" />
 					</div>
 
 					<template v-if="chromakey.enabled">
@@ -996,7 +1036,7 @@ function formatTime(seconds: number): string {
 		</template>
 
 		<!-- ══════ Audio Tab ══════ -->
-		<div v-else-if="activeTab === 'audio'" class="flex-1 overflow-y-auto p-3">
+		<div v-else-if="activeTab === 'audio'" class="p-3">
 			<div class="flex items-center border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
 				<span class="text-sm text-zinc-400">Audio</span>
 			</div>
@@ -1013,18 +1053,50 @@ function formatTime(seconds: number): string {
 					</div>
 				</div>
 
+				<!-- Pan -->
+				<div class="space-y-2 border-t border-white/[0.05] pt-4">
+					<div class="flex items-center justify-between">
+						<span class="text-xs font-medium text-zinc-300">Pan</span>
+						<div class="flex items-center gap-1.5">
+							<span class="text-[10px] text-zinc-600">L</span>
+							<span class="min-w-[28px] text-center text-[10px] text-zinc-400">
+								{{ (element.pan ?? 0) === 0 ? 'C' : (element.pan ?? 0) > 0 ? `R${Math.round(Math.abs(element.pan ?? 0) * 100)}` : `L${Math.round(Math.abs(element.pan ?? 0) * 100)}` }}
+							</span>
+							<span class="text-[10px] text-zinc-600">R</span>
+						</div>
+					</div>
+					<div class="flex items-center gap-2">
+						<input
+							type="range"
+							:value="(element.pan ?? 0) * 100"
+							min="-100"
+							max="100"
+							step="1"
+							class="flex-1"
+							@input="(e) => update({ pan: Number((e.target as HTMLInputElement).value) / 100 })"
+						/>
+						<button
+							class="rounded border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-zinc-400 transition-colors hover:text-zinc-200"
+							@click="update({ pan: 0 })"
+						>
+							C
+						</button>
+					</div>
+				</div>
+
 				<!-- Mute -->
 				<div class="flex items-center justify-between border-t border-white/[0.05] pt-4">
 					<span class="text-[11px] text-zinc-500">Mute</span>
-					<Switch :checked="element.muted" @update:checked="(val: boolean) => update({ muted: val })" />
+					<Switch :model-value="!!element.muted" @update:model-value="(val: boolean) => update({ muted: val })" />
 				</div>
 			</div>
 		</div>
 
 		<!-- ══════ Speed Tab ══════ -->
-		<div v-else-if="activeTab === 'speed'" class="flex-1 overflow-y-auto p-3">
-			<div class="flex items-center border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
+		<div v-else-if="activeTab === 'speed'" class="p-3">
+			<div class="flex items-center justify-between border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
 				<span class="text-sm text-zinc-400">Speed</span>
+				<KeyframeToggle :active="hasKf('speed')" label="speed" @toggle="toggleSpeedKeyframe" />
 			</div>
 			<div class="flex items-center gap-2">
 				<input type="range" :value="currentSpeed * 10" min="1" max="100" step="1" class="flex-1" @input="(e) => changeSpeed(Number((e.target as HTMLInputElement).value) / 10)" />
@@ -1043,11 +1115,11 @@ function formatTime(seconds: number): string {
 		</div>
 
 		<!-- ══════ Animate Tab ══════ -->
-		<div v-else-if="activeTab === 'animate'" class="flex flex-col flex-1 overflow-hidden">
+		<div v-else-if="activeTab === 'animate'" class="flex flex-col">
 			<div class="flex shrink-0 items-center border-b border-white/10 px-3 py-1.5">
 				<span class="text-sm text-zinc-400">Animate</span>
 			</div>
-			<div class="flex-1 overflow-y-auto">
+			<div class="p-3">
 				<AnimationProperties
 					:element-id="element.id"
 					:track-id="trackId"
@@ -1059,8 +1131,16 @@ function formatTime(seconds: number): string {
 			</div>
 		</div>
 
+		<!-- ══════ Masks Tab ══════ -->
+		<div v-else-if="activeTab === 'masks'">
+			<div class="flex shrink-0 items-center border-b border-white/10 px-3 py-1.5">
+				<span class="text-sm text-zinc-400">Masks</span>
+			</div>
+			<MasksPanel :element="element" :track-id="trackId" />
+		</div>
+
 		<!-- ══════ Adjust Tab ══════ -->
-		<div v-else-if="activeTab === 'adjust'" class="flex-1 overflow-y-auto p-3">
+		<div v-else-if="activeTab === 'adjust'" class="p-3">
 			<div class="flex items-center border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
 				<span class="text-sm text-zinc-400">Adjust</span>
 			</div>
@@ -1122,9 +1202,37 @@ function formatTime(seconds: number): string {
 			</div>
 		</div>
 
-		<!-- ══════ Transition (shown at bottom if element has one) ══════ -->
-		<div v-if="activeTransition" class="shrink-0 border-t border-white/10 p-3">
-			<TransitionProperties :transition="activeTransition" />
+		<!-- ══════ Color Grading Tab ══════ -->
+		<div v-else-if="activeTab === 'grading'" class="space-y-5 p-3">
+			<!-- RGB Curves -->
+			<div class="space-y-2">
+				<div class="flex items-center justify-between">
+					<span class="text-xs font-medium text-zinc-300">RGB Curves</span>
+				</div>
+				<ColorCurvesPanel
+					:curves="element.colorCurves ?? {}"
+					@update="updateColorCurves"
+				/>
+			</div>
+
+			<!-- Color Wheels -->
+			<div class="space-y-2 border-t border-white/[0.05] pt-4">
+				<span class="text-xs font-medium text-zinc-300">Color Wheels</span>
+				<ColorWheelsPanel
+					:wheels="element.colorWheels ?? {}"
+					@update="updateColorWheels"
+				/>
+			</div>
+
+			<!-- LUT -->
+			<div class="border-t border-white/[0.05] pt-4">
+				<LutPanel
+					:lut-path="element.lutPath"
+					@update="updateLutPath"
+				/>
+			</div>
+		</div>
+
 		</div>
 		</div>
 

@@ -443,7 +443,10 @@ async function extractAudioFromFile(filePath: string): Promise<{ data: AudioData
 
   try {
     console.log('[WaveformService] Calling audioContext.decodeAudioData...');
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    // decodeAudioData may detach the buffer; decode a copy so logging/catch stays valid
+    const decodeInput =
+      arrayBuffer.byteLength === 0 ? arrayBuffer : arrayBuffer.slice(0);
+    const audioBuffer = await audioContext.decodeAudioData(decodeInput);
     console.log('[WaveformService] ✓ Decode successful!');
     console.log('[WaveformService]   Channels:', audioBuffer.numberOfChannels);
     console.log('[WaveformService]   Sample rate:', audioBuffer.sampleRate);

@@ -1,14 +1,15 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
-import type { Transform, FlipState, ColorAdjustments, CropRect } from "../../types/timeline";
+import type { Transform, FlipState, ColorAdjustments, CropRect, ColorCurves, ColorWheels, BlendMode, MaskShape } from "../../types/timeline";
 import type { VideoEffect } from "../../types/effects";
 import type { ElementKeyframes } from "../../types/keyframes";
 import { getKeyframedValue } from "../../types/keyframes";
-import { buildFilterString, hasPostDrawEffects, applyCanvasEffects, applyAdvancedColorAdjustments } from "../effects/canvas-effects";
+import { buildFilterString, hasPostDrawEffects, applyCanvasEffects, applyAdvancedColorAdjustments, applyColorCurves, applyColorWheels } from "../effects/canvas-effects";
 import { applyChromakey } from "../effects/canvas-chromakey";
 import type { ChromakeySettings } from "../../types/chromakey";
 import type { ElementAnimation } from "../../types/animations";
 import { computeAnimationTransforms, applyAnimationToContext } from "../effects/canvas-animations";
+import { hasMasks, setupMaskClip } from "./mask-compositor";
 
 const IMAGE_EPSILON = 1 / 1000;
 
@@ -35,15 +36,27 @@ export interface ImageNodeParams {
 	animationIn?: ElementAnimation;
 	animationOut?: ElementAnimation;
 	animationLoop?: ElementAnimation;
+	colorCurves?: ColorCurves;
+	colorWheels?: ColorWheels;
+	blendMode?: BlendMode;
+	masks?: MaskShape[];
 }
 
 export class ImageNode extends BaseNode<ImageNodeParams> {
 	private image?: HTMLImageElement;
 	private readyPromise: Promise<void>;
+	private transitionExtension: { before: number; after: number } = { before: 0, after: 0 };
 
 	constructor(params: ImageNodeParams) {
 		super(params);
 		this.readyPromise = this.load();
+	}
+
+	setTransitionExtension(extension: { before?: number; after?: number }) {
+		this.transitionExtension = {
+			before: Math.max(this.transitionExtension.before, extension.before ?? 0),
+			after: Math.max(this.transitionExtension.after, extension.after ?? 0),
+		};
 	}
 
 	private async load() {
@@ -57,15 +70,16 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		});
 	}
 
-	private getImageTime(time: number) {
-		return time - this.params.timeOffset + this.params.trimStart;
+	private getClampedElapsed(time: number) {
+		const elapsed = time - this.params.timeOffset;
+		return Math.max(0, Math.min(this.params.duration, elapsed));
 	}
 
 	private isInRange(time: number) {
-		const imageTime = this.getImageTime(time);
+		const elapsed = time - this.params.timeOffset;
 		return (
-			imageTime >= this.params.trimStart - IMAGE_EPSILON &&
-			imageTime < this.params.trimStart + this.params.duration
+			elapsed >= -(this.transitionExtension.before + IMAGE_EPSILON) &&
+			elapsed < this.params.duration + this.transitionExtension.after
 		);
 	}
 
@@ -84,8 +98,14 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 
 		renderer.context.save();
 
+		// Apply blend mode (composite operation)
+		if (this.params.blendMode && this.params.blendMode !== "normal") {
+			renderer.context.globalCompositeOperation = this.params.blendMode as GlobalCompositeOperation;
+		}
+
 		// Resolve keyframed values
-		const elapsed = time - this.params.timeOffset;
+		const elapsed = this.getClampedElapsed(time);
+		const effectiveTime = this.params.timeOffset + elapsed;
 		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
 		const kf = this.params.keyframes;
 
@@ -111,6 +131,11 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 			{ elapsed, elementDuration: this.params.duration, canvasWidth: renderer.width, canvasHeight: renderer.height },
 		);
 		applyAnimationToContext(renderer.context, animResult, renderer.width / 2, renderer.height / 2);
+
+		// Apply shape masks (clip path) before drawing
+		if (hasMasks(this.params.masks)) {
+			setupMaskClip(renderer.context, this.params.masks!, renderer.width, renderer.height);
+		}
 
 		// Apply transform (scale, position, rotation)
 		const transform = this.params.transform;
@@ -220,7 +245,7 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		// Apply post-draw effects (pixelate, sharpen, vignette, colorShift, glitch, wave, zoomPulse, flash)
 		if (fx && fx.length > 0 && hasPostDrawEffects(fx)) {
 			renderer.context.restore();
-			applyCanvasEffects(renderer.context, renderer.width, renderer.height, fx, time, this.params.timeOffset);
+			applyCanvasEffects(renderer.context, renderer.width, renderer.height, fx, effectiveTime, this.params.timeOffset);
 		} else {
 			renderer.context.restore();
 		}
@@ -233,6 +258,14 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		// Apply chromakey (green screen removal)
 		if (this.params.chromakey?.enabled) {
 			applyChromakey(renderer.context, renderer.width, renderer.height, this.params.chromakey);
+		}
+
+		// Apply color grading: curves then wheels
+		if (this.params.colorCurves) {
+			applyColorCurves(renderer.context, renderer.width, renderer.height, this.params.colorCurves);
+		}
+		if (this.params.colorWheels) {
+			applyColorWheels(renderer.context, renderer.width, renderer.height, this.params.colorWheels);
 		}
 	}
 }

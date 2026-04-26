@@ -214,7 +214,7 @@
   import { Type, XIcon, CheckIcon, PlayIcon, PauseIcon, RotateCcwIcon } from 'lucide-vue-next';
   import Hls from 'hls.js';
   import type { SubtitleSettings, SubtitleOverride } from '@/types';
-  import { utf8ToBase64 } from '@/utils/encoding';
+  import { utf8ToBase64Url } from '@/utils/encoding';
 
   interface Props {
     modelValue: boolean;
@@ -290,7 +290,7 @@
   }
 
   function constructVideoUrl(filePath: string, port: number): string {
-    const encodedPath = utf8ToBase64(filePath);
+    const encodedPath = utf8ToBase64Url(filePath);
     const isTsFile = filePath.toLowerCase().endsWith('.ts');
     if (isTsFile) {
       return `http://localhost:${port}/ts-hls/${encodedPath}/playlist.m3u8`;

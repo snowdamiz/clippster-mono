@@ -37,6 +37,7 @@ const PROPERTY_LABELS: Record<KeyframableProperty, string> = {
 	positionY: "Position Y",
 	rotation: "Rotation",
 	volume: "Volume",
+	speed: "Speed",
 };
 
 // Find element and track

@@ -3347,6 +3347,7 @@
         clipStartTime: startTime,
         clipEndTime: endTime,
         clipSegments: segments,
+        rawVideoParentProjectId: props.project?.parent_id ?? null,
       });
 
       console.log('[ProjectWorkspaceDialog] Video editor project created:', {

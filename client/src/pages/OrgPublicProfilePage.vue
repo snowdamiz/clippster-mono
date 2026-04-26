@@ -173,7 +173,22 @@
                   </div>
                   <div class="org-account__info">
                     <span class="org-account__name">{{ a.display_name || a.username || a.platform }}</span>
-                    <span class="org-account__platform">{{ a.platform }}</span>
+                    <div class="org-account__platform-row">
+                      <span
+                        class="org-account__platform-chip"
+                        :title="a.platform ? platformTitle(a.platform) : 'No platform linked'"
+                      >
+                        <img
+                          v-if="a.platform && getPlatformIcon(a.platform)"
+                          :src="getPlatformIcon(a.platform)"
+                          class="org-account__platform-icon"
+                          :style="{ filter: getPlatformFilter(a.platform) }"
+                          alt=""
+                        />
+                        <Link v-else class="org-account__platform-empty" />
+                      </span>
+                      <span class="org-account__platform">{{ a.platform ? platformTitle(a.platform) : 'Unknown' }}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -341,8 +356,12 @@ function getPlatformIcon(platform: string): string {
     kick: '/kick.svg',
     twitch: '/twitch.svg',
     youtube: '/youtube.svg',
+    x: '/x.svg',
+    twitter: '/x.svg',
+    tiktok: '/tiktok.svg',
+    rumble: '/rumble.svg',
   };
-  return icons[platform] || '/capsule.svg';
+  return icons[platform] || '';
 }
 
 function getPlatformFilter(platform: string): string {
@@ -360,6 +379,11 @@ const platformLabels: Record<string, string> = {
   twitch: 'Twitch',
   youtube: 'YouTube',
   pumpfun: 'Pump.fun',
+  x: 'X',
+  twitter: 'X',
+  tiktok: 'TikTok',
+  instagram: 'Instagram',
+  rumble: 'Rumble',
 };
 
 function platformTitle(platform: string): string {
@@ -417,6 +441,12 @@ function formatStatNumber(n: number): string {
 </script>
 
 <style scoped>
+/* Profile accent: matches sampled hero blue (#14b8db) — all borders, glows, tags, and links. */
+.org-profile {
+  --org-profile-accent: #14b8db;
+  --org-profile-accent-rgb: 20, 184, 219;
+}
+
 /* ===== Header Actions ===== */
 .profile-header-actions {
   display: flex;
@@ -442,8 +472,8 @@ function formatStatNumber(n: number): string {
 
 .profile-action-btn:hover {
   background: var(--sidebar-hover);
-  border-color: #22d3ee;
-  color: #22d3ee;
+  border-color: #14b8db;
+  color: #14b8db;
 }
 
 .profile-action-btn__icon {
@@ -477,7 +507,7 @@ function formatStatNumber(n: number): string {
 .loading-spinner__icon {
   width: 32px;
   height: 32px;
-  color: #22d3ee;
+  color: #14b8db;
   animation: spin 1s linear infinite;
 }
 
@@ -543,7 +573,7 @@ function formatStatNumber(n: number): string {
 
 .org-hero__banner {
   height: 120px;
-  background: linear-gradient(135deg, #0891b2 0%, #06b6d4 25%, #22d3ee 50%, #0891b2 75%, #164e63 100%);
+  background: linear-gradient(135deg, #0e7490 0%, #0ea0c0 25%, #14b8db 50%, #0b9fbf 75%, #164e63 100%);
   background-size: 200% 200%;
   border-radius: 14px 14px 0 0;
   position: relative;
@@ -641,12 +671,12 @@ function formatStatNumber(n: number): string {
   display: inline-flex;
   align-items: center;
   padding: 0.25rem 0.625rem;
-  background: rgba(34, 211, 238, 0.1);
-  border: 1px solid rgba(34, 211, 238, 0.2);
+  background: rgba(20, 184, 219, 0.1);
+  border: 1px solid rgba(20, 184, 219, 0.2);
   border-radius: 6px;
   font-size: 0.6875rem;
   font-weight: 500;
-  color: #22d3ee;
+  color: #14b8db;
   letter-spacing: 0.01em;
 }
 
@@ -677,14 +707,21 @@ function formatStatNumber(n: number): string {
   gap: 0.75rem;
   padding: 1rem;
   background: var(--sidebar-surface);
-  border: 1px solid rgba(34, 211, 238, 0.15);
+  border: 1px solid rgba(20, 184, 219, 0.22);
   border-radius: 12px;
   transition: all 200ms ease;
+  box-shadow:
+    inset 0 1px 0 0 rgba(20, 184, 219, 0.2),
+    0 0 0 1px rgba(0, 0, 0, 0.12),
+    0 0 18px rgba(20, 184, 219, 0.1);
 }
 
 .org-stat-card:hover {
-  border-color: rgba(34, 211, 238, 0.4);
-  box-shadow: 0 0 20px rgba(34, 211, 238, 0.1);
+  border-color: rgba(20, 184, 219, 0.55);
+  box-shadow:
+    inset 0 1px 0 0 rgba(20, 184, 219, 0.4),
+    0 0 0 1px rgba(20, 184, 219, 0.32),
+    0 0 20px rgba(20, 184, 219, 0.18);
 }
 
 .org-stat-card__icon {
@@ -698,8 +735,8 @@ function formatStatNumber(n: number): string {
 }
 
 .org-stat-card__icon--cyan {
-  background: rgba(34, 211, 238, 0.15);
-  color: #22d3ee;
+  background: rgba(20, 184, 219, 0.15);
+  color: #14b8db;
 }
 
 .org-stat-card__icon--green {
@@ -782,15 +819,22 @@ function formatStatNumber(n: number): string {
 /* ===== Cards ===== */
 .org-card {
   background: var(--sidebar-surface);
-  border: 1px solid rgba(34, 211, 238, 0.15);
+  border: 1px solid rgba(20, 184, 219, 0.24);
   border-radius: 14px;
   overflow: hidden;
   transition: border-color 200ms ease, box-shadow 200ms ease;
+  box-shadow:
+    inset 0 1px 0 0 rgba(20, 184, 219, 0.3),
+    0 0 0 1px rgba(0, 0, 0, 0.15),
+    0 0 24px rgba(20, 184, 219, 0.12);
 }
 
 .org-card:hover {
-  border-color: rgba(34, 211, 238, 0.3);
-  box-shadow: 0 0 24px rgba(34, 211, 238, 0.08);
+  border-color: rgba(20, 184, 219, 0.55);
+  box-shadow:
+    inset 0 1px 0 0 rgba(20, 184, 219, 0.45),
+    0 0 0 1px rgba(20, 184, 219, 0.35),
+    0 0 30px rgba(20, 184, 219, 0.2);
 }
 
 .org-card--compact .org-card__header {
@@ -813,7 +857,7 @@ function formatStatNumber(n: number): string {
 .org-card__empty-icon {
   width: 40px;
   height: 40px;
-  color: #22d3ee;
+  color: #14b8db;
   opacity: 0.35;
   margin-bottom: 0.75rem;
 }
@@ -829,14 +873,14 @@ function formatStatNumber(n: number): string {
   align-items: center;
   gap: 0.625rem;
   padding: 1rem 1.25rem;
-  border-bottom: 1px solid rgba(34, 211, 238, 0.1);
-  background: linear-gradient(90deg, rgba(34, 211, 238, 0.04) 0%, transparent 50%);
+  border-bottom: 1px solid rgba(20, 184, 219, 0.1);
+  background: linear-gradient(90deg, rgba(20, 184, 219, 0.05) 0%, transparent 50%);
 }
 
 .org-card__header-icon {
   width: 18px;
   height: 18px;
-  color: #22d3ee;
+  color: #14b8db;
 }
 
 .org-card__title {
@@ -850,8 +894,8 @@ function formatStatNumber(n: number): string {
 .org-card__count {
   font-size: 0.75rem;
   font-weight: 500;
-  color: #22d3ee;
-  background: rgba(34, 211, 238, 0.1);
+  color: #14b8db;
+  background: rgba(20, 184, 219, 0.1);
   padding: 0.1875rem 0.5rem;
   border-radius: 6px;
 }
@@ -859,9 +903,9 @@ function formatStatNumber(n: number): string {
 .org-card__badge {
   font-size: 0.6875rem;
   font-weight: 600;
-  color: #10b981;
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  color: #14b8db;
+  background: rgba(20, 184, 219, 0.12);
+  border: 1px solid rgba(20, 184, 219, 0.28);
   padding: 0.25rem 0.625rem;
   border-radius: 6px;
   text-transform: capitalize;
@@ -897,10 +941,14 @@ function formatStatNumber(n: number): string {
   display: flex;
   flex-direction: column;
   background: var(--sidebar-surface);
-  border: 1px solid rgba(34, 211, 238, 0.15);
+  border: 1px solid rgba(20, 184, 219, 0.22);
   border-radius: 14px;
   overflow: hidden;
   transition: all 200ms ease;
+  box-shadow:
+    inset 0 1px 0 0 rgba(20, 184, 219, 0.25),
+    0 0 0 1px rgba(0, 0, 0, 0.12),
+    0 0 20px rgba(20, 184, 219, 0.1);
 }
 
 .creator-card--link {
@@ -910,33 +958,69 @@ function formatStatNumber(n: number): string {
 }
 
 .creator-card:hover {
-  border-color: rgba(34, 211, 238, 0.4);
+  border-color: rgba(20, 184, 219, 0.55);
   transform: translateY(-3px);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2), 0 0 24px rgba(34, 211, 238, 0.1);
+  box-shadow:
+    inset 0 1px 0 0 rgba(20, 184, 219, 0.4),
+    0 12px 28px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(20, 184, 219, 0.32),
+    0 0 26px rgba(20, 184, 219, 0.2);
 }
 
+/* Streamer strip: same treatment as .org-hero__banner (gradient, radial, fade to surface) */
 .creator-card__banner {
-  height: 56px;
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.2) 0%, rgba(6, 182, 212, 0.1) 50%, transparent 100%);
+  flex-shrink: 0;
+  height: 48px;
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: 14px 14px 0 0;
+  background: linear-gradient(135deg, #0e7490 0%, #0ea0c0 25%, #14b8db 50%, #0b9fbf 75%, #164e63 100%);
+  background-size: 200% 200%;
+}
+
+.creator-card__banner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: 
+    radial-gradient(ellipse 80% 50% at 20% 100%, rgba(255,255,255,0.1) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 40% at 80% 20%, rgba(255,255,255,0.08) 0%, transparent 40%);
+}
+
+.creator-card__banner::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 43.33%;
+  background: linear-gradient(to top, var(--sidebar-surface) 0%, transparent 100%);
+  pointer-events: none;
 }
 
 .creator-card__content {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
   padding: 0 1rem 1.25rem;
-  margin-top: -32px;
+  margin-top: -24px;
 }
 
 .creator-card__avatar {
+  position: relative;
+  z-index: 2;
   width: 64px;
   height: 64px;
   border-radius: 50%;
   overflow: hidden;
   background: var(--sidebar-hover);
   border: 3px solid var(--sidebar-surface);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(34, 211, 238, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(20, 184, 219, 0.2);
   margin-bottom: 0.75rem;
 }
 
@@ -1039,6 +1123,35 @@ function formatStatNumber(n: number): string {
   text-transform: capitalize;
 }
 
+.org-account__platform-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.org-account__platform-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 0.3125rem;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.org-account__platform-icon {
+  width: 0.75rem;
+  height: 0.75rem;
+  object-fit: contain;
+}
+
+.org-account__platform-empty {
+  width: 0.6875rem;
+  height: 0.6875rem;
+  color: var(--sidebar-text-muted);
+  opacity: 0.7;
+}
+
 /* ===== Contact Items ===== */
 .org-contact {
   display: flex;
@@ -1072,7 +1185,7 @@ function formatStatNumber(n: number): string {
 
 .org-contact__value--link {
   text-decoration: none;
-  color: #22d3ee;
+  color: #14b8db;
   transition: opacity 150ms ease;
 }
 
@@ -1082,17 +1195,20 @@ function formatStatNumber(n: number): string {
 
 /* ===== Hiring Card ===== */
 .org-card--hiring {
-  border-color: rgba(16, 185, 129, 0.2);
+  border-color: rgba(20, 184, 219, 0.2);
 }
 
 .org-card--hiring:hover {
-  border-color: rgba(16, 185, 129, 0.4);
-  box-shadow: 0 0 24px rgba(16, 185, 129, 0.1);
+  border-color: rgba(20, 184, 219, 0.52);
+  box-shadow:
+    inset 0 1px 0 0 rgba(20, 184, 219, 0.35),
+    0 0 0 1px rgba(20, 184, 219, 0.3),
+    0 0 20px rgba(20, 184, 219, 0.14);
 }
 
 .org-card--hiring .org-card__header {
-  background: linear-gradient(90deg, rgba(16, 185, 129, 0.06) 0%, transparent 50%);
-  border-bottom-color: rgba(16, 185, 129, 0.12);
+  background: linear-gradient(90deg, rgba(20, 184, 219, 0.07) 0%, transparent 50%);
+  border-bottom-color: rgba(20, 184, 219, 0.12);
 }
 
 .org-hiring__title {
@@ -1137,6 +1253,104 @@ function formatStatNumber(n: number): string {
 }
 
 /* ===== Responsive ===== */
+@media (max-width: 900px) {
+  .org-grid {
+    gap: 1rem;
+  }
+
+  .org-stats-grid {
+    gap: 0.625rem;
+  }
+
+  .org-stat-card {
+    padding: 0.875rem;
+    gap: 0.625rem;
+  }
+
+  .org-stat-card__icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .org-stat-card__value {
+    font-size: 1.125rem;
+  }
+
+  .org-stat-card__label {
+    font-size: 0.625rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .profile-header-actions {
+    width: 100%;
+  }
+
+  .profile-action-btn {
+    flex: 1;
+    justify-content: center;
+    font-size: 0.75rem;
+    height: 32px;
+    padding: 0 0.75rem;
+  }
+
+  .profile-action-btn__icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .org-card__body--streamers {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.875rem;
+  }
+
+  .creator-card__banner {
+    height: 48px;
+  }
+
+  .creator-card__content {
+    padding: 0 0.875rem 1rem;
+    margin-top: -28px;
+  }
+
+  .creator-card__avatar {
+    width: 56px;
+    height: 56px;
+    margin-bottom: 0.625rem;
+  }
+
+  .creator-card__name {
+    font-size: 0.875rem;
+  }
+
+  .creator-card__platform {
+    min-width: 2rem;
+    min-height: 2rem;
+    padding: 0.3125rem;
+  }
+
+  .creator-card__platform-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .org-card__header {
+    padding: 0.875rem 1rem;
+  }
+
+  .org-card__body {
+    padding: 1rem;
+  }
+
+  .org-card--compact .org-card__header {
+    padding: 0.75rem 0.875rem;
+  }
+
+  .org-card--compact .org-card__body {
+    padding: 0.875rem;
+  }
+}
+
 @media (max-width: 640px) {
   .org-profile {
     padding: 0 1rem 1.5rem;
@@ -1148,6 +1362,7 @@ function formatStatNumber(n: number): string {
 
   .org-hero__banner {
     height: 100px;
+    border-radius: 12px 12px 0 0;
   }
 
   .org-hero__content {
@@ -1178,10 +1393,306 @@ function formatStatNumber(n: number): string {
 
   .org-stats-grid {
     margin-top: 0.5rem;
+    gap: 0.5rem;
   }
 
-  .org-card__body--grid {
+  .org-stat-card {
+    padding: 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .org-stat-card__icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .org-stat-card__value {
+    font-size: 1rem;
+  }
+
+  .org-card__body--grid,
+  .org-card__body--streamers {
     grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .org-card__header {
+    padding: 0.75rem 0.875rem;
+    gap: 0.5rem;
+  }
+
+  .org-card__body {
+    padding: 0.875rem;
+  }
+
+  .org-card--compact .org-card__header {
+    padding: 0.625rem 0.75rem;
+  }
+
+  .org-card--compact .org-card__body {
+    padding: 0.75rem;
+  }
+
+  .org-account {
+    padding: 0.375rem;
+  }
+
+  .org-contact {
+    padding: 0.375rem 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .org-contact__value {
+    text-align: left;
+  }
+
+  .org-hiring__meta {
+    gap: 0.25rem;
+  }
+
+  .org-hiring__row {
+    padding: 0.3125rem 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .org-profile {
+    padding: 0 0.75rem 1rem;
+  }
+
+  .profile-header-actions {
+    gap: 0.375rem;
+  }
+
+  .profile-action-btn {
+    font-size: 0.6875rem;
+    height: 28px;
+    padding: 0 0.625rem;
+  }
+
+  .profile-action-btn__icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  .org-hero {
+    padding-bottom: 1.25rem;
+  }
+
+  .org-hero__banner {
+    height: 80px;
+    border-radius: 10px 10px 0 0;
+  }
+
+  .org-hero__content {
+    margin-top: -36px;
+    padding: 0 0.75rem;
+  }
+
+  .org-hero__avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 12px;
+  }
+
+  .org-hero__name {
+    font-size: 1.125rem;
+  }
+
+  .org-hero__tagline {
+    font-size: 0.8125rem;
+  }
+
+  .org-hero__tag {
+    font-size: 0.625rem;
+    padding: 0.1875rem 0.5rem;
+  }
+
+  .org-stats-grid {
+    margin-top: 0.375rem;
+    margin-bottom: 1rem;
+    gap: 0.375rem;
+  }
+
+  .org-stat-card {
+    padding: 0.625rem;
+    gap: 0.375rem;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .org-stat-card__icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .org-stat-card__value {
+    font-size: 0.9375rem;
+  }
+
+  .org-stat-card__label {
+    font-size: 0.5625rem;
+  }
+
+  .org-grid {
+    gap: 0.75rem;
+  }
+
+  .org-card {
+    border-radius: 12px;
+  }
+
+  .org-card__header {
+    padding: 0.625rem 0.75rem;
+    gap: 0.375rem;
+  }
+
+  .org-card__header-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .org-card__title {
+    font-size: 0.875rem;
+  }
+
+  .org-card__count {
+    font-size: 0.6875rem;
+    padding: 0.125rem 0.375rem;
+  }
+
+  .org-card__badge {
+    font-size: 0.625rem;
+    padding: 0.1875rem 0.5rem;
+  }
+
+  .org-card__body {
+    padding: 0.75rem;
+  }
+
+  .org-card__text {
+    font-size: 0.8125rem;
+  }
+
+  .org-card--compact .org-card__header {
+    padding: 0.5rem 0.625rem;
+  }
+
+  .org-card--compact .org-card__body {
+    padding: 0.625rem;
+  }
+
+  .org-card--empty {
+    padding: 2rem 1rem;
+  }
+
+  .org-card__empty-icon {
+    width: 32px;
+    height: 32px;
+    margin-bottom: 0.5rem;
+  }
+
+  .org-card__empty-text {
+    font-size: 0.8125rem;
+  }
+
+  .creator-card {
+    border-radius: 12px;
+  }
+
+  .creator-card__banner {
+    height: 40px;
+  }
+
+  .creator-card__content {
+    padding: 0 0.75rem 0.875rem;
+    margin-top: -24px;
+  }
+
+  .creator-card__avatar {
+    width: 48px;
+    height: 48px;
+    border-width: 2px;
+    margin-bottom: 0.5rem;
+  }
+
+  .creator-card__name {
+    font-size: 0.8125rem;
+    margin-bottom: 0.3125rem;
+  }
+
+  .creator-card__platform {
+    min-width: 1.75rem;
+    min-height: 1.75rem;
+    padding: 0.25rem;
+    border-radius: 8px;
+  }
+
+  .creator-card__platform-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .creator-card__platform-empty {
+    width: 16px;
+    height: 16px;
+  }
+
+  .org-account {
+    padding: 0.3125rem;
+  }
+
+  .org-account__avatar {
+    width: 28px;
+    height: 28px;
+  }
+
+  .org-account__name {
+    font-size: 0.75rem;
+  }
+
+  .org-account__platform {
+    font-size: 0.625rem;
+  }
+
+  .org-account__platform-chip {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 0.25rem;
+  }
+
+  .org-account__platform-icon {
+    width: 0.625rem;
+    height: 0.625rem;
+  }
+
+  .org-contact {
+    padding: 0.3125rem 0;
+  }
+
+  .org-contact__label {
+    font-size: 0.6875rem;
+  }
+
+  .org-contact__value {
+    font-size: 0.75rem;
+  }
+
+  .org-hiring__title {
+    font-size: 0.875rem;
+    margin-bottom: 0.3125rem;
+  }
+
+  .org-hiring__desc {
+    font-size: 0.75rem;
+    margin-bottom: 0.625rem;
+  }
+
+  .org-hiring__row {
+    font-size: 0.6875rem;
+    padding: 0.25rem 0;
   }
 }
 </style>

@@ -50,6 +50,7 @@ export class BlurBackgroundNode extends BaseNode<BlurBackgroundNodeParams> {
 		renderer.context = offscreenCtx;
 
 		for (const node of this.contentNodes) {
+			await node.prefetch({ renderer, time });
 			await node.render({ renderer, time });
 		}
 

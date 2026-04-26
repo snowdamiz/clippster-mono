@@ -25,6 +25,11 @@ export function useElementSelection() {
 		return editor.selection.getSelectedElements();
 	});
 
+	const selectedTransitionId = computed(() => {
+		void version.value;
+		return editor.selection.getSelectedTransitionId();
+	});
+
 	function isElementSelected({ trackId, elementId }: ElementRef): boolean {
 		return selectedElements.value.some(
 			(el) => el.trackId === trackId && el.elementId === elementId,
@@ -33,6 +38,11 @@ export function useElementSelection() {
 
 	function selectElement({ trackId, elementId }: ElementRef) {
 		editor.selection.setSelectedElements({ elements: [{ trackId, elementId }] });
+	}
+
+	function selectTransition({ transitionId }: { transitionId: string }) {
+		setPreviewFocused(false);
+		editor.selection.setSelectedTransition({ transitionId });
 	}
 
 	function addElementToSelection({ trackId, elementId }: ElementRef) {
@@ -138,8 +148,10 @@ export function useElementSelection() {
 
 	return {
 		selectedElements,
+		selectedTransitionId,
 		isElementSelected,
 		selectElement,
+		selectTransition,
 		setElementSelection,
 		addElementToSelection,
 		removeElementFromSelection,

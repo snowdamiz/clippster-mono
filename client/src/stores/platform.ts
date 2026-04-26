@@ -12,6 +12,7 @@ import { getYouTubeVods, extractYouTubeChannel, type YouTubeVod } from '@/servic
 import { getRumbleVods, extractRumbleChannel, checkRumbleLivestream, type RumbleVod } from '@/services/rumble';
 import { extractTwitterBroadcastId, validateTwitterUrl, getTwitterBroadcastInfo } from '@/services/twitter';
 import { cache } from '@/utils/persistentCache';
+import { isTauri } from '@/lib/instagram-auth';
 
 // Unified clip type that works across platforms
 export interface PlatformClip {
@@ -334,6 +335,42 @@ export const usePlatformStore = defineStore('platform', {
         }
       } catch (error) {
         console.error('[Platform] Failed to fetch Kick metadata for:', channelSlug, error);
+      }
+    },
+
+    /**
+     * Replace RapidAPI/Kick list durations with yt-dlp stream duration (same as download + file).
+     * The upstream list field is often a few minutes longer than the actual HLS/IVS asset.
+     */
+    async enrichKickVodDurationsWithStreamProbe(clips: PlatformClip[]) {
+      if (!isTauri() || !clips.length) {
+        return;
+      }
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const CONCURRENCY = 3;
+        for (let i = 0; i < clips.length; i += CONCURRENCY) {
+          const batch = clips.slice(i, i + CONCURRENCY);
+          await Promise.all(
+            batch.map(async (c) => {
+              const url = c.mp4Url || c.playlistUrl;
+              if (!url) {
+                return;
+              }
+              try {
+                const d = await invoke<number>('probe_kick_vod_duration', { videoUrl: url });
+                if (typeof d === 'number' && d > 0 && !Number.isNaN(d)) {
+                  c.duration = d;
+                }
+              } catch (e) {
+                console.debug('[Platform] Kick stream duration probe skipped:', c.clipId, e);
+              }
+            })
+          );
+        }
+        console.log('[Platform] Kick VOD stream durations probed (yt-dlp)');
+      } catch (e) {
+        console.warn('[Platform] Kick VOD duration enrichment failed:', e);
       }
     },
 
@@ -693,6 +730,9 @@ export const usePlatformStore = defineStore('platform', {
             this.fetchPumpFunMetadata(extractedId!);
           } else if (this.activePlatform === 'kick') {
             this.fetchKickMetadata(extractedId!);
+            // Align card duration with the real stream (yt-dlp) — the API list is often a few
+            // minutes longer than the IVS VOD; download uses yt-dlp duration, not RapidAPI.
+            void this.enrichKickVodDurationsWithStreamProbe(filteredClips);
           } else if (this.activePlatform === 'twitch') {
             this.fetchTwitchMetadata(extractedId!);
           } else if (this.activePlatform === 'rumble') {

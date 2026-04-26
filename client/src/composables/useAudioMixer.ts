@@ -1,6 +1,7 @@
 import { ref, watch, onUnmounted, type Ref } from 'vue';
 import type { ActiveAudioTrack } from './useTimelineRenderer';
 import { invoke } from '@tauri-apps/api/core';
+import { utf8ToBase64Url } from '@/utils/encoding';
 
 // Video server port for streaming audio files
 let videoServerPort: number | null = null;
@@ -20,8 +21,7 @@ async function getStreamingUrl(filePath: string): Promise<string> {
     }
   }
   
-  // Encode the path as base64 for the streaming server
-  const encodedPath = btoa(unescape(encodeURIComponent(filePath)));
+  const encodedPath = utf8ToBase64Url(filePath);
   return `http://localhost:${videoServerPort}/video/${encodedPath}`;
 }
 

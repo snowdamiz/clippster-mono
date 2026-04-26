@@ -669,7 +669,7 @@
   }
 
   function constructVideoUrl(filePath: string, port: number): string {
-    const encodedPath = utf8ToBase64(filePath);
+    const encodedPath = utf8ToBase64Url(filePath);
     const isTsFile = filePath.toLowerCase().endsWith('.ts');
     if (isTsFile) {
       return `http://localhost:${port}/ts-hls/${encodedPath}/playlist.m3u8`;

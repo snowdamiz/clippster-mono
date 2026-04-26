@@ -143,10 +143,30 @@ export interface RumbleChannelInfo {
 }
 
 export async function getRumbleChannelInfo(channel: string): Promise<RumbleChannelInfo | null> {
+  const channelName = extractRumbleChannel(channel) || channel.trim();
+
+  // Try Tauri command first (desktop app)
   try {
-    const channelName = extractRumbleChannel(channel) || channel.trim();
     const result = await invoke<string>('get_rumble_channel_info', { channel: channelName });
-    return JSON.parse(result);
+    const parsed = JSON.parse(result) as RumbleChannelInfo;
+    if (parsed?.profileImageUrl || parsed?.displayName || parsed?.channelName) {
+      return parsed;
+    }
+  } catch (error: unknown) {
+    console.warn('[Rumble] Tauri channel info failed, trying API fallback:', error);
+  }
+
+  // Fallback for browser/org flows. Server route expects bare channel segment.
+  try {
+    const routeChannel = channelName.replace(/^c\//i, '').replace(/^user\//i, '');
+    const response = await fetch(`/api/rumble/channels/${encodeURIComponent(routeChannel)}`);
+    if (!response.ok) return null;
+    const data = (await response.json()) as any;
+    return {
+      channelName: data.channelName || channelName,
+      displayName: data.displayName,
+      profileImageUrl: data.profileImageUrl,
+    };
   } catch (error: unknown) {
     console.error('[Rumble] Failed to fetch channel info:', error);
     return null;

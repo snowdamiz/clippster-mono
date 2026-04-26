@@ -132,6 +132,12 @@ function loadState() {
 }
 
 export function useDownloads() {
+  const isAudioOnlyDownloadEvent = (downloadId: string): boolean => {
+    // Audio downloads use a separate composable/store (`useAudioDownloads`).
+    // Ignore their events here to avoid noisy "unknown download" warnings.
+    return downloadId.startsWith('audio-') || downloadId.startsWith('upload_');
+  };
+
   // Helper function to refund free tier usage when download is cancelled or fails
   async function refundFreeTierUsage() {
     try {
@@ -165,6 +171,9 @@ export function useDownloads() {
 
     // Listen for download progress updates
     await listen<DownloadProgress>('download-progress', (event) => {
+      if (isAudioOnlyDownloadEvent(event.payload.download_id)) {
+        return;
+      }
       const download = activeDownloads.get(event.payload.download_id);
       if (download) {
         download.progress = event.payload;
@@ -238,6 +247,9 @@ export function useDownloads() {
 
     // Listen for download completion
     await listen<DownloadResult>('download-complete', async (event) => {
+      if (isAudioOnlyDownloadEvent(event.payload.download_id)) {
+        return;
+      }
       console.log('[Downloads] Download complete event received:', event.payload.download_id);
       const download = activeDownloads.get(event.payload.download_id);
       if (download) {

@@ -20,6 +20,7 @@ import {
 	RefreshCw,
 } from "lucide-vue-next";
 import PanelSearchBar from "./PanelSearchBar.vue";
+import { utf8ToBase64Url } from "@/utils/encoding";
 
 // ── Types ──
 interface TranscriptWord {
@@ -707,7 +708,7 @@ async function handleGenerateTranscript() {
 					const { invoke } = await import("@tauri-apps/api/core");
 					let port: number;
 					try { port = await invoke<number>("get_video_server_port"); } catch { port = 8642; }
-					const serverUrl = `http://localhost:${port}/video/${btoa(elem.filePath)}`;
+					const serverUrl = `http://localhost:${port}/video/${utf8ToBase64Url(elem.filePath)}`;
 					const resp = await fetch(serverUrl);
 					if (!resp.ok) throw new Error(`Video server returned ${resp.status}`);
 					const blob = await resp.blob();

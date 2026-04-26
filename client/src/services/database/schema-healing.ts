@@ -135,6 +135,27 @@ export async function healSchema(): Promise<void> {
       'CREATE INDEX IF NOT EXISTS idx_downloaded_audio_source ON downloaded_audio(source)'
     );
 
+    await db.execute(`CREATE TABLE IF NOT EXISTS downloaded_space_metadata (
+      id TEXT PRIMARY KEY,
+      audio_id TEXT NOT NULL,
+      source_url TEXT,
+      title TEXT,
+      participants_json TEXT,
+      speaker_segments_json TEXT,
+      stage_snapshots_json TEXT,
+      user_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (audio_id) REFERENCES downloaded_audio(id) ON DELETE CASCADE
+    )`);
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_downloaded_space_metadata_audio_id ON downloaded_space_metadata(audio_id)'
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_downloaded_space_metadata_user_id ON downloaded_space_metadata(user_id)'
+    );
+    await addColumnIfMissing(db, 'downloaded_space_metadata', 'stage_snapshots_json', 'TEXT');
+
     await db.execute(`CREATE TABLE IF NOT EXISTS audio_playlists (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,

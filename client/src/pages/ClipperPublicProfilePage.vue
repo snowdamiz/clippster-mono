@@ -1999,65 +1999,228 @@
 
   /* ===== Responsive ===== */
   @media (max-width: 768px) {
-    .profile-header {
-      padding: 1rem;
+    .org-profile {
+      padding: 0 1rem 1.5rem;
     }
 
-    .profile-header__container {
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      gap: 1rem;
-    }
-
-    .profile-avatar {
-      width: 64px;
-      height: 64px;
-    }
-
-    .profile-top-row {
-      flex-direction: column;
-      align-items: center;
-      gap: 1rem;
-    }
-
-    .profile-stats {
-      gap: 1.5rem;
-    }
-
-    .org-hero__name {
-      font-size: 1.25rem;
-    }
-
-    .profile-badges {
-      justify-content: center;
-    }
-
-    .profile-main {
+    .profile-header-actions {
+      flex-wrap: wrap;
       width: 100%;
     }
 
-    .org-grid {
-      gap: 1.25rem;
+    .profile-action-btn {
+      flex: 1;
+      min-width: fit-content;
+      justify-content: center;
+      font-size: 0.75rem;
+      height: 36px;
+      padding: 0 0.75rem;
+    }
+
+    .profile-action-btn__icon {
+      width: 14px;
+      height: 14px;
     }
 
     .portfolio-grid {
-      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-      gap: 1rem;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.875rem;
       padding: 1rem;
     }
 
     .about-grid {
       grid-template-columns: 1fr;
+      gap: 0.75rem;
+      padding: 1rem;
+    }
+
+    .about-item {
       padding: 1rem;
     }
 
     .endorsements-list {
       padding: 1rem;
+      gap: 0.875rem;
+    }
+
+    .endorsement-card {
+      padding: 1rem;
     }
 
     .section__header {
       padding: 1rem;
+      gap: 0.75rem;
+    }
+
+    .section__header-icon {
+      width: 40px;
+      height: 40px;
+    }
+
+    .section__header-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .section__title {
+      font-size: 1rem;
+    }
+
+    .section__subtitle {
+      font-size: 0.75rem;
+    }
+
+    .sidebar-card__content {
+      padding: 1rem;
+    }
+
+    .sidebar-card__header {
+      padding: 1rem;
+    }
+
+    .video-modal__overlay {
+      padding: 1rem;
+    }
+
+    .org-grid {
+      gap: 1rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .org-profile {
+      padding: 0 0.75rem 1rem;
+    }
+
+    .profile-header-actions {
+      gap: 0.375rem;
+    }
+
+    .profile-action-btn {
+      font-size: 0.6875rem;
+      height: 32px;
+      padding: 0 0.625rem;
+    }
+
+    .profile-action-btn__icon {
+      width: 12px;
+      height: 12px;
+    }
+
+    .portfolio-grid {
+      grid-template-columns: 1fr;
+      gap: 0.75rem;
+      padding: 0.875rem;
+    }
+
+    .portfolio-item__play {
+      width: 56px;
+      height: 56px;
+    }
+
+    .portfolio-item__play-icon {
+      width: 18px;
+      height: 18px;
+    }
+
+    .about-grid {
+      padding: 0.875rem;
+      gap: 0.625rem;
+    }
+
+    .about-item {
+      padding: 0.875rem;
+      gap: 0.75rem;
+    }
+
+    .endorsements-list {
+      padding: 0.875rem;
+      gap: 0.75rem;
+    }
+
+    .endorsement-card {
+      padding: 0.875rem;
+    }
+
+    .endorsement-card__header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.625rem;
+    }
+
+    .section__header {
+      padding: 0.875rem;
+      gap: 0.625rem;
+    }
+
+    .section__header-icon {
+      width: 36px;
+      height: 36px;
+    }
+
+    .section__header-icon svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .section__title {
+      font-size: 0.9375rem;
+    }
+
+    .sidebar-card__content {
+      padding: 0.875rem;
+    }
+
+    .sidebar-card__header {
+      padding: 0.875rem;
+    }
+
+    .connected-account {
+      padding: 0.5rem;
+      gap: 0.5rem;
+    }
+
+    .tag-list {
+      gap: 0.375rem;
+    }
+
+    .tag {
+      font-size: 0.6875rem;
+      padding: 0.3125rem 0.5rem;
+    }
+
+    .video-modal__overlay {
+      padding: 0.5rem;
+    }
+
+    .video-modal {
+      border-radius: 8px;
+    }
+
+    .org-grid {
+      gap: 0.875rem;
+    }
+
+    .endorse-dialog {
+      margin: 0.5rem;
+      max-height: 90vh;
+    }
+
+    .endorse-dialog__header {
+      padding: 1rem 1rem 0.75rem;
+    }
+
+    .endorse-dialog__content {
+      padding: 0.5rem 1rem 1rem;
+    }
+
+    .endorse-dialog__footer {
+      padding: 1rem;
+      flex-direction: column;
+    }
+
+    .endorse-dialog__btn {
+      width: 100%;
     }
   }
 

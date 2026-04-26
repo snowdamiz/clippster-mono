@@ -3,6 +3,7 @@ import { ref, computed, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useBrandingConfig, ASPECT_RATIOS } from "../../../composables/useBrandingConfig";
 import { useEditor } from "../../../composables/useEditor";
+import { resolveApplicableProfiles, type ApplicableProfile } from "@/composables/useBrandingProfileSelection";
 import { getAllWatermarkImages, resolveWatermarkById, type WatermarkImage } from "@/services/database/watermarks";
 import { getAllIntroOutros, createIntroOutro } from "@/services/database/intro-outros";
 import type { IntroOutro } from "@/services/database/types";
@@ -11,7 +12,6 @@ import WatermarkPositionPicker from "@/components/WatermarkPositionPicker.vue";
 import type { CreatorWatermarkSettings } from "@/components/WatermarkPositionPicker.vue";
 import {
 	Info,
-	Image as ImageIcon,
 	Film,
 	ChevronDown,
 	Monitor,
@@ -24,7 +24,7 @@ import {
 	Loader2,
 } from "lucide-vue-next";
 
-const { editor, version } = useEditor();
+const { editor } = useEditor();
 const {
 	creatorProfile,
 	isReadOnly,
@@ -32,12 +32,16 @@ const {
 	setWatermarkForRatio,
 	setIntroForRatio,
 	setOutroForRatio,
+	initFromCreatorProfile,
+	detachCreatorProfile,
 	getActiveWatermark,
 	getActiveIntro,
 	getActiveOutro,
 } = useBrandingConfig();
 
 const activeRatio = ref<AspectRatioId>("16:9");
+const showProfileDropdown = ref(false);
+const applicableProfiles = ref<ApplicableProfile[]>([]);
 
 const ratioConfig = [
 	{ id: "16:9" as AspectRatioId, label: "16:9", icon: Monitor },
@@ -76,6 +80,13 @@ const lastResolvedWmId = ref<string | null>(null);
 const activeWatermark = computed(() => getActiveWatermark(activeRatio.value));
 const activeIntro = computed(() => getActiveIntro(activeRatio.value));
 const activeOutro = computed(() => getActiveOutro(activeRatio.value));
+const brandingProjectId = computed(() => editor.project.getActiveOrNull()?.settings?.sourceProjectId ?? null);
+const selectedBrandingProfileId = computed(() => config.value.creatorProfileId ?? null);
+const selectedBrandingProfileName = computed(() => {
+	if (creatorProfile.value?.name) return creatorProfile.value.name;
+	const selected = applicableProfiles.value.find((profile) => profile.profile.id === selectedBrandingProfileId.value);
+	return selected?.profile.name ?? null;
+});
 
 // Watch active watermark ID and resolve org-asset- watermarks
 watch(
@@ -164,23 +175,6 @@ const activeOutroName = computed(() => {
 	return found?.name ?? "Unknown";
 });
 
-// Count configured ratios
-const configuredRatioCount = computed(() => {
-	let count = 0;
-	for (const ratio of ASPECT_RATIOS) {
-		const wm = getActiveWatermark(ratio);
-		const intro = getActiveIntro(ratio);
-		const outro = getActiveOutro(ratio);
-		if (wm || intro || outro) count++;
-	}
-	return count;
-});
-
-// Count how many ratios have watermark configured
-const configuredWatermarkRatios = computed(() => {
-	return ASPECT_RATIOS.filter((r) => getActiveWatermark(r) !== null);
-});
-
 // Load data on mount
 async function loadAssets() {
 	loadingIntroOutros.value = true;
@@ -214,6 +208,35 @@ async function loadAssets() {
 }
 
 loadAssets();
+
+async function loadApplicableBrandingProfiles() {
+	const projectId = brandingProjectId.value;
+	if (!projectId) {
+		applicableProfiles.value = [];
+		return;
+	}
+	try {
+		applicableProfiles.value = await resolveApplicableProfiles(projectId);
+	} catch (error) {
+		console.warn("[BrandingView] Failed to load applicable branding profiles:", error);
+		applicableProfiles.value = [];
+	}
+}
+function applyBrandingProfileSelection(profile: ApplicableProfile | null) {
+	if (profile) {
+		closeDropdowns();
+		showProfileDropdown.value = false;
+		initFromCreatorProfile(profile.profile);
+		return;
+	}
+	detachCreatorProfile();
+	closeDropdowns();
+	showProfileDropdown.value = false;
+}
+
+watch(brandingProjectId, () => {
+	loadApplicableBrandingProfiles();
+}, { immediate: true });
 
 // Persist branding config to project settings when it changes
 watch(
@@ -373,6 +396,7 @@ function handlePositionPickerSave(settings: CreatorWatermarkSettings) {
 
 // Close all dropdowns when clicking away
 function closeDropdowns() {
+	showProfileDropdown.value = false;
 	showIntroDropdown.value = false;
 	showOutroDropdown.value = false;
 }
@@ -414,13 +438,13 @@ function formatDuration(d: number | null | undefined): string {
 
 		<!-- Read-only banner -->
 		<div
-			v-if="isReadOnly && creatorProfile"
+			v-if="isReadOnly && selectedBrandingProfileName"
 			class="mx-3 mt-2 flex items-center gap-2 rounded-md border border-blue-500/20 bg-blue-500/10 px-3 py-2"
 		>
 			<Info class="size-3.5 shrink-0 text-blue-400" />
 			<div class="min-w-0">
 				<p class="truncate text-[11px] font-medium text-blue-300">
-					{{ creatorProfile.name }}
+					{{ selectedBrandingProfileName }}
 				</p>
 				<p class="text-[10px] text-blue-400/70">Configured by creator profile</p>
 			</div>
@@ -428,6 +452,68 @@ function formatDuration(d: number | null | undefined): string {
 
 		<!-- Content -->
 		<div class="flex-1 overflow-y-auto">
+			<div>
+				<div class="px-3 pb-1 pt-3">
+					<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Branding Profile</span>
+				</div>
+
+				<div class="relative">
+					<button
+						type="button"
+						class="flex w-full items-center gap-3 border-b border-white/5 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.03]"
+						@click.stop="showProfileDropdown = !showProfileDropdown"
+					>
+						<div class="flex size-8 shrink-0 items-center justify-center rounded-md bg-white/5">
+							<Info class="size-3.5 text-zinc-500" />
+						</div>
+						<div class="min-w-0 flex-1">
+							<p class="truncate text-xs" :class="selectedBrandingProfileName ? 'text-zinc-200' : 'text-zinc-500'">
+								{{ selectedBrandingProfileName ?? 'None' }}
+							</p>
+							<p class="text-[10px] text-zinc-500">
+								{{ selectedBrandingProfileName ? 'Profile branding applied' : 'No profile selected' }}
+							</p>
+						</div>
+						<ChevronDown class="size-3 shrink-0 text-zinc-500" />
+					</button>
+
+					<div
+						v-if="showProfileDropdown"
+						class="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-lg border border-white/10 bg-[#1e1e22] py-1 shadow-xl"
+						@click.stop
+					>
+						<button
+							type="button"
+							:class="[
+								'flex w-full items-center gap-2 px-2.5 py-1.5 text-xs transition-colors',
+								!selectedBrandingProfileId ? 'bg-blue-500/10 text-blue-400' : 'text-zinc-300 hover:bg-white/5',
+							]"
+							@click="applyBrandingProfileSelection(null)"
+						>
+							<X class="size-3" />
+							None
+						</button>
+						<button
+							v-for="profile in applicableProfiles"
+							:key="profile.profile.id"
+							type="button"
+							:class="[
+								'flex w-full items-center gap-2 px-2.5 py-1.5 text-xs transition-colors',
+								selectedBrandingProfileId === profile.profile.id ? 'bg-blue-500/10 text-blue-400' : 'text-zinc-300 hover:bg-white/5',
+							]"
+							@click="applyBrandingProfileSelection(profile)"
+						>
+							<Info class="size-3 shrink-0 text-zinc-500" />
+							<span class="truncate">{{ profile.profile.name }}</span>
+							<span class="ml-auto text-[10px] text-zinc-500">{{ profile.label }}</span>
+						</button>
+						<div v-if="applicableProfiles.length === 0" class="px-2.5 py-2 text-center text-[10px] text-zinc-500">
+							No branding profiles available
+						</div>
+					</div>
+				</div>
+			</div>
+
 			<!-- Watermark Section -->
 			<div>
 				<div class="px-3 pb-1 pt-3">
@@ -617,7 +703,7 @@ function formatDuration(d: number | null | undefined): string {
 
 		<!-- Click-away for dropdowns -->
 		<div
-			v-if="showIntroDropdown || showOutroDropdown"
+			v-if="showProfileDropdown || showIntroDropdown || showOutroDropdown"
 			class="fixed inset-0 z-40"
 			@click="closeDropdowns"
 		/>

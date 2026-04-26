@@ -7,4 +7,6 @@ export interface MediaAsset
 	file: File;
 	url?: string;
 	filePath?: string;
+	/** Tauri: absolute path to copy into editor-media. Prefer this over mutating `File.path` (Vue/reactivity can drop the latter). */
+	diskImportPath?: string;
 }

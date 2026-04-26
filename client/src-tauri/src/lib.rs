@@ -23,6 +23,7 @@ mod kick;
 mod pumpfun;
 mod rumble;
 mod sidecar;
+mod space_hls_speaker_timeline;
 mod storage;
 mod stripe_callback;
 mod thumbnail_utils;
@@ -1186,6 +1187,7 @@ commands::file_utils::generate_video_thumbnail,
             downloads::download_pumpfun_vod_segment,
             downloads::download_kick_vod,
             downloads::download_kick_vod_segment,
+            downloads::probe_kick_vod_duration,
             twitch::download_twitch_vod,
             twitch::download_twitch_vod_segment,
 
@@ -1203,6 +1205,7 @@ commands::file_utils::generate_video_thumbnail,
             audio_download::download_twitter_space_audio,
             audio_download::upload_audio_file,
             audio_download::cancel_audio_download,
+            space_hls_speaker_timeline::extract_space_speaker_timeline_from_hls_manifest,
 
             // Waveform commands
             waveform::extract_audio_waveform,
@@ -1227,6 +1230,7 @@ commands::file_utils::generate_video_thumbnail,
             storage::generate_thumbnail_at_timestamp,
             storage::save_temp_file,
             storage::save_editor_media_file,
+            storage::get_editor_clip_extract_path,
             storage::copy_file_to_project_media,
             storage::read_file_as_data_url,
             storage::delete_video_file,

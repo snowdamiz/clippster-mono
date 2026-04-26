@@ -1,15 +1,16 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
 import { videoCache } from "../../video-cache/service";
-import type { Transform, FlipState, ColorAdjustments, CropRect } from "../../types/timeline";
+import type { Transform, FlipState, ColorAdjustments, CropRect, ColorCurves, ColorWheels, BlendMode, MaskShape } from "../../types/timeline";
 import type { VideoEffect } from "../../types/effects";
 import type { ElementKeyframes } from "../../types/keyframes";
-import { getKeyframedValue } from "../../types/keyframes";
-import { buildFilterString, hasPostDrawEffects, applyCanvasEffects, applyAdvancedColorAdjustments } from "../effects/canvas-effects";
+import { evaluateKeyframeTrack, getKeyframedValue } from "../../types/keyframes";
+import { buildFilterString, hasPostDrawEffects, applyCanvasEffects, applyAdvancedColorAdjustments, applyColorCurves, applyColorWheels } from "../effects/canvas-effects";
 import { applyChromakey } from "../effects/canvas-chromakey";
 import type { ChromakeySettings } from "../../types/chromakey";
 import type { ElementAnimation } from "../../types/animations";
 import { computeAnimationTransforms, applyAnimationToContext } from "../effects/canvas-animations";
+import { hasMasks, setupMaskClip } from "./mask-compositor";
 
 const VIDEO_EPSILON = 1 / 1000;
 
@@ -41,29 +42,101 @@ export interface VideoNodeParams {
 	animationIn?: ElementAnimation;
 	animationOut?: ElementAnimation;
 	animationLoop?: ElementAnimation;
+	colorCurves?: ColorCurves;
+	colorWheels?: ColorWheels;
+	blendMode?: BlendMode;
+	masks?: MaskShape[];
 }
 
 export class VideoNode extends BaseNode<VideoNodeParams> {
 	private prefetchedFrame: import("mediabunny").WrappedCanvas | null = null;
+	private transitionExtension: { before: number; after: number } = { before: 0, after: 0 };
+
+	setTransitionExtension(extension: { before?: number; after?: number }) {
+		this.transitionExtension = {
+			before: Math.max(this.transitionExtension.before, extension.before ?? 0),
+			after: Math.max(this.transitionExtension.after, extension.after ?? 0),
+		};
+	}
 
 	private isInRange(time: number) {
 		const elapsed = time - this.params.timeOffset;
-		return elapsed >= -VIDEO_EPSILON && elapsed < this.params.duration;
+		return (
+			elapsed >= -(this.transitionExtension.before + VIDEO_EPSILON) &&
+			elapsed < this.params.duration + this.transitionExtension.after
+		);
+	}
+
+	private getClampedElapsed(time: number) {
+		const elapsed = time - this.params.timeOffset;
+		return Math.max(0, Math.min(this.params.duration, elapsed));
+	}
+
+	private getIntegratedSourceOffset(elapsed: number) {
+		const speedTrack = this.params.keyframes?.tracks?.speed;
+		const fallbackSpeed = Math.max(0.1, Math.min(10, this.params.speed ?? 1));
+
+		if (!speedTrack || speedTrack.keyframes.length === 0 || elapsed <= 0) {
+			return elapsed * fallbackSpeed;
+		}
+
+		const stepCount = Math.max(1, Math.min(200, Math.ceil(elapsed * 24)));
+		const dt = elapsed / stepCount;
+		let sourceOffset = 0;
+
+		for (let i = 0; i < stepCount; i++) {
+			const sampleElapsed = (i + 0.5) * dt;
+			const normalizedTime = this.params.duration > 0 ? sampleElapsed / this.params.duration : 0;
+			const sampleSpeed = Math.max(0.1, Math.min(10, evaluateKeyframeTrack(speedTrack, normalizedTime)));
+			sourceOffset += sampleSpeed * dt;
+		}
+
+		return sourceOffset;
 	}
 
 	private getSourceTime(time: number) {
-		const speed = this.params.speed ?? 1;
-		const elapsed = time - this.params.timeOffset;
+		// During a transition, allow elapsed to peek slightly before 0 (incoming pre-roll) or
+		// past duration (outgoing post-roll). If we clamp to [0, duration] here, a split clip
+		// pair renders the *exact same* source frame on both sides of the cut and pixel-blend
+		// transitions (crossfade / wipe / dissolve / circle / diamond / clock wipe) look invisible.
+		const rawElapsed = time - this.params.timeOffset;
+		const minElapsed = -this.transitionExtension.before;
+		const maxElapsed = this.params.duration + this.transitionExtension.after;
+		const elapsed = Math.max(minElapsed, Math.min(maxElapsed, rawElapsed));
+		const computedTrimEnd =
+			this.params.trimStart + this.params.duration * (this.params.speed ?? 1);
+		// `trimEnd` is often persisted as `0` when unset (e.g. bridge imports). `??` does not
+		// treat `0` as missing, which would clamp every decode request to media time 0.
+		const trimEnd =
+			this.params.trimEnd != null && this.params.trimEnd > this.params.trimStart
+				? this.params.trimEnd
+				: computedTrimEnd;
+
+		// Extend the source-time clamp window by the transition extension so the decoded frame
+		// actually advances through the source during the transition instead of freezing at the
+		// trim boundary.
+		const speed = Math.max(0.1, Math.min(10, this.params.speed ?? 1));
+		const beforeSource = this.transitionExtension.before * speed;
+		const afterSource = this.transitionExtension.after * speed;
+
 		if (this.params.reversed) {
-			// Play backwards: start from the end of the trimmed region
-			const trimEnd = this.params.trimStart + this.params.duration * speed;
-			return trimEnd - elapsed * speed;
+			const sourceOffset = this.getIntegratedSourceOffset(elapsed);
+			return Math.max(
+				Math.max(0, this.params.trimStart - afterSource),
+				Math.min(trimEnd + beforeSource, trimEnd - sourceOffset),
+			);
 		}
-		return this.params.trimStart + elapsed * speed;
+
+		const sourceElapsed = Math.max(0, elapsed + this.transitionExtension.before);
+		const sourceOffset = this.getIntegratedSourceOffset(sourceElapsed);
+
+		return Math.max(
+			Math.max(0, this.params.trimStart),
+			Math.min(trimEnd + beforeSource + afterSource, this.params.trimStart + sourceOffset),
+		);
 	}
 
-	async prefetch({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
-		this.prefetchedFrame = null;
+	async prefetch({ renderer: _renderer, time }: { renderer: CanvasRenderer; time: number }) {
 		if (!this.isInRange(time)) return;
 
 		const videoTime = this.getSourceTime(time);
@@ -81,18 +154,26 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			return;
 		}
 
-		// Use pre-decoded frame from prefetch() if available, otherwise decode inline
-		const frame = this.prefetchedFrame ?? await videoCache.getFrameAt({
+		const prefetched = this.prefetchedFrame;
+		this.prefetchedFrame = null;
+		const videoTime = this.getSourceTime(time);
+		const frame = prefetched ?? (await videoCache.getFrameAt({
 			sinkKey: this.params.elementId,
 			file: this.params.file,
-			time: this.getSourceTime(time),
-		});
+			time: videoTime,
+		}));
 
 		if (frame) {
 			renderer.context.save();
 
+			// Apply blend mode (composite operation)
+			if (this.params.blendMode && this.params.blendMode !== "normal") {
+				renderer.context.globalCompositeOperation = this.params.blendMode as GlobalCompositeOperation;
+			}
+
 			// Resolve keyframed values
-			const elapsed = time - this.params.timeOffset;
+			const elapsed = this.getClampedElapsed(time);
+			const effectiveTime = this.params.timeOffset + elapsed;
 			const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
 			const kf = this.params.keyframes;
 
@@ -118,6 +199,11 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 				{ elapsed, elementDuration: this.params.duration, canvasWidth: renderer.width, canvasHeight: renderer.height },
 			);
 			applyAnimationToContext(renderer.context, animResult, renderer.width / 2, renderer.height / 2);
+
+			// Apply shape masks (clip path) before drawing
+			if (hasMasks(this.params.masks)) {
+				setupMaskClip(renderer.context, this.params.masks!, renderer.width, renderer.height);
+			}
 
 			// Apply transform (scale, position, rotation) with keyframe overrides
 			const transform = this.params.transform;
@@ -237,19 +323,24 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			// Apply post-draw effects (pixelate, sharpen, vignette, colorShift, glitch, wave, zoomPulse, flash)
 			if (fx && fx.length > 0 && hasPostDrawEffects(fx)) {
 				renderer.context.restore();
-				applyCanvasEffects(renderer.context, renderer.width, renderer.height, fx, time, this.params.timeOffset);
+				applyCanvasEffects(renderer.context, renderer.width, renderer.height, fx, effectiveTime, this.params.timeOffset);
 			} else {
 				renderer.context.restore();
 			}
 
-			// Apply advanced color adjustments that require post-draw compositing
 			if (ca) {
 				applyAdvancedColorAdjustments(renderer.context, renderer.width, renderer.height, ca);
 			}
 
-			// Apply chromakey (green screen removal)
 			if (this.params.chromakey?.enabled) {
 				applyChromakey(renderer.context, renderer.width, renderer.height, this.params.chromakey);
+			}
+
+			if (this.params.colorCurves) {
+				applyColorCurves(renderer.context, renderer.width, renderer.height, this.params.colorCurves);
+			}
+			if (this.params.colorWheels) {
+				applyColorWheels(renderer.context, renderer.width, renderer.height, this.params.colorWheels);
 			}
 		}
 	}

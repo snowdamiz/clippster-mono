@@ -1,17 +1,18 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
+  Briefcase,
   Building2,
-  Loader2,
-  UserCircle,
-  Link,
-  FileText,
-  TrendingUp,
   CheckCircle2,
-  Video,
-  Users2,
   Eye,
-  type LucideIcon,
+  Globe,
+  Link,
+  Loader2,
+  TrendingUp,
+  UserCircle,
+  Users,
+  Users2,
+  Video,
 } from 'lucide-react'
 import { getOrgPublicProfile, getContentTypeLabel, type OrgPublicProfile } from '@/services/orgPublicApi'
 
@@ -89,8 +90,20 @@ export function OrgPublicProfilePage() {
     return buildPublicContactRows(profile)
   }, [profile])
 
-  if (loading) return <div className="min-h-screen grid place-items-center text-zinc-500"><Loader2 className="w-8 h-8 animate-spin" /></div>
-  if (!profile) return <div className="min-h-screen grid place-items-center text-zinc-500">Organization not found</div>
+  if (loading) {
+    return (
+      <div className="org-profile-page org-profile-page--centered">
+        <Loader2 className="org-profile-page__loader" />
+      </div>
+    )
+  }
+  if (!profile) {
+    return (
+      <div className="org-profile-page org-profile-page--centered org-profile-page--not-found">
+        <p>Organization not found</p>
+      </div>
+    )
+  }
 
   const getPlatformIcon = (platform: string | null) => {
     if (!platform) return null
@@ -99,8 +112,12 @@ export function OrgPublicProfilePage() {
       kick: '/kick.svg',
       twitch: '/twitch.svg',
       youtube: '/youtube.svg',
+      rumble: '/rumble.svg',
+      x: '/x.svg',
+      twitter: '/x.svg',
+      tiktok: '/tiktok.svg',
     }
-    return icons[platform] || '/capsule.svg'
+    return icons[platform] || null
   }
 
   const getPlatformFilter = (platform: string | null) => {
@@ -119,6 +136,15 @@ export function OrgPublicProfilePage() {
     twitch: 'Twitch',
     youtube: 'YouTube',
     pumpfun: 'Pump.fun',
+    x: 'X',
+    twitter: 'X',
+    instagram: 'Instagram',
+    tiktok: 'TikTok',
+  }
+
+  const platformLabel = (platform: string | null) => {
+    if (!platform) return 'Unknown'
+    return platformTitles[platform] || platform
   }
 
   const streamerProfileUrl = (platform: string | null, platformId: string | null) => {
@@ -139,245 +165,131 @@ export function OrgPublicProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0b] text-white p-6">
-      <div className="max-w-[1400px] mx-auto">
-        <div className="relative rounded-2xl border border-zinc-800 bg-zinc-900 overflow-hidden mb-6">
-          <div className="absolute top-0 left-0 right-0 h-[120px] bg-gradient-to-br from-blue-500/15 to-blue-700/15 opacity-50" />
-          <div className="relative p-8">
-            <div className="flex items-start gap-6 mb-8">
-              {profile.logo_url ? <img src={profile.logo_url} className="w-24 h-24 rounded-[20px] object-cover border-2 border-zinc-800" /> : <Building2 className="w-24 h-24 p-5 rounded-[20px] bg-zinc-800 text-zinc-500 border-2 border-zinc-800" />}
-              <div className="min-w-0">
-                <h1 className="text-[28px] font-bold tracking-[-0.03em]">{profile.name}</h1>
-                {profile.description && <p className="text-zinc-400 mt-2 max-w-[680px] leading-relaxed">{profile.description}</p>}
-                {!!profile.content_type_tags?.length && <div className="flex gap-2 flex-wrap mt-3">{profile.content_type_tags.map((t) => <span key={t} className="px-2.5 py-1.5 text-[11px] rounded-md bg-blue-500/15 text-blue-400 font-semibold">{getContentTypeLabel(t)}</span>)}</div>}
-              </div>
+    <div className="org-profile-page">
+      <div className="org-profile">
+        <div className="org-hero">
+          <div className="org-hero__banner" />
+          <div className="org-hero__content">
+            <div className="org-hero__avatar">
+              {profile.logo_url ? <img src={profile.logo_url} className="org-hero__avatar-img" /> : <Building2 className="org-hero__avatar-fallback" />}
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-2.5">
-              {(
-                [
-                  {
-                    label: 'Active Campaigns',
-                    value: profile.stats.campaigns_running,
-                    Icon: TrendingUp,
-                    box: 'bg-gradient-to-br from-sky-500/25 to-sky-600/10',
-                    iconClass: 'text-sky-400',
-                  },
-                  {
-                    label: 'Completed Campaigns',
-                    value: profile.stats.campaigns_completed,
-                    Icon: CheckCircle2,
-                    box: 'bg-gradient-to-br from-emerald-500/25 to-emerald-600/10',
-                    iconClass: 'text-emerald-400',
-                  },
-                  {
-                    label: 'Streamers',
-                    value: profile.stats.streamers_count,
-                    Icon: Video,
-                    box: 'bg-gradient-to-br from-violet-500/25 to-violet-600/10',
-                    iconClass: 'text-violet-400',
-                  },
-                  {
-                    label: 'Clippers',
-                    value: profile.stats.clippers_count,
-                    Icon: Users2,
-                    box: 'bg-gradient-to-br from-amber-500/25 to-amber-600/10',
-                    iconClass: 'text-amber-400',
-                  },
-                  {
-                    label: 'Total Views',
-                    value: profile.stats.total_views ?? 0,
-                    Icon: Eye,
-                    box: 'bg-gradient-to-br from-fuchsia-500/25 to-fuchsia-600/10',
-                    iconClass: 'text-fuchsia-400',
-                  },
-                ] as const satisfies ReadonlyArray<{
-                  label: string
-                  value: number
-                  Icon: LucideIcon
-                  box: string
-                  iconClass: string
-                }>
-              ).map(({ label, value, Icon, box, iconClass }) => (
-                <div
-                  key={label}
-                  className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-800/60 px-2.5 py-2 min-w-0"
-                >
-                  <div
-                    className={`flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg ${box}`}
-                  >
-                    <Icon className={`h-[15px] w-[15px] ${iconClass}`} strokeWidth={2} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-lg sm:text-xl font-bold leading-none tabular-nums truncate">
-                      {value.toLocaleString()}
-                    </div>
-                    <div className="text-[9px] sm:text-[10px] uppercase tracking-[0.04em] text-zinc-500 mt-0.5 whitespace-nowrap truncate">
-                      {label}
-                    </div>
-                  </div>
+            <div className="org-hero__info">
+              <h1 className="org-hero__name">{profile.name}</h1>
+              {profile.description && <p className="org-hero__tagline">{profile.description}</p>}
+              {!!profile.content_type_tags?.length && (
+                <div className="org-hero__tags">
+                  {profile.content_type_tags.map((t) => <span key={t} className="org-hero__tag">{getContentTypeLabel(t)}</span>)}
                 </div>
-              ))}
+              )}
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8 px-2">
-          <div className="flex flex-col gap-6">
+        <div className="org-stats-grid">
+          <div className="org-stat-card"><div className="org-stat-card__icon org-stat-card__icon--cyan"><TrendingUp size={18} /></div><div className="org-stat-card__content"><span className="org-stat-card__value">{profile.stats.campaigns_running}</span><span className="org-stat-card__label">Active Campaigns</span></div></div>
+          <div className="org-stat-card"><div className="org-stat-card__icon org-stat-card__icon--green"><CheckCircle2 size={18} /></div><div className="org-stat-card__content"><span className="org-stat-card__value">{profile.stats.campaigns_completed}</span><span className="org-stat-card__label">Completed</span></div></div>
+          <div className="org-stat-card"><div className="org-stat-card__icon org-stat-card__icon--violet"><Video size={18} /></div><div className="org-stat-card__content"><span className="org-stat-card__value">{profile.stats.streamers_count}</span><span className="org-stat-card__label">Streamers</span></div></div>
+          <div className="org-stat-card"><div className="org-stat-card__icon org-stat-card__icon--amber"><Users2 size={18} /></div><div className="org-stat-card__content"><span className="org-stat-card__value">{profile.stats.clippers_count}</span><span className="org-stat-card__label">Clippers</span></div></div>
+          <div className="org-stat-card"><div className="org-stat-card__icon org-stat-card__icon--pink"><Eye size={18} /></div><div className="org-stat-card__content"><span className="org-stat-card__value">{(profile.stats.total_views ?? 0).toLocaleString()}</span><span className="org-stat-card__label">Total Views</span></div></div>
+        </div>
+
+        <div className="org-grid">
+          <div className="org-main">
             {!!profile.bio && (
-              <section className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
-                <div className="px-6 py-5 border-b border-zinc-800 bg-gradient-to-b from-purple-500/5 to-transparent flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-purple-500/15 flex items-center justify-center">
-                    <FileText className="w-5 h-5 text-purple-400" />
-                  </div>
-                  <h2 className="text-lg font-semibold">About</h2>
-                </div>
-                <div className="p-6">
-                  <p className="text-zinc-400 leading-relaxed whitespace-pre-wrap">{profile.bio}</p>
-                </div>
-              </section>
+              <div className="org-card">
+                <div className="org-card__header"><h2 className="org-card__title">About</h2></div>
+                <div className="org-card__body"><p className="org-card__text">{profile.bio}</p></div>
+              </div>
             )}
 
             {!!profile.streamers?.length && (
-              <section className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
-                <div className="px-6 py-5 border-b border-zinc-800 bg-gradient-to-b from-cyan-500/5 to-transparent">
-                  <h2 className="text-lg font-semibold">Streamers</h2>
-                </div>
-                <div className="p-6">
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-5">
-              {profile.streamers.map((s) => {
-                const href = streamerProfileUrl(s.platform, s.platform_id ?? null)
-                const CardTag = href ? 'a' : 'div'
-                const linkProps = href
-                  ? { href, target: '_blank' as const, rel: 'noopener noreferrer' as const }
-                  : {}
-                return (
-                  <CardTag
-                    key={s.id}
-                    {...linkProps}
-                    className={`relative flex flex-col overflow-hidden rounded-[16px] border border-zinc-800 bg-[linear-gradient(to_bottom,rgba(24,24,27,1)_0%,rgba(0,0,0,0.2)_100%)] transition-all duration-200 [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] hover:-translate-y-1 hover:border-cyan-500/40 hover:shadow-[0_12px_24px_rgba(0,0,0,0.3),0_0_0_1px_rgba(6,182,212,0.1)] ${href ? 'cursor-pointer text-inherit no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2' : ''}`}
-                  >
-                    <div className="pointer-events-none absolute left-0 right-0 top-0 h-20 bg-[linear-gradient(135deg,rgba(6,182,212,0.1)_0%,rgba(14,165,233,0.05)_100%)] opacity-50" />
-
-                    <div className="relative flex flex-col items-center gap-3.5 border-b border-zinc-800 px-5 pb-5 pt-6 text-center">
-                      <div className="relative z-[1] h-20 w-20 shrink-0 overflow-hidden rounded-full border-4 border-zinc-900 bg-zinc-800 shadow-[0_4px_12px_rgba(0,0,0,0.2),0_0_0_2px_rgba(6,182,212,0.2)]">
-                        {s.profile_image_url ? (
-                          <img src={s.profile_image_url} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,rgba(6,182,212,0.15)_0%,rgba(39,39,42,1)_100%)]">
-                            <UserCircle className="h-7 w-7 text-zinc-500 opacity-60" />
+              <div className="org-card">
+                <div className="org-card__header"><h2 className="org-card__title">Streamers</h2><span className="org-card__count">{profile.streamers.length}</span></div>
+                <div className="org-card__body org-card__body--streamers">
+                  {profile.streamers.map((s) => {
+                    const href = streamerProfileUrl(s.platform, s.platform_id ?? null)
+                    const inner = (
+                      <>
+                        <div className="creator-card__banner" />
+                        <div className="creator-card__content">
+                          <div className="creator-card__avatar">
+                            {s.profile_image_url ? <img src={s.profile_image_url} className="creator-card__avatar-img" /> : <UserCircle className="creator-card__avatar-fallback" />}
                           </div>
-                        )}
-                      </div>
-
-                      <div className="flex w-full flex-col items-center gap-2">
-                        <div className="w-full overflow-hidden text-ellipsis whitespace-nowrap text-[1.125rem] font-bold leading-[1.3] tracking-[-0.02em] text-white">
-                          {s.display_name || s.name || 'Streamer'}
+                          <span className="creator-card__name">{s.display_name || s.name || 'Streamer'}</span>
+                          <div className="creator-card__platform" title={s.platform ? platformLabel(s.platform) : 'No platform linked'}>
+                            {s.platform && getPlatformIcon(s.platform) ? <img src={getPlatformIcon(s.platform) || ''} className="creator-card__platform-icon" style={{ filter: getPlatformFilter(s.platform) }} /> : <Link className="creator-card__platform-empty" />}
+                          </div>
                         </div>
-                        <div className="mt-0.5 flex items-center justify-center gap-1.5">
-                          <span
-                            className="flex h-7 w-7 items-center justify-center rounded-md bg-white/10"
-                            title={s.platform ? platformTitles[s.platform] ?? s.platform : 'No platform linked'}
-                          >
-                            {s.platform ? (
-                              <img
-                                src={getPlatformIcon(s.platform) || ''}
-                                alt=""
-                                className="h-[18px] w-[18px]"
-                                style={{ filter: getPlatformFilter(s.platform) }}
-                              />
-                            ) : (
-                              <Link className="h-4 w-4 text-zinc-500" />
-                            )}
-                          </span>
-                        </div>
+                      </>
+                    )
+                    if (href) {
+                      return (
+                        <a key={s.id} className="creator-card creator-card--link" href={href} target="_blank" rel="noopener noreferrer">
+                          {inner}
+                        </a>
+                      )
+                    }
+                    return (
+                      <div key={s.id} className="creator-card">
+                        {inner}
                       </div>
-                    </div>
-                  </CardTag>
-                )
-              })}
-            </div>
+                    )
+                  })}
                 </div>
-              </section>
+              </div>
             )}
           </div>
 
-          <aside className="flex flex-col gap-5">
+          <aside className="org-sidebar">
             {!!profile.social_accounts?.length && (
-              <section className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
-                <div className="px-5 py-4 border-b border-zinc-800 bg-gradient-to-b from-cyan-500/5 to-transparent">
-                  <h3 className="text-base font-semibold">Connected Accounts</h3>
-                </div>
-                <div className="p-4 flex flex-col gap-2">
+              <div className="org-card org-card--compact">
+                <div className="org-card__header"><Users className="org-card__header-icon" /><h3 className="org-card__title">Connected</h3></div>
+                <div className="org-card__body">
                   {profile.social_accounts.map((a) => (
-                    <div key={a.id} className="flex items-center gap-2.5 p-2.5 rounded-lg border border-zinc-800 bg-zinc-800/60">
-                      {a.profile_image_url ? <img src={a.profile_image_url} className="w-8 h-8 rounded-full object-cover" /> : <UserCircle className="w-8 h-8 text-zinc-500" />}
-                      <div className="min-w-0">
-                        <div className="text-sm text-zinc-100 truncate">{a.display_name || a.username || a.platform}</div>
-                        <div className="text-[11px] text-zinc-500">{a.platform}</div>
+                    <div key={a.id} className="org-account">
+                      {a.profile_image_url ? <img src={a.profile_image_url} className="org-account__avatar" /> : <div className="org-account__avatar org-account__avatar--placeholder"><Users size={14} /></div>}
+                      <div className="org-account__info">
+                        <span className="org-account__name">{a.display_name || a.username || a.platform}</span>
+                        <div className="org-account__platform-row">
+                          <span className="org-account__platform-chip" title={a.platform ? platformLabel(a.platform) : 'No platform linked'}>
+                            {a.platform && getPlatformIcon(a.platform) ? <img src={getPlatformIcon(a.platform) || ''} className="org-account__platform-icon" style={{ filter: getPlatformFilter(a.platform) }} /> : <Link className="org-account__platform-empty" />}
+                          </span>
+                          <span className="org-account__platform">{platformLabel(a.platform)}</span>
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
-              </section>
+              </div>
             )}
+
             {publicContactRows.length > 0 && (
-              <section className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
-                <div className="px-5 py-4 border-b border-zinc-800 bg-gradient-to-b from-cyan-500/5 to-transparent">
-                  <h3 className="text-base font-semibold">Contact</h3>
-                </div>
-                <div className="p-4 flex flex-col gap-2">
+              <div className="org-card org-card--compact">
+                <div className="org-card__header"><Globe className="org-card__header-icon" /><h3 className="org-card__title">Contact</h3></div>
+                <div className="org-card__body">
                   {publicContactRows.map((row) => (
-                    <div
-                      key={row.key}
-                      className="flex flex-col gap-1 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-800/60 min-w-0"
-                    >
-                      <span className="text-[10px] uppercase tracking-[0.06em] text-zinc-500 font-semibold">{row.label}</span>
-                      {row.href ? (
-                        <a
-                          href={row.href}
-                          target={row.external ? '_blank' : undefined}
-                          rel={row.external ? 'noopener noreferrer' : undefined}
-                          className="text-sm text-zinc-100 no-underline hover:text-cyan-400 break-words leading-snug"
-                        >
-                          {row.text}
-                        </a>
-                      ) : (
-                        <span className="text-sm text-zinc-100 break-words leading-snug">{row.text}</span>
-                      )}
+                    <div key={row.key} className="org-contact">
+                      <span className="org-contact__label">{row.label}</span>
+                      {row.href ? <a href={row.href} target={row.external ? '_blank' : undefined} rel={row.external ? 'noopener noreferrer' : undefined} className="org-contact__value org-contact__value--link">{row.text}</a> : <span className="org-contact__value">{row.text}</span>}
                     </div>
                   ))}
                 </div>
-              </section>
+              </div>
             )}
+
             {!!profile.hiring && (
-              <section className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
-                <div className="px-5 py-4 border-b border-zinc-800 bg-gradient-to-b from-cyan-500/5 to-transparent flex items-center gap-3">
-                  <h3 className="text-base font-semibold">Hiring</h3>
-                  <span className="ml-auto px-2 py-0.5 text-[11px] font-semibold rounded bg-emerald-500/15 text-emerald-400 capitalize">{profile.hiring.status}</span>
-                </div>
-                <div className="p-4 flex flex-col gap-3">
-                  <div className="font-semibold text-[15px] text-white">{profile.hiring.title}</div>
-                  {!!profile.hiring.description && <p className="text-zinc-400 text-[13px] leading-relaxed m-0">{profile.hiring.description}</p>}
-                  <div className="flex flex-col gap-2">
-                    <div className="flex justify-between items-center p-2.5 rounded-lg border border-zinc-800 bg-zinc-800/60">
-                      <span className="text-[11px] uppercase text-zinc-500 tracking-wide">Status</span>
-                      <span className="text-[13px] font-medium text-zinc-100">{profile.hiring.status}</span>
-                    </div>
-                    <div className="flex justify-between items-center p-2.5 rounded-lg border border-zinc-800 bg-zinc-800/60">
-                      <span className="text-[11px] uppercase text-zinc-500 tracking-wide">Slots</span>
-                      <span className="text-[13px] font-medium text-zinc-100">{profile.hiring.clipper_slots_filled} / {profile.hiring.clipper_slots ?? 'N/A'}</span>
-                    </div>
-                    <div className="flex justify-between items-center p-2.5 rounded-lg border border-zinc-800 bg-zinc-800/60">
-                      <span className="text-[11px] uppercase text-zinc-500 tracking-wide">Experience</span>
-                      <span className="text-[13px] font-medium text-zinc-100">{profile.hiring.experience_level || 'Any'}</span>
-                    </div>
-                    <div className="flex justify-between items-center p-2.5 rounded-lg border border-zinc-800 bg-zinc-800/60">
-                      <span className="text-[11px] uppercase text-zinc-500 tracking-wide">Payment</span>
-                      <span className="text-[13px] font-medium text-zinc-100">{profile.hiring.payment_type || 'Not specified'}</span>
-                    </div>
+              <div className="org-card org-card--compact org-card--hiring">
+                <div className="org-card__header"><Briefcase className="org-card__header-icon" /><h3 className="org-card__title">Hiring</h3><span className="org-card__badge">{profile.hiring.status}</span></div>
+                <div className="org-card__body">
+                  <div className="org-hiring__title">{profile.hiring.title}</div>
+                  {!!profile.hiring.description && <p className="org-hiring__desc">{profile.hiring.description}</p>}
+                  <div className="org-hiring__meta">
+                    <div className="org-hiring__row"><span>Slots</span><span>{profile.hiring.clipper_slots_filled} / {profile.hiring.clipper_slots ?? '∞'}</span></div>
+                    <div className="org-hiring__row"><span>Experience</span><span>{profile.hiring.experience_level || 'Any'}</span></div>
+                    <div className="org-hiring__row"><span>Payment</span><span>{profile.hiring.payment_type || 'Not specified'}</span></div>
                   </div>
                 </div>
-              </section>
+              </div>
             )}
           </aside>
         </div>

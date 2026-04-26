@@ -3,6 +3,7 @@ import type { TimelineTrack } from "../../../../types/timeline";
 import type { Transition } from "../../../../types/transitions";
 import { generateUUID } from "../../../../utils/id";
 import { EditorCore } from "../../../../core";
+import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
 
 export class SplitElementsCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;
@@ -117,7 +118,9 @@ export class SplitElementsCommand extends Command {
 			} as typeof track;
 		});
 
-		editor.timeline.updateTracks(updatedTracks);
+		const fps = editor.project.getActive()?.settings?.fps ?? 30;
+		const collapsedTracks = collapseMainVideoTracksIfPresent(updatedTracks, fps);
+		editor.timeline.updateTracks(collapsedTracks);
 
 		// Clean up transitions whose targetElementId no longer exists in the updated tracks.
 		// We do NOT save/restore these — SetTransitionCommand handles its own undo.
@@ -125,7 +128,7 @@ export class SplitElementsCommand extends Command {
 			const scene = editor.scenes.getActiveScene();
 			if (scene?.transitions?.length) {
 				const allElementIds = new Set(
-					updatedTracks.flatMap((t) => t.elements.map((e) => e.id)),
+					collapsedTracks.flatMap((t) => t.elements.map((e) => e.id)),
 				);
 				const cleanedTransitions = scene.transitions.filter(
 					(t: Transition) => allElementIds.has(t.targetElementId),

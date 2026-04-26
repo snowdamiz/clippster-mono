@@ -5,14 +5,12 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { appDataDir } from '@tauri-apps/api/path';
 import {
   createVideoEditorProject,
   createVideoEditorSource,
   getOrCreateVideoEditorEdit,
   recalculateProjectDuration,
   getClip,
-  getRawVideosByProjectId,
   getFullClipEdit,
   // Migration helpers for clip edits
   createVideoEditorAudioTrack,
@@ -21,7 +19,7 @@ import {
   createVideoEditorWatermark,
   type VideoEditorSource,
 } from '@/services/database';
-import { base64ToUtf8 } from '@/utils/encoding';
+import { extractUnbuiltClipSegmentToPath } from '@/services/clip-vod-extract';
 
 export interface ClipSegmentInput {
   start_time: number;
@@ -35,6 +33,8 @@ export interface CreateProjectFromClipOptions {
   clipStartTime: number;
   clipEndTime: number;
   clipSegments?: ClipSegmentInput[];
+  /** When clips live on a segment/child project, raw VODs are often on the parent — pass `parent_id`. */
+  rawVideoParentProjectId?: string | null;
 }
 
 export interface CreateProjectFromClipResult {
@@ -56,7 +56,7 @@ export interface CreateProjectFromClipResult {
 export async function createVideoEditorProjectFromClip(
   options: CreateProjectFromClipOptions
 ): Promise<CreateProjectFromClipResult> {
-  const { clipId, clipTitle, videoSrc, clipStartTime, clipEndTime } = options;
+  const { clipId, clipTitle, videoSrc, clipStartTime, clipEndTime, rawVideoParentProjectId } = options;
 
   // Create a new video editor project with the clip's name
   const projectName = `${clipTitle || 'Untitled'} - Video Project`;
@@ -86,51 +86,19 @@ export async function createVideoEditorProjectFromClip(
         clipVideoPath = clip.built_file_path;
         console.log('[video-editor-project-creator] Using existing built clip file:', clipVideoPath);
       } else {
-        // No built file — extract the clip segment from the VOD via FFmpeg
-        let vodPath = '';
-
-        // Try to get VOD path from the clip's project
-        if (clip?.project_id) {
-          const rawVideos = await getRawVideosByProjectId(clip.project_id);
-          if (rawVideos.length > 0) {
-            vodPath = rawVideos[0].file_path;
-          }
-        }
-
-        // Fallback: try to extract VOD path from the videoSrc URL
-        if (!vodPath && videoSrc) {
-          const match = videoSrc.match(/\/video\/([^?]+)/);
-          if (match) {
-            try {
-              vodPath = base64ToUtf8(match[1]);
-            } catch {
-              console.warn('[video-editor-project-creator] Failed to decode video path from URL');
-            }
-          }
-        }
-
-        if (!vodPath) {
-          throw new Error('Cannot find source video file for clip extraction');
-        }
-
-        // Extract the clip segment into the editor-media directory
-        const baseDir = await appDataDir();
-        const outputDir = `${baseDir}editor-media/${newProjectId}`;
-        const outputPath = `${outputDir}/clip_${clipId}.mp4`;
-
-        console.log('[video-editor-project-creator] Extracting clip segment from VOD:', {
-          vodPath: vodPath.split(/[\\/]/).pop(),
-          startTime: clipStartTime,
-          endTime: clipEndTime,
-          duration: clipDuration,
-          outputPath,
+        // No built file — extract the clip segment from the VOD (same pipeline as editor media panel)
+        const outputPath = await invoke<string>('get_editor_clip_extract_path', {
+          projectId: newProjectId,
+          clipId,
         });
 
-        await invoke('extract_clip', {
-          sourcePath: vodPath,
+        await extractUnbuiltClipSegmentToPath({
+          clipId,
+          clipStartTime,
+          clipEndTime,
           outputPath,
-          startTime: clipStartTime,
-          endTime: clipEndTime,
+          videoSrc,
+          rawVideoParentProjectId: rawVideoParentProjectId ?? null,
         });
 
         clipVideoPath = outputPath;

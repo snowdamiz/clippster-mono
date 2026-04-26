@@ -1429,11 +1429,25 @@ defmodule ClippsterServer.Campaigns do
   """
   def delete_social_account(%ClipperSocialAccount{} = account, %User{} = user) do
     if account.user_id == user.id do
+      disconnect_provider_account(account)
       Repo.delete(account)
     else
       {:error, :unauthorized}
     end
   end
+
+  defp disconnect_provider_account(%ClipperSocialAccount{
+         provider: "post_for_me",
+         provider_account_id: provider_account_id
+       })
+       when is_binary(provider_account_id) and provider_account_id != "" do
+    case PostForMe.disconnect_social_account(provider_account_id) do
+      {:ok, _} -> :ok
+      {:error, _} -> :ok
+    end
+  end
+
+  defp disconnect_provider_account(_), do: :ok
 
   @doc """
   Updates social account tokens (for token refresh).
