@@ -618,161 +618,46 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* ── Embedded (compact) overrides ── */
-.sp--embedded .sp__preview {
-  min-height: 44px;
-  padding: 8px 10px;
+/* ── Embedded (wizard) overrides ── */
+.sp--embedded {
+  height: auto;
+}
+
+.sp--embedded .sp__body {
+  overflow-y: visible;
+  flex: none;
 }
 
 .sp--embedded .sp__section {
-  padding: 0.5rem 0.75rem;
-}
-
-.sp--embedded .sp__section-hd {
-  font-size: 0.625rem;
-  margin-bottom: 0.3rem;
-  letter-spacing: 0.07em;
+  padding: 0.875rem 1rem;
 }
 
 .sp--embedded .sp__section--last {
-  padding-bottom: 0.75rem;
+  padding-bottom: 1rem;
 }
 
-.sp--embedded p,
-.sp--embedded .sp__hint {
+.sp--embedded .sp__section-hd {
   font-size: 0.6875rem;
-  margin-top: 2px;
-}
-
-.sp--embedded h4,
-.sp--embedded .sp__section > p:first-of-type {
-  font-size: 0.6875rem;
+  margin-bottom: 0.5rem;
+  letter-spacing: 0.06em;
 }
 
 .sp--embedded .sp__field {
-  gap: 3px;
-}
-
-.sp--embedded .sp__label {
-  font-size: 0.6875rem;
-}
-
-.sp--embedded .sp__slider {
-  height: 3px;
-}
-
-.sp--embedded .sp__style-grid {
-  gap: 0.25rem;
-}
-
-.sp--embedded .sp__style-btn {
-  padding: 0.375rem 0.5rem;
-}
-
-.sp--embedded .sp__style-name {
-  font-size: 0.6875rem;
-}
-
-.sp--embedded .sp__style-desc {
-  font-size: 0.5625rem;
+  gap: 6px;
 }
 
 .sp--embedded .sp__segments {
-  max-height: 100px;
-  gap: 3px;
-}
-
-.sp--embedded .sp__seg-ta {
-  font-size: 0.6875rem;
-  padding: 3px 5px;
+  max-height: 160px;
+  gap: 6px;
 }
 
 .sp--embedded .sp__font-grid {
   grid-template-columns: repeat(3, 1fr);
-  gap: 0.25rem;
-}
-
-.sp--embedded .sp__pill-row {
-  gap: 2px;
-}
-
-.sp--embedded .sp__swatch {
-  width: 26px;
-  height: 26px;
-}
-
-.sp--embedded .sp__color-preset {
-  width: 34px;
-  height: 34px;
+  gap: 0.375rem;
 }
 
 .sp--embedded .sp__section-hd-row {
-  margin-bottom: 0.25rem;
-}
-
-.sp--embedded .sp__mt {
-  margin-top: 0.375rem;
-}
-
-.sp--embedded .sp__mb {
-  margin-bottom: 0.375rem;
-}
-
-.sp--embedded .sp__hint {
-  font-size: 0.625rem;
-  margin-bottom: 0;
-}
-
-.sp--embedded .sp__row2 {
-  gap: 0 6px;
-}
-
-.sp--embedded .sp__val {
-  font-size: 0.625rem;
-}
-
-.sp--embedded .sp__hex {
-  font-size: 0.6875rem;
-  padding: 3px 6px;
-}
-
-.sp--embedded .sp__seg-ta {
-  font-size: 0.6875rem;
-  padding: 3px 5px;
-  min-height: 36px;
-}
-
-.sp--embedded .sp__seg-ts {
-  font-size: 0.625rem;
-  min-width: 32px;
-}
-
-.sp--embedded .sp__seg-ctrl {
-  height: 26px;
-}
-
-.sp--embedded .sp__seg-btn {
-  padding: 0.25rem;
-}
-
-.sp--embedded .sp__font-btn {
-  padding: 3px 5px;
-  font-size: 0.6875rem;
-}
-
-.sp--embedded .sp__toggle-track {
-  width: 32px;
-  height: 18px;
-  border-radius: 9px;
-}
-
-.sp--embedded .sp__toggle-thumb {
-  width: 14px;
-  height: 14px;
-}
-
-.sp--embedded input[type="checkbox"]:checked ~ .sp__toggle-thumb {
-  transform: translateX(14px);
+  margin-bottom: 0.5rem;
 }
 
 /* Header */

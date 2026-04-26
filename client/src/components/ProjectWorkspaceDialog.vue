@@ -106,8 +106,8 @@
                     :watermark-data="currentWatermarkData"
                     :subtitle-settings="activeSubtitleSettings"
                     :subtitle-initial-position="activeSubtitlePosition"
-                    :transcript-words="transcriptWords"
-                    :transcript-segments="transcriptSegments"
+                    :transcript-words="videoPlayerTranscriptWords"
+                    :transcript-segments="videoPlayerTranscriptSegments"
                     :current-time="currentTime"
                     :clip-text-box-state="clipTextBoxForVideoPlayer"
                     :clip-text-box-interactive="clipTextBoxPlayerInteractive"
@@ -392,7 +392,7 @@
   import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
   import { X, Film, Smartphone } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
-  import type { WatermarkSettings } from '@/types';
+  import type { WatermarkSettings, WordInfo, WhisperSegment } from '@/types';
   import VideoPlayer from './VideoPlayer.vue';
   import VideoControls from './VideoControls.vue';
   import MediaPanel from './MediaPanel.vue';
@@ -546,6 +546,16 @@
     const segments = getClipTimelineSegments(clip);
     if (!segments.length) return null;
     return segments[0].start_time;
+  }
+
+  /** Source-timeline [start, end) for a clip; used to align subtitles with built 0-based playback. */
+  function getClipSourceTimeWindow(clip: any): { start: number; end: number } | null {
+    const segs = getClipTimelineSegments(clip);
+    if (!segs.length) return null;
+    return {
+      start: segs[0].start_time,
+      end: segs[segs.length - 1].end_time,
+    };
   }
 
   const textBoxContextClipId = computed(() => {
@@ -813,6 +823,61 @@
     const segments = transcriptData.value?.whisperSegments || [];
     console.log('[ProjectWorkspaceDialog] transcriptSegments:', segments.length);
     return segments;
+  });
+
+  /**
+   * For built-clip playback the video is 0-based, but the DB transcript is source-absolute.
+   * Remap words/segments to clip-relative times so VideoPlayer can match `currentTime`.
+   */
+  const videoPlayerTranscriptWords = computed((): WordInfo[] => {
+    const words = transcriptData.value?.words || [];
+    if (workspaceVideoTimeIsSourceAbsolute.value) return words;
+    const clipId = currentlyPlayingClipId.value || lastPlayedClipId.value;
+    const clip = getTimelineClipById(clipId);
+    if (!clip) return words;
+    const win = getClipSourceTimeWindow(clip);
+    if (!win) return words;
+    const { start: c0, end: c1 } = win;
+    const span = c1 - c0;
+    return words
+      .filter((w) => w.end > c0 && w.start < c1)
+      .map((w) => ({
+        ...w,
+        start: Math.max(0, w.start - c0),
+        end: Math.min(span, w.end - c0),
+      }));
+  });
+
+  const videoPlayerTranscriptSegments = computed((): WhisperSegment[] => {
+    const segs = transcriptData.value?.whisperSegments || [];
+    if (workspaceVideoTimeIsSourceAbsolute.value) return segs;
+    const clipId = currentlyPlayingClipId.value || lastPlayedClipId.value;
+    const clip = getTimelineClipById(clipId);
+    if (!clip) return segs;
+    const win = getClipSourceTimeWindow(clip);
+    if (!win) return segs;
+    const { start: c0, end: c1 } = win;
+    const span = c1 - c0;
+    const out: WhisperSegment[] = [];
+    for (const seg of segs) {
+      if (seg.end <= c0 || seg.start >= c1) continue;
+      const ns = Math.max(0, seg.start - c0);
+      const ne = Math.min(span, seg.end - c0);
+      if (ne <= ns) continue;
+      let remappedWords: WordInfo[] | undefined;
+      if (seg.words && seg.words.length > 0) {
+        remappedWords = seg.words
+          .filter((w) => w.end > c0 && w.start < c1)
+          .map((w) => ({
+            ...w,
+            start: Math.max(0, w.start - c0),
+            end: Math.min(span, w.end - c0),
+          }));
+        if (remappedWords.length === 0) remappedWords = undefined;
+      }
+      out.push({ ...seg, start: ns, end: ne, words: remappedWords });
+    }
+    return out;
   });
 
   // Segments scoped to the selected/playing clip for the subtitle properties panel

@@ -250,12 +250,7 @@ export function OrgPublicProfilePage() {
                       {a.profile_image_url ? <img src={a.profile_image_url} className="org-account__avatar" /> : <div className="org-account__avatar org-account__avatar--placeholder"><Users size={14} /></div>}
                       <div className="org-account__info">
                         <span className="org-account__name">{a.display_name || a.username || a.platform}</span>
-                        <div className="org-account__platform-row">
-                          <span className="org-account__platform-chip" title={a.platform ? platformLabel(a.platform) : 'No platform linked'}>
-                            {a.platform && getPlatformIcon(a.platform) ? <img src={getPlatformIcon(a.platform) || ''} className="org-account__platform-icon" style={{ filter: getPlatformFilter(a.platform) }} /> : <Link className="org-account__platform-empty" />}
-                          </span>
-                          <span className="org-account__platform">{platformLabel(a.platform)}</span>
-                        </div>
+                        <span className="org-account__platform">{platformLabel(a.platform)}</span>
                       </div>
                     </div>
                   ))}

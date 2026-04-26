@@ -320,19 +320,6 @@
                                 </div>
                               </button>
 
-                              <div class="clips-tab-dropdown-divider h-px my-1 mx-2"></div>
-                              <button
-                                v-if="clip.build_status !== 'building'"
-                                class="clips-tab-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
-                                @click.stop="
-                                  onBuildClip(clip);
-                                  closeDownloadDropdown();
-                                "
-                              >
-                                <Hammer class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
-                                <span>Rebuild in another format…</span>
-                              </button>
-
                               <!-- Legacy download fallback -->
                               <button
                                 v-if="getDownloadableFilesCount(clip) === 0 && clip.built_file_path"
@@ -432,7 +419,7 @@
                                 "
                               >
                                 <Hammer class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
-                                <span>{{ hasCompletedBuilds(clip) ? 'Rebuild clip…' : 'Build Clip' }}</span>
+                                <span>{{ hasCompletedBuilds(clip) ? 'Rebuild Clip' : 'Build Clip' }}</span>
                               </button>
 
                               <!-- Publish Now (only for found clips NOT yet built) -->
