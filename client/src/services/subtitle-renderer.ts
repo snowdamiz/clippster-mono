@@ -247,6 +247,53 @@ function computeSubtitleFrames(
 }
 
 /**
+ * Break the visible words into lines that fit in maxW (matches VideoPlayer:
+ * `maxWidth` % of canvas + `flex-wrap: wrap`).
+ * If a single word is wider than maxW, it occupies its own line (can extend past
+ * the limit, as in a non-breaking long token).
+ */
+function wrapWordIndicesToLines(
+  wordWidths: number[],
+  maxW: number,
+  wordSpacing: number
+): number[][] {
+  if (wordWidths.length === 0) return [];
+  const lines: number[][] = [];
+  let i = 0;
+  while (i < wordWidths.length) {
+    const line: number[] = [i];
+    let lineW = wordWidths[i];
+    i++;
+    while (i < wordWidths.length) {
+      const withGap = lineW + wordSpacing + wordWidths[i];
+      if (withGap <= maxW + 1e-2) {
+        line.push(i);
+        lineW = withGap;
+        i++;
+      } else {
+        break;
+      }
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+function widthOfLine(
+  lineIndices: number[],
+  wordWidths: number[],
+  wordSpacing: number
+): number {
+  if (lineIndices.length === 0) return 0;
+  let w = 0;
+  for (let k = 0; k < lineIndices.length; k++) {
+    w += wordWidths[lineIndices[k]];
+    if (k < lineIndices.length - 1) w += wordSpacing;
+  }
+  return w;
+}
+
+/**
  * Render a single subtitle frame to a PNG blob using Canvas 2D.
  */
 async function renderSubtitleFrame({
@@ -285,28 +332,34 @@ async function renderSubtitleFrame({
     settings.animationStyle === 'single-word' ? w.word.toUpperCase() : w.word
   );
   
-  let totalWidth = 0;
   const wordWidths: number[] = [];
   for (const text of wordTexts) {
-    const width = measureTextWithLetterSpacing(ctx, text, letterSpacing);
-    wordWidths.push(width);
-    totalWidth += width;
+    wordWidths.push(measureTextWithLetterSpacing(ctx, text, letterSpacing));
   }
-  totalWidth += wordSpacing * (wordTexts.length - 1);
+
+  // maxWidth matches VideoPlayer `maxWidth: customSubtitleWidth + '%'`
+  const maxWidthPx = (canvasWidth * (settings.maxWidth || 100)) / 100;
+  const lineStepPx = (settings.lineHeight || 1.2) * fontSize;
+
+  const wordLines = wrapWordIndicesToLines(wordWidths, maxWidthPx, wordSpacing);
+  const lineWidthPx: number[] = wordLines.map((line) => widthOfLine(line, wordWidths, wordSpacing));
+  const maxLineW = lineWidthPx.length ? Math.max(...lineWidthPx) : 0;
+  const nLines = wordLines.length;
+  // Content width: same as CSS `min(max-content, maxW)` on the text box
+  const colWidthPx = Math.min(maxWidthPx, maxLineW);
+  // Total block height: similar to a wrapped flex column
+  const blockHeightPx = nLines > 0 ? (nLines - 1) * lineStepPx + fontSize : fontSize;
+  const align = settings.textAlign || 'center';
 
   // Calculate position
   // Handle per-ratio position override (from ManualPOIEditor)
   // The position can be either:
   // 1. An object { x: number, y: number } with percentages from per-ratio override
   // 2. A string ('top', 'middle', 'bottom') with positionPercentage for Y
-  const maxWidthPx = (canvasWidth * settings.maxWidth) / 100;
-  const actualWidth = Math.min(totalWidth, maxWidthPx);
-  
   let positionX: number;
   let positionY: number;
-  
+
   if (typeof settings.position === 'object' && settings.position !== null && 'x' in settings.position) {
-    // Per-ratio override with explicit x,y percentages
     positionX = (canvasWidth * settings.position.x) / 100 + (settings.textOffsetX || 0) * scaleFactor;
     positionY = (canvasHeight * settings.position.y) / 100 + (settings.textOffsetY || 0) * scaleFactor;
     console.log('[SubtitleRenderer] Using position object:', {
@@ -315,7 +368,6 @@ async function renderSubtitleFrame({
       calculatedY: positionY,
     });
   } else {
-    // Default centered X with positionPercentage for Y
     positionX = canvasWidth / 2 + (settings.textOffsetX || 0) * scaleFactor;
     console.log('[SubtitleRenderer] Using default position (centered X, positionPercentage for Y):', {
       positionPercentage: settings.positionPercentage,
@@ -324,155 +376,156 @@ async function renderSubtitleFrame({
     positionY = (canvasHeight * settings.positionPercentage) / 100 + (settings.textOffsetY || 0) * scaleFactor;
   }
 
-  // Clamp position to ensure text stays within canvas bounds
-  // The text is centered at positionX, so we need padding of half the text width on each side
-  const halfTextWidth = totalWidth / 2;
-  const edgePadding = 5 * scaleFactor; // Small padding from edge
-  
-  // Calculate bounds - ensure text doesn't extend past canvas edges
+  // Keep the text block in frame (after line wrap, not single-line width)
+  const halfTextWidth = colWidthPx / 2;
+  const edgePadding = 5 * scaleFactor;
   const minX = halfTextWidth + edgePadding;
   const maxX = canvasWidth - halfTextWidth - edgePadding;
-  
-  // Only clamp if valid bounds exist (text fits in canvas)
   if (maxX > minX) {
     if (positionX < minX) {
-      console.log('[SubtitleRenderer] Clamping X from', positionX, 'to', minX, '(text would extend past left edge)');
       positionX = minX;
     } else if (positionX > maxX) {
-      console.log('[SubtitleRenderer] Clamping X from', positionX, 'to', maxX, '(text would extend past right edge)');
       positionX = maxX;
     }
   } else {
-    // Text is wider than canvas - center it
-    console.log('[SubtitleRenderer] Text wider than canvas, centering. totalWidth:', totalWidth, 'canvasWidth:', canvasWidth);
     positionX = canvasWidth / 2;
   }
-  
-  // Also clamp Y position
-  const halfTextHeight = fontSize / 2;
+
+  const halfTextHeight = blockHeightPx / 2;
   const minY = halfTextHeight + edgePadding;
   const maxY = canvasHeight - halfTextHeight - edgePadding;
-  
   if (maxY > minY) {
     if (positionY < minY) {
-      console.log('[SubtitleRenderer] Clamping Y from', positionY, 'to', minY);
       positionY = minY;
     } else if (positionY > maxY) {
-      console.log('[SubtitleRenderer] Clamping Y from', positionY, 'to', maxY);
       positionY = maxY;
     }
   }
 
-  // Draw background if enabled
+  // Per-line Y (text vertical center per line) — same anchor as the flex preview block
+  function lineY(lineIndex: number): number {
+    if (nLines <= 0) return positionY;
+    const t = lineIndex - (nLines - 1) / 2;
+    return positionY + t * lineStepPx;
+  }
+
+  // Draw background if enabled (encompass all wrapped lines)
   if (settings.backgroundEnabled && settings.backgroundColor && settings.backgroundColor !== 'transparent') {
     const bgPadding = settings.padding * scaleFactor;
-    const bgWidth = actualWidth + bgPadding * 2;
-    const bgHeight = fontSize * settings.lineHeight + bgPadding * 2;
+    const bgWidth = colWidthPx + bgPadding * 2;
+    const bgHeight = blockHeightPx + bgPadding * 2;
     const bgX = positionX - bgWidth / 2;
     const bgY = positionY - bgHeight / 2;
-    
     ctx.fillStyle = settings.backgroundColor;
     roundRect(ctx, bgX, bgY, bgWidth, bgHeight, settings.borderRadius * scaleFactor);
     ctx.fill();
   }
 
-  // Draw each word
-  let currentX = positionX - totalWidth / 2;
-  
-  for (let i = 0; i < frame.words.length; i++) {
-    const word = frame.words[i];
-    const text = wordTexts[i];
-    const wordWidth = wordWidths[i];
-    const isActive = i === frame.activeWordIndex;
-    const wordCenterX = currentX + wordWidth / 2;
-
-    // Get color for this word
-    let fillColor = settings.textColor;
-    if (settings.animationStyle === 'single-word' && settings.multiColorEnabled) {
-      const globalIndex = allWords.findIndex(w => w.start === word.start && w.word === word.word);
-      fillColor = getWordColor(settings, globalIndex);
-    } else if (isActive && (settings.animationStyle === 'karaoke' || settings.animationStyle === 'glow')) {
-      fillColor = settings.highlightColor || DEFAULT_SUBTITLE_HIGHLIGHT;
+  function lineStartX(lineW: number): number {
+    if (align === 'left') {
+      return positionX - maxWidthPx / 2;
     }
-
-    // Apply shadow
-    if (settings.shadowBlur > 0 || settings.shadowOffsetX !== 0 || settings.shadowOffsetY !== 0) {
-      ctx.shadowColor = settings.shadowColor || '#000000';
-      ctx.shadowBlur = settings.shadowBlur * scaleFactor;
-      ctx.shadowOffsetX = settings.shadowOffsetX * scaleFactor;
-      ctx.shadowOffsetY = settings.shadowOffsetY * scaleFactor;
+    if (align === 'right') {
+      return positionX + maxWidthPx / 2 - lineW;
     }
+    return positionX - lineW / 2;
+  }
 
-    // Draw box highlight background
-    if (isActive && settings.animationStyle === 'box-highlight') {
+  for (let li = 0; li < wordLines.length; li++) {
+    const indices = wordLines[li];
+    const lineW = lineWidthPx[li] ?? 0;
+    let currentX = lineStartX(lineW);
+    const y = lineY(li);
+
+    for (const i of indices) {
+      const word = frame.words[i]!;
+      const text = wordTexts[i]!;
+      const wordWidth = wordWidths[i]!;
+      const isActive = i === frame.activeWordIndex;
+      const wordCenterX = currentX + wordWidth / 2;
+
+      let fillColor = settings.textColor;
+      if (settings.animationStyle === 'single-word' && settings.multiColorEnabled) {
+        const globalIndex = allWords.findIndex(
+          (w) => w.start === word.start && w.word === word.word
+        );
+        fillColor = getWordColor(settings, globalIndex);
+      } else if (isActive && (settings.animationStyle === 'karaoke' || settings.animationStyle === 'glow')) {
+        fillColor = settings.highlightColor || DEFAULT_SUBTITLE_HIGHLIGHT;
+      }
+
+      if (settings.shadowBlur > 0 || settings.shadowOffsetX !== 0 || settings.shadowOffsetY !== 0) {
+        ctx.shadowColor = settings.shadowColor || '#000000';
+        ctx.shadowBlur = settings.shadowBlur * scaleFactor;
+        ctx.shadowOffsetX = settings.shadowOffsetX * scaleFactor;
+        ctx.shadowOffsetY = settings.shadowOffsetY * scaleFactor;
+      }
+
+      if (isActive && settings.animationStyle === 'box-highlight') {
+        ctx.save();
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = settings.highlightColor || DEFAULT_SUBTITLE_HIGHLIGHT;
+        ctx.globalAlpha = 0.3;
+        const boxPad = 4 * scaleFactor;
+        roundRect(
+          ctx,
+          wordCenterX - wordWidth / 2 - boxPad,
+          y - fontSize / 2 - boxPad / 2,
+          wordWidth + boxPad * 2,
+          fontSize + boxPad,
+          4 * scaleFactor
+        );
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+
+      if (isActive && settings.animationStyle === 'glow') {
+        ctx.save();
+        ctx.shadowColor = settings.highlightColor || DEFAULT_SUBTITLE_HIGHLIGHT;
+        ctx.shadowBlur = 20 * scaleFactor;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        drawTextWithLetterSpacing(ctx, text, wordCenterX, y, letterSpacing, fillColor);
+        ctx.restore();
+      }
+
+      if (settings.border2Width > 0) {
+        ctx.save();
+        ctx.strokeStyle = settings.border2Color || '#FF0000';
+        ctx.lineWidth = (settings.border1Width + settings.border2Width) * 2 * scaleFactor;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        strokeTextWithLetterSpacing(ctx, text, wordCenterX, y, letterSpacing);
+        ctx.restore();
+      }
+
+      if (settings.border1Width > 0) {
+        ctx.save();
+        ctx.strokeStyle = settings.border1Color || '#000000';
+        ctx.lineWidth = settings.border1Width * 2 * scaleFactor;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        strokeTextWithLetterSpacing(ctx, text, wordCenterX, y, letterSpacing);
+        ctx.restore();
+      }
+
       ctx.save();
-      ctx.shadowColor = 'transparent';
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = settings.highlightColor || DEFAULT_SUBTITLE_HIGHLIGHT;
-      ctx.globalAlpha = 0.3;
-      const boxPadding = 4 * scaleFactor;
-      roundRect(
-        ctx,
-        wordCenterX - wordWidth / 2 - boxPadding,
-        positionY - fontSize / 2 - boxPadding / 2,
-        wordWidth + boxPadding * 2,
-        fontSize + boxPadding,
-        4 * scaleFactor
-      );
-      ctx.fill();
-      ctx.globalAlpha = 1;
+      if (settings.border1Width <= 0 && settings.border2Width <= 0) {
+        ctx.shadowColor = settings.shadowColor || '#000000';
+        ctx.shadowBlur = settings.shadowBlur * scaleFactor;
+        ctx.shadowOffsetX = settings.shadowOffsetX * scaleFactor;
+        ctx.shadowOffsetY = settings.shadowOffsetY * scaleFactor;
+      } else {
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+      }
+      drawTextWithLetterSpacing(ctx, text, wordCenterX, y, letterSpacing, fillColor);
       ctx.restore();
-    }
 
-    // Draw glow effect
-    if (isActive && settings.animationStyle === 'glow') {
-      ctx.save();
-      ctx.shadowColor = settings.highlightColor || DEFAULT_SUBTITLE_HIGHLIGHT;
-      ctx.shadowBlur = 20 * scaleFactor;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 0;
-      drawTextWithLetterSpacing(ctx, text, wordCenterX, positionY, letterSpacing, fillColor);
-      ctx.restore();
+      currentX += wordWidth + wordSpacing;
     }
-
-    // Draw border 2 (outer)
-    if (settings.border2Width > 0) {
-      ctx.save();
-      ctx.strokeStyle = settings.border2Color || '#FF0000';
-      ctx.lineWidth = (settings.border1Width + settings.border2Width) * 2 * scaleFactor;
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      strokeTextWithLetterSpacing(ctx, text, wordCenterX, positionY, letterSpacing);
-      ctx.restore();
-    }
-
-    // Draw border 1 (inner)
-    if (settings.border1Width > 0) {
-      ctx.save();
-      ctx.strokeStyle = settings.border1Color || '#000000';
-      ctx.lineWidth = settings.border1Width * 2 * scaleFactor;
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      strokeTextWithLetterSpacing(ctx, text, wordCenterX, positionY, letterSpacing);
-      ctx.restore();
-    }
-
-    // Draw fill text
-    ctx.save();
-    if (settings.border1Width <= 0 && settings.border2Width <= 0) {
-      // Apply shadow to fill if no borders
-      ctx.shadowColor = settings.shadowColor || '#000000';
-      ctx.shadowBlur = settings.shadowBlur * scaleFactor;
-      ctx.shadowOffsetX = settings.shadowOffsetX * scaleFactor;
-      ctx.shadowOffsetY = settings.shadowOffsetY * scaleFactor;
-    } else {
-      ctx.shadowColor = 'transparent';
-      ctx.shadowBlur = 0;
-    }
-    drawTextWithLetterSpacing(ctx, text, wordCenterX, positionY, letterSpacing, fillColor);
-    ctx.restore();
-
-    currentX += wordWidth + wordSpacing;
   }
 
   const blob = await canvas.convertToBlob({ type: 'image/png' });

@@ -1305,7 +1305,9 @@
     // For landscape (16:9): container ~240px wide, output 1920px → scale ~0.125
     // For square (1:1): container ~240px wide, output 1080px → scale ~0.22
     const scale = ar < 0.9 ? 0.20 : ar < 1.2 ? 0.22 : 0.125;
-    const fs = Math.max(9, Math.round(settings.fontSize * scale));
+    // Do not floor too high: preview canvas is small (fontSize*scale is often 6–20px);
+    // a high min hid real font size changes when resizing the subtitle box in POI.
+    const fs = Math.max(1, Math.round(settings.fontSize * scale));
     const stroke = settings.border1Width > 0
       ? `${settings.border1Color} 0 0 0 ${settings.border1Width * scale}px`
       : undefined;
@@ -1762,20 +1764,19 @@
     });
 
     const onMove = (e: MouseEvent) => {
-      // Calculate horizontal delta for box width
+      // Combine X and Y so corner drags (mostly vertical or diagonal) still resize, like the clip
+      // text box. In screen space, y grows downward.
       const deltaXPct = ((e.clientX - startX) / rect.width) * 100;
-      let newWidth: number;
-      let newCenterX: number;
+      const deltaYPct = ((e.clientY - startY) / rect.height) * 100;
+      // Positive deltaExpand = drag “outward” from center for each corner
+      let deltaExpand = 0;
+      if (corner === 'se') deltaExpand = deltaXPct + deltaYPct;
+      else if (corner === 'ne') deltaExpand = deltaXPct - deltaYPct;
+      else if (corner === 'sw') deltaExpand = -deltaXPct + deltaYPct;
+      else if (corner === 'nw') deltaExpand = -deltaXPct - deltaYPct;
 
-      if (corner === 'ne' || corner === 'se') {
-        // Right corners: dragging right increases width
-        newWidth = Math.max(20, Math.min(100, startWidth + deltaXPct * 2));
-        newCenterX = startCenterX;
-      } else {
-        // Left corners: dragging left increases width
-        newWidth = Math.max(20, Math.min(100, startWidth - deltaXPct * 2));
-        newCenterX = startCenterX;
-      }
+      const newWidth = Math.max(20, Math.min(100, startWidth + deltaExpand * 2));
+      const newCenterX = startCenterX;
 
       // Calculate font size directly from box width ratio
       // This creates a 1:1 correlation between box size and font size
@@ -1795,11 +1796,8 @@
       // Emit both position and settings changes
       emit('subtitlePositionChange', { ...localSubtitlePosition.value });
       
-      const updatedSettings = {
-        ...subtitleSettingsSnapshot,
-        fontSize: newFontSize
-      };
-      emit('subtitleSettingsChange', updatedSettings);
+      const base = props.subtitleSettings ?? subtitleSettingsSnapshot;
+      emit('subtitleSettingsChange', { ...base, fontSize: newFontSize });
     };
 
     const onUp = () => {

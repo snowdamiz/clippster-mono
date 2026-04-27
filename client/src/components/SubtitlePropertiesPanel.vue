@@ -618,14 +618,20 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* ── Embedded (wizard) overrides ── */
+/* ── Embedded (Manual POI left rail): fill flex parent and scroll the body.
+   (Previously height:auto + visible overflow let content extend past the modal; parent had
+   overflow-hidden so the panel could not scroll to Animation Style / Font / etc.) */
 .sp--embedded {
-  height: auto;
+  min-height: 0;
+  flex: 1 1 0%;
+  height: 100%;
 }
 
 .sp--embedded .sp__body {
-  overflow-y: visible;
-  flex: none;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .sp--embedded .sp__section {
