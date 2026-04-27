@@ -245,17 +245,20 @@
 <script setup lang="ts">
   import { ref, watch } from 'vue';
   import { Captions, Info, Loader2, X, AlertCircle } from 'lucide-vue-next';
-  import type { Clip } from '@/types';
+  import type { Clip, SubtitleSettings } from '@/types';
 
   interface Props {
     modelValue: boolean;
     clips: Clip[];
     projectId?: string | null;
+    /** From VOD preset (creator layout) or local creator profile clip_build_defaults */
+    defaultSubtitleSettings?: SubtitleSettings | null;
   }
 
   const props = withDefaults(defineProps<Props>(), {
     clips: () => [],
     projectId: null,
+    defaultSubtitleSettings: null,
   });
 
   const emit = defineEmits<{
@@ -320,16 +323,24 @@
     }
   }
 
-  // Reset state when dialog opens
+  // Reset state when dialog opens; pre-select style from creator / VOD defaults when present
   watch(
     () => props.modelValue,
     (isOpen) => {
       if (isOpen) {
         applyToAll.value = false;
-        selectedPreset.value = '';
         selectedClipIds.value = new Set();
         error.value = '';
         isSaving.value = false;
+
+        const d = props.defaultSubtitleSettings;
+        if (d?.selectedPresetId && String(d.selectedPresetId).trim()) {
+          selectedPreset.value = String(d.selectedPresetId).trim();
+        } else if (d) {
+          selectedPreset.value = 'tiktok-bold';
+        } else {
+          selectedPreset.value = '';
+        }
       }
     }
   );

@@ -625,6 +625,7 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
   min-height: 0;
   flex: 1 1 0%;
   height: 100%;
+  font-size: 0.8125rem;
 }
 
 .sp--embedded .sp__body {
@@ -635,26 +636,138 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
 }
 
 .sp--embedded .sp__section {
-  padding: 0.875rem 1rem;
+  padding: 1rem 1rem;
 }
 
 .sp--embedded .sp__section--last {
-  padding-bottom: 1rem;
+  padding-bottom: 1.25rem;
 }
 
 .sp--embedded .sp__section-hd {
+  font-size: 0.625rem;
+  margin-bottom: 0.625rem;
+  letter-spacing: 0.07em;
+}
+
+.sp--embedded .sp__section-hint {
+  font-size: 0.5625rem;
+}
+
+.sp--embedded .sp__label {
   font-size: 0.6875rem;
-  margin-bottom: 0.5rem;
-  letter-spacing: 0.06em;
+  font-weight: 500;
+  line-height: 1.35;
+  gap: 0.25rem;
+}
+
+.sp--embedded .sp__val {
+  font-size: 0.625rem;
 }
 
 .sp--embedded .sp__field {
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Narrow rail: stack paired controls so sliders aren’t crushed against color pickers */
+.sp--embedded .sp__row2 {
+  grid-template-columns: 1fr;
+  gap: 12px 0;
+}
+
+.sp--embedded .sp__mt {
+  margin-top: 10px;
+}
+
+.sp--embedded .sp__hint {
+  font-size: 0.625rem;
+  line-height: 1.45;
+}
+
+.sp--embedded .sp__hint.sp__mb {
+  margin-bottom: 0.625rem;
+}
+
+.sp--embedded .sp__slider {
+  margin-top: 1px;
+}
+
+.sp--embedded .sp__color-grid {
+  gap: 14px 14px;
+}
+
+.sp--embedded .sp__color-item {
   gap: 6px;
+}
+
+.sp--embedded .sp__swatch-row {
+  gap: 8px;
+}
+
+.sp--embedded .sp__swatch {
+  width: 28px;
+  height: 28px;
+}
+
+.sp--embedded .sp__hex {
+  font-size: 0.6875rem;
+  padding: 0.375rem 0.5rem;
+}
+
+.sp--embedded .sp__style-grid {
+  gap: 6px;
+}
+
+.sp--embedded .sp__style-btn {
+  padding: 0.5rem 0.625rem;
+  gap: 0.125rem;
+}
+
+.sp--embedded .sp__style-name {
+  font-size: 0.8125rem;
+}
+
+.sp--embedded .sp__style-desc {
+  font-size: 0.625rem;
+  line-height: 1.35;
+}
+
+.sp--embedded .sp__font-btn {
+  padding: 0.45rem 0.5rem;
+  font-size: 0.6875rem;
+}
+
+.sp--embedded .sp__pill {
+  font-size: 9px;
+  padding: 2px 6px;
+}
+
+.sp--embedded .sp__seg-ctrl {
+  border-radius: 5px;
+}
+
+.sp--embedded .sp__seg-btn {
+  padding: 0.35rem 0.45rem;
 }
 
 .sp--embedded .sp__segments {
   max-height: 160px;
-  gap: 6px;
+  gap: 8px;
+}
+
+.sp--embedded .sp__seg-ta {
+  font-size: 0.75rem;
+  padding: 0.5rem 0.625rem;
+}
+
+/* No “live playback” segment highlight in creator defaults — avoid emerald active chrome */
+.sp--embedded .sp__seg--active {
+  border-color: transparent;
+  background: transparent;
+}
+
+.sp--embedded .sp__seg-ta:focus {
+  border-color: var(--sidebar-border);
 }
 
 .sp--embedded .sp__font-grid {
@@ -663,7 +776,32 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
 }
 
 .sp--embedded .sp__section-hd-row {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.625rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sp--embedded .sp__radio-label {
+  font-size: 0.75rem;
+}
+
+.sp--embedded .sp__preset-colors {
+  gap: 6px;
+}
+
+.sp--embedded .sp__color-preset {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border-width: 1px;
+}
+
+.sp--embedded .sp__color-preset-check {
+  font-size: 14px;
+}
+
+.sp--embedded .sp__color-preset-icon {
+  font-size: 18px;
 }
 
 /* Header */

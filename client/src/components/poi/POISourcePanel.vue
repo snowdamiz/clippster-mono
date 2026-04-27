@@ -30,6 +30,7 @@
       </div>
       <div class="flex items-center gap-2">
         <button
+          v-if="allowMediaUpload"
           @click="openMediaUpload"
           class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 rounded-md transition-colors"
           title="Upload image/video (creates new region)"
@@ -284,6 +285,8 @@
     isPlaying?: boolean;
     volume?: number;
     isMuted?: boolean;
+    /** When false, hides upload UI (e.g. creator profile defaults use stream/thumbnail reference only). */
+    allowMediaUpload?: boolean;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -293,6 +296,7 @@
     isPlaying: false,
     volume: 1,
     isMuted: false,
+    allowMediaUpload: true,
   });
 
   const emit = defineEmits<{
@@ -673,6 +677,7 @@
 
   // Open media upload - creates new region if none selected
   function openMediaUpload() {
+    if (!props.allowMediaUpload) return;
     if (props.selectedRegionId) {
       emit('uploadMedia', props.selectedRegionId);
     } else {

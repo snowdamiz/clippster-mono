@@ -6,7 +6,14 @@ import {
   getNextSegmentNumber,
   createProject,
   getDatabase,
+  getCreatorProfile,
+  updateProject,
 } from '@/services/database';
+import { setProjectVodPreset } from '@/services/database/vod-presets';
+import {
+  parseCreatorClipBuildDefaults,
+  buildActiveVodPresetFromCreatorDefaults,
+} from '@/composables/useCreatorClipDefaults';
 import { generateId } from '@/services/database';
 import { trackEvent } from '@/services/analytics';
 import { useToast } from '@/composables/useToast';
@@ -59,6 +66,10 @@ export interface ActiveDownload {
   groupId?: string;
   totalSegments?: number;
   currentSegmentIndex?: number;
+  /** Local creator profile matched for this download (Stream VODs). */
+  creatorProfileId?: string;
+  /** When true, seed `active_vod_preset_config` from profile `clip_build_defaults`. */
+  applyCreatorClipLayout?: boolean;
 }
 
 const activeDownloads = reactive<Map<string, ActiveDownload>>(new Map());
@@ -68,6 +79,29 @@ const isInitialized = ref(false);
 // Download queue settings
 const MAX_CONCURRENT_DOWNLOADS = 1;
 const activeDownloadIds = reactive<Set<string>>(new Set());
+
+/** Apply creator profile `clip_build_defaults` to a project when the user opted in on download. */
+async function seedCreatorClipLayoutOnProject(
+  projectId: string,
+  creatorProfileId: string | undefined,
+  apply: boolean | undefined
+): Promise<void> {
+  if (!apply || !creatorProfileId) return;
+  try {
+    const profile = await getCreatorProfile(creatorProfileId);
+    if (!profile?.clip_build_defaults) return;
+    const defaults = parseCreatorClipBuildDefaults(profile.clip_build_defaults);
+    if (!defaults) return;
+    await setProjectVodPreset(
+      projectId,
+      null,
+      buildActiveVodPresetFromCreatorDefaults(defaults)
+    );
+    await updateProject(projectId, undefined, undefined, undefined, undefined, creatorProfileId);
+  } catch (e) {
+    console.warn('[Downloads] seedCreatorClipLayoutOnProject failed:', e);
+  }
+}
 
 // Persistence keys
 const ACTIVE_DOWNLOADS_KEY = 'clippster_active_downloads';
@@ -291,6 +325,14 @@ export function useDownloads() {
                 }
               }
 
+              if (finalProjectId) {
+                await seedCreatorClipLayoutOnProject(
+                  finalProjectId,
+                  download.creatorProfileId,
+                  download.applyCreatorClipLayout
+                );
+              }
+
               // Video is valid, create database record
               // Note: Waveform generation is deferred until the user opens the workspace
               const rawVideoId = await createRawVideo(event.payload.file_path, {
@@ -499,6 +541,9 @@ export function useDownloads() {
         watermarkId: string;
         watermarkSettings: string; // JSON string of per-ratio watermark settings
       };
+      creatorProfileId?: string;
+      /** When true, persist matched creator's clip_build_defaults into active_vod_preset_config. */
+      applyCreatorClipLayout?: boolean;
     } = {}
   ): Promise<string> {
     // Free tier: 2 VOD downloads/day limit
@@ -543,7 +588,9 @@ export function useDownloads() {
         totalDuration,
         segmentDuration,
         provider,
-        options.creatorWatermarkSettings
+        options.creatorWatermarkSettings,
+        options.creatorProfileId,
+        options.applyCreatorClipLayout === true
       );
     }
 
@@ -671,6 +718,8 @@ export function useDownloads() {
       projectId,
       parentProjectId,
       provider,
+      creatorProfileId: options.creatorProfileId,
+      applyCreatorClipLayout: options.applyCreatorClipLayout === true,
     };
 
     activeDownloads.set(downloadId, download);
@@ -833,7 +882,9 @@ export function useDownloads() {
     totalDuration: number,
     maxSegmentDuration: number = 3600,
     provider: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter' = 'pumpfun',
-    creatorWatermarkSettings?: { watermarkId: string; watermarkSettings: string }
+    creatorWatermarkSettings?: { watermarkId: string; watermarkSettings: string },
+    creatorProfileId?: string,
+    applyCreatorClipLayout?: boolean
   ): Promise<string> {
     await initialize();
 
@@ -913,6 +964,8 @@ export function useDownloads() {
         currentSegmentIndex: i,
         isAutoSegmented: true,
         isQueued: i >= MAX_CONCURRENT_DOWNLOADS,
+        creatorProfileId,
+        applyCreatorClipLayout: applyCreatorClipLayout === true,
       };
 
       console.log(`[Downloads] Created segment download ${i + 1}/${numberOfSegments}:`, {

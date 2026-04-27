@@ -328,6 +328,7 @@
     :model-value="showDetectConfirmDialog"
     :video-duration="duration"
     :is-transcribed="isTranscribed"
+    :initial-subtitle-detection-defaults="detectionSubtitleDefaults"
     @update:model-value="showDetectConfirmDialog = $event"
     @confirm="onDetectClipsConfirmed"
   />
@@ -346,6 +347,7 @@
     :model-value="showSubtitleEditorDialog"
     :clips="timelineClips"
     :project-id="project?.id"
+    :default-subtitle-settings="subtitleEditorDefaultSettings"
     @update:model-value="showSubtitleEditorDialog = $event"
     @save="onSaveSubtitles"
   />
@@ -392,7 +394,13 @@
   import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
   import { X, Film, Smartphone } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
-  import type { WatermarkSettings, WordInfo, WhisperSegment } from '@/types';
+  import type {
+    ActiveVodPresetConfig,
+    SubtitleSettings,
+    WatermarkSettings,
+    WordInfo,
+    WhisperSegment,
+  } from '@/types';
   import VideoPlayer from './VideoPlayer.vue';
   import VideoControls from './VideoControls.vue';
   import MediaPanel from './MediaPanel.vue';
@@ -433,7 +441,7 @@
     createDefaultClipTextBoxState,
     type ClipTextBoxState,
   } from '@/utils/clipTextBox';
-  import type { ActiveVodPresetConfig } from '@/types';
+  import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
   import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
 
   const authStore = useAuthStore();
@@ -615,6 +623,35 @@
 
   // VOD preset config state
   const vodPresetConfig = ref<ActiveVodPresetConfig | null>(null);
+
+  /** When preset was seeded from creator profile, pre-fill detection dialog subtitle toggle + preset. */
+  const detectionSubtitleDefaults = computed(() => {
+    const subs = vodPresetConfig.value?.subtitleDefaults;
+    if (!subs) return null;
+    const presetId =
+      (subs.selectedPresetId && String(subs.selectedPresetId).trim()) || 'tiktok-bold';
+    return {
+      enabled: subs.enabled !== false,
+      presetId,
+    };
+  });
+
+  /**
+   * Full subtitle defaults for "Add subtitles" / SubtitleEditorDialog: project VOD preset first,
+   * then local creator profile clip_build_defaults (same source as creator layout in ProfileDialog).
+   */
+  const subtitleEditorDefaultSettings = computed((): SubtitleSettings | null => {
+    const vodSubs = vodPresetConfig.value?.subtitleDefaults;
+    if (vodSubs && typeof vodSubs === 'object') {
+      return JSON.parse(JSON.stringify(vodSubs)) as SubtitleSettings;
+    }
+    const parsed = parseCreatorClipBuildDefaults(creatorProfile.value?.clip_build_defaults ?? null);
+    const subs = parsed?.subtitleDefaults;
+    if (subs && typeof subs === 'object') {
+      return JSON.parse(JSON.stringify(subs)) as SubtitleSettings;
+    }
+    return null;
+  });
 
   // VOD framing focal point override (computed from framing regions)
   const vodFocalPointOverride = ref<{ x: number; y: number } | null>(null);
@@ -1430,22 +1467,41 @@
   });
 
   async function onSaveSubtitles(clipIds: string[], presetId: string, applyToAll: boolean) {
-    console.log('[ProjectWorkspaceDialog] Saving subtitles:', { clipIds, presetId, applyToAll });
-    
     try {
-      const { updateMultipleClipsSubtitleSettings } = await import('@/services/database/clips');
-      
-      // Update subtitle settings for all selected clips
-      await updateMultipleClipsSubtitleSettings(clipIds, true, presetId);
-      
+      const defaults = subtitleEditorDefaultSettings.value;
+
+      if (defaults && clipIds.length > 0) {
+        const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } = await import(
+          '@/services/database/clips'
+        );
+        const merged: SubtitleSettings = {
+          ...JSON.parse(JSON.stringify(defaults)),
+          enabled: true,
+          selectedPresetId: presetId || defaults.selectedPresetId || null,
+        };
+        for (const id of clipIds) {
+          await updateClipFullSubtitleSettings(id, merged);
+          await updateClipSubtitlePosition(
+            id,
+            50,
+            merged.positionPercentage ?? 85,
+            merged.maxWidth ?? undefined
+          );
+        }
+      } else {
+        const { updateMultipleClipsSubtitleSettings } = await import('@/services/database/clips');
+        await updateMultipleClipsSubtitleSettings(clipIds, true, presetId);
+      }
+
       const { success: showSuccess } = useToast();
       const clipCount = clipIds.length;
       showSuccess(
         'Subtitles Configured',
-        `Subtitles with ${presetId} style applied to ${clipCount} clip${clipCount !== 1 ? 's' : ''}.`
+        defaults
+          ? `Subtitle styling from your creator defaults applied to ${clipCount} clip${clipCount !== 1 ? 's' : ''}.`
+          : `Subtitles with ${presetId} style applied to ${clipCount} clip${clipCount !== 1 ? 's' : ''}.`
       );
-      
-      // Refresh clips to show updated subtitle settings
+
       await onRefreshClipsData();
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to save subtitles:', error);

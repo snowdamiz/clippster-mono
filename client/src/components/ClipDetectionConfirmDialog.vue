@@ -384,6 +384,8 @@
     // Multi-segment mode props (for project-level detection)
     segmentCount?: number;
     totalDuration?: number;
+    /** From VOD preset / creator clip defaults — pre-select subtitle options when opening */
+    initialSubtitleDetectionDefaults?: { enabled: boolean; presetId: string } | null;
   }>();
 
   // Use totalDuration if provided (multi-segment mode), otherwise use videoDuration
@@ -416,6 +418,16 @@
   // Subtitle selection
   const subtitlesEnabled = ref(false);
   const selectedSubtitlePreset = ref<string>('');
+
+  watch(
+    () => props.modelValue,
+    (open) => {
+      if (open && props.initialSubtitleDetectionDefaults) {
+        subtitlesEnabled.value = props.initialSubtitleDetectionDefaults.enabled;
+        selectedSubtitlePreset.value = props.initialSubtitleDetectionDefaults.presetId;
+      }
+    }
+  );
 
   // Time range selection (for single video detection)
   const timeRange = ref({ startTime: 0, endTime: 0 });

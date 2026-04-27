@@ -8,7 +8,14 @@ import {
 } from './transcripts';
 import { getRawVideosByProjectId } from './raw-videos';
 import { getProject } from './projects';
+import { getProjectVodPresetConfig } from './vod-presets';
+import {
+  updateClipFullSubtitleSettings,
+  updateClipSubtitlePosition,
+  updateClipSubtitleSettings,
+} from './clips';
 import type { ClipWithVersion, ClipSegment, ClipWithVersionAndSegment } from './types';
+import type { SubtitleSettings } from '@/types';
 import { invoke } from '@tauri-apps/api/core';
 
 // Manual migration fallback function - kept here as it's specifically for clip versioning
@@ -234,6 +241,44 @@ export async function createVersionedClip(
   );
 
   return clipId;
+}
+
+/**
+ * After detection, persist subtitle choice onto the clip row. When the project has VOD preset
+ * `subtitleDefaults` (e.g. from creator layout), merge the full SubtitlePropertiesPanel snapshot
+ * with the preset style selected in the detection dialog.
+ */
+async function applyDetectionSubtitleChoiceToClip(
+  clipId: string,
+  projectId: string,
+  detectionSubtitle: { enabled: boolean; presetId: string } | null | undefined
+): Promise<void> {
+  if (!detectionSubtitle?.enabled || !detectionSubtitle.presetId) return;
+
+  try {
+    const vodPreset = await getProjectVodPresetConfig(projectId);
+    const seeded = vodPreset?.subtitleDefaults as SubtitleSettings | null | undefined;
+
+    if (seeded && typeof seeded === 'object') {
+      const merged: SubtitleSettings = {
+        ...JSON.parse(JSON.stringify(seeded)),
+        enabled: true,
+        selectedPresetId: detectionSubtitle.presetId || seeded.selectedPresetId || null,
+      };
+
+      await updateClipFullSubtitleSettings(clipId, merged);
+      await updateClipSubtitlePosition(
+        clipId,
+        50,
+        merged.positionPercentage ?? 85,
+        merged.maxWidth ?? undefined
+      );
+    } else {
+      await updateClipSubtitleSettings(clipId, true, detectionSubtitle.presetId);
+    }
+  } catch (e) {
+    console.warn('[clip-detection] applyDetectionSubtitleChoiceToClip failed:', e);
+  }
 }
 
 export async function getClipsWithVersionsByProjectId(
@@ -750,13 +795,14 @@ export async function persistClipDetectionResults(
     }
 
     try {
-      await createVersionedClip(
+      const clipId = await createVersionedClip(
         projectId,
         sessionId,
         clipInfo,
         metadata?.videoFilePath,
         thumbnailPath
       );
+      await applyDetectionSubtitleChoiceToClip(clipId, projectId, subtitleSettings);
     } catch (e) {
       console.error(`[Database] Failed to create clip ${i + 1}:`, e);
     }

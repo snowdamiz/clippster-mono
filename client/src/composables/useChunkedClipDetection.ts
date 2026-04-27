@@ -760,7 +760,7 @@ export function useChunkedClipDetection() {
         processingTimeMs: 0,
         detectionModel: 'claude-3.5-sonnet-traditional',
         serverResponseId: result.jobId || null,
-      });
+      }, currentSubtitleSettings);
 
       showSuccess('Clips detected', `Found ${result.clips?.length || 0} clips`, undefined, 'clips');
 
@@ -865,7 +865,7 @@ export function useChunkedClipDetection() {
         processingTimeMs: 0,
         detectionModel: 'claude-3.5-sonnet-fresh',
         serverResponseId: result.jobId || null,
-      });
+      }, currentSubtitleSettings);
 
       showSuccess('Clips detected', `Found ${result.clips?.length || 0} clips`, undefined, 'clips');
 
@@ -969,7 +969,7 @@ export function useChunkedClipDetection() {
           ? 'multimodal-ensemble-fallback'
           : 'claude-3.5-sonnet-fallback',
         serverResponseId: result.jobId || null,
-      });
+      }, currentSubtitleSettings);
 
       showSuccess('Clips detected', `Found ${result.clips?.length || 0} clips`, undefined, 'clips');
 
