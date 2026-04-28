@@ -215,6 +215,8 @@ export interface MaskShape {
 	invert: boolean;
 	/** Rotation in degrees. */
 	rotation: number;
+	/** Corner radius as fraction of half the shorter side (0 = sharp, 1 = fully rounded). Rectangle only. */
+	cornerRadius?: number;
 }
 
 export interface VideoElement extends BaseTimelineElement {

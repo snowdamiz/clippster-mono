@@ -179,6 +179,19 @@ function clamp(value: number, min: number, max: number) {
 					/>
 					<span class="text-right text-[9px] text-zinc-500">{{ mask.rotation }}°</span>
 				</div>
+
+				<!-- Corner Radius (rectangle only) -->
+				<div v-if="mask.type === 'rectangle'" class="col-span-2 flex flex-col gap-1">
+					<label class="text-[10px] text-zinc-500">Corner Radius</label>
+					<input
+						type="range"
+						:value="mask.cornerRadius ?? 0"
+						min="0" max="1" step="0.01"
+						class="h-1 w-full accent-blue-500"
+						@input="updateMask(mask.id, { cornerRadius: Number(($event.target as HTMLInputElement).value) })"
+					/>
+					<span class="text-right text-[9px] text-zinc-500">{{ Math.round((mask.cornerRadius ?? 0) * 100) }}%</span>
+				</div>
 			</div>
 
 			<!-- Invert toggle -->

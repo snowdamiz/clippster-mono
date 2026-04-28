@@ -24,6 +24,7 @@ function drawRectangle(
 	const cy = mask.y * canvasH;
 	const hw = (mask.width * canvasW) / 2;
 	const hh = (mask.height * canvasH) / 2;
+	const cr = mask.cornerRadius ?? 0;
 
 	ctx.save();
 	if (mask.rotation !== 0) {
@@ -31,7 +32,12 @@ function drawRectangle(
 		ctx.rotate((mask.rotation * Math.PI) / 180);
 		ctx.translate(-cx, -cy);
 	}
-	ctx.rect(cx - hw, cy - hh, hw * 2, hh * 2);
+	if (cr > 0) {
+		const radius = cr * Math.min(hw, hh);
+		ctx.roundRect(cx - hw, cy - hh, hw * 2, hh * 2, radius);
+	} else {
+		ctx.rect(cx - hw, cy - hh, hw * 2, hh * 2);
+	}
 	ctx.restore();
 }
 
@@ -136,24 +142,32 @@ export async function applyFeatheredMasks(
 	if (!maskCtx) return;
 
 	for (const mask of featheredMasks) {
+		// Step A: draw the shape (white on black) onto a dedicated shape canvas.
+		// We overdraw by feather px on every side so blur edges don't hit canvas bounds.
+		const pad = mask.feather * 2;
+		const shapeCanvas = new OffscreenCanvas(canvasW + pad * 2, canvasH + pad * 2);
+		const shapeCtx = shapeCanvas.getContext("2d");
+		if (!shapeCtx) continue;
+
+		// Translate so the shape is centered with padding room around it.
+		shapeCtx.translate(pad, pad);
+		shapeCtx.beginPath();
+		drawMaskShape(shapeCtx as unknown as CanvasRenderingContext2D, mask, canvasW, canvasH);
+		shapeCtx.fillStyle = "white";
+		shapeCtx.fill();
+
+		// Step B: draw the shape canvas blurred onto the mask canvas.
 		maskCtx.save();
 		if (mask.feather > 0) {
 			maskCtx.filter = `blur(${mask.feather}px)`;
 		}
-		maskCtx.beginPath();
-		drawMaskShape(maskCtx as unknown as CanvasRenderingContext2D, mask, canvasW, canvasH);
-
 		if (mask.invert) {
-			// White everywhere except the shape
+			// Start with full white, then subtract the blurred shape.
 			maskCtx.fillStyle = "white";
 			maskCtx.fillRect(0, 0, canvasW, canvasH);
 			maskCtx.globalCompositeOperation = "destination-out";
-			maskCtx.fillStyle = "black";
-			maskCtx.fill();
-		} else {
-			maskCtx.fillStyle = "white";
-			maskCtx.fill();
 		}
+		maskCtx.drawImage(shapeCanvas, -pad, -pad);
 		maskCtx.restore();
 	}
 
