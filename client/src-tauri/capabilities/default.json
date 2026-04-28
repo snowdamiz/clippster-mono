@@ -62,6 +62,27 @@
       "allow": [
         {
           "path": "$TEMP/**"
+        },
+        {
+          "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "$DOCUMENT/**"
+        },
+        {
+          "path": "$DESKTOP/**"
+        },
+        {
+          "path": "$DOWNLOAD/**"
+        },
+        {
+          "path": "$PICTURE/**"
+        },
+        {
+          "path": "$VIDEO/**"
         }
       ]
     },
@@ -70,6 +91,9 @@
       "allow": [
         {
           "path": "$TEMP/**"
+        },
+        {
+          "path": "$APPLOCALDATA/**"
         }
       ]
     },

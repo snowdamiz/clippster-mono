@@ -459,6 +459,24 @@
                     </div>
                   </div>
                 </div>
+
+                <!-- Creator clip defaults (local user profiles only; eligibility set when dialog opens) -->
+                <div v-if="clipDefaultsEligible" class="download-section download-section--creator-layout">
+                  <div class="download-section__header">
+                    <span class="download-section__label">Creator layout</span>
+                  </div>
+                  <label class="download-creator-layout">
+                    <input
+                      v-model="useCreatorLayout"
+                      type="checkbox"
+                      class="download-creator-layout__checkbox"
+                    />
+                    <span class="download-creator-layout__text">Use creator layout</span>
+                  </label>
+                  <p class="download-creator-layout__hint">
+                    Apply framing, overlays, and subtitle defaults from this creator's profile for this VOD.
+                  </p>
+                </div>
               </div>
 
               <!-- Footer -->
@@ -509,7 +527,11 @@
   import { useDownloads } from '@/composables/useDownloads';
   import { getNextSegmentNumber, getDownloadedVodIds } from '@/services/database';
   import { Clock, ChevronDown, X, AlertTriangle, Download, Video, Search, Loader2, RotateCcw, Check } from 'lucide-vue-next';
-  import { getCreatorProfileByPlatformId } from '@/services/database';
+  import {
+    getCreatorProfileByPlatformId,
+    type CreatorProfileWithLinks,
+  } from '@/services/database';
+  import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
   import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
   import { useAuthStore } from '@/stores/auth';
@@ -535,6 +557,11 @@
   const currentPage = ref(1);
   const clipsPerPage = 20;
   const showAuthModal = ref(false);
+
+  /** Local creator profile has saved clip_build_defaults (user-side SQLite only). */
+  const clipDefaultsEligible = ref(false);
+  /** User opted in to seed active_vod_preset_config from that profile on this download. */
+  const useCreatorLayout = ref(false);
 
   // Multi-selection state
   const selectedVodIds = ref<Set<string>>(new Set());
@@ -631,6 +658,20 @@
     loadDownloadedVodIds();
   }
 
+  /** Map `?platform=` query values to PlatformId (handles org/API `youtube` vs app `YouTube`). */
+  function normalizeVodRoutePlatform(raw: string): PlatformId | null {
+    const key = raw.trim().toLowerCase();
+    const map: Record<string, PlatformId> = {
+      pumpfun: 'pumpfun',
+      kick: 'kick',
+      twitch: 'twitch',
+      youtube: 'YouTube',
+      rumble: 'rumble',
+      twitter: 'twitter',
+    };
+    return map[key] ?? null;
+  }
+
   // Initialize
   onMounted(async () => {
     document.addEventListener('click', handleClickOutside);
@@ -644,15 +685,19 @@
     await loadDownloadedVodIds();
     detectPlatform();
 
-    // Check for query params (from Creator Profiles navigation)
-    const queryPlatform = route.query.platform as string | undefined;
-    const querySearch = route.query.search as string | undefined;
+    // Check for query params (from Creator Profiles: platform + id; elsewhere: platform + search)
+    const rawPlatform = route.query.platform;
+    const queryPlatform = (
+      Array.isArray(rawPlatform) ? rawPlatform[0] : rawPlatform
+    ) as string | undefined;
+    const rawSearch = route.query.search ?? route.query.id;
+    const querySearch = (Array.isArray(rawSearch) ? rawSearch[0] : rawSearch) as string | undefined;
 
     if (queryPlatform && querySearch) {
-      // Set the platform and search from query params
-      const validPlatforms = ['pumpfun', 'kick', 'twitch', 'YouTube', 'rumble', 'twitter'] as const;
-      if (validPlatforms.includes(queryPlatform as any)) {
-        detectedPlatform.value = queryPlatform as PlatformId;
+      const normalizedPlatform = normalizeVodRoutePlatform(queryPlatform);
+
+      if (normalizedPlatform) {
+        detectedPlatform.value = normalizedPlatform;
         searchInput.value = querySearch;
 
         // Clear query params from URL to prevent re-search on navigation
@@ -985,6 +1030,19 @@
     selectedTimeRange.value = { startTime: 0, endTime: clip.duration || 0 };
     // Default auto-segment off, user can enable if they want to split
     autoSegment.value = false;
+    useCreatorLayout.value = false;
+    clipDefaultsEligible.value = false;
+    if (detectedPlatform.value && platformStore.currentSearchId) {
+      try {
+        const lp = await getCreatorProfileByPlatformId(
+          detectedPlatform.value as any,
+          platformStore.currentSearchId
+        );
+        clipDefaultsEligible.value = !!parseCreatorClipBuildDefaults(lp?.clip_build_defaults ?? null);
+      } catch {
+        clipDefaultsEligible.value = false;
+      }
+    }
     calculateNextSegmentNumber(clip.clipId);
     showDownloadDialog.value = true;
   }
@@ -1054,6 +1112,7 @@
       // First try local profiles, then check organization profiles
       // This works for both PumpFun (mint ID) and Kick (channel slug)
       let creatorWatermarkSettings: { watermarkId: string; watermarkSettings: string } | undefined;
+      let localCreatorProfile: CreatorProfileWithLinks | null = null;
       if (detectedPlatform.value && platformStore.currentSearchId) {
         console.log('[StreamVods] Looking up creator watermark for:', {
           platform: detectedPlatform.value,
@@ -1062,15 +1121,15 @@
 
         try {
           // Try local profiles first
-          const localProfile = await getCreatorProfileByPlatformId(
+          localCreatorProfile = await getCreatorProfileByPlatformId(
             detectedPlatform.value as any,
             platformStore.currentSearchId
           );
-          if (localProfile?.watermark_id && localProfile?.watermark_settings) {
-            console.log('[StreamVods] Found local creator profile with watermark:', localProfile.name);
+          if (localCreatorProfile?.watermark_id && localCreatorProfile?.watermark_settings) {
+            console.log('[StreamVods] Found local creator profile with watermark:', localCreatorProfile.name);
             creatorWatermarkSettings = {
-              watermarkId: localProfile.watermark_id,
-              watermarkSettings: localProfile.watermark_settings,
+              watermarkId: localCreatorProfile.watermark_id,
+              watermarkSettings: localCreatorProfile.watermark_settings,
             };
           }
 
@@ -1164,6 +1223,10 @@
         }
       }
 
+      const clipDefaultsParsed = parseCreatorClipBuildDefaults(localCreatorProfile?.clip_build_defaults ?? null);
+      const applyLayout =
+        useCreatorLayout.value && !!clipDefaultsParsed && !!localCreatorProfile?.id;
+
       await startDownload(
         clip.title,
         videoUrl,
@@ -1181,6 +1244,8 @@
           segmentDuration: autoSegmentDuration.value * 60,
           provider: detectedPlatform.value === 'kick' ? 'kick' : detectedPlatform.value === 'twitch' ? 'twitch' : detectedPlatform.value === 'YouTube' ? 'YouTube' : detectedPlatform.value === 'rumble' ? 'rumble' : detectedPlatform.value === 'twitter' ? 'twitter' : 'pumpfun',
           creatorWatermarkSettings,
+          creatorProfileId: applyLayout ? localCreatorProfile!.id : undefined,
+          applyCreatorClipLayout: applyLayout,
         }
       );
 
@@ -2472,6 +2537,36 @@
   }
 
   /* ===== Modal Footer ===== */
+  .download-section--creator-layout {
+    margin-top: 0.25rem;
+  }
+
+  .download-creator-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+  }
+
+  .download-creator-layout__checkbox {
+    margin-top: 0.15rem;
+    flex-shrink: 0;
+  }
+
+  .download-creator-layout__text {
+    font-weight: 600;
+  }
+
+  .download-creator-layout__hint {
+    margin: 0.35rem 0 0 1.5rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--sidebar-text);
+    opacity: 0.75;
+  }
+
   .download-modal__footer {
     display: flex;
     align-items: center;

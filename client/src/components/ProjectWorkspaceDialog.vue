@@ -102,12 +102,13 @@
                     :aspect-ratio="selectedAspectRatio"
                     :focal-point="effectiveFocalPoint"
                     :framing-regions="currentFramingRegions"
+                    :manual-framing-config="vodManualFramingConfigForPlayer"
                     :watermark-settings="watermarkSettings"
                     :watermark-data="currentWatermarkData"
-                    :subtitle-settings="activeSubtitleSettings"
-                    :subtitle-initial-position="activeSubtitlePosition"
-                    :transcript-words="videoPlayerTranscriptWords"
-                    :transcript-segments="videoPlayerTranscriptSegments"
+                    :subtitle-settings="videoPlayerSubtitleSettings"
+                    :subtitle-initial-position="videoPlayerSubtitleInitialPosition"
+                    :transcript-words="videoPlayerTranscriptWordsForPlayer"
+                    :transcript-segments="videoPlayerTranscriptSegmentsForPlayer"
                     :current-time="currentTime"
                     :clip-text-box-state="clipTextBoxForVideoPlayer"
                     :clip-text-box-interactive="clipTextBoxPlayerInteractive"
@@ -328,6 +329,7 @@
     :model-value="showDetectConfirmDialog"
     :video-duration="duration"
     :is-transcribed="isTranscribed"
+    :initial-subtitle-detection-defaults="detectionSubtitleDefaults"
     @update:model-value="showDetectConfirmDialog = $event"
     @confirm="onDetectClipsConfirmed"
   />
@@ -346,6 +348,7 @@
     :model-value="showSubtitleEditorDialog"
     :clips="timelineClips"
     :project-id="project?.id"
+    :default-subtitle-settings="subtitleEditorDefaultSettings"
     @update:model-value="showSubtitleEditorDialog = $event"
     @save="onSaveSubtitles"
   />
@@ -392,7 +395,14 @@
   import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
   import { X, Film, Smartphone } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
-  import type { WatermarkSettings, WordInfo, WhisperSegment } from '@/types';
+  import type {
+    ActiveVodPresetConfig,
+    ManualFramingConfig,
+    SubtitleSettings,
+    WatermarkSettings,
+    WordInfo,
+    WhisperSegment,
+  } from '@/types';
   import VideoPlayer from './VideoPlayer.vue';
   import VideoControls from './VideoControls.vue';
   import MediaPanel from './MediaPanel.vue';
@@ -433,7 +443,7 @@
     createDefaultClipTextBoxState,
     type ClipTextBoxState,
   } from '@/utils/clipTextBox';
-  import type { ActiveVodPresetConfig } from '@/types';
+  import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
   import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
 
   const authStore = useAuthStore();
@@ -616,6 +626,52 @@
   // VOD preset config state
   const vodPresetConfig = ref<ActiveVodPresetConfig | null>(null);
 
+  /** When preset was seeded from creator profile, pre-fill detection dialog subtitle toggle + preset. */
+  const detectionSubtitleDefaults = computed(() => {
+    const subs = vodPresetConfig.value?.subtitleDefaults;
+    if (!subs) return null;
+    const presetId =
+      (subs.selectedPresetId && String(subs.selectedPresetId).trim()) || 'tiktok-bold';
+    return {
+      enabled: subs.enabled !== false,
+      presetId,
+    };
+  });
+
+  /**
+   * Full subtitle defaults for workspace preview / editor: **creator profile clip_build_defaults first**
+   * (same UI as Creator clip defaults), then project VOD preset snapshot.
+   * The VOD snapshot often carries detection/preset-library bottom defaults and must not override
+   * explicit creator positioning (e.g. subs at top of 9:16).
+   */
+  const subtitleEditorDefaultSettings = computed((): SubtitleSettings | null => {
+    const parsed = parseCreatorClipBuildDefaults(creatorProfile.value?.clip_build_defaults ?? null);
+    const profileSubs = parsed?.subtitleDefaults;
+    if (profileSubs && typeof profileSubs === 'object') {
+      return JSON.parse(JSON.stringify(profileSubs)) as SubtitleSettings;
+    }
+    const vodSubs = vodPresetConfig.value?.subtitleDefaults;
+    if (vodSubs && typeof vodSubs === 'object') {
+      return JSON.parse(JSON.stringify(vodSubs)) as SubtitleSettings;
+    }
+    return null;
+  });
+
+  /**
+   * Built clip files are already full composites (blur + sharp 9:16). Applying VOD framing again
+   * stacks "Use 16:9" on top → nested 9:16 look.
+   */
+  const workspacePlaybackIsBuiltExport = ref(false);
+
+  /** Full framing config for VideoPlayer (Use 16:9 blur path + POI regions use `framing-regions`). */
+  const vodManualFramingConfigForPlayer = computed((): ManualFramingConfig | null => {
+    if (workspacePlaybackIsBuiltExport.value) return null;
+    const fc = vodPresetConfig.value?.framingConfig;
+    if (!fc) return null;
+    if (previewAspectRatio.value === '16:9') return null;
+    return fc;
+  });
+
   // VOD framing focal point override (computed from framing regions)
   const vodFocalPointOverride = ref<{ x: number; y: number } | null>(null);
 
@@ -682,17 +738,24 @@
     };
   });
 
-  // Framing regions for the currently selected preview aspect ratio
+  // Framing regions for the currently selected preview aspect ratio (POI rectangles only — not "Use 16:9" blur mode)
   const currentFramingRegions = computed(() => {
+    if (workspacePlaybackIsBuiltExport.value) {
+      return undefined;
+    }
     if (previewAspectRatio.value === '16:9') {
       return undefined; // No framing for source ratio
     }
-    
-    if (vodPresetConfig.value?.framingConfig && 
-        vodPresetConfig.value.targetAspectRatio === previewAspectRatio.value) {
-      return vodPresetConfig.value.framingConfig.regions;
+
+    const fc = vodPresetConfig.value?.framingConfig;
+    if (fc?.sourceFrameMode === 'use16x9') {
+      return undefined; // VideoPlayer renders blur + sharp 16:9 via manualFramingConfig
     }
-    
+
+    if (fc && vodPresetConfig.value?.targetAspectRatio === previewAspectRatio.value) {
+      return fc.regions;
+    }
+
     return undefined;
   });
 
@@ -798,17 +861,166 @@
   // Store active subtitle settings (persists during playback even if currentlyPlayingClipId is cleared)
   const activeSubtitleSettings = ref<any>(undefined);
 
-  // Subtitle position for the currently/last playing clip — defaults to bottom-center (50, 85)
-  const activeSubtitlePosition = computed(() => {
-    // Use currentlyPlayingClipId if available, otherwise use lastPlayedClipId to persist position
-    const clipId = currentlyPlayingClipId.value || lastPlayedClipId.value;
-    const clip = timelineClips.value.find((c: any) => c.id === clipId);
-    if (!clip || !activeSubtitleSettings.value) return null;
-    return {
-      x: clip.subtitle_position_x ?? 50,
-      y: clip.subtitle_position_y ?? 85,
-      width: clip.subtitle_position_width ?? null,
+  /**
+   * True when DB subtitle_position_* reflect a deliberate user drag/resize in the workspace.
+   * Detection used to mirror preset bottom coords (50, 85) into columns; that must not block
+   * creator clip defaults from applying.
+   */
+  function clipSubtitlePositionLooksUserPlaced(clip: {
+    subtitle_position_x?: number | null;
+    subtitle_position_y?: number | null;
+  }): boolean {
+    const x = clip.subtitle_position_x;
+    const y = clip.subtitle_position_y;
+    if (y == null && x == null) return false;
+    // Classic bottom default mirrored by old detection — not a user drag.
+    if (x != null && y != null && Math.abs(x - 50) < 0.5 && Math.abs(y - 85) < 0.5) return false;
+    return true;
+  }
+
+  /** Merge VOD/creator subtitle defaults with per-preview-ratio overrides — main VOD playback before a clip is selected. */
+  function mergePlaybackSubtitleDefaults(): SubtitleSettings | null {
+    const base = subtitleEditorDefaultSettings.value;
+    if (!base) return null;
+    const ratio = previewAspectRatio.value;
+    const ov = base.perRatioConfigs?.[ratio];
+    const merged: SubtitleSettings = {
+      ...JSON.parse(JSON.stringify(base)),
+      enabled: true,
     };
+    if (ov) {
+      Object.assign(merged, ov);
+      const yFromPos = ov.position?.y;
+      if (yFromPos != null && Number.isFinite(yFromPos)) {
+        merged.positionPercentage = yFromPos;
+      }
+    }
+    return merged;
+  }
+
+  function applyWorkspacePlaybackSubtitleDefaults() {
+    const m = mergePlaybackSubtitleDefaults();
+    if (m) activeSubtitleSettings.value = m;
+  }
+
+  /**
+   * After loading a clip's preset/subtitle_settings, apply creator/VOD layout for the current preview
+   * ratio so detection presets (which default to bottom 85%) don't hide profile positioning.
+   * Skips layout when the user dragged subs for this clip (subtitle_position_x/y set in DB).
+   */
+  function applyWorkspaceLayoutToClipPlaybackSettings(
+    clipSettings: SubtitleSettings,
+    layoutDefaults: SubtitleSettings | null,
+    fullClip: { subtitle_position_x?: number | null; subtitle_position_y?: number | null; subtitle_position_width?: number | null }
+  ): SubtitleSettings {
+    if (!layoutDefaults) return clipSettings;
+    const userMovedSubtitleBoxXY = clipSubtitlePositionLooksUserPlaced(fullClip);
+    const ratio = previewAspectRatio.value;
+    const layoutPr = layoutDefaults.perRatioConfigs?.[ratio];
+    const clipPr = clipSettings.perRatioConfigs?.[ratio];
+    const layoutY =
+      layoutPr?.position?.y ??
+      layoutPr?.positionPercentage ??
+      layoutDefaults.positionPercentage;
+    const layoutMaxW = layoutPr?.maxWidth ?? layoutDefaults.maxWidth;
+
+    const merged: SubtitleSettings = {
+      ...clipSettings,
+      perRatioConfigs: {
+        ...(layoutDefaults.perRatioConfigs ?? {}),
+        ...(clipSettings.perRatioConfigs ?? {}),
+      },
+    };
+
+    // VideoPlayer resolves Y from perRatioConfigs[ratio].position before positionPercentage;
+    // clip preset JSON often stores bottom coords there — overlay creator/VOD ratio row on top.
+    if (!userMovedSubtitleBoxXY) {
+      if (layoutPr != null) {
+        merged.perRatioConfigs = {
+          ...merged.perRatioConfigs,
+          [ratio]: { ...(clipPr ?? {}), ...layoutPr },
+        };
+      } else if (layoutY != null && Number.isFinite(layoutY)) {
+        merged.perRatioConfigs = {
+          ...merged.perRatioConfigs,
+          [ratio]: {
+            ...(clipPr ?? {}),
+            positionPercentage: layoutY,
+            position: {
+              x: clipPr?.position?.x ?? 50,
+              y: layoutY,
+            },
+          },
+        };
+      }
+      if (layoutY != null && Number.isFinite(layoutY)) {
+        merged.positionPercentage = layoutY;
+      }
+    }
+
+    if (fullClip.subtitle_position_width == null && layoutMaxW != null) {
+      merged.maxWidth = layoutMaxW;
+      const r = merged.perRatioConfigs?.[ratio];
+      if (r != null && merged.perRatioConfigs) {
+        merged.perRatioConfigs = {
+          ...merged.perRatioConfigs,
+          [ratio]: { ...r, maxWidth: layoutMaxW },
+        };
+      }
+    }
+    return merged;
+  }
+
+  watch(
+    [previewAspectRatio, subtitleEditorDefaultSettings, vodPresetConfig],
+    () => {
+      if (!props.modelValue || !subtitleEditorDefaultSettings.value) return;
+      const clipId = currentlyPlayingClipId.value;
+      if (clipId) {
+        const c = timelineClips.value.find((x: any) => x.id === clipId);
+        if (c?.subtitle_enabled) return;
+      }
+      applyWorkspacePlaybackSubtitleDefaults();
+    },
+    { deep: true }
+  );
+
+  /**
+   * Subtitle box position for VideoPlayer.
+   * Only use clip DB x/y when the user actually moved the box (columns set). `subtitle_position_width`
+   * alone is often seeded from presets; treating it as "saved position" forced y ?? 85 and pinned
+   * subs to the bottom of the 9:16 canvas instead of creator/VOD top layout.
+   * Otherwise use merged creator/VOD defaults (including perRatioConfigs for the preview aspect).
+   */
+  const activeSubtitlePosition = computed(() => {
+    const playingId = currentlyPlayingClipId.value;
+    const clip = playingId ? timelineClips.value.find((c: any) => c.id === playingId) : null;
+    const userSavedSubtitleXY =
+      clip && activeSubtitleSettings.value && clipSubtitlePositionLooksUserPlaced(clip);
+
+    if (userSavedSubtitleXY && clip) {
+      return {
+        x: clip.subtitle_position_x ?? 50,
+        y: clip.subtitle_position_y ?? 85,
+        width: clip.subtitle_position_width ?? null,
+      };
+    }
+
+    const s = activeSubtitleSettings.value as SubtitleSettings | undefined;
+    if (!s) return null;
+    const ratioKey = previewAspectRatio.value;
+    const pr = s.perRatioConfigs?.[ratioKey];
+    const y =
+      pr?.position?.y ??
+      pr?.positionPercentage ??
+      s.positionPercentage ??
+      85;
+    const x = pr?.position?.x ?? 50;
+    const w =
+      clip?.subtitle_position_width != null
+        ? clip.subtitle_position_width
+        : pr?.maxWidth ?? s.maxWidth ?? null;
+    return { x, y, width: w };
   });
 
   // Get transcript words for subtitle rendering
@@ -878,6 +1090,27 @@
       out.push({ ...seg, start: ns, end: ne, words: remappedWords });
     }
     return out;
+  });
+
+  /** Self-contained built MP4s already include burned-in subtitles — do not overlay editable captions in VideoPlayer. */
+  const videoPlayerSubtitleSettings = computed(() => {
+    if (workspacePlaybackIsBuiltExport.value) return undefined;
+    return activeSubtitleSettings.value;
+  });
+
+  const videoPlayerSubtitleInitialPosition = computed(() => {
+    if (workspacePlaybackIsBuiltExport.value) return null;
+    return activeSubtitlePosition.value;
+  });
+
+  const videoPlayerTranscriptWordsForPlayer = computed((): WordInfo[] => {
+    if (workspacePlaybackIsBuiltExport.value) return [];
+    return videoPlayerTranscriptWords.value;
+  });
+
+  const videoPlayerTranscriptSegmentsForPlayer = computed((): WhisperSegment[] => {
+    if (workspacePlaybackIsBuiltExport.value) return [];
+    return videoPlayerTranscriptSegments.value;
   });
 
   // Segments scoped to the selected/playing clip for the subtitle properties panel
@@ -1430,22 +1663,41 @@
   });
 
   async function onSaveSubtitles(clipIds: string[], presetId: string, applyToAll: boolean) {
-    console.log('[ProjectWorkspaceDialog] Saving subtitles:', { clipIds, presetId, applyToAll });
-    
     try {
-      const { updateMultipleClipsSubtitleSettings } = await import('@/services/database/clips');
-      
-      // Update subtitle settings for all selected clips
-      await updateMultipleClipsSubtitleSettings(clipIds, true, presetId);
-      
+      const defaults = subtitleEditorDefaultSettings.value;
+
+      if (defaults && clipIds.length > 0) {
+        const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } = await import(
+          '@/services/database/clips'
+        );
+        const merged: SubtitleSettings = {
+          ...JSON.parse(JSON.stringify(defaults)),
+          enabled: true,
+          selectedPresetId: presetId || defaults.selectedPresetId || null,
+        };
+        for (const id of clipIds) {
+          await updateClipFullSubtitleSettings(id, merged);
+          await updateClipSubtitlePosition(
+            id,
+            50,
+            merged.positionPercentage ?? 85,
+            merged.maxWidth ?? undefined
+          );
+        }
+      } else {
+        const { updateMultipleClipsSubtitleSettings } = await import('@/services/database/clips');
+        await updateMultipleClipsSubtitleSettings(clipIds, true, presetId);
+      }
+
       const { success: showSuccess } = useToast();
       const clipCount = clipIds.length;
       showSuccess(
         'Subtitles Configured',
-        `Subtitles with ${presetId} style applied to ${clipCount} clip${clipCount !== 1 ? 's' : ''}.`
+        defaults
+          ? `Subtitle styling from your creator defaults applied to ${clipCount} clip${clipCount !== 1 ? 's' : ''}.`
+          : `Subtitles with ${presetId} style applied to ${clipCount} clip${clipCount !== 1 ? 's' : ''}.`
       );
-      
-      // Refresh clips to show updated subtitle settings
+
       await onRefreshClipsData();
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to save subtitles:', error);
@@ -2436,6 +2688,28 @@
     }
   }
 
+  /** True if the resolved profile includes at least one watermark (column or per-ratio in JSON). */
+  function creatorProfileSpecifiesWatermark(profile: CreatorProfileWithLinks): boolean {
+    if (profile.watermark_id) return true;
+    if (!profile.watermark_settings) return false;
+    try {
+      const parsed =
+        typeof profile.watermark_settings === 'string'
+          ? JSON.parse(profile.watermark_settings)
+          : profile.watermark_settings;
+      if (!parsed || typeof parsed !== 'object') return false;
+      for (const key of Object.keys(parsed)) {
+        const cfg = parsed[key];
+        if (cfg && typeof cfg === 'object' && cfg.watermarkId != null && String(cfg.watermarkId).trim() !== '') {
+          return true;
+        }
+      }
+    } catch {
+      return false;
+    }
+    return false;
+  }
+
   // Load creator profile and apply their default settings
   async function loadCreatorProfileSettings(projectId: string) {
     try {
@@ -2556,16 +2830,16 @@
           profile.watermark_id
         );
 
-        // Apply watermark settings from creator profile
-        // Profile watermark should override project-saved watermark (unless user explicitly customized it)
-        if (profile.watermark_id) {
+        // Apply watermark settings from creator profile, or clear org/project-inherited watermark
+        // when the resolved profile has none (e.g. project.default_watermark_settings still has org WM)
+        if (creatorProfileSpecifiesWatermark(profile)) {
           console.log('[ProjectWorkspaceDialog] Applying creator watermark:', profile.watermark_id, 'current enabled:', watermarkSettings.value.enabled, 'current watermarkId:', watermarkSettings.value.watermarkId);
 
           // Parse the creator's per-ratio watermark settings
           let perRatioSettings = null;
           let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
-          let effectiveWatermarkId = profile.watermark_id;
-          
+          let effectiveWatermarkId: string | null = profile.watermark_id ?? null;
+
           if (profile.watermark_settings) {
             try {
               perRatioSettings = JSON.parse(profile.watermark_settings);
@@ -2580,40 +2854,85 @@
               if (ratioConfig?.watermarkId) {
                 effectiveWatermarkId = ratioConfig.watermarkId;
                 console.log('[ProjectWorkspaceDialog] Using per-ratio watermarkId:', effectiveWatermarkId, 'instead of profile.watermark_id:', profile.watermark_id);
+              } else if (!effectiveWatermarkId && perRatioSettings) {
+                for (const ratio of ['16:9', '9:16', '1:1', '4:5'] as const) {
+                  const wid = perRatioSettings[ratio]?.watermarkId;
+                  if (wid != null && String(wid).trim() !== '') {
+                    effectiveWatermarkId = String(wid);
+                    console.log('[ProjectWorkspaceDialog] Using per-ratio watermarkId from', ratio, ':', effectiveWatermarkId);
+                    break;
+                  }
+                }
               }
             } catch (e) {
               console.warn('[ProjectWorkspaceDialog] Failed to parse creator watermark settings:', e);
             }
           }
 
-          const newSettings = {
-            ...watermarkSettings.value,
-            enabled: true,
-            watermarkId: effectiveWatermarkId,
-            positionX: defaultPos.x,
-            positionY: defaultPos.y,
-            opacity: defaultPos.opacity,
-            scale: defaultPos.scale,
-            perRatioSettings: perRatioSettings,
-          };
+          if (!effectiveWatermarkId) {
+            console.warn(
+              '[ProjectWorkspaceDialog] Profile indicates watermark but none resolved — clearing inherited watermark'
+            );
+            const clearedInconsistent: WatermarkSettings = {
+              enabled: false,
+              watermarkId: null,
+              positionX: 12,
+              positionY: 92,
+              opacity: 80,
+              scale: 20,
+              perRatioSettings: null,
+            };
+            await nextTick();
+            if (mediaPanelRef.value) {
+              mediaPanelRef.value.setWatermarkSettings(clearedInconsistent);
+            }
+            await onWatermarkSettingsChanged(clearedInconsistent);
+          } else {
+            const newSettings = {
+              ...watermarkSettings.value,
+              enabled: true,
+              watermarkId: effectiveWatermarkId,
+              positionX: defaultPos.x,
+              positionY: defaultPos.y,
+              opacity: defaultPos.opacity,
+              scale: defaultPos.scale,
+              perRatioSettings: perRatioSettings,
+            };
 
-          console.log('[ProjectWorkspaceDialog] Applying creator watermark settings:', {
-            watermarkId: newSettings.watermarkId,
-            defaultPos,
-            hasPerRatioSettings: !!perRatioSettings,
-            perRatioSettings,
-          });
+            console.log('[ProjectWorkspaceDialog] Applying creator watermark settings:', {
+              watermarkId: newSettings.watermarkId,
+              defaultPos,
+              hasPerRatioSettings: !!perRatioSettings,
+              perRatioSettings,
+            });
 
-          // Wait for next tick to ensure MediaPanel ref is available
-          await nextTick();
+            // Wait for next tick to ensure MediaPanel ref is available
+            await nextTick();
 
-          // Update MediaPanel's internal state if ref is available
-          if (mediaPanelRef.value) {
-            mediaPanelRef.value.setWatermarkSettings(newSettings);
+            // Update MediaPanel's internal state if ref is available
+            if (mediaPanelRef.value) {
+              mediaPanelRef.value.setWatermarkSettings(newSettings);
+            }
+
+            // Always ensure parent state gets updated so VideoPlayer receives the watermark immediately
+            await onWatermarkSettingsChanged(newSettings);
           }
-
-          // Always ensure parent state gets updated so VideoPlayer receives the watermark immediately
-          await onWatermarkSettingsChanged(newSettings);
+        } else {
+          const cleared: WatermarkSettings = {
+            enabled: false,
+            watermarkId: null,
+            positionX: 12,
+            positionY: 92,
+            opacity: 80,
+            scale: 20,
+            perRatioSettings: null,
+          };
+          console.log('[ProjectWorkspaceDialog] Resolved profile has no watermark — clearing inherited project/org watermark');
+          await nextTick();
+          if (mediaPanelRef.value) {
+            mediaPanelRef.value.setWatermarkSettings(cleared);
+          }
+          await onWatermarkSettingsChanged(cleared);
         }
 
         // Load creator's default intro (will be auto-applied when building clips)
@@ -2850,6 +3169,7 @@
       segments: clip.segments,
     });
 
+    workspacePlaybackIsBuiltExport.value = false;
     workspaceVideoTimeIsSourceAbsolute.value = true;
 
     // Set guard flag BEFORE stopping playback to prevent watcher from clearing currentlyPlayingClipId
@@ -2914,9 +3234,8 @@
             border2Width: savedSettings.border2Width
           });
           
-          // IMPORTANT: Override position/width with the separately stored values
-          // Position is stored in subtitle_position_x/y/width columns and takes precedence
-          if (fullClip.subtitle_position_y != null) {
+          // Override from columns only for deliberate workspace edits — not legacy detection (50,85).
+          if (fullClip.subtitle_position_y != null && clipSubtitlePositionLooksUserPlaced(fullClip)) {
             savedSettings.positionPercentage = fullClip.subtitle_position_y;
           }
           if (fullClip.subtitle_position_width != null) {
@@ -2934,6 +3253,15 @@
         // Fall back to preset if no full settings saved
         console.warn('[ProjectWorkspaceDialog] No subtitle_settings found in clip object, falling back to preset');
         loadSubtitleSettingsFromPreset(fullClip);
+      }
+
+      const layout = mergePlaybackSubtitleDefaults();
+      if (activeSubtitleSettings.value && layout) {
+        activeSubtitleSettings.value = applyWorkspaceLayoutToClipPlaybackSettings(
+          activeSubtitleSettings.value,
+          layout,
+          fullClip
+        );
       }
     } else {
       activeSubtitleSettings.value = undefined;
@@ -2980,6 +3308,7 @@
       console.log('[ProjectWorkspaceDialog] Loading built clip file:', builtFilePath);
       const loaded = await loadVideoFromPath(builtFilePath);
       if (loaded) {
+        workspacePlaybackIsBuiltExport.value = true;
         workspaceVideoTimeIsSourceAbsolute.value = false;
         // For built clips, we just play from start - the whole file is the clip
         // Wait for the video element to be ready after loading
@@ -3648,6 +3977,8 @@
           } catch (e) {
             console.error('[ProjectWorkspaceDialog] Failed to load VOD preset config:', e);
             vodPresetConfig.value = null;
+          } finally {
+            applyWorkspacePlaybackSubtitleDefaults();
           }
 
           // Check if this project has active detection and restore state

@@ -49,6 +49,7 @@ async function ensureCreatorProfilesSchema(db: any): Promise<void> {
     );
     await addColumnIfMissing(db, 'creator_profiles', 'layout_overlays', 'TEXT DEFAULT NULL');
     await addColumnIfMissing(db, 'creator_profiles', 'disabled', 'INTEGER NOT NULL DEFAULT 0');
+    await addColumnIfMissing(db, 'creator_profiles', 'clip_build_defaults', 'TEXT DEFAULT NULL');
   })();
 
   try {
@@ -189,7 +190,8 @@ export async function createCreatorProfile(
   introRatioSettings?: string | null,
   outroRatioSettings?: string | null,
   scope: 'streamer' | 'global' = 'streamer',
-  layoutOverlays?: string | null
+  layoutOverlays?: string | null,
+  clipBuildDefaults?: string | null
 ): Promise<string> {
   const db = await getDatabase();
   await ensureCreatorProfilesSchema(db);
@@ -198,8 +200,8 @@ export async function createCreatorProfile(
   const userId = getCurrentUserId();
 
   await db.execute(
-    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, intro_outro_settings, auto_dvr_enabled, intro_ratio_settings, outro_ratio_settings, scope, layout_overlays, user_id, created_at, updated_at) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, intro_outro_settings, auto_dvr_enabled, intro_ratio_settings, outro_ratio_settings, scope, layout_overlays, clip_build_defaults, user_id, created_at, updated_at) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       name,
@@ -215,6 +217,7 @@ export async function createCreatorProfile(
       outroRatioSettings || null,
       scope,
       layoutOverlays || null,
+      clipBuildDefaults || null,
       userId,
       now,
       now,
@@ -240,6 +243,7 @@ export async function updateCreatorProfile(
     auto_dvr_enabled: number | boolean;
     scope: 'streamer' | 'global';
     layout_overlays: string | null;
+    clip_build_defaults: string | null;
   }>
 ): Promise<void> {
   const db = await getDatabase();
@@ -310,6 +314,11 @@ export async function updateCreatorProfile(
   if (updates.layout_overlays !== undefined) {
     fields.push('layout_overlays = ?');
     values.push(updates.layout_overlays);
+  }
+
+  if (updates.clip_build_defaults !== undefined) {
+    fields.push('clip_build_defaults = ?');
+    values.push(updates.clip_build_defaults);
   }
 
   if (fields.length === 0) {

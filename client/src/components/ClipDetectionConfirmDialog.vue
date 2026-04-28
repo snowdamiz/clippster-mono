@@ -227,7 +227,7 @@
                       </div>
                       <div class="detect-clips-dialog__preset-sample" style="background: linear-gradient(135deg, #1a1a1c 0%, #2a2a2c 100%);">
                         <span style="color: #FFFFFF; font-family: 'Montserrat', sans-serif; font-size: 14px; font-weight: bold;">
-                          <span style="color: #FACC15;">WORD</span> BY <span style="color: #FACC15;">WORD</span>
+                          <span style="color: #0ea5e9;">WORD</span> BY <span style="color: #0ea5e9;">WORD</span>
                         </span>
                       </div>
                       <p class="text-[10px] text-muted-foreground mt-1">Word-by-word highlight</p>
@@ -384,6 +384,8 @@
     // Multi-segment mode props (for project-level detection)
     segmentCount?: number;
     totalDuration?: number;
+    /** From VOD preset / creator clip defaults — pre-select subtitle options when opening */
+    initialSubtitleDetectionDefaults?: { enabled: boolean; presetId: string } | null;
   }>();
 
   // Use totalDuration if provided (multi-segment mode), otherwise use videoDuration
@@ -416,6 +418,16 @@
   // Subtitle selection
   const subtitlesEnabled = ref(false);
   const selectedSubtitlePreset = ref<string>('');
+
+  watch(
+    () => props.modelValue,
+    (open) => {
+      if (open && props.initialSubtitleDetectionDefaults) {
+        subtitlesEnabled.value = props.initialSubtitleDetectionDefaults.enabled;
+        selectedSubtitlePreset.value = props.initialSubtitleDetectionDefaults.presetId;
+      }
+    }
+  );
 
   // Time range selection (for single video detection)
   const timeRange = ref({ startTime: 0, endTime: 0 });
