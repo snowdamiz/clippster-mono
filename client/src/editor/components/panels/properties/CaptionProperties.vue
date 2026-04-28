@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
+import { ref, watchEffect, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useFontManager } from "../../../composables/useFontManager";
 import type {
@@ -71,17 +71,20 @@ const showStroke = ref(!!props.element.stroke);
 const showShadow = ref(!!props.element.shadow);
 const showGlow = ref(!!props.element.glow);
 
-// ── Watchers ──
-watch(() => props.element.fontSize, (v) => { fontSizeInput.value = v.toString(); });
-watch(() => props.element.opacity, (v) => { opacityInput.value = Math.round(v * 100).toString(); });
-watch(() => props.element.maxWordsPerLine, (v) => { maxWordsInput.value = v.toString(); });
-watch(() => props.element.transform.scale, (v) => { scaleInput.value = Math.round(v * 100).toString(); });
-watch(() => props.element.transform.position.x, (v) => { posXInput.value = Math.round(v).toString(); });
-watch(() => props.element.transform.position.y, (v) => { posYInput.value = Math.round(v).toString(); });
-watch(() => props.element.transform.rotate, (v) => { rotationInput.value = v.toFixed(2); });
-watch(() => props.element.stroke, (v) => { showStroke.value = !!v; });
-watch(() => props.element.shadow, (v) => { showShadow.value = !!v; });
-watch(() => props.element.glow, (v) => { showGlow.value = !!v; });
+// ── Watchers — single watchEffect so all refs update atomically on element switch ──
+watchEffect(() => {
+	void props.element.id;
+	fontSizeInput.value = props.element.fontSize.toString();
+	opacityInput.value = Math.round(props.element.opacity * 100).toString();
+	maxWordsInput.value = props.element.maxWordsPerLine.toString();
+	scaleInput.value = Math.round(props.element.transform.scale * 100).toString();
+	posXInput.value = Math.round(props.element.transform.position.x).toString();
+	posYInput.value = Math.round(props.element.transform.position.y).toString();
+	rotationInput.value = props.element.transform.rotate.toFixed(2);
+	showStroke.value = !!props.element.stroke;
+	showShadow.value = !!props.element.shadow;
+	showGlow.value = !!props.element.glow;
+});
 
 // ── All caption elements for "apply to all" ──
 const allCaptionElements = computed(() => {
