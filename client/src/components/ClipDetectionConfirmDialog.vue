@@ -227,7 +227,7 @@
                       </div>
                       <div class="detect-clips-dialog__preset-sample" style="background: linear-gradient(135deg, #1a1a1c 0%, #2a2a2c 100%);">
                         <span style="color: #FFFFFF; font-family: 'Montserrat', sans-serif; font-size: 14px; font-weight: bold;">
-                          <span style="color: #FACC15;">WORD</span> BY <span style="color: #FACC15;">WORD</span>
+                          <span style="color: #0ea5e9;">WORD</span> BY <span style="color: #0ea5e9;">WORD</span>
                         </span>
                       </div>
                       <p class="text-[10px] text-muted-foreground mt-1">Word-by-word highlight</p>

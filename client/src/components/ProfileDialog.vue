@@ -903,8 +903,6 @@
   } from '@/composables/useCreatorClipDefaults';
   import { invoke, convertFileSrc } from '@tauri-apps/api/core';
   import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
-  import { copyFile, mkdir } from '@tauri-apps/plugin-fs';
-  import { appLocalDataDir, join } from '@tauri-apps/api/path';
   import { useAuthStore } from '@/stores/auth';
   import { useSubscription } from '@/composables/useSubscription';
 
@@ -1118,19 +1116,16 @@
       });
       if (!selected || Array.isArray(selected)) return;
 
-      // Cache under the app data dir so the path remains valid offline.
-      const baseDir = await appLocalDataDir();
-      const targetDir = await join(baseDir, 'creator_reference_frames');
-      await mkdir(targetDir, { recursive: true }).catch(() => {});
-      const ext = selected.split('.').pop() || 'png';
-      const filename = `ref_${Date.now()}.${ext}`;
-      const destPath = await join(targetDir, filename);
-      await copyFile(selected, destPath);
+      // Same Rust storage root as watermarks (%LOCALAPPDATA%\Clippster\…), not appLocalDataDir().
+      const { destination_path } = await invoke<{ destination_path: string }>(
+        'copy_creator_reference_frame_to_storage',
+        { sourcePath: selected },
+      );
 
       formData.value.clip_build_defaults = {
         ...formData.value.clip_build_defaults,
         referenceImageSource: 'upload',
-        referenceImageUrl: destPath,
+        referenceImageUrl: destination_path,
         capturedAt: Date.now(),
       };
     } catch (err) {

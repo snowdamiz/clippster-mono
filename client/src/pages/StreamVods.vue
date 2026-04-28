@@ -658,6 +658,20 @@
     loadDownloadedVodIds();
   }
 
+  /** Map `?platform=` query values to PlatformId (handles org/API `youtube` vs app `YouTube`). */
+  function normalizeVodRoutePlatform(raw: string): PlatformId | null {
+    const key = raw.trim().toLowerCase();
+    const map: Record<string, PlatformId> = {
+      pumpfun: 'pumpfun',
+      kick: 'kick',
+      twitch: 'twitch',
+      youtube: 'YouTube',
+      rumble: 'rumble',
+      twitter: 'twitter',
+    };
+    return map[key] ?? null;
+  }
+
   // Initialize
   onMounted(async () => {
     document.addEventListener('click', handleClickOutside);
@@ -671,15 +685,19 @@
     await loadDownloadedVodIds();
     detectPlatform();
 
-    // Check for query params (from Creator Profiles navigation)
-    const queryPlatform = route.query.platform as string | undefined;
-    const querySearch = route.query.search as string | undefined;
+    // Check for query params (from Creator Profiles: platform + id; elsewhere: platform + search)
+    const rawPlatform = route.query.platform;
+    const queryPlatform = (
+      Array.isArray(rawPlatform) ? rawPlatform[0] : rawPlatform
+    ) as string | undefined;
+    const rawSearch = route.query.search ?? route.query.id;
+    const querySearch = (Array.isArray(rawSearch) ? rawSearch[0] : rawSearch) as string | undefined;
 
     if (queryPlatform && querySearch) {
-      // Set the platform and search from query params
-      const validPlatforms = ['pumpfun', 'kick', 'twitch', 'YouTube', 'rumble', 'twitter'] as const;
-      if (validPlatforms.includes(queryPlatform as any)) {
-        detectedPlatform.value = queryPlatform as PlatformId;
+      const normalizedPlatform = normalizeVodRoutePlatform(queryPlatform);
+
+      if (normalizedPlatform) {
+        detectedPlatform.value = normalizedPlatform;
         searchInput.value = querySearch;
 
         // Clear query params from URL to prevent re-search on navigation

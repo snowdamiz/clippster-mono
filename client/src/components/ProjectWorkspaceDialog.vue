@@ -102,6 +102,7 @@
                     :aspect-ratio="selectedAspectRatio"
                     :focal-point="effectiveFocalPoint"
                     :framing-regions="currentFramingRegions"
+                    :manual-framing-config="vodManualFramingConfigForPlayer"
                     :watermark-settings="watermarkSettings"
                     :watermark-data="currentWatermarkData"
                     :subtitle-settings="activeSubtitleSettings"
@@ -396,6 +397,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import type {
     ActiveVodPresetConfig,
+    ManualFramingConfig,
     SubtitleSettings,
     WatermarkSettings,
     WordInfo,
@@ -653,6 +655,14 @@
     return null;
   });
 
+  /** Full framing config for VideoPlayer (Use 16:9 blur path + POI regions use `framing-regions`). */
+  const vodManualFramingConfigForPlayer = computed((): ManualFramingConfig | null => {
+    const fc = vodPresetConfig.value?.framingConfig;
+    if (!fc) return null;
+    if (previewAspectRatio.value === '16:9') return null;
+    return fc;
+  });
+
   // VOD framing focal point override (computed from framing regions)
   const vodFocalPointOverride = ref<{ x: number; y: number } | null>(null);
 
@@ -719,17 +729,21 @@
     };
   });
 
-  // Framing regions for the currently selected preview aspect ratio
+  // Framing regions for the currently selected preview aspect ratio (POI rectangles only — not "Use 16:9" blur mode)
   const currentFramingRegions = computed(() => {
     if (previewAspectRatio.value === '16:9') {
       return undefined; // No framing for source ratio
     }
-    
-    if (vodPresetConfig.value?.framingConfig && 
-        vodPresetConfig.value.targetAspectRatio === previewAspectRatio.value) {
-      return vodPresetConfig.value.framingConfig.regions;
+
+    const fc = vodPresetConfig.value?.framingConfig;
+    if (fc?.sourceFrameMode === 'use16x9') {
+      return undefined; // VideoPlayer renders blur + sharp 16:9 via manualFramingConfig
     }
-    
+
+    if (fc && vodPresetConfig.value?.targetAspectRatio === previewAspectRatio.value) {
+      return fc.regions;
+    }
+
     return undefined;
   });
 
@@ -835,17 +849,63 @@
   // Store active subtitle settings (persists during playback even if currentlyPlayingClipId is cleared)
   const activeSubtitleSettings = ref<any>(undefined);
 
+  /** Merge VOD/creator subtitle defaults with per-preview-ratio overrides — main VOD playback before a clip is selected. */
+  function mergePlaybackSubtitleDefaults(): SubtitleSettings | null {
+    const base = subtitleEditorDefaultSettings.value;
+    if (!base) return null;
+    const ratio = previewAspectRatio.value;
+    const ov = base.perRatioConfigs?.[ratio];
+    const merged: SubtitleSettings = {
+      ...JSON.parse(JSON.stringify(base)),
+      enabled: true,
+    };
+    if (ov) {
+      Object.assign(merged, ov);
+      if (ov.position && merged.positionPercentage == null) {
+        merged.positionPercentage = ov.position.y;
+      }
+    }
+    return merged;
+  }
+
+  function applyWorkspacePlaybackSubtitleDefaults() {
+    const m = mergePlaybackSubtitleDefaults();
+    if (m) activeSubtitleSettings.value = m;
+  }
+
+  watch(
+    [previewAspectRatio, subtitleEditorDefaultSettings, vodPresetConfig],
+    () => {
+      if (!props.modelValue || !subtitleEditorDefaultSettings.value) return;
+      const clipId = currentlyPlayingClipId.value;
+      if (clipId) {
+        const c = timelineClips.value.find((x: any) => x.id === clipId);
+        if (c?.subtitle_enabled) return;
+      }
+      applyWorkspacePlaybackSubtitleDefaults();
+    },
+    { deep: true }
+  );
+
   // Subtitle position for the currently/last playing clip — defaults to bottom-center (50, 85)
   const activeSubtitlePosition = computed(() => {
-    // Use currentlyPlayingClipId if available, otherwise use lastPlayedClipId to persist position
     const clipId = currentlyPlayingClipId.value || lastPlayedClipId.value;
-    const clip = timelineClips.value.find((c: any) => c.id === clipId);
-    if (!clip || !activeSubtitleSettings.value) return null;
-    return {
-      x: clip.subtitle_position_x ?? 50,
-      y: clip.subtitle_position_y ?? 85,
-      width: clip.subtitle_position_width ?? null,
-    };
+    const clip = clipId ? timelineClips.value.find((c: any) => c.id === clipId) : null;
+    if (clip && activeSubtitleSettings.value) {
+      return {
+        x: clip.subtitle_position_x ?? 50,
+        y: clip.subtitle_position_y ?? 85,
+        width: clip.subtitle_position_width ?? null,
+      };
+    }
+    const s = activeSubtitleSettings.value as SubtitleSettings | undefined;
+    if (!s) return null;
+    const ratio = normalizedAspectRatio.value;
+    const pr = s.perRatioConfigs?.[ratio];
+    const y = pr?.position?.y ?? pr?.positionPercentage ?? s.positionPercentage ?? 85;
+    const x = pr?.position?.x ?? 50;
+    const w = pr?.maxWidth ?? s.maxWidth ?? null;
+    return { x, y, width: w };
   });
 
   // Get transcript words for subtitle rendering
@@ -3704,6 +3764,8 @@
           } catch (e) {
             console.error('[ProjectWorkspaceDialog] Failed to load VOD preset config:', e);
             vodPresetConfig.value = null;
+          } finally {
+            applyWorkspacePlaybackSubtitleDefaults();
           }
 
           // Check if this project has active detection and restore state
