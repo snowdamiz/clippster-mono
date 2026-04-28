@@ -47,6 +47,60 @@
           <PlusIcon class="w-3 h-3" />
           Add Region
         </button>
+
+        <!-- Platform overlay preview (9:16 export) — chrome shows on output panel only -->
+        <template v-if="isExport916">
+          <button
+            ref="platformOverlayButtonRef"
+            type="button"
+            class="flex items-center gap-1.5 shrink-0 px-2 py-1 text-[10px] font-medium rounded-md whitespace-nowrap transition-all cursor-pointer border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/[0.08] hover:border-white/[0.15] hover:text-white"
+            @click.stop="showSocialPlatformMenu = !showSocialPlatformMenu"
+          >
+            <Smartphone class="w-3 h-3 shrink-0 opacity-80" />
+            <span>{{ localSocialOverlay?.label || 'Platform' }}</span>
+          </button>
+
+          <Teleport to="body">
+            <Transition name="poi-social-dropdown">
+              <div
+                v-if="showSocialPlatformMenu && isExport916"
+                ref="socialPlatformMenuPanelRef"
+                class="fixed z-[10050] min-w-[180px] rounded-lg border border-white/10 bg-zinc-950/98 py-1.5 px-1.5 shadow-2xl backdrop-blur-md"
+                :style="socialPlatformMenuStyle"
+                @click.stop
+              >
+                <button
+                  type="button"
+                  class="flex items-center gap-3 w-full px-3 py-2.5 text-[13px] rounded-md text-left transition-colors cursor-pointer border-0"
+                  :class="
+                    !localSocialOverlay
+                      ? 'bg-cyan-500/15 text-cyan-400'
+                      : 'bg-transparent text-zinc-300 hover:bg-white/[0.08] hover:text-white'
+                  "
+                  @click="setSocialOverlay(null)"
+                >
+                  <span class="text-lg leading-none">✕</span>
+                  <span class="font-medium">None</span>
+                </button>
+                <button
+                  v-for="preset in SOCIAL_OVERLAY_PRESETS"
+                  :key="preset.platform"
+                  type="button"
+                  class="flex items-center gap-3 w-full px-3 py-2.5 text-[13px] rounded-md text-left transition-colors cursor-pointer border-0"
+                  :class="
+                    localSocialOverlay?.platform === preset.platform
+                      ? 'bg-cyan-500/15 text-cyan-400'
+                      : 'bg-transparent text-zinc-300 hover:bg-white/[0.08] hover:text-white'
+                  "
+                  @click="toggleSocialOverlayPreset(preset)"
+                >
+                  <span class="text-lg leading-none">{{ preset.icon }}</span>
+                  <span class="font-medium">{{ preset.label }}</span>
+                </button>
+              </div>
+            </Transition>
+          </Teleport>
+        </template>
       </div>
     </div>
 
@@ -268,11 +322,23 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-  import { PlusIcon, VideoIcon, PlusCircleIcon, ImageIcon, LockIcon, UnlockIcon, TrashIcon, CircleDotIcon as RoundCornerIcon } from 'lucide-vue-next';
+  import {
+    PlusIcon,
+    VideoIcon,
+    PlusCircleIcon,
+    ImageIcon,
+    LockIcon,
+    UnlockIcon,
+    TrashIcon,
+    Smartphone,
+    CircleDotIcon as RoundCornerIcon,
+  } from 'lucide-vue-next';
   import Hls from 'hls.js';
   import POIRegion from './POIRegion.vue';
   import type { ManualRegion, ManualRegionRect } from '@/types';
   import { POI_REGION_COLORS } from '@/types';
+  import { SOCIAL_OVERLAY_PRESETS } from '@/editor/constants/social-overlay-constants';
+  import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
 
   interface Props {
     regions: ManualRegion[];
@@ -287,6 +353,10 @@
     isMuted?: boolean;
     /** When false, hides upload UI (e.g. creator profile defaults use stream/thumbnail reference only). */
     allowMediaUpload?: boolean;
+    /** Manual POI export aspect ratio — used to show platform overlay toggle for 9:16. */
+    targetAspectRatio?: string;
+    /** Preview-only social chrome on output (TikTok / Reels / Shorts). */
+    socialOverlayPreset?: SocialOverlayPreset | null;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -297,6 +367,8 @@
     volume: 1,
     isMuted: false,
     allowMediaUpload: true,
+    targetAspectRatio: '16:9',
+    socialOverlayPreset: null,
   });
 
   const emit = defineEmits<{
@@ -308,7 +380,49 @@
     selectRegion: [id: string | null];
     timeUpdate: [time: number];
     uploadMedia: [regionId: string];
+    'update:socialOverlayPreset': [preset: SocialOverlayPreset | null];
   }>();
+
+  const showSocialPlatformMenu = ref(false);
+  const platformOverlayButtonRef = ref<HTMLButtonElement | null>(null);
+  const socialPlatformMenuPanelRef = ref<HTMLElement | null>(null);
+
+  const localSocialOverlay = computed(() => props.socialOverlayPreset ?? null);
+
+  const isExport916 = computed(() => props.targetAspectRatio === '9:16');
+
+  const socialPlatformMenuStyle = computed(() => {
+    const el = platformOverlayButtonRef.value;
+    if (!el) return {};
+    const rect = el.getBoundingClientRect();
+    return {
+      top: `${rect.bottom + 6}px`,
+      left: `${rect.left + rect.width / 2}px`,
+      transform: 'translateX(-50%)',
+    };
+  });
+
+  function setSocialOverlay(preset: SocialOverlayPreset | null) {
+    emit('update:socialOverlayPreset', preset);
+    showSocialPlatformMenu.value = false;
+  }
+
+  function toggleSocialOverlayPreset(preset: SocialOverlayPreset) {
+    if (localSocialOverlay.value?.platform === preset.platform) {
+      emit('update:socialOverlayPreset', null);
+    } else {
+      emit('update:socialOverlayPreset', preset);
+    }
+    showSocialPlatformMenu.value = false;
+  }
+
+  function handleDocumentClickForSocialMenu(e: MouseEvent) {
+    if (!showSocialPlatformMenu.value) return;
+    const target = e.target as Node;
+    if (platformOverlayButtonRef.value?.contains(target)) return;
+    if (socialPlatformMenuPanelRef.value?.contains(target)) return;
+    showSocialPlatformMenu.value = false;
+  }
 
   const containerRef = ref<HTMLElement | null>(null);
   const videoRef = ref<HTMLVideoElement | null>(null);
@@ -722,6 +836,8 @@
       resizeObserver = new ResizeObserver(updateContainerDimensions);
       resizeObserver.observe(containerRef.value);
     }
+
+    document.addEventListener('click', handleDocumentClickForSocialMenu);
   });
 
   onUnmounted(() => {
@@ -729,6 +845,11 @@
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
+    document.removeEventListener('click', handleDocumentClickForSocialMenu);
+  });
+
+  watch(isExport916, (val) => {
+    if (!val) showSocialPlatformMenu.value = false;
   });
 
   // Watch for aspect ratio changes
@@ -744,5 +865,15 @@
 <style scoped>
   .poi-source-panel {
     background: linear-gradient(to bottom, rgb(24 24 27 / 0.8), rgb(24 24 27 / 0.95));
+  }
+
+  .poi-social-dropdown-enter-active,
+  .poi-social-dropdown-leave-active {
+    transition: opacity 0.15s ease;
+  }
+
+  .poi-social-dropdown-enter-from,
+  .poi-social-dropdown-leave-to {
+    opacity: 0;
   }
 </style>

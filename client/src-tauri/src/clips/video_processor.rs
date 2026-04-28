@@ -3055,9 +3055,9 @@ pub async fn build_multi_region_clip(
 
         filter_parts.push("[0:v]split=2[vin_u9a][vin_u9b]".to_string());
         // Background: scale to cover, crop to output size, optionally blur
-        // blur_amount is 0-30 from UI; map to sigma range of 0-40 for noticeable blur on HD video
+        // Keep sigma scale in line with client `USE169_BLUR_SLIDER_TO_CSS_PX` (2.15) for export ≈ in-app preview
         if blur_enabled && blur_amount_cfg > 0.0 {
-            let bg_sigma = (blur_amount_cfg * 1.33).clamp(1.0, 40.0);
+            let bg_sigma = (blur_amount_cfg * 2.15).clamp(1.0, 55.0);
             println!("[Rust] Use 16:9 blur: amount={} -> sigma={}", blur_amount_cfg, bg_sigma);
             filter_parts.push(format!(
                 "[vin_u9a]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{}:(iw-ow)/2:(ih-oh)/2,gblur=sigma={}[v_u9_blur]",

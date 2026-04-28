@@ -395,6 +395,7 @@
     ManualFramingConfig,
   } from '@/types';
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
+  import { use169BlurSliderToCssPx } from '@/utils/use169Blur';
 
   interface WatermarkData {
     dataUrl: string; // Data URL for display
@@ -790,8 +791,9 @@
 
   const use169BgVideoStyle = computed(() => {
     const fc = props.manualFramingConfig;
+    const amt = fc?.blurAmount ?? 0;
     const blurPx =
-      fc?.blurEnabled !== false && (fc?.blurAmount ?? 0) > 0 ? (fc?.blurAmount ?? 12) : 0;
+      fc?.blurEnabled !== false && amt > 0 ? use169BlurSliderToCssPx(amt) : 0;
     return blurPx > 0 ? { filter: `blur(${blurPx}px)` } : {};
   });
 
@@ -864,12 +866,13 @@
     const use169Early =
       fcEarly?.sourceFrameMode === 'use16x9' &&
       props.aspectRatio.width / props.aspectRatio.height < 0.95;
+    const amtEarly = fcEarly?.blurAmount ?? 0;
     const blurPxEarly =
       use169Early &&
       fcEarly &&
       fcEarly.blurEnabled !== false &&
-      (fcEarly.blurAmount ?? 0) > 0
-        ? (fcEarly.blurAmount ?? 12)
+      amtEarly > 0
+        ? use169BlurSliderToCssPx(amtEarly)
         : 0;
     // Heavy canvas blur + DPR → massive lag; keep compositor light for HLS fallback.
     const dpr =
@@ -912,8 +915,9 @@
       }
       lastUse169CanvasDraw = now;
 
+      const amtU9 = fc!.blurAmount ?? 0;
       const blurPx =
-        fc!.blurEnabled !== false && (fc!.blurAmount ?? 0) > 0 ? (fc!.blurAmount ?? 12) : 0;
+        fc!.blurEnabled !== false && amtU9 > 0 ? use169BlurSliderToCssPx(amtU9) : 0;
 
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, cw, ch);

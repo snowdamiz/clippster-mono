@@ -542,6 +542,18 @@
           </template>
         </div>
 
+        <!-- Social platform chrome (TikTok / Reels / Shorts) — preview only, 9:16; toggle lives on source panel -->
+        <div
+          v-if="socialOverlayPreset && isTarget916"
+          class="absolute inset-0 z-[100] pointer-events-none select-none overflow-hidden rounded-lg"
+        >
+          <SocialOverlay
+            :preset="socialOverlayPreset"
+            :canvas-width="9"
+            :canvas-height="16"
+          />
+        </div>
+
         <!-- Empty state -->
         <div v-if="regions.length === 0 && !use16x9Mode" class="absolute inset-0 flex items-center justify-center">
           <div class="text-center">
@@ -560,8 +572,11 @@
   import { LayoutGridIcon, LayoutIcon } from 'lucide-vue-next';
   import POIRegion from './POIRegion.vue';
   import MediaPreview from '@/components/MediaPreview.vue';
+  import SocialOverlay from '@/editor/components/preview/SocialOverlay.vue';
+  import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
   import type { ManualRegion, ManualRegionRect, SubtitleSettings, ManualSourceFramingPayload } from '@/types';
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
+  import { scaleUse169BlurForPoiPreview, use169BlurSliderToCssPx } from '@/utils/use169Blur';
 
   interface WatermarkPreview {
     filePath?: string;
@@ -623,6 +638,8 @@
     /** Merged clip text state for current target ratio (preview + drag) */
     clipTextBoxDisplay?: ClipTextBoxState | null;
     clipTextBoxPositioningEnabled?: boolean;
+    /** Preview-only social chrome; controlled from Manual POI source toolbar when export is 9:16 */
+    socialOverlayPreset?: SocialOverlayPreset | null;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -640,6 +657,7 @@
     initialSourceFraming: null,
     clipTextBoxDisplay: null,
     clipTextBoxPositioningEnabled: false,
+    socialOverlayPreset: null,
   });
 
   const emit = defineEmits<{
@@ -655,6 +673,8 @@
   const containerWidth = ref(0);
   const containerHeight = ref(0);
 
+  const isTarget916 = computed(() => props.targetAspectRatio === '9:16');
+
   // Source frame scaling state
   const showSourceFrame = ref(false);
   const use16x9Mode = ref(false);
@@ -663,6 +683,14 @@
   const blurDropdownRef = ref<HTMLElement | null>(null);
   // Blur is enabled when amount > 0
   const blurEnabled = computed(() => blurAmount.value > 0);
+
+  /** Same slider→CSS mapping as VideoPlayer; then scale for small modal preview panel. */
+  function poiPreviewBgBlurPx(sliderVal: number): number {
+    const cssPx = use169BlurSliderToCssPx(sliderVal);
+    const minSide = Math.min(containerWidth.value, containerHeight.value);
+    return scaleUse169BlurForPoiPreview(cssPx, minSide);
+  }
+
   const sourceFrameTransform = ref({
     scale: 1,
     x: 0,
@@ -680,7 +708,8 @@
 
   // Close blur dropdown when clicking outside
   function handleClickOutsideBlur(e: MouseEvent) {
-    if (showBlurDropdown.value && blurDropdownRef.value && !blurDropdownRef.value.contains(e.target as Node)) {
+    const target = e.target as Node;
+    if (showBlurDropdown.value && blurDropdownRef.value && !blurDropdownRef.value.contains(target)) {
       showBlurDropdown.value = false;
     }
   }
@@ -914,12 +943,12 @@
 
   const use16x9BgBlurPx = computed(() => {
     if (!use16x9Mode.value) return 0;
-    return blurAmount.value; // 0 = no blur, >0 = blur with that amount
+    return poiPreviewBgBlurPx(blurAmount.value);
   });
 
   const scaleSourceBlurStyle = computed(() => {
     if (!showSourceFrame.value || !blurEnabled.value) return {};
-    return { filter: `blur(${blurAmount.value}px)` };
+    return { filter: `blur(${poiPreviewBgBlurPx(blurAmount.value)}px)` };
   });
 
   function regionMediaSrc(assetId?: string | null): string {
@@ -1899,4 +1928,5 @@
   .subtitle-text-container {
     user-select: none;
   }
+
 </style>

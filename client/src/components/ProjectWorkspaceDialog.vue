@@ -105,10 +105,10 @@
                     :manual-framing-config="vodManualFramingConfigForPlayer"
                     :watermark-settings="watermarkSettings"
                     :watermark-data="currentWatermarkData"
-                    :subtitle-settings="activeSubtitleSettings"
-                    :subtitle-initial-position="activeSubtitlePosition"
-                    :transcript-words="videoPlayerTranscriptWords"
-                    :transcript-segments="videoPlayerTranscriptSegments"
+                    :subtitle-settings="videoPlayerSubtitleSettings"
+                    :subtitle-initial-position="videoPlayerSubtitleInitialPosition"
+                    :transcript-words="videoPlayerTranscriptWordsForPlayer"
+                    :transcript-segments="videoPlayerTranscriptSegmentsForPlayer"
                     :current-time="currentTime"
                     :clip-text-box-state="clipTextBoxForVideoPlayer"
                     :clip-text-box-interactive="clipTextBoxPlayerInteractive"
@@ -657,8 +657,15 @@
     return null;
   });
 
+  /**
+   * Built clip files are already full composites (blur + sharp 9:16). Applying VOD framing again
+   * stacks "Use 16:9" on top → nested 9:16 look.
+   */
+  const workspacePlaybackIsBuiltExport = ref(false);
+
   /** Full framing config for VideoPlayer (Use 16:9 blur path + POI regions use `framing-regions`). */
   const vodManualFramingConfigForPlayer = computed((): ManualFramingConfig | null => {
+    if (workspacePlaybackIsBuiltExport.value) return null;
     const fc = vodPresetConfig.value?.framingConfig;
     if (!fc) return null;
     if (previewAspectRatio.value === '16:9') return null;
@@ -733,6 +740,9 @@
 
   // Framing regions for the currently selected preview aspect ratio (POI rectangles only — not "Use 16:9" blur mode)
   const currentFramingRegions = computed(() => {
+    if (workspacePlaybackIsBuiltExport.value) {
+      return undefined;
+    }
     if (previewAspectRatio.value === '16:9') {
       return undefined; // No framing for source ratio
     }
@@ -1080,6 +1090,27 @@
       out.push({ ...seg, start: ns, end: ne, words: remappedWords });
     }
     return out;
+  });
+
+  /** Self-contained built MP4s already include burned-in subtitles — do not overlay editable captions in VideoPlayer. */
+  const videoPlayerSubtitleSettings = computed(() => {
+    if (workspacePlaybackIsBuiltExport.value) return undefined;
+    return activeSubtitleSettings.value;
+  });
+
+  const videoPlayerSubtitleInitialPosition = computed(() => {
+    if (workspacePlaybackIsBuiltExport.value) return null;
+    return activeSubtitlePosition.value;
+  });
+
+  const videoPlayerTranscriptWordsForPlayer = computed((): WordInfo[] => {
+    if (workspacePlaybackIsBuiltExport.value) return [];
+    return videoPlayerTranscriptWords.value;
+  });
+
+  const videoPlayerTranscriptSegmentsForPlayer = computed((): WhisperSegment[] => {
+    if (workspacePlaybackIsBuiltExport.value) return [];
+    return videoPlayerTranscriptSegments.value;
   });
 
   // Segments scoped to the selected/playing clip for the subtitle properties panel
@@ -2657,6 +2688,28 @@
     }
   }
 
+  /** True if the resolved profile includes at least one watermark (column or per-ratio in JSON). */
+  function creatorProfileSpecifiesWatermark(profile: CreatorProfileWithLinks): boolean {
+    if (profile.watermark_id) return true;
+    if (!profile.watermark_settings) return false;
+    try {
+      const parsed =
+        typeof profile.watermark_settings === 'string'
+          ? JSON.parse(profile.watermark_settings)
+          : profile.watermark_settings;
+      if (!parsed || typeof parsed !== 'object') return false;
+      for (const key of Object.keys(parsed)) {
+        const cfg = parsed[key];
+        if (cfg && typeof cfg === 'object' && cfg.watermarkId != null && String(cfg.watermarkId).trim() !== '') {
+          return true;
+        }
+      }
+    } catch {
+      return false;
+    }
+    return false;
+  }
+
   // Load creator profile and apply their default settings
   async function loadCreatorProfileSettings(projectId: string) {
     try {
@@ -2777,16 +2830,16 @@
           profile.watermark_id
         );
 
-        // Apply watermark settings from creator profile
-        // Profile watermark should override project-saved watermark (unless user explicitly customized it)
-        if (profile.watermark_id) {
+        // Apply watermark settings from creator profile, or clear org/project-inherited watermark
+        // when the resolved profile has none (e.g. project.default_watermark_settings still has org WM)
+        if (creatorProfileSpecifiesWatermark(profile)) {
           console.log('[ProjectWorkspaceDialog] Applying creator watermark:', profile.watermark_id, 'current enabled:', watermarkSettings.value.enabled, 'current watermarkId:', watermarkSettings.value.watermarkId);
 
           // Parse the creator's per-ratio watermark settings
           let perRatioSettings = null;
           let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
-          let effectiveWatermarkId = profile.watermark_id;
-          
+          let effectiveWatermarkId: string | null = profile.watermark_id ?? null;
+
           if (profile.watermark_settings) {
             try {
               perRatioSettings = JSON.parse(profile.watermark_settings);
@@ -2801,40 +2854,85 @@
               if (ratioConfig?.watermarkId) {
                 effectiveWatermarkId = ratioConfig.watermarkId;
                 console.log('[ProjectWorkspaceDialog] Using per-ratio watermarkId:', effectiveWatermarkId, 'instead of profile.watermark_id:', profile.watermark_id);
+              } else if (!effectiveWatermarkId && perRatioSettings) {
+                for (const ratio of ['16:9', '9:16', '1:1', '4:5'] as const) {
+                  const wid = perRatioSettings[ratio]?.watermarkId;
+                  if (wid != null && String(wid).trim() !== '') {
+                    effectiveWatermarkId = String(wid);
+                    console.log('[ProjectWorkspaceDialog] Using per-ratio watermarkId from', ratio, ':', effectiveWatermarkId);
+                    break;
+                  }
+                }
               }
             } catch (e) {
               console.warn('[ProjectWorkspaceDialog] Failed to parse creator watermark settings:', e);
             }
           }
 
-          const newSettings = {
-            ...watermarkSettings.value,
-            enabled: true,
-            watermarkId: effectiveWatermarkId,
-            positionX: defaultPos.x,
-            positionY: defaultPos.y,
-            opacity: defaultPos.opacity,
-            scale: defaultPos.scale,
-            perRatioSettings: perRatioSettings,
-          };
+          if (!effectiveWatermarkId) {
+            console.warn(
+              '[ProjectWorkspaceDialog] Profile indicates watermark but none resolved — clearing inherited watermark'
+            );
+            const clearedInconsistent: WatermarkSettings = {
+              enabled: false,
+              watermarkId: null,
+              positionX: 12,
+              positionY: 92,
+              opacity: 80,
+              scale: 20,
+              perRatioSettings: null,
+            };
+            await nextTick();
+            if (mediaPanelRef.value) {
+              mediaPanelRef.value.setWatermarkSettings(clearedInconsistent);
+            }
+            await onWatermarkSettingsChanged(clearedInconsistent);
+          } else {
+            const newSettings = {
+              ...watermarkSettings.value,
+              enabled: true,
+              watermarkId: effectiveWatermarkId,
+              positionX: defaultPos.x,
+              positionY: defaultPos.y,
+              opacity: defaultPos.opacity,
+              scale: defaultPos.scale,
+              perRatioSettings: perRatioSettings,
+            };
 
-          console.log('[ProjectWorkspaceDialog] Applying creator watermark settings:', {
-            watermarkId: newSettings.watermarkId,
-            defaultPos,
-            hasPerRatioSettings: !!perRatioSettings,
-            perRatioSettings,
-          });
+            console.log('[ProjectWorkspaceDialog] Applying creator watermark settings:', {
+              watermarkId: newSettings.watermarkId,
+              defaultPos,
+              hasPerRatioSettings: !!perRatioSettings,
+              perRatioSettings,
+            });
 
-          // Wait for next tick to ensure MediaPanel ref is available
-          await nextTick();
+            // Wait for next tick to ensure MediaPanel ref is available
+            await nextTick();
 
-          // Update MediaPanel's internal state if ref is available
-          if (mediaPanelRef.value) {
-            mediaPanelRef.value.setWatermarkSettings(newSettings);
+            // Update MediaPanel's internal state if ref is available
+            if (mediaPanelRef.value) {
+              mediaPanelRef.value.setWatermarkSettings(newSettings);
+            }
+
+            // Always ensure parent state gets updated so VideoPlayer receives the watermark immediately
+            await onWatermarkSettingsChanged(newSettings);
           }
-
-          // Always ensure parent state gets updated so VideoPlayer receives the watermark immediately
-          await onWatermarkSettingsChanged(newSettings);
+        } else {
+          const cleared: WatermarkSettings = {
+            enabled: false,
+            watermarkId: null,
+            positionX: 12,
+            positionY: 92,
+            opacity: 80,
+            scale: 20,
+            perRatioSettings: null,
+          };
+          console.log('[ProjectWorkspaceDialog] Resolved profile has no watermark — clearing inherited project/org watermark');
+          await nextTick();
+          if (mediaPanelRef.value) {
+            mediaPanelRef.value.setWatermarkSettings(cleared);
+          }
+          await onWatermarkSettingsChanged(cleared);
         }
 
         // Load creator's default intro (will be auto-applied when building clips)
@@ -3071,6 +3169,7 @@
       segments: clip.segments,
     });
 
+    workspacePlaybackIsBuiltExport.value = false;
     workspaceVideoTimeIsSourceAbsolute.value = true;
 
     // Set guard flag BEFORE stopping playback to prevent watcher from clearing currentlyPlayingClipId
@@ -3209,6 +3308,7 @@
       console.log('[ProjectWorkspaceDialog] Loading built clip file:', builtFilePath);
       const loaded = await loadVideoFromPath(builtFilePath);
       if (loaded) {
+        workspacePlaybackIsBuiltExport.value = true;
         workspaceVideoTimeIsSourceAbsolute.value = false;
         // For built clips, we just play from start - the whole file is the clip
         // Wait for the video element to be ready after loading

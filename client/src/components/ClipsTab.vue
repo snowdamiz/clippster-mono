@@ -155,6 +155,22 @@
         <!-- Clips Grid -->
         <div class="space-y-6 py-4">
           <template v-for="section in clipSections" :key="section.title">
+            <div
+              v-if="section.title === 'Completed' && completedDownloadAllFileCount > 0"
+              class="flex items-center justify-end px-1 mb-1"
+            >
+              <button
+                type="button"
+                class="clips-tab-download-btn group flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium rounded-md transition-all disabled:opacity-50 disabled:pointer-events-none"
+                :disabled="isDownloadingAll"
+                title="Copy all built clip files to a folder"
+                @click.stop="onDownloadAllBuiltClips"
+              >
+                <LoaderIcon v-if="isDownloadingAll" class="h-3.5 w-3.5 animate-spin" />
+                <DownloadIcon v-else class="h-3.5 w-3.5" />
+                <span>Download all ({{ completedDownloadAllFileCount }})</span>
+              </button>
+            </div>
             <div class="flex items-center justify-between px-1" v-if="section.clips.length > 0">
               <div class="flex items-center gap-2">
                 <div class="h-1.5 w-1.5 rounded-full" :class="section.accentClass"></div>
@@ -932,6 +948,7 @@
 
   // State
   const hoveredClipId = ref<string | null>(null);
+  const isDownloadingAll = ref(false);
   const clipsScrollContainer = ref<HTMLElement | null>(null);
   const clipElements = ref<Map<string, HTMLElement>>(new Map());
   const showBuildSettingsDialog = ref(false);
@@ -1658,6 +1675,24 @@
   function getDownloadableFilesCount(clip: ClipWithVersion): number {
     return getDownloadableFiles(clip).length;
   }
+
+  /** Source paths for all built outputs in the Completed section (same order as the list). */
+  const completedDownloadSourcePaths = computed(() => {
+    const sec = clipSections.value.find((s) => s.title === 'Completed');
+    if (!sec?.clips.length) return [];
+    const paths: string[] = [];
+    for (const clip of sec.clips) {
+      const downloadable = getDownloadableFiles(clip);
+      if (downloadable.length > 0) {
+        for (const f of downloadable) paths.push(f.filePath);
+      } else if (clip.built_file_path) {
+        paths.push(clip.built_file_path);
+      }
+    }
+    return paths;
+  });
+
+  const completedDownloadAllFileCount = computed(() => completedDownloadSourcePaths.value.length);
 
   function getLoadingMessage(): string {
     switch (props.generationStage) {
@@ -3837,6 +3872,92 @@
     } finally {
       // Reset the build in progress flag
       isBuildInProgress.value = false;
+    }
+  }
+
+  function joinDirAndFile(dir: string, fileName: string): string {
+    const normalized = dir.replace(/[/\\]+$/, '');
+    const sep = normalized.includes('\\') ? '\\' : '/';
+    return `${normalized}${sep}${fileName}`;
+  }
+
+  function allocateUniqueDestBasename(originalBase: string, usedLower: Set<string>): string {
+    const dot = originalBase.lastIndexOf('.');
+    const stem = dot > 0 ? originalBase.slice(0, dot) : originalBase;
+    const ext = dot > 0 ? originalBase.slice(dot) : '';
+    let name = originalBase;
+    let n = 1;
+    while (usedLower.has(name.toLowerCase())) {
+      n++;
+      name = `${stem}_${n}${ext}`;
+    }
+    usedLower.add(name.toLowerCase());
+    return name;
+  }
+
+  async function onDownloadAllBuiltClips() {
+    const sources = completedDownloadSourcePaths.value;
+    if (sources.length === 0) {
+      try {
+        const toastComposable = await import('@/composables/useToast');
+        const { info } = toastComposable.useToast();
+        info('Nothing to download', 'No built clip files are available to export.');
+      } catch {
+        console.warn('[ClipsTab] Nothing to download');
+      }
+      return;
+    }
+
+    isDownloadingAll.value = true;
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Choose folder for clips',
+      });
+      if (selected === null || selected === undefined) return;
+      const dir = Array.isArray(selected) ? selected[0] : selected;
+      if (!dir || typeof dir !== 'string') return;
+
+      const { invoke } = await import('@tauri-apps/api/core');
+      const usedNames = new Set<string>();
+      let copied = 0;
+      const errors: string[] = [];
+
+      for (const sourcePath of sources) {
+        const originalBase = sourcePath.split(/[/\\]/).pop() || 'clip.mp4';
+        const destBase = allocateUniqueDestBasename(originalBase, usedNames);
+        const destinationPath = joinDirAndFile(dir, destBase);
+        try {
+          await invoke('copy_clip_to_destination', { sourcePath, destinationPath });
+          copied++;
+        } catch (e) {
+          errors.push(`${destBase}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
+      const toastComposable = await import('@/composables/useToast');
+      const { success: showSuccessToast, error: showErrorToast } = toastComposable.useToast();
+      if (errors.length > 0) {
+        showErrorToast(
+          copied > 0 ? 'Partial export' : 'Export failed',
+          copied > 0
+            ? `Saved ${copied} of ${sources.length} files. First error: ${errors[0]}`
+            : errors[0] ?? 'Unknown error',
+          10000
+        );
+      } else {
+        showSuccessToast(
+          'Clips exported',
+          `Saved ${copied} file${copied !== 1 ? 's' : ''} to ${dir}`
+        );
+      }
+    } catch (error) {
+      console.error('[ClipsTab] Download all failed:', error);
+      showError('Export failed', error instanceof Error ? error.message : String(error));
+    } finally {
+      isDownloadingAll.value = false;
     }
   }
 

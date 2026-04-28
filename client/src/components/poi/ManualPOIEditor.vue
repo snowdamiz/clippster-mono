@@ -103,6 +103,8 @@
                     :selected-region-id="selectedRegionId"
                     :thumbnail-url="thumbnailUrl"
                     :source-aspect-ratio="sourceAspectRatio"
+                    :target-aspect-ratio="targetAspectRatio"
+                    :social-overlay-preset="socialOverlayPreset"
                     :video-url="videoUrl"
                     :video-time="absoluteVideoTime"
                     :is-playing="isPlaying"
@@ -114,6 +116,7 @@
                     @select-region="selectRegion"
                     @time-update="onTimeUpdate"
                     @upload-media="handleMediaUpload"
+                    @update:socialOverlayPreset="socialOverlayPreset = $event"
                   />
                 </div>
 
@@ -149,6 +152,7 @@
                     :initial-source-framing="targetPanelInitialFraming"
                     :clip-text-box-display="clipTextBoxForTarget"
                     :clip-text-box-positioning-enabled="clipTextBoxPositioningActive"
+                    :social-overlay-preset="socialOverlayPreset"
                     @update-region="updateRegion"
                     @select-region="selectRegion"
                     @update-source-transform="handleSourceTransformUpdate"
@@ -419,6 +423,7 @@
     serializeClipTextBoxState,
     upsertClipTextPerRatioGeometry,
   } from '@/utils/clipTextBox';
+  import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
 
   // Animation styles shown in the subtitle section (matches SubtitlePropertiesPanel)
   const ANIMATION_STYLES = [
@@ -530,6 +535,9 @@
   // Local state
   const regions = ref<ManualRegion[]>([]);
   const selectedRegionId = ref<string | null>(null);
+
+  /** Preview-only TikTok / Reels / Shorts chrome on the 9:16 output (toggle lives on source panel). */
+  const socialOverlayPreset = ref<SocialOverlayPreset | null>(null);
 
   // Base regions - apply to entire clip when no segment is active
   const baseRegions = ref<ManualRegion[]>([]);
@@ -1057,9 +1065,17 @@
         poiBlurEnabled.value = false;
         poiBlurAmount.value = 12;
         sourceTransform.value = null;
+        socialOverlayPreset.value = null;
       }
     },
     { immediate: true }
+  );
+
+  watch(
+    () => props.targetAspectRatio,
+    (r) => {
+      if (r !== '9:16') socialOverlayPreset.value = null;
+    }
   );
 
   // Add a new region
