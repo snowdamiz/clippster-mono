@@ -1964,4 +1964,38 @@ export interface ActiveVodPresetConfig {
   layoutOverlays: LayoutOverlay[];
   watermarkMode: 'creator' | 'custom' | 'none';
   customWatermarkSettings: WatermarkSettings | null;
+  /** Present when seeded from creator profile clip defaults (detection dialog / clips can read this) */
+  subtitleDefaults?: SubtitleSettings | null;
+}
+
+// ==========================================
+// Creator profile clip-build defaults
+// ==========================================
+
+// Source of the still image used to draw regions on the creator profile
+// when no live VOD is available.
+export type CreatorReferenceImageSource = 'twitch_preview' | 'upload' | 'vod_thumbnail' | 'none';
+
+// Defaults a user saves on a creator profile so each new VOD download for that
+// creator can opt-in (via "Use creator layout") to start with the same crop
+// regions, layout overlays, watermark choice, and subtitle styling.
+export interface CreatorClipBuildDefaults {
+  // Single output aspect ratio for this creator (one of "16:9" | "9:16" | "1:1" | "4:5")
+  targetAspectRatio: string;
+  // Framing/regions for that single ratio (target/source aspect aligned with targetAspectRatio)
+  framingConfig: ManualFramingConfig | null;
+  // Layout overlays (e.g. borders/dividers) to apply to the target frame
+  layoutOverlays: LayoutOverlay[];
+  // Watermark mode: 'creator' uses the creator profile watermark (recommended),
+  // 'custom' uses customWatermarkSettings, 'none' disables watermark.
+  watermarkMode: 'creator' | 'custom' | 'none';
+  customWatermarkSettings: WatermarkSettings | null;
+  // Subtitle defaults that get applied to new clips when seeded.
+  // Stored using the same SubtitleSettings shape SubtitlePropertiesPanel edits.
+  subtitleDefaults: SubtitleSettings | null;
+  // Reference image used in the editor when calibrating regions at profile time
+  referenceImageSource: CreatorReferenceImageSource;
+  referenceImageUrl: string | null; // Remote URL or app-local file path
+  sourceAspectRatio: string;        // typically "16:9"
+  capturedAt?: number;              // timestamp the reference image was captured
 }

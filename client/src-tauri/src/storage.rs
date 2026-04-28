@@ -1419,6 +1419,64 @@ pub async fn copy_watermark_to_storage(
     })
 }
 
+/// Same storage layout as watermarks — uses `%LOCALAPPDATA%\\Clippster\\` (not the Tauri bundle id path).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CopyCreatorReferenceFrameResponse {
+    pub destination_path: String,
+}
+
+/// Copy a picked image into `creator_reference_frames/` under the app storage root (matches watermark upload).
+#[tauri::command]
+pub async fn copy_creator_reference_frame_to_storage(
+    source_path: String,
+) -> Result<CopyCreatorReferenceFrameResponse, String> {
+    use std::fs;
+    use std::path::Path;
+
+    let source = Path::new(&source_path);
+
+    if !source.exists() {
+        return Err("Source file does not exist".to_string());
+    }
+
+    let extension = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .ok_or("File has no extension")?
+        .to_lowercase();
+
+    let valid_extensions = ["png", "jpg", "jpeg", "webp"];
+    if !valid_extensions.contains(&extension.as_str()) {
+        return Err(format!(
+            "Invalid image format. Supported: {}",
+            valid_extensions.join(", ")
+        ));
+    }
+
+    let paths = init_storage_dirs()?;
+    let dir = paths.base.join("creator_reference_frames");
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create directory: {}", e))?;
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_millis();
+
+    let filename = format!("ref_{}.{}", timestamp, extension);
+    let destination = dir.join(&filename);
+
+    fs::copy(source, &destination).map_err(|e| format!("Failed to copy file: {}", e))?;
+
+    println!(
+        "[Rust] Creator reference frame copied to {}",
+        destination.display()
+    );
+
+    Ok(CopyCreatorReferenceFrameResponse {
+        destination_path: destination.to_string_lossy().to_string(),
+    })
+}
+
 /// Tauri command to delete a watermark file from the filesystem
 #[tauri::command]
 pub fn delete_watermark_file(file_path: String) -> Result<(), String> {

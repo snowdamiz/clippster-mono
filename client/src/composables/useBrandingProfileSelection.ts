@@ -210,8 +210,9 @@ function linksMatchStreamer(
  *   - Org streamer match (no campaign) → org streamer auto-wins, excludes personal-global
  *   - No streamer match → fall through to org-global, then personal-global
  *
- * When any streamer-specific match exists, org-global profiles are excluded.
- * When an org streamer match exists, personal-global profiles are excluded.
+ * When any streamer/campaign match exists, personal-global fallbacks are excluded.
+ * org-global remains in this list for org-target clip builds; workspace auto-select filters
+ * it in filterCandidatesForWorkspaceAutoSelect() so the local streamer profile wins in the editor.
  */
 export async function resolveApplicableProfiles(
   projectId: string,
@@ -327,20 +328,35 @@ export async function resolveApplicableProfiles(
 
   const hasAnyStreamerMatch = hasOrgStreamerMatch || hasLocalStreamerMatch || hasCampaignMatch;
 
-  // Apply priority filtering:
-  // IMPORTANT: 
-  // - org-global profiles come from getMyAssignedCreatorProfiles() which only returns
-  //   profiles explicitly assigned to the user by an org admin. These should ALWAYS be available.
-  // - org-streamer and campaign profiles should coexist with personal streamer profiles.
-  //   Users should be able to choose between using org branding vs their personal profile.
-  // - Only filter out personal-global profiles when there's a streamer-specific match.
+  // Exclude personal-global fallbacks when a streamer/campaign match exists (see docblock).
+  // NOTE: Do NOT exclude org-global here — Clip builds that target an org need org-global in the
+  // list so ClipsTab can resolve watermark/outro when streamer-specific org branding is absent.
+  // Workspace auto-select avoids org-global via filterCandidatesForWorkspaceAutoSelect().
   if (hasAnyStreamerMatch) {
-    // Filter out personal-global profiles (user's own global profiles)
-    // but keep all streamer-specific profiles (personal, org, campaign) for user selection
     return profiles.filter((p) => p.source !== 'personal-global');
   }
 
   return profiles;
+}
+
+/**
+ * Candidates for resolveBrandingProfile auto-select only. When streamer-specific or campaign
+ * profiles exist, org-global must not win first (array order puts globals before local streamer).
+ * Clip export code uses the full resolveApplicableProfiles list — not this filter.
+ */
+function filterCandidatesForWorkspaceAutoSelect(
+  candidates: ApplicableProfile[]
+): ApplicableProfile[] {
+  const hasStreamerSpecific = candidates.some(
+    (c) =>
+      c.source === 'streamer' ||
+      c.source === 'org-streamer' ||
+      c.source === 'campaign'
+  );
+  if (!hasStreamerSpecific) return candidates;
+  return candidates.filter(
+    (p) => p.source !== 'personal-global' && p.source !== 'org-global'
+  );
 }
 
 /**
@@ -384,6 +400,8 @@ export async function resolveBrandingProfile(
     return null;
   }
 
+  const autoSelectPool = filterCandidatesForWorkspaceAutoSelect(candidates);
+
   // Check if project already has a selection AND it's still a valid candidate
   const existingId = await getProjectBrandingProfileId(projectId);
   if (existingId) {
@@ -397,8 +415,12 @@ export async function resolveBrandingProfile(
     await setProjectBrandingProfile(projectId, null);
   }
 
-  // Auto-select the first available profile (no dialog)
-  const candidate = candidates[0];
+  // Auto-select the first profile from the workspace pool (never prefer org-global over local streamer)
+  if (autoSelectPool.length === 0) {
+    await setProjectBrandingProfile(projectId, null);
+    return null;
+  }
+  const candidate = autoSelectPool[0];
   await trySaveSelection(projectId, candidate);
   console.log('[BrandingProfile] Auto-selected profile:', candidate.profile.name, `(${candidate.source})`);
   return candidate.profile;

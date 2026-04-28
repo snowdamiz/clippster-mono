@@ -77,8 +77,8 @@
         :src="videoSrc && !videoSrc.includes('.m3u8') ? videoSrc : undefined"
         crossorigin="anonymous"
         class="w-full h-full video-with-focal-point"
-        :class="hasFramingRegions ? 'opacity-0' : 'object-cover'"
-        :style="hasFramingRegions ? {} : {
+        :class="hideVideoForComposition ? 'opacity-0' : 'object-cover'"
+        :style="hideVideoForComposition ? {} : {
           objectPosition: `${focalPoint.x * 100}% ${focalPoint.y * 100}%`,
         }"
         @timeupdate="$emit('timeUpdate')"
@@ -91,9 +91,36 @@
         data-testid="project-video"
       />
 
+      <!-- Use 16:9: CSS blur + sharp layer (GPU-friendly). Canvas blur was unusably slow on long VODs. -->
+      <div
+        v-if="showUse169GpuStack"
+        class="absolute inset-0 z-10 overflow-hidden cursor-pointer"
+        @click="$emit('togglePlayPause')"
+      >
+        <video
+          ref="use169BgVideoRef"
+          :src="videoSrc && !videoSrc.includes('.m3u8') ? videoSrc : undefined"
+          class="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover scale-[1.08]"
+          :style="use169BgVideoStyle"
+          muted
+          playsinline
+          preload="metadata"
+        />
+        <div class="pointer-events-none absolute z-[1]" :style="use169SharpFrameStyle">
+          <video
+            ref="use169FgVideoRef"
+            :src="videoSrc && !videoSrc.includes('.m3u8') ? videoSrc : undefined"
+            class="absolute inset-0 h-full w-full object-contain pointer-events-none"
+            muted
+            playsinline
+            preload="metadata"
+          />
+        </div>
+      </div>
+
       <!-- Canvas-based multi-region framing preview -->
       <canvas
-        v-if="hasFramingRegions && videoSrc && !videoLoading && !videoError"
+        v-if="showFramingCanvas && videoSrc && !videoLoading && !videoError"
         ref="framingCanvasRef"
         class="absolute inset-0 w-full h-full z-10 cursor-pointer"
         @click="$emit('togglePlayPause')"
@@ -356,12 +383,19 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
+  import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
   import { Video, AlertTriangle, Play, Pause, Film, RotateCcw } from 'lucide-vue-next';
   import Hls from 'hls.js';
 
-  import type { WhisperSegment, WatermarkSettings, PerRatioWatermarkSettings, ManualRegion } from '@/types';
+  import type {
+    WhisperSegment,
+    WatermarkSettings,
+    PerRatioWatermarkSettings,
+    ManualRegion,
+    ManualFramingConfig,
+  } from '@/types';
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
+  import { use169BlurSliderToCssPx } from '@/utils/use169Blur';
 
   interface WatermarkData {
     dataUrl: string; // Data URL for display
@@ -384,6 +418,8 @@
     watermarkData?: WatermarkData | null;
     audioGainDb?: number; // dB gain (-20 to +20) for audio playback preview
     framingRegions?: ManualRegion[]; // Multi-region framing for VOD preset preview
+    /** Full manual framing from VOD preset — drives "Use 16:9" blur + sharp letterbox (creator profile layout). */
+    manualFramingConfig?: ManualFramingConfig | null;
     subtitleInitialPosition?: { x: number; y: number; width?: number | null } | null;
     clipTextBoxState?: ClipTextBoxState | null;
     /** When true, show handles and allow drag/resize */
@@ -484,6 +520,7 @@
     watermarkData: null,
     audioGainDb: 0,
     framingRegions: () => [],
+    manualFramingConfig: null,
     subtitleInitialPosition: null,
     clipTextBoxState: null,
     clipTextBoxInteractive: false,
@@ -512,10 +549,13 @@
   const emit = defineEmits<Emits>();
 
   const videoElementRef = ref<HTMLVideoElement | null>(null);
+  const use169BgVideoRef = ref<HTMLVideoElement | null>(null);
+  const use169FgVideoRef = ref<HTMLVideoElement | null>(null);
   const videoContainerRef = ref<HTMLElement | null>(null);
   const framingCanvasRef = ref<HTMLCanvasElement | null>(null);
   const subtitleContainerRef = ref<HTMLElement | null>(null);
   const containerHeight = ref<number>(1080); // Default to 1080p height
+  const containerWidth = ref<number>(1920);
 
   // Subtitle box state
   const isDraggingSubtitles = ref(false);
@@ -719,9 +759,72 @@
     }
   }
 
-  // Multi-region framing
-  const hasFramingRegions = computed(() => (props.framingRegions?.length ?? 0) > 0);
+  // Multi-region framing + creator "Use 16:9" (blur bg + sharp 16:9) from manualFramingConfig
+  const usesUse169WorkspaceFraming = computed(() => {
+    const fc = props.manualFramingConfig;
+    if (!fc || fc.sourceFrameMode !== 'use16x9') return false;
+    const rw = props.aspectRatio.width;
+    const rh = props.aspectRatio.height;
+    if (!rw || !rh) return false;
+    return rw / rh < 0.95; // portrait / tall preview canvas
+  });
+
+  /** Progressive file / blob playback: GPU layers instead of canvas blur (fixes severe jank on long VODs). */
+  const showUse169GpuStack = computed(() => {
+    if (!usesUse169WorkspaceFraming.value || !props.videoSrc || props.videoLoading || props.videoError)
+      return false;
+    if (props.videoSrc.includes('.m3u8')) return false;
+    return true;
+  });
+
+  /** HLS or POI regions only: canvas compositing (use 16:9 on HLS stays canvas + throttled). */
+  const showFramingCanvas = computed(() => {
+    const regions = props.framingRegions?.length ?? 0;
+    const use169 = usesUse169WorkspaceFraming.value;
+    const src = props.videoSrc;
+    const isHls = !!src?.includes('.m3u8');
+    if (use169 && src && !isHls) return false;
+    return regions > 0 || (use169 && isHls && !!src);
+  });
+
+  const hideVideoForComposition = computed(() => showFramingCanvas.value || showUse169GpuStack.value);
+
+  const use169BgVideoStyle = computed(() => {
+    const fc = props.manualFramingConfig;
+    const amt = fc?.blurAmount ?? 0;
+    const blurPx =
+      fc?.blurEnabled !== false && amt > 0 ? use169BlurSliderToCssPx(amt) : 0;
+    return blurPx > 0 ? { filter: `blur(${blurPx}px)` } : {};
+  });
+
+  const use169SharpFrameStyle = computed((): Record<string, string> => {
+    const fc = props.manualFramingConfig;
+    const cw = containerWidth.value;
+    const ch = containerHeight.value;
+    if (!fc || cw <= 0 || ch <= 0) {
+      return { display: 'none' };
+    }
+    const st = fc.sourceTransform ?? { scale: 1, x: 0, y: 0 };
+    const sourceAspect = 16 / 9;
+    const baseWidth = cw;
+    const baseHeight = baseWidth / sourceAspect;
+    const width = baseWidth * st.scale;
+    const height = baseHeight * st.scale;
+    const left = (cw - width) / 2 + st.x * cw;
+    const top = (ch - height) / 2 + st.y * ch;
+    return {
+      position: 'absolute',
+      left: `${left}px`,
+      top: `${top}px`,
+      width: `${width}px`,
+      height: `${height}px`,
+    };
+  });
+
   let framingAnimationId: number | null = null;
+  let use169SyncRaf: number | null = null;
+  /** HLS use-16:9 canvas path: throttle + limit backing store size */
+  let lastUse169CanvasDraw = 0;
 
   function startFramingLoop() {
     if (framingAnimationId !== null) return;
@@ -735,18 +838,47 @@
     }
   }
 
+  /** Cover the canvas with video (letterbox/crop center) — same visual as CSS object-cover */
+  function drawVideoCover(ctx: CanvasRenderingContext2D, video: HTMLVideoElement, cw: number, ch: number) {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return;
+    const scale = Math.max(cw / vw, ch / vh);
+    const dw = vw * scale;
+    const dh = vh * scale;
+    const dx = (cw - dw) / 2;
+    const dy = (ch - dh) / 2;
+    ctx.drawImage(video, 0, 0, vw, vh, dx, dy, dw, dh);
+  }
+
   function renderFramingFrame() {
     const canvas = framingCanvasRef.value;
     const video = videoElementRef.value;
     const regions = props.framingRegions;
-    if (!canvas || !video || !regions || regions.length === 0) {
+    if (!canvas || !video) {
       framingAnimationId = null;
       return;
     }
 
     // Size canvas to match container
     const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    const fcEarly = props.manualFramingConfig;
+    const use169Early =
+      fcEarly?.sourceFrameMode === 'use16x9' &&
+      props.aspectRatio.width / props.aspectRatio.height < 0.95;
+    const amtEarly = fcEarly?.blurAmount ?? 0;
+    const blurPxEarly =
+      use169Early &&
+      fcEarly &&
+      fcEarly.blurEnabled !== false &&
+      amtEarly > 0
+        ? use169BlurSliderToCssPx(amtEarly)
+        : 0;
+    // Heavy canvas blur + DPR → massive lag; keep compositor light for HLS fallback.
+    const dpr =
+      use169Early && blurPxEarly > 0
+        ? 1
+        : Math.min(window.devicePixelRatio || 1, 2);
     const cw = Math.round(rect.width * dpr);
     const ch = Math.round(rect.height * dpr);
 
@@ -763,15 +895,61 @@
     const ctx = canvas.getContext('2d');
     if (!ctx) { framingAnimationId = null; return; }
 
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, cw, ch);
-
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     if (vw === 0 || vh === 0) {
       framingAnimationId = requestAnimationFrame(renderFramingFrame);
       return;
     }
+
+    const fc = props.manualFramingConfig;
+    const use169 =
+      fc?.sourceFrameMode === 'use16x9' &&
+      props.aspectRatio.width / props.aspectRatio.height < 0.95;
+
+    if (use169) {
+      const now = performance.now();
+      if (!video.paused && now - lastUse169CanvasDraw < 42) {
+        framingAnimationId = requestAnimationFrame(renderFramingFrame);
+        return;
+      }
+      lastUse169CanvasDraw = now;
+
+      const amtU9 = fc!.blurAmount ?? 0;
+      const blurPx =
+        fc!.blurEnabled !== false && amtU9 > 0 ? use169BlurSliderToCssPx(amtU9) : 0;
+
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, cw, ch);
+
+      if (blurPx > 0) {
+        ctx.save();
+        ctx.filter = `blur(${blurPx}px)`;
+        drawVideoCover(ctx, video, cw, ch);
+        ctx.restore();
+      }
+
+      const st = fc!.sourceTransform ?? { scale: 1, x: 0, y: 0 };
+      const baseWidth = cw;
+      const baseHeight = baseWidth / (16 / 9);
+      const boxW = baseWidth * st.scale;
+      const boxH = baseHeight * st.scale;
+      const left = (cw - boxW) / 2 + st.x * cw;
+      const top = (ch - boxH) / 2 + st.y * ch;
+
+      ctx.drawImage(video, 0, 0, vw, vh, left, top, boxW, boxH);
+
+      framingAnimationId = video.paused ? null : requestAnimationFrame(renderFramingFrame);
+      return;
+    }
+
+    if (!regions || regions.length === 0) {
+      framingAnimationId = null;
+      return;
+    }
+
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, cw, ch);
 
     // Draw each region: source rect from video → output rect on canvas
     for (const region of regions) {
@@ -792,13 +970,67 @@
   }
 
   // Start/stop framing loop based on regions, video, and canvas readiness
-  watch([hasFramingRegions, videoElementRef, framingCanvasRef], ([hasRegions, videoEl, canvasEl]) => {
-    if (hasRegions && videoEl && canvasEl) {
+  watch([showFramingCanvas, videoElementRef, framingCanvasRef], ([show, videoEl, canvasEl]) => {
+    if (show && videoEl && canvasEl) {
       startFramingLoop();
     } else {
       stopFramingLoop();
     }
   }, { immediate: true });
+
+  watch(
+    () => props.isPlaying,
+    (playing) => {
+      if (playing && showFramingCanvas.value && videoElementRef.value && framingCanvasRef.value) {
+        startFramingLoop();
+      }
+    }
+  );
+
+  function syncUse169CloneVideos() {
+    const master = videoElementRef.value;
+    const bg = use169BgVideoRef.value;
+    const fg = use169FgVideoRef.value;
+    if (!master || !bg || !fg) return;
+    const t = master.currentTime;
+    if (!Number.isFinite(t)) return;
+    if (Math.abs(bg.currentTime - t) > 0.12 || Math.abs(fg.currentTime - t) > 0.12) {
+      bg.currentTime = t;
+      fg.currentTime = t;
+    }
+    bg.playbackRate = master.playbackRate;
+    fg.playbackRate = master.playbackRate;
+    const shouldPlay = props.isPlaying && !master.paused && !master.ended;
+    if (shouldPlay) {
+      if (bg.paused) void bg.play().catch(() => {});
+      if (fg.paused) void fg.play().catch(() => {});
+    } else {
+      bg.pause();
+      fg.pause();
+    }
+  }
+
+  function use169SyncTick() {
+    syncUse169CloneVideos();
+    use169SyncRaf = requestAnimationFrame(use169SyncTick);
+  }
+
+  watch(
+    showUse169GpuStack,
+    (on) => {
+      if (use169SyncRaf !== null) {
+        cancelAnimationFrame(use169SyncRaf);
+        use169SyncRaf = null;
+      }
+      if (on) {
+        nextTick(() => {
+          syncUse169CloneVideos();
+          use169SyncRaf = requestAnimationFrame(use169SyncTick);
+        });
+      }
+    },
+    { immediate: true }
+  );
 
   // HLS.js instance for HLS playback
   let hlsInstance: Hls | null = null;
@@ -1797,14 +2029,14 @@
 
   onMounted(() => {
     if (videoContainerRef.value) {
-      // Initialize with current height
       containerHeight.value = videoContainerRef.value.clientHeight;
+      containerWidth.value = videoContainerRef.value.clientWidth;
 
       // Create ResizeObserver to watch for size changes
       resizeObserver = new ResizeObserver((entries) => {
         for (const entry of entries) {
-          // Update the reactive containerHeight when size changes
           containerHeight.value = entry.contentRect.height;
+          containerWidth.value = entry.contentRect.width;
         }
       });
 
@@ -1830,6 +2062,10 @@
   });
 
   onUnmounted(() => {
+    if (use169SyncRaf !== null) {
+      cancelAnimationFrame(use169SyncRaf);
+      use169SyncRaf = null;
+    }
     if (resizeObserver) {
       resizeObserver.disconnect();
     }

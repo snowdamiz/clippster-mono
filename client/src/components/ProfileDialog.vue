@@ -637,6 +637,108 @@
                   </div>
                 </div>
               </div>
+
+              <!-- Clip defaults — same layout primitives as Default Assets (asset-row / asset-select pattern) -->
+              <div
+                v-if="mode === 'local' && formData.scope !== 'global'"
+                class="org-dialog__section"
+              >
+                <h3 class="org-dialog__section-title">Clip Defaults</h3>
+                <p class="org-dialog__section-desc">
+                  Set the framing, layout, and subtitle style this creator usually needs. When you
+                  download a VOD for them you can tick "Use creator layout" to start every project
+                  pre-configured with these defaults.
+                </p>
+
+                <div class="org-dialog__section-items">
+                  <!-- Output ratio (pill group: same chrome as asset-upload sizing) -->
+                  <div class="org-dialog__asset-row">
+                    <label class="org-dialog__asset-label">Default output ratio</label>
+                    <div class="org-dialog__asset-controls org-dialog__asset-controls--wrap">
+                      <button
+                        v-for="ratio in CLIP_DEFAULT_RATIO_OPTIONS"
+                        :key="ratio"
+                        type="button"
+                        class="org-dialog__aspect-pill"
+                        :class="{
+                          'org-dialog__aspect-pill--active':
+                            formData.clip_build_defaults.targetAspectRatio === ratio,
+                        }"
+                        @click="setClipDefaultRatio(ratio)"
+                      >
+                        {{ ratio }}
+                      </button>
+                    </div>
+                    <p class="org-dialog__asset-ratio-hint">
+                      Matches the framing editor · source frame {{ formData.clip_build_defaults.sourceAspectRatio }}
+                    </p>
+                  </div>
+
+                  <!-- Reference image -->
+                  <div class="org-dialog__asset-row">
+                    <label class="org-dialog__asset-label">Reference image</label>
+                    <p class="org-dialog__asset-ratio-hint">
+                      Used to align crop regions on the canvas (same as framing editor upload).
+                    </p>
+                    <div class="org-dialog__asset-controls">
+                      <button
+                        type="button"
+                        class="org-dialog__aspect-pill org-dialog__aspect-pill--grow"
+                        :class="{
+                          'org-dialog__aspect-pill--active':
+                            formData.clip_build_defaults.referenceImageSource === 'upload',
+                        }"
+                        @click="pickReferenceImageUpload"
+                      >
+                        Upload screenshot
+                      </button>
+                      <button
+                        type="button"
+                        class="org-dialog__aspect-pill org-dialog__aspect-pill--grow"
+                        :class="{
+                          'org-dialog__aspect-pill--active':
+                            formData.clip_build_defaults.referenceImageSource === 'none',
+                        }"
+                        @click="setReferenceSource('none')"
+                      >
+                        No image
+                      </button>
+                    </div>
+
+                    <div v-if="resolvedReferenceImageUrl" class="org-dialog__clip-ref-preview">
+                      <img
+                        :src="resolvedReferenceImageUrl"
+                        class="org-dialog__clip-ref-preview-img"
+                        @error="onReferenceImageError"
+                        alt="Reference frame preview"
+                      />
+                    </div>
+                    <p v-else-if="formData.clip_build_defaults.referenceImageSource !== 'none'" class="org-dialog__asset-hint">
+                      <AlertCircle :size="12" />
+                      No reference image yet. Pick a source above.
+                    </p>
+                  </div>
+
+                  <!-- Primary action = same pattern as Intro / Overlay rows (asset-select + icon) -->
+                  <div class="org-dialog__asset-row">
+                    <label class="org-dialog__asset-label">Layout & subtitles</label>
+                    <div class="org-dialog__asset-controls">
+                      <button type="button" class="org-dialog__asset-select org-dialog__flex-1" @click="openClipDefaultsEditor">
+                        <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--overlay">
+                          <Layers :size="14" />
+                        </div>
+                        <span class="org-dialog__asset-select-label">{{
+                          hasClipDefaultsConfig ? 'Edit framing & subtitles' : 'Configure framing & subtitles'
+                        }}</span>
+                      </button>
+                    </div>
+                    <p v-if="hasClipDefaultsConfig" class="org-dialog__asset-hint">
+                      <Settings2 :size="12" />
+                      {{ clipDefaultsSummary }}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- Footer -->
@@ -712,6 +814,17 @@
     @save="handleRatioSettingsSave"
     @close="showIntroOutroRatioPicker = false"
   />
+
+  <!-- Creator profile clip-defaults editor (slim Manual POI fork) -->
+  <CreatorProfileFramingEditor
+    v-model="showClipDefaultsEditor"
+    :initial-framing="formData.clip_build_defaults.framingConfig"
+    :initial-subtitle="formData.clip_build_defaults.subtitleDefaults"
+    :target-aspect-ratio="formData.clip_build_defaults.targetAspectRatio"
+    :source-aspect-ratio="formData.clip_build_defaults.sourceAspectRatio"
+    :reference-image-url="resolvedReferenceImageUrl"
+    @confirm="handleClipDefaultsConfirm"
+  />
 </template>
 
 <script setup lang="ts">
@@ -733,6 +846,7 @@
     Paintbrush,
     Layers,
     Lock,
+    AlertCircle,
   } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
   import {
@@ -772,9 +886,23 @@
   import WatermarkPositionPicker, { type CreatorWatermarkSettings } from './WatermarkPositionPicker.vue';
   import OverlayPositionPicker from './OverlayPositionPicker.vue';
   import IntroOutroRatioPicker from './IntroOutroRatioPicker.vue';
-  import type { RatioAssetMap } from '@/services/database/types';
-  import type { LayoutOverlay, PerRatioOverlaySettings } from '@/types';
-  import { invoke } from '@tauri-apps/api/core';
+  import CreatorProfileFramingEditor from './poi/CreatorProfileFramingEditor.vue';
+  import type { CreatorPlatformLink, RatioAssetMap } from '@/services/database/types';
+  import type {
+    CreatorClipBuildDefaults,
+    CreatorReferenceImageSource,
+    LayoutOverlay,
+    ManualFramingConfig,
+    PerRatioOverlaySettings,
+    SubtitleSettings,
+  } from '@/types';
+  import {
+    SUPPORTED_TARGET_ASPECT_RATIOS,
+    parseCreatorClipBuildDefaults,
+    serializeCreatorClipBuildDefaults,
+  } from '@/composables/useCreatorClipDefaults';
+  import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+  import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
   import { useAuthStore } from '@/stores/auth';
   import { useSubscription } from '@/composables/useSubscription';
 
@@ -789,6 +917,11 @@
     id?: number | string; // Present if existing link
     isNew?: boolean;
     monitored_streamer_id?: string | null;
+  }
+
+  /** Maps UI picker ids (`youtube`) to SQLite creator_platform_links.platform (`YouTube`). */
+  function platformInputToDb(platform: PlatformId): CreatorPlatformLink['platform'] {
+    return platform === 'youtube' ? 'YouTube' : platform;
   }
 
   // Unified asset type for both modes
@@ -871,6 +1004,22 @@
     { id: 'rumble' as PlatformId, name: 'Rumble', disabled: false },
   ];
 
+  const CLIP_DEFAULT_RATIO_OPTIONS = SUPPORTED_TARGET_ASPECT_RATIOS;
+
+  function createEmptyClipBuildDefaults(): CreatorClipBuildDefaults {
+    return {
+      targetAspectRatio: '9:16',
+      framingConfig: null,
+      layoutOverlays: [],
+      watermarkMode: 'creator',
+      customWatermarkSettings: null,
+      subtitleDefaults: null,
+      referenceImageSource: 'none',
+      referenceImageUrl: null,
+      sourceAspectRatio: '16:9',
+    };
+  }
+
   const formData = ref<{
     name: string;
     description: string;
@@ -885,6 +1034,7 @@
     platformLinks: PlatformLinkInput[];
     auto_dvr_enabled: boolean;
     scope: 'streamer' | 'global';
+    clip_build_defaults: CreatorClipBuildDefaults;
   }>({
     name: '',
     description: '',
@@ -899,7 +1049,110 @@
     platformLinks: [],
     auto_dvr_enabled: false,
     scope: 'streamer',
+    clip_build_defaults: createEmptyClipBuildDefaults(),
   });
+
+  // Clip defaults editor state
+  const showClipDefaultsEditor = ref(false);
+
+  // Resolve a renderable URL for the chosen reference image source.
+  // Local file paths get run through Tauri's convertFileSrc so the webview can load them.
+  const resolvedReferenceImageUrl = computed<string | null>(() => {
+    const cd = formData.value.clip_build_defaults;
+    if (!cd.referenceImageUrl) return null;
+    if (cd.referenceImageUrl.startsWith('http://') || cd.referenceImageUrl.startsWith('https://')) {
+      return cd.referenceImageUrl;
+    }
+    try {
+      return convertFileSrc(cd.referenceImageUrl);
+    } catch {
+      return cd.referenceImageUrl;
+    }
+  });
+
+  const hasClipDefaultsConfig = computed(() => {
+    const cd = formData.value.clip_build_defaults;
+    return Boolean(cd.framingConfig || cd.subtitleDefaults);
+  });
+
+  const clipDefaultsSummary = computed(() => {
+    const cd = formData.value.clip_build_defaults;
+    const parts: string[] = [];
+    if (cd.framingConfig) {
+      const regionCount = cd.framingConfig.regions?.length ?? 0;
+      parts.push(`${regionCount} region${regionCount === 1 ? '' : 's'}`);
+    }
+    if (cd.subtitleDefaults) {
+      parts.push(`subtitles: ${cd.subtitleDefaults.animationStyle}`);
+    }
+    return parts.length ? parts.join(' · ') : 'Configured';
+  });
+
+  function setClipDefaultRatio(ratio: string) {
+    formData.value.clip_build_defaults = {
+      ...formData.value.clip_build_defaults,
+      targetAspectRatio: ratio,
+      framingConfig: formData.value.clip_build_defaults.framingConfig
+        ? { ...formData.value.clip_build_defaults.framingConfig, targetAspectRatio: ratio }
+        : null,
+    };
+  }
+
+  function setReferenceSource(source: CreatorReferenceImageSource) {
+    formData.value.clip_build_defaults = {
+      ...formData.value.clip_build_defaults,
+      referenceImageSource: source,
+      referenceImageUrl: source === 'none' ? null : formData.value.clip_build_defaults.referenceImageUrl,
+      capturedAt: source === 'none' ? undefined : Date.now(),
+    };
+  }
+
+  async function pickReferenceImageUpload() {
+    try {
+      const selected = await openFileDialog({
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+      });
+      if (!selected || Array.isArray(selected)) return;
+
+      // Same Rust storage root as watermarks (%LOCALAPPDATA%\Clippster\…), not appLocalDataDir().
+      const { destination_path } = await invoke<{ destination_path: string }>(
+        'copy_creator_reference_frame_to_storage',
+        { sourcePath: selected },
+      );
+
+      formData.value.clip_build_defaults = {
+        ...formData.value.clip_build_defaults,
+        referenceImageSource: 'upload',
+        referenceImageUrl: destination_path,
+        capturedAt: Date.now(),
+      };
+    } catch (err) {
+      console.error('[ProfileDialog] Failed to pick reference image:', err);
+      showError('Upload Failed', err instanceof Error ? err.message : 'Could not save image');
+    }
+  }
+
+  function onReferenceImageError() {
+    console.warn('[ProfileDialog] Reference image failed to load.');
+  }
+
+  function openClipDefaultsEditor() {
+    showClipDefaultsEditor.value = true;
+  }
+
+  function handleClipDefaultsConfirm(payload: {
+    framing: ManualFramingConfig;
+    subtitle: SubtitleSettings;
+  }) {
+    formData.value.clip_build_defaults = {
+      ...formData.value.clip_build_defaults,
+      targetAspectRatio: payload.framing.targetAspectRatio,
+      framingConfig: payload.framing,
+      subtitleDefaults: payload.subtitle,
+    };
+  }
 
   // Watermark position picker state
   const showWatermarkPositionPicker = ref(false);
@@ -1048,6 +1301,9 @@
               isNew: false,
               monitored_streamer_id: null,
             })),
+            // Org profiles do not support clip-build defaults — keep empty defaults so the
+            // form is well-formed even when this section is hidden.
+            clip_build_defaults: createEmptyClipBuildDefaults(),
           };
         } else if (props.mode === 'local' && props.creator) {
           formData.value = {
@@ -1073,6 +1329,9 @@
               isNew: false,
               monitored_streamer_id: link.monitored_streamer_id,
             })),
+            clip_build_defaults:
+              parseCreatorClipBuildDefaults(props.creator.clip_build_defaults ?? null) ??
+              createEmptyClipBuildDefaults(),
           };
         } else {
           formData.value = {
@@ -1089,6 +1348,7 @@
             platformLinks: [],
             auto_dvr_enabled: false,
             scope: props.scope || 'streamer',
+            clip_build_defaults: createEmptyClipBuildDefaults(),
           };
         }
 
@@ -1280,7 +1540,7 @@
           fetchingProfileImage.value = false;
         }
       }
-    } else if (link.platform === 'youtube' || link.platform === 'YouTube') {
+    } else if (link.platform === 'youtube') {
       const channelId = extractYouTubeChannel(input);
       if (channelId) {
         link.platform_id = channelId;
@@ -2191,7 +2451,7 @@
       let monitoredStreamerId: string | null = null;
 
       // Resolve monitored streamer for supported platforms
-      if (link.platform === 'pumpfun' || link.platform === 'kick' || link.platform === 'twitch' || link.platform === 'youtube' || link.platform === 'YouTube' || link.platform === 'rumble') {
+      if (link.platform === 'pumpfun' || link.platform === 'kick' || link.platform === 'twitch' || link.platform === 'youtube' || link.platform === 'rumble') {
         try {
           const existing = await getMonitoredStreamerByMint(link.platform_id.trim());
           if (existing) {
@@ -2203,7 +2463,7 @@
               link.profile_image_url || undefined,
               5, // segment duration
               formData.value.auto_dvr_enabled,
-              link.platform
+              platformInputToDb(link.platform)
             );
           }
         } catch (err) {
@@ -2214,7 +2474,7 @@
       if (link.id && !link.isNew) {
         // Update existing link
         await dbUpdatePlatformLink(String(link.id), {
-          platform: link.platform,
+          platform: platformInputToDb(link.platform),
           platform_id: link.platform_id.trim(),
           display_name: link.display_name.trim() || null,
           profile_image_url: link.profile_image_url || null,
@@ -2225,7 +2485,7 @@
         // Create new link
         await dbAddPlatformLink(
           creatorId,
-          link.platform,
+          platformInputToDb(link.platform),
           link.platform_id.trim(),
           link.display_name.trim() || null,
           link.profile_image_url || null,
@@ -2252,6 +2512,9 @@
         auto_dvr_enabled: formData.value.auto_dvr_enabled ? 1 : 0,
         layout_overlays: formData.value.layout_overlays.length > 0
           ? JSON.stringify(formData.value.layout_overlays)
+          : null,
+        clip_build_defaults: hasClipDefaultsConfig.value
+          ? serializeCreatorClipBuildDefaults(formData.value.clip_build_defaults)
           : null,
       });
 
@@ -2289,6 +2552,9 @@
         formData.value.scope,
         formData.value.layout_overlays.length > 0
           ? JSON.stringify(formData.value.layout_overlays)
+          : null,
+        hasClipDefaultsConfig.value
+          ? serializeCreatorClipBuildDefaults(formData.value.clip_build_defaults)
           : null
       );
 
@@ -3229,5 +3495,58 @@
 
   .org-dialog__text-muted {
     color: var(--sidebar-text-muted);
+  }
+
+  /* ===== Clip defaults (uses asset-row + shared asset chrome; pills match asset-upload height / active ring) ===== */
+  .org-dialog__asset-controls--wrap {
+    flex-wrap: wrap;
+  }
+
+  .org-dialog__aspect-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    padding: 0 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    flex-shrink: 0;
+  }
+
+  .org-dialog__aspect-pill:hover {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-text);
+  }
+
+  .org-dialog__aspect-pill--active {
+    border-color: rgba(245, 158, 11, 0.5);
+    color: #f59e0b;
+  }
+
+  .org-dialog__aspect-pill--grow {
+    flex: 1;
+    min-width: min(160px, 100%);
+  }
+
+  .org-dialog__clip-ref-preview {
+    margin-top: 0.25rem;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    overflow: hidden;
+    aspect-ratio: 16 / 9;
+    background-color: rgba(0, 0, 0, 0.25);
+  }
+
+  .org-dialog__clip-ref-preview-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
 </style>

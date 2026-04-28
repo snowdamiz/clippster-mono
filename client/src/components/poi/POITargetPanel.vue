@@ -213,10 +213,12 @@
           />
         </div>
 
-        <!-- 16:9 Source Frame Overlay (when Scale 16:9 is enabled) -->
+        <!-- 16:9 Source Frame Overlay (when Scale 16:9 is enabled)
+             Must stay above the full-canvas click-catcher (z-[4]) or drag/corner scale never receives events.
+             Use z-[5] to align with region preview layer; region nodes after this in the DOM still stack above. -->
         <div
           v-if="showSourceFrame"
-          class="absolute border-2 border-purple-500 cursor-move z-[3]"
+          class="absolute border-2 border-purple-500 cursor-move z-[5]"
           :style="sourceFrameStyle"
           @mousedown="startDragSourceFrame"
         >
@@ -245,7 +247,7 @@
           
           <!-- Label -->
           <div class="absolute top-0 left-0 -translate-y-full px-2 py-1 bg-purple-500 text-white text-[10px] font-medium rounded-t whitespace-nowrap">
-            16:9 Source Frame (Drag to position)
+            16:9 Source Frame — drag · corners to scale
           </div>
 
           <!-- Corner resize handles -->
@@ -400,13 +402,14 @@
               v-if="visibleWords.length > 0"
               :class="subtitleSettings?.animationStyle === 'single-word'
                 ? 'flex items-center justify-center pointer-events-none'
-                : 'flex flex-wrap items-center justify-center gap-2 px-2 pointer-events-none'"
+                : 'flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-2 py-0.5 pointer-events-none'"
             >
               <template v-if="subtitleSettings">
                 <span
                   v-for="(wordInfo, index) in visibleWords"
                   :key="`subtitle-word-${wordInfo.start}-${index}`"
-                  class="relative inline-block"
+                  class="relative inline-block shrink-0 transition-transform duration-150"
+                  :style="subtitleWordPreviewMotionStyle(wordInfo)"
                 >
                   <!-- Use SVG for proper border rendering -->
                   <!-- For single-word, add horizontal padding so stroke isn't clipped at edges -->
@@ -465,16 +468,7 @@
                       y="55%"
                       dominant-baseline="middle"
                       text-anchor="middle"
-                      :style="{
-                        fontFamily: subtitleSettings.fontFamily,
-                        fontWeight: subtitleSettings.fontWeight,
-                        fontSize: subtitleTextStyle.fontSize,
-                        fill: (subtitleSettings.animationStyle === 'karaoke' && isCurrentWord(wordInfo))
-                          ? (subtitleSettings.highlightColor || '#0ea5e9')
-                          : (subtitleSettings.animationStyle === 'single-word'
-                              ? getWordColor(getWordIndexInTranscript(wordInfo))
-                              : (subtitleSettings.textColor || '#FFFFFF')),
-                      }"
+                      :style="subtitleWordSvgFillStyle(wordInfo)"
                     >
                       {{ subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
                     </text>
@@ -489,7 +483,7 @@
               class="text-center font-medium pointer-events-none px-2"
               :style="subtitleTextStyle"
             >
-              {{ sampleSubtitleText }}
+              {{ subtitlePreviewFallbackText }}
             </div>
 
           </div>
@@ -548,6 +542,18 @@
           </template>
         </div>
 
+        <!-- Social platform chrome (TikTok / Reels / Shorts) — preview only, 9:16; toggle lives on source panel -->
+        <div
+          v-if="socialOverlayPreset && isTarget916"
+          class="absolute inset-0 z-[100] pointer-events-none select-none overflow-hidden rounded-lg"
+        >
+          <SocialOverlay
+            :preset="socialOverlayPreset"
+            :canvas-width="9"
+            :canvas-height="16"
+          />
+        </div>
+
         <!-- Empty state -->
         <div v-if="regions.length === 0 && !use16x9Mode" class="absolute inset-0 flex items-center justify-center">
           <div class="text-center">
@@ -566,8 +572,11 @@
   import { LayoutGridIcon, LayoutIcon } from 'lucide-vue-next';
   import POIRegion from './POIRegion.vue';
   import MediaPreview from '@/components/MediaPreview.vue';
+  import SocialOverlay from '@/editor/components/preview/SocialOverlay.vue';
+  import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
   import type { ManualRegion, ManualRegionRect, SubtitleSettings, ManualSourceFramingPayload } from '@/types';
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
+  import { scaleUse169BlurForPoiPreview, use169BlurSliderToCssPx } from '@/utils/use169Blur';
 
   interface WatermarkPreview {
     filePath?: string;
@@ -629,6 +638,8 @@
     /** Merged clip text state for current target ratio (preview + drag) */
     clipTextBoxDisplay?: ClipTextBoxState | null;
     clipTextBoxPositioningEnabled?: boolean;
+    /** Preview-only social chrome; controlled from Manual POI source toolbar when export is 9:16 */
+    socialOverlayPreset?: SocialOverlayPreset | null;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -646,6 +657,7 @@
     initialSourceFraming: null,
     clipTextBoxDisplay: null,
     clipTextBoxPositioningEnabled: false,
+    socialOverlayPreset: null,
   });
 
   const emit = defineEmits<{
@@ -661,6 +673,8 @@
   const containerWidth = ref(0);
   const containerHeight = ref(0);
 
+  const isTarget916 = computed(() => props.targetAspectRatio === '9:16');
+
   // Source frame scaling state
   const showSourceFrame = ref(false);
   const use16x9Mode = ref(false);
@@ -669,6 +683,14 @@
   const blurDropdownRef = ref<HTMLElement | null>(null);
   // Blur is enabled when amount > 0
   const blurEnabled = computed(() => blurAmount.value > 0);
+
+  /** Same slider→CSS mapping as VideoPlayer; then scale for small modal preview panel. */
+  function poiPreviewBgBlurPx(sliderVal: number): number {
+    const cssPx = use169BlurSliderToCssPx(sliderVal);
+    const minSide = Math.min(containerWidth.value, containerHeight.value);
+    return scaleUse169BlurForPoiPreview(cssPx, minSide);
+  }
+
   const sourceFrameTransform = ref({
     scale: 1,
     x: 0,
@@ -686,7 +708,8 @@
 
   // Close blur dropdown when clicking outside
   function handleClickOutsideBlur(e: MouseEvent) {
-    if (showBlurDropdown.value && blurDropdownRef.value && !blurDropdownRef.value.contains(e.target as Node)) {
+    const target = e.target as Node;
+    if (showBlurDropdown.value && blurDropdownRef.value && !blurDropdownRef.value.contains(target)) {
       showBlurDropdown.value = false;
     }
   }
@@ -920,12 +943,12 @@
 
   const use16x9BgBlurPx = computed(() => {
     if (!use16x9Mode.value) return 0;
-    return blurAmount.value; // 0 = no blur, >0 = blur with that amount
+    return poiPreviewBgBlurPx(blurAmount.value);
   });
 
   const scaleSourceBlurStyle = computed(() => {
     if (!showSourceFrame.value || !blurEnabled.value) return {};
-    return { filter: `blur(${blurAmount.value}px)` };
+    return { filter: `blur(${poiPreviewBgBlurPx(blurAmount.value)}px)` };
   });
 
   function regionMediaSrc(assetId?: string | null): string {
@@ -1276,12 +1299,18 @@
     return baseWidth;
   });
 
+  /** Taller box when multiple transcript words so flex-wrap / two lines are not clipped (fixed 10% hid words). */
+  const subtitlePreviewBoxHeightPct = computed(() => {
+    if (props.subtitleSettings?.animationStyle === 'single-word') return 10;
+    const n = props.transcriptWords?.length ?? 0;
+    return n > 1 ? 18 : 10;
+  });
+
   // Subtitle box — positioned as absolute rect using x/y as center, width as %
   const subtitleBoxStyle = computed(() => {
     const pos = localSubtitlePosition.value;
     const w = computedSubtitleBoxWidth.value;
-    // Height is fixed at ~10% of container to give enough drag area
-    const h = 10;
+    const h = subtitlePreviewBoxHeightPct.value;
     // x/y are center percentages → convert to left/top
     const left = pos.x - w / 2;
     const top = pos.y - h / 2;
@@ -1305,7 +1334,9 @@
     // For landscape (16:9): container ~240px wide, output 1920px → scale ~0.125
     // For square (1:1): container ~240px wide, output 1080px → scale ~0.22
     const scale = ar < 0.9 ? 0.20 : ar < 1.2 ? 0.22 : 0.125;
-    const fs = Math.max(9, Math.round(settings.fontSize * scale));
+    // Do not floor too high: preview canvas is small (fontSize*scale is often 6–20px);
+    // a high min hid real font size changes when resizing the subtitle box in POI.
+    const fs = Math.max(1, Math.round(settings.fontSize * scale));
     const stroke = settings.border1Width > 0
       ? `${settings.border1Color} 0 0 0 ${settings.border1Width * scale}px`
       : undefined;
@@ -1340,122 +1371,62 @@
     return styles;
   });
   
-  // Sample subtitle text based on animation style
-  const sampleSubtitleText = computed(() => {
-    console.log('[POITargetPanel] sampleSubtitleText computed:', {
-      hasSubtitleSettings: !!props.subtitleSettings,
-      hasTranscriptWords: !!props.transcriptWords,
-      transcriptWordsLength: props.transcriptWords?.length,
-      style: props.subtitleSettings?.animationStyle
-    });
-
-    if (!props.subtitleSettings) return 'Sample Text';
-    
-    // If we have transcript data, we'll render actual words, not sample text
-    if (props.transcriptWords && props.transcriptWords.length > 0) {
-      return ''; // Actual words will be rendered separately
-    }
-    
-    const style = props.subtitleSettings.animationStyle;
-    
-    // Single-word style shows 1 word
-    if (style === 'single-word') {
-      return 'WORD';
-    }
-    
-    // Default sample for other animation styles
-    return 'Sample subtitle text';
-  });
-
   // Compute visible words based on current video time
   const visibleWords = computed((): WordInfo[] => {
-    console.log('[POITargetPanel] visibleWords computed:', {
-      hasTranscriptWords: !!props.transcriptWords,
-      transcriptWordsLength: props.transcriptWords?.length,
-      hasSubtitleSettings: !!props.subtitleSettings,
-      videoTime: props.videoTime,
-      clipStartTime: props.clipStartTime
-    });
-
     if (!props.transcriptWords || props.transcriptWords.length === 0 || !props.subtitleSettings) {
       return [];
     }
 
-    // Convert absolute video time to clip-relative time for subtitle matching
-    // (transcriptWords have been adjusted to be relative to clip start)
     const absoluteTime = props.videoTime || 0;
     const clipRelativeTime = absoluteTime - (props.clipStartTime || 0);
     const animationStyle = props.subtitleSettings.animationStyle;
 
-    console.log('[POITargetPanel] Computing visible words:', {
-      absoluteTime,
-      clipStartTime: props.clipStartTime,
-      clipRelativeTime,
-      animationStyle,
-      totalWords: props.transcriptWords.length,
-      firstWord: props.transcriptWords[0],
-      lastWord: props.transcriptWords[props.transcriptWords.length - 1]
-    });
-
-    // Single word mode - only show the current word
     if (animationStyle === 'single-word') {
-      const currentWord = props.transcriptWords.find(w => clipRelativeTime >= w.start && clipRelativeTime < w.end);
-      console.log('[POITargetPanel] Single word mode:', {
-        currentWord,
-        clipRelativeTime,
-        firstWordTime: props.transcriptWords[0],
-        lastWordTime: props.transcriptWords[props.transcriptWords.length - 1]
-      });
+      const currentWord = props.transcriptWords.find(
+        (w) => clipRelativeTime >= w.start && clipRelativeTime < w.end
+      );
       return currentWord ? [currentWord] : [];
     }
 
-    // For karaoke and other segment-based styles, show only words from the current segment
-    // Find the current segment from transcriptSegments
-    console.log('[POITargetPanel] Checking segments:', {
-      hasSegments: !!props.transcriptSegments,
-      segmentCount: props.transcriptSegments?.length || 0,
-      clipRelativeTime,
-      animationStyle
-    });
-    
     if (props.transcriptSegments && props.transcriptSegments.length > 0) {
       const currentSegment = props.transcriptSegments.find(
-        seg => clipRelativeTime >= seg.start && clipRelativeTime < seg.end
+        (seg) => clipRelativeTime >= seg.start && clipRelativeTime < seg.end
       );
-      
-      console.log('[POITargetPanel] Current segment lookup:', {
-        found: !!currentSegment,
-        clipRelativeTime,
-        firstSegment: props.transcriptSegments[0],
-        lastSegment: props.transcriptSegments[props.transcriptSegments.length - 1]
-      });
-      
-      if (currentSegment && currentSegment.words && currentSegment.words.length > 0) {
-        console.log('[POITargetPanel] Segment mode, visible words from current segment:', {
-          count: currentSegment.words.length,
-          segmentStart: currentSegment.start,
-          segmentEnd: currentSegment.end,
-          segmentText: currentSegment.text
-        });
+
+      if (!currentSegment) {
+        return [];
+      }
+
+      if (currentSegment.words && currentSegment.words.length > 0) {
         return currentSegment.words;
       }
-      
-      // No current segment found - show nothing (between segments)
-      console.log('[POITargetPanel] No current segment found, showing nothing');
-      return [];
+
+      return props.transcriptWords.filter(
+        (w) => w.start < currentSegment.end && w.end > currentSegment.start
+      );
     }
 
-    // Fallback: use 3-second window ONLY if no segments are available at all
-    const WINDOW_SIZE = 3;
-    const words = props.transcriptWords.filter(
-      w => w.start <= clipRelativeTime + WINDOW_SIZE && w.end >= clipRelativeTime - WINDOW_SIZE
+    // No Whisper segments: approximate “line at playhead”. Use symmetric overlap window (seconds).
+    // A tiny window (e.g. 3s) hid later words when clipRelativeTime=0 — e.g. demo [0–5],[5–10]s.
+    const WINDOW_SEC = 20;
+    return props.transcriptWords.filter(
+      (w) =>
+        w.start < clipRelativeTime + WINDOW_SEC && w.end > clipRelativeTime - WINDOW_SEC
     );
-    console.log('[POITargetPanel] Window mode (fallback), visible words:', {
-      count: words.length,
-      firstWord: words[0],
-      lastWord: words[words.length - 1]
-    });
-    return words;
+  });
+
+  /** Static line when word-level SVG path is empty (e.g. timing gap) but we still have transcript words */
+  const subtitlePreviewFallbackText = computed(() => {
+    if (!props.subtitleSettings) return 'Sample Text';
+    if (visibleWords.value.length > 0) return '';
+
+    if (props.transcriptWords && props.transcriptWords.length > 0) {
+      return props.transcriptWords.map((w) => w.word).join(' ');
+    }
+
+    const style = props.subtitleSettings.animationStyle;
+    if (style === 'single-word') return 'WORD';
+    return 'Sample subtitle text';
   });
 
   // Check if a word is currently being spoken
@@ -1498,6 +1469,44 @@
   // Get word index in full transcript (for color rotation)
   function getWordIndexInTranscript(word: WordInfo): number {
     return props.transcriptWords?.findIndex(w => w.start === word.start && w.end === word.end) || 0;
+  }
+
+  function subtitleWordPreviewMotionStyle(wordInfo: WordInfo): Record<string, string> {
+    if (!props.subtitleSettings || !isCurrentWord(wordInfo)) return {};
+    const style = props.subtitleSettings.animationStyle;
+    if (style === 'zoom') return { transform: 'scale(1.14)', transformOrigin: 'bottom center' };
+    if (style === 'pop') return { transform: 'scale(1.1)', transformOrigin: 'bottom center' };
+    if (style === 'wave') return { transform: 'translateY(-3px)' };
+    return {};
+  }
+
+  function subtitleWordSvgFillStyle(wordInfo: WordInfo): Record<string, string> {
+    if (!props.subtitleSettings) return {};
+    const s = props.subtitleSettings;
+    const active = isCurrentWord(wordInfo);
+    const hl = s.highlightColor || '#0ea5e9';
+    const base = s.textColor || '#FFFFFF';
+
+    let fill = base;
+    if (s.animationStyle === 'single-word') {
+      fill = getWordColor(getWordIndexInTranscript(wordInfo));
+    } else if (active && (s.animationStyle === 'karaoke' || s.animationStyle === 'glow')) {
+      fill = hl;
+    }
+
+    const fs = subtitleTextStyle.value.fontSize ?? '12px';
+    const st: Record<string, string> = {
+      fontFamily: s.fontFamily,
+      fontWeight: String(s.fontWeight),
+      fontSize: typeof fs === 'number' ? `${fs}px` : String(fs),
+      fill,
+    };
+
+    if (active && s.animationStyle === 'glow') {
+      st.filter = `drop-shadow(0 0 6px ${hl})`;
+    }
+
+    return st;
   }
 
   // Calculate overlay preview style
@@ -1762,20 +1771,19 @@
     });
 
     const onMove = (e: MouseEvent) => {
-      // Calculate horizontal delta for box width
+      // Combine X and Y so corner drags (mostly vertical or diagonal) still resize, like the clip
+      // text box. In screen space, y grows downward.
       const deltaXPct = ((e.clientX - startX) / rect.width) * 100;
-      let newWidth: number;
-      let newCenterX: number;
+      const deltaYPct = ((e.clientY - startY) / rect.height) * 100;
+      // Positive deltaExpand = drag “outward” from center for each corner
+      let deltaExpand = 0;
+      if (corner === 'se') deltaExpand = deltaXPct + deltaYPct;
+      else if (corner === 'ne') deltaExpand = deltaXPct - deltaYPct;
+      else if (corner === 'sw') deltaExpand = -deltaXPct + deltaYPct;
+      else if (corner === 'nw') deltaExpand = -deltaXPct - deltaYPct;
 
-      if (corner === 'ne' || corner === 'se') {
-        // Right corners: dragging right increases width
-        newWidth = Math.max(20, Math.min(100, startWidth + deltaXPct * 2));
-        newCenterX = startCenterX;
-      } else {
-        // Left corners: dragging left increases width
-        newWidth = Math.max(20, Math.min(100, startWidth - deltaXPct * 2));
-        newCenterX = startCenterX;
-      }
+      const newWidth = Math.max(20, Math.min(100, startWidth + deltaExpand * 2));
+      const newCenterX = startCenterX;
 
       // Calculate font size directly from box width ratio
       // This creates a 1:1 correlation between box size and font size
@@ -1795,11 +1803,8 @@
       // Emit both position and settings changes
       emit('subtitlePositionChange', { ...localSubtitlePosition.value });
       
-      const updatedSettings = {
-        ...subtitleSettingsSnapshot,
-        fontSize: newFontSize
-      };
-      emit('subtitleSettingsChange', updatedSettings);
+      const base = props.subtitleSettings ?? subtitleSettingsSnapshot;
+      emit('subtitleSettingsChange', { ...base, fontSize: newFontSize });
     };
 
     const onUp = () => {
@@ -1923,4 +1928,5 @@
   .subtitle-text-container {
     user-select: none;
   }
+
 </style>
