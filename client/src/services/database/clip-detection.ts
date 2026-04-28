@@ -9,11 +9,7 @@ import {
 import { getRawVideosByProjectId } from './raw-videos';
 import { getProject } from './projects';
 import { getProjectVodPresetConfig } from './vod-presets';
-import {
-  updateClipFullSubtitleSettings,
-  updateClipSubtitlePosition,
-  updateClipSubtitleSettings,
-} from './clips';
+import { updateClipFullSubtitleSettings, updateClipSubtitleSettings } from './clips';
 import type { ClipWithVersion, ClipSegment, ClipWithVersionAndSegment } from './types';
 import type { SubtitleSettings } from '@/types';
 import { invoke } from '@tauri-apps/api/core';
@@ -267,12 +263,9 @@ async function applyDetectionSubtitleChoiceToClip(
       };
 
       await updateClipFullSubtitleSettings(clipId, merged);
-      await updateClipSubtitlePosition(
-        clipId,
-        50,
-        merged.positionPercentage ?? 85,
-        merged.maxWidth ?? undefined
-      );
+      // Do not mirror Y/X/width into subtitle_position_* columns here. Those columns mean "user
+      // dragged in workspace" for layout merge; copying detection defaults blocked creator layout.
+      // Position lives on subtitle_settings JSON (merged above).
     } else {
       await updateClipSubtitleSettings(clipId, true, detectionSubtitle.presetId);
     }

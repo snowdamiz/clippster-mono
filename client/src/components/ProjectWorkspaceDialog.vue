@@ -639,18 +639,20 @@
   });
 
   /**
-   * Full subtitle defaults for "Add subtitles" / SubtitleEditorDialog: project VOD preset first,
-   * then local creator profile clip_build_defaults (same source as creator layout in ProfileDialog).
+   * Full subtitle defaults for workspace preview / editor: **creator profile clip_build_defaults first**
+   * (same UI as Creator clip defaults), then project VOD preset snapshot.
+   * The VOD snapshot often carries detection/preset-library bottom defaults and must not override
+   * explicit creator positioning (e.g. subs at top of 9:16).
    */
   const subtitleEditorDefaultSettings = computed((): SubtitleSettings | null => {
+    const parsed = parseCreatorClipBuildDefaults(creatorProfile.value?.clip_build_defaults ?? null);
+    const profileSubs = parsed?.subtitleDefaults;
+    if (profileSubs && typeof profileSubs === 'object') {
+      return JSON.parse(JSON.stringify(profileSubs)) as SubtitleSettings;
+    }
     const vodSubs = vodPresetConfig.value?.subtitleDefaults;
     if (vodSubs && typeof vodSubs === 'object') {
       return JSON.parse(JSON.stringify(vodSubs)) as SubtitleSettings;
-    }
-    const parsed = parseCreatorClipBuildDefaults(creatorProfile.value?.clip_build_defaults ?? null);
-    const subs = parsed?.subtitleDefaults;
-    if (subs && typeof subs === 'object') {
-      return JSON.parse(JSON.stringify(subs)) as SubtitleSettings;
     }
     return null;
   });
@@ -849,6 +851,23 @@
   // Store active subtitle settings (persists during playback even if currentlyPlayingClipId is cleared)
   const activeSubtitleSettings = ref<any>(undefined);
 
+  /**
+   * True when DB subtitle_position_* reflect a deliberate user drag/resize in the workspace.
+   * Detection used to mirror preset bottom coords (50, 85) into columns; that must not block
+   * creator clip defaults from applying.
+   */
+  function clipSubtitlePositionLooksUserPlaced(clip: {
+    subtitle_position_x?: number | null;
+    subtitle_position_y?: number | null;
+  }): boolean {
+    const x = clip.subtitle_position_x;
+    const y = clip.subtitle_position_y;
+    if (y == null && x == null) return false;
+    // Classic bottom default mirrored by old detection — not a user drag.
+    if (x != null && y != null && Math.abs(x - 50) < 0.5 && Math.abs(y - 85) < 0.5) return false;
+    return true;
+  }
+
   /** Merge VOD/creator subtitle defaults with per-preview-ratio overrides — main VOD playback before a clip is selected. */
   function mergePlaybackSubtitleDefaults(): SubtitleSettings | null {
     const base = subtitleEditorDefaultSettings.value;
@@ -861,8 +880,9 @@
     };
     if (ov) {
       Object.assign(merged, ov);
-      if (ov.position && merged.positionPercentage == null) {
-        merged.positionPercentage = ov.position.y;
+      const yFromPos = ov.position?.y;
+      if (yFromPos != null && Number.isFinite(yFromPos)) {
+        merged.positionPercentage = yFromPos;
       }
     }
     return merged;
@@ -871,6 +891,74 @@
   function applyWorkspacePlaybackSubtitleDefaults() {
     const m = mergePlaybackSubtitleDefaults();
     if (m) activeSubtitleSettings.value = m;
+  }
+
+  /**
+   * After loading a clip's preset/subtitle_settings, apply creator/VOD layout for the current preview
+   * ratio so detection presets (which default to bottom 85%) don't hide profile positioning.
+   * Skips layout when the user dragged subs for this clip (subtitle_position_x/y set in DB).
+   */
+  function applyWorkspaceLayoutToClipPlaybackSettings(
+    clipSettings: SubtitleSettings,
+    layoutDefaults: SubtitleSettings | null,
+    fullClip: { subtitle_position_x?: number | null; subtitle_position_y?: number | null; subtitle_position_width?: number | null }
+  ): SubtitleSettings {
+    if (!layoutDefaults) return clipSettings;
+    const userMovedSubtitleBoxXY = clipSubtitlePositionLooksUserPlaced(fullClip);
+    const ratio = previewAspectRatio.value;
+    const layoutPr = layoutDefaults.perRatioConfigs?.[ratio];
+    const clipPr = clipSettings.perRatioConfigs?.[ratio];
+    const layoutY =
+      layoutPr?.position?.y ??
+      layoutPr?.positionPercentage ??
+      layoutDefaults.positionPercentage;
+    const layoutMaxW = layoutPr?.maxWidth ?? layoutDefaults.maxWidth;
+
+    const merged: SubtitleSettings = {
+      ...clipSettings,
+      perRatioConfigs: {
+        ...(layoutDefaults.perRatioConfigs ?? {}),
+        ...(clipSettings.perRatioConfigs ?? {}),
+      },
+    };
+
+    // VideoPlayer resolves Y from perRatioConfigs[ratio].position before positionPercentage;
+    // clip preset JSON often stores bottom coords there — overlay creator/VOD ratio row on top.
+    if (!userMovedSubtitleBoxXY) {
+      if (layoutPr != null) {
+        merged.perRatioConfigs = {
+          ...merged.perRatioConfigs,
+          [ratio]: { ...(clipPr ?? {}), ...layoutPr },
+        };
+      } else if (layoutY != null && Number.isFinite(layoutY)) {
+        merged.perRatioConfigs = {
+          ...merged.perRatioConfigs,
+          [ratio]: {
+            ...(clipPr ?? {}),
+            positionPercentage: layoutY,
+            position: {
+              x: clipPr?.position?.x ?? 50,
+              y: layoutY,
+            },
+          },
+        };
+      }
+      if (layoutY != null && Number.isFinite(layoutY)) {
+        merged.positionPercentage = layoutY;
+      }
+    }
+
+    if (fullClip.subtitle_position_width == null && layoutMaxW != null) {
+      merged.maxWidth = layoutMaxW;
+      const r = merged.perRatioConfigs?.[ratio];
+      if (r != null && merged.perRatioConfigs) {
+        merged.perRatioConfigs = {
+          ...merged.perRatioConfigs,
+          [ratio]: { ...r, maxWidth: layoutMaxW },
+        };
+      }
+    }
+    return merged;
   }
 
   watch(
@@ -887,24 +975,41 @@
     { deep: true }
   );
 
-  // Subtitle position for the currently/last playing clip — defaults to bottom-center (50, 85)
+  /**
+   * Subtitle box position for VideoPlayer.
+   * Only use clip DB x/y when the user actually moved the box (columns set). `subtitle_position_width`
+   * alone is often seeded from presets; treating it as "saved position" forced y ?? 85 and pinned
+   * subs to the bottom of the 9:16 canvas instead of creator/VOD top layout.
+   * Otherwise use merged creator/VOD defaults (including perRatioConfigs for the preview aspect).
+   */
   const activeSubtitlePosition = computed(() => {
-    const clipId = currentlyPlayingClipId.value || lastPlayedClipId.value;
-    const clip = clipId ? timelineClips.value.find((c: any) => c.id === clipId) : null;
-    if (clip && activeSubtitleSettings.value) {
+    const playingId = currentlyPlayingClipId.value;
+    const clip = playingId ? timelineClips.value.find((c: any) => c.id === playingId) : null;
+    const userSavedSubtitleXY =
+      clip && activeSubtitleSettings.value && clipSubtitlePositionLooksUserPlaced(clip);
+
+    if (userSavedSubtitleXY && clip) {
       return {
         x: clip.subtitle_position_x ?? 50,
         y: clip.subtitle_position_y ?? 85,
         width: clip.subtitle_position_width ?? null,
       };
     }
+
     const s = activeSubtitleSettings.value as SubtitleSettings | undefined;
     if (!s) return null;
-    const ratio = normalizedAspectRatio.value;
-    const pr = s.perRatioConfigs?.[ratio];
-    const y = pr?.position?.y ?? pr?.positionPercentage ?? s.positionPercentage ?? 85;
+    const ratioKey = previewAspectRatio.value;
+    const pr = s.perRatioConfigs?.[ratioKey];
+    const y =
+      pr?.position?.y ??
+      pr?.positionPercentage ??
+      s.positionPercentage ??
+      85;
     const x = pr?.position?.x ?? 50;
-    const w = pr?.maxWidth ?? s.maxWidth ?? null;
+    const w =
+      clip?.subtitle_position_width != null
+        ? clip.subtitle_position_width
+        : pr?.maxWidth ?? s.maxWidth ?? null;
     return { x, y, width: w };
   });
 
@@ -3030,9 +3135,8 @@
             border2Width: savedSettings.border2Width
           });
           
-          // IMPORTANT: Override position/width with the separately stored values
-          // Position is stored in subtitle_position_x/y/width columns and takes precedence
-          if (fullClip.subtitle_position_y != null) {
+          // Override from columns only for deliberate workspace edits — not legacy detection (50,85).
+          if (fullClip.subtitle_position_y != null && clipSubtitlePositionLooksUserPlaced(fullClip)) {
             savedSettings.positionPercentage = fullClip.subtitle_position_y;
           }
           if (fullClip.subtitle_position_width != null) {
@@ -3050,6 +3154,15 @@
         // Fall back to preset if no full settings saved
         console.warn('[ProjectWorkspaceDialog] No subtitle_settings found in clip object, falling back to preset');
         loadSubtitleSettingsFromPreset(fullClip);
+      }
+
+      const layout = mergePlaybackSubtitleDefaults();
+      if (activeSubtitleSettings.value && layout) {
+        activeSubtitleSettings.value = applyWorkspaceLayoutToClipPlaybackSettings(
+          activeSubtitleSettings.value,
+          layout,
+          fullClip
+        );
       }
     } else {
       activeSubtitleSettings.value = undefined;
