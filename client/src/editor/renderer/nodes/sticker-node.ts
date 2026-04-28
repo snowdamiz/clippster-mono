@@ -79,14 +79,19 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 		}
 
 		const { transform, opacity } = this.params;
-		const size = 200 * transform.scale;
-		const x = renderer.width / 2 + transform.position.x - size / 2;
-		const y = renderer.height / 2 + transform.position.y - size / 2;
 
 		// Resolve keyframed values
 		const elapsed = time - this.params.timeOffset;
 		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
-		let resolvedOpacity = getKeyframedValue({ elementKeyframes: this.params.keyframes, property: "opacity", normalizedTime, defaultValue: opacity });
+		const kf = this.params.keyframes;
+		let resolvedOpacity = getKeyframedValue({ elementKeyframes: kf, property: "opacity", normalizedTime, defaultValue: opacity });
+		const resolvedScale = getKeyframedValue({ elementKeyframes: kf, property: "scale", normalizedTime, defaultValue: transform.scale });
+		const resolvedPosX = getKeyframedValue({ elementKeyframes: kf, property: "positionX", normalizedTime, defaultValue: transform.position.x });
+		const resolvedPosY = getKeyframedValue({ elementKeyframes: kf, property: "positionY", normalizedTime, defaultValue: transform.position.y });
+		const resolvedRotation = getKeyframedValue({ elementKeyframes: kf, property: "rotation", normalizedTime, defaultValue: transform.rotate });
+		const size = 200 * resolvedScale;
+		const x = renderer.width / 2 + resolvedPosX - size / 2;
+		const y = renderer.height / 2 + resolvedPosY - size / 2;
 
 		// Apply fade in/out opacity ramp
 		const fadeIn = this.params.fadeIn ?? 0;
@@ -114,11 +119,11 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 		);
 		applyAnimationToContext(renderer.context, animResult, x + size / 2, y + size / 2);
 
-		if (transform.rotate !== 0) {
+		if (resolvedRotation !== 0) {
 			const centerX = x + size / 2;
 			const centerY = y + size / 2;
 			renderer.context.translate(centerX, centerY);
-			renderer.context.rotate((transform.rotate * Math.PI) / 180);
+			renderer.context.rotate((resolvedRotation * Math.PI) / 180);
 			renderer.context.translate(-centerX, -centerY);
 		}
 

@@ -9,6 +9,7 @@ import type {
 	TextGradient,
 } from "../../types/timeline";
 import { getKeyframedValue } from "../../types/keyframes";
+import { computeAnimationTransforms, applyAnimationToContext } from "../effects/canvas-animations";
 
 type Ctx = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
 
@@ -106,6 +107,20 @@ export class CaptionNode extends BaseNode<CaptionNodeParams> {
 		});
 		const prevAlpha = ctx.globalAlpha;
 		ctx.globalAlpha = resolvedOpacity;
+
+		// Apply entrance / exit / loop animations
+		const animResult = computeAnimationTransforms(
+			this.params.animationIn,
+			this.params.animationOut,
+			this.params.animationLoop,
+			{
+				elapsed,
+				elementDuration: this.params.duration,
+				canvasWidth: this.params.canvasCenter.x * 2,
+				canvasHeight: this.params.canvasCenter.y * 2,
+			},
+		);
+		applyAnimationToContext(ctx, animResult, 0, 0);
 
 		this.paintCaption(ctx, time);
 

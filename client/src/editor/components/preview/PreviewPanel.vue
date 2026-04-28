@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, shallowRef, onUnmounted } from "vue";
+import { ref, computed, watch, shallowRef, onUnmounted, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../composables/useEditor";
 import { useRafLoop } from "../../composables/useRafLoop";
@@ -20,7 +20,7 @@ const { editor, version } = useEditor({
 		selection: false,
 	},
 });
-const { isCropMode, activeSocialOverlay } = useEditorUIState();
+const { isCropMode, activeSocialOverlay, viewportZoom, previewQuality } = useEditorUIState();
 const { selectedElements } = useElementSelection();
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -29,6 +29,7 @@ let lastFrame = -1;
 let lastScene: any = null;
 let lastRenderedTime = Number.NEGATIVE_INFINITY;
 let rendering = false;
+let idleTickCount = 0;
 
 // Register canvas on editor core so freeze-frame can capture it
 watch(canvasRef, (canvas) => {
@@ -43,8 +44,18 @@ const activeProject = computed(() => {
 	return editor.project.getActiveOrNull();
 });
 
-const canvasWidth = computed(() => activeProject.value?.settings?.canvasSize?.width ?? 1920);
-const canvasHeight = computed(() => activeProject.value?.settings?.canvasSize?.height ?? 1080);
+const projectWidth = computed(() => activeProject.value?.settings?.canvasSize?.width ?? 1920);
+const projectHeight = computed(() => activeProject.value?.settings?.canvasSize?.height ?? 1080);
+
+// Preview quality scaling: render at lower resolution then CSS-scale up
+const previewScale = computed(() => {
+	const q = previewQuality.value;
+	if (q === "auto") return 1;
+	return Math.min(1, q / projectHeight.value);
+});
+
+const canvasWidth = computed(() => Math.round(projectWidth.value * previewScale.value));
+const canvasHeight = computed(() => Math.round(projectHeight.value * previewScale.value));
 
 const fps = computed(() => activeProject.value?.settings?.fps ?? 30);
 const background = computed(() => activeProject.value?.settings?.background ?? { type: "color" as const, color: "#000000" });
@@ -116,7 +127,9 @@ watch(
 	{ immediate: true },
 );
 
+let rafTickCount = 0;
 useRafLoop(() => {
+	rafTickCount++;
 	const canvas = canvasRef.value;
 	const r = renderer.value;
 	const renderTree = editor.renderer.getRenderTree();
@@ -134,22 +147,30 @@ useRafLoop(() => {
 	const timeMoved =
 		isPlaying && Math.abs(renderTime - lastRenderedTime) >= 1 / Math.max(24, r.fps * 2);
 
-	if (frame !== lastFrame || renderTree !== lastScene || timeMoved) {
-		rendering = true;
-		const commitFrame = frame;
-		const commitTree = renderTree;
-		const commitTime = renderTime;
-		r.renderToCanvas({ node: commitTree, time: commitTime, targetCanvas: canvas })
-			.then(() => {
-				lastFrame = commitFrame;
-				lastScene = commitTree;
-				lastRenderedTime = commitTime;
-				rendering = false;
-			})
-			.catch(() => {
-				rendering = false;
-			});
+	const needsRender = frame !== lastFrame || renderTree !== lastScene || timeMoved;
+
+	// When paused and nothing changed, throttle to ~15Hz after 250ms idle to save GPU
+	if (!needsRender) {
+		idleTickCount++;
+		if (!isPlaying && idleTickCount > 15 && rafTickCount % 4 !== 0) return;
+		return;
 	}
+
+	idleTickCount = 0;
+	rendering = true;
+	const commitFrame = frame;
+	const commitTree = renderTree;
+	const commitTime = renderTime;
+	r.renderToCanvas({ node: commitTree, time: commitTime, targetCanvas: canvas })
+		.then(() => {
+			lastFrame = commitFrame;
+			lastScene = commitTree;
+			lastRenderedTime = commitTime;
+			rendering = false;
+		})
+		.catch(() => {
+			rendering = false;
+		});
 });
 
 const canvasBackground = computed(() => {
@@ -266,6 +287,49 @@ watch(
 	{ immediate: true },
 );
 
+// Zoom helpers
+const ZOOM_STEP = 0.25;
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 4;
+
+function stepZoom(delta: number) {
+	viewportZoom.value = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round((viewportZoom.value + delta) * 100) / 100));
+}
+
+function fitZoom() {
+	viewportZoom.value = 1;
+}
+
+function onWheelZoom(e: WheelEvent) {
+	if (!e.ctrlKey && !e.metaKey) return;
+	e.preventDefault();
+	const delta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
+	stepZoom(delta);
+}
+
+const zoomPercent = computed(() => `${Math.round(viewportZoom.value * 100)}%`);
+
+const qualityOptions = [
+	{ label: 'Auto', value: 'auto' as const },
+	{ label: '1080p', value: 1080 as const },
+	{ label: '720p', value: 720 as const },
+	{ label: '540p', value: 540 as const },
+	{ label: '360p', value: 360 as const },
+];
+
+const qualityLabel = computed(() => {
+	const q = previewQuality.value;
+	return q === 'auto' ? 'Auto' : `${q}p`;
+});
+
+onMounted(() => {
+	containerRef.value?.addEventListener('wheel', onWheelZoom, { passive: false });
+});
+
+onUnmounted(() => {
+	containerRef.value?.removeEventListener('wheel', onWheelZoom);
+});
+
 defineExpose({ containerRef });
 
 function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number; opacity: number; rotation: number; isFullFrameOverlay?: boolean }) {
@@ -294,9 +358,14 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 <template>
 	<div ref="containerRef" class="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-[#0e0e10]">
 		<!-- Canvas + Interactive Overlay -->
-		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden p-4">
-			<div class="preview-canvas-wrapper relative rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
-				:style="{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }"
+		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto p-4">
+			<div
+				class="preview-canvas-wrapper relative rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
+				:style="{
+					aspectRatio: `${projectWidth} / ${projectHeight}`,
+					transform: viewportZoom !== 1 ? `scale(${viewportZoom})` : undefined,
+					transformOrigin: 'center center',
+				}"
 			>
 				<canvas
 					ref="canvasRef"
@@ -307,19 +376,19 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 				/>
 				<PreviewOverlay
 					:canvas-ref="canvasRef"
-					:canvas-width="canvasWidth"
-					:canvas-height="canvasHeight"
+					:canvas-width="projectWidth"
+					:canvas-height="projectHeight"
 				/>
 				<GuideOverlay
 					:canvas-ref="canvasRef"
-					:canvas-width="canvasWidth"
-					:canvas-height="canvasHeight"
+					:canvas-width="projectWidth"
+					:canvas-height="projectHeight"
 				/>
 				<SocialOverlay
 					v-if="activeSocialOverlay"
 					:preset="activeSocialOverlay"
-					:canvas-width="canvasWidth"
-					:canvas-height="canvasHeight"
+					:canvas-width="projectWidth"
+					:canvas-height="projectHeight"
 				/>
 				<!-- Branding watermark overlay -->
 				<img
@@ -341,12 +410,33 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 				/>
 			</div>
 		</div>
+
+		<!-- Preview controls bar: zoom + quality -->
+		<div class="flex h-8 shrink-0 items-center justify-end gap-1 border-t border-white/10 bg-[#18181b] px-2">
+			<!-- Quality selector -->
+			<div class="relative">
+				<select
+					class="h-6 cursor-pointer appearance-none rounded bg-white/5 px-2 pr-5 text-[11px] text-zinc-300 hover:bg-white/10 focus:outline-none"
+					:value="previewQuality"
+					@change="previewQuality = ($event.target as HTMLSelectElement).value as any"
+				>
+					<option v-for="opt in qualityOptions" :key="opt.label" :value="opt.value">{{ opt.label }}</option>
+				</select>
+				<span class="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-zinc-500">▾</span>
+			</div>
+			<div class="h-4 w-px bg-white/10" />
+			<!-- Zoom controls -->
+			<button class="flex h-6 w-6 items-center justify-center rounded text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200" title="Zoom out (Ctrl+-)" @click="stepZoom(-ZOOM_STEP)">−</button>
+			<button class="h-6 min-w-[42px] rounded bg-white/5 px-1 text-[11px] text-zinc-300 hover:bg-white/10" title="Reset zoom (Ctrl+0)" @click="fitZoom">{{ zoomPercent }}</button>
+			<button class="flex h-6 w-6 items-center justify-center rounded text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200" title="Zoom in (Ctrl++)" @click="stepZoom(ZOOM_STEP)">+</button>
+		</div>
 	</div>
 </template>
 
 <style scoped>
 .preview-canvas-wrapper {
 	max-width: 100%;
-	max-height: 100%;
+	max-height: calc(100% - 2rem);
+	flex-shrink: 0;
 }
 </style>

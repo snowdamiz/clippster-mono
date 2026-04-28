@@ -208,14 +208,18 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			// Apply transform (scale, position, rotation) with keyframe overrides
 			const transform = this.params.transform;
 			if (transform) {
-				const centerX = renderer.width / 2 + transform.position.x;
-				const centerY = renderer.height / 2 + transform.position.y;
+				const resolvedScale = getKeyframedValue({ elementKeyframes: kf, property: "scale", normalizedTime, defaultValue: transform.scale });
+				const resolvedPosX = getKeyframedValue({ elementKeyframes: kf, property: "positionX", normalizedTime, defaultValue: transform.position.x });
+				const resolvedPosY = getKeyframedValue({ elementKeyframes: kf, property: "positionY", normalizedTime, defaultValue: transform.position.y });
+				const resolvedRotation = getKeyframedValue({ elementKeyframes: kf, property: "rotation", normalizedTime, defaultValue: transform.rotate });
+				const centerX = renderer.width / 2 + resolvedPosX;
+				const centerY = renderer.height / 2 + resolvedPosY;
 				renderer.context.translate(centerX, centerY);
-				if (transform.rotate !== 0) {
-					renderer.context.rotate((transform.rotate * Math.PI) / 180);
+				if (resolvedRotation !== 0) {
+					renderer.context.rotate((resolvedRotation * Math.PI) / 180);
 				}
-				if (transform.scale !== 1) {
-					renderer.context.scale(transform.scale, transform.scale);
+				if (resolvedScale !== 1) {
+					renderer.context.scale(resolvedScale, resolvedScale);
 				}
 				renderer.context.translate(-renderer.width / 2, -renderer.height / 2);
 			}

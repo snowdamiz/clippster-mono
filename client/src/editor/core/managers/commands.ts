@@ -1,5 +1,7 @@
 import type { Command } from "../../lib/commands";
 
+const MAX_HISTORY = 20;
+
 export class CommandManager {
 	private history: Command[] = [];
 	private redoStack: Command[] = [];
@@ -7,6 +9,9 @@ export class CommandManager {
 	execute({ command }: { command: Command }): Command {
 		command.execute();
 		this.history.push(command);
+		if (this.history.length > MAX_HISTORY) {
+			this.history.shift();
+		}
 		this.redoStack = [];
 		return command;
 	}

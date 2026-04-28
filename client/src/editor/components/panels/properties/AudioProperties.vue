@@ -27,11 +27,16 @@ watch(() => props.element.fadeOut, (v) => { fadeOutInput.value = (v ?? 0).toFixe
 const speedTicks = [0.5, 1, 2, 3, 4, 5, 8, 10];
 const currentSpeed = computed(() => props.element.speed ?? 1);
 const speedInput = ref(currentSpeed.value.toFixed(2));
+const isDraggingSpeed = ref(false);
 
 watch(() => props.element.speed, (v) => { speedInput.value = (v ?? 1).toFixed(2); });
 
-function changeSpeed(speed: number) {
-	const clamped = Math.round(Math.max(0.1, Math.min(10, speed)) * 10) / 10;
+function clampSpeed(speed: number) {
+	return Math.round(Math.max(0.1, Math.min(10, speed)) * 10) / 10;
+}
+
+function commitSpeed(speed: number) {
+	const clamped = clampSpeed(speed);
 	speedInput.value = clamped.toFixed(2);
 	editor.timeline.changeElementSpeed({
 		trackId: props.trackId,
@@ -40,28 +45,26 @@ function changeSpeed(speed: number) {
 	});
 }
 
+function changeSpeed(speed: number) {
+	const clamped = clampSpeed(speed);
+	speedInput.value = clamped.toFixed(2);
+	if (!isDraggingSpeed.value) commitSpeed(clamped);
+}
+
+function onSpeedPointerDown() { isDraggingSpeed.value = true; }
+function onSpeedPointerUp(e: PointerEvent) {
+	isDraggingSpeed.value = false;
+	commitSpeed(Number((e.target as HTMLInputElement).value) / 10);
+}
+
 function handleSpeedInput(value: string) {
 	speedInput.value = value;
-	const parsed = parseFloat(value);
-	if (!Number.isNaN(parsed) && parsed >= 0.1 && parsed <= 10) {
-		editor.timeline.changeElementSpeed({
-			trackId: props.trackId,
-			elementId: props.element.id,
-			speed: Math.round(parsed * 10) / 10,
-		});
-	}
 }
 
 function handleSpeedBlur() {
 	const parsed = parseFloat(speedInput.value);
 	const val = Number.isNaN(parsed) ? (props.element.speed ?? 1) : Math.max(0.1, Math.min(10, parsed));
-	const clamped = Math.round(val * 10) / 10;
-	speedInput.value = clamped.toFixed(2);
-	editor.timeline.changeElementSpeed({
-		trackId: props.trackId,
-		elementId: props.element.id,
-		speed: clamped,
-	});
+	commitSpeed(val);
 }
 
 function update(updates: Record<string, unknown>) {
@@ -254,7 +257,7 @@ function formatTime(seconds: number): string {
 			</div>
 			<div class="flex items-center gap-2">
 				<div class="relative flex-1">
-					<input type="range" :value="currentSpeed * 10" min="1" max="100" step="1" class="w-full" @input="(e) => changeSpeed(Number((e.target as HTMLInputElement).value) / 10)" />
+					<input type="range" :value="currentSpeed * 10" min="1" max="100" step="1" class="w-full" @pointerdown="onSpeedPointerDown" @pointerup="onSpeedPointerUp" @input="(e) => changeSpeed(Number((e.target as HTMLInputElement).value) / 10)" />
 					<!-- Tick marks -->
 					<div class="pointer-events-none absolute inset-x-0 top-1/2 flex h-0 items-center">
 						<div

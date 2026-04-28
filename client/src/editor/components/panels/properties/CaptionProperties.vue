@@ -48,8 +48,9 @@ const topTabs: { id: TopTab; label: string; icon: any }[] = [
 ];
 
 // ── Text sub-tabs ──
-type TextSubTab = "basic" | "templates" | "effects";
-const activeTextSubTab = ref<TextSubTab>("basic");
+type TextSubTab = "style" | "effects";
+const activeTextSubTab = ref<TextSubTab>("style");
+const showCustomize = ref(false);
 
 // ── Animation sub-tabs ──
 type AnimSubTab = "in" | "out" | "loop" | "captions";
@@ -521,13 +522,13 @@ async function handleUploadFont() {
 		</div>
 
 		<!-- ═══════════════════════════════════════════ -->
-		<!-- TAB: Text — Basic / Templates / Effects    -->
+		<!-- TAB: Text — Style / Effects               -->
 		<!-- ═══════════════════════════════════════════ -->
 		<div v-else-if="activeTopTab === 'text'" class="flex flex-col overflow-y-auto" style="max-height: calc(100vh - 200px)">
 			<!-- Sub-tab bar -->
 			<div class="flex gap-1 border-b border-white/5 px-3 py-1.5">
 				<button
-					v-for="sub in (['basic', 'templates', 'effects'] as TextSubTab[])"
+					v-for="sub in (['style', 'effects'] as TextSubTab[])"
 					:key="sub"
 					class="rounded-md px-3 py-1 text-xs font-medium capitalize transition-colors"
 					:class="activeTextSubTab === sub ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'"
@@ -549,12 +550,71 @@ async function handleUploadFont() {
 				<span class="text-zinc-400 text-[11px]">Apply to all main captions</span>
 			</div>
 
-			<!-- ── Basic sub-tab ── -->
-			<div v-if="activeTextSubTab === 'basic'" class="flex flex-col gap-3 p-3">
-				<!-- Caption text preview -->
-				<div class="rounded-md border border-white/5 bg-white/[0.02] p-2">
-					<pre class="max-h-20 overflow-y-auto whitespace-pre-wrap text-[11px] leading-relaxed text-zinc-300">{{ captionText }}</pre>
+			<!-- ── Style sub-tab (presets + customize) ── -->
+			<div v-if="activeTextSubTab === 'style'" class="flex flex-col gap-3 p-3">
+
+				<!-- Preset grid (collapsed into 3-col) -->
+				<div class="flex flex-col gap-1.5">
+					<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Style Preset</span>
+					<!-- Category filter pills -->
+					<div class="flex flex-wrap gap-1">
+						<button
+							class="rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors"
+							:class="activeTemplateCategory === 'all' ? 'border-primary/40 bg-primary/20 text-primary' : 'border-white/10 bg-white/5 text-zinc-400 hover:text-zinc-200'"
+							@click="activeTemplateCategory = 'all'"
+						>All</button>
+						<button
+							v-for="cat in CATEGORY_ORDER"
+							:key="cat"
+							class="rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors"
+							:class="activeTemplateCategory === cat ? 'border-primary/40 bg-primary/20 text-primary' : 'border-white/10 bg-white/5 text-zinc-400 hover:text-zinc-200'"
+							@click="activeTemplateCategory = cat"
+						>{{ CATEGORY_LABELS[cat] }}</button>
+					</div>
+					<!-- Grouped preset sections -->
+					<div v-for="group in groupedPresets" :key="group.category" class="flex flex-col gap-1.5">
+						<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">{{ group.label }}</span>
+						<div class="grid grid-cols-3 gap-1.5">
+							<button
+								v-for="preset in group.presets"
+								:key="preset.id"
+								class="group relative flex flex-col items-center gap-1 rounded-lg border p-2 text-center transition-all hover:border-white/20 hover:bg-white/5"
+								:class="element.presetId === preset.id ? 'border-primary/50 bg-primary/10' : 'border-white/10 bg-white/[0.02]'"
+								@click="applyPreset(preset.id)"
+							>
+								<div
+									class="flex h-8 w-full items-center justify-center rounded font-bold"
+									:class="preset.maxWordsPerLine === 1 ? 'text-sm' : 'text-[11px]'"
+									:style="{
+										color: preset.color === 'transparent' ? (preset.stroke?.color || '#FFFFFF') : preset.color,
+										fontFamily: preset.fontFamily,
+										fontWeight: preset.fontWeight,
+										fontStyle: preset.fontStyle,
+										letterSpacing: preset.letterSpacing + 'px',
+										backgroundColor: preset.backgroundColor && preset.backgroundColor !== 'transparent' ? preset.backgroundColor : undefined,
+										padding: preset.backgroundColor && preset.backgroundColor !== 'transparent' ? '2px 5px' : undefined,
+										borderRadius: preset.backgroundColor && preset.backgroundColor !== 'transparent' ? '3px' : undefined,
+									}"
+								>Aa</div>
+								<span class="truncate text-[9px] text-zinc-400 group-hover:text-zinc-200">{{ preset.name }}</span>
+							</button>
+						</div>
+					</div>
 				</div>
+
+				<!-- Customize disclosure -->
+				<div class="border-t border-white/10 pt-2">
+					<button
+						class="flex w-full items-center justify-between py-1 text-[11px] font-medium text-zinc-400 hover:text-zinc-200"
+						@click="showCustomize = !showCustomize"
+					>
+						<span>Customize</span>
+						<ChevronDown v-if="!showCustomize" class="size-3.5" />
+						<ChevronUp v-else class="size-3.5" />
+					</button>
+				</div>
+
+				<div v-if="showCustomize" class="flex flex-col gap-3">
 
 				<!-- ── Transform section ── -->
 				<div class="space-y-2">
@@ -775,63 +835,6 @@ async function handleUploadFont() {
 								<span class="text-zinc-400 text-[10px]">{{ element.highlightColor }}</span>
 							</div>
 						</div>
-					</div>
-				</div>
-			</div>
-
-			<!-- ── Templates sub-tab ── -->
-			<div v-else-if="activeTextSubTab === 'templates'" class="flex flex-col gap-2 p-3">
-				<!-- Category filter pills -->
-				<div class="flex flex-wrap gap-1">
-					<button
-						class="rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors"
-						:class="activeTemplateCategory === 'all' ? 'bg-primary/20 text-primary border border-primary/40' : 'bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200'"
-						@click="activeTemplateCategory = 'all'"
-					>All</button>
-					<button
-						v-for="cat in CATEGORY_ORDER"
-						:key="cat"
-						class="rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors"
-						:class="activeTemplateCategory === cat ? 'bg-primary/20 text-primary border border-primary/40' : 'bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200'"
-						@click="activeTemplateCategory = cat"
-					>{{ CATEGORY_LABELS[cat] }}</button>
-				</div>
-
-				<!-- Grouped preset sections -->
-				<div v-for="group in groupedPresets" :key="group.category" class="flex flex-col gap-1.5">
-					<span class="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">{{ group.label }}</span>
-					<div class="grid grid-cols-3 gap-1.5">
-						<button
-							v-for="preset in group.presets"
-							:key="preset.id"
-							class="group relative flex flex-col items-center gap-1 rounded-lg border p-2 text-center transition-all hover:border-white/20 hover:bg-white/5"
-							:class="element.presetId === preset.id ? 'border-primary/50 bg-primary/10' : 'border-white/10 bg-white/[0.02]'"
-							@click="applyPreset(preset.id)"
-						>
-							<div
-								class="flex h-8 w-full items-center justify-center rounded font-bold"
-								:class="preset.maxWordsPerLine === 1 ? 'text-sm' : 'text-[11px]'"
-								:style="{
-									color: preset.color === 'transparent' ? (preset.stroke?.color || '#FFFFFF') : preset.color,
-									fontFamily: preset.fontFamily,
-									fontWeight: preset.fontWeight,
-									fontStyle: preset.fontStyle,
-									letterSpacing: preset.letterSpacing + 'px',
-									textShadow: preset.stroke
-										? `0 0 0 transparent, -1px -1px 0 ${preset.stroke.color}, 1px -1px 0 ${preset.stroke.color}, -1px 1px 0 ${preset.stroke.color}, 1px 1px 0 ${preset.stroke.color}`
-										: preset.shadow
-											? `${preset.shadow.offsetX}px ${preset.shadow.offsetY}px ${preset.shadow.blur}px ${preset.shadow.color}`
-											: preset.glow
-												? `0 0 ${preset.glow.intensity}px ${preset.glow.color}`
-												: 'none',
-									backgroundColor: preset.backgroundColor !== 'transparent' ? preset.backgroundColor : undefined,
-								}"
-							>
-								<span :style="{ color: preset.highlightStyle !== 'none' ? preset.highlightColor : (preset.color === 'transparent' ? (preset.stroke?.color || '#FFFFFF') : preset.color) }">{{ preset.maxWordsPerLine === 1 ? 'Word' : 'Ab' }}</span>
-								<span v-if="preset.maxWordsPerLine > 1" class="ml-0.5">Cd</span>
-							</div>
-							<span class="text-[9px] text-zinc-500 group-hover:text-zinc-400 truncate w-full">{{ preset.name }}</span>
-						</button>
 					</div>
 				</div>
 			</div>

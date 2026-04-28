@@ -318,6 +318,8 @@ export interface TextElement extends BaseTimelineElement {
 	bubbleStyle: TextBubbleStyle;
 	bubbleColor?: string;
 	bubblePadding?: number;
+	bubbleOpacity?: number; // 0-1, background opacity independent of text opacity; default 0.7
+	textOpacity?: number; // 0-1, glyph opacity independent of element opacity; default 1
 	hidden?: boolean;
 	transform: Transform;
 	opacity: number;
@@ -443,6 +445,9 @@ export interface CaptionElement extends BaseTimelineElement {
 	shadow?: TextShadow;
 	glow?: TextGlow;
 	gradient?: TextGradient;
+	animationIn?: import("./animations").ElementAnimation;
+	animationOut?: import("./animations").ElementAnimation;
+	animationLoop?: import("./animations").ElementAnimation;
 	hidden?: boolean;
 	transform: Transform;
 	opacity: number;

@@ -65,6 +65,36 @@ function getMainTrackIndex({ tracks }: { tracks: TimelineTrack[] }): number {
 	return tracks.findIndex((track) => isMainTrack(track));
 }
 
+/**
+ * Find the first existing compatible non-main track that has no element
+ * overlapping [startTime, startTime + duration).
+ * Returns the track's array index, or -1 if none found.
+ */
+export function findCompatibleTrack({
+	tracks,
+	elementType,
+	startTime,
+	duration,
+}: {
+	tracks: TimelineTrack[];
+	elementType: ElementType;
+	startTime: number;
+	duration: number;
+}): number {
+	const end = startTime + duration;
+	for (let i = 0; i < tracks.length; i++) {
+		const track = tracks[i];
+		if (!isCompatible({ elementType, trackType: track.type })) continue;
+		if (isMainTrack(track)) continue;
+		// Check for overlap
+		const hasOverlap = track.elements.some(
+			(el) => el.startTime < end && el.startTime + el.duration > startTime,
+		);
+		if (!hasOverlap) return i;
+	}
+	return -1;
+}
+
 function findInsertIndex({
 	elementType,
 	tracks,
