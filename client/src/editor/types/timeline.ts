@@ -196,7 +196,7 @@ interface BaseTimelineElement {
 
 // ── Shape masks ───────────────────────────────────────────────────────────
 
-export type MaskShapeType = "rectangle" | "ellipse";
+export type MaskShapeType = "rectangle" | "ellipse" | "polygon";
 
 export interface MaskShape {
 	id: string;
@@ -217,6 +217,8 @@ export interface MaskShape {
 	rotation: number;
 	/** Corner radius as fraction of half the shorter side (0 = sharp, 1 = fully rounded). Rectangle only. */
 	cornerRadius?: number;
+	/** Polygon points in normalized coords. Used when type === "polygon". */
+	points?: { x: number; y: number }[];
 }
 
 export interface VideoElement extends BaseTimelineElement {

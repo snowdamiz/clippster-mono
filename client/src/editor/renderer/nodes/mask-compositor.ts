@@ -64,6 +64,14 @@ function drawMaskShape(
 ) {
 	if (mask.type === "rectangle") {
 		drawRectangle(ctx, mask, canvasW, canvasH);
+	} else if (mask.type === "polygon") {
+		const pts = mask.points ?? [];
+		if (pts.length < 3) return;
+		ctx.moveTo(pts[0].x * canvasW, pts[0].y * canvasH);
+		for (let i = 1; i < pts.length; i++) {
+			ctx.lineTo(pts[i].x * canvasW, pts[i].y * canvasH);
+		}
+		ctx.closePath();
 	} else {
 		drawEllipse(ctx, mask, canvasW, canvasH);
 	}
@@ -142,9 +150,10 @@ export async function applyFeatheredMasks(
 	if (!maskCtx) return;
 
 	for (const mask of featheredMasks) {
+		const featherPx = mask.feather * (Math.min(canvasW, canvasH) / 1000);
 		// Step A: draw the shape (white on black) onto a dedicated shape canvas.
 		// We overdraw by feather px on every side so blur edges don't hit canvas bounds.
-		const pad = mask.feather * 2;
+		const pad = featherPx * 2;
 		const shapeCanvas = new OffscreenCanvas(canvasW + pad * 2, canvasH + pad * 2);
 		const shapeCtx = shapeCanvas.getContext("2d");
 		if (!shapeCtx) continue;
@@ -158,8 +167,8 @@ export async function applyFeatheredMasks(
 
 		// Step B: draw the shape canvas blurred onto the mask canvas.
 		maskCtx.save();
-		if (mask.feather > 0) {
-			maskCtx.filter = `blur(${mask.feather}px)`;
+		if (featherPx > 0) {
+			maskCtx.filter = `blur(${featherPx}px)`;
 		}
 		if (mask.invert) {
 			// Start with full white, then subtract the blurred shape.

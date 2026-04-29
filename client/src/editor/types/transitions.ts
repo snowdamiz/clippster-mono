@@ -2,6 +2,8 @@ export type TransitionType =
 	| "crossfade"
 	| "fadeToBlack"
 	| "fadeToWhite"
+	| "dissolve"
+	| "fadegrays"
 	| "slideLeft"
 	| "slideRight"
 	| "slideUp"
@@ -11,9 +13,6 @@ export type TransitionType =
 	| "wipeUp"
 	| "wipeDown"
 	| "zoomIn"
-	| "zoomOut"
-	| "blur"
-	| "dissolve"
 	| "circleWipe"
 	| "diamondWipe"
 	| "clockWipe"
@@ -25,12 +24,42 @@ export type TransitionType =
 	| "coverRight"
 	| "revealLeft"
 	| "revealRight"
-	| "rotateIn"
-	| "flipHorizontal"
-	| "flipVertical"
-	| "glitch";
+	| "prismSweep"
+	| "glitchBlocks"
+	| "shutterFlash"
+	| "inkBloom"
+	| "diagTl"
+	| "diagTr"
+	| "diagBl"
+	| "diagBr"
+	| "wipeTl"
+	| "wipeTr"
+	| "wipeBl"
+	| "wipeBr"
+	| "squeezeH"
+	| "squeezeV"
+	| "hlSlice"
+	| "hrSlice"
+	| "vuSlice"
+	| "vdSlice"
+	| "circleClose"
+	| "horzOpen"
+	| "horzClose"
+	| "vertOpen"
+	| "vertClose"
+	| "hblurTransition"
+	| "fadefast"
+	| "fadeslow";
 
-export type TransitionCategory = "fade" | "slide" | "wipe" | "zoom" | "stylize" | "push" | "cover";
+export type TransitionCategory =
+	| "fade"
+	| "slide"
+	| "wipe"
+	| "zoom"
+	| "push"
+	| "cover"
+	| "modern"
+	| "shape";
 
 export interface Transition {
 	id: string;
@@ -49,4 +78,12 @@ export interface TransitionPreset {
 	description: string;
 	category: TransitionCategory;
 	defaultDuration: number;
+	/** FFmpeg xfade transition name (source of truth for export) */
+	ffmpegName: string;
+	/** Canvas preview implementation key. Must intentionally mirror ffmpegName/custom expression. */
+	previewRenderer: TransitionType;
+	/** User-facing presets must be export-supported. */
+	exportSupported: boolean;
+	/** Sort/ranking hint for modern packs. Lower appears earlier. */
+	modernRank: number;
 }

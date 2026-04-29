@@ -88,7 +88,7 @@ class WebGLContextManager {
 	}
 
 	/** Read the current framebuffer as an ImageData (for copying to 2D canvas). */
-	readPixels(width: number, height: number): Uint8ClampedArray<ArrayBuffer> | null {
+	readPixels(width: number, height: number): Uint8ClampedArray | null {
 		const gl = this.gl;
 		if (!gl) return null;
 		const pixels = new Uint8ClampedArray(new ArrayBuffer(width * height * 4));

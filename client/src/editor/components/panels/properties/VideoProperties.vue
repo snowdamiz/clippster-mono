@@ -74,6 +74,7 @@ const speedTicks = [0.5, 1, 2, 3, 4, 5, 8, 10];
 const currentSpeed = computed(() => props.element.speed ?? 1);
 const speedInput = ref(currentSpeed.value.toFixed(2));
 const isDraggingSpeed = ref(false);
+const speedDragSnapshot = ref<ReturnType<typeof editor.timeline.getTracks> | null>(null);
 
 watch(() => props.element.speed, (v) => { speedInput.value = (v ?? 1).toFixed(2); });
 
@@ -91,16 +92,59 @@ function commitSpeed(speed: number) {
 	});
 }
 
+function applySpeedPreview(speed: number) {
+	const clamped = clampSpeed(speed);
+	const tracks = editor.timeline.getTracks();
+	const updatedTracks = tracks.map((track) => {
+		if (track.id !== props.trackId) return track;
+		const target = track.elements.find((el) => el.id === props.element.id);
+		if (!target) return track;
+		const oldSpeed = ("speed" in target && typeof target.speed === "number") ? target.speed : 1;
+		const oldDuration = target.duration;
+		const newDuration = oldDuration * oldSpeed / clamped;
+		const durationDelta = newDuration - oldDuration;
+		const oldEndTime = target.startTime + oldDuration;
+		return {
+			...track,
+			elements: track.elements.map((el) => {
+				if (el.id === props.element.id) {
+					return { ...el, speed: clamped, duration: newDuration } as typeof el;
+				}
+				if (durationDelta !== 0 && el.startTime >= oldEndTime - 0.001) {
+					return { ...el, startTime: el.startTime + durationDelta } as typeof el;
+				}
+				return el;
+			}),
+		} as typeof track;
+	});
+	editor.timeline.updateTracks(updatedTracks);
+}
+
 function changeSpeed(speed: number) {
 	const clamped = clampSpeed(speed);
 	speedInput.value = clamped.toFixed(2);
-	// Only update preview display during drag; commit on pointerup
-	if (!isDraggingSpeed.value) commitSpeed(clamped);
+	if (isDraggingSpeed.value) {
+		applySpeedPreview(clamped);
+	} else {
+		commitSpeed(clamped);
+	}
 }
 
-function onSpeedPointerDown() { isDraggingSpeed.value = true; }
+function onSpeedPointerDown() {
+	if (!isDraggingSpeed.value) {
+		speedDragSnapshot.value = editor.timeline.getTracks();
+	}
+	editor.setInteractiveDrag(true);
+	isDraggingSpeed.value = true;
+}
 function onSpeedPointerUp(e: PointerEvent) {
+	if (!isDraggingSpeed.value) return;
 	isDraggingSpeed.value = false;
+	editor.setInteractiveDrag(false);
+	if (speedDragSnapshot.value) {
+		editor.timeline.updateTracks(speedDragSnapshot.value);
+		speedDragSnapshot.value = null;
+	}
 	commitSpeed(Number((e.target as HTMLInputElement).value) / 10);
 }
 
@@ -285,6 +329,10 @@ const showChromakey = ref(chromakey.value.enabled);
 
 function updateChromakey(partial: Partial<ChromakeySettings>) {
 	update({ chromakey: { ...chromakey.value, ...partial } });
+}
+
+function resetChromakey() {
+	update({ chromakey: { ...DEFAULT_CHROMAKEY } });
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -1011,6 +1059,15 @@ function formatTime(seconds: number): string {
 					</div>
 
 					<template v-if="chromakey.enabled">
+						<div class="flex items-center justify-end">
+							<button
+								class="rounded px-1.5 py-0.5 text-[10px] text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
+								@click="resetChromakey"
+							>
+								Reset
+							</button>
+						</div>
+
 						<!-- Color picker -->
 						<div class="flex h-7 items-center gap-2 rounded-sm border border-white/10 bg-white/5 px-2">
 							<span class="shrink-0 select-none text-[10px] text-zinc-500">Color</span>

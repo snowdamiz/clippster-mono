@@ -141,13 +141,32 @@ pub struct VideoSource {
     /// `orderIndex` within the track (CapCut-style stacking). Lower = further back within the same track tier.
     #[serde(default)]
     pub order_index: Option<i32>,
+
+    pub chromakey: Option<ChromaKeySettings>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ChromaKeySettings {
+    pub enabled: bool,
+    pub color: String,
+    pub similarity: f64,
+    pub smoothness: f64,
+    #[serde(default)]
+    pub spill_reduction: Option<f64>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct MaskPoint {
+    pub x: f64,
+    pub y: f64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct MaskShape {
-    /// "rectangle" or "ellipse"
+    /// "rectangle" | "ellipse" | "polygon"
     pub mask_type: String,
-    /// Normalised center X (0–1)
+    /// Normalised center X (0–1) for rectangle / ellipse; ignored for polygon when points are set
     pub x: f64,
     /// Normalised center Y (0–1)
     pub y: f64,
@@ -161,6 +180,12 @@ pub struct MaskShape {
     pub invert: bool,
     /// Rotation in degrees
     pub rotation: f64,
+    /// 0–1 fraction of min(half-width, half-height); rectangle only
+    #[serde(default)]
+    pub corner_radius: Option<f64>,
+    /// Normalised polygon vertices (polygon only)
+    #[serde(default)]
+    pub points: Option<Vec<MaskPoint>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -208,6 +233,14 @@ pub struct TextOverlay {
 
     #[allow(dead_code)]
     pub animation_loop: Option<AnimationData>,
+
+    /// When true, `image_path` is an image2 printf pattern (…/frame_%05d.png).
+    #[serde(default)]
+    pub is_frame_sequence: bool,
+
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub sequence_frame_count: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -225,6 +258,13 @@ pub struct StickerOverlay {
 
     #[allow(dead_code)]
     pub animation_loop: Option<AnimationData>,
+
+    #[serde(default)]
+    pub is_frame_sequence: bool,
+
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub sequence_frame_count: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -346,6 +386,134 @@ fn map_blend_mode_ffmpeg(mode: &str) -> &'static str {
     }
 }
 
+/// Parse hex key color to RGB in 0–1 (matches preview chromakey UI).
+fn parse_hex_rgb01(hex: &str) -> Option<(f64, f64, f64)> {
+    let clean = hex.trim().trim_start_matches('#');
+    let full = if clean.len() == 3 {
+        let mut out = String::with_capacity(6);
+        for c in clean.chars() {
+            out.push(c);
+            out.push(c);
+        }
+        out
+    } else {
+        clean.to_string()
+    };
+    if full.len() != 6 || !full.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let r = u8::from_str_radix(&full[0..2], 16).ok()? as f64 / 255.0;
+    let g = u8::from_str_radix(&full[2..4], 16).ok()? as f64 / 255.0;
+    let b = u8::from_str_radix(&full[4..6], 16).ok()? as f64 / 255.0;
+    Some((r, g, b))
+}
+
+/// Spill suppression pass before `chromakey`, aligned with preview shader (`webgl-chromakey.ts`):
+/// YCbCr chroma distance → chromaProximity → spillMask → mix dominant key channel toward neutral.
+/// FFmpeg `geq` commas inside expressions must be escaped as `\,` for filtergraphs.
+fn build_chromakey_spill_geq(chromakey: &ChromaKeySettings, kr: f64, kg: f64, kb: f64) -> Option<String> {
+    let spill_ui = chromakey.spill_reduction.unwrap_or(0.0);
+    if spill_ui <= 0.0 {
+        return None;
+    }
+    let spill_amt = (spill_ui / 100.0).clamp(0.0, 1.0);
+
+    let sim = (chromakey.similarity / 100.0).clamp(0.0, 1.0) * 0.4;
+    let smth = (chromakey.smoothness / 100.0).clamp(0.0, 1.0) * 0.2;
+    let spill_range = (sim + smth * 2.0 + 0.05).max(0.001);
+
+    let kcb = -0.169 * kr - 0.331 * kg + 0.5 * kb + 0.5;
+    let kcr = 0.5 * kr - 0.419 * kg - 0.081 * kb + 0.5;
+
+    let kcb_s = format!("{:.10}", kcb);
+    let kcr_s = format!("{:.10}", kcr);
+    let sr_s = format!("{:.10}", spill_range);
+    let sa_s = format!("{:.10}", spill_amt);
+
+    // Pixel coords: escaped commas for filter_complex
+    let rx = "r(X\\,Y)";
+    let gx = "g(X\\,Y)";
+    let bx = "b(X\\,Y)";
+
+    let cb = format!(
+        "(-0.169*{rx}/255-0.331*{gx}/255+0.5*{bx}/255+0.5)",
+        rx = rx,
+        gx = gx,
+        bx = bx
+    );
+    let cr = format!(
+        "(0.5*{rx}/255-0.419*{gx}/255-0.081*{bx}/255+0.5)",
+        rx = rx,
+        gx = gx,
+        bx = bx
+    );
+
+    let dist = format!(
+        "sqrt(pow({cb}-{kcb}\\,2)+pow({cr}-{kcr}\\,2))",
+        cb = cb,
+        cr = cr,
+        kcb = kcb_s,
+        kcr = kcr_s
+    );
+
+    let chroma_prox = format!(
+        "max(0\\,1-(({dist})/{sr}))",
+        dist = dist,
+        sr = sr_s
+    );
+
+    // Match preview shader: spillMask = min(1, (1-alpha + chromaProximity)*0.5) * spillAmount.
+    // Preview alpha = smoothstep(sim, sim+smoothness, dist); use linear ramp between same endpoints (close fit).
+    let t_s = format!("{:.10}", sim);
+    let w_s = format!("{:.10}", smth.max(0.0001));
+    let alpha_lin = format!(
+        "max(0\\,min(1\\,(({dist})-{ts})/max({ws}\\,0.0001)))",
+        dist = dist,
+        ts = t_s,
+        ws = w_s
+    );
+    let spill_mask = format!(
+        "min(1\\,((1-({al}))+({cp}))*0.5)*{sa}",
+        al = alpha_lin,
+        cp = chroma_prox,
+        sa = sa_s
+    );
+
+    let (r_e, g_e, b_e) = if kg >= kr && kg >= kb {
+        let avg = format!("(({rx}/255+{bx}/255)/2)", rx = rx, bx = bx);
+        let gn_new = format!(
+            "({gx}/255)*(1-({sm}))+({avg})*({sm})",
+            gx = gx,
+            sm = spill_mask,
+            avg = avg
+        );
+        let g_out = format!("min(255\\,max(0\\,255*({gn})))", gn = gn_new);
+        (rx.to_string(), g_out, bx.to_string())
+    } else if kb >= kr && kb >= kg {
+        let avg = format!("(({rx}/255+{gx}/255)/2)", rx = rx, gx = gx);
+        let bn_new = format!(
+            "({bx}/255)*(1-({sm}))+({avg})*({sm})",
+            bx = bx,
+            sm = spill_mask,
+            avg = avg
+        );
+        let b_out = format!("min(255\\,max(0\\,255*({bn})))", bn = bn_new);
+        (rx.to_string(), gx.to_string(), b_out)
+    } else {
+        let avg = format!("(({gx}/255+{bx}/255)/2)", gx = gx, bx = bx);
+        let rn_new = format!(
+            "({rx}/255)*(1-({sm}))+({avg})*({sm})",
+            rx = rx,
+            sm = spill_mask,
+            avg = avg
+        );
+        let r_out = format!("min(255\\,max(0\\,255*({rn})))", rn = rn_new);
+        (r_out, gx.to_string(), bx.to_string())
+    };
+
+    Some(format!("geq=r='{}':g='{}':b='{}'", r_e, g_e, b_e))
+}
+
 async fn ffprobe_path_has_audio<R: Runtime>(
     shell: &tauri_plugin_shell::Shell<R>,
     path: &str,
@@ -398,6 +566,217 @@ async fn ffprobe_format_duration<R: Runtime>(
     Ok(s.parse().ok())
 }
 
+// -----------------------------------------------------------------------------
+// Keyframe evaluation — aligned with client/src/editor/types/keyframes.ts
+// Preview uses full easing; export densifies non-linear / hold curves to samples
+// then emits piecewise-linear FFmpeg expressions in `t` (seconds within clip).
+// -----------------------------------------------------------------------------
+
+fn apply_easing_rust(t: f64, interpolation: &str) -> f64 {
+    let t = t.clamp(0.0, 1.0);
+    match interpolation {
+        "linear" => t,
+        "ease-in" => t * t,
+        "ease-out" => t * (2.0 - t),
+        "ease-in-out" => {
+            if t < 0.5 {
+                2.0 * t * t
+            } else {
+                -1.0 + (4.0 - 2.0 * t) * t
+            }
+        }
+        "hold" => 0.0,
+        "ease-in-cubic" => t * t * t,
+        "ease-out-cubic" => 1.0 - (1.0 - t).powi(3),
+        "ease-in-out-cubic" => {
+            if t < 0.5 {
+                4.0 * t * t * t
+            } else {
+                1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
+            }
+        }
+        "ease-in-expo" => {
+            if t == 0.0 {
+                0.0
+            } else {
+                2f64.powf(10.0 * t - 10.0)
+            }
+        }
+        "ease-out-expo" => {
+            if t >= 1.0 {
+                1.0
+            } else {
+                1.0 - 2f64.powf(-10.0 * t)
+            }
+        }
+        "ease-in-back" => {
+            let c1 = 1.70158;
+            let c3 = c1 + 1.0;
+            c3 * t * t * t - c1 * t * t
+        }
+        "ease-out-back" => {
+            let c1 = 1.70158;
+            let c3 = c1 + 1.0;
+            1.0 + c3 * (t - 1.0).powi(3) + c1 * (t - 1.0).powi(2)
+        }
+        "ease-out-bounce" => {
+            let n1 = 7.5625;
+            let d1 = 2.75;
+            let mut x = t;
+            if x < 1.0 / d1 {
+                n1 * x * x
+            } else if x < 2.0 / d1 {
+                x -= 1.5 / d1;
+                n1 * x * x + 0.75
+            } else if x < 2.5 / d1 {
+                x -= 2.25 / d1;
+                n1 * x * x + 0.9375
+            } else {
+                x -= 2.625 / d1;
+                n1 * x * x + 0.984375
+            }
+        }
+        "spring" => {
+            let w = 4.71238;
+            let decay = 4.0;
+            1.0 - (-decay * t).exp() * (w * t).cos()
+        }
+        _ => t,
+    }
+}
+
+fn evaluate_keyframe_track_rust(keyframes: &[KeyframePoint], normalized_t: f64, default_value: f64) -> f64 {
+    if keyframes.is_empty() {
+        return default_value;
+    }
+    if keyframes.len() == 1 {
+        return keyframes[0].value;
+    }
+    let nt = normalized_t.clamp(0.0, 1.0);
+    if nt <= keyframes[0].offset {
+        return keyframes[0].value;
+    }
+    let last = &keyframes[keyframes.len() - 1];
+    if nt >= last.offset {
+        return last.value;
+    }
+
+    let mut left = &keyframes[0];
+    let mut right = &keyframes[keyframes.len() - 1];
+    for i in 0..keyframes.len() - 1 {
+        if nt >= keyframes[i].offset && nt <= keyframes[i + 1].offset {
+            left = &keyframes[i];
+            right = &keyframes[i + 1];
+            break;
+        }
+    }
+
+    if left.interpolation == "hold" {
+        return left.value;
+    }
+
+    let range = right.offset - left.offset;
+    if range.abs() < 1e-12 {
+        return left.value;
+    }
+
+    let seg_t = (nt - left.offset) / range;
+    let eased_t = apply_easing_rust(seg_t, left.interpolation.as_str());
+    left.value + (right.value - left.value) * eased_t
+}
+
+fn densify_keyframes_if_needed(keyframes: &[KeyframePoint], duration: f64, default_value: f64) -> Vec<KeyframePoint> {
+    if keyframes.is_empty() {
+        return vec![];
+    }
+    let mut sorted: Vec<KeyframePoint> = keyframes.to_vec();
+    sorted.sort_by(|a, b| a.offset.partial_cmp(&b.offset).unwrap());
+
+    let needs_sampling = sorted.iter().any(|k| {
+        k.interpolation != "linear" && k.interpolation != "hold"
+    }) || sorted.iter().any(|k| k.interpolation == "hold");
+
+    if !needs_sampling {
+        return sorted;
+    }
+
+    let steps = ((duration * 48.0).round() as usize).clamp(32, 256);
+    let mut out: Vec<KeyframePoint> = Vec::with_capacity(steps + 1);
+    for i in 0..=steps {
+        let nt = i as f64 / steps as f64;
+        let v = evaluate_keyframe_track_rust(&sorted, nt, default_value);
+        out.push(KeyframePoint {
+            offset: nt,
+            value: v,
+            interpolation: "linear".to_string(),
+        });
+    }
+    out
+}
+
+/// Piecewise-linear FFmpeg expression in `t` (seconds from clip start after trim).
+fn build_keyframe_expression(
+    keyframes: &[KeyframePoint],
+    duration: f64,
+    default_value: f64,
+) -> Option<String> {
+    let keyframes = densify_keyframes_if_needed(keyframes, duration, default_value);
+    if keyframes.is_empty() {
+        return None;
+    }
+    if keyframes.len() == 1 {
+        let v = keyframes[0].value;
+        if (v - default_value).abs() < 0.001 {
+            return None;
+        }
+        return Some(format!("{}", v));
+    }
+
+    let mut parts = Vec::new();
+    for i in 0..keyframes.len() - 1 {
+        let kf0 = &keyframes[i];
+        let kf1 = &keyframes[i + 1];
+        let t0 = kf0.offset * duration;
+        let t1 = kf1.offset * duration;
+        let v0 = kf0.value;
+        let v1 = kf1.value;
+
+        if kf0.interpolation == "hold" {
+            parts.push((t1, format!("{}", v0)));
+        } else {
+            let dt = t1 - t0;
+            if dt.abs() < 0.0001 {
+                parts.push((t1, format!("{}", v0)));
+            } else {
+                let slope = (v1 - v0) / dt;
+                parts.push((t1, format!("{}+{}*(t-{})", v0, slope, t0)));
+            }
+        }
+    }
+
+    let last_val = keyframes.last().unwrap().value;
+    let mut expr = format!("{}", last_val);
+    for (t_end, segment_expr) in parts.iter().rev() {
+        expr = format!("if(lt(t\\,{})\\,{}\\,{})", t_end, segment_expr, expr);
+    }
+
+    Some(expr)
+}
+
+fn keyframe_expr_for_prop(
+    tracks: Option<&Vec<KeyframeTrack>>,
+    property: &str,
+    duration: f64,
+    default_value: f64,
+) -> Option<String> {
+    let track = tracks?.iter().find(|t| t.property == property && !t.keyframes.is_empty())?;
+    build_keyframe_expression(&track.keyframes, duration, default_value)
+}
+
+fn ffmpeg_expr_or_constant(kf_expr: Option<String>, constant: f64) -> String {
+    kf_expr.unwrap_or_else(|| format!("{}", constant))
+}
+
 #[tauri::command]
 
 pub async fn export_video_editor_project(
@@ -441,13 +820,29 @@ pub async fn export_video_editor_project(
     }
 
     for text in &config.text_overlays {
-        if !Path::new(&text.image_path).exists() {
+        if text.is_frame_sequence {
+            let first = text.image_path.replace("%05d", "00001");
+            if !Path::new(&first).exists() {
+                return Err(format!(
+                    "Text overlay sequence first frame not found: {}",
+                    first
+                ));
+            }
+        } else if !Path::new(&text.image_path).exists() {
             return Err(format!("Text overlay PNG not found: {}", text.image_path));
         }
     }
 
     for sticker in &config.sticker_overlays {
-        if !Path::new(&sticker.image_path).exists() {
+        if sticker.is_frame_sequence {
+            let first = sticker.image_path.replace("%05d", "00001");
+            if !Path::new(&first).exists() {
+                return Err(format!(
+                    "Sticker overlay sequence first frame not found: {}",
+                    first
+                ));
+            }
+        } else if !Path::new(&sticker.image_path).exists() {
             return Err(format!(
                 "Sticker overlay PNG not found: {}",
                 sticker.image_path
@@ -525,6 +920,10 @@ pub async fn export_video_editor_project(
     // Add text overlay PNG inputs (pre-rendered by frontend canvas)
 
     for text in &config.text_overlays {
+        if text.is_frame_sequence {
+            args.push("-framerate".to_string());
+            args.push(format!("{}", config.fps.max(1)));
+        }
         args.push("-i".to_string());
 
         args.push(text.image_path.clone());
@@ -533,6 +932,10 @@ pub async fn export_video_editor_project(
     // Add sticker overlay PNG inputs (pre-rendered by frontend canvas)
 
     for sticker in &config.sticker_overlays {
+        if sticker.is_frame_sequence {
+            args.push("-framerate".to_string());
+            args.push(format!("{}", config.fps.max(1)));
+        }
         args.push("-i".to_string());
 
         args.push(sticker.image_path.clone());
@@ -657,63 +1060,12 @@ pub async fn export_video_editor_project(
 
     println!("  Black padding needed: {}s", black_padding_duration);
 
-    // Helper: build a piecewise-linear FFmpeg expression from keyframe points.
-    // `duration` is the element duration in seconds, used to convert normalized offsets (0..1) to absolute time.
-    // Returns an FFmpeg expression string using `t` as the time variable, e.g. "0.5+0.5*(t/2)" segments.
-    fn build_keyframe_expression(
-        keyframes: &[KeyframePoint],
-        duration: f64,
-        default_value: f64,
-    ) -> Option<String> {
-        if keyframes.is_empty() {
-            return None;
-        }
-        if keyframes.len() == 1 {
-            let v = keyframes[0].value;
-            if (v - default_value).abs() < 0.001 {
-                return None;
-            }
-            return Some(format!("{}", v));
-        }
-
-        // Build piecewise expression: if(lt(t,t1),lerp0, if(lt(t,t2),lerp1, ...))
-        let mut parts = Vec::new();
-        for i in 0..keyframes.len() - 1 {
-            let kf0 = &keyframes[i];
-            let kf1 = &keyframes[i + 1];
-            let t0 = kf0.offset * duration;
-            let t1 = kf1.offset * duration;
-            let v0 = kf0.value;
-            let v1 = kf1.value;
-
-            if kf0.interpolation == "hold" {
-                parts.push((t1, format!("{}", v0)));
-            } else {
-                // Linear interpolation: v0 + (v1-v0) * (t-t0)/(t1-t0)
-                let dt = t1 - t0;
-                if dt.abs() < 0.0001 {
-                    parts.push((t1, format!("{}", v0)));
-                } else {
-                    let slope = (v1 - v0) / dt;
-                    parts.push((t1, format!("{}+{}*(t-{})", v0, slope, t0)));
-                }
-            }
-        }
-
-        // Build nested if expression
-        let last_val = keyframes.last().unwrap().value;
-        let mut expr = format!("{}", last_val);
-        for (t_end, segment_expr) in parts.iter().rev() {
-            expr = format!("if(lt(t\\,{})\\,{}\\,{})", t_end, segment_expr, expr);
-        }
-
-        Some(expr)
-    }
-
     // Helper: build per-source video transform filters
 
     fn build_video_transform_filter(source: &VideoSource, width: i32, height: i32) -> String {
         let mut transform_filters = Vec::new();
+
+        let clip_duration = source.end_time - source.start_time;
 
         let opacity = source.opacity.unwrap_or(1.0);
 
@@ -724,6 +1076,12 @@ pub async fn export_video_editor_project(
         let pos_y = source.position_y.unwrap_or(0.0);
 
         let rotation = source.rotation.unwrap_or(0.0);
+
+        let tracks_ref = source.keyframes.as_ref();
+        let scale_kf = keyframe_expr_for_prop(tracks_ref, "scale", clip_duration, scale);
+        let pos_x_kf = keyframe_expr_for_prop(tracks_ref, "positionX", clip_duration, pos_x);
+        let pos_y_kf = keyframe_expr_for_prop(tracks_ref, "positionY", clip_duration, pos_y);
+        let rot_kf = keyframe_expr_for_prop(tracks_ref, "rotation", clip_duration, rotation);
 
         let speed = source.speed.unwrap_or(1.0);
 
@@ -747,6 +1105,32 @@ pub async fn export_video_editor_project(
 
         let temperature = source.temperature.unwrap_or(0.0);
 
+        fn normalize_similarity(similarity: f64) -> f64 {
+            (similarity / 100.0).clamp(0.0, 1.0) * 0.4
+        }
+
+        fn normalize_smoothness(smoothness: f64) -> f64 {
+            (smoothness / 100.0).clamp(0.0, 1.0) * 0.2
+        }
+
+        fn to_ffmpeg_color(hex: &str) -> Option<String> {
+            let clean = hex.trim().trim_start_matches('#');
+            let full = if clean.len() == 3 {
+                let mut out = String::with_capacity(6);
+                for c in clean.chars() {
+                    out.push(c);
+                    out.push(c);
+                }
+                out
+            } else {
+                clean.to_string()
+            };
+            if full.len() != 6 || !full.chars().all(|c| c.is_ascii_hexdigit()) {
+                return None;
+            }
+            Some(format!("0x{}", full))
+        }
+
         // Speed via setpts (video only, audio handled separately).
         // If speed keyframes exist, use a piecewise speed expression.
         let speed_kf = source.keyframes.as_ref().and_then(|tracks| {
@@ -756,7 +1140,7 @@ pub async fn export_video_editor_project(
         });
 
         if let Some(kf_track) = speed_kf {
-            if let Some(speed_expr) = build_keyframe_expression(&kf_track.keyframes, source.end_time - source.start_time, speed) {
+            if let Some(speed_expr) = build_keyframe_expression(&kf_track.keyframes, clip_duration, speed) {
                 // Approximate variable speed by applying reciprocal instantaneous speed.
                 // (A full integral mapping can be added later for exact parity.)
                 transform_filters.push(format!("setpts='(1/({}))*PTS'", speed_expr));
@@ -828,38 +1212,81 @@ pub async fn export_video_editor_project(
             ));
         }
 
+        // Chroma key (preview/export parity): optional spill pass (same YCbCr proximity as preview),
+        // then FFmpeg chromakey with normalized similarity/smoothness.
+        if let Some(chromakey) = &source.chromakey {
+            if chromakey.enabled {
+                if let Some(key_color) = to_ffmpeg_color(&chromakey.color) {
+                    let similarity = normalize_similarity(chromakey.similarity);
+                    let smoothness = normalize_smoothness(chromakey.smoothness);
+
+                    if let Some((kr, kg, kb)) = parse_hex_rgb01(&chromakey.color) {
+                        if let Some(spill_geq) = build_chromakey_spill_geq(chromakey, kr, kg, kb) {
+                            transform_filters.push("format=rgb24".to_string());
+                            transform_filters.push(spill_geq);
+                        }
+                    }
+
+                    transform_filters.push(format!(
+                        "chromakey={}:{}:{}",
+                        key_color,
+                        similarity.max(0.001),
+                        smoothness.max(0.001)
+                    ));
+                }
+            }
+        }
+
         // Scale to fit canvas (contain-fit) preserving aspect ratio, then pad to exact canvas size
 
         // This produces letterboxing/pillarboxing when video AR differs from canvas AR
 
         // CRITICAL: pad must use canvas dimensions (width x height) to ensure concat gets uniform inputs
 
-        if (scale - 1.0).abs() > 0.001 {
-            // Scale to the zoomed box size, then ensure output is always canvas-sized.
-            // Zoom in (scale>1): content is larger than canvas → pad then crop to canvas.
-            // Zoom out (scale<1): content is smaller than canvas → pad up to canvas.
-            let sw = (((width as f64 * scale) as i32) / 2) * 2; // ensure even
-            let sh = (((height as f64 * scale) as i32) / 2) * 2;
+        let cw = width as f64;
+        let ch = height as f64;
+        let needs_zoom = scale_kf.is_some() || (scale - 1.0).abs() > 0.001;
 
-            transform_filters.push(format!(
-                "scale={}:{}:force_original_aspect_ratio=decrease",
-                sw, sh
-            ));
-
-            // Pad to at least canvas dimensions (handles zoom-out where sw < width)
-            let pad_w = sw.max(width);
-            let pad_h = sh.max(height);
-            transform_filters.push(format!(
-                "pad={}:{}:(ow-iw)/2:(oh-ih)/2:black",
-                pad_w, pad_h
-            ));
-
-            // Crop back to exact canvas size (handles zoom-in where sw > width)
-            if pad_w != width || pad_h != height {
+        if needs_zoom {
+            if let Some(ref s_expr) = scale_kf {
+                // Time-varying scale: piecewise/eased curves are densified in build_keyframe_expression.
+                let sw_e = format!("2*floor(iround({}*({}))/2)", cw, s_expr);
+                let sh_e = format!("2*floor(iround({}*({}))/2)", ch, s_expr);
                 transform_filters.push(format!(
-                    "crop={}:{}:(iw-{})/2:(ih-{})/2",
+                    "scale=w='{}':h='{}':force_original_aspect_ratio=decrease:eval=frame",
+                    sw_e, sh_e
+                ));
+                transform_filters.push(format!(
+                    "pad=w='max({}\\,{})':h='max({}\\,{})':x='(ow-iw)/2':y='(oh-ih)/2':color=black:eval=frame",
+                    sw_e, cw, sh_e, ch
+                ));
+                transform_filters.push(format!(
+                    "crop={}:{}:(iw-{})/2:(ih-{})/2:eval=frame",
                     width, height, width, height
                 ));
+            } else {
+                // Static scale ≠ 1
+                let sw = (((width as f64 * scale) as i32) / 2) * 2; // ensure even
+                let sh = (((height as f64 * scale) as i32) / 2) * 2;
+
+                transform_filters.push(format!(
+                    "scale={}:{}:force_original_aspect_ratio=decrease",
+                    sw, sh
+                ));
+
+                let pad_w = sw.max(width);
+                let pad_h = sh.max(height);
+                transform_filters.push(format!(
+                    "pad={}:{}:(ow-iw)/2:(oh-ih)/2:black",
+                    pad_w, pad_h
+                ));
+
+                if pad_w != width || pad_h != height {
+                    transform_filters.push(format!(
+                        "crop={}:{}:(iw-{})/2:(ih-{})/2",
+                        width, height, width, height
+                    ));
+                }
             }
         } else {
             transform_filters.push(format!(
@@ -885,7 +1312,13 @@ pub async fn export_video_editor_project(
 
         // Rotation (FFmpeg rotate filter uses radians)
 
-        if rotation.abs() > 0.01 {
+        if let Some(ref r_expr) = rot_kf {
+            let angle = format!("PI/180*({})", r_expr);
+            transform_filters.push(format!(
+                "rotate='{}':ow='rotw({})':oh='roth({})':fillcolor=none:eval=frame",
+                angle, angle, angle
+            ));
+        } else if rotation.abs() > 0.01 {
             let radians = rotation * std::f64::consts::PI / 180.0;
 
             transform_filters.push(format!(
@@ -896,21 +1329,39 @@ pub async fn export_video_editor_project(
 
         // Position offset via pad+crop
 
-        if pos_x.abs() > 0.5 || pos_y.abs() > 0.5 {
+        let has_position_motion = pos_x_kf.is_some()
+            || pos_y_kf.is_some()
+            || pos_x.abs() > 0.5
+            || pos_y.abs() > 0.5;
+
+        if has_position_motion {
             let pad_w = width * 3;
 
             let pad_h = height * 3;
 
-            let crop_x = width + pos_x as i32;
+            if pos_x_kf.is_some() || pos_y_kf.is_some() {
+                let px_e = ffmpeg_expr_or_constant(pos_x_kf, pos_x);
+                let py_e = ffmpeg_expr_or_constant(pos_y_kf, pos_y);
+                transform_filters.push(format!(
+                    "pad={}:{}:{}:{}:black",
+                    pad_w, pad_h, width, height
+                ));
+                transform_filters.push(format!(
+                    "crop={}:{}:'{}+({})':'{}+({})':eval=frame",
+                    width, height, width, px_e, height, py_e
+                ));
+            } else {
+                let crop_x = width + pos_x as i32;
 
-            let crop_y = height + pos_y as i32;
+                let crop_y = height + pos_y as i32;
 
-            transform_filters.push(format!(
-                "pad={}:{}:{}:{}:black",
-                pad_w, pad_h, width, height
-            ));
+                transform_filters.push(format!(
+                    "pad={}:{}:{}:{}:black",
+                    pad_w, pad_h, width, height
+                ));
 
-            transform_filters.push(format!("crop={}:{}:{}:{}", width, height, crop_x, crop_y));
+                transform_filters.push(format!("crop={}:{}:{}:{}", width, height, crop_x, crop_y));
+            }
         }
 
         // Color adjustments via eq filter (brightness, contrast, saturation)
@@ -944,8 +1395,7 @@ pub async fn export_video_editor_project(
             transform_filters.push(format!("hue=h={}", hue_shift));
         }
 
-        // Opacity via colorchannelmixer — with keyframe support
-        let duration = source.end_time - source.start_time;
+        // Opacity via colorchannelmixer — with keyframe support (single path; no duplicate geq)
         let opacity_kf = source.keyframes.as_ref().and_then(|tracks| {
             tracks
                 .iter()
@@ -954,7 +1404,7 @@ pub async fn export_video_editor_project(
 
         if let Some(kf_track) = opacity_kf {
             // Build piecewise-linear opacity expression from keyframes
-            let expr = build_keyframe_expression(&kf_track.keyframes, duration, opacity);
+            let expr = build_keyframe_expression(&kf_track.keyframes, clip_duration, opacity);
             if let Some(expr_str) = expr {
                 transform_filters.push(format!("colorchannelmixer=aa='{}'", expr_str));
             } else if (opacity - 1.0).abs() > 0.01 {
@@ -973,7 +1423,7 @@ pub async fn export_video_editor_project(
         }
 
         if fade_out > 0.01 {
-            let fade_start = (duration - fade_out).max(0.0);
+            let fade_start = (clip_duration - fade_out).max(0.0);
             transform_filters.push(format!("fade=t=out:st={}:d={}", fade_start, fade_out));
         }
 
@@ -1057,7 +1507,6 @@ pub async fn export_video_editor_project(
         }
 
         // Animation in/out fade (matches preview canvas fade behaviour)
-        let source_duration = source.end_time - source.start_time;
         if let Some(ref anim_in) = source.animation_in {
             if anim_in.anim_type == "fade" && anim_in.duration > 0.01 {
                 transform_filters.push(format!(
@@ -1068,28 +1517,10 @@ pub async fn export_video_editor_project(
         }
         if let Some(ref anim_out) = source.animation_out {
             if anim_out.anim_type == "fade" && anim_out.duration > 0.01 {
-                let fade_start = (source_duration - anim_out.duration).max(0.0);
+                let fade_start = (clip_duration - anim_out.duration).max(0.0);
                 transform_filters.push(format!(
                     "fade=t=out:st={}:d={}:alpha=1",
                     fade_start, anim_out.duration
-                ));
-            }
-        }
-
-        // Opacity keyframes via geq — drives time-varying alpha per-pixel.
-        // Static opacity is already handled by colorchannelmixer in the transform block above.
-        let opacity_kf = source.keyframes.as_ref().and_then(|tracks| {
-            tracks
-                .iter()
-                .find(|t| t.property == "opacity" && !t.keyframes.is_empty())
-        });
-        if let Some(kf_track) = opacity_kf {
-            let base_opacity = source.opacity.unwrap_or(1.0);
-            if let Some(opacity_expr) = build_keyframe_expression(&kf_track.keyframes, source_duration, base_opacity) {
-                // geq evaluates t (seconds from clip start) — matches the piecewise expression
-                transform_filters.push(format!(
-                    "geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':a='alpha(X\\,Y)*min(1\\,max(0\\,{}))'",
-                    opacity_expr
                 ));
             }
         }
@@ -1109,62 +1540,130 @@ pub async fn export_video_editor_project(
     }
 
     fn build_mask_filter(mask: &MaskShape, canvas_w: i32, canvas_h: i32) -> String {
-        let cx = mask.x * canvas_w as f64;
-        let cy = mask.y * canvas_h as f64;
-        let hw = mask.width * canvas_w as f64 / 2.0;
-        let hh = mask.height * canvas_h as f64 / 2.0;
+        let w = canvas_w as f64;
+        let h = canvas_h as f64;
+
+        // Polygon masks: even–odd rule in canvas space (points are normalised 0–1).
+        if mask.mask_type == "polygon" {
+            if let Some(pts) = &mask.points {
+                if pts.len() >= 3 && pts.len() <= 32 {
+                    let mut terms: Vec<String> = Vec::new();
+                    for i in 0..pts.len() {
+                        let j = (i + 1) % pts.len();
+                        let xi = pts[i].x * w;
+                        let yi = pts[i].y * h;
+                        let xj = pts[j].x * w;
+                        let yj = pts[j].y * h;
+                        let dy = yj - yi;
+                        if dy.abs() < 1e-4 {
+                            continue;
+                        }
+                        let term = format!(
+                            "if(and(lt((Y-{yi})*(Y-{yj})\\,0)\\,lt(X\\,(({xj}-{xi})*(Y-{yi})/({dy})+{xi})))\\,1\\,0)",
+                            xi = xi,
+                            yi = yi,
+                            xj = xj,
+                            yj = yj,
+                            dy = dy
+                        );
+                        terms.push(term);
+                    }
+                    if terms.is_empty() {
+                        return String::new();
+                    }
+                    let sum = terms.join("+");
+                    let inside_expr = format!(
+                        "255*if(gt(mod({sum}\\,2)\\,0.5)\\,1\\,0)",
+                        sum = sum
+                    );
+                    let alpha_expr = if mask.invert {
+                        format!("255-({})", inside_expr)
+                    } else {
+                        inside_expr
+                    };
+                    return format!(
+                        "geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':a='min(alpha(X\\,Y)\\,{})'",
+                        alpha_expr
+                    );
+                }
+            }
+            return String::new();
+        }
+
+        let cx = mask.x * w;
+        let cy = mask.y * h;
+        let hw = mask.width * w / 2.0;
+        let hh = mask.height * h / 2.0;
         let feather = mask.feather.max(0.0);
         let rot_rad = mask.rotation * std::f64::consts::PI / 180.0;
         let cos_r = rot_rad.cos();
         let sin_r = rot_rad.sin();
 
-        // Rotated local coordinates relative to mask center:
-        //   lx = (X-cx)*cos - (Y-cy)*sin
-        //   ly = (X-cx)*sin + (Y-cy)*cos
         let lx = format!("((X-{cx})*{cos_r}-(Y-{cy})*{sin_r})", cx=cx, cy=cy, cos_r=cos_r, sin_r=sin_r);
         let ly = format!("((X-{cx})*{sin_r}+(Y-{cy})*{cos_r})", cx=cx, cy=cy, sin_r=sin_r, cos_r=cos_r);
 
-        // Inside expression returns 0.0–1.0 (or 0–255 for hard edge)
         let inside_expr = if mask.mask_type == "ellipse" {
-            // Ellipse: (lx/rx)^2 + (ly/ry)^2 <= 1
             if feather > 0.0 {
-                // Smooth feather using distance from ellipse boundary
                 let avg_r = (hw + hh) / 2.0;
                 format!(
                     "max(0\\,min(255\\,(1-sqrt(pow({lx}/{hw}\\,2)+pow({ly}/{hh}\\,2)))*{scale}))",
-                    lx=lx, ly=ly, hw=hw, hh=hh,
+                    lx = lx,
+                    ly = ly,
+                    hw = hw,
+                    hh = hh,
                     scale = avg_r / feather.max(1.0) * 255.0
                 )
             } else {
                 format!(
                     "255*lte(pow({lx}/{hw}\\,2)+pow({ly}/{hh}\\,2)\\,1)",
-                    lx=lx, ly=ly, hw=hw, hh=hh
+                    lx = lx,
+                    ly = ly,
+                    hw = hw,
+                    hh = hh
                 )
             }
-        } else {
-            // Rectangle: |lx| <= hw && |ly| <= hh
+        } else if mask.corner_radius.unwrap_or(0.0) > 0.001 {
+            // Rounded rectangle (rotated) via SDF
+            let cr = mask.corner_radius.unwrap_or(0.0).clamp(0.0, 1.0);
+            let r = cr * hw.min(hh);
+            let qx = format!("max(abs({lx})-({hw}-{r})\\,0)", lx = lx, hw = hw, r = r);
+            let qy = format!("max(abs({ly})-({hh}-{r})\\,0)", ly = ly, hh = hh, r = r);
+            let d = format!("sqrt(pow({qx}\\,2)+pow({qy}\\,2))-{r}", qx = qx, qy = qy, r = r);
             if feather > 0.0 {
-                // Linear ramp on each edge
+                let f = feather.max(1.0);
                 format!(
-                    "255*min(min(max(0\\,({lx}+{hw})/{feather})\\,max(0\\,({hw}-{lx})/{feather}))\\,min(max(0\\,({ly}+{hh})/{feather})\\,max(0\\,({hh}-{ly})/{feather})))",
-                    lx=lx, ly=ly, hw=hw, hh=hh, feather=feather.max(1.0)
+                    "255*if(lte({d}\\,0)\\,1\\,max(0\\,min(1\\,1-{d}/{f})))",
+                    d = d,
+                    f = f
                 )
             } else {
-                format!(
-                    "255*between({lx}\\,-{hw}\\,{hw})*between({ly}\\,-{hh}\\,{hh})",
-                    lx=lx, ly=ly, hw=hw, hh=hh
-                )
+                format!("255*lte({d}\\,0)", d = d)
             }
+        } else if feather > 0.0 {
+            format!(
+                "255*min(min(max(0\\,({lx}+{hw})/{feather})\\,max(0\\,({hw}-{lx})/{feather}))\\,min(max(0\\,({ly}+{hh})/{feather})\\,max(0\\,({hh}-{ly})/{feather})))",
+                lx = lx,
+                ly = ly,
+                hw = hw,
+                hh = hh,
+                feather = feather.max(1.0)
+            )
+        } else {
+            format!(
+                "255*between({lx}\\,-{hw}\\,{hw})*between({ly}\\,-{hh}\\,{hh})",
+                lx = lx,
+                ly = ly,
+                hw = hw,
+                hh = hh
+            )
         };
 
         let alpha_expr = if mask.invert {
-            format!("255-({inside_expr})", inside_expr=inside_expr)
+            format!("255-({inside_expr})", inside_expr = inside_expr)
         } else {
             inside_expr
         };
 
-        // geq modifies alpha channel in-place.
-        // Use min with existing alpha so stacked masks intersect correctly.
         format!(
             "geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':a='min(alpha(X\\,Y)\\,{})'",
             alpha_expr
@@ -1394,61 +1893,153 @@ pub async fn export_video_editor_project(
                         .push(format!("eq=brightness='{}*max(0,sin({}*PI*t))'", i, speed));
                 }
 
-                _ => {}
+                "noise" => {
+                    let amt = (effect.intensity / 100.0 * 45.0).round().max(1.0) as i32;
+
+                    effect_filters.push(format!("noise=alls={}:allf=t", amt));
+                }
+
+                "posterize" => {
+                    let levels = get_f64("levels", 6.0).clamp(2.0, 255.0) as i32;
+
+                    effect_filters.push(format!("posterize={}", levels));
+                }
+
+                "scanlines" => {
+                    let spacing = get_f64("spacing", 4.0).clamp(2.0, 32.0).round() as i32;
+
+                    let dim = (get_f64("opacity", 40.0) / 100.0).clamp(0.1, 0.95);
+
+                    let stripe = 1.0 - dim * 0.85;
+
+                    effect_filters.push(format!(
+                        "geq=lum='lum(X\\,Y)*if(eq(mod(Y\\,{sp})\\,0)\\,{stripe}\\,1)'",
+                        sp = spacing,
+                        stripe = stripe
+                    ));
+                }
+
+                "letterbox" => {
+                    let bar_pct = (get_f64("barSize", 12.0) / 100.0).clamp(0.02, 0.45);
+                    let color = effect
+                        .params
+                        .get("color")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("#000000")
+                        .replace('#', "0x");
+
+                    effect_filters.push(format!(
+                        "drawbox=x=0:y=0:w=iw:h=floor(ih*{bp}):color={color}:t=fill,drawbox=x=0:y=ih-floor(ih*{bp}):w=iw:h=floor(ih*{bp}):color={color}:t=fill",
+                        bp = bar_pct,
+                        color = color
+                    ));
+                }
+
+                "rgbSplit" => {
+                    let amount = get_f64("amount", 8.0);
+
+                    let angle = get_f64("angle", 0.0) * std::f64::consts::PI / 180.0;
+
+                    let rh = (amount * angle.cos()).round() as i32;
+
+                    let rv = (amount * angle.sin()).round() as i32;
+
+                    effect_filters.push(format!(
+                        "rgbashift=rh={}:rv={}:bh={}:bv={}",
+                        rh,
+                        rv,
+                        -rh,
+                        -rv
+                    ));
+                }
+
+                other => {
+                    panic!(
+                        "[export] Unsupported video effect {:?}; hidden/removed presets must not reach export",
+                        other
+                    );
+                }
             }
         }
 
         effect_filters.join(",")
     }
 
-    fn map_transition_type(editor_type: &str) -> &str {
+    fn map_transition_type(editor_type: &str) -> &'static str {
         match editor_type {
-            // Fades
             "crossfade" => "fade",
             "dissolve" => "dissolve",
             "fadeToBlack" => "fadeblack",
             "fadeToWhite" => "fadewhite",
+            "fadegrays" => "fadegrays",
+            "fadefast" => "fadefast",
+            "fadeslow" => "fadeslow",
 
-            // Wipes
             "wipeLeft" => "wipeleft",
             "wipeRight" => "wiperight",
             "wipeUp" => "wipeup",
             "wipeDown" => "wipedown",
 
-            // Slides
             "slideLeft" => "slideleft",
             "slideRight" => "slideright",
             "slideUp" => "slideup",
             "slideDown" => "slidedown",
 
-            // Push (preview uses the same motion as slide in canvas-transitions)
             "pushLeft" => "slideleft",
             "pushRight" => "slideright",
             "pushUp" => "slideup",
             "pushDown" => "slidedown",
 
-            // Cover / reveal (named cover/reveal in xfade)
-            "coverLeft" => "coverleft",
-            "coverRight" => "coverright",
-            "revealLeft" => "revealleft",
-            "revealRight" => "revealright",
+            "coverLeft" => "slideright",
+            "coverRight" => "slideleft",
+            "revealLeft" => "slideleft",
+            "revealRight" => "slideright",
 
-            // Shape wipes
             "circleWipe" => "circleopen",
             "clockWipe" => "radial",
-
-            // Zoom — xfade only defines zoomin; map zoomOut to the complementary iris
             "zoomIn" => "zoomin",
-            "zoomOut" => "circleclose",
 
-            // Stylize — closest xfade analogues (not pixel-identical to the canvas preview)
-            "blur" => "hblur",
-            "rotateIn" => "circleopen",
-            "flipHorizontal" => "horzopen",
-            "flipVertical" => "vertopen",
-            "glitch" => "pixelize",
+            "diagTl" => "diagtl",
+            "diagTr" => "diagtr",
+            "diagBl" => "diagbl",
+            "diagBr" => "diagbr",
 
-            _ => "fade",
+            "wipeTl" => "wipetl",
+            "wipeTr" => "wipetr",
+            "wipeBl" => "wipebl",
+            "wipeBr" => "wipebr",
+
+            "squeezeH" => "squeezeh",
+            "squeezeV" => "squeezev",
+
+            "hlSlice" => "hlslice",
+            "hrSlice" => "hrslice",
+            "vuSlice" => "vuslice",
+            "vdSlice" => "vdslice",
+
+            "circleClose" => "circleclose",
+            "horzOpen" => "horzopen",
+            "horzClose" => "horzclose",
+            "vertOpen" => "vertopen",
+            "vertClose" => "vertclose",
+
+            "hblurTransition" => "hblur",
+
+            // Legacy project types (no longer in UI) — degrade to a safe crossfade
+            "zoomOut" | "blur" | "rotateIn" | "flipHorizontal" | "flipVertical" | "glitch" => {
+                eprintln!(
+                    "[export] Deprecated transition {:?} mapped to fade",
+                    editor_type
+                );
+                "fade"
+            }
+
+            _ => {
+                panic!(
+                    "[export] Unknown transition {:?}; add it to map_transition_type before exposing it",
+                    editor_type
+                );
+            }
         }
     }
 
@@ -1465,6 +2056,29 @@ pub async fn export_video_editor_project(
             completion_floor = completion_floor,
             reveal = reveal
         )
+    }
+
+    fn custom_transition_expr(editor_type: &str, duration: f64, fps: i32) -> Option<String> {
+        match editor_type {
+            "diamondWipe" => Some(diamond_wipe_expr(duration, fps)),
+            "prismSweep" => Some(
+                "if(eq(PLANE\\,3)\\,A*(1-min(max(((P*1.45-0.18)-(X/W*0.78+Y/H*0.28)+0.04)/0.08\\,0)\\,1))+B*min(max(((P*1.45-0.18)-(X/W*0.78+Y/H*0.28)+0.04)/0.08\\,0)\\,1)\\,min(255\\,A*(1-min(max(((P*1.45-0.18)-(X/W*0.78+Y/H*0.28)+0.04)/0.08\\,0)\\,1))+B*min(max(((P*1.45-0.18)-(X/W*0.78+Y/H*0.28)+0.04)/0.08\\,0)\\,1)+60*max(0\\,1-abs((X/W*0.78+Y/H*0.28)-P)/0.045)*sin(PI*P)))"
+                    .to_string(),
+            ),
+            "glitchBlocks" => Some(
+                "A*(1-if(eq(mod(floor(Y/(H/12))\\,2)\\,0)\\,if(lt(X/W\\,min(1\\,max(0\\,P*1.35-(mod(floor(Y/(H/12))*37\\,11)/11)*0.35)))\\,1\\,0)\\,if(gt(X/W\\,1-min(1\\,max(0\\,P*1.35-(mod(floor(Y/(H/12))*37\\,11)/11)*0.35)))\\,1\\,0)))+B*if(eq(mod(floor(Y/(H/12))\\,2)\\,0)\\,if(lt(X/W\\,min(1\\,max(0\\,P*1.35-(mod(floor(Y/(H/12))*37\\,11)/11)*0.35)))\\,1\\,0)\\,if(gt(X/W\\,1-min(1\\,max(0\\,P*1.35-(mod(floor(Y/(H/12))*37\\,11)/11)*0.35)))\\,1\\,0))"
+                    .to_string(),
+            ),
+            "shutterFlash" => Some(
+                "if(eq(PLANE\\,3)\\,if(eq(mod(floor(X/(W/10))\\,2)\\,0)\\,if(lt(Y/H\\,min(1\\,max(0\\,P*1.22)))\\,B\\,A)\\,if(gt(Y/H\\,1-min(1\\,max(0\\,P*1.22-0.22)))\\,B\\,A))\\,min(255\\,if(eq(mod(floor(X/(W/10))\\,2)\\,0)\\,if(lt(Y/H\\,min(1\\,max(0\\,P*1.22)))\\,B\\,A)\\,if(gt(Y/H\\,1-min(1\\,max(0\\,P*1.22-0.22)))\\,B\\,A))+90*max(0\\,1-abs(P-0.5)/0.12)))"
+                    .to_string(),
+            ),
+            "inkBloom" => Some(
+                "if(lt(sqrt(pow((X/W)-0.5\\,2)+pow((Y/H)-0.5\\,2))\\,max(0\\,P*0.92-0.04)+0.035*sin(24*((X/W)-0.5)+9*P)+0.025*sin(28*((Y/H)-0.5)-7*P))\\,B\\,A)"
+                    .to_string(),
+            ),
+            _ => None,
+        }
     }
 
     // Process video sources - concat if multiple, trim to timeline positions
@@ -1861,15 +2475,16 @@ pub async fn export_video_editor_project(
                 if let Some(t) = transition {
                     let offset = (cur_v_len - t.duration).max(0.0);
 
-                    if t.transition_type == "diamondWipe" {
-                        let diamond_expr = diamond_wipe_expr(t.duration, config.fps);
+                    if let Some(custom_expr) =
+                        custom_transition_expr(&t.transition_type, t.duration, config.fps)
+                    {
                         filters.push(format!(
                             "{}[v{}]xfade=transition=custom:duration={}:offset={}:expr='{}'{}",
                             current_stream,
                             i,
                             t.duration,
                             offset,
-                            diamond_expr,
+                            custom_expr,
                             output_label
                         ));
                     } else {
@@ -2349,28 +2964,47 @@ pub async fn export_video_editor_project(
 
     let existing_input_count = config.video_sources.len() + config.audio_tracks.len();
 
+    let fps_i = config.fps.max(1);
+    let fps_tb = format!("N/{}/TB", fps_i);
+
     for (i, text) in config.text_overlays.iter().enumerate() {
         let input_idx = existing_input_count + i;
 
         let next_stream = format!("[vt{}]", i);
         let overlay_duration = text.end_time - text.start_time;
 
-        // Check if we need to apply fade animations on the overlay input
-        let has_fade_in = text
-            .animation_in
-            .as_ref()
-            .map_or(false, |a| a.duration > 0.01);
-        let has_fade_out = text
-            .animation_out
-            .as_ref()
-            .map_or(false, |a| a.duration > 0.01);
+        let has_fade_in = text.animation_in.as_ref().map_or(false, |a| {
+            a.duration > 0.01 && (a.anim_type == "fadeIn" || a.anim_type == "fade")
+        });
+        let has_fade_out = text.animation_out.as_ref().map_or(false, |a| {
+            a.duration > 0.01 && (a.anim_type == "fadeOut" || a.anim_type == "fade")
+        });
 
-        if has_fade_in || has_fade_out {
-            // Pre-process the PNG overlay: loop it into a video stream, apply fade, then overlay
-            let prep_label = format!("[tp{}]", i);
+        let prep_label = format!("[tp{}]", i);
+        if text.is_frame_sequence {
+            let mut prep = format!(
+                "[{}:v]format=rgba,fps={},setpts=PTS-STARTPTS,trim=duration={}",
+                input_idx, fps_i, overlay_duration
+            );
+            if has_fade_in {
+                let d = text.animation_in.as_ref().unwrap().duration;
+                prep.push_str(&format!(",fade=t=in:st=0:d={}:alpha=1", d));
+            }
+            if has_fade_out {
+                let d = text.animation_out.as_ref().unwrap().duration;
+                let fade_start = (overlay_duration - d).max(0.0);
+                prep.push_str(&format!(",fade=t=out:st={}:d={}:alpha=1", fade_start, d));
+            }
+            prep.push_str(&prep_label);
+            filters.push(prep);
+            filters.push(format!(
+                "{}{}overlay=0:0:enable='between(t,{},{})'{}",
+                video_stream, prep_label, text.start_time, text.end_time, next_stream
+            ));
+        } else if has_fade_in || has_fade_out {
             let mut fade_filters = format!(
-                "[{}:v]format=rgba,loop=loop=-1:size=1,setpts=N/25/TB,trim=duration={}",
-                input_idx, overlay_duration
+                "[{}:v]format=rgba,loop=loop=-1:size=1,setpts={},trim=duration={}",
+                input_idx, fps_tb, overlay_duration
             );
             if has_fade_in {
                 let d = text.animation_in.as_ref().unwrap().duration;
@@ -2409,21 +3043,38 @@ pub async fn export_video_editor_project(
         let next_stream = format!("[vs{}]", i);
         let overlay_duration = sticker.end_time - sticker.start_time;
 
-        // Check if we need to apply fade animations on the overlay input
-        let has_fade_in = sticker
-            .animation_in
-            .as_ref()
-            .map_or(false, |a| a.duration > 0.01);
-        let has_fade_out = sticker
-            .animation_out
-            .as_ref()
-            .map_or(false, |a| a.duration > 0.01);
+        let has_fade_in = sticker.animation_in.as_ref().map_or(false, |a| {
+            a.duration > 0.01 && (a.anim_type == "fadeIn" || a.anim_type == "fade")
+        });
+        let has_fade_out = sticker.animation_out.as_ref().map_or(false, |a| {
+            a.duration > 0.01 && (a.anim_type == "fadeOut" || a.anim_type == "fade")
+        });
 
-        if has_fade_in || has_fade_out {
-            let prep_label = format!("[sp{}]", i);
+        let prep_label = format!("[sp{}]", i);
+        if sticker.is_frame_sequence {
+            let mut prep = format!(
+                "[{}:v]format=rgba,fps={},setpts=PTS-STARTPTS,trim=duration={}",
+                input_idx, fps_i, overlay_duration
+            );
+            if has_fade_in {
+                let d = sticker.animation_in.as_ref().unwrap().duration;
+                prep.push_str(&format!(",fade=t=in:st=0:d={}:alpha=1", d));
+            }
+            if has_fade_out {
+                let d = sticker.animation_out.as_ref().unwrap().duration;
+                let fade_start = (overlay_duration - d).max(0.0);
+                prep.push_str(&format!(",fade=t=out:st={}:d={}:alpha=1", fade_start, d));
+            }
+            prep.push_str(&prep_label);
+            filters.push(prep);
+            filters.push(format!(
+                "{}{}overlay=0:0:enable='between(t,{},{})'{}",
+                video_stream, prep_label, sticker.start_time, sticker.end_time, next_stream
+            ));
+        } else if has_fade_in || has_fade_out {
             let mut fade_filters = format!(
-                "[{}:v]format=rgba,loop=loop=-1:size=1,setpts=N/25/TB,trim=duration={}",
-                input_idx, overlay_duration
+                "[{}:v]format=rgba,loop=loop=-1:size=1,setpts={},trim=duration={}",
+                input_idx, fps_tb, overlay_duration
             );
             if has_fade_in {
                 let d = sticker.animation_in.as_ref().unwrap().duration;
@@ -2995,4 +3646,43 @@ pub async fn save_text_overlay_png(
     );
 
     Ok(file_path.to_string_lossy().to_string())
+}
+
+/// Save a numbered PNG sequence for animated overlay export (`image2` + `overlay`).
+#[tauri::command]
+pub async fn save_overlay_frame_sequence(
+    element_id: String,
+    frames: Vec<Vec<u8>>,
+) -> Result<(String, u32), String> {
+    if frames.is_empty() {
+        return Err("save_overlay_frame_sequence: empty frames".to_string());
+    }
+
+    let safe_id: String = element_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .take(80)
+        .collect();
+
+    let dir = std::env::temp_dir()
+        .join("clippster_overlay_seq")
+        .join(format!("seq_{}", safe_id));
+
+    std::fs::create_dir_all(&dir).map_err(|e| format!("overlay seq mkdir: {}", e))?;
+
+    for (i, bytes) in frames.iter().enumerate() {
+        let path = dir.join(format!("frame_{:05}.png", i + 1));
+        std::fs::write(&path, bytes).map_err(|e| format!("overlay seq write: {}", e))?;
+    }
+
+    let pattern = dir.join("frame_%05d.png");
+    let pattern_str = pattern.to_string_lossy().replace('\\', "/");
+
+    println!(
+        "[Rust] Saved overlay sequence {} frames → {}",
+        frames.len(),
+        pattern_str
+    );
+
+    Ok((pattern_str, frames.len() as u32))
 }

@@ -10,6 +10,7 @@ import ImageProperties from "./properties/ImageProperties.vue";
 import StickerProperties from "./properties/StickerProperties.vue";
 import EffectProperties from "./properties/EffectProperties.vue";
 import CaptionProperties from "./properties/CaptionProperties.vue";
+import CaptionMultiProperties from "./properties/CaptionMultiProperties.vue";
 import KeyframeEditorPanel from "./KeyframeEditorPanel.vue";
 import TransitionProperties from "./properties/TransitionProperties.vue";
 import { Settings } from "lucide-vue-next";
@@ -31,6 +32,15 @@ const captionRepresentative = computed(() => {
 	if (all.every(({ element }) => element.type === "caption")) return all[0];
 	return null;
 });
+const multiCaptionElements = computed(() => {
+	const all = elementsWithTracks.value;
+	if (all.length <= 1) return [];
+	if (!all.every(({ element }) => element.type === "caption")) return [];
+	return all.map(({ track, element }) => ({
+		trackId: track.id,
+		element: element as CaptionElement,
+	}));
+});
 
 const selectedTransition = computed((): Transition | null => {
 	void version.value;
@@ -50,7 +60,9 @@ const selectedTransition = computed((): Transition | null => {
 		<template v-if="selectedElements.length > 0">
 			<!-- Multi-caption selection: render a single representative panel to avoid N-mount flicker -->
 			<div v-if="captionRepresentative" class="min-h-0 flex-1 overflow-hidden">
+				<CaptionMultiProperties v-if="multiCaptionElements.length > 1" :elements="multiCaptionElements" />
 				<CaptionProperties
+					v-else
 					:element="(captionRepresentative.element as CaptionElement)"
 					:track-id="captionRepresentative.track.id"
 				/>

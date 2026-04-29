@@ -1,4 +1,6 @@
 import { ref, onMounted } from "vue";
+import { renderTransition } from "../renderer/effects/canvas-transitions";
+import type { TransitionType } from "../types/transitions";
 
 export const THUMB_W = 240;
 export const THUMB_H = 160;
@@ -219,32 +221,48 @@ async function applyEffectToCanvas(
 			ctx.putImageData(imgData, 0, 0);
 			break;
 		}
-		case "vhs": {
-			// Heavy scanlines
-			for (let y = 0; y < h; y += 3) {
-				ctx.fillStyle = "rgba(0,0,0,0.25)";
-				ctx.fillRect(0, y, w, 1);
+		case "rgbSplit": {
+			const src = snapshot(ctx, w, h);
+			const imgData = src.getContext("2d")!.getImageData(0, 0, w, h);
+			const srcBuf = new Uint8ClampedArray(imgData.data);
+			const dst = ctx.createImageData(w, h);
+			const amount = 8;
+			const rad = 0;
+			const dx = Math.round(Math.cos(rad) * amount);
+			const dy = Math.round(Math.sin(rad) * amount);
+			for (let y = 0; y < h; y++) {
+				for (let x = 0; x < w; x++) {
+					const di = (y * w + x) * 4;
+					const rx = Math.min(w - 1, Math.max(0, x + dx));
+					const ry = Math.min(h - 1, Math.max(0, y + dy));
+					const bx = Math.min(w - 1, Math.max(0, x - dx));
+					const by = Math.min(h - 1, Math.max(0, y - dy));
+					dst.data[di] = srcBuf[(ry * w + rx) * 4];
+					dst.data[di + 1] = srcBuf[di + 1];
+					dst.data[di + 2] = srcBuf[(by * w + bx) * 4 + 2];
+					dst.data[di + 3] = srcBuf[di + 3];
+				}
 			}
-			// Color bleed
-			ctx.globalCompositeOperation = "screen";
-			ctx.fillStyle = "rgba(255,0,0,0.1)";
-			ctx.fillRect(3, 0, w, h);
-			ctx.fillStyle = "rgba(0,255,255,0.1)";
-			ctx.fillRect(-3, 0, w, h);
-			ctx.globalCompositeOperation = "source-over";
-			// Noise
-			const imgData = ctx.getImageData(0, 0, w, h);
-			const d = imgData.data;
-			for (let i = 0; i < d.length; i += 8) {
-				const n = (Math.random() - 0.5) * 50;
-				d[i] = Math.min(255, Math.max(0, d[i] + n));
-				d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + n));
-				d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + n));
+			ctx.putImageData(dst, 0, 0);
+			break;
+		}
+		case "scanlines": {
+			ctx.save();
+			ctx.globalAlpha = 0.35;
+			ctx.fillStyle = "#000000";
+			for (let y = 0; y < h; y += 8) {
+				ctx.fillRect(0, y, w, 4);
 			}
-			ctx.putImageData(imgData, 0, 0);
-			// Tracking line
-			ctx.fillStyle = "rgba(255,255,255,0.3)";
-			ctx.fillRect(0, h * 0.4, w, 2);
+			ctx.restore();
+			break;
+		}
+		case "letterbox": {
+			const bar = Math.round(h * 0.12);
+			ctx.save();
+			ctx.fillStyle = "#000000";
+			ctx.fillRect(0, 0, w, bar);
+			ctx.fillRect(0, h - bar, w, bar);
+			ctx.restore();
 			break;
 		}
 		case "posterize": {
@@ -258,69 +276,6 @@ async function applyEffectToCanvas(
 				d[i + 2] = Math.round(d[i + 2] / step) * step;
 			}
 			ctx.putImageData(imgData, 0, 0);
-			break;
-		}
-		case "colorHalftone": {
-			const imgData = ctx.getImageData(0, 0, w, h);
-			ctx.clearRect(0, 0, w, h);
-			ctx.fillStyle = "#0a0a0a";
-			ctx.fillRect(0, 0, w, h);
-			const dotSpacing = 6;
-			for (let y = 0; y < h; y += dotSpacing) {
-				for (let x = 0; x < w; x += dotSpacing) {
-					const i = (y * w + x) * 4;
-					const r = imgData.data[i], g = imgData.data[i + 1], b = imgData.data[i + 2];
-					const brightness = (r + g + b) / 3 / 255;
-					const radius = brightness * dotSpacing * 0.48;
-					if (radius > 0.5) {
-						ctx.fillStyle = `rgb(${r},${g},${b})`;
-						ctx.beginPath();
-						ctx.arc(x + dotSpacing / 2, y + dotSpacing / 2, radius, 0, Math.PI * 2);
-						ctx.fill();
-					}
-				}
-			}
-			break;
-		}
-		case "motionBlur": {
-			const src = snapshot(ctx, w, h);
-			ctx.globalAlpha = 0.2;
-			for (let i = 1; i <= 8; i++) {
-				ctx.drawImage(src, i * 3, 0);
-			}
-			ctx.globalAlpha = 1;
-			break;
-		}
-		case "radialBlur": {
-			const src = snapshot(ctx, w, h);
-			ctx.globalAlpha = 0.2;
-			for (let i = 1; i <= 5; i++) {
-				const s = 1 + i * 0.02;
-				ctx.drawImage(src, -(w * (s - 1)) / 2, -(h * (s - 1)) / 2, w * s, h * s);
-			}
-			ctx.globalAlpha = 1;
-			break;
-		}
-		case "hueShift": {
-			applyCSSFilter(ctx, w, h, "hue-rotate(150deg) saturate(1.4)");
-			break;
-		}
-		case "lensDistortion": {
-			const src = snapshot(ctx, w, h);
-			ctx.clearRect(0, 0, w, h);
-			ctx.fillStyle = "#000";
-			ctx.fillRect(0, 0, w, h);
-			// Barrel distortion: draw zoomed center
-			ctx.drawImage(src, -w * 0.06, -h * 0.06, w * 1.12, h * 1.12);
-			// Rounded mask for barrel effect
-			ctx.globalCompositeOperation = "destination-in";
-			const grad = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w * 0.52);
-			grad.addColorStop(0, "white");
-			grad.addColorStop(0.8, "white");
-			grad.addColorStop(1, "rgba(255,255,255,0.15)");
-			ctx.fillStyle = grad;
-			ctx.fillRect(0, 0, w, h);
-			ctx.globalCompositeOperation = "source-over";
 			break;
 		}
 		default:
@@ -493,23 +448,6 @@ export async function renderTransitionPreview(
 			ctx.globalAlpha = 1;
 			break;
 		}
-		case "zoomOut": {
-			ctx.drawImage(tempA, 0, 0);
-			const scale = progress;
-			const sw = w * scale;
-			const sh = h * scale;
-			ctx.drawImage(tempB, (w - sw) / 2, (h - sh) / 2, sw, sh);
-			break;
-		}
-		case "blur": {
-			ctx.drawImage(tempA, 0, 0);
-			ctx.globalAlpha = progress;
-			ctx.filter = `blur(${3 * (1 - progress)}px)`;
-			ctx.drawImage(tempB, 0, 0);
-			ctx.filter = "none";
-			ctx.globalAlpha = 1;
-			break;
-		}
 		case "circleWipe": {
 			const maxR = Math.sqrt(w * w + h * h) / 2;
 			ctx.drawImage(tempA, 0, 0);
@@ -589,83 +527,8 @@ export async function renderTransitionPreview(
 			ctx.drawImage(tempA, w * progress, 0);
 			break;
 		}
-		case "rotateIn": {
-			ctx.save();
-			ctx.globalAlpha = 1 - progress;
-			ctx.drawImage(tempA, 0, 0);
-			ctx.restore();
-			ctx.save();
-			ctx.globalAlpha = progress;
-			ctx.translate(w / 2, h / 2);
-			ctx.rotate((1 - progress) * Math.PI * 0.5);
-			ctx.scale(0.5 + progress * 0.5, 0.5 + progress * 0.5);
-			ctx.translate(-w / 2, -h / 2);
-			ctx.drawImage(tempB, 0, 0);
-			ctx.restore();
-			break;
-		}
-		case "flipHorizontal": {
-			if (progress < 0.5) {
-				const s = Math.cos(progress * Math.PI);
-				ctx.save();
-				ctx.translate(w / 2, 0);
-				ctx.scale(s, 1);
-				ctx.translate(-w / 2, 0);
-				ctx.drawImage(tempA, 0, 0);
-				ctx.restore();
-			} else {
-				const s = -Math.cos(progress * Math.PI);
-				ctx.save();
-				ctx.translate(w / 2, 0);
-				ctx.scale(s, 1);
-				ctx.translate(-w / 2, 0);
-				ctx.drawImage(tempB, 0, 0);
-				ctx.restore();
-			}
-			break;
-		}
-		case "flipVertical": {
-			if (progress < 0.5) {
-				const s = Math.cos(progress * Math.PI);
-				ctx.save();
-				ctx.translate(0, h / 2);
-				ctx.scale(1, s);
-				ctx.translate(0, -h / 2);
-				ctx.drawImage(tempA, 0, 0);
-				ctx.restore();
-			} else {
-				const s = -Math.cos(progress * Math.PI);
-				ctx.save();
-				ctx.translate(0, h / 2);
-				ctx.scale(1, s);
-				ctx.translate(0, -h / 2);
-				ctx.drawImage(tempB, 0, 0);
-				ctx.restore();
-			}
-			break;
-		}
-		case "glitch": {
-			const src = progress < 0.5 ? tempA : tempB;
-			ctx.drawImage(src, 0, 0);
-			const intensity = Math.sin(progress * Math.PI);
-			const other = progress < 0.5 ? tempB : tempA;
-			const slices = Math.floor(3 + intensity * 8);
-			for (let i = 0; i < slices; i++) {
-				const hash = ((Math.floor(progress * 100) + i * 73856093) & 0xffff) / 0xffff;
-				if (hash > intensity) continue;
-				const sy = Math.floor(hash * h);
-				const sh = Math.floor(4 + hash * 15);
-				const ox = (hash - 0.5) * w * intensity * 0.3;
-				ctx.drawImage(other, 0, sy, w, sh, ox, sy, w, sh);
-			}
-			break;
-		}
 		default: {
-			// Fallback: simple crossfade
-			ctx.drawImage(tempA, 0, 0);
-			ctx.globalAlpha = progress;
-			ctx.drawImage(tempB, 0, 0);
-			ctx.globalAlpha = 1;
+			renderTransition(ctx, w, h, tempA, tempB, progress, transitionType as TransitionType);
 			break;
 		}
 	}

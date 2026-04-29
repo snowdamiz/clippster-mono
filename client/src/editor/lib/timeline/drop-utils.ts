@@ -13,16 +13,17 @@ function getTrackAtY({
 	verticalDragDirection?: "up" | "down" | null;
 }): { trackIndex: number; relativeY: number } | null {
 	let cumulativeHeight = 0;
+	const EDGE_TOLERANCE = 6;
 
 	for (let i = 0; i < tracks.length; i++) {
 		const trackHeight = TRACK_HEIGHTS[tracks[i].type];
 		const trackTop = cumulativeHeight;
 		const trackBottom = trackTop + trackHeight;
 
-		if (mouseY >= trackTop && mouseY < trackBottom) {
+		if (mouseY >= trackTop - EDGE_TOLERANCE && mouseY < trackBottom + EDGE_TOLERANCE) {
 			return {
 				trackIndex: i,
-				relativeY: mouseY - trackTop,
+				relativeY: Math.max(0, Math.min(trackHeight, mouseY - trackTop)),
 			};
 		}
 
@@ -52,6 +53,7 @@ function isCompatible({
 	trackType: TimelineTrack["type"];
 }): boolean {
 	if (elementType === "text") return trackType === "text";
+	if (elementType === "caption") return trackType === "caption";
 	if (elementType === "audio") return trackType === "audio";
 	if (elementType === "sticker") return trackType === "sticker";
 	if (elementType === "effect") return trackType === "effect";
@@ -166,6 +168,43 @@ export function computeDropTarget({
 	}
 
 	const trackAtMouse = getTrackAtY({ mouseY, tracks, verticalDragDirection });
+	const singleInstanceTypes: ElementType[] = ["caption", "sticker", "text", "effect"];
+	const totalTrackStackHeight = tracks.reduce(
+		(sum, t, i) => sum + TRACK_HEIGHTS[t.type] + (i < tracks.length - 1 ? TRACK_GAP : 0),
+		0,
+	);
+
+	function findNearestCompatibleTrackIndex(): number | null {
+		if (!singleInstanceTypes.includes(elementType)) return null;
+		const compatibleIndices = tracks
+			.map((t, i) => ({ track: t, index: i }))
+			.filter(({ track }) => isCompatible({ elementType, trackType: track.type }))
+			.map(({ index }) => index);
+		if (compatibleIndices.length === 0) return null;
+		if (compatibleIndices.length === 1) return compatibleIndices[0];
+
+		const sourceTrackIdx = tracks.findIndex((t) =>
+			t.elements.some((el) => el.id === excludeElementId),
+		);
+		if (
+			sourceTrackIdx >= 0 &&
+			compatibleIndices.includes(sourceTrackIdx)
+		) {
+			return sourceTrackIdx;
+		}
+
+		let best: { idx: number; dist: number } | null = null;
+		let cumulative = 0;
+		for (let i = 0; i < tracks.length; i++) {
+			const h = TRACK_HEIGHTS[tracks[i].type];
+			const centerY = cumulative + h / 2;
+			cumulative += h + TRACK_GAP;
+			if (!compatibleIndices.includes(i)) continue;
+			const dist = Math.abs(mouseY - centerY);
+			if (!best || dist < best.dist) best = { idx: i, dist };
+		}
+		return best?.idx ?? compatibleIndices[0];
+	}
 
 	if (!trackAtMouse) {
 		const isAboveAllTracks = mouseY < 0;
@@ -184,6 +223,17 @@ export function computeDropTarget({
 				trackIndex: 0,
 				isNewTrack: true,
 				insertPosition: "above",
+				xPosition,
+			};
+		}
+
+		const nearTrackStack = mouseY >= -16 && mouseY <= totalTrackStackHeight + 16;
+		const nearestCompatible = nearTrackStack ? findNearestCompatibleTrackIndex() : null;
+		if (nearestCompatible !== null) {
+			return {
+				trackIndex: nearestCompatible,
+				isNewTrack: false,
+				insertPosition: null,
 				xPosition,
 			};
 		}

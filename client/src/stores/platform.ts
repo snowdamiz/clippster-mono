@@ -829,7 +829,7 @@ export const usePlatformStore = defineStore('platform', {
         
         // Check cache first (5 minute TTL)
         const cacheKey = `rumble_${tab}_${channelName}_${limit}`;
-        const cached = cache.get<RumbleVod[]>(cacheKey);
+        const cached = await cache.get<RumbleVod[]>('rawVideos', cacheKey);
         if (cached && cached.length > 0) {
           console.log('[Platform Store] Using cached Rumble', tab, '- found', cached.length, 'items');
           // Apply the same filtering logic to cached data
@@ -892,7 +892,7 @@ export const usePlatformStore = defineStore('platform', {
         
         // Cache the raw VODs (not filtered) so we can use them for both tabs
         if (vods.length > 0) {
-          cache.set(cacheKey, vods, 5 * 60 * 1000);
+          await cache.set('rawVideos', cacheKey, vods, 5 * 60 * 1000);
         }
         
         const clips: PlatformClip[] = filteredVods.map((vod: RumbleVod) => {
@@ -960,7 +960,7 @@ export const usePlatformStore = defineStore('platform', {
         
         // Check cache first (5 minute TTL)
         const cacheKey = `youtube_${tab}_${channelId}_${limit}`;
-        const cached = cache.get<YouTubeVod[]>(cacheKey);
+        const cached = await cache.get<YouTubeVod[]>('rawVideos', cacheKey);
         if (cached && cached.length > 0) {
           console.log('[Platform Store] Using cached YouTube', tab, '- found', cached.length, 'items');
           const clips: PlatformClip[] = cached.map((vod: YouTubeVod) => ({
@@ -1013,7 +1013,7 @@ export const usePlatformStore = defineStore('platform', {
         // Cache the results (5 minute TTL)
         if (vods.length > 0) {
           const cacheKey = `youtube_${actualTab}_${channelId}_${limit}`;
-          cache.set(cacheKey, vods, 5 * 60 * 1000);
+          await cache.set('rawVideos', cacheKey, vods, 5 * 60 * 1000);
         }
         
         const clips: PlatformClip[] = vods.map((vod: YouTubeVod) => {

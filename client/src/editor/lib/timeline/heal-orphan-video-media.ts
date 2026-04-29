@@ -75,7 +75,7 @@ export function healOrphanVideoMediaReferences({
 	let anySceneChange = false;
 	const nextScenes = editor.scenes.getScenes().map((scene) => {
 		let sceneChanged = false;
-		const tracks: TimelineTrack[] = (scene.tracks ?? []).map((track) => {
+		const tracks = (scene.tracks ?? []).map((track) => {
 			let trackChanged = false;
 			const elements = (track.elements ?? []).map((el) => {
 				if (!isVideoTimelineElement(el)) return el;
@@ -88,7 +88,7 @@ export function healOrphanVideoMediaReferences({
 			});
 
 			return trackChanged ? { ...track, elements } : track;
-		});
+		}) as TimelineTrack[];
 
 		return sceneChanged ? { ...scene, tracks, updatedAt: new Date() } : scene;
 	});

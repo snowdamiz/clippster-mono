@@ -945,6 +945,7 @@
           ...merged.perRatioConfigs,
           [ratio]: {
             ...(clipPr ?? {}),
+            fontSize: clipPr?.fontSize ?? layoutDefaults.fontSize,
             positionPercentage: layoutY,
             position: {
               x: clipPr?.position?.x ?? 50,

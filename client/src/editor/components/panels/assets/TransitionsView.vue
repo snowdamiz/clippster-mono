@@ -35,11 +35,17 @@ const { selectedElements } = useElementSelection();
 const { toast } = useToast();
 
 const searchQuery = ref("");
+const visibleTransitionPresets = computed(() =>
+	TRANSITION_PRESETS
+		.filter((p) => p.exportSupported)
+		.slice()
+		.sort((a, b) => a.modernRank - b.modernRank),
+);
 
 const filteredPresets = computed(() => {
 	const q = searchQuery.value.trim().toLowerCase();
-	if (!q) return TRANSITION_PRESETS;
-	return TRANSITION_PRESETS.filter(
+	if (!q) return visibleTransitionPresets.value;
+	return visibleTransitionPresets.value.filter(
 		(p) => p.label.toLowerCase().includes(q) || p.description.toLowerCase().includes(q),
 	);
 });

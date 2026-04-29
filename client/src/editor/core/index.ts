@@ -26,6 +26,7 @@ export class EditorCore {
 	public readonly transcript: TranscriptManager;
 
 	private _previewCanvas: HTMLCanvasElement | null = null;
+	private _interactiveDrag = false;
 
 	private constructor() {
 		this.command = new CommandManager();
@@ -48,6 +49,14 @@ export class EditorCore {
 
 	getPreviewCanvas(): HTMLCanvasElement | null {
 		return this._previewCanvas;
+	}
+
+	setInteractiveDrag(value: boolean): void {
+		this._interactiveDrag = value;
+	}
+
+	getInteractiveDrag(): boolean {
+		return this._interactiveDrag;
 	}
 
 	static getInstance(): EditorCore {

@@ -28,7 +28,7 @@ precision highp float;
 
 uniform sampler2D u_texture;
 uniform vec3 u_keyColor;      // RGB 0-1
-uniform float u_threshold;    // similarity threshold 0-1
+uniform float u_threshold;    // similarity threshold (normalized chroma distance)
 uniform float u_smoothness;   // edge softness 0-1
 uniform float u_spillAmount;  // spill suppression strength 0-1
 
@@ -158,13 +158,14 @@ export function applyChromakeyGPU(
 		const aPosLoc = gl.getAttribLocation(prog.program, "a_position");
 		drawFullscreenQuad(gl, aPosLoc);
 
-		// Read back pixels and write to 2D canvas
-		// UNPACK_FLIP_Y_WEBGL on upload aligns texture orientation with Canvas2D,
-		// so readPixels output is already in top-left-origin order — no row flip needed.
+		// Read back pixels and write to 2D canvas.
+		// readPixels is bottom-up relative to Canvas2D, so flip rows before putImageData.
 		const raw = webglContextManager.readPixels(width, height);
-		if (!raw) return false;
-
-		const result = new ImageData(raw, width, height);
+		if (!raw) {
+			console.warn("[WebGL] Chromakey readPixels returned empty buffer", { width, height });
+			return false;
+		}
+		const result = new ImageData(flipRows(raw, width, height), width, height);
 		ctx.putImageData(result, 0, 0);
 
 		return true;
@@ -184,4 +185,15 @@ function parseHexColor(hex: string): { r: number; g: number; b: number } {
 		g: ((bigint >> 8) & 255) / 255,
 		b: (bigint & 255) / 255,
 	};
+}
+
+function flipRows(data: Uint8ClampedArray, width: number, height: number): Uint8ClampedArray {
+	const rowSize = width * 4;
+	const flipped = new Uint8ClampedArray(data.length);
+	for (let y = 0; y < height; y++) {
+		const src = y * rowSize;
+		const dst = (height - 1 - y) * rowSize;
+		flipped.set(data.subarray(src, src + rowSize), dst);
+	}
+	return flipped;
 }

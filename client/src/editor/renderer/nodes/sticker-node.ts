@@ -139,9 +139,12 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 	async renderToImage({
 		canvasWidth,
 		canvasHeight,
+		sampleTime,
 	}: {
 		canvasWidth: number;
 		canvasHeight: number;
+		/** Timeline seconds used to sample keyframes / fades (default: element midpoint). */
+		sampleTime?: number;
 	}): Promise<{ blob: Blob } | null> {
 		// Fetch the SVG as a blob URL to guarantee no CORS canvas taint.
 		// The normal Image load (used for preview) can taint the canvas,
@@ -156,19 +159,64 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 		const ctx = offscreen.getContext("2d");
 		if (!ctx) return null;
 
+		const timelineT = sampleTime ?? this.params.timeOffset + this.params.duration / 2;
+		const elapsed = timelineT - this.params.timeOffset;
+		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
+		const kf = this.params.keyframes;
 		const { transform, opacity } = this.params;
-		const size = 200 * transform.scale;
-		const x = canvasWidth / 2 + transform.position.x - size / 2;
-		const y = canvasHeight / 2 + transform.position.y - size / 2;
+
+		let resolvedOpacity = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "opacity",
+			normalizedTime,
+			defaultValue: opacity,
+		});
+		const resolvedScale = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "scale",
+			normalizedTime,
+			defaultValue: transform.scale,
+		});
+		const resolvedPosX = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "positionX",
+			normalizedTime,
+			defaultValue: transform.position.x,
+		});
+		const resolvedPosY = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "positionY",
+			normalizedTime,
+			defaultValue: transform.position.y,
+		});
+		const resolvedRotation = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "rotation",
+			normalizedTime,
+			defaultValue: transform.rotate,
+		});
+
+		const size = 200 * resolvedScale;
+		const x = canvasWidth / 2 + resolvedPosX - size / 2;
+		const y = canvasHeight / 2 + resolvedPosY - size / 2;
 
 		ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-		ctx.globalAlpha = opacity;
 
-		if (transform.rotate !== 0) {
+		const fadeIn = this.params.fadeIn ?? 0;
+		const fadeOut = this.params.fadeOut ?? 0;
+		if (fadeIn > 0 && elapsed < fadeIn) {
+			resolvedOpacity *= elapsed / fadeIn;
+		}
+		if (fadeOut > 0 && elapsed > this.params.duration - fadeOut) {
+			resolvedOpacity *= (this.params.duration - elapsed) / fadeOut;
+		}
+		ctx.globalAlpha = resolvedOpacity;
+
+		if (resolvedRotation !== 0) {
 			const centerX = x + size / 2;
 			const centerY = y + size / 2;
 			ctx.translate(centerX, centerY);
-			ctx.rotate((transform.rotate * Math.PI) / 180);
+			ctx.rotate((resolvedRotation * Math.PI) / 180);
 			ctx.translate(-centerX, -centerY);
 		}
 

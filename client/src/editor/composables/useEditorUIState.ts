@@ -9,6 +9,8 @@ const timelineKeyframePlacementActive = ref(false);
 const cropPanelRequested = ref(false);
 const isCropMode = ref(false);
 const activeSocialOverlay = ref<SocialOverlayPreset | null>(null);
+const fitMode = ref<"fit" | "fill" | "manual">("fit");
+const maskEditMode = ref(false);
 
 /** Preview viewport zoom: 1 = fit-to-panel, values > 1 zoom in, < 1 zoom out. Range: 0.1–4.0. */
 const viewportZoom = ref(1);
@@ -81,6 +83,8 @@ export function useEditorUIState() {
 		activeSocialOverlay,
 		viewportZoom,
 		previewQuality,
+		fitMode,
+		maskEditMode,
 		requestCropPanel,
 		clearCropPanelRequest,
 		enterCropMode,

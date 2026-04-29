@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, shallowRef, onUnmounted, onMounted } from "vue";
+import { ChevronDown } from "lucide-vue-next";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../composables/useEditor";
 import { useRafLoop } from "../../composables/useRafLoop";
@@ -20,7 +21,7 @@ const { editor, version } = useEditor({
 		selection: false,
 	},
 });
-const { isCropMode, activeSocialOverlay, viewportZoom, previewQuality } = useEditorUIState();
+const { isCropMode, activeSocialOverlay, viewportZoom, previewQuality, fitMode } = useEditorUIState();
 const { selectedElements } = useElementSelection();
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -47,22 +48,23 @@ const activeProject = computed(() => {
 const projectWidth = computed(() => activeProject.value?.settings?.canvasSize?.width ?? 1920);
 const projectHeight = computed(() => activeProject.value?.settings?.canvasSize?.height ?? 1080);
 
-// Preview quality scaling: render at lower resolution then CSS-scale up
+// Preview quality scaling: render scene at lower internal resolution,
+// then upscale to project canvas size for display/interaction consistency.
 const previewScale = computed(() => {
 	const q = previewQuality.value;
 	if (q === "auto") return 1;
 	return Math.min(1, q / projectHeight.value);
 });
 
-const canvasWidth = computed(() => Math.round(projectWidth.value * previewScale.value));
-const canvasHeight = computed(() => Math.round(projectHeight.value * previewScale.value));
+const renderWidth = computed(() => Math.max(1, Math.round(projectWidth.value * previewScale.value)));
+const renderHeight = computed(() => Math.max(1, Math.round(projectHeight.value * previewScale.value)));
 
 const fps = computed(() => activeProject.value?.settings?.fps ?? 30);
 const background = computed(() => activeProject.value?.settings?.background ?? { type: "color" as const, color: "#000000" });
 
 const renderer = shallowRef<CanvasRenderer | null>(null);
 
-watch([canvasWidth, canvasHeight, fps], ([w, h, f]) => {
+watch([renderWidth, renderHeight, fps], ([w, h, f]) => {
 	// Use a DOM canvas-backed renderer for preview. Several transition effects rely on
 	// alpha/clip compositing that is unreliable when the destination context is OffscreenCanvas
 	// in Chromium/Electron, which makes wipes/crossfades appear as no-ops in preview.
@@ -96,21 +98,30 @@ const sceneTransitions = computed(() => {
 // When in crop mode, strip crop from the selected element so canvas shows full frame
 const sceneTracks = computed((): TimelineTrack[] => {
 	const raw = tracks.value;
-	if (!isCropMode.value || selectedElements.value.length === 0) return raw;
-	const sel = selectedElements.value[0];
+	const selectedElement = selectedElements.value[0];
+
 	return raw.map((t) => {
-		if (t.id !== sel.trackId) return t;
-		return {
-			...t,
-			elements: t.elements.map((el) =>
-				el.id === sel.elementId ? { ...el, crop: undefined } : el,
-			),
-		} as typeof t;
+		const nextElements = t.elements.map((el) => {
+			let next = el;
+
+			if (
+				isCropMode.value &&
+				selectedElement &&
+				t.id === selectedElement.trackId &&
+				el.id === selectedElement.elementId
+			) {
+				next = { ...next, crop: undefined } as typeof el;
+			}
+
+			return next;
+		});
+
+		return { ...t, elements: nextElements } as typeof t;
 	});
 });
 
 watch(
-	[sceneTracks, mediaAssets, background, canvasWidth, canvasHeight, sceneTransitions],
+	[sceneTracks, mediaAssets, background, renderWidth, renderHeight, sceneTransitions],
 	() => {
 		if (!activeProject.value) return;
 		const duration = editor.timeline.getTotalDuration();
@@ -118,7 +129,7 @@ watch(
 			tracks: sceneTracks.value,
 			mediaAssets: mediaAssets.value,
 			duration,
-			canvasSize: { width: canvasWidth.value, height: canvasHeight.value },
+			canvasSize: { width: renderWidth.value, height: renderHeight.value },
 			background: background.value,
 			transitions: sceneTransitions.value,
 		});
@@ -149,7 +160,7 @@ useRafLoop(() => {
 
 	const needsRender = frame !== lastFrame || renderTree !== lastScene || timeMoved;
 
-	// When paused and nothing changed, throttle to ~15Hz after 250ms idle to save GPU
+	// When paused and nothing changed, throttle to ~15Hz after 250ms idle to save GPU.
 	if (!needsRender) {
 		idleTickCount++;
 		if (!isPlaying && idleTickCount > 15 && rafTickCount % 4 !== 0) return;
@@ -183,7 +194,9 @@ const canvasBackground = computed(() => {
 const { getWatermarkForCanvasSize, getOverlaysForCanvasSize } = useBrandingConfig();
 
 const brandingWatermark = computed(() => {
-	return getWatermarkForCanvasSize(canvasWidth.value, canvasHeight.value);
+	// Branding selection must follow project canvas size, not preview quality scaling.
+	// Changing preview quality should never add/remove watermark/overlay content.
+	return getWatermarkForCanvasSize(projectWidth.value, projectHeight.value);
 });
 
 const brandingWatermarkDataUrl = ref<string | null>(null);
@@ -246,7 +259,8 @@ const brandingWatermarkStyle = computed(() => {
 
 // Branding layout overlays preview
 const brandingOverlays = computed(() => {
-	return getOverlaysForCanvasSize(canvasWidth.value, canvasHeight.value) ?? [];
+	// Keep branding overlays stable across preview quality changes.
+	return getOverlaysForCanvasSize(projectWidth.value, projectHeight.value) ?? [];
 });
 
 const brandingOverlayDataUrls = ref<Record<string, string>>({});
@@ -293,11 +307,31 @@ const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 4;
 
 function stepZoom(delta: number) {
+	fitMode.value = "manual";
 	viewportZoom.value = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round((viewportZoom.value + delta) * 100) / 100));
 }
 
 function fitZoom() {
+	fitMode.value = "fit";
 	viewportZoom.value = 1;
+}
+
+function onKeyZoom(e: KeyboardEvent) {
+	if (!e.ctrlKey && !e.metaKey) return;
+	if (e.key === "0") {
+		e.preventDefault();
+		fitZoom();
+		return;
+	}
+	if (e.key === "+" || e.key === "=") {
+		e.preventDefault();
+		stepZoom(ZOOM_STEP);
+		return;
+	}
+	if (e.key === "-") {
+		e.preventDefault();
+		stepZoom(-ZOOM_STEP);
+	}
 }
 
 function onWheelZoom(e: WheelEvent) {
@@ -322,12 +356,21 @@ const qualityLabel = computed(() => {
 	return q === 'auto' ? 'Auto' : `${q}p`;
 });
 
+const showQualityDropdown = ref(false);
+
+function setQuality(value: "auto" | 360 | 540 | 720 | 1080) {
+	previewQuality.value = value;
+	showQualityDropdown.value = false;
+}
+
 onMounted(() => {
 	containerRef.value?.addEventListener('wheel', onWheelZoom, { passive: false });
+	window.addEventListener("keydown", onKeyZoom);
 });
 
 onUnmounted(() => {
 	containerRef.value?.removeEventListener('wheel', onWheelZoom);
+	window.removeEventListener("keydown", onKeyZoom);
 });
 
 defineExpose({ containerRef });
@@ -369,10 +412,13 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 			>
 				<canvas
 					ref="canvasRef"
-					:width="canvasWidth"
-					:height="canvasHeight"
+					:width="projectWidth"
+					:height="projectHeight"
 					class="block h-full w-full rounded-sm"
-					:style="{ background: canvasBackground }"
+					:style="{
+						background: canvasBackground,
+						imageRendering: previewScale < 1 ? 'pixelated' : 'auto',
+					}"
 				/>
 				<PreviewOverlay
 					:canvas-ref="canvasRef"
@@ -415,20 +461,31 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 		<div class="flex h-8 shrink-0 items-center justify-end gap-1 border-t border-white/10 bg-[#18181b] px-2">
 			<!-- Quality selector -->
 			<div class="relative">
-				<select
-					class="h-6 cursor-pointer appearance-none rounded bg-white/5 px-2 pr-5 text-[11px] text-zinc-300 hover:bg-white/10 focus:outline-none"
-					:value="previewQuality"
-					@change="previewQuality = ($event.target as HTMLSelectElement).value as any"
+				<button
+					class="preview-quality__input preview-quality__select h-6 px-2 text-[11px]"
+					@click.stop="showQualityDropdown = !showQualityDropdown"
 				>
-					<option v-for="opt in qualityOptions" :key="opt.label" :value="opt.value">{{ opt.label }}</option>
-				</select>
-				<span class="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-zinc-500">▾</span>
+					<span class="truncate">Quality: {{ qualityLabel }}</span>
+					<ChevronDown class="h-3.5 w-3.5 transition-transform" :class="{ 'rotate-180': showQualityDropdown }" />
+				</button>
+				<div v-if="showQualityDropdown" class="preview-quality__dropdown">
+					<button
+						v-for="opt in qualityOptions"
+						:key="opt.label"
+						class="preview-quality__dropdown-item"
+						:class="{ 'preview-quality__dropdown-item--selected': previewQuality === opt.value }"
+						@click.stop="setQuality(opt.value)"
+					>
+						{{ opt.label }}
+					</button>
+				</div>
 			</div>
 			<div class="h-4 w-px bg-white/10" />
 			<!-- Zoom controls -->
 			<button class="flex h-6 w-6 items-center justify-center rounded text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200" title="Zoom out (Ctrl+-)" @click="stepZoom(-ZOOM_STEP)">−</button>
-			<button class="h-6 min-w-[42px] rounded bg-white/5 px-1 text-[11px] text-zinc-300 hover:bg-white/10" title="Reset zoom (Ctrl+0)" @click="fitZoom">{{ zoomPercent }}</button>
+			<button class="h-6 min-w-[42px] rounded bg-white/5 px-1 text-[11px] text-zinc-300 hover:bg-white/10" title="Current zoom">{{ zoomPercent }}</button>
 			<button class="flex h-6 w-6 items-center justify-center rounded text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200" title="Zoom in (Ctrl++)" @click="stepZoom(ZOOM_STEP)">+</button>
+			<button class="h-6 rounded bg-white/5 px-2 text-[11px] text-zinc-300 hover:bg-white/10" title="Fit zoom (Ctrl+0)" @click="fitZoom">Fit</button>
 		</div>
 	</div>
 </template>
@@ -438,5 +495,62 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 	max-width: 100%;
 	max-height: calc(100% - 2rem);
 	flex-shrink: 0;
+}
+
+.preview-quality__input {
+	width: 100%;
+	background-color: rgb(255 255 255 / 0.05);
+	border: 1px solid rgb(255 255 255 / 0.1);
+	border-radius: 0.375rem;
+	color: rgb(212 212 216);
+	transition: all 150ms ease;
+}
+
+.preview-quality__select {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.375rem;
+	cursor: pointer;
+}
+
+.preview-quality__input:hover {
+	background-color: rgb(255 255 255 / 0.1);
+	border-color: rgb(255 255 255 / 0.16);
+}
+
+.preview-quality__dropdown {
+	position: absolute;
+	bottom: calc(100% + 0.35rem);
+	right: 0;
+	min-width: 110px;
+	background-color: rgb(24 24 27);
+	border: 1px solid rgb(255 255 255 / 0.1);
+	border-radius: 0.45rem;
+	overflow: hidden;
+	z-index: 100;
+	box-shadow: 0 8px 24px rgb(0 0 0 / 0.45);
+}
+
+.preview-quality__dropdown-item {
+	display: block;
+	width: 100%;
+	text-align: left;
+	padding: 0.42rem 0.6rem;
+	font-size: 11px;
+	color: rgb(228 228 231);
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	transition: background-color 150ms ease;
+}
+
+.preview-quality__dropdown-item:hover {
+	background-color: rgb(255 255 255 / 0.08);
+}
+
+.preview-quality__dropdown-item--selected {
+	background-color: rgb(6 182 212 / 0.15);
+	color: rgb(103 232 249);
 }
 </style>

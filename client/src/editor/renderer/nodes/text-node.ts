@@ -31,25 +31,77 @@ export class TextNode extends BaseNode<TextNodeParams> {
 	 * Used by the export pipeline to composite text as image overlays in FFmpeg.
 	 * Returns { blob, width, height } or null if content is empty.
 	 */
-	async renderToImage({ canvasWidth, canvasHeight }: { canvasWidth: number; canvasHeight: number }): Promise<{ blob: Blob; width: number; height: number } | null> {
+	async renderToImage({
+		canvasWidth,
+		canvasHeight,
+		sampleTime,
+	}: {
+		canvasWidth: number;
+		canvasHeight: number;
+		/** Timeline seconds used to sample keyframes / fades (default: element midpoint). */
+		sampleTime?: number;
+	}): Promise<{ blob: Blob; width: number; height: number } | null> {
 		if (!this.params.content.trim()) return null;
 
 		const oc = new OffscreenCanvas(canvasWidth, canvasHeight);
 		const ctx = oc.getContext("2d");
 		if (!ctx) return null;
 
+		const t = sampleTime ?? this.params.startTime + this.params.duration / 2;
+		const elapsed = t - this.params.startTime;
+		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
+		const kf = this.params.keyframes;
+
+		const resolvedScale = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "scale",
+			normalizedTime,
+			defaultValue: this.params.transform.scale ?? 1,
+		});
+		const resolvedPosX = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "positionX",
+			normalizedTime,
+			defaultValue: this.params.transform.position.x,
+		});
+		const resolvedPosY = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "positionY",
+			normalizedTime,
+			defaultValue: this.params.transform.position.y,
+		});
+		const resolvedRotation = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "rotation",
+			normalizedTime,
+			defaultValue: this.params.transform.rotate,
+		});
+
 		// Translate to element position (canvas center + offset)
-		const x = this.params.canvasCenter.x + (this.params.transform.position?.x ?? 0);
-		const y = this.params.canvasCenter.y + (this.params.transform.position?.y ?? 0);
+		const x = this.params.canvasCenter.x + resolvedPosX;
+		const y = this.params.canvasCenter.y + resolvedPosY;
 		ctx.translate(x, y);
 
-		const scale = this.params.transform.scale ?? 1;
-		if (scale !== 1) ctx.scale(scale, scale);
-		if (this.params.transform.rotate) {
-			ctx.rotate((this.params.transform.rotate * Math.PI) / 180);
+		if (resolvedScale !== 1) ctx.scale(resolvedScale, resolvedScale);
+		if (resolvedRotation) {
+			ctx.rotate((resolvedRotation * Math.PI) / 180);
 		}
 
-		ctx.globalAlpha = this.params.opacity ?? 1;
+		let resolvedOpacity = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "opacity",
+			normalizedTime,
+			defaultValue: this.params.opacity,
+		});
+		const fadeIn = this.params.fadeIn ?? 0;
+		const fadeOut = this.params.fadeOut ?? 0;
+		if (fadeIn > 0 && elapsed < fadeIn) {
+			resolvedOpacity *= elapsed / fadeIn;
+		}
+		if (fadeOut > 0 && elapsed > this.params.duration - fadeOut) {
+			resolvedOpacity *= (this.params.duration - elapsed) / fadeOut;
+		}
+		ctx.globalAlpha = resolvedOpacity;
 
 		this.paintText(ctx);
 
