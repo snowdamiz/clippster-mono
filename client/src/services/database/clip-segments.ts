@@ -96,6 +96,29 @@ export async function updateClipSegment(
   );
 }
 
+// Update a single clip segment's transcript text
+export async function updateClipSegmentTranscript(
+  clipId: string,
+  segmentIndex: number,
+  transcript: string
+): Promise<void> {
+  const db = await getDatabase();
+
+  const clipVersions = await db.select<ClipVersion[]>(
+    'SELECT id FROM clip_versions WHERE clip_id = ? ORDER BY version_number DESC LIMIT 1',
+    [clipId]
+  );
+
+  if (clipVersions.length === 0) {
+    throw new Error('No clip version found for clip');
+  }
+
+  await db.execute(
+    'UPDATE clip_segments SET transcript = ? WHERE clip_version_id = ? AND segment_index = ?',
+    [transcript, clipVersions[0].id, segmentIndex]
+  );
+}
+
 // Split a clip segment into two separate segments at a specific time
 export async function splitClipSegment(
   clipId: string,

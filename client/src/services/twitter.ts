@@ -291,6 +291,7 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
   uploadDate?: string;
   error?: string;
 }> {
+  const cacheKey = url;
   try {
     const result = await invoke<string>('get_twitter_broadcast_info', { url });
     const metadata = JSON.parse(result);
@@ -455,7 +456,7 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
     } else if (participants && participants.length > 0 && duration && duration > 0) {
       // Rust GraphQL/Periscope call didn't produce a timeline — build an
       // equal-distribution fallback from the participants we already have.
-      const onStage = participants.filter(p => p.role !== 'listener');
+      const onStage = participants;
       if (onStage.length > 0) {
         const segDur = duration / onStage.length;
         speakerTimeline = onStage.map((p, i) => ({

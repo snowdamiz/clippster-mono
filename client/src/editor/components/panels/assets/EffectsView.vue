@@ -15,13 +15,14 @@ const { selectedElements } = useElementSelection();
 const { startDrag, wasDragCompleted } = usePointerDrag();
 const searchQuery = ref("");
 
-const effectTypes = EFFECT_PRESETS.map((p) => p.type);
+const visibleEffectPresets = computed(() => EFFECT_PRESETS.filter((p) => p.exportSupported));
+const effectTypes = visibleEffectPresets.value.map((p) => p.type);
 const previews = useEffectPreviews(effectTypes);
 
 const filteredPresets = computed(() => {
 	const q = searchQuery.value.trim().toLowerCase();
-	if (!q) return EFFECT_PRESETS;
-	return EFFECT_PRESETS.filter(
+	if (!q) return visibleEffectPresets.value;
+	return visibleEffectPresets.value.filter(
 		(p) => p.label.toLowerCase().includes(q) || p.description.toLowerCase().includes(q),
 	);
 });

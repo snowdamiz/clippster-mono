@@ -133,6 +133,7 @@
       :transcript-data="transcriptData"
       :watermark-settings="watermarkSettings"
       :subtitle-settings="props.subtitleSettings"
+      :max-words-for-aspect-ratio="props.maxWordsForAspectRatio"
       :creator-default-intro="props.creatorDefaultIntro"
       :creator-default-outro="props.creatorDefaultOutro"
       :creator-profile="props.creatorProfile"
@@ -193,6 +194,7 @@
     videoDuration: null,
     currentTime: null,
     aspectRatio: () => ({ width: 16, height: 9 }),
+    maxWordsForAspectRatio: 3,
     subtitleSettings: null,
     creatorDefaultIntro: null,
     creatorDefaultOutro: null,

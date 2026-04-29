@@ -91,7 +91,7 @@ class WebGLContextManager {
 	readPixels(width: number, height: number): Uint8ClampedArray | null {
 		const gl = this.gl;
 		if (!gl) return null;
-		const pixels = new Uint8ClampedArray(width * height * 4);
+		const pixels = new Uint8ClampedArray(new ArrayBuffer(width * height * 4));
 		gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 		return pixels;
 	}

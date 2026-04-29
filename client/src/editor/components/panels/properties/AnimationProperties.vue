@@ -2,7 +2,7 @@
 import { ref, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import type { ElementAnimation, AnimationType, AnimationEasing, AnimationCategory } from "../../../types/animations";
-import { ANIMATION_PRESETS, getPresetsForDirection, ANIMATION_CATEGORIES } from "../../../constants/animation-constants";
+import { ANIMATION_PRESETS, getExportableAnimationPresetsForDirection, ANIMATION_CATEGORIES } from "../../../constants/animation-constants";
 import { X } from "lucide-vue-next";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -20,9 +20,9 @@ const { editor } = useEditor();
 type AnimTab = "in" | "out" | "loop";
 const activeTab = ref<AnimTab>("in");
 
-const inPresets = computed(() => getPresetsForDirection("in"));
-const outPresets = computed(() => getPresetsForDirection("out"));
-const loopPresets = computed(() => getPresetsForDirection("loop"));
+const inPresets = computed(() => getExportableAnimationPresetsForDirection("in"));
+const outPresets = computed(() => getExportableAnimationPresetsForDirection("out"));
+const loopPresets = computed(() => getExportableAnimationPresetsForDirection("loop"));
 
 const currentPresets = computed(() => {
 	switch (activeTab.value) {

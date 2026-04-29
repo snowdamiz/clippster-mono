@@ -110,7 +110,10 @@ export function mergeClipTextBoxForRatio(state: ClipTextBoxState, ratio: string)
   if (!pr?.position) {
     return { ...state };
   }
-  const prStyle = pr.style && typeof pr.style === 'object' ? pr.style : {};
+  const prStyle =
+    pr.style && typeof pr.style === 'object'
+      ? (pr.style as Partial<TextOverlayStyle>)
+      : {};
   const widthFromStyle =
     typeof prStyle.maxWidth === 'number'
       ? prStyle.maxWidth

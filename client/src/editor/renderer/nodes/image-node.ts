@@ -46,6 +46,8 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 	private image?: HTMLImageElement;
 	private readyPromise: Promise<void>;
 	private transitionExtension: { before: number; after: number } = { before: 0, after: 0 };
+	private chromakeyCanvas?: HTMLCanvasElement;
+	private chromakeyCtx?: CanvasRenderingContext2D | null;
 
 	constructor(params: ImageNodeParams) {
 		super(params);
@@ -137,17 +139,21 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 			setupMaskClip(renderer.context, this.params.masks!, renderer.width, renderer.height);
 		}
 
-		// Apply transform (scale, position, rotation)
+		// Apply transform (scale, position, rotation) with keyframe overrides
 		const transform = this.params.transform;
 		if (transform) {
-			const centerX = renderer.width / 2 + transform.position.x;
-			const centerY = renderer.height / 2 + transform.position.y;
+			const resolvedScale = getKeyframedValue({ elementKeyframes: kf, property: "scale", normalizedTime, defaultValue: transform.scale });
+			const resolvedPosX = getKeyframedValue({ elementKeyframes: kf, property: "positionX", normalizedTime, defaultValue: transform.position.x });
+			const resolvedPosY = getKeyframedValue({ elementKeyframes: kf, property: "positionY", normalizedTime, defaultValue: transform.position.y });
+			const resolvedRotation = getKeyframedValue({ elementKeyframes: kf, property: "rotation", normalizedTime, defaultValue: transform.rotate });
+			const centerX = renderer.width / 2 + resolvedPosX;
+			const centerY = renderer.height / 2 + resolvedPosY;
 			renderer.context.translate(centerX, centerY);
-			if (transform.rotate !== 0) {
-				renderer.context.rotate((transform.rotate * Math.PI) / 180);
+			if (resolvedRotation !== 0) {
+				renderer.context.rotate((resolvedRotation * Math.PI) / 180);
 			}
-			if (transform.scale !== 1) {
-				renderer.context.scale(transform.scale, transform.scale);
+			if (resolvedScale !== 1) {
+				renderer.context.scale(resolvedScale, resolvedScale);
 			}
 			renderer.context.translate(-renderer.width / 2, -renderer.height / 2);
 		}
@@ -188,6 +194,9 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 			renderer.context.filter = filterParts.join(" ");
 		}
 
+		const chromakeySource = this.getChromakeySourceCanvas(this.image, this.params.chromakey);
+		const drawSource = chromakeySource ?? this.image;
+
 		if (
 			this.params.x !== undefined &&
 			this.params.y !== undefined &&
@@ -195,15 +204,15 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 			this.params.height !== undefined
 		) {
 			renderer.context.drawImage(
-				this.image,
+				drawSource,
 				this.params.x,
 				this.params.y,
 				this.params.width,
 				this.params.height,
 			);
 		} else {
-			const mediaW = this.image.naturalWidth || renderer.width;
-			const mediaH = this.image.naturalHeight || renderer.height;
+			const mediaW = ("naturalWidth" in drawSource ? drawSource.naturalWidth : drawSource.width) || renderer.width;
+			const mediaH = ("naturalHeight" in drawSource ? drawSource.naturalHeight : drawSource.height) || renderer.height;
 
 			// Apply crop: extract sub-rectangle from source image
 			const crop = this.params.crop;
@@ -222,7 +231,7 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 				const drawY = (renderer.height - drawH) / 2;
 
 				renderer.context.drawImage(
-					this.image,
+					drawSource,
 					sx, sy, sw, sh,
 					drawX, drawY, drawW, drawH,
 				);
@@ -236,7 +245,7 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 				const drawX = (renderer.width - drawW) / 2;
 				const drawY = (renderer.height - drawH) / 2;
 
-				renderer.context.drawImage(this.image, drawX, drawY, drawW, drawH);
+				renderer.context.drawImage(drawSource, drawX, drawY, drawW, drawH);
 			}
 		}
 
@@ -255,11 +264,6 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 			applyAdvancedColorAdjustments(renderer.context, renderer.width, renderer.height, ca);
 		}
 
-		// Apply chromakey (green screen removal)
-		if (this.params.chromakey?.enabled) {
-			applyChromakey(renderer.context, renderer.width, renderer.height, this.params.chromakey);
-		}
-
 		// Apply color grading: curves then wheels
 		if (this.params.colorCurves) {
 			applyColorCurves(renderer.context, renderer.width, renderer.height, this.params.colorCurves);
@@ -267,5 +271,28 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		if (this.params.colorWheels) {
 			applyColorWheels(renderer.context, renderer.width, renderer.height, this.params.colorWheels);
 		}
+	}
+
+	private getChromakeySourceCanvas(
+		source: HTMLImageElement,
+		chromakey?: ChromakeySettings,
+	): HTMLCanvasElement | null {
+		if (!chromakey?.enabled) return null;
+		const width = source.naturalWidth;
+		const height = source.naturalHeight;
+		if (width <= 0 || height <= 0) return null;
+
+		if (!this.chromakeyCanvas || this.chromakeyCanvas.width !== width || this.chromakeyCanvas.height !== height) {
+			this.chromakeyCanvas = document.createElement("canvas");
+			this.chromakeyCanvas.width = width;
+			this.chromakeyCanvas.height = height;
+			this.chromakeyCtx = this.chromakeyCanvas.getContext("2d", { willReadFrequently: true });
+		}
+		if (!this.chromakeyCanvas || !this.chromakeyCtx) return null;
+
+		this.chromakeyCtx.clearRect(0, 0, width, height);
+		this.chromakeyCtx.drawImage(source, 0, 0, width, height);
+		applyChromakey(this.chromakeyCtx, width, height, chromakey);
+		return this.chromakeyCanvas;
 	}
 }

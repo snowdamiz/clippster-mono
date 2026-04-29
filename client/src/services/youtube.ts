@@ -112,6 +112,15 @@ export function extractYouTubeChannel(input: string): string | null {
         }
       }
 
+      // Handle legacy/custom channel paths like youtube.com/DilanJay or youtube.com/DilanJay/videos
+      const [firstPathPart] = url.pathname.split('/').filter(Boolean);
+      if (
+        firstPathPart &&
+        !['watch', 'shorts', 'embed', 'live', 'playlist', 'feed', 'results', 'redirect'].includes(firstPathPart)
+      ) {
+        return firstPathPart;
+      }
+
       return null;
     } catch {
       return null;
@@ -219,10 +228,10 @@ export async function getSingleYouTubeVideo(videoUrl: string): Promise<YouTubeVo
  * 
  * Performance optimization: Fetch durations in parallel for VODs missing duration data
  */
-export async function getYouTubeVods(channel: string, limit: number = 20): Promise<YouTubeVod[]> {
+export async function getYouTubeVods(channel: string, limit: number = 20, offset: number = 0): Promise<YouTubeVod[]> {
   try {
     // Backend now handles video URL detection automatically
-    const result = await invoke<string>('get_youtube_vods', { channel: channel.trim(), limit });
+    const result = await invoke<string>('get_youtube_vods', { channel: channel.trim(), limit, offset });
     const vods: YouTubeVod[] = JSON.parse(result);
     
     // Find VODs missing duration
@@ -265,10 +274,10 @@ export async function getYouTubeVods(channel: string, limit: number = 20): Promi
  * 
  * Performance optimization: Fetch durations in parallel for videos missing duration data
  */
-export async function getYouTubeVideos(channel: string, limit: number = 20): Promise<YouTubeVod[]> {
+export async function getYouTubeVideos(channel: string, limit: number = 20, offset: number = 0): Promise<YouTubeVod[]> {
   try {
     // Backend now handles video URL detection automatically
-    const result = await invoke<string>('get_youtube_videos', { channel: channel.trim(), limit });
+    const result = await invoke<string>('get_youtube_videos', { channel: channel.trim(), limit, offset });
     const videos: YouTubeVod[] = JSON.parse(result);
     
     // Find videos missing duration

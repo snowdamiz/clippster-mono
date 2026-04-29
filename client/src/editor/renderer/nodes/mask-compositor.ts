@@ -24,6 +24,7 @@ function drawRectangle(
 	const cy = mask.y * canvasH;
 	const hw = (mask.width * canvasW) / 2;
 	const hh = (mask.height * canvasH) / 2;
+	const cr = mask.cornerRadius ?? 0;
 
 	ctx.save();
 	if (mask.rotation !== 0) {
@@ -31,7 +32,12 @@ function drawRectangle(
 		ctx.rotate((mask.rotation * Math.PI) / 180);
 		ctx.translate(-cx, -cy);
 	}
-	ctx.rect(cx - hw, cy - hh, hw * 2, hh * 2);
+	if (cr > 0) {
+		const radius = cr * Math.min(hw, hh);
+		ctx.roundRect(cx - hw, cy - hh, hw * 2, hh * 2, radius);
+	} else {
+		ctx.rect(cx - hw, cy - hh, hw * 2, hh * 2);
+	}
 	ctx.restore();
 }
 
@@ -58,6 +64,14 @@ function drawMaskShape(
 ) {
 	if (mask.type === "rectangle") {
 		drawRectangle(ctx, mask, canvasW, canvasH);
+	} else if (mask.type === "polygon") {
+		const pts = mask.points ?? [];
+		if (pts.length < 3) return;
+		ctx.moveTo(pts[0].x * canvasW, pts[0].y * canvasH);
+		for (let i = 1; i < pts.length; i++) {
+			ctx.lineTo(pts[i].x * canvasW, pts[i].y * canvasH);
+		}
+		ctx.closePath();
 	} else {
 		drawEllipse(ctx, mask, canvasW, canvasH);
 	}
@@ -136,24 +150,33 @@ export async function applyFeatheredMasks(
 	if (!maskCtx) return;
 
 	for (const mask of featheredMasks) {
-		maskCtx.save();
-		if (mask.feather > 0) {
-			maskCtx.filter = `blur(${mask.feather}px)`;
-		}
-		maskCtx.beginPath();
-		drawMaskShape(maskCtx as unknown as CanvasRenderingContext2D, mask, canvasW, canvasH);
+		const featherPx = mask.feather * (Math.min(canvasW, canvasH) / 1000);
+		// Step A: draw the shape (white on black) onto a dedicated shape canvas.
+		// We overdraw by feather px on every side so blur edges don't hit canvas bounds.
+		const pad = featherPx * 2;
+		const shapeCanvas = new OffscreenCanvas(canvasW + pad * 2, canvasH + pad * 2);
+		const shapeCtx = shapeCanvas.getContext("2d");
+		if (!shapeCtx) continue;
 
+		// Translate so the shape is centered with padding room around it.
+		shapeCtx.translate(pad, pad);
+		shapeCtx.beginPath();
+		drawMaskShape(shapeCtx as unknown as CanvasRenderingContext2D, mask, canvasW, canvasH);
+		shapeCtx.fillStyle = "white";
+		shapeCtx.fill();
+
+		// Step B: draw the shape canvas blurred onto the mask canvas.
+		maskCtx.save();
+		if (featherPx > 0) {
+			maskCtx.filter = `blur(${featherPx}px)`;
+		}
 		if (mask.invert) {
-			// White everywhere except the shape
+			// Start with full white, then subtract the blurred shape.
 			maskCtx.fillStyle = "white";
 			maskCtx.fillRect(0, 0, canvasW, canvasH);
 			maskCtx.globalCompositeOperation = "destination-out";
-			maskCtx.fillStyle = "black";
-			maskCtx.fill();
-		} else {
-			maskCtx.fillStyle = "white";
-			maskCtx.fill();
 		}
+		maskCtx.drawImage(shapeCanvas, -pad, -pad);
 		maskCtx.restore();
 	}
 

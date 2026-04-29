@@ -1,3 +1,4 @@
+import { getEffectPreset } from "../../constants/effect-constants";
 import type { VideoEffect } from "../../types/effects";
 import type {
 	ColorAdjustments,
@@ -33,6 +34,8 @@ export function applyCanvasEffects(
 
 	for (const effect of effects) {
 		if (!effect.enabled) continue;
+		// Skip legacy / removed presets so old projects do not get preview-only behavior.
+		if (!getEffectPreset(effect.type)) continue;
 
 		switch (effect.type) {
 			case "blur":
@@ -155,6 +158,8 @@ export function applyCanvasEffects(
 			case "filmBurn":
 				applyFilmBurn(ctx, width, height, effect.speed, effect.color, effect.intensity, elapsed);
 				break;
+			default:
+				break;
 		}
 	}
 }
@@ -168,6 +173,7 @@ export function buildFilterString(effects: VideoEffect[]): string {
 	const parts: string[] = [];
 	for (const effect of effects) {
 		if (!effect.enabled) continue;
+		if (!getEffectPreset(effect.type)) continue;
 		switch (effect.type) {
 			case "blur":
 				parts.push(`blur(${effect.radius}px)`);
@@ -181,6 +187,8 @@ export function buildFilterString(effects: VideoEffect[]): string {
 			case "negative":
 				parts.push(`invert(${effect.intensity / 100})`);
 				break;
+			default:
+				break;
 		}
 	}
 	return parts.join(" ");
@@ -192,7 +200,9 @@ export function buildFilterString(effects: VideoEffect[]): string {
  */
 export function hasPostDrawEffects(effects: VideoEffect[]): boolean {
 	const filterOnlyTypes = new Set(["blur", "grayscale", "sepia", "negative"]);
-	return effects.some((e) => e.enabled && !filterOnlyTypes.has(e.type));
+	return effects.some(
+		(e) => e.enabled && getEffectPreset(e.type) !== undefined && !filterOnlyTypes.has(e.type),
+	);
 }
 
 // ── Individual effect implementations ──

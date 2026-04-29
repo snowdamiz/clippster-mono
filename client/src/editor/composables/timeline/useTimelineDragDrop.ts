@@ -19,7 +19,7 @@ import {
 	buildImageElement,
 	buildEffectElement,
 } from "../../lib/timeline/element-utils";
-import { computeDropTarget } from "../../lib/timeline/drop-utils";
+import { computeDropTarget, findCompatibleTrack } from "../../lib/timeline/drop-utils";
 import { isMainTrack } from "../../lib/timeline/track-utils";
 import { getMainTrackMagnet } from "./useTimelineTools";
 import type { TrackType, DropTarget, ElementType } from "../../types/timeline";
@@ -207,7 +207,17 @@ export function useTimelineDragDrop({
 	function executeTextDrop(target: DropTarget, dragData: TextDragData) {
 		let trackId: string;
 		if (target.isNewTrack) {
-			trackId = editor.timeline.addTrack({ type: "text", index: target.trackIndex });
+			const compatIdx = findCompatibleTrack({
+				tracks: tracks.value,
+				elementType: "text",
+				startTime: target.xPosition,
+				duration: TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,
+			});
+			if (compatIdx >= 0) {
+				trackId = tracks.value[compatIdx].id;
+			} else {
+				trackId = editor.timeline.addTrack({ type: "text", index: target.trackIndex });
+			}
 		} else {
 			const track = tracks.value[target.trackIndex];
 			if (!track) return;
@@ -228,7 +238,17 @@ export function useTimelineDragDrop({
 	function executeStickerDrop(target: DropTarget, dragData: StickerDragData) {
 		let trackId: string;
 		if (target.isNewTrack) {
-			trackId = editor.timeline.addTrack({ type: "sticker", index: target.trackIndex });
+			const compatIdx = findCompatibleTrack({
+				tracks: tracks.value,
+				elementType: "sticker",
+				startTime: target.xPosition,
+				duration: TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,
+			});
+			if (compatIdx >= 0) {
+				trackId = tracks.value[compatIdx].id;
+			} else {
+				trackId = editor.timeline.addTrack({ type: "sticker", index: target.trackIndex });
+			}
 		} else {
 			const track = tracks.value[target.trackIndex];
 			if (!track) return;
@@ -266,7 +286,17 @@ export function useTimelineDragDrop({
 
 		let trackId: string;
 		if (target.isNewTrack) {
-			trackId = editor.timeline.addTrack({ type: "effect", index: target.trackIndex });
+			const compatIdx = findCompatibleTrack({
+				tracks: tracks.value,
+				elementType: "effect",
+				startTime: target.xPosition,
+				duration: TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,
+			});
+			if (compatIdx >= 0) {
+				trackId = tracks.value[compatIdx].id;
+			} else {
+				trackId = editor.timeline.addTrack({ type: "effect", index: target.trackIndex });
+			}
 		} else {
 			const track = tracks.value[target.trackIndex];
 			if (!track) return;
@@ -368,17 +398,26 @@ export function useTimelineDragDrop({
 
 		const trackType: TrackType = dragData.mediaType === "audio" ? "audio" : "video";
 		const trackName = dragData.mediaType === "image" ? "Image track" : undefined;
+		const duration = mediaAsset.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
 		let trackId: string;
 
 		if (target.isNewTrack) {
-			trackId = editor.timeline.addTrack({ type: trackType, index: target.trackIndex, name: trackName });
+			const compatIdx = findCompatibleTrack({
+				tracks: tracks.value,
+				elementType: dragData.mediaType,
+				startTime: target.xPosition,
+				duration,
+			});
+			if (compatIdx >= 0) {
+				trackId = tracks.value[compatIdx].id;
+			} else {
+				trackId = editor.timeline.addTrack({ type: trackType, index: target.trackIndex, name: trackName });
+			}
 		} else {
 			const track = tracks.value[target.trackIndex];
 			if (!track) return;
 			trackId = track.id;
 		}
-
-		const duration = mediaAsset.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
 
 		// Auto-ripple: push subsequent elements right on main track before inserting
 		rippleInsertOnMainTrack(trackId, target.xPosition, duration);

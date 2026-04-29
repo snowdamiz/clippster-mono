@@ -28,7 +28,7 @@ precision highp float;
 
 uniform sampler2D u_texture;
 uniform vec3 u_keyColor;      // RGB 0-1
-uniform float u_threshold;    // similarity threshold 0-1
+uniform float u_threshold;    // similarity threshold (normalized chroma distance)
 uniform float u_smoothness;   // edge softness 0-1
 uniform float u_spillAmount;  // spill suppression strength 0-1
 
@@ -52,32 +52,31 @@ void main() {
 	vec3 keyYCbCr = rgbToYCbCr(u_keyColor);
 	float dist = distance(srcYCbCr.yz, keyYCbCr.yz);
 
-	// Map distance to alpha:
-	//  dist < threshold           → fully transparent (remove)
-	//  threshold..threshold+soft  → partial alpha (smooth edge)
-	//  dist > threshold+soft      → fully opaque
-	float hard = u_threshold;
-	float soft = u_smoothness * 0.3;
-	float alpha = smoothstep(hard, hard + soft + 0.001, dist);
+	// Standard OBS/After Effects smoothstep formulation:
+	//   similarity  → inner edge (fully transparent below)
+	//   smoothness  → outer edge width (fully opaque above similarity+smoothness)
+	float alpha = smoothstep(u_threshold, u_threshold + u_smoothness, dist);
 
-	// Spill suppression: desaturate chroma near key colour
-	if (u_spillAmount > 0.0 && alpha < 1.0) {
-		float spillMask = (1.0 - alpha) * u_spillAmount;
-		// Reduce the dominant key channel toward neutral grey
+	// Spill suppression: desaturate pixels that are chromatically close to the key.
+	// Applies to fringe pixels (alpha < 1) AND near-fringe opaque pixels based on chroma proximity.
+	if (u_spillAmount > 0.0) {
+		float spillRange = u_threshold + u_smoothness * 2.0 + 0.05;
+		float chromaProximity = max(0.0, 1.0 - dist / max(spillRange, 0.001));
+		float spillMask = min(1.0, (1.0 - alpha + chromaProximity) * 0.5) * clamp(u_spillAmount, 0.0, 1.0);
 		float keyR = u_keyColor.r;
 		float keyG = u_keyColor.g;
 		float keyB = u_keyColor.b;
-		// Which channel dominates?
 		float maxKey = max(keyR, max(keyG, keyB));
-		if (maxKey > 0.5) {
+		if (maxKey > 0.3) {
 			if (keyG >= keyR && keyG >= keyB) {
-				// Green screen: reduce green, boost toward average of R/B
 				float avg = (rgb.r + rgb.b) / 2.0;
 				rgb.g = mix(rgb.g, avg, spillMask);
 			} else if (keyB >= keyR && keyB >= keyG) {
-				// Blue screen: reduce blue
 				float avg = (rgb.r + rgb.g) / 2.0;
 				rgb.b = mix(rgb.b, avg, spillMask);
+			} else {
+				float avg = (rgb.g + rgb.b) / 2.0;
+				rgb.r = mix(rgb.r, avg, spillMask);
 			}
 		}
 	}
@@ -126,10 +125,13 @@ export function applyChromakeyGPU(
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+		// Flip Y on upload so WebGL texture coords (bottom-left origin) match Canvas2D (top-left)
+		gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 		gl.texImage2D(
 			gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0,
 			gl.RGBA, gl.UNSIGNED_BYTE, imageData.data,
 		);
+		gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
 
 		// Parse key colour
 		const { r, g, b } = parseHexColor(settings.color ?? "#00ff00");
@@ -156,21 +158,14 @@ export function applyChromakeyGPU(
 		const aPosLoc = gl.getAttribLocation(prog.program, "a_position");
 		drawFullscreenQuad(gl, aPosLoc);
 
-		// Read back pixels and write to 2D canvas
-		// WebGL Y-axis is flipped vs Canvas 2D — we need to flip vertically
+		// Read back pixels and write to 2D canvas.
+		// readPixels is bottom-up relative to Canvas2D, so flip rows before putImageData.
 		const raw = webglContextManager.readPixels(width, height);
-		if (!raw) return false;
-
-		// Flip rows vertically (WebGL origin is bottom-left, Canvas is top-left)
-		const flipped = new Uint8ClampedArray(width * height * 4);
-		const rowBytes = width * 4;
-		for (let row = 0; row < height; row++) {
-			const srcRow = (height - 1 - row) * rowBytes;
-			const dstRow = row * rowBytes;
-			flipped.set(raw.subarray(srcRow, srcRow + rowBytes), dstRow);
+		if (!raw) {
+			console.warn("[WebGL] Chromakey readPixels returned empty buffer", { width, height });
+			return false;
 		}
-
-		const result = new ImageData(flipped, width, height);
+		const result = new ImageData(flipRows(raw, width, height), width, height);
 		ctx.putImageData(result, 0, 0);
 
 		return true;
@@ -190,4 +185,15 @@ function parseHexColor(hex: string): { r: number; g: number; b: number } {
 		g: ((bigint >> 8) & 255) / 255,
 		b: (bigint & 255) / 255,
 	};
+}
+
+function flipRows(data: Uint8ClampedArray, width: number, height: number): Uint8ClampedArray {
+	const rowSize = width * 4;
+	const flipped = new Uint8ClampedArray(data.length);
+	for (let y = 0; y < height; y++) {
+		const src = y * rowSize;
+		const dst = (height - 1 - y) * rowSize;
+		flipped.set(data.subarray(src, src + rowSize), dst);
+	}
+	return flipped;
 }

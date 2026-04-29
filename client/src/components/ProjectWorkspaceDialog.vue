@@ -43,7 +43,7 @@
                     placeholder="Select aspect ratio"
                     class="workspace-dialog__aspect-dropdown"
                   />
-                  
+
                   <!-- Platform Preview Button (only shown for 9:16) -->
                   <button
                     v-if="is916"
@@ -60,29 +60,30 @@
                 <!-- Social Overlay Dropdown Menu -->
                 <Teleport to="body">
                   <Transition name="dropdown">
-                    <div
-                      v-if="showSocialMenu && is916"
-                      class="workspace-dialog__social-menu"
-                      :style="socialMenuStyle"
-                    >
+                    <div v-if="showSocialMenu && is916" class="workspace-dialog__social-menu" :style="socialMenuStyle">
                       <!-- None option -->
                       <button
                         type="button"
                         class="workspace-dialog__social-option"
                         :class="{ 'workspace-dialog__social-option--active': !activeSocialOverlay }"
-                        @click="activeSocialOverlay = null; showSocialMenu = false"
+                        @click="
+                          activeSocialOverlay = null;
+                          showSocialMenu = false;
+                        "
                       >
                         <span class="workspace-dialog__social-icon">✕</span>
                         <span class="workspace-dialog__social-label">None</span>
                       </button>
-                      
+
                       <!-- Platform options -->
                       <button
                         v-for="preset in SOCIAL_OVERLAY_PRESETS"
                         :key="preset.platform"
                         type="button"
                         class="workspace-dialog__social-option"
-                        :class="{ 'workspace-dialog__social-option--active': activeSocialOverlay?.platform === preset.platform }"
+                        :class="{
+                          'workspace-dialog__social-option--active': activeSocialOverlay?.platform === preset.platform,
+                        }"
                         @click="toggleSocialOverlay(preset)"
                       >
                         <span class="workspace-dialog__social-icon">{{ preset.icon }}</span>
@@ -93,7 +94,7 @@
                 </Teleport>
 
                 <!-- Video Player Container -->
-                <div class="workspace-dialog__video-wrapper" style="position: relative;">
+                <div class="workspace-dialog__video-wrapper" style="position: relative">
                   <VideoPlayer
                     :video-src="videoSrc"
                     :video-loading="videoLoading"
@@ -130,11 +131,11 @@
                     @clipTextBoxPositionChange="onClipTextBoxPositionChange"
                     @clipTextBoxSelected="onClipTextBoxSelected"
                   />
-                  
+
                   <!-- Social Platform Overlay -->
                   <div
                     v-if="activeSocialOverlay"
-                    style="position: absolute; inset: 0; z-index: 100; pointer-events: none; user-select: none;"
+                    style="position: absolute; inset: 0; z-index: 100; pointer-events: none; user-select: none"
                   >
                     <SocialOverlay
                       :preset="activeSocialOverlay"
@@ -438,11 +439,7 @@
   import { getRawVideosByProjectId } from '@/services/database';
   import { getProjectVodPresetConfig } from '@/services/database/vod-presets';
   import { updateClipSubtitlePosition, updateClipTextOverlay } from '@/services/database/clips';
-  import {
-    parseClipTextOverlayJson,
-    createDefaultClipTextBoxState,
-    type ClipTextBoxState,
-  } from '@/utils/clipTextBox';
+  import { parseClipTextOverlayJson, createDefaultClipTextBoxState, type ClipTextBoxState } from '@/utils/clipTextBox';
   import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
   import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
 
@@ -519,7 +516,7 @@
   // Segmented playback tracking
   const currentlyPlayingClipId = ref<string | null>(null);
   const lastPlayedClipId = ref<string | null>(null);
-  
+
   // Selected clip for subtitle editing (separate from playback)
   const selectedClipId = ref<string | null>(null);
 
@@ -546,10 +543,7 @@
   function getClipDurationFromTimelineClip(clip: any): number {
     const segments = getClipTimelineSegments(clip);
     if (!segments.length) return Math.max(0.1, Number(clip?.total_duration) || 3);
-    return segments.reduce(
-      (sum: number, s: any) => sum + (s.end_time - s.start_time),
-      0
-    );
+    return segments.reduce((sum: number, s: any) => sum + (s.end_time - s.start_time), 0);
   }
 
   function getClipAbsoluteStartFromTimelineClip(clip: any): number | null {
@@ -570,9 +564,7 @@
 
   const textBoxContextClipId = computed(() => {
     if (rightPanelTab.value === 'text' && selectedClipId.value) return selectedClipId.value;
-    return (
-      currentlyPlayingClipId.value || lastPlayedClipId.value || selectedClipId.value || null
-    );
+    return currentlyPlayingClipId.value || lastPlayedClipId.value || selectedClipId.value || null;
   });
 
   /** Player reads overlay from timeline clip JSON (kept in sync when editing). */
@@ -585,9 +577,7 @@
   });
 
   /** Drag/resize handles whenever the visible clip has an enabled text box (like subtitles). */
-  const clipTextBoxPlayerInteractive = computed(
-    () => Boolean(clipTextBoxForVideoPlayer.value?.enabled)
-  );
+  const clipTextBoxPlayerInteractive = computed(() => Boolean(clipTextBoxForVideoPlayer.value?.enabled));
 
   const clipTextBoxAbsoluteStart = computed((): number | null => {
     if (!workspaceVideoTimeIsSourceAbsolute.value) return null;
@@ -614,7 +604,7 @@
 
   // Aspect ratio state
   const selectedAspectRatio = ref({ width: 16, height: 9 });
-  
+
   // Preview aspect ratio for video player (separate from selectedAspectRatio used for framing)
   const previewAspectRatio = ref<string>('16:9');
 
@@ -630,8 +620,7 @@
   const detectionSubtitleDefaults = computed(() => {
     const subs = vodPresetConfig.value?.subtitleDefaults;
     if (!subs) return null;
-    const presetId =
-      (subs.selectedPresetId && String(subs.selectedPresetId).trim()) || 'tiktok-bold';
+    const presetId = (subs.selectedPresetId && String(subs.selectedPresetId).trim()) || 'tiktok-bold';
     return {
       enabled: subs.enabled !== false,
       presetId,
@@ -703,7 +692,7 @@
   // Available aspect ratios for preview dropdown (16:9 + VOD preset ratios)
   const availablePreviewRatios = computed(() => {
     const ratios = ['16:9']; // Always include source ratio
-    
+
     if (vodPresetConfig.value?.framingConfig) {
       // Add the target aspect ratio from VOD preset
       const targetRatio = vodPresetConfig.value.targetAspectRatio;
@@ -711,15 +700,15 @@
         ratios.push(targetRatio);
       }
     }
-    
+
     return ratios;
   });
 
   // Aspect ratio options for CustomDropdown component
   const aspectRatioOptions = computed(() => {
-    return availablePreviewRatios.value.map(ratio => ({
+    return availablePreviewRatios.value.map((ratio) => ({
       label: ratio,
-      value: ratio
+      value: ratio,
     }));
   });
 
@@ -806,7 +795,7 @@
         aspectRatio: aspectRatioStr,
         currentWatermarkData: !!currentWatermarkData.value,
       });
-      
+
       if (!settings.enabled) {
         console.log('[ProjectWorkspaceDialog] Watermark disabled, clearing data');
         currentWatermarkData.value = null;
@@ -911,17 +900,18 @@
   function applyWorkspaceLayoutToClipPlaybackSettings(
     clipSettings: SubtitleSettings,
     layoutDefaults: SubtitleSettings | null,
-    fullClip: { subtitle_position_x?: number | null; subtitle_position_y?: number | null; subtitle_position_width?: number | null }
+    fullClip: {
+      subtitle_position_x?: number | null;
+      subtitle_position_y?: number | null;
+      subtitle_position_width?: number | null;
+    }
   ): SubtitleSettings {
     if (!layoutDefaults) return clipSettings;
     const userMovedSubtitleBoxXY = clipSubtitlePositionLooksUserPlaced(fullClip);
     const ratio = previewAspectRatio.value;
     const layoutPr = layoutDefaults.perRatioConfigs?.[ratio];
     const clipPr = clipSettings.perRatioConfigs?.[ratio];
-    const layoutY =
-      layoutPr?.position?.y ??
-      layoutPr?.positionPercentage ??
-      layoutDefaults.positionPercentage;
+    const layoutY = layoutPr?.position?.y ?? layoutPr?.positionPercentage ?? layoutDefaults.positionPercentage;
     const layoutMaxW = layoutPr?.maxWidth ?? layoutDefaults.maxWidth;
 
     const merged: SubtitleSettings = {
@@ -945,6 +935,7 @@
           ...merged.perRatioConfigs,
           [ratio]: {
             ...(clipPr ?? {}),
+            fontSize: clipPr?.fontSize ?? layoutDefaults.fontSize ?? clipSettings.fontSize,
             positionPercentage: layoutY,
             position: {
               x: clipPr?.position?.x ?? 50,
@@ -995,8 +986,7 @@
   const activeSubtitlePosition = computed(() => {
     const playingId = currentlyPlayingClipId.value;
     const clip = playingId ? timelineClips.value.find((c: any) => c.id === playingId) : null;
-    const userSavedSubtitleXY =
-      clip && activeSubtitleSettings.value && clipSubtitlePositionLooksUserPlaced(clip);
+    const userSavedSubtitleXY = clip && activeSubtitleSettings.value && clipSubtitlePositionLooksUserPlaced(clip);
 
     if (userSavedSubtitleXY && clip) {
       return {
@@ -1010,16 +1000,10 @@
     if (!s) return null;
     const ratioKey = previewAspectRatio.value;
     const pr = s.perRatioConfigs?.[ratioKey];
-    const y =
-      pr?.position?.y ??
-      pr?.positionPercentage ??
-      s.positionPercentage ??
-      85;
+    const y = pr?.position?.y ?? pr?.positionPercentage ?? s.positionPercentage ?? 85;
     const x = pr?.position?.x ?? 50;
     const w =
-      clip?.subtitle_position_width != null
-        ? clip.subtitle_position_width
-        : pr?.maxWidth ?? s.maxWidth ?? null;
+      clip?.subtitle_position_width != null ? clip.subtitle_position_width : (pr?.maxWidth ?? s.maxWidth ?? null);
     return { x, y, width: w };
   });
 
@@ -1118,20 +1102,20 @@
     const clipId = selectedClipId.value || currentlyPlayingClipId.value;
     const clip = timelineClips.value.find((c: any) => c.id === clipId);
     if (!clip) return [];
-    
+
     // Get the clip's time range from its segments
     const clipSegments = clip.current_version_segments || clip.segments || [];
     if (clipSegments.length === 0) return [];
-    
+
     const clipStartTime = clipSegments[0].start_time;
     const clipEndTime = clipSegments[clipSegments.length - 1].end_time;
-    
+
     // Filter the project's transcript segments to only those within this clip's time range
     const allSegments = transcriptSegments.value || [];
     const filteredSegments = allSegments.filter((seg: any) => {
       return seg.start >= clipStartTime && seg.end <= clipEndTime;
     });
-    
+
     // Adjust segment times to be relative to clip start (0-based)
     return filteredSegments.map((seg: any) => ({
       start: seg.start - clipStartTime,
@@ -1371,13 +1355,17 @@
     cancelTranscriptionFn.value = cancelTranscription;
 
     // Watch transcription progress
-    const stopWatch = watch(tProgress, (p) => {
-      if (props.project?.id === projectId) {
-        transcribeProgressValue.value = p.progress;
-        transcribeStage.value = p.stage;
-        transcribeMessage.value = p.message;
-      }
-    }, { deep: true });
+    const stopWatch = watch(
+      tProgress,
+      (p) => {
+        if (props.project?.id === projectId) {
+          transcribeProgressValue.value = p.progress;
+          transcribeStage.value = p.stage;
+          transcribeMessage.value = p.message;
+        }
+      },
+      { deep: true }
+    );
 
     try {
       const result = await transcribeProject(projectId, { organizationId });
@@ -1411,9 +1399,8 @@
       const { createManualClip } = await import('@/services/database/manual-clips');
 
       // Auto-generate clip name from transcript text (first ~50 chars)
-      const clipName = transcriptText.length > 50
-        ? transcriptText.substring(0, 50).trim() + '...'
-        : transcriptText.trim();
+      const clipName =
+        transcriptText.length > 50 ? transcriptText.substring(0, 50).trim() + '...' : transcriptText.trim();
 
       await createManualClip(props.project.id, {
         name: clipName || 'Transcript Clip',
@@ -1442,7 +1429,10 @@
     // In the workspace dialog context, transcript delete removes the time range from clips
     // by adjusting clip boundaries. This is a non-destructive operation on the source video.
     const { success: showSuccess } = useToast();
-    showSuccess('Time Range Marked', `Marked ${(endTime - startTime).toFixed(1)}s for removal. Clips will be adjusted.`);
+    showSuccess(
+      'Time Range Marked',
+      `Marked ${(endTime - startTime).toFixed(1)}s for removal. Clips will be adjusted.`
+    );
   }
 
   function onSplitAtTime(time: number) {
@@ -1594,12 +1584,7 @@
     scheduleClipTextPersist();
   }
 
-  async function onClipTextBoxPositionChange(payload: {
-    x: number;
-    y: number;
-    widthPct: number;
-    fontSize?: number;
-  }) {
+  async function onClipTextBoxPositionChange(payload: { x: number; y: number; widthPct: number; fontSize?: number }) {
     const clipId = textBoxContextClipId.value;
     if (!clipId) return;
     const clip = getTimelineClipById(clipId);
@@ -1611,10 +1596,7 @@
       positionX: payload.x,
       positionY: payload.y,
       widthPct: payload.widthPct,
-      style:
-        payload.fontSize != null
-          ? { ...base.style, fontSize: payload.fontSize }
-          : base.style,
+      style: payload.fontSize != null ? { ...base.style, fontSize: payload.fontSize } : base.style,
     };
     if (selectedClipId.value === clipId) {
       activeClipTextBox.value = next;
@@ -1667,9 +1649,8 @@
       const defaults = subtitleEditorDefaultSettings.value;
 
       if (defaults && clipIds.length > 0) {
-        const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } = await import(
-          '@/services/database/clips'
-        );
+        const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } =
+          await import('@/services/database/clips');
         const merged: SubtitleSettings = {
           ...JSON.parse(JSON.stringify(defaults)),
           enabled: true,
@@ -1677,12 +1658,7 @@
         };
         for (const id of clipIds) {
           await updateClipFullSubtitleSettings(id, merged);
-          await updateClipSubtitlePosition(
-            id,
-            50,
-            merged.positionPercentage ?? 85,
-            merged.maxWidth ?? undefined
-          );
+          await updateClipSubtitlePosition(id, 50, merged.positionPercentage ?? 85, merged.maxWidth ?? undefined);
         }
       } else {
         const { updateMultipleClipsSubtitleSettings } = await import('@/services/database/clips');
@@ -1745,7 +1721,6 @@
     _promptId: string,
     promptContent: string,
     organizationId: number | null = null,
-    multimodal: boolean = false,
     startTime: number = 0,
     endTime: number = 0,
     subtitleSettings: { enabled: boolean; presetId: string } | null = null
@@ -1754,7 +1729,6 @@
     console.log('[ProjectWorkspaceDialog] _promptId:', _promptId);
     console.log('[ProjectWorkspaceDialog] promptContent length:', promptContent?.length);
     console.log('[ProjectWorkspaceDialog] organizationId:', organizationId);
-    console.log('[ProjectWorkspaceDialog] multimodal:', multimodal);
     console.log('[ProjectWorkspaceDialog] arguments count:', arguments.length);
 
     if (!props.project) {
@@ -1789,7 +1763,7 @@
         console.error('[ProjectWorkspaceDialog] Failed to set backend clip generation state:', error);
       }
 
-      console.log('[ProjectWorkspaceDialog] Starting enhanced clip detection with chunking support');
+      console.log('[ProjectWorkspaceDialog] Starting clip detection with chunking support');
 
       // Use the new chunked detection system
       const { useChunkedClipDetection } = await import('@/composables/useChunkedClipDetection');
@@ -1804,7 +1778,13 @@
         chunkedProgress,
         (newProgress) => {
           // Always update global tracking (this persists across navigation)
-          updateProgress(projectId, newProgress.progress, newProgress.stage, newProgress.message, newProgress.error || '');
+          updateProgress(
+            projectId,
+            newProgress.progress,
+            newProgress.stage,
+            newProgress.message,
+            newProgress.error || ''
+          );
 
           // Only update local UI refs if the user is still viewing THIS project
           // This prevents other project's progress from overwriting the current view
@@ -1822,20 +1802,24 @@
       );
 
       try {
-        // Perform enhanced clip detection
+        // Perform clip detection
         const result = await detectClipsWithChunking(projectId, promptContent, {
           chunkDurationMinutes: 15,
           overlapSeconds: 30,
           forceReprocess: false,
           organizationId: organizationId,
-          multimodal: multimodal,
           startTime,
           endTime,
           subtitleSettings,
+          streamerMetadata: {
+            display_name: props.project?.name,
+            platform: props.project?.platform,
+            creator_profile_id: props.project?.creator_profile_id,
+          },
         });
 
         if (result.success) {
-          console.log('[ProjectWorkspaceDialog] Enhanced clip detection successful');
+          console.log('[ProjectWorkspaceDialog] Clip detection successful');
 
           // Show finalizing state while we prepare thumbnails
           if (props.project?.id === projectId) {
@@ -2508,7 +2492,7 @@
       const endTime = segments[segments.length - 1].end_time;
       return currentTime.value >= startTime && currentTime.value <= endTime;
     });
-    
+
     // Set selectedClipId to the clip at current time (or first clip if none found)
     if (currentClip) {
       selectedClipId.value = currentClip.id;
@@ -2524,7 +2508,7 @@
   async function onSubtitleFontSizeChange(fontSize: number) {
     if (activeSubtitleSettings.value) {
       activeSubtitleSettings.value = { ...activeSubtitleSettings.value, fontSize };
-      
+
       // CRITICAL: Sync current position from subtitle_position columns into settings
       const currentClip = timelineClips.value.find((c: any) => c.id === currentlyPlayingClipId.value);
       if (currentClip) {
@@ -2535,13 +2519,14 @@
           activeSubtitleSettings.value.maxWidth = currentClip.subtitle_position_width;
         }
       }
-      
+
       // Save the full settings to the database
       if (currentlyPlayingClipId.value) {
         try {
-          const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } = await import('@/services/database/clips');
+          const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } =
+            await import('@/services/database/clips');
           await updateClipFullSubtitleSettings(currentlyPlayingClipId.value, activeSubtitleSettings.value);
-          
+
           // CRITICAL: Also save position to the separate columns to keep them in sync
           if (currentClip) {
             const posX = currentClip.subtitle_position_x ?? 50;
@@ -2550,8 +2535,11 @@
             await updateClipSubtitlePosition(currentlyPlayingClipId.value, posX, posY, width);
             console.log('[ProjectWorkspaceDialog] Synced position columns after font size change');
           }
-          
-          console.log('[ProjectWorkspaceDialog] Saved subtitle font size change with current position for clip:', currentlyPlayingClipId.value);
+
+          console.log(
+            '[ProjectWorkspaceDialog] Saved subtitle font size change with current position for clip:',
+            currentlyPlayingClipId.value
+          );
         } catch (error) {
           console.error('[ProjectWorkspaceDialog] Failed to save subtitle font size:', error);
         }
@@ -2564,43 +2552,47 @@
     console.log('[ProjectWorkspaceDialog] onSubtitleSettingsUpdate called with patch:', patch);
     console.log('[ProjectWorkspaceDialog] currentlyPlayingClipId.value:', currentlyPlayingClipId.value);
     console.log('[ProjectWorkspaceDialog] activeSubtitleSettings.value:', activeSubtitleSettings.value);
-    
+
     if (activeSubtitleSettings.value) {
       // Merge the patch with current settings
       const updatedSettings = { ...activeSubtitleSettings.value, ...patch };
-      
+
       // Try to sync the current dragged position from subtitle_position columns
       const currentClip = timelineClips.value.find((c: any) => c.id === currentlyPlayingClipId.value);
       if (currentClip) {
         console.log('[ProjectWorkspaceDialog] Current clip position before sync:', {
           x: currentClip.subtitle_position_x,
           y: currentClip.subtitle_position_y,
-          width: currentClip.subtitle_position_width
+          width: currentClip.subtitle_position_width,
         });
-        
+
         if (currentClip.subtitle_position_y != null) {
           updatedSettings.positionPercentage = currentClip.subtitle_position_y;
         }
         if (currentClip.subtitle_position_width != null) {
           updatedSettings.maxWidth = currentClip.subtitle_position_width;
         }
-        
+
         console.log('[ProjectWorkspaceDialog] Updated settings after position sync:', {
           positionPercentage: updatedSettings.positionPercentage,
-          maxWidth: updatedSettings.maxWidth
+          maxWidth: updatedSettings.maxWidth,
         });
       } else {
-        console.warn('[ProjectWorkspaceDialog] Could not find current clip in timelineClips for position sync. ClipId:', currentlyPlayingClipId.value);
+        console.warn(
+          '[ProjectWorkspaceDialog] Could not find current clip in timelineClips for position sync. ClipId:',
+          currentlyPlayingClipId.value
+        );
       }
-      
+
       activeSubtitleSettings.value = updatedSettings;
-      
+
       // Save the full settings to the database for the currently playing clip
       // IMPORTANT: Save even if currentClip wasn't found in timelineClips
       if (currentlyPlayingClipId.value) {
         try {
-          const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } = await import('@/services/database/clips');
-          
+          const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } =
+            await import('@/services/database/clips');
+
           console.log('[ProjectWorkspaceDialog] About to save full settings to database:', {
             clipId: currentlyPlayingClipId.value,
             animationStyle: activeSubtitleSettings.value.animationStyle,
@@ -2609,13 +2601,16 @@
             border2Width: activeSubtitleSettings.value.border2Width,
             border2Color: activeSubtitleSettings.value.border2Color,
             fontSize: activeSubtitleSettings.value.fontSize,
-            highlightColor: activeSubtitleSettings.value.highlightColor
+            highlightColor: activeSubtitleSettings.value.highlightColor,
           });
-          
+
           await updateClipFullSubtitleSettings(currentlyPlayingClipId.value, activeSubtitleSettings.value);
-          
-          console.log('[ProjectWorkspaceDialog] Saved subtitle settings to database for clip:', currentlyPlayingClipId.value);
-          
+
+          console.log(
+            '[ProjectWorkspaceDialog] Saved subtitle settings to database for clip:',
+            currentlyPlayingClipId.value
+          );
+
           // Also save position to the separate columns if we have the clip data
           if (currentClip) {
             const posX = currentClip.subtitle_position_x ?? 50;
@@ -2624,9 +2619,12 @@
             await updateClipSubtitlePosition(currentlyPlayingClipId.value, posX, posY, width);
             console.log('[ProjectWorkspaceDialog] Synced position columns to match JSON:', { posX, posY, width });
           }
-          
-          console.log('[ProjectWorkspaceDialog] Saved full subtitle settings for clip with current position:', currentlyPlayingClipId.value);
-          
+
+          console.log(
+            '[ProjectWorkspaceDialog] Saved full subtitle settings for clip with current position:',
+            currentlyPlayingClipId.value
+          );
+
           // CRITICAL: Wait for clips data to refresh so updated settings are available
           // Use a promise to wait for the refresh to actually complete
           await new Promise<void>((resolve) => {
@@ -2635,10 +2633,10 @@
               if (mediaPanelRef.value) {
                 await mediaPanelRef.value.refreshClips();
               }
-              
+
               // Refresh timeline clips (this updates the in-memory clip data)
               await loadTimelineClips(props.project!.id);
-              
+
               console.log('[ProjectWorkspaceDialog] Clips data refreshed after saving subtitle settings');
               resolve();
             }, 50); // Small delay to ensure DB write completes
@@ -2677,7 +2675,7 @@
     try {
       // Save position to separate columns
       await updateClipSubtitlePosition(currentlyPlayingClipId.value, position.x, position.y, width);
-      
+
       // Also save full settings with the updated position
       if (activeSubtitleSettings.value) {
         const { updateClipFullSubtitleSettings } = await import('@/services/database/clips');
@@ -2833,7 +2831,14 @@
         // Apply watermark settings from creator profile, or clear org/project-inherited watermark
         // when the resolved profile has none (e.g. project.default_watermark_settings still has org WM)
         if (creatorProfileSpecifiesWatermark(profile)) {
-          console.log('[ProjectWorkspaceDialog] Applying creator watermark:', profile.watermark_id, 'current enabled:', watermarkSettings.value.enabled, 'current watermarkId:', watermarkSettings.value.watermarkId);
+          console.log(
+            '[ProjectWorkspaceDialog] Applying creator watermark:',
+            profile.watermark_id,
+            'current enabled:',
+            watermarkSettings.value.enabled,
+            'current watermarkId:',
+            watermarkSettings.value.watermarkId
+          );
 
           // Parse the creator's per-ratio watermark settings
           let perRatioSettings = null;
@@ -2853,13 +2858,23 @@
               // the main profile.watermark_id (which can be stale or incorrectly set)
               if (ratioConfig?.watermarkId) {
                 effectiveWatermarkId = ratioConfig.watermarkId;
-                console.log('[ProjectWorkspaceDialog] Using per-ratio watermarkId:', effectiveWatermarkId, 'instead of profile.watermark_id:', profile.watermark_id);
+                console.log(
+                  '[ProjectWorkspaceDialog] Using per-ratio watermarkId:',
+                  effectiveWatermarkId,
+                  'instead of profile.watermark_id:',
+                  profile.watermark_id
+                );
               } else if (!effectiveWatermarkId && perRatioSettings) {
                 for (const ratio of ['16:9', '9:16', '1:1', '4:5'] as const) {
                   const wid = perRatioSettings[ratio]?.watermarkId;
                   if (wid != null && String(wid).trim() !== '') {
                     effectiveWatermarkId = String(wid);
-                    console.log('[ProjectWorkspaceDialog] Using per-ratio watermarkId from', ratio, ':', effectiveWatermarkId);
+                    console.log(
+                      '[ProjectWorkspaceDialog] Using per-ratio watermarkId from',
+                      ratio,
+                      ':',
+                      effectiveWatermarkId
+                    );
                     break;
                   }
                 }
@@ -2927,7 +2942,9 @@
             scale: 20,
             perRatioSettings: null,
           };
-          console.log('[ProjectWorkspaceDialog] Resolved profile has no watermark — clearing inherited project/org watermark');
+          console.log(
+            '[ProjectWorkspaceDialog] Resolved profile has no watermark — clearing inherited project/org watermark'
+          );
           await nextTick();
           if (mediaPanelRef.value) {
             mediaPanelRef.value.setWatermarkSettings(cleared);
@@ -2976,31 +2993,34 @@
         const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
         const { getBrandingIfFreeTier } = useFreeTierBranding();
         const adminBranding = await getBrandingIfFreeTier();
-        
+
         console.log('[ProjectWorkspaceDialog] Checking free tier branding:', {
           hasBranding: !!adminBranding,
           watermark_id: adminBranding?.watermark_id,
           watermark_url: adminBranding?.watermark_url,
         });
-        
+
         if (adminBranding) {
-          console.log('[ProjectWorkspaceDialog] Free tier user detected, applying admin branding (overrides project/creator watermark)');
-          
+          console.log(
+            '[ProjectWorkspaceDialog] Free tier user detected, applying admin branding (overrides project/creator watermark)'
+          );
+
           // Apply admin watermark settings — overrides any previously set watermark
           if (adminBranding.watermark_id) {
             console.log('[ProjectWorkspaceDialog] Admin watermark ID:', adminBranding.watermark_id);
-            
+
             // Parse per-ratio settings to get default position
             let perRatioSettings = null;
             let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
             let effectiveWatermarkId = adminBranding.watermark_id;
-            
+
             if (adminBranding.watermark_settings) {
               try {
-                perRatioSettings = typeof adminBranding.watermark_settings === 'string' 
-                  ? JSON.parse(adminBranding.watermark_settings)
-                  : adminBranding.watermark_settings;
-                
+                perRatioSettings =
+                  typeof adminBranding.watermark_settings === 'string'
+                    ? JSON.parse(adminBranding.watermark_settings)
+                    : adminBranding.watermark_settings;
+
                 const ratioConfig = perRatioSettings['16:9'];
                 if (ratioConfig?.position) {
                   defaultPos = ratioConfig.position;
@@ -3013,7 +3033,7 @@
                 console.warn('[ProjectWorkspaceDialog] Failed to parse admin watermark settings:', e);
               }
             }
-            
+
             const newSettings = {
               enabled: true,
               watermarkId: effectiveWatermarkId,
@@ -3026,20 +3046,20 @@
               // so these only affect position/opacity/scale per ratio — not which image loads.
               perRatioSettings: perRatioSettings,
             };
-            
+
             console.log('[ProjectWorkspaceDialog] Applying admin watermark settings:', {
               watermarkId: newSettings.watermarkId,
             });
-            
+
             // Pre-set currentWatermarkId to the effective watermark ID BEFORE updating
             // watermarkSettings — this ensures the watcher sees no change and skips reload
             currentWatermarkId.value = effectiveWatermarkId;
-            
+
             if (mediaPanelRef.value) {
               mediaPanelRef.value.setWatermarkSettings(newSettings);
             }
             watermarkSettings.value = newSettings;
-            
+
             // Download watermark via presigned URL (bypasses org-asset system)
             if (adminBranding.watermark_url) {
               console.log('[ProjectWorkspaceDialog] Downloading free tier watermark via presigned URL');
@@ -3068,13 +3088,13 @@
               await loadWatermarkDataById(adminBranding.watermark_id);
             }
           }
-          
+
           // Load admin intro (will be auto-applied when building clips)
           if (adminBranding.intro) {
             creatorDefaultIntro.value = adminBranding.intro as any;
             console.log('[ProjectWorkspaceDialog] Loaded admin default intro:', adminBranding.intro.name);
           }
-          
+
           // Load admin outro (will be auto-applied when building clips)
           if (adminBranding.outro) {
             creatorDefaultOutro.value = adminBranding.outro as any;
@@ -3092,24 +3112,27 @@
 
   // Helper function to load subtitle settings from preset (fallback when no full settings saved)
   function loadSubtitleSettingsFromPreset(clip: any) {
-    const preset = CAPTION_PRESETS.find(p => p.id === clip.subtitle_preset_id);
+    const preset = CAPTION_PRESETS.find((p) => p.id === clip.subtitle_preset_id);
     if (!preset) return;
-    
-    const animationStyleMap: Record<string, 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave'> = {
-      'none': 'none',
-      'karaoke': 'karaoke',
+
+    const animationStyleMap: Record<
+      string,
+      'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave'
+    > = {
+      none: 'none',
+      karaoke: 'karaoke',
       'karaoke-scale': 'karaoke',
-      'zoom': 'zoom',
-      'pop': 'pop',
-      'glow': 'glow',
+      zoom: 'zoom',
+      pop: 'pop',
+      glow: 'glow',
       'box-highlight': 'box-highlight',
-      'typewriter': 'typewriter',
-      'wave': 'wave',
+      typewriter: 'typewriter',
+      wave: 'wave',
     };
-    
+
     const fontWeightMap: Record<string, number> = {
-      'normal': 400,
-      'bold': 700,
+      normal: 400,
+      bold: 700,
       '100': 100,
       '200': 200,
       '300': 300,
@@ -3121,7 +3144,7 @@
       '900': 900,
     };
     const fontWeight = fontWeightMap[preset.fontWeight || '700'] || 700;
-    
+
     activeSubtitleSettings.value = {
       enabled: true,
       selectedPresetId: preset.id,
@@ -3156,7 +3179,12 @@
       borderRadius: 0,
       wordSpacing: 0.35,
     };
-    console.log('[ProjectWorkspaceDialog] Loaded subtitle settings from preset:', preset.id, 'with saved position:', clip.subtitle_position_y);
+    console.log(
+      '[ProjectWorkspaceDialog] Loaded subtitle settings from preset:',
+      preset.id,
+      'with saved position:',
+      clip.subtitle_position_y
+    );
   }
 
   // Function to handle clip playback
@@ -3203,7 +3231,7 @@
           hasSubtitleSettings: !!fullClip.subtitle_settings,
           subtitleSettingsType: typeof fullClip.subtitle_settings,
           subtitleSettingsLength: fullClip.subtitle_settings ? fullClip.subtitle_settings.length : 0,
-          presetId: fullClip.subtitle_preset_id
+          presetId: fullClip.subtitle_preset_id,
         });
       }
     } catch (error) {
@@ -3217,23 +3245,24 @@
         hasSubtitleSettings: !!fullClip.subtitle_settings,
         subtitleSettingsType: typeof fullClip.subtitle_settings,
         subtitleSettingsLength: fullClip.subtitle_settings ? fullClip.subtitle_settings.length : 0,
-        presetId: fullClip.subtitle_preset_id
+        presetId: fullClip.subtitle_preset_id,
       });
-      
+
       // First, try to load full settings from database if they exist
       if (fullClip.subtitle_settings) {
         try {
-          const savedSettings = typeof fullClip.subtitle_settings === 'string' 
-            ? JSON.parse(fullClip.subtitle_settings) 
-            : fullClip.subtitle_settings;
-          
+          const savedSettings =
+            typeof fullClip.subtitle_settings === 'string'
+              ? JSON.parse(fullClip.subtitle_settings)
+              : fullClip.subtitle_settings;
+
           console.log('[ProjectWorkspaceDialog] Parsed subtitle_settings:', {
             animationStyle: savedSettings.animationStyle,
             textColor: savedSettings.textColor,
             border1Width: savedSettings.border1Width,
-            border2Width: savedSettings.border2Width
+            border2Width: savedSettings.border2Width,
           });
-          
+
           // Override from columns only for deliberate workspace edits — not legacy detection (50,85).
           if (fullClip.subtitle_position_y != null && clipSubtitlePositionLooksUserPlaced(fullClip)) {
             savedSettings.positionPercentage = fullClip.subtitle_position_y;
@@ -3241,9 +3270,14 @@
           if (fullClip.subtitle_position_width != null) {
             savedSettings.maxWidth = fullClip.subtitle_position_width;
           }
-          
+
           activeSubtitleSettings.value = savedSettings;
-          console.log('[ProjectWorkspaceDialog] Loaded full subtitle settings from database for clip:', fullClip.id, 'with position override:', fullClip.subtitle_position_y);
+          console.log(
+            '[ProjectWorkspaceDialog] Loaded full subtitle settings from database for clip:',
+            fullClip.id,
+            'with position override:',
+            fullClip.subtitle_position_y
+          );
         } catch (error) {
           console.error('[ProjectWorkspaceDialog] Failed to parse subtitle_settings JSON:', error);
           // Fall back to preset
@@ -3281,14 +3315,13 @@
     // 1. If it has a built_file_path, play that (self-contained export)
     // 2. If it's a manual/auto clip with its own file, load and play that with segments
     // 3. Otherwise, load the project's source video and play segments
-    
+
     const builtFilePath = clip.built_file_path;
     const hasBuiltFile = builtFilePath && builtFilePath.trim() !== '';
-    
+
     // Manual/auto clips from livestream have their own extracted file
-    const isManualOrAutoClip = clip.session_prompt === 'Manual clip creation' || 
-                                clip.session_prompt?.includes('auto');
-    
+    const isManualOrAutoClip = clip.session_prompt === 'Manual clip creation' || clip.session_prompt?.includes('auto');
+
     const clipOwnFile = clip.filename || clip.file_path;
     const hasClipOwnFile = clipOwnFile && clipOwnFile.trim() !== '';
 
@@ -3326,14 +3359,14 @@
             isPlaying.value = false;
           });
         }
-        
+
         // Clear guard flag and timeout since we're done with this playback
         if (skipPlaybackEndedClearTimeout) {
           clearTimeout(skipPlaybackEndedClearTimeout);
           skipPlaybackEndedClearTimeout = null;
         }
         skipPlaybackEndedClear = false;
-        
+
         return;
       }
     }
@@ -3342,126 +3375,133 @@
     if (isManualOrAutoClip && hasClipOwnFile) {
       const isDifferentFile = currentFilePath.value !== clipOwnFile;
       const needsVideoLoad = !currentFilePath.value || isDifferentFile;
-      
+
       if (needsVideoLoad) {
         console.log('[ProjectWorkspaceDialog] Loading manual/auto clip as main video source:', clipOwnFile);
         const loaded = await loadVideoFromPath(clipOwnFile);
-      if (loaded) {
-        // Wait for video to be ready
-        await nextTick();
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        
-        // For manual/auto clips, the clip file starts at 0, but segments are stored with
-        // their original livestream timestamps. We need to adjust them to be 0-based.
-        const clipStartOffset = clip.current_version_start_time ?? clip.start_time ?? 0;
-        const clipDuration = duration.value || clip.total_duration || 
-                            (clip.current_version_end_time - clip.current_version_start_time) || 
-                            (clip.end_time - clip.start_time) || 0;
-        
-        // Get the clip's segments and adjust timestamps to be 0-based
-        let adjustedSegments = [];
-        if (clip.segments && clip.segments.length > 0) {
-          adjustedSegments = clip.segments.map((seg: any, index: number) => ({
-            id: seg.id || `seg-${clip.id}-${index}`,
-            clip_version_id: clip.current_version_id || clip.id,
-            segment_index: index,
-            start_time: Math.max(0, seg.start_time - clipStartOffset),
-            end_time: Math.min(clipDuration, seg.end_time - clipStartOffset),
-            duration: seg.duration,
-            transcript: seg.transcript || '',
-            transcript_raw_json: null,
-            audio_peaks: null,
-            created_at: Date.now(),
-            updated_at: Date.now()
-          }));
-        } else {
-          // No segments, create one spanning the full clip
-          adjustedSegments = [{
-            id: `trim-${clip.id}`,
-            clip_version_id: clip.current_version_id || clip.id,
-            segment_index: 0,
-            start_time: 0,
-            end_time: clipDuration,
-            duration: clipDuration,
-            transcript: clip.combined_transcript || clip.current_version_description || '',
-            transcript_raw_json: null,
-            audio_peaks: null,
-            created_at: Date.now(),
-            updated_at: Date.now()
-          }];
+        if (loaded) {
+          // Wait for video to be ready
+          await nextTick();
+          await new Promise((resolve) => setTimeout(resolve, 100));
+
+          // For manual/auto clips, the clip file starts at 0, but segments are stored with
+          // their original livestream timestamps. We need to adjust them to be 0-based.
+          const clipStartOffset = clip.current_version_start_time ?? clip.start_time ?? 0;
+          const clipDuration =
+            duration.value ||
+            clip.total_duration ||
+            clip.current_version_end_time - clip.current_version_start_time ||
+            clip.end_time - clip.start_time ||
+            0;
+
+          // Get the clip's segments and adjust timestamps to be 0-based
+          let adjustedSegments = [];
+          if (clip.segments && clip.segments.length > 0) {
+            adjustedSegments = clip.segments.map((seg: any, index: number) => ({
+              id: seg.id || `seg-${clip.id}-${index}`,
+              clip_version_id: clip.current_version_id || clip.id,
+              segment_index: index,
+              start_time: Math.max(0, seg.start_time - clipStartOffset),
+              end_time: Math.min(clipDuration, seg.end_time - clipStartOffset),
+              duration: seg.duration,
+              transcript: seg.transcript || '',
+              transcript_raw_json: null,
+              audio_peaks: null,
+              created_at: Date.now(),
+              updated_at: Date.now(),
+            }));
+          } else {
+            // No segments, create one spanning the full clip
+            adjustedSegments = [
+              {
+                id: `trim-${clip.id}`,
+                clip_version_id: clip.current_version_id || clip.id,
+                segment_index: 0,
+                start_time: 0,
+                end_time: clipDuration,
+                duration: clipDuration,
+                transcript: clip.combined_transcript || clip.current_version_description || '',
+                transcript_raw_json: null,
+                audio_peaks: null,
+                created_at: Date.now(),
+                updated_at: Date.now(),
+              },
+            ];
+          }
+
+          console.log('[ProjectWorkspaceDialog] Playing manual/auto clip with adjusted segments:', adjustedSegments);
+          playClipSegments(adjustedSegments);
+
+          // Update timelineClips to show the adjusted clip in the timeline
+          // This is critical - the timeline needs the clip with 0-based timestamps
+          timelineClips.value = [
+            {
+              id: clip.id,
+              title: clip.title || clip.name || 'Manual Clip',
+              filename: clipOwnFile,
+              type: 'continuous',
+              segments: adjustedSegments.map((seg: any) => ({
+                start_time: seg.start_time,
+                end_time: seg.end_time,
+                duration: seg.duration,
+                transcript: seg.transcript,
+              })),
+              total_duration: clipDuration,
+              combined_transcript: clip.combined_transcript || clip.current_version_description || '',
+              virality_score: clip.virality_score || 0,
+              current_version_virality_score: clip.current_version_virality_score || 0,
+              reason: clip.reason || 'Manual clip',
+              socialMediaPost: clip.socialMediaPost || '',
+              run_number: clip.run_number,
+              run_color: clip.run_color,
+              session_prompt: clip.session_prompt,
+              clip_text_overlay: fullClip.clip_text_overlay ?? clip.clip_text_overlay ?? null,
+              subtitle_enabled: fullClip.subtitle_enabled,
+              subtitle_preset_id: fullClip.subtitle_preset_id ?? null,
+              subtitle_position_x: fullClip.subtitle_position_x ?? null,
+              subtitle_position_y: fullClip.subtitle_position_y ?? null,
+              subtitle_position_width: fullClip.subtitle_position_width ?? null,
+              subtitle_settings: fullClip.subtitle_settings ?? null,
+            },
+          ];
+
+          // Clear guard flag
+          if (skipPlaybackEndedClearTimeout) {
+            clearTimeout(skipPlaybackEndedClearTimeout);
+            skipPlaybackEndedClearTimeout = null;
+          }
+          skipPlaybackEndedClear = false;
+
+          return;
         }
-        
-        console.log('[ProjectWorkspaceDialog] Playing manual/auto clip with adjusted segments:', adjustedSegments);
-        playClipSegments(adjustedSegments);
-        
-        // Update timelineClips to show the adjusted clip in the timeline
-        // This is critical - the timeline needs the clip with 0-based timestamps
-        timelineClips.value = [{
-          id: clip.id,
-          title: clip.title || clip.name || 'Manual Clip',
-          filename: clipOwnFile,
-          type: 'continuous',
-          segments: adjustedSegments.map((seg: any) => ({
-            start_time: seg.start_time,
-            end_time: seg.end_time,
-            duration: seg.duration,
-            transcript: seg.transcript
-          })),
-          total_duration: clipDuration,
-          combined_transcript: clip.combined_transcript || clip.current_version_description || '',
-          virality_score: clip.virality_score || 0,
-          current_version_virality_score: clip.current_version_virality_score || 0,
-          reason: clip.reason || 'Manual clip',
-          socialMediaPost: clip.socialMediaPost || '',
-          run_number: clip.run_number,
-          run_color: clip.run_color,
-          session_prompt: clip.session_prompt,
-          clip_text_overlay: fullClip.clip_text_overlay ?? clip.clip_text_overlay ?? null,
-          subtitle_enabled: fullClip.subtitle_enabled,
-          subtitle_preset_id: fullClip.subtitle_preset_id ?? null,
-          subtitle_position_x: fullClip.subtitle_position_x ?? null,
-          subtitle_position_y: fullClip.subtitle_position_y ?? null,
-          subtitle_position_width: fullClip.subtitle_position_width ?? null,
-          subtitle_settings: fullClip.subtitle_settings ?? null,
-        }];
-        
-        // Clear guard flag
-        if (skipPlaybackEndedClearTimeout) {
-          clearTimeout(skipPlaybackEndedClearTimeout);
-          skipPlaybackEndedClearTimeout = null;
-        }
-        skipPlaybackEndedClear = false;
-        
-        return;
       }
-    }
     }
 
     // Priority 3: Non-built VOD clips - need to load the project's source video
     // These clips don't have built files yet and aren't manual/auto clips
     const needsSourceVideo = !hasBuiltFile && !isManualOrAutoClip;
-    
+
     if (needsSourceVideo) {
       // Check if the current video is different from the project's raw video
       const projectVideo = currentVideo.value;
       const projectFilePath = projectVideo?.file_path;
-      
+
       // If we don't have the right source video loaded, load it
       if (!projectFilePath || currentFilePath.value !== projectFilePath) {
         console.log('[ProjectWorkspaceDialog] Loading project source video for non-built VOD clip');
         await loadVideoForProject();
-        
+
         // Wait for video to be ready and metadata to load
         await nextTick();
         await new Promise((resolve) => setTimeout(resolve, 100));
-        
+
         // Wait for duration to be available (video metadata loaded)
         let attempts = 0;
         while ((!duration.value || duration.value === 0) && attempts < 50) {
           await new Promise((resolve) => setTimeout(resolve, 50));
           attempts++;
         }
-        
+
         if (!duration.value || duration.value === 0) {
           console.warn('[ProjectWorkspaceDialog] Video duration not available after loading, cannot play clip');
           currentlyPlayingClipId.value = null;
@@ -3472,7 +3512,7 @@
           skipPlaybackEndedClear = false;
           return;
         }
-        
+
         console.log('[ProjectWorkspaceDialog] Video loaded, duration:', duration.value);
       }
     }
@@ -3585,7 +3625,7 @@
 
     console.log('[ProjectWorkspaceDialog] Final segments to play:', {
       count: segments.length,
-      segments: segments.map(s => ({
+      segments: segments.map((s) => ({
         start: s.start_time,
         end: s.end_time,
         duration: s.duration,
@@ -3595,12 +3635,10 @@
     if (segments.length > 0) {
       // Ensure we have valid segments before playing
       console.log('[ProjectWorkspaceDialog] Validating segments. Video duration:', duration.value);
-      
-      const validSegments = segments.filter(s => {
-        const isValid = s.start_time >= 0 && 
-                       s.end_time > s.start_time && 
-                       s.end_time <= duration.value;
-        
+
+      const validSegments = segments.filter((s) => {
+        const isValid = s.start_time >= 0 && s.end_time > s.start_time && s.end_time <= duration.value;
+
         if (!isValid) {
           console.warn('[ProjectWorkspaceDialog] Invalid segment:', {
             start: s.start_time,
@@ -3612,7 +3650,7 @@
             withinDuration: s.end_time <= duration.value,
           });
         }
-        
+
         return isValid;
       });
 
@@ -3928,7 +3966,12 @@
         await loadVideoForProject();
         // Load timeline clips when dialog opens
         if (props.project) {
-          console.log('[ProjectWorkspaceDialog] Opening workspace for project:', props.project.id, 'parent_id:', props.project.parent_id);
+          console.log(
+            '[ProjectWorkspaceDialog] Opening workspace for project:',
+            props.project.id,
+            'parent_id:',
+            props.project.parent_id
+          );
           await loadTimelineClips(props.project.id);
 
           // Load creator profile and apply their default settings (watermark, etc.)
@@ -3938,10 +3981,18 @@
           // Check current project first, then fall back to parent project
           try {
             vodPresetConfig.value = await getProjectVodPresetConfig(props.project.id);
-            console.log('[ProjectWorkspaceDialog] VOD preset from project:', props.project.id, vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found');
+            console.log(
+              '[ProjectWorkspaceDialog] VOD preset from project:',
+              props.project.id,
+              vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found'
+            );
             if (!vodPresetConfig.value && props.project.parent_id) {
               vodPresetConfig.value = await getProjectVodPresetConfig(props.project.parent_id);
-              console.log('[ProjectWorkspaceDialog] VOD preset from parent:', props.project.parent_id, vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found');
+              console.log(
+                '[ProjectWorkspaceDialog] VOD preset from parent:',
+                props.project.parent_id,
+                vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found'
+              );
             }
             console.log('[ProjectWorkspaceDialog] Loaded VOD preset config:', vodPresetConfig.value);
             if (vodPresetConfig.value?.framingConfig) {
@@ -3954,14 +4005,20 @@
               const parts = vodPresetConfig.value.targetAspectRatio.split(':').map(Number);
               if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
                 selectedAspectRatio.value = { width: parts[0], height: parts[1] };
-                console.log('[ProjectWorkspaceDialog] Applied VOD preset aspect ratio:', vodPresetConfig.value.targetAspectRatio);
+                console.log(
+                  '[ProjectWorkspaceDialog] Applied VOD preset aspect ratio:',
+                  vodPresetConfig.value.targetAspectRatio
+                );
               }
             }
             // Apply focal point from framing regions so the preview crops to the right area
             if (vodPresetConfig.value?.framingConfig?.regions?.length) {
               const regions = vodPresetConfig.value.framingConfig.regions;
               // Compute bounding box center of all source regions
-              let minX = 1, minY = 1, maxX = 0, maxY = 0;
+              let minX = 1,
+                minY = 1,
+                maxX = 0,
+                maxY = 0;
               for (const r of regions) {
                 minX = Math.min(minX, r.source.x);
                 minY = Math.min(minY, r.source.y);
@@ -4025,7 +4082,14 @@
     async (newProject, oldProject) => {
       if (newProject && oldProject?.id !== newProject.id) {
         const newProjectId = newProject.id;
-        console.log('[ProjectWorkspaceDialog] Project changed from', oldProject?.id, 'to', newProjectId, 'parent_id:', newProject.parent_id);
+        console.log(
+          '[ProjectWorkspaceDialog] Project changed from',
+          oldProject?.id,
+          'to',
+          newProjectId,
+          'parent_id:',
+          newProject.parent_id
+        );
         setProgressProjectId(newProjectId.toString());
       } else {
         setProgressProjectId(null);
@@ -4061,7 +4125,7 @@
       if (!newProjectId) return;
       // Allow first load (oldProjectId undefined) or actual project change
       if (oldProjectId !== undefined && newProjectId === oldProjectId) return;
-      
+
       // Skip full reload if dialog isn't open (but still load VOD preset config below)
       const shouldReloadAssets = props.modelValue;
 
@@ -4085,11 +4149,20 @@
       try {
         console.log('[ProjectWorkspaceDialog] Loading VOD preset config for project:', newProjectId);
         vodPresetConfig.value = await getProjectVodPresetConfig(newProjectId);
-        console.log('[ProjectWorkspaceDialog] Project change - VOD preset result:', vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found');
+        console.log(
+          '[ProjectWorkspaceDialog] Project change - VOD preset result:',
+          vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found'
+        );
         if (!vodPresetConfig.value && props.project?.parent_id) {
-          console.log('[ProjectWorkspaceDialog] No config for current project, trying parent:', props.project.parent_id);
+          console.log(
+            '[ProjectWorkspaceDialog] No config for current project, trying parent:',
+            props.project.parent_id
+          );
           vodPresetConfig.value = await getProjectVodPresetConfig(props.project.parent_id);
-          console.log('[ProjectWorkspaceDialog] Project change - Parent VOD preset result:', vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found');
+          console.log(
+            '[ProjectWorkspaceDialog] Project change - Parent VOD preset result:',
+            vodPresetConfig.value ? `found (${vodPresetConfig.value.targetAspectRatio})` : 'not found'
+          );
         }
         console.log('[ProjectWorkspaceDialog] Loaded VOD preset config:', vodPresetConfig.value);
         if (vodPresetConfig.value?.framingConfig) {
@@ -4097,11 +4170,11 @@
             targetAspectRatio: vodPresetConfig.value.targetAspectRatio,
             regionsCount: vodPresetConfig.value.framingConfig.regions?.length || 0,
           });
-          
+
           // Set default preview aspect ratio based on priority: 9:16 > 4:5 > first VOD ratio > 16:9
           const targetRatio = vodPresetConfig.value.targetAspectRatio;
           let defaultRatio = '16:9';
-          
+
           if (targetRatio === '9:16') {
             defaultRatio = '9:16';
           } else if (targetRatio === '4:5') {
@@ -4109,7 +4182,7 @@
           } else if (targetRatio) {
             defaultRatio = targetRatio;
           }
-          
+
           console.log('[ProjectWorkspaceDialog] Setting default preview aspect ratio:', defaultRatio);
           setPreviewAspectRatio(defaultRatio);
         } else {
@@ -4119,7 +4192,10 @@
         // Apply focal point from framing regions
         if (vodPresetConfig.value?.framingConfig?.regions?.length) {
           const regions = vodPresetConfig.value.framingConfig.regions;
-          let minX = 1, minY = 1, maxX = 0, maxY = 0;
+          let minX = 1,
+            minY = 1,
+            maxX = 0,
+            maxY = 0;
           for (const r of regions) {
             minX = Math.min(minX, r.source.x);
             minY = Math.min(minY, r.source.y);
@@ -4145,10 +4221,16 @@
       if (isOpen && props.project?.id) {
         // Load VOD preset config when dialog opens with a project
         try {
-          console.log('[ProjectWorkspaceDialog] Dialog opened, loading VOD preset config for project:', props.project.id);
+          console.log(
+            '[ProjectWorkspaceDialog] Dialog opened, loading VOD preset config for project:',
+            props.project.id
+          );
           vodPresetConfig.value = await getProjectVodPresetConfig(props.project.id);
           if (!vodPresetConfig.value && props.project.parent_id) {
-            console.log('[ProjectWorkspaceDialog] No config for current project, trying parent:', props.project.parent_id);
+            console.log(
+              '[ProjectWorkspaceDialog] No config for current project, trying parent:',
+              props.project.parent_id
+            );
             vodPresetConfig.value = await getProjectVodPresetConfig(props.project.parent_id);
           }
           console.log('[ProjectWorkspaceDialog] Loaded VOD preset config:', vodPresetConfig.value);
@@ -4157,11 +4239,11 @@
               targetAspectRatio: vodPresetConfig.value.targetAspectRatio,
               regionsCount: vodPresetConfig.value.framingConfig.regions?.length || 0,
             });
-            
+
             // Set default preview aspect ratio based on priority: 9:16 > 4:5 > first VOD ratio > 16:9
             const targetRatio = vodPresetConfig.value.targetAspectRatio;
             let defaultRatio = '16:9';
-            
+
             if (targetRatio === '9:16') {
               defaultRatio = '9:16';
             } else if (targetRatio === '4:5') {
@@ -4169,7 +4251,7 @@
             } else if (targetRatio) {
               defaultRatio = targetRatio;
             }
-            
+
             console.log('[ProjectWorkspaceDialog] Setting default preview aspect ratio:', defaultRatio);
             setPreviewAspectRatio(defaultRatio);
           } else {

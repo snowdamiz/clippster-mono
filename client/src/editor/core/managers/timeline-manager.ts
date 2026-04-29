@@ -5,6 +5,7 @@ import type {
 	TextElement,
 	TimelineElement,
 	ClipboardItem,
+	Transform,
 } from "../../types/timeline";
 import { calculateTotalDuration } from "../../lib/timeline";
 import {
@@ -27,6 +28,7 @@ import {
 	UpdateElementStartTimeCommand,
 	MoveElementCommand,
 	MoveElementsBatchCommand,
+	UpdateElementsTransformsBatchCommand,
 	ChangeSpeedCommand,
 	UpdateElementKeyframesCommand,
 	ExtractAudioCommand,
@@ -35,10 +37,12 @@ import {
 	RippleDeleteTimeRangeCommand,
 	ReorderTrackCommand,
 	ReorderElementCommand,
+	UpdateMaskCommand,
 } from "../../lib/commands/timeline";
 import type { UpdatableElementProps } from "../../lib/commands/timeline";
 import type { InsertElementParams } from "../../lib/commands/timeline/element/insert-element";
 import type { ElementKeyframes } from "../../types/keyframes";
+import type { MaskShape } from "../../types/timeline";
 
 export class TimelineManager {
 	private listeners = new Set<() => void>();
@@ -287,6 +291,18 @@ export class TimelineManager {
 		this.editor.command.execute({ command });
 	}
 
+	/** One undo step for multi-element transform edits (e.g. multi-caption canvas drag). */
+	updateElementsTransformsBatch({
+		trackId,
+		updates,
+	}: {
+		trackId: string;
+		updates: { elementId: string; transform: Transform }[];
+	}): void {
+		const command = new UpdateElementsTransformsBatchCommand(trackId, updates);
+		this.editor.command.execute({ command });
+	}
+
 	changeElementSpeed({
 		trackId,
 		elementId,
@@ -323,6 +339,21 @@ export class TimelineManager {
 		updates: import("../../lib/commands/timeline/element/update-caption-element").CaptionElementUpdatable;
 	}): void {
 		const command = new UpdateCaptionElementCommand(trackId, elementId, updates);
+		this.editor.command.execute({ command });
+	}
+
+	updateElementMasks({
+		trackId,
+		elementId,
+		previousMasks,
+		nextMasks,
+	}: {
+		trackId: string;
+		elementId: string;
+		previousMasks: MaskShape[];
+		nextMasks: MaskShape[];
+	}): void {
+		const command = new UpdateMaskCommand(trackId, elementId, previousMasks, nextMasks);
 		this.editor.command.execute({ command });
 	}
 

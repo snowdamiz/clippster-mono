@@ -83,4 +83,9 @@ export interface AnimationPreset {
 	direction: AnimationDirection;
 	defaultDuration: number;
 	defaultEasing: AnimationEasing;
+	supports: {
+		preview: boolean;
+		export: boolean;
+		exportStrategy: "ffmpeg-alpha-fade" | "overlay-raster-sequence";
+	};
 }
