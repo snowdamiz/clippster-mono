@@ -18,6 +18,7 @@ export interface ExportOptions {
 	canvasSize?: { width: number; height: number };
 	onProgress?: ({ progress }: { progress: number }) => void;
 	onCancel?: () => boolean;
+	exportId?: string;
 }
 
 export interface ExportResult {
