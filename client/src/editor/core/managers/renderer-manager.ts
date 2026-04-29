@@ -12,9 +12,12 @@ import type {
 	StickerElement,
 	EffectElement,
 	CaptionElement,
+	MaskShape,
 } from "../../types/timeline";
 import type { MediaAsset } from "../../types/assets";
 import type { VideoEffect } from "../../types/effects";
+import type { ElementAnimation } from "../../types/animations";
+import type { ElementKeyframes } from "../../types/keyframes";
 import type { AspectRatioId } from "../../types/project";
 import { TextNode } from "../../renderer/nodes/text-node";
 import type { TextNodeParams } from "../../renderer/nodes/text-node";
@@ -101,6 +104,30 @@ interface TauriVideoSource {
 	/** Main video track = bottom layer when compositing overlapping clips */
 	track_is_main: boolean;
 	order_index: number;
+	chromakey: TauriChromakeySettings | null;
+	masks?: TauriSerializedMask[] | null;
+}
+
+interface TauriSerializedMask {
+	id?: string;
+	mask_type: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	feather: number;
+	invert: boolean;
+	rotation: number;
+	corner_radius?: number;
+	points?: { x: number; y: number }[] | null;
+}
+
+interface TauriChromakeySettings {
+	enabled: boolean;
+	color: string;
+	similarity: number;
+	smoothness: number;
+	spill_reduction: number;
 }
 
 interface TauriKeyframe {
@@ -146,6 +173,8 @@ interface TauriTextOverlay {
 	animation_in: TauriAnimationData | null;
 	animation_out: TauriAnimationData | null;
 	animation_loop: TauriAnimationData | null;
+	is_frame_sequence?: boolean;
+	sequence_frame_count?: number;
 }
 
 interface TauriStickerOverlay {
@@ -155,6 +184,8 @@ interface TauriStickerOverlay {
 	animation_in: TauriAnimationData | null;
 	animation_out: TauriAnimationData | null;
 	animation_loop: TauriAnimationData | null;
+	is_frame_sequence?: boolean;
+	sequence_frame_count?: number;
 }
 
 interface TauriEffectOverlay {
@@ -273,18 +304,28 @@ export class RendererManager {
 
 			onProgress?.({ progress: 0.05 });
 
+			const exportFps = Math.max(
+				1,
+				Math.round(options.fps ?? activeProject.settings?.fps ?? 30),
+			);
+
 			// Pre-render text elements to transparent PNGs for pixel-perfect export
-			const textOverlays = await this.preRenderTextOverlays({ tracks, canvasSize });
+			const textOverlays = await this.preRenderTextOverlays({ tracks, canvasSize, fps: exportFps });
 
 			onProgress?.({ progress: 0.1 });
 
 			// Pre-render sticker elements to transparent PNGs for pixel-perfect export
-			const stickerOverlays = await this.preRenderStickerOverlays({ tracks, canvasSize });
+			const stickerOverlays = await this.preRenderStickerOverlays({ tracks, canvasSize, fps: exportFps });
 
 			onProgress?.({ progress: 0.12 });
 
 			// Pre-render caption elements to transparent PNGs for pixel-perfect export
-			const captionOverlays = await this.preRenderCaptionOverlays({ tracks, canvasSize, duration });
+			const captionOverlays = await this.preRenderCaptionOverlays({
+				tracks,
+				canvasSize,
+				duration,
+				fps: exportFps,
+			});
 
 			onProgress?.({ progress: 0.15 });
 
@@ -294,7 +335,6 @@ export class RendererManager {
 			onProgress?.({ progress: 0.18 });
 
 			// Build export config from timeline data
-			const exportFps = Math.max(1, Math.round(options.fps ?? 30));
 			const config = this.buildExportConfig({
 				tracks,
 				mediaAssets,
@@ -456,6 +496,8 @@ export class RendererManager {
 						blend_mode: imgEl.blendMode ?? null,
 						track_is_main: trackIsMain,
 						order_index: orderIndex,
+						chromakey: serializeChromakey(imgEl.chromakey),
+						masks: serializeMasks(imgEl.masks),
 					};
 					collectedVideos.push({
 						source,
@@ -520,6 +562,8 @@ export class RendererManager {
 						blend_mode: videoEl.blendMode ?? null,
 						track_is_main: trackIsMain,
 						order_index: orderIndex,
+						chromakey: serializeChromakey(videoEl.chromakey),
+						masks: serializeMasks(videoEl.masks),
 					};
 					collectedVideos.push({
 						source,
@@ -710,9 +754,11 @@ export class RendererManager {
 	private async preRenderTextOverlays({
 		tracks,
 		canvasSize,
+		fps,
 	}: {
 		tracks: TimelineTrack[];
 		canvasSize: { width: number; height: number };
+		fps: number;
 	}): Promise<TauriTextOverlay[]> {
 		const overlays: TauriTextOverlay[] = [];
 		const center = { x: canvasSize.width / 2, y: canvasSize.height / 2 };
@@ -731,29 +777,70 @@ export class RendererManager {
 					};
 					const node = new TextNode(nodeParams);
 
-					const result = await node.renderToImage({
-						canvasWidth: canvasSize.width,
-						canvasHeight: canvasSize.height,
-					});
-					if (!result) continue;
-
-					// Convert blob to Uint8Array and save via Tauri
-					const arrayBuffer = await result.blob.arrayBuffer();
-					const bytes = Array.from(new Uint8Array(arrayBuffer));
-
-					const imagePath = await invoke<string>("save_text_overlay_png", {
-						pngBytes: bytes,
-						elementId: textEl.id,
+					const motion = overlayNeedsAnimatedRaster({
+						animationIn: textEl.animationIn,
+						animationOut: textEl.animationOut,
+						animationLoop: textEl.animationLoop,
+						keyframes: textEl.keyframes,
 					});
 
-					overlays.push({
-						image_path: imagePath,
-						start_time: textEl.startTime,
-						end_time: textEl.startTime + textEl.duration,
-						animation_in: serializeAnimation(textEl.animationIn),
-						animation_out: serializeAnimation(textEl.animationOut),
-						animation_loop: serializeAnimation(textEl.animationLoop),
-					});
+					if (motion) {
+						const overlayDuration = textEl.duration;
+						const frameCount = Math.max(2, Math.ceil(overlayDuration * fps));
+						const frames: number[][] = [];
+						for (let fi = 0; fi < frameCount; fi++) {
+							const sampleTime =
+								textEl.startTime + (fi / Math.max(1, frameCount - 1)) * overlayDuration;
+							const result = await node.renderToImage({
+								canvasWidth: canvasSize.width,
+								canvasHeight: canvasSize.height,
+								sampleTime,
+							});
+							if (!result) continue;
+							const arrayBuffer = await result.blob.arrayBuffer();
+							frames.push(Array.from(new Uint8Array(arrayBuffer)));
+						}
+						if (frames.length === 0) continue;
+						const [pattern, count] = await invoke<[string, number]>("save_overlay_frame_sequence", {
+							elementId: textEl.id,
+							frames,
+						});
+						overlays.push({
+							image_path: pattern,
+							start_time: textEl.startTime,
+							end_time: textEl.startTime + textEl.duration,
+							animation_in: serializeAnimation(textEl.animationIn),
+							animation_out: serializeAnimation(textEl.animationOut),
+							animation_loop: serializeAnimation(textEl.animationLoop),
+							is_frame_sequence: true,
+							sequence_frame_count: count,
+						});
+					} else {
+						const sampleTime = textEl.startTime + textEl.duration / 2;
+						const result = await node.renderToImage({
+							canvasWidth: canvasSize.width,
+							canvasHeight: canvasSize.height,
+							sampleTime,
+						});
+						if (!result) continue;
+
+						const arrayBuffer = await result.blob.arrayBuffer();
+						const bytes = Array.from(new Uint8Array(arrayBuffer));
+
+						const imagePath = await invoke<string>("save_text_overlay_png", {
+							pngBytes: bytes,
+							elementId: textEl.id,
+						});
+
+						overlays.push({
+							image_path: imagePath,
+							start_time: textEl.startTime,
+							end_time: textEl.startTime + textEl.duration,
+							animation_in: serializeAnimation(textEl.animationIn),
+							animation_out: serializeAnimation(textEl.animationOut),
+							animation_loop: serializeAnimation(textEl.animationLoop),
+						});
+					}
 				} catch (err) {
 					console.error(`[Export] Failed to pre-render text element ${textEl.id}:`, err);
 				}
@@ -771,9 +858,11 @@ export class RendererManager {
 	private async preRenderStickerOverlays({
 		tracks,
 		canvasSize,
+		fps,
 	}: {
 		tracks: TimelineTrack[];
 		canvasSize: { width: number; height: number };
+		fps: number;
 	}): Promise<TauriStickerOverlay[]> {
 		const overlays: TauriStickerOverlay[] = [];
 		let stickerCount = 0;
@@ -797,38 +886,84 @@ export class RendererManager {
 						transform: stickerEl.transform,
 						opacity: stickerEl.opacity,
 						color: stickerEl.color,
+						fadeIn: stickerEl.fadeIn,
+						fadeOut: stickerEl.fadeOut,
 						keyframes: stickerEl.keyframes,
 					};
 					const node = new StickerNode(nodeParams);
 
-					const result = await node.renderToImage({
-						canvasWidth: canvasSize.width,
-						canvasHeight: canvasSize.height,
+					const motion = overlayNeedsAnimatedRaster({
+						animationIn: stickerEl.animationIn,
+						animationOut: stickerEl.animationOut,
+						animationLoop: stickerEl.animationLoop,
+						keyframes: stickerEl.keyframes,
 					});
-					if (!result) {
-						console.error(`[Export] StickerNode.renderToImage returned null for ${stickerEl.id} (${stickerEl.iconName})`);
-						continue;
+
+					if (motion) {
+						const overlayDuration = stickerEl.duration;
+						const frameCount = Math.max(2, Math.ceil(overlayDuration * fps));
+						const frames: number[][] = [];
+						for (let fi = 0; fi < frameCount; fi++) {
+							const sampleTime =
+								stickerEl.startTime + (fi / Math.max(1, frameCount - 1)) * overlayDuration;
+							const result = await node.renderToImage({
+								canvasWidth: canvasSize.width,
+								canvasHeight: canvasSize.height,
+								sampleTime,
+							});
+							if (!result) continue;
+							const arrayBuffer = await result.blob.arrayBuffer();
+							frames.push(Array.from(new Uint8Array(arrayBuffer)));
+						}
+						if (frames.length === 0) {
+							console.error(`[Export] Sticker ${stickerEl.id}: no frames for animated raster`);
+							continue;
+						}
+						const [pattern, count] = await invoke<[string, number]>("save_overlay_frame_sequence", {
+							elementId: `sticker_${stickerEl.id}`,
+							frames,
+						});
+						overlays.push({
+							image_path: pattern,
+							start_time: stickerEl.startTime,
+							end_time: stickerEl.startTime + stickerEl.duration,
+							animation_in: serializeAnimation(stickerEl.animationIn),
+							animation_out: serializeAnimation(stickerEl.animationOut),
+							animation_loop: serializeAnimation(stickerEl.animationLoop),
+							is_frame_sequence: true,
+							sequence_frame_count: count,
+						});
+					} else {
+						const sampleTime = stickerEl.startTime + stickerEl.duration / 2;
+						const result = await node.renderToImage({
+							canvasWidth: canvasSize.width,
+							canvasHeight: canvasSize.height,
+							sampleTime,
+						});
+						if (!result) {
+							console.error(`[Export] StickerNode.renderToImage returned null for ${stickerEl.id} (${stickerEl.iconName})`);
+							continue;
+						}
+
+						const arrayBuffer = await result.blob.arrayBuffer();
+						const bytes = Array.from(new Uint8Array(arrayBuffer));
+						console.log(`[Export] Sticker ${stickerEl.id} rendered to PNG: ${bytes.length} bytes`);
+
+						const imagePath = await invoke<string>("save_text_overlay_png", {
+							pngBytes: bytes,
+							elementId: `sticker_${stickerEl.id}`,
+						});
+						console.log(`[Export] Sticker ${stickerEl.id} saved to: ${imagePath}`);
+
+						overlays.push({
+							image_path: imagePath,
+							start_time: stickerEl.startTime,
+							end_time: stickerEl.startTime + stickerEl.duration,
+							animation_in: serializeAnimation(stickerEl.animationIn),
+							animation_out: serializeAnimation(stickerEl.animationOut),
+							animation_loop: serializeAnimation(stickerEl.animationLoop),
+						});
 					}
-
-					// Convert blob to Uint8Array and save via Tauri
-					const arrayBuffer = await result.blob.arrayBuffer();
-					const bytes = Array.from(new Uint8Array(arrayBuffer));
-					console.log(`[Export] Sticker ${stickerEl.id} rendered to PNG: ${bytes.length} bytes`);
-
-					const imagePath = await invoke<string>("save_text_overlay_png", {
-						pngBytes: bytes,
-						elementId: `sticker_${stickerEl.id}`,
-					});
-					console.log(`[Export] Sticker ${stickerEl.id} saved to: ${imagePath}`);
-
-					overlays.push({
-						image_path: imagePath,
-						start_time: stickerEl.startTime,
-						end_time: stickerEl.startTime + stickerEl.duration,
-						animation_in: serializeAnimation(stickerEl.animationIn),
-						animation_out: serializeAnimation(stickerEl.animationOut),
-						animation_loop: serializeAnimation(stickerEl.animationLoop),
-					});
 				} catch (err) {
 					console.error(`[Export] Failed to pre-render sticker element ${stickerEl.id} (${stickerEl.iconName}):`, err);
 				}
@@ -849,10 +984,12 @@ export class RendererManager {
 		tracks,
 		canvasSize,
 		duration,
+		fps,
 	}: {
 		tracks: TimelineTrack[];
 		canvasSize: { width: number; height: number };
 		duration: number;
+		fps: number;
 	}): Promise<TauriTextOverlay[]> {
 		const overlays: TauriTextOverlay[] = [];
 		const center = { x: canvasSize.width / 2, y: canvasSize.height / 2 };
@@ -866,11 +1003,16 @@ export class RendererManager {
 				if (!captionEl.lines || captionEl.lines.length === 0) continue;
 				captionCount++;
 
-				// For each line in the caption element, render a separate PNG
-				// at the midpoint of that line's time range
+				const motion = overlayNeedsAnimatedRaster({
+					animationIn: captionEl.animationIn,
+					animationOut: captionEl.animationOut,
+					animationLoop: captionEl.animationLoop,
+					keyframes: captionEl.keyframes,
+				});
+
 				for (let lineIdx = 0; lineIdx < captionEl.lines.length; lineIdx++) {
 					const line = captionEl.lines[lineIdx];
-					const lineMidTime = (line.startTime + line.endTime) / 2;
+					const lineDur = Math.max(1e-6, line.endTime - line.startTime);
 
 					try {
 						const nodeParams: CaptionNodeParams = {
@@ -879,29 +1021,62 @@ export class RendererManager {
 						};
 						const node = new CaptionNode(nodeParams);
 
-						const result = await node.renderToImage({
-							canvasWidth: canvasSize.width,
-							canvasHeight: canvasSize.height,
-							time: lineMidTime,
-						});
-						if (!result) continue;
+						if (motion) {
+							const frameCount = Math.max(2, Math.ceil(lineDur * fps));
+							const frames: number[][] = [];
+							for (let fi = 0; fi < frameCount; fi++) {
+								const sampleTime =
+									line.startTime + (fi / Math.max(1, frameCount - 1)) * lineDur;
+								const result = await node.renderToImage({
+									canvasWidth: canvasSize.width,
+									canvasHeight: canvasSize.height,
+									time: sampleTime,
+								});
+								if (!result) continue;
+								const arrayBuffer = await result.blob.arrayBuffer();
+								frames.push(Array.from(new Uint8Array(arrayBuffer)));
+							}
+							if (frames.length === 0) continue;
+							const [pattern, count] = await invoke<[string, number]>("save_overlay_frame_sequence", {
+								elementId: `caption_${captionEl.id}_line${lineIdx}`,
+								frames,
+							});
+							overlays.push({
+								image_path: pattern,
+								start_time: line.startTime,
+								end_time: line.endTime,
+								animation_in: serializeAnimation(captionEl.animationIn),
+								animation_out: serializeAnimation(captionEl.animationOut),
+								animation_loop: serializeAnimation(captionEl.animationLoop),
+								is_frame_sequence: true,
+								sequence_frame_count: count,
+							});
+						} else {
+							const lineMidTime = (line.startTime + line.endTime) / 2;
+							const result = await node.renderToImage({
+								canvasWidth: canvasSize.width,
+								canvasHeight: canvasSize.height,
+								time: lineMidTime,
+							});
+							if (!result) continue;
 
-						const arrayBuffer = await result.blob.arrayBuffer();
-						const bytes = Array.from(new Uint8Array(arrayBuffer));
+							const arrayBuffer = await result.blob.arrayBuffer();
+							const bytes = Array.from(new Uint8Array(arrayBuffer));
 
-						const imagePath = await invoke<string>("save_text_overlay_png", {
-							pngBytes: bytes,
-							elementId: `caption_${captionEl.id}_line${lineIdx}`,
-						});
+							const imagePath = await invoke<string>("save_text_overlay_png", {
+								pngBytes: bytes,
+								elementId: `caption_${captionEl.id}_line${lineIdx}`,
+							});
 
-						overlays.push({
-							image_path: imagePath,
-							start_time: line.startTime,
-							end_time: line.endTime,
-							animation_in: serializeAnimation(captionEl.animationIn),
-							animation_out: serializeAnimation(captionEl.animationOut),
-							animation_loop: serializeAnimation(captionEl.animationLoop),
-						});
+							overlays.push({
+								image_path: imagePath,
+								start_time: line.startTime,
+								end_time: line.endTime,
+								animation_in: serializeAnimation(captionEl.animationIn),
+								animation_out: serializeAnimation(captionEl.animationOut),
+								animation_loop: serializeAnimation(captionEl.animationLoop),
+							});
+						}
 					} catch (err) {
 						console.error(`[Export] Failed to pre-render caption element ${captionEl.id} line ${lineIdx}:`, err);
 					}
@@ -1289,6 +1464,43 @@ export class RendererManager {
 	}
 }
 
+function overlayNeedsAnimatedRaster(opts: {
+	animationIn?: ElementAnimation | null;
+	animationOut?: ElementAnimation | null;
+	animationLoop?: ElementAnimation | null;
+	keyframes?: ElementKeyframes | null;
+}): boolean {
+	if (opts.keyframes?.tracks) {
+		for (const track of Object.values(opts.keyframes.tracks)) {
+			if (track && track.keyframes.length > 1) return true;
+		}
+	}
+	const isFadeOnlyAnim = (a?: ElementAnimation | null) =>
+		!!(a && a.duration > 0.01 && (a.type === "fadeIn" || a.type === "fadeOut"));
+	const needsRasterAnim = (a?: ElementAnimation | null) =>
+		!!(a && a.duration > 0.01 && !isFadeOnlyAnim(a));
+	if (needsRasterAnim(opts.animationIn) || needsRasterAnim(opts.animationOut)) return true;
+	if (opts.animationLoop && opts.animationLoop.duration > 0.01) return true;
+	return false;
+}
+
+function serializeMasks(masks?: MaskShape[]): TauriSerializedMask[] | undefined {
+	if (!masks?.length) return undefined;
+	return masks.map((m) => ({
+		id: m.id,
+		mask_type: m.type,
+		x: m.x,
+		y: m.y,
+		width: m.width,
+		height: m.height,
+		feather: m.feather,
+		invert: m.invert,
+		rotation: m.rotation,
+		corner_radius: m.cornerRadius ?? 0,
+		points: m.points?.length ? m.points.map((p) => ({ x: p.x, y: p.y })) : undefined,
+	}));
+}
+
 function serializeAnimation(anim?: import("../../types/animations").ElementAnimation): TauriAnimationData | null {
 	if (!anim) return null;
 	return {
@@ -1341,4 +1553,17 @@ function serializeKeyframes(kf?: import("../../types/keyframes").ElementKeyframe
 		});
 	}
 	return result.length > 0 ? result : null;
+}
+
+function serializeChromakey(
+	ck?: import("../../types/chromakey").ChromakeySettings,
+): TauriChromakeySettings | null {
+	if (!ck?.enabled) return null;
+	return {
+		enabled: true,
+		color: ck.color,
+		similarity: ck.similarity ?? 0,
+		smoothness: ck.smoothness ?? 0,
+		spill_reduction: ck.spillReduction ?? 0,
+	};
 }

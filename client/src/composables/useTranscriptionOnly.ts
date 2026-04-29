@@ -341,7 +341,7 @@ export function useTranscriptionOnly(options: UseTranscriptionOnlyOptions = {}) 
     };
 
     // Check if transcript was already created (race condition guard)
-    const existingTranscript = await getTranscriptByProjectId(projectId);
+    const existingTranscript = await getTranscriptByRawVideoId(projectVideo.id);
     if (existingTranscript) {
       progress.value = {
         stage: 'completed',

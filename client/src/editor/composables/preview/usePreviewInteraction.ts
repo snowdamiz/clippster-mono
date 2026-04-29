@@ -73,6 +73,8 @@ interface DragState {
 	handle?: HandlePosition;
 	/** Original element bounds at drag start */
 	originalBounds: ElementBounds;
+	/** Original transforms for all selected elements on the same track */
+	selectedOriginalTransforms?: Record<string, Transform>;
 }
 
 export function usePreviewInteraction({
@@ -442,6 +444,24 @@ export function usePreviewInteraction({
 		const pos = screenToCanvas(event.clientX, event.clientY);
 		if (!pos) return;
 
+		const selectedOnTrack = selectedElements.value
+			.filter((s) => s.trackId === bounds.trackId)
+			.map((s) => s.elementId);
+		if (!selectedOnTrack.includes(bounds.elementId)) selectedOnTrack.push(bounds.elementId);
+		const track = editor.timeline.getTrackById({ trackId: bounds.trackId });
+		const selectedOriginalTransforms: Record<string, Transform> = {};
+		for (const elementId of selectedOnTrack) {
+			const element = track?.elements.find((e) => e.id === elementId);
+			if (element && "transform" in element) {
+				const t = (element as any).transform as Transform;
+				selectedOriginalTransforms[elementId] = {
+					scale: t.scale,
+					rotate: t.rotate,
+					position: { x: t.position.x, y: t.position.y },
+				};
+			}
+		}
+
 		dragState.value = {
 			type,
 			trackId: bounds.trackId,
@@ -451,6 +471,7 @@ export function usePreviewInteraction({
 			originalTransform: { ...bounds.transform, position: { ...bounds.transform.position } },
 			handle,
 			originalBounds: { ...bounds },
+			selectedOriginalTransforms,
 		};
 
 		document.addEventListener("mousemove", handleMouseMove);
@@ -493,11 +514,7 @@ export function usePreviewInteraction({
 				if (guideSnapY !== null) newY = guideSnapY * ch - ch / 2;
 			}
 
-			const newTransform: Transform = {
-				...ds.originalTransform,
-				position: { x: newX, y: newY },
-			};
-			applyTransform(ds.trackId, ds.elementId, newTransform);
+			applyMoveDelta(ds.trackId, ds, deltaX, deltaY, newX, newY);
 		} else if (ds.type === "resize") {
 			handleResize(ds, pos.x, pos.y);
 		} else if (ds.type === "rotate") {
@@ -532,11 +549,7 @@ export function usePreviewInteraction({
 		const scaleRatio = currentDist / startDist;
 		const newScale = Math.max(0.05, ds.originalTransform.scale * scaleRatio);
 
-		const newTransform: Transform = {
-			...ds.originalTransform,
-			scale: newScale,
-		};
-		applyTransform(ds.trackId, ds.elementId, newTransform);
+		applyScaleDelta(ds.trackId, ds, newScale / ds.originalTransform.scale, newScale);
 	}
 
 	function handleRotate(ds: DragState, canvasX: number, canvasY: number) {
@@ -555,11 +568,7 @@ export function usePreviewInteraction({
 			}
 		}
 
-		const newTransform: Transform = {
-			...ds.originalTransform,
-			rotate: newRotation,
-		};
-		applyTransform(ds.trackId, ds.elementId, newTransform);
+		applyRotateDelta(ds.trackId, ds, deltaAngle, newRotation);
 	}
 
 	function handleMouseUp() {
@@ -576,44 +585,64 @@ export function usePreviewInteraction({
 			// Commit the final transform via command for undo/redo
 			const track = editor.timeline.getTrackById({ trackId: ds.trackId });
 			if (track) {
-				// Read final transform from the primary dragged element
-				const primaryElement = track.elements.find((e) => e.id === ds.elementId);
-				if (primaryElement && "transform" in primaryElement) {
-					const liveTransform = (primaryElement as any).transform as Transform;
-					const finalTransform: Transform = {
-						scale: liveTransform.scale,
-						rotate: liveTransform.rotate,
-						position: { x: liveTransform.position.x, y: liveTransform.position.y },
-					};
-					const orig = ds.originalTransform;
-					// Only commit if transform actually changed
+				const selectedOriginal = ds.selectedOriginalTransforms ?? {};
+				const finalTransforms = new Map<string, Transform>();
+
+				for (const el of track.elements) {
+					if (!selectedOnTrack.has(el.id) || !("transform" in el)) continue;
+					const t = (el as any).transform as Transform;
+					finalTransforms.set(el.id, {
+						scale: t.scale,
+						rotate: t.rotate,
+						position: { x: t.position.x, y: t.position.y },
+					});
+				}
+
+				let changed = false;
+				for (const [elId, finalTransform] of finalTransforms.entries()) {
+					const orig = selectedOriginal[elId];
+					if (!orig) continue;
 					if (
 						finalTransform.position.x !== orig.position.x ||
 						finalTransform.position.y !== orig.position.y ||
 						finalTransform.scale !== orig.scale ||
 						finalTransform.rotate !== orig.rotate
 					) {
-						// Batch-revert all selected elements to original in one updateTracks call
-						const currentTracks = editor.timeline.getTracks();
-						const revertedTracks = currentTracks.map((t) => {
-							if (t.id !== ds.trackId) return t;
-							return {
-								...t,
-								elements: t.elements.map((el) =>
-									selectedOnTrack.has(el.id) ? { ...el, transform: orig } : el,
-								),
-							} as typeof t;
-						});
-						editor.timeline.updateTracks(revertedTracks);
+						changed = true;
+						break;
+					}
+				}
 
-						// Commit final transform for each element via command (supports undo/redo)
-						for (const elId of selectedOnTrack) {
-							editor.timeline.updateElement({
-								trackId: ds.trackId,
-								elementId: elId,
-								updates: { transform: finalTransform },
-							});
-						}
+				if (changed) {
+					// Batch-revert all selected elements to their own original transforms.
+					const currentTracks = editor.timeline.getTracks();
+					const revertedTracks = currentTracks.map((t) => {
+						if (t.id !== ds.trackId) return t;
+						return {
+							...t,
+							elements: t.elements.map((el) => {
+								const orig = selectedOriginal[el.id];
+								return selectedOnTrack.has(el.id) && orig ? { ...el, transform: orig } : el;
+							}),
+						} as typeof t;
+					});
+					editor.timeline.updateTracks(revertedTracks);
+
+					const batchUpdates = [...finalTransforms.entries()]
+						.filter(([elId]) => selectedOriginal[elId])
+						.map(([elementId, transform]) => ({ elementId, transform }));
+
+					if (batchUpdates.length === 1) {
+						editor.timeline.updateElement({
+							trackId: ds.trackId,
+							elementId: batchUpdates[0].elementId,
+							updates: { transform: batchUpdates[0].transform },
+						});
+					} else if (batchUpdates.length > 1) {
+						editor.timeline.updateElementsTransformsBatch({
+							trackId: ds.trackId,
+							updates: batchUpdates,
+						});
 					}
 				}
 			}
@@ -630,6 +659,85 @@ export function usePreviewInteraction({
 	 */
 	function applyTransform(trackId: string, elementId: string, transform: Transform) {
 		applyTransformDirect(trackId, elementId, transform);
+	}
+
+	function applyMoveDelta(
+		trackId: string,
+		ds: DragState,
+		deltaX: number,
+		deltaY: number,
+		primaryX: number,
+		primaryY: number,
+	) {
+		const selectedOriginal = ds.selectedOriginalTransforms ?? {};
+		const currentTracks = editor.timeline.getTracks();
+		const updatedTracks = currentTracks.map((t) => {
+			if (t.id !== trackId) return t;
+			return {
+				...t,
+				elements: t.elements.map((el) => {
+					const orig = selectedOriginal[el.id];
+					if (!orig) return el;
+					if (el.id === ds.elementId) {
+						return {
+							...el,
+							transform: { ...orig, position: { x: primaryX, y: primaryY } },
+						};
+					}
+					return {
+						...el,
+						transform: {
+							...orig,
+							position: {
+								x: orig.position.x + deltaX,
+								y: orig.position.y + deltaY,
+							},
+						},
+					};
+				}),
+			} as typeof t;
+		});
+		editor.timeline.updateTracks(updatedTracks);
+	}
+
+	function applyScaleDelta(trackId: string, ds: DragState, ratio: number, primaryScale: number) {
+		const selectedOriginal = ds.selectedOriginalTransforms ?? {};
+		const currentTracks = editor.timeline.getTracks();
+		const updatedTracks = currentTracks.map((t) => {
+			if (t.id !== trackId) return t;
+			return {
+				...t,
+				elements: t.elements.map((el) => {
+					const orig = selectedOriginal[el.id];
+					if (!orig) return el;
+					if (el.id === ds.elementId) {
+						return { ...el, transform: { ...orig, scale: primaryScale } };
+					}
+					return { ...el, transform: { ...orig, scale: Math.max(0.05, orig.scale * ratio) } };
+				}),
+			} as typeof t;
+		});
+		editor.timeline.updateTracks(updatedTracks);
+	}
+
+	function applyRotateDelta(trackId: string, ds: DragState, deltaAngle: number, primaryRotation: number) {
+		const selectedOriginal = ds.selectedOriginalTransforms ?? {};
+		const currentTracks = editor.timeline.getTracks();
+		const updatedTracks = currentTracks.map((t) => {
+			if (t.id !== trackId) return t;
+			return {
+				...t,
+				elements: t.elements.map((el) => {
+					const orig = selectedOriginal[el.id];
+					if (!orig) return el;
+					if (el.id === ds.elementId) {
+						return { ...el, transform: { ...orig, rotate: primaryRotation } };
+					}
+					return { ...el, transform: { ...orig, rotate: orig.rotate + deltaAngle } };
+				}),
+			} as typeof t;
+		});
+		editor.timeline.updateTracks(updatedTracks);
 	}
 
 	function applyTransformDirect(trackId: string, elementId: string, transform: Transform) {

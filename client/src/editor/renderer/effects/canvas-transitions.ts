@@ -10,6 +10,9 @@ function normalizeTransitionType(type: string): TransitionType {
 		fadetoblack: "fadeToBlack",
 		fadetowhite: "fadeToWhite",
 		dissolve: "dissolve",
+		fadegrays: "fadegrays",
+		fadefast: "fadefast",
+		fadeslow: "fadeslow",
 		slideleft: "slideLeft",
 		slideright: "slideRight",
 		slideup: "slideUp",
@@ -19,8 +22,13 @@ function normalizeTransitionType(type: string): TransitionType {
 		wipeup: "wipeUp",
 		wipedown: "wipeDown",
 		zoomin: "zoomIn",
-		zoomout: "zoomOut",
-		blur: "blur",
+		// Legacy / removed product types → safe crossfade preview
+		zoomout: "crossfade",
+		blur: "crossfade",
+		rotatein: "crossfade",
+		fliphorizontal: "crossfade",
+		flipvertical: "crossfade",
+		glitch: "crossfade",
 		circlewipe: "circleWipe",
 		diamondwipe: "diamondWipe",
 		clockwipe: "clockWipe",
@@ -32,10 +40,30 @@ function normalizeTransitionType(type: string): TransitionType {
 		coverright: "coverRight",
 		revealleft: "revealLeft",
 		revealright: "revealRight",
-		rotatein: "rotateIn",
-		fliphorizontal: "flipHorizontal",
-		flipvertical: "flipVertical",
-		glitch: "glitch",
+		prismsweep: "prismSweep",
+		glitchblocks: "glitchBlocks",
+		shutterflash: "shutterFlash",
+		inkbloom: "inkBloom",
+		diagtl: "diagTl",
+		diagtr: "diagTr",
+		diagbl: "diagBl",
+		diagbr: "diagBr",
+		wipetl: "wipeTl",
+		wipetr: "wipeTr",
+		wipebl: "wipeBl",
+		wipebr: "wipeBr",
+		squeezeh: "squeezeH",
+		squeezev: "squeezeV",
+		hlslice: "hlSlice",
+		hrslice: "hrSlice",
+		vuslice: "vuSlice",
+		vdslice: "vdSlice",
+		circleclose: "circleClose",
+		horzopen: "horzOpen",
+		horzclose: "horzClose",
+		vertopen: "vertOpen",
+		vertclose: "vertClose",
+		hblurtransition: "hblurTransition",
 	};
 	return aliases[compact] ?? (type as TransitionType);
 }
@@ -81,6 +109,15 @@ export function renderTransition(
 		case "dissolve":
 			renderDissolve(ctx, w, h, outgoing, incoming, t);
 			break;
+		case "fadegrays":
+			renderFadeGrays(ctx, w, h, outgoing, incoming, t);
+			break;
+		case "fadefast":
+			renderCrossfade(ctx, w, h, outgoing, incoming, Math.min(1, t * 1.85));
+			break;
+		case "fadeslow":
+			renderCrossfade(ctx, w, h, outgoing, incoming, Math.pow(t, 0.65));
+			break;
 		case "slideLeft":
 			renderSlide(ctx, w, h, outgoing, incoming, t, "left");
 			break;
@@ -107,12 +144,6 @@ export function renderTransition(
 			break;
 		case "zoomIn":
 			renderZoom(ctx, w, h, outgoing, incoming, t, "in");
-			break;
-		case "zoomOut":
-			renderZoom(ctx, w, h, outgoing, incoming, t, "out");
-			break;
-		case "blur":
-			renderBlurTransition(ctx, w, h, outgoing, incoming, t);
 			break;
 		case "circleWipe":
 			renderCircleWipe(ctx, w, h, outgoing, incoming, t);
@@ -147,17 +178,77 @@ export function renderTransition(
 		case "revealRight":
 			renderReveal(ctx, w, h, outgoing, incoming, t, "right");
 			break;
-		case "rotateIn":
-			renderRotateIn(ctx, w, h, outgoing, incoming, t);
+		case "prismSweep":
+			renderPrismSweep(ctx, w, h, outgoing, incoming, t);
 			break;
-		case "flipHorizontal":
-			renderFlip(ctx, w, h, outgoing, incoming, t, "horizontal");
+		case "glitchBlocks":
+			renderGlitchBlocks(ctx, w, h, outgoing, incoming, t);
 			break;
-		case "flipVertical":
-			renderFlip(ctx, w, h, outgoing, incoming, t, "vertical");
+		case "shutterFlash":
+			renderShutterFlash(ctx, w, h, outgoing, incoming, t);
 			break;
-		case "glitch":
-			renderGlitchTransition(ctx, w, h, outgoing, incoming, t);
+		case "inkBloom":
+			renderInkBloom(ctx, w, h, outgoing, incoming, t);
+			break;
+		case "diagTl":
+			renderDiagonalWipe(ctx, w, h, outgoing, incoming, t, "tl");
+			break;
+		case "diagTr":
+			renderDiagonalWipe(ctx, w, h, outgoing, incoming, t, "tr");
+			break;
+		case "diagBl":
+			renderDiagonalWipe(ctx, w, h, outgoing, incoming, t, "bl");
+			break;
+		case "diagBr":
+			renderDiagonalWipe(ctx, w, h, outgoing, incoming, t, "br");
+			break;
+		case "wipeTl":
+			renderCornerWipe(ctx, w, h, outgoing, incoming, t, "tl");
+			break;
+		case "wipeTr":
+			renderCornerWipe(ctx, w, h, outgoing, incoming, t, "tr");
+			break;
+		case "wipeBl":
+			renderCornerWipe(ctx, w, h, outgoing, incoming, t, "bl");
+			break;
+		case "wipeBr":
+			renderCornerWipe(ctx, w, h, outgoing, incoming, t, "br");
+			break;
+		case "squeezeH":
+			renderSqueeze(ctx, w, h, outgoing, incoming, t, "h");
+			break;
+		case "squeezeV":
+			renderSqueeze(ctx, w, h, outgoing, incoming, t, "v");
+			break;
+		case "hlSlice":
+			renderSlice(ctx, w, h, outgoing, incoming, t, "hl");
+			break;
+		case "hrSlice":
+			renderSlice(ctx, w, h, outgoing, incoming, t, "hr");
+			break;
+		case "vuSlice":
+			renderSlice(ctx, w, h, outgoing, incoming, t, "vu");
+			break;
+		case "vdSlice":
+			renderSlice(ctx, w, h, outgoing, incoming, t, "vd");
+			break;
+		case "circleClose":
+			renderCircleClose(ctx, w, h, outgoing, incoming, t);
+			break;
+		case "horzOpen":
+			renderHorzVertOpenClose(ctx, w, h, outgoing, incoming, t, "horz", "open");
+			break;
+		case "horzClose":
+			renderHorzVertOpenClose(ctx, w, h, outgoing, incoming, t, "horz", "close");
+			break;
+		case "vertOpen":
+			renderHorzVertOpenClose(ctx, w, h, outgoing, incoming, t, "vert", "open");
+			break;
+		case "vertClose":
+			renderHorzVertOpenClose(ctx, w, h, outgoing, incoming, t, "vert", "close");
+			break;
+		case "hblurTransition":
+			renderBlurTransition(ctx, w, h, outgoing, incoming, t);
 			break;
 		default:
 			renderCrossfade(ctx, w, h, outgoing, incoming, t);
@@ -508,110 +599,295 @@ function renderReveal(
 	}
 }
 
-function renderRotateIn(
+function renderFadeGrays(
 	ctx: Ctx, w: number, h: number,
 	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
 ): void {
-	const eased = easeInOutCubic(t);
+	// Approximation of xfade fadegrays: blend via dissolve-style noise + desaturation midpoint
+	renderDissolve(ctx, w, h, outgoing, incoming, easeInOutCubic(t));
+}
 
-	// Outgoing fades out
-	ctx.save();
-	ctx.globalAlpha = 1 - eased;
+function renderPrismSweep(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
+): void {
+	renderProceduralMatte(ctx, w, h, outgoing, incoming, t, "prismSweep");
+}
+
+function renderGlitchBlocks(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
+): void {
+	renderProceduralMatte(ctx, w, h, outgoing, incoming, t, "glitchBlocks");
+}
+
+function renderShutterFlash(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
+): void {
+	renderProceduralMatte(ctx, w, h, outgoing, incoming, t, "shutterFlash");
+}
+
+function renderInkBloom(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
+): void {
+	renderProceduralMatte(ctx, w, h, outgoing, incoming, t, "inkBloom");
+}
+
+type ProceduralMatteType = "prismSweep" | "glitchBlocks" | "shutterFlash" | "inkBloom";
+
+function renderProceduralMatte(
+	ctx: Ctx,
+	w: number,
+	h: number,
+	outgoing: CanvasImageSource,
+	incoming: CanvasImageSource,
+	t: number,
+	type: ProceduralMatteType,
+): void {
+	if (t <= 0) {
+		ctx.drawImage(outgoing, 0, 0, w, h);
+		return;
+	}
+	if (t >= 1) {
+		ctx.drawImage(incoming, 0, 0, w, h);
+		return;
+	}
+
+	const outCtx = createScratchContext(w, h);
+	const inCtx = createScratchContext(w, h);
+	outCtx.drawImage(outgoing, 0, 0, w, h);
+	inCtx.drawImage(incoming, 0, 0, w, h);
+
+	const outPixels = outCtx.getImageData(0, 0, w, h);
+	const inPixels = inCtx.getImageData(0, 0, w, h);
+	const result = ctx.createImageData(w, h);
+	const outData = outPixels.data;
+	const inData = inPixels.data;
+	const resultData = result.data;
+
+	for (let y = 0; y < h; y++) {
+		const yn = y / Math.max(1, h);
+		for (let x = 0; x < w; x++) {
+			const xn = x / Math.max(1, w);
+			const { mix, flash } = proceduralMatteAt(type, xn, yn, t);
+			const i = (y * w + x) * 4;
+			const inv = 1 - mix;
+			resultData[i] = clampByte(outData[i] * inv + inData[i] * mix + flash);
+			resultData[i + 1] = clampByte(outData[i + 1] * inv + inData[i + 1] * mix + flash);
+			resultData[i + 2] = clampByte(outData[i + 2] * inv + inData[i + 2] * mix + flash);
+			resultData[i + 3] = clampByte(outData[i + 3] * inv + inData[i + 3] * mix);
+		}
+	}
+
+	ctx.putImageData(result, 0, 0);
+}
+
+function proceduralMatteAt(
+	type: ProceduralMatteType,
+	x: number,
+	y: number,
+	p: number,
+): { mix: number; flash: number } {
+	switch (type) {
+		case "prismSweep": {
+			const axis = x * 0.78 + y * 0.28;
+			const mix = clamp01(((p * 1.45 - 0.18) - axis + 0.04) / 0.08);
+			const flash = 60 * Math.max(0, 1 - Math.abs(axis - p) / 0.045) * Math.sin(Math.PI * p);
+			return { mix, flash };
+		}
+		case "glitchBlocks": {
+			const row = Math.floor(y * 12);
+			const stagger = ((row * 37) % 11) / 11;
+			const reveal = clamp01(p * 1.35 - stagger * 0.35);
+			const fromLeft = row % 2 === 0;
+			return { mix: fromLeft ? (x < reveal ? 1 : 0) : (x > 1 - reveal ? 1 : 0), flash: 0 };
+		}
+		case "shutterFlash": {
+			const col = Math.floor(x * 10);
+			const fromTop = col % 2 === 0;
+			const reveal = clamp01(p * 1.22 - (fromTop ? 0 : 0.22));
+			const mix = fromTop ? (y < reveal ? 1 : 0) : (y > 1 - reveal ? 1 : 0);
+			const flash = 90 * Math.max(0, 1 - Math.abs(p - 0.5) / 0.12);
+			return { mix, flash };
+		}
+		case "inkBloom": {
+			const dx = x - 0.5;
+			const dy = y - 0.5;
+			const radius = Math.sqrt(dx * dx + dy * dy);
+			const edge = Math.max(0, p * 0.92 - 0.04)
+				+ 0.035 * Math.sin(24 * dx + 9 * p)
+				+ 0.025 * Math.sin(28 * dy - 7 * p);
+			return { mix: radius < edge ? 1 : 0, flash: 0 };
+		}
+	}
+}
+
+function createScratchContext(w: number, h: number): Ctx {
+	const canvas = typeof OffscreenCanvas !== "undefined"
+		? new OffscreenCanvas(w, h)
+		: document.createElement("canvas");
+	canvas.width = w;
+	canvas.height = h;
+	const scratchCtx = canvas.getContext("2d");
+	if (!scratchCtx) throw new Error("Unable to create transition scratch canvas");
+	return scratchCtx as Ctx;
+}
+
+function clamp01(value: number): number {
+	return Math.max(0, Math.min(1, value));
+}
+
+function clampByte(value: number): number {
+	return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function renderDiagonalWipe(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource,
+	t: number, corner: "tl" | "tr" | "bl" | "br",
+): void {
+	const u = easeInOutCubic(t);
 	ctx.drawImage(outgoing, 0, 0, w, h);
-	ctx.restore();
-
-	// Incoming rotates in from small + rotated
 	ctx.save();
-	ctx.globalAlpha = eased;
-	ctx.translate(w / 2, h / 2);
-	ctx.rotate((1 - eased) * Math.PI * 0.5);
-	ctx.scale(0.5 + eased * 0.5, 0.5 + eased * 0.5);
-	ctx.translate(-w / 2, -h / 2);
+	ctx.beginPath();
+	if (corner === "tl") {
+		ctx.moveTo(0, 0);
+		ctx.lineTo(u * w, 0);
+		ctx.lineTo(0, u * h);
+	} else if (corner === "tr") {
+		ctx.moveTo(w, 0);
+		ctx.lineTo(w - u * w, 0);
+		ctx.lineTo(w, u * h);
+	} else if (corner === "bl") {
+		ctx.moveTo(0, h);
+		ctx.lineTo(u * w, h);
+		ctx.lineTo(0, h - u * h);
+	} else {
+		ctx.moveTo(w, h);
+		ctx.lineTo(w - u * w, h);
+		ctx.lineTo(w, h - u * h);
+	}
+	ctx.closePath();
+	ctx.clip();
 	ctx.drawImage(incoming, 0, 0, w, h);
 	ctx.restore();
 }
 
-function renderFlip(
+function renderCornerWipe(
 	ctx: Ctx, w: number, h: number,
 	outgoing: CanvasImageSource, incoming: CanvasImageSource,
-	t: number, axis: "horizontal" | "vertical",
+	t: number, corner: "tl" | "tr" | "bl" | "br",
 ): void {
-	// First half: outgoing flips away, second half: incoming flips in
-	if (t < 0.5) {
-		const scale = Math.cos(t * Math.PI); // 1 → 0
-		ctx.save();
-		ctx.translate(w / 2, h / 2);
-		if (axis === "horizontal") {
-			ctx.scale(scale, 1);
-		} else {
-			ctx.scale(1, scale);
-		}
-		ctx.translate(-w / 2, -h / 2);
-		ctx.drawImage(outgoing, 0, 0, w, h);
-		ctx.restore();
-	} else {
-		const scale = -Math.cos(t * Math.PI); // 0 → 1
-		ctx.save();
-		ctx.translate(w / 2, h / 2);
-		if (axis === "horizontal") {
-			ctx.scale(scale, 1);
-		} else {
-			ctx.scale(1, scale);
-		}
-		ctx.translate(-w / 2, -h / 2);
-		ctx.drawImage(incoming, 0, 0, w, h);
-		ctx.restore();
-	}
+	const u = easeInOutCubic(t);
+	const maxR = Math.sqrt(w * w + h * h);
+	const r = u * maxR * 0.55;
+	ctx.drawImage(outgoing, 0, 0, w, h);
+	ctx.save();
+	ctx.beginPath();
+	const cx = corner === "tl" || corner === "bl" ? 0 : w;
+	const cy = corner === "tl" || corner === "tr" ? 0 : h;
+	const start = corner === "tl" ? 0 : corner === "tr" ? Math.PI / 2 : corner === "bl" ? -Math.PI / 2 : Math.PI;
+	ctx.moveTo(cx, cy);
+	ctx.arc(cx, cy, r, start, start + Math.PI / 2);
+	ctx.closePath();
+	ctx.clip();
+	ctx.drawImage(incoming, 0, 0, w, h);
+	ctx.restore();
 }
 
-function renderGlitchTransition(
+function renderSqueeze(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource,
+	t: number, axis: "h" | "v",
+): void {
+	const u = easeInOutCubic(t);
+	ctx.save();
+	ctx.translate(w / 2, h / 2);
+	if (axis === "h") {
+		ctx.scale(1 - u * 0.45, 1);
+	} else {
+		ctx.scale(1, 1 - u * 0.45);
+	}
+	ctx.translate(-w / 2, -h / 2);
+	ctx.globalAlpha = 1;
+	ctx.drawImage(outgoing, 0, 0, w, h);
+	ctx.restore();
+
+	ctx.save();
+	ctx.translate(w / 2, h / 2);
+	if (axis === "h") {
+		ctx.scale(Math.max(0.05, u), 1);
+	} else {
+		ctx.scale(1, Math.max(0.05, u));
+	}
+	ctx.translate(-w / 2, -h / 2);
+	ctx.globalAlpha = Math.min(1, u * 1.2);
+	ctx.drawImage(incoming, 0, 0, w, h);
+	ctx.restore();
+	ctx.globalAlpha = 1;
+}
+
+function renderSlice(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource,
+	t: number, kind: "hl" | "hr" | "vu" | "vd",
+): void {
+	const u = easeInOutCubic(t);
+	ctx.drawImage(outgoing, 0, 0, w, h);
+	ctx.save();
+	ctx.beginPath();
+	if (kind === "hl") {
+		ctx.rect(0, 0, u * w, h);
+	} else if (kind === "hr") {
+		ctx.rect(w * (1 - u), 0, u * w, h);
+	} else if (kind === "vu") {
+		ctx.rect(0, 0, w, u * h);
+	} else {
+		ctx.rect(0, h * (1 - u), w, u * h);
+	}
+	ctx.clip();
+	ctx.drawImage(incoming, 0, 0, w, h);
+	ctx.restore();
+}
+
+function renderCircleClose(
 	ctx: Ctx, w: number, h: number,
 	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
 ): void {
-	// Draw base frame
-	const source = t < 0.5 ? outgoing : incoming;
-	ctx.drawImage(source, 0, 0, w, h);
+	renderCircleWipe(ctx, w, h, incoming, outgoing, 1 - easeInOutCubic(t));
+}
 
-	// Glitch slices from the other frame
-	const other = t < 0.5 ? incoming : outgoing;
-	const intensity = Math.sin(t * Math.PI); // peaks at 0.5
-	const sliceCount = Math.floor(5 + intensity * 15);
-	const seed = Math.floor(t * 100);
-
+function renderHorzVertOpenClose(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource,
+	t: number, axis: "horz" | "vert", mode: "open" | "close",
+): void {
+	const u = easeInOutCubic(t);
+	const gap = axis === "horz" ? u * w * 0.5 : u * h * 0.5;
+	ctx.drawImage(outgoing, 0, 0, w, h);
 	ctx.save();
-	for (let i = 0; i < sliceCount; i++) {
-		const hash = ((seed + i * 73856093) & 0xffff) / 0xffff;
-		const hash2 = ((seed + i * 19349663) & 0xffff) / 0xffff;
-		if (hash > intensity) continue;
-
-		const sliceY = Math.floor(hash2 * h);
-		const sliceH = Math.floor(4 + hash * 30);
-		const offsetX = (hash - 0.5) * w * intensity * 0.3;
-
-		ctx.drawImage(
-			other,
-			0, sliceY, w, sliceH,
-			offsetX, sliceY, w, sliceH,
-		);
-	}
-	ctx.restore();
-
-	// RGB shift during peak
-	if (intensity > 0.3) {
-		const shift = Math.round(intensity * 8);
-		const imageData = ctx.getImageData(0, 0, w, h);
-		const src = new Uint8ClampedArray(imageData.data);
-		const dst = imageData.data;
-		for (let y = 0; y < h; y++) {
-			for (let x = 0; x < w; x++) {
-				const idx = (y * w + x) * 4;
-				const rx = Math.min(w - 1, Math.max(0, x + shift));
-				dst[idx] = src[(y * w + rx) * 4]; // Red shifted
-				dst[idx + 2] = src[(y * w + Math.min(w - 1, Math.max(0, x - shift))) * 4 + 2]; // Blue shifted
-			}
+	ctx.beginPath();
+	if (axis === "horz") {
+		if (mode === "open") {
+			ctx.rect(w / 2 - gap, 0, gap * 2, h);
+			ctx.clip();
+		} else {
+			ctx.rect(0, 0, w, h);
+			ctx.rect(w / 2 - gap, 0, gap * 2, h);
+			ctx.clip("evenodd");
 		}
-		ctx.putImageData(imageData, 0, 0);
+	} else if (mode === "open") {
+		ctx.rect(0, h / 2 - gap, w, gap * 2);
+		ctx.clip();
+	} else {
+		ctx.rect(0, 0, w, h);
+		ctx.rect(0, h / 2 - gap, w, gap * 2);
+		ctx.clip("evenodd");
 	}
+	ctx.drawImage(incoming, 0, 0, w, h);
+	ctx.restore();
 }
 
 function easeInOutCubic(t: number): number {

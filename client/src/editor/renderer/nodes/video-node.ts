@@ -51,6 +51,8 @@ export interface VideoNodeParams {
 export class VideoNode extends BaseNode<VideoNodeParams> {
 	private prefetchedFrame: import("mediabunny").WrappedCanvas | null = null;
 	private transitionExtension: { before: number; after: number } = { before: 0, after: 0 };
+	private chromakeyCanvas?: HTMLCanvasElement;
+	private chromakeyCtx?: CanvasRenderingContext2D | null;
 
 	setTransitionExtension(extension: { before?: number; after?: number }) {
 		this.transitionExtension = {
@@ -208,14 +210,18 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			// Apply transform (scale, position, rotation) with keyframe overrides
 			const transform = this.params.transform;
 			if (transform) {
-				const centerX = renderer.width / 2 + transform.position.x;
-				const centerY = renderer.height / 2 + transform.position.y;
+				const resolvedScale = getKeyframedValue({ elementKeyframes: kf, property: "scale", normalizedTime, defaultValue: transform.scale });
+				const resolvedPosX = getKeyframedValue({ elementKeyframes: kf, property: "positionX", normalizedTime, defaultValue: transform.position.x });
+				const resolvedPosY = getKeyframedValue({ elementKeyframes: kf, property: "positionY", normalizedTime, defaultValue: transform.position.y });
+				const resolvedRotation = getKeyframedValue({ elementKeyframes: kf, property: "rotation", normalizedTime, defaultValue: transform.rotate });
+				const centerX = renderer.width / 2 + resolvedPosX;
+				const centerY = renderer.height / 2 + resolvedPosY;
 				renderer.context.translate(centerX, centerY);
-				if (transform.rotate !== 0) {
-					renderer.context.rotate((transform.rotate * Math.PI) / 180);
+				if (resolvedRotation !== 0) {
+					renderer.context.rotate((resolvedRotation * Math.PI) / 180);
 				}
-				if (transform.scale !== 1) {
-					renderer.context.scale(transform.scale, transform.scale);
+				if (resolvedScale !== 1) {
+					renderer.context.scale(resolvedScale, resolvedScale);
 				}
 				renderer.context.translate(-renderer.width / 2, -renderer.height / 2);
 			}
@@ -257,6 +263,9 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 				renderer.context.filter = filterParts.join(" ");
 			}
 
+			const chromakeySource = this.getChromakeySourceCanvas(frame.canvas, this.params.chromakey);
+			const drawSource = chromakeySource ?? frame.canvas;
+
 			if (
 				this.params.x !== undefined &&
 				this.params.y !== undefined &&
@@ -264,15 +273,15 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 				this.params.height !== undefined
 			) {
 				renderer.context.drawImage(
-					frame.canvas,
+					drawSource,
 					this.params.x,
 					this.params.y,
 					this.params.width,
 					this.params.height,
 				);
 			} else {
-				const mediaW = frame.canvas.width || renderer.width;
-				const mediaH = frame.canvas.height || renderer.height;
+				const mediaW = drawSource.width || renderer.width;
+				const mediaH = drawSource.height || renderer.height;
 
 				// Apply crop: extract sub-rectangle from source frame
 				const crop = this.params.crop;
@@ -293,7 +302,7 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 					const drawY = (renderer.height - drawH) / 2;
 
 					renderer.context.drawImage(
-						frame.canvas,
+						drawSource,
 						sx, sy, sw, sh,
 						drawX, drawY, drawW, drawH,
 					);
@@ -308,7 +317,7 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 					const drawY = (renderer.height - drawH) / 2;
 
 					renderer.context.drawImage(
-						frame.canvas,
+						drawSource,
 						drawX,
 						drawY,
 						drawW,
@@ -332,10 +341,6 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 				applyAdvancedColorAdjustments(renderer.context, renderer.width, renderer.height, ca);
 			}
 
-			if (this.params.chromakey?.enabled) {
-				applyChromakey(renderer.context, renderer.width, renderer.height, this.params.chromakey);
-			}
-
 			if (this.params.colorCurves) {
 				applyColorCurves(renderer.context, renderer.width, renderer.height, this.params.colorCurves);
 			}
@@ -343,5 +348,28 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 				applyColorWheels(renderer.context, renderer.width, renderer.height, this.params.colorWheels);
 			}
 		}
+	}
+
+	private getChromakeySourceCanvas(
+		source: CanvasImageSource & { width: number; height: number },
+		chromakey?: ChromakeySettings,
+	): HTMLCanvasElement | null {
+		if (!chromakey?.enabled) return null;
+		const width = source.width;
+		const height = source.height;
+		if (width <= 0 || height <= 0) return null;
+
+		if (!this.chromakeyCanvas || this.chromakeyCanvas.width !== width || this.chromakeyCanvas.height !== height) {
+			this.chromakeyCanvas = document.createElement("canvas");
+			this.chromakeyCanvas.width = width;
+			this.chromakeyCanvas.height = height;
+			this.chromakeyCtx = this.chromakeyCanvas.getContext("2d", { willReadFrequently: true });
+		}
+		if (!this.chromakeyCanvas || !this.chromakeyCtx) return null;
+
+		this.chromakeyCtx.clearRect(0, 0, width, height);
+		this.chromakeyCtx.drawImage(source, 0, 0, width, height);
+		applyChromakey(this.chromakeyCtx, width, height, chromakey);
+		return this.chromakeyCanvas;
 	}
 }

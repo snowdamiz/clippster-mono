@@ -2,8 +2,9 @@
 import { computed } from "vue";
 import { nanoid } from "nanoid";
 import { useEditor } from "../../../composables/useEditor";
+import { useEditorUIState } from "../../../composables/useEditorUIState";
 import type { VideoElement, ImageElement, MaskShape } from "../../../types/timeline";
-import { Plus, Trash2, RectangleHorizontal, Circle } from "lucide-vue-next";
+import { Plus, Trash2, RectangleHorizontal, Circle, Pentagon } from "lucide-vue-next";
 
 const props = defineProps<{
 	element: VideoElement | ImageElement;
@@ -11,6 +12,7 @@ const props = defineProps<{
 }>();
 
 const { editor } = useEditor();
+const { maskEditMode } = useEditorUIState();
 
 const masks = computed<MaskShape[]>(() => props.element.masks ?? []);
 
@@ -22,7 +24,7 @@ function updateMasks(newMasks: MaskShape[]) {
 	});
 }
 
-function addMask(type: "rectangle" | "ellipse") {
+function addMask(type: "rectangle" | "ellipse" | "polygon") {
 	const newMask: MaskShape = {
 		id: nanoid(8),
 		type,
@@ -34,6 +36,15 @@ function addMask(type: "rectangle" | "ellipse") {
 		invert: false,
 		rotation: 0,
 	};
+	if (type === "polygon") {
+		newMask.points = [
+			{ x: 0.35, y: 0.35 },
+			{ x: 0.65, y: 0.35 },
+			{ x: 0.75, y: 0.6 },
+			{ x: 0.5, y: 0.75 },
+			{ x: 0.25, y: 0.6 },
+		];
+	}
 	updateMasks([...masks.value, newMask]);
 }
 
@@ -54,6 +65,17 @@ function clamp(value: number, min: number, max: number) {
 
 <template>
 	<div class="flex flex-col gap-3 p-3">
+		<div class="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-2">
+			<span class="text-[11px] text-zinc-400">Mask edit mode</span>
+			<button
+				class="rounded px-2 py-0.5 text-[10px] transition"
+				:class="maskEditMode ? 'bg-primary/20 text-primary' : 'bg-white/5 text-zinc-400 hover:bg-white/10'"
+				@click="maskEditMode = !maskEditMode"
+			>
+				{{ maskEditMode ? 'On' : 'Off' }}
+			</button>
+		</div>
+
 		<!-- Add buttons -->
 		<div class="flex gap-2">
 			<button
@@ -69,6 +91,13 @@ function clamp(value: number, min: number, max: number) {
 			>
 				<Circle class="size-3.5" />
 				Ellipse
+			</button>
+			<button
+				class="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs text-zinc-300 transition hover:bg-white/10"
+				@click="addMask('polygon')"
+			>
+				<Pentagon class="size-3.5" />
+				Polygon
 			</button>
 		</div>
 
@@ -90,7 +119,8 @@ function clamp(value: number, min: number, max: number) {
 			<div class="mb-2.5 flex items-center justify-between">
 				<div class="flex items-center gap-1.5">
 					<RectangleHorizontal v-if="mask.type === 'rectangle'" class="size-3.5 text-zinc-400" />
-					<Circle v-else class="size-3.5 text-zinc-400" />
+					<Circle v-else-if="mask.type === 'ellipse'" class="size-3.5 text-zinc-400" />
+					<Pentagon v-else class="size-3.5 text-zinc-400" />
 					<span class="text-xs font-medium capitalize text-zinc-300">{{ mask.type }}</span>
 				</div>
 				<button
@@ -178,6 +208,19 @@ function clamp(value: number, min: number, max: number) {
 						@input="updateMask(mask.id, { rotation: Number(($event.target as HTMLInputElement).value) })"
 					/>
 					<span class="text-right text-[9px] text-zinc-500">{{ mask.rotation }}°</span>
+				</div>
+
+				<!-- Corner Radius (rectangle only) -->
+				<div v-if="mask.type === 'rectangle'" class="col-span-2 flex flex-col gap-1">
+					<label class="text-[10px] text-zinc-500">Corner Radius</label>
+					<input
+						type="range"
+						:value="mask.cornerRadius ?? 0"
+						min="0" max="1" step="0.01"
+						class="h-1 w-full accent-blue-500"
+						@input="updateMask(mask.id, { cornerRadius: Number(($event.target as HTMLInputElement).value) })"
+					/>
+					<span class="text-right text-[9px] text-zinc-500">{{ Math.round((mask.cornerRadius ?? 0) * 100) }}%</span>
 				</div>
 			</div>
 

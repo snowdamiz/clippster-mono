@@ -1327,6 +1327,7 @@ commands::file_utils::generate_video_thumbnail,
 video_editor_export::export_video_editor_project_simple,
 video_editor_export::export_video_editor_project,
 video_editor_export::save_text_overlay_png,
+video_editor_export::save_overlay_frame_sequence,
 
 // Video Frame Decoder commands
 video::get_video_frame,

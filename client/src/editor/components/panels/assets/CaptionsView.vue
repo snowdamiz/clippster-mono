@@ -357,8 +357,8 @@ function handleRemoveCaptions() {
 	<div class="flex h-full flex-col overflow-hidden">
 		<PanelSearchBar v-model="searchQuery" placeholder="Search presets..." />
 
-		<div class="flex-1 overflow-y-auto">
-			<!-- Preset grid -->
+		<!-- Scrollable preset grid -->
+		<div class="min-h-0 flex-1 overflow-y-auto">
 			<div class="p-2">
 				<div class="grid grid-cols-2 gap-1.5">
 					<button
@@ -391,12 +391,17 @@ function handleRemoveCaptions() {
 					</button>
 				</div>
 			</div>
+		</div>
 
-			<!-- Divider -->
-			<div class="border-t border-white/10 mx-2" />
+		<!-- Pinned bottom bar: Generate / Add / Remove -->
+		<div class="shrink-0 border-t border-white/10">
+			<!-- Error -->
+			<div v-if="error" class="mx-3 mt-3 rounded-md border border-red-500/20 bg-red-500/10 p-3">
+				<p class="text-xs leading-relaxed text-red-400">{{ error }}</p>
+			</div>
 
 			<!-- Add from existing transcript -->
-			<div v-if="hasTranscriptWords && !hasCaptionTrack" class="space-y-3 p-4">
+			<div v-if="hasTranscriptWords && !hasCaptionTrack" class="p-3">
 				<button
 					class="flex w-full items-center justify-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/20"
 					@click="handleAddFromTranscript"
@@ -404,13 +409,10 @@ function handleRemoveCaptions() {
 					<Captions class="size-4 shrink-0" />
 					<span class="truncate">Add Subtitles</span>
 				</button>
-				<p class="text-[10px] leading-relaxed text-zinc-500">
-					Add subtitles from the existing transcript.
-				</p>
 			</div>
 
 			<!-- Generate section (fresh transcription) -->
-			<div v-if="!hasTranscriptWords && !hasCaptionTrack" class="space-y-3 p-4">
+			<div v-if="!hasTranscriptWords && !hasCaptionTrack" class="p-3">
 				<button
 					class="flex w-full items-center justify-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/20 disabled:opacity-50"
 					:disabled="isProcessing"
@@ -420,18 +422,13 @@ function handleRemoveCaptions() {
 					<Captions v-else class="size-4 shrink-0" />
 					<span class="truncate">{{ isProcessing ? processingStep : "Generate Subtitles" }}</span>
 				</button>
-				<p class="text-[10px] leading-relaxed text-zinc-500">
-					Transcribes speech from video and audio tracks on the timeline. Music tracks are excluded.
+				<p class="mt-1.5 text-[10px] leading-relaxed text-zinc-500">
+					Transcribes speech from video and audio tracks.
 				</p>
 			</div>
 
-			<!-- Error -->
-			<div v-if="error" class="mx-4 rounded-md border border-red-500/20 bg-red-500/10 p-3">
-				<p class="text-xs leading-relaxed text-red-400">{{ error }}</p>
-			</div>
-
 			<!-- Remove captions -->
-			<div v-if="hasCaptionTrack" class="p-4 pt-0">
+			<div v-if="hasCaptionTrack" class="p-3">
 				<Button class="w-full" variant="destructive" size="sm" @click="handleRemoveCaptions">
 					Remove all captions
 				</Button>

@@ -2,6 +2,7 @@ import { ref, watch, computed, onUnmounted, type Ref } from "vue";
 import { filmstripService } from "../../services/filmstrip-service";
 import type { TimelineElement as TimelineElementType } from "../../types/timeline";
 import type { MediaAsset } from "../../types/assets";
+import { EditorCore } from "../../core";
 
 const DEBOUNCE_MS = 200;
 const THUMBNAIL_HEIGHT = 54;
@@ -93,6 +94,11 @@ export function useFilmstrip({
 	}
 
 	function requestExtraction() {
+		if (EditorCore.getInstance().getInteractiveDrag()) {
+			isLoading.value = false;
+			return;
+		}
+
 		const el = element.value;
 		const asset = mediaAsset.value;
 

@@ -97,7 +97,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
         }
       ],
       "reasoning" => %{
-        "effort" => "high"
+        "effort" => "low"
       },
       "max_output_tokens" => 32000
     }
@@ -158,7 +158,25 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
 
               {:error, reason} ->
                 IO.puts("[OpenRouterAPI] Failed to extract clips: #{reason}")
-                {:error, reason}
+
+                if attempt < max_attempts - 1 and String.contains?(reason, "truncated") do
+                  IO.puts(
+                    "[OpenRouterAPI] Retrying truncated response with compact JSON guidance..."
+                  )
+
+                  generate_clips_with_retry(
+                    transcript,
+                    system_prompt,
+                    user_prompt_input,
+                    model,
+                    api_key,
+                    attempt + 1,
+                    ["compact_valid_json"],
+                    project_id
+                  )
+                else
+                  {:error, reason}
+                end
             end
 
           {:error, reason} ->
@@ -246,7 +264,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
 
   defp build_user_prompt(transcript, user_prompt, attempt) do
     try do
-      transcript_json = Jason.encode!(transcript, pretty: true)
+      transcript_json = Jason.encode!(transcript)
 
       retry_message =
         if attempt > 0 do
@@ -268,6 +286,8 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
       #{transcript_json}
 
       Please analyze this transcript and generate viral clips according to the user instructions and system prompt.#{retry_message}
+
+      Return compact valid JSON only. Keep titles, reasons, transcripts, and social captions concise.
       """
     rescue
       e ->
@@ -291,7 +311,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
             end)
         }
 
-        transcript_json = Jason.encode!(simplified_transcript, pretty: true)
+        transcript_json = Jason.encode!(simplified_transcript)
 
         retry_message =
           if attempt > 0 do
@@ -313,6 +333,8 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
         #{transcript_json}
 
         Please analyze this transcript and generate viral clips according to the user instructions and system prompt.#{retry_message}
+
+        Return compact valid JSON only. Keep titles, reasons, transcripts, and social captions concise.
         """
     end
   end
@@ -636,6 +658,16 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
             - Lowercase letters, numbers, underscores only
             - Must end with .mp4
             - Example: "epic_market_prediction_100x.mp4"
+            """
+
+          "compact_valid_json" ->
+            """
+            **compact valid JSON (REQUIRED):**
+            - Return ONLY a single JSON object: {"clips":[...]}
+            - Do not use markdown fences or commentary.
+            - Return at most 4 clips for this retry.
+            - Keep "reason", "combined_transcript", and "socialMediaPost" concise so the response does not truncate.
+            - Every clip object must be complete and include all required fields.
             """
 
           _ ->

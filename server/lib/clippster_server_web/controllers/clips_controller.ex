@@ -22,10 +22,13 @@ defmodule ClippsterServerWeb.ClipsController do
   # Helper to parse numeric strings that may be integers or floats
   defp parse_numeric_string(nil), do: nil
   defp parse_numeric_string(""), do: nil
+
   defp parse_numeric_string(val) when is_binary(val) do
     # Try to parse as integer first, then as float
     case Integer.parse(val) do
-      {int_val, ""} -> int_val * 1.0
+      {int_val, ""} ->
+        int_val * 1.0
+
       _ ->
         case Float.parse(val) do
           {float_val, _} -> float_val
@@ -33,6 +36,7 @@ defmodule ClippsterServerWeb.ClipsController do
         end
     end
   end
+
   defp parse_numeric_string(val) when is_number(val), do: val * 1.0
 
   def detect_chunked(
@@ -73,11 +77,9 @@ defmodule ClippsterServerWeb.ClipsController do
                   throw({:error, "chunks must be valid JSON"})
               end
 
-            # Check for multimodal mode
-            multimodal_raw = Map.get(params, "multimodal")
-            IO.puts("[ClipsController] Raw multimodal param: #{inspect(multimodal_raw)}")
-            multimodal = multimodal_raw == "true"
-            IO.puts("[ClipsController] Multimodal mode enabled: #{multimodal}")
+            # Multimodal detection is no longer user-facing. Ignore stale clients/API params.
+            multimodal = false
+            IO.puts("[ClipsController] Multimodal mode disabled for VOD detection")
 
             # Extract optional time range parameters
             start_time = parse_numeric_string(Map.get(params, "start_time")) || 0.0
@@ -267,7 +269,8 @@ defmodule ClippsterServerWeb.ClipsController do
                   credits,
                   is_admin,
                   job_id,
-                  multimodal
+                  multimodal,
+                  parse_streamer_metadata(params)
                 )
             end
         end
@@ -296,7 +299,8 @@ defmodule ClippsterServerWeb.ClipsController do
          credits_deducted,
          is_admin,
          job_id,
-         multimodal
+         multimodal,
+         streamer_metadata
        ) do
     operation = fn ->
       execute_chunked_clip_detection(
@@ -305,7 +309,8 @@ defmodule ClippsterServerWeb.ClipsController do
         chunks_metadata,
         processing_mode,
         user_id,
-        multimodal
+        multimodal,
+        streamer_metadata
       )
     end
 
@@ -378,7 +383,8 @@ defmodule ClippsterServerWeb.ClipsController do
          chunks_metadata,
          processing_mode,
          user_id,
-         multimodal
+         multimodal,
+         streamer_metadata
        ) do
     # Broadcast initial progress
     mode_label = if multimodal, do: "multimodal", else: "chunked"
@@ -429,9 +435,14 @@ defmodule ClippsterServerWeb.ClipsController do
 
     reconstructed_transcript = reconstruct_timeline_from_chunks(sorted_chunks)
 
-    # Process chunks with AI - either parallel normal mode or parallel multimodal mode
-    # Use news + trends enriched system prompt for better context awareness
-    system_prompt = SystemPrompt.get_with_full_context()
+    # Process chunks with AI. Build conditional news/streamer context for the single model.
+    system_prompt =
+      SystemPrompt.get_with_detection_context(
+        user_prompt,
+        reconstructed_transcript,
+        streamer_metadata
+      )
+
     total_chunks = length(sorted_chunks)
 
     {all_clips, total_usage_tokens} =
@@ -487,17 +498,31 @@ defmodule ClippsterServerWeb.ClipsController do
 
     # Advanced deduplication - catches 2-3 second variations and content duplicates
     IO.puts("[ClipsController] Running advanced duplicate detection...")
-    ProgressChannel.broadcast_progress(project_id, "deduplicating", 93, "Removing duplicate clips...")
+
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "deduplicating",
+      93,
+      "Removing duplicate clips..."
+    )
+
     deduplicated_clips = deduplicate_clips_advanced(merged_clips)
 
     # Quality filtering - remove clips below minimum virality threshold
     IO.puts("[ClipsController] Filtering clips by quality threshold...")
-    ProgressChannel.broadcast_progress(project_id, "filtering", 94, "Filtering low-quality clips...")
+
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "filtering",
+      94,
+      "Filtering low-quality clips..."
+    )
+
     quality_filtered_clips = filter_by_minimum_virality(deduplicated_clips)
 
     IO.puts(
       "[ClipsController] After deduplication and quality filtering: #{length(quality_filtered_clips)} clips " <>
-      "(removed #{length(merged_clips) - length(quality_filtered_clips)} clips)"
+        "(removed #{length(merged_clips) - length(quality_filtered_clips)} clips)"
     )
 
     # Validation step - using the filtered clips and the reconstructed full transcript
@@ -511,36 +536,17 @@ defmodule ClippsterServerWeb.ClipsController do
     )
 
     # Validate all clips against the reconstructed transcript
-    case ClipValidation.validate_and_correct_clips(quality_filtered_clips, reconstructed_transcript, true) do
+    case ClipValidation.validate_and_correct_clips(
+           quality_filtered_clips,
+           reconstructed_transcript,
+           true
+         ) do
       {:ok, validation_result} ->
         IO.puts("[ClipsController] Enhanced validation completed")
         IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
 
-        # Apply minimum duration filtering if specified in user prompt
         final_clips =
-          case PromptRulesParser.parse_minimum_duration(user_prompt) do
-            nil ->
-              # No minimum duration rule found, use all validated clips
-              validation_result.validatedClips
-
-            min_duration ->
-              # Filter clips by minimum duration
-              IO.puts("[ClipsController] Applying minimum duration filter: #{min_duration}s")
-
-              filtered =
-                ClipValidation.filter_by_minimum_duration(
-                  validation_result.validatedClips,
-                  min_duration
-                )
-
-              removed_count = length(validation_result.validatedClips) - length(filtered)
-
-              if removed_count > 0 do
-                IO.puts("[ClipsController] Removed #{removed_count} clips below minimum duration")
-              end
-
-              filtered
-          end
+          apply_duration_and_shape_policy(validation_result.validatedClips, user_prompt)
 
         # Prepare final response
         total_processed = length(successful_chunks) + length(failed_chunks)
@@ -626,8 +632,11 @@ defmodule ClippsterServerWeb.ClipsController do
             "[ClipsController] Processing chunk #{index + 1}/#{total_chunks} in parallel..."
           )
 
-          # Prepare optimized transcript for this chunk
-          ai_transcript = process_whisper_response_for_ai(chunk.adjusted_whisper_response)
+          # Prepare optimized transcript for this chunk (same enhancement as full-VOD /detect path)
+          full_enhanced =
+            process_whisper_response_enhanced(chunk.adjusted_whisper_response)
+
+          ai_transcript = process_whisper_response_for_ai(full_enhanced)
 
           # Call AI for this chunk
           case OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt, project_id) do
@@ -718,8 +727,11 @@ defmodule ClippsterServerWeb.ClipsController do
             "[ClipsController] Multimodal processing chunk #{index + 1}/#{total_chunks}..."
           )
 
-          # Prepare optimized transcript for this chunk
-          ai_transcript = process_whisper_response_for_ai(chunk.adjusted_whisper_response)
+          # Prepare optimized transcript for this chunk (same enhancement as full-VOD /detect path)
+          full_enhanced =
+            process_whisper_response_enhanced(chunk.adjusted_whisper_response)
+
+          ai_transcript = process_whisper_response_for_ai(full_enhanced)
 
           # Use multimodal detection for this chunk
           case MultimodalClipDetection.process_chunk_multimodal(
@@ -1148,18 +1160,12 @@ defmodule ClippsterServerWeb.ClipsController do
 
             is_first_run = not using_cached_transcript and Map.has_key?(params, "audio")
 
-            # Check for multimodal mode
-            multimodal_raw = Map.get(params, "multimodal")
-
-            IO.puts(
-              "[ClipsController] Raw multimodal param in detect: #{inspect(multimodal_raw)}"
-            )
-
-            multimodal = multimodal_raw == "true"
+            # Multimodal detection is no longer user-facing. Ignore stale clients/API params.
+            multimodal = false
 
             IO.puts("[ClipsController] Using cached transcript: #{using_cached_transcript}")
             IO.puts("[ClipsController] First run: #{is_first_run}")
-            IO.puts("[ClipsController] Multimodal mode enabled: #{multimodal}")
+            IO.puts("[ClipsController] Multimodal mode disabled for VOD detection")
 
             # Calculate audio duration
             duration_hours = calculate_audio_duration_hours(params)
@@ -1509,9 +1515,11 @@ defmodule ClippsterServerWeb.ClipsController do
           )
         end
 
-        # Step 3: Send to OpenRouter API with system prompt using optimized transcript
-        # Use news + trends enriched system prompt for better context awareness
-        system_prompt = SystemPrompt.get_with_full_context()
+        # Step 3: Send to OpenRouter API with conditional news/streamer context.
+        streamer_metadata = parse_streamer_metadata(params)
+
+        system_prompt =
+          SystemPrompt.get_with_detection_context(user_prompt, ai_transcript, streamer_metadata)
 
         ai_result =
           if multimodal do
@@ -1685,36 +1693,11 @@ defmodule ClippsterServerWeb.ClipsController do
                         "[ClipsController] Quality score: #{validation_result.qualityScore}"
                       )
 
-                      # Apply minimum duration filtering if specified in user prompt
                       final_clips =
-                        case PromptRulesParser.parse_minimum_duration(user_prompt) do
-                          nil ->
-                            # No minimum duration rule found, use all validated clips
-                            validation_result.validatedClips
-
-                          min_duration ->
-                            # Filter clips by minimum duration
-                            IO.puts(
-                              "[ClipsController] Applying minimum duration filter: #{min_duration}s"
-                            )
-
-                            filtered =
-                              ClipValidation.filter_by_minimum_duration(
-                                validation_result.validatedClips,
-                                min_duration
-                              )
-
-                            removed_count =
-                              length(validation_result.validatedClips) - length(filtered)
-
-                            if removed_count > 0 do
-                              IO.puts(
-                                "[ClipsController] Removed #{removed_count} clips below minimum duration"
-                              )
-                            end
-
-                            filtered
-                        end
+                        apply_duration_and_shape_policy(
+                          validation_result.validatedClips,
+                          user_prompt
+                        )
 
                       # Replace clips with validated and corrected versions
                       enhanced_response =
@@ -2026,102 +2009,16 @@ defmodule ClippsterServerWeb.ClipsController do
 
     words =
       case whisper_response do
-        %{"words" => words} when is_list(words) ->
+        %{"words" => words} when is_list(words) and length(words) > 0 ->
           IO.puts("[ClipsController] Found top-level words: #{length(words)}")
-          words
+          Enum.filter(words, &valid_word?/1)
 
-        %{"verbose_json" => %{"words" => words}} when is_list(words) ->
+        %{"verbose_json" => %{"words" => words}} when is_list(words) and length(words) > 0 ->
           IO.puts("[ClipsController] Found verbose_json words: #{length(words)}")
-          words
-
-        %{"segments" => segments} when is_list(segments) and length(segments) > 0 ->
-          IO.puts("[ClipsController] Checking #{length(segments)} segments for word data")
-
-          # Check first segment structure safely
-          first_segment = hd(segments)
-          IO.puts("[ClipsController] First segment keys: #{inspect(Map.keys(first_segment))}")
-
-          # Check what type the 'words' field actually is
-          case Map.get(first_segment, "words") do
-            words when is_list(words) ->
-              IO.puts(
-                "[ClipsController] First segment words is a list with #{length(words)} items"
-              )
-
-            words when is_map(words) ->
-              IO.puts("[ClipsController] First segment words is a map: #{inspect(words)}")
-
-            words when is_nil(words) ->
-              IO.puts("[ClipsController] First segment words is nil")
-
-            words ->
-              IO.puts(
-                "[ClipsController] First segment words is unexpected type: #{inspect(words)}"
-              )
-          end
-
-          # Extract words from segments if available, with defensive programming
-          extracted_words =
-            segments
-            |> Enum.reduce([], fn segment, acc ->
-              case segment do
-                %{"words" => words} when is_list(words) ->
-                  IO.puts("[ClipsController] Found segment with #{length(words)} words")
-
-                  # Debug: Show first few word entries
-                  sample_words = Enum.take(words, 3)
-                  IO.puts("[ClipsController] Sample words: #{inspect(sample_words)}")
-
-                  # Filter out nil values and ensure word has required structure
-                  valid_words =
-                    Enum.filter(words, fn word ->
-                      cond do
-                        word == nil ->
-                          false
-
-                        not is_map(word) ->
-                          IO.puts("[ClipsController] Word is not a map: #{inspect(word)}")
-                          false
-
-                        not Map.has_key?(word, "start") ->
-                          IO.puts("[ClipsController] Word missing 'start': #{inspect(word)}")
-                          false
-
-                        not Map.has_key?(word, "end") ->
-                          IO.puts("[ClipsController] Word missing 'end': #{inspect(word)}")
-                          false
-
-                        not Map.has_key?(word, "word") ->
-                          IO.puts("[ClipsController] Word missing 'word': #{inspect(word)}")
-                          false
-
-                        true ->
-                          true
-                      end
-                    end)
-
-                  IO.puts("[ClipsController] Valid words in this segment: #{length(valid_words)}")
-                  acc ++ valid_words
-
-                %{"words" => words} ->
-                  IO.puts(
-                    "[ClipsController] Found segment with words that is not a list: #{inspect(words)}"
-                  )
-
-                  acc
-
-                _ ->
-                  IO.puts("[ClipsController] Segment has no words or wrong structure")
-                  acc
-              end
-            end)
-
-          IO.puts("[ClipsController] Extracted #{length(extracted_words)} words from segments")
-          extracted_words
+          Enum.filter(words, &valid_word?/1)
 
         %{"segments" => segments} when is_list(segments) ->
-          IO.puts("[ClipsController] Found empty segments list")
-          []
+          extract_words_from_segments(segments)
 
         _ ->
           IO.puts("[ClipsController] No word data found in response")
@@ -2131,6 +2028,35 @@ defmodule ClippsterServerWeb.ClipsController do
     IO.puts("[ClipsController] extract_words_from_response returning #{length(words)} words")
     words
   end
+
+  defp extract_words_from_segments(segments) when is_list(segments) do
+    if length(segments) > 0 do
+      IO.puts("[ClipsController] Checking #{length(segments)} segments for word data")
+      first_segment = hd(segments)
+      IO.puts("[ClipsController] First segment keys: #{inspect(Map.keys(first_segment))}")
+    end
+
+    extracted_words =
+      segments
+      |> Enum.flat_map(fn segment ->
+        case Map.get(segment, "words") do
+          words when is_list(words) -> Enum.filter(words, &valid_word?/1)
+          _ -> []
+        end
+      end)
+
+    IO.puts("[ClipsController] Extracted #{length(extracted_words)} words from segments")
+    extracted_words
+  end
+
+  defp extract_words_from_segments(_), do: []
+
+  defp valid_word?(word) when is_map(word) do
+    is_number(Map.get(word, "start")) and is_number(Map.get(word, "end")) and
+      is_binary(Map.get(word, "word"))
+  end
+
+  defp valid_word?(_), do: false
 
   # Validate AI response structure matches system prompt specifications
   defp validate_ai_response(response) do
@@ -2279,7 +2205,10 @@ defmodule ClippsterServerWeb.ClipsController do
 
   # Enhance a single segment with timing analysis
   defp enhance_single_segment(segment, index) do
-    words = Map.get(segment, "words", [])
+    words =
+      segment
+      |> Map.get("words", [])
+      |> Enum.filter(&valid_word?/1)
 
     if length(words) > 0 do
       # Calculate word gaps and timing analysis
@@ -2326,14 +2255,16 @@ defmodule ClippsterServerWeb.ClipsController do
       gap_after =
         if index < length(words) - 1 do
           next_word = Enum.at(words, index + 1)
-          next_word["start"] - word["end"]
+          Kernel.max(0.0, Map.get(next_word, "start", 0.0) - Map.get(word, "end", 0.0))
         else
           0.0
         end
 
+      word_duration = Kernel.max(0.0, Map.get(word, "end", 0.0) - Map.get(word, "start", 0.0))
+
       word
       |> Map.put("gap_after", Float.round(gap_after, 3))
-      |> Map.put("word_duration", Float.round(word["end"] - word["start"], 3))
+      |> Map.put("word_duration", Float.round(word_duration, 3))
     end)
   end
 
@@ -2634,9 +2565,20 @@ defmodule ClippsterServerWeb.ClipsController do
         segments when is_list(segments) ->
           segments
           |> Enum.map(fn segment ->
+            adjusted_words =
+              segment
+              |> Map.get("words", [])
+              |> Enum.filter(&valid_word?/1)
+              |> Enum.map(fn word ->
+                word
+                |> Map.put("start", Map.get(word, "start", 0) + chunk_start_time)
+                |> Map.put("end", Map.get(word, "end", 0) + chunk_start_time)
+              end)
+
             segment
             |> Map.put("start", Map.get(segment, "start", 0) + chunk_start_time)
             |> Map.put("end", Map.get(segment, "end", 0) + chunk_start_time)
+            |> Map.put("words", adjusted_words)
           end)
 
         _ ->
@@ -2646,8 +2588,9 @@ defmodule ClippsterServerWeb.ClipsController do
     # Adjust words if available
     adjusted_words =
       case Map.get(whisper_response, "words") do
-        words when is_list(words) ->
+        words when is_list(words) and length(words) > 0 ->
           words
+          |> Enum.filter(&valid_word?/1)
           |> Enum.map(fn word ->
             word
             |> Map.put("start", Map.get(word, "start", 0) + chunk_start_time)
@@ -2655,7 +2598,7 @@ defmodule ClippsterServerWeb.ClipsController do
           end)
 
         _ ->
-          []
+          extract_words_from_segments(adjusted_segments)
       end
 
     # Update duration to reflect the full timeline position
@@ -3155,49 +3098,75 @@ defmodule ClippsterServerWeb.ClipsController do
     end)
   end
 
-  # Merge two overlapping clips, taking the union of their time ranges
-  # Keeps the clip with higher virality score as the base, but expands boundaries
+  # Merge two overlapping clips by keeping the tighter, higher-value candidate.
+  # Only widen when a candidate explicitly says it needs complete context.
   defp merge_two_clips(clip1, clip2) do
     clip1_start = get_clip_start_time(clip1)
     clip1_end = get_clip_end_time(clip1)
     clip2_start = get_clip_start_time(clip2)
     clip2_end = get_clip_end_time(clip2)
 
-    # Take the UNION of timestamps (wider boundaries = more context)
-    merged_start = min(clip1_start, clip2_start)
-    merged_end = max(clip1_end, clip2_end)
-    merged_duration = merged_end - merged_start
-
-    # Use the clip with higher virality score as base
     clip1_score = Map.get(clip1, "virality_score", 0) || 0
     clip2_score = Map.get(clip2, "virality_score", 0) || 0
+    clip1_duration = clip1_end - clip1_start
+    clip2_duration = clip2_end - clip2_start
 
-    base_clip = if clip1_score >= clip2_score, do: clip1, else: clip2
+    base_clip =
+      cond do
+        clip1_score > clip2_score -> clip1
+        clip2_score > clip1_score -> clip2
+        clip1_duration <= clip2_duration -> clip1
+        true -> clip2
+      end
 
-    # Update the segments with merged boundaries
-    # For simplicity, create a single continuous segment with merged boundaries
-    merged_segments = [
-      %{
-        "start_time" => merged_start,
-        "end_time" => merged_end,
-        "duration" => merged_duration,
-        "transcript" => get_merged_transcript(clip1, clip2)
-      }
-    ]
+    should_widen = needs_merged_context?(clip1) or needs_merged_context?(clip2)
 
-    # Combine transcripts
-    combined_transcript = get_merged_transcript(clip1, clip2)
+    {final_clip, final_start, final_end} =
+      if should_widen do
+        merged_start = min(clip1_start, clip2_start)
+        merged_end = max(clip1_end, clip2_end)
+        merged_duration = merged_end - merged_start
+        combined_transcript = get_merged_transcript(clip1, clip2)
+
+        merged_segments = [
+          %{
+            "start_time" => merged_start,
+            "end_time" => merged_end,
+            "duration" => merged_duration,
+            "transcript" => combined_transcript
+          }
+        ]
+
+        {
+          base_clip
+          |> Map.put("segments", merged_segments)
+          |> Map.put("total_duration", merged_duration)
+          |> Map.put("combined_transcript", combined_transcript)
+          |> Map.put("type", "continuous")
+          |> Map.put("merged_from_chunks", true)
+          |> Map.put("merge_policy", "widened_for_context"),
+          merged_start,
+          merged_end
+        }
+      else
+        {Map.put(base_clip, "merge_policy", "kept_tighter_candidate"),
+         get_clip_start_time(base_clip), get_clip_end_time(base_clip)}
+      end
 
     Logger.info(
-      "[ClipsController] Merged clips: #{clip1_start}-#{clip1_end} + #{clip2_start}-#{clip2_end} -> #{merged_start}-#{merged_end}"
+      "[ClipsController] Resolved overlapping clips: #{clip1_start}-#{clip1_end} + #{clip2_start}-#{clip2_end} -> #{final_start}-#{final_end}"
     )
 
-    base_clip
-    |> Map.put("segments", merged_segments)
-    |> Map.put("total_duration", merged_duration)
-    |> Map.put("combined_transcript", combined_transcript)
-    |> Map.put("type", "continuous")
-    |> Map.put("merged_from_chunks", true)
+    final_clip
+  end
+
+  defp needs_merged_context?(clip) do
+    text =
+      "#{Map.get(clip, "duration_policy", "")} #{Map.get(clip, "exception_reason", "")} #{Map.get(clip, "reason", "")}"
+      |> String.downcase()
+
+    String.contains?(text, "context") or String.contains?(text, "complete") or
+      String.contains?(text, "full arc")
   end
 
   # Get merged transcript from two clips, preferring the longer one
@@ -3212,49 +3181,50 @@ defmodule ClippsterServerWeb.ClipsController do
   # Catches duplicates that time-overlap logic misses (2-3 second variations, shifted boundaries)
   defp deduplicate_clips_advanced(clips) do
     Logger.info("[ClipsController] Running advanced deduplication on #{length(clips)} clips")
-    
+
     _tier1_removed = 0
     _tier2_removed = 0
     _tier3_removed = 0
-    
+
     # Process clips in order, removing duplicates as we find them
-    {deduplicated, stats} = Enum.reduce(clips, {[], %{tier1: 0, tier2: 0, tier3: 0}}, fn clip, {acc, stats} ->
-      # Check if this clip is a duplicate of any clip already in the accumulator
-      case find_duplicate_clip(clip, acc) do
-        nil ->
-          # No duplicate found, add to accumulator
-          {[clip | acc], stats}
-        
-        {duplicate_of, tier} ->
-          # Found duplicate, log it and skip this clip
-          clip_start = get_clip_start_time(clip)
-          clip_end = get_clip_end_time(clip)
-          dup_start = get_clip_start_time(duplicate_of)
-          dup_end = get_clip_end_time(duplicate_of)
-          clip_score = Map.get(clip, "virality_score", 0) || 0
-          dup_score = Map.get(duplicate_of, "virality_score", 0) || 0
-          
-          Logger.info(
-            "[ClipsController] Tier #{tier} duplicate detected: " <>
-            "Clip #{clip_start}-#{clip_end} (score: #{clip_score}) is duplicate of " <>
-            "#{dup_start}-#{dup_end} (score: #{dup_score}). Keeping higher score."
-          )
-          
-          # Update stats
-          new_stats = Map.update!(stats, String.to_atom("tier#{tier}"), &(&1 + 1))
-          {acc, new_stats}
-      end
-    end)
-    
+    {deduplicated, stats} =
+      Enum.reduce(clips, {[], %{tier1: 0, tier2: 0, tier3: 0}}, fn clip, {acc, stats} ->
+        # Check if this clip is a duplicate of any clip already in the accumulator
+        case find_duplicate_clip(clip, acc) do
+          nil ->
+            # No duplicate found, add to accumulator
+            {[clip | acc], stats}
+
+          {duplicate_of, tier} ->
+            # Found duplicate, log it and skip this clip
+            clip_start = get_clip_start_time(clip)
+            clip_end = get_clip_end_time(clip)
+            dup_start = get_clip_start_time(duplicate_of)
+            dup_end = get_clip_end_time(duplicate_of)
+            clip_score = Map.get(clip, "virality_score", 0) || 0
+            dup_score = Map.get(duplicate_of, "virality_score", 0) || 0
+
+            Logger.info(
+              "[ClipsController] Tier #{tier} duplicate detected: " <>
+                "Clip #{clip_start}-#{clip_end} (score: #{clip_score}) is duplicate of " <>
+                "#{dup_start}-#{dup_end} (score: #{dup_score}). Keeping higher score."
+            )
+
+            # Update stats
+            new_stats = Map.update!(stats, String.to_atom("tier#{tier}"), &(&1 + 1))
+            {acc, new_stats}
+        end
+      end)
+
     total_removed = stats.tier1 + stats.tier2 + stats.tier3
-    
+
     Logger.info(
       "[ClipsController] Advanced deduplication complete: " <>
-      "Removed #{total_removed} duplicates " <>
-      "(Tier 1: #{stats.tier1}, Tier 2: #{stats.tier2}, Tier 3: #{stats.tier3}). " <>
-      "#{length(deduplicated)} clips remaining."
+        "Removed #{total_removed} duplicates " <>
+        "(Tier 1: #{stats.tier1}, Tier 2: #{stats.tier2}, Tier 3: #{stats.tier3}). " <>
+        "#{length(deduplicated)} clips remaining."
     )
-    
+
     Enum.reverse(deduplicated)
   end
 
@@ -3267,7 +3237,7 @@ defmodule ClippsterServerWeb.ClipsController do
     clip_transcript = Map.get(clip, "combined_transcript", "")
     clip_title = get_clip_title(clip)
     clip_score = Map.get(clip, "virality_score", 0) || 0
-    
+
     Enum.reduce_while(acc, nil, fn existing_clip, _result ->
       existing_start = get_clip_start_time(existing_clip)
       existing_end = get_clip_end_time(existing_clip)
@@ -3275,12 +3245,12 @@ defmodule ClippsterServerWeb.ClipsController do
       existing_transcript = Map.get(existing_clip, "combined_transcript", "")
       existing_title = get_clip_title(existing_clip)
       existing_score = Map.get(existing_clip, "virality_score", 0) || 0
-      
+
       # Tier 1: Exact duplicate detection (±3s start/end, >90% transcript similarity)
       start_diff = abs(clip_start - existing_start)
       end_diff = abs(clip_end - existing_end)
       transcript_sim = calculate_transcript_similarity(clip_transcript, existing_transcript)
-      
+
       if start_diff <= 3.0 and end_diff <= 3.0 and transcript_sim > 0.90 do
         # Keep the clip with higher virality score
         if clip_score > existing_score do
@@ -3298,8 +3268,10 @@ defmodule ClippsterServerWeb.ClipsController do
         overlap_duration = max(0, overlap_end - overlap_start)
         shorter_duration = min(clip_duration, existing_duration)
         overlap_ratio = if shorter_duration > 0, do: overlap_duration / shorter_duration, else: 0
-        duration_diff_ratio = abs(clip_duration - existing_duration) / max(clip_duration, existing_duration)
-        
+
+        duration_diff_ratio =
+          abs(clip_duration - existing_duration) / max(clip_duration, existing_duration)
+
         if overlap_ratio > 0.30 and transcript_sim > 0.75 and duration_diff_ratio < 0.30 do
           # Keep the clip with higher virality score
           if clip_score > existing_score do
@@ -3310,7 +3282,7 @@ defmodule ClippsterServerWeb.ClipsController do
         else
           # Tier 3: Content-based duplicate detection (>85% transcript similarity, >70% title similarity)
           title_sim = calculate_transcript_similarity(clip_title, existing_title)
-          
+
           if transcript_sim > 0.85 and title_sim > 0.70 do
             # Keep the clip with higher virality score
             if clip_score > existing_score do
@@ -3333,7 +3305,7 @@ defmodule ClippsterServerWeb.ClipsController do
     # Normalize texts for comparison
     norm1 = normalize_text_for_comparison(text1)
     norm2 = normalize_text_for_comparison(text2)
-    
+
     # Handle empty strings
     if norm1 == "" or norm2 == "" do
       0.0
@@ -3351,6 +3323,7 @@ defmodule ClippsterServerWeb.ClipsController do
     |> String.replace(~r/\s+/, " ")
     |> String.trim()
   end
+
   defp normalize_text_for_comparison(_), do: ""
 
   # Get clip title from clip map
@@ -3362,22 +3335,24 @@ defmodule ClippsterServerWeb.ClipsController do
   # Removes clips below the quality threshold
   defp filter_by_minimum_virality(clips) do
     minimum_score = 50
-    
-    filtered = Enum.filter(clips, fn clip ->
-      virality_score = Map.get(clip, "virality_score", 0) || 0
-      virality_score >= minimum_score
-    end)
-    
+
+    filtered =
+      Enum.filter(clips, fn clip ->
+        virality_score = Map.get(clip, "virality_score", 0) || 0
+        virality_score >= minimum_score
+      end)
+
     removed_count = length(clips) - length(filtered)
-    
+
     if removed_count > 0 do
       Logger.info(
         "[ClipsController] Quality filter: Removed #{removed_count} clips below minimum virality score (#{minimum_score}). " <>
-        "#{length(filtered)} clips remaining."
+          "#{length(filtered)} clips remaining."
       )
-      
+
       # Log examples of removed clips for debugging
       removed_clips = clips -- filtered
+
       Enum.take(removed_clips, 3)
       |> Enum.each(fn clip ->
         score = Map.get(clip, "virality_score", 0) || 0
@@ -3385,9 +3360,46 @@ defmodule ClippsterServerWeb.ClipsController do
         Logger.info("[ClipsController] Removed low-quality clip: \"#{title}\" (score: #{score})")
       end)
     end
-    
+
     filtered
   end
+
+  defp apply_duration_and_shape_policy(clips, user_prompt) do
+    rules = PromptRulesParser.parse_duration_rules(user_prompt)
+
+    filtered = ClipValidation.apply_clip_shape_policy(clips, rules)
+    removed_count = length(clips) - length(filtered)
+
+    IO.puts(
+      "[ClipsController] Clip shape policy applied: #{length(filtered)} kept, #{removed_count} removed, ideal #{rules.ideal_min}-#{rules.ideal_max}s"
+    )
+
+    filtered
+  end
+
+  defp parse_streamer_metadata(params) when is_map(params) do
+    case Map.get(params, "streamer_metadata") do
+      nil ->
+        nil
+
+      "" ->
+        nil
+
+      metadata when is_map(metadata) ->
+        metadata
+
+      metadata when is_binary(metadata) ->
+        case Jason.decode(metadata) do
+          {:ok, decoded} when is_map(decoded) -> decoded
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp parse_streamer_metadata(_), do: nil
 
   # Reconstruct timeline from multiple chunk transcripts
   defp reconstruct_timeline_from_chunks(chunk_transcripts) do
@@ -3409,7 +3421,15 @@ defmodule ClippsterServerWeb.ClipsController do
     all_words =
       sorted_chunks
       |> Enum.flat_map(fn chunk ->
-        Map.get(chunk.adjusted_whisper_response, "words", [])
+        case Map.get(chunk.adjusted_whisper_response, "words", []) do
+          words when is_list(words) and length(words) > 0 ->
+            Enum.filter(words, &valid_word?/1)
+
+          _ ->
+            chunk.adjusted_whisper_response
+            |> Map.get("segments", [])
+            |> extract_words_from_segments()
+        end
       end)
 
     # Calculate total duration
@@ -3535,7 +3555,7 @@ defmodule ClippsterServerWeb.ClipsController do
 
             {:error, :insufficient_credits} ->
               Logger.warning("[ClipsController] Insufficient credits for user #{user_id}")
-              
+
               conn
               |> put_status(402)
               |> json(%{
@@ -3546,7 +3566,7 @@ defmodule ClippsterServerWeb.ClipsController do
 
             {:error, reason} ->
               Logger.error("[ClipsController] Credit deduction failed: #{inspect(reason)}")
-              
+
               conn
               |> put_status(500)
               |> json(%{
@@ -3559,7 +3579,7 @@ defmodule ClippsterServerWeb.ClipsController do
 
       {:error, reason} ->
         Logger.warning("[ClipsController] Authentication failed: #{reason}")
-        
+
         conn
         |> put_status(401)
         |> json(%{success: false, error: "Unauthorized"})
@@ -3576,9 +3596,10 @@ defmodule ClippsterServerWeb.ClipsController do
       "prompt" => user_prompt,
       "virality_threshold" => virality_threshold
     } = params
-    
+
     audio_context = Map.get(params, "audio_context", "")
     pending_clip = Map.get(params, "pending_clip", nil)
+
     case get_user_id_from_token(conn) do
       {:ok, user_id, is_admin} ->
         Logger.info("[ClipsController] Real-time detection for user: #{user_id}")
@@ -3608,45 +3629,46 @@ defmodule ClippsterServerWeb.ClipsController do
             system_prompt = SystemPrompt.get_with_full_context()
 
             # Format pending clip context for AI
-            pending_clip_context = if pending_clip do
-              """
-              
-              PENDING CLIP (ongoing scene being tracked):
-              Title: "#{pending_clip["title"]}"
-              Time Range: #{pending_clip["start_time"]}s - #{pending_clip["end_time"]}s
-              Description: #{pending_clip["description"]}
-              Context: #{pending_clip["context_summary"]}
-              
-              CONTEXT CHANGE DETECTION:
-              Analyze if the current transcript is:
-              1. SAME CONTEXT (continuation of pending clip):
-                 - Same topic/scene/situation as pending clip
-                 - Example: Airport lady still freaking out → SAME CONTEXT
-                 - Example: Gambling session continues → SAME CONTEXT
-                 - Action: Set context_change=false, update pending_clip end_time to #{transcript_end}
-              
-              2. NEW CONTEXT (different scene):
-                 - Different topic/scene/situation from pending clip
-                 - Example: Airport scene ends, now talking about gambling → NEW CONTEXT
-                 - Example: Freakout ends, now calm conversation → NEW CONTEXT
-                 - Action: Set context_change=true, create new pending_clip for the new scene
-              
-              If SAME CONTEXT: Return {"context_change": false, "pending_clip": {updated clip with new end_time}}
-              If NEW CONTEXT: Return {"context_change": true, "pending_clip": {new clip data for the new scene}}
-              """
-            else
-              """
-              
-              NO PENDING CLIP:
-              This is the first detection or previous clip was saved.
-              If you detect a clip-worthy moment, create a new pending_clip.
-              Set context_change=false (no previous context to change from).
-              """
-            end
-            
+            pending_clip_context =
+              if pending_clip do
+                """
+
+                PENDING CLIP (ongoing scene being tracked):
+                Title: "#{pending_clip["title"]}"
+                Time Range: #{pending_clip["start_time"]}s - #{pending_clip["end_time"]}s
+                Description: #{pending_clip["description"]}
+                Context: #{pending_clip["context_summary"]}
+
+                CONTEXT CHANGE DETECTION:
+                Analyze if the current transcript is:
+                1. SAME CONTEXT (continuation of pending clip):
+                   - Same topic/scene/situation as pending clip
+                   - Example: Airport lady still freaking out → SAME CONTEXT
+                   - Example: Gambling session continues → SAME CONTEXT
+                   - Action: Set context_change=false, update pending_clip end_time to #{transcript_end}
+
+                2. NEW CONTEXT (different scene):
+                   - Different topic/scene/situation from pending clip
+                   - Example: Airport scene ends, now talking about gambling → NEW CONTEXT
+                   - Example: Freakout ends, now calm conversation → NEW CONTEXT
+                   - Action: Set context_change=true, create new pending_clip for the new scene
+
+                If SAME CONTEXT: Return {"context_change": false, "pending_clip": {updated clip with new end_time}}
+                If NEW CONTEXT: Return {"context_change": true, "pending_clip": {new clip data for the new scene}}
+                """
+              else
+                """
+
+                NO PENDING CLIP:
+                This is the first detection or previous clip was saved.
+                If you detect a clip-worthy moment, create a new pending_clip.
+                Set context_change=false (no previous context to change from).
+                """
+              end
+
             # Format transcript for AI analysis
             audio_info = if audio_context != "", do: "\n\n#{audio_context}\n", else: ""
-            
+
             formatted_transcript = """
             TRANSCRIPT (#{transcript_start}s - #{transcript_end}s):
             #{transcript}#{audio_info}#{pending_clip_context}
@@ -3674,9 +3696,9 @@ defmodule ClippsterServerWeb.ClipsController do
             - Natural break/transition in the stream
             - Pending clip is already 60+ seconds AND current moment could work standalone
             - Current moment has a strong hook that deserves its own clip
-            
+
             WHAT QUALIFIES AS 85+ SCORE (CLIP-WORTHY):
-            
+
             GAMING STREAMS:
             - Impressive clutch plays or skill moments (1v3+, comeback wins, tournament plays)
             - Rage/tilt moments with strong reactions (screaming, breaking things, tilting hard)
@@ -3684,7 +3706,7 @@ defmodule ClippsterServerWeb.ClipsController do
             - Hype moments (big wins, insane RNG, perfect timing)
             - Drama with teammates or opponents (arguments, trash talk, beef)
             - Funny banter or roasts that land perfectly
-            
+
             IRL STREAMS:
             - Confrontations or arguments (getting kicked out, disputes, drama)
             - Unexpected encounters (celebrities, crazy people, weird situations)
@@ -3692,7 +3714,7 @@ defmodule ClippsterServerWeb.ClipsController do
             - Wholesome moments with strong emotional payoff
             - Surprising reveals or announcements
             - Chaotic or unpredictable events
-            
+
             ALL STREAMS:
             - Strong emotional reactions (genuine crying, explosive laughter, shock)
             - Drama or controversy (call-outs, hot takes, relationship stuff)
@@ -3728,15 +3750,15 @@ defmodule ClippsterServerWeb.ClipsController do
               "context_change": true/false,
               "pending_clip": {...} or null
             }
-            
+
             DO NOT return {"clips": [...]} - that format is DEPRECATED.
             DO NOT return {"clips": [], "extensions": []} - that format is DEPRECATED.
-            
+
             EXAMPLES:
-            
+
             Example 1 - No clip detected:
             {"context_change": false, "pending_clip": null}
-            
+
             Example 2 - First clip detected (no previous context):
             {
               "context_change": false,
@@ -3750,7 +3772,7 @@ defmodule ClippsterServerWeb.ClipsController do
                 "context_summary": "Airport freakout scene"
               }
             }
-            
+
             Example 3 - Continuing same scene (extend end_time):
             {
               "context_change": false,
@@ -3764,7 +3786,7 @@ defmodule ClippsterServerWeb.ClipsController do
                 "context_summary": "Airport freakout scene"
               }
             }
-            
+
             Example 4 - NEW scene detected (context changed):
             {
               "context_change": true,
@@ -3778,7 +3800,7 @@ defmodule ClippsterServerWeb.ClipsController do
                 "context_summary": "Gambling session"
               }
             }
-            
+
             RULES:
             - start_time and end_time are ABSOLUTE timestamps (seconds from stream start)
             - When extending a scene, keep the original start_time, update end_time to #{transcript_end}
@@ -3791,77 +3813,105 @@ defmodule ClippsterServerWeb.ClipsController do
               {:ok, ai_response, _usage} ->
                 # Log the full AI response for debugging
                 Logger.info("[ClipsController] Full AI response: #{inspect(ai_response)}")
-                
+
                 # Parse AI response - extract the new pending clip data (ignore AI's context_change)
-                ai_pending_clip = case ai_response do
-                  # New format
-                  %{"context_change" => _change, "pending_clip" => clip} ->
-                    clip
-                  
-                  # Old format fallback - convert to new format
-                  %{"clips" => clips} when is_list(clips) and length(clips) > 0 ->
-                    first_clip = List.first(clips)
-                    %{
-                      "title" => Map.get(first_clip, "title", "Untitled"),
-                      "description" => Map.get(first_clip, "description", ""),
-                      "start_time" => get_clip_start_time(first_clip, transcript_start),
-                      "end_time" => get_clip_end_time(first_clip, transcript_start, transcript_end),
-                      "virality_score" => Map.get(first_clip, "virality_score", 85),
-                      "detection_reason" => Map.get(first_clip, "reason", "") || Map.get(first_clip, "detection_reason", ""),
-                      "context_summary" => String.slice(Map.get(first_clip, "title", ""), 0, 50)
-                    }
-                  
-                  # No clips detected
-                  _ ->
-                    nil
-                end
+                ai_pending_clip =
+                  case ai_response do
+                    # New format
+                    %{"context_change" => _change, "pending_clip" => clip} ->
+                      clip
+
+                    # Old format fallback - convert to new format
+                    %{"clips" => clips} when is_list(clips) and length(clips) > 0 ->
+                      first_clip = List.first(clips)
+
+                      %{
+                        "title" => Map.get(first_clip, "title", "Untitled"),
+                        "description" => Map.get(first_clip, "description", ""),
+                        "start_time" => get_clip_start_time(first_clip, transcript_start),
+                        "end_time" =>
+                          get_clip_end_time(first_clip, transcript_start, transcript_end),
+                        "virality_score" => Map.get(first_clip, "virality_score", 85),
+                        "detection_reason" =>
+                          Map.get(first_clip, "reason", "") ||
+                            Map.get(first_clip, "detection_reason", ""),
+                        "context_summary" => String.slice(Map.get(first_clip, "title", ""), 0, 50)
+                      }
+
+                    # No clips detected
+                    _ ->
+                      nil
+                  end
 
                 # Server-side context change detection (don't trust AI's flag)
                 # Compare existing pending clip with new detection using time overlap + semantic similarity
                 # Max clip duration: 180 seconds (3 minutes) - force save if exceeded
                 max_clip_duration = 180
-                
-                {context_change, final_pending_clip} = cond do
-                  # No new clip detected by AI
-                  is_nil(ai_pending_clip) ->
-                    # If we have an existing pending clip and AI found nothing new,
-                    # this might mean the context ended - but we need consecutive "nothing" detections
-                    # For now, keep the existing pending clip (context continues until something new appears)
-                    {false, pending_clip}
-                  
-                  # No existing pending clip - this is a new detection
-                  is_nil(pending_clip) ->
-                    Logger.info("[ClipsController] First clip detected: #{ai_pending_clip["title"]}")
-                    {false, ai_pending_clip}
-                  
-                  # Both exist - compare them
-                  true ->
-                    # FIRST check if clips should merge (check duration AFTER merge, not before)
-                    case should_merge_clips?(pending_clip, ai_pending_clip) do
-                      {:merge, reason} ->
-                        # Similar enough - merge/extend the pending clip
-                        merged = merge_pending_clips(pending_clip, ai_pending_clip)
-                        merged_duration = Map.get(merged, "end_time", 0) - Map.get(merged, "start_time", 0)
-                        
-                        # THEN check duration AFTER merge - cap at max_clip_duration
-                        if merged_duration >= max_clip_duration do
-                          # Cap the clip at max duration and force save
-                          Logger.info("[ClipsController] Merged clip exceeded max duration (#{merged_duration}s >= #{max_clip_duration}s), capping at #{max_clip_duration}s")
-                          capped_clip = Map.put(merged, "end_time", Map.get(merged, "start_time", 0) + max_clip_duration)
-                          {true, capped_clip}
-                        else
-                          Logger.info("[ClipsController] Merging clips (#{reason}): #{merged["start_time"]}s - #{merged["end_time"]}s")
-                          {false, merged}
-                        end
-                      
-                      {:different, reason} ->
-                        # Truly different context - save existing, start new
-                        Logger.info("[ClipsController] Context change (#{reason})! Saving: '#{pending_clip["title"]}' -> Starting: '#{ai_pending_clip["title"]}'")
-                        {true, ai_pending_clip}
-                    end
-                end
 
-                Logger.info("[ClipsController] Context change: #{context_change}, Pending clip: #{if final_pending_clip, do: "#{final_pending_clip["title"]} (#{final_pending_clip["start_time"]}s - #{final_pending_clip["end_time"]}s)", else: "none"}")
+                {context_change, final_pending_clip} =
+                  cond do
+                    # No new clip detected by AI
+                    is_nil(ai_pending_clip) ->
+                      # If we have an existing pending clip and AI found nothing new,
+                      # this might mean the context ended - but we need consecutive "nothing" detections
+                      # For now, keep the existing pending clip (context continues until something new appears)
+                      {false, pending_clip}
+
+                    # No existing pending clip - this is a new detection
+                    is_nil(pending_clip) ->
+                      Logger.info(
+                        "[ClipsController] First clip detected: #{ai_pending_clip["title"]}"
+                      )
+
+                      {false, ai_pending_clip}
+
+                    # Both exist - compare them
+                    true ->
+                      # FIRST check if clips should merge (check duration AFTER merge, not before)
+                      case should_merge_clips?(pending_clip, ai_pending_clip) do
+                        {:merge, reason} ->
+                          # Similar enough - merge/extend the pending clip
+                          merged = merge_pending_clips(pending_clip, ai_pending_clip)
+
+                          merged_duration =
+                            Map.get(merged, "end_time", 0) - Map.get(merged, "start_time", 0)
+
+                          # THEN check duration AFTER merge - cap at max_clip_duration
+                          if merged_duration >= max_clip_duration do
+                            # Cap the clip at max duration and force save
+                            Logger.info(
+                              "[ClipsController] Merged clip exceeded max duration (#{merged_duration}s >= #{max_clip_duration}s), capping at #{max_clip_duration}s"
+                            )
+
+                            capped_clip =
+                              Map.put(
+                                merged,
+                                "end_time",
+                                Map.get(merged, "start_time", 0) + max_clip_duration
+                              )
+
+                            {true, capped_clip}
+                          else
+                            Logger.info(
+                              "[ClipsController] Merging clips (#{reason}): #{merged["start_time"]}s - #{merged["end_time"]}s"
+                            )
+
+                            {false, merged}
+                          end
+
+                        {:different, reason} ->
+                          # Truly different context - save existing, start new
+                          Logger.info(
+                            "[ClipsController] Context change (#{reason})! Saving: '#{pending_clip["title"]}' -> Starting: '#{ai_pending_clip["title"]}'"
+                          )
+
+                          {true, ai_pending_clip}
+                      end
+                  end
+
+                Logger.info(
+                  "[ClipsController] Context change: #{context_change}, Pending clip: #{if final_pending_clip, do: "#{final_pending_clip["title"]} (#{final_pending_clip["start_time"]}s - #{final_pending_clip["end_time"]}s)", else: "none"}"
+                )
 
                 json(conn, %{
                   success: true,
@@ -3906,6 +3956,7 @@ defmodule ClippsterServerWeb.ClipsController do
       segments when is_list(segments) and length(segments) > 0 ->
         last_segment = List.last(segments)
         Map.get(last_segment, "end_time", transcript_end)
+
       _ ->
         start_time = get_clip_start_time(clip, transcript_start)
         duration = Map.get(clip, "total_duration") || Map.get(clip, "duration", 30)
@@ -3949,26 +4000,30 @@ defmodule ClippsterServerWeb.ClipsController do
       intersection / union
     end
   end
+
   defp calculate_word_similarity(_, _), do: 0.0
 
   # Determine if two clips should be MERGED (extended) vs saved separately
   # Returns {:merge, reason} if clips should be merged, {:different, reason} if truly different
-  defp should_merge_clips?(existing_clip, new_clip) when is_map(existing_clip) and is_map(new_clip) do
+  defp should_merge_clips?(existing_clip, new_clip)
+       when is_map(existing_clip) and is_map(new_clip) do
     # Check title similarity
     existing_title = Map.get(existing_clip, "title", "") || ""
     new_title = Map.get(new_clip, "title", "") || ""
     title_similarity = calculate_word_similarity(existing_title, new_title)
-    
+
     # Check context summary similarity
     existing_summary = Map.get(existing_clip, "context_summary", "") || ""
     new_summary = Map.get(new_clip, "context_summary", "") || ""
     context_similarity = calculate_word_similarity(existing_summary, new_summary)
-    
+
     # Calculate time overlap
     time_overlap = calculate_time_overlap(existing_clip, new_clip)
-    
-    Logger.info("[ClipsController] Merge check: time_overlap=#{Float.round(time_overlap, 2)}, context_sim=#{Float.round(context_similarity, 2)}, title_sim=#{Float.round(title_similarity, 2)}")
-    
+
+    Logger.info(
+      "[ClipsController] Merge check: time_overlap=#{Float.round(time_overlap, 2)}, context_sim=#{Float.round(context_similarity, 2)}, title_sim=#{Float.round(title_similarity, 2)}"
+    )
+
     # MERGE if:
     # 1. Very high title similarity (>70%) - clearly same moment
     # 2. OR moderate title similarity (>30%) WITH significant time overlap (>40%) - related content, extend it
@@ -3977,20 +4032,24 @@ defmodule ClippsterServerWeb.ClipsController do
     cond do
       title_similarity > 0.7 ->
         {:merge, "high title similarity (#{Float.round(title_similarity, 2)})"}
-      
+
       title_similarity > 0.3 and time_overlap > 0.4 ->
-        {:merge, "moderate title similarity (#{Float.round(title_similarity, 2)}) with significant overlap (#{Float.round(time_overlap, 2)})"}
-      
+        {:merge,
+         "moderate title similarity (#{Float.round(title_similarity, 2)}) with significant overlap (#{Float.round(time_overlap, 2)})"}
+
       title_similarity > 0.2 and time_overlap > 0.5 ->
-        {:merge, "some title similarity (#{Float.round(title_similarity, 2)}) with very high overlap (#{Float.round(time_overlap, 2)})"}
-      
+        {:merge,
+         "some title similarity (#{Float.round(title_similarity, 2)}) with very high overlap (#{Float.round(time_overlap, 2)})"}
+
       context_similarity > 0.5 and time_overlap > 0.1 ->
         {:merge, "context similarity (#{Float.round(context_similarity, 2)}) with overlap"}
-      
+
       true ->
-        {:different, "low similarity (title=#{Float.round(title_similarity, 2)}, context=#{Float.round(context_similarity, 2)}, overlap=#{Float.round(time_overlap, 2)})"}
+        {:different,
+         "low similarity (title=#{Float.round(title_similarity, 2)}, context=#{Float.round(context_similarity, 2)}, overlap=#{Float.round(time_overlap, 2)})"}
     end
   end
+
   defp should_merge_clips?(_, _), do: {:different, "invalid clips"}
 
   # Merge two clips that represent the same context
@@ -4000,13 +4059,13 @@ defmodule ClippsterServerWeb.ClipsController do
     existing_end = Map.get(existing_clip, "end_time", 0)
     new_start = Map.get(new_clip, "start_time", 0)
     new_end = Map.get(new_clip, "end_time", 0)
-    
+
     existing_score = Map.get(existing_clip, "virality_score", 0)
     new_score = Map.get(new_clip, "virality_score", 0)
-    
+
     # Use metadata from whichever has higher virality score
     base_clip = if new_score > existing_score, do: new_clip, else: existing_clip
-    
+
     %{
       "title" => Map.get(base_clip, "title"),
       "description" => Map.get(base_clip, "description"),

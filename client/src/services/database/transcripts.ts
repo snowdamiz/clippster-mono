@@ -36,7 +36,18 @@ export async function getTranscriptByProjectId(projectId: string): Promise<Trans
     `SELECT t.* FROM transcripts t
      JOIN raw_videos rv ON t.raw_video_id = rv.id
      WHERE rv.project_id = ?
-     ORDER BY t.created_at DESC, t.id ASC`,
+     ORDER BY
+       CASE
+         WHEN (rv.is_segment IS NULL OR rv.is_segment = 0 OR rv.is_segment = 'false')
+          AND rv.source_clip_id IS NULL
+          AND rv.original_project_id IS NULL
+         THEN 0
+         ELSE 1
+       END ASC,
+       COALESCE(t.duration, rv.duration, 0) DESC,
+       LENGTH(COALESCE(t.text, '')) DESC,
+       t.created_at DESC,
+       t.id ASC`,
     [projectId]
   );
   return result[0] || null;

@@ -307,8 +307,9 @@ export function useElementInteraction({
 
 		// Check if pending drag exceeds threshold
 		if (isPendingDrag.value && pendingDrag) {
-			const deltaX = Math.abs(clientX - pendingDrag.startMouseX);
-			const deltaY = Math.abs(clientY - pendingDrag.startMouseY);
+			const drag = pendingDrag;
+			const deltaX = Math.abs(clientX - drag.startMouseX);
+			const deltaY = Math.abs(clientY - drag.startMouseY);
 			if (deltaX > DRAG_THRESHOLD_PX || deltaY > DRAG_THRESHOLD_PX) {
 				const activeProject = editor.project.getActive();
 				if (!activeProject) return;
@@ -319,23 +320,23 @@ export function useElementInteraction({
 					zoomLevel: zoomLevel.value,
 					scrollLeft,
 				});
-				let adjustedTime = Math.max(0, mouseTime - pendingDrag.clickOffsetTime);
+				let adjustedTime = Math.max(0, mouseTime - drag.clickOffsetTime);
 				let currentMouseY = clientY;
-				const srcTr = tracks.value.find((t) => t.id === pendingDrag.trackId);
-				const movEl = srcTr?.elements.find((e) => e.id === pendingDrag.elementId);
+				const srcTr = tracks.value.find((t) => t.id === drag.trackId);
+				const movEl = srcTr?.elements.find((e) => e.id === drag.elementId);
 				if (srcTr && movEl && isMainTrackSolePrimaryMediaClip(srcTr, movEl)) {
 					adjustedTime = 0;
-					currentMouseY = pendingDrag.startMouseY;
+					currentMouseY = drag.startMouseY;
 				}
 
 				dragState.value = {
 					isDragging: true,
-					elementId: pendingDrag.elementId,
-					trackId: pendingDrag.trackId,
-					startMouseX: pendingDrag.startMouseX,
-					startMouseY: pendingDrag.startMouseY,
-					startElementTime: pendingDrag.startElementTime,
-					clickOffsetTime: pendingDrag.clickOffsetTime,
+					elementId: drag.elementId,
+					trackId: drag.trackId,
+					startMouseX: drag.startMouseX,
+					startMouseY: drag.startMouseY,
+					startElementTime: drag.startElementTime,
+					clickOffsetTime: drag.clickOffsetTime,
 					currentTime: adjustedTime,
 					currentMouseY,
 				};

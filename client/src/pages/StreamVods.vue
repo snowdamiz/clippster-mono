@@ -225,7 +225,7 @@
           <!-- Results Count -->
           <div class="streamvods__results-count">
             {{ paginatedClips.length }} {{ paginatedClips.length === 1 ? 'item' : 'items' }}
-            <span v-if="totalPages > 1">(Page {{ currentPage }} of {{ totalPages }})</span>
+            <span v-if="displayTotalPages > 1">(Page {{ currentPage }} of {{ displayTotalPages }})</span>
           </div>
 
           <!-- Bulk Actions Bar -->
@@ -334,7 +334,7 @@
       <PaginationFooter
         v-if="platformStore.clips.length > 0"
         :current-page="currentPage"
-        :total-pages="totalPages"
+        :total-pages="displayTotalPages"
         :total-items="platformStore.clips.length"
         item-label="VOD"
         @go-to-page="goToPage"
@@ -556,6 +556,7 @@
   const autoSegmentDuration = ref(30);
   const currentPage = ref(1);
   const clipsPerPage = 20;
+  const loadingNextYouTubePage = ref(false);
   const showAuthModal = ref(false);
 
   /** Local creator profile has saved clip_build_defaults (user-side SQLite only). */
@@ -849,24 +850,86 @@
 
   // Pagination
   const totalPages = computed(() => Math.ceil(platformStore.clips.length / clipsPerPage));
+  const canLoadMoreYouTubePages = computed(() => {
+    return detectedPlatform.value === 'YouTube' && platformStore.hasMore;
+  });
+  const displayTotalPages = computed(() => {
+    return totalPages.value + (canLoadMoreYouTubePages.value ? 1 : 0);
+  });
   const paginatedClips = computed(() => {
     const start = (currentPage.value - 1) * clipsPerPage;
     return platformStore.clips.slice(start, start + clipsPerPage);
   });
 
   function goToPage(page: number) {
-    if (page >= 1 && page <= totalPages.value) currentPage.value = page;
+    if (page < 1 || page > displayTotalPages.value) return;
+
+    if (page <= totalPages.value) {
+      currentPage.value = page;
+      return;
+    }
+
+    void loadNextYouTubePage();
   }
-  function nextPage() {
-    if (currentPage.value < totalPages.value) currentPage.value++;
+  async function nextPage() {
+    if (currentPage.value < totalPages.value) {
+      currentPage.value++;
+      return;
+    }
+
+    if (canLoadMoreYouTubePages.value) {
+      await loadNextYouTubePage();
+    }
   }
   function previousPage() {
     if (currentPage.value > 1) currentPage.value--;
   }
 
+  async function loadNextYouTubePage() {
+    if (
+      loadingNextYouTubePage.value ||
+      platformStore.loading ||
+      detectedPlatform.value !== 'YouTube' ||
+      !platformStore.hasMore ||
+      !platformStore.currentSearchId
+    ) {
+      return;
+    }
+
+    loadingNextYouTubePage.value = true;
+
+    try {
+      const result = await platformStore.loadMoreYouTubeClips(platformStore.currentSearchId, clipsPerPage, youtubeTab.value);
+
+      if (result.success) {
+        if (result.added > 0) {
+          currentPage.value = totalPages.value;
+          await loadDownloadedVodIds();
+          success('More VODs Loaded', `Loaded ${result.added} more VOD${result.added !== 1 ? 's' : ''}`);
+        } else {
+          platformStore.hasMore = false;
+          success('End of Videos', 'No more YouTube videos found for this channel');
+        }
+      } else {
+        showError('Search Failed', result.error || 'Failed to fetch more YouTube videos');
+      }
+    } catch (err) {
+      showError('Error', err instanceof Error ? err.message : 'An unexpected error occurred');
+    } finally {
+      loadingNextYouTubePage.value = false;
+    }
+  }
+
   watch(
     () => platformStore.clips,
-    () => {
+    (newClips, oldClips) => {
+      const isAppendingClips =
+        oldClips.length > 0 &&
+        newClips.length > oldClips.length &&
+        oldClips.every((clip, index) => clip.clipId === newClips[index]?.clipId);
+
+      if (isAppendingClips) return;
+
       currentPage.value = 1;
     }
   );
@@ -977,11 +1040,6 @@
         config.comingSoonMessage || `${config.name} integration is not yet available.`
       );
       return;
-    }
-
-    // Reset YouTube tab to streams (default) when doing a new search
-    if (detectedPlatform.value === 'YouTube') {
-      youtubeTab.value = 'streams';
     }
 
     // Reset Rumble tab to streams (default) when doing a new search

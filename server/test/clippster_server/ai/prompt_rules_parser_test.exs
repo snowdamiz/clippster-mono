@@ -74,4 +74,41 @@ defmodule ClippsterServer.AI.PromptRulesParserTest do
       assert PromptRulesParser.parse_minimum_duration(nil) == nil
     end
   end
+
+  describe "parse_maximum_duration/1" do
+    test "parses max duration constraints" do
+      assert PromptRulesParser.parse_maximum_duration("no clips over 45 seconds") == 45
+      assert PromptRulesParser.parse_maximum_duration("maximum 60 seconds") == 60
+      assert PromptRulesParser.parse_maximum_duration("max 90s") == 90
+      assert PromptRulesParser.parse_maximum_duration("clips should be under 45 seconds") == 45
+      assert PromptRulesParser.parse_maximum_duration("90 second maximum") == 90
+    end
+
+    test "returns nil when no max rule exists" do
+      assert PromptRulesParser.parse_maximum_duration("find viral moments") == nil
+      assert PromptRulesParser.parse_maximum_duration("no clips under 10 seconds") == nil
+      assert PromptRulesParser.parse_maximum_duration(nil) == nil
+    end
+  end
+
+  describe "parse_ideal_duration_range/1" do
+    test "defaults to the product target range" do
+      assert PromptRulesParser.parse_ideal_duration_range("find clips") == {30, 45}
+      assert PromptRulesParser.parse_ideal_duration_range(nil) == {30, 45}
+    end
+
+    test "parses explicit ideal ranges" do
+      assert PromptRulesParser.parse_ideal_duration_range("ideal 20-35 seconds") == {20, 35}
+      assert PromptRulesParser.parse_ideal_duration_range("target 30 to 45s") == {30, 45}
+      assert PromptRulesParser.parse_ideal_duration_range("15-60s preferred") == {15, 60}
+    end
+  end
+
+  describe "parse_duration_rules/1" do
+    test "combines min max and ideal range" do
+      assert PromptRulesParser.parse_duration_rules(
+               "minimum 15 seconds, no clips over 75 seconds, ideal 30-45 seconds"
+             ) == %{minimum: 15, maximum: 75, ideal_min: 30, ideal_max: 45}
+    end
+  end
 end

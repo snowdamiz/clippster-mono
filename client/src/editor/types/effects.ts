@@ -328,6 +328,10 @@ export interface VideoEffectPreset {
 	category: VideoEffectCategory;
 	icon: string; // SVG path or identifier
 	defaults: VideoEffectDefaults;
+	/** User-facing presets must have an FFmpeg export implementation. */
+	exportSupported: boolean;
+	/** Name of the FFmpeg filter family / chain used by export. */
+	ffmpegFilterKind: string;
 }
 
-export type VideoEffectCategory = "blur" | "color" | "distortion" | "stylize" | "retro" | "cinematic";
+export type VideoEffectCategory = "blur" | "color" | "distortion" | "stylize" | "retro";
