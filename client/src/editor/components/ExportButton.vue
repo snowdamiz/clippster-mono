@@ -34,6 +34,7 @@ const progress = ref(0);
 const exportError = ref<string | null>(null);
 const copied = ref(false);
 const cancelRequested = ref(false);
+const currentExportId = ref<string | null>(null);
 const exportedPath = ref<string | null>(null);
 const showSuccess = ref(false);
 const showPublishDialog = ref(false);
@@ -395,6 +396,8 @@ async function handleExport() {
 	}
 
 	cancelRequested.value = false;
+	const exportId = `editor-export-${Date.now()}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+	currentExportId.value = exportId;
 	isExporting.value = true;
 	progress.value = 0;
 	exportError.value = null;
@@ -533,10 +536,12 @@ async function handleExport() {
 				canvasSize: exportCanvasSize.value,
 				onProgress: (p: { progress: number }) => { progress.value = p.progress; },
 				onCancel: () => cancelRequested.value,
+				exportId,
 			},
 		});
 
 		isExporting.value = false;
+		currentExportId.value = null;
 
 		if (result.cancelled) {
 			progress.value = 0;
@@ -634,12 +639,19 @@ async function handleExport() {
 		}
 	} catch (err) {
 		isExporting.value = false;
+		currentExportId.value = null;
 		exportError.value = err instanceof Error ? err.message : "Export failed";
 	}
 }
 
 function handleCancel() {
 	cancelRequested.value = true;
+	const exportId = currentExportId.value;
+	if (!exportId) return;
+
+	import("@tauri-apps/api/core")
+		.then(({ invoke }) => invoke("cancel_video_editor_export", { exportId }))
+		.catch((err) => console.warn("[ExportButton] Failed to cancel export:", err));
 }
 
 function handleClose() {

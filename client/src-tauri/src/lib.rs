@@ -1326,6 +1326,7 @@ commands::file_utils::generate_video_thumbnail,
 // Video Editor Export commands
 video_editor_export::export_video_editor_project_simple,
 video_editor_export::export_video_editor_project,
+video_editor_export::cancel_video_editor_export,
 video_editor_export::save_text_overlay_png,
 video_editor_export::save_overlay_frame_sequence,
 

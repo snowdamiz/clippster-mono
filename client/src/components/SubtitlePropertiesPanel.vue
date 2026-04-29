@@ -17,7 +17,7 @@
         <div class="sp__segments">
           <div
             v-for="(seg, si) in editableSegments"
-            :key="si"
+            :key="segmentRowKey(seg, si)"
             :ref="(el) => setSegmentRef(el, si)"
             class="sp__seg"
             :class="{ 'sp__seg--active': isActiveSegment(seg) }"
@@ -26,8 +26,9 @@
             <textarea
               class="sp__seg-ta"
               :value="seg.text"
-              rows="2"
-              @input="onSegmentTextChange(si, ($event.target as HTMLTextAreaElement).value)"
+              rows="1"
+              @input="onSegmentTextInput(si, ($event.target as HTMLTextAreaElement).value)"
+              @blur="onSegmentTextBlur(si, ($event.target as HTMLTextAreaElement).value)"
             />
           </div>
           <div v-if="editableSegments.length === 0" class="sp__empty">No transcript for this clip.</div>
@@ -328,7 +329,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { ChevronLeft, AlignLeft, AlignCenter, AlignRight, Trash2 } from 'lucide-vue-next';
 
 interface SubtitleSettings {
@@ -369,6 +370,9 @@ interface TranscriptSegment {
   start: number;
   end: number;
   text: string;
+  /** When set, stable row identity for the workspace transcript editor */
+  whisperSegmentIndex?: number;
+  wordIndex?: number | null;
 }
 
 interface Props {
@@ -382,7 +386,10 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'updateSettings', settings: Partial<SubtitleSettings>): void;
-  (e: 'updateSegmentText', segmentIndex: number, text: string): void;
+  /** Live in-memory sync (preview) while typing */
+  (e: 'draftSegmentText', segmentIndex: number, text: string): void;
+  /** Persist to storage (call on blur) */
+  (e: 'commitSegmentText', segmentIndex: number, text: string): void;
   (e: 'delete'): void;
 }>();
 
@@ -418,12 +425,23 @@ const animationStyles = [
 const editableSegments = ref<TranscriptSegment[]>([]);
 const segmentRefs = ref<HTMLElement[]>([]);
 const lastScrolledActiveIndex = ref(-1);
+/** Rows edited since last successful blur-commit (flushed on unmount so tab switches still save). */
+const dirtySegmentIndices = ref(new Set<number>());
 
 watch(() => props.segments, (segs) => {
   segmentRefs.value = [];
   lastScrolledActiveIndex.value = -1;
+  dirtySegmentIndices.value = new Set();
   editableSegments.value = segs.map(s => ({ ...s }));
 }, { immediate: true });
+
+onBeforeUnmount(() => {
+  for (const index of dirtySegmentIndices.value) {
+    const text = editableSegments.value[index]?.text ?? '';
+    emit('commitSegmentText', index, text);
+  }
+  dirtySegmentIndices.value = new Set();
+});
 
 const activeSegmentIndex = computed(() => {
   const t = props.currentTime ?? 0;
@@ -441,6 +459,16 @@ function setSegmentRef(el: unknown, index: number) {
   if (el instanceof HTMLElement) {
     segmentRefs.value[index] = el;
   }
+}
+
+function segmentRowKey(seg: TranscriptSegment, i: number) {
+  if (seg.whisperSegmentIndex != null && typeof seg.wordIndex === 'number') {
+    return `ws${seg.whisperSegmentIndex}-w${seg.wordIndex}`;
+  }
+  if (seg.whisperSegmentIndex != null) {
+    return `ws${seg.whisperSegmentIndex}-seg`;
+  }
+  return `row-${i}`;
 }
 
 const previewBg = computed(() => ({
@@ -593,9 +621,17 @@ function update<K extends keyof SubtitleSettings>(key: K, value: SubtitleSetting
   }
 }
 
-function onSegmentTextChange(index: number, text: string) {
-  editableSegments.value[index].text = text;
-  emit('updateSegmentText', index, text);
+function onSegmentTextInput(index: number, text: string) {
+  if (editableSegments.value[index]) {
+    editableSegments.value[index].text = text;
+  }
+  dirtySegmentIndices.value.add(index);
+  emit('draftSegmentText', index, text);
+}
+
+function onSegmentTextBlur(index: number, text: string) {
+  dirtySegmentIndices.value.delete(index);
+  emit('commitSegmentText', index, text);
 }
 
 // Highlight color presets

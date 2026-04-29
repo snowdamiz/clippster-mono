@@ -234,11 +234,12 @@
                 <SubtitlePropertiesPanel
                   v-if="rightPanelTab === 'subtitles' && activeSubtitleSettings"
                   :settings="activeSubtitleSettings"
-                  :segments="subtitleSegmentsForPanel"
+                  :segments="subtitlePanelSegmentsForPanel"
                   :current-time="currentTime"
                   @close="rightPanelTab = 'clips'"
                   @updateSettings="onSubtitleSettingsUpdate"
-                  @updateSegmentText="onSubtitleSegmentTextUpdate"
+                  @draft-segment-text="onSubtitleSegmentDraft"
+                  @commit-segment-text="onSubtitleSegmentCommit"
                 />
 
                 <ClipTextBoxPropertiesPanel
@@ -432,6 +433,8 @@
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useVideoFocalPoint } from '@/composables/useVideoFocalPoint';
   import { useTranscriptData } from '@/composables/useTranscriptData';
+  import { flattenWhisperSegmentsForClipSubtitlePanel } from '@/utils/transcriptPanelSegments';
+  import { updateTranscriptWhisperCell } from '@/services/database/transcript-words';
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import { ensureAssetDownloaded } from '@/services/orgAssetSync';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
@@ -845,7 +848,7 @@
   const projectRef = computed(() => props.project);
 
   // Use transcript data composable
-  const { transcriptData } = useTranscriptData(computed(() => props.project?.id || null));
+  const { transcriptData, loadTranscriptData } = useTranscriptData(computed(() => props.project?.id || null));
 
   // Store active subtitle settings (persists during playback even if currentlyPlayingClipId is cleared)
   const activeSubtitleSettings = ref<any>(undefined);
@@ -1097,30 +1100,33 @@
     return videoPlayerTranscriptSegments.value;
   });
 
-  // Segments scoped to the selected/playing clip for the subtitle properties panel
-  const subtitleSegmentsForPanel = computed(() => {
+  /** One panel row per timed word (or one row per segment when there are no word timings). */
+  const subtitlePanelRows = computed(() => {
     const clipId = selectedClipId.value || currentlyPlayingClipId.value;
     const clip = timelineClips.value.find((c: any) => c.id === clipId);
     if (!clip) return [];
 
-    // Get the clip's time range from its segments
     const clipSegments = clip.current_version_segments || clip.segments || [];
     if (clipSegments.length === 0) return [];
 
     const clipStartTime = clipSegments[0].start_time;
     const clipEndTime = clipSegments[clipSegments.length - 1].end_time;
 
-    // Filter the project's transcript segments to only those within this clip's time range
     const allSegments = transcriptSegments.value || [];
-    const filteredSegments = allSegments.filter((seg: any) => {
-      return seg.start >= clipStartTime && seg.end <= clipEndTime;
-    });
+    return flattenWhisperSegmentsForClipSubtitlePanel(
+      allSegments as WhisperSegment[],
+      clipStartTime,
+      clipEndTime
+    );
+  });
 
-    // Adjust segment times to be relative to clip start (0-based)
-    return filteredSegments.map((seg: any) => ({
-      start: seg.start - clipStartTime,
-      end: seg.end - clipStartTime,
-      text: seg.text,
+  const subtitlePanelSegmentsForPanel = computed(() => {
+    return subtitlePanelRows.value.map((r) => ({
+      start: r.start,
+      end: r.end,
+      text: r.text,
+      whisperSegmentIndex: r.whisperSegmentIndex,
+      wordIndex: r.wordIndex,
     }));
   });
 
@@ -2648,10 +2654,58 @@
     }
   }
 
-  // Handle transcript text edit from properties panel (in-memory only for now)
-  function onSubtitleSegmentTextUpdate(_index: number, _text: string) {
-    // Transcript edits are reflected reactively via subtitleSegmentsForPanel
-    // Full persistence would require a separate transcript edit API
+  function patchSubtitleTranscriptDraft(panelIndex: number, text: string) {
+    const rows = subtitlePanelRows.value;
+    const row = rows[panelIndex];
+    const td = transcriptData.value;
+    if (!row || !td?.whisperSegments) return;
+
+    const seg = td.whisperSegments[row.whisperSegmentIndex];
+    if (!seg) return;
+
+    if (row.wordIndex != null && seg.words && seg.words[row.wordIndex]) {
+      seg.words[row.wordIndex].word = text;
+      seg.text = seg.words.map((w) => w.word).join(' ');
+      const flat = td.words;
+      if (flat?.length) {
+        for (let i = 0; i < flat.length; i++) {
+          const fw = flat[i];
+          if (Math.abs(fw.start - row.sourceStart) < 0.08 && Math.abs(fw.end - row.sourceEnd) < 0.08) {
+            flat[i] = { ...fw, word: text };
+            break;
+          }
+        }
+      }
+    } else {
+      seg.text = text;
+    }
+  }
+
+  function onSubtitleSegmentDraft(panelIndex: number, text: string) {
+    patchSubtitleTranscriptDraft(panelIndex, text);
+  }
+
+  async function onSubtitleSegmentCommit(panelIndex: number, text: string) {
+    const projectId = props.project?.id;
+    if (!projectId) return;
+
+    const rows = subtitlePanelRows.value;
+    const row = rows[panelIndex];
+    if (!row) return;
+
+    const res = await updateTranscriptWhisperCell(
+      projectId,
+      row.whisperSegmentIndex,
+      row.wordIndex,
+      text
+    );
+    if (!res.success) {
+      console.error('[ProjectWorkspaceDialog] Transcript save failed:', res.error);
+      showError('Could not save transcript', res.error || 'Unknown error');
+      await loadTranscriptData(projectId);
+      return;
+    }
+    await loadTranscriptData(projectId);
   }
 
   // Handle subtitle position change (when user drags/resizes subtitles)

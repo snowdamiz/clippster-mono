@@ -242,6 +242,7 @@ interface TauriExportConfig {
 	intro_duration: number | null;
 	outro_path: string | null;
 	outro_duration: number | null;
+	export_id?: string | null;
 }
 
 interface BrandingExportData {
@@ -273,7 +274,13 @@ export class RendererManager {
 	}: {
 		options: ExportOptions;
 	}): Promise<ExportResult> {
-		const { onProgress } = options;
+		const { onProgress, onCancel } = options;
+		const checkCancelled = () => {
+			if (onCancel?.()) {
+				return { success: false, cancelled: true } satisfies ExportResult;
+			}
+			return null;
+		};
 
 		try {
 			const tracks = this.editor.timeline.getTracks();
@@ -303,6 +310,8 @@ export class RendererManager {
 			await invoke("create_directory", { path: `${appDataDir}/built_clips` });
 
 			onProgress?.({ progress: 0.05 });
+			const cancelledAfterSetup = checkCancelled();
+			if (cancelledAfterSetup) return cancelledAfterSetup;
 
 			const exportFps = Math.max(
 				1,
@@ -313,11 +322,15 @@ export class RendererManager {
 			const textOverlays = await this.preRenderTextOverlays({ tracks, canvasSize, fps: exportFps });
 
 			onProgress?.({ progress: 0.1 });
+			const cancelledAfterText = checkCancelled();
+			if (cancelledAfterText) return cancelledAfterText;
 
 			// Pre-render sticker elements to transparent PNGs for pixel-perfect export
 			const stickerOverlays = await this.preRenderStickerOverlays({ tracks, canvasSize, fps: exportFps });
 
 			onProgress?.({ progress: 0.12 });
+			const cancelledAfterStickers = checkCancelled();
+			if (cancelledAfterStickers) return cancelledAfterStickers;
 
 			// Pre-render caption elements to transparent PNGs for pixel-perfect export
 			const captionOverlays = await this.preRenderCaptionOverlays({
@@ -328,11 +341,15 @@ export class RendererManager {
 			});
 
 			onProgress?.({ progress: 0.15 });
+			const cancelledAfterCaptions = checkCancelled();
+			if (cancelledAfterCaptions) return cancelledAfterCaptions;
 
 			// Resolve branding config for export
 			const brandingExport = await this.resolveBrandingForExport({ canvasSize });
 
 			onProgress?.({ progress: 0.18 });
+			const cancelledAfterBranding = checkCancelled();
+			if (cancelledAfterBranding) return cancelledAfterBranding;
 
 			// Build export config from timeline data
 			const config = this.buildExportConfig({
@@ -347,8 +364,11 @@ export class RendererManager {
 				captionOverlays,
 				brandingExport,
 			});
+			config.export_id = options.exportId ?? null;
 
 			onProgress?.({ progress: 0.2 });
+			const cancelledBeforeEncode = checkCancelled();
+			if (cancelledBeforeEncode) return cancelledBeforeEncode;
 
 			// Call Tauri FFmpeg export command
 			await invoke("export_video_editor_project", { config });
@@ -370,9 +390,17 @@ export class RendererManager {
 			};
 		} catch (error) {
 			console.error("Export failed:", error);
+			const message = error instanceof Error ? error.message : String(error);
+			if (message.includes("Export cancelled")) {
+				return {
+					success: false,
+					cancelled: true,
+				};
+			}
+
 			return {
 				success: false,
-				error: error instanceof Error ? error.message : String(error),
+				error: message,
 			};
 		}
 	}

@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
 import { useEditor } from "../composables/useEditor";
 import { useEditorUIState } from "../composables/useEditorUIState";
 import { useRouter } from "vue-router";
 import ExportButton from "./ExportButton.vue";
-import { Button } from "@/components/ui/button";
 import { ArrowLeft, ChevronDown, Maximize, Minimize, Smartphone } from "lucide-vue-next";
 import ShortcutsDialog from "./dialogs/ShortcutsDialog.vue";
 import ChatFab from "@/components/chat/ChatFab.vue";
@@ -28,7 +27,6 @@ const { activeSocialOverlay } = useEditorUIState();
 const router = useRouter();
 
 const isExiting = ref(false);
-const showRenameDialog = ref(false);
 const showShortcutsDialog = ref(false);
 const showAspectMenu = ref(false);
 const showSocialMenu = ref(false);
@@ -36,6 +34,7 @@ const showDropdown = ref(false);
 const isFullscreen = ref(false);
 const aspectButtonRef = ref<HTMLButtonElement | null>(null);
 const socialButtonRef = ref<HTMLButtonElement | null>(null);
+const titleInputRef = ref<HTMLInputElement | null>(null);
 
 const aspectMenuStyle = computed(() => {
 	const el = aspectButtonRef.value;
@@ -58,6 +57,7 @@ const socialMenuStyle = computed(() => {
 		transform: "translateX(-50%)",
 	};
 });
+const isRenamingTitle = ref(false);
 const renameInput = ref("");
 const vodInfo = ref<{ platform: string; streamerName: string | null } | null>(null);
 
@@ -77,6 +77,7 @@ const activeProject = computed(() => {
 	}
 });
 
+const projectTitle = computed(() => activeProject.value?.metadata.name || "Untitled");
 const canvasWidth = computed(() => activeProject.value?.settings?.canvasSize?.width ?? 1920);
 const canvasHeight = computed(() => activeProject.value?.settings?.canvasSize?.height ?? 1080);
 
@@ -208,19 +209,22 @@ async function handleExit() {
 
 async function handleRename() {
 	const project = activeProject.value;
-	if (!project || !renameInput.value.trim() || renameInput.value === project.metadata.name) {
-		showRenameDialog.value = false;
+	const trimmed = renameInput.value.trim();
+	if (!project || !trimmed || trimmed === project.metadata.name) {
+		isRenamingTitle.value = false;
+		renameInput.value = project?.metadata.name ?? "";
 		return;
 	}
 	try {
 		await editor.project.renameProject({
 			id: project.metadata.id,
-			name: renameInput.value.trim(),
+			name: trimmed,
 		});
 	} catch (error) {
 		console.error("Failed to rename project:", error);
+		renameInput.value = project.metadata.name;
 	}
-	showRenameDialog.value = false;
+	isRenamingTitle.value = false;
 }
 
 async function handleDelete() {
@@ -235,10 +239,18 @@ async function handleDelete() {
 	}
 }
 
-function openRename() {
+async function openRename() {
 	renameInput.value = activeProject.value?.metadata.name || "";
-	showRenameDialog.value = true;
+	isRenamingTitle.value = true;
 	showDropdown.value = false;
+	await nextTick();
+	titleInputRef.value?.focus();
+	titleInputRef.value?.select();
+}
+
+function cancelRename() {
+	renameInput.value = activeProject.value?.metadata.name || "";
+	isRenamingTitle.value = false;
 }
 </script>
 
@@ -268,7 +280,26 @@ function openRename() {
 				<span class="text-zinc-600">|</span>
 			</template>
 
-			<span class="text-[0.85rem] text-zinc-200">{{ activeProject?.metadata.name }}</span>
+			<input
+				v-if="isRenamingTitle"
+				ref="titleInputRef"
+				v-model="renameInput"
+				type="text"
+				class="h-7 min-w-24 max-w-72 rounded border border-white/10 bg-white/5 px-2 text-[0.85rem] text-zinc-100 outline-none ring-0 transition-colors focus:border-blue-400/70 focus:bg-white/10"
+				aria-label="Project name"
+				@blur="handleRename"
+				@keydown.enter.prevent="handleRename"
+				@keydown.escape.prevent="cancelRename"
+			/>
+			<button
+				v-else
+				type="button"
+				class="max-w-72 truncate rounded px-1.5 py-1 text-left text-[0.85rem] text-zinc-200 transition-colors hover:bg-white/5 hover:text-zinc-50 focus:outline-none focus:ring-1 focus:ring-blue-400/60"
+				:title="`Rename ${projectTitle}`"
+				@click="openRename"
+			>
+				{{ projectTitle }}
+			</button>
 		</div>
 
 	<!-- Center: Aspect ratio + Social overlay + Fullscreen -->
@@ -380,25 +411,6 @@ function openRename() {
 			<ChatFab compact />
 			<ExportButton />
 		</nav>
-
-		<!-- Rename dialog -->
-		<Teleport to="body">
-			<div v-if="showRenameDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-				<div class="w-80 rounded-lg border border-white/10 bg-[#1e1e22] p-6 shadow-lg">
-					<h3 class="mb-4 font-medium">Rename project</h3>
-					<input
-						v-model="renameInput"
-						type="text"
-						class="mb-4 w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200"
-						@keydown.enter="handleRename"
-					/>
-					<div class="flex justify-end gap-2">
-						<Button variant="outline" size="sm" @click="showRenameDialog = false">Cancel</Button>
-						<Button size="sm" @click="handleRename">Save</Button>
-					</div>
-				</div>
-			</div>
-		</Teleport>
 
 		<!-- Shortcuts dialog -->
 		<ShortcutsDialog v-model:open="showShortcutsDialog" />
