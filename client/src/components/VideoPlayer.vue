@@ -396,6 +396,7 @@
   } from '@/types';
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
   import { use169BlurSliderToCssPx } from '@/utils/use169Blur';
+  import { pickActiveSingleWordAtTime } from '@/utils/subtitleVisibleWords';
 
   interface WatermarkData {
     dataUrl: string; // Data URL for display
@@ -1243,43 +1244,10 @@
       isSingleWord: animationStyle === 'single-word'
     });
 
-    // Single word mode - only show the current word
+    // Single word mode - only show the current word (shared hit-test: min window + no short-word drop)
     if (animationStyle === 'single-word') {
-      // Use the same approach as OpenCut editor - simple and effective
-      let currentWord = null;
-      
-      // Find the current word being spoken
-      for (let i = 0; i < allSegmentWords.length; i++) {
-        const word = allSegmentWords[i];
-        if (time >= word.start && time < word.end) {
-          currentWord = word;
-          break;
-        }
-      }
-
-      // If no current word, don't show anything (clean gaps)
-      if (!currentWord) {
-        return [];
-      }
-
-      // Simple validation - just check we have a valid word
-      const wordDuration = currentWord.end - currentWord.start;
-      
-      // Skip extremely short words (likely transcription errors)
-      if (wordDuration < 0.05) {
-        return [];
-      }
-
-      // Debug logging
-      console.log('[VideoPlayer] Simple single word timing:', {
-        currentTime: time.toFixed(3),
-        word: currentWord.word,
-        wordStart: currentWord.start.toFixed(3),
-        wordEnd: currentWord.end.toFixed(3),
-        wordDuration: wordDuration.toFixed(3)
-      });
-
-      return [currentWord];
+      const currentWord = pickActiveSingleWordAtTime(allSegmentWords, time);
+      return currentWord ? [currentWord] : [];
     }
 
     // Normal chunked display for other animation styles
@@ -1323,29 +1291,30 @@
     return allSegmentWords.slice(startIndex, endIndex);
   });
 
-  // Check if a word is currently being spoken
+  // Check if a word is currently being spoken (must match single-word hit-test / extended windows)
   function isCurrentWord(word: WordInfo): boolean {
+    const style = props.subtitleSettings?.animationStyle;
+    if (style === 'single-word') {
+      return visibleWords.value.some(
+        (w) => w.start === word.start && w.end === word.end && w.word === word.word
+      );
+    }
+
     const time = props.currentTime || 0;
-    
-    // FIRST: Check if we're exactly in the word's time window
+
     if (time >= word.start && time < word.end) {
       return true;
     }
-    
-    // SECOND: Check if we just barely missed the word's start (handles frame skipping)
-    // Look back up to 50ms to catch words that started between frames
-    const LOOK_BACK_TOLERANCE = 0.05; // 50ms
+
+    const LOOK_BACK_TOLERANCE = 0.05;
     const timeSinceWordStart = time - word.start;
-    
-    // Did this word start very recently (within 50ms ago)?
+
     if (timeSinceWordStart > 0 && timeSinceWordStart <= LOOK_BACK_TOLERANCE) {
-      // AND is the word still supposed to be playing?
       if (time < word.end) {
         return true;
       }
     }
-    
-    // Word is not active (either hasn't started yet, or already ended, or we're in a gap/pause)
+
     return false;
   }
 

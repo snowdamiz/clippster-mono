@@ -605,28 +605,34 @@ defmodule ClippsterServer.ClipValidation do
 
   defp extract_words_from_transcript(transcript) do
     case transcript do
-      %{"words" => words} when is_list(words) ->
-        words
+      %{"words" => words} when is_list(words) and length(words) > 0 ->
+        Enum.filter(words, &valid_word?/1)
 
-      %{"verbose_json" => %{"words" => words}} when is_list(words) ->
-        words
+      %{"verbose_json" => %{"words" => words}} when is_list(words) and length(words) > 0 ->
+        Enum.filter(words, &valid_word?/1)
 
       %{"segments" => segments} when is_list(segments) ->
-        # Extract words from segments if available
-        segments
-        |> Enum.flat_map(fn segment ->
-          Map.get(segment, "words", [])
-        end)
-        |> Enum.filter(fn word ->
-          # Filter out nil values and ensure word has required structure
-          word != nil and is_map(word) and Map.has_key?(word, "start") and
-            Map.has_key?(word, "end") and Map.has_key?(word, "word")
-        end)
+        extract_words_from_segments(segments)
 
       _ ->
         []
     end
   end
+
+  defp extract_words_from_segments(segments) do
+    segments
+    |> Enum.flat_map(fn segment ->
+      Map.get(segment, "words", [])
+    end)
+    |> Enum.filter(&valid_word?/1)
+  end
+
+  defp valid_word?(word) when is_map(word) do
+    is_number(Map.get(word, "start")) and is_number(Map.get(word, "end")) and
+      is_binary(Map.get(word, "word"))
+  end
+
+  defp valid_word?(_), do: false
 
   defp find_word_position_at_time(words, target_time) do
     # Binary search to find word at given time
@@ -1149,6 +1155,244 @@ defmodule ClippsterServer.ClipValidation do
   def filter_by_minimum_duration(clips, _min_duration_seconds) when is_list(clips), do: clips
   def filter_by_minimum_duration(_, _), do: []
 
+  @doc """
+  Applies deterministic short-form clip-shape policy after AI detection.
+
+  The model is still responsible for judgment, but this pass enforces the product
+  contract: hook-first clips biased to 30-45s, with explicit exceptions.
+  """
+  @spec apply_clip_shape_policy(list(map()), map()) :: list(map())
+  def apply_clip_shape_policy(clips, rules \\ %{})
+
+  def apply_clip_shape_policy(clips, rules) when is_list(clips) do
+    min_duration = Map.get(rules, :minimum) || Map.get(rules, "minimum") || 10
+    max_duration = Map.get(rules, :maximum) || Map.get(rules, "maximum") || 90
+    ideal_min = Map.get(rules, :ideal_min) || Map.get(rules, "ideal_min") || 30
+    ideal_max = Map.get(rules, :ideal_max) || Map.get(rules, "ideal_max") || 45
+
+    clips
+    |> Enum.map(&annotate_clip_shape(&1, min_duration, max_duration, ideal_min, ideal_max))
+    |> Enum.filter(&clip_shape_allowed?/1)
+    |> Enum.sort_by(fn clip ->
+      {-numeric_field(clip, "virality_score"),
+       duration_distance(get_clip_duration(clip), ideal_min, ideal_max)}
+    end)
+  end
+
+  def apply_clip_shape_policy(_, _), do: []
+
+  defp annotate_clip_shape(clip, min_duration, max_duration, ideal_min, ideal_max) do
+    duration = get_clip_duration(clip)
+    score = numeric_field(clip, "virality_score")
+    reason = "#{Map.get(clip, "reason", "")} #{Map.get(clip, "exception_reason", "")}"
+    weak_start = weak_start?(clip)
+    weak_end = weak_end?(clip)
+
+    {policy, allowed, issues, exception_reason} =
+      cond do
+        duration < min_duration ->
+          {"too_short", false, ["below minimum duration"], Map.get(clip, "exception_reason")}
+
+        duration < ideal_min ->
+          allowed = short_exception?(clip, score, reason)
+
+          {"short_exception", allowed,
+           if(allowed, do: [], else: ["short clip lacks extreme standalone hook"]),
+           exception_text(clip, "Short standalone reaction/meme/soundbite")}
+
+        duration <= ideal_max ->
+          {"target_30_45", true, [], Map.get(clip, "exception_reason")}
+
+        duration <= max_duration ->
+          allowed = long_exception?(clip, score, reason)
+
+          {"long_context_exception", allowed,
+           if(allowed, do: [], else: ["long clip lacks explicit full-context need"]),
+           exception_text(clip, "Complete setup and payoff require extra context")}
+
+        true ->
+          allowed = rare_long_exception?(clip, score, reason)
+
+          {"rare_over_90_exception", allowed,
+           if(allowed, do: [], else: ["above maximum duration without explicit rare exception"]),
+           exception_text(clip, "Rare full-context exception")}
+      end
+
+    issues =
+      issues
+      |> maybe_add(weak_start, "weak first words")
+      |> maybe_add(weak_end, "weak ending words")
+
+    clip
+    |> Map.put("total_duration", duration)
+    |> Map.put_new("hook_score", estimate_hook_score(clip, weak_start))
+    |> Map.put_new(
+      "retention_score",
+      estimate_retention_score(clip, duration, ideal_min, ideal_max)
+    )
+    |> Map.put_new("shareability_score", score)
+    |> Map.put_new("trend_score", 0)
+    |> Map.put_new("platform_fit_score", estimate_platform_fit(duration, ideal_min, ideal_max))
+    |> Map.put_new("creator_factor_score", 0)
+    |> Map.put("duration_policy", policy)
+    |> Map.put("exception_reason", exception_reason)
+    |> Map.put("clip_shape_metadata", %{
+      "allowed" => allowed and not weak_end,
+      "issues" => issues,
+      "ideal_range" => "#{ideal_min}-#{ideal_max}s",
+      "max_duration" => max_duration
+    })
+  end
+
+  defp clip_shape_allowed?(clip) do
+    metadata = Map.get(clip, "clip_shape_metadata", %{})
+    Map.get(metadata, "allowed", true)
+  end
+
+  defp short_exception?(clip, score, reason) do
+    score >= 50 or
+      contains_any?("#{reason} #{clip_text(clip)}", [
+        "reaction",
+        "meme",
+        "soundbite",
+        "quote",
+        "scream",
+        "laugh",
+        "rage",
+        "insane",
+        "hook",
+        "story",
+        "reveal",
+        "surprise",
+        "behind the scenes",
+        "how i"
+      ])
+  end
+
+  defp long_exception?(_clip, score, reason) do
+    score >= 65 and
+      contains_any?(reason, [
+        "context",
+        "setup",
+        "payoff",
+        "story",
+        "argument",
+        "debate",
+        "full arc",
+        "complete"
+      ])
+  end
+
+  defp rare_long_exception?(_clip, score, reason) do
+    score >= 80 and
+      contains_any?(reason, [
+        "full context",
+        "complete context",
+        "rare",
+        "entire arc",
+        "cannot be shorter"
+      ])
+  end
+
+  defp weak_start?(clip) do
+    clip
+    |> clip_text()
+    |> String.downcase()
+    |> String.trim()
+    |> String.split(~r/\s+/, parts: 2)
+    |> case do
+      [first | _] ->
+        normalize_boundary_word(first) in ["and", "but", "or", "so", "then", "um", "uh", "like"]
+
+      _ ->
+        false
+    end
+  end
+
+  defp weak_end?(clip) do
+    words =
+      clip
+      |> clip_text()
+      |> String.downcase()
+      |> String.trim()
+      |> String.split(~r/\s+/, trim: true)
+
+    case List.last(words) do
+      nil -> false
+      last -> normalize_boundary_word(last) in ["and", "but", "or", "so"]
+    end
+  end
+
+  defp clip_text(clip) do
+    Map.get(clip, "combined_transcript") ||
+      Map.get(clip, "segments", [])
+      |> Enum.map_join(" ", &Map.get(&1, "transcript", "")) ||
+      ""
+  end
+
+  defp normalize_boundary_word(word), do: String.replace(word, ~r/[^a-z0-9]/, "")
+
+  defp contains_any?(text, terms) do
+    normalized = String.downcase(text || "")
+    Enum.any?(terms, &String.contains?(normalized, &1))
+  end
+
+  defp exception_text(clip, fallback), do: Map.get(clip, "exception_reason") || fallback
+
+  defp maybe_add(list, true, item), do: list ++ [item]
+  defp maybe_add(list, false, _item), do: list
+
+  defp numeric_field(clip, field) do
+    case Map.get(clip, field, 0) do
+      value when is_number(value) ->
+        value
+
+      value when is_binary(value) ->
+        case Float.parse(value) do
+          {number, _} -> number
+          _ -> 0
+        end
+
+      _ ->
+        0
+    end
+  end
+
+  defp duration_distance(duration, ideal_min, ideal_max) do
+    cond do
+      duration < ideal_min -> ideal_min - duration
+      duration > ideal_max -> duration - ideal_max
+      true -> 0
+    end
+  end
+
+  defp estimate_hook_score(clip, weak_start) do
+    existing = numeric_field(clip, "hook_score")
+
+    cond do
+      weak_start -> 35
+      existing > 0 -> existing
+      true -> 70
+    end
+  end
+
+  defp estimate_retention_score(clip, duration, ideal_min, ideal_max) do
+    existing = numeric_field(clip, "retention_score")
+
+    if existing > 0,
+      do: existing,
+      else: Kernel.max(45, 90 - duration_distance(duration, ideal_min, ideal_max))
+  end
+
+  defp estimate_platform_fit(duration, ideal_min, ideal_max) do
+    cond do
+      duration >= ideal_min and duration <= ideal_max -> 95
+      duration >= 10 and duration <= 60 -> 82
+      duration <= 90 -> 68
+      true -> 40
+    end
+  end
+
   # Extracts the duration of a clip in seconds.
   #
   # Tries multiple methods to determine clip duration:
@@ -1157,7 +1401,7 @@ defmodule ClippsterServer.ClipValidation do
   # 3. Sums individual segment durations
   # 4. Returns 0 if duration cannot be determined
   @spec get_clip_duration(map()) :: float()
-  defp get_clip_duration(clip) when is_map(clip) do
+  def get_clip_duration(clip) when is_map(clip) do
     cond do
       # Use total_duration field if available
       Map.has_key?(clip, "total_duration") and is_number(clip["total_duration"]) ->
@@ -1192,5 +1436,5 @@ defmodule ClippsterServer.ClipValidation do
     end
   end
 
-  defp get_clip_duration(_), do: 0
+  def get_clip_duration(_), do: 0
 end

@@ -1,7 +1,7 @@
 defmodule ClippsterServer.News.TheNewsAPIClient do
   @moduledoc """
   Client for TheNewsAPI - fetches breaking news articles for AI context.
-  
+
   API Documentation: https://www.thenewsapi.com/documentation
   """
 
@@ -12,9 +12,9 @@ defmodule ClippsterServer.News.TheNewsAPIClient do
 
   @doc """
   Fetches breaking news from the last 6 hours.
-  
+
   Returns articles sorted by published_at (newest first).
-  
+
   ## Options
     * `:limit` - Number of articles to fetch (default: 10, max: 100)
     * `:categories` - Comma-separated categories (e.g., "general,tech,sports")
@@ -67,7 +67,7 @@ defmodule ClippsterServer.News.TheNewsAPIClient do
 
   @doc """
   Searches for news articles by keyword.
-  
+
   ## Options
     * `:limit` - Number of articles to fetch (default: 10, max: 100)
     * `:language` - Language code (default: "en")
@@ -121,7 +121,10 @@ defmodule ClippsterServer.News.TheNewsAPIClient do
     query_string = URI.encode_query(params)
     full_url = "#{url}?#{query_string}"
 
-    case HTTPoison.get(full_url, headers, timeout: @default_timeout, recv_timeout: @default_timeout) do
+    case HTTPoison.get(full_url, headers,
+           timeout: @default_timeout,
+           recv_timeout: @default_timeout
+         ) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         case Jason.decode(body) do
           {:ok, data} -> {:ok, data}
@@ -149,10 +152,23 @@ defmodule ClippsterServer.News.TheNewsAPIClient do
         published_at: parse_datetime(article["published_at"]),
         source: article["source"],
         categories: article["categories"] || [],
-        locale: article["locale"]
+        locale: article["locale"],
+        relevance_score: parse_relevance_score(article["relevance_score"])
       }
     end)
   end
+
+  defp parse_relevance_score(nil), do: nil
+  defp parse_relevance_score(score) when is_number(score), do: score * 1.0
+
+  defp parse_relevance_score(score) when is_binary(score) do
+    case Float.parse(score) do
+      {value, _} -> value
+      _ -> nil
+    end
+  end
+
+  defp parse_relevance_score(_), do: nil
 
   defp parse_datetime(nil), do: nil
 

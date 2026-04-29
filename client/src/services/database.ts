@@ -138,6 +138,8 @@ export {
   seedGamingPrompt,
   seedGamblingPrompt,
   seedBreakingNewsPrompt,
+  seedIrlPrompt,
+  seedMusicPrompt,
 } from './database/prompts';
 
 // Re-export transcript functions

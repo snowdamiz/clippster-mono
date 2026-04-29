@@ -241,36 +241,6 @@
                 </div>
               </div>
 
-              <!-- Enhanced Multimodal Detection Toggle - TEMPORARILY HIDDEN -->
-              <!-- TODO: Re-enable multimodal detection option in future release -->
-              <!--
-              <div class="detect-clips-dialog__field detect-clips-dialog__toggle-box">
-                <div class="flex items-center justify-between">
-                  <div class="flex-1 min-w-0 pr-3">
-                    <div class="flex items-center gap-2">
-                      <span class="text-sm font-medium">Enhanced Detection</span>
-                      <span class="detect-clips-dialog__badge">2x Credits</span>
-                    </div>
-                    <p class="text-xs mt-1 opacity-70">
-                      Uses 3 AI models in parallel for higher quality clip detection
-                    </p>
-                  </div>
-                  <button
-                    @click="multimodalEnabled = !multimodalEnabled"
-                    class="detect-clips-dialog__toggle"
-                    :class="{ 'detect-clips-dialog__toggle--active': multimodalEnabled }"
-                    role="switch"
-                    :aria-checked="multimodalEnabled"
-                  >
-                    <span
-                      class="detect-clips-dialog__toggle-thumb"
-                      :class="{ 'detect-clips-dialog__toggle-thumb--active': multimodalEnabled }"
-                    />
-                  </button>
-                </div>
-              </div>
-              -->
-
               <!-- Credit Source Selector (shown when user has org credits) -->
               <div v-if="showCreditSourceSelector" class="detect-clips-dialog__field">
                 <label class="detect-clips-dialog__label">Pay with</label>
@@ -397,7 +367,6 @@
       promptId: string,
       promptContent: string,
       organizationId: number | null,
-      multimodal: boolean,
       startTime: number,
       endTime: number,
       subtitleSettings?: { enabled: boolean; presetId: string } | null
@@ -411,9 +380,6 @@
   const isProcessing = ref(false);
   const error = ref<string>('');
   const prompts = ref<Prompt[]>([]);
-
-  // Multimodal detection toggle
-  const multimodalEnabled = ref(false);
 
   // Subtitle selection
   const subtitlesEnabled = ref(false);
@@ -459,24 +425,22 @@
   // Check if user is admin (has unlimited credits)
   const isAdmin = computed(() => selectedSourceHoursRemaining.value === Infinity);
 
-  // Calculate credits based on duration, transcription status, and multimodal mode
+  // Calculate credits based on duration and transcription status
   // Must match server's per-step ceil math:
   //   - Not transcribed: ceil(minutes * 0.3) [transcribe] + ceil(minutes * 0.7) [detect]
   //   - Already transcribed: ceil(minutes * 0.7) [detect only]
-  // Multimodal applies 2x to the detection step only (transcription unchanged)
   const calculatedCredits = computed(() => {
     // For multi-segment mode, use total duration; for single video, use selected range
     const durationToCharge = props.segmentCount ? effectiveDuration.value : selectedDuration.value;
     const minutesToCharge = durationToCharge / 60; // Convert seconds to minutes
-    const multiMod = multimodalEnabled.value ? 2.0 : 1.0;
 
     if (props.isTranscribed) {
-      // Detection only: ceil(minutes * 0.7 * multiMod)
-      return Math.ceil(minutesToCharge * 0.7 * multiMod);
+      // Detection only: ceil(minutes * 0.7)
+      return Math.ceil(minutesToCharge * 0.7);
     } else {
       // Transcription + detection, each ceiled separately (matches server)
       const transcriptionCredits = Math.ceil(minutesToCharge * 0.3);
-      const detectionCredits = Math.ceil(minutesToCharge * 0.7 * multiMod);
+      const detectionCredits = Math.ceil(minutesToCharge * 0.7);
       return transcriptionCredits + detectionCredits;
     }
   });
@@ -499,20 +463,18 @@
     const roundedCredits = Math.ceil(creditsToCharge);
     const roundedRemaining = Math.round(remaining);
 
-    const multimodalNote = multimodalEnabled.value ? ' (2x for Enhanced Detection)' : '';
-
     if (remaining === 0) {
-      return `No credits remaining in ${sourceName}. This operation requires ${roundedCredits} credits${multimodalNote}.`;
+      return `No credits remaining in ${sourceName}. This operation requires ${roundedCredits} credits.`;
     }
 
     if (remaining < creditsToCharge) {
       const adjustRangeHint = !props.segmentCount && props.videoDuration > 0 
         ? ' Adjust the time range above to reduce the cost.' 
         : '';
-      return `Insufficient credits in ${sourceName}. You have ${roundedRemaining} credits, but this operation requires ${roundedCredits} credits${multimodalNote}.${adjustRangeHint}`;
+      return `Insufficient credits in ${sourceName}. You have ${roundedRemaining} credits, but this operation requires ${roundedCredits} credits.${adjustRangeHint}`;
     }
 
-    return `This operation will charge ${roundedCredits} credits${multimodalNote} from ${sourceName}. You have ${roundedRemaining} credits remaining.`;
+    return `This operation will charge ${roundedCredits} credits from ${sourceName}. You have ${roundedRemaining} credits remaining.`;
   });
 
   // Close dropdown when clicking outside
@@ -584,19 +546,25 @@
     error.value = '';
 
     try {
-      // Include organizationId, multimodal flag, and time range
+      // Include organizationId and time range
       // Prepare subtitle settings
       const subtitleSettings = subtitlesEnabled.value && selectedSubtitlePreset.value
         ? { enabled: true, presetId: selectedSubtitlePreset.value }
         : null;
 
-      console.log('[ClipDetectionConfirmDialog] Emitting confirm with multimodal:', multimodalEnabled.value, 'subtitles:', subtitleSettings, 'time range:', timeRange.value.startTime, '-', timeRange.value.endTime);
+      console.log(
+        '[ClipDetectionConfirmDialog] Emitting confirm subtitles:',
+        subtitleSettings,
+        'time range:',
+        timeRange.value.startTime,
+        '-',
+        timeRange.value.endTime
+      );
       emit(
         'confirm',
         selectedPromptId.value,
         selectedPromptContent.value,
         organizationIdForApi.value,
-        multimodalEnabled.value,
         timeRange.value.startTime,
         timeRange.value.endTime,
         subtitleSettings
@@ -646,9 +614,6 @@
         selectedPromptName.value = '';
         selectedPromptContent.value = '';
         showPromptDropdown.value = false;
-
-        // Reset multimodal toggle (default off)
-        multimodalEnabled.value = false;
 
         // Reset subtitle selection (default off)
         subtitlesEnabled.value = false;

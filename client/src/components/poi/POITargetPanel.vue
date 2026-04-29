@@ -577,6 +577,7 @@
   import type { ManualRegion, ManualRegionRect, SubtitleSettings, ManualSourceFramingPayload } from '@/types';
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
   import { scaleUse169BlurForPoiPreview, use169BlurSliderToCssPx } from '@/utils/use169Blur';
+  import { getVisibleSubtitleWordsForClipTime } from '@/utils/subtitleVisibleWords';
 
   interface WatermarkPreview {
     filePath?: string;
@@ -1371,57 +1372,27 @@
     return styles;
   });
   
-  // Compute visible words based on current video time
+  // Compute visible words — same rules as VideoPlayer (no ±20s window, no full-segment dump on gaps)
   const visibleWords = computed((): WordInfo[] => {
-    if (!props.transcriptWords || props.transcriptWords.length === 0 || !props.subtitleSettings) {
-      return [];
-    }
-
+    if (!props.subtitleSettings) return [];
     const absoluteTime = props.videoTime || 0;
     const clipRelativeTime = absoluteTime - (props.clipStartTime || 0);
-    const animationStyle = props.subtitleSettings.animationStyle;
-
-    if (animationStyle === 'single-word') {
-      const currentWord = props.transcriptWords.find(
-        (w) => clipRelativeTime >= w.start && clipRelativeTime < w.end
-      );
-      return currentWord ? [currentWord] : [];
-    }
-
-    if (props.transcriptSegments && props.transcriptSegments.length > 0) {
-      const currentSegment = props.transcriptSegments.find(
-        (seg) => clipRelativeTime >= seg.start && clipRelativeTime < seg.end
-      );
-
-      if (!currentSegment) {
-        return [];
-      }
-
-      if (currentSegment.words && currentSegment.words.length > 0) {
-        return currentSegment.words;
-      }
-
-      return props.transcriptWords.filter(
-        (w) => w.start < currentSegment.end && w.end > currentSegment.start
-      );
-    }
-
-    // No Whisper segments: approximate “line at playhead”. Use symmetric overlap window (seconds).
-    // A tiny window (e.g. 3s) hid later words when clipRelativeTime=0 — e.g. demo [0–5],[5–10]s.
-    const WINDOW_SEC = 20;
-    return props.transcriptWords.filter(
-      (w) =>
-        w.start < clipRelativeTime + WINDOW_SEC && w.end > clipRelativeTime - WINDOW_SEC
+    return getVisibleSubtitleWordsForClipTime(
+      clipRelativeTime,
+      props.transcriptWords,
+      props.transcriptSegments,
+      props.subtitleSettings.animationStyle,
+      props.targetAspectRatio
     );
   });
 
-  /** Static line when word-level SVG path is empty (e.g. timing gap) but we still have transcript words */
+  /** Placeholder copy only when there is no transcript — never join the full transcript on silence/gaps */
   const subtitlePreviewFallbackText = computed(() => {
     if (!props.subtitleSettings) return 'Sample Text';
     if (visibleWords.value.length > 0) return '';
 
     if (props.transcriptWords && props.transcriptWords.length > 0) {
-      return props.transcriptWords.map((w) => w.word).join(' ');
+      return '';
     }
 
     const style = props.subtitleSettings.animationStyle;
@@ -1429,21 +1400,25 @@
     return 'Sample subtitle text';
   });
 
-  // Check if a word is currently being spoken
+  // Check if a word is currently being spoken (highlight / motion)
   function isCurrentWord(word: WordInfo): boolean {
-    // Convert absolute video time to clip-relative time
+    const animationStyle = props.subtitleSettings?.animationStyle;
+    if (animationStyle === 'single-word') {
+      return visibleWords.value.some(
+        (w) => w.start === word.start && w.end === word.end && w.word === word.word
+      );
+    }
+
     const absoluteTime = props.videoTime || 0;
     const clipRelativeTime = absoluteTime - (props.clipStartTime || 0);
-    
-    // Check if we're in the word's time window
+
     if (clipRelativeTime >= word.start && clipRelativeTime < word.end) {
       return true;
     }
-    
-    // Look back tolerance for words that started between frames
-    const LOOK_BACK_TOLERANCE = 0.05; // 50ms
+
+    const LOOK_BACK_TOLERANCE = 0.05;
     const timeSinceWordStart = clipRelativeTime - word.start;
-    
+
     if (timeSinceWordStart > 0 && timeSinceWordStart <= LOOK_BACK_TOLERANCE) {
       if (clipRelativeTime < word.end) {
         return true;

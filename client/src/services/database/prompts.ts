@@ -78,17 +78,16 @@ export async function seedDefaultPrompt(): Promise<void> {
   const db = await getDatabase();
 
   // Delete existing default prompt to force update
-  await db.execute(
-    'DELETE FROM prompts WHERE name = ? AND user_id IS NULL',
-    ['Default Clip Detector']
-  );
+  await db.execute('DELETE FROM prompts WHERE name = ? AND user_id IS NULL', [
+    'Default Clip Detector',
+  ]);
 
   // Create the default prompt with user_id = NULL (system-wide, visible to all users)
   const defaultPromptContent = `Analyze this stream transcript and identify ALL potential clip-worthy moments for TikTok/Shorts/X.
 
 **DETECTION PHILOSOPHY:**
-- EXTREME BIAS TOWARDS FINDING CLIPS — when in doubt, INCLUDE IT.
-- It is better to provide a "maybe" clip than to miss a good one.
+- Be selective: return moments with real stop-scroll potential, not filler.
+- Strong hooks beat complete but slow context. If a clip does not grab attention in the first 1-3 seconds, skip it.
 **VIRAL EDITING & CREATIVE REUSE:**
 - **Find the "Meme":** Look for short, funny, out-of-context moments hidden inside longer conversations.
 - **Creative Splicing:** You are encouraged to connect distant thoughts to create humor, "manipulate" the speaker's words for comedic effect, or highlight irony.
@@ -115,8 +114,10 @@ export async function seedDefaultPrompt(): Promise<void> {
    - Each segment must independently follow the same start/end rules (sentence boundary + pads).
    - Only splice to remove long dead air (>2s). Do not over-splice natural pauses.
 5) Hard constraints.
-   - Minimum 10s, maximum 180s total per clip.
-   - Prefer 15–90s when possible for short-form platforms.
+   - Primary target: 30-45s.
+   - Short exception: 10-29s only for extreme standalone reactions, memes, or soundbites.
+   - Long exception: 46-90s only when the full setup/payoff is truly required.
+   - Above 90s requires a concrete exception_reason explaining why full context is mandatory.
 
 **SCORING MODEL (0-100):**
 - **Hook Power (25%)**: First 1-2 seconds must STOP THE SCROLL
@@ -131,7 +132,7 @@ export async function seedDefaultPrompt(): Promise<void> {
 - **IRL Moments**: Confrontations, awkward encounters, street interviews, gym content, fight content, public interactions.
 - **Energy Shifts**: Calm→hype, serious→cracking up, confident→tilted. These transitions are natural clip boundaries.
 - Strong emotions or shifts; humor/awkwardness; drama/tension/conflict; surprises/reveals; bold claims; unusual behavior; struggle/vulnerability; high energy; relatable/resonant lines; quotable statements.
-- **News/Trends Awareness**: The system provides real-time breaking news and trending topics context. Look for reactions to current events.
+- **News Awareness**: The system provides TheNewsAPI current-event context when relevant. Boost only direct named overlap.
 - ANY interaction that feels "human" or "authentic".
 - **CRITICAL**: A 30-second clip of someone being genuinely funny/charismatic > a 90-second clip of someone calmly explaining something interesting.`;
 
@@ -154,15 +155,14 @@ export async function seedGamingPrompt(): Promise<void> {
   const db = await getDatabase();
 
   // Delete existing gaming prompt to force update
-  await db.execute(
-    'DELETE FROM prompts WHERE name = ? AND user_id IS NULL',
-    ['Gaming Stream Clip Detector']
-  );
+  await db.execute('DELETE FROM prompts WHERE name = ? AND user_id IS NULL', [
+    'Gaming Stream Clip Detector',
+  ]);
 
   const gamingPromptContent = `Analyze this gaming stream transcript and identify ALL potential clip-worthy moments for TikTok/Shorts/X.
 
 **DETECTION PHILOSOPHY:**
-- Bias toward inclusion, but every clip must have at least ONE moment that makes a viewer react.
+- Be selective: every clip must have a first-3-second hook that makes a viewer react.
 - Gaming content has INSTANT viral potential — prioritize emotion and action over perfect context.
 - Quality over quantity — we want viral moments, not filler.
 
@@ -208,8 +208,10 @@ Each transcript segment includes:
    - Only splice to remove long dead air (>2.0s). Do NOT splice out tension-building moments or anticipation.
    - **Create BOTH versions**: If a moment has dead space, generate a "continuous" version AND a "spliced" version with dead space removed.
 5) Hard constraints.
-   - Minimum 10s, maximum 180s total per clip.
-   - **Prefer 10–45s for gaming clips** — short and punchy wins. Only go longer (45-90s) for complex plays requiring full context.
+   - Primary target: 30-45s.
+   - Short exception: 10-29s only for extreme standalone reactions, memes, or soundbites.
+   - Long exception: 46-90s only for complex plays that require setup → execution → payoff.
+   - Above 90s requires a concrete exception_reason explaining why full context is mandatory.
 
 **SPLICING STRATEGY FOR MAXIMUM ENGAGEMENT:**
 - **Continuous Clips**: Single segments with natural flow. Allow pauses up to 3s if they add tension.
@@ -257,15 +259,14 @@ export async function seedGamblingPrompt(): Promise<void> {
   const db = await getDatabase();
 
   // Delete existing gambling prompt to force update
-  await db.execute(
-    'DELETE FROM prompts WHERE name = ? AND user_id IS NULL',
-    ['Gambling Stream Clip Detector']
-  );
+  await db.execute('DELETE FROM prompts WHERE name = ? AND user_id IS NULL', [
+    'Gambling Stream Clip Detector',
+  ]);
 
   const gamblingPromptContent = `Analyze this gambling stream transcript and identify ALL potential clip-worthy moments for TikTok/Shorts/X.
 
 **DETECTION PHILOSOPHY:**
-- Bias toward inclusion, but every clip must have at least ONE moment that makes a viewer react.
+- Be selective: every clip must have a first-3-second hook that makes a viewer react.
 - Gambling content is PURE EMOTION — every spin, hand, or bet is a potential viral moment.
 - Prioritize STAKES and REACTIONS over everything else — viewers want to feel the highs and lows.
 - Quality over quantity — we want viral moments, not filler.
@@ -319,9 +320,9 @@ Each transcript segment includes:
    - Preserve the emotional arc: setup → tension → result → reaction.
    - **Create BOTH versions**: If a moment has dead space, generate a "continuous" version AND a "spliced" version with dead space removed.
 5) Hard constraints.
-   - Minimum 10s, maximum 180s total per clip.
-   - **Prefer 15–60s for gambling clips** — capture setup, tension, and payoff without dragging.
-   - Bonus rounds can go longer (60-120s) if the anticipation and payoff justify it.
+   - Primary target: 30-45s.
+   - Short exception: 10-29s only for extreme standalone reactions, memes, or soundbites.
+   - Long exception: 46-90s only if stakes, anticipation, and payoff all stay compelling.
    - Quick reaction clips can be 10-20s if the emotion is extreme enough.
 
 **SPLICING STRATEGY FOR MAXIMUM ENGAGEMENT:**
@@ -375,18 +376,17 @@ export async function seedBreakingNewsPrompt(): Promise<void> {
   const db = await getDatabase();
 
   // Delete existing breaking news prompt to force update
-  await db.execute(
-    'DELETE FROM prompts WHERE name = ? AND user_id IS NULL',
-    ['Breaking News & Trending Viral']
-  );
+  await db.execute('DELETE FROM prompts WHERE name = ? AND user_id IS NULL', [
+    'Breaking News & Trending Viral',
+  ]);
 
   const breakingNewsPromptContent = `Analyze this stream transcript and identify ALL potential clip-worthy moments for TikTok/Shorts/X, with PRIORITY on breaking news, trending topics, and time-sensitive viral content.
 
 **DETECTION PHILOSOPHY:**
-- Bias toward inclusion, but every clip must have at least ONE moment that makes a viewer react.
+- Be selective: every clip must have a first-3-second hook that makes a viewer react.
 - TIME-SENSITIVE content has MAXIMUM viral potential — prioritize recency and trending topics over everything else.
 - Quality over quantity — we want viral moments, not filler.
-- **NEWS API INTEGRATION**: The system provides real-time breaking news and Google Trends context. Use it to identify when streamers are reacting to current events.
+- **NEWS API INTEGRATION**: The system provides TheNewsAPI current-event context. Use it to identify when streamers are reacting to current events.
 
 **ENHANCED DATA YOU RECEIVE:**
 Each transcript segment includes:
@@ -430,8 +430,10 @@ Each transcript segment includes:
    - Only splice to remove long dead air (>2.0s). Do not over-splice natural pauses.
    - **Create BOTH versions**: If a moment has dead space, generate a "continuous" version AND a "spliced" version with dead space removed.
 5) Hard constraints.
-   - Minimum 10s, maximum 180s total per clip.
-   - **Prefer 15–60s for trending clips** — shorter is more shareable. Only go longer if the full take requires it.
+   - Primary target: 30-45s.
+   - Short exception: 10-29s only for extreme standalone reactions, memes, or soundbites.
+   - Long exception: 46-90s only if the full take is truly necessary.
+   - Above 90s requires a concrete exception_reason explaining why full context is mandatory.
 
 **SPLICING STRATEGY FOR MAXIMUM ENGAGEMENT:**
 - **Continuous Clips**: Single segments with natural flow. Allow pauses up to 3s if they add tension.
@@ -459,7 +461,7 @@ Each transcript segment includes:
 - **Platform Fit (10%)**: Duration sweet spots (15-60s ideal)
 - **Creator Factor (5%)**: For viral creators, personality IS content
 
-**NEWS/TRENDS BOOST**: If the clip references breaking news or trending topics from the system context, boost score by 5-15 points based on connection strength.`;
+**NEWS BOOST**: If the clip directly references current events from TheNewsAPI system context, boost score by 5-15 points based on connection strength.`;
 
   const id = generateId();
   const now = timestamp();
@@ -472,4 +474,79 @@ Each transcript segment includes:
   } catch (error) {
     throw error;
   }
+}
+
+// Seed IRL / Just Chatting prompt
+export async function seedIrlPrompt(): Promise<void> {
+  const db = await getDatabase();
+  await db.execute('DELETE FROM prompts WHERE name = ? AND user_id IS NULL', [
+    'IRL & Just Chatting Clip Detector',
+  ]);
+
+  const irlPromptContent = `Analyze this IRL / Just Chatting stream transcript and identify the most valuable short-form clips for TikTok/Reels/Shorts/X.
+
+**DETECTION PHILOSOPHY:**
+- Be selective: every clip must have a first-3-second hook that makes a viewer react.
+- Prioritize human tension, awkwardness, charm, confrontation, vulnerability, surprise, and personality chemistry.
+- Keep general viral moments active even if they are not strictly IRL. If a non-category moment is stronger, return it.
+
+**DURATION POLICY:**
+- Primary target: 30-45s.
+- Short exception: 10-29s only for extreme standalone reactions, memes, or soundbites.
+- Long exception: 46-90s only when full social context is truly needed.
+- Above 90s requires a concrete exception_reason.
+
+**WHAT TO LOOK FOR:**
+- Public interactions, confrontations, awkward pauses, flirtation, social tension, crowd/chat reactions.
+- Bold claims, hot takes, confessions, unexpected vulnerability, weird behavior, quotable one-liners.
+- Energy shifts: calm→chaos, confident→embarrassed, serious→laughing.
+
+**RETURN REQUIREMENTS:**
+- Include scoring fields: hook_score, retention_score, shareability_score, trend_score, platform_fit_score, creator_factor_score, duration_policy, exception_reason.
+- Clips must work with captions and make sense without explaining the backstory.`;
+
+  const id = generateId();
+  const now = timestamp();
+
+  await db.execute(
+    'INSERT INTO prompts (id, name, content, user_id, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?)',
+    [id, 'IRL & Just Chatting Clip Detector', irlPromptContent, now, now]
+  );
+}
+
+// Seed Music / Performance prompt
+export async function seedMusicPrompt(): Promise<void> {
+  const db = await getDatabase();
+  await db.execute('DELETE FROM prompts WHERE name = ? AND user_id IS NULL', [
+    'Music & Performance Clip Detector',
+  ]);
+
+  const musicPromptContent = `Analyze this music/performance stream transcript and identify the most valuable short-form clips for TikTok/Reels/Shorts/X.
+
+**DETECTION PHILOSOPHY:**
+- Be selective: every clip must have a first-3-second hook or immediate performance reason to keep watching.
+- Prioritize performance peaks, surprising talent, recognizable song moments, mistakes/recoveries, crowd/chat reactions, and emotional payoff.
+- Keep general viral moments active even if they are not strictly music. If a non-category moment is stronger, return it.
+
+**DURATION POLICY:**
+- Primary target: 30-45s.
+- Short exception: 10-29s only for a perfect vocal/instrumental hit, funny mistake, reaction, or meme soundbite.
+- Long exception: 46-90s only when the build and payoff are both required.
+- Above 90s requires a concrete exception_reason.
+
+**WHAT TO LOOK FOR:**
+- Beat drops, high notes, freestyle punchlines, audience/chat eruptions, unexpected skill, failed notes followed by recovery.
+- Recognizable song lines, emotional delivery, collaboration chemistry, funny performance interruptions.
+
+**RETURN REQUIREMENTS:**
+- Include scoring fields: hook_score, retention_score, shareability_score, trend_score, platform_fit_score, creator_factor_score, duration_policy, exception_reason.
+- Clips must work with captions and should preserve enough audio/performance context to feel satisfying.`;
+
+  const id = generateId();
+  const now = timestamp();
+
+  await db.execute(
+    'INSERT INTO prompts (id, name, content, user_id, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?)',
+    [id, 'Music & Performance Clip Detector', musicPromptContent, now, now]
+  );
 }

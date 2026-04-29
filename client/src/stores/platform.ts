@@ -946,7 +946,7 @@ export const usePlatformStore = defineStore('platform', {
     },
 
     // Helper to convert YouTube VODs to PlatformClip format
-    async getYouTubeClips(channelId: string, limit: number = 20, tab: 'streams' | 'videos' = 'streams'): Promise<{
+    async getYouTubeClips(channelId: string, limit: number = 20, tab: 'streams' | 'videos' = 'streams', offset: number = 0): Promise<{
       success: boolean;
       clips: PlatformClip[];
       hasMore: boolean;
@@ -956,10 +956,10 @@ export const usePlatformStore = defineStore('platform', {
       actualTab?: 'streams' | 'videos';
     }> {
       try {
-        console.log('[Platform Store] getYouTubeClips - channelId:', channelId, 'tab:', tab);
+        console.log('[Platform Store] getYouTubeClips - channelId:', channelId, 'tab:', tab, 'offset:', offset);
         
         // Check cache first (5 minute TTL)
-        const cacheKey = `youtube_${tab}_${channelId}_${limit}`;
+        const cacheKey = `youtube_${tab}_${channelId}_${limit}_${offset}`;
         const cached = await cache.get<YouTubeVod[]>('rawVideos', cacheKey);
         if (cached && cached.length > 0) {
           console.log('[Platform Store] Using cached YouTube', tab, '- found', cached.length, 'items');
@@ -988,20 +988,20 @@ export const usePlatformStore = defineStore('platform', {
         
         // Try primary tab first
         let vods = tab === 'videos' 
-          ? await getYouTubeVideos(channelId, limit)
-          : await getYouTubeVods(channelId, limit);
+          ? await getYouTubeVideos(channelId, limit, offset)
+          : await getYouTubeVods(channelId, limit, offset);
         console.log('[Platform Store] Fetched', vods.length, tab === 'videos' ? 'videos' : 'streams');
         
         let fallbackUsed = false;
         let actualTab = tab;
         
         // If no results, automatically try the other tab
-        if (vods.length === 0) {
+        if (vods.length === 0 && offset === 0) {
           const fallbackTab = tab === 'streams' ? 'videos' : 'streams';
           console.log('[Platform Store] No results in', tab, 'tab, trying', fallbackTab, 'tab');
           vods = fallbackTab === 'videos'
-            ? await getYouTubeVideos(channelId, limit)
-            : await getYouTubeVods(channelId, limit);
+            ? await getYouTubeVideos(channelId, limit, offset)
+            : await getYouTubeVods(channelId, limit, offset);
           console.log('[Platform Store] Fallback fetched', vods.length, fallbackTab);
           
           if (vods.length > 0) {
@@ -1012,7 +1012,7 @@ export const usePlatformStore = defineStore('platform', {
         
         // Cache the results (5 minute TTL)
         if (vods.length > 0) {
-          const cacheKey = `youtube_${actualTab}_${channelId}_${limit}`;
+          const cacheKey = `youtube_${actualTab}_${channelId}_${limit}_${offset}`;
           await cache.set('rawVideos', cacheKey, vods, 5 * 60 * 1000);
         }
         
@@ -1048,6 +1048,57 @@ export const usePlatformStore = defineStore('platform', {
           total: 0,
           error: error instanceof Error ? error.message : 'Failed to fetch YouTube VODs',
         };
+      }
+    },
+
+    async loadMoreYouTubeClips(channelId: string, limit: number = 20, tab: 'streams' | 'videos' = 'streams'): Promise<{
+      success: boolean;
+      added: number;
+      hasMore: boolean;
+      error?: string;
+    }> {
+      try {
+        this.loading = true;
+        this.error = '';
+
+        const offset = this.clips.length;
+        const result = await this.getYouTubeClips(channelId, limit, tab, offset);
+
+        if (!result.success) {
+          this.hasMore = false;
+          this.error = result.error || 'Failed to fetch more YouTube VODs';
+          return {
+            success: false,
+            added: 0,
+            hasMore: false,
+            error: this.error,
+          };
+        }
+
+        const existingIds = new Set(this.clips.map((clip) => clip.clipId));
+        const newClips = result.clips.filter((clip) => !existingIds.has(clip.clipId));
+
+        this.clips = [...this.clips, ...newClips];
+        this.total = this.clips.length;
+        this.hasMore = result.hasMore && newClips.length > 0;
+        this.lastSearchTime = Date.now();
+
+        return {
+          success: true,
+          added: newClips.length,
+          hasMore: this.hasMore,
+        };
+      } catch (error) {
+        this.hasMore = false;
+        this.error = error instanceof Error ? error.message : 'Failed to fetch more YouTube VODs';
+        return {
+          success: false,
+          added: 0,
+          hasMore: false,
+          error: this.error,
+        };
+      } finally {
+        this.loading = false;
       }
     },
     
