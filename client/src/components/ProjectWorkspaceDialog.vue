@@ -203,6 +203,7 @@
                   :video-duration="duration"
                   :current-time="currentTime"
                   :aspect-ratio="selectedAspectRatio"
+                  :max-words-for-aspect-ratio="subtitleWordsPerLine"
                   :creator-default-intro="creatorDefaultIntro"
                   :creator-default-outro="creatorDefaultOutro"
                   :creator-profile="creatorProfile"
@@ -230,15 +231,33 @@
                 />
 
                 <!-- Subtitle Properties Tab -->
-                <SubtitlePropertiesPanel
+                <div
                   v-if="rightPanelTab === 'subtitles' && activeSubtitleSettings"
-                  :settings="activeSubtitleSettings"
-                  :segments="subtitleSegmentsForPanel"
-                  :current-time="currentTime"
-                  @close="rightPanelTab = 'clips'"
-                  @updateSettings="onSubtitleSettingsUpdate"
-                  @updateSegmentText="onSubtitleSegmentTextUpdate"
-                />
+                  class="flex flex-col flex-1 min-h-0 overflow-hidden"
+                >
+                  <div class="flex items-center gap-3 px-4 py-3 border-b border-zinc-800 shrink-0 bg-zinc-900/80">
+                    <button
+                      type="button"
+                      class="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+                      title="Back to Clips"
+                      @click="rightPanelTab = 'clips'"
+                    >
+                      <ChevronLeft :size="15" />
+                    </button>
+                    <span class="text-sm font-semibold text-white">Subtitles</span>
+                  </div>
+                  <SubtitlePropertiesPanel
+                    class="flex-1 min-h-0 overflow-hidden"
+                    variant="embedded"
+                    :settings="activeSubtitleSettings"
+                    :segments="subtitleSegmentsForPanel"
+                    :current-time="currentTime"
+                    @close="rightPanelTab = 'clips'"
+                    @updateSettings="onSubtitleSettingsUpdate"
+                    @updateSegmentText="onSubtitleSegmentTextUpdate"
+                    @delete="onSubtitleDelete"
+                  />
+                </div>
 
                 <ClipTextBoxPropertiesPanel
                   v-if="rightPanelTab === 'text'"
@@ -393,7 +412,7 @@
   import { resolveBrandingProfile } from '@/composables/useBrandingProfileSelection';
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
-  import { X, Film, Smartphone } from 'lucide-vue-next';
+  import { X, Film, Smartphone, ChevronLeft } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import type {
     ActiveVodPresetConfig,
@@ -437,7 +456,8 @@
   import { useAuthStore } from '@/stores/auth';
   import { getRawVideosByProjectId } from '@/services/database';
   import { getProjectVodPresetConfig } from '@/services/database/vod-presets';
-  import { updateClipSubtitlePosition, updateClipTextOverlay } from '@/services/database/clips';
+  import { updateClipSubtitlePosition, updateClipSubtitleSettings, updateClipTextOverlay } from '@/services/database/clips';
+  import { parseTranscriptToWords } from '@/utils/timelineUtils';
   import {
     parseClipTextOverlayJson,
     createDefaultClipTextBoxState,
@@ -725,6 +745,12 @@
 
   // Check if current aspect ratio is 9:16 (vertical)
   const is916 = computed(() => previewAspectRatio.value === '9:16');
+  const subtitleWordsPerLine = computed(() => {
+    const aspectRatioValue = selectedAspectRatio.value.width / selectedAspectRatio.value.height;
+    if (aspectRatioValue > 1.5) return 6;
+    if (aspectRatioValue > 0.9) return 4;
+    return 3;
+  });
 
   // Social menu positioning
   const socialMenuStyle = computed(() => {
@@ -1038,13 +1064,270 @@
     return segments;
   });
 
-  /**
-   * For built-clip playback the video is 0-based, but the DB transcript is source-absolute.
-   * Remap words/segments to clip-relative times so VideoPlayer can match `currentTime`.
-   */
+  function generateApproxWords(text: string, start: number, end: number): WordInfo[] {
+    const tokens = text.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return [];
+    const duration = Math.max(0.001, end - start);
+    const step = duration / tokens.length;
+    return tokens.map((word, index) => ({
+      word,
+      start: start + step * index,
+      end: index === tokens.length - 1 ? end : start + step * (index + 1),
+    }));
+  }
+
+  function tokenizeTranscriptText(text: string): string[] {
+    return text.trim().split(/\s+/).filter(Boolean);
+  }
+
+  function overlayTranscriptTextOnTimedWords(text: string, timedWords: WordInfo[], start: number, end: number): WordInfo[] {
+    const tokens = tokenizeTranscriptText(text);
+    if (tokens.length === 0) return [];
+    if (timedWords.length === 0) return generateApproxWords(text, start, end);
+
+    const overlaid = timedWords.slice(0, tokens.length).map((word, index) => ({
+      ...word,
+      word: tokens[index],
+    }));
+
+    if (tokens.length > timedWords.length) {
+      const extraText = tokens.slice(timedWords.length).join(' ');
+      const extraStart = timedWords[timedWords.length - 1]?.end ?? start;
+      overlaid.push(...generateApproxWords(extraText, extraStart, end));
+    }
+
+    return overlaid;
+  }
+
+  function normalizeTimedWordsToSegment(
+    words: WordInfo[],
+    sourceStart: number,
+    sourceEnd: number,
+    timelineStart: number,
+    timelineEnd: number
+  ): WordInfo[] {
+    if (words.length === 0) return [];
+
+    const duration = Math.max(0.001, sourceEnd - sourceStart);
+    const firstStart = words[0]?.start ?? 0;
+    const lastEnd = words[words.length - 1]?.end ?? 0;
+    const looksRelative = firstStart < duration + 1 && lastEnd <= duration + 1;
+    const sourceWords = looksRelative
+      ? words.map((word) => ({ ...word, start: word.start + sourceStart, end: word.end + sourceStart }))
+      : words;
+
+    return sourceWords
+      .filter((word) => word.end > sourceStart && word.start < sourceEnd)
+      .map((word) => {
+        if (workspaceVideoTimeIsSourceAbsolute.value) {
+          return {
+            ...word,
+            start: Math.max(sourceStart, word.start),
+            end: Math.min(sourceEnd, word.end),
+          };
+        }
+        return {
+          ...word,
+          start: timelineStart + Math.max(0, word.start - sourceStart),
+          end: timelineStart + Math.min(timelineEnd - timelineStart, word.end - sourceStart),
+        };
+      })
+      .filter((word) => word.end > word.start);
+  }
+
+  function getTimedWordsForClipSegment(
+    segment: any,
+    sourceStart: number,
+    sourceEnd: number,
+    timelineStart: number,
+    timelineEnd: number
+  ): WordInfo[] {
+    if (typeof segment.transcript_raw_json === 'string' && segment.transcript_raw_json.trim()) {
+      const rawWords = parseTranscriptToWords(segment.transcript_raw_json);
+      const normalized = normalizeTimedWordsToSegment(rawWords, sourceStart, sourceEnd, timelineStart, timelineEnd);
+      if (normalized.length > 0) return normalized;
+    }
+
+    const globalWords = transcriptData.value?.words || [];
+    const normalized = normalizeTimedWordsToSegment(globalWords, sourceStart, sourceEnd, timelineStart, timelineEnd);
+    if (normalized.length > 0) return normalized;
+
+    return [];
+  }
+
+  function getTranscriptText(value: unknown): string {
+    if (typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed?.text === 'string') return parsed.text.trim();
+        if (Array.isArray(parsed?.segments)) {
+          return parsed.segments
+            .map((segment: any) => segment?.text)
+            .filter((text: any): text is string => typeof text === 'string' && text.trim().length > 0)
+            .join(' ')
+            .trim();
+        }
+      } catch {
+        // Plain transcript text can legitimately start with punctuation-like JSON characters.
+      }
+    }
+
+    return trimmed;
+  }
+
+  type SubtitlePanelSegment = {
+    start: number;
+    end: number;
+    text: string;
+    sourceSegmentIndex?: number;
+    sourceSegmentId?: string;
+  };
+
+  function splitTranscriptForPanel(
+    text: string,
+    start: number,
+    end: number,
+    sourceSegmentIndex: number,
+    sourceSegmentId?: string,
+    wordsPerLine = subtitleWordsPerLine.value
+  ): SubtitlePanelSegment[] {
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return [];
+
+    const chunks: string[][] = [];
+    const maxWords = Math.max(1, wordsPerLine);
+
+    for (let i = 0; i < words.length; i += maxWords) {
+      chunks.push(words.slice(i, i + maxWords));
+    }
+
+    const duration = Math.max(0.001, end - start);
+    let cursor = 0;
+    return chunks.map((chunk, index) => {
+      const chunkStart = start + (cursor / words.length) * duration;
+      cursor += chunk.length;
+      const chunkEnd = index === chunks.length - 1 ? end : start + (cursor / words.length) * duration;
+      return {
+        start: chunkStart,
+        end: chunkEnd,
+        text: chunk.join(' '),
+        sourceSegmentIndex,
+        sourceSegmentId,
+      };
+    });
+  }
+
+  function splitTimedWordsForPanel(
+    words: WordInfo[],
+    sourceSegmentIndex: number,
+    sourceSegmentId?: string,
+    wordsPerLine = subtitleWordsPerLine.value
+  ): SubtitlePanelSegment[] {
+    const maxWords = Math.max(1, wordsPerLine);
+    const rows: SubtitlePanelSegment[] = [];
+    for (let index = 0; index < words.length; index += maxWords) {
+      const chunk = words.slice(index, index + maxWords);
+      if (chunk.length === 0) continue;
+      rows.push({
+        start: chunk[0].start,
+        end: chunk[chunk.length - 1].end,
+        text: chunk.map((word) => word.word).join(' '),
+        sourceSegmentIndex,
+        sourceSegmentId,
+      });
+    }
+    return rows;
+  }
+
+  function getClipSubtitleSegmentsForClipId(clipId: string | null): WhisperSegment[] {
+    const clip = getTimelineClipById(clipId);
+    if (!clip) return [];
+
+    const clipSegments = getClipTimelineSegments(clip);
+    if (clipSegments.length === 0) return [];
+
+    if (workspaceVideoTimeIsSourceAbsolute.value) {
+      return clipSegments.map((segment: any, index: number) => {
+        const start = Number(segment.start_time) || 0;
+        const end = Number(segment.end_time) || start;
+        const text = getTranscriptText(segment.transcript);
+        const timedWords = getTimedWordsForClipSegment(segment, start, end, start, end);
+        return {
+          id: typeof segment.id === 'number' ? segment.id : index,
+          start,
+          end,
+          text,
+          words: overlayTranscriptTextOnTimedWords(text, timedWords, start, end),
+        };
+      });
+    }
+
+    let cursor = 0;
+    return clipSegments.map((segment: any, index: number) => {
+      const duration = Math.max(0, (Number(segment.end_time) || 0) - (Number(segment.start_time) || 0));
+      const start = cursor;
+      const end = cursor + duration;
+      cursor = end;
+      const text = getTranscriptText(segment.transcript);
+      const sourceStart = Number(segment.start_time) || 0;
+      const sourceEnd = Number(segment.end_time) || sourceStart;
+      const timedWords = getTimedWordsForClipSegment(segment, sourceStart, sourceEnd, start, end);
+      return {
+        id: typeof segment.id === 'number' ? segment.id : index,
+        start,
+        end,
+        text,
+        words: overlayTranscriptTextOnTimedWords(text, timedWords, start, end),
+      };
+    });
+  }
+
+  function getActiveClipSubtitleSegments(): WhisperSegment[] {
+    return getClipSubtitleSegmentsForClipId(currentlyPlayingClipId.value || lastPlayedClipId.value);
+  }
+
+  function getClipSubtitlePanelSegmentsForClipId(clipId: string | null): SubtitlePanelSegment[] {
+    const clip = getTimelineClipById(clipId);
+    if (!clip) return [];
+
+    const clipSegments = getClipTimelineSegments(clip);
+    if (clipSegments.length === 0) return [];
+
+    const panelSegments: SubtitlePanelSegment[] = [];
+    let cursor = 0;
+
+    clipSegments.forEach((segment: any, index: number) => {
+      const sourceStart = Number(segment.start_time) || 0;
+      const sourceEnd = Number(segment.end_time) || sourceStart;
+      const duration = Math.max(0, sourceEnd - sourceStart);
+      const start = workspaceVideoTimeIsSourceAbsolute.value ? sourceStart : cursor;
+      const end = workspaceVideoTimeIsSourceAbsolute.value ? sourceEnd : cursor + duration;
+      cursor += duration;
+
+      const text = getTranscriptText(segment.transcript);
+      const sourceSegmentIndex =
+        typeof segment.segment_index === 'number' ? segment.segment_index : index;
+      const timedWords = overlayTranscriptTextOnTimedWords(
+        text,
+        getTimedWordsForClipSegment(segment, sourceStart, sourceEnd, start, end),
+        start,
+        end
+      );
+      panelSegments.push(...splitTimedWordsForPanel(timedWords, sourceSegmentIndex, segment.id));
+    });
+
+    return panelSegments;
+  }
+
   const videoPlayerTranscriptWords = computed((): WordInfo[] => {
+    const clipSubtitleWords = getActiveClipSubtitleSegments().flatMap((segment) => segment.words ?? []);
+    if (clipSubtitleWords.length > 0) return clipSubtitleWords;
+
     const words = transcriptData.value?.words || [];
-    if (workspaceVideoTimeIsSourceAbsolute.value) return words;
     const clipId = currentlyPlayingClipId.value || lastPlayedClipId.value;
     const clip = getTimelineClipById(clipId);
     if (!clip) return words;
@@ -1052,18 +1335,26 @@
     if (!win) return words;
     const { start: c0, end: c1 } = win;
     const span = c1 - c0;
-    return words
+
+    if (workspaceVideoTimeIsSourceAbsolute.value) {
+      return words.filter((w) => w.end > c0 && w.start < c1);
+    }
+
+    const relativeWords = words
       .filter((w) => w.end > c0 && w.start < c1)
       .map((w) => ({
         ...w,
         start: Math.max(0, w.start - c0),
         end: Math.min(span, w.end - c0),
       }));
+    return relativeWords;
   });
 
   const videoPlayerTranscriptSegments = computed((): WhisperSegment[] => {
+    const clipSubtitleSegments = getActiveClipSubtitleSegments();
+    if (clipSubtitleSegments.length > 0) return clipSubtitleSegments;
+
     const segs = transcriptData.value?.whisperSegments || [];
-    if (workspaceVideoTimeIsSourceAbsolute.value) return segs;
     const clipId = currentlyPlayingClipId.value || lastPlayedClipId.value;
     const clip = getTimelineClipById(clipId);
     if (!clip) return segs;
@@ -1071,6 +1362,11 @@
     if (!win) return segs;
     const { start: c0, end: c1 } = win;
     const span = c1 - c0;
+
+    if (workspaceVideoTimeIsSourceAbsolute.value) {
+      return segs;
+    }
+
     const out: WhisperSegment[] = [];
     for (const seg of segs) {
       if (seg.end <= c0 || seg.start >= c1) continue;
@@ -1116,12 +1412,17 @@
 
   // Segments scoped to the selected/playing clip for the subtitle properties panel
   const subtitleSegmentsForPanel = computed(() => {
-    const clipId = selectedClipId.value || currentlyPlayingClipId.value;
-    const clip = timelineClips.value.find((c: any) => c.id === clipId);
+    const clipId = selectedClipId.value || currentlyPlayingClipId.value || lastPlayedClipId.value;
+    const clipScopedSegments = getClipSubtitlePanelSegmentsForClipId(clipId);
+    if (clipScopedSegments.length > 0) {
+      return clipScopedSegments;
+    }
+
+    const clip = getTimelineClipById(clipId);
     if (!clip) return [];
     
     // Get the clip's time range from its segments
-    const clipSegments = clip.current_version_segments || clip.segments || [];
+    const clipSegments = getClipTimelineSegments(clip);
     if (clipSegments.length === 0) return [];
     
     const clipStartTime = clipSegments[0].start_time;
@@ -1130,13 +1431,12 @@
     // Filter the project's transcript segments to only those within this clip's time range
     const allSegments = transcriptSegments.value || [];
     const filteredSegments = allSegments.filter((seg: any) => {
-      return seg.start >= clipStartTime && seg.end <= clipEndTime;
+      return seg.end > clipStartTime && seg.start < clipEndTime;
     });
     
-    // Adjust segment times to be relative to clip start (0-based)
     return filteredSegments.map((seg: any) => ({
-      start: seg.start - clipStartTime,
-      end: seg.end - clipStartTime,
+      start: workspaceVideoTimeIsSourceAbsolute.value ? seg.start : Math.max(0, seg.start - clipStartTime),
+      end: workspaceVideoTimeIsSourceAbsolute.value ? seg.end : Math.max(0, seg.end - clipStartTime),
       text: seg.text,
     }));
   });
@@ -1666,40 +1966,50 @@
   async function onSaveSubtitles(clipIds: string[], presetId: string, applyToAll: boolean) {
     try {
       const defaults = subtitleEditorDefaultSettings.value;
-
-      if (defaults && clipIds.length > 0) {
-        const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } = await import(
-          '@/services/database/clips'
-        );
-        const merged: SubtitleSettings = {
-          ...JSON.parse(JSON.stringify(defaults)),
-          enabled: true,
-          selectedPresetId: presetId || defaults.selectedPresetId || null,
-        };
-        for (const id of clipIds) {
-          await updateClipFullSubtitleSettings(id, merged);
-          await updateClipSubtitlePosition(
-            id,
-            50,
-            merged.positionPercentage ?? 85,
-            merged.maxWidth ?? undefined
-          );
-        }
-      } else {
-        const { updateMultipleClipsSubtitleSettings } = await import('@/services/database/clips');
-        await updateMultipleClipsSubtitleSettings(clipIds, true, presetId);
+      const merged = buildSubtitleSettingsFromPreset(presetId, undefined, defaults ?? undefined);
+      if (!merged) {
+        const { error: showError } = useToast();
+        showError('Save Failed', 'Could not find the selected subtitle style.');
+        return;
       }
+
+      const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } = await import(
+        '@/services/database/clips'
+      );
+
+      for (const id of clipIds) {
+        await updateClipFullSubtitleSettings(id, merged);
+        await updateClipSubtitlePosition(
+          id,
+          50,
+          merged.positionPercentage ?? 85,
+          merged.maxWidth ?? undefined
+        );
+
+        const clip = getTimelineClipById(id);
+        if (clip) {
+          clip.subtitle_enabled = true;
+          clip.subtitle_preset_id = merged.selectedPresetId;
+          clip.subtitle_settings = JSON.stringify(merged);
+          clip.subtitle_position_x = 50;
+          clip.subtitle_position_y = merged.positionPercentage ?? 85;
+          clip.subtitle_position_width = merged.maxWidth ?? null;
+        }
+      }
+
+      activeSubtitleSettings.value = merged;
 
       const { success: showSuccess } = useToast();
       const clipCount = clipIds.length;
       showSuccess(
         'Subtitles Configured',
-        defaults
-          ? `Subtitle styling from your creator defaults applied to ${clipCount} clip${clipCount !== 1 ? 's' : ''}.`
-          : `Subtitles with ${presetId} style applied to ${clipCount} clip${clipCount !== 1 ? 's' : ''}.`
+        `Subtitles with ${presetId} style applied to ${clipCount} clip${clipCount !== 1 ? 's' : ''}.`
       );
 
-      await onRefreshClipsData();
+      if (props.project?.id) {
+        await loadTimelineClips(props.project.id);
+      }
+      onRefreshClipsData();
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to save subtitles:', error);
       const { error: showError } = useToast();
@@ -2220,10 +2530,14 @@
         ) {
           // Use the proper segments from database
           segments = clip.current_version_segments.map((segment: any) => ({
+            id: segment.id,
+            clip_version_id: segment.clip_version_id,
+            segment_index: segment.segment_index,
             start_time: segment.start_time,
             end_time: segment.end_time,
             duration: segment.duration || segment.end_time - segment.start_time,
             transcript: segment.transcript || version.description || 'No transcript available',
+            transcript_raw_json: segment.transcript_raw_json ?? null,
           }));
         } else {
           // Fallback: create single segment from version timing
@@ -2651,15 +2965,104 @@
     }
   }
 
-  // Handle transcript text edit from properties panel (in-memory only for now)
-  function onSubtitleSegmentTextUpdate(_index: number, _text: string) {
-    // Transcript edits are reflected reactively via subtitleSegmentsForPanel
-    // Full persistence would require a separate transcript edit API
+  // Handle transcript text edit from properties panel
+  async function onSubtitleSegmentTextUpdate(index: number, text: string) {
+    const clipId = selectedClipId.value || currentlyPlayingClipId.value || lastPlayedClipId.value;
+    const clip = getTimelineClipById(clipId);
+    const editedPanelSegment = subtitleSegmentsForPanel.value[index] as SubtitlePanelSegment | undefined;
+    if (!clipId || !clip || !editedPanelSegment || editedPanelSegment.sourceSegmentIndex === undefined) {
+      return;
+    }
+
+    const clipSegments = getClipTimelineSegments(clip);
+    const sourceSegment = clipSegments.find((segment: any, segmentIndex: number) => {
+      const sourceIndex =
+        typeof segment.segment_index === 'number' ? segment.segment_index : segmentIndex;
+      return sourceIndex === editedPanelSegment.sourceSegmentIndex;
+    });
+    if (!sourceSegment) return;
+
+    const rebuiltTranscript = (subtitleSegmentsForPanel.value as SubtitlePanelSegment[])
+      .filter((segment) => segment.sourceSegmentIndex === editedPanelSegment.sourceSegmentIndex)
+      .map((segment) => (segment === editedPanelSegment ? text : segment.text).trim())
+      .filter(Boolean)
+      .join(' ');
+
+    sourceSegment.transcript = rebuiltTranscript;
+
+    if (Array.isArray(clip.segments)) {
+      const timelineSegment = clip.segments.find((segment: any, segmentIndex: number) => {
+        const sourceIndex =
+          typeof segment.segment_index === 'number' ? segment.segment_index : segmentIndex;
+        return sourceIndex === editedPanelSegment.sourceSegmentIndex;
+      });
+      if (timelineSegment) {
+        timelineSegment.transcript = rebuiltTranscript;
+      }
+    }
+
+    clip.combined_transcript = clipSegments
+      .map((segment: any) => getTranscriptText(segment.transcript))
+      .filter(Boolean)
+      .join(' ');
+
+    try {
+      const { updateClipSegmentTranscript } = await import('@/services/database/clip-segments');
+      await updateClipSegmentTranscript(clipId, editedPanelSegment.sourceSegmentIndex, rebuiltTranscript);
+    } catch (error) {
+      console.error('[ProjectWorkspaceDialog] Failed to save subtitle transcript edit:', error);
+      const { error: showError } = useToast();
+      showError('Transcript Save Failed', 'Failed to save the subtitle transcript edit.');
+    }
+  }
+
+  async function onSubtitleDelete() {
+    const clipId = selectedClipId.value || currentlyPlayingClipId.value || lastPlayedClipId.value;
+    if (!clipId) return;
+
+    const clip = getTimelineClipById(clipId);
+    if (clip) {
+      clip.subtitle_enabled = false;
+      clip.subtitle_preset_id = null;
+      if (activeSubtitleSettings.value) {
+        clip.subtitle_settings = JSON.stringify({
+          ...activeSubtitleSettings.value,
+          enabled: false,
+          selectedPresetId: null,
+        });
+      }
+    }
+
+    try {
+      if (activeSubtitleSettings.value) {
+        const { updateClipFullSubtitleSettings } = await import('@/services/database/clips');
+        await updateClipFullSubtitleSettings(clipId, {
+          ...activeSubtitleSettings.value,
+          enabled: false,
+          selectedPresetId: null,
+        });
+      } else {
+        await updateClipSubtitleSettings(clipId, false, null);
+      }
+
+      activeSubtitleSettings.value = undefined;
+      rightPanelTab.value = 'clips';
+      await onRefreshClipsData();
+
+      const { success: showSuccess } = useToast();
+      showSuccess('Subtitles Removed', 'Subtitles were removed from this clip.');
+    } catch (error) {
+      console.error('[ProjectWorkspaceDialog] Failed to remove subtitles from clip:', error);
+      const { error: showError } = useToast();
+      showError('Remove Failed', 'Failed to remove subtitles from this clip.');
+    }
   }
 
   // Handle subtitle position change (when user drags/resizes subtitles)
   async function onSubtitlePositionChange(position: { x: number; y: number }, width: number) {
     if (!currentlyPlayingClipId.value) return;
+
+    const ratio = previewAspectRatio.value;
 
     // Update the in-memory clip so the computed activeSubtitlePosition reflects immediately
     const clip = timelineClips.value.find((c: any) => c.id === currentlyPlayingClipId.value);
@@ -2671,8 +3074,23 @@
 
     // CRITICAL: Also update activeSubtitleSettings to keep them in sync
     if (activeSubtitleSettings.value) {
-      activeSubtitleSettings.value.positionPercentage = position.y;
-      activeSubtitleSettings.value.maxWidth = width;
+      const currentSettings = activeSubtitleSettings.value as SubtitleSettings;
+      const currentRatioConfig = currentSettings.perRatioConfigs?.[ratio] ?? { fontSize: currentSettings.fontSize };
+      activeSubtitleSettings.value = {
+        ...currentSettings,
+        positionPercentage: position.y,
+        maxWidth: width,
+        perRatioConfigs: {
+          ...(currentSettings.perRatioConfigs ?? {}),
+          [ratio]: {
+            ...currentRatioConfig,
+            fontSize: currentRatioConfig.fontSize ?? currentSettings.fontSize,
+            position: { x: position.x, y: position.y },
+            positionPercentage: position.y,
+            maxWidth: width,
+          },
+        },
+      };
     }
 
     try {
@@ -3091,12 +3509,15 @@
     }
   }
 
-  // Helper function to load subtitle settings from preset (fallback when no full settings saved)
-  function loadSubtitleSettingsFromPreset(clip: any) {
-    const preset = CAPTION_PRESETS.find(p => p.id === clip.subtitle_preset_id);
-    if (!preset) return;
+  function buildSubtitleSettingsFromPreset(
+    presetId: string,
+    clip?: { subtitle_position_y?: number | null; subtitle_position_width?: number | null },
+    layoutBase?: SubtitleSettings
+  ): SubtitleSettings | null {
+    const preset = CAPTION_PRESETS.find(p => p.id === presetId);
+    if (!preset) return null;
     
-    const animationStyleMap: Record<string, 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave'> = {
+    const animationStyleMap: Record<string, SubtitleSettings['animationStyle']> = {
       'none': 'none',
       'karaoke': 'karaoke',
       'karaoke-scale': 'karaoke',
@@ -3122,8 +3543,10 @@
       '900': 900,
     };
     const fontWeight = fontWeightMap[preset.fontWeight || '700'] || 700;
+    const base = layoutBase ? JSON.parse(JSON.stringify(layoutBase)) as Partial<SubtitleSettings> : {};
     
-    activeSubtitleSettings.value = {
+    return {
+      ...base,
       enabled: true,
       selectedPresetId: preset.id,
       fontFamily: preset.fontFamily || 'Montserrat',
@@ -3132,32 +3555,40 @@
       textColor: preset.color || '#FFFFFF',
       backgroundColor: preset.backgroundColor || 'transparent',
       backgroundEnabled: preset.backgroundColor !== 'transparent',
-      position: 'bottom' as const,
-      positionPercentage: clip.subtitle_position_y ?? 85, // Use saved position
-      maxWidth: clip.subtitle_position_width ?? 90, // Use saved width
+      position: base.position ?? 'bottom',
+      positionPercentage: clip?.subtitle_position_y ?? base.positionPercentage ?? 85,
+      maxWidth: clip?.subtitle_position_width ?? base.maxWidth ?? 90,
       animationStyle: animationStyleMap[preset.highlightStyle || 'none'] || 'none',
       highlightColor: preset.highlightColor || '#0ea5e9',
-      multiColorEnabled: false,
-      multiColorMode: 'default',
-      colorPalette: [],
+      multiColorEnabled: base.multiColorEnabled ?? false,
+      multiColorMode: base.multiColorMode ?? 'default',
+      colorPalette: base.colorPalette ?? [],
       border1Width: preset.stroke?.width || 0,
       border1Color: preset.stroke?.color || '#000000',
-      border2Width: 0,
-      border2Color: '#000000',
+      border2Width: base.border2Width ?? 0,
+      border2Color: base.border2Color ?? '#000000',
       shadowBlur: preset.shadow?.blur ?? 0,
       shadowOffsetX: preset.shadow?.offsetX ?? 0,
       shadowOffsetY: preset.shadow?.offsetY ?? 0,
       shadowColor: preset.shadow?.color || '#000000',
       lineHeight: preset.lineHeight || 1.2,
       letterSpacing: preset.letterSpacing || 0,
-      textAlign: 'center' as const,
-      textOffsetX: 0,
-      textOffsetY: 0,
-      padding: 0,
-      borderRadius: 0,
-      wordSpacing: 0.35,
+      textAlign: base.textAlign ?? 'center',
+      textOffsetX: base.textOffsetX ?? 0,
+      textOffsetY: base.textOffsetY ?? 0,
+      padding: base.padding ?? 0,
+      borderRadius: base.borderRadius ?? 0,
+      wordSpacing: base.wordSpacing ?? 0.35,
     };
-    console.log('[ProjectWorkspaceDialog] Loaded subtitle settings from preset:', preset.id, 'with saved position:', clip.subtitle_position_y);
+  }
+
+  // Helper function to load subtitle settings from preset (fallback when no full settings saved)
+  function loadSubtitleSettingsFromPreset(clip: any) {
+    const settings = buildSubtitleSettingsFromPreset(clip.subtitle_preset_id, clip);
+    if (!settings) return;
+
+    activeSubtitleSettings.value = settings;
+    console.log('[ProjectWorkspaceDialog] Loaded subtitle settings from preset:', clip.subtitle_preset_id, 'with saved position:', clip.subtitle_position_y);
   }
 
   // Function to handle clip playback

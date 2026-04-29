@@ -387,15 +387,30 @@ pub fn generate_ass_file(
     );
 
     // Calculate margins and positioning to match VideoPlayer.vue
-    // Vue uses a container with width=maxWidth% centered on screen
-    // And positions it using top=positionPercentage% and translate(-50%, -50%)
+    // Vue uses a container with maxWidth% and positions it by center point using
+    // left/top percentages plus translate(-50%, -50%).
 
     // Extract per-ratio override values if available
     let (override_x, override_y, override_max_width) = if let Some(r#override) = per_ratio_override {
-        // Parse the override JSON
-        let x = r#override.get("x").and_then(|v| v.as_f64()).unwrap_or(50.0);
-        let y = r#override.get("y").and_then(|v| v.as_f64()).unwrap_or(85.0);
-        let max_width = r#override.get("width").and_then(|v| v.as_f64()).unwrap_or(settings.max_width as f64);
+        // New override shape stores `{ position: { x, y }, maxWidth }`; keep legacy
+        // x/y/width reads so older payloads and manual build-dialog overrides still work.
+        let position = r#override.get("position");
+        let x = position
+            .and_then(|p| p.get("x"))
+            .and_then(|v| v.as_f64())
+            .or_else(|| r#override.get("x").and_then(|v| v.as_f64()))
+            .unwrap_or(50.0);
+        let y = position
+            .and_then(|p| p.get("y"))
+            .and_then(|v| v.as_f64())
+            .or_else(|| r#override.get("y").and_then(|v| v.as_f64()))
+            .or_else(|| r#override.get("positionPercentage").and_then(|v| v.as_f64()))
+            .unwrap_or(85.0);
+        let max_width = r#override
+            .get("maxWidth")
+            .and_then(|v| v.as_f64())
+            .or_else(|| r#override.get("width").and_then(|v| v.as_f64()))
+            .unwrap_or(settings.max_width as f64);
         (x, y, max_width)
     } else {
         // Use default values from settings

@@ -21,34 +21,6 @@
 
             <!-- Content -->
             <div class="subtitle-editor-dialog__content">
-              <!-- Apply to All Clips Toggle -->
-              <div class="subtitle-editor-dialog__field">
-                <div class="subtitle-editor-dialog__toggle-box">
-                  <div class="flex items-center justify-between">
-                    <div class="flex-1 min-w-0 pr-3">
-                      <div class="flex items-center gap-2">
-                        <span class="text-sm font-medium">Apply to All Clips</span>
-                      </div>
-                      <p class="text-xs mt-1 opacity-70">
-                        Enable subtitles for all clips in this project
-                      </p>
-                    </div>
-                    <button
-                      @click="applyToAll = !applyToAll"
-                      class="subtitle-editor-dialog__toggle"
-                      :class="{ 'subtitle-editor-dialog__toggle--active': applyToAll }"
-                      role="switch"
-                      :aria-checked="applyToAll"
-                    >
-                      <span
-                        class="subtitle-editor-dialog__toggle-thumb"
-                        :class="{ 'subtitle-editor-dialog__toggle-thumb--active': applyToAll }"
-                      />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
               <!-- Subtitle Preset Selection -->
               <div class="subtitle-editor-dialog__field">
                 <label class="subtitle-editor-dialog__label">Select Subtitle Style</label>
@@ -164,37 +136,10 @@
                     </div>
                     <div class="subtitle-editor-dialog__preset-sample" style="background: linear-gradient(135deg, #1a1a1c 0%, #2a2a2c 100%);">
                       <span style="color: #FFFFFF; font-family: 'Montserrat', sans-serif; font-size: 14px; font-weight: bold;">
-                        <span style="color: #FACC15;">WORD</span> BY <span style="color: #FACC15;">WORD</span>
+                        <span style="color: #0ea5e9;">WORD</span> BY <span style="color: #0ea5e9;">WORD</span>
                       </span>
                     </div>
                     <p class="text-[10px] text-muted-foreground mt-1">Word-by-word highlight</p>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Clips List (when not applying to all) -->
-              <div v-if="!applyToAll && clips.length > 0" class="subtitle-editor-dialog__field">
-                <label class="subtitle-editor-dialog__label">Select Clips</label>
-                <div class="subtitle-editor-dialog__clips-list">
-                  <button
-                    v-for="clip in clips"
-                    :key="clip.id"
-                    @click="toggleClipSelection(clip.id)"
-                    class="subtitle-editor-dialog__clip-item"
-                    :class="{ 'subtitle-editor-dialog__clip-item--selected': selectedClipIds.has(clip.id) }"
-                  >
-                    <div class="flex-1 min-w-0">
-                      <div class="font-medium truncate text-sm">{{ clip.title }}</div>
-                      <div class="text-xs opacity-60">{{ formatDuration(clip.total_duration) }}</div>
-                    </div>
-                    <div
-                      v-if="selectedClipIds.has(clip.id)"
-                      class="subtitle-editor-dialog__checkmark"
-                    >
-                      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
                   </button>
                 </div>
               </div>
@@ -203,9 +148,9 @@
               <div class="subtitle-editor-dialog__alert subtitle-editor-dialog__alert--info">
                 <Info :size="16" />
                 <div class="flex-1">
-                  <p class="font-medium text-xs sm:text-sm mb-0.5 sm:mb-1">Subtitle Position</p>
+                  <p class="font-medium text-xs sm:text-sm mb-0.5 sm:mb-1">Applies to All Clips</p>
                   <p class="text-[10px] sm:text-xs opacity-80">
-                    Subtitles will be positioned at bottom-center. You can adjust positioning per aspect ratio in the POI editor during clip building.
+                    This style will enable subtitles for every detected or manually added clip. Remove subtitles from a single clip from its subtitle properties panel.
                   </p>
                 </div>
               </div>
@@ -228,7 +173,7 @@
               </button>
               <button
                 @click="save"
-                :disabled="!selectedPreset || isSaving || (!applyToAll && selectedClipIds.size === 0)"
+                :disabled="!selectedPreset || isSaving || clips.length === 0"
                 class="subtitle-editor-dialog__btn subtitle-editor-dialog__btn--primary"
               >
                 <Loader2 v-if="isSaving" :size="16" class="subtitle-editor-dialog__spinner" />
@@ -266,27 +211,9 @@
     save: [clipIds: string[], presetId: string, applyToAll: boolean];
   }>();
 
-  const applyToAll = ref(false);
   const selectedPreset = ref<string>('');
-  const selectedClipIds = ref<Set<string>>(new Set());
   const isSaving = ref(false);
   const error = ref<string>('');
-
-  function toggleClipSelection(clipId: string) {
-    if (selectedClipIds.value.has(clipId)) {
-      selectedClipIds.value.delete(clipId);
-    } else {
-      selectedClipIds.value.add(clipId);
-    }
-    // Trigger reactivity
-    selectedClipIds.value = new Set(selectedClipIds.value);
-  }
-
-  function formatDuration(seconds: number): string {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  }
 
   function close() {
     if (!isSaving.value) {
@@ -300,8 +227,8 @@
       return;
     }
 
-    if (!applyToAll.value && selectedClipIds.value.size === 0) {
-      error.value = 'Please select at least one clip';
+    if (props.clips.length === 0) {
+      error.value = 'No clips available for subtitles';
       return;
     }
 
@@ -309,11 +236,7 @@
     error.value = '';
 
     try {
-      const clipIds = applyToAll.value 
-        ? props.clips.map(c => c.id)
-        : Array.from(selectedClipIds.value);
-
-      emit('save', clipIds, selectedPreset.value, applyToAll.value);
+      emit('save', props.clips.map(c => c.id), selectedPreset.value, true);
       emit('update:modelValue', false);
     } catch (err) {
       console.error('Failed to save subtitle settings:', err);
@@ -328,8 +251,6 @@
     () => props.modelValue,
     (isOpen) => {
       if (isOpen) {
-        applyToAll.value = false;
-        selectedClipIds.value = new Set();
         error.value = '';
         isSaving.value = false;
 

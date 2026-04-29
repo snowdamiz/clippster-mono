@@ -56,6 +56,8 @@ pub struct SubtitleOverride {
     pub font_size: f32,
     pub position_percentage: f32,
     #[serde(default)]
+    pub position: Option<SubtitleOverridePosition>,
+    #[serde(default)]
     pub max_width: Option<f32>,
     #[serde(default)]
     pub preset_id: Option<String>,
@@ -95,6 +97,13 @@ pub struct SubtitleOverride {
     pub background_color: Option<String>,
     #[serde(default)]
     pub background_enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubtitleOverridePosition {
+    pub x: f32,
+    pub y: f32,
 }
 
 // Map of aspect ratio string to subtitle override

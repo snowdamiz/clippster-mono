@@ -573,20 +573,19 @@ export function useChunkedClipDetection() {
       // We need to stitch the chunked transcripts together and save it as the project transcript
       // so the TranscriptPanel can display it.
 
-      const { createTranscript, createTranscriptSegment, getTranscriptByProjectId } = await import(
+      const { createTranscript, createTranscriptSegment, getTranscriptByRawVideoId } = await import(
         '@/services/database'
       );
-      const existingTranscript = await getTranscriptByProjectId(projectId);
+      try {
+        // Fetch all chunks from the database
+        const { getTranscriptChunks, getChunkedTranscriptByRawVideoId } = await import(
+          '@/services/database'
+        );
+        const rawVideos = await getRawVideosByProjectId(projectId);
 
-      if (!existingTranscript) {
-        try {
-          // Fetch all chunks from the database
-          const { getTranscriptChunks, getChunkedTranscriptByRawVideoId } = await import(
-            '@/services/database'
-          );
-          const rawVideos = await getRawVideosByProjectId(projectId);
-
-          if (rawVideos.length > 0) {
+        if (rawVideos.length > 0) {
+          const existingTranscript = await getTranscriptByRawVideoId(rawVideos[0].id);
+          if (!existingTranscript) {
             const chunkedTranscript = await getChunkedTranscriptByRawVideoId(rawVideos[0].id);
 
             if (chunkedTranscript) {
@@ -669,9 +668,9 @@ export function useChunkedClipDetection() {
               }, 500);
             }
           }
-        } catch (err) {
-          console.error('[ChunkedDetection] Failed to create full transcript from chunks:', err);
         }
+      } catch (err) {
+        console.error('[ChunkedDetection] Failed to create full transcript from chunks:', err);
       }
 
       showSuccess(

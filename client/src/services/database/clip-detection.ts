@@ -601,6 +601,7 @@ export async function persistClipDetectionResults(
         console.warn('[Database] No raw video found for project, cannot store transcript');
       } else {
         const rawVideo = rawVideos[0]; // Use the first raw video found
+        let shouldStoreTranscriptSegments = false;
 
         // Check if transcript already exists for this raw video
         const existingTranscript = await getTranscriptByRawVideoId(rawVideo.id);
@@ -629,22 +630,41 @@ export async function persistClipDetectionResults(
               ) ||
               null;
 
-            const db = await getDatabase();
-            await db.execute(
-              'UPDATE transcripts SET raw_json = ?, text = ?, language = ?, duration = ? WHERE id = ?',
-              [
-                JSON.stringify(detectionResults.transcript),
-                transcriptText,
-                language,
-                duration,
-                transcriptId,
-              ]
-            );
+            const existingDuration = Number(existingTranscript.duration) || 0;
+            const incomingDuration = Number(duration) || 0;
+            const existingTextLength = existingTranscript.text?.length || 0;
+            const incomingTextLength = transcriptText.length;
+            const incomingLooksPartial =
+              (existingDuration > 0 && incomingDuration > 0 && incomingDuration < existingDuration * 0.8) ||
+              (existingTextLength > 0 && incomingTextLength > 0 && incomingTextLength < existingTextLength * 0.8);
 
-            // Delete existing segments to refresh them
-            await db.execute('DELETE FROM transcript_segments WHERE transcript_id = ?', [
-              transcriptId,
-            ]);
+            if (incomingLooksPartial) {
+              console.warn('[Database] Skipping transcript overwrite because incoming transcript is shorter than the existing VOD transcript', {
+                transcriptId,
+                existingDuration,
+                incomingDuration,
+                existingTextLength,
+                incomingTextLength,
+              });
+            } else {
+              const db = await getDatabase();
+              await db.execute(
+                'UPDATE transcripts SET raw_json = ?, text = ?, language = ?, duration = ? WHERE id = ?',
+                [
+                  JSON.stringify(detectionResults.transcript),
+                  transcriptText,
+                  language,
+                  duration,
+                  transcriptId,
+                ]
+              );
+
+              // Delete existing segments to refresh them
+              await db.execute('DELETE FROM transcript_segments WHERE transcript_id = ?', [
+                transcriptId,
+              ]);
+              shouldStoreTranscriptSegments = true;
+            }
           } else {
             console.log('[Database] Used cached transcript, no database update needed');
           }
@@ -672,13 +692,12 @@ export async function persistClipDetectionResults(
             language,
             duration
           );
+          shouldStoreTranscriptSegments = true;
         }
 
         // Store transcript segments if available (only for fresh transcriptions)
-        const usedCachedTranscript = (detectionResults as any).processing_info
-          ?.used_cached_transcript;
         if (
-          !usedCachedTranscript &&
+          shouldStoreTranscriptSegments &&
           detectionResults.transcript.segments &&
           Array.isArray(detectionResults.transcript.segments)
         ) {
@@ -692,7 +711,7 @@ export async function persistClipDetectionResults(
               i
             );
           }
-        } else if (usedCachedTranscript) {
+        } else if ((detectionResults as any).processing_info?.used_cached_transcript) {
           console.log('[Database] Using cached transcript segments, no segment storage needed');
         }
 

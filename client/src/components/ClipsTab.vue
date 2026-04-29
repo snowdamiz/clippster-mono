@@ -679,6 +679,7 @@
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
   import { formatDateTime } from '@/utils/dateTimeUtils';
   import { utf8ToBase64Url } from '@/utils/encoding';
+  import { parseTranscriptToWords, type WordInfo } from '@/utils/timelineUtils';
   import type { ClipWithVersion, ClipBuild, Prompt } from '@/services/database';
   import {
     PlayIcon,
@@ -724,6 +725,55 @@
     if (typeof value === 'string') return value.toLowerCase() === 'true';
     if (typeof value === 'number') return value !== 0;
     return Boolean(value);
+  }
+
+  function clipSubtitlePositionLooksUserPlaced(clip: {
+    subtitle_position_x?: number | null;
+    subtitle_position_y?: number | null;
+  }): boolean {
+    const x = clip.subtitle_position_x;
+    const y = clip.subtitle_position_y;
+    if (x == null && y == null) return false;
+    return !(x != null && y != null && Math.abs(x - 50) < 0.5 && Math.abs(y - 85) < 0.5);
+  }
+
+  function mergeDraggedSubtitlePositionForBuild(
+    subtitleSettings: SubtitleSettings,
+    clip: {
+      subtitle_position_x?: number | null;
+      subtitle_position_y?: number | null;
+      subtitle_position_width?: number | null;
+    },
+    aspectRatios: string[]
+  ): SubtitleSettings {
+    if (!clipSubtitlePositionLooksUserPlaced(clip) || clip.subtitle_position_x == null || clip.subtitle_position_y == null) {
+      return subtitleSettings;
+    }
+
+    const ratios =
+      aspectRatios.length > 0
+        ? aspectRatios
+        : Object.keys(subtitleSettings.perRatioConfigs ?? {});
+    const targetRatios = ratios.length > 0 ? ratios : ['16:9'];
+    const perRatioConfigs = { ...(subtitleSettings.perRatioConfigs ?? {}) };
+
+    for (const ratio of targetRatios) {
+      const existing = perRatioConfigs[ratio] ?? {};
+      perRatioConfigs[ratio] = {
+        ...existing,
+        fontSize: existing.fontSize ?? subtitleSettings.fontSize,
+        position: { x: clip.subtitle_position_x, y: clip.subtitle_position_y },
+        positionPercentage: clip.subtitle_position_y,
+        maxWidth: clip.subtitle_position_width ?? existing.maxWidth ?? subtitleSettings.maxWidth,
+      };
+    }
+
+    return {
+      ...subtitleSettings,
+      positionPercentage: clip.subtitle_position_y,
+      maxWidth: clip.subtitle_position_width ?? subtitleSettings.maxWidth,
+      perRatioConfigs,
+    };
   }
 
   // Helper function to convert server API response to Rust-expected format
@@ -860,6 +910,85 @@
       speakers: null,
       contentRegions: null,
     };
+  }
+
+  function tokenizeTranscriptText(text: string): string[] {
+    return text.trim().split(/\s+/).filter(Boolean);
+  }
+
+  function getTranscriptText(value: unknown): string {
+    if (typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed?.text === 'string') return parsed.text.trim();
+        if (Array.isArray(parsed?.segments)) {
+          return parsed.segments.map((seg: any) => seg?.text).filter(Boolean).join(' ').trim();
+        }
+      } catch {
+        // Plain transcript text can legitimately look JSON-ish.
+      }
+    }
+    return trimmed;
+  }
+
+  function overlayTranscriptTextOnTimedWords(text: string, timedWords: WordInfo[]): WordInfo[] {
+    const tokens = tokenizeTranscriptText(text);
+    if (tokens.length === 0 || timedWords.length === 0) return timedWords;
+    const overlaid = timedWords.slice(0, tokens.length).map((word, index) => ({
+      ...word,
+      word: tokens[index],
+    }));
+
+    if (tokens.length > timedWords.length) {
+      const lastWord = timedWords[timedWords.length - 1];
+      const step = Math.max(0.05, lastWord.end - lastWord.start);
+      tokens.slice(timedWords.length).forEach((word, index) => {
+        const start = lastWord.end + step * index;
+        overlaid.push({ word, start, end: start + step });
+      });
+    }
+
+    return overlaid;
+  }
+
+  function normalizeWordsForSourceSegment(words: WordInfo[], startTime: number, endTime: number): WordInfo[] {
+    if (words.length === 0) return [];
+    const duration = Math.max(0.001, endTime - startTime);
+    const firstStart = words[0]?.start ?? 0;
+    const lastEnd = words[words.length - 1]?.end ?? 0;
+    const looksRelative = firstStart < duration + 1 && lastEnd <= duration + 1;
+    const sourceWords = looksRelative
+      ? words.map((word) => ({ ...word, start: word.start + startTime, end: word.end + startTime }))
+      : words;
+    return sourceWords.filter((word) => word.end > startTime && word.start < endTime);
+  }
+
+  function buildEditedSubtitleWordsForExport(segments: any[], transcriptWords: WordInfo[]): WordInfo[] {
+    const out: WordInfo[] = [];
+    for (const segment of segments) {
+      const startTime = Number(segment.start_time) || 0;
+      const endTime = Number(segment.end_time) || startTime;
+      const transcriptText = getTranscriptText(segment.transcript);
+
+      let timedWords: WordInfo[] = [];
+      if (typeof segment.transcript_raw_json === 'string' && segment.transcript_raw_json.trim()) {
+        timedWords = normalizeWordsForSourceSegment(
+          parseTranscriptToWords(segment.transcript_raw_json),
+          startTime,
+          endTime
+        );
+      }
+      if (timedWords.length === 0) {
+        timedWords = normalizeWordsForSourceSegment(transcriptWords, startTime, endTime);
+      }
+
+      out.push(...overlayTranscriptTextOnTimedWords(transcriptText, timedWords));
+    }
+
+    return out.sort((a, b) => a.start - b.start);
   }
 
   // Props
@@ -2387,7 +2516,10 @@
       const { invoke } = await import('@tauri-apps/api/core');
 
       // Get transcript data from props (already computed in parent)
-      const transcriptWords = props.transcriptData?.words || [];
+      const transcriptWords = buildEditedSubtitleWordsForExport(
+        freshSegments,
+        props.transcriptData?.words || []
+      );
       const transcriptSegments = props.transcriptData?.whisperSegments || [];
 
       // Prepare watermark settings if enabled
@@ -2881,6 +3013,14 @@
       if (!effectiveSubtitleSettings) {
         effectiveSubtitleSettings = derivedSubtitleSettings.value ?? props.subtitleSettings ?? null;
         console.log('[ClipsTab] Using fallback subtitle settings (derived or prop)');
+      }
+
+      if (effectiveSubtitleSettings && freshClipData) {
+        effectiveSubtitleSettings = mergeDraggedSubtitlePositionForBuild(
+          effectiveSubtitleSettings,
+          freshClipData,
+          settings.aspectRatios
+        );
       }
 
       // Helper: build SubtitleSettings from a CAPTION_PRESETS id

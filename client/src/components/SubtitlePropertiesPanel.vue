@@ -18,6 +18,7 @@
           <div
             v-for="(seg, si) in editableSegments"
             :key="si"
+            :ref="(el) => setSegmentRef(el, si)"
             class="sp__seg"
             :class="{ 'sp__seg--active': isActiveSegment(seg) }"
           >
@@ -314,13 +315,21 @@
         </div>
       </div>
 
+      <!-- ── REMOVE FROM THIS CLIP ── -->
+      <div class="sp__section sp__section--danger">
+        <button class="sp__delete-btn" type="button" @click="$emit('delete')">
+          <Trash2 :size="15" />
+          Remove subtitles from this clip
+        </button>
+      </div>
+
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
-import { ChevronLeft, AlignLeft, AlignCenter, AlignRight } from 'lucide-vue-next';
+import { computed, nextTick, ref, watch } from 'vue';
+import { ChevronLeft, AlignLeft, AlignCenter, AlignRight, Trash2 } from 'lucide-vue-next';
 
 interface SubtitleSettings {
   enabled: boolean;
@@ -374,6 +383,7 @@ const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'updateSettings', settings: Partial<SubtitleSettings>): void;
   (e: 'updateSegmentText', segmentIndex: number, text: string): void;
+  (e: 'delete'): void;
 }>();
 
 const fonts = [
@@ -406,9 +416,32 @@ const animationStyles = [
 ];
 
 const editableSegments = ref<TranscriptSegment[]>([]);
+const segmentRefs = ref<HTMLElement[]>([]);
+const lastScrolledActiveIndex = ref(-1);
+
 watch(() => props.segments, (segs) => {
+  segmentRefs.value = [];
+  lastScrolledActiveIndex.value = -1;
   editableSegments.value = segs.map(s => ({ ...s }));
 }, { immediate: true });
+
+const activeSegmentIndex = computed(() => {
+  const t = props.currentTime ?? 0;
+  return editableSegments.value.findIndex((seg) => t >= seg.start && t < seg.end);
+});
+
+watch(activeSegmentIndex, async (index) => {
+  if (index < 0 || index === lastScrolledActiveIndex.value) return;
+  lastScrolledActiveIndex.value = index;
+  await nextTick();
+  segmentRefs.value[index]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+});
+
+function setSegmentRef(el: unknown, index: number) {
+  if (el instanceof HTMLElement) {
+    segmentRefs.value[index] = el;
+  }
+}
 
 const previewBg = computed(() => ({
   background: props.settings.backgroundEnabled ? props.settings.backgroundColor : '#1a1a1a',
@@ -693,6 +726,7 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
 }
 
 .sp--embedded .sp__color-grid {
+  grid-template-columns: 1fr;
   gap: 14px 14px;
 }
 
@@ -710,6 +744,8 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
 }
 
 .sp--embedded .sp__hex {
+  flex: 1;
+  min-width: 0;
   font-size: 0.6875rem;
   padding: 0.375rem 0.5rem;
 }
@@ -871,6 +907,10 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
 }
 
 .sp__section--last {
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+.sp__section--danger {
   border-bottom: none;
   padding-bottom: 2.5rem;
 }
@@ -901,6 +941,28 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
   letter-spacing: 0;
   color: var(--sidebar-text-muted);
   opacity: 0.6;
+}
+
+.sp__delete-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.625rem;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+  color: #f87171;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.sp__delete-btn:hover {
+  background: rgba(248, 113, 113, 0.14);
+  border-color: rgba(248, 113, 113, 0.55);
 }
 
 /* Utility */

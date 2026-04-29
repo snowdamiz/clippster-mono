@@ -86,6 +86,7 @@ export {
   getClipSegmentsByClipId,
   getClipSegmentsByVersionId,
   updateClipSegment,
+  updateClipSegmentTranscript,
   splitClipSegment,
   insertClipSegment,
   deleteClipSegment,
