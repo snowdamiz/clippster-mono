@@ -75,7 +75,8 @@
                       :segments="demoSubtitleSegments"
                       :current-time="0"
                       @updateSettings="onSubtitleSettingsPatch"
-                      @updateSegmentText="onDemoSegmentTextChange"
+                      @draft-segment-text="onDemoSegmentTextChange"
+                      @commit-segment-text="onDemoSegmentTextChange"
                       @close="doneSubtitleSettings"
                     />
                   </template>
@@ -314,7 +315,7 @@
   });
   const subtitlePositioningEnabled = ref(true);
 
-  /** Demo transcript for subtitle styling preview — synced from SubtitlePropertiesPanel via @updateSegmentText */
+  /** Demo transcript for subtitle styling preview — synced from SubtitlePropertiesPanel draft/commit */
   const demoSubtitleSegments = ref<Array<{ start: number; end: number; text: string }>>([
     { start: 0, end: 10, text: 'Subtitles preview' },
   ]);

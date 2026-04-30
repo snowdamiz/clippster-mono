@@ -188,3 +188,92 @@ async function updateClipSegmentsWithWordChange(
     console.error('[Database] Failed to update clip segments:', error);
   }
 }
+
+/**
+ * Update one Whisper segment cell by index into `raw_json.segments` (matches parsed `whisperSegments` order).
+ * Word rows: `wordIndex` into `segment.words`; empty `newText` removes that word.
+ * Whole-segment rows (no word timings): pass `wordIndex: null` to replace `segment.text`.
+ */
+export async function updateTranscriptWhisperCell(
+  projectId: string,
+  whisperSegmentIndex: number,
+  wordIndex: number | null,
+  newText: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const db = await getDatabase();
+    const transcript = await getTranscriptByProjectId(projectId);
+    if (!transcript?.raw_json) {
+      return { success: false, error: 'No transcript found for this project' };
+    }
+
+    let transcriptData: any;
+    try {
+      transcriptData = JSON.parse(transcript.raw_json);
+    } catch {
+      return { success: false, error: 'Failed to parse transcript data' };
+    }
+
+    if (!transcriptData.segments || !Array.isArray(transcriptData.segments)) {
+      return { success: false, error: 'Transcript has no segments array' };
+    }
+
+    const segment = transcriptData.segments[whisperSegmentIndex];
+    if (!segment) {
+      return { success: false, error: 'Invalid segment index' };
+    }
+
+    if (wordIndex !== null) {
+      if (!segment.words || !Array.isArray(segment.words)) {
+        return { success: false, error: 'Segment has no word-level timings' };
+      }
+      if (wordIndex < 0 || wordIndex >= segment.words.length) {
+        return { success: false, error: 'Invalid word index' };
+      }
+      if (newText.trim() === '') {
+        segment.words.splice(wordIndex, 1);
+      } else {
+        segment.words[wordIndex].word = newText.trim();
+      }
+      if (segment.words.length > 0) {
+        segment.text = segment.words
+          .map((w: any) => String(w.word ?? '').trim())
+          .filter(Boolean)
+          .join(' ');
+      } else {
+        segment.text = '';
+      }
+    } else {
+      segment.text = newText;
+    }
+
+    const hasSegmentWords =
+      Array.isArray(transcriptData.segments) &&
+      transcriptData.segments.some((s: any) => s.words && Array.isArray(s.words) && s.words.length > 0);
+    if (hasSegmentWords && transcriptData.words) {
+      delete transcriptData.words;
+    }
+
+    let fullText = '';
+    if (transcriptData.words && Array.isArray(transcriptData.words) && transcriptData.words.length > 0) {
+      fullText = transcriptData.words.map((w: any) => String(w.word ?? '').trim()).filter(Boolean).join(' ');
+    } else if (transcriptData.segments && Array.isArray(transcriptData.segments)) {
+      fullText = transcriptData.segments
+        .map((s: any) => (s.text || '').trim())
+        .filter(Boolean)
+        .join(' ');
+    }
+
+    await db.execute('UPDATE transcripts SET raw_json = ?, text = ?, updated_at = ? WHERE id = ?', [
+      JSON.stringify(transcriptData),
+      fullText,
+      timestamp(),
+      transcript.id,
+    ]);
+
+    return { success: true };
+  } catch (error) {
+    console.error('[Database] Failed to update transcript whisper cell:', error);
+    return { success: false, error: 'Database update failed' };
+  }
+}

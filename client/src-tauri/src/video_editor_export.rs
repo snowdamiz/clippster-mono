@@ -1,7 +1,21 @@
-use tauri_plugin_shell::ShellExt;
+use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
+use once_cell::sync::Lazy;
 use serde::Deserialize;
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    time::Duration,
+};
 use tauri::Runtime;
+
+const FFMPEG_EXPORT_CANCELLED: &str = "Export cancelled by user";
+
+static ACTIVE_VIDEO_EDITOR_EXPORTS: Lazy<Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 #[derive(Debug, Deserialize)]
 
@@ -364,9 +378,83 @@ pub struct ExportConfig {
     pub outro_path: Option<String>,
 
     pub outro_duration: Option<f64>,
+
+    pub export_id: Option<String>,
 }
 
 /// Full video editor export with audio tracks, text overlays, and effects
+
+fn register_video_editor_export(export_id: &str) -> Arc<AtomicBool> {
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let mut exports = ACTIVE_VIDEO_EDITOR_EXPORTS.lock().unwrap();
+    exports.insert(export_id.to_string(), Arc::clone(&cancel_flag));
+    cancel_flag
+}
+
+fn unregister_video_editor_export(export_id: &str) {
+    let mut exports = ACTIVE_VIDEO_EDITOR_EXPORTS.lock().unwrap();
+    exports.remove(export_id);
+}
+
+#[tauri::command]
+pub fn cancel_video_editor_export(export_id: String) -> Result<bool, String> {
+    let exports = ACTIVE_VIDEO_EDITOR_EXPORTS.lock().unwrap();
+    if let Some(cancel_flag) = exports.get(&export_id) {
+        cancel_flag.store(true, Ordering::SeqCst);
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+async fn run_ffmpeg_for_video_editor_export<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    args: &[String],
+    cancel_flag: Option<Arc<AtomicBool>>,
+) -> Result<Vec<u8>, String> {
+    let shell = app.shell();
+    let (mut rx, child) = shell
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(args)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn FFmpeg: {}", e))?;
+
+    let mut stderr_buf = Vec::new();
+
+    loop {
+        if cancel_flag
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::SeqCst))
+        {
+            let _ = child.kill();
+            return Err(FFMPEG_EXPORT_CANCELLED.to_string());
+        }
+
+        tokio::select! {
+            event = rx.recv() => {
+                match event {
+                    Some(CommandEvent::Stderr(data)) => stderr_buf.extend_from_slice(&data),
+                    Some(CommandEvent::Terminated(payload)) => {
+                        if payload.code == Some(0) {
+                            return Ok(stderr_buf);
+                        }
+
+                        let stderr = String::from_utf8_lossy(&stderr_buf);
+                        return Err(format!("FFmpeg export failed: {}", stderr));
+                    }
+                    Some(CommandEvent::Error(err)) => {
+                        let _ = child.kill();
+                        return Err(format!("FFmpeg process error: {}", err));
+                    }
+                    Some(_) => {}
+                    None => return Err("FFmpeg closed without termination".to_string()),
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_millis(120)) => {}
+        }
+    }
+}
 
 /// Map editor blend preset names to FFmpeg `blend` filter `all_mode` values.
 fn map_blend_mode_ffmpeg(mode: &str) -> &'static str {
@@ -1062,7 +1150,12 @@ pub async fn export_video_editor_project(
 
     // Helper: build per-source video transform filters
 
-    fn build_video_transform_filter(source: &VideoSource, width: i32, height: i32) -> String {
+    fn build_video_transform_filter(
+        source: &VideoSource,
+        width: i32,
+        height: i32,
+        transparent_padding: bool,
+    ) -> String {
         let mut transform_filters = Vec::new();
 
         let clip_duration = source.end_time - source.start_time;
@@ -1246,6 +1339,15 @@ pub async fn export_video_editor_project(
         let cw = width as f64;
         let ch = height as f64;
         let needs_zoom = scale_kf.is_some() || (scale - 1.0).abs() > 0.001;
+        let pad_color = if transparent_padding { "black@0" } else { "black" };
+        let has_position_motion = pos_x_kf.is_some()
+            || pos_y_kf.is_some()
+            || pos_x.abs() > 0.5
+            || pos_y.abs() > 0.5;
+
+        if transparent_padding {
+            transform_filters.push("format=rgba".to_string());
+        }
 
         if needs_zoom {
             if let Some(ref s_expr) = scale_kf {
@@ -1257,13 +1359,15 @@ pub async fn export_video_editor_project(
                     sw_e, sh_e
                 ));
                 transform_filters.push(format!(
-                    "pad=w='max({}\\,{})':h='max({}\\,{})':x='(ow-iw)/2':y='(oh-ih)/2':color=black:eval=frame",
-                    sw_e, cw, sh_e, ch
+                    "pad=w='max({}\\,{})':h='max({}\\,{})':x='(ow-iw)/2':y='(oh-ih)/2':color={}:eval=frame",
+                    sw_e, cw, sh_e, ch, pad_color
                 ));
-                transform_filters.push(format!(
-                    "crop={}:{}:(iw-{})/2:(ih-{})/2:eval=frame",
-                    width, height, width, height
-                ));
+                if !has_position_motion {
+                    transform_filters.push(format!(
+                        "crop={}:{}:(iw-{})/2:(ih-{})/2:eval=frame",
+                        width, height, width, height
+                    ));
+                }
             } else {
                 // Static scale ≠ 1
                 let sw = (((width as f64 * scale) as i32) / 2) * 2; // ensure even
@@ -1277,11 +1381,11 @@ pub async fn export_video_editor_project(
                 let pad_w = sw.max(width);
                 let pad_h = sh.max(height);
                 transform_filters.push(format!(
-                    "pad={}:{}:(ow-iw)/2:(oh-ih)/2:black",
-                    pad_w, pad_h
+                    "pad={}:{}:(ow-iw)/2:(oh-ih)/2:{}",
+                    pad_w, pad_h, pad_color
                 ));
 
-                if pad_w != width || pad_h != height {
+                if (pad_w != width || pad_h != height) && !has_position_motion {
                     transform_filters.push(format!(
                         "crop={}:{}:(iw-{})/2:(ih-{})/2",
                         width, height, width, height
@@ -1295,8 +1399,8 @@ pub async fn export_video_editor_project(
             ));
 
             transform_filters.push(format!(
-                "pad={}:{}:(ow-iw)/2:(oh-ih)/2:black",
-                width, height
+                "pad={}:{}:(ow-iw)/2:(oh-ih)/2:{}",
+                width, height, pad_color
             ));
         }
 
@@ -1329,11 +1433,6 @@ pub async fn export_video_editor_project(
 
         // Position offset via pad+crop
 
-        let has_position_motion = pos_x_kf.is_some()
-            || pos_y_kf.is_some()
-            || pos_x.abs() > 0.5
-            || pos_y.abs() > 0.5;
-
         if has_position_motion {
             let pad_w = width * 3;
 
@@ -1343,24 +1442,23 @@ pub async fn export_video_editor_project(
                 let px_e = ffmpeg_expr_or_constant(pos_x_kf, pos_x);
                 let py_e = ffmpeg_expr_or_constant(pos_y_kf, pos_y);
                 transform_filters.push(format!(
-                    "pad={}:{}:{}:{}:black",
-                    pad_w, pad_h, width, height
+                    "pad=w='max(iw\\,{})':h='max(ih\\,{})':x='(ow-iw)/2':y='(oh-ih)/2':color={}:eval=frame",
+                    pad_w, pad_h, pad_color
                 ));
                 transform_filters.push(format!(
-                    "crop={}:{}:'{}+({})':'{}+({})':eval=frame",
+                    "crop={}:{}:'(iw-{})/2-({})':'(ih-{})/2-({})':eval=frame",
                     width, height, width, px_e, height, py_e
                 ));
             } else {
-                let crop_x = width + pos_x as i32;
-
-                let crop_y = height + pos_y as i32;
-
                 transform_filters.push(format!(
-                    "pad={}:{}:{}:{}:black",
-                    pad_w, pad_h, width, height
+                    "pad=w='max(iw\\,{})':h='max(ih\\,{})':x='(ow-iw)/2':y='(oh-ih)/2':color={}:eval=frame",
+                    pad_w, pad_h, pad_color
                 ));
 
-                transform_filters.push(format!("crop={}:{}:{}:{}", width, height, crop_x, crop_y));
+                transform_filters.push(format!(
+                    "crop={}:{}:'(iw-{})/2-({})':'(ih-{})/2-({})'",
+                    width, height, width, pos_x, height, pos_y
+                ));
             }
         }
 
@@ -2118,7 +2216,7 @@ pub async fn export_video_editor_project(
 
         let duration = source.end_time - source.start_time;
 
-        let transform = build_video_transform_filter(source, config.width, config.height);
+        let transform = build_video_transform_filter(source, config.width, config.height, false);
 
         let effects_str = source
             .effects
@@ -2250,7 +2348,9 @@ pub async fn export_video_editor_project(
             let source = &config.video_sources[orig_i];
             let trim_start = source.trim_start.unwrap_or(0.0);
             let clip_dur = source.end_time - source.start_time;
-            let transform = build_video_transform_filter(source, w, h);
+            let transparent_layer = !source.track_is_main.unwrap_or(true);
+            let transform = build_video_transform_filter(source, w, h, transparent_layer);
+            let layer_pad_color = if transparent_layer { "black@0" } else { "black" };
             let effects_str = source
                 .effects
                 .as_ref()
@@ -2270,8 +2370,8 @@ pub async fn export_video_editor_project(
                 orig_i, trim_start, clip_dur, transform, effects_suffix
             );
             vf.push_str(&format!(
-                ",tpad=start_mode=add:start_duration={}:stop_mode=add:stop_duration={}:color=black[vlp{}]",
-                st, pad_end, orig_i
+                ",tpad=start_mode=add:start_duration={}:stop_mode=add:stop_duration={}:color={}[vlp{}]",
+                st, pad_end, layer_pad_color, orig_i
             ));
             filters.push(vf);
 
@@ -2407,7 +2507,7 @@ pub async fn export_video_editor_project(
 
             let trim_start = source.trim_start.unwrap_or(0.0);
             let duration = source.end_time - source.start_time;
-            let transform = build_video_transform_filter(source, config.width, config.height);
+            let transform = build_video_transform_filter(source, config.width, config.height, false);
 
             let effects_str = source
                 .effects
@@ -3440,27 +3540,35 @@ pub async fn export_video_editor_project(
 
     println!("[Rust] FFmpeg command: ffmpeg {}", args.join(" "));
 
-    // Execute FFmpeg
+    // Execute FFmpeg with a cancellation token so the UI can stop long exports.
+    let export_cancel_flag = config
+        .export_id
+        .as_ref()
+        .map(|export_id| register_video_editor_export(export_id));
 
-    let output = shell
-        .sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(&args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
+    let export_result =
+        run_ffmpeg_for_video_editor_export(&app, &args, export_cancel_flag.clone()).await;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    if let Err(err) = export_result {
+        if let Some(export_id) = &config.export_id {
+            unregister_video_editor_export(export_id);
+        }
 
-        println!("[Rust] FFmpeg stderr: {}", stderr);
+        if err == FFMPEG_EXPORT_CANCELLED {
+            let _ = std::fs::remove_file(&config.output_path);
+        }
 
-        return Err(format!("FFmpeg export failed: {}", stderr));
+        println!("[Rust] FFmpeg export failed: {}", err);
+        return Err(err);
     }
 
     // Verify output file was created
 
     if !Path::new(&config.output_path).exists() {
+        if let Some(export_id) = &config.export_id {
+            unregister_video_editor_export(export_id);
+        }
+
         return Err("Export completed but output file not found".to_string());
     }
 
@@ -3490,35 +3598,43 @@ pub async fn export_video_editor_project(
             cover_ts, cover_path
         );
 
-        let cover_output = shell
-            .sidecar("ffmpeg")
-            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-            .args(&[
-                "-y",
-                "-ss",
-                &cover_ts.to_string(),
-                "-i",
-                &config.output_path,
-                "-vframes",
-                "1",
-                "-q:v",
-                "2",
-                &cover_path,
-            ])
-            .output()
-            .await
-            .map_err(|e| format!("Failed to extract cover image: {}", e))?;
+        let cover_args = vec![
+            "-y".to_string(),
+            "-ss".to_string(),
+            cover_ts.to_string(),
+            "-i".to_string(),
+            config.output_path.clone(),
+            "-vframes".to_string(),
+            "1".to_string(),
+            "-q:v".to_string(),
+            "2".to_string(),
+            cover_path.clone(),
+        ];
 
-        if cover_output.status.success() {
-            println!("[Rust] Cover image saved: {}", cover_path);
-        } else {
-            let stderr = String::from_utf8_lossy(&cover_output.stderr);
+        match run_ffmpeg_for_video_editor_export(&app, &cover_args, export_cancel_flag).await {
+            Ok(_) => {
+                println!("[Rust] Cover image saved: {}", cover_path);
+            }
+            Err(err) if err == FFMPEG_EXPORT_CANCELLED => {
+                if let Some(export_id) = &config.export_id {
+                    unregister_video_editor_export(export_id);
+                }
 
-            println!(
-                "[Rust] Cover image extraction failed (non-fatal): {}",
-                stderr
-            );
+                let _ = std::fs::remove_file(&config.output_path);
+                let _ = std::fs::remove_file(&cover_path);
+                return Err(err);
+            }
+            Err(err) => {
+                println!(
+                    "[Rust] Cover image extraction failed (non-fatal): {}",
+                    err
+                );
+            }
         }
+    }
+
+    if let Some(export_id) = &config.export_id {
+        unregister_video_editor_export(export_id);
     }
 
     Ok(())
