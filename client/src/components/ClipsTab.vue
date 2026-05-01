@@ -722,16 +722,6 @@
     return Boolean(value);
   }
 
-  function clipSubtitlePositionLooksUserPlaced(clip: {
-    subtitle_position_x?: number | null;
-    subtitle_position_y?: number | null;
-  }): boolean {
-    const x = clip.subtitle_position_x;
-    const y = clip.subtitle_position_y;
-    if (x == null && y == null) return false;
-    return !(x != null && y != null && Math.abs(x - 50) < 0.5 && Math.abs(y - 85) < 0.5);
-  }
-
   function mergeDraggedSubtitlePositionForBuild(
     subtitleSettings: SubtitleSettings,
     clip: {
@@ -741,7 +731,10 @@
     },
     aspectRatios: string[]
   ): SubtitleSettings {
-    if (!clipSubtitlePositionLooksUserPlaced(clip) || clip.subtitle_position_x == null || clip.subtitle_position_y == null) {
+    // Apply DB columns whenever both coordinates exist. Do not use clipSubtitlePositionLooksUserPlaced:
+    // classic bottom (50,85) is still a valid saved workspace position; skipping merge left stale
+    // positionPercentage in JSON (e.g. middle-of-frame defaults) so FFmpeg disagreed with preview.
+    if (clip.subtitle_position_x == null || clip.subtitle_position_y == null) {
       return subtitleSettings;
     }
 

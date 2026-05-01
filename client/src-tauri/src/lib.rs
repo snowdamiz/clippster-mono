@@ -17,6 +17,7 @@ mod ffmpeg_sidecar;
 mod ffmpeg_utils;
 mod focal_detection;
 mod font_commands;
+mod path_utils;
 mod hls;
 mod hls_proxy;
 mod kick;

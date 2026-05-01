@@ -249,6 +249,7 @@ pub async fn generate_proxy_file(
 /// True if the file exists, false otherwise
 #[tauri::command]
 pub async fn check_file_exists(path: String) -> Result<bool, String> {
+    let path = crate::path_utils::normalize_local_fs_path(path);
     Ok(Path::new(&path).exists())
 }
 

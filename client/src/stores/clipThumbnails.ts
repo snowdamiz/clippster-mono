@@ -2,6 +2,11 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { persistentCache } from '@/utils/persistentCache';
+import { normalizeLocalFilePathForFs } from '@/utils/normalizeLocalFilePath';
+
+function isValidImageDataUrl(s: string): boolean {
+  return /^data:image\/(jpeg|jpg|png|gif|webp);base64,/i.test(s);
+}
 
 /**
  * Persistent thumbnail cache store
@@ -50,10 +55,13 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
     // Check persistent cache first
     try {
       const cached = await persistentCache.get<string>('thumbnails', clipId);
-      if (cached) {
+      if (cached && isValidImageDataUrl(cached)) {
         thumbnailCache.value.set(clipId, cached);
         thumbnailCache.value = new Map(thumbnailCache.value);
         return cached;
+      }
+      if (cached && !isValidImageDataUrl(cached)) {
+        persistentCache.delete('thumbnails', clipId).catch(() => {});
       }
     } catch (error) {
       console.warn(`[ClipThumbnailStore] Failed to read from persistent cache for clip ${clipId}:`, error);
@@ -68,7 +76,7 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
       loadingThumbnails.value.add(clipId);
 
       const dataUrl = await invoke<string>('read_file_as_data_url', {
-        filePath: thumbnailPath,
+        filePath: normalizeLocalFilePathForFs(thumbnailPath),
       });
 
       thumbnailCache.value.set(clipId, dataUrl);
@@ -116,16 +124,19 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
           try {
             // Check persistent cache first
             const cached = await persistentCache.get<string>('thumbnails', clip.id);
-            if (cached) {
+            if (cached && isValidImageDataUrl(cached)) {
               thumbnailCache.value.set(clip.id, cached);
               hasNewThumbnails = true;
               return;
+            }
+            if (cached && !isValidImageDataUrl(cached)) {
+              persistentCache.delete('thumbnails', clip.id).catch(() => {});
             }
 
             loadingThumbnails.value.add(clip.id);
 
             const dataUrl = await invoke<string>('read_file_as_data_url', {
-              filePath: clip.built_thumbnail_path!,
+              filePath: normalizeLocalFilePathForFs(clip.built_thumbnail_path!),
             });
 
             thumbnailCache.value.set(clip.id, dataUrl);
@@ -263,7 +274,7 @@ export const useClipThumbnailStore = defineStore('clipThumbnails', () => {
             loadingThumbnails.value.add(build.key);
 
             const dataUrl = await invoke<string>('read_file_as_data_url', {
-              filePath: build.thumbnailPath,
+              filePath: normalizeLocalFilePathForFs(build.thumbnailPath),
             });
 
             buildThumbnailCache.value.set(build.key, dataUrl);
