@@ -1306,40 +1306,41 @@
         // Reset to first step when dialog opens
         currentStep.value = 'platforms';
 
-        // Initialize from saved AspectTab settings if available, then VOD preset, otherwise default to 16:9
-        if (props.initialAspectRatios && props.initialAspectRatios.length > 0) {
-          selectedRatios.value = [...props.initialAspectRatios];
-          console.log('[ClipBuildSettingsDialog] Initialized aspect ratios from saved settings:', selectedRatios.value);
-        } else if (props.vodPresetConfig?.targetAspectRatio) {
+        // An active VOD pre-edit is the project-level export snapshot and should win over
+        // creator/profile defaults or older clip-editor aspect settings.
+        if (props.vodPresetConfig?.targetAspectRatio) {
           selectedRatios.value = [props.vodPresetConfig.targetAspectRatio];
           console.log('[ClipBuildSettingsDialog] Initialized aspect ratio from VOD preset:', selectedRatios.value);
+        } else if (props.initialAspectRatios && props.initialAspectRatios.length > 0) {
+          selectedRatios.value = [...props.initialAspectRatios];
+          console.log('[ClipBuildSettingsDialog] Initialized aspect ratios from saved settings:', selectedRatios.value);
         } else {
           selectedRatios.value = ['16:9'];
         }
 
-        if (props.initialFramingMode) {
-          framingMode.value = props.initialFramingMode;
-          console.log('[ClipBuildSettingsDialog] Initialized framing mode from saved settings:', framingMode.value);
-        } else if (props.vodPresetConfig?.framingConfig) {
+        if (props.vodPresetConfig?.framingConfig) {
           framingMode.value = 'manual';
           console.log('[ClipBuildSettingsDialog] Initialized framing mode from VOD preset: manual');
+        } else if (props.initialFramingMode) {
+          framingMode.value = props.initialFramingMode;
+          console.log('[ClipBuildSettingsDialog] Initialized framing mode from saved settings:', framingMode.value);
         } else {
           framingMode.value = 'manual';
         }
 
-        if (props.initialFramingConfigs && Object.keys(props.initialFramingConfigs).length > 0) {
-          manualFramingConfigs.value = { ...props.initialFramingConfigs };
-          console.log(
-            '[ClipBuildSettingsDialog] Initialized framing configs from saved settings:',
-            Object.keys(manualFramingConfigs.value)
-          );
-        } else if (props.vodPresetConfig?.framingConfig) {
+        if (props.vodPresetConfig?.framingConfig) {
           // Apply VOD preset framing config for the target aspect ratio
           const ratio = props.vodPresetConfig.targetAspectRatio;
           manualFramingConfigs.value = { [ratio]: props.vodPresetConfig.framingConfig };
           console.log('[ClipBuildSettingsDialog] Initialized framing configs from VOD preset for ratio:', ratio);
           console.log('[ClipBuildSettingsDialog] VOD preset framing config:', props.vodPresetConfig.framingConfig);
           console.log('[ClipBuildSettingsDialog] manualFramingConfigs after init:', manualFramingConfigs.value);
+        } else if (props.initialFramingConfigs && Object.keys(props.initialFramingConfigs).length > 0) {
+          manualFramingConfigs.value = { ...props.initialFramingConfigs };
+          console.log(
+            '[ClipBuildSettingsDialog] Initialized framing configs from saved settings:',
+            Object.keys(manualFramingConfigs.value)
+          );
         } else {
           manualFramingConfigs.value = {};
         }
@@ -1373,23 +1374,13 @@
         // Load available orgs and campaigns for the streamer
         await loadOrgsAndCampaigns();
 
-        // Pre-select creator profile defaults
+        // Personal / free-tier defaults: props are only set when workspace branding is personal (not org/campaign).
+        // Pre-select so personal builds use creator defaults without an extra click.
         if (props.defaultIntro) {
-          // Find the matching intro in the loaded list
-          const matchingIntro = intros.value.find((i) => i.id === props.defaultIntro!.id);
-          if (matchingIntro) {
-            selectedIntro.value = matchingIntro;
-            console.log('[ClipBuildSettingsDialog] Pre-selected creator default intro:', selectedIntro.value?.name);
-          }
+          selectedIntro.value = props.defaultIntro as IntroOutroItem;
         }
-
         if (props.defaultOutro) {
-          // Find the matching outro in the loaded list
-          const matchingOutro = outros.value.find((o) => o.id === props.defaultOutro!.id);
-          if (matchingOutro) {
-            selectedOutro.value = matchingOutro;
-            console.log('[ClipBuildSettingsDialog] Pre-selected creator default outro:', selectedOutro.value?.name);
-          }
+          selectedOutro.value = props.defaultOutro as IntroOutroItem;
         }
 
         // Load overlay previews for POI editor

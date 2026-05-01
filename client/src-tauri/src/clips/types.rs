@@ -755,6 +755,12 @@ pub struct ManualRegion {
     pub source: NormalizedBBox,
     /// Output position (normalized 0-1 coordinates on target canvas)
     pub output: NormalizedBBox,
+    /// Whether to clip this region to rounded corners
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub corner_radius_enabled: Option<bool>,
+    /// Corner radius slider value (design-space px, scaled by output region width)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub corner_radius_px: Option<f64>,
     /// Media asset reference (file path or asset ID)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub media_asset_id: Option<String>,
