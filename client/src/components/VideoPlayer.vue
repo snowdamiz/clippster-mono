@@ -384,6 +384,7 @@
 
 <script setup lang="ts">
   import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
+  import { convertFileSrc } from '@tauri-apps/api/core';
   import { Video, AlertTriangle, Play, Pause, Film, RotateCcw } from 'lucide-vue-next';
   import Hls from 'hls.js';
 
@@ -762,6 +763,7 @@
 
   // Multi-region framing + creator "Use 16:9" (blur bg + sharp 16:9) from manualFramingConfig
   const usesUse169WorkspaceFraming = computed(() => {
+    if ((props.framingRegions?.length ?? 0) > 0) return false;
     const fc = props.manualFramingConfig;
     if (!fc || fc.sourceFrameMode !== 'use16x9') return false;
     const rw = props.aspectRatio.width;
@@ -826,6 +828,8 @@
   let use169SyncRaf: number | null = null;
   /** HLS use-16:9 canvas path: throttle + limit backing store size */
   let lastUse169CanvasDraw = 0;
+  const regionImageCache = new Map<string, HTMLImageElement>();
+  const regionVideoCache = new Map<string, HTMLVideoElement>();
 
   function startFramingLoop() {
     if (framingAnimationId !== null) return;
@@ -850,6 +854,128 @@
     const dx = (cw - dw) / 2;
     const dy = (ch - dh) / 2;
     ctx.drawImage(video, 0, 0, vw, vh, dx, dy, dw, dh);
+  }
+
+  function regionMediaSrc(assetId?: string | null): string {
+    if (!assetId) return '';
+    if (
+      assetId.startsWith('blob:') ||
+      assetId.startsWith('http://') ||
+      assetId.startsWith('https://') ||
+      assetId.startsWith('asset:')
+    ) {
+      return assetId;
+    }
+    try {
+      return convertFileSrc(assetId);
+    } catch {
+      return assetId;
+    }
+  }
+
+  function getRegionImage(assetId: string): HTMLImageElement | null {
+    const src = regionMediaSrc(assetId);
+    if (!src) return null;
+    const cached = regionImageCache.get(src);
+    if (cached) return cached;
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = src;
+    regionImageCache.set(src, img);
+    return img;
+  }
+
+  function getRegionVideo(assetId: string): HTMLVideoElement | null {
+    const src = regionMediaSrc(assetId);
+    if (!src) return null;
+    const cached = regionVideoCache.get(src);
+    if (cached) return cached;
+
+    const media = document.createElement('video');
+    media.crossOrigin = 'anonymous';
+    media.src = src;
+    media.muted = true;
+    media.loop = true;
+    media.playsInline = true;
+    media.preload = 'metadata';
+    regionVideoCache.set(src, media);
+    return media;
+  }
+
+  function drawObjectCover(
+    ctx: CanvasRenderingContext2D,
+    source: CanvasImageSource,
+    sourceWidth: number,
+    sourceHeight: number,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number
+  ) {
+    if (!sourceWidth || !sourceHeight || !dw || !dh) return;
+    const scale = Math.max(dw / sourceWidth, dh / sourceHeight);
+    const sw = dw / scale;
+    const sh = dh / scale;
+    const sx = (sourceWidth - sw) / 2;
+    const sy = (sourceHeight - sh) / 2;
+    ctx.drawImage(source, sx, sy, sw, sh, dx, dy, dw, dh);
+  }
+
+  function getRegionCornerRadius(region: ManualRegion, regionWidthPx: number, regionHeightPx: number): number {
+    if (!region.cornerRadiusEnabled || !region.cornerRadiusPx) return 0;
+    const radius = region.cornerRadiusPx * (regionWidthPx / 1080);
+    return Math.max(0, Math.min(radius, regionWidthPx / 2, regionHeightPx / 2));
+  }
+
+  function applyRoundedRegionClip(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    radius: number
+  ) {
+    if (radius <= 0) return;
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    ctx.clip();
+  }
+
+  function drawTransformedSourceFrame(
+    ctx: CanvasRenderingContext2D,
+    video: HTMLVideoElement,
+    cw: number,
+    ch: number,
+    vw: number,
+    vh: number,
+    config: ManualFramingConfig
+  ) {
+    const st = config.sourceTransform ?? { scale: 1, x: 0, y: 0 };
+    const sourceAspect = vw / vh || 16 / 9;
+    const baseWidth = cw;
+    const baseHeight = baseWidth / sourceAspect;
+    const width = baseWidth * st.scale;
+    const height = baseHeight * st.scale;
+    const left = (cw - width) / 2 + st.x * cw;
+    const top = (ch - height) / 2 + st.y * ch;
+    const amt = config.blurAmount ?? 0;
+    const blurPx =
+      config.blurEnabled !== false && amt > 0 ? use169BlurSliderToCssPx(amt) : 0;
+
+    ctx.save();
+    if (blurPx > 0) ctx.filter = `blur(${blurPx}px)`;
+    ctx.drawImage(video, 0, 0, vw, vh, left, top, width, height);
+    ctx.restore();
   }
 
   function renderFramingFrame() {
@@ -904,7 +1030,9 @@
     }
 
     const fc = props.manualFramingConfig;
+    const hasRegions = !!regions && regions.length > 0;
     const use169 =
+      !hasRegions &&
       fc?.sourceFrameMode === 'use16x9' &&
       props.aspectRatio.width / props.aspectRatio.height < 0.95;
 
@@ -952,19 +1080,59 @@
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, cw, ch);
 
+    if (fc?.sourceFrameMode === 'scale') {
+      drawTransformedSourceFrame(ctx, video, cw, ch, vw, vh, fc);
+    }
+
     // Draw each region: source rect from video → output rect on canvas
     for (const region of regions) {
+      const dx = region.output.x * cw;
+      const dy = region.output.y * ch;
+      const dw = region.output.width * cw;
+      const dh = region.output.height * ch;
+      const cornerRadius = getRegionCornerRadius(region, dw, dh);
+
+      if (region.mediaAssetId && region.mediaType === 'image') {
+        const img = getRegionImage(region.mediaAssetId);
+        if (img?.complete && img.naturalWidth && img.naturalHeight) {
+          ctx.save();
+          applyRoundedRegionClip(ctx, dx, dy, dw, dh, cornerRadius);
+          drawObjectCover(ctx, img, img.naturalWidth, img.naturalHeight, dx, dy, dw, dh);
+          ctx.restore();
+        }
+        continue;
+      }
+
+      if (region.mediaAssetId && region.mediaType === 'video') {
+        const media = getRegionVideo(region.mediaAssetId);
+        if (media) {
+          if (Number.isFinite(video.currentTime) && media.duration) {
+            const targetTime = video.currentTime % media.duration;
+            if (Math.abs(media.currentTime - targetTime) > 0.12) {
+              media.currentTime = targetTime;
+            }
+          }
+          if (!video.paused && media.paused) void media.play().catch(() => {});
+          if (video.paused && !media.paused) media.pause();
+          if (media.readyState >= 2 && media.videoWidth && media.videoHeight) {
+            ctx.save();
+            applyRoundedRegionClip(ctx, dx, dy, dw, dh, cornerRadius);
+            drawObjectCover(ctx, media, media.videoWidth, media.videoHeight, dx, dy, dw, dh);
+            ctx.restore();
+          }
+        }
+        continue;
+      }
+
       const sx = region.source.x * vw;
       const sy = region.source.y * vh;
       const sw = region.source.width * vw;
       const sh = region.source.height * vh;
 
-      const dx = region.output.x * cw;
-      const dy = region.output.y * ch;
-      const dw = region.output.width * cw;
-      const dh = region.output.height * ch;
-
+      ctx.save();
+      applyRoundedRegionClip(ctx, dx, dy, dw, dh, cornerRadius);
       ctx.drawImage(video, sx, sy, sw, sh, dx, dy, dw, dh);
+      ctx.restore();
     }
 
     framingAnimationId = requestAnimationFrame(renderFramingFrame);

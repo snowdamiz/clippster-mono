@@ -224,23 +224,20 @@
                 <div class="flex gap-3 p-3 pl-4">
                   <!-- Thumbnail -->
                   <div class="flex-shrink-0 w-24 h-16 rounded-md overflow-hidden bg-black/30 border border-border/30 relative">
-                    <!-- Framed thumbnail when VOD preset has framing regions -->
-                    <FramedThumbnail
-                      v-if="hasVodFraming && getClipVideoPath(clip)"
-                      :video-src="getClipVideoPath(clip)!"
-                      :framing-regions="vodPresetConfig!.framingConfig!.regions"
-                      :aspect-ratio="parseAspectRatio(vodPresetConfig!.targetAspectRatio)"
-                      :seek-time="getClipMidpoint(clip)"
-                    />
-                    <!-- Standard thumbnail -->
+                    <!-- Persisted/generated FFmpeg thumbnails — always prefer these over per-row FramedThumbnail.
+                         Framed thumbnails used full-VOD seeks per clip row (slow/failed on long sources). -->
                     <img
-                      v-else-if="getClipThumbnail(clip.id)"
+                      v-if="getClipThumbnail(clip.id)"
                       :src="getClipThumbnail(clip.id)!"
                       :alt="clip.current_version_name || clip.name || 'Clip thumbnail'"
                       class="w-full h-full object-cover"
                     />
                     <div v-else class="w-full h-full flex items-center justify-center">
-                      <Video class="w-6 h-6 text-muted-foreground/40" />
+                      <LoaderIcon
+                        v-if="thumbnailStore.isLoading(clip.id)"
+                        class="w-5 h-5 animate-spin text-muted-foreground/50"
+                      />
+                      <Video v-else class="w-6 h-6 text-muted-foreground/40" />
                     </div>
 
                     <!-- Building Overlay -->
@@ -664,7 +661,7 @@
       :default-intro="creatorDefaultIntro"
       :default-outro="creatorDefaultOutro"
       :thumbnail-url="videoThumbnailUrl"
-      :subtitle-settings="derivedSubtitleSettings ?? subtitleSettings"
+      :subtitle-settings="buildDialogSubtitleSettings"
       :initial-aspect-ratios="savedAspectRatios"
       :initial-framing-mode="savedFramingMode"
       :initial-framing-configs="savedFramingConfigs"
@@ -678,7 +675,6 @@
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
   import { formatDateTime } from '@/utils/dateTimeUtils';
-  import { utf8ToBase64Url } from '@/utils/encoding';
   import { parseTranscriptToWords, type WordInfo } from '@/utils/timelineUtils';
   import type { ClipWithVersion, ClipBuild, Prompt } from '@/services/database';
   import {
@@ -712,7 +708,6 @@
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { useClipThumbnailStore } from '@/stores/clipThumbnails';
   import ClipBuildSettingsDialog, { type BuildSettings, type BuildTarget, type IntroOutroItem } from './ClipBuildSettingsDialog.vue';
-  import FramedThumbnail from './FramedThumbnail.vue';
   import type { SubtitleSettings, WatermarkSettings, IntroOutroRef } from '@/types';
   import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
@@ -1185,6 +1180,14 @@
       colorPalette: [],
     };
   });
+
+  const buildDialogSubtitleSettings = computed((): SubtitleSettings | null => {
+    const vodDefaults = props.vodPresetConfig?.subtitleDefaults;
+    if (vodDefaults && typeof vodDefaults === 'object') {
+      return JSON.parse(JSON.stringify(vodDefaults)) as SubtitleSettings;
+    }
+    return derivedSubtitleSettings.value ?? props.subtitleSettings ?? null;
+  });
   const openDownloadDropdownId = ref<string | null>(null);
   const dropdownButtonRefs = ref<Map<string, HTMLElement>>(new Map());
 
@@ -1425,74 +1428,6 @@
   // Get thumbnail URL for a clip
   function getClipThumbnail(clipId: string): string | null {
     return thumbnailStore.getThumbnail(clipId);
-  }
-
-  // Check if VOD preset has framing regions configured
-  const hasVodFraming = computed(() => {
-    return !!(
-      props.vodPresetConfig?.framingConfig?.regions &&
-      props.vodPresetConfig.framingConfig.regions.length > 0
-    );
-  });
-
-  // Cache for raw video paths by project ID
-  const rawVideoPathCache = ref<Map<string, string>>(new Map());
-
-  // Get video path for a clip (for framed thumbnail rendering)
-  function getClipVideoPath(clip: ClipWithVersion): string | null {
-    // Use the project's raw video path for rendering framed thumbnails
-    // We can't use clip.file_path as it might point to a build output
-    const projectId = clip.project_id || props.projectId;
-    if (!projectId) return null;
-    
-    // Check cache first
-    const cachedPath = rawVideoPathCache.value.get(projectId);
-    if (cachedPath) {
-      // Return a video server URL with base64-encoded file path
-      const encodedPath = utf8ToBase64Url(cachedPath);
-      return `http://localhost:48276/video/${encodedPath}`;
-    }
-    
-    // Load raw video path asynchronously and cache it
-    loadRawVideoPath(projectId);
-    
-    // Return null for now - component will re-render when cache is populated
-    return null;
-  }
-
-  // Load raw video path for a project and cache it
-  async function loadRawVideoPath(projectId: string) {
-    if (rawVideoPathCache.value.has(projectId)) return;
-    
-    try {
-      const { getRawVideosByProjectId } = await import('@/services/database');
-      const rawVideos = await getRawVideosByProjectId(projectId);
-      
-      if (rawVideos.length > 0) {
-        rawVideoPathCache.value.set(projectId, rawVideos[0].file_path);
-        // Trigger reactivity
-        rawVideoPathCache.value = new Map(rawVideoPathCache.value);
-      }
-    } catch (err) {
-      console.warn(`[ClipsTab] Failed to load raw video path for project ${projectId}:`, err);
-    }
-  }
-
-  // Parse aspect ratio string (e.g., "9:16") to { width, height } object
-  function parseAspectRatio(ratio: string): { width: number; height: number } {
-    const parts = ratio.split(':');
-    if (parts.length !== 2) return { width: 16, height: 9 };
-    return {
-      width: parseInt(parts[0], 10) || 16,
-      height: parseInt(parts[1], 10) || 9,
-    };
-  }
-
-  // Get midpoint time of a clip for thumbnail generation
-  function getClipMidpoint(clip: ClipWithVersion): number {
-    const startTime = clip.current_version_start_time ?? clip.start_time ?? 0;
-    const endTime = clip.current_version_end_time ?? clip.end_time ?? 0;
-    return (startTime + endTime) / 2;
   }
 
   // Sorted clips: by virality descending across all runs
@@ -3018,7 +2953,11 @@
       const freshClipData = await getClip(clip.id);
       let effectiveSubtitleSettings: SubtitleSettings | null = null;
       
-      if (freshClipData?.subtitle_settings) {
+      const vodSubtitleDefaults = props.vodPresetConfig?.subtitleDefaults;
+      if (vodSubtitleDefaults && typeof vodSubtitleDefaults === 'object') {
+        effectiveSubtitleSettings = JSON.parse(JSON.stringify(vodSubtitleDefaults)) as SubtitleSettings;
+        console.log('[ClipsTab] Using VOD pre-edit subtitle defaults for build');
+      } else if (freshClipData?.subtitle_settings) {
         try {
           const savedSettings = typeof freshClipData.subtitle_settings === 'string'
             ? JSON.parse(freshClipData.subtitle_settings)
@@ -3036,8 +2975,8 @@
       
       // Fall back to derived settings or prop if fresh load failed
       if (!effectiveSubtitleSettings) {
-        effectiveSubtitleSettings = derivedSubtitleSettings.value ?? props.subtitleSettings ?? null;
-        console.log('[ClipsTab] Using fallback subtitle settings (derived or prop)');
+        effectiveSubtitleSettings = buildDialogSubtitleSettings.value;
+        console.log('[ClipsTab] Using fallback subtitle settings for build');
       }
 
       if (effectiveSubtitleSettings && freshClipData) {

@@ -1,4 +1,7 @@
 use futures::future::join_all;
+use image::{imageops, GrayImage, Luma};
+use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri_plugin_shell::ShellExt;
 
@@ -2770,18 +2773,33 @@ fn push_letterboxed_source_transform_chain(
         .map(|s| format!(",gblur=sigma={}", s.clamp(0.1, 40.0)))
         .unwrap_or_default();
 
-    if scaled_w > output_w || scaled_h > output_h {
-        let crop_x = (-final_x).max(0.0) as u32;
-        let crop_y = (-final_y).max(0.0) as u32;
+    let covers_output = final_x <= 0.0
+        && final_y <= 0.0
+        && final_x + scaled_w as f64 >= output_w as f64
+        && final_y + scaled_h as f64 >= output_h as f64;
+
+    if covers_output {
+        // Crop from the source first, then scale to the output. This is visually equivalent to
+        // scaling the full source up and cropping the 9:16 viewport, but avoids creating a huge
+        // intermediate frame (e.g. 3456x1944 for scale=3.2) on every export frame.
+        let source_scale = scaled_w as f64 / source_w;
+        let crop_x = ((-final_x) / source_scale).max(0.0);
+        let crop_y = ((-final_y) / source_scale).max(0.0);
+        let crop_w = (output_w as f64 / source_scale).min(source_w - crop_x).max(2.0);
+        let crop_h = (output_h as f64 / source_scale).min(source_h - crop_y).max(2.0);
+        let crop_x = crop_x.floor() as u32;
+        let crop_y = crop_y.floor() as u32;
+        let crop_w = make_even(crop_w.ceil() as u32).min(source_w as u32 - crop_x);
+        let crop_h = make_even(crop_h.ceil() as u32).min(source_h as u32 - crop_y);
         filter_parts.push(format!(
-            "[{}]scale={}:{}:flags=lanczos,crop={}:{}:{}:{}{}[{}]",
+            "[{}]crop={}:{}:{}:{},scale={}:{}:flags=lanczos{}[{}]",
             input_tag,
-            scaled_w,
-            scaled_h,
-            output_w,
-            output_h,
+            crop_w,
+            crop_h,
             crop_x,
             crop_y,
+            output_w,
+            output_h,
             blur_clause,
             output_tag
         ));
@@ -2837,6 +2855,92 @@ fn build_use16x9_sharp_layer(
     (overlay_x, overlay_y)
 }
 
+fn rounded_region_radius_px(
+    region: &super::types::ManualRegion,
+    out_w: u32,
+    out_h: u32,
+    output_w: u32,
+) -> Option<u32> {
+    if region.corner_radius_enabled != Some(true) {
+        return None;
+    }
+
+    let Some(radius_design_px) = region.corner_radius_px else {
+        return None;
+    };
+    if radius_design_px <= 0.0 || out_w == 0 || out_h == 0 || output_w == 0 {
+        return None;
+    }
+
+    let radius = (radius_design_px * out_w as f64 / output_w as f64)
+        .clamp(0.0, (out_w.min(out_h) as f64) / 2.0);
+    if radius <= 0.001 {
+        return None;
+    }
+
+    Some(radius.round().max(1.0) as u32)
+}
+
+fn generate_rounded_mask_png(path: &std::path::Path, width: u32, height: u32, radius: u32) -> Result<(), String> {
+    const SUPERSAMPLE: u32 = 2;
+    let sw = width.saturating_mul(SUPERSAMPLE).max(1);
+    let sh = height.saturating_mul(SUPERSAMPLE).max(1);
+    let sr = (radius.saturating_mul(SUPERSAMPLE)).min(sw.min(sh) / 2);
+    let mut hi = GrayImage::new(sw, sh);
+    let right = sw.saturating_sub(sr) as f64;
+    let bottom = sh.saturating_sub(sr) as f64;
+    let r = sr as f64;
+    let r_sq = r * r;
+
+    for y in 0..sh {
+        let yf = y as f64 + 0.5;
+        for x in 0..sw {
+            let xf = x as f64 + 0.5;
+            let inside_core = xf >= r && xf <= right || yf >= r && yf <= bottom;
+            let inside_corner =
+                (xf - r).powi(2) + (yf - r).powi(2) <= r_sq ||
+                (xf - right).powi(2) + (yf - r).powi(2) <= r_sq ||
+                (xf - r).powi(2) + (yf - bottom).powi(2) <= r_sq ||
+                (xf - right).powi(2) + (yf - bottom).powi(2) <= r_sq;
+            hi.put_pixel(x, y, Luma([if inside_core || inside_corner { 255 } else { 0 }]));
+        }
+    }
+
+    let mask = imageops::resize(&hi, width.max(1), height.max(1), imageops::FilterType::Triangle);
+    mask.save(path)
+        .map_err(|e| format!("Failed to save rounded region mask {}: {}", path.display(), e))
+}
+
+fn push_rounded_region_filter(
+    filter_parts: &mut Vec<String>,
+    input_label: &str,
+    output_label_base: &str,
+    mask_input_index: usize,
+) -> String {
+    let mask_label = format!("{}_mask", output_label_base);
+    let rgba_color_label = format!("{}_rgba_color", output_label_base);
+    let rgba_alpha_label = format!("{}_rgba_alpha", output_label_base);
+    let alpha_label = format!("{}_alpha", output_label_base);
+    let masked_alpha_label = format!("{}_masked_alpha", output_label_base);
+    let rounded_label = format!("{}_rounded", output_label_base);
+    filter_parts.push(format!("[{}:v]format=gray[{}]", mask_input_index, mask_label));
+    filter_parts.push(format!(
+        "[{}]format=rgba,split=2[{}][{}]",
+        input_label, rgba_color_label, rgba_alpha_label
+    ));
+    filter_parts.push(format!("[{}]alphaextract[{}]", rgba_alpha_label, alpha_label));
+    filter_parts.push(format!(
+        "[{}][{}]blend=all_mode=multiply[{}]",
+        alpha_label, mask_label, masked_alpha_label
+    ));
+    filter_parts.push(format!(
+        "[{}][{}]alphamerge[{}]",
+        rgba_color_label, masked_alpha_label, rounded_label
+    ));
+
+    rounded_label
+}
+
 /// Collect unique, existing filesystem paths for POI regions that use uploaded media.
 fn collect_external_media_paths_for_multi_region(config: &ManualFramingConfig) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -2857,15 +2961,19 @@ fn collect_external_media_paths_for_multi_region(config: &ManualFramingConfig) -
         }
     };
     for r in &config.regions {
-        if let Some(ref id) = r.media_asset_id {
-            push_path(id);
+        if matches!(r.media_type.as_deref(), Some("image") | Some("video")) {
+            if let Some(ref id) = r.media_asset_id {
+                push_path(id);
+            }
         }
     }
     if let Some(segs) = &config.segment_configs {
         for s in segs {
             for r in &s.regions {
-                if let Some(ref id) = r.media_asset_id {
-                    push_path(id);
+                if matches!(r.media_type.as_deref(), Some("image") | Some("video")) {
+                    if let Some(ref id) = r.media_asset_id {
+                        push_path(id);
+                    }
                 }
             }
         }
@@ -2873,6 +2981,45 @@ fn collect_external_media_paths_for_multi_region(config: &ManualFramingConfig) -
     out
 }
 
+fn multi_region_uses_external_media(region: &super::types::ManualRegion, external_media_paths: &[String]) -> bool {
+    if !matches!(region.media_type.as_deref(), Some("image") | Some("video")) {
+        return false;
+    }
+
+    region
+        .media_asset_id
+        .as_ref()
+        .map(|p| {
+            let trimmed = p.trim();
+            !trimmed.is_empty()
+                && !trimmed.starts_with("blob:")
+                && external_media_paths.iter().any(|known| known == trimmed)
+        })
+        .unwrap_or(false)
+}
+
+fn count_multi_region_source_video_consumers(
+    config: &ManualFramingConfig,
+    external_media_paths: &[String],
+) -> usize {
+    let mut count = config
+        .regions
+        .iter()
+        .filter(|region| !multi_region_uses_external_media(region, external_media_paths))
+        .count();
+
+    if let Some(segment_configs) = &config.segment_configs {
+        for segment in segment_configs {
+            count += segment
+                .regions
+                .iter()
+                .filter(|region| !multi_region_uses_external_media(region, external_media_paths))
+                .count();
+        }
+    }
+
+    count
+}
 /// Builds a multi-region clip with user-defined crop regions composited together.
 ///
 /// This is used for manual POI (Point of Interest) framing where the user defines
@@ -2953,37 +3100,14 @@ pub async fn build_multi_region_clip(
         config.source_transform
     );
 
-    // If no regions but sourceTransform is set (scale mode), create a full-frame region.
-    // use16x9 mode may have no regions — composite blur+sharp only.
-    let mut working_config = config.clone();
+    // use16x9 and scale-source modes may have no regions — composite the source-frame layer directly.
+    let working_config = config.clone();
     let use_16x9 = matches!(
         working_config.source_frame_mode.as_deref(),
         Some("use16x9")
     );
     println!("[Rust] use_16x9 mode detected: {}", use_16x9);
-    if working_config.regions.is_empty() && working_config.source_transform.is_some() && !use_16x9 {
-        println!("[Rust] No regions defined but sourceTransform is set - creating full-frame region");
-        // Create a full-frame region that uses the entire source
-        working_config.regions.push(super::types::ManualRegion {
-            id: "full_frame".to_string(),
-            color: "#ffffff".to_string(),
-            label: Some("Full Frame".to_string()),
-            source: super::types::NormalizedBBox {
-                x: 0.0,
-                y: 0.0,
-                width: 1.0,
-                height: 1.0,
-            },
-            output: super::types::NormalizedBBox {
-                x: 0.0,
-                y: 0.0,
-                width: 1.0,
-                height: 1.0,
-            },
-            media_asset_id: None,
-            media_type: None,
-        });
-    } else if working_config.regions.is_empty() && !use_16x9 {
+    if working_config.regions.is_empty() && working_config.source_transform.is_none() && !use_16x9 {
         return Err("MultiRegion config has no regions defined and no sourceTransform".to_string());
     }
 
@@ -3028,15 +3152,49 @@ pub async fn build_multi_region_clip(
     let mut filter_parts: Vec<String> = Vec::new();
     let mut region_labels: Vec<(String, u32, u32, Option<String>)> = Vec::new();
 
-    // Blur amount: 0 = no blur, >0 = blur enabled
-    // The UI slider goes 0-30, we convert to sigma by dividing by 5
+    // Blur amount: 0 = no blur, >0 = blur enabled.
+    // Match the preview's CSS blur conversion instead of the old low FFmpeg sigma.
     let blur_amount_cfg = working_config.blur_amount.unwrap_or(0.0);
     let blur_enabled = blur_amount_cfg > 0.0;
     let blur_sigma = if blur_enabled {
-        (blur_amount_cfg / 5.0).clamp(0.1, 6.0)
+        (blur_amount_cfg * 2.15).clamp(1.0, 55.0)
     } else {
         0.0
     };
+
+    let external_media_paths = collect_external_media_paths_for_multi_region(&working_config);
+    if !external_media_paths.is_empty() {
+        println!(
+            "[Rust] Multi-region: {} external media input(s) for compositing",
+            external_media_paths.len()
+        );
+    }
+
+    let source_frame_consumers = if use_16x9 {
+        2
+    } else if working_config.source_transform.is_some() {
+        1
+    } else {
+        0
+    };
+    let source_region_consumers =
+        count_multi_region_source_video_consumers(&working_config, &external_media_paths);
+    let source_consumer_count = source_frame_consumers + source_region_consumers;
+    let mut source_video_labels: VecDeque<String> = VecDeque::new();
+    if source_consumer_count == 1 {
+        filter_parts.push("[0:v]setpts=PTS-STARTPTS[src0]".to_string());
+        source_video_labels.push_back("src0".to_string());
+    } else if source_consumer_count > 1 {
+        let labels: Vec<String> = (0..source_consumer_count)
+            .map(|idx| format!("src{}", idx))
+            .collect();
+        filter_parts.push(format!(
+            "[0:v]setpts=PTS-STARTPTS,split={}[{}]",
+            source_consumer_count,
+            labels.join("][")
+        ));
+        source_video_labels.extend(labels);
+    }
 
     // Build processed main-video label: use16x9 (blur fill + sharp), scale+transform+optional blur, or raw input
     let source_label = if use_16x9 {
@@ -3053,27 +3211,32 @@ pub async fn build_multi_region_clip(
             transform.scale, transform.x, transform.y, blur_amount_cfg, blur_enabled
         );
 
-        filter_parts.push("[0:v]split=2[vin_u9a][vin_u9b]".to_string());
+        let vin_u9a = source_video_labels
+            .pop_front()
+            .ok_or_else(|| "Missing source video split for Use 16:9 background".to_string())?;
+        let vin_u9b = source_video_labels
+            .pop_front()
+            .ok_or_else(|| "Missing source video split for Use 16:9 sharp layer".to_string())?;
         // Background: scale to cover, crop to output size, optionally blur
         // Keep sigma scale in line with client `USE169_BLUR_SLIDER_TO_CSS_PX` (2.15) for export ≈ in-app preview
         if blur_enabled && blur_amount_cfg > 0.0 {
             let bg_sigma = (blur_amount_cfg * 2.15).clamp(1.0, 55.0);
             println!("[Rust] Use 16:9 blur: amount={} -> sigma={}", blur_amount_cfg, bg_sigma);
             filter_parts.push(format!(
-                "[vin_u9a]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{}:(iw-ow)/2:(ih-oh)/2,gblur=sigma={}[v_u9_blur]",
-                output_w, output_h, output_w, output_h, bg_sigma
+                "[{}]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{}:(iw-ow)/2:(ih-oh)/2,gblur=sigma={}[v_u9_blur]",
+                vin_u9a, output_w, output_h, output_w, output_h, bg_sigma
             ));
         } else {
             // No blur - just scale and crop
             filter_parts.push(format!(
-                "[vin_u9a]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{}:(iw-ow)/2:(ih-oh)/2[v_u9_blur]",
-                output_w, output_h, output_w, output_h
+                "[{}]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{}:(iw-ow)/2:(ih-oh)/2[v_u9_blur]",
+                vin_u9a, output_w, output_h, output_w, output_h
             ));
         }
         // Build the sharp layer for Use 16:9 mode and get overlay position
         let (overlay_x, overlay_y) = build_use16x9_sharp_layer(
             &mut filter_parts,
-            "vin_u9b",
+            &vin_u9b,
             "v_u9_sharp",
             &transform,
             output_w,
@@ -3097,9 +3260,12 @@ pub async fn build_multi_region_clip(
         } else {
             None
         };
+        let transform_input = source_video_labels
+            .pop_front()
+            .ok_or_else(|| "Missing source video split for transformed background".to_string())?;
         push_letterboxed_source_transform_chain(
             &mut filter_parts,
-            "0:v",
+            &transform_input,
             "vsrc",
             transform,
             output_w,
@@ -3110,22 +3276,39 @@ pub async fn build_multi_region_clip(
         );
         "vsrc"
     } else {
-        "0:v"
+        ""
     };
 
-    let crop_from_output_space = source_label != "0:v";
-    let external_media_paths = collect_external_media_paths_for_multi_region(&working_config);
-    if !external_media_paths.is_empty() {
-        println!(
-            "[Rust] Multi-region: {} external media input(s) for compositing",
-            external_media_paths.len()
-        );
-    }
+    // Region source rectangles are selected against the original source media. The transformed
+    // source frame is only the background layer for "Scale 16:9" layouts.
+    let crop_from_output_space = false;
+    let mut rounded_mask_inputs: Vec<PathBuf> = Vec::new();
+    let mut rounded_mask_cache: HashMap<(u32, u32, u32), usize> = HashMap::new();
+    let mut ensure_rounded_mask_input =
+        |out_w: u32, out_h: u32, radius_px: u32| -> Result<usize, String> {
+            let key = (out_w, out_h, radius_px);
+            if let Some(input_idx) = rounded_mask_cache.get(&key) {
+                return Ok(*input_idx);
+            }
+
+            let input_idx = 1 + external_media_paths.len() + rounded_mask_inputs.len();
+            let mask_path = std::env::temp_dir().join(format!(
+                "clippster_rounded_mask_{}_{}x{}_r{}.png",
+                uuid::Uuid::new_v4(),
+                out_w,
+                out_h,
+                radius_px
+            ));
+            generate_rounded_mask_png(&mask_path, out_w, out_h, radius_px)?;
+            rounded_mask_inputs.push(mask_path);
+            rounded_mask_cache.insert(key, input_idx);
+            Ok(input_idx)
+        };
 
     // Helper function to build region filters
     let mut build_region_filters = |regions: &Vec<super::types::ManualRegion>, 
                                  prefix: &str, 
-                                 enable_condition: Option<String>| -> Vec<(String, u32, u32, Option<String>)> {
+                                 enable_condition: Option<String>| -> Result<Vec<(String, u32, u32, Option<String>)>, String> {
         let mut labels = Vec::new();
         for (i, region) in regions.iter().enumerate() {
             let out_x = (region.output.x * output_w as f64) as u32;
@@ -3142,17 +3325,30 @@ pub async fn build_multi_region_clip(
                         let is_image = matches!(region.media_type.as_deref(), Some("image"));
                         let filter = if is_image {
                             format!(
-                                "[{}:v]scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2,format=yuv420p[{}]",
+                                "[{}:v]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{}:(iw-ow)/2:(ih-oh)/2,format=rgba[{}]",
                                 input_idx, out_w, out_h, out_w, out_h, label
                             )
                         } else {
                             format!(
-                                "[{}:v]trim=duration={},setpts=PTS-STARTPTS,scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2,format=yuv420p[{}]",
+                                "[{}:v]trim=duration={},setpts=PTS-STARTPTS,scale={}:{}:force_original_aspect_ratio=increase,crop={}:{}:(iw-ow)/2:(ih-oh)/2,format=rgba[{}]",
                                 input_idx, duration, out_w, out_h, out_w, out_h, label
                             )
                         };
                         filter_parts.push(filter);
-                        labels.push((label, out_x, out_y, enable_condition.clone()));
+                        let rounded_label = if let Some(radius_px) =
+                            rounded_region_radius_px(region, out_w, out_h, output_w)
+                        {
+                            let mask_input_idx = ensure_rounded_mask_input(out_w, out_h, radius_px)?;
+                            push_rounded_region_filter(
+                                &mut filter_parts,
+                                &label,
+                                &label,
+                                mask_input_idx,
+                            )
+                        } else {
+                            label.clone()
+                        };
+                        labels.push((rounded_label, out_x, out_y, enable_condition.clone()));
                         continue;
                     } else {
                         eprintln!(
@@ -3245,17 +3441,38 @@ pub async fn build_multi_region_clip(
             let crop_y = crop_y.min(max_h.saturating_sub(crop_h));
 
             // Build crop and scale filter (without enable - we'll apply enable to overlay instead)
+            let region_crop_label = if crop_from_output_space {
+                source_label.to_string()
+            } else {
+                source_video_labels
+                    .pop_front()
+                    .ok_or_else(|| format!("Missing source video split for region {}", region.id))?
+            };
             let filter = format!(
                 "[{}]crop={}:{}:{}:{},scale={}:{}:flags=lanczos[{}]",
-                source_label, crop_w, crop_h, crop_x, crop_y, out_w, out_h, label
+                region_crop_label, crop_w, crop_h, crop_x, crop_y, out_w, out_h, label
             );
             
             filter_parts.push(filter);
 
+            let rounded_label = if let Some(radius_px) =
+                rounded_region_radius_px(region, out_w, out_h, output_w)
+            {
+                let mask_input_idx = ensure_rounded_mask_input(out_w, out_h, radius_px)?;
+                push_rounded_region_filter(
+                    &mut filter_parts,
+                    &label,
+                    &label,
+                    mask_input_idx,
+                )
+            } else {
+                label.clone()
+            };
+
             // Store label with enable condition for overlay stage
-            labels.push((label, out_x, out_y, enable_condition.clone()));
+            labels.push((rounded_label, out_x, out_y, enable_condition.clone()));
         }
-        labels
+        Ok(labels)
     };
 
     // Build regions based on whether we have segments
@@ -3290,7 +3507,7 @@ pub async fn build_multi_region_clip(
         };
         
         println!("[Rust] Building base regions with enable condition: {:?}", base_enable);
-        let base_labels = build_region_filters(&working_config.regions, "base_r", base_enable);
+        let base_labels = build_region_filters(&working_config.regions, "base_r", base_enable)?;
         region_labels.extend(base_labels);
         
         // Build segment-specific regions
@@ -3314,17 +3531,17 @@ pub async fn build_multi_region_clip(
                 &seg.regions, 
                 &format!("seg{}_r", seg_idx), 
                 Some(seg_enable)
-            );
+            )?;
             region_labels.extend(seg_labels);
         }
     } else {
         // No segments - build regions normally without enable filters
-        region_labels = build_region_filters(&working_config.regions, "r", None);
+        region_labels = build_region_filters(&working_config.regions, "r", None)?;
     }
 
     if region_labels.is_empty() {
-        if use_16x9 {
-            println!("[Rust] Use 16:9 with no regions — output is blur+sharp composite only");
+        if use_16x9 || working_config.source_transform.is_some() {
+            println!("[Rust] Source-frame mode with no regions — output is source-frame composite only");
             if let Some(ref filter_str) = video_filter_str {
                 filter_parts.push(format!(
                     "[{}]{}[vout_graded]",
@@ -3339,14 +3556,18 @@ pub async fn build_multi_region_clip(
             );
         }
     } else {
-        // Create base canvas (black background)
-        filter_parts.push(format!(
-            "color=c=black:s={}x{}:d={}[base]",
-            output_w, output_h, duration
-        ));
+        let mut current_label = if working_config.source_transform.is_some() || use_16x9 {
+            source_label.to_string()
+        } else {
+            // Create base canvas (black background) when there is no scaled source-frame layer.
+            filter_parts.push(format!(
+                "color=c=black:s={}x{}:d={}[base]",
+                output_w, output_h, duration
+            ));
+            "base".to_string()
+        };
 
-        // Start with base canvas, overlay each region
-        let mut current_label = "base".to_string();
+        // Start with the source-frame/background canvas, overlay each region.
         for (i, (region_label, out_x, out_y, enable_cond)) in region_labels.iter().enumerate() {
             let next_label = if i == region_labels.len() - 1 {
                 "vout".to_string() // Final output
@@ -3379,13 +3600,16 @@ pub async fn build_multi_region_clip(
         }
     }
 
+    let pre_format_label = if video_filter_str.is_some() {
+        "vout_graded"
+    } else {
+        "vout"
+    };
+    filter_parts.push(format!("[{}]format=yuv420p[vout_final]", pre_format_label));
+
     let filter_complex = filter_parts.join(";");
 
-    let map_label = if video_filter_str.is_some() {
-        "[vout_graded]"
-    } else {
-        "[vout]"
-    };
+    let map_label = "[vout_final]";
 
     // Detect hardware encoder
     let encoder = detect_hardware_encoder(app, quality).await;
@@ -3395,19 +3619,14 @@ pub async fn build_multi_region_clip(
     // when using input seeking with complex filter graphs
     let mut args = build_hwaccel_args(&encoder, true);
 
-    // Combined seeking: input seek (fast) to ~5s before, then output seek (accurate)
-    let input_seek = (start_time - 5.0).max(0.0);
-    let output_seek = start_time - input_seek;
-
+    // Multi-region exports add external media/mask inputs after the main VOD.
+    // Keep seeking as an input option on the VOD and cap duration as an output
+    // option later; otherwise `-ss/-t` after input 0 binds to input 1.
     args.extend(vec![
         "-ss".to_string(),
-        format!("{:.3}", input_seek),
+        format!("{:.3}", start_time),
         "-i".to_string(),
         video_path.to_string(),
-        "-ss".to_string(),
-        format!("{:.3}", output_seek),
-        "-t".to_string(),
-        format!("{:.3}", duration),
     ]);
 
     for ext in &external_media_paths {
@@ -3429,11 +3648,28 @@ pub async fn build_multi_region_clip(
             args.push("-i".to_string());
             args.push(p);
         } else {
-            args.push("-i".to_string());
-            args.push(p);
             args.push("-t".to_string());
             args.push(format!("{:.3}", duration));
+            args.push("-i".to_string());
+            args.push(p);
         }
+    }
+
+    if !rounded_mask_inputs.is_empty() {
+        println!(
+            "[Rust] Multi-region: {} pre-rendered rounded mask input(s)",
+            rounded_mask_inputs.len()
+        );
+    }
+    for mask_path in &rounded_mask_inputs {
+        args.push("-loop".to_string());
+        args.push("1".to_string());
+        args.push("-framerate".to_string());
+        args.push(frame_rate.to_string());
+        args.push("-t".to_string());
+        args.push(format!("{:.3}", duration));
+        args.push("-i".to_string());
+        args.push(mask_path.to_string_lossy().to_string());
     }
 
     args.extend(vec![
@@ -3461,22 +3697,24 @@ pub async fn build_multi_region_clip(
     args.push(encoder.quality_param.clone());
     args.push(encoder.quality_value.clone());
 
-    let audio_filter = build_audio_filter(audio_settings);
-    let copy_audio = audio_filter.is_none();
-
-    if let Some(af) = audio_filter {
-        args.push("-af".to_string());
-        args.push(af);
+    let mut audio_filters = vec![
+        format!("atrim=duration={:.3}", duration),
+        "asetpts=PTS-STARTPTS".to_string(),
+        "aresample=async=1:first_pts=0".to_string(),
+    ];
+    if let Some(af) = build_audio_filter(audio_settings) {
+        audio_filters.push(af);
     }
-
+    args.push("-af".to_string());
+    args.push(audio_filters.join(","));
     args.push("-c:a".to_string());
-    if copy_audio {
-        args.push("copy".to_string());
-    } else {
-        args.push("aac".to_string());
-        args.push("-b:a".to_string());
-        args.push("192k".to_string());
-    }
+    args.push("aac".to_string());
+    args.push("-b:a".to_string());
+    args.push("192k".to_string());
+
+    args.push("-t".to_string());
+    args.push(format!("{:.3}", duration));
+    args.push("-shortest".to_string());
 
     // Output - add avoid_negative_ts to prevent black frames at start
     args.push("-avoid_negative_ts".to_string());
@@ -3549,6 +3787,9 @@ pub async fn build_multi_region_clip(
     }
 
     println!("[Rust] Multi-region clip built successfully");
+    for mask_path in &rounded_mask_inputs {
+        let _ = std::fs::remove_file(mask_path);
+    }
     Ok(())
 }
 

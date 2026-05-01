@@ -633,20 +633,19 @@
   });
 
   /**
-   * Full subtitle defaults for workspace preview / editor: **creator profile clip_build_defaults first**
-   * (same UI as Creator clip defaults), then project VOD preset snapshot.
-   * The VOD snapshot often carries detection/preset-library bottom defaults and must not override
-   * explicit creator positioning (e.g. subs at top of 9:16).
+   * Full subtitle defaults for workspace preview / editor.
+   * An active VOD pre-edit is an explicit project snapshot, so it wins over live creator profile
+   * defaults that may have changed since the VOD was configured.
    */
   const subtitleEditorDefaultSettings = computed((): SubtitleSettings | null => {
+    const vodSubs = vodPresetConfig.value?.subtitleDefaults;
+    if (vodSubs && typeof vodSubs === 'object') {
+      return JSON.parse(JSON.stringify(vodSubs)) as SubtitleSettings;
+    }
     const parsed = parseCreatorClipBuildDefaults(creatorProfile.value?.clip_build_defaults ?? null);
     const profileSubs = parsed?.subtitleDefaults;
     if (profileSubs && typeof profileSubs === 'object') {
       return JSON.parse(JSON.stringify(profileSubs)) as SubtitleSettings;
-    }
-    const vodSubs = vodPresetConfig.value?.subtitleDefaults;
-    if (vodSubs && typeof vodSubs === 'object') {
-      return JSON.parse(JSON.stringify(vodSubs)) as SubtitleSettings;
     }
     return null;
   });
@@ -732,7 +731,8 @@
     };
   });
 
-  // Framing regions for the currently selected preview aspect ratio (POI rectangles only — not "Use 16:9" blur mode)
+  // Framing regions for the current preview aspect (stacked POI layout). When regions exist, VideoPlayer
+  // composites them (including uploaded media); "Use 16:9" single-box preview only applies when there are no regions.
   const currentFramingRegions = computed(() => {
     if (workspacePlaybackIsBuiltExport.value) {
       return undefined;
@@ -742,11 +742,7 @@
     }
 
     const fc = vodPresetConfig.value?.framingConfig;
-    if (fc?.sourceFrameMode === 'use16x9') {
-      return undefined; // VideoPlayer renders blur + sharp 16:9 via manualFramingConfig
-    }
-
-    if (fc && vodPresetConfig.value?.targetAspectRatio === previewAspectRatio.value) {
+    if (fc && vodPresetConfig.value?.targetAspectRatio === previewAspectRatio.value && fc.regions?.length) {
       return fc.regions;
     }
 
@@ -836,6 +832,37 @@
       }
     },
     { deep: true, immediate: true }
+  );
+
+  watch(
+    vodPresetConfig,
+    async (config) => {
+      if (!props.modelValue || !config) return;
+
+      if (config.watermarkMode === 'custom' && config.customWatermarkSettings) {
+        const presetWatermark: WatermarkSettings = {
+          ...JSON.parse(JSON.stringify(config.customWatermarkSettings)),
+          enabled: true,
+        };
+        await nextTick();
+        mediaPanelRef.value?.setWatermarkSettings(presetWatermark);
+        await onWatermarkSettingsChanged(presetWatermark);
+      } else if (config.watermarkMode === 'none') {
+        const cleared: WatermarkSettings = {
+          enabled: false,
+          watermarkId: null,
+          positionX: 12,
+          positionY: 92,
+          opacity: 80,
+          scale: 20,
+          perRatioSettings: null,
+        };
+        await nextTick();
+        mediaPanelRef.value?.setWatermarkSettings(cleared);
+        await onWatermarkSettingsChanged(cleared);
+      }
+    },
+    { deep: true }
   );
 
   // Creator profile associated with this project (for preconfiguring settings)
