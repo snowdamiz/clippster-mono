@@ -117,11 +117,18 @@ pub fn remove_hwaccel_flags(args: &mut Vec<String>) {
 
 // Build hardware acceleration args from encoder config
 // These args must be placed BEFORE the -i input argument
-// IMPORTANT: hwaccel_output_format should NOT be used when there are no video filters,
-// as FFmpeg cannot convert from CUDA format to encoder format without a filter chain.
-// Always use GPU decode, but skip hwaccel_output_format to let FFmpeg handle format conversion.
-pub fn build_hwaccel_args(encoder: &EncoderConfig, _uses_cpu_filters: bool) -> Vec<String> {
+// Hardware decode is only useful when FFmpeg can keep frames in a compatible pipeline.
+// Complex CPU filter graphs (crop/scale/blur/overlay/alphamerge/etc.) are more stable
+// when decoded into normal CPU frames, while still allowing hardware encoding later.
+pub fn build_hwaccel_args(encoder: &EncoderConfig, uses_cpu_filters: bool) -> Vec<String> {
     let mut args = Vec::new();
+
+    if uses_cpu_filters {
+        println!(
+            "[Rust] Skipping hardware decode because this FFmpeg command uses CPU filters"
+        );
+        return args;
+    }
 
     if let Some(hw_accel) = &encoder.hw_accel {
         println!("[Rust] Building hardware acceleration args:");

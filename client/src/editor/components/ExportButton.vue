@@ -293,12 +293,15 @@ async function loadAvailableCampaigns() {
 		const clip = await getClip(clipSource.source_id);
 		
 		if (clip?.project_id) {
-			// Resolve creator profile for this clip's project
-			const { resolveBrandingProfile } = await import("@/composables/useBrandingProfileSelection");
-			const profile = await resolveBrandingProfile(clip.project_id);
-			
-			if (profile && profile.context_type === "organization" && profile.id && !profile.id.startsWith("campaign-")) {
-				const serverId = parseInt(profile.id, 10);
+			// Read-only: org-streamer match for campaign API (do not use resolveBrandingProfile — it persists auto-selection).
+			const { resolveApplicableProfiles } = await import("@/composables/useBrandingProfileSelection");
+			const candidates = await resolveApplicableProfiles(clip.project_id);
+			const orgStreamer = candidates.find((c) => c.source === "org-streamer");
+			if (
+				orgStreamer?.profile?.id &&
+				!orgStreamer.profile.id.startsWith("campaign-")
+			) {
+				const serverId = parseInt(orgStreamer.profile.id, 10);
 				if (!isNaN(serverId)) {
 					creatorProfileServerId.value = serverId;
 				}

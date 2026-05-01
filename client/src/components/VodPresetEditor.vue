@@ -472,6 +472,7 @@
     VodPreset,
     WatermarkSettings,
     PerRatioOverlaySettings,
+    SubtitleSettings,
   } from '@/types';
   import {
     getAllVodPresets,
@@ -482,6 +483,7 @@
     deleteVodPreset,
   } from '@/services/database/vod-presets';
   import { resolveApplicableProfiles } from '@/composables/useBrandingProfileSelection';
+  import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
 
   interface Props {
     modelValue: boolean;
@@ -524,6 +526,7 @@
   const layoutOverlays = ref<LayoutOverlay[]>([]);
   const watermarkMode = ref<'creator' | 'custom' | 'none'>('none');
   const customWatermarkSettings = ref<WatermarkSettings | null>(null);
+  const subtitleDefaults = ref<SubtitleSettings | null>(null);
   const overlayPreviews = reactive<Record<string, string>>({});
   // Ref-based copy to trigger prop reactivity in child components (ManualPOIEditor)
   // reactive() mutations don't propagate as prop changes; ref does
@@ -963,6 +966,9 @@
       customWatermarkSettings: customWatermarkSettings.value
         ? JSON.parse(JSON.stringify(customWatermarkSettings.value))
         : null,
+      subtitleDefaults: subtitleDefaults.value
+        ? JSON.parse(JSON.stringify(subtitleDefaults.value))
+        : null,
     };
 
     emit('confirm', config);
@@ -993,6 +999,9 @@
           customWatermarkSettings.value = props.initialConfig.customWatermarkSettings
             ? JSON.parse(JSON.stringify(props.initialConfig.customWatermarkSettings))
             : null;
+          subtitleDefaults.value = props.initialConfig.subtitleDefaults
+            ? JSON.parse(JSON.stringify(props.initialConfig.subtitleDefaults))
+            : null;
           selectedTemplateId.value = props.initialConfig.presetId || '';
 
           // Restore custom watermark selection from saved settings
@@ -1020,6 +1029,7 @@
           layoutOverlays.value = [];
           watermarkMode.value = hasCreatorProfile.value ? 'creator' : 'none';
           customWatermarkSettings.value = null;
+          subtitleDefaults.value = null;
           selectedTemplateId.value = '';
           selectedCustomWatermarkId.value = null;
           customWatermarkPositionSettings.value = null;
@@ -1071,6 +1081,11 @@
                   } catch (parseErr) {
                     console.warn('[VodPresetEditor] Failed to parse creator profile watermark settings:', parseErr);
                   }
+                }
+
+                const profileClipDefaults = parseCreatorClipBuildDefaults(profile.clip_build_defaults ?? null);
+                if (profileClipDefaults?.subtitleDefaults) {
+                  subtitleDefaults.value = JSON.parse(JSON.stringify(profileClipDefaults.subtitleDefaults));
                 }
               } else {
                 hasResolvedProfile.value = false;

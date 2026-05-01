@@ -789,21 +789,20 @@
     emit('selectRegion', id);
   }
 
-  // Open media upload - creates new region if none selected
+  // Open media upload — always add a new region (when under cap), then attach media to it
   function openMediaUpload() {
     if (!props.allowMediaUpload) return;
-    if (props.selectedRegionId) {
-      emit('uploadMedia', props.selectedRegionId);
-    } else {
-      // Auto-create a region first, then upload media to it
+    if (props.regions.length < props.maxRegions) {
       addRegion();
-      // The new region will be auto-selected, emit upload for it
-      // Wait for next tick to ensure region is created
       nextTick(() => {
         if (props.selectedRegionId) {
           emit('uploadMedia', props.selectedRegionId);
         }
       });
+    } else {
+      // At region limit: attach to the current selection (cannot add another region)
+      const id = props.selectedRegionId ?? props.regions[0]?.id;
+      if (id) emit('uploadMedia', id);
     }
   }
 

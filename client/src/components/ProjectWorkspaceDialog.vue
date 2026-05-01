@@ -386,13 +386,15 @@
     deleteClip,
     getWatermarkByServerId,
     getCreatorProfileByProjectId,
+    getCreatorProfile,
+    getProjectBrandingProfileId,
     getProject,
     createClipVersion,
     updateClip,
     getOrCreateManualSession,
   } from '@/services/database';
   import { resolveIntroOutroById } from '@/services/database/intro-outros';
-  import { resolveBrandingProfile } from '@/composables/useBrandingProfileSelection';
+  import { resolveApplicableProfiles } from '@/composables/useBrandingProfileSelection';
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
   import { X, Film, Smartphone } from 'lucide-vue-next';
@@ -631,20 +633,19 @@
   });
 
   /**
-   * Full subtitle defaults for workspace preview / editor: **creator profile clip_build_defaults first**
-   * (same UI as Creator clip defaults), then project VOD preset snapshot.
-   * The VOD snapshot often carries detection/preset-library bottom defaults and must not override
-   * explicit creator positioning (e.g. subs at top of 9:16).
+   * Full subtitle defaults for workspace preview / editor.
+   * An active VOD pre-edit is an explicit project snapshot, so it wins over live creator profile
+   * defaults that may have changed since the VOD was configured.
    */
   const subtitleEditorDefaultSettings = computed((): SubtitleSettings | null => {
+    const vodSubs = vodPresetConfig.value?.subtitleDefaults;
+    if (vodSubs && typeof vodSubs === 'object') {
+      return JSON.parse(JSON.stringify(vodSubs)) as SubtitleSettings;
+    }
     const parsed = parseCreatorClipBuildDefaults(creatorProfile.value?.clip_build_defaults ?? null);
     const profileSubs = parsed?.subtitleDefaults;
     if (profileSubs && typeof profileSubs === 'object') {
       return JSON.parse(JSON.stringify(profileSubs)) as SubtitleSettings;
-    }
-    const vodSubs = vodPresetConfig.value?.subtitleDefaults;
-    if (vodSubs && typeof vodSubs === 'object') {
-      return JSON.parse(JSON.stringify(vodSubs)) as SubtitleSettings;
     }
     return null;
   });
@@ -730,7 +731,8 @@
     };
   });
 
-  // Framing regions for the currently selected preview aspect ratio (POI rectangles only — not "Use 16:9" blur mode)
+  // Framing regions for the current preview aspect (stacked POI layout). When regions exist, VideoPlayer
+  // composites them (including uploaded media); "Use 16:9" single-box preview only applies when there are no regions.
   const currentFramingRegions = computed(() => {
     if (workspacePlaybackIsBuiltExport.value) {
       return undefined;
@@ -740,11 +742,7 @@
     }
 
     const fc = vodPresetConfig.value?.framingConfig;
-    if (fc?.sourceFrameMode === 'use16x9') {
-      return undefined; // VideoPlayer renders blur + sharp 16:9 via manualFramingConfig
-    }
-
-    if (fc && vodPresetConfig.value?.targetAspectRatio === previewAspectRatio.value) {
+    if (fc && vodPresetConfig.value?.targetAspectRatio === previewAspectRatio.value && fc.regions?.length) {
       return fc.regions;
     }
 
@@ -834,6 +832,37 @@
       }
     },
     { deep: true, immediate: true }
+  );
+
+  watch(
+    vodPresetConfig,
+    async (config) => {
+      if (!props.modelValue || !config) return;
+
+      if (config.watermarkMode === 'custom' && config.customWatermarkSettings) {
+        const presetWatermark: WatermarkSettings = {
+          ...JSON.parse(JSON.stringify(config.customWatermarkSettings)),
+          enabled: true,
+        };
+        await nextTick();
+        mediaPanelRef.value?.setWatermarkSettings(presetWatermark);
+        await onWatermarkSettingsChanged(presetWatermark);
+      } else if (config.watermarkMode === 'none') {
+        const cleared: WatermarkSettings = {
+          enabled: false,
+          watermarkId: null,
+          positionX: 12,
+          positionY: 92,
+          opacity: 80,
+          scale: 20,
+          perRatioSettings: null,
+        };
+        await nextTick();
+        mediaPanelRef.value?.setWatermarkSettings(cleared);
+        await onWatermarkSettingsChanged(cleared);
+      }
+    },
+    { deep: true }
   );
 
   // Creator profile associated with this project (for preconfiguring settings)
@@ -2762,6 +2791,21 @@
     return false;
   }
 
+  /** Only personal/local profiles may auto-apply watermark and intro/outro in workspace (not org-global or campaign). */
+  function isPersonalWorkspaceBrandingProfile(profile: CreatorProfileWithLinks): boolean {
+    return profile.context_type !== 'organization' && profile.context_type !== 'campaign';
+  }
+
+  function projectHasStoredWatermarkId(projectRow: Awaited<ReturnType<typeof getProject>>): boolean {
+    if (!projectRow?.default_watermark_settings) return false;
+    try {
+      const storedSettings = JSON.parse(projectRow.default_watermark_settings);
+      return Boolean(storedSettings?.watermarkId);
+    } catch {
+      return false;
+    }
+  }
+
   // Load creator profile and apply their default settings
   async function loadCreatorProfileSettings(projectId: string) {
     try {
@@ -2854,36 +2898,56 @@
         }
       }
 
-      // Then try to find the branding profile (streamer-specific, global, or user-selected)
-      const profile = await resolveBrandingProfile(projectId);
-      creatorProfile.value = profile;
+      // Read-only discovery for campaigns — never call resolveBrandingProfile here (it persists auto-selection).
+      const candidates = await resolveApplicableProfiles(projectId);
 
-      console.log('[ProjectWorkspaceDialog] Resolved branding profile:', {
-        name: profile?.name,
-        id: profile?.id,
-        context_type: profile?.context_type,
-        watermark_id: profile?.watermark_id,
-        watermark_settings: profile?.watermark_settings,
-      });
-
-      // Extract server ID for campaign lookup (org profiles have numeric string IDs)
-      if (profile && profile.context_type === 'organization' && profile.id && !profile.id.startsWith('campaign-')) {
-        const serverId = parseInt(profile.id, 10);
+      creatorProfileServerId.value = null;
+      const orgStreamerCandidate = candidates.find((c) => c.source === 'org-streamer');
+      if (
+        orgStreamerCandidate?.profile?.id &&
+        !orgStreamerCandidate.profile.id.startsWith('campaign-')
+      ) {
+        const serverId = parseInt(orgStreamerCandidate.profile.id, 10);
         creatorProfileServerId.value = isNaN(serverId) ? null : serverId;
-      } else {
-        creatorProfileServerId.value = null;
       }
 
-      if (profile) {
+      let localProfile: CreatorProfileWithLinks | null = null;
+      const savedBrandingId = await getProjectBrandingProfileId(projectId);
+      if (savedBrandingId) {
+        try {
+          const row = await getCreatorProfile(savedBrandingId);
+          if (row) localProfile = row;
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!localProfile) {
+        localProfile = await getCreatorProfileByProjectId(projectId);
+      }
+
+      creatorProfile.value = localProfile;
+
+      console.log('[ProjectWorkspaceDialog] Workspace creator profile (local DB only):', {
+        name: localProfile?.name,
+        id: localProfile?.id,
+        context_type: localProfile?.context_type,
+        creatorProfileServerId: creatorProfileServerId.value,
+      });
+
+      const applyPersonalBranding =
+        localProfile !== null && isPersonalWorkspaceBrandingProfile(localProfile);
+
+      if (applyPersonalBranding && localProfile) {
+        const profile = localProfile;
+
         console.log(
-          '[ProjectWorkspaceDialog] Found creator profile:',
+          '[ProjectWorkspaceDialog] Applying personal creator branding:',
           profile.name,
           'watermark_id:',
           profile.watermark_id
         );
 
-        // Apply watermark settings from creator profile, or clear org/project-inherited watermark
-        // when the resolved profile has none (e.g. project.default_watermark_settings still has org WM)
+        // Apply watermark settings from creator profile, or clear inherited watermark when profile has none
         if (creatorProfileSpecifiesWatermark(profile)) {
           console.log(
             '[ProjectWorkspaceDialog] Applying creator watermark:',
@@ -3038,8 +3102,29 @@
             console.log('[ProjectWorkspaceDialog] Loaded creator default outro:', profile.outro_id);
           }
         }
+      } else if (localProfile && !isPersonalWorkspaceBrandingProfile(localProfile)) {
+        console.log(
+          '[ProjectWorkspaceDialog] Skipping auto-apply of org/campaign branding for workspace:',
+          localProfile.name
+        );
+        if (!projectHasStoredWatermarkId(project)) {
+          const cleared: WatermarkSettings = {
+            enabled: false,
+            watermarkId: null,
+            positionX: 12,
+            positionY: 92,
+            opacity: 80,
+            scale: 20,
+            perRatioSettings: null,
+          };
+          await nextTick();
+          if (mediaPanelRef.value) {
+            mediaPanelRef.value.setWatermarkSettings(cleared);
+          }
+          await onWatermarkSettingsChanged(cleared);
+        }
       } else {
-        console.log('[ProjectWorkspaceDialog] No creator profile found for project:', projectId);
+        console.log('[ProjectWorkspaceDialog] No local creator profile found for project:', projectId);
       }
 
       // For free tier users, admin-configured branding OVERRIDES any project/creator watermark

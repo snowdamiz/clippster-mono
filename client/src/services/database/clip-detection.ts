@@ -244,6 +244,15 @@ export async function createVersionedClip(
  * `subtitleDefaults` (e.g. from creator layout), merge the full SubtitlePropertiesPanel snapshot
  * with the preset style selected in the detection dialog.
  */
+async function getProjectOrParentVodPresetConfig(projectId: string) {
+  const vodPreset = await getProjectVodPresetConfig(projectId);
+  if (vodPreset) return vodPreset;
+
+  const project = await getProject(projectId);
+  if (!project?.parent_id) return null;
+  return getProjectVodPresetConfig(project.parent_id);
+}
+
 async function applyDetectionSubtitleChoiceToClip(
   clipId: string,
   projectId: string,
@@ -252,7 +261,7 @@ async function applyDetectionSubtitleChoiceToClip(
   if (!detectionSubtitle?.enabled || !detectionSubtitle.presetId) return;
 
   try {
-    const vodPreset = await getProjectVodPresetConfig(projectId);
+    const vodPreset = await getProjectOrParentVodPresetConfig(projectId);
     const seeded = vodPreset?.subtitleDefaults as SubtitleSettings | null | undefined;
 
     if (seeded && typeof seeded === 'object') {

@@ -2,6 +2,7 @@
   <div
     ref="regionRef"
     class="poi-region absolute cursor-move select-none group"
+    :class="{ 'is-selected': isSelected }"
     :style="regionStyle"
     @mousedown.stop="onDragStart"
   >
@@ -369,8 +370,17 @@
     z-index: 10;
   }
 
-  .poi-region:hover {
+  /* Tab-selected region must win hit-testing over overlapping siblings */
+  .poi-region.is-selected {
+    z-index: 25;
+  }
+
+  .poi-region:not(.is-selected):hover {
     z-index: 20;
+  }
+
+  .poi-region.is-selected:hover {
+    z-index: 30;
   }
 
   .resize-handle {

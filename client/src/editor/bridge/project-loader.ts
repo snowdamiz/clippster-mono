@@ -37,7 +37,6 @@ import type {
 import { getClip } from "@/services/database/clips";
 import { getRawVideosByProjectId } from "@/services/database/raw-videos";
 import { getCreatorProfileByProjectId } from "@/services/database/creator-profiles";
-import { resolveBrandingProfile } from "@/composables/useBrandingProfileSelection";
 import { useBrandingConfig } from "../composables/useBrandingConfig";
 import { healOrphanVideoMediaReferences } from "../lib/timeline/heal-orphan-video-media";
 
