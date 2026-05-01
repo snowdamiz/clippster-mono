@@ -485,6 +485,7 @@ pub async fn generate_thumbnail(
 ) -> Result<String, String> {
     use std::path::Path;
 
+    let video_path = crate::path_utils::normalize_local_fs_path(video_path);
     let video = Path::new(&video_path);
 
     // Validate video file exists
@@ -552,6 +553,7 @@ pub async fn generate_thumbnail_at_timestamp(
 ) -> Result<String, String> {
     use std::path::Path;
 
+    let video_path = crate::path_utils::normalize_local_fs_path(video_path);
     let video = Path::new(&video_path);
 
     // Validate video file exists
@@ -628,6 +630,7 @@ pub fn read_file_as_data_url(file_path: String) -> Result<String, String> {
     use std::fs;
     use std::path::Path;
 
+    let file_path = crate::path_utils::normalize_local_fs_path(file_path);
     let path = Path::new(&file_path);
 
     if !path.exists() {

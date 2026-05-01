@@ -1160,11 +1160,10 @@
   });
 
   const isTranscribed = computed(() => {
-    return !!(
-      transcriptData.value &&
-      transcriptData.value.whisperSegments &&
-      transcriptData.value.whisperSegments.length > 0
-    );
+    const td = transcriptData.value;
+    if (!td) return false;
+    // Match Transcript tab / parseTranscriptToWords: word-level-only JSON has no whisper `segments` until synthesized.
+    return (td.whisperSegments?.length ?? 0) > 0 || (td.words?.length ?? 0) > 0;
   });
 
   // Initialize progress socket
