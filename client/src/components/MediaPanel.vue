@@ -159,7 +159,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
+  import { ref, onMounted, computed, watch, onUnmounted, nextTick } from 'vue';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import {
     getClipDetectionSessionsByProjectId,
@@ -690,10 +690,15 @@
     }
   }
 
+  async function refreshThumbnails() {
+    await nextTick();
+    await clipsTabRef.value?.refreshThumbnails?.();
+  }
+
   // Expose methods for external access
   defineExpose({
     refreshClips,
-    refreshThumbnails: () => clipsTabRef.value?.refreshThumbnails?.(),
+    refreshThumbnails,
     scrollClipIntoView: (clipId: string) => {
       clipsTabRef.value?.scrollClipIntoView(clipId);
     },

@@ -88,6 +88,20 @@ export function useTranscriptData(projectId: Ref<string | null>) {
         });
       }
 
+      // Word-only JSON (top-level `words` or flat array) has no `segments`; subtitles/gating use whisperSegments.
+      if (segments.length === 0) {
+        const words = parseTranscriptToWords(rawJson);
+        if (words.length > 0) {
+          segments.push({
+            id: 0,
+            start: words[0].start,
+            end: words[words.length - 1].end,
+            text: words.map((w) => w.word).join(' ').trim(),
+            words,
+          });
+        }
+      }
+
       return segments;
     } catch (error) {
       console.error('[useTranscriptData] Failed to parse whisper segments:', error);

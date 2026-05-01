@@ -1,5 +1,7 @@
 use tokio::process::Command as AsyncCommand;
 
+use crate::youtube::resolve_ffmpeg_binary;
+
 /// On Windows, set CREATE_NO_WINDOW flag to prevent a visible console window.
 #[cfg(target_os = "windows")]
 fn no_window(cmd: &mut AsyncCommand) -> &mut AsyncCommand {
@@ -18,6 +20,8 @@ pub async fn extract_clip_segment(
     start_time: f64,
     end_time: f64,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let ffmpeg_path = resolve_ffmpeg_binary()?;
+
     let duration = end_time - start_time;
 
     if duration <= 0.0 {
@@ -38,7 +42,16 @@ pub async fn extract_clip_segment(
     // 1) `-ss` *before* `-i` seeks in the demuxer (fast on long VODs). `-ss` *after* `-i` decodes
     // from t=0 to start_time (very slow for 30+ min offsets) — only use as fallback when fast seek
     // fails or yields a near-empty file (moov-at-end / fragmented MP4 edge cases).
-    match run_extract_ffmpeg(input_path, output_path, start_time, duration, true).await {
+    match run_extract_ffmpeg(
+        &ffmpeg_path,
+        input_path,
+        output_path,
+        start_time,
+        duration,
+        true,
+    )
+    .await
+    {
         Ok(()) => {
             if let Ok(meta) = std::fs::metadata(output_path) {
                 if meta.len() >= MIN_OK_BYTES {
@@ -59,6 +72,7 @@ pub async fn extract_clip_segment(
 
     println!("[FFmpeg] Retrying with accurate output-side seek (slow path)");
     run_extract_ffmpeg(
+        &ffmpeg_path,
         input_path,
         output_path,
         start_time,
@@ -82,13 +96,14 @@ pub async fn extract_clip_segment(
 
 /// `input_seek_first`: true → `-ss` before `-i` (fast). false → `-ss` after `-i` (accurate, slow on long files).
 async fn run_extract_ffmpeg(
+    ffmpeg_path: &str,
     input_path: &str,
     output_path: &str,
     start_time: f64,
     duration: f64,
     input_seek_first: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut cmd = AsyncCommand::new("ffmpeg");
+    let mut cmd = AsyncCommand::new(ffmpeg_path);
     no_window(&mut cmd);
     cmd.arg("-y");
 
@@ -143,7 +158,9 @@ pub async fn generate_thumbnail_at_time(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("[FFmpeg] Generating thumbnail at {}s", time);
 
-    let mut cmd = AsyncCommand::new("ffmpeg");
+    let ffmpeg_path = resolve_ffmpeg_binary()?;
+
+    let mut cmd = AsyncCommand::new(&ffmpeg_path);
     no_window(&mut cmd);
     
     let output = cmd
@@ -177,11 +194,13 @@ pub async fn extract_waveform_data(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("[FFmpeg] Extracting waveform data");
 
+    let ffmpeg_path = resolve_ffmpeg_binary()?;
+
     // First extract audio as WAV
     let temp_audio_path = format!("{}.wav", output_path);
 
     // Extract audio
-    let mut cmd = AsyncCommand::new("ffmpeg");
+    let mut cmd = AsyncCommand::new(&ffmpeg_path);
     no_window(&mut cmd);
     
     let output = cmd
@@ -205,7 +224,7 @@ pub async fn extract_waveform_data(
     }
 
     // Generate waveform data points
-    let waveform_data = generate_waveform_points(&temp_audio_path).await?;
+    let waveform_data = generate_waveform_points(&ffmpeg_path, &temp_audio_path).await?;
 
     // Save as JSON
     let json_data = serde_json::to_string_pretty(&waveform_data)?;
@@ -219,12 +238,13 @@ pub async fn extract_waveform_data(
 
 /// Generate waveform data points from audio file
 async fn generate_waveform_points(
+    ffmpeg_path: &str,
     audio_path: &str,
 ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
     // For now, generate a simple waveform using FFmpeg's volumedetect
     // In a more sophisticated implementation, we could use a proper audio analysis library
 
-    let mut cmd = AsyncCommand::new("ffmpeg");
+    let mut cmd = AsyncCommand::new(ffmpeg_path);
     no_window(&mut cmd);
     
     let output = cmd
