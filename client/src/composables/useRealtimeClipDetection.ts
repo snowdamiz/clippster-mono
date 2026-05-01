@@ -202,10 +202,25 @@ export function useRealtimeClipDetection() {
     // Start transcription
     await transcription.startTranscription(options.sessionId);
 
-    // Start detection interval (every 30 seconds)
-    state.value.detectionInterval = window.setInterval(async () => {
-      await runDetection();
-    }, DETECTION_INTERVAL_MS);
+    // Schedule detection runs every 30s, but never overlap: setInterval would queue
+    // another run while await runDetection() is still in progress, which caused
+    // duplicate saves of the same pending clip (same timestamps/title).
+    const scheduleNextDetection = () => {
+      if (!state.value.isActive) return;
+      state.value.detectionInterval = window.setTimeout(async () => {
+        if (!state.value.isActive) return;
+        try {
+          await runDetection();
+        } finally {
+          if (state.value.isActive) {
+            scheduleNextDetection();
+          } else {
+            state.value.detectionInterval = null;
+          }
+        }
+      }, DETECTION_INTERVAL_MS);
+    };
+    scheduleNextDetection();
 
     // Start credit deduction interval (every minute)
     state.value.creditInterval = window.setInterval(async () => {
@@ -271,8 +286,8 @@ export function useRealtimeClipDetection() {
   async function stopDetection() {
     console.log('[RealtimeClipDetection] Stopping detection');
 
-    if (state.value.detectionInterval) {
-      clearInterval(state.value.detectionInterval);
+    if (state.value.detectionInterval !== null) {
+      clearTimeout(state.value.detectionInterval);
       state.value.detectionInterval = null;
     }
 
@@ -462,19 +477,20 @@ export function useRealtimeClipDetection() {
       return;
     }
 
+    // Claim immediately (sync). Overlapping runDetection ticks used to await here while
+    // still holding pendingClip, so two saves passed dedup and extracted the same clip.
     const pending = state.value.pendingClip;
+    state.value.pendingClip = null;
 
     // Check virality threshold before saving
     if (pending.viralityScore < VIRALITY_THRESHOLD) {
       console.log('[RealtimeClipDetection] Pending clip below threshold:', pending.viralityScore, '- discarding');
-      state.value.pendingClip = null;
       return;
     }
 
     // Check for duplicates with recently saved clips (client-side safeguard)
     if (isDuplicateOfRecentClip(pending)) {
       console.log('[RealtimeClipDetection] Skipping duplicate clip:', pending.title);
-      state.value.pendingClip = null;
       return;
     }
 
@@ -554,11 +570,12 @@ export function useRealtimeClipDetection() {
           clipPath: clipFilePath,
         },
       }));
-
-      // Clear pending clip after saving
-      state.value.pendingClip = null;
     } catch (error) {
       console.error('[RealtimeClipDetection] Failed to save pending clip:', error);
+      // Restore pending only if nothing newer replaced it (retry extraction later)
+      if (!state.value.pendingClip) {
+        state.value.pendingClip = pending;
+      }
     }
   }
 
