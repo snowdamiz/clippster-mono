@@ -2748,10 +2748,28 @@
       clip.subtitle_position_width = width;
     }
 
-    // CRITICAL: Also update activeSubtitleSettings to keep them in sync
+    // CRITICAL: Keep root fields AND perRatioConfigs in sync (Rust FFmpeg reads per-ratio JSON overrides).
+    // Without updating perRatioConfigs for the preview ratio, builds could use stale Y/X from VOD defaults
+    // while the preview used subtitle_position_* columns — worse when merge skips (50,85) heuristics.
     if (activeSubtitleSettings.value) {
-      activeSubtitleSettings.value.positionPercentage = position.y;
-      activeSubtitleSettings.value.maxWidth = width;
+      const ratio = previewAspectRatio.value;
+      const prev = activeSubtitleSettings.value as SubtitleSettings;
+      const existingPr = prev.perRatioConfigs?.[ratio] ?? {};
+      activeSubtitleSettings.value = {
+        ...prev,
+        positionPercentage: position.y,
+        maxWidth: width,
+        perRatioConfigs: {
+          ...(prev.perRatioConfigs ?? {}),
+          [ratio]: {
+            ...existingPr,
+            fontSize: existingPr.fontSize ?? prev.fontSize,
+            position: { x: position.x, y: position.y },
+            positionPercentage: position.y,
+            maxWidth: width,
+          },
+        },
+      };
     }
 
     try {
