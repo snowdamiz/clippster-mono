@@ -1373,23 +1373,13 @@
         // Load available orgs and campaigns for the streamer
         await loadOrgsAndCampaigns();
 
-        // Pre-select creator profile defaults
+        // Personal / free-tier defaults: props are only set when workspace branding is personal (not org/campaign).
+        // Pre-select so personal builds use creator defaults without an extra click.
         if (props.defaultIntro) {
-          // Find the matching intro in the loaded list
-          const matchingIntro = intros.value.find((i) => i.id === props.defaultIntro!.id);
-          if (matchingIntro) {
-            selectedIntro.value = matchingIntro;
-            console.log('[ClipBuildSettingsDialog] Pre-selected creator default intro:', selectedIntro.value?.name);
-          }
+          selectedIntro.value = props.defaultIntro as IntroOutroItem;
         }
-
         if (props.defaultOutro) {
-          // Find the matching outro in the loaded list
-          const matchingOutro = outros.value.find((o) => o.id === props.defaultOutro!.id);
-          if (matchingOutro) {
-            selectedOutro.value = matchingOutro;
-            console.log('[ClipBuildSettingsDialog] Pre-selected creator default outro:', selectedOutro.value?.name);
-          }
+          selectedOutro.value = props.defaultOutro as IntroOutroItem;
         }
 
         // Load overlay previews for POI editor

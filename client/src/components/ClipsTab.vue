@@ -2522,113 +2522,138 @@
       );
       const transcriptSegments = props.transcriptData?.whisperSegments || [];
 
-      // Prepare watermark settings if enabled
+      // Prepare watermark settings if enabled (reused for personal workspace fallback per target)
       // Now supports per-aspect-ratio watermark files - each ratio can use a completely different watermark
       // Uses resolveWatermarkById to handle both local IDs and org-asset-{serverId} format
-      let watermarkSettings = null;
-      if (settings.watermark && settings.watermark.enabled && settings.watermark.watermarkId) {
-        const defaultWatermark = await resolveWatermarkById(settings.watermark.watermarkId);
-        if (defaultWatermark) {
-          // Build per-ratio settings with resolved file paths
-          // Each ratio can have its own watermark image AND position settings
-          const buildPerRatioSettings: Record<
-            string,
-            {
-              watermarkId: string | null;
-              filePath: string | null;
-              width: number | null;
-              height: number | null;
-              position: { x: number; y: number; opacity: number; scale: number } | null;
-            } | null
-          > = {};
+      type ResolvedWatermarkPayload = {
+        enabled: true;
+        watermarkId: string;
+        filePath: string;
+        width: number;
+        height: number;
+        positionX: number;
+        positionY: number;
+        opacity: number;
+        scale: number;
+        perRatioSettings: Record<
+          string,
+          {
+            watermarkId: string | null;
+            filePath: string | null;
+            width: number | null;
+            height: number | null;
+            position: { x: number; y: number; opacity: number; scale: number } | null;
+          } | null
+        >;
+      };
+      async function buildWatermarkInvokePayload(
+        wm: WatermarkSettings | null | undefined
+      ): Promise<ResolvedWatermarkPayload | null> {
+        if (!wm?.enabled || !wm.watermarkId) return null;
+        const defaultWatermark = await resolveWatermarkById(wm.watermarkId);
+        if (!defaultWatermark) return null;
+        const buildPerRatioSettings: Record<
+          string,
+          {
+            watermarkId: string | null;
+            filePath: string | null;
+            width: number | null;
+            height: number | null;
+            position: { x: number; y: number; opacity: number; scale: number } | null;
+          } | null
+        > = {};
 
-          // Process each aspect ratio that might be built
-          const allRatios = ['16:9', '9:16', '1:1', '4:5'];
-          for (const ratio of allRatios) {
-            const perRatioConfig =
-              settings.watermark.perRatioSettings?.[ratio as keyof typeof settings.watermark.perRatioSettings];
+        const allRatios = ['16:9', '9:16', '1:1', '4:5'];
+        for (const ratio of allRatios) {
+          const perRatioConfig = wm.perRatioSettings?.[ratio as keyof typeof wm.perRatioSettings];
 
-            if (perRatioConfig === null) {
-              // Watermark explicitly disabled for this ratio
-              buildPerRatioSettings[ratio] = null;
-              console.log(`[ClipsTab] Watermark disabled for ${ratio}`);
-            } else if (perRatioConfig) {
-              // Ratio has specific settings
-              const ratioWatermarkId = perRatioConfig.watermarkId;
-              let ratioFilePath = defaultWatermark.filePath;
-              let ratioWidth = defaultWatermark.width;
-              let ratioHeight = defaultWatermark.height;
+          if (perRatioConfig === null) {
+            buildPerRatioSettings[ratio] = null;
+            console.log(`[ClipsTab] Watermark disabled for ${ratio}`);
+          } else if (perRatioConfig) {
+            const ratioWatermarkId = perRatioConfig.watermarkId;
+            let ratioFilePath = defaultWatermark.filePath;
+            let ratioWidth = defaultWatermark.width;
+            let ratioHeight = defaultWatermark.height;
 
-              // If this ratio has a different watermark, fetch its file info
-              // resolveWatermarkById handles both local IDs and org-asset-{serverId} format
-              if (ratioWatermarkId && ratioWatermarkId !== settings.watermark.watermarkId) {
-                const ratioWatermark = await resolveWatermarkById(ratioWatermarkId);
-                if (ratioWatermark) {
-                  ratioFilePath = ratioWatermark.filePath;
-                  ratioWidth = ratioWatermark.width;
-                  ratioHeight = ratioWatermark.height;
-                  console.log(`[ClipsTab] Using different watermark for ${ratio}:`, ratioWatermarkId);
-                }
+            if (ratioWatermarkId && ratioWatermarkId !== wm.watermarkId) {
+              const ratioWatermark = await resolveWatermarkById(ratioWatermarkId);
+              if (ratioWatermark) {
+                ratioFilePath = ratioWatermark.filePath;
+                ratioWidth = ratioWatermark.width;
+                ratioHeight = ratioWatermark.height;
+                console.log(`[ClipsTab] Using different watermark for ${ratio}:`, ratioWatermarkId);
               }
-
-              // Use per-ratio position if available, otherwise fall back to default
-              const position = perRatioConfig.position || {
-                x: settings.watermark.positionX,
-                y: settings.watermark.positionY,
-                opacity: settings.watermark.opacity,
-                scale: settings.watermark.scale,
-              };
-
-              buildPerRatioSettings[ratio] = {
-                watermarkId: ratioWatermarkId || settings.watermark.watermarkId,
-                filePath: ratioFilePath,
-                width: ratioWidth,
-                height: ratioHeight,
-                position,
-              };
-            } else {
-              // No per-ratio config, use default watermark with default position
-              buildPerRatioSettings[ratio] = {
-                watermarkId: settings.watermark.watermarkId,
-                filePath: defaultWatermark.filePath,
-                width: defaultWatermark.width,
-                height: defaultWatermark.height,
-                position: {
-                  x: settings.watermark.positionX,
-                  y: settings.watermark.positionY,
-                  opacity: settings.watermark.opacity,
-                  scale: settings.watermark.scale,
-                },
-              };
             }
-          }
 
-          watermarkSettings = {
-            enabled: true,
-            watermarkId: settings.watermark.watermarkId,
-            filePath: defaultWatermark.filePath,
-            width: defaultWatermark.width,
-            height: defaultWatermark.height,
-            positionX: settings.watermark.positionX,
-            positionY: settings.watermark.positionY,
-            opacity: settings.watermark.opacity,
-            scale: settings.watermark.scale,
-            // Per-ratio settings with resolved file paths
-            perRatioSettings: buildPerRatioSettings,
-          };
-          const defaultWatermarkId = settings.watermark?.watermarkId;
-          console.log('[ClipsTab] Watermark settings for build:', {
-            defaultWatermarkId: defaultWatermarkId,
-            defaultFilePath: defaultWatermark.filePath,
-            selectedRatios: settings.aspectRatios,
-            perRatioSettings: Object.entries(buildPerRatioSettings).map(([ratio, config]) => ({
-              ratio,
-              enabled: config !== null,
-              watermarkId: config?.watermarkId,
-              hasCustomWatermark: config?.watermarkId !== defaultWatermarkId,
-            })),
-          });
+            const position = perRatioConfig.position || {
+              x: wm.positionX,
+              y: wm.positionY,
+              opacity: wm.opacity,
+              scale: wm.scale,
+            };
+
+            buildPerRatioSettings[ratio] = {
+              watermarkId: ratioWatermarkId || wm.watermarkId,
+              filePath: ratioFilePath,
+              width: ratioWidth,
+              height: ratioHeight,
+              position,
+            };
+          } else {
+            buildPerRatioSettings[ratio] = {
+              watermarkId: wm.watermarkId,
+              filePath: defaultWatermark.filePath,
+              width: defaultWatermark.width,
+              height: defaultWatermark.height,
+              position: {
+                x: wm.positionX,
+                y: wm.positionY,
+                opacity: wm.opacity,
+                scale: wm.scale,
+              },
+            };
+          }
         }
+
+        const payload: ResolvedWatermarkPayload = {
+          enabled: true,
+          watermarkId: wm.watermarkId,
+          filePath: defaultWatermark.filePath,
+          width: defaultWatermark.width ?? 0,
+          height: defaultWatermark.height ?? 0,
+          positionX: wm.positionX,
+          positionY: wm.positionY,
+          opacity: wm.opacity,
+          scale: wm.scale,
+          perRatioSettings: buildPerRatioSettings,
+        };
+        const defaultWatermarkId = wm.watermarkId;
+        console.log('[ClipsTab] Watermark settings for build:', {
+          defaultWatermarkId: defaultWatermarkId,
+          defaultFilePath: defaultWatermark.filePath,
+          selectedRatios: settings.aspectRatios,
+          perRatioSettings: Object.entries(buildPerRatioSettings).map(([ratio, config]) => ({
+            ratio,
+            enabled: config !== null,
+            watermarkId: config?.watermarkId,
+            hasCustomWatermark: config?.watermarkId !== defaultWatermarkId,
+          })),
+        });
+        return payload;
+      }
+
+      let watermarkSettings = await buildWatermarkInvokePayload(settings.watermark);
+
+      let cachedPersonalWatermarkFallback: ResolvedWatermarkPayload | null | undefined;
+      async function getPersonalWatermarkFallback(): Promise<ResolvedWatermarkPayload | null> {
+        if (cachedPersonalWatermarkFallback !== undefined) return cachedPersonalWatermarkFallback;
+        if (!props.watermarkSettings?.enabled || !props.watermarkSettings.watermarkId) {
+          cachedPersonalWatermarkFallback = null;
+          return null;
+        }
+        cachedPersonalWatermarkFallback = await buildWatermarkInvokePayload(props.watermarkSettings);
+        return cachedPersonalWatermarkFallback;
       }
 
       // Load audio settings for the project
@@ -3193,6 +3218,20 @@
       // Clone watermarkSettings for this target (so campaign overrides don't leak between groups)
       let targetWatermarkSettings = watermarkSettings ? { ...watermarkSettings } : null;
 
+      // Personal / legacy builds: use workspace watermark when the dialog emitted none (e.g. edge timing).
+      // Never use this for org/campaign targets — those resolve their own branding.
+      if (
+        (activeBrandingType === 'personal' || activeBrandingType === 'legacy') &&
+        !activeCampaignId &&
+        !targetWatermarkSettings
+      ) {
+        const fb = await getPersonalWatermarkFallback();
+        if (fb) {
+          targetWatermarkSettings = { ...fb };
+          console.log('[ClipsTab] Personal workspace watermark applied for personal/legacy target');
+        }
+      }
+
       // ── Campaign Branding Override ────────────────────────────────────────────
       let campaignOverrideIntro: IntroOutroRef | null = null;
       let campaignOverrideOutro: IntroOutroRef | null = null;
@@ -3450,10 +3489,24 @@
       }
       // ── End Org Branding Resolution ─────────────────────────────────────────
 
-      // Determine effective intro/outro:
-      // Campaign branding > org branding > creator profile defaults > dialog selection
-      const effectiveIntro = campaignOverrideIntro ?? orgOverrideIntro ?? (activeCampaignId ? null : (props.creatorDefaultIntro || settings.intro));
-      const effectiveOutro = campaignOverrideOutro ?? orgOverrideOutro ?? (activeCampaignId ? null : (props.creatorDefaultOutro || settings.outro));
+      // Effective intro/outro: campaign > org > (personal/legacy: creator defaults + dialog) | (org/campaign targets: dialog only).
+      const isOrgOrCampaignTarget = activeBrandingType === 'org' || activeBrandingType === 'campaign';
+      const effectiveIntro =
+        campaignOverrideIntro ??
+        orgOverrideIntro ??
+        (activeCampaignId
+          ? null
+          : isOrgOrCampaignTarget
+            ? settings.intro
+            : props.creatorDefaultIntro || settings.intro);
+      const effectiveOutro =
+        campaignOverrideOutro ??
+        orgOverrideOutro ??
+        (activeCampaignId
+          ? null
+          : isOrgOrCampaignTarget
+            ? settings.outro
+            : props.creatorDefaultOutro || settings.outro);
       // If campaign selected, use campaign watermark; otherwise clear org watermark (don't leak org branding into campaign builds)
       if (activeCampaignId && campaignOverrideWatermark) {
         // Re-resolve watermark for Rust from campaign override
@@ -3477,8 +3530,8 @@
               enabled: true,
               watermarkId: campaignOverrideWatermark.watermarkId,
               filePath: campaignWm.filePath,
-              width: campaignWm.width,
-              height: campaignWm.height,
+              width: campaignWm.width ?? 0,
+              height: campaignWm.height ?? 0,
               positionX: campaignOverrideWatermark.positionX,
               positionY: campaignOverrideWatermark.positionY,
               opacity: campaignOverrideWatermark.opacity,
@@ -3512,7 +3565,18 @@
       if (effectiveIntro) {
         introPath = effectiveIntro.file_path || null;
         introDuration = effectiveIntro.duration || null;
-        const introSource = props.creatorDefaultIntro ? '(creator profile)' : '(dialog selection)';
+        const introSource = campaignOverrideIntro
+          ? '(campaign)'
+          : orgOverrideIntro
+            ? '(org branding)'
+            : !activeCampaignId &&
+                !isOrgOrCampaignTarget &&
+                props.creatorDefaultIntro &&
+                effectiveIntro &&
+                (effectiveIntro.id === props.creatorDefaultIntro.id ||
+                  effectiveIntro.file_path === props.creatorDefaultIntro.file_path)
+              ? '(creator profile default)'
+              : '(dialog selection)';
         console.log('[ClipsTab] Using intro:', effectiveIntro.name, introSource);
 
         // Download org intro if needed (cast to any for org asset properties)
@@ -3545,7 +3609,18 @@
       if (effectiveOutro) {
         outroPath = effectiveOutro.file_path || null;
         outroDuration = effectiveOutro.duration || null;
-        const outroSource = props.creatorDefaultOutro ? '(creator profile)' : '(dialog selection)';
+        const outroSource = campaignOverrideOutro
+          ? '(campaign)'
+          : orgOverrideOutro
+            ? '(org branding)'
+            : !activeCampaignId &&
+                !isOrgOrCampaignTarget &&
+                props.creatorDefaultOutro &&
+                effectiveOutro &&
+                (effectiveOutro.id === props.creatorDefaultOutro.id ||
+                  effectiveOutro.file_path === props.creatorDefaultOutro.file_path)
+              ? '(creator profile default)'
+              : '(dialog selection)';
         console.log('[ClipsTab] Using outro:', effectiveOutro.name, outroSource);
 
         // Download org outro if needed (cast to any for org asset properties)
@@ -3574,12 +3649,20 @@
         }
       }
 
-      // Resolve per-ratio intro/outro from creator profile
+      // Per-ratio intro/outro from profile JSON — org/campaign targets only (not personal builds).
       const introOutroPerRatio: Record<string, { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number }> = {};
-      
-      if (props.creatorProfile?.intro_outro_settings) {
+
+      const perRatioIntroOutroRaw =
+        activeBrandingType === 'org' && targetResolvedProfile?.intro_outro_settings
+          ? targetResolvedProfile.intro_outro_settings
+          : null;
+
+      if (perRatioIntroOutroRaw) {
         try {
-          const introOutroSettings = JSON.parse(props.creatorProfile.intro_outro_settings);
+          const introOutroSettings =
+            typeof perRatioIntroOutroRaw === 'string'
+              ? JSON.parse(perRatioIntroOutroRaw)
+              : perRatioIntroOutroRaw;
           
           for (const ratio of settings.aspectRatios) {
             const ratioConfig = introOutroSettings[ratio];
@@ -3782,8 +3865,8 @@
               enabled: true,
               watermarkId: adminBranding.watermark_id,
               filePath: wmFilePath,
-              width: wmWidth,
-              height: wmHeight,
+              width: wmWidth ?? 0,
+              height: wmHeight ?? 0,
               positionX: defaultPos.x,
               positionY: defaultPos.y,
               opacity: defaultPos.opacity,
@@ -3974,12 +4057,12 @@
         stickers: stickersForExport,
         clipWatermarks: clipWatermarksForExport,
         layoutOverlays: await resolveLayoutOverlaysForBuild(
-          settings.layoutOverlays
-            || (targetResolvedProfile?.layout_overlays
-              ? JSON.parse(targetResolvedProfile.layout_overlays)
-              : (props.creatorProfile?.layout_overlays
-                ? JSON.parse(props.creatorProfile.layout_overlays)
-                : null))
+          settings.layoutOverlays ||
+            (activeBrandingType === 'org' && targetResolvedProfile?.layout_overlays
+              ? typeof targetResolvedProfile.layout_overlays === 'string'
+                ? JSON.parse(targetResolvedProfile.layout_overlays)
+                : targetResolvedProfile.layout_overlays
+              : null)
         ),
         campaignId: activeCampaignId,
         campaignBrandingProfileId: activeCampaignBrandingProfileId,
