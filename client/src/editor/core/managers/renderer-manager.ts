@@ -1,6 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { EditorCore } from "../../core";
 import type { RootNode } from "../../renderer/nodes/root-node";
+import type { CanvasRenderer } from "../../renderer/canvas-renderer";
+import {
+	getPreviewSceneTreeCached,
+	invalidatePreviewSceneCache as resetPreviewSceneCache,
+	type PreviewSceneCache,
+	type PreviewSceneInputs,
+} from "../../renderer/preview-scene-sync";
+import {
+	previewPerfBeginFrame,
+	previewPerfEndFrame,
+	previewPerfMarkRenderToCanvas,
+} from "../../lib/preview-performance";
+import { setGpuPreviewEffectsEnabled as setGlobalGpuPreviewEffects } from "../../renderer/effects/preview-gpu-config";
+import { invalidateAllLayerPrecomps } from "../../renderer/layer-precomp-cache";
 import type { ExportOptions, ExportResult } from "../../types/export";
 import type {
 	TimelineTrack,
@@ -263,6 +277,7 @@ interface BrandingExportData {
 export class RendererManager {
 	private renderTree: RootNode | null = null;
 	private listeners = new Set<() => void>();
+	private previewSceneCache: PreviewSceneCache = { fingerprint: null, tree: null };
 
 	constructor(private editor: EditorCore) {}
 
@@ -273,6 +288,51 @@ export class RendererManager {
 
 	getRenderTree(): RootNode | null {
 		return this.renderTree;
+	}
+
+	/**
+	 * Builds (or reuses cached) scene tree from panel inputs; updates render tree.
+	 * Skips expensive buildScene when fingerprint matches.
+	 */
+	syncPreviewRenderTreeFromInputs(inputs: PreviewSceneInputs): { buildMs: number; cacheHit: boolean } {
+		const { tree, buildMs, cacheHit } = getPreviewSceneTreeCached(this.previewSceneCache, inputs);
+		if (cacheHit && this.renderTree === tree) {
+			return { buildMs, cacheHit: true };
+		}
+		this.setRenderTree({ renderTree: tree });
+		return { buildMs, cacheHit };
+	}
+
+	invalidatePreviewSceneCache(): void {
+		resetPreviewSceneCache(this.previewSceneCache);
+		invalidateAllLayerPrecomps();
+	}
+
+	/** Instrumented preview paint (Canvas 2D → display canvas). */
+	async renderPreviewToTarget({
+		renderer,
+		time,
+		targetCanvas,
+	}: {
+		renderer: CanvasRenderer;
+		time: number;
+		targetCanvas: HTMLCanvasElement;
+	}): Promise<void> {
+		const tree = this.getRenderTree();
+		if (!tree) return;
+		previewPerfBeginFrame();
+		const t0 = performance.now();
+		try {
+			await renderer.renderToCanvas({ node: tree, time, targetCanvas });
+			const ms = performance.now() - t0;
+			previewPerfMarkRenderToCanvas(ms);
+		} finally {
+			previewPerfEndFrame();
+		}
+	}
+
+	setGpuPreviewEffectsEnabled(on: boolean): void {
+		setGlobalGpuPreviewEffects(on);
 	}
 
 	async exportProject({

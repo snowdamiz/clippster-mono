@@ -583,6 +583,7 @@ export class ProjectManager {
 
 	setActiveProject({ project }: { project: TProject }): void {
 		this.active = project;
+		this.editor.renderer.invalidatePreviewSceneCache();
 		this.notify();
 	}
 

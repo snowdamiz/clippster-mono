@@ -27,8 +27,8 @@ export function useTimelinePlayhead({
   const { editor, version } = useEditor({
     subscribe: {
       playback: true,
-      timeline: true,
-      scenes: false,
+      timeline: false,
+      scenes: true,
       project: true,
       media: false,
       selection: false,

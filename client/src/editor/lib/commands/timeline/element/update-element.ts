@@ -1,6 +1,5 @@
 import { Command } from "../../../../lib/commands/base-command";
 import type {
-	TimelineTrack,
 	TimelineElement,
 	VideoElement,
 	ImageElement,
@@ -48,7 +47,8 @@ export type UpdatableElementProps =
 	| UpdatableCaptionProps;
 
 export class UpdateElementCommand extends Command {
-	private savedState: TimelineTrack[] | null = null;
+	/** Deep snapshot of the target element only (avoids cloning full timeline for undo). */
+	private savedElement: TimelineElement | null = null;
 
 	constructor(
 		private trackId: string,
@@ -60,9 +60,12 @@ export class UpdateElementCommand extends Command {
 
 	execute(): void {
 		const editor = EditorCore.getInstance();
-		this.savedState = editor.timeline.getTracks();
+		const tracks = editor.timeline.getTracks();
+		const track = tracks.find((t) => t.id === this.trackId);
+		const prev = track?.elements.find((el) => el.id === this.elementId);
+		this.savedElement = prev ? structuredClone(prev) : null;
 
-		const updatedTracks = this.savedState.map((t) => {
+		const updatedTracks = tracks.map((t) => {
 			if (t.id !== this.trackId) return t;
 			const newElements = t.elements.map((el) =>
 				el.id === this.elementId
@@ -76,9 +79,16 @@ export class UpdateElementCommand extends Command {
 	}
 
 	undo(): void {
-		if (this.savedState) {
-			const editor = EditorCore.getInstance();
-			editor.timeline.updateTracks(this.savedState);
-		}
+		if (!this.savedElement) return;
+		const editor = EditorCore.getInstance();
+		const tracks = editor.timeline.getTracks();
+		const restored = tracks.map((t) => {
+			if (t.id !== this.trackId) return t;
+			const newElements = t.elements.map((el) =>
+				el.id === this.elementId ? structuredClone(this.savedElement!) : el,
+			);
+			return { ...t, elements: newElements } as typeof t;
+		});
+		editor.timeline.updateTracks(restored);
 	}
 }
