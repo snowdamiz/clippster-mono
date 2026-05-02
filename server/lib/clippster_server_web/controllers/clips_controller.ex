@@ -3814,37 +3814,41 @@ defmodule ClippsterServerWeb.ClipsController do
                 # Log the full AI response for debugging
                 Logger.info("[ClipsController] Full AI response: #{inspect(ai_response)}")
 
-                # Parse AI response - extract the new pending clip data (ignore AI's context_change)
-                ai_pending_clip =
+                # Parse AI response - extract the new pending clip data and transition signal.
+                # The server still validates/merges below, but an explicit AI context change
+                # should be honored so unrelated live topics do not get stitched together.
+                {ai_context_change, ai_pending_clip} =
                   case ai_response do
                     # New format
-                    %{"context_change" => _change, "pending_clip" => clip} ->
-                      clip
+                    %{"context_change" => change, "pending_clip" => clip} ->
+                      {change == true, clip}
 
                     # Old format fallback - convert to new format
                     %{"clips" => clips} when is_list(clips) and length(clips) > 0 ->
                       first_clip = List.first(clips)
 
-                      %{
-                        "title" => Map.get(first_clip, "title", "Untitled"),
-                        "description" => Map.get(first_clip, "description", ""),
-                        "start_time" => get_clip_start_time(first_clip, transcript_start),
-                        "end_time" =>
-                          get_clip_end_time(first_clip, transcript_start, transcript_end),
-                        "virality_score" => Map.get(first_clip, "virality_score", 85),
-                        "detection_reason" =>
-                          Map.get(first_clip, "reason", "") ||
-                            Map.get(first_clip, "detection_reason", ""),
-                        "context_summary" => String.slice(Map.get(first_clip, "title", ""), 0, 50)
-                      }
+                      {false,
+                       %{
+                         "title" => Map.get(first_clip, "title", "Untitled"),
+                         "description" => Map.get(first_clip, "description", ""),
+                         "start_time" => get_clip_start_time(first_clip, transcript_start),
+                         "end_time" =>
+                           get_clip_end_time(first_clip, transcript_start, transcript_end),
+                         "virality_score" => Map.get(first_clip, "virality_score", 85),
+                         "detection_reason" =>
+                           Map.get(first_clip, "reason", "") ||
+                             Map.get(first_clip, "detection_reason", ""),
+                         "context_summary" =>
+                           String.slice(Map.get(first_clip, "title", ""), 0, 50)
+                       }}
 
                     # No clips detected
                     _ ->
-                      nil
+                      {false, nil}
                   end
 
-                # Server-side context change detection (don't trust AI's flag)
-                # Compare existing pending clip with new detection using time overlap + semantic similarity
+                # Server-side context change detection.
+                # Honor explicit AI transitions first, then fall back to similarity/overlap merging.
                 # Max clip duration: 180 seconds (3 minutes) - force save if exceeded
                 max_clip_duration = 180
 
@@ -3864,6 +3868,16 @@ defmodule ClippsterServerWeb.ClipsController do
                       )
 
                       {false, ai_pending_clip}
+
+                    # AI explicitly identified a new topic/scene. Honor it before applying
+                    # overlap-based merge heuristics, because rolling transcript windows often
+                    # contain both the old and new topics and otherwise bias toward merging.
+                    ai_context_change ->
+                      Logger.info(
+                        "[ClipsController] AI context change! Saving: '#{pending_clip["title"]}' -> Starting: '#{ai_pending_clip["title"]}'"
+                      )
+
+                      {true, ai_pending_clip}
 
                     # Both exist - compare them
                     true ->
