@@ -41,29 +41,46 @@ const { isCropMode, enterCropMode, maskEditMode } = useEditorUIState();
 
 const overlayRef = ref<HTMLDivElement | null>(null);
 
+function getCanvasLocalMetrics() {
+	const canvas = props.canvasRef;
+	if (!canvas) return null;
+
+	const canvasRect = canvas.getBoundingClientRect();
+	const overlayRect = overlayRef.value?.getBoundingClientRect();
+	const localWidth = canvas.clientWidth || canvas.offsetWidth || canvasRect.width;
+	const localHeight = canvas.clientHeight || canvas.offsetHeight || canvasRect.height;
+	const screenScaleX = localWidth > 0 ? canvasRect.width / localWidth : 1;
+	const screenScaleY = localHeight > 0 ? canvasRect.height / localHeight : 1;
+
+	return {
+		left: overlayRect ? (canvasRect.left - overlayRect.left) / screenScaleX : 0,
+		top: overlayRect ? (canvasRect.top - overlayRect.top) / screenScaleY : 0,
+		width: localWidth,
+		height: localHeight,
+		scaleX: localWidth / props.canvasWidth,
+		scaleY: localHeight / props.canvasHeight,
+	};
+}
+
 // Canvas center and size in screen (overlay) coordinates for guide lines.
 // Reads canvasWidth/canvasHeight props directly so Vue recomputes on aspect ratio change.
 const canvasScreenCenter = computed(() => {
-	const canvas = props.canvasRef;
-	if (!canvas) return { x: 0, y: 0 };
-	const rect = canvas.getBoundingClientRect();
-	const scaleX = rect.width / props.canvasWidth;
-	const scaleY = rect.height / props.canvasHeight;
+	const metrics = getCanvasLocalMetrics();
+	if (!metrics) return { x: 0, y: 0 };
 	return {
-		x: (props.canvasWidth / 2) * scaleX,
-		y: (props.canvasHeight / 2) * scaleY,
+		x: metrics.left + (props.canvasWidth / 2) * metrics.scaleX,
+		y: metrics.top + (props.canvasHeight / 2) * metrics.scaleY,
 	};
 });
 
 const canvasScreenSize = computed(() => {
-	const canvas = props.canvasRef;
-	if (!canvas) return { w: 0, h: 0 };
-	const rect = canvas.getBoundingClientRect();
-	const scaleX = rect.width / props.canvasWidth;
-	const scaleY = rect.height / props.canvasHeight;
+	const metrics = getCanvasLocalMetrics();
+	if (!metrics) return { left: 0, top: 0, w: 0, h: 0 };
 	return {
-		w: props.canvasWidth * scaleX,
-		h: props.canvasHeight * scaleY,
+		left: metrics.left,
+		top: metrics.top,
+		w: metrics.width,
+		h: metrics.height,
 	};
 });
 
@@ -75,18 +92,14 @@ const ROTATE_HANDLE_OFFSET = 30;
  * (relative to the overlay container which is positioned over the canvas).
  */
 function boundsToScreen(bounds: ElementBounds) {
-	const canvas = props.canvasRef;
-	if (!canvas) return null;
-
-	const rect = canvas.getBoundingClientRect();
-	const scaleX = rect.width / props.canvasWidth;
-	const scaleY = rect.height / props.canvasHeight;
+	const metrics = getCanvasLocalMetrics();
+	if (!metrics) return null;
 
 	return {
-		cx: bounds.cx * scaleX,
-		cy: bounds.cy * scaleY,
-		width: bounds.width * scaleX,
-		height: bounds.height * scaleY,
+		cx: metrics.left + bounds.cx * metrics.scaleX,
+		cy: metrics.top + bounds.cy * metrics.scaleY,
+		width: bounds.width * metrics.scaleX,
+		height: bounds.height * metrics.scaleY,
 		rotation: bounds.rotation,
 	};
 }
@@ -179,41 +192,34 @@ const selectedElementMasks = computed<MaskShape[]>(() => {
 });
 
 function maskPoints(mask: MaskShape): string {
-	const canvas = props.canvasRef;
-	if (!canvas) return "";
-	const rect = canvas.getBoundingClientRect();
-	const sx = rect.width / props.canvasWidth;
-	const sy = rect.height / props.canvasHeight;
-	const pts = (mask.points ?? []).map((p) => `${p.x * props.canvasWidth * sx},${p.y * props.canvasHeight * sy}`);
+	const metrics = getCanvasLocalMetrics();
+	if (!metrics) return "";
+	const pts = (mask.points ?? []).map((p) => `${metrics.left + p.x * metrics.width},${metrics.top + p.y * metrics.height}`);
 	return pts.join(" ");
 }
 
 function maskScreenX(mask: MaskShape): number {
-	const canvas = props.canvasRef;
-	if (!canvas) return 0;
-	const rect = canvas.getBoundingClientRect();
-	return mask.x * props.canvasWidth * (rect.width / props.canvasWidth);
+	const metrics = getCanvasLocalMetrics();
+	if (!metrics) return 0;
+	return metrics.left + mask.x * metrics.width;
 }
 
 function maskScreenY(mask: MaskShape): number {
-	const canvas = props.canvasRef;
-	if (!canvas) return 0;
-	const rect = canvas.getBoundingClientRect();
-	return mask.y * props.canvasHeight * (rect.height / props.canvasHeight);
+	const metrics = getCanvasLocalMetrics();
+	if (!metrics) return 0;
+	return metrics.top + mask.y * metrics.height;
 }
 
 function maskScreenW(mask: MaskShape): number {
-	const canvas = props.canvasRef;
-	if (!canvas) return 0;
-	const rect = canvas.getBoundingClientRect();
-	return mask.width * props.canvasWidth * (rect.width / props.canvasWidth);
+	const metrics = getCanvasLocalMetrics();
+	if (!metrics) return 0;
+	return mask.width * metrics.width;
 }
 
 function maskScreenH(mask: MaskShape): number {
-	const canvas = props.canvasRef;
-	if (!canvas) return 0;
-	const rect = canvas.getBoundingClientRect();
-	return mask.height * props.canvasHeight * (rect.height / props.canvasHeight);
+	const metrics = getCanvasLocalMetrics();
+	if (!metrics) return 0;
+	return mask.height * metrics.height;
 }
 
 function updateMaskById(maskId: string, updates: Partial<MaskShape>) {
@@ -486,9 +492,9 @@ const cursorStyle = computed(() => {
 			<line
 				v-if="showCenterGuideX"
 				:x1="canvasScreenCenter.x"
-				y1="0"
+				:y1="canvasScreenSize.top"
 				:x2="canvasScreenCenter.x"
-				:y2="canvasScreenSize.h"
+				:y2="canvasScreenSize.top + canvasScreenSize.h"
 				stroke="#22d3ee"
 				stroke-width="1"
 				opacity="0.9"
@@ -496,9 +502,9 @@ const cursorStyle = computed(() => {
 			<!-- Horizontal center line (element is centered vertically, y=0) -->
 			<line
 				v-if="showCenterGuideY"
-				x1="0"
+				:x1="canvasScreenSize.left"
 				:y1="canvasScreenCenter.y"
-				:x2="canvasScreenSize.w"
+				:x2="canvasScreenSize.left + canvasScreenSize.w"
 				:y2="canvasScreenCenter.y"
 				stroke="#22d3ee"
 				stroke-width="1"
@@ -647,8 +653,8 @@ const cursorStyle = computed(() => {
 						v-for="(pt, idx) in (mask.points ?? [])"
 						:key="`${mask.id}-p-${idx}`"
 						class="pointer-events-auto"
-						:cx="pt.x * canvasScreenSize.w"
-						:cy="pt.y * canvasScreenSize.h"
+						:cx="canvasScreenSize.left + pt.x * canvasScreenSize.w"
+						:cy="canvasScreenSize.top + pt.y * canvasScreenSize.h"
 						r="4"
 						fill="#fff"
 						stroke="#3b82f6"

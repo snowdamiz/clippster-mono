@@ -1,5 +1,17 @@
 import { api } from '@/lib/api'
 
+export interface ChannelLink {
+  id: number
+  platform: string
+  url: string
+  username: string | null
+}
+
+export interface ClipperBadge {
+  id: number
+  badge_type: string
+}
+
 export interface ClipperProfile {
   id: number
   user_id: number
@@ -23,6 +35,13 @@ export interface ClipperProfile {
   timezone?: string | null
   is_affiliate?: boolean
   total_views?: number
+  badges?: ClipperBadge[]
+  channel_links?: ChannelLink[]
+  user?: {
+    id: number
+    name?: string
+    last_active_at?: string
+  }
   endorsements?: Array<{
     id: number
     content: string | null
@@ -32,7 +51,7 @@ export interface ClipperProfile {
   }>
   social_accounts?: Array<{
     platform: string
-    username: string
+    username: string | null
     profile_url: string | null
     profile_image_url: string | null
     is_verified: boolean
@@ -115,6 +134,16 @@ export const PREFERRED_PLATFORMS = [
   { value: 'snapchat', label: 'Snapchat' },
 ]
 
+/** Platforms that can appear on manual channel links (matches Tauri clipperProfilesApi). */
+export const CHANNEL_PLATFORMS = [
+  { value: 'tiktok', label: 'TikTok' },
+  { value: 'youtube', label: 'YouTube' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'x', label: 'X (Twitter)' },
+  { value: 'kick', label: 'Kick' },
+  { value: 'twitch', label: 'Twitch' },
+]
+
 export const LANGUAGES = [
   { code: 'en', name: 'English' },
   { code: 'es', name: 'Spanish' },
@@ -159,6 +188,17 @@ export async function getClipperBySlug(slug: string) {
   return api.get<{ success: boolean; profile: ClipperProfile; error?: string }>(`/clippers/${slug}`)
 }
 
+export async function createEndorsement(
+  slug: string,
+  organizationId: number,
+  data: { content?: string; rating?: number }
+) {
+  return api.post<{ success: boolean; error?: string }>(`/clippers/${slug}/endorsements`, {
+    organization_id: organizationId,
+    ...data,
+  })
+}
+
 export async function getLeaderboard(period: 'weekly' | 'monthly' = 'weekly') {
   return api.get<{ success: boolean; entries: LeaderboardEntry[]; error?: string }>(`/clipper-profiles/leaderboard?period=${period}`)
 }
@@ -169,6 +209,18 @@ export function getExperienceLevelLabel(value: string): string {
 
 export function getSpecialtyTagLabel(value: string): string {
   return SPECIALTY_TAGS.find(t => t.value === value)?.label || value
+}
+
+export function getContentStyleTagLabel(value: string): string {
+  return CONTENT_STYLE_TAGS.find(t => t.value === value)?.label || value
+}
+
+export function getPlatformLabel(value: string): string {
+  return (
+    PREFERRED_PLATFORMS.find(p => p.value === value)?.label ||
+    CHANNEL_PLATFORMS.find(p => p.value === value)?.label ||
+    value
+  )
 }
 
 export function getLanguageName(code: string): string {
@@ -198,4 +250,21 @@ export function formatViews(views: number): string {
   if (views >= 1000000) return (views / 1000000).toFixed(1) + 'M'
   if (views >= 1000) return (views / 1000).toFixed(1) + 'K'
   return views.toString()
+}
+
+export function getBadgeLabel(badgeType: string): string {
+  const labels: Record<string, string> = {
+    verified: 'Verified Clipper',
+    top_clipper: 'Top Clipper',
+    rising_star: 'Rising Star',
+  }
+  return labels[badgeType] || badgeType
+}
+
+/** BEM modifier for `.profile-badge-pill` (landing CSS, mirrors Tauri Badge styling). */
+export function getBadgeModifier(badgeType: string): string {
+  if (badgeType === 'verified') return 'profile-badge-pill--verified'
+  if (badgeType === 'top_clipper') return 'profile-badge-pill--top'
+  if (badgeType === 'rising_star') return 'profile-badge-pill--rising'
+  return 'profile-badge-pill--default'
 }

@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import './index.css'
 /* Org public profile: must follow index.css (Tailwind + body) or colors/glows never win the cascade. */
 import './pages/OrgPublicProfilePage.css'
+import './pages/ClipperPublicProfilePage.css'
 import App from './App'
 import { PricingPage } from './pages/PricingPage'
 import { PrivacyPage } from './pages/PrivacyPage'
