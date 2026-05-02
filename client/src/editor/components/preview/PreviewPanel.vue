@@ -135,7 +135,7 @@ watch(
 		});
 		editor.renderer.setRenderTree({ renderTree });
 	},
-	{ immediate: true },
+	{ immediate: true, flush: "sync" },
 );
 
 let rafTickCount = 0;
@@ -174,10 +174,16 @@ useRafLoop(() => {
 	const commitTime = renderTime;
 	r.renderToCanvas({ node: commitTree, time: commitTime, targetCanvas: canvas })
 		.then(() => {
+			rendering = false;
+			// Async render can finish after a newer scene tree was published (e.g. transform
+			// drag). Do not advance lastScene to a stale tree — the next rAF will repaint.
+			const currentTree = editor.renderer.getRenderTree();
+			if (currentTree !== commitTree) {
+				return;
+			}
 			lastFrame = commitFrame;
 			lastScene = commitTree;
 			lastRenderedTime = commitTime;
-			rendering = false;
 		})
 		.catch(() => {
 			rendering = false;

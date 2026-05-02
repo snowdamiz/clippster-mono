@@ -66,13 +66,13 @@ function clamp(value: number, min: number, max: number) {
 <template>
 	<div class="flex flex-col gap-3 p-3">
 		<div class="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-2">
-			<span class="text-[11px] text-zinc-400">Mask edit mode</span>
+			<span class="text-[11px] text-zinc-400">Mask lock</span>
 			<button
 				class="rounded px-2 py-0.5 text-[10px] transition"
-				:class="maskEditMode ? 'bg-primary/20 text-primary' : 'bg-white/5 text-zinc-400 hover:bg-white/10'"
+				:class="!maskEditMode ? 'bg-primary/20 text-primary' : 'bg-white/5 text-zinc-400 hover:bg-white/10'"
 				@click="maskEditMode = !maskEditMode"
 			>
-				{{ maskEditMode ? 'On' : 'Off' }}
+				{{ maskEditMode ? 'Unlocked' : 'Locked' }}
 			</button>
 		</div>
 
