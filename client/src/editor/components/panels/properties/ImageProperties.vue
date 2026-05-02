@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
+import { ref, watch, computed, toRef, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
 import type { ImageElement, ColorAdjustments, ColorCurves, ColorWheels } from "../../../types/timeline";
@@ -10,7 +10,6 @@ import type { ChromakeySettings } from "../../../types/chromakey";
 import { DEFAULT_CHROMAKEY } from "../../../types/chromakey";
 import { Image, Trash2, RotateCcw, FlipHorizontal, FlipVertical, Wand2, Eye, EyeOff, X, ChevronDown, Pipette, SlidersHorizontal, Sparkles, Scissors } from "lucide-vue-next";
 import { useKeyframes } from "../../../composables/useKeyframes";
-import { toRef } from "vue";
 import KeyframeToggle from "./KeyframeToggle.vue";
 import AnimationProperties from "./AnimationProperties.vue";
 import MasksPanel from "./MasksPanel.vue";
@@ -25,6 +24,31 @@ const props = defineProps<{
 
 const { editor } = useEditor();
 const { selectedElements } = useElementSelection();
+
+function isRangeInputTarget(target: EventTarget | null): boolean {
+	return target instanceof HTMLInputElement && target.type === "range";
+}
+
+function handleRangePointerDown(event: PointerEvent) {
+	if (isRangeInputTarget(event.target)) {
+		editor.setInteractiveDrag(true);
+	}
+}
+
+function stopRangeInteraction() {
+	editor.setInteractiveDrag(false);
+}
+
+onMounted(() => {
+	window.addEventListener("pointerup", stopRangeInteraction);
+	window.addEventListener("pointercancel", stopRangeInteraction);
+});
+
+onUnmounted(() => {
+	window.removeEventListener("pointerup", stopRangeInteraction);
+	window.removeEventListener("pointercancel", stopRangeInteraction);
+	stopRangeInteraction();
+});
 
 const trackRef = computed(() => editor.timeline.getTrackById({ trackId: props.trackId })!);
 const { hasKeyframes: hasKf, addKeyframe, clearPropertyKeyframes } = useKeyframes({
@@ -245,7 +269,7 @@ function formatTime(seconds: number): string {
 </script>
 
 <template>
-	<div class="flex h-full min-h-0 flex-row">
+	<div class="flex h-full min-h-0 flex-row" @pointerdown.capture="handleRangePointerDown">
 		<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
 			<div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
 				<template v-if="activeTab === 'image'">

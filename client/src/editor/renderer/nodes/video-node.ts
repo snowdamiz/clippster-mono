@@ -239,6 +239,8 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 
 			// Apply color adjustments via CSS filter on canvas context
 			const ca = this.params.colorAdjustments;
+			const processingSize = renderer.getEffectProcessingSize();
+			const backingSize = renderer.getBackingSize();
 			const filterParts: string[] = [];
 			if (ca) {
 				// Exposure maps to brightness with gamma curve
@@ -332,20 +334,20 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			// Apply post-draw effects (pixelate, sharpen, vignette, colorShift, glitch, wave, zoomPulse, flash)
 			if (fx && fx.length > 0 && hasPostDrawEffects(fx)) {
 				renderer.context.restore();
-				applyCanvasEffects(renderer.context, renderer.width, renderer.height, fx, effectiveTime, this.params.timeOffset);
+				applyCanvasEffects(renderer.context, backingSize.width, backingSize.height, fx, effectiveTime, this.params.timeOffset, { processingSize });
 			} else {
 				renderer.context.restore();
 			}
 
 			if (ca) {
-				applyAdvancedColorAdjustments(renderer.context, renderer.width, renderer.height, ca);
+				applyAdvancedColorAdjustments(renderer.context, backingSize.width, backingSize.height, ca, { processingSize });
 			}
 
 			if (this.params.colorCurves) {
-				applyColorCurves(renderer.context, renderer.width, renderer.height, this.params.colorCurves);
+				applyColorCurves(renderer.context, backingSize.width, backingSize.height, this.params.colorCurves, { processingSize });
 			}
 			if (this.params.colorWheels) {
-				applyColorWheels(renderer.context, renderer.width, renderer.height, this.params.colorWheels);
+				applyColorWheels(renderer.context, backingSize.width, backingSize.height, this.params.colorWheels, { processingSize });
 			}
 		}
 	}

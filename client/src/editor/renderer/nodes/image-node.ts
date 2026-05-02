@@ -10,8 +10,45 @@ import type { ChromakeySettings } from "../../types/chromakey";
 import type { ElementAnimation } from "../../types/animations";
 import { computeAnimationTransforms, applyAnimationToContext } from "../effects/canvas-animations";
 import { hasMasks, setupMaskClip } from "./mask-compositor";
+import {
+	createPreviewScaledImageBitmap,
+	getPreviewDecodeGeneration,
+} from "../../lib/preview-decode-settings";
 
 const IMAGE_EPSILON = 1 / 1000;
+
+function intrinsicCanvasImageSize(
+	source: CanvasImageSource,
+	fallbackW: number,
+	fallbackH: number,
+): { w: number; h: number } {
+	if (source instanceof HTMLImageElement) {
+		const w = source.naturalWidth;
+		const h = source.naturalHeight;
+		return { w: w || fallbackW, h: h || fallbackH };
+	}
+	if (source instanceof HTMLVideoElement) {
+		return {
+			w: source.videoWidth || fallbackW,
+			h: source.videoHeight || fallbackH,
+		};
+	}
+	if (source instanceof ImageBitmap) {
+		return { w: source.width, h: source.height };
+	}
+	if (typeof VideoFrame !== "undefined" && source instanceof VideoFrame) {
+		return { w: source.displayWidth, h: source.displayHeight };
+	}
+	if (source instanceof HTMLCanvasElement || source instanceof OffscreenCanvas) {
+		return { w: source.width, h: source.height };
+	}
+	if (source instanceof SVGImageElement) {
+		const w = source.width.baseVal.value;
+		const h = source.height.baseVal.value;
+		return { w: w || fallbackW, h: h || fallbackH };
+	}
+	return { w: fallbackW, h: fallbackH };
+}
 
 export interface ImageNodeParams {
 	url: string;
@@ -48,6 +85,9 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 	private transitionExtension: { before: number; after: number } = { before: 0, after: 0 };
 	private chromakeyCanvas?: HTMLCanvasElement;
 	private chromakeyCtx?: CanvasRenderingContext2D | null;
+	/** Cached downscaled raster for current preview-decode generation. */
+	private rasterCacheGen = -1;
+	private cachedRaster: CanvasImageSource | null = null;
 
 	constructor(params: ImageNodeParams) {
 		super(params);
@@ -97,6 +137,19 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		if (!this.image) {
 			return;
 		}
+
+		const decodeGen = getPreviewDecodeGeneration();
+		if (decodeGen !== this.rasterCacheGen) {
+			if (this.cachedRaster instanceof ImageBitmap) {
+				this.cachedRaster.close();
+			}
+			this.cachedRaster = null;
+			this.rasterCacheGen = decodeGen;
+		}
+		if (!this.cachedRaster) {
+			this.cachedRaster = await createPreviewScaledImageBitmap(this.image);
+		}
+		const raster = this.cachedRaster;
 
 		renderer.context.save();
 
@@ -171,6 +224,8 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 
 		// Apply color adjustments via CSS filter on canvas context
 		const ca = this.params.colorAdjustments;
+		const processingSize = renderer.getEffectProcessingSize();
+		const backingSize = renderer.getBackingSize();
 		const filterParts: string[] = [];
 		if (ca) {
 			const exposureOffset = ca.exposure ? ca.exposure / 100 : 0;
@@ -194,8 +249,8 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 			renderer.context.filter = filterParts.join(" ");
 		}
 
-		const chromakeySource = this.getChromakeySourceCanvas(this.image, this.params.chromakey);
-		const drawSource = chromakeySource ?? this.image;
+		const chromakeySource = this.getChromakeySourceCanvas(raster, this.params.chromakey);
+		const drawSource = chromakeySource ?? raster;
 
 		if (
 			this.params.x !== undefined &&
@@ -211,8 +266,11 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 				this.params.height,
 			);
 		} else {
-			const mediaW = ("naturalWidth" in drawSource ? drawSource.naturalWidth : drawSource.width) || renderer.width;
-			const mediaH = ("naturalHeight" in drawSource ? drawSource.naturalHeight : drawSource.height) || renderer.height;
+			const { w: mediaW, h: mediaH } = intrinsicCanvasImageSize(
+				drawSource,
+				renderer.width,
+				renderer.height,
+			);
 
 			// Apply crop: extract sub-rectangle from source image
 			const crop = this.params.crop;
@@ -254,32 +312,42 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		// Apply post-draw effects (pixelate, sharpen, vignette, colorShift, glitch, wave, zoomPulse, flash)
 		if (fx && fx.length > 0 && hasPostDrawEffects(fx)) {
 			renderer.context.restore();
-			applyCanvasEffects(renderer.context, renderer.width, renderer.height, fx, effectiveTime, this.params.timeOffset);
+			applyCanvasEffects(renderer.context, backingSize.width, backingSize.height, fx, effectiveTime, this.params.timeOffset, { processingSize });
 		} else {
 			renderer.context.restore();
 		}
 
 		// Apply advanced color adjustments that require post-draw compositing
 		if (ca) {
-			applyAdvancedColorAdjustments(renderer.context, renderer.width, renderer.height, ca);
+			applyAdvancedColorAdjustments(renderer.context, backingSize.width, backingSize.height, ca, { processingSize });
 		}
 
 		// Apply color grading: curves then wheels
 		if (this.params.colorCurves) {
-			applyColorCurves(renderer.context, renderer.width, renderer.height, this.params.colorCurves);
+			applyColorCurves(renderer.context, backingSize.width, backingSize.height, this.params.colorCurves, { processingSize });
 		}
 		if (this.params.colorWheels) {
-			applyColorWheels(renderer.context, renderer.width, renderer.height, this.params.colorWheels);
+			applyColorWheels(renderer.context, backingSize.width, backingSize.height, this.params.colorWheels, { processingSize });
 		}
 	}
 
 	private getChromakeySourceCanvas(
-		source: HTMLImageElement,
+		source: CanvasImageSource,
 		chromakey?: ChromakeySettings,
 	): HTMLCanvasElement | null {
 		if (!chromakey?.enabled) return null;
-		const width = source.naturalWidth;
-		const height = source.naturalHeight;
+		let width = 0;
+		let height = 0;
+		if (source instanceof ImageBitmap) {
+			width = source.width;
+			height = source.height;
+		} else if (source instanceof HTMLImageElement) {
+			width = source.naturalWidth;
+			height = source.naturalHeight;
+		} else if (source instanceof HTMLCanvasElement) {
+			width = source.width;
+			height = source.height;
+		}
 		if (width <= 0 || height <= 0) return null;
 
 		if (!this.chromakeyCanvas || this.chromakeyCanvas.width !== width || this.chromakeyCanvas.height !== height) {

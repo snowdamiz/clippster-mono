@@ -5,6 +5,7 @@ import {
 	CanvasSink,
 	type WrappedCanvas,
 } from "mediabunny";
+import { getPreviewDecodeSinkSize } from "../lib/preview-decode-settings";
 
 interface VideoSinkData {
 	sink: CanvasSink;
@@ -343,9 +344,12 @@ export class VideoCache {
 				throw new Error("Video codec not supported for decoding");
 			}
 
+			const { width, height } = getPreviewDecodeSinkSize();
 			const sink = new CanvasSink(videoTrack, {
 				poolSize: 3,
 				fit: "contain",
+				width,
+				height,
 			});
 
 			this.sinks.set(sinkKey, {

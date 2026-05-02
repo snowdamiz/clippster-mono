@@ -20,6 +20,7 @@ import type {
 	Transform,
 } from "../../types/timeline";
 import { isMainTrack } from "../../lib/timeline";
+import { buildActiveElementIndex } from "../../lib/timeline-active-elements";
 
 // Singleton offscreen canvas for text measurement
 let measureCanvas: HTMLCanvasElement | null = null;
@@ -89,8 +90,10 @@ export function usePreviewInteraction({
 	const { editor, version } = useEditor({
 		subscribe: {
 			playback: false,
-			scenes: false,
+			timeline: false,
+			scenes: true,
 			project: false,
+			media: true,
 			selection: false,
 		},
 	});
@@ -112,6 +115,9 @@ export function usePreviewInteraction({
 		void version.value;
 		return editor.timeline.getTracks();
 	});
+
+	/** Per-track elements sorted by startTime for consistent hit-testing. */
+	const sortedElementsByTrackId = computed(() => buildActiveElementIndex(tracks.value));
 
 	const currentTime = computed(() => {
 		return playbackTime.value;
@@ -156,7 +162,8 @@ export function usePreviewInteraction({
 		];
 
 		for (const track of orderedTracks) {
-			for (const element of track.elements) {
+			const elements = sortedElementsByTrackId.value.get(track.id) ?? track.elements;
+			for (const element of elements) {
 				if ("hidden" in element && element.hidden) continue;
 				const start = element.startTime;
 				const end = start + element.duration;

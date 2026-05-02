@@ -10,6 +10,82 @@ import {
 	type WrappedAudioBuffer,
 } from "mediabunny";
 
+function buildAudioTimelineSignature(editor: EditorCore): string {
+	const tracks = editor.timeline.getTracks();
+	const mediaAssets = editor.media.getAssets();
+	let transitions;
+	try {
+		transitions = editor.scenes.getActiveScene().transitions;
+	} catch {
+		transitions = undefined;
+	}
+
+	const media = mediaAssets.map((asset) => ({
+		id: asset.id,
+		type: asset.type,
+		name: asset.file.name,
+		size: asset.file.size,
+		lastModified: asset.file.lastModified,
+	}));
+
+	const audioTracks = tracks.map((track) => ({
+		id: track.id,
+		type: track.type,
+		muted: "muted" in track ? track.muted ?? false : false,
+		elements: track.elements
+			.filter((element) => element.type === "video" || element.type === "audio")
+			.map((element) => {
+				if (element.type === "audio") {
+					return {
+						id: element.id,
+						type: element.type,
+						mediaId: element.sourceType === "upload" ? element.mediaId : null,
+						sourceType: element.sourceType,
+						sourceUrl: element.sourceType === "library" ? element.sourceUrl : null,
+						startTime: element.startTime,
+						duration: element.duration,
+						trimStart: element.trimStart,
+						trimEnd: element.trimEnd,
+						muted: element.muted ?? false,
+						volume: element.volume ?? 1,
+						speed: element.speed ?? 1,
+						fadeIn: element.fadeIn ?? 0,
+						fadeOut: element.fadeOut ?? 0,
+						audioEffects: element.audioEffects ?? null,
+						pan: element.pan ?? null,
+						linkedElementId: element.linkedElementId ?? null,
+					};
+				}
+
+				return {
+					id: element.id,
+					type: element.type,
+					mediaId: element.mediaId,
+					startTime: element.startTime,
+					duration: element.duration,
+					trimStart: element.trimStart,
+					trimEnd: element.trimEnd,
+					muted: element.muted ?? false,
+					volume: element.volume ?? 1,
+					speed: element.speed ?? 1,
+					fadeIn: element.fadeIn ?? 0,
+					fadeOut: element.fadeOut ?? 0,
+					audioEffects: "audioEffects" in element ? element.audioEffects ?? null : null,
+					pan: element.pan ?? null,
+				};
+			}),
+	}));
+
+	const audioTransitions = (transitions ?? []).map((transition) => ({
+		id: transition.id,
+		type: transition.type,
+		targetElementId: transition.targetElementId,
+		duration: transition.duration,
+	}));
+
+	return JSON.stringify({ media, tracks: audioTracks, transitions: audioTransitions });
+}
+
 export class AudioManager {
 	private audioContext: AudioContext | null = null;
 	private masterGain: GainNode | null = null;
@@ -17,7 +93,9 @@ export class AudioManager {
 	private playbackStartContextTime = 0;
 	private scheduleTimer: number | null = null;
 	private lookaheadSeconds = 5;
-	private scheduleIntervalMs = 500;
+	private scheduleIntervalMs = 250;
+	private audioQueueAheadSeconds = 4;
+	private audioQueueResumeThresholdSeconds = 2;
 	private clips: AudioClipSource[] = [];
 	private clipLastBufferTime = new Map<string, number>();
 	private clipHealthCheckTimer: number | null = null;
@@ -38,6 +116,7 @@ export class AudioManager {
 	private clipsReady = false;
 	private clipLoadPromise: Promise<AudioClipSource[]> | null = null;
 	private clipCacheVersion = 0;
+	private lastAudioTimelineSignature = "";
 
 	constructor(private editor: EditorCore) {
 		this.lastVolume = this.editor.playback.getVolume();
@@ -106,6 +185,12 @@ export class AudioManager {
 	};
 
 	private handleTimelineChange = (): void => {
+		const nextSignature = buildAudioTimelineSignature(this.editor);
+		if (nextSignature === this.lastAudioTimelineSignature) {
+			return;
+		}
+		this.lastAudioTimelineSignature = nextSignature;
+
 		this.invalidateClipCache();
 		this.stopPlayback();
 		this.disposeSinks();
@@ -203,24 +288,23 @@ export class AudioManager {
 
 		if (duration <= 0) return;
 
-		const playbackRequestedAt = performance.now();
 		if (audioContext.state === "suspended") {
 			await audioContext.resume();
 		}
 		if (sessionId !== this.playbackSessionId) return;
 
-		// Anchor audio to the original play click so async prep doesn't leave audio behind video.
-		const anchorDelaySeconds = Math.max(
-			0,
-			(performance.now() - playbackRequestedAt) / 1000,
-		);
-		this.playbackStartTime = time;
-		this.playbackStartContextTime =
-			audioContext.currentTime - anchorDelaySeconds;
-
 		this.clips = await this.ensureClipsLoaded();
 		if (!this.editor.playback.getIsPlaying()) return;
 		if (sessionId !== this.playbackSessionId) return;
+
+		await this.preloadNativeBuffers(this.clips);
+		if (!this.editor.playback.getIsPlaying()) return;
+		if (sessionId !== this.playbackSessionId) return;
+
+		// Anchor after audio prep. If decoding was late, start from the current playhead
+		// instead of trying to catch up from the original click and skipping large regions.
+		this.playbackStartTime = this.editor.playback.getCurrentTime();
+		this.playbackStartContextTime = audioContext.currentTime;
 
 		this.scheduleUpcomingClips();
 
@@ -361,6 +445,10 @@ export class AudioManager {
 		const audioContext = this.ensureAudioContext();
 		if (!audioContext) return;
 
+		if (await this.runNativeFallback({ clip, startTime, sessionId })) {
+			return;
+		}
+
 		const sink = await this.getAudioSink({ clip });
 		if (!this.editor.playback.getIsPlaying()) return;
 		if (sessionId !== this.playbackSessionId) return;
@@ -368,7 +456,6 @@ export class AudioManager {
 		// If mediabunny sink is unavailable (e.g. codec not supported on this platform),
 		// fall back to native Web Audio API decoding
 		if (!sink) {
-			await this.runNativeFallback({ clip, startTime, sessionId });
 			return;
 		}
 
@@ -457,8 +544,11 @@ export class AudioManager {
 			this.clipLastBufferTime.set(clip.id, performance.now());
 
 			const aheadTime = timelineTime - this.getPlaybackTime();
-			if (aheadTime >= 1) {
-				await this.waitUntilCaughtUp({ timelineTime, targetAhead: 1 });
+			if (aheadTime >= this.audioQueueAheadSeconds) {
+				await this.waitUntilCaughtUp({
+					timelineTime,
+					targetAhead: this.audioQueueResumeThresholdSeconds,
+				});
 				if (sessionId !== this.playbackSessionId) return;
 			}
 		}
@@ -474,6 +564,34 @@ export class AudioManager {
 	 * Uses the browser's built-in decodeAudioData which supports codecs that
 	 * WebCodecs may not (e.g. AAC on macOS WKWebView).
 	 */
+	private async getNativeAudioBuffer(clip: AudioClipSource): Promise<AudioBuffer | null> {
+		const audioContext = this.ensureAudioContext();
+		if (!audioContext) return null;
+		if (this.nativeFailedKeys.has(clip.sourceKey)) return null;
+
+		const existing = this.nativeBuffers.get(clip.sourceKey);
+		if (existing) return existing;
+
+		try {
+			const arrayBuffer = await clip.file.arrayBuffer();
+			const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+			this.nativeBuffers.set(clip.sourceKey, audioBuffer);
+			return audioBuffer;
+		} catch (err) {
+			console.warn(`[AudioManager] Native decode failed for ${clip.sourceKey}:`, err);
+			this.nativeFailedKeys.add(clip.sourceKey);
+			return null;
+		}
+	}
+
+	private async preloadNativeBuffers(clips: AudioClipSource[]): Promise<void> {
+		await Promise.all(
+			clips
+				.filter((clip) => !clip.muted)
+				.map((clip) => this.getNativeAudioBuffer(clip).then(() => undefined)),
+		);
+	}
+
 	private async runNativeFallback({
 		clip,
 		startTime,
@@ -482,28 +600,18 @@ export class AudioManager {
 		clip: AudioClipSource;
 		startTime: number;
 		sessionId: number;
-	}): Promise<void> {
+	}): Promise<boolean> {
 		const audioContext = this.ensureAudioContext();
-		if (!audioContext) return;
+		if (!audioContext) return false;
 
 		// Skip if we already know this source can't be decoded natively either
-		if (this.nativeFailedKeys.has(clip.sourceKey)) return;
+		if (this.nativeFailedKeys.has(clip.sourceKey)) return false;
 
-		let audioBuffer = this.nativeBuffers.get(clip.sourceKey);
-		if (!audioBuffer) {
-			try {
-				const arrayBuffer = await clip.file.arrayBuffer();
-				audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
-				this.nativeBuffers.set(clip.sourceKey, audioBuffer);
-			} catch (err) {
-				console.warn(`[AudioManager] Native fallback also failed for ${clip.sourceKey}:`, err);
-				this.nativeFailedKeys.add(clip.sourceKey);
-				return;
-			}
-		}
+		const audioBuffer = await this.getNativeAudioBuffer(clip);
+		if (!audioBuffer) return false;
 
-		if (!this.editor.playback.getIsPlaying()) return;
-		if (sessionId !== this.playbackSessionId) return;
+		if (!this.editor.playback.getIsPlaying()) return false;
+		if (sessionId !== this.playbackSessionId) return false;
 
 		const effectiveClipStart = this.getEffectiveClipStart(clip);
 		const clipEnd = this.getEffectiveClipEnd(clip);
@@ -514,7 +622,14 @@ export class AudioManager {
 			clip.trimStart + this.getEffectiveClipElapsed({ clip, timelineTime: iteratorStartTime }) * (clip.speed ?? 1);
 		const remainingDuration = clipEnd - iteratorStartTime;
 
-		if (remainingDuration <= 0) return;
+		if (remainingDuration <= 0) return false;
+		if (sourceOffset >= audioBuffer.duration) return false;
+		const speed = clip.speed ?? 1;
+		const sourceDuration = Math.min(
+			remainingDuration * speed,
+			Math.max(0, audioBuffer.duration - sourceOffset),
+		);
+		if (sourceDuration <= 0) return false;
 
 		// Per-clip GainNode for volume + fade envelope
 		const clipGain = audioContext.createGain();
@@ -535,9 +650,9 @@ export class AudioManager {
 		node.buffer = audioBuffer;
 
 		// Apply speed via playbackRate with pitch correction
-		if (clip.speed !== 1) {
-			node.playbackRate.value = clip.speed;
-			node.detune.value = -1200 * Math.log2(clip.speed);
+		if (speed !== 1) {
+			node.playbackRate.value = speed;
+			node.detune.value = -1200 * Math.log2(speed);
 		}
 
 		// Insert audio effect chain between source and gain
@@ -554,13 +669,20 @@ export class AudioManager {
 			(iteratorStartTime - this.playbackStartTime);
 
 		if (contextStartTime >= audioContext.currentTime) {
-			node.start(contextStartTime, sourceOffset, remainingDuration * (clip.speed ?? 1));
+			node.start(contextStartTime, sourceOffset, sourceDuration);
 		} else {
 			const offset = audioContext.currentTime - contextStartTime;
 			if (offset < remainingDuration) {
-				node.start(audioContext.currentTime, sourceOffset + offset * (clip.speed ?? 1), (remainingDuration - offset) * (clip.speed ?? 1));
+				const lateSourceOffset = sourceOffset + offset * speed;
+				if (lateSourceOffset >= audioBuffer.duration) return false;
+				const lateSourceDuration = Math.min(
+					(remainingDuration - offset) * speed,
+					Math.max(0, audioBuffer.duration - lateSourceOffset),
+				);
+				if (lateSourceDuration <= 0) return false;
+				node.start(audioContext.currentTime, lateSourceOffset, lateSourceDuration);
 			} else {
-				return;
+				return false;
 			}
 		}
 
@@ -577,6 +699,7 @@ export class AudioManager {
 			node.disconnect();
 			this.queuedSources.delete(node);
 		});
+		return true;
 	}
 
 	private waitUntilCaughtUp({
@@ -665,16 +788,7 @@ export class AudioManager {
 	 */
 	private async preloadClips(): Promise<void> {
 		const clips = await this.ensureClipsLoaded();
-
-		// Preload first 2 seconds of each clip
-		for (const clip of clips) {
-			if (clip.muted) continue;
-			try {
-				await this.getAudioSink({ clip });
-			} catch (err) {
-				console.warn(`[AudioManager] Failed to preload clip ${clip.id}:`, err);
-			}
-		}
+		await this.preloadNativeBuffers(clips);
 	}
 
 	/**
@@ -707,7 +821,7 @@ export class AudioManager {
 
 		const now = performance.now();
 		const currentTime = this.getPlaybackTime();
-		const stalledThresholdMs = 3000;
+		const stalledThresholdMs = 8000;
 
 		for (const clip of this.clips) {
 			if (clip.muted) continue;

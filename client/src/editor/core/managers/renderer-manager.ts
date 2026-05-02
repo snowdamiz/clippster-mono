@@ -1,6 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { EditorCore } from "../../core";
 import type { RootNode } from "../../renderer/nodes/root-node";
+import type { CanvasRenderer } from "../../renderer/canvas-renderer";
+import {
+	getPreviewSceneTreeCached,
+	invalidatePreviewSceneCache as resetPreviewSceneCache,
+	type PreviewSceneCache,
+	type PreviewSceneInputs,
+} from "../../renderer/preview-scene-sync";
+import {
+	previewPerfBeginFrame,
+	previewPerfEndFrame,
+	previewPerfMarkRenderToCanvas,
+} from "../../lib/preview-performance";
+import { setGpuPreviewEffectsEnabled as setGlobalGpuPreviewEffects } from "../../renderer/effects/preview-gpu-config";
+import { invalidateAllLayerPrecomps } from "../../renderer/layer-precomp-cache";
 import type { ExportOptions, ExportResult } from "../../types/export";
 import type {
 	TimelineTrack,
@@ -12,6 +26,7 @@ import type {
 	StickerElement,
 	EffectElement,
 	CaptionElement,
+	CaptionHighlightStyle,
 	MaskShape,
 } from "../../types/timeline";
 import type { MediaAsset } from "../../types/assets";
@@ -263,6 +278,7 @@ interface BrandingExportData {
 export class RendererManager {
 	private renderTree: RootNode | null = null;
 	private listeners = new Set<() => void>();
+	private previewSceneCache: PreviewSceneCache = { fingerprint: null, tree: null };
 
 	constructor(private editor: EditorCore) {}
 
@@ -273,6 +289,51 @@ export class RendererManager {
 
 	getRenderTree(): RootNode | null {
 		return this.renderTree;
+	}
+
+	/**
+	 * Builds (or reuses cached) scene tree from panel inputs; updates render tree.
+	 * Skips expensive buildScene when fingerprint matches.
+	 */
+	syncPreviewRenderTreeFromInputs(inputs: PreviewSceneInputs): { buildMs: number; cacheHit: boolean } {
+		const { tree, buildMs, cacheHit } = getPreviewSceneTreeCached(this.previewSceneCache, inputs);
+		if (cacheHit && this.renderTree === tree) {
+			return { buildMs, cacheHit: true };
+		}
+		this.setRenderTree({ renderTree: tree });
+		return { buildMs, cacheHit };
+	}
+
+	invalidatePreviewSceneCache(): void {
+		resetPreviewSceneCache(this.previewSceneCache);
+		invalidateAllLayerPrecomps();
+	}
+
+	/** Instrumented preview paint (Canvas 2D → display canvas). */
+	async renderPreviewToTarget({
+		renderer,
+		time,
+		targetCanvas,
+	}: {
+		renderer: CanvasRenderer;
+		time: number;
+		targetCanvas: HTMLCanvasElement;
+	}): Promise<void> {
+		const tree = this.getRenderTree();
+		if (!tree) return;
+		previewPerfBeginFrame();
+		const t0 = performance.now();
+		try {
+			await renderer.renderToCanvas({ node: tree, time, targetCanvas });
+			const ms = performance.now() - t0;
+			previewPerfMarkRenderToCanvas(ms);
+		} finally {
+			previewPerfEndFrame();
+		}
+	}
+
+	setGpuPreviewEffectsEnabled(on: boolean): void {
+		setGlobalGpuPreviewEffects(on);
 	}
 
 	async exportProject({
@@ -835,8 +896,12 @@ export class RendererManager {
 						const frameCount = Math.max(2, Math.ceil(overlayDuration * fps));
 						const frames: number[][] = [];
 						for (let fi = 0; fi < frameCount; fi++) {
-							const sampleTime =
-								textEl.startTime + (fi / Math.max(1, frameCount - 1)) * overlayDuration;
+							const sampleTime = getFrameCenterSampleTime(
+								textEl.startTime,
+								overlayDuration,
+								frameCount,
+								fi,
+							);
 							const result = await node.renderToImage({
 								canvasWidth: canvasSize.width,
 								canvasHeight: canvasSize.height,
@@ -950,8 +1015,12 @@ export class RendererManager {
 						const frameCount = Math.max(2, Math.ceil(overlayDuration * fps));
 						const frames: number[][] = [];
 						for (let fi = 0; fi < frameCount; fi++) {
-							const sampleTime =
-								stickerEl.startTime + (fi / Math.max(1, frameCount - 1)) * overlayDuration;
+							const sampleTime = getFrameCenterSampleTime(
+								stickerEl.startTime,
+								overlayDuration,
+								frameCount,
+								fi,
+							);
 							const result = await node.renderToImage({
 								canvasWidth: canvasSize.width,
 								canvasHeight: canvasSize.height,
@@ -1022,9 +1091,8 @@ export class RendererManager {
 
 	/**
 	 * Pre-render caption elements to transparent PNGs for export.
-	 * Because captions have time-dependent word highlighting (karaoke),
-	 * we render one PNG per caption line at the midpoint of that line's
-	 * time range so the active word is highlighted correctly.
+	 * Static captions can be one PNG per line, but word-highlight styles are
+	 * time-dependent and need a frame sequence to match preview playback.
 	 */
 	private async preRenderCaptionOverlays({
 		tracks,
@@ -1054,7 +1122,7 @@ export class RendererManager {
 					animationOut: captionEl.animationOut,
 					animationLoop: captionEl.animationLoop,
 					keyframes: captionEl.keyframes,
-				});
+				}) || captionHighlightNeedsAnimatedRaster(captionEl.highlightStyle);
 
 				for (let lineIdx = 0; lineIdx < captionEl.lines.length; lineIdx++) {
 					const line = captionEl.lines[lineIdx];
@@ -1071,8 +1139,12 @@ export class RendererManager {
 							const frameCount = Math.max(2, Math.ceil(lineDur * fps));
 							const frames: number[][] = [];
 							for (let fi = 0; fi < frameCount; fi++) {
-								const sampleTime =
-									line.startTime + (fi / Math.max(1, frameCount - 1)) * lineDur;
+								const sampleTime = getFrameCenterSampleTime(
+									line.startTime,
+									lineDur,
+									frameCount,
+									fi,
+								);
 								const result = await node.renderToImage({
 									canvasWidth: canvasSize.width,
 									canvasHeight: canvasSize.height,
@@ -1528,6 +1600,21 @@ function overlayNeedsAnimatedRaster(opts: {
 	if (needsRasterAnim(opts.animationIn) || needsRasterAnim(opts.animationOut)) return true;
 	if (opts.animationLoop && opts.animationLoop.duration > 0.01) return true;
 	return false;
+}
+
+function captionHighlightNeedsAnimatedRaster(style?: CaptionHighlightStyle | null): boolean {
+	return !!style && style !== "none";
+}
+
+function getFrameCenterSampleTime(
+	startTime: number,
+	duration: number,
+	frameCount: number,
+	frameIndex: number,
+): number {
+	if (duration <= 0) return startTime;
+	const centerOffset = ((frameIndex + 0.5) / Math.max(1, frameCount)) * duration;
+	return Math.min(startTime + duration - 1e-6, startTime + centerOffset);
 }
 
 function serializeMasks(masks?: MaskShape[]): TauriSerializedMask[] | undefined {

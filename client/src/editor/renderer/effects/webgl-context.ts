@@ -87,6 +87,11 @@ class WebGLContextManager {
 		}
 	}
 
+	/** Offscreen canvas backing the shared WebGL context (for drawImage → 2D canvas). */
+	getDrawingSurface(): OffscreenCanvas | null {
+		return this.canvas;
+	}
+
 	/** Read the current framebuffer as an ImageData (for copying to 2D canvas). */
 	readPixels(width: number, height: number): Uint8ClampedArray | null {
 		const gl = this.gl;

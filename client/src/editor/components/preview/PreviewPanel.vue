@@ -8,12 +8,16 @@ import { useEditorUIState } from "../../composables/useEditorUIState";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { useBrandingConfig } from "../../composables/useBrandingConfig";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
-import { buildScene } from "../../renderer/scene-builder";
 import { getLastFrameTime } from "../../lib/time";
 import type { TimelineTrack } from "../../types/timeline";
+import { exposePreviewPerfGlobal } from "../../lib/preview-performance";
+import { exposeStressTimelineGlobal } from "../../lib/stress-timeline-dev";
+import { pingPreviewWorker } from "../../renderer/preview-worker-client";
 import PreviewOverlay from "./PreviewOverlay.vue";
 import SocialOverlay from "./SocialOverlay.vue";
 import GuideOverlay from "./GuideOverlay.vue";
+import { configurePreviewDecode } from "../../lib/preview-decode-settings";
+import { videoCache } from "../../video-cache/service";
 
 const { editor, version } = useEditor({
 	subscribe: {
@@ -31,6 +35,7 @@ let lastScene: any = null;
 let lastRenderedTime = Number.NEGATIVE_INFINITY;
 let rendering = false;
 let idleTickCount = 0;
+let sceneRebuildIdleId: number | null = null;
 
 // Register canvas on editor core so freeze-frame can capture it
 watch(canvasRef, (canvas) => {
@@ -48,27 +53,56 @@ const activeProject = computed(() => {
 const projectWidth = computed(() => activeProject.value?.settings?.canvasSize?.width ?? 1920);
 const projectHeight = computed(() => activeProject.value?.settings?.canvasSize?.height ?? 1080);
 
-// Preview quality scaling: render scene at lower internal resolution,
-// then upscale to project canvas size for display/interaction consistency.
-const previewScale = computed(() => {
-	const q = previewQuality.value;
-	if (q === "auto") return 1;
-	return Math.min(1, q / projectHeight.value);
+/**
+ * Layout: buildScene + CanvasRenderer always use full project canvas size so text/overlays stay aligned.
+ * Quality: softer decode — video CanvasSink + image bitmaps use a smaller pixel box (see preview-decode-settings).
+ */
+const layoutWidth = computed(() => Math.max(1, Math.round(projectWidth.value)));
+const layoutHeight = computed(() => Math.max(1, Math.round(projectHeight.value)));
+const previewBackingSize = computed(() => {
+	const width = Math.max(1, Math.round(projectWidth.value));
+	const height = Math.max(1, Math.round(projectHeight.value));
+	const targetHeight = previewQuality.value === "auto"
+		? Math.min(height, 720)
+		: Math.min(previewQuality.value, 720);
+	const scale = Math.min(1, targetHeight / height);
+	return {
+		width: Math.max(1, Math.round(width * scale)),
+		height: Math.max(1, Math.round(height * scale)),
+	};
 });
 
-const renderWidth = computed(() => Math.max(1, Math.round(projectWidth.value * previewScale.value)));
-const renderHeight = computed(() => Math.max(1, Math.round(projectHeight.value * previewScale.value)));
+watch(
+	[projectWidth, projectHeight, previewQuality],
+	() => {
+		configurePreviewDecode({
+			projectWidth: projectWidth.value,
+			projectHeight: projectHeight.value,
+			previewQuality: previewQuality.value,
+		});
+		videoCache.clearAll();
+	},
+	{ immediate: true },
+);
 
 const fps = computed(() => activeProject.value?.settings?.fps ?? 30);
 const background = computed(() => activeProject.value?.settings?.background ?? { type: "color" as const, color: "#000000" });
 
 const renderer = shallowRef<CanvasRenderer | null>(null);
 
-watch([renderWidth, renderHeight, fps], ([w, h, f]) => {
+watch([layoutWidth, layoutHeight, fps, previewBackingSize], ([w, h, f, backing]) => {
 	// Use a DOM canvas-backed renderer for preview. Several transition effects rely on
 	// alpha/clip compositing that is unreliable when the destination context is OffscreenCanvas
 	// in Chromium/Electron, which makes wipes/crossfades appear as no-ops in preview.
-	renderer.value = new CanvasRenderer({ width: w, height: h, fps: f, preferOffscreen: false });
+	renderer.value = new CanvasRenderer({
+		width: w,
+		height: h,
+		fps: f,
+		preferOffscreen: false,
+		previewEffectProcessing: true,
+		backingWidth: backing.width,
+		backingHeight: backing.height,
+	});
 	lastFrame = -1;
 	lastScene = null;
 	lastRenderedTime = Number.NEGATIVE_INFINITY;
@@ -120,22 +154,45 @@ const sceneTracks = computed((): TimelineTrack[] => {
 	});
 });
 
+function schedulePreviewSceneRebuild() {
+	if (!activeProject.value) return;
+	const duration = editor.timeline.getTotalDuration();
+	const inputs = {
+		tracks: sceneTracks.value,
+		mediaAssets: mediaAssets.value,
+		duration,
+		canvasSize: { width: layoutWidth.value, height: layoutHeight.value },
+		background: background.value,
+		transitions: sceneTransitions.value,
+	};
+
+	const run = () => {
+		sceneRebuildIdleId = null;
+		editor.renderer.syncPreviewRenderTreeFromInputs(inputs);
+	};
+
+	if (sceneRebuildIdleId !== null && typeof cancelIdleCallback !== "undefined") {
+		cancelIdleCallback(sceneRebuildIdleId);
+		sceneRebuildIdleId = null;
+	}
+
+	// During playback, rebuild immediately so edits while playing stay in sync.
+	if (editor.playback.getIsPlaying()) {
+		run();
+		return;
+	}
+
+	if (typeof requestIdleCallback !== "undefined") {
+		sceneRebuildIdleId = requestIdleCallback(run, { timeout: 100 });
+	} else {
+		queueMicrotask(run);
+	}
+}
+
 watch(
-	[sceneTracks, mediaAssets, background, renderWidth, renderHeight, sceneTransitions],
-	() => {
-		if (!activeProject.value) return;
-		const duration = editor.timeline.getTotalDuration();
-		const renderTree = buildScene({
-			tracks: sceneTracks.value,
-			mediaAssets: mediaAssets.value,
-			duration,
-			canvasSize: { width: renderWidth.value, height: renderHeight.value },
-			background: background.value,
-			transitions: sceneTransitions.value,
-		});
-		editor.renderer.setRenderTree({ renderTree });
-	},
-	{ immediate: true, flush: "sync" },
+	[sceneTracks, mediaAssets, background, layoutWidth, layoutHeight, sceneTransitions],
+	schedulePreviewSceneRebuild,
+	{ immediate: true, flush: "post" },
 );
 
 let rafTickCount = 0;
@@ -172,7 +229,8 @@ useRafLoop(() => {
 	const commitFrame = frame;
 	const commitTree = renderTree;
 	const commitTime = renderTime;
-	r.renderToCanvas({ node: commitTree, time: commitTime, targetCanvas: canvas })
+	editor.renderer
+		.renderPreviewToTarget({ renderer: r, time: commitTime, targetCanvas: canvas })
 		.then(() => {
 			rendering = false;
 			// Async render can finish after a newer scene tree was published (e.g. transform
@@ -370,11 +428,22 @@ function setQuality(value: "auto" | 360 | 540 | 720 | 1080) {
 }
 
 onMounted(() => {
+	exposePreviewPerfGlobal();
+	exposeStressTimelineGlobal(editor);
+	if (import.meta.env.DEV) {
+		void pingPreviewWorker().then((t) => {
+			if (t != null) console.debug("[Preview] compositor worker ping ok", t);
+		});
+	}
 	containerRef.value?.addEventListener('wheel', onWheelZoom, { passive: false });
 	window.addEventListener("keydown", onKeyZoom);
 });
 
 onUnmounted(() => {
+	if (sceneRebuildIdleId !== null && typeof cancelIdleCallback !== "undefined") {
+		cancelIdleCallback(sceneRebuildIdleId);
+		sceneRebuildIdleId = null;
+	}
 	containerRef.value?.removeEventListener('wheel', onWheelZoom);
 	window.removeEventListener("keydown", onKeyZoom);
 });
@@ -423,7 +492,7 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					class="block h-full w-full rounded-sm"
 					:style="{
 						background: canvasBackground,
-						imageRendering: previewScale < 1 ? 'pixelated' : 'auto',
+						imageRendering: 'auto',
 					}"
 				/>
 				<PreviewOverlay
@@ -465,10 +534,11 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 
 		<!-- Preview controls bar: zoom + quality -->
 		<div class="flex h-8 shrink-0 items-center justify-end gap-1 border-t border-white/10 bg-[#18181b] px-2">
-			<!-- Quality selector -->
+			<!-- Quality: lower = softer video/image decode (faster); layout stays full canvas size -->
 			<div class="relative">
 				<button
 					class="preview-quality__input preview-quality__select h-6 px-2 text-[11px]"
+					title="Lowers decoded video and image resolution in the preview (blockier, faster). Timeline layout and overlay positions stay fixed."
 					@click.stop="showQualityDropdown = !showQualityDropdown"
 				>
 					<span class="truncate">Quality: {{ qualityLabel }}</span>

@@ -1,7 +1,7 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import type { VideoEffectType } from "../../types/effects";
 import { BaseNode } from "./base-node";
-import { applyCanvasEffects, buildFilterString, hasPostDrawEffects } from "../effects/canvas-effects";
+import { applyCanvasEffects, applyCanvasFilter, buildFilterString, hasPostDrawEffects } from "../effects/canvas-effects";
 import type { VideoEffect } from "../../types/effects";
 
 export type EffectNodeParams = {
@@ -31,24 +31,29 @@ export class EffectNode extends BaseNode<EffectNodeParams> {
 
 		const effect = this.toVideoEffect();
 		const effects = [effect];
+		const processingSize = renderer.getEffectProcessingSize();
+		const backingSize = renderer.getBackingSize();
 
 		const filterStr = buildFilterString(effects);
 		if (filterStr) {
-			const imageData = renderer.context.getImageData(0, 0, renderer.width, renderer.height);
-			renderer.context.filter = filterStr;
-			renderer.context.putImageData(imageData, 0, 0);
-			renderer.context.drawImage(renderer.context.canvas, 0, 0);
-			renderer.context.filter = "none";
+			applyCanvasFilter(
+				renderer.context,
+				backingSize.width,
+				backingSize.height,
+				filterStr,
+				{ processingSize },
+			);
 		}
 
 		if (hasPostDrawEffects(effects)) {
 			applyCanvasEffects(
 				renderer.context,
-				renderer.width,
-				renderer.height,
+				backingSize.width,
+				backingSize.height,
 				effects,
 				time,
 				startTime,
+				{ processingSize },
 			);
 		}
 	}

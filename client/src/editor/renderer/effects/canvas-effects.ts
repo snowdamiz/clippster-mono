@@ -1,4 +1,5 @@
 import { getEffectPreset } from "../../constants/effect-constants";
+import { tryGpuInvertCanvas2D } from "./gpu-preview-invert";
 import type { VideoEffect } from "../../types/effects";
 import type {
 	ColorAdjustments,
@@ -9,6 +10,127 @@ import type {
 } from "../../types/timeline";
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+type EffectProcessingOptions = {
+	processingSize?: { width: number; height: number };
+};
+
+let scratchA: OffscreenCanvas | HTMLCanvasElement | null = null;
+let scratchB: OffscreenCanvas | HTMLCanvasElement | null = null;
+
+function createScratchCanvas(width: number, height: number): OffscreenCanvas | HTMLCanvasElement {
+	if (typeof OffscreenCanvas !== "undefined") {
+		return new OffscreenCanvas(width, height);
+	}
+	const canvas = document.createElement("canvas");
+	canvas.width = width;
+	canvas.height = height;
+	return canvas;
+}
+
+function getScratchCanvas(slot: "a" | "b", width: number, height: number): OffscreenCanvas | HTMLCanvasElement {
+	let canvas = slot === "a" ? scratchA : scratchB;
+	if (!canvas || canvas.width !== width || canvas.height !== height) {
+		canvas = createScratchCanvas(width, height);
+		if (slot === "a") scratchA = canvas;
+		else scratchB = canvas;
+	}
+	return canvas;
+}
+
+function get2d(canvas: OffscreenCanvas | HTMLCanvasElement): Ctx | null {
+	return canvas.getContext("2d", { willReadFrequently: true }) as Ctx | null;
+}
+
+function shouldUseScaledProcessing(
+	width: number,
+	height: number,
+	options?: EffectProcessingOptions,
+): options is { processingSize: { width: number; height: number } } {
+	const target = options?.processingSize;
+	return Boolean(
+		target &&
+		target.width > 0 &&
+		target.height > 0 &&
+		(target.width < width || target.height < height),
+	);
+}
+
+function runAtProcessingSize(
+	ctx: Ctx,
+	width: number,
+	height: number,
+	target: { width: number; height: number },
+	draw: (targetCtx: Ctx, targetW: number, targetH: number) => void,
+): boolean {
+	const targetW = Math.max(1, Math.round(target.width));
+	const targetH = Math.max(1, Math.round(target.height));
+	if (targetW >= width && targetH >= height) return false;
+
+	const scratch = getScratchCanvas("a", targetW, targetH);
+	const scratchCtx = get2d(scratch);
+	if (!scratchCtx) return false;
+
+	scratchCtx.save();
+	scratchCtx.setTransform(1, 0, 0, 1, 0, 0);
+	scratchCtx.globalAlpha = 1;
+	scratchCtx.globalCompositeOperation = "source-over";
+	scratchCtx.filter = "none";
+	scratchCtx.clearRect(0, 0, targetW, targetH);
+	scratchCtx.drawImage(ctx.canvas as CanvasImageSource, 0, 0, width, height, 0, 0, targetW, targetH);
+	draw(scratchCtx, targetW, targetH);
+	scratchCtx.restore();
+
+	ctx.save();
+	ctx.setTransform(1, 0, 0, 1, 0, 0);
+	ctx.globalAlpha = 1;
+	ctx.globalCompositeOperation = "source-over";
+	ctx.filter = "none";
+	ctx.clearRect(0, 0, width, height);
+	ctx.imageSmoothingEnabled = false;
+	ctx.drawImage(scratch, 0, 0, targetW, targetH, 0, 0, width, height);
+	ctx.restore();
+	return true;
+}
+
+export function applyCanvasFilter(
+	ctx: Ctx,
+	width: number,
+	height: number,
+	filter: string,
+	options?: EffectProcessingOptions,
+): void {
+	if (!filter) return;
+
+	if (shouldUseScaledProcessing(width, height, options)) {
+		const applied = runAtProcessingSize(ctx, width, height, options.processingSize, (targetCtx, targetW, targetH) => {
+			applyCanvasFilter(targetCtx, targetW, targetH, filter);
+		});
+		if (applied) return;
+	}
+
+	const temp = getScratchCanvas("b", width, height);
+	const tempCtx = get2d(temp);
+	if (!tempCtx) return;
+
+	tempCtx.save();
+	tempCtx.setTransform(1, 0, 0, 1, 0, 0);
+	tempCtx.globalAlpha = 1;
+	tempCtx.globalCompositeOperation = "source-over";
+	tempCtx.filter = "none";
+	tempCtx.clearRect(0, 0, width, height);
+	tempCtx.drawImage(ctx.canvas as CanvasImageSource, 0, 0, width, height);
+	tempCtx.restore();
+
+	ctx.save();
+	ctx.setTransform(1, 0, 0, 1, 0, 0);
+	ctx.globalAlpha = 1;
+	ctx.globalCompositeOperation = "source-over";
+	ctx.clearRect(0, 0, width, height);
+	ctx.filter = filter;
+	ctx.drawImage(temp, 0, 0, width, height);
+	ctx.filter = "none";
+	ctx.restore();
+}
 
 /**
  * Apply all enabled effects to the canvas context AFTER the frame has been drawn.
@@ -29,7 +151,15 @@ export function applyCanvasEffects(
 	effects: VideoEffect[],
 	time: number,
 	elementStartTime: number,
+	options?: EffectProcessingOptions,
 ): void {
+	if (shouldUseScaledProcessing(width, height, options)) {
+		const applied = runAtProcessingSize(ctx, width, height, options.processingSize, (targetCtx, targetW, targetH) => {
+			applyCanvasEffects(targetCtx, targetW, targetH, effects, time, elementStartTime);
+		});
+		if (applied) return;
+	}
+
 	const elapsed = time - elementStartTime;
 
 	for (const effect of effects) {
@@ -301,8 +431,22 @@ function applyGrayscale(ctx: Ctx, _w: number, _h: number, _intensity: number): v
 	// Handled via ctx.filter — no-op here
 }
 
-function applyNegative(ctx: Ctx, _w: number, _h: number, _intensity: number): void {
-	// Handled via ctx.filter — no-op here
+function applyNegative(ctx: Ctx, w: number, h: number, intensity: number): void {
+	if (intensity <= 0) return;
+	// ctx.filter path handles pre-draw; post-draw stack uses GPU invert when available.
+	if (tryGpuInvertCanvas2D(ctx as CanvasRenderingContext2D, w, h, intensity)) return;
+	const imageData = ctx.getImageData(0, 0, w, h);
+	const d = imageData.data;
+	const t = intensity / 100;
+	for (let i = 0; i < d.length; i += 4) {
+		const r = d[i]!;
+		const g = d[i + 1]!;
+		const b = d[i + 2]!;
+		d[i] = Math.round(r * (1 - t) + (255 - r) * t);
+		d[i + 1] = Math.round(g * (1 - t) + (255 - g) * t);
+		d[i + 2] = Math.round(b * (1 - t) + (255 - b) * t);
+	}
+	ctx.putImageData(imageData, 0, 0);
 }
 
 function applyColorShift(
@@ -668,6 +812,7 @@ export function applyAdvancedColorAdjustments(
 	w: number,
 	h: number,
 	ca: Partial<ColorAdjustments>,
+	options?: EffectProcessingOptions,
 ): void {
 	const hasFade = ca.fade && ca.fade > 0;
 	const hasTint = ca.tint && ca.tint.length > 0;
@@ -676,6 +821,13 @@ export function applyAdvancedColorAdjustments(
 	const hasSharpness = ca.sharpness && ca.sharpness > 0;
 
 	if (!hasFade && !hasTint && !hasHighlights && !hasShadows && !hasSharpness) return;
+
+	if (shouldUseScaledProcessing(w, h, options)) {
+		const applied = runAtProcessingSize(ctx, w, h, options.processingSize, (targetCtx, targetW, targetH) => {
+			applyAdvancedColorAdjustments(targetCtx, targetW, targetH, ca);
+		});
+		if (applied) return;
+	}
 
 	// Fade: lift black point by blending white overlay
 	if (hasFade) {
@@ -1284,13 +1436,26 @@ function buildLut(points: ColorCurvePoint[] | undefined): Uint8Array {
  * Apply RGB curves to the canvas via ImageData pixel manipulation.
  * Only performs ImageData work when the curves are non-identity.
  */
-export function applyColorCurves(ctx: Ctx, width: number, height: number, curves: ColorCurves): void {
+export function applyColorCurves(
+	ctx: Ctx,
+	width: number,
+	height: number,
+	curves: ColorCurves,
+	options?: EffectProcessingOptions,
+): void {
 	const hasAny =
 		(curves.master && curves.master.length >= 2) ||
 		(curves.red && curves.red.length >= 2) ||
 		(curves.green && curves.green.length >= 2) ||
 		(curves.blue && curves.blue.length >= 2);
 	if (!hasAny) return;
+
+	if (shouldUseScaledProcessing(width, height, options)) {
+		const applied = runAtProcessingSize(ctx, width, height, options.processingSize, (targetCtx, targetW, targetH) => {
+			applyColorCurves(targetCtx, targetW, targetH, curves);
+		});
+		if (applied) return;
+	}
 
 	const masterLut = buildLut(curves.master);
 	const redLut = buildLut(curves.red);
@@ -1315,22 +1480,47 @@ export function applyColorCurves(ctx: Ctx, width: number, height: number, curves
 function colorWheelRangeHasEffect(w?: ColorWheelValues): boolean {
 	if (!w) return false;
 	return (
-		Math.abs(w.hue) > 0.5 ||
 		Math.abs(w.saturation) > 0.0001 ||
 		Math.abs(w.luminance) > 0.0001
 	);
 }
 
+const WHEEL_COLOR_STRENGTH = 0.35;
+
+function colorWheelBalance(wheel: ColorWheelValues): [number, number, number] {
+	const hue = (((wheel.hue % 360) + 360) % 360) / 360;
+	const [r, g, b] = hslToRgb(hue, 1, 0.5);
+	const amount = Math.min(1, Math.max(-1, wheel.saturation)) * WHEEL_COLOR_STRENGTH;
+	return [
+		Math.min(1, Math.max(-1, wheel.luminance + (r - 0.5) * 2 * amount)),
+		Math.min(1, Math.max(-1, wheel.luminance + (g - 0.5) * 2 * amount)),
+		Math.min(1, Math.max(-1, wheel.luminance + (b - 0.5) * 2 * amount)),
+	];
+}
+
 /**
- * Apply three-way color correction (lift/gamma/gain) via pixel manipulation.
- * Converts RGB → HSL, adjusts per tonal range, converts back.
+ * Apply three-way color correction via pixel manipulation.
+ * Shadows, midtones, and highlights receive separate color-balance offsets.
  */
-export function applyColorWheels(ctx: Ctx, width: number, height: number, wheels: ColorWheels): void {
+export function applyColorWheels(
+	ctx: Ctx,
+	width: number,
+	height: number,
+	wheels: ColorWheels,
+	options?: EffectProcessingOptions,
+): void {
 	const hasAny =
 		colorWheelRangeHasEffect(wheels.shadows) ||
 		colorWheelRangeHasEffect(wheels.midtones) ||
 		colorWheelRangeHasEffect(wheels.highlights);
 	if (!hasAny) return;
+
+	if (shouldUseScaledProcessing(width, height, options)) {
+		const applied = runAtProcessingSize(ctx, width, height, options.processingSize, (targetCtx, targetW, targetH) => {
+			applyColorWheels(targetCtx, targetW, targetH, wheels);
+		});
+		if (applied) return;
+	}
 
 	const imageData = ctx.getImageData(0, 0, width, height);
 	const data = imageData.data;
@@ -1338,6 +1528,9 @@ export function applyColorWheels(ctx: Ctx, width: number, height: number, wheels
 	const shadow = wheels.shadows ?? { hue: 0, saturation: 0, luminance: 0 };
 	const mid = wheels.midtones ?? { hue: 0, saturation: 0, luminance: 0 };
 	const high = wheels.highlights ?? { hue: 0, saturation: 0, luminance: 0 };
+	const shadowBalance = colorWheelBalance(shadow);
+	const midBalance = colorWheelBalance(mid);
+	const highBalance = colorWheelBalance(high);
 
 	for (let i = 0; i < data.length; i += 4) {
 		let r = data[i] / 255;
@@ -1354,29 +1547,13 @@ export function applyColorWheels(ctx: Ctx, width: number, height: number, wheels
 		// Midtone weight: remainder
 		const mw = Math.max(0, 1 - sw - hw);
 
-		// Blend hue rotation and saturation per range
-		const totalHue = shadow.hue * sw + mid.hue * mw + high.hue * hw;
-		const totalSat = shadow.saturation * sw + mid.saturation * mw + high.saturation * hw;
-		const totalLum = shadow.luminance * sw + mid.luminance * mw + high.luminance * hw;
+		const redOffset = shadowBalance[0] * sw + midBalance[0] * mw + highBalance[0] * hw;
+		const greenOffset = shadowBalance[1] * sw + midBalance[1] * mw + highBalance[1] * hw;
+		const blueOffset = shadowBalance[2] * sw + midBalance[2] * mw + highBalance[2] * hw;
 
-		// Apply luminance offset
-		r = Math.min(1, Math.max(0, r + totalLum));
-		g = Math.min(1, Math.max(0, g + totalLum));
-		b = Math.min(1, Math.max(0, b + totalLum));
-
-		// Apply hue rotation if non-zero
-		if (Math.abs(totalHue) > 0.5) {
-			const [h, s, l] = rgbToHsl(r, g, b);
-			const newH = (h + totalHue / 360 + 1) % 1;
-			const newS = Math.min(1, Math.max(0, s + totalSat));
-			const [nr, ng, nb] = hslToRgb(newH, newS, l);
-			r = nr; g = ng; b = nb;
-		} else if (Math.abs(totalSat) > 0.01) {
-			const [h, s, l] = rgbToHsl(r, g, b);
-			const newS = Math.min(1, Math.max(0, s + totalSat));
-			const [nr, ng, nb] = hslToRgb(h, newS, l);
-			r = nr; g = ng; b = nb;
-		}
+		r = Math.min(1, Math.max(0, r + redOffset));
+		g = Math.min(1, Math.max(0, g + greenOffset));
+		b = Math.min(1, Math.max(0, b + blueOffset));
 
 		data[i] = Math.round(r * 255);
 		data[i + 1] = Math.round(g * 255);
@@ -1384,20 +1561,6 @@ export function applyColorWheels(ctx: Ctx, width: number, height: number, wheels
 	}
 
 	ctx.putImageData(imageData, 0, 0);
-}
-
-function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
-	const max = Math.max(r, g, b);
-	const min = Math.min(r, g, b);
-	const l = (max + min) / 2;
-	if (max === min) return [0, 0, l];
-	const d = max - min;
-	const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-	let h: number;
-	if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
-	else if (max === g) h = (b - r) / d + 2;
-	else h = (r - g) / d + 4;
-	return [h / 6, s, l];
 }
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {

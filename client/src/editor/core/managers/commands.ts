@@ -1,4 +1,5 @@
 import type { Command } from "../../lib/commands";
+import { MacroCommand } from "../../lib/commands/macro-command";
 
 const MAX_HISTORY = 20;
 
@@ -14,6 +15,12 @@ export class CommandManager {
 		}
 		this.redoStack = [];
 		return command;
+	}
+
+	/** Single undo step for multiple commands (e.g. batched inspector updates). */
+	executeMacro({ commands }: { commands: Command[] }): Command {
+		const macro = new MacroCommand(commands);
+		return this.execute({ command: macro });
 	}
 
 	undo(): void {

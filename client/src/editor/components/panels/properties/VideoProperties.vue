@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
+import { ref, watch, computed, toRef, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
 import { useEditorUIState } from "../../../composables/useEditorUIState";
@@ -12,7 +12,6 @@ import { DEFAULT_CHROMAKEY } from "../../../types/chromakey";
 import { Film, Trash2, RotateCcw, VolumeX, Volume2, FlipHorizontal, FlipVertical, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, Crop, RectangleHorizontal, Square, RectangleVertical, Pipette, SlidersHorizontal, Sparkles, Scissors } from "lucide-vue-next";
 import MasksPanel from "./MasksPanel.vue";
 import { useKeyframes } from "../../../composables/useKeyframes";
-import { toRef } from "vue";
 import KeyframeToggle from "./KeyframeToggle.vue";
 import AnimationProperties from "./AnimationProperties.vue";
 import ColorCurvesPanel from "./ColorCurvesPanel.vue";
@@ -46,6 +45,31 @@ function toggleVideoSection(section: string) {
 const { editor, version } = useEditor();
 const { selectedElements } = useElementSelection();
 const { cropPanelRequested, clearCropPanelRequest } = useEditorUIState();
+
+function isRangeInputTarget(target: EventTarget | null): boolean {
+	return target instanceof HTMLInputElement && target.type === "range";
+}
+
+function handleRangePointerDown(event: PointerEvent) {
+	if (isRangeInputTarget(event.target)) {
+		editor.setInteractiveDrag(true);
+	}
+}
+
+function stopRangeInteraction() {
+	editor.setInteractiveDrag(false);
+}
+
+onMounted(() => {
+	window.addEventListener("pointerup", stopRangeInteraction);
+	window.addEventListener("pointercancel", stopRangeInteraction);
+});
+
+onUnmounted(() => {
+	window.removeEventListener("pointerup", stopRangeInteraction);
+	window.removeEventListener("pointercancel", stopRangeInteraction);
+	stopRangeInteraction();
+});
 
 const trackRef = computed(() => editor.timeline.getTrackById({ trackId: props.trackId })!);
 const { hasKeyframes: hasKf, addKeyframe, clearPropertyKeyframes } = useKeyframes({
@@ -536,7 +560,7 @@ function formatTime(seconds: number): string {
 </script>
 
 <template>
-	<div class="flex h-full min-h-0 flex-row">
+	<div class="flex h-full min-h-0 flex-row" @pointerdown.capture="handleRangePointerDown">
 		<!-- ══════ Content Area ══════ -->
 		<div class="flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden">
 		<!-- One scroll region for the active tab + transition block -->
