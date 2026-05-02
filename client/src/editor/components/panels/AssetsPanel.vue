@@ -14,7 +14,7 @@ import type { MediaAsset } from "../../types/assets";
 import type { CreateTimelineElement } from "../../types/timeline";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Upload, Image, Film, Music, Grid, List, Wand2, ArrowRightLeft, Palette, SlidersHorizontal, FolderOpen, Clapperboard, Loader2, Plus } from "lucide-vue-next";
+import { Upload, Image, Film, Music, Grid, List, Wand2, ArrowRightLeft, FolderOpen, Clapperboard, Loader2, Plus } from "lucide-vue-next";
 import TextView from "./assets/TextView.vue";
 import CaptionsView from "./assets/CaptionsView.vue";
 import SettingsView from "./assets/SettingsView.vue";
@@ -24,7 +24,6 @@ import BuiltClipsView from "./assets/BuiltClipsView.vue";
 import ProjectClipsView from "./assets/ProjectClipsView.vue";
 import EffectsView from "./assets/EffectsView.vue";
 import FiltersView from "./assets/FiltersView.vue";
-import AdjustmentsView from "./assets/AdjustmentsView.vue";
 import TransitionsView from "./assets/TransitionsView.vue";
 import BrandingView from "./assets/BrandingView.vue";
 import UploadMediaView from "./assets/UploadMediaView.vue";
@@ -377,9 +376,6 @@ function getMediaIcon(type: string) {
 
 		<!-- Filters view -->
 		<FiltersView v-else-if="activeTab === 'filters'" />
-
-		<!-- Adjustment view -->
-		<AdjustmentsView v-else-if="activeTab === 'adjustment'" />
 
 		<!-- Transcript view -->
 		<TranscriptView v-else-if="activeTab === 'transcript'" />
