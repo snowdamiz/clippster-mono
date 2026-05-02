@@ -103,6 +103,18 @@ pub struct VideoSource {
 
     pub temperature: Option<f64>,
 
+    pub highlights: Option<f64>,
+
+    pub shadows: Option<f64>,
+
+    pub exposure: Option<f64>,
+
+    pub fade: Option<f64>,
+
+    pub tint: Option<String>,
+
+    pub sharpness: Option<f64>,
+
     pub effects: Option<Vec<VideoEffect>>,
 
     pub is_image: Option<bool>,
@@ -600,6 +612,59 @@ fn build_chromakey_spill_geq(chromakey: &ChromaKeySettings, kr: f64, kg: f64, kb
     };
 
     Some(format!("geq=r='{}':g='{}':b='{}'", r_e, g_e, b_e))
+}
+
+fn build_highlight_shadow_filter(highlights: f64, shadows: f64) -> Option<String> {
+    if highlights.abs() <= 0.5 && shadows.abs() <= 0.5 {
+        return None;
+    }
+
+    let highlight_shift = (highlights / 100.0) * 60.0;
+    let shadow_shift = (shadows / 100.0) * 60.0;
+    let lum = "((0.299*r(X\\,Y)+0.587*g(X\\,Y)+0.114*b(X\\,Y))/255)";
+    let adjustment = format!(
+        "({hs}*if(gt({lum}\\,0.5)\\,(({lum}-0.5)*2)\\,0)+{ss}*if(lt({lum}\\,0.5)\\,((0.5-{lum})*2)\\,0))",
+        hs = highlight_shift,
+        ss = shadow_shift,
+        lum = lum
+    );
+    let channel = |name: &str| -> String {
+        format!(
+            "min(255\\,max(0\\,{name}(X\\,Y)+({adjustment})))",
+            name = name,
+            adjustment = adjustment
+        )
+    };
+
+    Some(format!(
+        "geq=r='{}':g='{}':b='{}'",
+        channel("r"),
+        channel("g"),
+        channel("b")
+    ))
+}
+
+fn parse_hex_color(hex: &str) -> Option<(f64, f64, f64)> {
+    let clean = hex.trim().trim_start_matches('#');
+    let full = if clean.len() == 3 {
+        let mut out = String::with_capacity(6);
+        for c in clean.chars() {
+            out.push(c);
+            out.push(c);
+        }
+        out
+    } else {
+        clean.to_string()
+    };
+
+    if full.len() != 6 || !full.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+
+    let r = u8::from_str_radix(&full[0..2], 16).ok()? as f64 / 255.0;
+    let g = u8::from_str_radix(&full[2..4], 16).ok()? as f64 / 255.0;
+    let b = u8::from_str_radix(&full[4..6], 16).ok()? as f64 / 255.0;
+    Some((r, g, b))
 }
 
 async fn ffprobe_path_has_audio<R: Runtime>(
@@ -1198,6 +1263,18 @@ pub async fn export_video_editor_project(
 
         let temperature = source.temperature.unwrap_or(0.0);
 
+        let highlights = source.highlights.unwrap_or(0.0);
+
+        let shadows = source.shadows.unwrap_or(0.0);
+
+        let exposure = source.exposure.unwrap_or(0.0);
+
+        let fade = source.fade.unwrap_or(0.0);
+
+        let tint = source.tint.as_deref().unwrap_or("");
+
+        let sharpness = source.sharpness.unwrap_or(0.0);
+
         fn normalize_similarity(similarity: f64) -> f64 {
             (similarity / 100.0).clamp(0.0, 1.0) * 0.4
         }
@@ -1462,22 +1539,23 @@ pub async fn export_video_editor_project(
             }
         }
 
-        // Color adjustments via eq filter (brightness, contrast, saturation)
+        // Match preview's canvas CSS filters: brightness/exposure are multiplicative,
+        // while FFmpeg `eq=brightness` is additive.
+        let brightness_multiplier = (1.0 + brightness / 100.0 + (exposure / 100.0) * 0.5).max(0.0);
+        if (brightness_multiplier - 1.0).abs() > 0.005 {
+            transform_filters.push(format!(
+                "colorchannelmixer=rr={}:gg={}:bb={}",
+                brightness_multiplier, brightness_multiplier, brightness_multiplier
+            ));
+        }
 
-        let has_color = brightness.abs() > 0.5 || contrast.abs() > 0.5 || saturation.abs() > 0.5;
-
-        if has_color {
-            // FFmpeg eq: brightness -1..1 (we have -100..100), contrast 0..2 (we have -100..100), saturation 0..3 (we have -100..100)
-
-            let eq_brightness = brightness / 100.0;
-
+        if contrast.abs() > 0.5 || saturation.abs() > 0.5 {
             let eq_contrast = 1.0 + contrast / 100.0;
-
             let eq_saturation = 1.0 + saturation / 100.0;
 
             transform_filters.push(format!(
-                "eq=brightness={}:contrast={}:saturation={}",
-                eq_brightness, eq_contrast, eq_saturation
+                "eq=contrast={}:saturation={}",
+                eq_contrast, eq_saturation
             ));
         }
 
@@ -1491,6 +1569,34 @@ pub async fn export_video_editor_project(
             let hue_shift = temperature * 0.3;
 
             transform_filters.push(format!("hue=h={}", hue_shift));
+        }
+
+        if let Some(highlight_shadow_filter) = build_highlight_shadow_filter(highlights, shadows) {
+            transform_filters.push(highlight_shadow_filter);
+        }
+
+        if fade > 0.5 {
+            transform_filters.push(format!("eq=brightness={}", (fade / 100.0) * 0.15));
+        }
+
+        if let Some((r, g, b)) = parse_hex_color(tint) {
+            let mix = 0.25;
+            transform_filters.push(format!(
+                "colorchannelmixer=rr={}:rg={}:rb={}:gr={}:gg={}:gb={}:br={}:bg={}:bb={}",
+                1.0 - mix + r * mix,
+                g * mix,
+                b * mix,
+                r * mix,
+                1.0 - mix + g * mix,
+                b * mix,
+                r * mix,
+                g * mix,
+                1.0 - mix + b * mix
+            ));
+        }
+
+        if sharpness > 0.5 {
+            transform_filters.push(format!("unsharp=5:5:{}", (sharpness / 100.0) * 1.5));
         }
 
         // Opacity via colorchannelmixer — with keyframe support (single path; no duplicate geq)

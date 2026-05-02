@@ -75,6 +75,12 @@ interface TauriVideoSource {
 	contrast: number;
 	saturation: number;
 	temperature: number;
+	highlights: number;
+	shadows: number;
+	exposure: number;
+	fade: number;
+	tint: string;
+	sharpness: number;
 	effects: TauriVideoEffect[];
 	is_image: boolean;
 	is_reversed: boolean;
@@ -499,6 +505,12 @@ export class RendererManager {
 						contrast: imgEl.colorAdjustments?.contrast ?? 0,
 						saturation: imgEl.colorAdjustments?.saturation ?? 0,
 						temperature: imgEl.colorAdjustments?.temperature ?? 0,
+						highlights: imgEl.colorAdjustments?.highlights ?? 0,
+						shadows: imgEl.colorAdjustments?.shadows ?? 0,
+						exposure: imgEl.colorAdjustments?.exposure ?? 0,
+						fade: imgEl.colorAdjustments?.fade ?? 0,
+						tint: imgEl.colorAdjustments?.tint ?? "",
+						sharpness: imgEl.colorAdjustments?.sharpness ?? 0,
 						effects: serializeEffects(imgEl.effects),
 						is_image: true,
 						is_reversed: false,
@@ -565,6 +577,12 @@ export class RendererManager {
 						contrast: videoEl.colorAdjustments?.contrast ?? 0,
 						saturation: videoEl.colorAdjustments?.saturation ?? 0,
 						temperature: videoEl.colorAdjustments?.temperature ?? 0,
+						highlights: videoEl.colorAdjustments?.highlights ?? 0,
+						shadows: videoEl.colorAdjustments?.shadows ?? 0,
+						exposure: videoEl.colorAdjustments?.exposure ?? 0,
+						fade: videoEl.colorAdjustments?.fade ?? 0,
+						tint: videoEl.colorAdjustments?.tint ?? "",
+						sharpness: videoEl.colorAdjustments?.sharpness ?? 0,
 						effects: serializeEffects(videoEl.effects),
 						is_image: false,
 						is_reversed: videoEl.reversed ?? false,
