@@ -71,9 +71,13 @@ export class SaveManager {
 		if (this.saveTimer) {
 			clearTimeout(this.saveTimer);
 		}
+		// Longer debounce during playback/range drags to reduce main-thread JSON serialization while preview runs.
+		const playing = this.editor.playback.getIsPlaying();
+		const interactive = this.editor.getInteractiveDrag();
+		const ms = playing || interactive ? Math.max(this.debounceMs, 2000) : this.debounceMs;
 		this.saveTimer = setTimeout(() => {
 			void this.saveNow();
-		}, this.debounceMs);
+		}, ms);
 	}
 
 	private async saveNow(): Promise<void> {

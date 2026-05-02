@@ -438,7 +438,8 @@ export class TimelineManager {
 	}
 
 	updateTracks(newTracks: TimelineTrack[]): void {
+		// ScenesManager.updateSceneTracks already notifies subscribers; avoid double Vue
+		// invalidation (timeline + scenes) for the same mutation.
 		this.editor.scenes.updateSceneTracks({ tracks: newTracks });
-		this.notify();
 	}
 }

@@ -29,7 +29,7 @@ export class BlurBackgroundNode extends BaseNode<BlurBackgroundNodeParams> {
 			| CanvasRenderingContext2D;
 
 		try {
-			offscreen = new OffscreenCanvas(renderer.width, renderer.height);
+			offscreen = new OffscreenCanvas(renderer.backingWidth, renderer.backingHeight);
 			const ctx = offscreen.getContext("2d");
 			if (!ctx) {
 				throw new Error("failed to get offscreen canvas context");
@@ -37,14 +37,22 @@ export class BlurBackgroundNode extends BaseNode<BlurBackgroundNodeParams> {
 			offscreenCtx = ctx;
 		} catch {
 			offscreen = document.createElement("canvas");
-			offscreen.width = renderer.width;
-			offscreen.height = renderer.height;
+			offscreen.width = renderer.backingWidth;
+			offscreen.height = renderer.backingHeight;
 			const ctx = offscreen.getContext("2d");
 			if (!ctx) {
 				throw new Error("failed to get canvas context");
 			}
 			offscreenCtx = ctx;
 		}
+		offscreenCtx.setTransform(
+			renderer.backingWidth / renderer.width,
+			0,
+			0,
+			renderer.backingHeight / renderer.height,
+			0,
+			0,
+		);
 
 		const originalContext = renderer.context;
 		renderer.context = offscreenCtx;

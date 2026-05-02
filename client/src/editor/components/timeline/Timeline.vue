@@ -62,7 +62,7 @@
   const { editor, version } = useEditor({
     subscribe: {
       playback: false,
-      timeline: true,
+      timeline: false,
       scenes: true,
       selection: true,
     },
