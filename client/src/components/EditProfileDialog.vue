@@ -144,11 +144,12 @@
                     </div>
                     <div class="profile-dialog__field">
                       <label class="profile-dialog__label">Timezone</label>
-                      <input
+                      <CustomDropdown
                         v-model="profile.timezone"
-                        type="text"
-                        class="profile-dialog__input"
-                        placeholder="America/New_York"
+                        :options="timezoneOptions"
+                        placeholder="Select timezone"
+                        class="profile-dialog__dropdown"
+                        trigger-class="profile-dialog__dropdown-trigger"
                       />
                     </div>
                   </div>
@@ -547,6 +548,7 @@
 
 <script setup lang="ts">
   import { ref, reactive, watch, computed } from 'vue';
+  import { getGlobalTimezoneSelectOptions } from '@/utils/timezones';
   import {
     Loader2,
     UserCircle,
@@ -691,6 +693,13 @@
       profile.looking_for_work = val;
     },
   });
+
+  const timezoneOptions = computed(() =>
+    getGlobalTimezoneSelectOptions(new Date(), profile.timezone ?? null).map((o) => ({
+      label: o.label,
+      value: o.value,
+    }))
+  );
 
   // Reset avatar load error when avatar_url changes
   watch(

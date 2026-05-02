@@ -2,24 +2,16 @@
   <div class="clipper-public-profile-page">
     <PageLayout
       :title="profile?.display_name || 'Clipper Profile'"
-      :description="profile?.bio || ''"
+      description=""
       :show-header="true"
       :icon="UserCircle"
       :breadcrumbs="breadcrumbs"
     >
       <template #actions>
         <div v-if="profile" class="profile-header-actions">
-          <button v-if="authStore.isAuthenticated" @click="openMessageDialog" class="profile-action-btn profile-action-btn--primary">
-            <MessageCircle class="profile-action-btn__icon" />
-            Message
-          </button>
           <button v-if="authStore.isAuthenticated" @click="openEndorsementDialog" class="profile-action-btn profile-action-btn--outline">
             <Star class="profile-action-btn__icon" />
             Endorse
-          </button>
-          <button @click="copyProfileLink" class="profile-action-btn profile-action-btn--outline">
-            <Share2 class="profile-action-btn__icon" />
-            Share
           </button>
         </div>
       </template>
@@ -79,7 +71,6 @@
                   </div>
                 </div>
               </div>
-              <p v-if="profile.bio" class="org-hero__tagline">{{ profile.bio }}</p>
               <div v-if="profile.specialty_tags?.length" class="org-hero__tags">
                 <span v-for="tag in profile.specialty_tags.slice(0, 6)" :key="tag" class="org-hero__tag">
                   {{ getSpecialtyTagLabel(tag) }}
@@ -132,40 +123,14 @@
         <div class="org-grid">
           <!-- Left Column -->
           <div class="main-column">
-            <!-- About Section -->
-            <section v-if="profile.experience_level || profile.timezone || profile.response_time_hours" class="section">
+            <!-- About (bio only — matches org public profile) -->
+            <section v-if="profile.bio?.trim()" class="section">
               <div class="section__header">
-                <div class="section__header-icon">
-                  <Info />
-                </div>
                 <div class="section__header-text">
                   <h2 class="section__title">About</h2>
-                  <p class="section__subtitle">Professional details</p>
                 </div>
               </div>
-              <div class="about-grid">
-                <div v-if="profile.experience_level" class="about-item">
-                  <Star class="about-item__icon" />
-                  <div class="about-item__content">
-                    <div class="about-item__label">Experience</div>
-                    <div class="about-item__value">{{ getExperienceLevelLabel(profile.experience_level) }}</div>
-                  </div>
-                </div>
-                <div v-if="profile.timezone" class="about-item">
-                  <Clock class="about-item__icon" />
-                  <div class="about-item__content">
-                    <div class="about-item__label">Timezone</div>
-                    <div class="about-item__value">{{ profile.timezone }}</div>
-                  </div>
-                </div>
-                <div v-if="profile.response_time_hours" class="about-item">
-                  <MessageCircle class="about-item__icon" />
-                  <div class="about-item__content">
-                    <div class="about-item__label">Response Time</div>
-                    <div class="about-item__value">~{{ profile.response_time_hours }} hours</div>
-                  </div>
-                </div>
-              </div>
+              <p class="section__bio">{{ profile.bio }}</p>
             </section>
 
             <!-- Portfolio Section -->
@@ -318,21 +283,6 @@
               </div>
             </div>
 
-            <!-- Languages -->
-            <div v-if="profile.languages?.length" class="sidebar-card">
-              <div class="sidebar-card__header">
-                <Globe class="sidebar-card__icon" />
-                <h3 class="sidebar-card__title">Languages</h3>
-              </div>
-              <div class="sidebar-card__content">
-                <div class="language-list">
-                  <div v-for="lang in profile.languages" :key="lang" class="language-item">
-                    {{ getLanguageName(lang) }}
-                  </div>
-                </div>
-              </div>
-            </div>
-
             <!-- Channel Links -->
             <div v-if="profile.channel_links?.length" class="sidebar-card">
               <div class="sidebar-card__header">
@@ -352,6 +302,50 @@
                     <span class="channel-item__username">{{ link.username || getPlatformLabel(link.platform) }}</span>
                     <ExternalLink class="channel-item__external" />
                   </a>
+                </div>
+              </div>
+            </div>
+
+            <div
+              v-if="
+                profile.experience_level ||
+                profile.timezone ||
+                profile.response_time_hours != null ||
+                (profile.languages?.length ?? 0) > 0
+              "
+              class="sidebar-card"
+            >
+              <div class="sidebar-card__header">
+                <Briefcase class="sidebar-card__icon" />
+                <h3 class="sidebar-card__title">Professional</h3>
+              </div>
+              <div class="sidebar-card__content">
+                <div class="clipper-profile-locale">
+                  <div v-if="profile.experience_level" class="clipper-profile-locale__row">
+                    <span class="clipper-profile-locale__label">Experience</span>
+                    <span class="clipper-profile-locale__value">{{ getExperienceLevelLabel(profile.experience_level) }}</span>
+                  </div>
+                  <div v-if="profile.timezone" class="clipper-profile-locale__row">
+                    <span class="clipper-profile-locale__label">Timezone</span>
+                    <span class="clipper-profile-locale__value">{{ formatTimezoneForDisplay(profile.timezone) }}</span>
+                  </div>
+                  <div v-if="profile.response_time_hours != null" class="clipper-profile-locale__row">
+                    <span class="clipper-profile-locale__label">Response time</span>
+                    <span class="clipper-profile-locale__value">~{{ profile.response_time_hours }} hours</span>
+                  </div>
+                  <div
+                    v-for="(lang, i) in profile.languages || []"
+                    :key="lang"
+                    class="clipper-profile-locale__row"
+                  >
+                    <span
+                      class="clipper-profile-locale__label"
+                      :class="{ 'clipper-profile-locale__label--continued': i > 0 }"
+                    >
+                      {{ i === 0 ? 'Languages' : '\u00a0' }}
+                    </span>
+                    <span class="clipper-profile-locale__value">{{ getLanguageName(lang) }}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -490,14 +484,11 @@
 <script setup lang="ts">
   import { ref, computed, onMounted } from 'vue';
   import { useAuthStore } from '@/stores/auth';
-  import { useRoute, useRouter } from 'vue-router';
+  import { useRoute } from 'vue-router';
   import {
     UserCircle,
     CheckCircle,
     Star,
-    Clock,
-    MessageCircle,
-    Briefcase,
     ExternalLink,
     Video,
     Play,
@@ -508,14 +499,12 @@
     Youtube,
     Twitch,
     Link2,
-    Info,
     Award,
     Building2,
     Sparkles,
     Monitor,
-    Globe,
+    Briefcase,
     Link,
-    Share2,
     Handshake,
     X,
     Eye,
@@ -541,9 +530,9 @@
   } from '@/services/clipperProfilesApi';
   import { useToast } from '@/composables/useToast';
   import { formatLastActive, isOnline } from '@/utils/timeUtils';
+  import { formatTimezoneForDisplay } from '@/utils/timezones';
 
   const route = useRoute();
-  const router = useRouter();
   const { toast } = useToast();
   const authStore = useAuthStore();
 
@@ -635,28 +624,11 @@
   const submittingEndorsement = ref(false);
   const endorsementError = ref('');
 
-  const openMessageDialog = () => {
-    if (!profile.value) return;
-    router.push(`/messages?to=${profile.value.user_id}`);
-  };
-
   const openEndorsementDialog = () => {
     endorsementContent.value = '';
     endorsementRating.value = 0;
     endorsementError.value = '';
     showEndorsementDialog.value = true;
-  };
-
-  const copyProfileLink = () => {
-    // Generate landing web app URL, not desktop app URL
-    const landingUrl = import.meta.env.VITE_LANDING_URL || 'https://clippster.app';
-    const url = `${landingUrl}/clippers/${profile.value?.slug}`;
-    navigator.clipboard.writeText(url).then(() => {
-      toast({
-        title: 'Link Copied',
-        description: 'Profile link copied to clipboard',
-      });
-    });
   };
 
   const submitEndorsement = async () => {
@@ -783,6 +755,17 @@
   .clipper-public-profile-page {
     width: 100%;
     min-height: 100%;
+    /* Match landing clipper public profile (ClipperPublicProfilePage.css) */
+    --sidebar-bg: #0a0a0b;
+    --sidebar-surface: #141416;
+    --sidebar-border: #27272a;
+    --sidebar-hover: #1f1f23;
+    --sidebar-active: #3f3f46;
+    --sidebar-text: #fafafa;
+    --sidebar-text-muted: #a1a1aa;
+    --org-profile-accent: #14b8db;
+    --org-profile-accent-rgb: 20, 184, 219;
+    --sidebar-accent: #14b8db;
     background: var(--sidebar-bg);
   }
 
@@ -884,7 +867,8 @@
 
   .org-hero__banner {
     height: 120px;
-    background: linear-gradient(135deg, #0891b2 0%, #06b6d4 25%, #22d3ee 50%, #0891b2 75%, #164e63 100%);
+    /* Same gradient as OrgPublicProfilePage / landing clipper */
+    background: linear-gradient(135deg, #0e7490 0%, #0ea0c0 25%, #14b8db 50%, #0b9fbf 75%, #164e63 100%);
     background-size: 200% 200%;
     border-radius: 14px 14px 0 0;
     position: relative;
@@ -982,12 +966,12 @@
     display: inline-flex;
     align-items: center;
     padding: 0.25rem 0.625rem;
-    background: rgba(34, 211, 238, 0.1);
-    border: 1px solid rgba(34, 211, 238, 0.2);
+    background: rgba(20, 184, 219, 0.1);
+    border: 1px solid rgba(20, 184, 219, 0.2);
     border-radius: 6px;
     font-size: 0.6875rem;
     font-weight: 500;
-    color: #22d3ee;
+    color: #14b8db;
     letter-spacing: 0.01em;
   }
 
@@ -1060,14 +1044,14 @@
     gap: 0.75rem;
     padding: 1rem;
     background: var(--sidebar-surface);
-    border: 1px solid rgba(34, 211, 238, 0.15);
+    border: 1px solid rgba(20, 184, 219, 0.15);
     border-radius: 12px;
     transition: all 200ms ease;
   }
 
   .org-stat-card:hover {
-    border-color: rgba(34, 211, 238, 0.4);
-    box-shadow: 0 0 20px rgba(34, 211, 238, 0.1);
+    border-color: rgba(20, 184, 219, 0.4);
+    box-shadow: 0 0 20px rgba(20, 184, 219, 0.1);
   }
 
   .org-stat-card__icon {
@@ -1081,8 +1065,8 @@
   }
 
   .org-stat-card__icon--cyan {
-    background: rgba(34, 211, 238, 0.15);
-    color: #22d3ee;
+    background: rgba(20, 184, 219, 0.15);
+    color: #14b8db;
   }
 
   .org-stat-card__icon--green {
@@ -1129,7 +1113,7 @@
     right: -3px;
     width: 28px;
     height: 28px;
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    background: linear-gradient(135deg, #14b8db 0%, #0e7490 100%);
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -1293,7 +1277,7 @@
   /* ===== Section ===== */
   .section {
     background-color: var(--sidebar-surface);
-    border: 1px solid rgba(34, 211, 238, 0.15);
+    border: 1px solid rgba(20, 184, 219, 0.15);
     border-radius: 14px;
     padding: 0;
     overflow: hidden;
@@ -1301,8 +1285,8 @@
   }
 
   .section:hover {
-    border-color: rgba(34, 211, 238, 0.3);
-    box-shadow: 0 0 24px rgba(34, 211, 238, 0.08);
+    border-color: rgba(20, 184, 219, 0.3);
+    box-shadow: 0 0 24px rgba(20, 184, 219, 0.08);
   }
 
   .section__header {
@@ -1310,8 +1294,8 @@
     align-items: center;
     gap: 1rem;
     padding: 1.5rem;
-    border-bottom: 1px solid rgba(34, 211, 238, 0.1);
-    background: linear-gradient(90deg, rgba(34, 211, 238, 0.04) 0%, transparent 50%);
+    border-bottom: 1px solid rgba(20, 184, 219, 0.1);
+    background: linear-gradient(90deg, rgba(20, 184, 219, 0.04) 0%, transparent 50%);
   }
 
   .section__header-icon {
@@ -1321,7 +1305,7 @@
     width: 48px;
     height: 48px;
     border-radius: 12px;
-    background-color: rgba(6, 182, 212, 0.15);
+    background-color: rgba(20, 184, 219, 0.15);
     color: var(--sidebar-accent);
     flex-shrink: 0;
   }
@@ -1332,8 +1316,8 @@
   }
 
   .section__header-icon--cyan {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: #06b6d4;
+    background-color: rgba(20, 184, 219, 0.15);
+    color: #14b8db;
   }
 
   .section__header-text {
@@ -1353,6 +1337,48 @@
     font-size: 0.8125rem;
     color: var(--sidebar-text-muted);
     margin: 0.25rem 0 0;
+  }
+
+  .section__bio {
+    margin: 0;
+    padding: 0 1.5rem 1.5rem;
+    font-size: 0.9375rem;
+    line-height: 1.65;
+    color: var(--sidebar-text-muted);
+    white-space: pre-wrap;
+  }
+
+  .clipper-profile-locale {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .clipper-profile-locale__row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.625rem 0.75rem;
+    background: var(--sidebar-hover);
+    border-radius: 8px;
+    border: 1px solid rgba(20, 184, 219, 0.12);
+  }
+
+  .clipper-profile-locale__label {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .clipper-profile-locale__label--continued {
+    visibility: hidden;
+  }
+
+  .clipper-profile-locale__value {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
   }
 
   /* About Section */
@@ -1376,7 +1402,7 @@
 
   .about-item:hover {
     background: var(--sidebar-active);
-    border-color: rgba(6, 182, 212, 0.3);
+    border-color: rgba(20, 184, 219, 0.3);
   }
 
   .about-item__icon {
@@ -1426,7 +1452,7 @@
   .portfolio-item:hover {
     border-color: var(--sidebar-accent);
     transform: translateY(-4px);
-    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(6, 182, 212, 0.2);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(20, 184, 219, 0.2);
   }
 
   .portfolio-item__thumbnail {
@@ -1642,7 +1668,7 @@
 
   .endorsement-card:hover {
     background: var(--sidebar-hover);
-    border-color: rgba(6, 182, 212, 0.3);
+    border-color: rgba(20, 184, 219, 0.3);
   }
 
   .endorsement-card__header {
@@ -1730,15 +1756,15 @@
   /* Sidebar Card */
   .sidebar-card {
     background-color: var(--sidebar-surface);
-    border: 1px solid rgba(34, 211, 238, 0.15);
+    border: 1px solid rgba(20, 184, 219, 0.15);
     border-radius: 14px;
     overflow: hidden;
     transition: border-color 200ms ease, box-shadow 200ms ease;
   }
 
   .sidebar-card:hover {
-    border-color: rgba(34, 211, 238, 0.3);
-    box-shadow: 0 0 24px rgba(34, 211, 238, 0.08);
+    border-color: rgba(20, 184, 219, 0.3);
+    box-shadow: 0 0 24px rgba(20, 184, 219, 0.08);
   }
 
   .sidebar-card__header {
@@ -1746,8 +1772,8 @@
     align-items: center;
     gap: 0.75rem;
     padding: 1.25rem;
-    border-bottom: 1px solid rgba(34, 211, 238, 0.1);
-    background: linear-gradient(to bottom, rgba(6, 182, 212, 0.03), transparent);
+    border-bottom: 1px solid rgba(20, 184, 219, 0.1);
+    background: linear-gradient(to bottom, rgba(20, 184, 219, 0.03), transparent);
   }
 
   .sidebar-card__icon {
@@ -1799,7 +1825,7 @@
   }
 
   .tag--specialty {
-    background: rgba(6, 182, 212, 0.12);
+    background: rgba(20, 184, 219, 0.12);
     color: var(--sidebar-accent);
   }
 
@@ -2251,7 +2277,7 @@
 
   .endorse-dialog__accent {
     height: 3px;
-    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(20, 184, 219, 0.5));
     flex-shrink: 0;
   }
 
@@ -2298,7 +2324,7 @@
     width: 52px;
     height: 52px;
     border-radius: 12px;
-    background-color: rgba(6, 182, 212, 0.15);
+    background-color: rgba(20, 184, 219, 0.15);
     color: var(--sidebar-accent);
     margin-bottom: 0.875rem;
   }
@@ -2403,7 +2429,7 @@
   .endorse-dialog__textarea:focus {
     outline: none;
     border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+    box-shadow: 0 0 0 2px rgba(20, 184, 219, 0.15);
   }
 
   .endorse-dialog__char-count {
@@ -2473,7 +2499,7 @@
   }
 
   .endorse-dialog__btn--primary {
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0e7490 100%);
     color: #000;
   }
 

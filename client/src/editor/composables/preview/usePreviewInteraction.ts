@@ -90,7 +90,7 @@ export function usePreviewInteraction({
 	const { editor, version } = useEditor({
 		subscribe: {
 			playback: false,
-			timeline: false,
+			timeline: true,
 			scenes: true,
 			project: false,
 			media: true,
@@ -135,6 +135,12 @@ export function usePreviewInteraction({
 	onUnmounted(() => {
 		unsubscribePlayback?.();
 		unsubscribePlayback = null;
+		window.removeEventListener("mousemove", handleMouseMove);
+		window.removeEventListener("mouseup", handleMouseUp);
+		window.removeEventListener("blur", handleMouseUp);
+		dragState.value = null;
+		showCenterGuideX.value = false;
+		showCenterGuideY.value = false;
 	});
 
 	/**
@@ -410,15 +416,25 @@ export function usePreviewInteraction({
 	}
 
 	async function handleCanvasMouseDown(event: MouseEvent) {
+		if (event.button !== 0) return;
+
 		const pos = screenToCanvas(event.clientX, event.clientY);
 		if (!pos) return;
 
 		const hit = hitTest(pos.x, pos.y);
 		if (hit) {
+			let releasedBeforeDrag = false;
+			const markReleased = (upEvent: MouseEvent) => {
+				if (upEvent.button === event.button) {
+					releasedBeforeDrag = true;
+				}
+			};
+
 			// If the clicked element is already part of a multi-selection (e.g. caption track),
 			// preserve the selection so the entire group moves together.
 			const alreadySelected = isElementSelected({ trackId: hit.trackId, elementId: hit.elementId });
 			if (!alreadySelected) {
+				window.addEventListener("mouseup", markReleased, { once: true });
 				selectElement({ trackId: hit.trackId, elementId: hit.elementId });
 				// Wait for Vue to flush DOM updates before recording the drag start position.
 				// Selecting a new element may cause the PropertiesPanel to appear on the right,
@@ -426,8 +442,10 @@ export function usePreviewInteraction({
 				// before the layout settles, getBoundingClientRect() returns the pre-shift rect
 				// and any subsequent mousemove produces a phantom delta, making the element jump.
 				await nextTick();
+				window.removeEventListener("mouseup", markReleased);
 			}
 			setPreviewFocused(true);
+			if (releasedBeforeDrag) return;
 			// Prevent drag on locked tracks (still allow selection)
 			if (isTrackLocked(hit.trackId)) return;
 			startDrag(event, hit, "move");
@@ -481,8 +499,9 @@ export function usePreviewInteraction({
 			selectedOriginalTransforms,
 		};
 
-		document.addEventListener("mousemove", handleMouseMove);
-		document.addEventListener("mouseup", handleMouseUp);
+		window.addEventListener("mousemove", handleMouseMove);
+		window.addEventListener("mouseup", handleMouseUp);
+		window.addEventListener("blur", handleMouseUp);
 	}
 
 	function handleMouseMove(event: MouseEvent) {
@@ -657,8 +676,9 @@ export function usePreviewInteraction({
 		dragState.value = null;
 		showCenterGuideX.value = false;
 		showCenterGuideY.value = false;
-		document.removeEventListener("mousemove", handleMouseMove);
-		document.removeEventListener("mouseup", handleMouseUp);
+		window.removeEventListener("mousemove", handleMouseMove);
+		window.removeEventListener("mouseup", handleMouseUp);
+		window.removeEventListener("blur", handleMouseUp);
 	}
 
 	/**

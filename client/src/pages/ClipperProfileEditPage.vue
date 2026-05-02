@@ -124,53 +124,6 @@
           </div>
         </div>
 
-        <!-- Experience & Availability -->
-        <div class="space-y-4">
-          <h3 class="text-lg font-semibold text-foreground">Experience & Availability</h3>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="space-y-2">
-              <Label>Experience Level</Label>
-              <Select
-                :model-value="profile.experience_level ?? undefined"
-                @update:modelValue="
-                  (v: unknown) => {
-                    profile.experience_level = String(v);
-                    saveProfile();
-                  }
-                "
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select level" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="level in EXPERIENCE_LEVELS" :key="level.value" :value="level.value">
-                    {{ level.label }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div class="space-y-2">
-              <Label>Timezone</Label>
-              <Input
-                :model-value="profile.timezone ?? ''"
-                @update:model-value="profile.timezone = String($event)"
-                placeholder="America/New_York"
-                @blur="saveProfile"
-              />
-            </div>
-          </div>
-
-          <div class="flex items-center justify-between p-4 bg-muted/30 rounded-xl">
-            <div>
-              <div class="font-medium text-foreground">Looking for Work</div>
-              <div class="text-sm text-muted-foreground">Show that you're available for new campaigns</div>
-            </div>
-            <Switch v-model="profile.looking_for_work" @update:modelValue="saveProfile" />
-          </div>
-        </div>
-
         <!-- Tags Section -->
         <div class="space-y-4">
           <h3 class="text-lg font-semibold text-foreground">Specialties & Style</h3>
@@ -363,6 +316,83 @@
           </div>
         </div>
 
+        <!-- Experience & availability (bottom — cards match; timezone list portals to body for scroll areas) -->
+        <div class="space-y-4">
+          <h3 class="text-lg font-semibold text-foreground">Experience & Availability</h3>
+
+          <div class="flex flex-col gap-4 rounded-xl border border-border/60 bg-muted/30 p-4">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div class="space-y-2">
+                <Label>Experience Level</Label>
+                <Select
+                  :model-value="profile.experience_level ?? undefined"
+                  @update:modelValue="
+                    (v: unknown) => {
+                      profile.experience_level = String(v);
+                      saveProfile();
+                    }
+                  "
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select level" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="level in EXPERIENCE_LEVELS" :key="level.value" :value="level.value">
+                      {{ level.label }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div class="space-y-2">
+                <Label>Timezone</Label>
+                <button
+                  ref="tzTriggerRef"
+                  type="button"
+                  class="clipper-edit-tz-trigger"
+                  @click.stop="toggleTimezoneDropdown"
+                >
+                  <span class="min-w-0 flex-1 truncate text-left">
+                    {{ selectedTimezoneLabel || 'Select timezone…' }}
+                  </span>
+                  <ChevronDown
+                    class="h-3.5 w-3.5 shrink-0 transition-transform sm:h-4 sm:w-4"
+                    :class="{ 'rotate-180': showTimezoneDropdown }"
+                  />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between rounded-xl border border-border/60 bg-muted/30 p-4">
+            <div>
+              <div class="font-medium text-foreground">Looking for Work</div>
+              <div class="text-sm text-muted-foreground">Show that you're available for new campaigns</div>
+            </div>
+            <Switch v-model="profile.looking_for_work" @update:modelValue="saveProfile" />
+          </div>
+        </div>
+
+        <Teleport to="body">
+          <div
+            v-if="showTimezoneDropdown"
+            ref="tzPortalRef"
+            class="clipper-edit-tz-portal"
+            :style="tzPortalStyle"
+          >
+            <button
+              v-for="opt in timezoneSelectOptions"
+              :key="opt.value"
+              type="button"
+              class="clipper-edit-tz-portal__item"
+              :class="{ 'clipper-edit-tz-portal__item--selected': profile.timezone === opt.value }"
+              @click="selectTimezone(opt.value)"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+        </Teleport>
+
         <!-- View Public Profile Link -->
         <div v-if="profile.slug && profile.is_public" class="text-center py-4">
           <router-link :to="`/clipper/${profile.slug}`" class="text-primary hover:underline">
@@ -461,7 +491,8 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, onMounted } from 'vue';
+  import { ref, reactive, onMounted, computed, nextTick } from 'vue';
+  import { onClickOutside, useEventListener } from '@vueuse/core';
   import {
     UserCircle,
     Globe,
@@ -478,6 +509,7 @@
     Youtube,
     Twitch,
     Upload,
+    ChevronDown,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Button } from '@/components/ui/button';
@@ -518,8 +550,61 @@
     getPlatformLabel,
   } from '@/services/clipperProfilesApi';
   import { useToast } from '@/composables/useToast';
+  import { getGlobalTimezoneSelectOptions } from '@/utils/timezones';
 
   const { toast } = useToast();
+
+  const showTimezoneDropdown = ref(false);
+  const tzTriggerRef = ref<HTMLButtonElement | null>(null);
+  const tzPortalRef = ref<HTMLElement | null>(null);
+  const tzDropdownRect = ref({ top: 0, left: 0, width: 280 });
+
+  const tzPortalStyle = computed(() => ({
+    position: 'fixed' as const,
+    top: `${tzDropdownRect.value.top}px`,
+    left: `${tzDropdownRect.value.left}px`,
+    width: `${tzDropdownRect.value.width}px`,
+    zIndex: 10050,
+  }));
+
+  function updateTzDropdownPosition() {
+    const el = tzTriggerRef.value;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    tzDropdownRect.value = {
+      top: r.bottom + 8,
+      left: r.left,
+      width: Math.max(r.width, 360),
+    };
+  }
+
+  function toggleTimezoneDropdown() {
+    showTimezoneDropdown.value = !showTimezoneDropdown.value;
+    if (showTimezoneDropdown.value) {
+      nextTick(() => updateTzDropdownPosition());
+    }
+  }
+
+  onClickOutside(
+    tzTriggerRef,
+    () => {
+      showTimezoneDropdown.value = false;
+    },
+    { ignore: [tzPortalRef] }
+  );
+
+  useEventListener(
+    window,
+    'scroll',
+    () => {
+      if (showTimezoneDropdown.value) showTimezoneDropdown.value = false;
+    },
+    { capture: true }
+  );
+
+  useEventListener(window, 'resize', () => {
+    if (showTimezoneDropdown.value) updateTzDropdownPosition();
+  });
 
   const loading = ref(true);
   const profile = reactive<Partial<ClipperProfile>>({
@@ -538,6 +623,17 @@
     total_campaigns_completed: 0,
     total_clips_delivered: 0,
     total_endorsements: 0,
+  });
+
+  const timezoneSelectOptions = computed(() =>
+    getGlobalTimezoneSelectOptions(new Date(), profile.timezone ?? null)
+  );
+
+  const selectedTimezoneLabel = computed(() => {
+    const tz = profile.timezone;
+    if (!tz) return '';
+    const o = timezoneSelectOptions.value.find((x) => x.value === tz);
+    return o?.label ?? tz;
   });
 
   const channelLinks = ref<ChannelLink[]>([]);
@@ -636,6 +732,12 @@
       console.error('Failed to save profile:', error);
       toast({ title: 'Error', description: 'Failed to save profile' });
     }
+  };
+
+  const selectTimezone = (tz: string) => {
+    profile.timezone = tz;
+    showTimezoneDropdown.value = false;
+    void saveProfile();
   };
 
   const toggleTag = (
@@ -796,5 +898,82 @@
 <style scoped>
   .clipper-profile-edit-page {
     height: 100%;
+  }
+
+  /* Trigger: same tokens as ClipDetectionConfirmDialog.vue (.detect-clips-dialog__input / __select) */
+  .clipper-edit-tz-trigger {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .clipper-edit-tz-trigger:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .clipper-edit-tz-trigger:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+</style>
+
+<style>
+  .clipper-edit-tz-portal {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    overflow: hidden;
+    max-height: 12rem;
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 0.25rem;
+  }
+
+  .clipper-edit-tz-portal::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .clipper-edit-tz-portal::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .clipper-edit-tz-portal::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .clipper-edit-tz-portal__item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.625rem 0.75rem;
+    border-radius: 5px;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    transition: background-color 150ms ease;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .clipper-edit-tz-portal__item:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .clipper-edit-tz-portal__item--selected {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
   }
 </style>
