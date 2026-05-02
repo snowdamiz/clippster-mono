@@ -122,9 +122,10 @@ function getAdminBasePath(pathname: string): '/admin' | '/dashboard/admin' {
 
 interface DashboardSidebarProps {
   variant?: DashboardSidebarVariant
+  onNavigate?: () => void
 }
 
-export function DashboardSidebar({ variant = 'organization' }: DashboardSidebarProps) {
+export function DashboardSidebar({ variant = 'organization', onNavigate }: DashboardSidebarProps) {
   const { id } = useParams<{ id: string }>()
   const location = useLocation()
   const navigate = useNavigate()
@@ -246,6 +247,7 @@ export function DashboardSidebar({ variant = 'organization' }: DashboardSidebarP
                     <li key={item.path}>
                       <Link
                         to={linkPath}
+                        onClick={onNavigate}
                         className={`flex items-center gap-3 w-full py-2 px-3 rounded-md text-sm no-underline transition-all duration-150 cursor-pointer ${
                           active
                             ? 'bg-cyan-500/[0.08] text-cyan-400'
