@@ -18,8 +18,35 @@ interface TranscriptSegment {
 
 interface TranscriptChunk {
   segment: TranscriptSegment;
-  wallClockTime: number;  // Date.now() when chunk was added
-  streamTime: number;     // cumulative stream elapsed time in seconds
+  wallClockTime: number; // Date.now() when chunk was added
+  streamTime: number; // cumulative stream elapsed time in seconds
+}
+
+interface AbsoluteTranscriptWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
+interface AbsoluteTranscriptSegment {
+  text: string;
+  start: number;
+  end: number;
+  words: AbsoluteTranscriptWord[];
+}
+
+interface TranscriptStats {
+  start: number;
+  end: number;
+  duration: number;
+  wordCount: number;
+  spokenDuration: number;
+  speechDensity: number;
+  firstSpeechTime: number | null;
+  lastSpeechTime: number | null;
+  leadingSilence: number;
+  trailingSilence: number;
+  longestGap: number;
 }
 
 interface RealtimeTranscriptionState {
@@ -43,7 +70,7 @@ export function useRealtimeTranscription() {
   const isActive = computed(() => state.value.isActive);
   const transcriptBuffer = computed(() => state.value.buffer);
   const bufferText = computed(() => {
-    return state.value.buffer.map(chunk => chunk.segment.text).join(' ');
+    return state.value.buffer.map((chunk) => chunk.segment.text).join(' ');
   });
 
   /**
@@ -62,15 +89,20 @@ export function useRealtimeTranscription() {
 
     // Listen to segment-ready events (emitted every 4 seconds by DVR recording)
     segmentReadyUnlisten = await listen('segment-ready', async (event: any) => {
-      const payload = event.payload as { path: string; sessionId: string; segment?: number; duration?: number };
-      
+      const payload = event.payload as {
+        path: string;
+        sessionId: string;
+        segment?: number;
+        duration?: number;
+      };
+
       // Only process segments for this session
       if (payload.sessionId !== sessionId) {
         return;
       }
 
       console.log('[RealtimeTranscription] Segment ready:', payload.path);
-      
+
       try {
         // Extract audio from segment and get base64 data
         console.log('[RealtimeTranscription] Extracting audio from segment...');
@@ -84,7 +116,7 @@ export function useRealtimeTranscription() {
         console.log('[RealtimeTranscription] Audio extracted, size:', audioBase64.length, 'chars');
 
         // Convert base64 to blob for upload
-        const audioBytes = Uint8Array.from(atob(audioBase64), c => c.charCodeAt(0));
+        const audioBytes = Uint8Array.from(atob(audioBase64), (c) => c.charCodeAt(0));
         const audioBlob = new Blob([audioBytes], { type: 'audio/mpeg' });
         console.log('[RealtimeTranscription] Audio blob created, size:', audioBlob.size, 'bytes');
 
@@ -99,7 +131,7 @@ export function useRealtimeTranscription() {
         const response = await fetch(`${API_BASE}/clips/transcribe`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
+            Authorization: `Bearer ${token}`,
           },
           credentials: 'include',
           body: formData,
@@ -114,19 +146,24 @@ export function useRealtimeTranscription() {
 
         const transcriptData = await response.json();
         console.log('[RealtimeTranscription] Transcription received:', transcriptData);
-        
+
         // The server returns { success, transcript: { segments, text, ... } }
         const transcript = transcriptData.transcript || transcriptData;
         const segments = transcript.segments || [];
         const fullText = transcript.text || '';
-        
-        console.log('[RealtimeTranscription] Segments count:', segments.length, 'Full text:', fullText.substring(0, 100));
-        
+
+        console.log(
+          '[RealtimeTranscription] Segments count:',
+          segments.length,
+          'Full text:',
+          fullText.substring(0, 100)
+        );
+
         // If no segments but has text, create a single segment from the full text
         if (segments.length === 0 && fullText.trim().length > 0) {
           segments.push({ text: fullText, start: 0, end: 4, words: [] });
         }
-        
+
         // Add to buffer
         if (segments.length > 0) {
           const now = Date.now();
@@ -147,14 +184,14 @@ export function useRealtimeTranscription() {
               // Map segment-local time to cumulative stream time
               streamTime: segmentStreamTime + (segment.start || 0),
             };
-            
+
             state.value.buffer.push(chunk);
             state.value.lastProcessedTime = now;
           }
 
           // Trim buffer to last 3 minutes
           trimBuffer();
-          
+
           console.log('[RealtimeTranscription] Buffer size:', state.value.buffer.length, 'chunks');
         }
       } catch (error) {
@@ -168,7 +205,7 @@ export function useRealtimeTranscription() {
    */
   function stopTranscription() {
     console.log('[RealtimeTranscription] Stopping transcription');
-    
+
     if (segmentReadyUnlisten) {
       segmentReadyUnlisten();
       segmentReadyUnlisten = null;
@@ -186,10 +223,10 @@ export function useRealtimeTranscription() {
     if (state.value.buffer.length === 0) return;
 
     const now = Date.now();
-    const cutoffMs = now - (state.value.bufferDurationSeconds * 1000);
+    const cutoffMs = now - state.value.bufferDurationSeconds * 1000;
 
     // Remove chunks older than cutoff (using wall-clock time)
-    state.value.buffer = state.value.buffer.filter(chunk => {
+    state.value.buffer = state.value.buffer.filter((chunk) => {
       return chunk.wallClockTime >= cutoffMs;
     });
   }
@@ -202,19 +239,122 @@ export function useRealtimeTranscription() {
       return { text: '', start: 0, end: 0 };
     }
 
-    const text = state.value.buffer.map(chunk => chunk.segment.text).join(' ');
+    const text = state.value.buffer.map((chunk) => chunk.segment.text).join(' ');
     // Use cumulative stream time for AI detection context
     const start = state.value.buffer[0].streamTime;
-    const end = state.value.buffer[state.value.buffer.length - 1].streamTime;
+    const lastChunk = state.value.buffer[state.value.buffer.length - 1];
+    const lastChunkDuration = Math.max(0, lastChunk.segment.end - lastChunk.segment.start);
+    const end = lastChunk.streamTime + (lastChunkDuration || 4);
 
     return { text, start, end };
+  }
+
+  function getTranscriptStats(start?: number, end?: number): TranscriptStats {
+    const transcript = getFormattedTranscript();
+    const rangeStart = start ?? transcript.start;
+    const rangeEnd = end ?? transcript.end;
+    const duration = Math.max(0, rangeEnd - rangeStart);
+    const speechEvents: Array<{ start: number; end: number; words: number }> = [];
+
+    for (const chunk of state.value.buffer) {
+      const segmentStart = chunk.streamTime;
+      const segmentDuration = Math.max(0, chunk.segment.end - chunk.segment.start);
+      const segmentEnd = chunk.streamTime + (segmentDuration || 4);
+
+      if (segmentEnd < rangeStart || segmentStart > rangeEnd) {
+        continue;
+      }
+
+      const chunkBaseTime = chunk.streamTime - chunk.segment.start;
+      const validWords = (chunk.segment.words || []).filter((word) => {
+        const wordStart = chunkBaseTime + word.start;
+        const wordEnd = chunkBaseTime + word.end;
+        return word.word.trim().length > 0 && wordEnd >= rangeStart && wordStart <= rangeEnd;
+      });
+
+      if (validWords.length > 0) {
+        for (const word of validWords) {
+          speechEvents.push({
+            start: Math.max(rangeStart, chunkBaseTime + word.start),
+            end: Math.min(rangeEnd, chunkBaseTime + word.end),
+            words: 1,
+          });
+        }
+        continue;
+      }
+
+      const text = chunk.segment.text.trim();
+      if (!text) {
+        continue;
+      }
+
+      const overlapStart = Math.max(rangeStart, segmentStart);
+      const overlapEnd = Math.min(rangeEnd, segmentEnd || segmentStart + 4);
+      const fallbackWords = text.split(/\s+/).filter(Boolean).length;
+
+      if (overlapEnd > overlapStart && fallbackWords > 0) {
+        speechEvents.push({
+          start: overlapStart,
+          end: overlapEnd,
+          words: fallbackWords,
+        });
+      }
+    }
+
+    speechEvents.sort((a, b) => a.start - b.start);
+
+    const wordCount = speechEvents.reduce((sum, event) => sum + event.words, 0);
+    const firstSpeechTime = speechEvents[0]?.start ?? null;
+    const lastSpeechTime = speechEvents[speechEvents.length - 1]?.end ?? null;
+    const spokenDuration = speechEvents.reduce(
+      (sum, event) => sum + Math.max(0, event.end - event.start),
+      0
+    );
+    let longestGap = 0;
+
+    for (let index = 1; index < speechEvents.length; index += 1) {
+      longestGap = Math.max(longestGap, speechEvents[index].start - speechEvents[index - 1].end);
+    }
+
+    return {
+      start: rangeStart,
+      end: rangeEnd,
+      duration,
+      wordCount,
+      spokenDuration,
+      speechDensity: duration > 0 ? wordCount / duration : 0,
+      firstSpeechTime,
+      lastSpeechTime,
+      leadingSilence:
+        firstSpeechTime === null ? duration : Math.max(0, firstSpeechTime - rangeStart),
+      trailingSilence: lastSpeechTime === null ? duration : Math.max(0, rangeEnd - lastSpeechTime),
+      longestGap,
+    };
+  }
+
+  function getAbsoluteTranscriptSegments(): AbsoluteTranscriptSegment[] {
+    return state.value.buffer.map((chunk) => {
+      const chunkBaseTime = chunk.streamTime - chunk.segment.start;
+      const segmentDuration = Math.max(0, chunk.segment.end - chunk.segment.start);
+
+      return {
+        text: chunk.segment.text,
+        start: chunk.streamTime,
+        end: chunk.streamTime + (segmentDuration || 4),
+        words: (chunk.segment.words || []).map((word) => ({
+          word: word.word,
+          start: chunkBaseTime + word.start,
+          end: chunkBaseTime + word.end,
+        })),
+      };
+    });
   }
 
   /**
    * Get transcript buffer as Whisper-compatible JSON
    */
   function getTranscriptJson(): string {
-    const segments = state.value.buffer.map(chunk => chunk.segment);
+    const segments = state.value.buffer.map((chunk) => chunk.segment);
     return JSON.stringify({ segments });
   }
 
@@ -225,6 +365,8 @@ export function useRealtimeTranscription() {
     startTranscription,
     stopTranscription,
     getFormattedTranscript,
+    getTranscriptStats,
+    getAbsoluteTranscriptSegments,
     getTranscriptJson,
   };
 }

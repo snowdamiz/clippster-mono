@@ -3599,6 +3599,10 @@ defmodule ClippsterServerWeb.ClipsController do
 
     audio_context = Map.get(params, "audio_context", "")
     pending_clip = Map.get(params, "pending_clip", nil)
+    transcript_segments = Map.get(params, "transcript_segments", [])
+    transcript_stats = Map.get(params, "transcript_stats", %{})
+    recent_transcript_stats = Map.get(params, "recent_transcript_stats", %{})
+    signal_context = Map.get(params, "signal_context", %{})
 
     case get_user_id_from_token(conn) do
       {:ok, user_id, is_admin} ->
@@ -3668,11 +3672,24 @@ defmodule ClippsterServerWeb.ClipsController do
 
             # Format transcript for AI analysis
             audio_info = if audio_context != "", do: "\n\n#{audio_context}\n", else: ""
+            timing_info = format_realtime_timing_summary(transcript_stats, transcript_segments)
+            signal_info = format_realtime_signal_summary(signal_context, recent_transcript_stats)
 
             formatted_transcript = """
             TRANSCRIPT (#{transcript_start}s - #{transcript_end}s):
-            #{transcript}#{audio_info}#{pending_clip_context}
+            #{transcript}#{audio_info}
+            #{timing_info}
+            #{signal_info}
+            #{pending_clip_context}
             You are a clip detector analyzing livestream content. Find moments that are entertaining, shareable, and worth clipping.
+
+            REALTIME QUALITY GATES:
+            - Automatic saves require score >= #{virality_threshold}; do not inflate weak moments to pass.
+            - Dead air, low speech density, or a weak first 3 seconds prevents a high score.
+            - A clip with no clear hook or payoff must be null, even if the topic is interesting.
+            - If a moment starts after silence, set start_time at the first compelling spoken/action beat, not at the beginning of the rolling window.
+            - If the live signal reason is only steady speech, be extra selective; normal conversation is not enough.
+            - Trigger phrases and audio spikes are candidate signals, not proof. Still require hook, payoff, and shareability.
 
             AUDIO ANALYSIS GUIDANCE:
             - Volume spikes indicate screaming/yelling/excitement - STRONG clip signal
@@ -3744,11 +3761,44 @@ defmodule ClippsterServerWeb.ClipsController do
             IMPORTANT: Score honestly. If it's not genuinely entertaining/shareable, don't force it to 85+.
             The threshold is #{virality_threshold}. Only return clips that meet or exceed this score.
 
+            REQUIRED REALTIME SCORECARD:
+            Every non-null pending_clip MUST include these 0-100 component scores:
+            - hook_score: first 1-3 seconds stop-scroll strength
+            - payoff_score: clear resolution, punchline, reveal, escalation, or result
+            - emotion_score: high-arousal emotion (shock, awe, anger, humor, hype, cringe)
+            - shareability_score: would someone send/post this because it is funny, shocking, useful, debatable, or meme-worthy?
+            - density_score: useful/funny/action content vs silence, filler, or waiting
+            - signal_score: live evidence strength from trigger phrase, audio spike, dense speech, or other stream signal
+            - boundary_score: clean start/end with no dead-air intro or trailing silence
+
+            HARD SCORE CAPS:
+            - hook_score < 55 means virality_score cannot exceed 55.
+            - payoff_score < 55 means virality_score cannot exceed 60.
+            - shareability_score < 55 means virality_score cannot exceed 65.
+            - density_score < 50 or boundary_score < 50 means virality_score cannot exceed 70.
+            - If hook_score, payoff_score, or shareability_score is catastrophic (<35), pending_clip must be null.
+            - If you cannot provide the scorecard, pending_clip must be null.
+
             CRITICAL - NEW RESPONSE FORMAT (DO NOT USE OLD FORMAT):
             You MUST return JSON in this EXACT format:
             {
               "context_change": true/false,
-              "pending_clip": {...} or null
+              "pending_clip": {
+                "title": "...",
+                "description": "...",
+                "start_time": 123.4,
+                "end_time": 156.7,
+                "virality_score": 88,
+                "detection_reason": "...",
+                "context_summary": "...",
+                "hook_score": 90,
+                "payoff_score": 85,
+                "emotion_score": 80,
+                "shareability_score": 88,
+                "density_score": 84,
+                "signal_score": 76,
+                "boundary_score": 92
+              } or null
             }
 
             DO NOT return {"clips": [...]} - that format is DEPRECATED.
@@ -3769,7 +3819,14 @@ defmodule ClippsterServerWeb.ClipsController do
                 "end_time": #{transcript_end},
                 "virality_score": 88,
                 "detection_reason": "Dramatic confrontation with volume spikes",
-                "context_summary": "Airport freakout scene"
+                "context_summary": "Airport freakout scene",
+                "hook_score": 88,
+                "payoff_score": 78,
+                "emotion_score": 90,
+                "shareability_score": 86,
+                "density_score": 82,
+                "signal_score": 84,
+                "boundary_score": 88
               }
             }
 
@@ -3783,7 +3840,14 @@ defmodule ClippsterServerWeb.ClipsController do
                 "end_time": #{transcript_end},
                 "virality_score": 92,
                 "detection_reason": "Escalating confrontation",
-                "context_summary": "Airport freakout scene"
+                "context_summary": "Airport freakout scene",
+                "hook_score": 90,
+                "payoff_score": 86,
+                "emotion_score": 94,
+                "shareability_score": 90,
+                "density_score": 84,
+                "signal_score": 88,
+                "boundary_score": 86
               }
             }
 
@@ -3797,7 +3861,14 @@ defmodule ClippsterServerWeb.ClipsController do
                 "end_time": #{transcript_end},
                 "virality_score": 85,
                 "detection_reason": "Exciting gambling moment",
-                "context_summary": "Gambling session"
+                "context_summary": "Gambling session",
+                "hook_score": 84,
+                "payoff_score": 82,
+                "emotion_score": 86,
+                "shareability_score": 85,
+                "density_score": 80,
+                "signal_score": 78,
+                "boundary_score": 86
               }
             }
 
@@ -3846,6 +3917,8 @@ defmodule ClippsterServerWeb.ClipsController do
                     _ ->
                       {false, nil}
                   end
+
+                ai_pending_clip = normalize_realtime_scorecard(ai_pending_clip)
 
                 # Server-side context change detection.
                 # Honor explicit AI transitions first, then fall back to similarity/overlap merging.
@@ -3923,6 +3996,16 @@ defmodule ClippsterServerWeb.ClipsController do
                       end
                   end
 
+                candidate_before_quality_gate = final_pending_clip
+
+                {final_pending_clip, pending_clip_rejection_reason} =
+                  apply_realtime_quality_gate(
+                    final_pending_clip,
+                    transcript,
+                    virality_threshold,
+                    transcript_segments
+                  )
+
                 Logger.info(
                   "[ClipsController] Context change: #{context_change}, Pending clip: #{if final_pending_clip, do: "#{final_pending_clip["title"]} (#{final_pending_clip["start_time"]}s - #{final_pending_clip["end_time"]}s)", else: "none"}"
                 )
@@ -3930,7 +4013,12 @@ defmodule ClippsterServerWeb.ClipsController do
                 json(conn, %{
                   success: true,
                   context_change: context_change,
-                  pending_clip: final_pending_clip
+                  pending_clip: final_pending_clip,
+                  pending_clip_rejected:
+                    is_nil(final_pending_clip) and not is_nil(pending_clip) and not context_change,
+                  candidate_rejected:
+                    is_nil(final_pending_clip) and not is_nil(candidate_before_quality_gate),
+                  pending_clip_rejection_reason: pending_clip_rejection_reason
                 })
 
               {:error, reason} ->
@@ -3954,6 +4042,454 @@ defmodule ClippsterServerWeb.ClipsController do
         |> json(%{success: false, error: "Unauthorized"})
     end
   end
+
+  defp apply_realtime_quality_gate(nil, _transcript, _virality_threshold, _segments),
+    do: {nil, nil}
+
+  defp apply_realtime_quality_gate(clip, transcript, virality_threshold, segments) do
+    start_time = number_or_default(Map.get(clip, "start_time"), 0)
+    end_time = number_or_default(Map.get(clip, "end_time"), start_time)
+    initial_stats = realtime_range_stats(segments, transcript, start_time, end_time)
+
+    {clip, trim_reasons} = trim_realtime_clip_boundaries(clip, initial_stats)
+    clip = apply_realtime_scorecard_policy(clip)
+
+    start_time = number_or_default(Map.get(clip, "start_time"), 0)
+    end_time = number_or_default(Map.get(clip, "end_time"), start_time)
+    stats = realtime_range_stats(segments, transcript, start_time, end_time)
+    duration = stats.duration
+    min_words = realtime_min_words(duration)
+    min_density = if duration <= 12, do: 0.35, else: 0.45
+
+    rejection_reasons =
+      []
+      |> maybe_add_reason(duration < 4, "too_short")
+      |> maybe_add_reason(stats.word_count < min_words, "too_few_words")
+      |> maybe_add_reason(stats.speech_density < min_density, "low_speech_density")
+      |> maybe_add_reason(stats.longest_gap > 14 and duration > 25, "internal_dead_air")
+      |> maybe_add_reason(stats.leading_silence > 3, "leading_dead_air")
+      |> maybe_add_reason(stats.trailing_silence > 5, "trailing_dead_air")
+
+    cond do
+      Map.get(clip, "_realtime_scorecard_rejected") == true ->
+        reason =
+          "scorecard:#{Map.get(clip, "_realtime_scorecard_rejection_reason")}"
+
+        Logger.info(
+          "[ClipsController] Realtime scorecard rejected #{inspect(Map.get(clip, "title"))}: #{reason}"
+        )
+
+        {nil, reason}
+
+      rejection_reasons != [] ->
+        reason = "quality:#{Enum.join(rejection_reasons, ",")}"
+
+        Logger.info(
+          "[ClipsController] Realtime quality gate rejected #{inspect(Map.get(clip, "title"))}: #{Enum.join(rejection_reasons, ", ")} (duration=#{Float.round(duration, 1)}s, words=#{stats.word_count}, density=#{Float.round(stats.speech_density, 2)}wps)"
+        )
+
+        {nil, reason}
+
+      number_or_default(Map.get(clip, "virality_score"), 0) <
+          number_or_default(virality_threshold, 85) ->
+        {nil, "below_virality_threshold"}
+
+      true ->
+        gated_clip =
+          clip
+          |> maybe_append_realtime_scorecard_reason()
+          |> maybe_append_realtime_gate_reason(trim_reasons)
+
+        {gated_clip, nil}
+    end
+  end
+
+  defp normalize_realtime_scorecard(nil), do: nil
+
+  defp normalize_realtime_scorecard(clip) when is_map(clip) do
+    Enum.reduce(realtime_scorecard_fields(), clip, fn {field, camel_field}, acc ->
+      value = Map.get(acc, field) || Map.get(acc, camel_field)
+
+      if is_nil(value) do
+        acc
+      else
+        Map.put(acc, field, clamp_score(value))
+      end
+    end)
+  end
+
+  defp normalize_realtime_scorecard(clip), do: clip
+
+  defp apply_realtime_scorecard_policy(clip) do
+    scorecard = realtime_scorecard(clip)
+
+    cond do
+      not realtime_scorecard_complete?(scorecard) ->
+        reject_realtime_scorecard(clip, "missing_scorecard_fields")
+
+      scorecard[:hook_score] < 35 ->
+        reject_realtime_scorecard(clip, "catastrophic_hook_score")
+
+      scorecard[:payoff_score] < 35 ->
+        reject_realtime_scorecard(clip, "catastrophic_payoff_score")
+
+      scorecard[:shareability_score] < 35 ->
+        reject_realtime_scorecard(clip, "catastrophic_shareability_score")
+
+      true ->
+        {capped_score, cap_reasons} =
+          realtime_score_caps(scorecard)
+          |> Enum.reduce({number_or_default(Map.get(clip, "virality_score"), 0), []}, fn {cap,
+                                                                                          reason},
+                                                                                         {score,
+                                                                                          reasons} ->
+            if score > cap do
+              {cap, [reason | reasons]}
+            else
+              {score, reasons}
+            end
+          end)
+
+        clip
+        |> Map.put("virality_score", capped_score)
+        |> Map.put("_realtime_scorecard_cap_reasons", Enum.reverse(cap_reasons))
+    end
+  end
+
+  defp reject_realtime_scorecard(clip, reason) do
+    clip
+    |> Map.put("_realtime_scorecard_rejected", true)
+    |> Map.put("_realtime_scorecard_rejection_reason", reason)
+  end
+
+  defp realtime_score_caps(scorecard) do
+    []
+    |> maybe_add_score_cap(scorecard[:hook_score] < 55, 55, "hook_score_below_55")
+    |> maybe_add_score_cap(scorecard[:payoff_score] < 55, 60, "payoff_score_below_55")
+    |> maybe_add_score_cap(scorecard[:shareability_score] < 55, 65, "shareability_score_below_55")
+    |> maybe_add_score_cap(scorecard[:density_score] < 50, 70, "density_score_below_50")
+    |> maybe_add_score_cap(scorecard[:boundary_score] < 50, 70, "boundary_score_below_50")
+    |> maybe_add_score_cap(scorecard[:emotion_score] < 45, 70, "emotion_score_below_45")
+    |> maybe_add_score_cap(scorecard[:signal_score] < 40, 75, "signal_score_below_40")
+  end
+
+  defp maybe_add_score_cap(caps, true, cap, reason), do: [{cap, reason} | caps]
+  defp maybe_add_score_cap(caps, false, _cap, _reason), do: caps
+
+  defp realtime_scorecard(clip) do
+    Enum.reduce(realtime_scorecard_fields(), %{}, fn {field, _camel_field}, acc ->
+      case Map.get(clip, field) do
+        value when is_number(value) -> Map.put(acc, String.to_atom(field), value)
+        _ -> acc
+      end
+    end)
+  end
+
+  defp realtime_scorecard_complete?(scorecard) do
+    Enum.all?(realtime_scorecard_fields(), fn {field, _camel_field} ->
+      Map.has_key?(scorecard, String.to_atom(field))
+    end)
+  end
+
+  defp realtime_scorecard_fields do
+    [
+      {"hook_score", "hookScore"},
+      {"payoff_score", "payoffScore"},
+      {"emotion_score", "emotionScore"},
+      {"shareability_score", "shareabilityScore"},
+      {"density_score", "densityScore"},
+      {"signal_score", "signalScore"},
+      {"boundary_score", "boundaryScore"}
+    ]
+  end
+
+  defp clamp_score(value) do
+    value
+    |> number_or_default(0)
+    |> max(0)
+    |> min(100)
+  end
+
+  defp format_realtime_timing_summary(stats, segments) do
+    word_count = number_or_default(Map.get(stats, "wordCount") || Map.get(stats, "word_count"), 0)
+
+    density =
+      number_or_default(Map.get(stats, "speechDensity") || Map.get(stats, "speech_density"), 0)
+
+    """
+    REALTIME TIMING SUMMARY:
+    - Timed transcript segments available: #{if is_list(segments), do: length(segments), else: 0}
+    - Rolling word count: #{round(word_count)}
+    - Rolling speech density: #{Float.round(density, 2)} words/sec
+    - Leading silence: #{Float.round(number_or_default(Map.get(stats, "leadingSilence") || Map.get(stats, "leading_silence"), 0), 1)}s
+    - Trailing silence: #{Float.round(number_or_default(Map.get(stats, "trailingSilence") || Map.get(stats, "trailing_silence"), 0), 1)}s
+    - Longest internal gap: #{Float.round(number_or_default(Map.get(stats, "longestGap") || Map.get(stats, "longest_gap"), 0), 1)}s
+    """
+    |> String.trim()
+  end
+
+  defp format_realtime_signal_summary(signal_context, recent_stats) do
+    signal_context = if is_map(signal_context), do: signal_context, else: %{}
+    recent_stats = if is_map(recent_stats), do: recent_stats, else: %{}
+    reasons = Map.get(signal_context, "reasons", [])
+    trigger_phrases = Map.get(signal_context, "triggerPhrases", [])
+    audio_peak_count = number_or_default(Map.get(signal_context, "audioPeakCount"), 0)
+
+    recent_word_count =
+      number_or_default(
+        Map.get(signal_context, "recentWordCount") ||
+          Map.get(recent_stats, "wordCount") ||
+          Map.get(recent_stats, "word_count"),
+        0
+      )
+
+    recent_density =
+      number_or_default(
+        Map.get(signal_context, "recentSpeechDensity") ||
+          Map.get(recent_stats, "speechDensity") ||
+          Map.get(recent_stats, "speech_density"),
+        0
+      )
+
+    recent_longest_gap =
+      number_or_default(
+        Map.get(signal_context, "recentLongestGap") ||
+          Map.get(recent_stats, "longestGap") ||
+          Map.get(recent_stats, "longest_gap"),
+        0
+      )
+
+    """
+    REALTIME LIVE SIGNALS:
+    - Candidate trigger reasons: #{format_realtime_list(reasons)}
+    - Trigger phrases heard: #{format_realtime_list(trigger_phrases)}
+    - Recent audio peaks: #{round(audio_peak_count)}
+    - Last 30s word count: #{round(recent_word_count)}
+    - Last 30s speech density: #{Float.round(recent_density, 2)} words/sec
+    - Last 30s longest speech gap: #{Float.round(recent_longest_gap, 1)}s
+    """
+    |> String.trim()
+  end
+
+  defp format_realtime_list(values) when is_list(values) and length(values) > 0 do
+    Enum.join(values, ", ")
+  end
+
+  defp format_realtime_list(_values), do: "none"
+
+  defp trim_realtime_clip_boundaries(clip, stats) do
+    clip = Map.put(clip, "start_time", number_or_default(Map.get(clip, "start_time"), 0))
+    clip = Map.put(clip, "end_time", number_or_default(Map.get(clip, "end_time"), 0))
+    reasons = []
+
+    {clip, reasons} =
+      if stats.first_speech_time != nil and stats.leading_silence > 3 do
+        {
+          Map.put(
+            clip,
+            "start_time",
+            max(Map.get(clip, "start_time"), stats.first_speech_time - 0.75)
+          ),
+          ["trimmed_leading_silence" | reasons]
+        }
+      else
+        {clip, reasons}
+      end
+
+    if stats.last_speech_time != nil and stats.trailing_silence > 5 do
+      {
+        Map.put(clip, "end_time", min(Map.get(clip, "end_time"), stats.last_speech_time + 2.0)),
+        ["trimmed_trailing_silence" | reasons]
+      }
+    else
+      {clip, reasons}
+    end
+  end
+
+  defp maybe_append_realtime_gate_reason(clip, []), do: clip
+
+  defp maybe_append_realtime_gate_reason(clip, reasons) do
+    existing_reason =
+      Map.get(clip, "detection_reason") || Map.get(clip, "reason") || ""
+
+    Map.put(
+      clip,
+      "detection_reason",
+      String.trim("#{existing_reason} | Quality gates: #{Enum.join(Enum.reverse(reasons), ", ")}")
+    )
+  end
+
+  defp maybe_append_realtime_scorecard_reason(clip) do
+    scorecard = realtime_scorecard(clip)
+
+    if realtime_scorecard_complete?(scorecard) do
+      existing_reason =
+        Map.get(clip, "detection_reason") || Map.get(clip, "reason") || ""
+
+      cap_reasons = Map.get(clip, "_realtime_scorecard_cap_reasons", [])
+      cap_suffix = if cap_reasons == [], do: "", else: "; caps=#{Enum.join(cap_reasons, ",")}"
+
+      scorecard_summary =
+        "Scorecard: hook=#{round(scorecard[:hook_score])}, payoff=#{round(scorecard[:payoff_score])}, emotion=#{round(scorecard[:emotion_score])}, share=#{round(scorecard[:shareability_score])}, density=#{round(scorecard[:density_score])}, signal=#{round(scorecard[:signal_score])}, boundary=#{round(scorecard[:boundary_score])}#{cap_suffix}"
+
+      clip
+      |> Map.put("detection_reason", String.trim("#{existing_reason} | #{scorecard_summary}"))
+      |> strip_realtime_private_fields()
+    else
+      strip_realtime_private_fields(clip)
+    end
+  end
+
+  defp strip_realtime_private_fields(clip) do
+    clip
+    |> Map.delete("_realtime_scorecard_rejected")
+    |> Map.delete("_realtime_scorecard_rejection_reason")
+    |> Map.delete("_realtime_scorecard_cap_reasons")
+  end
+
+  defp realtime_range_stats(segments, fallback_text, range_start, range_end)
+       when is_list(segments) do
+    duration = max(range_end - range_start, 0.0)
+
+    events =
+      segments
+      |> Enum.flat_map(&realtime_speech_events(&1, range_start, range_end))
+      |> Enum.sort_by(& &1.start)
+
+    if events == [] do
+      fallback_word_count = if segments == [], do: realtime_word_count(fallback_text), else: 0
+
+      %{
+        duration: duration,
+        word_count: fallback_word_count,
+        spoken_duration: duration,
+        speech_density: if(duration > 0, do: fallback_word_count / duration, else: 0.0),
+        first_speech_time: nil,
+        last_speech_time: nil,
+        leading_silence: 0.0,
+        trailing_silence: 0.0,
+        longest_gap: 0.0
+      }
+    else
+      word_count = Enum.reduce(events, 0, &(&1.words + &2))
+      first_speech_time = List.first(events).start
+      last_speech_time = List.last(events).end
+      spoken_duration = Enum.reduce(events, 0.0, &(max(&1.end - &1.start, 0.0) + &2))
+      longest_gap = realtime_longest_gap(events)
+
+      %{
+        duration: duration,
+        word_count: word_count,
+        spoken_duration: spoken_duration,
+        speech_density: if(duration > 0, do: word_count / duration, else: 0.0),
+        first_speech_time: first_speech_time,
+        last_speech_time: last_speech_time,
+        leading_silence: max(first_speech_time - range_start, 0.0),
+        trailing_silence: max(range_end - last_speech_time, 0.0),
+        longest_gap: longest_gap
+      }
+    end
+  end
+
+  defp realtime_range_stats(_segments, fallback_text, range_start, range_end) do
+    duration = max(range_end - range_start, 0.0)
+    word_count = realtime_word_count(fallback_text)
+
+    %{
+      duration: duration,
+      word_count: word_count,
+      spoken_duration: duration,
+      speech_density: if(duration > 0, do: word_count / duration, else: 0.0),
+      first_speech_time: nil,
+      last_speech_time: nil,
+      leading_silence: 0.0,
+      trailing_silence: 0.0,
+      longest_gap: 0.0
+    }
+  end
+
+  defp realtime_speech_events(segment, range_start, range_end) when is_map(segment) do
+    start_time = number_or_default(Map.get(segment, "start"), 0)
+    end_time = number_or_default(Map.get(segment, "end"), start_time)
+    words = Map.get(segment, "words", [])
+
+    cond do
+      end_time < range_start or start_time > range_end ->
+        []
+
+      is_list(words) and words != [] ->
+        words
+        |> Enum.filter(&valid_realtime_word?(&1, range_start, range_end))
+        |> Enum.map(fn word ->
+          %{
+            start: max(number_or_default(Map.get(word, "start"), range_start), range_start),
+            end: min(number_or_default(Map.get(word, "end"), range_end), range_end),
+            words: 1
+          }
+        end)
+
+      true ->
+        overlap_start = max(start_time, range_start)
+        overlap_end = min(end_time, range_end)
+        word_count = realtime_word_count(Map.get(segment, "text", ""))
+
+        if overlap_end > overlap_start and word_count > 0 do
+          [%{start: overlap_start, end: overlap_end, words: word_count}]
+        else
+          []
+        end
+    end
+  end
+
+  defp realtime_speech_events(_segment, _range_start, _range_end), do: []
+
+  defp valid_realtime_word?(word, range_start, range_end) when is_map(word) do
+    word_start = number_or_default(Map.get(word, "start"), -1)
+    word_end = number_or_default(Map.get(word, "end"), -1)
+
+    is_binary(Map.get(word, "word")) and String.trim(Map.get(word, "word")) != "" and
+      word_end >= range_start and word_start <= range_end
+  end
+
+  defp valid_realtime_word?(_word, _range_start, _range_end), do: false
+
+  defp realtime_longest_gap([_event]), do: 0.0
+
+  defp realtime_longest_gap(events) do
+    events
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.reduce(0.0, fn [previous, current], longest ->
+      max(longest, current.start - previous.end)
+    end)
+  end
+
+  defp realtime_word_count(text) when is_binary(text) do
+    text
+    |> String.replace(~r/[^[:alnum:]\s']/u, " ")
+    |> String.split(~r/\s+/, trim: true)
+    |> Enum.count(&(String.length(&1) > 1))
+  end
+
+  defp realtime_word_count(_), do: 0
+
+  defp realtime_min_words(duration) when duration <= 12, do: 4
+  defp realtime_min_words(duration) when duration <= 20, do: 8
+  defp realtime_min_words(_duration), do: 12
+
+  defp maybe_add_reason(reasons, true, reason), do: [reason | reasons]
+  defp maybe_add_reason(reasons, false, _reason), do: reasons
+
+  defp number_or_default(value, _default) when is_integer(value), do: value * 1.0
+  defp number_or_default(value, _default) when is_float(value), do: value
+
+  defp number_or_default(value, default) when is_binary(value) do
+    case Float.parse(value) do
+      {number, _} -> number
+      :error -> default
+    end
+  end
+
+  defp number_or_default(_value, default), do: default
 
   # Helper functions for converting old clip format to new pending_clip format
   defp get_clip_start_time(clip, transcript_start) do
