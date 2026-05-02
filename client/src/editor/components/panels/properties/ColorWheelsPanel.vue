@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * Three-way color correction panel (Lift / Gamma / Gain).
- * Each wheel controls Hue rotation and Saturation boost for that
- * tonal range, plus a Luminance slider below.
+ * Three-way color correction panel (Shadows / Midtones / Highlights).
+ * Each wheel adds a directional color cast to that tonal range,
+ * plus a Luminance slider below.
  */
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, watch } from "vue";
 import type { ColorWheels, ColorWheelValues } from "../../../types/timeline";
 
 const props = defineProps<{
@@ -17,12 +17,15 @@ const emit = defineEmits<{
 
 type Range = "shadows" | "midtones" | "highlights";
 const RANGE_LABELS: Record<Range, string> = {
-	shadows: "Lift",
-	midtones: "Gamma",
-	highlights: "Gain",
+	shadows: "Shadows",
+	midtones: "Midtones",
+	highlights: "Highlights",
 };
 
-const WHEEL_SIZE = 80; // px diameter of the canvas wheel
+const WHEEL_SIZE = 96;
+const INDICATOR_RADIUS = 7;
+const WHEEL_RESPONSE = 0.5;
+const FINE_WHEEL_RESPONSE = 0.2;
 
 function getValues(range: Range): ColorWheelValues {
 	return props.wheels[range] ?? { hue: 0, saturation: 0, luminance: 0 };
@@ -89,18 +92,24 @@ function drawWheel(canvas: HTMLCanvasElement, vals: ColorWheelValues) {
 	ctx.arc(cx, cy, r, 0, Math.PI * 2);
 	ctx.stroke();
 
-	// Draw indicator dot
+	// Draw a larger, high-contrast handle for precise grading.
 	const hRad = (vals.hue * Math.PI) / 180;
-	const sat = Math.min(1, Math.abs(vals.saturation));
+	const sat = Math.min(1, Math.abs(vals.saturation) / WHEEL_RESPONSE);
 	const dotX = cx + Math.cos(hRad) * sat * r;
 	const dotY = cy + Math.sin(hRad) * sat * r;
 
 	ctx.fillStyle = "#ffffff";
 	ctx.strokeStyle = "#000000";
+	ctx.lineWidth = 2;
+	ctx.beginPath();
+	ctx.arc(dotX, dotY, INDICATOR_RADIUS, 0, Math.PI * 2);
+	ctx.fill();
+	ctx.stroke();
+
+	ctx.strokeStyle = "rgba(255,255,255,0.75)";
 	ctx.lineWidth = 1;
 	ctx.beginPath();
-	ctx.arc(dotX, dotY, 4, 0, Math.PI * 2);
-	ctx.fill();
+	ctx.arc(dotX, dotY, INDICATOR_RADIUS + 2, 0, Math.PI * 2);
 	ctx.stroke();
 }
 
@@ -124,8 +133,6 @@ function redrawAll() {
 	}
 }
 
-// Watch for external prop changes
-import { watch } from "vue";
 watch(() => props.wheels, redrawAll, { deep: true });
 onMounted(redrawAll);
 
@@ -152,7 +159,8 @@ function handleDrag(e: MouseEvent, range: Range) {
 	const dy = py - cy;
 	const dist = Math.min(r, Math.sqrt(dx * dx + dy * dy));
 	const hue = ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360;
-	const sat = dist / r;
+	const response = e.shiftKey ? FINE_WHEEL_RESPONSE : WHEEL_RESPONSE;
+	const sat = (dist / r) * response;
 
 	const current = getValues(range);
 	emitRange(range, { ...current, hue, saturation: sat });
@@ -197,14 +205,15 @@ function resetAll() {
 			<div
 				v-for="range in (['shadows', 'midtones', 'highlights'] as const)"
 				:key="range"
-				class="flex flex-col items-center gap-1.5"
+				class="flex flex-col items-center gap-2"
 			>
 				<!-- Label + reset -->
 				<div class="flex w-full items-center justify-between">
-					<span class="text-[10px] text-zinc-400">{{ RANGE_LABELS[range] }}</span>
+					<span class="text-[10px] font-medium text-zinc-300">{{ RANGE_LABELS[range] }}</span>
 					<button
 						type="button"
 						class="text-[9px] text-zinc-600 transition-colors hover:text-zinc-400"
+						:title="`Reset ${RANGE_LABELS[range]}`"
 						@click="resetRange(range)"
 					>
 						↺
@@ -216,8 +225,8 @@ function resetAll() {
 					:ref="(el) => { wheelRefs[range] = el as HTMLCanvasElement | null; redrawAll(); }"
 					:width="WHEEL_SIZE"
 					:height="WHEEL_SIZE"
-					class="cursor-crosshair rounded-full"
-					style="width: 80px; height: 80px;"
+					class="cursor-grab rounded-full active:cursor-grabbing"
+					:style="{ width: `${WHEEL_SIZE}px`, height: `${WHEEL_SIZE}px` }"
 					@mousedown="(e) => startDrag(e, range)"
 				/>
 
@@ -247,5 +256,6 @@ function resetAll() {
 		>
 			Reset all wheels
 		</button>
+		<p class="text-[9px] text-zinc-600">Drag inside a wheel to add color · Hold Shift for finer moves</p>
 	</div>
 </template>

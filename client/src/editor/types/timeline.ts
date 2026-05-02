@@ -119,7 +119,7 @@ export interface ColorWheelValues {
 	luminance: number;
 }
 
-/** Three-way (lift / gamma / gain) color correction */
+/** Three-way (shadows / midtones / highlights) color correction */
 export interface ColorWheels {
 	shadows?: ColorWheelValues;
 	midtones?: ColorWheelValues;

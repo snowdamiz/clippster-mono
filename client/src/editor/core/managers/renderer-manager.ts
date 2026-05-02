@@ -26,6 +26,7 @@ import type {
 	StickerElement,
 	EffectElement,
 	CaptionElement,
+	CaptionHighlightStyle,
 	MaskShape,
 } from "../../types/timeline";
 import type { MediaAsset } from "../../types/assets";
@@ -895,8 +896,12 @@ export class RendererManager {
 						const frameCount = Math.max(2, Math.ceil(overlayDuration * fps));
 						const frames: number[][] = [];
 						for (let fi = 0; fi < frameCount; fi++) {
-							const sampleTime =
-								textEl.startTime + (fi / Math.max(1, frameCount - 1)) * overlayDuration;
+							const sampleTime = getFrameCenterSampleTime(
+								textEl.startTime,
+								overlayDuration,
+								frameCount,
+								fi,
+							);
 							const result = await node.renderToImage({
 								canvasWidth: canvasSize.width,
 								canvasHeight: canvasSize.height,
@@ -1010,8 +1015,12 @@ export class RendererManager {
 						const frameCount = Math.max(2, Math.ceil(overlayDuration * fps));
 						const frames: number[][] = [];
 						for (let fi = 0; fi < frameCount; fi++) {
-							const sampleTime =
-								stickerEl.startTime + (fi / Math.max(1, frameCount - 1)) * overlayDuration;
+							const sampleTime = getFrameCenterSampleTime(
+								stickerEl.startTime,
+								overlayDuration,
+								frameCount,
+								fi,
+							);
 							const result = await node.renderToImage({
 								canvasWidth: canvasSize.width,
 								canvasHeight: canvasSize.height,
@@ -1082,9 +1091,8 @@ export class RendererManager {
 
 	/**
 	 * Pre-render caption elements to transparent PNGs for export.
-	 * Because captions have time-dependent word highlighting (karaoke),
-	 * we render one PNG per caption line at the midpoint of that line's
-	 * time range so the active word is highlighted correctly.
+	 * Static captions can be one PNG per line, but word-highlight styles are
+	 * time-dependent and need a frame sequence to match preview playback.
 	 */
 	private async preRenderCaptionOverlays({
 		tracks,
@@ -1114,7 +1122,7 @@ export class RendererManager {
 					animationOut: captionEl.animationOut,
 					animationLoop: captionEl.animationLoop,
 					keyframes: captionEl.keyframes,
-				});
+				}) || captionHighlightNeedsAnimatedRaster(captionEl.highlightStyle);
 
 				for (let lineIdx = 0; lineIdx < captionEl.lines.length; lineIdx++) {
 					const line = captionEl.lines[lineIdx];
@@ -1131,8 +1139,12 @@ export class RendererManager {
 							const frameCount = Math.max(2, Math.ceil(lineDur * fps));
 							const frames: number[][] = [];
 							for (let fi = 0; fi < frameCount; fi++) {
-								const sampleTime =
-									line.startTime + (fi / Math.max(1, frameCount - 1)) * lineDur;
+								const sampleTime = getFrameCenterSampleTime(
+									line.startTime,
+									lineDur,
+									frameCount,
+									fi,
+								);
 								const result = await node.renderToImage({
 									canvasWidth: canvasSize.width,
 									canvasHeight: canvasSize.height,
@@ -1588,6 +1600,21 @@ function overlayNeedsAnimatedRaster(opts: {
 	if (needsRasterAnim(opts.animationIn) || needsRasterAnim(opts.animationOut)) return true;
 	if (opts.animationLoop && opts.animationLoop.duration > 0.01) return true;
 	return false;
+}
+
+function captionHighlightNeedsAnimatedRaster(style?: CaptionHighlightStyle | null): boolean {
+	return !!style && style !== "none";
+}
+
+function getFrameCenterSampleTime(
+	startTime: number,
+	duration: number,
+	frameCount: number,
+	frameIndex: number,
+): number {
+	if (duration <= 0) return startTime;
+	const centerOffset = ((frameIndex + 0.5) / Math.max(1, frameCount)) * duration;
+	return Math.min(startTime + duration - 1e-6, startTime + centerOffset);
 }
 
 function serializeMasks(masks?: MaskShape[]): TauriSerializedMask[] | undefined {

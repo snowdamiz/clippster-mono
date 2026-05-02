@@ -1480,15 +1480,27 @@ export function applyColorCurves(
 function colorWheelRangeHasEffect(w?: ColorWheelValues): boolean {
 	if (!w) return false;
 	return (
-		Math.abs(w.hue) > 0.5 ||
 		Math.abs(w.saturation) > 0.0001 ||
 		Math.abs(w.luminance) > 0.0001
 	);
 }
 
+const WHEEL_COLOR_STRENGTH = 0.35;
+
+function colorWheelBalance(wheel: ColorWheelValues): [number, number, number] {
+	const hue = (((wheel.hue % 360) + 360) % 360) / 360;
+	const [r, g, b] = hslToRgb(hue, 1, 0.5);
+	const amount = Math.min(1, Math.max(-1, wheel.saturation)) * WHEEL_COLOR_STRENGTH;
+	return [
+		Math.min(1, Math.max(-1, wheel.luminance + (r - 0.5) * 2 * amount)),
+		Math.min(1, Math.max(-1, wheel.luminance + (g - 0.5) * 2 * amount)),
+		Math.min(1, Math.max(-1, wheel.luminance + (b - 0.5) * 2 * amount)),
+	];
+}
+
 /**
- * Apply three-way color correction (lift/gamma/gain) via pixel manipulation.
- * Converts RGB → HSL, adjusts per tonal range, converts back.
+ * Apply three-way color correction via pixel manipulation.
+ * Shadows, midtones, and highlights receive separate color-balance offsets.
  */
 export function applyColorWheels(
 	ctx: Ctx,
@@ -1516,6 +1528,9 @@ export function applyColorWheels(
 	const shadow = wheels.shadows ?? { hue: 0, saturation: 0, luminance: 0 };
 	const mid = wheels.midtones ?? { hue: 0, saturation: 0, luminance: 0 };
 	const high = wheels.highlights ?? { hue: 0, saturation: 0, luminance: 0 };
+	const shadowBalance = colorWheelBalance(shadow);
+	const midBalance = colorWheelBalance(mid);
+	const highBalance = colorWheelBalance(high);
 
 	for (let i = 0; i < data.length; i += 4) {
 		let r = data[i] / 255;
@@ -1532,29 +1547,13 @@ export function applyColorWheels(
 		// Midtone weight: remainder
 		const mw = Math.max(0, 1 - sw - hw);
 
-		// Blend hue rotation and saturation per range
-		const totalHue = shadow.hue * sw + mid.hue * mw + high.hue * hw;
-		const totalSat = shadow.saturation * sw + mid.saturation * mw + high.saturation * hw;
-		const totalLum = shadow.luminance * sw + mid.luminance * mw + high.luminance * hw;
+		const redOffset = shadowBalance[0] * sw + midBalance[0] * mw + highBalance[0] * hw;
+		const greenOffset = shadowBalance[1] * sw + midBalance[1] * mw + highBalance[1] * hw;
+		const blueOffset = shadowBalance[2] * sw + midBalance[2] * mw + highBalance[2] * hw;
 
-		// Apply luminance offset
-		r = Math.min(1, Math.max(0, r + totalLum));
-		g = Math.min(1, Math.max(0, g + totalLum));
-		b = Math.min(1, Math.max(0, b + totalLum));
-
-		// Apply hue rotation if non-zero
-		if (Math.abs(totalHue) > 0.5) {
-			const [h, s, l] = rgbToHsl(r, g, b);
-			const newH = (h + totalHue / 360 + 1) % 1;
-			const newS = Math.min(1, Math.max(0, s + totalSat));
-			const [nr, ng, nb] = hslToRgb(newH, newS, l);
-			r = nr; g = ng; b = nb;
-		} else if (Math.abs(totalSat) > 0.01) {
-			const [h, s, l] = rgbToHsl(r, g, b);
-			const newS = Math.min(1, Math.max(0, s + totalSat));
-			const [nr, ng, nb] = hslToRgb(h, newS, l);
-			r = nr; g = ng; b = nb;
-		}
+		r = Math.min(1, Math.max(0, r + redOffset));
+		g = Math.min(1, Math.max(0, g + greenOffset));
+		b = Math.min(1, Math.max(0, b + blueOffset));
 
 		data[i] = Math.round(r * 255);
 		data[i + 1] = Math.round(g * 255);
@@ -1562,20 +1561,6 @@ export function applyColorWheels(
 	}
 
 	ctx.putImageData(imageData, 0, 0);
-}
-
-function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
-	const max = Math.max(r, g, b);
-	const min = Math.min(r, g, b);
-	const l = (max + min) / 2;
-	if (max === min) return [0, 0, l];
-	const d = max - min;
-	const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-	let h: number;
-	if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
-	else if (max === g) h = (b - r) / d + 2;
-	else h = (r - g) / d + 4;
-	return [h / 6, s, l];
 }
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {

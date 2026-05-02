@@ -644,6 +644,59 @@ fn build_highlight_shadow_filter(highlights: f64, shadows: f64) -> Option<String
     ))
 }
 
+fn color_wheel_balance(hue: f64, saturation: f64, luminance: f64) -> (f64, f64, f64) {
+    const WHEEL_COLOR_STRENGTH: f64 = 0.35;
+
+    let (r, g, b) = hsl_to_rgb_unit((hue % 360.0 + 360.0) % 360.0, 1.0, 0.5);
+    let amount = saturation.clamp(-1.0, 1.0) * WHEEL_COLOR_STRENGTH;
+
+    (
+        (luminance + (r - 0.5) * 2.0 * amount).clamp(-1.0, 1.0),
+        (luminance + (g - 0.5) * 2.0 * amount).clamp(-1.0, 1.0),
+        (luminance + (b - 0.5) * 2.0 * amount).clamp(-1.0, 1.0),
+    )
+}
+
+fn hsl_to_rgb_unit(hue_degrees: f64, saturation: f64, lightness: f64) -> (f64, f64, f64) {
+    if saturation.abs() <= f64::EPSILON {
+        return (lightness, lightness, lightness);
+    }
+
+    let hue = hue_degrees / 360.0;
+    let q = if lightness < 0.5 {
+        lightness * (1.0 + saturation)
+    } else {
+        lightness + saturation - lightness * saturation
+    };
+    let p = 2.0 * lightness - q;
+
+    (
+        hue_to_rgb_unit(p, q, hue + 1.0 / 3.0),
+        hue_to_rgb_unit(p, q, hue),
+        hue_to_rgb_unit(p, q, hue - 1.0 / 3.0),
+    )
+}
+
+fn hue_to_rgb_unit(p: f64, q: f64, t: f64) -> f64 {
+    let mut tt = t;
+    if tt < 0.0 {
+        tt += 1.0;
+    }
+    if tt > 1.0 {
+        tt -= 1.0;
+    }
+    if tt < 1.0 / 6.0 {
+        return p + (q - p) * 6.0 * tt;
+    }
+    if tt < 1.0 / 2.0 {
+        return q;
+    }
+    if tt < 2.0 / 3.0 {
+        return p + (q - p) * (2.0 / 3.0 - tt) * 6.0;
+    }
+    p
+}
+
 fn parse_hex_color(hex: &str) -> Option<(f64, f64, f64)> {
     let clean = hex.trim().trim_start_matches('#');
     let full = if clean.len() == 3 {
@@ -1667,33 +1720,30 @@ pub async fn export_video_editor_project(
             }
         }
 
-        // Color wheels via FFmpeg 'colorbalance' filter
-        // Shadows=rs/gs/bs, Midtones=rm/gm/bm, Highlights=rh/gh/bh (each -1..1)
-        let has_wheels = source.color_wheels_shadows_hue.is_some()
-            || source.color_wheels_midtones_hue.is_some()
-            || source.color_wheels_highlights_hue.is_some()
+        // Color wheels via FFmpeg 'colorbalance' filter.
+        // Shadows=rs/gs/bs, Midtones=rm/gm/bm, Highlights=rh/gh/bh (each -1..1).
+        let has_wheels = source.color_wheels_shadows_saturation.is_some()
+            || source.color_wheels_midtones_saturation.is_some()
+            || source.color_wheels_highlights_saturation.is_some()
             || source.color_wheels_shadows_luminance.is_some()
             || source.color_wheels_midtones_luminance.is_some()
             || source.color_wheels_highlights_luminance.is_some();
         if has_wheels {
-            // Luminance offsets translate to colorbalance shifts: approximate by splitting across channels
-            let sl = source.color_wheels_shadows_luminance.unwrap_or(0.0);
-            let ml = source.color_wheels_midtones_luminance.unwrap_or(0.0);
-            let hl = source.color_wheels_highlights_luminance.unwrap_or(0.0);
-            let ss = source.color_wheels_shadows_saturation.unwrap_or(0.0);
-            let ms = source.color_wheels_midtones_saturation.unwrap_or(0.0);
-            let hs = source.color_wheels_highlights_saturation.unwrap_or(0.0);
-
-            // Map saturation/luminance to per-channel balance shifts (simplified)
-            let rs = (sl + ss * 0.3).clamp(-1.0, 1.0);
-            let gs = (sl - ss * 0.15).clamp(-1.0, 1.0);
-            let bs = (sl - ss * 0.15).clamp(-1.0, 1.0);
-            let rm = (ml + ms * 0.3).clamp(-1.0, 1.0);
-            let gm = (ml - ms * 0.15).clamp(-1.0, 1.0);
-            let bm = (ml - ms * 0.15).clamp(-1.0, 1.0);
-            let rh = (hl + hs * 0.3).clamp(-1.0, 1.0);
-            let gh = (hl - hs * 0.15).clamp(-1.0, 1.0);
-            let bh = (hl - hs * 0.15).clamp(-1.0, 1.0);
+            let (rs, gs, bs) = color_wheel_balance(
+                source.color_wheels_shadows_hue.unwrap_or(0.0),
+                source.color_wheels_shadows_saturation.unwrap_or(0.0),
+                source.color_wheels_shadows_luminance.unwrap_or(0.0),
+            );
+            let (rm, gm, bm) = color_wheel_balance(
+                source.color_wheels_midtones_hue.unwrap_or(0.0),
+                source.color_wheels_midtones_saturation.unwrap_or(0.0),
+                source.color_wheels_midtones_luminance.unwrap_or(0.0),
+            );
+            let (rh, gh, bh) = color_wheel_balance(
+                source.color_wheels_highlights_hue.unwrap_or(0.0),
+                source.color_wheels_highlights_saturation.unwrap_or(0.0),
+                source.color_wheels_highlights_luminance.unwrap_or(0.0),
+            );
 
             transform_filters.push(format!(
                 "colorbalance=rs={}:gs={}:bs={}:rm={}:gm={}:bm={}:rh={}:gh={}:bh={}",
@@ -1874,12 +1924,12 @@ pub async fn export_video_editor_project(
         )
     }
 
-    /// Format curve control points as FFmpeg 'curves' point string: "x0/y0:x1/y1:..."
+    /// Format curve control points as FFmpeg 'curves' point string: "x0/y0 x1/y1 ..."
     fn format_curve_points(pts: &[[f64; 2]]) -> String {
         pts.iter()
             .map(|p| format!("{}/{}", p[0].clamp(0.0, 1.0), p[1].clamp(0.0, 1.0)))
             .collect::<Vec<_>>()
-            .join(":")
+            .join(" ")
     }
 
     fn build_effects_filter(effects: &[VideoEffect]) -> String {
@@ -3201,6 +3251,7 @@ pub async fn export_video_editor_project(
                 let fade_start = (overlay_duration - d).max(0.0);
                 prep.push_str(&format!(",fade=t=out:st={}:d={}:alpha=1", fade_start, d));
             }
+            prep.push_str(&format!(",setpts=PTS+{}/TB", text.start_time));
             prep.push_str(&prep_label);
             filters.push(prep);
             filters.push(format!(
@@ -3271,6 +3322,7 @@ pub async fn export_video_editor_project(
                 let fade_start = (overlay_duration - d).max(0.0);
                 prep.push_str(&format!(",fade=t=out:st={}:d={}:alpha=1", fade_start, d));
             }
+            prep.push_str(&format!(",setpts=PTS+{}/TB", sticker.start_time));
             prep.push_str(&prep_label);
             filters.push(prep);
             filters.push(format!(
