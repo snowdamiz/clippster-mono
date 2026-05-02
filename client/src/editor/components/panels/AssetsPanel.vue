@@ -14,7 +14,7 @@ import type { MediaAsset } from "../../types/assets";
 import type { CreateTimelineElement } from "../../types/timeline";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Upload, Image, Film, Music, Grid, List, Wand2, ArrowRightLeft, Palette, SlidersHorizontal, FolderOpen, Clapperboard, Loader2, Plus } from "lucide-vue-next";
+import { Upload, Image, Film, Music, Grid, List, Wand2, ArrowRightLeft, FolderOpen, Clapperboard, Loader2, Plus } from "lucide-vue-next";
 import TextView from "./assets/TextView.vue";
 import CaptionsView from "./assets/CaptionsView.vue";
 import SettingsView from "./assets/SettingsView.vue";
@@ -24,13 +24,12 @@ import BuiltClipsView from "./assets/BuiltClipsView.vue";
 import ProjectClipsView from "./assets/ProjectClipsView.vue";
 import EffectsView from "./assets/EffectsView.vue";
 import FiltersView from "./assets/FiltersView.vue";
-import AdjustmentsView from "./assets/AdjustmentsView.vue";
 import TransitionsView from "./assets/TransitionsView.vue";
 import BrandingView from "./assets/BrandingView.vue";
 import UploadMediaView from "./assets/UploadMediaView.vue";
 import TranscriptView from "./assets/TranscriptView.vue";
 import AudioLibraryView from "./assets/AudioLibraryView.vue";
-import XSpacesView from "./assets/XSpacesView.vue";
+// import XSpacesView from "./assets/XSpacesView.vue"; // X Spaces import tab temporarily disabled
 import FoldersView from "./assets/FoldersView.vue";
 
 const props = defineProps<{
@@ -40,7 +39,7 @@ const props = defineProps<{
 const { editor, version } = useEditor();
 const { startDrag, wasDragCompleted } = usePointerDrag();
 const showMediaDialog = ref(false);
-const dialogTab = ref<"upload" | "built" | "projects" | "audio" | "spaces">("upload");
+const dialogTab = ref<"upload" | "built" | "projects" | "audio">("upload");
 const viewMode = ref<"grid" | "list">("grid");
 const isProcessing = ref(false);
 const progress = ref(0);
@@ -323,13 +322,13 @@ function getMediaIcon(type: string) {
 					</DialogHeader>
 					<!-- Tab bar -->
 					<div class="flex items-center border-b border-white/10 px-4 mt-3 shrink-0 overflow-x-auto">
+						<!-- X Spaces tab: see git history / XSpacesView.vue when re-enabling -->
 						<button
 							v-for="tab in ([
 								{ key: 'upload', label: 'Upload', icon: Upload },
 								{ key: 'built', label: 'Built Clips', icon: Clapperboard },
 								{ key: 'projects', label: 'Projects', icon: FolderOpen },
 								{ key: 'audio', label: 'Audio', icon: Music },
-								{ key: 'spaces', label: 'X Spaces', icon: Music },
 							] as const)"
 							:key="tab.key"
 							type="button"
@@ -351,7 +350,7 @@ function getMediaIcon(type: string) {
 						<BuiltClipsView v-else-if="dialogTab === 'built'" />
 						<ProjectClipsView v-else-if="dialogTab === 'projects'" />
 						<AudioLibraryView v-else-if="dialogTab === 'audio'" />
-						<XSpacesView v-else-if="dialogTab === 'spaces'" />
+						<!-- <XSpacesView v-else-if="dialogTab === 'spaces'" /> -->
 					</div>
 				</DialogContent>
 			</Dialog>
@@ -377,9 +376,6 @@ function getMediaIcon(type: string) {
 
 		<!-- Filters view -->
 		<FiltersView v-else-if="activeTab === 'filters'" />
-
-		<!-- Adjustment view -->
-		<AdjustmentsView v-else-if="activeTab === 'adjustment'" />
 
 		<!-- Transcript view -->
 		<TranscriptView v-else-if="activeTab === 'transcript'" />

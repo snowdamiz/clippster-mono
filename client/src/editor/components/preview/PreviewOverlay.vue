@@ -257,9 +257,9 @@ function ensureMaskEditSnapshot(mask: MaskShape) {
 }
 
 function onMaskMouseDown(event: MouseEvent, mask: MaskShape) {
-	if (!maskEditMode.value) return;
 	event.preventDefault();
 	event.stopPropagation();
+	if (!maskEditMode.value) return;
 	ensureMaskEditSnapshot(mask);
 	maskDragState.value = {
 		mode: "move",
@@ -281,9 +281,9 @@ function onMaskResizeMouseDown(
 	mask: MaskShape,
 	handle: "tl" | "tr" | "bl" | "br",
 ) {
-	if (!maskEditMode.value) return;
 	event.preventDefault();
 	event.stopPropagation();
+	if (!maskEditMode.value) return;
 	ensureMaskEditSnapshot(mask);
 	maskDragState.value = {
 		mode: "resize",
@@ -301,9 +301,9 @@ function onMaskResizeMouseDown(
 }
 
 function onMaskRotateMouseDown(event: MouseEvent, mask: MaskShape) {
-	if (!maskEditMode.value || !props.canvasRef) return;
 	event.preventDefault();
 	event.stopPropagation();
+	if (!maskEditMode.value || !props.canvasRef) return;
 	ensureMaskEditSnapshot(mask);
 	maskDragState.value = {
 		mode: "rotate",
@@ -319,9 +319,9 @@ function onMaskRotateMouseDown(event: MouseEvent, mask: MaskShape) {
 }
 
 function onMaskPointMouseDown(event: MouseEvent, mask: MaskShape, pointIndex: number) {
-	if (!maskEditMode.value) return;
 	event.preventDefault();
 	event.stopPropagation();
+	if (!maskEditMode.value) return;
 	ensureMaskEditSnapshot(mask);
 	maskDragState.value = {
 		mode: "point",
@@ -530,7 +530,7 @@ const cursorStyle = computed(() => {
 						:y="-maskScreenH(mask) / 2"
 						:width="maskScreenW(mask)"
 						:height="maskScreenH(mask)"
-						fill="none"
+						fill="transparent"
 						stroke="white"
 						stroke-width="1.5"
 						stroke-dasharray="6 4"
@@ -586,7 +586,7 @@ const cursorStyle = computed(() => {
 						cy="0"
 						:rx="maskScreenW(mask) / 2"
 						:ry="maskScreenH(mask) / 2"
-						fill="none"
+						fill="transparent"
 						stroke="white"
 						stroke-width="1.5"
 						stroke-dasharray="6 4"
@@ -636,7 +636,7 @@ const cursorStyle = computed(() => {
 					<polygon
 						class="pointer-events-auto"
 						:points="maskPoints(mask)"
-						fill="none"
+						fill="transparent"
 						stroke="white"
 						stroke-width="1.5"
 						stroke-dasharray="6 4"

@@ -21,7 +21,6 @@ import {
 	Captions,
 	FileText,
 	Palette,
-	SlidersHorizontal,
 	Stamp,
 	Settings,
 } from "lucide-vue-next";
@@ -50,7 +49,6 @@ const TAB_KEYS = [
 	"captions",
 	"transcript",
 	"filters",
-	"adjustment",
 	"branding",
 	"settings",
 ] as const;
@@ -67,7 +65,6 @@ const tabConfig: Record<Tab, { icon: any; label: string }> = {
 	captions: { icon: Captions, label: "Captions" },
 	transcript: { icon: FileText, label: "Transcript" },
 	filters: { icon: Palette, label: "Filters" },
-	adjustment: { icon: SlidersHorizontal, label: "Adjustment" },
 	branding: { icon: Stamp, label: "Branding" },
 	settings: { icon: Settings, label: "Settings" },
 };

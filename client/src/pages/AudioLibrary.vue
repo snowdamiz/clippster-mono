@@ -67,7 +67,8 @@
           <p class="projects__subtitle">Manage your downloaded audio and playlists</p>
         </div>
 
-        <!-- Tab Navigation -->
+        <!-- X Spaces tab temporarily disabled (Space Studio / Twitter audio needs more work) -->
+        <!--
         <div class="audio-tabs">
           <button
             :class="['audio-tab', { 'audio-tab--active': activeTab === 'all' }]"
@@ -82,6 +83,7 @@
             X Spaces
           </button>
         </div>
+        -->
 
         <!-- Active Downloads Section -->
         <div v-if="getActiveDownloads().length > 0" class="projects__section">
@@ -228,8 +230,8 @@
         </div>
       </div>
 
-        <!-- Playlists Section (hidden on X Spaces tab) -->
-        <div v-if="playlists.length > 0 && activeTab === 'all'" class="projects__section">
+        <!-- Playlists Section -->
+        <div v-if="playlists.length > 0" class="projects__section">
           <div class="projects__section-header-row">
             <h3 class="projects__section-header">Playlists</h3>
           </div>
@@ -286,7 +288,7 @@
           <Music class="projects-empty__icon" />
           <h3 class="projects-empty__title">No Audio Files</h3>
           <p class="projects-empty__text">
-            Download audio from YouTube or X Spaces, or upload your own audio files
+            Download audio from YouTube, or upload your own audio files
           </p>
           <div class="projects-empty__actions">
             <button @click="$router.push('/download-audio')" class="projects-empty__button">
@@ -601,7 +603,6 @@
   const audioFiles = ref<DownloadedAudio[]>([]);
   const playlists = ref<AudioPlaylist[]>([]);
   const searchQuery = ref('');
-  const activeTab = ref<'all' | 'spaces'>('all');
   const showCreatePlaylistDialog = ref(false);
   const showAddToPlaylistDialog = ref(false);
   const showPlaylistDetailDialog = ref(false);
@@ -622,17 +623,9 @@
   const isDragging = ref(false);
   
   const filteredAudio = computed(() => {
-    let filtered = audioFiles.value;
-    
-    // Filter by tab
-    if (activeTab.value === 'spaces') {
-      // X Spaces tab: only show Twitter Spaces
-      filtered = filtered.filter(audio => audio.platform === 'Twitter');
-    } else {
-      // All Audio tab: exclude Twitter Spaces
-      filtered = filtered.filter(audio => audio.platform !== 'Twitter');
-    }
-    
+    // X Spaces (Twitter) hidden while that flow is disabled — same as former "Audio" tab
+    let filtered = audioFiles.value.filter(audio => audio.platform !== 'Twitter');
+
     // Filter by search query
     if (searchQuery.value) {
       const query = searchQuery.value.toLowerCase();
@@ -728,7 +721,7 @@
   async function handleUploadAudio() {
     try {
       const selected = await open({
-        multiple: false,
+        multiple: true,
         filters: [{
           name: 'Audio',
           extensions: ['mp3', 'm4a', 'wav', 'flac', 'ogg']
@@ -737,17 +730,49 @@
 
       if (!selected) return;
 
-      const filePath = Array.isArray(selected) ? selected[0] : selected;
-      const fileName = filePath.split(/[\\/]/).pop() || 'Uploaded Audio';
-      const title = fileName.replace(/\.[^/.]+$/, ''); // Remove extension
+      const paths = Array.isArray(selected) ? selected : [selected];
+      if (paths.length === 0) return;
 
-      const result = await uploadAudioFile(filePath, title);
+      let ok = 0;
+      const failures: string[] = [];
+      let singleSuccessTitle: string | null = null;
 
-      if (result.success) {
-        success('Upload Complete', `Uploaded: ${title}`);
-        await loadAudioFiles();
+      for (const filePath of paths) {
+        const fileName = filePath.split(/[\\/]/).pop() || 'Uploaded Audio';
+        const title = fileName.replace(/\.[^/.]+$/, '');
+
+        try {
+          const result = await uploadAudioFile(filePath, title);
+          if (result.success) {
+            ok += 1;
+            if (paths.length === 1) singleSuccessTitle = title;
+          } else {
+            failures.push(`${title}: ${result.error || 'Unknown error'}`);
+          }
+        } catch (err) {
+          failures.push(`${title}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      await loadAudioFiles();
+
+      if (ok > 0 && failures.length === 0) {
+        success(
+          'Upload Complete',
+          ok === 1 && singleSuccessTitle
+            ? `Uploaded: ${singleSuccessTitle}`
+            : `Uploaded ${ok} file${ok === 1 ? '' : 's'}`
+        );
+      } else if (ok > 0 && failures.length > 0) {
+        showError(
+          'Some uploads failed',
+          `${ok} succeeded, ${failures.length} failed.\n${failures.slice(0, 5).join('\n')}${failures.length > 5 ? `\n… and ${failures.length - 5} more` : ''}`
+        );
       } else {
-        showError('Upload Failed', result.error || 'Unknown error');
+        showError(
+          'Upload Failed',
+          failures.slice(0, 5).join('\n') || 'All uploads failed'
+        );
       }
     } catch (error) {
       console.error('Upload error:', error);
@@ -836,12 +861,7 @@
   }
 
   function handleAudioCardClick(audio: DownloadedAudio) {
-    if (activeTab.value === 'spaces') {
-      selectedSpaceAudio.value = audio;
-      showSpaceStudioDialog.value = true;
-      return;
-    }
-
+    // Space Studio (X Spaces) entry disabled with tab — was: open dialog on spaces tab
     playAudio(audio);
   }
 

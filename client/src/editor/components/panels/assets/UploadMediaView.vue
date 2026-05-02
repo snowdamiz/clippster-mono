@@ -5,6 +5,7 @@ import { readFile } from "@tauri-apps/plugin-fs";
 import { useEditor } from "../../../composables/useEditor";
 import { useFileUpload } from "../../../composables/useFileUpload";
 import { processMediaAssets } from "../../../lib/media/processing";
+import { fileNameFromPathOrName } from "@/utils/fsNames";
 import { Upload, Loader2, Check, AlertCircle, FolderOpen } from "lucide-vue-next";
 
 const { editor, version } = useEditor();
@@ -109,7 +110,7 @@ async function browseFiles() {
 	for (const filePath of paths) {
 		try {
 			const bytes = await readFile(filePath);
-			const name = filePath.split("/").pop() || filePath;
+			const name = fileNameFromPathOrName(filePath);
 			const ext = name.split(".").pop()?.toLowerCase() || "";
 			const mime = getMimeType(ext);
 			const file = new File([bytes], name, { type: mime });

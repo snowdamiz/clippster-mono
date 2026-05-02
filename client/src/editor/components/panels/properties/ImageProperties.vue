@@ -2,18 +2,21 @@
 import { ref, watch, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
-import type { ImageElement, ColorAdjustments } from "../../../types/timeline";
+import type { ImageElement, ColorAdjustments, ColorCurves, ColorWheels } from "../../../types/timeline";
 import { DEFAULT_COLOR_ADJUSTMENTS } from "../../../types/timeline";
 import type { VideoEffect } from "../../../types/effects";
 import { getEffectPreset } from "../../../constants/effect-constants";
 import type { ChromakeySettings } from "../../../types/chromakey";
 import { DEFAULT_CHROMAKEY } from "../../../types/chromakey";
-import { Image, Trash2, RotateCcw, FlipHorizontal, FlipVertical, Wand2, Eye, EyeOff, X, ChevronDown, Pipette } from "lucide-vue-next";
+import { Image, Trash2, RotateCcw, FlipHorizontal, FlipVertical, Wand2, Eye, EyeOff, X, ChevronDown, Pipette, SlidersHorizontal, Sparkles, Scissors } from "lucide-vue-next";
 import { useKeyframes } from "../../../composables/useKeyframes";
 import { toRef } from "vue";
 import KeyframeToggle from "./KeyframeToggle.vue";
 import AnimationProperties from "./AnimationProperties.vue";
 import MasksPanel from "./MasksPanel.vue";
+import ColorCurvesPanel from "./ColorCurvesPanel.vue";
+import ColorWheelsPanel from "./ColorWheelsPanel.vue";
+import LutPanel from "./LutPanel.vue";
 
 const props = defineProps<{
 	element: ImageElement;
@@ -42,6 +45,26 @@ watch(() => props.element.transform.position.y, (v) => { posYInput.value = v.toS
 watch(() => props.element.transform.rotate, (v) => { rotateInput.value = v.toString(); });
 
 const ca = computed(() => ({ ...DEFAULT_COLOR_ADJUSTMENTS, ...props.element.colorAdjustments }));
+
+type TopTab = "image" | "adjust" | "grading" | "animate" | "masks";
+const activeTab = ref<TopTab>("image");
+
+const topTabs: { id: TopTab; label: string; icon: any }[] = [
+	{ id: "image", label: "Image", icon: Image },
+	{ id: "adjust", label: "Adjust", icon: SlidersHorizontal },
+	{ id: "grading", label: "Grade", icon: Wand2 },
+	{ id: "animate", label: "Animate", icon: Sparkles },
+	{ id: "masks", label: "Masks", icon: Scissors },
+];
+
+/** Show file name only when `name` was stored as a full path (Windows or POSIX). */
+const displayFileName = computed(() => {
+	const raw = props.element.name?.trim() ?? "";
+	if (!raw) return "";
+	const normalized = raw.replace(/\\/g, "/");
+	const segments = normalized.split("/").filter(Boolean);
+	return segments.length ? segments[segments.length - 1]! : raw;
+});
 
 function update(updates: Record<string, unknown>) {
 	editor.timeline.updateElement({
@@ -74,6 +97,18 @@ function updateTransform(partial: Record<string, unknown>) {
 
 function updateColor(partial: Partial<ColorAdjustments>) {
 	update({ colorAdjustments: { ...ca.value, ...partial } });
+}
+
+function updateColorCurves(curves: ColorCurves) {
+	update({ colorCurves: Object.keys(curves).length > 0 ? curves : undefined });
+}
+
+function updateColorWheels(wheels: ColorWheels) {
+	update({ colorWheels: Object.keys(wheels).length > 0 ? wheels : undefined });
+}
+
+function updateLutPath(lutPath: string | undefined) {
+	update({ lutPath: lutPath || undefined });
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -210,19 +245,23 @@ function formatTime(seconds: number): string {
 </script>
 
 <template>
-	<div class="space-y-5 p-4">
-		<!-- Header -->
-		<div class="flex items-center gap-2">
-			<Image class="size-4 text-zinc-500" />
-			<h3 class="text-sm font-medium">Image</h3>
-		</div>
+	<div class="flex h-full min-h-0 flex-row">
+		<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+			<div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+				<template v-if="activeTab === 'image'">
+					<div class="space-y-5 p-4">
+						<!-- Header -->
+						<div class="flex items-center gap-2">
+							<Image class="size-4 text-zinc-500" />
+							<h3 class="text-sm font-medium">Image</h3>
+						</div>
 
-		<!-- Info -->
-		<div class="space-y-3">
-			<div class="space-y-1">
-				<label class="text-xs text-zinc-500">Name</label>
-				<p class="text-sm">{{ element.name }}</p>
-			</div>
+						<!-- Info -->
+						<div class="space-y-3">
+							<div class="space-y-1">
+								<label class="text-xs text-zinc-500">Name</label>
+								<p class="text-sm break-all" :title="element.name">{{ displayFileName || "—" }}</p>
+							</div>
 			<div class="flex gap-4">
 				<div class="space-y-1">
 					<label class="text-xs text-zinc-500">Start</label>
@@ -355,63 +394,6 @@ function formatTime(seconds: number): string {
 						<FlipVertical class="size-3.5" />
 						V
 					</button>
-				</div>
-			</div>
-		</div>
-
-		<!-- Color Adjustments -->
-		<div class="space-y-3">
-			<div class="flex items-center justify-between">
-				<label class="text-xs font-medium text-zinc-300">Color Adjustments</label>
-				<button class="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300" title="Reset color" @click="resetColor">
-					<RotateCcw class="size-3" />
-					Reset
-				</button>
-			</div>
-
-			<div v-for="prop in (['brightness', 'contrast', 'saturation', 'temperature'] as const)" :key="prop" class="space-y-1">
-				<label class="text-xs capitalize text-zinc-500">{{ prop }}</label>
-				<div class="flex items-center gap-2">
-					<input type="range" :value="ca[prop]" min="-100" max="100" step="1" class="flex-1" @input="(e) => updateColor({ [prop]: Number((e.target as HTMLInputElement).value) })" />
-					<input type="number" :value="ca[prop]" min="-100" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none" @input="(e) => updateColor({ [prop]: Number((e.target as HTMLInputElement).value) })" />
-				</div>
-			</div>
-
-			<!-- Advanced adjustments -->
-			<div v-for="prop in (['highlights', 'shadows', 'exposure'] as const)" :key="prop" class="space-y-1">
-				<label class="text-xs capitalize text-zinc-500">{{ prop }}</label>
-				<div class="flex items-center gap-2">
-					<input type="range" :value="ca[prop]" min="-100" max="100" step="1" class="flex-1" @input="(e) => updateColor({ [prop]: Number((e.target as HTMLInputElement).value) })" />
-					<input type="number" :value="ca[prop]" min="-100" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none" @input="(e) => updateColor({ [prop]: Number((e.target as HTMLInputElement).value) })" />
-				</div>
-			</div>
-
-			<div class="space-y-1">
-				<label class="text-xs text-zinc-500">Fade</label>
-				<div class="flex items-center gap-2">
-					<input type="range" :value="ca.fade" min="0" max="100" step="1" class="flex-1" @input="(e) => updateColor({ fade: Number((e.target as HTMLInputElement).value) })" />
-					<input type="number" :value="ca.fade" min="0" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none" @input="(e) => updateColor({ fade: Number((e.target as HTMLInputElement).value) })" />
-				</div>
-			</div>
-
-			<div class="space-y-1">
-				<label class="text-xs text-zinc-500">Sharpness</label>
-				<div class="flex items-center gap-2">
-					<input type="range" :value="ca.sharpness" min="0" max="100" step="1" class="flex-1" @input="(e) => updateColor({ sharpness: Number((e.target as HTMLInputElement).value) })" />
-					<input type="number" :value="ca.sharpness" min="0" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none" @input="(e) => updateColor({ sharpness: Number((e.target as HTMLInputElement).value) })" />
-				</div>
-			</div>
-
-			<div class="space-y-1">
-				<label class="text-xs text-zinc-500">Tint</label>
-				<div class="flex items-center gap-2">
-					<div class="relative">
-						<input type="color" :value="ca.tint || '#000000'" class="absolute inset-0 h-6 w-6 cursor-pointer opacity-0"
-							@input="(e) => updateColor({ tint: (e.target as HTMLInputElement).value })" />
-						<div class="size-6 rounded border border-white/10" :style="{ backgroundColor: ca.tint || 'transparent' }" />
-					</div>
-					<span class="text-xs text-zinc-400">{{ ca.tint || 'None' }}</span>
-					<button v-if="ca.tint" class="ml-auto text-[10px] text-zinc-500 hover:text-zinc-300" @click="updateColor({ tint: '' })">Clear</button>
 				</div>
 			</div>
 		</div>
@@ -769,37 +751,153 @@ function formatTime(seconds: number): string {
 			</div>
 		</div>
 
-		<!-- Animation -->
-		<div class="space-y-1.5">
-			<label class="text-xs font-medium text-zinc-300">Animation</label>
-			<div class="rounded-md border border-white/5 bg-white/[0.01]">
-				<AnimationProperties
-					:element-id="element.id"
-					:track-id="trackId"
-					:animation-in="element.animationIn"
-					:animation-out="element.animationOut"
-					:animation-loop="element.animationLoop"
-					:element-duration="element.duration"
-				/>
+						<!-- Delete -->
+						<div class="mt-2 border-t border-white/10 pt-4">
+							<button
+								class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20"
+								@click="handleDelete"
+							>
+								<Trash2 class="size-3.5" />
+								Delete Image
+							</button>
+						</div>
+					</div>
+				</template>
+
+				<!-- Adjust -->
+				<div v-else-if="activeTab === 'adjust'" class="p-3">
+					<div class="-mx-3 -mt-3 mb-4 flex items-center border-b border-white/10 px-3 py-1.5">
+						<span class="text-sm text-zinc-400">Adjust</span>
+					</div>
+					<div class="space-y-4">
+						<div class="flex items-center justify-between">
+							<span class="text-xs font-medium text-zinc-300">Color</span>
+							<button class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300" @click="resetColor">
+								<RotateCcw class="size-3" />
+								<span>Reset</span>
+							</button>
+						</div>
+
+						<div class="space-y-2">
+							<div v-for="prop in (['brightness', 'contrast', 'saturation', 'temperature', 'highlights', 'shadows', 'exposure'] as const)" :key="prop" class="space-y-1.5">
+								<label class="text-[11px] capitalize text-zinc-500">{{ prop }}</label>
+								<div class="flex items-center gap-2">
+									<input type="range" :value="ca[prop]" min="-100" max="100" step="1" class="flex-1" @input="(e) => updateColor({ [prop]: Number((e.target as HTMLInputElement).value) })" />
+									<div class="flex h-7 w-12 items-center rounded-sm border border-white/10 bg-white/5 px-1">
+										<input type="number" :value="ca[prop]" min="-100" max="100" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => updateColor({ [prop]: Number((e.target as HTMLInputElement).value) })" />
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="space-y-2 border-t border-white/[0.05] pt-4">
+							<div class="space-y-1.5">
+								<label class="text-[11px] text-zinc-500">Fade</label>
+								<div class="flex items-center gap-2">
+									<input type="range" :value="ca.fade" min="0" max="100" step="1" class="flex-1" @input="(e) => updateColor({ fade: Number((e.target as HTMLInputElement).value) })" />
+									<div class="flex h-7 w-12 items-center rounded-sm border border-white/10 bg-white/5 px-1">
+										<input type="number" :value="ca.fade" min="0" max="100" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => updateColor({ fade: Number((e.target as HTMLInputElement).value) })" />
+									</div>
+								</div>
+							</div>
+
+							<div class="space-y-1.5">
+								<label class="text-[11px] text-zinc-500">Sharpness</label>
+								<div class="flex items-center gap-2">
+									<input type="range" :value="ca.sharpness" min="0" max="100" step="1" class="flex-1" @input="(e) => updateColor({ sharpness: Number((e.target as HTMLInputElement).value) })" />
+									<div class="flex h-7 w-12 items-center rounded-sm border border-white/10 bg-white/5 px-1">
+										<input type="number" :value="ca.sharpness" min="0" max="100" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => updateColor({ sharpness: Number((e.target as HTMLInputElement).value) })" />
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="space-y-1.5 border-t border-white/[0.05] pt-4">
+							<label class="text-[11px] text-zinc-500">Tint</label>
+							<div class="flex items-center gap-2">
+								<div class="relative">
+									<input type="color" :value="ca.tint || '#000000'" class="absolute inset-0 h-7 w-7 cursor-pointer opacity-0"
+										@input="(e) => updateColor({ tint: (e.target as HTMLInputElement).value })" />
+									<div class="flex h-7 w-7 items-center justify-center rounded-sm border border-white/10" :style="{ backgroundColor: ca.tint || 'transparent' }" />
+								</div>
+								<span class="text-[11px] text-zinc-400">{{ ca.tint || 'None' }}</span>
+								<button v-if="ca.tint" class="ml-auto flex h-7 items-center rounded-sm border border-white/10 bg-white/5 px-2 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200" @click="updateColor({ tint: '' })">Clear</button>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Grade -->
+				<div v-else-if="activeTab === 'grading'" class="space-y-5 p-3">
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<span class="text-xs font-medium text-zinc-300">RGB Curves</span>
+						</div>
+						<ColorCurvesPanel
+							:curves="element.colorCurves ?? {}"
+							@update="updateColorCurves"
+						/>
+					</div>
+
+					<div class="space-y-2 border-t border-white/[0.05] pt-4">
+						<span class="text-xs font-medium text-zinc-300">Color Wheels</span>
+						<ColorWheelsPanel
+							:wheels="element.colorWheels ?? {}"
+							@update="updateColorWheels"
+						/>
+					</div>
+
+					<div class="border-t border-white/[0.05] pt-4">
+						<LutPanel
+							:lut-path="element.lutPath"
+							@update="updateLutPath"
+						/>
+					</div>
+				</div>
+
+				<!-- Animate -->
+				<div v-else-if="activeTab === 'animate'" class="flex flex-col">
+					<div class="flex shrink-0 items-center border-b border-white/10 px-3 py-1.5">
+						<span class="text-sm text-zinc-400">Animate</span>
+					</div>
+					<div class="p-3">
+						<AnimationProperties
+							:element-id="element.id"
+							:track-id="trackId"
+							:animation-in="element.animationIn"
+							:animation-out="element.animationOut"
+							:animation-loop="element.animationLoop"
+							:element-duration="element.duration"
+						/>
+					</div>
+				</div>
+
+				<!-- Masks -->
+				<div v-else-if="activeTab === 'masks'">
+					<div class="flex shrink-0 items-center border-b border-white/10 px-3 py-1.5">
+						<span class="text-sm text-zinc-400">Masks</span>
+					</div>
+					<MasksPanel :element="element" :track-id="trackId" />
+				</div>
 			</div>
 		</div>
 
-		<!-- Masks -->
-		<div class="space-y-1.5">
-			<label class="text-xs font-medium text-zinc-300">Masks</label>
-			<div class="rounded-md border border-white/5 bg-white/[0.01]">
-				<MasksPanel :element="element" :track-id="trackId" />
-			</div>
-		</div>
-
-		<!-- Delete -->
-		<div class="border-t border-white/10 pt-4 mt-2">
+		<!-- Right tab strip -->
+		<div class="scrollbar-hidden flex w-10 shrink-0 flex-col items-center gap-2 overflow-y-auto border-l border-white/10 bg-[#0e0e10] py-3">
 			<button
-				class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20"
-				@click="handleDelete"
+				v-for="tab in topTabs"
+				:key="tab.id"
+				type="button"
+				:title="tab.label"
+				:class="[
+					'flex flex-col items-center justify-center rounded-md p-1.5 transition-colors',
+					activeTab === tab.id
+						? 'text-blue-400'
+						: 'text-zinc-500 hover:text-zinc-300',
+				]"
+				@click="activeTab = tab.id"
 			>
-				<Trash2 class="size-3.5" />
-				Delete Image
+				<component :is="tab.icon" class="size-[15px]" />
 			</button>
 		</div>
 	</div>

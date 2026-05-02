@@ -19,7 +19,9 @@
     "knip:fix": "knip --fix",
     "madge:orphans": "madge --orphans --extensions ts --exclude \"\\.vue$\" src/",
     "madge:circular": "madge --circular --extensions ts --exclude \"\\.vue$\" src/",
-    "madge:graph": "madge --image ../analysis-output/ts-dependency-graph.svg --extensions ts --exclude \"\\.vue$\" src/"
+    "madge:graph": "madge --image ../analysis-output/ts-dependency-graph.svg --extensions ts --exclude \"\\.vue$\" src/",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@remotion/bundler": "^4.0.0",
@@ -88,6 +90,7 @@
     "tailwindcss": "^4.1.16",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
+    "vitest": "^3.2.4",
     "vue-tsc": "^2.1.10"
   }
 }

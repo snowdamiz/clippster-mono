@@ -619,14 +619,52 @@ export interface SpaceParticipant {
   id: string;
   name: string;
   avatar_url: string | null;
-  role: 'host' | 'speaker' | 'listener' | 'guest' | 'unknown';
+  role: 'host' | 'cohost' | 'speaker' | 'admin' | 'listener' | 'guest' | 'unknown';
+  /** X handle (without @) when known — used for secondary avatar fetching. */
+  twitter_username?: string;
+  /** Periscope user id from AudioSpaceById; Chatman replay events use this as guestRemoteID. */
+  periscope_user_id?: string;
+  /** Numeric X/Twitter rest_id from user_results. */
+  x_rest_id?: string;
+  /** Display name from AudioSpaceById when distinct from handle. */
+  display_name?: string;
 }
+
+/** Origin of a speaker segment; synthetic_* must not drive active-speaker highlights. */
+export type SpaceSpeakerSegmentSource =
+  | 'chatman_replay'
+  | 'periscope'
+  | 'hls_id3'
+  | 'manual'
+  | 'stage_join'
+  | 'synthetic_equal'
+  | 'synthetic_seed'
+  | 'unknown';
 
 export interface SpaceSpeakerSegment {
   id: string;
   speaker_id: string;
   start: number;
   end: number;
+  /** When omitted, UI derives from segment id prefix for backward compatibility. */
+  source?: SpaceSpeakerSegmentSource;
+  periscope_user_id?: string;
+  x_rest_id?: string;
+  username?: string;
+  display_name?: string;
+  avatar_url?: string | null;
+  role?: SpaceParticipant['role'];
+}
+
+/** Replay timeline feed: stage roster changes and speaker highlights (from snapshots / API cues). */
+export type SpaceTimelineEventType = 'joined_stage' | 'left_stage' | 'speaker_changed';
+
+export interface SpaceTimelineEvent {
+  id: string;
+  t: number;
+  type: SpaceTimelineEventType;
+  user_ids: string[];
+  detail?: string;
 }
 
 /** On-stage roster at playlist time `t` (seconds), from HLS ID3 when available. */
@@ -644,6 +682,8 @@ export interface DownloadedSpaceMetadata {
   participants_json: string | null;
   speaker_segments_json: string | null;
   stage_snapshots_json: string | null;
+  /** Join/leave stage cues and related replay events (JSON array). */
+  timeline_events_json: string | null;
   user_id: string | null;
   created_at: number;
   updated_at: number;
