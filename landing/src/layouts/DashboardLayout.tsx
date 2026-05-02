@@ -1,18 +1,27 @@
-import { Outlet, useParams } from 'react-router-dom'
+import { Outlet, useParams, useLocation } from 'react-router-dom'
 import { useEffect, useRef, useState } from 'react'
+import { Menu, X } from 'lucide-react'
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
 import { useOrganization } from '@/hooks/useOrganization'
 import { OrganizationSetupDialog } from '@/components/organization/OrganizationSetupDialog'
 import { api } from '@/lib/api'
+import './DashboardLayout.css'
 
 export function DashboardLayout() {
   const { id } = useParams()
+  const location = useLocation()
   const { subscription, error, isAdmin, organization, role, loadOrganization } = useOrganization()
   const [showSetupDialog, setShowSetupDialog] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   // isReady starts false on every mount so the hub never renders before we've
   // confirmed whether setup is still required.
   const [isReady, setIsReady] = useState(false)
   const initDone = useRef(false)
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileMenuOpen(false)
+  }, [location.pathname])
 
   const status = subscription?.status
   const isSubscriptionBlocked =
@@ -98,8 +107,33 @@ export function DashboardLayout() {
 
   return (
     <div className="flex h-screen bg-[#0a0a0b]">
-      <DashboardSidebar />
-      <main className="flex-1 flex flex-col min-h-0">
+      {/* Mobile Header */}
+      <header className="dashboard-mobile-header">
+        <button
+          className="dashboard-mobile-header__toggle"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+        >
+          {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        </button>
+        <img src="/logo-icon.svg" alt="Clippster" className="dashboard-mobile-header__logo" />
+        <img src="/logo.svg" alt="Clippster" className="dashboard-mobile-header__wordmark" />
+      </header>
+
+      {/* Mobile Menu Overlay */}
+      {mobileMenuOpen && (
+        <div
+          className="dashboard-mobile-overlay"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <div className={`dashboard-sidebar-wrapper ${mobileMenuOpen ? 'dashboard-sidebar-wrapper--open' : ''}`}>
+        <DashboardSidebar onNavigate={() => setMobileMenuOpen(false)} />
+      </div>
+
+      <main className="dashboard-main">
         {/* Hub only mounts once we've confirmed setup status for this navigation */}
         {isReady && !showSetupDialog && <Outlet />}
       </main>
