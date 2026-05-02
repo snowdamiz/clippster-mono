@@ -56,6 +56,7 @@ function serializeProject(project: TProject): SerializedProject {
 		settings: project.settings,
 		version: project.version,
 		timelineViewState: project.timelineViewState,
+		coverTimestamp: project.coverTimestamp,
 	};
 }
 
@@ -91,6 +92,7 @@ function deserializeProject(serialized: SerializedProject): TProject {
 		settings: serialized.settings,
 		version: serialized.version,
 		timelineViewState: serialized.timelineViewState,
+		coverTimestamp: serialized.coverTimestamp,
 	};
 }
 

@@ -53,8 +53,11 @@
     MessageSquare,
   } from 'lucide-vue-next';
   import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+  import { useToast } from '@/composables/useToast';
 
   const tracksContainerHeight = { min: 0 };
+
+  const { success: toastSuccess } = useToast();
 
   const { editor, version } = useEditor({
     subscribe: {
@@ -133,6 +136,11 @@
     const currentTime = editor.playback.getCurrentTime();
     const command = new UpdateCoverTimestampCommand(currentTime);
     editor.command.execute({ command });
+    const seconds = currentTime.toFixed(2);
+    toastSuccess(
+      'Cover image set',
+      `Export will use the frame at ${seconds}s (current playhead).`,
+    );
   }
 
   const tracks = computed(() => {
@@ -768,10 +776,11 @@
                     <!-- Cover (main video track only) -->
                     <button
                       v-if="'isMain' in track && track.isMain"
+                      type="button"
                       class="rounded p-1 text-zinc-600 transition-colors hover:bg-white/10 hover:text-[#0ea5e9] disabled:pointer-events-none disabled:opacity-40"
                       :disabled="!track.elements.length"
-                      @click="openCoverEditor"
-                      title="Edit cover image"
+                      @click.stop="openCoverEditor"
+                      title="Set export cover image to the frame at the current playhead"
                     >
                       <ImageIcon class="size-3.5" />
                     </button>
