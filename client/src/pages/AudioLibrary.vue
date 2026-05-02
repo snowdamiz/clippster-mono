@@ -721,7 +721,7 @@
   async function handleUploadAudio() {
     try {
       const selected = await open({
-        multiple: false,
+        multiple: true,
         filters: [{
           name: 'Audio',
           extensions: ['mp3', 'm4a', 'wav', 'flac', 'ogg']
@@ -730,17 +730,49 @@
 
       if (!selected) return;
 
-      const filePath = Array.isArray(selected) ? selected[0] : selected;
-      const fileName = filePath.split(/[\\/]/).pop() || 'Uploaded Audio';
-      const title = fileName.replace(/\.[^/.]+$/, ''); // Remove extension
+      const paths = Array.isArray(selected) ? selected : [selected];
+      if (paths.length === 0) return;
 
-      const result = await uploadAudioFile(filePath, title);
+      let ok = 0;
+      const failures: string[] = [];
+      let singleSuccessTitle: string | null = null;
 
-      if (result.success) {
-        success('Upload Complete', `Uploaded: ${title}`);
-        await loadAudioFiles();
+      for (const filePath of paths) {
+        const fileName = filePath.split(/[\\/]/).pop() || 'Uploaded Audio';
+        const title = fileName.replace(/\.[^/.]+$/, '');
+
+        try {
+          const result = await uploadAudioFile(filePath, title);
+          if (result.success) {
+            ok += 1;
+            if (paths.length === 1) singleSuccessTitle = title;
+          } else {
+            failures.push(`${title}: ${result.error || 'Unknown error'}`);
+          }
+        } catch (err) {
+          failures.push(`${title}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      await loadAudioFiles();
+
+      if (ok > 0 && failures.length === 0) {
+        success(
+          'Upload Complete',
+          ok === 1 && singleSuccessTitle
+            ? `Uploaded: ${singleSuccessTitle}`
+            : `Uploaded ${ok} file${ok === 1 ? '' : 's'}`
+        );
+      } else if (ok > 0 && failures.length > 0) {
+        showError(
+          'Some uploads failed',
+          `${ok} succeeded, ${failures.length} failed.\n${failures.slice(0, 5).join('\n')}${failures.length > 5 ? `\n… and ${failures.length - 5} more` : ''}`
+        );
       } else {
-        showError('Upload Failed', result.error || 'Unknown error');
+        showError(
+          'Upload Failed',
+          failures.slice(0, 5).join('\n') || 'All uploads failed'
+        );
       }
     } catch (error) {
       console.error('Upload error:', error);
