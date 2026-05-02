@@ -402,6 +402,7 @@
   import type {
     ActiveVodPresetConfig,
     ManualFramingConfig,
+    SubtitleOverride,
     SubtitleSettings,
     WatermarkSettings,
     WordInfo,
@@ -2754,7 +2755,7 @@
     if (activeSubtitleSettings.value) {
       const ratio = previewAspectRatio.value;
       const prev = activeSubtitleSettings.value as SubtitleSettings;
-      const existingPr = prev.perRatioConfigs?.[ratio] ?? {};
+      const existingPr = (prev.perRatioConfigs?.[ratio] ?? {}) as Partial<SubtitleOverride>;
       activeSubtitleSettings.value = {
         ...prev,
         positionPercentage: position.y,

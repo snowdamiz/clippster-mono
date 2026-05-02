@@ -193,6 +193,24 @@ function extractWord(wordObj: any): WordInfo | null {
   return null;
 }
 
+function normalizeWordForDedupe(word: string): string {
+  return word.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+function wordOverlapRatio(a: WordInfo, b: WordInfo): number {
+  const overlap = Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start));
+  const shortestDuration = Math.min(a.end - a.start, b.end - b.start);
+  return shortestDuration > 0 ? overlap / shortestDuration : 0;
+}
+
+function areNearDuplicateWords(a: WordInfo, b: WordInfo): boolean {
+  if (normalizeWordForDedupe(a.word) !== normalizeWordForDedupe(b.word)) return false;
+
+  const startsNearlyMatch = Math.abs(a.start - b.start) <= 0.12;
+  const endsNearlyMatch = Math.abs(a.end - b.end) <= 0.12;
+  return (startsNearlyMatch && endsNearlyMatch) || wordOverlapRatio(a, b) >= 0.5;
+}
+
 // Parse raw transcript JSON to extract word-level timing
 export function parseTranscriptToWords(rawJson: string): WordInfo[] {
   try {
@@ -255,13 +273,15 @@ export function parseTranscriptToWords(rawJson: string): WordInfo[] {
     // Sort words by start time and remove duplicates (from overlapping sources)
     words.sort((a, b) => a.start - b.start);
 
-    // Remove duplicates that might occur from multiple sources
-    const uniqueWords = words.filter((word, index, arr) => {
-      if (index === 0) return true;
-      const prev = arr[index - 1];
-      // Consider words duplicate if they have same start time and text
-      return !(word.start === prev.start && word.word === prev.word);
-    });
+    // Remove duplicates that might occur from multiple sources. Some transcript payloads include
+    // both top-level words and segment words with millisecond-level timing differences.
+    const uniqueWords: WordInfo[] = [];
+    for (const word of words) {
+      const recentWords = uniqueWords.slice(Math.max(0, uniqueWords.length - 8));
+      if (!recentWords.some((prev) => areNearDuplicateWords(prev, word))) {
+        uniqueWords.push(word);
+      }
+    }
 
     console.log(
       '[parseTranscriptToWords] Final words count:',
