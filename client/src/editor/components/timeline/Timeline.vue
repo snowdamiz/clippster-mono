@@ -226,6 +226,7 @@
     isPlaying: isTimelinePlaying,
     playheadPosition,
     handlePlayheadMouseDown: handlePlayheadRulerMouseDown,
+    handleRulerMouseDown: handleRulerScrubMouseDown,
     isScrubbing: isPlayheadScrubbing,
   } = useTimelinePlayhead({
     zoomLevel,
@@ -428,6 +429,12 @@
     clearSelectedElements: clearElementSelection,
     seek: (time: number) => editor.playback.seek({ time }),
   });
+
+  /** Ruler inner surface: record click-to-seek tracking, then scrub (playhead composable skips the handle). */
+  function onRulerSurfaceMouseDown(event: MouseEvent) {
+    handleRulerMouseDown(event);
+    handleRulerScrubMouseDown(event);
+  }
 
   useScrollSync({
     tracksScrollRef,
@@ -866,7 +873,7 @@
                   @wheel="onScrollAreaWheel"
                   @ruler-click="handleRulerClick"
                   @ruler-tracking-mouse-down="handleRulerMouseDown"
-                  @ruler-mouse-down="handlePlayheadRulerMouseDown"
+                  @ruler-mouse-down="onRulerSurfaceMouseDown"
                 />
               </div>
 
