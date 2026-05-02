@@ -4,6 +4,7 @@ import type {
   SpaceParticipant,
   SpaceSpeakerSegment,
   SpaceStageSnapshot,
+  SpaceTimelineEvent,
 } from './types';
 
 export interface SpaceMetadataPayload {
@@ -14,6 +15,8 @@ export interface SpaceMetadataPayload {
   speakerSegments?: SpaceSpeakerSegment[];
   /** Omit to leave existing DB value unchanged on update. */
   stageSnapshots?: SpaceStageSnapshot[];
+  /** Omit to leave existing DB value unchanged on update. */
+  timelineEvents?: SpaceTimelineEvent[];
 }
 
 export async function upsertDownloadedSpaceMetadata(payload: SpaceMetadataPayload): Promise<void> {
@@ -30,12 +33,18 @@ export async function upsertDownloadedSpaceMetadata(payload: SpaceMetadataPayloa
       : payload.stageSnapshots.length > 0
         ? JSON.stringify(payload.stageSnapshots)
         : null;
+  const timelineEventsJson =
+    payload.timelineEvents === undefined
+      ? undefined
+      : payload.timelineEvents.length > 0
+        ? JSON.stringify(payload.timelineEvents)
+        : null;
 
   if (existing) {
     await db.execute(
       `UPDATE downloaded_space_metadata
        SET source_url = ?, title = ?, participants_json = ?, speaker_segments_json = ?,
-           stage_snapshots_json = ?, updated_at = ?
+           stage_snapshots_json = ?, timeline_events_json = ?, updated_at = ?
        WHERE audio_id = ?`,
       [
         payload.sourceUrl ?? existing.source_url ?? null,
@@ -45,6 +54,9 @@ export async function upsertDownloadedSpaceMetadata(payload: SpaceMetadataPayloa
         stageSnapshotsJson !== undefined
           ? stageSnapshotsJson
           : (existing.stage_snapshots_json ?? null),
+        timelineEventsJson !== undefined
+          ? timelineEventsJson
+          : (existing.timeline_events_json ?? null),
         now,
         payload.audioId,
       ]
@@ -54,8 +66,8 @@ export async function upsertDownloadedSpaceMetadata(payload: SpaceMetadataPayloa
 
   await db.execute(
     `INSERT INTO downloaded_space_metadata
-     (id, audio_id, source_url, title, participants_json, speaker_segments_json, stage_snapshots_json, user_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, audio_id, source_url, title, participants_json, speaker_segments_json, stage_snapshots_json, timeline_events_json, user_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       generateId(),
       payload.audioId,
@@ -64,6 +76,7 @@ export async function upsertDownloadedSpaceMetadata(payload: SpaceMetadataPayloa
       participantsJson,
       speakerSegmentsJson,
       stageSnapshotsJson !== undefined ? stageSnapshotsJson : null,
+      timelineEventsJson !== undefined ? timelineEventsJson : null,
       userId,
       now,
       now,
@@ -112,6 +125,16 @@ export function parseSpaceStageSnapshots(value: string | null): SpaceStageSnapsh
   if (!value) return [];
   try {
     const parsed = JSON.parse(value) as SpaceStageSnapshot[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function parseSpaceTimelineEvents(value: string | null): SpaceTimelineEvent[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as SpaceTimelineEvent[];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];

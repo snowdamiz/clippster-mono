@@ -67,7 +67,8 @@
           <p class="projects__subtitle">Manage your downloaded audio and playlists</p>
         </div>
 
-        <!-- Tab Navigation -->
+        <!-- X Spaces tab temporarily disabled (Space Studio / Twitter audio needs more work) -->
+        <!--
         <div class="audio-tabs">
           <button
             :class="['audio-tab', { 'audio-tab--active': activeTab === 'all' }]"
@@ -82,6 +83,7 @@
             X Spaces
           </button>
         </div>
+        -->
 
         <!-- Active Downloads Section -->
         <div v-if="getActiveDownloads().length > 0" class="projects__section">
@@ -228,8 +230,8 @@
         </div>
       </div>
 
-        <!-- Playlists Section (hidden on X Spaces tab) -->
-        <div v-if="playlists.length > 0 && activeTab === 'all'" class="projects__section">
+        <!-- Playlists Section -->
+        <div v-if="playlists.length > 0" class="projects__section">
           <div class="projects__section-header-row">
             <h3 class="projects__section-header">Playlists</h3>
           </div>
@@ -286,7 +288,7 @@
           <Music class="projects-empty__icon" />
           <h3 class="projects-empty__title">No Audio Files</h3>
           <p class="projects-empty__text">
-            Download audio from YouTube or X Spaces, or upload your own audio files
+            Download audio from YouTube, or upload your own audio files
           </p>
           <div class="projects-empty__actions">
             <button @click="$router.push('/download-audio')" class="projects-empty__button">
@@ -601,7 +603,6 @@
   const audioFiles = ref<DownloadedAudio[]>([]);
   const playlists = ref<AudioPlaylist[]>([]);
   const searchQuery = ref('');
-  const activeTab = ref<'all' | 'spaces'>('all');
   const showCreatePlaylistDialog = ref(false);
   const showAddToPlaylistDialog = ref(false);
   const showPlaylistDetailDialog = ref(false);
@@ -622,17 +623,9 @@
   const isDragging = ref(false);
   
   const filteredAudio = computed(() => {
-    let filtered = audioFiles.value;
-    
-    // Filter by tab
-    if (activeTab.value === 'spaces') {
-      // X Spaces tab: only show Twitter Spaces
-      filtered = filtered.filter(audio => audio.platform === 'Twitter');
-    } else {
-      // All Audio tab: exclude Twitter Spaces
-      filtered = filtered.filter(audio => audio.platform !== 'Twitter');
-    }
-    
+    // X Spaces (Twitter) hidden while that flow is disabled — same as former "Audio" tab
+    let filtered = audioFiles.value.filter(audio => audio.platform !== 'Twitter');
+
     // Filter by search query
     if (searchQuery.value) {
       const query = searchQuery.value.toLowerCase();
@@ -836,12 +829,7 @@
   }
 
   function handleAudioCardClick(audio: DownloadedAudio) {
-    if (activeTab.value === 'spaces') {
-      selectedSpaceAudio.value = audio;
-      showSpaceStudioDialog.value = true;
-      return;
-    }
-
+    // Space Studio (X Spaces) entry disabled with tab — was: open dialog on spaces tab
     playAudio(audio);
   }
 

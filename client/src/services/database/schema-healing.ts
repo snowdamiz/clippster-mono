@@ -146,6 +146,7 @@ export async function healSchema(): Promise<void> {
       participants_json TEXT,
       speaker_segments_json TEXT,
       stage_snapshots_json TEXT,
+      timeline_events_json TEXT,
       user_id TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
@@ -158,6 +159,7 @@ export async function healSchema(): Promise<void> {
       'CREATE INDEX IF NOT EXISTS idx_downloaded_space_metadata_user_id ON downloaded_space_metadata(user_id)'
     );
     await addColumnIfMissing(db, 'downloaded_space_metadata', 'stage_snapshots_json', 'TEXT');
+    await addColumnIfMissing(db, 'downloaded_space_metadata', 'timeline_events_json', 'TEXT');
 
     await db.execute(`CREATE TABLE IF NOT EXISTS audio_playlists (
       id TEXT PRIMARY KEY,

@@ -10,10 +10,24 @@ import {
   upsertDownloadedSpaceMetadata,
   type SpaceMetadataPayload,
 } from '@/services/database/downloaded-space-metadata';
-import type { SpaceParticipant, SpaceStageSnapshot } from '@/services/database/types';
+import type { SpaceParticipant, SpaceSpeakerSegment, SpaceStageSnapshot } from '@/services/database/types';
+import {
+  buildSpaceTimelineEventsPayload,
+  deriveSegmentSourceFromId,
+  mapSpeakerTimelineToStoredSegments,
+  normalizeSpeakerSegments,
+  sourceAllowsActiveHighlight,
+  type StageJoinHintRow,
+} from '@/services/spaces/space-replay-helpers';
 
 function normalizeRole(role: string | undefined): SpaceParticipant['role'] {
-  return role === 'host' || role === 'speaker' || role === 'listener' || role === 'guest' || role === 'unknown'
+  return role === 'host' ||
+    role === 'cohost' ||
+    role === 'speaker' ||
+    role === 'admin' ||
+    role === 'listener' ||
+    role === 'guest' ||
+    role === 'unknown'
     ? role
     : 'unknown';
 }
@@ -223,48 +237,50 @@ export function useAudioDownloads() {
       const info = await getTwitterBroadcastInfo(sourceUrl);
       const uploaderName = info.uploader || info.username?.replace('@', '') || 'Host';
       const hostId = `host-${uploaderName.toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'speaker'}`;
-      let participants = (info.participants && info.participants.length > 0
+      let participants: SpaceParticipant[] = (info.participants && info.participants.length > 0
         ? info.participants.map((participant) => ({
             id: participant.id,
             name: participant.name,
             avatar_url: participant.avatarUrl || null,
             role: normalizeRole(participant.role),
+            twitter_username: participant.twitterUsername,
+            periscope_user_id: participant.periscopeUserId,
+            x_rest_id: participant.xRestId,
+            display_name: participant.displayName,
           }))
         : [{
             id: hostId,
             name: uploaderName,
             avatar_url: info.avatarUrl || null,
             role: 'host' as const,
+            twitter_username: info.username?.replace(/^@/, '') || undefined,
           }]);
 
       const duration = event.duration || info.duration || 0;
-      const onStageIds = participants
-        .filter((p) => p.role === 'host' || p.role === 'speaker' || p.role === 'unknown')
-        .map((p) => p.id);
-      let speakerSegments =
-        duration > 0 && onStageIds.length > 0
-          ? buildSeedSpeakerSegments(onStageIds, duration)
-          : [];
+      let speakerSegments: SpaceSpeakerSegment[] = [];
 
       let hlsStageSnapshots: SpaceStageSnapshot[] | undefined;
 
-      // ── Priority 1: X API speaker timeline (Periscope events or stage-join times) ──
-      if (info.speakerTimeline && info.speakerTimeline.length > 0) {
+      const apiSpeakerSegments =
+        info.speakerTimeline && info.speakerTimeline.length > 0
+          ? mapSpeakerTimelineToStoredSegments(info.speakerTimeline)
+          : [];
+      const hasReliableApiTimeline = apiSpeakerSegments.some((segment) =>
+        sourceAllowsActiveHighlight(segment.source ?? deriveSegmentSourceFromId(segment.id))
+      );
+
+      // ── Priority 1: real X replay speaker events (Periscope) ──
+      if (hasReliableApiTimeline) {
         console.log(
-          `[useAudioDownloads] Using X API speaker timeline (${info.speakerTimeline.length} segments)`
+          `[useAudioDownloads] Using X API speaker timeline (${apiSpeakerSegments.length} segments)`
         );
-        speakerSegments = info.speakerTimeline.map((seg) => ({
-          id: seg.id,
-          speaker_id: seg.speakerId,
-          start: seg.start,
-          end: seg.end,
-        }));
+        speakerSegments = apiSpeakerSegments;
         // Ensure any IDs that appear only in the timeline are present in participants
         participants = mergeParticipantsWithTimeline(participants, speakerSegments);
-      } else if (info.manifestUrl && duration > 0) {
+      } else if (info.manifestUrl) {
         // ── Priority 2: HLS ID3 metadata (fallback) ──
         try {
-          const hls = await extractSpaceSpeakerTimelineFromHls(info.manifestUrl, duration);
+          const hls = await extractSpaceSpeakerTimelineFromHls(info.manifestUrl, duration || undefined);
           hlsStageSnapshots = (hls.stageSnapshots ?? []).map((s) => ({
             id: s.id,
             t: s.t,
@@ -272,12 +288,7 @@ export function useAudioDownloads() {
           }));
 
           if (hls.speakerSegments.length > 0) {
-            speakerSegments = hls.speakerSegments.map((seg) => ({
-              id: seg.id,
-              speaker_id: seg.speakerId,
-              start: seg.start,
-              end: seg.end,
-            }));
+            speakerSegments = mapSpeakerTimelineToStoredSegments(hls.speakerSegments);
             participants = mergeParticipantsWithTimeline(participants, speakerSegments);
           }
 
@@ -298,12 +309,34 @@ export function useAudioDownloads() {
         }
       }
 
+      const dur =
+        duration ||
+        Math.max(
+          0,
+          ...speakerSegments.map((segment) => segment.end),
+          ...(hlsStageSnapshots ?? []).map((snapshot) => snapshot.t)
+        );
+      speakerSegments = normalizeSpeakerSegments(speakerSegments, dur);
+      const joinHintRows: StageJoinHintRow[] =
+        info.spaceReplayHints?.stageJoinTimes?.map((r) => ({
+          userId: r.userId,
+          offsetSecs: typeof r.offsetSecs === 'number' ? r.offsetSecs : 0,
+        })) ?? [];
+      const timelineEvents = buildSpaceTimelineEventsPayload(
+        participants,
+        hlsStageSnapshots ?? [],
+        speakerSegments,
+        joinHintRows,
+        dur
+      );
+
       const payload: SpaceMetadataPayload = {
         audioId,
         sourceUrl,
         title: info.title || event.title || undefined,
         participants,
         speakerSegments,
+        timelineEvents,
       };
       if (hlsStageSnapshots !== undefined) {
         payload.stageSnapshots = hlsStageSnapshots;
@@ -325,7 +358,7 @@ export function useAudioDownloads() {
     participants: SpaceParticipant[],
     segments: Array<{ speaker_id: string }>
   ) {
-    const seen = new Set(participants.map((p) => p.id));
+    const seen = new Set(participants.flatMap((p) => [p.id, p.periscope_user_id].filter(Boolean)));
     const out = [...participants];
     for (const seg of segments) {
       if (seen.has(seg.speaker_id)) continue;
@@ -335,32 +368,10 @@ export function useAudioDownloads() {
         name: `Speaker ${seg.speaker_id}`,
         avatar_url: null,
         role: 'unknown' as const,
+        periscope_user_id: seg.speaker_id,
       });
     }
     return out;
-  }
-
-  function buildSeedSpeakerSegments(speakerIds: string[], totalDuration: number) {
-    if (speakerIds.length === 0 || totalDuration <= 0) return [];
-
-    // Seed timeline for UI: rotate speakers in 18s blocks until diarization is available.
-    const block = 18;
-    const segments: Array<{ id: string; speaker_id: string; start: number; end: number }> = [];
-    let cursor = 0;
-    let idx = 0;
-    while (cursor < totalDuration) {
-      const speakerId = speakerIds[idx % speakerIds.length];
-      const end = Math.min(totalDuration, cursor + block);
-      segments.push({
-        id: `${speakerId}-${Math.floor(cursor)}`,
-        speaker_id: speakerId,
-        start: cursor,
-        end,
-      });
-      cursor = end;
-      idx += 1;
-    }
-    return segments;
   }
 
   // Initialize event listeners only once (singleton pattern)

@@ -266,6 +266,113 @@ fn first_user_id_in_json(v: &Value, depth: u8) -> Option<String> {
     None
 }
 
+fn value_to_user_id(v: &Value) -> Option<String> {
+    if let Some(s) = v.as_str() {
+        let t = s.trim();
+        return (!t.is_empty()).then(|| t.to_string());
+    }
+    if let Some(n) = v.as_i64() {
+        return Some(n.to_string());
+    }
+    if let Some(n) = v.as_u64() {
+        return Some(n.to_string());
+    }
+    None
+}
+
+fn find_first_key_recursive(v: &Value, keys: &[&str], depth: u8) -> Option<String> {
+    if depth == 0 {
+        return None;
+    }
+    if let Value::Object(map) = v {
+        for key in keys {
+            if let Some(id) = map.get(*key).and_then(value_to_user_id) {
+                return Some(id);
+            }
+        }
+        for child in map.values() {
+            if let Some(id) = find_first_key_recursive(child, keys, depth - 1) {
+                return Some(id);
+            }
+        }
+    } else if let Value::Array(arr) = v {
+        for child in arr {
+            if let Some(id) = find_first_key_recursive(child, keys, depth - 1) {
+                return Some(id);
+            }
+        }
+    }
+    None
+}
+
+fn payload_type_mentions_speaking(v: &Value, depth: u8) -> bool {
+    if depth == 0 {
+        return false;
+    }
+    match v {
+        Value::Object(map) => {
+            for key in ["type", "kind", "event_type", "eventType", "name"] {
+                if let Some(s) = map.get(key).and_then(|x| x.as_str()) {
+                    let lower = s.to_ascii_lowercase();
+                    if lower == "typing_active"
+                        || lower == "speaking"
+                        || lower == "speaker_active"
+                        || lower.contains("speaking")
+                        || lower.contains("speaker_active")
+                    {
+                        return true;
+                    }
+                }
+            }
+            map.values().any(|child| payload_type_mentions_speaking(child, depth - 1))
+        }
+        Value::Array(arr) => arr.iter().any(|child| payload_type_mentions_speaking(child, depth - 1)),
+        _ => false,
+    }
+}
+
+fn speaker_user_id_from_payload(v: &Value) -> Option<String> {
+    let speaker_keys = [
+        "active_speaker_user_id",
+        "activeSpeakerUserId",
+        "active_speaker_id",
+        "activeSpeakerId",
+        "current_speaker_user_id",
+        "currentSpeakerUserId",
+        "current_speaker_id",
+        "currentSpeakerId",
+        "speaker_user_id",
+        "speakerUserId",
+        "speaking_user_id",
+        "speakingUserId",
+    ];
+    if let Some(id) = find_first_key_recursive(v, &speaker_keys, 8) {
+        return Some(id);
+    }
+    if let Value::Object(map) = v {
+        for key in [
+            "activeSpeaker",
+            "active_speaker",
+            "currentSpeaker",
+            "current_speaker",
+            "speakingUser",
+            "speaking_user",
+        ] {
+            if let Some(id) = map.get(key).and_then(participant_rest_id_value) {
+                return Some(id);
+            }
+        }
+    }
+
+    // Only fall back to generic user_id fields when the payload explicitly
+    // identifies itself as a speaking event. Stage roster payloads also contain
+    // user ids, and using those as active speakers is what makes the highlight wrong.
+    if payload_type_mentions_speaking(v, 6) {
+        return first_user_id_in_json(v, 8);
+    }
+    None
+}
+
 /// Prefer the last JSON blob in the segment (final ID3 state in the chunk).
 fn last_speaker_from_json_strings(strings: &[String]) -> Option<String> {
     strings.iter().rev().find_map(|s| {
@@ -275,7 +382,7 @@ fn last_speaker_from_json_strings(strings: &[String]) -> Option<String> {
         }
         serde_json::from_str::<Value>(t)
             .ok()
-            .and_then(|v| first_user_id_in_json(&v, 8))
+            .and_then(|v| speaker_user_id_from_payload(&v))
     })
 }
 
