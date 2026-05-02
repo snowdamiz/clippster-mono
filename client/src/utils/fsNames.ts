@@ -18,6 +18,18 @@ const DEFAULT_EXT: Record<EditorMediaKind, string> = {
 	image: ".png",
 };
 
+/**
+ * Last path segment for display/storage — handles Windows `\` and `/`.
+ * If there are no separators, returns the string trimmed (plain filenames unchanged).
+ */
+export function fileNameFromPathOrName(pathOrName: string): string {
+	const trimmed = pathOrName.trim();
+	if (!trimmed) return "media";
+	const segments = trimmed.split(/[/\\]+/).filter(Boolean);
+	if (segments.length === 0) return trimmed;
+	return segments[segments.length - 1]!;
+}
+
 /** Extract a leading-dot extension from a file path or basename (e.g. `.mp4`). */
 export function extensionFromFilesystemPath(pathOrName: string): string | undefined {
 	const base = pathOrName.replace(/^.*[/\\]/, "");

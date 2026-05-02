@@ -7,6 +7,7 @@ import { filmstripService } from "../../services/filmstrip-service";
 import { hasMediaId } from "../../lib/timeline/element-utils";
 import { healOrphanVideoMediaReferences } from "../../lib/timeline/heal-orphan-video-media";
 import { waveformService } from "@/services/waveformService";
+import { fileNameFromPathOrName } from "@/utils/fsNames";
 
 export class MediaManager {
 	private assets: MediaAsset[] = [];
@@ -26,6 +27,7 @@ export class MediaManager {
 		const newAsset: MediaAsset = {
 			...asset,
 			id: generateUUID(),
+			name: fileNameFromPathOrName(asset.name),
 		};
 
 		this.assets = [...this.assets, newAsset];

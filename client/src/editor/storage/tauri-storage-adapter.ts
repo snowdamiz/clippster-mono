@@ -18,6 +18,7 @@ import { getDatabase, getCurrentUserId } from "@/services/database/core";
 import { base64ToUtf8, utf8ToBase64Url } from "@/utils/encoding";
 import {
 	editorMediaDestinationFilename,
+	fileNameFromPathOrName,
 	playbackFileLabel,
 } from "@/utils/fsNames";
 
@@ -257,6 +258,7 @@ class TauriStorageService {
 		// For drag-and-drop files, we store them in a project media directory.
 		const filePath = await this.resolveFilePath({ mediaAsset, projectId });
 
+		const storedDisplayName = fileNameFromPathOrName(mediaAsset.name);
 		await db.execute(
 			`INSERT INTO opencut_media_assets
 			 (id, project_id, name, type, file_path, file_size, last_modified, width, height, duration, fps, thumbnail_url, ephemeral)
@@ -273,7 +275,7 @@ class TauriStorageService {
 			[
 				mediaAsset.id,
 				projectId,
-				mediaAsset.name,
+				storedDisplayName,
 				mediaAsset.type,
 				filePath,
 				mediaAsset.file.size,
@@ -313,10 +315,11 @@ class TauriStorageService {
 		if (rows.length === 0) return null;
 
 		const row = rows[0];
+		const displayName = fileNameFromPathOrName(row.name);
 		try {
 			const file = await this.fileFromPath(
 				row.file_path,
-				row.name,
+				displayName,
 				row.type as "video" | "audio" | "image",
 			);
 			const url = URL.createObjectURL(file);
@@ -331,7 +334,7 @@ class TauriStorageService {
 
 			return {
 				id: row.id,
-				name: row.name,
+				name: displayName,
 
 				type: row.type as "image" | "video" | "audio",
 				file,
@@ -363,10 +366,11 @@ class TauriStorageService {
 
 		const assets: MediaAsset[] = [];
 		for (const row of rows) {
+			const displayName = fileNameFromPathOrName(row.name);
 			try {
 				const file = await this.fileFromPath(
 					row.file_path,
-					row.name,
+					displayName,
 					row.type as "video" | "audio" | "image",
 				);
 				const url = URL.createObjectURL(file);
@@ -381,7 +385,7 @@ class TauriStorageService {
 
 				assets.push({
 					id: row.id,
-					name: row.name,
+					name: displayName,
 					type: row.type as "image" | "video" | "audio",
 					file,
 					url,
