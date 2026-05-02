@@ -36,12 +36,30 @@ export function useTimelineZoom({
 	);
 	let previousZoom = zoomLevel.value;
 
-	// Saved projects / older builds may have zoomLevel above ZOOM_MAX; keep state clamped.
+	// `minZoom` is derived from timeline duration (and container width). When duration changes
+	// — e.g. first clip added — the "fit whole timeline" floor moves. Without rescaling, a zoom
+	// level that matched the old floor still equals the old numeric value but sits far above the
+	// new floor, so the slider jumps to ~100% (looks fully zoomed in). Scale zoom with the floor
+	// so slider position / pixels-per-second intent is preserved.
+	let previousMinZoom = minZoomValue.value;
+
 	watch(
 		minZoomValue,
-		() => {
+		(newMin) => {
+			const oldMin = previousMinZoom;
+			if (oldMin !== newMin && oldMin > 0 && newMin > 0) {
+				const rescaled = zoomLevel.value * (newMin / oldMin);
+				zoomLevel.value = Math.max(
+					newMin,
+					Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, rescaled),
+				);
+				previousZoom = zoomLevel.value;
+			}
+			previousMinZoom = newMin;
+
+			// Saved projects / older builds may have zoomLevel above ZOOM_MAX; keep state clamped.
 			const clamped = Math.max(
-				minZoomValue.value,
+				newMin,
 				Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, zoomLevel.value),
 			);
 			if (clamped !== zoomLevel.value) {
