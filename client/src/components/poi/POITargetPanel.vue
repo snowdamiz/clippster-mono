@@ -152,9 +152,10 @@
             ref="use16x9BgVideoRef"
             :key="`u9bg-${videoUrl}-${videoCacheBuster}`"
             :src="videoUrl"
+            :poster="thumbnailUrl || undefined"
             class="absolute inset-0 w-full h-full object-cover scale-[1.08] pointer-events-none"
             :style="{ filter: `blur(${use16x9BgBlurPx}px)` }"
-            preload="metadata"
+            preload="auto"
             muted
             playsinline
             @loadedmetadata="(e) => onVideoLoaded(e.target as HTMLVideoElement)"
@@ -182,8 +183,9 @@
             ref="use16x9SharpVideoRef"
             :key="`u9fg-${videoUrl}-${videoCacheBuster}`"
             :src="videoUrl"
+            :poster="thumbnailUrl || undefined"
             class="absolute inset-0 w-full h-full object-contain pointer-events-none"
-            preload="metadata"
+            preload="auto"
             muted
             playsinline
             @loadedmetadata="(e) => onVideoLoaded(e.target as HTMLVideoElement)"
@@ -228,9 +230,10 @@
             ref="sourceFrameVideoRef"
             :key="`${videoUrl}-${videoCacheBuster}`"
             :src="videoUrl"
+            :poster="thumbnailUrl || undefined"
             class="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-50"
             :style="scaleSourceBlurStyle"
-            preload="metadata"
+            preload="auto"
             muted
             playsinline
             @loadedmetadata="(e) => onVideoLoaded(e.target as HTMLVideoElement)"
@@ -314,9 +317,10 @@
             v-else-if="videoUrl"
             :ref="(el) => setVideoRef(region.id, el as HTMLVideoElement)"
             :src="videoUrl"
+            :poster="thumbnailUrl || undefined"
             class="absolute max-w-none pointer-events-none"
             :style="getCroppedImageStyle(region)"
-            preload="metadata"
+            preload="auto"
             muted
             playsinline
             @loadedmetadata="(e) => onVideoLoaded(e.target as HTMLVideoElement)"

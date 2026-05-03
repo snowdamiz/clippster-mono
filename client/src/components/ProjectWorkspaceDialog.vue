@@ -444,7 +444,7 @@
   import { useAuthStore } from '@/stores/auth';
   import { getRawVideosByProjectId } from '@/services/database';
   import { getProjectVodPresetConfig } from '@/services/database/vod-presets';
-  import { updateClipSubtitlePosition, updateClipTextOverlay } from '@/services/database/clips';
+  import { updateClipFullSubtitleSettings, updateClipSubtitlePosition, updateClipTextOverlay } from '@/services/database/clips';
   import { parseClipTextOverlayJson, createDefaultClipTextBoxState, type ClipTextBoxState } from '@/utils/clipTextBox';
   import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
   import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
@@ -1542,6 +1542,28 @@
     return null;
   }
 
+  /**
+   * Subtitle drag/resize can happen after playback is paused/stopped by the UI.
+   * Persist edits to the clip whose captions are visible, then fall back to explicit
+   * selection/playhead so export reads the same state the workspace preview showed.
+   */
+  function resolveTargetClipIdForSubtitleEdit(): string | null {
+    if (currentlyPlayingClipId.value && getTimelineClipById(currentlyPlayingClipId.value)) {
+      return currentlyPlayingClipId.value;
+    }
+    if (lastPlayedClipId.value && getTimelineClipById(lastPlayedClipId.value)) {
+      return lastPlayedClipId.value;
+    }
+    if (selectedClipId.value && getTimelineClipById(selectedClipId.value)) {
+      return selectedClipId.value;
+    }
+
+    const atPlayhead = resolveClipAtPlayheadForText();
+    if (atPlayhead) return atPlayhead.id;
+
+    return timelineClips.value[0]?.id ?? null;
+  }
+
   function ensureClipTextBoxDraftForClip(clip: any) {
     const dur = getClipDurationFromTimelineClip(clip);
     const parsed = parseClipTextOverlayJson(clip.clip_text_overlay);
@@ -2541,44 +2563,49 @@
 
   // Handle subtitle font size change (when user drags a corner handle)
   async function onSubtitleFontSizeChange(fontSize: number) {
-    if (activeSubtitleSettings.value) {
-      activeSubtitleSettings.value = { ...activeSubtitleSettings.value, fontSize };
+    if (!activeSubtitleSettings.value) return;
 
-      // CRITICAL: Sync current position from subtitle_position columns into settings
-      const currentClip = timelineClips.value.find((c: any) => c.id === currentlyPlayingClipId.value);
+    const targetClipId = resolveTargetClipIdForSubtitleEdit();
+    if (!targetClipId) return;
+
+    const currentClip = getTimelineClipById(targetClipId);
+    const ratio = previewAspectRatio.value;
+    const prev = activeSubtitleSettings.value as SubtitleSettings;
+    const existingPr = (prev.perRatioConfigs?.[ratio] ?? {}) as Partial<SubtitleOverride>;
+    const positionX = currentClip?.subtitle_position_x ?? existingPr.position?.x ?? 50;
+    const positionY = currentClip?.subtitle_position_y ?? existingPr.position?.y ?? prev.positionPercentage ?? 85;
+    const width = currentClip?.subtitle_position_width ?? existingPr.maxWidth ?? prev.maxWidth ?? null;
+
+    activeSubtitleSettings.value = {
+      ...prev,
+      fontSize,
+      positionPercentage: positionY,
+      maxWidth: width ?? prev.maxWidth,
+      perRatioConfigs: {
+        ...(prev.perRatioConfigs ?? {}),
+        [ratio]: {
+          ...existingPr,
+          fontSize,
+          position: { x: positionX, y: positionY },
+          positionPercentage: positionY,
+          maxWidth: width ?? existingPr.maxWidth ?? prev.maxWidth,
+        },
+      },
+    };
+
+    try {
+      await updateClipFullSubtitleSettings(targetClipId, activeSubtitleSettings.value);
+
       if (currentClip) {
-        if (currentClip.subtitle_position_y != null) {
-          activeSubtitleSettings.value.positionPercentage = currentClip.subtitle_position_y;
-        }
-        if (currentClip.subtitle_position_width != null) {
-          activeSubtitleSettings.value.maxWidth = currentClip.subtitle_position_width;
-        }
+        currentClip.subtitle_position_x = positionX;
+        currentClip.subtitle_position_y = positionY;
+        currentClip.subtitle_position_width = width;
+        await updateClipSubtitlePosition(targetClipId, positionX, positionY, width ?? undefined);
       }
 
-      // Save the full settings to the database
-      if (currentlyPlayingClipId.value) {
-        try {
-          const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } =
-            await import('@/services/database/clips');
-          await updateClipFullSubtitleSettings(currentlyPlayingClipId.value, activeSubtitleSettings.value);
-
-          // CRITICAL: Also save position to the separate columns to keep them in sync
-          if (currentClip) {
-            const posX = currentClip.subtitle_position_x ?? 50;
-            const posY = currentClip.subtitle_position_y ?? 85;
-            const width = currentClip.subtitle_position_width ?? null;
-            await updateClipSubtitlePosition(currentlyPlayingClipId.value, posX, posY, width);
-            console.log('[ProjectWorkspaceDialog] Synced position columns after font size change');
-          }
-
-          console.log(
-            '[ProjectWorkspaceDialog] Saved subtitle font size change with current position for clip:',
-            currentlyPlayingClipId.value
-          );
-        } catch (error) {
-          console.error('[ProjectWorkspaceDialog] Failed to save subtitle font size:', error);
-        }
-      }
+      console.log('[ProjectWorkspaceDialog] Saved subtitle font size change for clip:', targetClipId);
+    } catch (error) {
+      console.error('[ProjectWorkspaceDialog] Failed to save subtitle font size:', error);
     }
   }
 
@@ -2739,10 +2766,11 @@
 
   // Handle subtitle position change (when user drags/resizes subtitles)
   async function onSubtitlePositionChange(position: { x: number; y: number }, width: number) {
-    if (!currentlyPlayingClipId.value) return;
+    const targetClipId = resolveTargetClipIdForSubtitleEdit();
+    if (!targetClipId) return;
 
     // Update the in-memory clip so the computed activeSubtitlePosition reflects immediately
-    const clip = timelineClips.value.find((c: any) => c.id === currentlyPlayingClipId.value);
+    const clip = getTimelineClipById(targetClipId);
     if (clip) {
       clip.subtitle_position_x = position.x;
       clip.subtitle_position_y = position.y;
@@ -2764,7 +2792,7 @@
           ...(prev.perRatioConfigs ?? {}),
           [ratio]: {
             ...existingPr,
-            fontSize: existingPr.fontSize ?? prev.fontSize,
+            fontSize: prev.fontSize ?? existingPr.fontSize,
             position: { x: position.x, y: position.y },
             positionPercentage: position.y,
             maxWidth: width,
@@ -2775,12 +2803,11 @@
 
     try {
       // Save position to separate columns
-      await updateClipSubtitlePosition(currentlyPlayingClipId.value, position.x, position.y, width);
+      await updateClipSubtitlePosition(targetClipId, position.x, position.y, width);
 
       // Also save full settings with the updated position
       if (activeSubtitleSettings.value) {
-        const { updateClipFullSubtitleSettings } = await import('@/services/database/clips');
-        await updateClipFullSubtitleSettings(currentlyPlayingClipId.value, activeSubtitleSettings.value);
+        await updateClipFullSubtitleSettings(targetClipId, activeSubtitleSettings.value);
       }
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to save subtitle position:', error);
@@ -4455,9 +4482,14 @@
   // Watch for progress socket errors and show toasts
   watch(clipError, (newError) => {
     if (newError && clipGenerationInProgress.value) {
+      const isCreditError = newError.toLowerCase().includes('insufficient credits');
+      const message = newError.includes('No credits were charged') || isCreditError
+        ? newError
+        : `${newError}. No credits were charged.`;
+
       showError(
         'Processing Error',
-        newError.includes('No credits were charged') ? newError : `${newError}. No credits were charged.`,
+        message,
         8000
       );
     }
