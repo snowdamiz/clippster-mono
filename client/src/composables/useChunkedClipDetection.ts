@@ -71,6 +71,44 @@ export function useChunkedClipDetection() {
   // Optional creator reach context for AI detection.
   let currentStreamerMetadata: Record<string, unknown> | null = null;
 
+  function getApiErrorResponse(error: unknown): { status?: number; data?: any } | null {
+    const response = (error as { response?: { status?: number; data?: any } } | null)?.response;
+    return response ?? null;
+  }
+
+  function formatCreditAmount(value: unknown): string {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return String(value ?? 0);
+    return numeric.toFixed(3).replace(/\.?0+$/, '');
+  }
+
+  function getErrorMessage(error: unknown): string {
+    const response = getApiErrorResponse(error);
+    const data = response?.data;
+
+    if (response?.status === 402) {
+      const details = typeof data?.details === 'string' ? data.details : '';
+      const required = data?.credits_required;
+      const remaining = data?.credits_remaining;
+      const refunded = Number(data?.credits_refunded ?? 0);
+
+      if (details) return `Insufficient credits. ${details}`;
+
+      if (required !== undefined && remaining !== undefined) {
+        const base = `Insufficient credits. You have ${formatCreditAmount(remaining)} credits, but ${formatCreditAmount(required)} are required.`;
+        return refunded > 0
+          ? `${base} ${formatCreditAmount(refunded)} transcription credits were refunded.`
+          : base;
+      }
+
+      return 'Insufficient credits for this operation.';
+    }
+
+    if (typeof data?.details === 'string') return data.details;
+    if (typeof data?.error === 'string') return data.error;
+    return error instanceof Error ? error.message : String(error);
+  }
+
   // Cancel the current detection process and request server-side refund
   async function cancelDetection() {
     if (!isProcessing.value) return;
@@ -196,7 +234,7 @@ export function useChunkedClipDetection() {
       const existingTranscript = await getTranscriptByRawVideoId(projectVideo.id);
 
       if (existingTranscript && !forceReprocess) {
-        return await processWithTraditionalTranscript(projectId, prompt, existingTranscript);
+        return await processWithTraditionalTranscript(projectId, prompt, existingTranscript, projectVideo);
       }
 
       // Initialize chunked transcript cache
@@ -234,7 +272,7 @@ export function useChunkedClipDetection() {
           // Fall back to traditional processing if chunks are empty
           const existingTranscript = await getTranscriptByRawVideoId(projectVideo.id);
           if (existingTranscript) {
-            return await processWithTraditionalTranscript(projectId, prompt, existingTranscript);
+            return await processWithTraditionalTranscript(projectId, prompt, existingTranscript, projectVideo);
           }
           // If no traditional transcript either, continue with fresh audio processing
         }
@@ -291,7 +329,7 @@ export function useChunkedClipDetection() {
 
       return await processWithFreshAudio(projectId, prompt, projectVideo);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = getErrorMessage(error);
 
       // Check if this was a cancellation
       if (
@@ -484,8 +522,7 @@ export function useChunkedClipDetection() {
         endTime
       );
     } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : String(e);
-      throw new Error(errorMessage);
+      throw e;
     }
   }
 
@@ -547,15 +584,14 @@ export function useChunkedClipDetection() {
         });
       } catch (err: any) {
         if (err?.response?.status === 402) {
-          const data = err.response.data;
-          const refunded = data?.credits_refunded ?? 0;
-          const remaining = data?.credits_remaining ?? 0;
-          const needed = data?.credits_required ?? 0;
-          const msg =
-            refunded > 0
-              ? `Insufficient credits for detection. ${refunded} transcription credit${refunded !== 1 ? 's' : ''} have been refunded. You now have ${Math.round(remaining)} credits but ${Math.ceil(needed)} are required.`
-              : `Insufficient credits. You have ${Math.round(remaining)} credits but ${Math.ceil(needed)} are required for detection.`;
+          const msg = getErrorMessage(err);
           showError('Insufficient Credits', msg, undefined, 'clips');
+          progress.value = {
+            stage: 'error',
+            progress: 0,
+            message: 'Detection failed',
+            error: msg,
+          };
           return { success: false, error: msg };
         }
         throw err;
@@ -582,6 +618,8 @@ export function useChunkedClipDetection() {
           processingTimeMs: 0, // Cached processing is fast
           detectionModel: 'claude-3.5-sonnet-chunked',
           serverResponseId: result.jobId || null,
+          videoFilePath: projectVideo.file_path,
+          rawVideoId: projectVideo.id,
         },
         currentSubtitleSettings
       );
@@ -711,7 +749,8 @@ export function useChunkedClipDetection() {
   async function processWithTraditionalTranscript(
     projectId: string,
     prompt: string,
-    existingTranscript: any
+    existingTranscript: any,
+    projectVideo: RawVideo
   ): Promise<{ success: boolean; sessionId?: string; error?: string; cancelled?: boolean }> {
     try {
       progress.value = {
@@ -780,6 +819,8 @@ export function useChunkedClipDetection() {
           processingTimeMs: 0,
           detectionModel: 'claude-3.5-sonnet-traditional',
           serverResponseId: result.jobId || null,
+          videoFilePath: projectVideo.file_path,
+          rawVideoId: projectVideo.id,
         },
         currentSubtitleSettings
       );
@@ -889,6 +930,8 @@ export function useChunkedClipDetection() {
           processingTimeMs: 0,
           detectionModel: 'claude-3.5-sonnet-fresh',
           serverResponseId: result.jobId || null,
+          videoFilePath: projectVideo.file_path,
+          rawVideoId: projectVideo.id,
         },
         currentSubtitleSettings
       );
@@ -995,6 +1038,8 @@ export function useChunkedClipDetection() {
           processingTimeMs: 0,
           detectionModel: 'claude-3.5-sonnet-fallback',
           serverResponseId: result.jobId || null,
+          videoFilePath: projectVideo.file_path,
+          rawVideoId: projectVideo.id,
         },
         currentSubtitleSettings
       );
