@@ -442,7 +442,7 @@
   import { ensureAssetDownloaded } from '@/services/orgAssetSync';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
   import { useAuthStore } from '@/stores/auth';
-  import { getRawVideosByProjectId } from '@/services/database';
+  import { getRawVideosByProjectId, getTranscriptByRawVideoId } from '@/services/database';
   import { getProjectVodPresetConfig } from '@/services/database/vod-presets';
   import { updateClipFullSubtitleSettings, updateClipSubtitlePosition, updateClipTextOverlay } from '@/services/database/clips';
   import { parseClipTextOverlayJson, createDefaultClipTextBoxState, type ClipTextBoxState } from '@/utils/clipTextBox';
@@ -499,6 +499,7 @@
   const transcribeStage = ref('');
   const transcribeMessage = ref('');
   const cancelTranscriptionFn = ref<(() => void) | null>(null);
+  const pendingSubtitleTranscriptionClipId = ref<string | null>(null);
 
   const isCreatingProject = ref(false);
 
@@ -1403,7 +1404,16 @@
     );
 
     try {
-      const result = await transcribeProject(projectId, { organizationId });
+      const targetClip = pendingSubtitleTranscriptionClipId.value
+        ? getTimelineClipById(pendingSubtitleTranscriptionClipId.value)
+        : null;
+      const sourceVideoPath = targetClip ? resolveClipTranscriptionSourcePath(targetClip) : null;
+
+      const result = await transcribeProject(projectId, {
+        organizationId,
+        parentProjectId: props.project.parent_id,
+        sourceVideoPath,
+      });
 
       if (result.success) {
         const { success: showSuccess } = useToast();
@@ -1412,6 +1422,7 @@
         } else {
           showSuccess('Transcription Complete', 'Transcript is ready for viewing.');
         }
+        await loadTranscriptData(projectId);
         // Auto-switch to transcript tab after successful transcription
         rightPanelTab.value = 'transcript';
       }
@@ -1424,6 +1435,7 @@
       transcribeStage.value = '';
       transcribeMessage.value = '';
       cancelTranscriptionFn.value = null;
+      pendingSubtitleTranscriptionClipId.value = null;
     }
   }
 
@@ -1492,21 +1504,56 @@
     showSuccess('Transcription Cancelled', 'Transcription was cancelled.');
   }
 
-  function onToggleSubtitles() {
+  function normalizeVideoPathForCompare(path: string): string {
+    return path.replace(/\\/g, '/').replace(/^file:\/\//, '').toLowerCase();
+  }
+
+  function resolveClipTranscriptionSourcePath(clip: any): string | null {
+    const builtFilePath = typeof clip?.built_file_path === 'string' ? clip.built_file_path.trim() : '';
+    if (builtFilePath) return builtFilePath;
+
+    const prompt = String(clip?.session_prompt || '').toLowerCase();
+    const isSelfContainedLiveClip = prompt === 'manual clip creation' || prompt.includes('auto');
+    const clipOwnFile = typeof (clip?.filename || clip?.file_path) === 'string' ? (clip.filename || clip.file_path).trim() : '';
+    return isSelfContainedLiveClip && clipOwnFile ? clipOwnFile : null;
+  }
+
+  async function clipHasOwnTranscript(clip: any): Promise<boolean> {
+    if (!props.project?.id) return false;
+
+    const sourceVideoPath = resolveClipTranscriptionSourcePath(clip);
+    if (!sourceVideoPath) return isTranscribed.value;
+
+    const rawVideos = await getRawVideosByProjectId(props.project.id);
+    const normalizedSource = normalizeVideoPathForCompare(sourceVideoPath);
+    const rawVideo = rawVideos.find((video) => normalizeVideoPathForCompare(video.file_path) === normalizedSource);
+    if (!rawVideo) return false;
+
+    return !!(await getTranscriptByRawVideoId(rawVideo.id));
+  }
+
+  async function onToggleSubtitles() {
     // Check if user is authenticated
     if (!authStore.isAuthenticated) {
       window.dispatchEvent(new CustomEvent('show-auth-modal'));
       return;
     }
 
+    const targetClipId = resolveTargetClipIdForSubtitleEdit();
+    if (targetClipId) selectedClipId.value = targetClipId;
+    const targetClip = getTimelineClipById(targetClipId);
+    const hasTranscript = targetClip ? await clipHasOwnTranscript(targetClip) : isTranscribed.value;
+
     // Check if project has transcript
-    if (!isTranscribed.value) {
+    if (!hasTranscript) {
       // No transcript - show transcription dialog first
       const { info: showInfo } = useToast();
       showInfo('Transcript Required', 'Subtitles require a transcript. Please transcribe your video first.');
+      pendingSubtitleTranscriptionClipId.value = targetClipId;
       showTranscribeConfirmDialog.value = true;
     } else {
       // Has transcript - show subtitle editor dialog
+      pendingSubtitleTranscriptionClipId.value = null;
       showSubtitleEditorDialog.value = true;
     }
   }

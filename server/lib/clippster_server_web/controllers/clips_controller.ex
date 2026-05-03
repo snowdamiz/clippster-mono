@@ -3624,7 +3624,9 @@ defmodule ClippsterServerWeb.ClipsController do
     # content, so we lower the bar on virality, duration, density, and word
     # count. We do NOT lower the catastrophic scorecard floors (hook/payoff/
     # shareability ≥ 35) — fame must not rescue truly bad clips.
-    reach_settings = StreamerReach.realtime_settings(streamer_metadata, requested_virality_threshold)
+    reach_settings =
+      StreamerReach.realtime_settings(streamer_metadata, requested_virality_threshold)
+
     virality_threshold = reach_settings.virality_threshold
 
     if reach_settings.tier in [:famous, :top_tier, :established] do
@@ -3955,14 +3957,17 @@ defmodule ClippsterServerWeb.ClipsController do
                 # Max clip duration: 180 seconds (3 minutes) - force save if exceeded
                 max_clip_duration = 180
 
+                # If the AI returns no new pending clip while the client already has
+                # one, that is an "idle/no continuation" tick, not a quality rejection.
+                # Return pending_clip: nil so the client can count consecutive nulls
+                # and finalize the existing pending clip.
+                no_new_pending_detection = is_nil(ai_pending_clip) and not is_nil(pending_clip)
+
                 {context_change, final_pending_clip} =
                   cond do
                     # No new clip detected by AI
                     is_nil(ai_pending_clip) ->
-                      # If we have an existing pending clip and AI found nothing new,
-                      # this might mean the context ended - but we need consecutive "nothing" detections
-                      # For now, keep the existing pending clip (context continues until something new appears)
-                      {false, pending_clip}
+                      {false, nil}
 
                     # No existing pending clip - this is a new detection
                     is_nil(pending_clip) ->
@@ -4045,8 +4050,10 @@ defmodule ClippsterServerWeb.ClipsController do
                   success: true,
                   context_change: context_change,
                   pending_clip: final_pending_clip,
+                  no_new_pending_detection: no_new_pending_detection,
                   pending_clip_rejected:
-                    is_nil(final_pending_clip) and not is_nil(pending_clip) and not context_change,
+                    is_nil(final_pending_clip) and not is_nil(pending_clip) and not context_change and
+                      not no_new_pending_detection,
                   candidate_rejected:
                     is_nil(final_pending_clip) and not is_nil(candidate_before_quality_gate),
                   pending_clip_rejection_reason: pending_clip_rejection_reason,
@@ -4393,7 +4400,8 @@ defmodule ClippsterServerWeb.ClipsController do
   end
 
   defp format_realtime_segment_timeline(_segments),
-    do: "PER-SEGMENT TIMELINE: (no timed segments available — DO NOT guess timestamps; if no usable timing, return pending_clip: null)"
+    do:
+      "PER-SEGMENT TIMELINE: (no timed segments available — DO NOT guess timestamps; if no usable timing, return pending_clip: null)"
 
   defp trim_realtime_clip_boundaries(clip, stats) do
     clip = Map.put(clip, "start_time", number_or_default(Map.get(clip, "start_time"), 0))

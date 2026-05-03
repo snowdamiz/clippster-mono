@@ -1,6 +1,9 @@
 import { ref } from 'vue';
 import {
   getRawVideosByProjectId,
+  getRawVideosByOriginalProjectId,
+  getRawVideo,
+  createRawVideo,
   getTranscriptByRawVideoId,
   getTranscriptChunks,
   createTranscript,
@@ -18,6 +21,8 @@ export interface TranscriptionOptions {
   chunkDurationMinutes?: number;
   overlapSeconds?: number;
   organizationId?: number | null;
+  parentProjectId?: string | null;
+  sourceVideoPath?: string | null;
 }
 
 interface UseTranscriptionOnlyOptions {
@@ -62,6 +67,73 @@ export function useTranscriptionOnly(options: UseTranscriptionOnlyOptions = {}) 
   });
   let abortController: AbortController | null = null;
   let currentOrganizationId: number | null = null;
+
+  function normalizePathForCompare(path: string): string {
+    return path.replace(/\\/g, '/').replace(/^file:\/\//, '').toLowerCase();
+  }
+
+  function findRawVideoByPath(rows: RawVideo[], sourceVideoPath: string): RawVideo | null {
+    const normalizedSource = normalizePathForCompare(sourceVideoPath);
+    return rows.find((row) => normalizePathForCompare(row.file_path) === normalizedSource) ?? null;
+  }
+
+  async function ensureRawVideoForSourcePath(
+    projectId: string,
+    sourceVideoPath: string
+  ): Promise<RawVideo> {
+    const existingForProject = findRawVideoByPath(
+      await getRawVideosByProjectId(projectId),
+      sourceVideoPath
+    );
+    if (existingForProject) {
+      return existingForProject;
+    }
+
+    const rawVideoId = await createRawVideo(sourceVideoPath, {
+      projectId,
+      originalFilename: sourceVideoPath.split(/[\\/]/).pop() || undefined,
+    });
+    const rawVideo = await getRawVideo(rawVideoId);
+    if (!rawVideo) {
+      throw new Error('Failed to create video record for clip transcription');
+    }
+    return rawVideo;
+  }
+
+  async function getRawVideosForTranscription(
+    projectId: string,
+    parentProjectId?: string | null,
+    sourceVideoPath?: string | null
+  ): Promise<RawVideo[]> {
+    if (sourceVideoPath?.trim()) {
+      return [await ensureRawVideoForSourcePath(projectId, sourceVideoPath.trim())];
+    }
+
+    const directRawVideos = await getRawVideosByProjectId(projectId);
+    if (directRawVideos.length > 0) {
+      return directRawVideos;
+    }
+
+    if (parentProjectId && parentProjectId !== projectId) {
+      const parentRawVideos = await getRawVideosByProjectId(parentProjectId);
+      if (parentRawVideos.length > 0) {
+        return parentRawVideos;
+      }
+    }
+
+    // Livestream auto-detect projects can store playable recordings as child
+    // segment raw_videos with original_project_id pointing back to a parent project.
+    const childSegmentVideos = await getRawVideosByOriginalProjectId(projectId);
+    if (childSegmentVideos.length > 0) {
+      return childSegmentVideos;
+    }
+
+    if (parentProjectId && parentProjectId !== projectId) {
+      return await getRawVideosByOriginalProjectId(parentProjectId);
+    }
+
+    return [];
+  }
 
   function checkCancelled() {
     if (isCancelled.value) {
@@ -109,7 +181,11 @@ export function useTranscriptionOnly(options: UseTranscriptionOnlyOptions = {}) 
       const { chunkDurationMinutes = 25, overlapSeconds = 30 } = options;
 
       // Get project video
-      const rawVideos = await getRawVideosByProjectId(projectId);
+      const rawVideos = await getRawVideosForTranscription(
+        projectId,
+        options.parentProjectId,
+        options.sourceVideoPath
+      );
       if (rawVideos.length === 0) {
         throw new Error('No video found for project');
       }

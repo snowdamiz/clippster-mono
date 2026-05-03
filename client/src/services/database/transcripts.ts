@@ -36,6 +36,9 @@ export async function getTranscriptByProjectId(projectId: string): Promise<Trans
     `SELECT t.* FROM transcripts t
      JOIN raw_videos rv ON t.raw_video_id = rv.id
      WHERE rv.project_id = ?
+        OR rv.original_project_id = ?
+        OR rv.project_id = (SELECT parent_id FROM projects WHERE id = ?)
+        OR rv.original_project_id = (SELECT parent_id FROM projects WHERE id = ?)
      ORDER BY
        CASE
          WHEN (rv.is_segment IS NULL OR rv.is_segment = 0 OR rv.is_segment = 'false')
@@ -48,7 +51,7 @@ export async function getTranscriptByProjectId(projectId: string): Promise<Trans
        LENGTH(COALESCE(t.text, '')) DESC,
        t.created_at DESC,
        t.id ASC`,
-    [projectId]
+    [projectId, projectId, projectId, projectId]
   );
   return result[0] || null;
 }
@@ -179,8 +182,11 @@ export async function hasTranscriptForProject(projectId: string): Promise<boolea
   const result = await db.select<{ cnt: number }[]>(
     `SELECT COUNT(*) as cnt FROM transcripts t
      JOIN raw_videos rv ON t.raw_video_id = rv.id
-     WHERE rv.project_id = ?`,
-    [projectId]
+     WHERE rv.project_id = ?
+        OR rv.original_project_id = ?
+        OR rv.project_id = (SELECT parent_id FROM projects WHERE id = ?)
+        OR rv.original_project_id = (SELECT parent_id FROM projects WHERE id = ?)`,
+    [projectId, projectId, projectId, projectId]
   );
   return (result[0]?.cnt || 0) > 0;
 }

@@ -561,7 +561,7 @@ pub async fn extract_and_chunk_audio(
         let current_end = (current_start + chunk_duration_secs).min(chunk_end);
         let actual_duration = current_end - current_start;
 
-        if actual_duration < 30.0 {
+        if actual_duration < 1.0 {
             println!(
                 "[Rust] Skipping small final chunk of {:.2} seconds",
                 actual_duration
