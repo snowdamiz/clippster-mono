@@ -1036,28 +1036,36 @@ defmodule ClippsterServerWeb.ClipsController do
           audio_upload = params["audio"]
 
           duration_hours = calculate_audio_duration_hours(params)
+          organization_id = Map.get(params, "organization_id") |> parse_org_id()
 
           # Deduct credits and create job for tracking/refunds
           credit_result =
             if is_admin do
-              {:ok, %{credits: 0.0, job_id: nil}}
+              {:ok, %{credits: 0.0, job_id: nil, credit_source: :unlimited}}
             else
-              case deduct_credits_for_transcription(user_id, duration_hours) do
-                {:ok, credits} ->
+              case deduct_credits_for_transcription(user_id, duration_hours, organization_id) do
+                {:ok, credits, credit_source} ->
                   # Create job record for refund tracking
-                  case Credits.create_processing_job(user_id, credits, duration_hours,
-                         project_id: project_id,
-                         job_type: "transcription"
-                       ) do
+                  job_opts = [
+                    project_id: project_id,
+                    job_type: "transcription"
+                  ]
+
+                  job_opts =
+                    if credit_source == :organization and organization_id,
+                      do: [{:organization_id, organization_id} | job_opts],
+                      else: job_opts
+
+                  case Credits.create_processing_job(user_id, credits, duration_hours, job_opts) do
                     {:ok, job} ->
                       IO.puts(
-                        "[ClipsController] Created transcription job #{job.id} for tracking (#{Float.round(credits, 3)} credits)"
+                        "[ClipsController] Created transcription job #{job.id} for tracking (#{Float.round(credits, 3)} credits from #{credit_source})"
                       )
 
-                      {:ok, %{credits: credits, job_id: job.id}}
+                      {:ok, %{credits: credits, job_id: job.id, credit_source: credit_source}}
 
                     {:error, _} ->
-                      {:ok, %{credits: credits, job_id: nil}}
+                      {:ok, %{credits: credits, job_id: nil, credit_source: credit_source}}
                   end
 
                 {:error, :insufficient_credits, remaining, needed} ->
@@ -1068,8 +1076,16 @@ defmodule ClippsterServerWeb.ClipsController do
                      success: false,
                      error: "Insufficient credits",
                      details:
-                       "Need #{Float.round(needed, 3)} credits, have #{Float.round(remaining, 3)}"
+                       "Need #{Float.round(needed, 3)} credits, have #{Float.round(remaining, 3)}",
+                     credits_required: needed,
+                     credits_remaining: remaining
                    })}
+
+                {:error, :not_a_member, details} ->
+                  {:halt,
+                   conn
+                   |> put_status(403)
+                   |> json(%{success: false, error: "Not authorized", details: details})}
 
                 {:error, _reason, _} ->
                   {:halt,
@@ -2796,25 +2812,22 @@ defmodule ClippsterServerWeb.ClipsController do
 
   # Deduct credits for transcription only (0.3 rate)
   # Credits are rounded up to whole minutes
-  defp deduct_credits_for_transcription(user_id, duration_minutes) do
+  defp deduct_credits_for_transcription(user_id, duration_minutes, organization_id) do
     credit_rate = 0.3
     credits_to_deduct = Float.ceil(duration_minutes * credit_rate)
 
-    case Credits.get_user_balance(user_id) do
-      {:ok, %{hours_remaining: remaining}} when remaining != :unlimited ->
-        remaining_credits = Decimal.to_float(remaining)
+    case Credits.deduct_credits_with_org_context(user_id, credits_to_deduct, organization_id) do
+      {:ok, %{source: source}} ->
+        {:ok, credits_to_deduct, source}
 
-        if remaining_credits < credits_to_deduct do
-          {:error, :insufficient_credits, remaining_credits, credits_to_deduct}
-        else
-          case Credits.deduct_credits(user_id, credits_to_deduct) do
-            {:ok, _} -> {:ok, credits_to_deduct}
-            {:error, reason} -> {:error, :deduction_failed, reason}
-          end
-        end
+      {:error, :insufficient_credits, remaining, needed} ->
+        {:error, :insufficient_credits, remaining, needed}
 
-      {:ok, %{hours_remaining: :unlimited}} ->
-        {:ok, 0.0}
+      {:error, :not_a_member} ->
+        {:error, :not_a_member, "User is not a member of the specified organization"}
+
+      {:error, reason} ->
+        {:error, :deduction_failed, reason}
     end
   end
 

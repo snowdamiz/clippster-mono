@@ -558,7 +558,7 @@
                   </div>
 
                   <div class="admin-orgs__modal-field">
-                    <label for="hours_used" class="admin-orgs__modal-label">Hours Used</label>
+                    <label for="hours_used" class="admin-orgs__modal-label">Credits Used</label>
                     <input
                       id="hours_used"
                       v-model.number="orgCreditForm.hours_used"
@@ -567,7 +567,7 @@
                       min="0"
                       required
                       class="admin-orgs__modal-input"
-                      placeholder="Enter hours used"
+                      placeholder="Enter credits used"
                     />
                   </div>
 

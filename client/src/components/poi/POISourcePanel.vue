@@ -184,8 +184,9 @@
             v-if="videoUrl"
             ref="videoRef"
             :src="videoUrl"
+            :poster="thumbnailUrl || undefined"
             class="absolute inset-0 w-full h-full object-cover"
-            preload="metadata"
+            preload="auto"
             :volume="volume"
             :muted="isMuted"
             playsinline

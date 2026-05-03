@@ -1343,7 +1343,7 @@ export function AdminOrganizationsPage() {
 
                     <div className="admin-orgs__modal-field">
                       <label htmlFor="hours_used" className="admin-orgs__modal-label">
-                        Hours Used
+                        Credits Used
                       </label>
                       <input
                         id="hours_used"
@@ -1356,7 +1356,7 @@ export function AdminOrganizationsPage() {
                         min="0"
                         required
                         className="admin-orgs__modal-input"
-                        placeholder="Enter hours used"
+                        placeholder="Enter credits used"
                       />
                     </div>
 
