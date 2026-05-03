@@ -63,6 +63,7 @@ defmodule ClippsterServer.AI.StreamerReach do
     "myth" => :famous,
     "cyr" => :famous,
     "austinshow" => :famous,
+    "clavicular" => :famous,
 
     # Established / category-famous creators
     "qt cinderella" => :established,
@@ -146,6 +147,58 @@ defmodule ClippsterServer.AI.StreamerReach do
     - Rule: use this only to boost genuinely hooky personality/community moments. Never accept a boring clip because the streamer is famous.
     """
     |> String.trim()
+  end
+
+  @doc """
+  Returns realtime detection settings adjusted for streamer reach tier.
+
+  The settings tell the realtime quality gate (and the AI prompt) how strict
+  to be for this streamer. Top-tier and famous creators are known to produce
+  viral content reliably — even mid moments from them outperform peak moments
+  from unknown streamers — so we lower the bar on virality threshold, clip
+  length, word count, and speech density. We never relax the catastrophic
+  scorecard floors (hook/payoff/shareability < 35) — fame must not rescue
+  truly bad clips, just borderline ones.
+
+  Returned map fields:
+  - tier              : the resolved tier atom
+  - tier_label        : human-readable label
+  - virality_threshold: minimum virality_score to auto-save (default 85)
+  - min_duration      : minimum clip duration in seconds
+  - min_words_short   : min words for clips ≤ 12s
+  - min_words_medium  : min words for clips 12-20s
+  - min_words_long    : min words for clips > 20s
+  - min_density_short : min words/sec for clips ≤ 12s
+  - min_density_long  : min words/sec for clips > 12s
+  """
+  @spec realtime_settings(map() | nil, integer()) :: map()
+  def realtime_settings(metadata, base_threshold \\ 85) do
+    reach = score(metadata)
+
+    {threshold_drop, min_duration, words_factor, density_factor} =
+      case reach.tier do
+        :top_tier -> {7, 3.0, 0.5, 0.55}
+        :famous -> {5, 3.0, 0.6, 0.65}
+        :established -> {3, 3.5, 0.75, 0.8}
+        :niche -> {0, 4.0, 1.0, 1.0}
+        _ -> {0, 4.0, 1.0, 1.0}
+      end
+
+    base = max(base_threshold || 85, 60)
+
+    %{
+      tier: reach.tier,
+      tier_label: reach.label,
+      score: reach.score,
+      matched_name: reach.matched_name,
+      virality_threshold: max(base - threshold_drop, 70),
+      min_duration: min_duration,
+      min_words_short: max(round(4 * words_factor), 2),
+      min_words_medium: max(round(8 * words_factor), 4),
+      min_words_long: max(round(12 * words_factor), 6),
+      min_density_short: 0.35 * density_factor,
+      min_density_long: 0.45 * density_factor
+    }
   end
 
   defp display_names(metadata) do

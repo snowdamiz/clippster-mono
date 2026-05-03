@@ -578,7 +578,7 @@
   }
 
   const { gates, requireSubscription } = useSubscriptionGate();
-  const { success } = useToast();
+  const { success, error: errorToast } = useToast();
 
   type ExtendedStreamer = Omit<MonitoredStreamer, 'platform'> & {
     platform: Platform;
@@ -712,6 +712,7 @@
 
     window.addEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
     window.addEventListener('realtime-clip-detected', handleRealtimeClipDetected as EventListener);
+    window.addEventListener('realtime-detection-stopped', handleRealtimeDetectionStopped as EventListener);
   });
 
   async function checkAllLiveStatuses() {
@@ -959,14 +960,23 @@
     }
   }
 
-  onUnmounted(async () => {
+  onUnmounted(() => {
     if (liveStatusInterval.value) {
       clearInterval(liveStatusInterval.value);
       liveStatusInterval.value = null;
     }
 
+    // Detection state, timers, and Tauri listeners live at module scope in
+    // useRealtimeClipDetection, so navigation away from /live-clip does NOT
+    // stop detection. It continues running until: user clicks Stop, recorder
+    // exits (stream offline), stream-ended event fires, credits run out, or
+    // the stale-buffer guard trips. Credits are billed per Whisper batch in
+    // useRealtimeTranscription.chargeForAudioSent — there is no wall-clock
+    // interval to leak. Re-mounting the page picks up the live state via
+    // syncDetectionState and the reactive `realtimeDetection.isActive` ref.
     window.removeEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
     window.removeEventListener('realtime-clip-detected', handleRealtimeClipDetected as EventListener);
+    window.removeEventListener('realtime-detection-stopped', handleRealtimeDetectionStopped as EventListener);
   });
 
   watch([activeSessions, monitoredStreamers, dvrSessions], () => syncDetectionState(), { deep: true });
@@ -1051,6 +1061,39 @@
         status: 'success',
         profileImageUrl: activeStreamer.profileImageUrl,
       });
+    }
+  }
+
+  function handleRealtimeDetectionStopped(event: CustomEvent<{
+    reason: 'recorder_exit' | 'stream_ended' | 'out_of_credits' | string;
+    sessionId?: string;
+    streamerId?: string;
+  }>) {
+    const { reason, streamerId } = event.detail || ({} as any);
+
+    const streamer = streamerId
+      ? streamers.value.find((s) => s.id === streamerId)
+      : streamers.value.find((s) => s.isDetecting);
+
+    const messageByReason: Record<string, string> = {
+      recorder_exit: 'Real-time detection stopped — stream ended',
+      stream_ended: 'Real-time detection stopped — stream ended',
+      out_of_credits: 'Real-time detection stopped — out of credits',
+    };
+    const message = messageByReason[reason] || `Real-time detection stopped (${reason})`;
+
+    if (streamer) {
+      addActivityLog({
+        streamerId: streamer.id,
+        streamerName: streamer.displayName,
+        platform: streamer.platform,
+        mintId: streamer.mintId,
+        message,
+        status: 'info',
+        profileImageUrl: streamer.profileImageUrl,
+      });
+    } else {
+      console.log('[LiveClip] realtime-detection-stopped:', reason, '(no matching streamer)');
     }
   }
 
@@ -1585,24 +1628,41 @@
     // Start real-time clip detection
     const session = activeSessions.value.get(streamer.id);
     if (session) {
-      await realtimeDetection.startDetection({
-        sessionId: session.sessionId,
-        streamerName: streamer.displayName,
-        platform: streamer.platform,
-        mintId: streamer.mintId,
-        prompt: data.promptContent || 'Detect viral moments',
-        segments: [], // Empty segments array - will be populated as recording progresses
-      });
+      try {
+        await realtimeDetection.startDetection({
+          sessionId: session.sessionId,
+          streamerName: streamer.displayName,
+          platform: streamer.platform,
+          mintId: streamer.mintId,
+          prompt: data.promptContent || 'Detect viral moments',
+          segments: [], // Empty segments array - will be populated as recording progresses
+        });
 
-      addActivityLog({
-        streamerId: streamer.id,
-        streamerName: streamer.displayName,
-        platform: streamer.platform,
-        mintId: streamer.mintId,
-        message: 'Real-time clip detection started',
-        status: 'success',
-        profileImageUrl: streamer.profileImageUrl,
-      });
+        addActivityLog({
+          streamerId: streamer.id,
+          streamerName: streamer.displayName,
+          platform: streamer.platform,
+          mintId: streamer.mintId,
+          message: 'Real-time clip detection started',
+          status: 'success',
+          profileImageUrl: streamer.profileImageUrl,
+        });
+      } catch (err) {
+        // Most likely "already active" — a previous session leaked. Surface it
+        // loudly so the user can stop the zombie session instead of silently
+        // burning credits in the background.
+        const message = err instanceof Error ? err.message : String(err);
+        errorToast('Could not start real-time detection', message);
+        addActivityLog({
+          streamerId: streamer.id,
+          streamerName: streamer.displayName,
+          platform: streamer.platform,
+          mintId: streamer.mintId,
+          message: `Real-time detection failed to start: ${message}`,
+          status: 'info',
+          profileImageUrl: streamer.profileImageUrl,
+        });
+      }
     }
 
     // Move streamer to top of list

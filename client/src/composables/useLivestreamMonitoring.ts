@@ -409,6 +409,23 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
   const session = activeSessions.value.get(streamer.id);
   if (!session) return;
 
+  // If realtime detection is bound to this session, stop it BEFORE tearing down
+  // the recorder/DB session. The detection composable also self-stops on
+  // `recorder-exit`/`stream-ended` events, but the polled "not live" path may
+  // resolve before either event is emitted, so we trigger here too. stopDetection
+  // is idempotent.
+  if (session.detectClips === false) {
+    try {
+      const { useRealtimeClipDetection } = await import('./useRealtimeClipDetection');
+      const detection = useRealtimeClipDetection();
+      if (detection.isActive.value) {
+        await detection.stopDetection();
+      }
+    } catch (error) {
+      console.warn('[LiveMonitor] Failed to stop realtime detection on stream end', error);
+    }
+  }
+
   try {
     // Stop platform-specific recording using session-specific stop
     // This ensures we only kill the auto-detect session, not any concurrent DVR viewer session
