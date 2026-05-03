@@ -713,6 +713,7 @@
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import type { AnalyzeSpeakersResponse } from '@/services/speaker-detection-api';
   import type { FramingStrategy as DbFramingStrategy, ParsedStrategyData } from '@/services/database/speaker-detection';
+  import { normalizeLocalFilePathForFs } from '@/utils/normalizeLocalFilePath';
 
   // Helper to ensure value is boolean (handles string "true"/"false" and numbers)
   function toBoolean(value: unknown): boolean {
@@ -720,6 +721,30 @@
     if (typeof value === 'string') return value.toLowerCase() === 'true';
     if (typeof value === 'number') return value !== 0;
     return Boolean(value);
+  }
+
+  function cloneSubtitleSettings(settings: SubtitleSettings): SubtitleSettings {
+    return JSON.parse(JSON.stringify(settings)) as SubtitleSettings;
+  }
+
+  function mergeVodSubtitleDefaultsWithSavedSettings(
+    savedSettings: SubtitleSettings,
+    vodDefaults?: SubtitleSettings | null
+  ): SubtitleSettings {
+    if (!vodDefaults || typeof vodDefaults !== 'object') {
+      return cloneSubtitleSettings(savedSettings);
+    }
+
+    const defaults = cloneSubtitleSettings(vodDefaults);
+    const saved = cloneSubtitleSettings(savedSettings);
+    return {
+      ...defaults,
+      ...saved,
+      perRatioConfigs: {
+        ...(defaults.perRatioConfigs ?? {}),
+        ...(saved.perRatioConfigs ?? {}),
+      },
+    };
   }
 
   function mergeDraggedSubtitlePositionForBuild(
@@ -1176,10 +1201,14 @@
 
   const buildDialogSubtitleSettings = computed((): SubtitleSettings | null => {
     const vodDefaults = props.vodPresetConfig?.subtitleDefaults;
-    if (vodDefaults && typeof vodDefaults === 'object') {
-      return JSON.parse(JSON.stringify(vodDefaults)) as SubtitleSettings;
+    const clipSettings = derivedSubtitleSettings.value ?? props.subtitleSettings ?? null;
+    if (clipSettings) {
+      return mergeVodSubtitleDefaultsWithSavedSettings(clipSettings, vodDefaults);
     }
-    return derivedSubtitleSettings.value ?? props.subtitleSettings ?? null;
+    if (vodDefaults && typeof vodDefaults === 'object') {
+      return cloneSubtitleSettings(vodDefaults);
+    }
+    return null;
   });
   const openDownloadDropdownId = ref<string | null>(null);
   const dropdownButtonRefs = ref<Map<string, HTMLElement>>(new Map());
@@ -1274,7 +1303,7 @@
 
     // Generate missing thumbnails sequentially (one at a time) for clips without built_thumbnail_path.
     // This covers cases where ProjectWorkspaceDialog is opened directly without going through Projects.vue.
-    generateMissingThumbnails();
+    await generateMissingThumbnails();
   }
 
   // Load which clips are already part of a video editor project
@@ -1379,7 +1408,7 @@
           continue;
         }
 
-        const videoPath = rawVideos[0].file_path;
+        const videoPath = normalizeLocalFilePathForFs(rawVideos[0].file_path);
 
         // Generate thumbnails ONE AT A TIME to prevent spawning too many FFmpeg processes
         for (const clip of projectClips) {
@@ -1401,11 +1430,13 @@
             hasNewThumbnails = true;
 
             // Persist to database (non-blocking)
-            updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
-              builtThumbnailPath: thumbnailPath,
-            }).catch((err) => {
+            try {
+              await updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
+                builtThumbnailPath: thumbnailPath,
+              });
+            } catch (err) {
               console.warn(`[ClipsTab] Failed to persist thumbnail path for clip ${clip.id}:`, err);
-            });
+            }
           } catch (err) {
             console.warn(`[ClipsTab] Failed to generate thumbnail for clip ${clip.id}:`, err);
           }
@@ -2945,17 +2976,14 @@
       // getClip already imported above in this function (clip edit / text overlay load)
       const freshClipData = await getClip(clip.id);
       let effectiveSubtitleSettings: SubtitleSettings | null = null;
-      
+
       const vodSubtitleDefaults = props.vodPresetConfig?.subtitleDefaults;
-      if (vodSubtitleDefaults && typeof vodSubtitleDefaults === 'object') {
-        effectiveSubtitleSettings = JSON.parse(JSON.stringify(vodSubtitleDefaults)) as SubtitleSettings;
-        console.log('[ClipsTab] Using VOD pre-edit subtitle defaults for build');
-      } else if (freshClipData?.subtitle_settings) {
+      if (freshClipData?.subtitle_settings) {
         try {
           const savedSettings = typeof freshClipData.subtitle_settings === 'string'
             ? JSON.parse(freshClipData.subtitle_settings)
             : freshClipData.subtitle_settings;
-          effectiveSubtitleSettings = savedSettings;
+          effectiveSubtitleSettings = mergeVodSubtitleDefaultsWithSavedSettings(savedSettings, vodSubtitleDefaults);
           console.log('[ClipsTab] Loaded FRESH subtitle settings from database:', {
             animationStyle: savedSettings.animationStyle,
             hasPerRatioConfigs: !!savedSettings.perRatioConfigs,
@@ -2964,8 +2992,11 @@
         } catch (error) {
           console.error('[ClipsTab] Failed to parse fresh subtitle_settings:', error);
         }
+      } else if (vodSubtitleDefaults && typeof vodSubtitleDefaults === 'object') {
+        effectiveSubtitleSettings = cloneSubtitleSettings(vodSubtitleDefaults);
+        console.log('[ClipsTab] Using VOD pre-edit subtitle defaults for build');
       }
-      
+
       // Fall back to derived settings or prop if fresh load failed
       if (!effectiveSubtitleSettings) {
         effectiveSubtitleSettings = buildDialogSubtitleSettings.value;
