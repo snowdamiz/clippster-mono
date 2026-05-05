@@ -1,7 +1,7 @@
 <template>
   <div class="poi-source-panel flex flex-col h-full">
     <!-- Header -->
-    <div class="flex items-center justify-between px-3 py-2 border-b border-zinc-700/50">
+    <div class="flex items-center justify-between px-2 py-1.5 border-b border-zinc-700/50">
       <div class="flex items-center gap-2">
         <!-- View tabs: Clip vs Uploaded Media -->
         <div class="flex items-center gap-1 bg-zinc-800/50 rounded-lg p-0.5">
@@ -107,7 +107,7 @@
     <!-- Aspect Ratio Lock Control (shown when region is selected) -->
     <div
       v-if="selectedRegion"
-      class="px-3 py-2 border-b border-zinc-700/50 bg-zinc-900/30"
+      class="px-2 py-1.5 border-b border-zinc-700/50 bg-zinc-900/30"
     >
       <div class="flex items-center justify-between gap-3">
         <label class="flex items-center gap-2 cursor-pointer group">
@@ -175,7 +175,7 @@
     </div>
 
     <!-- Canvas Area -->
-    <div class="flex-1 p-3 flex items-center justify-center bg-zinc-950/50">
+    <div class="flex-1 px-2 py-2 flex items-center justify-center bg-zinc-950/50">
       <div ref="containerRef" class="relative bg-black rounded-lg overflow-hidden shadow-lg" :style="containerStyle">
         <!-- ===== CLIP VIEW ===== -->
         <template v-if="activeSourceView === 'clip'">
@@ -300,7 +300,7 @@
     </div>
 
     <!-- Region List -->
-    <div v-if="regions.length > 0" class="px-3 py-2 border-t border-zinc-700/50 max-h-24 overflow-y-auto">
+    <div v-if="regions.length > 0" class="px-2 py-1.5 border-t border-zinc-700/50 max-h-24 overflow-y-auto">
       <div class="flex flex-wrap gap-1.5">
         <button
           v-for="region in regions"

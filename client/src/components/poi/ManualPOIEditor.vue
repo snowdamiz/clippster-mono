@@ -1,35 +1,31 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="modelValue" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[10001]">
+      <div v-if="modelValue" class="poi-dialog__overlay">
         <Transition name="dialog" appear>
-          <div
-            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl w-full max-w-5xl mx-4 border border-white/10 max-h-[90vh] flex flex-col overflow-hidden shadow-2xl"
-          >
+          <div class="poi-dialog" role="dialog" aria-modal="true">
             <!-- Top accent -->
-            <div class="h-1 w-full bg-gradient-to-r from-blue-500 via-violet-500 to-purple-500 flex-shrink-0" />
+            <div class="poi-dialog__accent" />
 
             <!-- Header -->
-            <div class="flex items-center justify-between px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/50">
-              <div class="flex items-center gap-2.5">
-                <div
-                  class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500/20 to-violet-500/20 flex items-center justify-center border border-blue-500/30"
-                >
-                  <LayoutDashboardIcon class="h-4 w-4 text-blue-400" />
+            <div class="poi-dialog__header">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <div class="poi-dialog__icon">
+                  <LayoutDashboardIcon class="h-4 w-4" />
                 </div>
-                <div class="flex items-baseline gap-2">
-                  <h2 class="text-base font-semibold text-white">Manual Framing Editor</h2>
-                  <span class="text-[11px] text-zinc-500">
+                <div class="flex items-baseline gap-2 min-w-0">
+                  <h2 class="poi-dialog__title">Manual Framing Editor</h2>
+                  <span class="poi-dialog__subtitle truncate">
                     · Define crop regions on the source and arrange them in the {{ targetAspectRatio }} output
                   </span>
                 </div>
               </div>
               <button
                 @click="close"
-                class="p-1.5 hover:bg-zinc-800 rounded-lg transition-colors border border-zinc-800"
+                class="poi-dialog__close"
                 title="Close"
               >
-                <XIcon class="h-4 w-4 text-zinc-400 hover:text-white" />
+                <XIcon :size="16" />
               </button>
             </div>
 
@@ -37,20 +33,20 @@
             <div class="flex-1 overflow-hidden flex flex-col">
               <div class="flex-1 flex overflow-hidden">
                 <!-- Source Panel (Left) — swapped for text box settings when editing -->
-                <div class="flex-1 border-r border-zinc-800 min-h-0 flex flex-col overflow-hidden">
+                <div class="flex-1 poi-dialog__divider-r min-h-0 flex flex-col overflow-hidden">
                   <!-- Subtitle Settings Mode -->
                   <template v-if="subtitleSettingsMode && localSubtitleSettings">
-                    <div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-zinc-800 shrink-0 bg-zinc-900/80">
-                      <span class="text-sm font-medium text-white">Subtitles</span>
+                    <div class="poi-dialog__sub-header">
+                      <span class="poi-dialog__sub-title">Subtitles</span>
                       <div class="flex items-center gap-2">
                         <button
                           type="button"
-                          class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600 text-zinc-300 hover:bg-zinc-800"
+                          class="poi-dialog__btn poi-dialog__btn--secondary poi-dialog__btn--sm"
                           @click="cancelSubtitleSettings"
                         >Cancel</button>
                         <button
                           type="button"
-                          class="px-2.5 py-1 text-xs rounded-lg bg-purple-600 text-white hover:bg-purple-500"
+                          class="poi-dialog__btn poi-dialog__btn--purple poi-dialog__btn--sm"
                           @click="doneSubtitleSettings"
                         >Done</button>
                       </div>
@@ -66,21 +62,19 @@
                     />
                   </template>
                   <template v-else-if="textBoxSettingsMode && clipTextLocal">
-                    <div
-                      class="flex items-center justify-between gap-2 px-3 py-2 border-b border-zinc-800 shrink-0 bg-zinc-900/80"
-                    >
-                      <span class="text-sm font-medium text-white">Text box</span>
+                    <div class="poi-dialog__sub-header">
+                      <span class="poi-dialog__sub-title">Text box</span>
                       <div class="flex items-center gap-2">
                         <button
                           type="button"
-                          class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600 text-zinc-300 hover:bg-zinc-800"
+                          class="poi-dialog__btn poi-dialog__btn--secondary poi-dialog__btn--sm"
                           @click="cancelTextBoxSettings"
                         >
                           Cancel
                         </button>
                         <button
                           type="button"
-                          class="px-2.5 py-1 text-xs rounded-lg bg-amber-600 text-white hover:bg-amber-500"
+                          class="poi-dialog__btn poi-dialog__btn--amber poi-dialog__btn--sm"
                           @click="doneTextBoxSettings"
                         >
                           Done
@@ -121,10 +115,10 @@
                 </div>
 
                 <!-- Arrow indicator -->
-                <div class="flex items-center justify-center w-12 bg-zinc-900/50">
-                  <div class="flex flex-col items-center gap-2">
-                    <ArrowRightIcon class="w-5 h-5 text-zinc-500" />
-                    <span class="text-[9px] text-zinc-600 font-medium tracking-wider rotate-90 whitespace-nowrap">
+                <div class="flex items-center justify-center w-8 poi-dialog__rail">
+                  <div class="flex flex-col items-center gap-1.5">
+                    <ArrowRightIcon class="w-4 h-4 poi-dialog__muted" />
+                    <span class="text-[9px] poi-dialog__faint font-medium tracking-wider rotate-90 whitespace-nowrap">
                       EXPORT
                     </span>
                   </div>
@@ -164,12 +158,12 @@
               </div>
 
               <!-- Video Playback Controls -->
-              <div v-if="clipDuration > 0" class="px-4 py-1 border-t border-zinc-800 bg-zinc-900/70">
+              <div v-if="clipDuration > 0" class="poi-dialog__playback">
                 <div class="flex items-center gap-2">
                   <!-- Play/Pause button -->
                   <button
                     @click="togglePlayback"
-                    class="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-500 flex items-center justify-center text-white transition-colors shadow-lg"
+                    class="poi-dialog__play-btn"
                     :disabled="!videoUrl"
                     :class="{ 'opacity-50 cursor-not-allowed': !videoUrl }"
                   >
@@ -178,25 +172,25 @@
                   </button>
 
                   <!-- Time display -->
-                  <span class="text-xs text-zinc-400 font-mono w-20">
+                  <span class="text-xs font-mono w-20 poi-dialog__muted">
                     {{ formatTime(currentTime) }} / {{ formatTime(clipDuration) }}
                   </span>
 
                   <!-- Progress bar -->
                   <div class="flex-1 relative group cursor-pointer" ref="progressBarRef" @mousedown="onSeekStart">
-                    <div class="h-1 bg-zinc-700 rounded-full overflow-hidden">
+                    <div class="poi-dialog__progress-track">
                       <div
-                        class="h-full bg-gradient-to-r from-blue-500 to-violet-500"
+                        class="poi-dialog__progress-fill"
                         :class="{ 'transition-all duration-100': !isSeeking }"
                         :style="{ width: `${(currentTime / clipDuration) * 100}%` }"
                       />
                     </div>
                     <!-- Seek handle -->
                     <div
-                      class="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md transition-opacity pointer-events-none"
-                      :class="{ 
-                        'opacity-100': isSeeking || currentTime === 0, 
-                        'opacity-0 group-hover:opacity-100': !isSeeking && currentTime !== 0 
+                      class="poi-dialog__progress-handle"
+                      :class="{
+                        'opacity-100': isSeeking || currentTime === 0,
+                        'opacity-0 group-hover:opacity-100': !isSeeking && currentTime !== 0
                       }"
                       :style="{ left: `calc(${(currentTime / clipDuration) * 100}% - 6px)` }"
                     />
@@ -206,7 +200,7 @@
                   <div class="flex items-center gap-1.5 shrink-0">
                     <button
                       @click="togglePoiMute"
-                      class="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                      class="poi-dialog__icon-btn"
                       :title="poiMuted ? 'Unmute' : 'Mute'"
                     >
                       <VolumeXIcon v-if="poiMuted || poiVolume === 0" class="w-4 h-4" />
@@ -218,7 +212,7 @@
                       max="1"
                       step="0.02"
                       :value="poiMuted ? 0 : poiVolume"
-                      class="w-16 h-1 accent-blue-500 cursor-pointer"
+                      class="poi-dialog__volume-slider"
                       @input="onPoiVolumeChange"
                     />
                   </div>
@@ -229,7 +223,7 @@
                       currentTime = 0;
                       isPlaying = false;
                     "
-                    class="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                    class="poi-dialog__icon-btn"
                     title="Reset to start"
                   >
                     <RotateCcwIcon class="w-4 h-4" />
@@ -237,8 +231,8 @@
                 </div>
 
                 <!-- Loading/Error state -->
-                <div v-if="videoLoading" class="text-[10px] text-zinc-500 mt-2">Loading video preview...</div>
-                <div v-else-if="videoError" class="text-[10px] text-amber-400 mt-2">
+                <div v-if="videoLoading" class="text-[10px] mt-2 poi-dialog__faint">Loading video preview...</div>
+                <div v-else-if="videoError" class="text-[10px] mt-2 poi-dialog__warning">
                   {{ videoError }}
                 </div>
               </div>
@@ -261,89 +255,81 @@
                 @seek-time="handleSeekTime"
               />
 
-              <!-- Subtitle Controls (shown when clip has subtitle settings) -->
-              <div v-if="subtitleSettings" class="border-t border-zinc-800">
-                <!-- Single line: Checkbox + Icon + Label + Edit button -->
-                <div class="px-4 py-1.5 bg-zinc-900/50">
-                  <div class="flex items-center gap-3">
-                    <!-- Checkbox toggles overlay visibility -->
-                    <input
-                      type="checkbox"
-                      v-model="subtitlePositioningEnabled"
-                      class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-purple-500 focus:ring-purple-500 focus:ring-offset-0 shrink-0"
-                    />
-                    <CaptionsIcon class="h-4 w-4 text-purple-400 shrink-0" />
-                    
-                    <!-- Subtitles label -->
-                    <div class="flex-1 min-w-0">
-                      <span class="text-sm font-medium text-white">Subtitles</span>
-                      <span v-if="subtitlePositioningEnabled" class="text-[10px] text-zinc-400 ml-2">
-                        · Drag to reposition · drag corner to resize
-                      </span>
-                    </div>
-
-                    <!-- Edit button — opens SubtitlePropertiesPanel in left panel (like text box) -->
-                    <button
-                      type="button"
-                      class="shrink-0 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-600"
-                      @click="openSubtitleSettings"
-                    >
-                      Edit…
-                    </button>
-                    <span class="text-[10px] text-zinc-500 shrink-0 font-mono">{{ targetAspectRatio }}</span>
-                  </div>
-                </div>
-              </div>
-
             </div>
 
-            <!-- Clip text box (per-clip pill) — optional POI authoring -->
-            <div v-if="clipId" class="border-t border-zinc-800">
-              <div class="px-4 py-1.5 bg-zinc-900/50">
-                <div class="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    :checked="clipTextLocal?.enabled === true"
-                    class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-amber-500 focus:ring-amber-500 focus:ring-offset-0 shrink-0"
-                    @change="toggleClipTextEnabled"
-                  />
-                  <Type class="h-4 w-4 text-amber-400 shrink-0" />
-                  <div class="flex-1 min-w-0">
-                    <span class="text-sm font-medium text-white">Clip text box</span>
-                    <span v-if="clipTextBoxPositioningActive" class="text-[10px] text-zinc-400 ml-2">
-                      · Drag on export preview · corners resize width
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    class="shrink-0 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-600"
-                    @click="openTextBoxSettings"
-                  >
-                    {{ clipTextLocal?.enabled ? 'Edit…' : 'Add text' }}
-                  </button>
-                  <span class="text-[10px] text-zinc-500 shrink-0 font-mono">{{ targetAspectRatio }}</span>
+            <!-- Feature controls: Subtitles + Clip text box (2-column row) -->
+            <div
+              v-if="subtitleSettings || clipId"
+              class="poi-dialog__divider-t poi-dialog__feature-grid"
+            >
+              <!-- Subtitles cell -->
+              <div v-if="subtitleSettings" class="poi-dialog__feature-cell">
+                <input
+                  type="checkbox"
+                  v-model="subtitlePositioningEnabled"
+                  class="poi-dialog__checkbox poi-dialog__checkbox--purple shrink-0"
+                />
+                <CaptionsIcon class="h-4 w-4 poi-dialog__icon-purple shrink-0" />
+                <div class="flex-1 min-w-0">
+                  <span class="poi-dialog__feature-label">Subtitles</span>
+                  <span v-if="subtitlePositioningEnabled" class="text-[10px] ml-2 poi-dialog__muted">
+                    · Drag to reposition
+                  </span>
                 </div>
+                <button
+                  type="button"
+                  class="poi-dialog__btn poi-dialog__btn--secondary poi-dialog__btn--sm shrink-0"
+                  @click="openSubtitleSettings"
+                >
+                  Edit
+                </button>
+                <span class="text-[10px] shrink-0 font-mono poi-dialog__faint">{{ targetAspectRatio }}</span>
+              </div>
+
+              <!-- Clip text box cell -->
+              <div v-if="clipId" class="poi-dialog__feature-cell">
+                <input
+                  type="checkbox"
+                  :checked="clipTextLocal?.enabled === true"
+                  class="poi-dialog__checkbox poi-dialog__checkbox--amber shrink-0"
+                  @change="toggleClipTextEnabled"
+                />
+                <Type class="h-4 w-4 poi-dialog__icon-amber shrink-0" />
+                <div class="flex-1 min-w-0">
+                  <span class="poi-dialog__feature-label">Clip text box</span>
+                  <span v-if="clipTextBoxPositioningActive" class="text-[10px] ml-2 poi-dialog__muted">
+                    · Drag on export preview
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  class="poi-dialog__btn poi-dialog__btn--secondary poi-dialog__btn--sm shrink-0"
+                  @click="openTextBoxSettings"
+                >
+                  {{ clipTextLocal?.enabled ? 'Edit' : 'Add text' }}
+                </button>
+                <span class="text-[10px] shrink-0 font-mono poi-dialog__faint">{{ targetAspectRatio }}</span>
               </div>
             </div>
 
             <!-- Footer -->
-            <div class="flex items-center justify-between px-4 py-2.5 border-t border-zinc-800 bg-zinc-900/50">
-              <div class="text-sm text-zinc-400">
-                <span v-if="!canApplyFraming" class="text-amber-400">
+            <div class="poi-dialog__footer">
+              <div class="text-sm poi-dialog__muted">
+                <span v-if="!canApplyFraming" class="poi-dialog__warning">
                   <AlertCircleIcon class="w-4 h-4 inline mr-1" />
                   Add a region, enable Scale 16:9 / Use 16:9, or enable the clip text box
                 </span>
-                <span v-else-if="sourceFrameMode !== 'none' && regions.length === 0" class="text-zinc-500">
+                <span v-else-if="sourceFrameMode !== 'none' && regions.length === 0" class="poi-dialog__faint">
                   {{ sourceFrameMode === 'use16x9' ? 'Use 16:9' : 'Scale 16:9' }} configured
                 </span>
-                <span v-else class="text-zinc-500">
+                <span v-else class="poi-dialog__faint">
                   {{ regions.length }} region{{ regions.length !== 1 ? 's' : '' }} configured
                 </span>
               </div>
-              <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2.5">
                 <button
                   @click="resetRegions"
-                  class="px-3 py-1.5 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
+                  class="poi-dialog__btn poi-dialog__btn--secondary"
                   :disabled="!canApplyFraming"
                   :class="{ 'opacity-50 cursor-not-allowed': !canApplyFraming }"
                 >
@@ -351,26 +337,17 @@
                 </button>
                 <button
                   @click="close"
-                  class="px-3 py-1.5 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
+                  class="poi-dialog__btn poi-dialog__btn--secondary"
                 >
                   Cancel
                 </button>
                 <button
                   @click="confirmConfig"
                   :disabled="!canApplyFraming"
-                  class="flex items-center gap-2 px-4 py-1.5 text-sm font-semibold rounded-lg transition-all relative overflow-hidden group"
-                  :class="
-                    !canApplyFraming
-                      ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-blue-600 to-violet-600 text-white hover:from-blue-500 hover:to-violet-500'
-                  "
+                  class="poi-dialog__btn poi-dialog__btn--primary"
                 >
-                  <div
-                    v-if="canApplyFraming"
-                    class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
-                  />
-                  <CheckIcon class="h-4 w-4 relative" />
-                  <span class="relative">Apply Configuration</span>
+                  <CheckIcon class="h-4 w-4" />
+                  <span>Apply Configuration</span>
                 </button>
               </div>
             </div>
@@ -1642,10 +1619,362 @@
 </script>
 
 <style scoped>
-  /* Modal backdrop transition */
+  /* ===== Overlay ===== */
+  .poi-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+  }
+
+  /* ===== Dialog Container ===== */
+  .poi-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    /* Sized to the actual preview content (source ~400px + arrow ~32px + target ~240px) */
+    max-width: 64rem;
+    margin: 1rem;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  /* ===== Accent Bar ===== */
+  .poi-dialog__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  /* ===== Header ===== */
+  .poi-dialog__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .poi-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .poi-dialog__title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .poi-dialog__subtitle {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .poi-dialog__close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    flex-shrink: 0;
+  }
+
+  .poi-dialog__close:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Sub-header (Subtitles / Text box modes) ===== */
+  .poi-dialog__sub-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--sidebar-border);
+    background-color: var(--sidebar-hover);
+    flex-shrink: 0;
+  }
+
+  .poi-dialog__sub-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Dividers ===== */
+  .poi-dialog__divider-r {
+    border-right: 1px solid var(--sidebar-border);
+  }
+
+  .poi-dialog__divider-t {
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  /* ===== Rail (between source / target) ===== */
+  .poi-dialog__rail {
+    background-color: var(--sidebar-hover);
+  }
+
+  /* ===== Text helpers ===== */
+  .poi-dialog__muted {
+    color: var(--sidebar-text-muted);
+  }
+
+  .poi-dialog__faint {
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+  }
+
+  .poi-dialog__warning {
+    color: #fbbf24;
+  }
+
+  /* ===== Feature grid (Subtitles + Clip text box, 2-column) ===== */
+  .poi-dialog__feature-grid {
+    display: flex;
+    background-color: var(--sidebar-hover);
+  }
+
+  .poi-dialog__feature-cell {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.5rem 0.875rem;
+  }
+
+  .poi-dialog__feature-cell + .poi-dialog__feature-cell {
+    border-left: 1px solid var(--sidebar-border);
+  }
+
+  .poi-dialog__feature-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .poi-dialog__icon-purple {
+    color: #c084fc;
+  }
+
+  .poi-dialog__icon-amber {
+    color: #fbbf24;
+  }
+
+  /* ===== Checkboxes ===== */
+  .poi-dialog__checkbox {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 0.25rem;
+    border: 1px solid var(--sidebar-border);
+    background-color: var(--sidebar-hover);
+    accent-color: var(--sidebar-accent);
+  }
+
+  .poi-dialog__checkbox--purple {
+    accent-color: #a855f7;
+  }
+
+  .poi-dialog__checkbox--amber {
+    accent-color: #f59e0b;
+  }
+
+  /* ===== Playback bar ===== */
+  .poi-dialog__playback {
+    padding: 0.375rem 1rem;
+    border-top: 1px solid var(--sidebar-border);
+    background-color: var(--sidebar-hover);
+  }
+
+  .poi-dialog__play-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 9999px;
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.25);
+  }
+
+  .poi-dialog__play-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .poi-dialog__play-btn:disabled {
+    cursor: not-allowed;
+  }
+
+  .poi-dialog__progress-track {
+    height: 4px;
+    background-color: var(--sidebar-border);
+    border-radius: 9999px;
+    overflow: hidden;
+  }
+
+  .poi-dialog__progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--sidebar-accent), #0891b2);
+  }
+
+  .poi-dialog__progress-handle {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 12px;
+    height: 12px;
+    background-color: white;
+    border-radius: 9999px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    transition: opacity 150ms ease;
+    pointer-events: none;
+  }
+
+  .poi-dialog__icon-btn {
+    padding: 0.375rem;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .poi-dialog__icon-btn:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .poi-dialog__volume-slider {
+    width: 4rem;
+    height: 4px;
+    accent-color: var(--sidebar-accent);
+    cursor: pointer;
+  }
+
+  /* ===== Footer ===== */
+  .poi-dialog__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--sidebar-border);
+    background-color: var(--sidebar-hover);
+  }
+
+  /* ===== Buttons ===== */
+  .poi-dialog__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.875rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 150ms ease;
+    line-height: 1;
+  }
+
+  .poi-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .poi-dialog__btn--sm {
+    padding: 0.3125rem 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border-radius: 6px;
+  }
+
+  .poi-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border-color: var(--sidebar-border);
+  }
+
+  .poi-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .poi-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+    border-color: transparent;
+  }
+
+  .poi-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .poi-dialog__btn--primary:disabled {
+    background: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+  }
+
+  .poi-dialog__btn--purple {
+    background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+    color: white;
+    border-color: transparent;
+  }
+
+  .poi-dialog__btn--purple:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .poi-dialog__btn--amber {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: white;
+    border-color: transparent;
+  }
+
+  .poi-dialog__btn--amber:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  /* ===== Transitions ===== */
   .modal-enter-active,
   .modal-leave-active {
-    transition: opacity 0.3s ease;
+    transition: opacity 200ms ease;
   }
 
   .modal-enter-from,
@@ -1653,18 +1982,17 @@
     opacity: 0;
   }
 
-  /* Dialog transition */
   .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dialog-leave-active {
-    transition: all 0.2s ease-in;
+    transition: all 150ms ease-in;
   }
 
   .dialog-enter-from {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
 
   .dialog-leave-to {

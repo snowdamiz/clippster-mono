@@ -725,42 +725,17 @@
 
                         <!-- 16:9 canvas with thumbnail + draggable subtitle -->
                         <div class="build-dialog__subtitle-canvas-col">
-                          <div
-                            ref="subtitleCanvasRef"
-                            class="build-dialog__subtitle-canvas"
-                          >
-                            <!-- Thumbnail background -->
-                            <img
-                              v-if="subtitleFirstFrameUrl"
-                              :src="subtitleFirstFrameUrl"
-                              class="build-dialog__subtitle-canvas-img"
-                              alt=""
-                              draggable="false"
-                            />
-                            <div v-else class="build-dialog__subtitle-canvas-empty">
-                              <CaptionsIcon :size="28" class="opacity-30" />
-                            </div>
-
-                            <!-- Draggable subtitle box -->
-                            <div
-                              class="build-dialog__subtitle-box"
-                              :style="wizardSubtitleBoxStyle"
-                              @mousedown.prevent="startWizardSubtitleDrag"
-                            >
-                              <span class="build-dialog__subtitle-box-text" :style="wizardSubtitleTextStyle">
-                                {{ wizardTranscriptSegments[0]?.text || 'Sample subtitle text' }}
-                              </span>
-
-                              <!-- Resize handles -->
-                              <div
-                                v-for="corner in ['nw','ne','sw','se']"
-                                :key="corner"
-                                class="build-dialog__subtitle-handle"
-                                :class="`build-dialog__subtitle-handle--${corner}`"
-                                @mousedown.stop.prevent="(e) => startWizardSubtitleResize(e, corner)"
-                              />
-                            </div>
-                          </div>
+                          <SubtitlePreviewCanvas
+                            :thumbnail-url="subtitleFirstFrameUrl"
+                            :aspect-ratio="{ width: 16, height: 9 }"
+                            :subtitle-settings="wizardSubtitleSettings"
+                            :subtitle-position="wizardSubtitlePosition"
+                            :transcript-words="wizardTranscriptWords"
+                            :transcript-segments="wizardTranscriptSegments"
+                            :static-preview="true"
+                            @subtitle-position-change="onWizardSubtitlePositionChange"
+                            @subtitle-settings-change="onWizardSubtitleSettingsChange"
+                          />
                           <p class="build-dialog__subtitle-canvas-label">Drag to reposition · corners to resize</p>
                         </div>
 
@@ -1196,6 +1171,7 @@ import XLogo from '@/components/icons/XLogo.vue';
 import TiktokLogo from '@/components/icons/TiktokLogo.vue';
 import ManualPOIEditor from './poi/ManualPOIEditor.vue';
 import SubtitlePropertiesPanel from './SubtitlePropertiesPanel.vue';
+import SubtitlePreviewCanvas from './SubtitlePreviewCanvas.vue';
 import { useTranscriptionOnly } from '@/composables/useTranscriptionOnly';
 import type { ClipWithVersion, WatermarkSettings } from '@/services/database';
 import type { ManualFramingConfig, ManualFramingConfigs } from '@/types';
@@ -1217,7 +1193,14 @@ import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services
 import { listUserYoutubeAccounts, type UserYoutubeAccount } from '@/services/userYoutubeApi';
 import { createProject } from '@/services/database/projects';
 import { updateClip } from '@/services/database/clips';
-import type { SubtitleSettings, WordInfo, WhisperSegment } from '@/types';
+import type {
+  SubtitleSettings,
+  SubtitleOverride,
+  SubtitleOverrides,
+  WordInfo,
+  WhisperSegment,
+} from '@/types';
+import { maxWordsChunkForAspectRatioString } from '@/utils/subtitleVisibleWords';
 
 interface IntroOutroItem extends Omit<IntroOutro, 'id'> {
   id: string;
@@ -1335,94 +1318,12 @@ const subtitleTranscribeError = ref<string | null>(null);
 
 const wizardTranscription = useTranscriptionOnly({ showSuccessToast: false, showErrorToast: false, showChunkCompletionToast: false, showCacheReuseToast: false });
 
-// Subtitle canvas drag/resize
-const subtitleCanvasRef = ref<HTMLElement | null>(null);
-
-const wizardSubtitleBoxStyle = computed(() => {
-  const pos = wizardSubtitlePosition.value;
-  return {
-    position: 'absolute' as const,
-    left: `${pos.x}%`,
-    top: `${pos.y}%`,
-    transform: 'translate(-50%, -50%)',
-    cursor: 'move',
-  };
-});
-
-const wizardSubtitleTextStyle = computed(() => {
-  const s = wizardSubtitleSettings.value;
-  if (!s) return {};
-  // Canvas is ~540px wide (full-width panel ~580px minus padding).
-  // Output is 1920px wide for 16:9 → scale ≈ 0.28
-  const canvasW = subtitleCanvasRef.value?.offsetWidth ?? 540;
-  const scale = canvasW / 1920;
-  const fs = Math.max(8, Math.round(s.fontSize * scale));
-  const styles: Record<string, string> = {
-    fontSize: `${fs}px`,
-    fontFamily: `"${s.fontFamily}", sans-serif`,
-    fontWeight: String(s.fontWeight),
-    color: s.textColor,
-    lineHeight: String(s.lineHeight ?? 1.2),
-    whiteSpace: 'nowrap',
-  };
-  if (s.shadowBlur > 0) {
-    styles.textShadow = `${s.shadowOffsetX * scale}px ${s.shadowOffsetY * scale}px ${s.shadowBlur * scale}px ${s.shadowColor}`;
-  }
-  if (s.border2Width > 0) {
-    styles.WebkitTextStroke = `${Math.max(0.5, s.border2Width * scale)}px ${s.border2Color}`;
-  }
-  return styles;
-});
-
-function startWizardSubtitleDrag(event: MouseEvent) {
-  const canvas = subtitleCanvasRef.value;
-  if (!canvas) return;
-  const rect = canvas.getBoundingClientRect();
-  const startMouseX = event.clientX;
-  const startMouseY = event.clientY;
-  const startX = wizardSubtitlePosition.value.x;
-  const startY = wizardSubtitlePosition.value.y;
-
-  function onMove(e: MouseEvent) {
-    const dx = ((e.clientX - startMouseX) / rect.width) * 100;
-    const dy = ((e.clientY - startMouseY) / rect.height) * 100;
-    const newX = Math.max(2, Math.min(98, startX + dx));
-    const newY = Math.max(2, Math.min(98, startY + dy));
-    wizardSubtitlePosition.value = { ...wizardSubtitlePosition.value, x: newX, y: newY };
-  }
-  function onUp() {
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
-  }
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
+function onWizardSubtitlePositionChange(position: { x: number; y: number; width?: number }) {
+  wizardSubtitlePosition.value = { ...position };
 }
 
-function startWizardSubtitleResize(event: MouseEvent, corner: string) {
-  const canvas = subtitleCanvasRef.value;
-  if (!canvas || !wizardSubtitleSettings.value) return;
-  const startX = event.clientX;
-  const startY = event.clientY;
-  const startFontSize = wizardSubtitleSettings.value.fontSize;
-
-  function onMove(e: MouseEvent) {
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-    // For each corner, "outward" drag increases font
-    const xSign = corner === 'ne' || corner === 'se' ? 1 : -1;
-    const ySign = corner === 'sw' || corner === 'se' ? 1 : -1;
-    const delta = (xSign * dx - ySign * dy) * 0.4;
-    const newFontSize = Math.round(Math.max(12, Math.min(200, startFontSize + delta)));
-    if (wizardSubtitleSettings.value) {
-      wizardSubtitleSettings.value = { ...wizardSubtitleSettings.value, fontSize: newFontSize };
-    }
-  }
-  function onUp() {
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
-  }
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
+function onWizardSubtitleSettingsChange(settings: SubtitleSettings) {
+  wizardSubtitleSettings.value = { ...settings };
 }
 
 // Add-ons (Step 4)
@@ -1921,7 +1822,10 @@ function buildSubtitleSettingsFromPreset(presetId: string): SubtitleSettings {
     textOffsetY: 0,
     padding: 0,
     borderRadius: 0,
-    wordSpacing: 0,
+    // 0.35em is the ProjectWorkspaceDialog/VideoPlayer default — without this
+    // the flex `gap` between word spans collapses to 0 and words run together
+    // ("ThereasonwhyI'msurprisedis") in both the preview and the burned export.
+    wordSpacing: 0.35,
   };
   switch (presetId) {
     case 'mr-beast':
@@ -1970,6 +1874,63 @@ async function saveWizardSubtitleSettings() {
   await updateClipFullSubtitleSettings(props.clip.id, wizardSubtitleSettings.value);
   const pos = wizardSubtitlePosition.value;
   await updateClipSubtitlePosition(props.clip.id, pos.x, pos.y, pos.width ?? undefined);
+}
+
+/**
+ * Build a subtitle payload (settings + transcript + max words) for a build target.
+ * Returns `null` when subtitles are disabled or transcript is missing — caller
+ * passes through as-null so the Rust pipeline skips subtitle rendering cleanly.
+ *
+ * The wizard captures position/width from the 16:9 preview (and for portrait
+ * ratios, from the POI editor) into `wizardSubtitlePosition`. We bake that into
+ * `perRatioConfigs[ratio].position` here so each build's burned-in subtitles
+ * land exactly where the user placed them.
+ */
+function buildSubtitlePayloadForTarget(aspectRatio: string): {
+  settings: SubtitleSettings;
+  subtitleOverrides: SubtitleOverrides;
+  transcriptWords: WordInfo[];
+  transcriptSegments: WhisperSegment[];
+  maxWords: number;
+} | null {
+  if (!subtitlesEnabled.value || !wizardSubtitleSettings.value) return null;
+  if (wizardTranscriptWords.value.length === 0) return null;
+
+  const base = wizardSubtitleSettings.value;
+  const pos = wizardSubtitlePosition.value;
+  const existingPerRatio = base.perRatioConfigs?.[aspectRatio] ?? ({} as SubtitleOverride);
+  const { perRatioConfigs: _ignored, ...rootSettings } = base;
+
+  // Per-ratio override carries the dragged position + width AND the rest of the
+  // styling so the Rust ASS generator picks up the user's exact x/y/width
+  // (orchestrator reads `subtitle_overrides[ratio].position.{x,y}` + `maxWidth`).
+  const ratioOverride: SubtitleOverride = {
+    ...rootSettings,
+    ...existingPerRatio,
+    fontSize: existingPerRatio.fontSize ?? base.fontSize,
+    position: { x: pos.x, y: pos.y },
+    positionPercentage: pos.y,
+    maxWidth: pos.width ?? existingPerRatio.maxWidth ?? base.maxWidth,
+  };
+
+  const settings: SubtitleSettings = {
+    ...base,
+    enabled: true,
+    positionPercentage: pos.y,
+    maxWidth: pos.width ?? base.maxWidth,
+    perRatioConfigs: {
+      ...(base.perRatioConfigs ?? {}),
+      [aspectRatio]: ratioOverride,
+    },
+  };
+
+  return {
+    settings,
+    subtitleOverrides: { [aspectRatio]: ratioOverride } as SubtitleOverrides,
+    transcriptWords: wizardTranscriptWords.value,
+    transcriptSegments: wizardTranscriptSegments.value,
+    maxWords: maxWordsChunkForAspectRatioString(aspectRatio, base.animationStyle),
+  };
 }
 
 function onWizardSubtitleSettingsUpdate(patch: Record<string, unknown>) {
@@ -2983,6 +2944,12 @@ async function startBuildProcess() {
       buildId,
     });
     
+    // Subtitle payload — pulls position into per-ratio config so the export uses
+    // the same x/y/width the user dragged on the preview. Without this, the build
+    // falls back to default bottom-center placement and the resize/reposition is
+    // silently lost.
+    const subtitlePayload = buildSubtitlePayloadForTarget(target.aspectRatio);
+
     // Build settings for this target
     const settings = {
       aspectRatios: [target.aspectRatio],
@@ -2997,6 +2964,11 @@ async function startBuildProcess() {
       campaignId: target.campaignId || null,
       buildNumber,
       buildId,
+      subtitleSettings: subtitlePayload?.settings ?? null,
+      subtitleOverrides: subtitlePayload?.subtitleOverrides,
+      transcriptWords: subtitlePayload?.transcriptWords ?? [],
+      transcriptSegments: subtitlePayload?.transcriptSegments ?? [],
+      maxWords: subtitlePayload?.maxWords,
     };
     
     console.log('[QuickPublishWizard] Starting build for target:', target.name, target.aspectRatio);
@@ -5744,78 +5716,9 @@ onUnmounted(() => {
 .build-dialog__subtitle-canvas-col {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: 0.5rem;
   width: 100%;
 }
-
-/* The 16:9 canvas container */
-.build-dialog__subtitle-canvas {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: #000;
-  border-radius: 6px;
-  overflow: visible; /* allow handles to poke out */
-  border: 1px solid var(--sidebar-border, #2d2d33);
-  user-select: none;
-}
-
-.build-dialog__subtitle-canvas-img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 6px;
-  pointer-events: none;
-  display: block;
-}
-
-.build-dialog__subtitle-canvas-empty {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #52525b;
-}
-
-/* Draggable subtitle box on top of canvas */
-.build-dialog__subtitle-box {
-  position: absolute;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px 4px;
-  border: 1px dashed rgba(139, 92, 246, 0.6);
-  background: transparent;
-  border-radius: 3px;
-  width: max-content;
-  max-width: 98%;
-}
-.build-dialog__subtitle-box:hover {
-  border-color: rgba(139, 92, 246, 0.9);
-}
-
-.build-dialog__subtitle-box-text {
-  pointer-events: none;
-  white-space: nowrap;
-}
-
-/* Resize corner handles */
-.build-dialog__subtitle-handle {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  background: #8b5cf6;
-  border: 1px solid #fff;
-  border-radius: 1px;
-  z-index: 10;
-}
-.build-dialog__subtitle-handle--nw { top: 0; left: 0; transform: translate(-50%, -50%); cursor: nwse-resize; }
-.build-dialog__subtitle-handle--ne { top: 0; right: 0; transform: translate(50%, -50%); cursor: nesw-resize; }
-.build-dialog__subtitle-handle--sw { bottom: 0; left: 0; transform: translate(-50%, 50%); cursor: nesw-resize; }
-.build-dialog__subtitle-handle--se { bottom: 0; right: 0; transform: translate(50%, 50%); cursor: nwse-resize; }
 
 .build-dialog__subtitle-canvas-label {
   font-size: 0.625rem;
