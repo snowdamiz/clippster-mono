@@ -421,8 +421,28 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   @doc """
   Renews organization subscription (called from Stripe webhook).
   Extends end_date and grants monthly credits for base + addons.
+
+  Options:
+    * `:period_start_unix` - Unix seconds for the new period start (from invoice
+      line item). Used as an idempotency anchor: if a base history row already
+      exists with `start_date` within ±1h of this timestamp, we short-circuit
+      with `{:ok, :already_renewed}` so resent/retried webhooks don't double-grant.
   """
-  def renew_subscription(organization_id) do
+  def renew_subscription(organization_id, opts \\ []) do
+    period_start_unix = Keyword.get(opts, :period_start_unix)
+
+    if period_start_unix && already_renewed_for_period?(organization_id, period_start_unix) do
+      IO.puts(
+        "[OrgSubscriptions] Org #{organization_id} already renewed for period_start_unix=#{period_start_unix}, skipping"
+      )
+
+      {:ok, :already_renewed}
+    else
+      do_renew_subscription(organization_id, period_start_unix)
+    end
+  end
+
+  defp do_renew_subscription(organization_id, period_start_unix) do
     Repo.transaction(fn ->
       org = Repo.get!(Organization, organization_id) |> Repo.preload(:members)
       tier = org.subscription_tier
@@ -432,14 +452,20 @@ defmodule ClippsterServer.OrganizationSubscriptions do
         Repo.rollback(:invalid_tier)
       end
 
-      # Calculate new end date
+      # Prefer Stripe's actual period_start over our local +30d math so DB stays
+      # aligned with Stripe's billing cycle even if a webhook is delayed.
       current_end = org.subscription_end_date || DateTime.utc_now()
 
       new_start =
-        if DateTime.compare(DateTime.utc_now(), current_end) == :gt do
-          DateTime.utc_now() |> DateTime.truncate(:second)
-        else
-          current_end
+        cond do
+          is_integer(period_start_unix) ->
+            DateTime.from_unix!(period_start_unix)
+
+          DateTime.compare(DateTime.utc_now(), current_end) == :gt ->
+            DateTime.utc_now() |> DateTime.truncate(:second)
+
+          true ->
+            current_end
         end
 
       new_end = DateTime.add(new_start, @subscription_days, :day)
@@ -449,9 +475,17 @@ defmodule ClippsterServer.OrganizationSubscriptions do
         org
         |> Organization.subscription_changeset(%{
           subscription_status: "active",
+          subscription_start_date: new_start,
           subscription_end_date: new_end
         })
         |> Repo.update()
+
+      # Use the admin/org-configured values rather than the static tier_info,
+      # because the "custom" tier has monthly_credits=0 / seats=nil / usd=0
+      # in the static config — admins set the real values on the org row.
+      base_credits = org.monthly_credits || tier_info.monthly_credits || 0
+      base_seats = org.max_seats || tier_info.seats
+      base_amount_usd = base_amount_usd(org, tier_info)
 
       # Create history for base subscription renewal
       {:ok, _subscription} =
@@ -463,16 +497,16 @@ defmodule ClippsterServer.OrganizationSubscriptions do
           status: "active",
           start_date: new_start,
           end_date: new_end,
-          seats: tier_info.seats,
-          credits_granted: Decimal.new(to_string(tier_info.monthly_credits)),
+          seats: base_seats,
+          credits_granted: Decimal.new(to_string(base_credits)),
           payment_method: org.subscription_renewal_method || "stripe",
           stripe_subscription_id: org.stripe_subscription_id,
-          amount_usd: Decimal.new(to_string(tier_info.usd))
+          amount_usd: base_amount_usd
         })
         |> Repo.insert()
 
       # Grant base subscription credits
-      total_credits = tier_info.monthly_credits
+      total_credits = base_credits
 
       # Renew and grant credits for active addons
       active_addons =
@@ -524,6 +558,35 @@ defmodule ClippsterServer.OrganizationSubscriptions do
 
       updated_org
     end)
+  end
+
+  # Returns true if a base history row already exists with a start_date close
+  # to the given period_start (within ±1h). Used to make renewal idempotent
+  # against webhook retries / dashboard "Resend" actions.
+  defp already_renewed_for_period?(organization_id, period_start_unix)
+       when is_integer(period_start_unix) do
+    target = DateTime.from_unix!(period_start_unix)
+    lower = DateTime.add(target, -3600, :second)
+    upper = DateTime.add(target, 3600, :second)
+
+    OrganizationSubscription
+    |> where([s], s.organization_id == ^organization_id and s.subscription_type == "base")
+    |> where([s], s.start_date >= ^lower and s.start_date <= ^upper)
+    |> Repo.exists?()
+  end
+
+  defp already_renewed_for_period?(_organization_id, _period_start_unix), do: false
+
+  # For the base history record's amount_usd we prefer admin-set price (custom
+  # tier orgs); falls back to tier_info.usd for standard tiers.
+  defp base_amount_usd(org, tier_info) do
+    cond do
+      is_integer(org.admin_price_cents) and org.admin_price_cents > 0 ->
+        Decimal.div(Decimal.new(org.admin_price_cents), Decimal.new(100))
+
+      true ->
+        Decimal.new(to_string(tier_info.usd || 0))
+    end
   end
 
   # ============================================================================
@@ -827,6 +890,162 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   defp calculate_days_remaining(end_date) do
     diff = DateTime.diff(end_date, DateTime.utc_now(), :day)
     max(0, diff)
+  end
+
+  @doc """
+  Syncs an organization's subscription state from Stripe (status, dates).
+
+  Use cases:
+    * Recovery from a webhook that didn't process (e.g. an API-version regression
+      that silently dropped the renewal).
+    * Reconciling an admin-created org's `subscription_end_date` with Stripe's
+      actual billing cycle after the owner completes initial payment.
+
+  Options:
+    * `:grant_period_credits` (default `false`) — when true, additionally grants
+      `org.monthly_credits` to the org's pool **for the current Stripe period**,
+      gated by `already_renewed_for_period?/2` so repeated calls won't double-grant.
+      This is what you want when calling this as a webhook-miss recovery; leave
+      false when you only want to sync dates/status.
+
+  Returns `{:ok, %{organization: org, granted_credits: integer | nil, period: {start, end}}}`
+  or `{:error, reason}`. The `:granted_credits` value is `nil` if no grant
+  was requested, `0` if the request was a no-op (already renewed), or the
+  amount granted otherwise.
+  """
+  def sync_from_stripe(organization_id, opts \\ []) do
+    grant_period_credits = Keyword.get(opts, :grant_period_credits, false)
+
+    with %Organization{} = org <- Repo.get(Organization, organization_id),
+         {:ok, sub_id} <- require_stripe_subscription_id(org),
+         {:ok, stripe_sub} <- Stripe.Subscription.retrieve(sub_id),
+         {:ok, {start_dt, end_dt}} <- extract_subscription_period_dt(stripe_sub) do
+      stripe_status = Map.get(stripe_sub, :status)
+      cancel_at_period_end = Map.get(stripe_sub, :cancel_at_period_end, false)
+      mapped_status = map_stripe_status(stripe_status, cancel_at_period_end)
+
+      result =
+        Repo.transaction(fn ->
+          {:ok, updated_org} =
+            org
+            |> Organization.subscription_changeset(%{
+              subscription_status: mapped_status,
+              subscription_start_date: start_dt,
+              subscription_end_date: end_dt
+            })
+            |> Repo.update()
+
+          granted =
+            if grant_period_credits and mapped_status == "active" do
+              maybe_grant_period_credits(updated_org, start_dt, end_dt)
+            else
+              nil
+            end
+
+          %{organization: updated_org, granted_credits: granted, period: {start_dt, end_dt}}
+        end)
+
+      case result do
+        {:ok, data} ->
+          IO.puts(
+            "[OrgSubscriptions] sync_from_stripe org=#{organization_id} status=#{mapped_status} period=#{DateTime.to_iso8601(start_dt)}..#{DateTime.to_iso8601(end_dt)} granted_credits=#{inspect(data.granted_credits)}"
+          )
+
+          {:ok, data}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    else
+      nil ->
+        {:error, :organization_not_found}
+
+      {:error, %Stripe.Error{message: msg}} ->
+        {:error, {:stripe_error, msg}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp require_stripe_subscription_id(%Organization{stripe_subscription_id: nil}),
+    do: {:error, :no_stripe_subscription}
+
+  defp require_stripe_subscription_id(%Organization{stripe_subscription_id: id}), do: {:ok, id}
+
+  # In API 2026-01-28+ current_period_start/end moved from Subscription root
+  # to each items.data[0]. Try root first (older APIs), then items.
+  defp extract_subscription_period_dt(stripe_sub) do
+    {start_unix, end_unix} =
+      case {Map.get(stripe_sub, :current_period_start), Map.get(stripe_sub, :current_period_end)} do
+        {s, e} when is_integer(s) and is_integer(e) ->
+          {s, e}
+
+        _ ->
+          items = Map.get(stripe_sub, :items)
+          data = if items, do: Map.get(items, :data), else: nil
+
+          case data do
+            [first | _] ->
+              {Map.get(first, :current_period_start), Map.get(first, :current_period_end)}
+
+            _ ->
+              {nil, nil}
+          end
+      end
+
+    if is_integer(start_unix) and is_integer(end_unix) do
+      {:ok, {DateTime.from_unix!(start_unix), DateTime.from_unix!(end_unix)}}
+    else
+      {:error, :no_period_on_subscription}
+    end
+  end
+
+  defp map_stripe_status(stripe_status, cancel_at_period_end) do
+    cond do
+      cancel_at_period_end == true -> "cancelled"
+      stripe_status in ["active", "trialing"] -> "active"
+      stripe_status in ["canceled", "unpaid", "incomplete_expired"] -> "expired"
+      stripe_status == "past_due" -> "active"
+      true -> "active"
+    end
+  end
+
+  defp maybe_grant_period_credits(%Organization{} = org, start_dt, _end_dt) do
+    period_start_unix = DateTime.to_unix(start_dt)
+
+    if already_renewed_for_period?(org.id, period_start_unix) do
+      0
+    else
+      base_credits = org.monthly_credits || 0
+
+      tier_info = if org.subscription_tier, do: get_tier_info(org.subscription_tier), else: nil
+
+      end_dt = DateTime.add(start_dt, @subscription_days, :day)
+
+      {:ok, _history} =
+        %OrganizationSubscription{}
+        |> OrganizationSubscription.create_changeset(%{
+          organization_id: org.id,
+          subscription_type: "base",
+          tier: org.subscription_tier,
+          status: "active",
+          start_date: start_dt,
+          end_date: end_dt,
+          seats: org.max_seats || (tier_info && tier_info.seats),
+          credits_granted: Decimal.new(to_string(base_credits)),
+          payment_method: org.subscription_renewal_method || "stripe",
+          stripe_subscription_id: org.stripe_subscription_id,
+          amount_usd: base_amount_usd(org, tier_info || %{usd: 0})
+        })
+        |> Repo.insert()
+
+      if base_credits > 0 do
+        {:ok, _} = Organizations.add_organization_credits(org.id, base_credits)
+      end
+
+      base_credits
+    end
   end
 
   @doc """

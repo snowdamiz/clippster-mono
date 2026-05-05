@@ -219,8 +219,28 @@ defmodule ClippsterServer.Subscriptions do
   @doc """
   Renews a subscription (called from Stripe webhook on invoice.payment_succeeded).
   Extends end_date and grants monthly credits.
+
+  Options:
+    * `:period_start_unix` - Unix seconds for the new period start (from invoice
+      line item). Used as an idempotency anchor: if a history row already exists
+      with `start_date` within ±1h of this timestamp, returns `{:ok, :already_renewed}`
+      so resent/retried webhooks don't double-grant credits.
   """
-  def renew_subscription(user_id) do
+  def renew_subscription(user_id, opts \\ []) do
+    period_start_unix = Keyword.get(opts, :period_start_unix)
+
+    if period_start_unix && already_renewed_for_period?(user_id, period_start_unix) do
+      IO.puts(
+        "[Subscriptions] User #{user_id} already renewed for period_start_unix=#{period_start_unix}, skipping"
+      )
+
+      {:ok, :already_renewed}
+    else
+      do_renew_subscription(user_id, period_start_unix)
+    end
+  end
+
+  defp do_renew_subscription(user_id, period_start_unix) do
     Repo.transaction(fn ->
       user = Repo.get!(User, user_id)
       tier = user.subscription_tier
@@ -230,16 +250,22 @@ defmodule ClippsterServer.Subscriptions do
         Repo.rollback(:invalid_tier)
       end
 
-      # Calculate new end date
+      # Prefer Stripe's actual period_start over our local +30d math so DB stays
+      # aligned with Stripe's billing cycle even if a webhook is delayed.
       current_end = user.subscription_end_date || DateTime.utc_now()
 
       new_start =
-        if DateTime.compare(DateTime.utc_now(), current_end) == :gt do
-          # Subscription was expired, start fresh
-          DateTime.utc_now() |> DateTime.truncate(:second)
-        else
-          # Still active, use current end as new start
-          current_end
+        cond do
+          is_integer(period_start_unix) ->
+            DateTime.from_unix!(period_start_unix)
+
+          DateTime.compare(DateTime.utc_now(), current_end) == :gt ->
+            # Subscription was expired, start fresh
+            DateTime.utc_now() |> DateTime.truncate(:second)
+
+          true ->
+            # Still active, use current end as new start
+            current_end
         end
 
       new_end = DateTime.add(new_start, @subscription_days, :day)
@@ -308,6 +334,23 @@ defmodule ClippsterServer.Subscriptions do
       %{user: updated_user, subscription: subscription}
     end)
   end
+
+  # Returns true if a subscription history row already exists with start_date
+  # close to the given period_start (within ±1h). Used to make renewal idempotent
+  # against webhook retries / dashboard "Resend" actions.
+  defp already_renewed_for_period?(user_id, period_start_unix)
+       when is_integer(period_start_unix) do
+    target = DateTime.from_unix!(period_start_unix)
+    lower = DateTime.add(target, -3600, :second)
+    upper = DateTime.add(target, 3600, :second)
+
+    Subscription
+    |> where([s], s.user_id == ^user_id)
+    |> where([s], s.start_date >= ^lower and s.start_date <= ^upper)
+    |> Repo.exists?()
+  end
+
+  defp already_renewed_for_period?(_user_id, _period_start_unix), do: false
 
   # ============================================================================
   # Subscription Cancellation & Expiration

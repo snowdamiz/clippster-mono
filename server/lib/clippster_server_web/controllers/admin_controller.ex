@@ -1256,6 +1256,71 @@ defmodule ClippsterServerWeb.AdminController do
   # ============================================================================
 
   @doc """
+  Sync an organization's subscription state (status, dates) from Stripe.
+
+  Useful for recovering from missed/dropped webhooks. Optional query param
+  `grant_period_credits=true` will additionally credit the org pool with
+  `org.monthly_credits` for the current Stripe period (idempotent — guarded
+  against double-grants by the existing OrganizationSubscription history).
+  """
+  def sync_org_stripe_subscription(conn, %{"organization_id" => org_id_string} = params) do
+    case parse_integer(org_id_string) do
+      {:ok, org_id} ->
+        grant_period_credits = parse_boolean(Map.get(params, "grant_period_credits", "false"))
+
+        case OrganizationSubscriptions.sync_from_stripe(org_id,
+               grant_period_credits: grant_period_credits
+             ) do
+          {:ok, %{organization: _org, granted_credits: granted, period: {start_dt, end_dt}}} ->
+            status = OrganizationSubscriptions.get_subscription_status(org_id)
+
+            json(conn, %{
+              success: true,
+              message: "Organization subscription synced from Stripe",
+              granted_credits: granted,
+              period: %{
+                start: DateTime.to_iso8601(start_dt),
+                end: DateTime.to_iso8601(end_dt)
+              },
+              subscription: status
+            })
+
+          {:error, :organization_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "Organization not found"})
+
+          {:error, :no_stripe_subscription} ->
+            conn
+            |> put_status(400)
+            |> json(%{
+              success: false,
+              error: "Organization has no stripe_subscription_id; cannot sync"
+            })
+
+          {:error, :no_period_on_subscription} ->
+            conn
+            |> put_status(502)
+            |> json(%{
+              success: false,
+              error: "Stripe subscription returned no current_period_start/end; cannot sync"
+            })
+
+          {:error, {:stripe_error, msg}} ->
+            conn
+            |> put_status(502)
+            |> json(%{success: false, error: "Stripe error: #{msg}"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid organization ID"})
+    end
+  end
+
+  @doc """
   Grant a subscription to an organization.
   """
   def grant_org_subscription(conn, %{"organization_id" => org_id_string} = params) do
