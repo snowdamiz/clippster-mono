@@ -1,196 +1,154 @@
 <template>
-  <div
-    class="clip-text-props flex flex-col h-full min-h-0 bg-[#0d0d0d]"
-    :class="variant === 'embedded' ? '' : 'border-l border-white/10'"
-  >
-    <div
-      v-if="variant !== 'embedded'"
-      class="flex items-center gap-2 px-3 py-2.5 border-b border-white/10 shrink-0"
-    >
-      <button
-        type="button"
-        class="p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/10"
-        title="Back"
-        @click="$emit('close')"
-      >
-        <ChevronLeft :size="18" />
+  <div class="ctp" :class="{ 'ctp--embedded': variant === 'embedded' }">
+    <div v-if="variant !== 'embedded'" class="ctp__header">
+      <button class="ctp__back" type="button" title="Back" @click="$emit('close')">
+        <ChevronLeft :size="15" />
       </button>
-      <span class="text-sm font-semibold text-white">Text box</span>
+      <span class="ctp__title">Text box</span>
     </div>
 
-    <div v-if="!state" class="p-4 text-sm text-zinc-500">No text box for this clip.</div>
+    <div v-if="!state" class="ctp__empty-state">No text box for this clip.</div>
 
-    <div v-else class="flex-1 overflow-y-auto px-3 py-3 space-y-4">
-      <label class="flex items-center gap-2 text-sm text-zinc-300">
-        <input :checked="state.enabled" type="checkbox" class="rounded border-zinc-600" @change="patch({ enabled: ($event.target as HTMLInputElement).checked })" />
-        Enable text box
-      </label>
-
-      <div>
-        <label class="text-[10px] uppercase tracking-wide text-zinc-500">Text</label>
+    <div v-else class="ctp__body">
+      <!-- ── CONTENT ── -->
+      <div class="ctp__section">
+        <div class="ctp__section-hd-row">
+          <span class="ctp__section-hd">Text</span>
+          <label class="ctp__toggle">
+            <input
+              type="checkbox"
+              :checked="state.enabled"
+              @change="patch({ enabled: ($event.target as HTMLInputElement).checked })"
+            />
+            <span class="ctp__toggle-track"><span class="ctp__toggle-thumb" /></span>
+          </label>
+        </div>
         <textarea
+          class="ctp__textarea ctp__mt"
           :value="state.text"
           rows="3"
-          class="mt-1 w-full rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-sm text-white"
           placeholder="Your message"
           @input="patch({ text: ($event.target as HTMLTextAreaElement).value })"
         />
       </div>
 
-      <div>
-        <div class="flex justify-between items-baseline gap-2 text-[10px] text-zinc-500 mb-1.5">
-          <span class="uppercase tracking-wide">Visible on clip</span>
-          <span class="font-mono text-zinc-400 shrink-0 tabular-nums">
+      <!-- ── VISIBLE ON CLIP ── -->
+      <div class="ctp__section">
+        <div class="ctp__section-hd-row">
+          <span class="ctp__section-hd">Visible on clip</span>
+          <span class="ctp__range-readout">
             {{ state.startTime.toFixed(1) }}s — {{ state.endTime.toFixed(1) }}s
-            <span class="text-zinc-600">({{ visibleDuration.toFixed(1) }}s)</span>
+            <span class="ctp__range-readout-span">({{ visibleDuration.toFixed(1) }}s)</span>
           </span>
         </div>
-        <div
-          v-if="effectiveDuration <= 0"
-          class="text-xs text-zinc-500 py-2"
-        >
+        <p v-if="effectiveDuration <= 0" class="ctp__hint ctp__mt">
           Clip length unavailable; timing can be set after duration is known.
-        </div>
-        <div
-          v-else
-          ref="visibilityTrackRef"
-          class="relative h-10 rounded-md bg-zinc-800/90 border border-zinc-700 select-none touch-none group/track"
-          @mousedown.prevent="onVisibilityTrackPress"
-        >
-          <!-- Full clip length (subtle) -->
-          <div class="absolute inset-y-2 left-2 right-2 rounded bg-zinc-900/80 pointer-events-none" />
-          <!-- Visible span -->
+        </p>
+        <template v-else>
           <div
-            class="absolute top-2 bottom-2 rounded-md bg-blue-600/40 border border-blue-500/50 pointer-events-none"
-            :style="{
-              left: `calc(0.5rem + (100% - 1rem) * ${rangeStartFrac})`,
-              width: `calc((100% - 1rem) * ${rangeWidthFrac})`,
-            }"
-          />
-          <!-- Draggable body: move whole window -->
-          <div
-            class="clip-text-visibility-body absolute top-0 bottom-0 z-[1] cursor-grab active:cursor-grabbing"
-            :style="{
-              left: `calc(0.5rem + (100% - 1rem) * ${rangeStartFrac})`,
-              width: `calc((100% - 1rem) * ${rangeWidthFrac})`,
-            }"
-            title="Drag to move visible range"
-            @mousedown.stop.prevent="startVisibilityDrag('move', $event)"
-          />
-          <!-- Start handle -->
-          <button
-            type="button"
-            class="visibility-handle absolute top-1/2 z-[2] w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white border-2 border-blue-500 shadow-md hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-            :style="{ left: `calc(0.5rem + (100% - 1rem) * ${rangeStartFrac})` }"
-            title="Drag start time"
-            aria-label="Text visible from"
-            @mousedown.stop.prevent="startVisibilityDrag('start', $event)"
-          />
-          <!-- End handle -->
-          <button
-            type="button"
-            class="visibility-handle absolute top-1/2 z-[2] w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white border-2 border-blue-500 shadow-md hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-            :style="{ left: `calc(0.5rem + (100% - 1rem) * ${rangeEndFrac})` }"
-            title="Drag end time"
-            aria-label="Text visible until"
-            @mousedown.stop.prevent="startVisibilityDrag('end', $event)"
-          />
-        </div>
-        <div
-          v-if="effectiveDuration > 0"
-          class="flex justify-between mt-1 text-[9px] font-mono text-zinc-600 tabular-nums"
-        >
-          <span>0s</span>
-          <span>{{ effectiveDuration.toFixed(1) }}s</span>
-        </div>
-      </div>
-
-      <div>
-        <label class="text-[10px] uppercase tracking-wide text-zinc-500">Font</label>
-        <div class="clip-text-prop-dropdown relative">
-          <button
-            type="button"
-            class="ctp-input ctp-select mt-1 w-full"
-            @click.stop="toggleFontDropdown"
+            ref="visibilityTrackRef"
+            class="ctp__range-track ctp__mt"
+            @mousedown.prevent="onVisibilityTrackPress"
           >
-          <span class="truncate">{{ state.style.fontFamily }}</span>
-          <ChevronDown class="h-3.5 w-3.5 shrink-0 transition-transform" :class="{ 'rotate-180': fontDropdownOpen }" />
-          </button>
-          <div v-if="fontDropdownOpen" class="ctp-dropdown">
+            <div class="ctp__range-bg" />
+            <div
+              class="ctp__range-fill"
+              :style="{
+                left: `calc(0.5rem + (100% - 1rem) * ${rangeStartFrac})`,
+                width: `calc((100% - 1rem) * ${rangeWidthFrac})`,
+              }"
+            />
+            <div
+              class="ctp__range-body"
+              title="Drag to move visible range"
+              :style="{
+                left: `calc(0.5rem + (100% - 1rem) * ${rangeStartFrac})`,
+                width: `calc((100% - 1rem) * ${rangeWidthFrac})`,
+              }"
+              @mousedown.stop.prevent="startVisibilityDrag('move', $event)"
+            />
             <button
-              v-for="f in fontChoices"
-              :key="f"
               type="button"
-              class="ctp-dropdown-item"
-              :class="{ 'ctp-dropdown-item--selected': state.style.fontFamily === f }"
-              @click="selectFontFamily(f)"
-            >
-              {{ f }}
-            </button>
+              class="ctp__range-handle"
+              :style="{ left: `calc(0.5rem + (100% - 1rem) * ${rangeStartFrac})` }"
+              title="Drag start time"
+              aria-label="Text visible from"
+              @mousedown.stop.prevent="startVisibilityDrag('start', $event)"
+            />
+            <button
+              type="button"
+              class="ctp__range-handle"
+              :style="{ left: `calc(0.5rem + (100% - 1rem) * ${rangeEndFrac})` }"
+              title="Drag end time"
+              aria-label="Text visible until"
+              @mousedown.stop.prevent="startVisibilityDrag('end', $event)"
+            />
           </div>
-        </div>
+          <div class="ctp__range-axis">
+            <span>0s</span>
+            <span>{{ effectiveDuration.toFixed(1) }}s</span>
+          </div>
+        </template>
       </div>
 
-      <div class="grid grid-cols-2 gap-2">
-        <div>
-          <label class="text-[10px] text-zinc-500">Size</label>
-          <input
-            :value="state.style.fontSize"
-            type="range"
-            class="w-full accent-amber-500"
-            min="10"
-            max="96"
-            step="1"
-            @input="patchStyle({ fontSize: Number(($event.target as HTMLInputElement).value) })"
-          />
-          <span class="text-[10px] text-zinc-400">{{ state.style.fontSize }}px</span>
+      <!-- ── FONT ── -->
+      <div class="ctp__section ctp__section--font">
+        <div class="ctp__section-hd">Font</div>
+        <div class="ctp__font-grid">
+          <button
+            v-for="f in fontChoices"
+            :key="f"
+            type="button"
+            class="ctp__font-btn"
+            :class="{ 'ctp__font-btn--active': state.style.fontFamily === f }"
+            :style="{ fontFamily: f }"
+            @click="patchStyle({ fontFamily: f })"
+          >
+            {{ f }}
+          </button>
         </div>
-        <div>
-          <label class="text-[10px] text-zinc-500">Weight</label>
-          <div class="clip-text-prop-dropdown relative">
-            <button
-              type="button"
-              class="ctp-input ctp-select mt-1 w-full"
-              @click.stop="toggleWeightDropdown"
-            >
-            <span class="truncate">{{ weightLabel }}</span>
-            <ChevronDown class="h-3.5 w-3.5 shrink-0 transition-transform" :class="{ 'rotate-180': weightDropdownOpen }" />
-            </button>
-            <div v-if="weightDropdownOpen" class="ctp-dropdown">
+
+        <div class="ctp__row2 ctp__font-controls ctp__mt">
+          <div class="ctp__field">
+            <span class="ctp__label">Size <em class="ctp__val">{{ state.style.fontSize }}px</em></span>
+            <input
+              type="range"
+              class="ctp__slider"
+              :value="state.style.fontSize"
+              min="10"
+              max="120"
+              step="1"
+              @input="patchStyle({ fontSize: Number(($event.target as HTMLInputElement).value) })"
+            />
+          </div>
+          <div class="ctp__field">
+            <span class="ctp__label">Weight</span>
+            <div class="ctp__pill-row">
               <button
-                v-for="opt in weightChoices"
-                :key="opt.value"
+                v-for="w in weightChoices"
+                :key="w.value"
                 type="button"
-                class="ctp-dropdown-item"
-                :class="{ 'ctp-dropdown-item--selected': Number(state.style.fontWeight) === opt.value }"
-                @click="selectWeight(opt.value)"
+                class="ctp__pill"
+                :class="{ 'ctp__pill--active': Number(state.style.fontWeight) === w.value }"
+                @click="patchStyle({ fontWeight: w.value })"
               >
-                {{ opt.label }}
+                {{ w.label }}
               </button>
             </div>
           </div>
         </div>
-      </div>
 
-      <div>
-        <label class="text-[10px] text-zinc-500">Text transform</label>
-        <div class="clip-text-prop-dropdown relative">
-          <button
-            type="button"
-            class="ctp-input ctp-select mt-1 w-full"
-            @click.stop="toggleTransformDropdown"
-          >
-            <span class="truncate">{{ transformLabel }}</span>
-            <ChevronDown class="h-3.5 w-3.5 shrink-0 transition-transform" :class="{ 'rotate-180': transformDropdownOpen }" />
-          </button>
-          <div v-if="transformDropdownOpen" class="ctp-dropdown">
+        <div class="ctp__field ctp__mt">
+          <span class="ctp__label">Transform</span>
+          <div class="ctp__seg-ctrl">
             <button
               v-for="opt in transformChoices"
               :key="opt.value"
               type="button"
-              class="ctp-dropdown-item"
-              :class="{ 'ctp-dropdown-item--selected': (state.style.textTransform ?? 'none') === opt.value }"
-              @click="selectTransform(opt.value)"
+              class="ctp__seg-btn"
+              :class="{ 'ctp__seg-btn--active': (state.style.textTransform ?? 'none') === opt.value }"
+              :title="opt.label"
+              @click="patchStyle({ textTransform: opt.value })"
             >
               {{ opt.label }}
             </button>
@@ -198,93 +156,111 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <span class="text-[10px] text-zinc-500">Text color</span>
-          <div class="flex items-center gap-2 mt-1">
-            <input
-              :value="state.style.color"
-              type="color"
-              class="h-8 w-10 rounded border border-zinc-600 bg-zinc-900"
-              @input="patchStyle({ color: ($event.target as HTMLInputElement).value })"
-            />
-            <input
-              :value="state.style.color"
-              type="text"
-              class="flex-1 rounded bg-zinc-900 border border-zinc-700 px-2 py-1 text-xs font-mono text-white"
-              @change="patchStyle({ color: ($event.target as HTMLInputElement).value })"
-            />
+      <!-- ── COLOR ── -->
+      <div class="ctp__section ctp__section--colors">
+        <div class="ctp__section-hd">Color</div>
+        <p class="ctp__hint ctp__mb">Text fill color</p>
+        <div class="ctp__colors-grid">
+          <div class="ctp__colors-row">
+            <span class="ctp__label">Text</span>
+            <div class="ctp__swatch-row ctp__colors-swatch-row">
+              <label class="ctp__swatch-wrap">
+                <input
+                  type="color"
+                  :value="state.style.color"
+                  @input="patchStyle({ color: ($event.target as HTMLInputElement).value })"
+                />
+                <span class="ctp__swatch" :style="{ background: state.style.color }" />
+              </label>
+              <input
+                class="ctp__hex"
+                type="text"
+                maxlength="7"
+                :value="state.style.color"
+                @change="patchStyle({ color: ($event.target as HTMLInputElement).value })"
+              />
+            </div>
           </div>
         </div>
-        <div>
-          <label class="flex items-center gap-2 text-[10px] text-zinc-500">
+      </div>
+
+      <!-- ── BACKGROUND ── -->
+      <div class="ctp__section">
+        <div class="ctp__section-hd-row">
+          <span class="ctp__section-hd">Background</span>
+          <label class="ctp__toggle">
             <input
-              :checked="state.style.backgroundEnabled"
               type="checkbox"
-              class="rounded border-zinc-600"
+              :checked="state.style.backgroundEnabled"
               @change="patchStyle({ backgroundEnabled: ($event.target as HTMLInputElement).checked })"
             />
-            Background
+            <span class="ctp__toggle-track"><span class="ctp__toggle-thumb" /></span>
           </label>
-          <div v-if="state.style.backgroundEnabled" class="flex items-center gap-2 mt-1">
+        </div>
+        <template v-if="state.style.backgroundEnabled">
+          <div class="ctp__row2 ctp__mt">
+            <div class="ctp__field">
+              <span class="ctp__label">Color</span>
+              <div class="ctp__swatch-row">
+                <label class="ctp__swatch-wrap">
+                  <input
+                    type="color"
+                    :value="state.style.backgroundColor || '#000000'"
+                    @input="patchStyle({ backgroundColor: ($event.target as HTMLInputElement).value })"
+                  />
+                  <span class="ctp__swatch" :style="{ background: state.style.backgroundColor || '#000000' }" />
+                </label>
+                <input
+                  class="ctp__hex"
+                  type="text"
+                  maxlength="7"
+                  :value="state.style.backgroundColor || '#000000'"
+                  @change="patchStyle({ backgroundColor: ($event.target as HTMLInputElement).value })"
+                />
+              </div>
+            </div>
+            <div class="ctp__field">
+              <span class="ctp__label">Padding <em class="ctp__val">{{ state.style.padding }}px</em></span>
+              <input
+                type="range"
+                class="ctp__slider"
+                :value="state.style.padding"
+                min="0"
+                max="48"
+                step="1"
+                @input="patchStyle({ padding: Number(($event.target as HTMLInputElement).value) })"
+              />
+            </div>
+          </div>
+          <div class="ctp__field ctp__mt">
+            <span class="ctp__label">Corner radius <em class="ctp__val">{{ state.style.borderRadius }}px</em></span>
             <input
-              :value="state.style.backgroundColor || '#FFFFFF'"
-              type="color"
-              class="h-8 w-10 rounded border border-zinc-600 bg-zinc-900"
-              @input="patchStyle({ backgroundColor: ($event.target as HTMLInputElement).value })"
-            />
-            <input
-              :value="state.style.backgroundColor || '#FFFFFF'"
-              type="text"
-              class="flex-1 rounded bg-zinc-900 border border-zinc-700 px-2 py-1 text-xs font-mono text-white"
-              @change="patchStyle({ backgroundColor: ($event.target as HTMLInputElement).value })"
+              type="range"
+              class="ctp__slider"
+              :value="state.style.borderRadius"
+              min="0"
+              max="48"
+              step="1"
+              @input="patchStyle({ borderRadius: Number(($event.target as HTMLInputElement).value) })"
             />
           </div>
-        </div>
+        </template>
       </div>
 
-      <div class="grid grid-cols-2 gap-2">
-        <div>
-          <label class="text-[10px] text-zinc-500">Corner radius</label>
-          <input
-            :value="state.style.borderRadius"
-            type="range"
-            class="w-full accent-amber-500"
-            min="0"
-            max="48"
-            step="1"
-            @input="patchStyle({ borderRadius: Number(($event.target as HTMLInputElement).value) })"
-          />
-        </div>
-        <div>
-          <label class="text-[10px] text-zinc-500">Padding</label>
-          <input
-            :value="state.style.padding"
-            type="range"
-            class="w-full accent-amber-500"
-            min="4"
-            max="48"
-            step="1"
-            @input="patchStyle({ padding: Number(($event.target as HTMLInputElement).value) })"
-          />
-        </div>
+      <!-- ── REMOVE ── -->
+      <div class="ctp__section ctp__section--danger">
+        <button class="ctp__delete-btn" type="button" @click="$emit('delete')">
+          <Trash2 :size="15" />
+          Remove text box
+        </button>
       </div>
-
-      <button
-        type="button"
-        class="flex items-center justify-center gap-2 w-full rounded-lg border border-red-500/35 bg-red-950/20 px-3 py-2.5 text-sm font-medium text-red-300 hover:bg-red-950/40 hover:border-red-500/50 transition-colors"
-        @click="$emit('delete')"
-      >
-        <Trash2 :size="16" class="shrink-0 opacity-90" />
-        Remove text box
-      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { computed, onMounted, onUnmounted, ref } from 'vue';
-  import { ChevronDown, ChevronLeft, Trash2 } from 'lucide-vue-next';
+  import { computed, onUnmounted, ref } from 'vue';
+  import { ChevronLeft, Trash2 } from 'lucide-vue-next';
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
   import type { TextOverlayStyle } from '@/types';
 
@@ -304,85 +280,32 @@
     delete: [];
   }>();
 
-  const fontChoices = ['Montserrat', 'Inter', 'Arial', 'Helvetica Neue', 'Georgia', 'Impact'];
+  const fontChoices = [
+    'Montserrat',
+    'Inter',
+    'Impact',
+    'Oswald',
+    'Poppins',
+    'Roboto',
+    'Arial',
+    'Georgia',
+    'Helvetica Neue',
+  ];
 
   const weightChoices = [
-    { value: 400, label: 'Normal' },
-    { value: 600, label: 'Semibold' },
+    { value: 400, label: 'Regular' },
+    { value: 600, label: 'Semi' },
     { value: 700, label: 'Bold' },
-    { value: 800, label: 'Extra bold' },
+    { value: 800, label: 'Extra' },
     { value: 900, label: 'Black' },
   ] as const;
 
   const transformChoices = [
     { value: 'none' as const, label: 'None' },
-    { value: 'uppercase' as const, label: 'Uppercase' },
-    { value: 'lowercase' as const, label: 'Lowercase' },
-    { value: 'capitalize' as const, label: 'Capitalize' },
+    { value: 'uppercase' as const, label: 'AA' },
+    { value: 'lowercase' as const, label: 'aa' },
+    { value: 'capitalize' as const, label: 'Aa' },
   ];
-
-  const fontDropdownOpen = ref(false);
-  const weightDropdownOpen = ref(false);
-  const transformDropdownOpen = ref(false);
-
-  const weightLabel = computed(() => {
-    const w = Number(props.state?.style.fontWeight ?? 700);
-    return weightChoices.find((o) => o.value === w)?.label ?? 'Bold';
-  });
-
-  const transformLabel = computed(() => {
-    const t = props.state?.style.textTransform ?? 'none';
-    return transformChoices.find((o) => o.value === t)?.label ?? 'None';
-  });
-
-  function closeAllDropdowns() {
-    fontDropdownOpen.value = false;
-    weightDropdownOpen.value = false;
-    transformDropdownOpen.value = false;
-  }
-
-  function onDocMouseDown(e: MouseEvent) {
-    const t = e.target as HTMLElement;
-    if (t.closest('.clip-text-prop-dropdown')) return;
-    closeAllDropdowns();
-  }
-
-  function toggleFontDropdown() {
-    const next = !fontDropdownOpen.value;
-    closeAllDropdowns();
-    fontDropdownOpen.value = next;
-  }
-
-  function toggleWeightDropdown() {
-    const next = !weightDropdownOpen.value;
-    closeAllDropdowns();
-    weightDropdownOpen.value = next;
-  }
-
-  function toggleTransformDropdown() {
-    const next = !transformDropdownOpen.value;
-    closeAllDropdowns();
-    transformDropdownOpen.value = next;
-  }
-
-  function selectFontFamily(f: string) {
-    patchStyle({ fontFamily: f });
-    closeAllDropdowns();
-  }
-
-  function selectWeight(value: number) {
-    patchStyle({ fontWeight: value });
-    closeAllDropdowns();
-  }
-
-  function selectTransform(value: 'none' | 'uppercase' | 'lowercase' | 'capitalize') {
-    patchStyle({ textTransform: value });
-    closeAllDropdowns();
-  }
-
-  onMounted(() => {
-    document.addEventListener('mousedown', onDocMouseDown);
-  });
 
   const MIN_VISIBLE = 0.1;
   const STEP = 0.1;
@@ -416,7 +339,6 @@
     return Math.max(0, e - s);
   });
 
-  /** 0–1 positions along the clip for the visible window (for layout). */
   const rangeStartFrac = computed(() => {
     const d = effectiveDuration.value;
     if (d <= 0) return 0;
@@ -429,9 +351,7 @@
     return Math.min(1, Math.max(0, displaySpan.value.e / d));
   });
 
-  const rangeWidthFrac = computed(() =>
-    Math.max(0, rangeEndFrac.value - rangeStartFrac.value)
-  );
+  const rangeWidthFrac = computed(() => Math.max(0, rangeEndFrac.value - rangeStartFrac.value));
 
   function roundTime(t: number): number {
     return Math.round(t / STEP) * STEP;
@@ -535,8 +455,8 @@
   function onVisibilityTrackPress(e: MouseEvent) {
     if (!props.state || effectiveDuration.value <= 0) return;
     const target = e.target as HTMLElement;
-    if (target.closest('.visibility-handle')) return;
-    if (target.closest('.clip-text-visibility-body')) return;
+    if (target.closest('.ctp__range-handle')) return;
+    if (target.closest('.ctp__range-body')) return;
     const t = timeFromClientX(e.clientX);
     const { startTime: s, endTime: end } = props.state;
     const mid = (s + end) / 2;
@@ -545,94 +465,715 @@
   }
 
   onUnmounted(() => {
-    document.removeEventListener('mousedown', onDocMouseDown);
     document.removeEventListener('mousemove', onVisibilityDragMove);
   });
 </script>
 
 <style scoped>
-  .clip-text-props {
-    --ctp-surface: rgb(39 39 42);
-    --ctp-border: rgb(63 63 70);
-    --ctp-text: rgb(244 244 245);
-    --ctp-muted: rgb(161 161 170);
-    --ctp-accent: rgb(6 182 212);
+  /* Root */
+  .ctp {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--sidebar-surface);
+    color: var(--sidebar-text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 
-  .clip-text-props .ctp-input {
-    width: 100%;
-    padding: 0.625rem 0.75rem;
-    font-size: 0.875rem;
-    background-color: var(--ctp-surface);
-    border: 1px solid var(--ctp-border);
-    border-radius: 8px;
-    color: var(--ctp-text);
-    transition:
-      border-color 150ms ease,
-      box-shadow 150ms ease;
+  /* Embedded variant: fill flex parent and scroll the body. */
+  .ctp--embedded {
+    min-height: 0;
+    flex: 1 1 0%;
+    height: 100%;
+    font-size: 0.8125rem;
   }
 
-  .clip-text-props .ctp-input:focus {
-    outline: none;
-    border-color: var(--ctp-accent);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  .ctp--embedded .ctp__body {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
-  .clip-text-props .ctp-select {
+  .ctp--embedded .ctp__section {
+    padding: 1rem 1rem;
+  }
+
+  .ctp--embedded .ctp__section--danger {
+    padding-bottom: 1.25rem;
+  }
+
+  .ctp--embedded .ctp__section-hd {
+    font-size: 0.625rem;
+    margin-bottom: 0.625rem;
+    letter-spacing: 0.07em;
+  }
+
+  .ctp--embedded .ctp__label {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1.35;
+  }
+
+  .ctp--embedded .ctp__val {
+    font-size: 0.625rem;
+  }
+
+  .ctp--embedded .ctp__field {
+    gap: 8px;
+    min-width: 0;
+  }
+
+  /* Narrow rail: stack paired controls so sliders aren't crushed. */
+  .ctp--embedded .ctp__row2 {
+    grid-template-columns: 1fr;
+    gap: 12px 0;
+  }
+
+  .ctp--embedded .ctp__font-controls {
+    gap: 14px 0;
+  }
+
+  .ctp--embedded .ctp__mt {
+    margin-top: 10px;
+  }
+
+  .ctp--embedded .ctp__hint {
+    font-size: 0.625rem;
+    line-height: 1.45;
+  }
+
+  .ctp--embedded .ctp__hint.ctp__mb {
+    margin-bottom: 0.625rem;
+  }
+
+  .ctp--embedded .ctp__slider {
+    margin-top: 1px;
+  }
+
+  .ctp--embedded .ctp__swatch-row {
+    gap: 8px;
+  }
+
+  .ctp--embedded .ctp__colors-grid {
+    gap: 6px 8px;
+  }
+
+  .ctp--embedded .ctp__colors-row {
+    gap: 6px;
+  }
+
+  .ctp--embedded .ctp__section--colors .ctp__colors-row > .ctp__label {
+    font-size: 0.6875rem;
+    margin: 0;
+    min-width: 0;
+  }
+
+  .ctp--embedded .ctp__section--colors .ctp__colors-swatch-row .ctp__swatch {
+    width: 24px;
+    height: 24px;
+  }
+
+  .ctp--embedded .ctp__section--colors .ctp__colors-swatch-row .ctp__hex {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+  }
+
+  .ctp--embedded .ctp__swatch {
+    width: 28px;
+    height: 28px;
+  }
+
+  .ctp--embedded .ctp__hex {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.6875rem;
+    padding: 0.375rem 0.5rem;
+  }
+
+  .ctp--embedded .ctp__font-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.375rem;
+  }
+
+  .ctp--embedded .ctp__font-btn {
+    padding: 0.38rem 0.45rem;
+    font-size: 0.625rem;
+  }
+
+  .ctp--embedded .ctp__pill {
+    font-size: 0.6875rem;
+    padding: 0.4rem 0.65rem;
+  }
+
+  .ctp--embedded .ctp__seg-ctrl {
+    border-radius: 5px;
+    gap: 2px;
+    padding: 2px;
+  }
+
+  .ctp--embedded .ctp__seg-btn {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0.4rem 0.55rem;
+    font-size: 0.6875rem;
+  }
+
+  .ctp--embedded .ctp__textarea {
+    font-size: 0.75rem;
+    padding: 0.5rem 0.625rem;
+  }
+
+  .ctp--embedded .ctp__section-hd-row {
+    margin-bottom: 0.625rem;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .ctp--embedded .ctp__range-readout {
+    font-size: 0.625rem;
+  }
+
+  /* Header */
+  .ctp__header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--sidebar-border);
+    flex-shrink: 0;
+  }
+
+  .ctp__back {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .ctp__back:hover {
+    background: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .ctp__title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    letter-spacing: -0.01em;
+  }
+
+  /* Body */
+  .ctp__body {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ctp__empty-state {
+    padding: 1.5rem 1.25rem;
+    color: var(--sidebar-text-muted);
+    font-size: 0.8125rem;
+  }
+
+  /* Sections */
+  .ctp__section {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .ctp__section--danger {
+    border-bottom: none;
+    padding-bottom: 2.5rem;
+  }
+
+  .ctp__section-hd {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--sidebar-text-muted);
+    margin-bottom: 0.75rem;
+  }
+
+  .ctp__section-hd-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
-    cursor: pointer;
-    text-align: left;
+    gap: 0.75rem;
   }
 
-  .clip-text-props .ctp-select:hover {
-    border-color: rgba(255, 255, 255, 0.1);
+  .ctp__section-hd-row .ctp__section-hd {
+    margin-bottom: 0;
   }
 
-  .clip-text-props .ctp-dropdown {
-    position: absolute;
-    top: calc(100% + 0.35rem);
-    left: 0;
-    right: 0;
-    z-index: 50;
-    background-color: rgb(24 24 27);
-    border: 1px solid var(--ctp-border);
-    border-radius: 8px;
-    max-height: 12rem;
-    overflow-y: auto;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+  .ctp__hint {
+    color: var(--sidebar-text-muted);
+    font-size: 0.6875rem;
+    font-weight: 400;
+    line-height: 1.35;
   }
 
-  .clip-text-props .ctp-dropdown::-webkit-scrollbar {
-    width: 6px;
+  .ctp__hint.ctp__mb {
+    margin-bottom: 8px;
   }
 
-  .clip-text-props .ctp-dropdown::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
+  /* Utility */
+  .ctp__mt {
+    margin-top: 8px;
   }
 
-  .clip-text-props .ctp-dropdown-item {
-    display: block;
+  .ctp__mb {
+    margin-bottom: 12px;
+  }
+
+  .ctp__row2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 10px;
+  }
+
+  .ctp__field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .ctp__label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .ctp__val {
+    font-style: normal;
+    font-weight: 400;
+    color: var(--sidebar-text-muted);
+    margin-left: auto;
+  }
+
+  /* Textarea */
+  .ctp__textarea {
     width: 100%;
-    text-align: left;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
     padding: 0.625rem 0.75rem;
-    font-size: 0.875rem;
-    color: var(--ctp-text);
-    border: none;
-    background: transparent;
+    font-size: 0.8125rem;
+    color: var(--sidebar-text);
+    resize: vertical;
+    font-family: inherit;
+    transition: all 150ms ease;
+  }
+
+  .ctp__textarea:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  /* Slider */
+  .ctp__slider {
+    width: 100%;
+    accent-color: var(--sidebar-accent);
     cursor: pointer;
-    transition: background-color 150ms ease;
   }
 
-  .clip-text-props .ctp-dropdown-item:hover {
-    background-color: var(--ctp-surface);
+  /* Visibility range track */
+  .ctp__range-track {
+    position: relative;
+    height: 40px;
+    border-radius: 8px;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    user-select: none;
+    touch-action: none;
   }
 
-  .clip-text-props .ctp-dropdown-item--selected {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--ctp-accent);
+  .ctp__range-bg {
+    position: absolute;
+    top: 0.5rem;
+    bottom: 0.5rem;
+    left: 0.5rem;
+    right: 0.5rem;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+  }
+
+  .ctp__range-fill {
+    position: absolute;
+    top: 0.5rem;
+    bottom: 0.5rem;
+    border-radius: 6px;
+    background: rgba(6, 182, 212, 0.28);
+    border: 1px solid rgba(6, 182, 212, 0.55);
+    pointer-events: none;
+  }
+
+  .ctp__range-body {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 1;
+    cursor: grab;
+  }
+
+  .ctp__range-body:active {
+    cursor: grabbing;
+  }
+
+  .ctp__range-handle {
+    position: absolute;
+    top: 50%;
+    z-index: 2;
+    width: 14px;
+    height: 14px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid var(--sidebar-accent);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    cursor: ew-resize;
+    transition: transform 150ms ease;
+  }
+
+  .ctp__range-handle:hover {
+    transform: translate(-50%, -50%) scale(1.12);
+  }
+
+  .ctp__range-handle:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.45);
+  }
+
+  .ctp__range-readout {
+    font-family: 'Courier New', monospace;
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ctp__range-readout-span {
+    opacity: 0.65;
+  }
+
+  .ctp__range-axis {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 0.5625rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+    font-family: 'Courier New', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Font grid */
+  .ctp__font-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 3px;
+  }
+
+  .ctp__font-btn {
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    padding: 0.45rem 0.5rem;
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ctp__font-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--sidebar-border);
+    color: var(--sidebar-text);
+  }
+
+  .ctp__font-btn--active {
+    background: rgba(6, 182, 212, 0.15);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
+  }
+
+  .ctp__font-controls {
+    column-gap: 18px;
+    align-items: start;
+  }
+
+  .ctp__font-controls .ctp__field {
+    min-width: 0;
+  }
+
+  /* Pills (weight) */
+  .ctp__pill-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .ctp__pill {
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 999px;
+    padding: 0.45rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .ctp__pill:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--sidebar-text);
+  }
+
+  .ctp__pill--active {
+    background: rgba(6, 182, 212, 0.15);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
+  }
+
+  /* Segmented control (transform) */
+  .ctp__seg-ctrl {
+    display: flex;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    gap: 2px;
+    padding: 2px;
+    width: fit-content;
+  }
+
+  .ctp__seg-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 30px;
+    padding: 0.45rem 0.75rem;
+    background: var(--sidebar-hover);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .ctp__seg-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--sidebar-text);
+  }
+
+  .ctp__seg-btn--active {
+    background: rgba(6, 182, 212, 0.15);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
+    z-index: 1;
+  }
+
+  /* Colors */
+  .ctp__colors-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px 12px;
+    align-items: center;
+  }
+
+  .ctp__colors-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .ctp__section--colors .ctp__colors-row > .ctp__label {
+    flex: 0 0 auto;
+    margin: 0;
+    width: auto;
+    min-width: 60px;
+    white-space: nowrap;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--sidebar-text);
+  }
+
+  .ctp__colors-swatch-row {
+    flex: 1 1 0%;
+    min-width: 0;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .ctp__section--colors .ctp__colors-swatch-row .ctp__swatch {
+    width: 28px;
+    height: 28px;
+    border-radius: 5px;
+  }
+
+  .ctp__section--colors .ctp__colors-swatch-row .ctp__hex {
+    min-width: 0;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+  }
+
+  .ctp__swatch-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .ctp__swatch-wrap {
+    position: relative;
+    cursor: pointer;
+    display: block;
+    flex-shrink: 0;
+  }
+
+  .ctp__swatch-wrap input[type='color'] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+  }
+
+  .ctp__swatch {
+    display: block;
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    border: 1px solid var(--sidebar-border);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .ctp__swatch:hover {
+    border-color: var(--sidebar-accent);
+    transform: scale(1.05);
+  }
+
+  .ctp__hex {
+    flex: 1;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-family: 'Courier New', monospace;
+    color: var(--sidebar-text);
+    text-transform: uppercase;
+    transition: all 150ms ease;
+  }
+
+  .ctp__hex:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  /* Toggle */
+  .ctp__toggle {
+    position: relative;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .ctp__toggle input {
+    display: none;
+  }
+
+  .ctp__toggle-track {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 200ms ease;
+    display: block;
+  }
+
+  .ctp__toggle input:checked + .ctp__toggle-track {
+    background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
+    border-color: rgba(14, 165, 233, 0.5);
+    box-shadow: 0 0 12px rgba(14, 165, 233, 0.3);
+  }
+
+  .ctp__toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background: #fff;
+    border-radius: 50%;
+    transition: all 200ms ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    display: block;
+  }
+
+  .ctp__toggle input:checked + .ctp__toggle-track .ctp__toggle-thumb {
+    transform: translateX(20px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Delete button */
+  .ctp__delete-btn {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.625rem;
+    border: 1px solid rgba(248, 113, 113, 0.35);
+    background: rgba(248, 113, 113, 0.08);
+    color: #f87171;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .ctp__delete-btn:hover {
+    background: rgba(248, 113, 113, 0.14);
+    border-color: rgba(248, 113, 113, 0.55);
   }
 </style>

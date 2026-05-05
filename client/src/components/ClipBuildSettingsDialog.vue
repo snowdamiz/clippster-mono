@@ -957,7 +957,15 @@
     framingMode?: 'auto' | 'manual';
     manualFramingConfig?: import('@/types').ManualFramingConfig;
     manualFramingConfigs?: import('@/types').ManualFramingConfigs;
+    /** Full subtitle styling to burn in (when enabled). */
+    subtitleSettings?: SubtitleSettings | null;
     subtitleOverrides?: SubtitleOverrides;
+    /** Word-level transcript needed for subtitle generation. */
+    transcriptWords?: import('@/types').WordInfo[];
+    /** Segment-level transcript for chunk paging. */
+    transcriptSegments?: import('@/types').WhisperSegment[];
+    /** Max words per subtitle chunk; per-aspect-ratio caller may override. */
+    maxWords?: number;
     layoutOverlays?: import('@/types').LayoutOverlay[];
     // Multi-build targets (orgs and campaigns with their aspect ratios)
     buildTargets?: BuildTarget[];

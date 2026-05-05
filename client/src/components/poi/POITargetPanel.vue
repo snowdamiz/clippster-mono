@@ -1,7 +1,7 @@
 <template>
   <div class="poi-target-panel flex flex-col h-full">
     <!-- Header - single row -->
-    <div class="flex items-center gap-3 px-3 py-2 border-b border-zinc-700/50">
+    <div class="flex items-center gap-2 px-2 py-1.5 border-b border-zinc-700/50">
       <!-- Output Preview label + aspect ratio -->
       <div class="flex items-center gap-1.5 shrink-0">
         <span class="text-xs font-medium text-zinc-300">Output Preview</span>
@@ -103,7 +103,7 @@
     </div>
 
     <!-- Canvas Area -->
-    <div class="flex-1 p-3 flex items-center justify-center bg-zinc-950/50">
+    <div class="flex-1 px-2 py-2 flex items-center justify-center bg-zinc-950/50">
       <div
         ref="containerRef"
         class="relative bg-black rounded-lg overflow-hidden shadow-lg border border-zinc-800"
