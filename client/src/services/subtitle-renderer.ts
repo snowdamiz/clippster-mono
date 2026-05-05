@@ -89,6 +89,63 @@ export function getSubtitleWordSpacingPx(
   );
 }
 
+export function getSubtitleLineHeightMultiplier(
+  settings: Pick<SubtitleSettings, 'animationStyle' | 'lineHeight'>,
+  aspectRatio: string
+): number {
+  const configured =
+    Number.isFinite(settings.lineHeight) && settings.lineHeight > 0 ? settings.lineHeight : 1.2;
+  const [w, h] = aspectRatio.split(':').map(Number);
+  const aspectRatioValue = (w || 16) / (h || 9);
+  const isVertical = aspectRatioValue <= 0.9;
+  const needsExtraRoom =
+    settings.animationStyle === 'karaoke' ||
+    settings.animationStyle === 'zoom' ||
+    settings.animationStyle === 'pop' ||
+    settings.animationStyle === 'glow' ||
+    settings.animationStyle === 'box-highlight' ||
+    settings.animationStyle === 'wave';
+
+  if (isVertical && needsExtraRoom) {
+    return Math.max(configured, 1.45);
+  }
+  if (needsExtraRoom) {
+    return Math.max(configured, 1.35);
+  }
+  return configured;
+}
+
+export function getSubtitleWordSafetyPaddingPx(
+  settings: Pick<
+    SubtitleSettings,
+    'animationStyle' | 'border1Width' | 'border2Width' | 'fontSize'
+  >,
+  fontSizePx: number,
+  aspectRatio: string
+): number {
+  if (fontSizePx <= 0) return 0;
+  const configuredFontSize = settings.fontSize > 0 ? settings.fontSize : REFERENCE_SUBTITLE_FONT_PX;
+  const scaleFactor = fontSizePx / configuredFontSize;
+  const strokeReserve = Math.max(0, (settings.border1Width || 0) + (settings.border2Width || 0)) * scaleFactor;
+  const [w, h] = aspectRatio.split(':').map(Number);
+  const aspectRatioValue = (w || 16) / (h || 9);
+  const isVertical = aspectRatioValue <= 0.9;
+  const needsEffectReserve =
+    settings.animationStyle === 'karaoke' ||
+    settings.animationStyle === 'zoom' ||
+    settings.animationStyle === 'pop' ||
+    settings.animationStyle === 'glow' ||
+    settings.animationStyle === 'box-highlight' ||
+    settings.animationStyle === 'wave';
+
+  if (!needsEffectReserve) return strokeReserve;
+
+  // The SVG word stack can draw outside the measured text box (stroke + active scale).
+  // Reserve that room in layout so neighboring words do not overlap in 9:16 captions.
+  const effectReserve = fontSizePx * (isVertical ? 0.2 : 0.14);
+  return strokeReserve + effectReserve;
+}
+
 /**
  * Aspect-ratio scale factor — mirrors VideoPlayer.vue `finalFontSizeScale`.
  * Preview shrinks vertical/square to keep subtitles readable in narrow frames; we must apply
@@ -435,6 +492,7 @@ async function renderSubtitleFrame({
   const letterSpacing =
     fontSize > 0 ? (settings.letterSpacing || 0) * (fontSize / REFERENCE_SUBTITLE_FONT_PX) : 0;
   const wordSpacing = getSubtitleWordSpacingPx(settings.wordSpacing, fontSize);
+  const wordSafetyPadding = getSubtitleWordSafetyPaddingPx(settings, fontSize, aspectRatio);
 
   // Set up font (already preloaded once in preRenderSubtitleOverlays)
   const font = `${settings.fontWeight} ${fontSize}px "${settings.fontFamily}", sans-serif`;
@@ -448,13 +506,16 @@ async function renderSubtitleFrame({
   );
   
   const wordWidths: number[] = [];
+  const textWidths: number[] = [];
   for (const text of wordTexts) {
-    wordWidths.push(measureTextWithLetterSpacing(ctx, text, letterSpacing));
+    const textWidth = measureTextWithLetterSpacing(ctx, text, letterSpacing);
+    textWidths.push(textWidth);
+    wordWidths.push(textWidth + wordSafetyPadding * 2);
   }
 
   // maxWidth matches VideoPlayer `maxWidth: customSubtitleWidth + '%'`
   const maxWidthPx = (canvasWidth * (settings.maxWidth || 100)) / 100;
-  const lineStepPx = (settings.lineHeight || 1.2) * fontSize;
+  const lineStepPx = getSubtitleLineHeightMultiplier(settings, aspectRatio) * fontSize;
 
   const wordLines = wrapWordIndicesToLines(wordWidths, maxWidthPx, wordSpacing);
   const lineWidthPx: number[] = wordLines.map((line) => widthOfLine(line, wordWidths, wordSpacing));
@@ -556,6 +617,7 @@ async function renderSubtitleFrame({
       const word = frame.words[i]!;
       const text = wordTexts[i]!;
       const wordWidth = wordWidths[i]!;
+      const textWidth = textWidths[i]!;
       const isActive = i === frame.activeWordIndex;
       const wordCenterX = currentX + wordWidth / 2;
 
@@ -585,9 +647,9 @@ async function renderSubtitleFrame({
         const boxPad = 4 * scaleFactor;
         roundRect(
           ctx,
-          wordCenterX - wordWidth / 2 - boxPad,
+          wordCenterX - textWidth / 2 - boxPad,
           y - fontSize / 2 - boxPad / 2,
-          wordWidth + boxPad * 2,
+          textWidth + boxPad * 2,
           fontSize + boxPad,
           4 * scaleFactor
         );

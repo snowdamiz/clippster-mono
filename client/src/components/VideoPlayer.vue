@@ -172,6 +172,7 @@
             :class="getAnimationClass"
             :style="{
               transitionDuration: `${getWordAnimationDuration(wordInfo)}s`,
+              ...subtitleWordSafetyPaddingStyle,
               ...getTypewriterStyle(wordInfo, index),
             }"
           >
@@ -388,8 +389,15 @@
   } from '@/types';
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
   import { use169BlurSliderToCssPx } from '@/utils/use169Blur';
-  import { pickActiveSingleWordAtTime } from '@/utils/subtitleVisibleWords';
-  import { getSubtitleWordSpacingPx } from '@/services/subtitle-renderer';
+  import {
+    maxWordsChunkForAspectRatioString,
+    pickActiveSingleWordAtTime,
+  } from '@/utils/subtitleVisibleWords';
+  import {
+    getSubtitleLineHeightMultiplier,
+    getSubtitleWordSafetyPaddingPx,
+    getSubtitleWordSpacingPx,
+  } from '@/services/subtitle-renderer';
 
   interface WatermarkData {
     dataUrl: string; // Data URL for display
@@ -1325,17 +1333,12 @@
     isAudioSetup.value = false;
   }
 
-  // Calculate max words based on aspect ratio
+  // Calculate max words based on aspect ratio + effect density.
   const maxWordsForAspectRatio = computed(() => {
-    const aspectRatioValue = props.aspectRatio.width / props.aspectRatio.height;
-
-    if (aspectRatioValue > 1.5) {
-      return 6; // wide formats (16:9, 21:9)
-    } else if (aspectRatioValue > 0.9) {
-      return 4; // squarish (1:1, 4:3)
-    } else {
-      return 3; // vertical (9:16, 4:5)
-    }
+    return maxWordsChunkForAspectRatioString(
+      `${props.aspectRatio.width}:${props.aspectRatio.height}`,
+      props.subtitleSettings?.animationStyle
+    );
   });
 
   // Find the current whisper segment
@@ -1640,7 +1643,10 @@
     // Calculate scaled values for advanced settings
     const scaledPadding = Math.round((settings.padding || 0) * finalFontSizeScale.value);
     const scaledBorderRadius = Math.round((settings.borderRadius || 0) * finalFontSizeScale.value);
-    const scaledLineHeight = settings.lineHeight || 1.2;
+    const scaledLineHeight = getSubtitleLineHeightMultiplier(
+      settings,
+      `${props.aspectRatio.width}:${props.aspectRatio.height}`
+    );
 
     // Base styles — always use absolute positioning anchored to the overlay container.
     // Width is fit-content so the box shrinks/grows with the text.
@@ -1733,6 +1739,12 @@
       fontWeight: settings.fontWeight,
       fontSize: `${adjustedFontSize}px`,
       letterSpacing: `${adjustedLetterSpacing}px`,
+      lineHeight: String(
+        getSubtitleLineHeightMultiplier(
+          settings,
+          `${props.aspectRatio.width}:${props.aspectRatio.height}`
+        )
+      ),
     };
     
     // Add uppercase for single-word style (CapCut-style)
@@ -1751,6 +1763,20 @@
       subtitleRenderedFontSizePx.value
     );
     return `${gapPx}px`;
+  });
+
+  const subtitleWordSafetyPaddingStyle = computed(() => {
+    if (!props.subtitleSettings) return {};
+    const aspectRatio = `${props.aspectRatio.width}:${props.aspectRatio.height}`;
+    const padPx = getSubtitleWordSafetyPaddingPx(
+      props.subtitleSettings,
+      subtitleRenderedFontSizePx.value,
+      aspectRatio
+    );
+    const verticalPadPx = Math.max(0, padPx * 0.35);
+    return {
+      padding: `${verticalPadPx}px ${padPx}px`,
+    };
   });
 
   // Get letter spacing for SVG elements

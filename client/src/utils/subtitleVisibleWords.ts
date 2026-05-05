@@ -8,12 +8,25 @@ export interface SubtitleTimingSegment {
   text?: string;
 }
 
-/** Words-per-line chunk sizing — matches VideoPlayer `maxWordsForAspectRatio`. */
-export function maxWordsChunkForAspectRatioString(targetAspectRatio: string): number {
+/** Words-per-line chunk sizing — matches VideoPlayer/export subtitle paging. */
+export function maxWordsChunkForAspectRatioString(
+  targetAspectRatio: string,
+  animationStyle?: string
+): number {
   const [w, h] = targetAspectRatio.split(':').map(Number);
   const aspectRatioValue = (w || 16) / (h || 9);
   if (aspectRatioValue > 1.5) return 6;
   if (aspectRatioValue > 0.9) return 4;
+  if (
+    animationStyle === 'karaoke' ||
+    animationStyle === 'zoom' ||
+    animationStyle === 'pop' ||
+    animationStyle === 'glow' ||
+    animationStyle === 'box-highlight' ||
+    animationStyle === 'wave'
+  ) {
+    return 2;
+  }
   return 3;
 }
 
@@ -123,7 +136,7 @@ export function getVisibleSubtitleWordsForClipTime(
   const allSegmentWords = transcriptWordsForWhisperSegment(segment, words);
   if (!allSegmentWords.length) return [];
 
-  const maxWords = maxWordsChunkForAspectRatioString(targetAspectRatio);
+  const maxWords = maxWordsChunkForAspectRatioString(targetAspectRatio, animationStyle);
 
   if (animationStyle === 'single-word') {
     const currentWord = pickActiveSingleWordAtTime(allSegmentWords, t);

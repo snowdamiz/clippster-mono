@@ -826,8 +826,12 @@
    * Mirrors VideoPlayer.vue `maxWordsForAspectRatio` so the export's chunking matches the preview
    * (otherwise wide builds can ship 3-word frames while the preview shows 6 words per page).
    */
-  function getSubtitleMaxWordsForAspectRatio(ratio: string, fallback?: number): number {
-    const computed = maxWordsChunkForAspectRatioString(ratio);
+  function getSubtitleMaxWordsForAspectRatio(
+    ratio: string,
+    fallback?: number,
+    animationStyle?: string
+  ): number {
+    const computed = maxWordsChunkForAspectRatioString(ratio, animationStyle);
     if (Number.isFinite(computed) && computed > 0) return computed;
     return fallback || 4;
   }
@@ -4253,7 +4257,11 @@
               wordsCount: transcriptWords.length,
               segmentsCount: subtitleSegments.length,
               animationStyle: mergedSettings.animationStyle,
-              maxWords: getSubtitleMaxWordsForAspectRatio(ratio, props.maxWordsForAspectRatio),
+              maxWords: getSubtitleMaxWordsForAspectRatio(
+                ratio,
+                props.maxWordsForAspectRatio,
+                mergedSettings.animationStyle
+              ),
               hasRatioOverride: !!ratioOverride,
               ratioOverrideAnimationStyle: ratioOverride?.animationStyle,
               ratioOverrideMultiColorEnabled: ratioOverride?.multiColorEnabled,
@@ -4318,7 +4326,11 @@
               settings: mergedSettings,
               words: transcriptWords,
               segments: subtitleSegments,
-              maxWords: getSubtitleMaxWordsForAspectRatio(ratio, props.maxWordsForAspectRatio),
+              maxWords: getSubtitleMaxWordsForAspectRatio(
+                ratio,
+                props.maxWordsForAspectRatio,
+                mergedSettings.animationStyle
+              ),
               canvasWidth,
               canvasHeight: evenCanvasHeight,
               aspectRatio: ratio,
@@ -4368,7 +4380,11 @@
         transcriptWords: transcriptWords,
         transcriptSegments: transcriptSegments,
         maxWords: targetRatios.length === 1
-          ? getSubtitleMaxWordsForAspectRatio(targetRatios[0], props.maxWordsForAspectRatio)
+          ? getSubtitleMaxWordsForAspectRatio(
+              targetRatios[0],
+              props.maxWordsForAspectRatio,
+              effectiveSubtitleSettings?.animationStyle
+            )
           : props.maxWordsForAspectRatio,
         aspectRatios: targetRatios,
         quality: settings.quality,
