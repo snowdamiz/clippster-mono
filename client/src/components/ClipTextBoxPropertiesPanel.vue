@@ -606,8 +606,8 @@
   }
 
   .ctp--embedded .ctp__pill {
-    font-size: 8px;
-    padding: 2px 5px;
+    font-size: 0.6875rem;
+    padding: 0.4rem 0.65rem;
   }
 
   .ctp--embedded .ctp__seg-ctrl {
@@ -931,16 +931,17 @@
   /* Pills (weight) */
   .ctp__pill-row {
     display: flex;
-    gap: 5px;
+    gap: 6px;
     flex-wrap: wrap;
   }
 
   .ctp__pill {
     background: var(--sidebar-hover);
     border: 1px solid var(--sidebar-border);
-    border-radius: 20px;
-    padding: 2px 6px;
-    font-size: 9px;
+    border-radius: 999px;
+    padding: 0.45rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
     color: var(--sidebar-text-muted);
     cursor: pointer;
     transition: all 150ms ease;
