@@ -6,14 +6,8 @@ import {
   getNextSegmentNumber,
   createProject,
   getDatabase,
-  getCreatorProfile,
-  updateProject,
 } from '@/services/database';
-import { setProjectVodPreset } from '@/services/database/vod-presets';
-import {
-  parseCreatorClipBuildDefaults,
-  buildActiveVodPresetFromCreatorDefaults,
-} from '@/composables/useCreatorClipDefaults';
+import { seedCreatorClipLayoutOnProject } from '@/composables/useCreatorClipDefaults';
 import { generateId } from '@/services/database';
 import { trackEvent } from '@/services/analytics';
 import { useToast } from '@/composables/useToast';
@@ -79,29 +73,6 @@ const isInitialized = ref(false);
 // Download queue settings
 const MAX_CONCURRENT_DOWNLOADS = 1;
 const activeDownloadIds = reactive<Set<string>>(new Set());
-
-/** Apply creator profile `clip_build_defaults` to a project when the user opted in on download. */
-async function seedCreatorClipLayoutOnProject(
-  projectId: string,
-  creatorProfileId: string | undefined,
-  apply: boolean | undefined
-): Promise<void> {
-  if (!apply || !creatorProfileId) return;
-  try {
-    const profile = await getCreatorProfile(creatorProfileId);
-    if (!profile?.clip_build_defaults) return;
-    const defaults = parseCreatorClipBuildDefaults(profile.clip_build_defaults);
-    if (!defaults) return;
-    await setProjectVodPreset(
-      projectId,
-      null,
-      buildActiveVodPresetFromCreatorDefaults(defaults)
-    );
-    await updateProject(projectId, undefined, undefined, undefined, undefined, creatorProfileId);
-  } catch (e) {
-    console.warn('[Downloads] seedCreatorClipLayoutOnProject failed:', e);
-  }
-}
 
 // Persistence keys
 const ACTIVE_DOWNLOADS_KEY = 'clippster_active_downloads';

@@ -147,6 +147,7 @@ export {
   createTranscript,
   getTranscriptByRawVideoId,
   getTranscriptByProjectId,
+  getTranscriptsWithRawVideosByProjectId,
   createTranscriptSegment,
   getTranscriptSegments,
   getTranscriptWithSegmentsByProjectId,
@@ -165,6 +166,7 @@ export {
   getTranscriptChunks,
   updateChunkedTranscriptCompleteness,
   getChunkMetadataForProcessing,
+  deleteChunkedTranscript,
 } from './database/chunked-transcripts';
 
 // Re-export raw video functions
