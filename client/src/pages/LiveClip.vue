@@ -578,7 +578,7 @@
   }
 
   const { gates, requireSubscription } = useSubscriptionGate();
-  const { success, error: errorToast } = useToast();
+  const { success } = useToast();
 
   type ExtendedStreamer = Omit<MonitoredStreamer, 'platform'> & {
     platform: Platform;
@@ -990,7 +990,7 @@
       return {
         ...streamer,
         isDetecting: !!monitored,
-        mode: monitored ? (monitored.options.detectClips ? 'Auto-Detect' : 'Record Only') : null,
+        mode: monitored ? (monitored.options.mode === 'realtime-detect' ? 'Auto-Detect' : 'Record Only') : null,
         status: session ? (session.isStopping ? 'STOPPING' : 'LIVE') : monitored ? 'WAITING' : 'IDLE',
         isLive: monitored ? (session ? true : streamer.isLive) : streamer.isLive,
         hasTempRecording: !!dvrSession,
@@ -1134,7 +1134,7 @@
           profileImageUrl: record.profile_image_url || undefined,
           streamThumbnailUrl: record.stream_thumbnail_url || undefined,
           segmentDurationMinutes: record.segment_duration_minutes ?? 5,
-          mode: (monitored ? (monitored.options.detectClips ? 'Auto-Detect' : 'Record Only') : null) as 'Auto-Detect' | 'Record Only' | null,
+          mode: (monitored ? (monitored.options.mode === 'realtime-detect' ? 'Auto-Detect' : 'Record Only') : null) as 'Auto-Detect' | 'Record Only' | null,
           status: (session ? 'LIVE' : monitored ? 'WAITING' : 'IDLE') as 'LIVE' | 'WAITING' | 'IDLE' | 'STOPPING',
           selected: false,
           autoDvr: Boolean(record.auto_dvr),
@@ -1614,56 +1614,16 @@
       }
     }
 
-    // Start DVR recording with 1-minute segments (triggers 4-second HLS chunks)
+    // Realtime detection owns AI decisions. Monitoring only records and feeds
+    // short segments into the 30s transcript detector.
     await updateSegmentDuration(streamer, 1);
 
-    // Start monitoring WITHOUT segment-based detection (real-time detection handles it)
     await startMonitoring([streamer], {
-      detectClips: false, // Disable segment-based detection for real-time mode
+      mode: 'realtime-detect',
       segmentDurationMinutes: 1,
       promptId: data.promptId || undefined,
       promptContent: data.promptContent || undefined,
     });
-
-    // Start real-time clip detection
-    const session = activeSessions.value.get(streamer.id);
-    if (session) {
-      try {
-        await realtimeDetection.startDetection({
-          sessionId: session.sessionId,
-          streamerName: streamer.displayName,
-          platform: streamer.platform,
-          mintId: streamer.mintId,
-          prompt: data.promptContent || 'Detect viral moments',
-          segments: [], // Empty segments array - will be populated as recording progresses
-        });
-
-        addActivityLog({
-          streamerId: streamer.id,
-          streamerName: streamer.displayName,
-          platform: streamer.platform,
-          mintId: streamer.mintId,
-          message: 'Real-time clip detection started',
-          status: 'success',
-          profileImageUrl: streamer.profileImageUrl,
-        });
-      } catch (err) {
-        // Most likely "already active" — a previous session leaked. Surface it
-        // loudly so the user can stop the zombie session instead of silently
-        // burning credits in the background.
-        const message = err instanceof Error ? err.message : String(err);
-        errorToast('Could not start real-time detection', message);
-        addActivityLog({
-          streamerId: streamer.id,
-          streamerName: streamer.displayName,
-          platform: streamer.platform,
-          mintId: streamer.mintId,
-          message: `Real-time detection failed to start: ${message}`,
-          status: 'info',
-          profileImageUrl: streamer.profileImageUrl,
-        });
-      }
-    }
 
     // Move streamer to top of list
     const index = streamers.value.findIndex((s) => s.id === streamer.id);
@@ -1705,8 +1665,10 @@
     }
 
     await startMonitoring([streamer], {
-      detectClips,
-      segmentDurationMinutes: segmentDurationMinutes ?? streamer.segmentDurationMinutes ?? 5,
+      mode: detectClips ? 'realtime-detect' : 'record',
+      segmentDurationMinutes: detectClips
+        ? 1
+        : (segmentDurationMinutes ?? streamer.segmentDurationMinutes ?? 5),
       promptId: prompt?.promptId,
       promptContent: prompt?.promptContent,
     });

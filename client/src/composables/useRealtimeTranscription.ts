@@ -67,6 +67,7 @@ interface PendingSegment {
 
 interface RealtimeTranscriptionState {
   isActive: boolean;
+  activeSessionId: string | null;
   buffer: TranscriptChunk[];
   bufferDurationSeconds: number;
   lastProcessedTime: number;
@@ -88,6 +89,7 @@ const DEFAULT_SEGMENT_DURATION = 4;
 
 const state = ref<RealtimeTranscriptionState>({
   isActive: false,
+  activeSessionId: null,
   buffer: [],
   bufferDurationSeconds: BUFFER_DURATION_SECONDS,
   lastProcessedTime: 0,
@@ -98,6 +100,14 @@ const state = ref<RealtimeTranscriptionState>({
 });
 
 let segmentReadyUnlisten: UnlistenFn | null = null;
+
+type RealtimeSegmentPayload = {
+  path: string;
+  sessionId: string;
+  segment?: number;
+  duration?: number;
+  streamTime?: number;
+};
 
 /**
  * Charge the user's credits for audio actually sent to Whisper.
@@ -291,10 +301,58 @@ export function useRealtimeTranscription() {
       // — and because billing is tied to this code path, halting transcription
       // (stop, offline, recorder exit) automatically halts billing.
       await chargeForAudioSent(batchSeconds);
+      window.dispatchEvent(
+        new CustomEvent('realtime-transcript-batch-ready', {
+          detail: {
+            batchSeconds,
+            batchStartStreamTime,
+            bufferedChunks: state.value.buffer.length,
+          },
+        })
+      );
     } catch (error) {
       console.error('[RealtimeTranscription] Failed to transcribe batch:', error);
     } finally {
       state.value.flushInProgress = false;
+    }
+  }
+
+  async function queueSegment(payload: RealtimeSegmentPayload) {
+    if (!state.value.isActive || payload.sessionId !== state.value.activeSessionId) {
+      return;
+    }
+
+    const segmentDuration = payload.duration ?? DEFAULT_SEGMENT_DURATION;
+    // Prefer absolute streamTime derived from segment index + duration when available,
+    // otherwise fall back to a running cumulative counter so platforms that omit
+    // the segment index still produce monotonically-increasing timestamps.
+    const streamTime =
+      typeof payload.streamTime === 'number'
+        ? payload.streamTime
+        : payload.segment !== undefined && payload.segment !== null
+          ? payload.segment * segmentDuration
+          : state.value.cumulativeStreamSeconds;
+
+    state.value.cumulativeStreamSeconds = streamTime + segmentDuration;
+
+    const pending: PendingSegment = {
+      path: payload.path,
+      segmentNumber: payload.segment ?? state.value.pendingBatch.length,
+      duration: segmentDuration,
+      streamTime,
+    };
+
+    state.value.pendingBatch.push(pending);
+    state.value.pendingBatchSeconds += segmentDuration;
+
+    console.log(
+      '[RealtimeTranscription] Queued segment for batch:',
+      payload.path,
+      `(${segmentDuration}s, total=${state.value.pendingBatchSeconds.toFixed(1)}s/${WHISPER_BATCH_SECONDS}s)`
+    );
+
+    if (state.value.pendingBatchSeconds >= WHISPER_BATCH_SECONDS) {
+      await flushBatch(false);
     }
   }
 
@@ -315,6 +373,7 @@ export function useRealtimeTranscription() {
 
     console.log('[RealtimeTranscription] Starting transcription for session:', sessionId);
     state.value.isActive = true;
+    state.value.activeSessionId = sessionId;
     state.value.buffer = [];
     state.value.lastProcessedTime = 0;
     state.value.pendingBatch = [];
@@ -323,47 +382,7 @@ export function useRealtimeTranscription() {
     state.value.cumulativeStreamSeconds = 0;
 
     segmentReadyUnlisten = await listen('segment-ready', async (event: any) => {
-      const payload = event.payload as {
-        path: string;
-        sessionId: string;
-        segment?: number;
-        duration?: number;
-      };
-
-      if (payload.sessionId !== sessionId) {
-        return;
-      }
-
-      const segmentDuration = payload.duration ?? DEFAULT_SEGMENT_DURATION;
-      // Prefer absolute streamTime derived from segment index + duration when available,
-      // otherwise fall back to a running cumulative counter so platforms that omit
-      // the segment index still produce monotonically-increasing timestamps.
-      const streamTime =
-        payload.segment !== undefined && payload.segment !== null
-          ? payload.segment * segmentDuration
-          : state.value.cumulativeStreamSeconds;
-
-      state.value.cumulativeStreamSeconds = streamTime + segmentDuration;
-
-      const pending: PendingSegment = {
-        path: payload.path,
-        segmentNumber: payload.segment ?? state.value.pendingBatch.length,
-        duration: segmentDuration,
-        streamTime,
-      };
-
-      state.value.pendingBatch.push(pending);
-      state.value.pendingBatchSeconds += segmentDuration;
-
-      console.log(
-        '[RealtimeTranscription] Queued segment for batch:',
-        payload.path,
-        `(${segmentDuration}s, total=${state.value.pendingBatchSeconds.toFixed(1)}s/${WHISPER_BATCH_SECONDS}s)`
-      );
-
-      if (state.value.pendingBatchSeconds >= WHISPER_BATCH_SECONDS) {
-        await flushBatch(false);
-      }
+      await queueSegment(event.payload as RealtimeSegmentPayload);
     });
   }
 
@@ -389,6 +408,7 @@ export function useRealtimeTranscription() {
     }
 
     state.value.isActive = false;
+    state.value.activeSessionId = null;
     state.value.buffer = [];
     state.value.lastProcessedTime = 0;
     state.value.pendingBatch = [];
@@ -609,5 +629,6 @@ export function useRealtimeTranscription() {
     getRecentWindow,
     getTranscriptForRange,
     getTranscriptJson,
+    queueSegment,
   };
 }

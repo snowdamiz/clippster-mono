@@ -7,6 +7,8 @@ import { createClipVersion } from '@/services/database/clip-versions';
 import { updateClip } from '@/services/database/clips';
 import { getOrCreateManualSession } from '@/services/database/clip-detection-sessions';
 import { createProject } from '@/services/database/projects';
+import { createRawVideo } from '@/services/database/raw-videos';
+import { createTranscript, createTranscriptSegment } from '@/services/database/transcripts';
 import type { SupportedLivestreamPlatform } from '@/types/livestream';
 import { API_BASE } from '@/lib/apiBase';
 
@@ -94,7 +96,6 @@ interface RealtimeDetectionState {
   isActive: boolean;
   sessionId: string | null;
   projectId: string | null;
-  detectionInterval: number | null;
   pendingClip: PendingClip | null;
   /** Wall-clock time when the current pending clip "moment" started (new topic / new start time). */
   pendingClipEpochStart: number | null;
@@ -133,13 +134,12 @@ interface SavedClipInfo {
   savedAt: number;
 }
 
-const DETECTION_INTERVAL_MS = 30_000; // 30 seconds
 const DETECTION_WINDOW_SECONDS = 30; // last 30s of transcript sent to AI each tick
 const VIRALITY_THRESHOLD = 85;
 const DEDUP_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const OVERLAP_THRESHOLD = 0.3; // 30% time overlap = potential duplicate
 const TITLE_SIMILARITY_THRESHOLD = 0.25; // 25% word similarity = potential duplicate (lowered to catch "Savage Brother Roast" variants)
-const MIN_CLIP_DURATION_SECONDS = 4;
+const MIN_CLIP_DURATION_SECONDS = 10;
 const MAX_LEADING_SILENCE_SECONDS = 1;
 const MAX_TRAILING_SILENCE_SECONDS = 2;
 const MAX_INTERNAL_SILENCE_SECONDS = 14;
@@ -147,9 +147,9 @@ const MAX_INTERNAL_SILENCE_SECONDS = 14;
 const TRIM_BEFORE_FIRST_WORD_SECONDS = 0.6;
 /** Tail to keep after the last spoken word so the clip doesn't get clipped mid-laugh/reaction. */
 const TRIM_AFTER_LAST_WORD_SECONDS = 1.5;
-/** If two consecutive AI ticks return pending_clip: null while we hold a pending clip,
- *  finalize: 60 seconds of "nothing new" implies the moment ended. */
-const NULL_PENDING_DETECTIONS_TO_CLOSE = 2;
+/** If AI returns pending_clip: null while we hold a pending clip, finalize.
+ *  The system optimizes for fast clips: one confirmed no-continuation batch is enough. */
+const NULL_PENDING_DETECTIONS_TO_CLOSE = 1;
 /** Even if AI keeps extending, force finalize so clips actually save while live.
  *  Set to 4 min (slightly past 3-min max span) so a real 3-min moment can wrap on context_change first. */
 const MAX_PENDING_WALL_CLOCK_MS = 4 * 60 * 1000;
@@ -157,6 +157,9 @@ const MAX_PENDING_WALL_CLOCK_MS = 4 * 60 * 1000;
 const MAX_PENDING_CLIP_SPAN_SECONDS = 180;
 /** New AI pending with start moved more than this (seconds) resets the stale-finalize timer. */
 const PENDING_NEW_MOMENT_START_DELTA_SECONDS = 10;
+/** If a returned clip ends this far before the current transcript window edge,
+ *  treat it as complete even if an older server/model response omitted clip_state. */
+const CLOSED_CLIP_WINDOW_EDGE_GRACE_SECONDS = 3;
 /** Audio peak detection knobs reused for both gating-context and finalize boundary trim. */
 const PEAK_THRESHOLD = 0.3;
 const PEAK_MIN_INTERVAL = 2.0;
@@ -192,11 +195,63 @@ function createDebugStats(): DetectionDebugStats {
   };
 }
 
+function buildClipTranscriptFromRealtimeBuffer(
+  startTime: number,
+  endTime: number,
+  transcriptRange: {
+    text: string;
+    segments: Array<{
+      text: string;
+      start: number;
+      end: number;
+      words: Array<{ word: string; start: number; end: number }>;
+    }>;
+  }
+) {
+  const clipSegments = transcriptRange.segments
+    .map((segment, index) => {
+      const start = Math.max(0, segment.start - startTime);
+      const end = Math.min(endTime - startTime, segment.end - startTime);
+      if (end <= start) return null;
+
+      return {
+        id: index,
+        start,
+        end,
+        text: segment.text,
+        words: segment.words
+          .filter((word) => word.end >= startTime && word.start <= endTime)
+          .map((word) => ({
+            word: word.word,
+            start: Math.max(0, word.start - startTime),
+            end: Math.min(endTime - startTime, word.end - startTime),
+          })),
+      };
+    })
+    .filter(Boolean) as Array<{
+      id: number;
+      start: number;
+      end: number;
+      text: string;
+      words: Array<{ word: string; start: number; end: number }>;
+    }>;
+
+  const text = clipSegments.map((segment) => segment.text).join(' ').trim() || transcriptRange.text;
+  return {
+    text,
+    rawJson: JSON.stringify({
+      text,
+      duration: Math.max(0, endTime - startTime),
+      segments: clipSegments,
+    }),
+    segments: clipSegments,
+  };
+}
+
 const state = ref<RealtimeDetectionState>({
   isActive: false,
   sessionId: null,
   projectId: null,
-  detectionInterval: null,
   pendingClip: null,
   pendingClipEpochStart: null,
   prompt: '',
@@ -221,6 +276,9 @@ let streamEndedUnlisten: UnlistenFn | null = null;
  *  These survive HMR reloads via the dispose hook at the bottom of this file. */
 let outOfCreditsHandler: ((event: Event) => void) | null = null;
 let creditsChargedHandler: ((event: Event) => void) | null = null;
+let transcriptBatchReadyHandler: ((event: Event) => void) | null = null;
+let detectionRunInProgress = false;
+let detectionRunQueued = false;
 
 /**
  * Calculate time overlap ratio between two time ranges
@@ -305,6 +363,42 @@ function isDuplicateOfRecentClip(pending: PendingClip): boolean {
   return false;
 }
 
+function clampPendingClipToManualWindow(pending: PendingClip): PendingClip {
+  const duration = pending.endTime - pending.startTime;
+  if (duration <= MAX_PENDING_CLIP_SPAN_SECONDS) {
+    return pending;
+  }
+
+  const clampedStart = Math.max(0, pending.endTime - MAX_PENDING_CLIP_SPAN_SECONDS);
+  console.log(
+    `[RealtimeClipDetection] Clamping pending clip to manual DVR window: ` +
+      `[${pending.startTime.toFixed(2)}s - ${pending.endTime.toFixed(2)}s] -> ` +
+      `[${clampedStart.toFixed(2)}s - ${pending.endTime.toFixed(2)}s]`
+  );
+
+  return {
+    ...pending,
+    startTime: clampedStart,
+    detectionReason: `${pending.detectionReason} | Trimmed to best ${MAX_PENDING_CLIP_SPAN_SECONDS}s DVR window`,
+  };
+}
+
+function normalizeClipState(value: unknown): 'open' | 'closed' | null {
+  return value === 'open' || value === 'closed' ? value : null;
+}
+
+function shouldSaveImmediately(
+  clipState: 'open' | 'closed' | null,
+  clipEndTime: number,
+  windowEndTime: number
+): boolean {
+  if (clipState === 'closed') {
+    return true;
+  }
+
+  return clipEndTime <= windowEndTime - CLOSED_CLIP_WINDOW_EDGE_GRACE_SECONDS;
+}
+
 export function useRealtimeClipDetection() {
   const transcription = useRealtimeTranscription();
 
@@ -331,6 +425,23 @@ export function useRealtimeClipDetection() {
         },
       })
     );
+  }
+
+  async function runDetectionSerial() {
+    if (detectionRunInProgress) {
+      detectionRunQueued = true;
+      return;
+    }
+
+    detectionRunInProgress = true;
+    try {
+      do {
+        detectionRunQueued = false;
+        await runDetection();
+      } while (detectionRunQueued && state.value.isActive);
+    } finally {
+      detectionRunInProgress = false;
+    }
   }
 
   function evaluatePendingClipQuality(pending: PendingClip): ClipQualityResult {
@@ -725,6 +836,10 @@ export function useRealtimeClipDetection() {
       window.removeEventListener('realtime-credits-charged', creditsChargedHandler);
       creditsChargedHandler = null;
     }
+    if (transcriptBatchReadyHandler) {
+      window.removeEventListener('realtime-transcript-batch-ready', transcriptBatchReadyHandler);
+      transcriptBatchReadyHandler = null;
+    }
 
     // Self-terminate when the recorder for this session exits or the backend
     // signals the stream has ended. Without these, detection keeps ticking on
@@ -799,25 +914,11 @@ export function useRealtimeClipDetection() {
     };
     window.addEventListener('realtime-credits-charged', creditsChargedHandler);
 
-    // Schedule detection runs every 30s, but never overlap: setInterval would queue
-    // another run while await runDetection() is still in progress, which caused
-    // duplicate saves of the same pending clip (same timestamps/title).
-    const scheduleNextDetection = () => {
+    transcriptBatchReadyHandler = () => {
       if (!state.value.isActive) return;
-      state.value.detectionInterval = window.setTimeout(async () => {
-        if (!state.value.isActive) return;
-        try {
-          await runDetection();
-        } finally {
-          if (state.value.isActive) {
-            scheduleNextDetection();
-          } else {
-            state.value.detectionInterval = null;
-          }
-        }
-      }, DETECTION_INTERVAL_MS);
+      void runDetectionSerial();
     };
-    scheduleNextDetection();
+    window.addEventListener('realtime-transcript-batch-ready', transcriptBatchReadyHandler);
 
     console.log('[RealtimeClipDetection] Detection started, project:', projectId);
   }
@@ -865,10 +966,9 @@ export function useRealtimeClipDetection() {
       window.removeEventListener('realtime-credits-charged', creditsChargedHandler);
       creditsChargedHandler = null;
     }
-
-    if (state.value.detectionInterval !== null) {
-      clearTimeout(state.value.detectionInterval);
-      state.value.detectionInterval = null;
+    if (transcriptBatchReadyHandler) {
+      window.removeEventListener('realtime-transcript-batch-ready', transcriptBatchReadyHandler);
+      transcriptBatchReadyHandler = null;
     }
 
     // Save pending clip before stopping
@@ -888,6 +988,9 @@ export function useRealtimeClipDetection() {
     // audio (e.g. 15s remaining → 0.25 credits). After this returns, no further
     // billing can occur.
     await transcription.stopTranscription();
+    if (state.value.isActive) {
+      await runDetectionSerial();
+    }
 
     state.value.isActive = false;
     state.value.sessionId = null;
@@ -904,6 +1007,8 @@ export function useRealtimeClipDetection() {
     state.value.lastWindowEnd = null;
     state.value.lastWindowAdvanceAt = null;
     state.value.debugStats = createDebugStats();
+    detectionRunInProgress = false;
+    detectionRunQueued = false;
   }
 
   /**
@@ -1071,6 +1176,7 @@ export function useRealtimeClipDetection() {
 
       const result = await response.json();
       const contextChange = result.context_change || false;
+      const clipState = normalizeClipState(result.clip_state);
       const pendingClipData = result.pending_clip;
       const pendingClipRejected = result.pending_clip_rejected || false;
       const candidateRejected = result.candidate_rejected || false;
@@ -1089,7 +1195,7 @@ export function useRealtimeClipDetection() {
         state.value.reachSettings = incoming;
       }
 
-      console.log('[RealtimeClipDetection] Context change:', contextChange);
+      console.log('[RealtimeClipDetection] Context change:', contextChange, 'clipState:', clipState);
 
       if (pendingClipRejected && state.value.pendingClip) {
         state.value.debugStats.serverRejections += 1;
@@ -1166,7 +1272,7 @@ export function useRealtimeClipDetection() {
           );
         }
 
-        state.value.pendingClip = {
+        state.value.pendingClip = clampPendingClipToManualWindow({
           title: pendingClipData.title,
           description: pendingClipData.description,
           startTime: finalStart,
@@ -1182,13 +1288,25 @@ export function useRealtimeClipDetection() {
           densityScore: pendingClipData.density_score ?? pendingClipData.densityScore,
           signalScore: pendingClipData.signal_score ?? pendingClipData.signalScore,
           boundaryScore: pendingClipData.boundary_score ?? pendingClipData.boundaryScore,
-        };
+        });
         console.log(
           `[RealtimeClipDetection] Pending clip updated: "${state.value.pendingClip.title}" [${finalStart.toFixed(2)}s - ${finalEnd.toFixed(2)}s] (${(finalEnd - finalStart).toFixed(1)}s)`
         );
+        if (shouldSaveImmediately(clipState, state.value.pendingClip.endTime, window.end)) {
+          console.log(
+            `[RealtimeClipDetection] Pending clip closed in current window, saving immediately: "${state.value.pendingClip.title}"`
+          );
+          recordDebugEvent('close_pending_in_window', {
+            reason: clipState === 'closed' ? 'server_closed_clip' : 'client_inferred_closed_clip',
+            pendingTitle: state.value.pendingClip.title,
+            clipEndTime: state.value.pendingClip.endTime,
+            windowEnd: window.end,
+          });
+          await savePendingClip();
+        }
       } else if (state.value.pendingClip) {
-        // AI saw nothing new and we already have a pending clip. Two consecutive
-        // "nothing" ticks (~60s) means the moment is over: finalize and save.
+        // AI saw nothing new and we already have a pending clip. One confirmed
+        // "nothing" tick means the moment ended; save immediately for latency.
         state.value.consecutiveNullPendingDetections += 1;
         console.log(
           '[RealtimeClipDetection] AI returned no clip; consecutiveNull =',
@@ -1238,7 +1356,7 @@ export function useRealtimeClipDetection() {
 
     // Audio-peak-aware boundary refinement runs FIRST so the existing word-trim
     // quality gate can then strip residual silence around the energetic span.
-    let pending = claimed;
+    let pending = clampPendingClipToManualWindow(claimed);
     try {
       pending = await refineBoundariesWithPeaks(claimed);
     } catch (error) {
@@ -1368,6 +1486,63 @@ export function useRealtimeClipDetection() {
         detection_session_id: manualSessionId,
       });
 
+      try {
+        const transcriptRange = transcription.getTranscriptForRange(
+          qualityPending.startTime,
+          qualityPending.endTime
+        );
+        const clipTranscript = buildClipTranscriptFromRealtimeBuffer(
+          qualityPending.startTime,
+          qualityPending.endTime,
+          transcriptRange
+        );
+
+        if (clipTranscript.text || clipTranscript.segments.length > 0) {
+          const rawVideoId = await createRawVideo(clipFilePath, {
+            projectId: state.value.projectId,
+            originalFilename: clipFilePath.split(/[\\/]/).pop() || undefined,
+            duration: clipDuration,
+            sourceClipId: clipId,
+          });
+          const transcriptId = await createTranscript(
+            rawVideoId,
+            clipTranscript.rawJson,
+            clipTranscript.text,
+            'en',
+            clipDuration
+          );
+
+          for (let index = 0; index < clipTranscript.segments.length; index++) {
+            const segment = clipTranscript.segments[index];
+            await createTranscriptSegment(
+              transcriptId,
+              segment.start,
+              segment.end,
+              segment.text,
+              index,
+              clipId
+            );
+          }
+
+          console.log('[RealtimeClipDetection] Persisted clip transcript:', {
+            clipId,
+            rawVideoId,
+            transcriptId,
+            words: clipTranscript.segments.reduce((sum, segment) => sum + segment.words.length, 0),
+            segments: clipTranscript.segments.length,
+          });
+        } else {
+          console.warn('[RealtimeClipDetection] No transcript slice available to persist for clip:', {
+            clipId,
+            title: qualityPending.title,
+            startTime: qualityPending.startTime,
+            endTime: qualityPending.endTime,
+          });
+        }
+      } catch (transcriptError) {
+        console.warn('[RealtimeClipDetection] Failed to persist clip transcript:', transcriptError);
+      }
+
       state.value.debugStats.clipsSaved += 1;
       console.log('[RealtimeClipDetection] Pending clip saved:', clipId);
       recordDebugEvent('clip_saved', {
@@ -1433,18 +1608,10 @@ export function useRealtimeClipDetection() {
 }
 
 // Vite HMR cleanup. Without this, every time this module hot-reloads in dev the
-// previous module's setTimeout(detectionInterval) and Tauri listeners keep
-// firing against an orphaned `state` ref. With the wall-clock credit interval
-// removed (billing is now per-Whisper-batch in useRealtimeTranscription),
-// there's no zombie `/credits/deduct` loop to worry about — but we still
-// tear down detection timers and event listeners cleanly so the new module
-// instance starts from a known state.
+// previous module's Tauri/window listeners can keep firing against an orphaned
+// `state` ref.
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
-    if (state.value.detectionInterval !== null) {
-      clearTimeout(state.value.detectionInterval);
-      state.value.detectionInterval = null;
-    }
     if (recorderExitUnlisten) {
       try {
         recorderExitUnlisten();
@@ -1469,7 +1636,11 @@ if (import.meta.hot) {
       window.removeEventListener('realtime-credits-charged', creditsChargedHandler);
       creditsChargedHandler = null;
     }
+    if (transcriptBatchReadyHandler) {
+      window.removeEventListener('realtime-transcript-batch-ready', transcriptBatchReadyHandler);
+      transcriptBatchReadyHandler = null;
+    }
     state.value.isActive = false;
-    console.log('[RealtimeClipDetection] HMR dispose: cleared timers + listeners');
+    console.log('[RealtimeClipDetection] HMR dispose: cleared listeners');
   });
 }

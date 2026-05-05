@@ -489,6 +489,13 @@ pub async fn extract_and_chunk_audio(
         chunk_start, chunk_end, effective_duration
     );
 
+    if effective_duration < 1.0 {
+        return Err(format!(
+            "Video/audio range is too short to transcribe ({:.2}s)",
+            effective_duration
+        ));
+    }
+
     // Determine if we should use the cached audio file or the original video
     let use_cached_audio = if let Ok(ref cached_path) = cached_audio_path_result {
         if cached_path.exists() {
@@ -581,6 +588,13 @@ pub async fn extract_and_chunk_audio(
         if chunk_index > 100 {
             return Err("Too many chunks - possible infinite loop".to_string());
         }
+    }
+
+    if chunk_specs.is_empty() {
+        return Err(format!(
+            "No audio chunk specs were generated for {:.2}s of media",
+            effective_duration
+        ));
     }
 
     // Reset cancellation flag at the start of a new extraction

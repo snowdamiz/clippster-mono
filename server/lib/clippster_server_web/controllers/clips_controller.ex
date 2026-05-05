@@ -3708,6 +3708,7 @@ defmodule ClippsterServerWeb.ClipsController do
 
             {
               "context_change": true | false,
+              "clip_state": "open" | "closed" | null,
               "pending_clip": null  OR  {
                 "title": "<short title>",
                 "description": "<one-sentence description>",
@@ -3726,7 +3727,12 @@ defmodule ClippsterServerWeb.ClipsController do
               }
             }
 
-            ALL 7 SCORECARD FIELDS (hook_score, payoff_score, emotion_score, shareability_score, density_score, signal_score, boundary_score) ARE MANDATORY whenever pending_clip is non-null. If you cannot supply all 7, return pending_clip: null. Responses that omit any scorecard field are auto-rejected by the server.
+            clip_state is MANDATORY:
+            - "open" when pending_clip is non-null AND the clip-worthy moment is still actively continuing at/near the end of this 30s window.
+            - "closed" when pending_clip is non-null AND the clip-worthy moment has ended inside this 30s window. This tells the client to create the clip immediately.
+            - null when pending_clip is null.
+
+            ALL 7 SCORECARD FIELDS (hook_score, payoff_score, emotion_score, shareability_score, density_score, signal_score, boundary_score) ARE MANDATORY whenever pending_clip is non-null. If you cannot supply all 7, return pending_clip: null and clip_state: null. Responses that omit any scorecard field are auto-rejected by the server.
 
             Scorecard meanings (0-100 each):
             - hook_score: stop-scroll strength of the first 1-3 seconds
@@ -3750,6 +3756,7 @@ defmodule ClippsterServerWeb.ClipsController do
             ================================================================
             1. SAME scene continues into this window:
                - context_change = false
+               - clip_state = "open" only if the same scene is still active at/near the window edge; otherwise clip_state = "closed"
                - KEEP pending_clip.start_time exactly as it was (do NOT change it)
                - Set end_time = absolute timestamp of the LAST impactful word in this window's timeline (+ ≤1.5s tail)
                - DO NOT push end_time to #{transcript_end} unless the last impactful word IS at the window edge. If the last 5+ seconds of the window are silence/filler, end_time MUST stop at the last impactful word.
@@ -3757,11 +3764,12 @@ defmodule ClippsterServerWeb.ClipsController do
             2. Topic CHANGED mid-window (old scene ended, NEW scene started in the same window):
                - context_change = true
                - Emit a NEW pending_clip for the NEW scene with timeline-anchored start_time AND end_time
+               - clip_state describes the NEW scene: "open" if it continues at/near the window edge, "closed" if it also ended inside this window.
 
             3. Pending moment ENDED mid-window and nothing new is clip-worthy:
                - context_change = false
                - Set pending_clip.end_time to the LAST impactful word of the OLD scene
-               - Server will finalize when subsequent windows confirm no continuation
+               - Set clip_state = "closed" so the client creates the clip immediately. Do NOT wait for another window.
 
             CLIP LENGTH GUIDANCE
             ====================
@@ -3806,12 +3814,13 @@ defmodule ClippsterServerWeb.ClipsController do
             ==============================================================
 
             Example A — No clip detected (window is filler / no hook):
-            {"context_change": false, "pending_clip": null}
+            {"context_change": false, "clip_state": null, "pending_clip": null}
 
             Example B — Moment starts MID-window, still going at window edge:
             (window 900s-930s; PER-SEGMENT TIMELINE shows first impactful word at 917.4s, last at 929.6s, energy still high)
             {
               "context_change": false,
+              "clip_state": "open",
               "pending_clip": {
                 "title": "Airport Lady Freakout Begins",
                 "description": "Woman starts yelling at airport staff",
@@ -3835,6 +3844,7 @@ defmodule ClippsterServerWeb.ClipsController do
             (pending clip currently 800s-930s. New window 930s-960s. PER-SEGMENT TIMELINE: same scene continues until 942.5s, then 17s of silence/dead air through window end.)
             {
               "context_change": false,
+              "clip_state": "closed",
               "pending_clip": {
                 "title": "Airport Lady Freakout Begins",
                 "description": "Woman yells at airport staff, security arrives",
@@ -3852,12 +3862,13 @@ defmodule ClippsterServerWeb.ClipsController do
                 "boundary_score": 88
               }
             }
-            // KEPT start_time = 800 (original pending). end_time = 944.0 (last impactful word 942.5 + 1.5s tail). NOT 960 — the trailing 17s of silence is excluded.
+            // KEPT start_time = 800 (original pending). end_time = 944.0 (last impactful word 942.5 + 1.5s tail). NOT 960 — the trailing 17s of silence is excluded. clip_state="closed" means save immediately.
 
             Example D — Continuation; topic CHANGED mid-window (save old, start new):
             (pending clip currently 800s-930s. New window 930s-960s. PER-SEGMENT TIMELINE: old scene's last impactful word at 933.2s, then 4s pause, then NEW scene first impactful word at 937.8s, last at 957.1s.)
             {
               "context_change": true,
+              "clip_state": "closed",
               "pending_clip": {
                 "title": "Gambling Hot Streak",
                 "description": "Streamer hits a huge multiplier",
@@ -3875,12 +3886,13 @@ defmodule ClippsterServerWeb.ClipsController do
                 "boundary_score": 88
               }
             }
-            // context_change=true triggers server to save the OLD pending clip (server will anchor its end_time on the OLD scene's last impactful word, 933.2s). NEW pending starts at 937.2 (first_word 937.8 − 0.6s) and ends at 958.4 (last_word 957.1 + 1.3s tail).
+            // context_change=true triggers the client to save the OLD pending clip. NEW pending starts at 937.2 (first_word 937.8 − 0.6s) and ends at 958.4 (last_word 957.1 + 1.3s tail). clip_state="closed" means the NEW clip should also save immediately.
 
             Example E — Last 13 seconds of window are clip-worthy, rest is filler:
             (window 1200s-1230s; first 17s mundane chat, then PER-SEGMENT TIMELINE shows hook word at 1217.0s, last word at 1229.5s, still going)
             {
               "context_change": false,
+              "clip_state": "open",
               "pending_clip": {
                 "title": "Streamer Spills Tea",
                 "description": "Reveals dating drama",
@@ -3909,6 +3921,7 @@ defmodule ClippsterServerWeb.ClipsController do
             5. If hook_score < 35 OR payoff_score < 35 OR shareability_score < 35: pending_clip MUST be null.
             6. virality_score must be ≥ #{virality_threshold} for auto-save. Score honestly.
             7. Old response formats {"clips": [...]} and {"clips": [], "extensions": []} are DEPRECATED and forbidden.
+            8. clip_state MUST be "closed" whenever pending_clip.end_time is more than 3 seconds before #{transcript_end}. clip_state MUST be "open" only when the clip-worthy moment reaches the window edge.
             """
 
             # Call OpenRouter API using existing generate_clips function
@@ -3920,17 +3933,18 @@ defmodule ClippsterServerWeb.ClipsController do
                 # Parse AI response - extract the new pending clip data and transition signal.
                 # The server still validates/merges below, but an explicit AI context change
                 # should be honored so unrelated live topics do not get stitched together.
-                {ai_context_change, ai_pending_clip} =
+                {ai_context_change, ai_clip_state, ai_pending_clip} =
                   case ai_response do
                     # New format
                     %{"context_change" => change, "pending_clip" => clip} ->
-                      {change == true, clip}
+                      {change == true,
+                       normalize_realtime_clip_state(Map.get(ai_response, "clip_state")), clip}
 
                     # Old format fallback - convert to new format
                     %{"clips" => clips} when is_list(clips) and length(clips) > 0 ->
                       first_clip = List.first(clips)
 
-                      {false,
+                      {false, "open",
                        %{
                          "title" => Map.get(first_clip, "title", "Untitled"),
                          "description" => Map.get(first_clip, "description", ""),
@@ -3947,7 +3961,7 @@ defmodule ClippsterServerWeb.ClipsController do
 
                     # No clips detected
                     _ ->
-                      {false, nil}
+                      {false, nil, nil}
                   end
 
                 ai_pending_clip = normalize_realtime_scorecard(ai_pending_clip)
@@ -4042,13 +4056,17 @@ defmodule ClippsterServerWeb.ClipsController do
                     reach_settings
                   )
 
+                clip_state =
+                  infer_realtime_clip_state(ai_clip_state, final_pending_clip, transcript_end)
+
                 Logger.info(
-                  "[ClipsController] Context change: #{context_change}, Pending clip: #{if final_pending_clip, do: "#{final_pending_clip["title"]} (#{final_pending_clip["start_time"]}s - #{final_pending_clip["end_time"]}s)", else: "none"}"
+                  "[ClipsController] Context change: #{context_change}, Clip state: #{inspect(clip_state)}, Pending clip: #{if final_pending_clip, do: "#{final_pending_clip["title"]} (#{final_pending_clip["start_time"]}s - #{final_pending_clip["end_time"]}s)", else: "none"}"
                 )
 
                 json(conn, %{
                   success: true,
                   context_change: context_change,
+                  clip_state: clip_state,
                   pending_clip: final_pending_clip,
                   no_new_pending_detection: no_new_pending_detection,
                   pending_clip_rejected:
@@ -4081,6 +4099,7 @@ defmodule ClippsterServerWeb.ClipsController do
                 json(conn, %{
                   success: true,
                   context_change: false,
+                  clip_state: "open",
                   pending_clip: pending_clip,
                   pending_clip_rejected: false,
                   candidate_rejected: false,
@@ -4108,6 +4127,32 @@ defmodule ClippsterServerWeb.ClipsController do
         conn
         |> put_status(401)
         |> json(%{success: false, error: "Unauthorized"})
+    end
+  end
+
+  defp normalize_realtime_clip_state("open"), do: "open"
+  defp normalize_realtime_clip_state("closed"), do: "closed"
+  defp normalize_realtime_clip_state(:open), do: "open"
+  defp normalize_realtime_clip_state(:closed), do: "closed"
+  defp normalize_realtime_clip_state(_), do: nil
+
+  defp infer_realtime_clip_state(_requested_state, nil, _transcript_end), do: nil
+
+  defp infer_realtime_clip_state(requested_state, clip, transcript_end) do
+    requested_state =
+      requested_state
+      |> normalize_realtime_clip_state()
+
+    cond do
+      requested_state in ["open", "closed"] ->
+        requested_state
+
+      number_or_default(Map.get(clip, "end_time"), 0) <=
+          number_or_default(transcript_end, 0) - 3 ->
+        "closed"
+
+      true ->
+        "open"
     end
   end
 

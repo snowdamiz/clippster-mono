@@ -84,7 +84,6 @@
         @timeupdate="$emit('timeUpdate')"
         @loadedmetadata="$emit('loadedMetadata')"
         @ended="$emit('videoEnded')"
-        @click="$emit('togglePlayPause')"
         @error="$emit('videoError', $event)"
         @loadstart="$emit('loadStart')"
         @canplay="$emit('canPlay')"
@@ -94,8 +93,7 @@
       <!-- Use 16:9: CSS blur + sharp layer (GPU-friendly). Canvas blur was unusably slow on long VODs. -->
       <div
         v-if="showUse169GpuStack"
-        class="absolute inset-0 z-10 overflow-hidden cursor-pointer"
-        @click="$emit('togglePlayPause')"
+        class="absolute inset-0 z-10 overflow-hidden pointer-events-none"
       >
         <video
           ref="use169BgVideoRef"
@@ -122,8 +120,7 @@
       <canvas
         v-if="showFramingCanvas && videoSrc && !videoLoading && !videoError"
         ref="framingCanvasRef"
-        class="absolute inset-0 w-full h-full z-10 cursor-pointer"
-        @click="$emit('togglePlayPause')"
+        class="absolute inset-0 w-full h-full z-10 pointer-events-none"
       />
 
       <!-- Subtitle Overlay -->
@@ -134,12 +131,17 @@
         <!-- Selection box wrapper: dashed border + resize handles + drag -->
         <div
           class="subtitle-selection-box pointer-events-auto"
-          :class="{ 'is-active': isDraggingSubtitles || isResizingSubtitles }"
+          :class="{
+            'is-active': isDraggingSubtitles || isResizingSubtitles,
+            'is-hidden': !subtitleBoxVisible,
+          }"
           :style="getSubtitleContainerStyle"
-          @mousedown.self="startDragSubtitles"
+          @mousedown.self="onSubtitleBoxMouseDown"
+          @click.stop="onSubtitleBoxClick"
         >
           <!-- Drag handle bar at top — click to open properties, drag to move -->
           <div
+            v-if="subtitleBoxVisible"
             class="subtitle-drag-bar"
             @mousedown.stop="startDragSubtitles"
             @click.stop="emit('subtitleSelected')"
@@ -148,16 +150,20 @@
           </div>
 
           <!-- Corner resize handles for font size adjustment -->
-          <div class="resize-handle resize-handle-tl" @mousedown.stop="(e) => startFontResize(e, 'tl')"></div>
-          <div class="resize-handle resize-handle-tr" @mousedown.stop="(e) => startFontResize(e, 'tr')"></div>
-          <div class="resize-handle resize-handle-bl" @mousedown.stop="(e) => startFontResize(e, 'bl')"></div>
-          <div class="resize-handle resize-handle-br" @mousedown.stop="(e) => startFontResize(e, 'br')"></div>
+          <template v-if="subtitleBoxVisible">
+            <div class="resize-handle resize-handle-tl" @mousedown.stop="(e) => startFontResize(e, 'tl')" @click.stop></div>
+            <div class="resize-handle resize-handle-tr" @mousedown.stop="(e) => startFontResize(e, 'tr')" @click.stop></div>
+            <div class="resize-handle resize-handle-bl" @mousedown.stop="(e) => startFontResize(e, 'bl')" @click.stop></div>
+            <div class="resize-handle resize-handle-br" @mousedown.stop="(e) => startFontResize(e, 'br')" @click.stop></div>
+          </template>
 
         <div 
           ref="subtitleContainerRef"
-          class="subtitle-text-container cursor-move pointer-events-auto"
+          class="subtitle-text-container pointer-events-auto"
+          :class="subtitleBoxVisible ? 'cursor-move' : 'cursor-pointer'"
           :style="{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', width: 'fit-content', gap: wordGapStyle }"
-          @mousedown="startDragSubtitles"
+          @mousedown="onSubtitleTextMouseDown"
+          @click.stop="onSubtitleTextClick"
         >
           <span
             v-for="(wordInfo, index) in visibleWords"
@@ -345,39 +351,24 @@
         />
       </div>
 
-      <!-- Center Play/Pause Overlay -->
-      <button
+      <!-- Canvas click capture — clicking the previewer hides the subtitle selection box (no play/pause) -->
+      <div
         v-if="videoSrc && !videoLoading"
-        @click="$emit('togglePlayPause')"
-        class="absolute inset-0 flex items-center justify-center play-overlay"
-        :class="{ 'is-paused': !isPlaying }"
-        title="Play/Pause (Space)"
-      >
-        <!-- Gradient vignette for better visibility -->
-        <div
-          class="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/20 opacity-0 group-hover/player:opacity-100 transition-opacity duration-300"
-        />
+        class="absolute inset-0 z-[15] cursor-default"
+        @click="onCanvasClick"
+      />
 
-        <!-- Play/Pause Button -->
-        <div class="play-button-container" :class="{ 'show-button': !isPlaying }">
-          <div class="play-button">
-            <Play v-if="!isPlaying" class="h-10 w-10 text-white ml-1" fill="white" />
-            <Pause v-else class="h-10 w-10 text-white" fill="white" />
-          </div>
-        </div>
-
-        <!-- Keyboard hint -->
-        <div
-          class="absolute bottom-4 left-1/2 -translate-x-1/2 opacity-0 group-hover/player:opacity-100 transition-all duration-300 translate-y-2 group-hover/player:translate-y-0"
-        >
-          <div
-            class="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 backdrop-blur-sm rounded-md border border-white/10"
-          >
-            <kbd class="text-[10px] text-white/50 font-mono bg-white/10 px-1.5 py-0.5 rounded">Space</kbd>
-            <span class="text-[10px] text-white/40">to {{ isPlaying ? 'pause' : 'play' }}</span>
-          </div>
-        </div>
-      </button>
+      <!-- Center alignment guides — visible while dragging subtitles, highlighted when snapped to center -->
+      <div
+        v-if="showSubtitleCenterGuides"
+        class="subtitle-guide-line subtitle-guide-line--vertical"
+        :class="{ 'is-snapped': isSubtitleSnappedX }"
+      />
+      <div
+        v-if="showSubtitleCenterGuides"
+        class="subtitle-guide-line subtitle-guide-line--horizontal"
+        :class="{ 'is-snapped': isSubtitleSnappedY }"
+      />
     </div>
   </div>
 </template>
@@ -385,7 +376,7 @@
 <script setup lang="ts">
   import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
   import { convertFileSrc } from '@tauri-apps/api/core';
-  import { Video, AlertTriangle, Play, Pause, Film, RotateCcw } from 'lucide-vue-next';
+  import { Video, AlertTriangle, Film, RotateCcw } from 'lucide-vue-next';
   import Hls from 'hls.js';
 
   import type {
@@ -398,6 +389,7 @@
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
   import { use169BlurSliderToCssPx } from '@/utils/use169Blur';
   import { pickActiveSingleWordAtTime } from '@/utils/subtitleVisibleWords';
+  import { getSubtitleWordSpacingPx } from '@/services/subtitle-renderer';
 
   interface WatermarkData {
     dataUrl: string; // Data URL for display
@@ -578,14 +570,41 @@
   // Which corner: tl | tr | bl | br
   const fontResizeCorner = ref<'tl' | 'tr' | 'bl' | 'br'>('br');
 
+  // Visibility of the subtitle selection chrome (border, drag bar, resize handles).
+  // Click on canvas hides it (subtitles only). Click on subtitle text brings it back.
+  const subtitleBoxVisible = ref(true);
+
+  /** Snap tolerance (percent) — within this distance from center, snap & highlight guide. */
+  const SUBTITLE_SNAP_TOLERANCE_PCT = 1.5;
+
+  const showSubtitleCenterGuides = computed(
+    () => isDraggingSubtitles.value && subtitleBoxVisible.value
+  );
+  const isSubtitleSnappedX = computed(
+    () => Math.abs(customSubtitlePosition.value.x - 50) < SUBTITLE_SNAP_TOLERANCE_PCT
+  );
+  const isSubtitleSnappedY = computed(
+    () => Math.abs(customSubtitlePosition.value.y - 50) < SUBTITLE_SNAP_TOLERANCE_PCT
+  );
+
   watch(() => props.subtitleInitialPosition, (pos) => {
     customSubtitlePosition.value = pos ? { x: pos.x, y: pos.y } : { x: 50, y: 85 };
     if (pos?.width != null) customSubtitleWidth.value = pos.width;
+    // New clip / new position context — restore the selection chrome by default.
+    subtitleBoxVisible.value = true;
   });
 
   watch(() => props.subtitleSettings?.maxWidth, (w) => {
     if (w !== undefined) customSubtitleWidth.value = w;
   });
+
+  // Re-show the chrome whenever subtitles are re-enabled (so the user always sees handles first).
+  watch(
+    () => props.subtitleSettings?.enabled,
+    (enabled) => {
+      if (enabled) subtitleBoxVisible.value = true;
+    }
+  );
 
   // --- Clip text box (pill) ---
   const customClipTextPosition = ref({ x: 50, y: 50 });
@@ -1681,13 +1700,32 @@
     return `url(#shadow-${wordIndex})`;
   }
 
+  /** Effective subtitle font size in CSS px (panel fontSize × video layout scale). */
+  const subtitleRenderedFontSizePx = computed(() => {
+    if (!props.subtitleSettings) return 0;
+    return Math.max(1, Math.round(props.subtitleSettings.fontSize * finalFontSizeScale.value));
+  });
+
+  /**
+   * Letter spacing from the panel is in px, calibrated around a typical on-screen size.
+   * Scale with rendered font so gaps don’t look “stuck” when the user enlarges subtitles.
+   */
+  const REFERENCE_SUBTITLE_FONT_PX = 48;
+
+  const scaledSubtitleLetterSpacingPx = computed(() => {
+    if (!props.subtitleSettings) return 0;
+    const raw = props.subtitleSettings.letterSpacing || 0;
+    const fs = subtitleRenderedFontSizePx.value;
+    return raw * (fs / REFERENCE_SUBTITLE_FONT_PX);
+  });
+
   // Style for text layer (top layer)
   const getTextStyle = computed(() => {
     if (!props.subtitleSettings) return {};
 
     const settings = props.subtitleSettings;
-    const adjustedFontSize = Math.round(settings.fontSize * finalFontSizeScale.value);
-    const adjustedLetterSpacing = (settings.letterSpacing || 0) * finalFontSizeScale.value;
+    const adjustedFontSize = subtitleRenderedFontSizePx.value;
+    const adjustedLetterSpacing = scaledSubtitleLetterSpacingPx.value;
 
     const styles: any = {
       color: settings.textColor,
@@ -1705,23 +1743,20 @@
     return styles;
   });
 
-  // Calculate word gap (spacing between words)
+  // Space between word spans: scale with rendered font (see getSubtitleWordSpacingPx — not full 0.35em or gaps look huge).
   const wordGapStyle = computed(() => {
-    if (!props.subtitleSettings) return '0.35em';
-
-    const settings = props.subtitleSettings;
-    // wordSpacing is a multiplier (0.1 to 1), convert to em units
-    const wordSpacing = settings.wordSpacing || 0.35;
-    return `${wordSpacing}em`;
+    if (!props.subtitleSettings) return '0px';
+    const gapPx = getSubtitleWordSpacingPx(
+      props.subtitleSettings.wordSpacing,
+      subtitleRenderedFontSizePx.value
+    );
+    return `${gapPx}px`;
   });
 
   // Get letter spacing for SVG elements
   const svgLetterSpacing = computed(() => {
     if (!props.subtitleSettings) return '0px';
-
-    const settings = props.subtitleSettings;
-    const adjustedLetterSpacing = (settings.letterSpacing || 0) * finalFontSizeScale.value;
-    return `${adjustedLetterSpacing}px`;
+    return `${scaledSubtitleLetterSpacingPx.value}px`;
   });
 
   // Watermark overlay computed properties
@@ -2069,6 +2104,8 @@
     e.preventDefault();
     e.stopPropagation();
     if (!videoContainerRef.value) return;
+    // Drag is only meaningful when the box is visible (handles + chrome shown)
+    if (!subtitleBoxVisible.value) return;
 
     isDraggingSubtitles.value = true;
 
@@ -2091,10 +2128,64 @@
     const containerRect = videoContainerRef.value.getBoundingClientRect();
     const curX = ((e.clientX - containerRect.left) / containerRect.width) * 100;
     const curY = ((e.clientY - containerRect.top) / containerRect.height) * 100;
-    customSubtitlePosition.value = {
-      x: Math.max(0, Math.min(100, curX - subtitleDragOffset.value.x)),
-      y: Math.max(0, Math.min(100, curY - subtitleDragOffset.value.y)),
-    };
+    let nextX = Math.max(0, Math.min(100, curX - subtitleDragOffset.value.x));
+    let nextY = Math.max(0, Math.min(100, curY - subtitleDragOffset.value.y));
+    // Snap to center when within tolerance so users can land on truly-centered.
+    if (Math.abs(nextX - 50) < SUBTITLE_SNAP_TOLERANCE_PCT) nextX = 50;
+    if (Math.abs(nextY - 50) < SUBTITLE_SNAP_TOLERANCE_PCT) nextY = 50;
+    customSubtitlePosition.value = { x: nextX, y: nextY };
+  }
+
+  /**
+   * Mousedown on the dashed selection-box wrapper.
+   * Only initiates a drag if the box chrome is visible (so clicks while hidden don't fight the
+   * canvas-click handler that brings the box back).
+   */
+  function onSubtitleBoxMouseDown(e: MouseEvent) {
+    if (!subtitleBoxVisible.value) return;
+    startDragSubtitles(e);
+  }
+
+  /**
+   * Click on the box wrapper (not bubbled to canvas).
+   * If the box is currently hidden, surface it again so the user can drag/resize.
+   */
+  function onSubtitleBoxClick() {
+    if (!subtitleBoxVisible.value) {
+      subtitleBoxVisible.value = true;
+    }
+  }
+
+  /**
+   * Mousedown on the inner subtitle text container.
+   * When hidden, do not start a drag — let the click handler bring the box back.
+   */
+  function onSubtitleTextMouseDown(e: MouseEvent) {
+    if (!subtitleBoxVisible.value) return;
+    startDragSubtitles(e);
+  }
+
+  /**
+   * Click on the subtitle text — bring the selection chrome back when hidden.
+   * When already visible, do nothing here; the drag bar handles "select" semantics.
+   */
+  function onSubtitleTextClick() {
+    if (!subtitleBoxVisible.value) {
+      subtitleBoxVisible.value = true;
+    }
+  }
+
+  /**
+   * Click on the previewer canvas (anywhere outside the subtitle box / text).
+   * Hides the subtitle selection chrome so the user sees a clean preview of the subtitles only.
+   * Clicks on the subtitle box/text are stopped before reaching here.
+   */
+  function onCanvasClick() {
+    if (!props.subtitleSettings?.enabled) return;
+    if (visibleWords.value.length === 0) return;
+    if (subtitleBoxVisible.value) {
+      subtitleBoxVisible.value = false;
+    }
   }
 
   // Font resize via corner handles — dragging away from center = bigger
@@ -2292,55 +2383,6 @@
     animation: pulse-slow 3s ease-in-out infinite;
   }
 
-  /* Play/Pause Overlay */
-  .play-overlay {
-    cursor: pointer;
-  }
-
-  .play-button-container {
-    opacity: 0;
-    transform: scale(0.8);
-    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-
-  .play-overlay:hover .play-button-container,
-  .play-button-container.show-button {
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  .play-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    box-shadow:
-      0 8px 32px rgba(0, 0, 0, 0.4),
-      inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    transition: all 0.2s ease;
-  }
-
-  .play-button:hover {
-    background: rgba(0, 0, 0, 0.7);
-    border-color: rgba(255, 255, 255, 0.25);
-    transform: scale(1.05);
-  }
-
-  .play-button:active {
-    transform: scale(0.95);
-  }
-
-  /* Paused state shows play button more prominently */
-  .is-paused .play-button-container {
-    opacity: 0.9;
-    transform: scale(1);
-  }
-
   /* Focal Point Indicator */
   .focal-point-indicator {
     animation: focal-pulse 2s ease-in-out infinite;
@@ -2368,7 +2410,7 @@
     backdrop-filter: blur(4px);
   }
 
-  /* Subtitle selection box — dashed border, always visible when subtitles on */
+  /* Subtitle selection box — dashed border + drag bar; chrome can be toggled off via .is-hidden */
   .subtitle-selection-box {
     position: absolute;
     border: 1px dashed rgba(255, 255, 255, 0.45);
@@ -2384,6 +2426,25 @@
   .subtitle-selection-box.is-active {
     border-color: rgba(59, 130, 246, 0.85);
     border-width: 2px;
+  }
+
+  /*
+   * Hidden state: clicking the previewer canvas hides the chrome so the user sees a clean
+   * preview of just the subtitles. Clicking the subtitle text brings the chrome back.
+   * Padding is preserved so the subtitle text doesn't visually shift between states.
+   * Pointer-events are disabled on the wrapper so clicks in the invisible padding area pass
+   * through to the canvas — only the inner text container remains interactive.
+   */
+  .subtitle-selection-box.is-hidden,
+  .subtitle-selection-box.is-hidden:hover {
+    border-color: transparent;
+    border-width: 1px;
+    cursor: default;
+    pointer-events: none;
+  }
+
+  .subtitle-selection-box.is-hidden .subtitle-text-container {
+    pointer-events: auto;
   }
 
   /* Drag bar at the top of the selection box */
@@ -2462,6 +2523,39 @@
     bottom: -5px;
     right: -5px;
     cursor: nwse-resize;
+  }
+
+  /*
+   * Center alignment guide lines — visible while the user is dragging the subtitle box.
+   * Highlight (cyan + glow) when the subtitle box is snapped to the canvas center.
+   */
+  .subtitle-guide-line {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.45);
+    pointer-events: none;
+    z-index: 30;
+    transition: background-color 0.12s ease, box-shadow 0.12s ease;
+  }
+
+  .subtitle-guide-line--vertical {
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    transform: translateX(-50%);
+  }
+
+  .subtitle-guide-line--horizontal {
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    transform: translateY(-50%);
+  }
+
+  .subtitle-guide-line.is-snapped {
+    background: rgba(34, 211, 238, 0.95);
+    box-shadow: 0 0 6px rgba(34, 211, 238, 0.7);
   }
 
   /* Clip text box selection — same chrome as subtitles (blue), shrink-wrap inner pill */

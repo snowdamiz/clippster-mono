@@ -67,6 +67,60 @@ interface SubtitleFrame {
 const DEFAULT_COLOR_PALETTE = ['#04F827', '#0ea5e9', '#FFFD03', '#FFFFFF'];
 const DEFAULT_SUBTITLE_HIGHLIGHT = '#0ea5e9';
 
+/** Panel default `wordSpacing` is 0.35 (historical). Map to ~0.22em of font for natural gaps in preview + export. */
+const SUBTITLE_WORD_SPACING_DEFAULT = 0.35;
+const SUBTITLE_WORD_GAP_EM_EFFECTIVE = 0.22;
+
+/** Letter spacing reference — VideoPlayer.vue uses 48px so the px value tracks rendered font. */
+const REFERENCE_SUBTITLE_FONT_PX = 48;
+
+/**
+ * Pixel gap between words, scaled with rendered font size (matches VideoPlayer flex `gap`).
+ */
+export function getSubtitleWordSpacingPx(
+  wordSpacingSetting: number | undefined,
+  fontSizePx: number
+): number {
+  const w = wordSpacingSetting ?? SUBTITLE_WORD_SPACING_DEFAULT;
+  if (fontSizePx <= 0) return 0;
+  return Math.max(
+    0,
+    (w / SUBTITLE_WORD_SPACING_DEFAULT) * SUBTITLE_WORD_GAP_EM_EFFECTIVE * fontSizePx
+  );
+}
+
+/**
+ * Aspect-ratio scale factor — mirrors VideoPlayer.vue `finalFontSizeScale`.
+ * Preview shrinks vertical/square to keep subtitles readable in narrow frames; we must apply
+ * the SAME scale to the canvas so the export visually matches what the user saw.
+ */
+function aspectRatioFontScaleFromString(aspectRatio: string): number {
+  const [w, h] = aspectRatio.split(':').map(Number);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || h <= 0) return 1;
+  const value = w / h;
+  if (value <= 0.9) return 0.65;
+  if (value <= 1.1) return 0.78;
+  return 1;
+}
+
+/**
+ * Ensure the resolved font is fully loaded before measuring/drawing on canvas.
+ * Without this, `ctx.font = '700 56px "Inter", sans-serif'` falls back to a system
+ * font (different glyph widths) when the web font hasn't loaded yet — which causes
+ * the export to wrap differently and look smaller/misplaced vs the preview.
+ */
+async function ensureFontLoaded(fontShorthand: string): Promise<void> {
+  if (typeof document === 'undefined' || !document.fonts) return;
+  try {
+    await document.fonts.load(fontShorthand);
+    if ((document.fonts as any).ready) {
+      await (document.fonts as any).ready;
+    }
+  } catch (err) {
+    console.warn('[SubtitleRenderer] document.fonts.load failed (using fallback metrics):', err);
+  }
+}
+
 /**
  * Pre-render subtitle frames to PNG images for a clip build.
  * Returns an array of SubtitleOverlay objects containing the image paths and timing.
@@ -80,6 +134,7 @@ export async function preRenderSubtitleOverlays({
   canvasHeight,
   aspectRatio,
   introOffset = 0,
+  clipStartTime = 0,
 }: {
   settings: SubtitleSettings;
   words: WordInfo[];
@@ -89,13 +144,20 @@ export async function preRenderSubtitleOverlays({
   canvasHeight: number;
   aspectRatio: string;
   introOffset?: number;
+  /**
+   * Source-time offset of the OUTPUT clip's first frame. Word/segment times are subtracted
+   * by this value to convert them into output-video time (which always starts at 0 + introOffset).
+   * For a clip extracted from `-ss K` of the source, pass `K`. For a clip whose source already
+   * matches the output (most common case), pass 0.
+   */
+  clipStartTime?: number;
 }): Promise<SubtitleOverlay[]> {
   if (!settings.enabled || words.length === 0) {
     return [];
   }
 
   const overlays: SubtitleOverlay[] = [];
-  const frames = computeSubtitleFrames(settings, words, segments, maxWords);
+  const frames = computeSubtitleFrames(settings, words, segments, maxWords, clipStartTime);
 
   console.log(`[SubtitleRenderer] Pre-rendering ${frames.length} subtitle frames for ${aspectRatio}`, {
     position: settings.position,
@@ -104,6 +166,22 @@ export async function preRenderSubtitleOverlays({
     fontSize: settings.fontSize,
     animationStyle: settings.animationStyle,
     highlightColor: settings.highlightColor,
+  });
+
+  // Pre-load the font ONCE before rendering all frames so canvas measureText
+  // returns the same widths the preview's CSS layout used.
+  const aspectFontScale = aspectRatioFontScaleFromString(aspectRatio);
+  const previewFontPx = settings.fontSize * aspectFontScale * (canvasHeight / 1080);
+  const preloadFont = `${settings.fontWeight} ${Math.max(1, Math.round(previewFontPx))}px "${settings.fontFamily}", sans-serif`;
+  await ensureFontLoaded(preloadFont);
+
+  console.log(`[SubtitleRenderer] Renderer effective scale for ${aspectRatio}:`, {
+    aspectFontScale,
+    canvasScale: canvasHeight / 1080,
+    combined: aspectFontScale * (canvasHeight / 1080),
+    settingsFontSize: settings.fontSize,
+    canvasFontSize: previewFontPx,
+    fontFamily: settings.fontFamily,
   });
 
   for (let i = 0; i < frames.length; i++) {
@@ -115,6 +193,7 @@ export async function preRenderSubtitleOverlays({
         frame,
         canvasWidth,
         canvasHeight,
+        aspectRatio,
         allWords: words,
       });
 
@@ -142,35 +221,49 @@ export async function preRenderSubtitleOverlays({
     }
   }
 
+  if (frames.length > 0 && overlays.length === 0) {
+    throw new Error('Subtitle PNG rendering produced 0 overlays. Refusing to fall back to mismatched ASS subtitles.');
+  }
+
   console.log(`[SubtitleRenderer] Successfully pre-rendered ${overlays.length}/${frames.length} frames`);
   return overlays;
 }
 
 /**
  * Compute the subtitle frames (which words to show and when) based on segments and animation style.
+ *
+ * IMPORTANT — timing model:
+ *   `clipStartTime` is the source-time at which the OUTPUT video begins (typically 0 when the
+ *   source media file already IS the clip). Frame times are emitted in output-video time, i.e.
+ *   `(wordTime - clipStartTime)`. The previous implementation used `min(segment.start)` for
+ *   this offset, which silently shifted ALL subtitles earlier whenever the clip had silence
+ *   before the first whisper segment — making subtitles appear during silence and end before
+ *   the speaker actually finished talking.
  */
 function computeSubtitleFrames(
   settings: SubtitleSettings,
   words: WordInfo[],
   segments: { start: number; end: number; transcript: string }[],
-  maxWords: number
+  maxWords: number,
+  clipStartTime: number
 ): SubtitleFrame[] {
   const frames: SubtitleFrame[] = [];
 
-  // Calculate the overall clip time range from segments
-  const clipStart = Math.min(...segments.map(s => s.start));
-  const clipEnd = Math.max(...segments.map(s => s.end));
-  
-  // Filter words to only those within the clip's time range
-  const clipWords = words.filter(w => w.start >= clipStart && w.end <= clipEnd);
-  
+  // Filter window: keep words inside the union of segment ranges. We use min/max for filtering
+  // ONLY — never for time offsetting (see header comment above).
+  const filterStart = segments.length > 0 ? Math.min(...segments.map(s => s.start)) : -Infinity;
+  const filterEnd = segments.length > 0 ? Math.max(...segments.map(s => s.end)) : Infinity;
+
+  const clipWords = words.filter(w => w.start >= filterStart && w.end <= filterEnd);
+
   console.log('[SubtitleRenderer] computeSubtitleFrames called with:', {
     animationStyle: settings.animationStyle,
     totalWordsCount: words.length,
     clipWordsCount: clipWords.length,
     segmentsCount: segments.length,
     maxWords,
-    clipTimeRange: { start: clipStart, end: clipEnd },
+    clipStartTime,
+    filterRange: { start: filterStart, end: filterEnd },
     firstClipWord: clipWords[0],
     lastClipWord: clipWords[clipWords.length - 1],
   });
@@ -181,56 +274,67 @@ function computeSubtitleFrames(
   }
 
   if (settings.animationStyle === 'single-word') {
-    // Single word mode: one frame per word
-    for (let i = 0; i < clipWords.length; i++) {
-      const word = clipWords[i];
-      if (word.end - word.start < 0.05) continue; // Skip very short words
-      
-      // Adjust timing relative to clip start
+    // Match preview behaviour (`pickActiveSingleWordAtTime`): every word gets a frame —
+    // never silently dropped — and short ASR tokens get their hit window extended to a
+    // minimum readable duration, capped by the next word's start so two frames can't
+    // overlap. Without this, fast tokens (articles, contractions) were exported as a
+    // sub-frame flash or skipped entirely.
+    const MIN_WORD_HOLD_SEC = 0.1;
+    const EPS = 1e-4;
+    const sorted = [...clipWords].sort(
+      (a, b) => a.start - b.start || a.end - b.end
+    );
+    for (let i = 0; i < sorted.length; i++) {
+      const word = sorted[i];
+      if (word.end <= word.start) continue;
+      const next = sorted[i + 1];
+      const nextStart = next ? next.start : Number.POSITIVE_INFINITY;
+      const extendedEnd = Math.min(
+        Math.max(word.end, word.start + MIN_WORD_HOLD_SEC),
+        nextStart - EPS
+      );
+      if (extendedEnd <= word.start) continue;
+
       frames.push({
         words: [word],
-        startTime: word.start - clipStart,
-        endTime: word.end - clipStart,
+        startTime: word.start - clipStartTime,
+        endTime: extendedEnd - clipStartTime,
         activeWordIndex: 0,
       });
     }
   } else {
-    // Chunked display: group words by segments and chunks
     for (const segment of segments) {
-      console.log('[SubtitleRenderer] Processing segment:', segment);
       const segmentWords = clipWords.filter(
         w => w.start >= segment.start && w.end <= segment.end
       );
-      console.log('[SubtitleRenderer] Found', segmentWords.length, 'words in segment range', segment.start, '-', segment.end);
 
       if (segmentWords.length === 0) continue;
 
-      // Split into chunks of maxWords
       for (let chunkStart = 0; chunkStart < segmentWords.length; chunkStart += maxWords) {
         const chunkWords = segmentWords.slice(chunkStart, chunkStart + maxWords);
         if (chunkWords.length === 0) continue;
 
-        const chunkStartTime = chunkWords[0].start - clipStart;
-        const chunkEndTime = chunkWords[chunkWords.length - 1].end - clipStart;
+        const chunkStartTime = chunkWords[0].start - clipStartTime;
+        const chunkEndTime = chunkWords[chunkWords.length - 1].end - clipStartTime;
 
-        // For karaoke and other word-highlighting styles, create a frame for each word
-        if (settings.animationStyle === 'karaoke' || 
-            settings.animationStyle === 'glow' || 
+        if (settings.animationStyle === 'karaoke' ||
+            settings.animationStyle === 'glow' ||
             settings.animationStyle === 'box-highlight') {
           for (let wordIdx = 0; wordIdx < chunkWords.length; wordIdx++) {
             const word = chunkWords[wordIdx];
             const nextWord = chunkWords[wordIdx + 1];
-            const frameEnd = nextWord ? nextWord.start - clipStart : chunkEndTime;
+            // For karaoke-style highlighting, the previous word stays highlighted until the
+            // next word starts; the chunk hides at its last word's end.
+            const frameEnd = nextWord ? nextWord.start - clipStartTime : chunkEndTime;
 
             frames.push({
               words: chunkWords,
-              startTime: word.start - clipStart,
+              startTime: word.start - clipStartTime,
               endTime: frameEnd,
               activeWordIndex: wordIdx,
             });
           }
         } else {
-          // For non-highlighting styles, one frame per chunk
           frames.push({
             words: chunkWords,
             startTime: chunkStartTime,
@@ -242,7 +346,7 @@ function computeSubtitleFrames(
     }
   }
 
-  console.log('[SubtitleRenderer] Computed', frames.length, 'total frames');
+  console.log('[SubtitleRenderer] Computed', frames.length, 'total frames (offset by clipStartTime =', clipStartTime, ')');
   return frames;
 }
 
@@ -301,27 +405,38 @@ async function renderSubtitleFrame({
   frame,
   canvasWidth,
   canvasHeight,
+  aspectRatio,
   allWords,
 }: {
   settings: SubtitleSettings;
   frame: SubtitleFrame;
   canvasWidth: number;
   canvasHeight: number;
+  aspectRatio: string;
   allWords: WordInfo[];
 }): Promise<{ blob: Blob; positionX: number; positionY: number } | null> {
   if (frame.words.length === 0) return null;
 
-  const canvas = new OffscreenCanvas(canvasWidth, canvasHeight);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
 
-  // Calculate scale factor (based on 1080p reference)
-  const scaleFactor = canvasHeight / 1080;
+  // Match VideoPlayer.vue `finalFontSizeScale = aspectRatioScale × (containerHeight / 1080)`.
+  // canvasHeight here plays the role of `containerHeight`; aspectFontScale shrinks vertical/square
+  // (0.65 / 0.78) so the rendered PNG visually matches the preview after the canvas is composited
+  // to the actual output frame by FFmpeg's scale2ref.
+  const aspectFontScale = aspectRatioFontScaleFromString(aspectRatio);
+  const scaleFactor = aspectFontScale * (canvasHeight / 1080);
   const fontSize = settings.fontSize * scaleFactor;
-  const letterSpacing = settings.letterSpacing * scaleFactor;
-  const wordSpacing = (settings.wordSpacing || 0.35) * fontSize;
+  // VideoPlayer.vue letter spacing: raw × (renderedFont / 48). Pre-export was `raw × scaleFactor`,
+  // which gave a different gap-to-font ratio and contributed to the layout drift.
+  const letterSpacing =
+    fontSize > 0 ? (settings.letterSpacing || 0) * (fontSize / REFERENCE_SUBTITLE_FONT_PX) : 0;
+  const wordSpacing = getSubtitleWordSpacingPx(settings.wordSpacing, fontSize);
 
-  // Set up font
+  // Set up font (already preloaded once in preRenderSubtitleOverlays)
   const font = `${settings.fontWeight} ${fontSize}px "${settings.fontFamily}", sans-serif`;
   ctx.font = font;
   ctx.textAlign = 'center';
@@ -528,7 +643,15 @@ async function renderSubtitleFrame({
     }
   }
 
-  const blob = await canvas.convertToBlob({ type: 'image/png' });
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((result) => {
+      if (result) {
+        resolve(result);
+      } else {
+        reject(new Error('Failed to convert subtitle canvas to PNG blob'));
+      }
+    }, 'image/png');
+  });
   return { blob, positionX, positionY };
 }
 
@@ -536,7 +659,7 @@ async function renderSubtitleFrame({
  * Measure text width accounting for letter spacing.
  */
 function measureTextWithLetterSpacing(
-  ctx: OffscreenCanvasRenderingContext2D,
+  ctx: CanvasRenderingContext2D,
   text: string,
   letterSpacing: number
 ): number {
@@ -548,7 +671,7 @@ function measureTextWithLetterSpacing(
  * Draw text with letter spacing.
  */
 function drawTextWithLetterSpacing(
-  ctx: OffscreenCanvasRenderingContext2D,
+  ctx: CanvasRenderingContext2D,
   text: string,
   centerX: number,
   y: number,
@@ -576,7 +699,7 @@ function drawTextWithLetterSpacing(
  * Stroke text with letter spacing.
  */
 function strokeTextWithLetterSpacing(
-  ctx: OffscreenCanvasRenderingContext2D,
+  ctx: CanvasRenderingContext2D,
   text: string,
   centerX: number,
   y: number,
@@ -616,7 +739,7 @@ function getWordColor(settings: SubtitleSettings, wordIndex: number): string {
  * Draw a rounded rectangle path.
  */
 function roundRect(
-  ctx: OffscreenCanvasRenderingContext2D,
+  ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   width: number,

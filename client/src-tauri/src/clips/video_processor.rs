@@ -5489,11 +5489,46 @@ pub async fn apply_subtitle_overlays_to_video(
         subtitle_overlays.len()
     );
 
+    // Windows fails to spawn FFmpeg with os error 206 when hundreds of PNG inputs
+    // and a large filter graph are passed in one command. Apply overlays in small
+    // batches so preview-matching PNG subtitles do not fall back to ASS.
+    const SUBTITLE_OVERLAY_BATCH_SIZE: usize = 24;
+    let total_batches = subtitle_overlays.len().div_ceil(SUBTITLE_OVERLAY_BATCH_SIZE);
+    for (batch_idx, batch) in subtitle_overlays
+        .chunks(SUBTITLE_OVERLAY_BATCH_SIZE)
+        .enumerate()
+    {
+        println!(
+            "[Rust] Applying subtitle overlay batch {}/{} ({} frames)",
+            batch_idx + 1,
+            total_batches,
+            batch.len()
+        );
+        apply_subtitle_overlay_batch_to_video(app, input_path, batch, quality, batch_idx).await?;
+    }
+
+    println!("[Rust] Pre-rendered subtitle overlays applied successfully");
+    Ok(())
+}
+
+async fn apply_subtitle_overlay_batch_to_video(
+    app: &tauri::AppHandle,
+    input_path: &std::path::Path,
+    subtitle_overlays: &[super::types::SubtitleOverlaySettings],
+    quality: &str,
+    batch_idx: usize,
+) -> Result<(), String> {
     // Detect hardware encoder
     let encoder = detect_hardware_encoder(app, quality).await;
 
     // Create temporary output path
-    let temp_output = input_path.with_extension("subtitles.mp4");
+    let temp_output = {
+        let stem = input_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("subtitle_overlay");
+        input_path.with_file_name(format!("{}_subtitles_{:03}.mp4", stem, batch_idx))
+    };
 
     // Build filter complex for subtitle overlays
     let mut filter_parts: Vec<String> = Vec::new();
@@ -5510,18 +5545,34 @@ pub async fn apply_subtitle_overlays_to_video(
         // The text is already rendered at the correct position within the PNG
 
         let sub_label = format!("sub{}", idx);
+        let scaled_sub_label = format!("subs{}", idx);
+        let base_ref_label = format!("sbase{}", idx);
         let next_label = format!("so{}", idx);
 
-        // Prepare the subtitle image (ensure RGBA format)
+        // Prepare the subtitle image (ensure RGBA format).
         let sub_filter = format!("[{}:v]format=rgba[{}]", input_count, sub_label);
         filter_parts.push(sub_filter);
 
-        // Overlay with timing - subtitle PNGs are full-frame so we position at 0,0
-        // The PNG already contains the positioned text on a transparent background
+        // The frontend renders subtitle PNGs from the target aspect-ratio canvas (e.g. 1080x608
+        // for 16:9), but the actual output video may be 1920x1080 or another size. Scale each
+        // full-frame transparent PNG to match the video stream before compositing so the baked-in
+        // x/y/font placement stays proportional instead of appearing small in the top-left.
+        //
+        // In FFmpeg `scale2ref` the standard `iw`/`ih` variables refer to the REFERENCE input
+        // (second input — the video here), while `main_w`/`main_h` refer to the MAIN input
+        // (first input — the PNG). Using `main_w:main_h` is a no-op (scale PNG to its own size),
+        // which is exactly what was leaving the PNG at 1080x608 in the corner of a 1920x1080
+        // frame. We want to scale the PNG up to match the video, so use `iw:ih`.
+        filter_parts.push(format!(
+            "[{}][{}]scale2ref=w=iw:h=ih[{}][{}]",
+            sub_label, current_label, scaled_sub_label, base_ref_label
+        ));
+
+        // Overlay with timing. Subtitle PNGs are now resized to match the video frame.
         let overlay_filter = format!(
             "[{}][{}]overlay=x=0:y=0:enable='between(t,{:.3},{:.3})'[{}]",
-            current_label,
-            sub_label,
+            base_ref_label,
+            scaled_sub_label,
             overlay.start_time,
             overlay.end_time,
             next_label
@@ -5596,7 +5647,6 @@ pub async fn apply_subtitle_overlays_to_video(
     std::fs::rename(&temp_output, input_path)
         .map_err(|e| format!("Failed to rename subtitle overlay output: {}", e))?;
 
-    println!("[Rust] Pre-rendered subtitle overlays applied successfully");
     Ok(())
 }
 

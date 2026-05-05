@@ -103,6 +103,26 @@ export async function getChunkedTranscriptByRawVideoId(
   return result[0] || null;
 }
 
+export async function deleteChunkedTranscript(chunkedTranscriptId: string): Promise<void> {
+  const db = await getDatabase();
+  await db.execute('DELETE FROM transcript_chunks WHERE chunked_transcript_id = ?', [chunkedTranscriptId]);
+  await db.execute('DELETE FROM chunked_transcripts WHERE id = ?', [chunkedTranscriptId]);
+}
+
+export async function deleteChunkedTranscriptsByRawVideoId(rawVideoId: string): Promise<void> {
+  const db = await getDatabase();
+  const rows = await db.select<{ id: string }[]>(
+    'SELECT id FROM chunked_transcripts WHERE raw_video_id = ?',
+    [rawVideoId]
+  );
+
+  for (const row of rows) {
+    await db.execute('DELETE FROM transcript_chunks WHERE chunked_transcript_id = ?', [row.id]);
+  }
+
+  await db.execute('DELETE FROM chunked_transcripts WHERE raw_video_id = ?', [rawVideoId]);
+}
+
 // Get all chunks for a chunked transcript
 export async function getTranscriptChunks(chunkedTranscriptId: string): Promise<TranscriptChunk[]> {
   const db = await getDatabase();

@@ -676,6 +676,7 @@
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
   import { formatDateTime } from '@/utils/dateTimeUtils';
   import { parseTranscriptToWords, type WordInfo } from '@/utils/timelineUtils';
+  import { maxWordsChunkForAspectRatioString } from '@/utils/subtitleVisibleWords';
   import type { ClipWithVersion, ClipBuild, Prompt } from '@/services/database';
   import {
     PlayIcon,
@@ -769,15 +770,46 @@
         : Object.keys(subtitleSettings.perRatioConfigs ?? {});
     const targetRatios = ratios.length > 0 ? ratios : ['16:9'];
     const perRatioConfigs = { ...(subtitleSettings.perRatioConfigs ?? {}) };
+    const { perRatioConfigs: _perRatioConfigs, ...rootSettingsForPreview } = subtitleSettings;
 
     for (const ratio of targetRatios) {
       const existing = perRatioConfigs[ratio] ?? {};
+      // Per-ratio positions configured in the POI editor MUST win over the
+      // workspace `subtitle_position_x/y` columns. Those columns reflect the
+      // single workspace drag (typically 16:9 default) — applying them to
+      // every ratio's per-ratio config would clobber positions the user
+      // intentionally set for each aspect ratio in the POI editor.
+      const hasPerRatioPosition =
+        existing.position?.x != null && existing.position?.y != null;
+      const ratioPositionX = hasPerRatioPosition
+        ? existing.position!.x
+        : clip.subtitle_position_x;
+      const ratioPositionY = hasPerRatioPosition
+        ? existing.position!.y
+        : clip.subtitle_position_y;
+
       perRatioConfigs[ratio] = {
+        // Root settings act as DEFAULTS — they fill in fields that aren't
+        // explicitly set per-ratio so old per-ratio rows with missing/stale
+        // font sizes don't fall through to backend defaults and produce
+        // mismatched preview/export output.
+        ...rootSettingsForPreview,
+        // Existing per-ratio values WIN over root for fields the user has
+        // explicitly customized in the build dialog / POI editor (e.g.
+        // animationStyle, multiColorEnabled, fontSize, colorPalette). The
+        // previous order (root after existing) silently clobbered every
+        // per-ratio override the user had just configured.
         ...existing,
-        fontSize: existing.fontSize ?? subtitleSettings.fontSize,
-        position: { x: clip.subtitle_position_x, y: clip.subtitle_position_y },
-        positionPercentage: clip.subtitle_position_y,
-        maxWidth: clip.subtitle_position_width ?? existing.maxWidth ?? subtitleSettings.maxWidth,
+        // Resolve final position/width: per-ratio overrides the user set in
+        // the POI editor take precedence; otherwise fall back to the
+        // workspace position columns so single-ratio workspace drags still
+        // propagate to ratios that haven't been customized.
+        position: { x: ratioPositionX, y: ratioPositionY },
+        positionPercentage: ratioPositionY,
+        maxWidth:
+          existing.maxWidth ??
+          clip.subtitle_position_width ??
+          subtitleSettings.maxWidth,
       };
     }
 
@@ -787,6 +819,17 @@
       maxWidth: clip.subtitle_position_width ?? subtitleSettings.maxWidth,
       perRatioConfigs,
     };
+  }
+
+  /**
+   * Resolve max words per subtitle chunk for a target aspect ratio.
+   * Mirrors VideoPlayer.vue `maxWordsForAspectRatio` so the export's chunking matches the preview
+   * (otherwise wide builds can ship 3-word frames while the preview shows 6 words per page).
+   */
+  function getSubtitleMaxWordsForAspectRatio(ratio: string, fallback?: number): number {
+    const computed = maxWordsChunkForAspectRatioString(ratio);
+    if (Number.isFinite(computed) && computed > 0) return computed;
+    return fallback || 4;
   }
 
   // Helper function to convert server API response to Rust-expected format
@@ -979,6 +1022,132 @@
     return sourceWords.filter((word) => word.end > startTime && word.start < endTime);
   }
 
+  function getSourceSegmentsForSelfContainedClip(clip: ClipWithVersion): any[] {
+    if (clip.current_version_segments && clip.current_version_segments.length > 0) {
+      return clip.current_version_segments;
+    }
+
+    const startTime = clip.current_version_start_time ?? clip.start_time ?? 0;
+    const endTime = clip.current_version_end_time ?? clip.end_time ?? 0;
+    if (endTime <= startTime) return [];
+
+    return [
+      {
+        id: `source-${clip.id}`,
+        clip_version_id: clip.current_version_id || '',
+        segment_index: 0,
+        start_time: startTime,
+        end_time: endTime,
+        duration: endTime - startTime,
+        transcript: null,
+        transcript_raw_json: null,
+        audio_peaks: null,
+        created_at: Date.now(),
+      },
+    ];
+  }
+
+  function rebaseWordsToClipStart(words: WordInfo[], clipStart: number, clipDuration: number): WordInfo[] {
+    return words
+      .map((word) => ({
+        ...word,
+        start: Math.max(0, word.start - clipStart),
+        end: Math.min(clipDuration, word.end - clipStart),
+      }))
+      .filter((word) => word.end > word.start);
+  }
+
+  function wordsOverlapSegments(words: WordInfo[] | undefined, segments: any[]): boolean {
+    if (!words || words.length === 0 || segments.length === 0) return false;
+    return segments.some((segment) => {
+      const startTime = Number(segment.start_time) || 0;
+      const endTime = Number(segment.end_time) || startTime;
+      return words.some((word) => word.end > startTime && word.start < endTime);
+    });
+  }
+
+  function normalizeTranscriptToken(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  function getClipAnchorTranscriptText(clip: ClipWithVersion): string {
+    const segments = clip.current_version_segments || [];
+    for (const segment of segments) {
+      const text = getTranscriptText(segment.transcript);
+      if (text) return text;
+    }
+    return getTranscriptText((clip as any).combined_transcript) || getTranscriptText(clip.current_version_description);
+  }
+
+  function findTranscriptAnchorOffset(clip: ClipWithVersion, words: WordInfo[]): number {
+    const anchorTokens = tokenizeTranscriptText(getClipAnchorTranscriptText(clip))
+      .map(normalizeTranscriptToken)
+      .filter(Boolean);
+    if (anchorTokens.length < 2 || words.length === 0) return 0;
+
+    const probe = anchorTokens.slice(0, Math.min(anchorTokens.length, 8));
+    const wordTokens = words.map((word) => normalizeTranscriptToken(word.word));
+    const minimumMatches = Math.min(probe.length, 4);
+
+    for (let start = 0; start < wordTokens.length; start++) {
+      let matched = 0;
+      for (let offset = 0; offset < probe.length && start + offset < wordTokens.length; offset++) {
+        if (wordTokens[start + offset] !== probe[offset]) break;
+        matched++;
+      }
+      if (matched >= minimumMatches) return words[start].start;
+    }
+
+    return 0;
+  }
+
+  function trimSelfContainedTranscriptToAnchor<T extends { words: WordInfo[]; whisperSegments: any[]; text: string }>(
+    clip: ClipWithVersion,
+    transcript: T
+  ): T {
+    const offset = findTranscriptAnchorOffset(clip, transcript.words);
+    if (offset <= 0.25) return transcript;
+
+    const words = transcript.words
+      .filter((word) => word.end > offset)
+      .map((word) => ({
+        ...word,
+        start: Math.max(0, word.start - offset),
+        end: Math.max(0, word.end - offset),
+      }))
+      .filter((word) => word.end > word.start);
+
+    const whisperSegments = transcript.whisperSegments
+      .filter((segment: any) => segment.end > offset)
+      .map((segment: any) => ({
+        ...segment,
+        start: Math.max(0, segment.start - offset),
+        end: Math.max(0, segment.end - offset),
+        words: Array.isArray(segment.words)
+          ? segment.words
+              .filter((word: WordInfo) => word.end > offset)
+              .map((word: WordInfo) => ({
+                ...word,
+                start: Math.max(0, word.start - offset),
+                end: Math.max(0, word.end - offset),
+              }))
+              .filter((word: WordInfo) => word.end > word.start)
+          : undefined,
+      }))
+      .filter((segment: any) => segment.end > segment.start);
+
+    console.log('[ClipsTab] Trimmed self-contained transcript to clip anchor:', {
+      clipId: clip.id,
+      offset,
+      firstWordBefore: transcript.words[0]?.word,
+      firstWordAfter: words[0]?.word,
+      wordsBefore: transcript.words.length,
+      wordsAfter: words.length,
+    });
+
+    return { ...transcript, words, whisperSegments };
+  }
+
   function buildEditedSubtitleWordsForExport(segments: any[], transcriptWords: WordInfo[]): WordInfo[] {
     const out: WordInfo[] = [];
     for (const segment of segments) {
@@ -1004,6 +1173,93 @@
     return out.sort((a, b) => a.start - b.start);
   }
 
+  function isSelfContainedLiveClip(clip: ClipWithVersion): boolean {
+    const prompt = String((clip as any).session_prompt || '').toLowerCase();
+    const hasOwnFile = typeof clip.file_path === 'string' && clip.file_path.trim().length > 0;
+    return hasOwnFile && (prompt === 'manual clip creation' || prompt.includes('auto'));
+  }
+
+  function isClipBuildOutputPath(filePath: string | null | undefined): boolean {
+    if (!filePath) return false;
+    const normalizedPath = filePath.replace(/\\/g, '/').toLowerCase();
+    const fileName = normalizedPath.split('/').pop() || '';
+
+    return (
+      normalizedPath.includes('/clips/project_') ||
+      normalizedPath.includes('/run-') ||
+      normalizedPath.includes('/manual-builds/') ||
+      /_\d+-\d+_\d+\.(mp4|mov)$/.test(fileName)
+    );
+  }
+
+  function getSelfContainedClipDuration(clip: ClipWithVersion): number {
+    if (clip.current_version_segments && clip.current_version_segments.length > 0) {
+      return clip.current_version_segments.reduce((total, segment) => {
+        const duration = Number(segment.duration) || Number(segment.end_time) - Number(segment.start_time);
+        return total + Math.max(0, duration);
+      }, 0);
+    }
+
+    const startTime = clip.current_version_start_time ?? clip.start_time ?? 0;
+    const endTime = clip.current_version_end_time ?? clip.end_time ?? 0;
+    if (endTime > startTime) return endTime - startTime;
+    return clip.duration || 0;
+  }
+
+  function normalizePathForCompare(path: string): string {
+    return path.replace(/\\/g, '/').replace(/^file:\/\//, '').toLowerCase();
+  }
+
+  async function loadSelfContainedClipTranscript(
+    projectId: string,
+    clip: ClipWithVersion
+  ): Promise<{ words: WordInfo[]; whisperSegments: any[]; text: string } | null> {
+    if (!clip.file_path) return null;
+
+    const { getRawVideosByProjectId, getTranscriptByRawVideoId, getTranscriptSegments } = await import('@/services/database');
+    const rawVideos = await getRawVideosByProjectId(projectId);
+    const normalizedClipPath = normalizePathForCompare(clip.file_path);
+    const rawVideo = rawVideos.find((video) => normalizePathForCompare(video.file_path) === normalizedClipPath);
+    if (!rawVideo) return null;
+
+    const transcript = await getTranscriptByRawVideoId(rawVideo.id);
+    if (!transcript?.raw_json) return null;
+
+    const words = parseTranscriptToWords(transcript.raw_json);
+    const dbSegments = await getTranscriptSegments(transcript.id);
+    let text = transcript.text || '';
+    let whisperSegments: any[] = [];
+
+    try {
+      const parsed = JSON.parse(transcript.raw_json);
+      if (Array.isArray(parsed?.segments)) {
+        whisperSegments = parsed.segments.map((segment: any, index: number) => ({
+          id: segment.id ?? index,
+          start: Number(segment.start) || 0,
+          end: Number(segment.end) || 0,
+          text: segment.text || '',
+          words: Array.isArray(segment.words)
+            ? segment.words.map((word: any) => ({
+                word: String(word.word || '').trim(),
+                start: Number(word.start) || 0,
+                end: Number(word.end) || 0,
+                confidence: word.confidence,
+              }))
+            : undefined,
+        }));
+      }
+      if (!text && typeof parsed?.text === 'string') text = parsed.text;
+    } catch {
+      // Keep DB transcript text / parsed words fallback.
+    }
+
+    if (!text && dbSegments.length > 0) {
+      text = dbSegments.map((segment) => segment.text).filter(Boolean).join(' ');
+    }
+
+    return { words, whisperSegments, text };
+  }
+
   // Props
   interface ClipsTabProps {
     projectId: string | null;
@@ -1020,6 +1276,7 @@
     prompts: Prompt[];
     transcriptData: any;
     subtitleSettings?: SubtitleSettings | null;
+    subtitleSettingsClipId?: string | null;
     maxWordsForAspectRatio?: number;
     watermarkSettings?: WatermarkSettings | null;
     // Creator profile default assets (auto-applied when building clips)
@@ -1049,6 +1306,7 @@
     videoDuration: 0,
     prompts: () => [],
     subtitleSettings: null,
+    subtitleSettingsClipId: null,
     maxWordsForAspectRatio: 3,
     watermarkSettings: null,
     creatorDefaultIntro: null,
@@ -1201,7 +1459,13 @@
 
   const buildDialogSubtitleSettings = computed((): SubtitleSettings | null => {
     const vodDefaults = props.vodPresetConfig?.subtitleDefaults;
-    const clipSettings = derivedSubtitleSettings.value ?? props.subtitleSettings ?? null;
+    const shouldUseLivePreviewSettings =
+      !!props.subtitleSettings &&
+      !!clipToBuild.value &&
+      clipToBuild.value.id === props.subtitleSettingsClipId;
+    const clipSettings = shouldUseLivePreviewSettings
+      ? props.subtitleSettings
+      : (derivedSubtitleSettings.value ?? props.subtitleSettings ?? null);
     if (clipSettings) {
       return mergeVodSubtitleDefaultsWithSavedSettings(clipSettings, vodDefaults);
     }
@@ -2380,17 +2644,15 @@
       // clip.file_path may point to a previous build output (e.g., clip_at_112527_9-16_2.mp4)
       // which would cause FFmpeg to fail when building different aspect ratios
       let projectVideo: { file_path: string; duration?: number | null };
+      const isBuildOutput = isClipBuildOutputPath(clip.file_path);
+      const selfContainedClip = isSelfContainedLiveClip(clip) && !isBuildOutput;
 
-      // Check if file_path points to a build output directory (contains /run-\d+/ or /clips/)
-      const isBuildOutput = clip.file_path && (
-        clip.file_path.includes('\\run-') || 
-        clip.file_path.includes('/run-') ||
-        clip.file_path.match(/clip_at_\d+_\d+-\d+_\d+\.mp4$/)
-      );
-
-      if (clip.file_path && !isBuildOutput) {
-        // Manual clip with valid source file_path (not a build output)
-        console.log('[ClipsTab] Using manual clip file_path:', clip.file_path);
+      if ((selfContainedClip || clip.file_path) && clip.file_path && !isBuildOutput) {
+        // Manual/auto live clips are self-contained files. Build the whole file from 0s.
+        console.log('[ClipsTab] Using clip file_path as build source:', {
+          filePath: clip.file_path,
+          selfContainedClip,
+        });
         projectVideo = {
           file_path: clip.file_path,
           duration: clip.duration || undefined,
@@ -2416,8 +2678,40 @@
       // The clip object in props may have stale data if user edited segments on timeline
       const { getClipSegmentsByVersionId } = await import('@/services/database/clip-segments');
       let freshSegments = clip.current_version_segments || [];
+      const selfContainedTranscript = selfContainedClip
+        ? await loadSelfContainedClipTranscript(clip.project_id || props.projectId, clip)
+        : null;
+      const anchoredSelfContainedTranscript =
+        selfContainedClip && selfContainedTranscript
+          ? trimSelfContainedTranscriptToAnchor(clip, selfContainedTranscript)
+          : null;
 
-      if (clip.current_version_id) {
+      if (selfContainedClip) {
+        const duration = getSelfContainedClipDuration(clip);
+        if (duration <= 0) {
+          throw new Error('Invalid clip duration for auto-detected clip build');
+        }
+
+        freshSegments = [
+          {
+            id: `self-contained-${clip.id}`,
+            clip_version_id: clip.current_version_id || '',
+            segment_index: 0,
+            start_time: 0,
+            end_time: duration,
+            duration,
+            transcript: selfContainedTranscript?.text || null,
+            transcript_raw_json: null,
+            audio_peaks: null,
+            created_at: Date.now(),
+          },
+        ];
+        console.log('[ClipsTab] Building self-contained auto/live clip as 0-based full file:', {
+          clipId: clip.id,
+          duration,
+          hasOwnTranscript: !!selfContainedTranscript,
+        });
+      } else if (clip.current_version_id) {
         try {
           const dbSegments = await getClipSegmentsByVersionId(clip.current_version_id);
           if (dbSegments.length > 0) {
@@ -2475,11 +2769,33 @@
       const { invoke } = await import('@tauri-apps/api/core');
 
       // Get transcript data from props (already computed in parent)
-      const transcriptWords = buildEditedSubtitleWordsForExport(
-        freshSegments,
-        props.transcriptData?.words || []
+      const sourceSegmentsForSelfContained = selfContainedClip ? getSourceSegmentsForSelfContainedClip(clip) : [];
+      const useSourceTranscriptForSelfContained =
+        selfContainedClip && !anchoredSelfContainedTranscript && wordsOverlapSegments(props.transcriptData?.words, sourceSegmentsForSelfContained);
+      const sourceTranscriptWords = useSourceTranscriptForSelfContained
+        ? props.transcriptData?.words || []
+        : anchoredSelfContainedTranscript?.words || props.transcriptData?.words || [];
+      const shouldUseSourceWindowForSubtitles =
+        selfContainedClip && (useSourceTranscriptForSelfContained || !anchoredSelfContainedTranscript);
+      const sourceSegmentsForSubtitles =
+        shouldUseSourceWindowForSubtitles
+          ? sourceSegmentsForSelfContained
+          : freshSegments;
+      const sourceBasedTranscriptWords = buildEditedSubtitleWordsForExport(
+        sourceSegmentsForSubtitles,
+        sourceTranscriptWords
       );
-      const transcriptSegments = props.transcriptData?.whisperSegments || [];
+      const transcriptWords =
+        shouldUseSourceWindowForSubtitles && sourceSegmentsForSubtitles.length > 0
+          ? rebaseWordsToClipStart(
+              sourceBasedTranscriptWords,
+              Number(sourceSegmentsForSubtitles[0].start_time) || 0,
+              getSelfContainedClipDuration(clip)
+            )
+          : sourceBasedTranscriptWords;
+      const transcriptSegments = useSourceTranscriptForSelfContained
+        ? props.transcriptData?.whisperSegments || []
+        : anchoredSelfContainedTranscript?.whisperSegments || props.transcriptData?.whisperSegments || [];
 
       // Prepare watermark settings if enabled (reused for personal workspace fallback per target)
       // Now supports per-aspect-ratio watermark files - each ratio can use a completely different watermark
@@ -2978,7 +3294,16 @@
       let effectiveSubtitleSettings: SubtitleSettings | null = null;
 
       const vodSubtitleDefaults = props.vodPresetConfig?.subtitleDefaults;
-      if (freshClipData?.subtitle_settings) {
+      const shouldUseLivePreviewSettingsForBuild =
+        !!props.subtitleSettings && clip.id === props.subtitleSettingsClipId;
+
+      if (shouldUseLivePreviewSettingsForBuild) {
+        effectiveSubtitleSettings = mergeVodSubtitleDefaultsWithSavedSettings(
+          props.subtitleSettings,
+          vodSubtitleDefaults
+        );
+        console.log('[ClipsTab] Using LIVE preview subtitle settings for current clip build');
+      } else if (freshClipData?.subtitle_settings) {
         try {
           const savedSettings = typeof freshClipData.subtitle_settings === 'string'
             ? JSON.parse(freshClipData.subtitle_settings)
@@ -3866,17 +4191,29 @@
       if (effectiveSubtitleSettings?.enabled && transcriptWords.length > 0) {
         console.log('[ClipsTab] Pre-rendering subtitles for pixel-perfect export...');
         console.log('[ClipsTab] transcriptWords count:', transcriptWords.length);
+        console.log('[ClipsTab] whisperSegments count:', transcriptSegments.length);
         console.log('[ClipsTab] segments for subtitle render:', segments.map(s => ({ start: s.start_time, end: s.end_time })));
         try {
           const { preRenderSubtitleOverlays } = await import('@/services/subtitle-renderer');
           subtitleOverlays = {};
-          
-          // Transform segments to the format expected by subtitle renderer
-          const subtitleSegments = segments.map(s => ({
-            start: s.start_time,
-            end: s.end_time,
-            transcript: s.transcript || '',
-          }));
+
+          // CRITICAL: The renderer must chunk on the SAME boundaries as VideoPlayer.vue's preview.
+          // VideoPlayer chunks within each whisper segment (one sentence) — so a 4-word sentence
+          // is its own 4-word frame, regardless of `maxWords`. If we feed the renderer a single
+          // synthetic clip segment instead, it groups every 6 words from word 0, producing
+          // entirely different chunks ("They're looking. They're looking. No. the" instead of
+          // "They're looking. They're looking.") and a wider box that wraps and drifts off-center.
+          const subtitleSegments = transcriptSegments.length > 0
+            ? transcriptSegments.map((seg: any) => ({
+                start: Number(seg.start) || 0,
+                end: Number(seg.end) || 0,
+                transcript: typeof (seg as any).text === 'string' ? (seg as any).text : '',
+              }))
+            : segments.map((s) => ({
+                start: s.start_time,
+                end: s.end_time,
+                transcript: s.transcript || '',
+              }));
           
           for (const ratio of targetRatios) {
             // Calculate output dimensions based on aspect ratio
@@ -3904,7 +4241,7 @@
               wordsCount: transcriptWords.length,
               segmentsCount: subtitleSegments.length,
               animationStyle: mergedSettings.animationStyle,
-              maxWords: props.maxWordsForAspectRatio || 4,
+              maxWords: getSubtitleMaxWordsForAspectRatio(ratio, props.maxWordsForAspectRatio),
               hasRatioOverride: !!ratioOverride,
               ratioOverrideAnimationStyle: ratioOverride?.animationStyle,
               ratioOverrideMultiColorEnabled: ratioOverride?.multiColorEnabled,
@@ -3953,23 +4290,43 @@
               isPositionObject: typeof mergedSettings.position === 'object' && mergedSettings.position !== null,
             });
             
+            // CRITICAL — timing offset:
+            // Subtitle frame times are emitted in OUTPUT-VIDEO time (FFmpeg `t`, starting at 0).
+            // Words/segments arrive in source-time of the build's input file. For self-contained
+            // clips we always build the whole input from t=0, so source-time == clip-time and the
+            // offset is 0. For regular project clips the build extracts from segments[0].start_time
+            // (FFmpeg `-ss`), so that is the source-time corresponding to output-time 0.
+            // Using `min(segment.start)` here was the prior bug: when the clip had silence before
+            // the first whisper sentence, it shifted ALL subtitles earlier by the silence length.
+            const clipStartTimeForRenderer = selfContainedClip
+              ? 0
+              : Number(freshSegments[0]?.start_time) || 0;
+
             const overlays = await preRenderSubtitleOverlays({
               settings: mergedSettings,
               words: transcriptWords,
               segments: subtitleSegments,
-              maxWords: props.maxWordsForAspectRatio || 4,
+              maxWords: getSubtitleMaxWordsForAspectRatio(ratio, props.maxWordsForAspectRatio),
               canvasWidth,
               canvasHeight: evenCanvasHeight,
               aspectRatio: ratio,
               introOffset,
+              clipStartTime: clipStartTimeForRenderer,
             });
             
             subtitleOverlays[ratio] = overlays;
             console.log(`[ClipsTab] Pre-rendered ${overlays.length} subtitle frames for ${ratio}`);
+            if (overlays.length === 0) {
+              throw new Error(`No subtitle PNG overlays were generated for ${ratio}`);
+            }
           }
         } catch (err) {
-          console.warn('[ClipsTab] Failed to pre-render subtitles, falling back to ASS:', err);
-          subtitleOverlays = null;
+          console.error('[ClipsTab] Failed to pre-render subtitles for pixel-perfect export:', err);
+          throw new Error(
+            `Failed to render preview-matching subtitle overlays: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
         }
       }
 
@@ -3998,7 +4355,9 @@
         subtitleOverlays: subtitleOverlays,
         transcriptWords: transcriptWords,
         transcriptSegments: transcriptSegments,
-        maxWords: props.maxWordsForAspectRatio,
+        maxWords: targetRatios.length === 1
+          ? getSubtitleMaxWordsForAspectRatio(targetRatios[0], props.maxWordsForAspectRatio)
+          : props.maxWordsForAspectRatio,
         aspectRatios: targetRatios,
         quality: settings.quality,
         frameRate: settings.frameRate,

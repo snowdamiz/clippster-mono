@@ -30,6 +30,28 @@ export async function getTranscriptByRawVideoId(rawVideoId: string): Promise<Tra
   return result[0] || null;
 }
 
+export async function getTranscriptById(transcriptId: string): Promise<Transcript | null> {
+  const db = await getDatabase();
+  const result = await db.select<Transcript[]>('SELECT * FROM transcripts WHERE id = ? LIMIT 1', [
+    transcriptId,
+  ]);
+  return result[0] || null;
+}
+
+export async function deleteTranscriptsByRawVideoId(rawVideoId: string): Promise<void> {
+  const db = await getDatabase();
+  const transcripts = await db.select<{ id: string }[]>(
+    'SELECT id FROM transcripts WHERE raw_video_id = ?',
+    [rawVideoId]
+  );
+
+  for (const transcript of transcripts) {
+    await db.execute('DELETE FROM transcript_segments WHERE transcript_id = ?', [transcript.id]);
+  }
+
+  await db.execute('DELETE FROM transcripts WHERE raw_video_id = ?', [rawVideoId]);
+}
+
 export async function getTranscriptByProjectId(projectId: string): Promise<Transcript | null> {
   const db = await getDatabase();
   const result = await db.select<Transcript[]>(
@@ -54,6 +76,77 @@ export async function getTranscriptByProjectId(projectId: string): Promise<Trans
     [projectId, projectId, projectId, projectId]
   );
   return result[0] || null;
+}
+
+export interface TranscriptWithRawVideo {
+  transcript: Transcript;
+  rawVideo: {
+    id: string;
+    project_id: string | null;
+    file_path: string;
+    duration: number | null;
+    source_clip_id: string | null;
+    original_project_id: string | null;
+    is_segment: boolean | number | string | null;
+  };
+}
+
+export async function getTranscriptsWithRawVideosByProjectId(
+  projectId: string
+): Promise<TranscriptWithRawVideo[]> {
+  const db = await getDatabase();
+  const rows = await db.select<Array<Transcript & {
+    rv_id: string;
+    rv_project_id: string | null;
+    rv_file_path: string;
+    rv_duration: number | null;
+    rv_source_clip_id: string | null;
+    rv_original_project_id: string | null;
+    rv_is_segment: boolean | number | string | null;
+  }>>(
+    `SELECT
+       t.*,
+       rv.id as rv_id,
+       rv.project_id as rv_project_id,
+       rv.file_path as rv_file_path,
+       rv.duration as rv_duration,
+       rv.source_clip_id as rv_source_clip_id,
+       rv.original_project_id as rv_original_project_id,
+       rv.is_segment as rv_is_segment
+     FROM transcripts t
+     JOIN raw_videos rv ON t.raw_video_id = rv.id
+     WHERE rv.project_id = ?
+        OR rv.original_project_id = ?
+        OR rv.project_id = (SELECT parent_id FROM projects WHERE id = ?)
+        OR rv.original_project_id = (SELECT parent_id FROM projects WHERE id = ?)
+     ORDER BY
+       t.created_at DESC,
+       COALESCE(t.duration, rv.duration, 0) DESC,
+       t.id ASC`,
+    [projectId, projectId, projectId, projectId]
+  );
+
+  return rows.map((row) => ({
+    transcript: {
+      id: row.id,
+      raw_video_id: row.raw_video_id,
+      raw_json: row.raw_json,
+      text: row.text,
+      language: row.language,
+      duration: row.duration,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    },
+    rawVideo: {
+      id: row.rv_id,
+      project_id: row.rv_project_id,
+      file_path: row.rv_file_path,
+      duration: row.rv_duration,
+      source_clip_id: row.rv_source_clip_id,
+      original_project_id: row.rv_original_project_id,
+      is_segment: row.rv_is_segment,
+    },
+  }));
 }
 
 // Transcript segment queries

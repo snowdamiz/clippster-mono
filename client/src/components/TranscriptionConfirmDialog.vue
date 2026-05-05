@@ -27,8 +27,8 @@
                 class="transcribe-dialog__field transcribe-dialog__info-box"
               >
                 <div class="flex items-center justify-between text-xs sm:text-sm">
-                  <span>Segments to Transcribe:</span>
-                  <span class="font-medium">{{ segmentCount }} segment{{ segmentCount !== 1 ? 's' : '' }}</span>
+                  <span>{{ itemLabelPlural }} to Transcribe:</span>
+                  <span class="font-medium">{{ segmentCount }} {{ itemLabel }}{{ segmentCount !== 1 ? 's' : '' }}</span>
                 </div>
                 <div class="flex items-center justify-between text-xs sm:text-sm">
                   <span>Total Duration:</span>
@@ -161,6 +161,7 @@
     segmentCount?: number;
     totalDuration?: number;
     isTranscribed?: boolean;
+    itemLabel?: string;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -168,6 +169,7 @@
     segmentCount: 0,
     totalDuration: 0,
     isTranscribed: false,
+    itemLabel: 'segment',
   });
 
   const emit = defineEmits<{
@@ -205,6 +207,9 @@
     if (props.totalDuration > 0) return props.totalDuration;
     return props.videoDuration;
   });
+
+  const itemLabel = computed(() => props.itemLabel || 'segment');
+  const itemLabelPlural = computed(() => `${itemLabel.value.charAt(0).toUpperCase()}${itemLabel.value.slice(1)}s`);
 
   // Calculate credits: 0.3 credits per minute for transcription
   const calculatedCredits = computed(() => {

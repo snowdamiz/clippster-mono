@@ -606,6 +606,86 @@ pub fn generate_ass_file(
         return Ok(());
     }
 
+    // Shared time formatter (used by both single-word fast path and the chunk loop).
+    let format_time = |t: f64| -> String {
+        let t = t.max(0.0);
+        let hours = (t / 3600.0).floor() as u32;
+        let mins = ((t % 3600.0) / 60.0).floor() as u32;
+        let secs = (t % 60.0).floor() as u32;
+        let centis = ((t % 1.0) * 100.0).round() as u32;
+        format!("{}:{:02}:{:02}.{:02}", hours, mins, secs, centis)
+    };
+
+    // ---------------------------------------------------------------------------------------
+    // single-word fast path
+    //
+    // The chunked / base-text rendering path below was designed for multi-word styles where
+    // every chunk word is on screen and the "active" word gets a highlight overlay. Reusing
+    // it for `single-word` produced two visible bugs:
+    //   1. The base layer always rendered the entire chunk (e.g. 4 words), not the lone
+    //      active word — directly contradicting the CapCut-style "one word at a time" UX
+    //      shown in the preview, and making it look like words were being skipped because
+    //      the screen never reduced to the single active token.
+    //   2. The interval used native `[w.start, w.end]` timing, so very short ASR tokens
+    //      (articles, contractions, etc.) flashed for tens of ms or were skipped entirely
+    //      between video frames.
+    //
+    // This branch mirrors the preview (`pickActiveSingleWordAtTime`): emit one dialogue
+    // per word, extend each word's hit window to a minimum readable duration, capped at
+    // the next word's start so two frames never overlap.
+    // ---------------------------------------------------------------------------------------
+    if eff_animation_style == "single-word" {
+        const MIN_WORD_HOLD_SEC: f64 = 0.1;
+        const EPS: f64 = 1e-4;
+        let weight_tag = format!("{{\\fw{}}}", eff_font_weight);
+
+        for (idx, word) in clip_timeline_words.iter().enumerate() {
+            let w_start = word.start;
+            let raw_end = word.end;
+            if raw_end <= w_start {
+                continue;
+            }
+            let next_start = clip_timeline_words
+                .get(idx + 1)
+                .map(|w| w.start)
+                .unwrap_or(f64::INFINITY);
+            let extended_end = raw_end
+                .max(w_start + MIN_WORD_HOLD_SEC)
+                .min(next_start - EPS);
+            if extended_end <= w_start {
+                continue;
+            }
+
+            let word_color = get_word_color(idx, &eff_settings);
+            let ass_color = convert_hex_to_ass_color(&word_color);
+            let text = format!("{{\\c{}}}{}{}", ass_color, weight_tag, word.word);
+
+            // Layer 0: Border2Layer (shadow + outer border)
+            writeln!(
+                file,
+                "Dialogue: 0,{},{},Border2Layer,,0,0,0,,{}{}",
+                format_time(w_start),
+                format_time(extended_end),
+                pos_tag,
+                text
+            )
+            .unwrap();
+
+            // Layer 1: Border1Layer (inner border) on top
+            writeln!(
+                file,
+                "Dialogue: 1,{},{},Border1Layer,,0,0,0,,{}{}",
+                format_time(w_start),
+                format_time(extended_end),
+                pos_tag,
+                text
+            )
+            .unwrap();
+        }
+
+        return Ok(());
+    }
+
     // 2. Group words into chunks (pages)
     let _chunks: Vec<&[ClipWord]> = clip_timeline_words.chunks(max_words).collect();
 
@@ -660,16 +740,6 @@ pub fn generate_ass_file(
             let active_word_idx = chunk
                 .iter()
                 .position(|w| t_mid >= w.start && t_mid <= w.end);
-
-            // Format time to H:MM:SS.cc
-            let format_time = |t: f64| -> String {
-                let t = t.max(0.0);
-                let hours = (t / 3600.0).floor() as u32;
-                let mins = ((t % 3600.0) / 60.0).floor() as u32;
-                let secs = (t % 60.0).floor() as u32;
-                let centis = ((t % 1.0) * 100.0).round() as u32;
-                format!("{}:{:02}:{:02}.{:02}", hours, mins, secs, centis)
-            };
 
             // Strategy: Render text in four layers for dual borders + animation
             // Layer 0: Border2Layer base text (shadow + outer border)

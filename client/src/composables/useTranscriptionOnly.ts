@@ -12,6 +12,8 @@ import {
   getChunkedTranscriptByRawVideoId,
   type RawVideo,
 } from '@/services/database';
+import { deleteTranscriptsByRawVideoId } from '@/services/database/transcripts';
+import { deleteChunkedTranscriptsByRawVideoId } from '@/services/database/chunked-transcripts';
 import { useChunkedTranscriptCache } from './useChunkedTranscriptCache';
 import { useToast } from '@/composables/useToast';
 import api from '@/services/api';
@@ -23,6 +25,7 @@ export interface TranscriptionOptions {
   organizationId?: number | null;
   parentProjectId?: string | null;
   sourceVideoPath?: string | null;
+  forceRetranscribe?: boolean;
 }
 
 interface UseTranscriptionOnlyOptions {
@@ -30,6 +33,7 @@ interface UseTranscriptionOnlyOptions {
   showErrorToast?: boolean;
   showChunkCompletionToast?: boolean;
   showCacheReuseToast?: boolean;
+  showAudioChunkingToast?: boolean;
 }
 
 export interface TranscriptionProgress {
@@ -64,6 +68,7 @@ export function useTranscriptionOnly(options: UseTranscriptionOnlyOptions = {}) 
     showCompletionToast: options.showChunkCompletionToast ?? true,
     showCacheReuseToast: options.showCacheReuseToast ?? true,
     showErrorToast: options.showErrorToast ?? true,
+    showAudioChunkingToast: options.showAudioChunkingToast ?? options.showChunkCompletionToast ?? true,
   });
   let abortController: AbortController | null = null;
   let currentOrganizationId: number | null = null;
@@ -191,6 +196,16 @@ export function useTranscriptionOnly(options: UseTranscriptionOnlyOptions = {}) 
       }
 
       const projectVideo = rawVideos[0];
+
+      if (options.forceRetranscribe) {
+        progress.value = {
+          stage: 'checking_cache',
+          progress: 8,
+          message: 'Clearing stale clip transcript...',
+        };
+        await deleteTranscriptsByRawVideoId(projectVideo.id);
+        await deleteChunkedTranscriptsByRawVideoId(projectVideo.id);
+      }
 
       // Check for existing transcript
       const existingTranscript = await getTranscriptByRawVideoId(projectVideo.id);

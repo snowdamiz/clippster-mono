@@ -559,11 +559,45 @@
       if (!videoRef.value) return;
       if (playing) {
         videoRef.value.play().catch(console.error);
+        startHighFrequencyTimeSync();
       } else {
         videoRef.value.pause();
+        stopHighFrequencyTimeSync();
       }
     }
   );
+
+  /**
+   * Native HTML5 `timeupdate` only fires every ~250ms, which is far too sparse for
+   * single-word subtitle rendering: short tokens (e.g. fast articles, contractions)
+   * can have hit windows under 200ms and would be visually skipped between samples.
+   *
+   * While the video is playing, drive an additional rAF loop that re-emits the latest
+   * `currentTime` every animation frame so downstream consumers (e.g. POITargetPanel
+   * subtitle selection via `pickActiveSingleWordAtTime`) sample at ~60Hz.
+   */
+  let timeSyncRafId: number | null = null;
+
+  function startHighFrequencyTimeSync() {
+    if (timeSyncRafId !== null) return;
+    const tick = () => {
+      const el = videoRef.value;
+      if (!el || el.paused || el.ended) {
+        timeSyncRafId = null;
+        return;
+      }
+      emit('timeUpdate', el.currentTime);
+      timeSyncRafId = requestAnimationFrame(tick);
+    };
+    timeSyncRafId = requestAnimationFrame(tick);
+  }
+
+  function stopHighFrequencyTimeSync() {
+    if (timeSyncRafId !== null) {
+      cancelAnimationFrame(timeSyncRafId);
+      timeSyncRafId = null;
+    }
+  }
 
   // Watch for time changes (seeking)
   watch(
@@ -838,10 +872,16 @@
     }
 
     document.addEventListener('click', handleDocumentClickForSocialMenu);
+
+    // If we mount already in play state, kick off the high-frequency time sync.
+    if (props.isPlaying) {
+      startHighFrequencyTimeSync();
+    }
   });
 
   onUnmounted(() => {
     cleanupHls();
+    stopHighFrequencyTimeSync();
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
