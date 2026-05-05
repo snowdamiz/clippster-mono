@@ -474,6 +474,9 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
 
     videoError.value = null;
     videoLoading.value = true;
+    currentTime.value = 0;
+    duration.value = 0;
+    stopSegmentedPlayback();
 
     try {
       const port = await invoke<number>('get_video_server_port');

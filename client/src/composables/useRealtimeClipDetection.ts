@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useRealtimeTranscription } from './useRealtimeTranscription';
 import { createClip as createClipRecord } from '@/services/database';
 import { createClipVersion } from '@/services/database/clip-versions';
+import { insertClipSegment } from '@/services/database/clip-segments';
 import { updateClip } from '@/services/database/clips';
 import { getOrCreateManualSession } from '@/services/database/clip-detection-sessions';
 import { createProject } from '@/services/database/projects';
@@ -1485,6 +1486,21 @@ export function useRealtimeClipDetection() {
         current_version_id: versionId,
         detection_session_id: manualSessionId,
       });
+
+      // The extracted MP4 starts at 0 and ends at clipDuration. Persist a clip_segments
+      // row using the clip's OWN-FILE timeline (0-based) so the workspace timeline can
+      // show the entire clip as a resizable segment, and so build_clip_from_segments
+      // picks the user-trimmed range when they drag the resize handles. Without this,
+      // legacy auto-clips have no clip_segments row and the timeline falls back to
+      // livestream-absolute version times — making the segment look shorter/misplaced.
+      try {
+        await insertClipSegment(clipId, 0, 0, clipDuration, null);
+      } catch (segmentError) {
+        console.warn(
+          '[RealtimeClipDetection] Failed to persist initial clip_segments row:',
+          segmentError
+        );
+      }
 
       try {
         const transcriptRange = transcription.getTranscriptForRange(
