@@ -2546,6 +2546,18 @@
     }
     isBuildInProgress.value = true;
 
+    // Optimistically flip the clip into the "building" state so the loading
+    // overlay appears the instant the user clicks Build. Without this, the UI
+    // doesn't show the loader until `updateClipBuildStatus` (DB write) and the
+    // final `emit('refreshClips')` further below complete — which can take
+    // several seconds because of the dynamic imports, DB reads, and per-target
+    // setup that run between here and the actual build invoke. The DB write
+    // and refresh further down reconcile this mutation, so there's no drift.
+    const clipMut = clip as any;
+    clipMut.build_status = 'building';
+    clipMut.build_progress = 0;
+    clipMut.build_error = null;
+
     try {
       // Refresh clip subtitle payload from DB so build uses latest saved editor state (not stale in-memory clip)
       try {
