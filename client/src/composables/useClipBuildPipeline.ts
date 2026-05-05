@@ -100,13 +100,38 @@ export function useClipBuildPipeline() {
         try {
           const dbSegments = await getClipSegmentsByVersionId(clip.current_version_id);
           if (dbSegments.length > 0) {
-            segments = dbSegments.map((s: any) => ({
-              id: s.id,
-              start_time: s.start_time,
-              end_time: s.end_time,
-              duration: s.duration,
-              transcript: s.transcript,
-            }));
+            // For self-contained extracted clips (anything with `file_path`), segments must
+            // address the clip's own MP4 file (0-based). Legacy paths sometimes wrote
+            // livestream-absolute timestamps into clip_segments; if any segment lies past
+            // the clip's actual duration, the row is stale — fall through to the synthetic
+            // [0, clip.duration] segment below so the build doesn't try to seek to a
+            // timestamp that doesn't exist in the file.
+            const isSelfContained =
+              typeof clip.file_path === 'string' && clip.file_path.trim() !== '';
+            const clipDur =
+              typeof clip.duration === 'number' && clip.duration > 0 ? clip.duration : 0;
+            const segmentsLookStale =
+              isSelfContained &&
+              clipDur > 0 &&
+              dbSegments.some(
+                (s: any) =>
+                  typeof s.end_time === 'number' && s.end_time > clipDur + 0.5
+              );
+
+            if (!segmentsLookStale) {
+              segments = dbSegments.map((s: any) => ({
+                id: s.id,
+                start_time: s.start_time,
+                end_time: s.end_time,
+                duration: s.duration,
+                transcript: s.transcript,
+              }));
+            } else {
+              console.warn(
+                '[BuildPipeline] Ignoring stale livestream-absolute clip_segments rows; falling back to full clip range:',
+                { clipId: clip.id, clipDuration: clipDur }
+              );
+            }
           }
         } catch (err) {
           console.warn('[BuildPipeline] Could not load segments from DB:', err);

@@ -213,6 +213,8 @@
                   :transcribe-stage="transcribeStage"
                   :transcribe-message="transcribeMessage"
                   :vod-preset-config="vodPresetConfig"
+                  :subtitle-settings="buildSubtitleSettingsForActivePreview"
+                  :subtitle-settings-clip-id="activeSubtitleSettingsClipId"
                   @detectClips="onDetectClips"
                   @cancelDetection="onCancelDetection"
                   @clipHover="onClipHover"
@@ -340,7 +342,10 @@
   <TranscriptionConfirmDialog
     :model-value="showTranscribeConfirmDialog"
     :video-duration="duration"
-    :is-transcribed="isTranscribed"
+    :segment-count="pendingSubtitleTranscriptionClipCount"
+    :total-duration="pendingSubtitleTranscriptionTotalDuration"
+    item-label="clip"
+    :is-transcribed="transcriptionConfirmAlreadyTranscribed"
     @update:model-value="showTranscribeConfirmDialog = $event"
     @confirm="onTranscribeConfirmed"
   />
@@ -348,7 +353,7 @@
   <!-- Subtitle Editor Dialog -->
   <SubtitleEditorDialog
     :model-value="showSubtitleEditorDialog"
-    :clips="timelineClips"
+    :clips="subtitleTargetClips"
     :project-id="project?.id"
     :default-subtitle-settings="subtitleEditorDefaultSettings"
     @update:model-value="showSubtitleEditorDialog = $event"
@@ -436,18 +441,30 @@
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useVideoFocalPoint } from '@/composables/useVideoFocalPoint';
   import { useTranscriptData } from '@/composables/useTranscriptData';
-  import { flattenWhisperSegmentsForClipSubtitlePanel } from '@/utils/transcriptPanelSegments';
-  import { updateTranscriptWhisperCell } from '@/services/database/transcript-words';
+  import {
+    flattenWhisperSegmentsForClipSubtitlePanel,
+    type SubtitlePanelTranscriptRow,
+  } from '@/utils/transcriptPanelSegments';
+  import { updateTranscriptWhisperCellRange } from '@/services/database/transcript-words';
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import { ensureAssetDownloaded } from '@/services/orgAssetSync';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
   import { useAuthStore } from '@/stores/auth';
-  import { getRawVideosByProjectId } from '@/services/database';
+  import {
+    getClipIdsWithTranscripts,
+    getRawVideo,
+    getRawVideoByPath,
+    getRawVideosByProjectId,
+    getTranscriptByRawVideoId,
+    getTranscriptSegments,
+    getTranscriptsWithRawVideosByProjectId,
+  } from '@/services/database';
   import { getProjectVodPresetConfig } from '@/services/database/vod-presets';
   import { updateClipFullSubtitleSettings, updateClipSubtitlePosition, updateClipTextOverlay } from '@/services/database/clips';
   import { parseClipTextOverlayJson, createDefaultClipTextBoxState, type ClipTextBoxState } from '@/utils/clipTextBox';
   import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
   import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
+  import { parseTranscriptToWords } from '@/utils/timelineUtils';
 
   const authStore = useAuthStore();
   const { error: showError } = useToast();
@@ -499,6 +516,7 @@
   const transcribeStage = ref('');
   const transcribeMessage = ref('');
   const cancelTranscriptionFn = ref<(() => void) | null>(null);
+  const pendingSubtitleTranscriptionClipIds = ref<string[]>([]);
 
   const isCreatingProject = ref(false);
 
@@ -528,6 +546,7 @@
 
   // Timeline clips state
   const timelineClips = ref<any[]>([]);
+  const allProjectClips = ref<any[]>([]);
 
   /**
    * When false, the loaded file timeline is 0-based (built export). Do not subtract source segment start for clip text timing.
@@ -537,8 +556,16 @@
 
   function getTimelineClipById(id: string | null): any | null {
     if (!id) return null;
-    return timelineClips.value.find((c: any) => c.id === id) ?? null;
+    return (
+      timelineClips.value.find((c: any) => c.id === id) ??
+      allProjectClips.value.find((c: any) => c.id === id) ??
+      null
+    );
   }
+
+  const subtitleTargetClips = computed(() => {
+    return allProjectClips.value.length > 0 ? allProjectClips.value : timelineClips.value;
+  });
 
   /** Timeline + DB clips often expose `current_version_segments`; older paths used `segments` only. */
   function getClipTimelineSegments(clip: any): any[] {
@@ -555,17 +582,27 @@
   function getClipAbsoluteStartFromTimelineClip(clip: any): number | null {
     const segments = getClipTimelineSegments(clip);
     if (!segments.length) return null;
-    return segments[0].start_time;
+    return segments[0].source_start_time ?? segments[0].start_time;
   }
 
   /** Source-timeline [start, end) for a clip; used to align subtitles with built 0-based playback. */
   function getClipSourceTimeWindow(clip: any): { start: number; end: number } | null {
     const segs = getClipTimelineSegments(clip);
-    if (!segs.length) return null;
-    return {
-      start: segs[0].start_time,
-      end: segs[segs.length - 1].end_time,
-    };
+    if (segs.length > 0) {
+      const first = segs[0];
+      const last = segs[segs.length - 1];
+      const sourceStart = first.source_start_time ?? first.start_time;
+      const sourceEnd = last.source_end_time ?? last.end_time;
+      if (sourceEnd > sourceStart) return { start: sourceStart, end: sourceEnd };
+    }
+
+    const versionStart = clip?.current_version_start_time ?? clip?.start_time;
+    const versionEnd = clip?.current_version_end_time ?? clip?.end_time;
+    if (versionStart !== undefined && versionEnd !== undefined && versionEnd > versionStart) {
+      return { start: versionStart, end: versionEnd };
+    }
+
+    return null;
   }
 
   const textBoxContextClipId = computed(() => {
@@ -879,9 +916,18 @@
 
   // Use transcript data composable
   const { transcriptData, loadTranscriptData } = useTranscriptData(computed(() => props.project?.id || null));
+  const activeClipTranscriptData = ref<{
+    clipId: string;
+    transcript: any;
+    segments: any[];
+    words: WordInfo[];
+    whisperSegments: WhisperSegment[];
+    timeBase?: 'clip-relative' | 'source-absolute';
+  } | null>(null);
 
   // Store active subtitle settings (persists during playback even if currentlyPlayingClipId is cleared)
   const activeSubtitleSettings = ref<any>(undefined);
+  const activeSubtitleSettingsClipId = ref<string | null>(null);
 
   /**
    * True when DB subtitle_position_* reflect a deliberate user drag/resize in the workspace.
@@ -1040,26 +1086,238 @@
     return { x, y, width: w };
   });
 
+  /**
+   * The preview renders subtitle geometry from `subtitleInitialPosition`, while clip build/export
+   * reads JSON settings. Keep the build prop hydrated with the exact computed preview geometry.
+   */
+  const buildSubtitleSettingsForActivePreview = computed((): SubtitleSettings | null => {
+    const settings = activeSubtitleSettings.value as SubtitleSettings | undefined;
+    if (!settings) return null;
+
+    const previewPosition = activeSubtitlePosition.value;
+    if (!previewPosition) return JSON.parse(JSON.stringify(settings)) as SubtitleSettings;
+
+    const ratio = previewAspectRatio.value;
+    const next = JSON.parse(JSON.stringify(settings)) as SubtitleSettings;
+    const { perRatioConfigs: _perRatioConfigs, ...settingsForRatio } = next;
+    const existingPr = (next.perRatioConfigs?.[ratio] ?? {}) as Partial<SubtitleOverride>;
+    const width = previewPosition.width ?? existingPr.maxWidth ?? next.maxWidth;
+
+    next.positionPercentage = previewPosition.y;
+    next.maxWidth = width;
+    next.perRatioConfigs = {
+      ...(next.perRatioConfigs ?? {}),
+      [ratio]: {
+        ...existingPr,
+        ...settingsForRatio,
+        position: { x: previewPosition.x, y: previewPosition.y },
+        positionPercentage: previewPosition.y,
+        maxWidth: width,
+      },
+    };
+
+    return next;
+  });
+
+  function parseWhisperSegmentsForWorkspace(rawJson: string): WhisperSegment[] {
+    try {
+      const data = JSON.parse(rawJson);
+      const segments: WhisperSegment[] = [];
+
+      if (data.segments && Array.isArray(data.segments)) {
+        data.segments.forEach((segment: any, index: number) => {
+          if (segment.start === undefined || segment.end === undefined) return;
+
+          const segmentWords = Array.isArray(segment.words)
+            ? segment.words
+                .filter((word: any) => word.word && word.start !== undefined && word.end !== undefined)
+                .map((word: any) => ({
+                  word: String(word.word).trim(),
+                  start: Number(word.start) || 0,
+                  end: Number(word.end) || 0,
+                  confidence: word.confidence,
+                }))
+            : undefined;
+
+          segments.push({
+            id: segment.id !== undefined ? segment.id : index,
+            start: Number(segment.start) || 0,
+            end: Number(segment.end) || 0,
+            text: segment.text || '',
+            words: segmentWords && segmentWords.length > 0 ? segmentWords : undefined,
+          });
+        });
+      }
+
+      if (segments.length === 0) {
+        const words = parseTranscriptToWords(rawJson);
+        if (words.length > 0) {
+          segments.push({
+            id: 0,
+            start: words[0].start,
+            end: words[words.length - 1].end,
+            text: words.map((word) => word.word).join(' ').trim(),
+            words,
+          });
+        }
+      }
+
+      return segments;
+    } catch (error) {
+      console.error('[ProjectWorkspaceDialog] Failed to parse clip transcript segments:', error);
+      return [];
+    }
+  }
+
+  function normalizeTranscriptToken(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  function tokenizeForTranscriptMatch(text: string): string[] {
+    return text
+      .split(/\s+/)
+      .map(normalizeTranscriptToken)
+      .filter(Boolean);
+  }
+
+  function extractPlainTranscriptText(value: unknown): string {
+    if (typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed?.text === 'string') return parsed.text.trim();
+        if (Array.isArray(parsed?.segments)) {
+          return parsed.segments.map((segment: any) => segment?.text).filter(Boolean).join(' ').trim();
+        }
+      } catch {
+        // Plain transcript text can legitimately look JSON-ish.
+      }
+    }
+
+    return trimmed;
+  }
+
+  function getClipAnchorTranscriptText(clip: any): string {
+    const segments = getClipTimelineSegments(clip);
+    for (const segment of segments) {
+      const text = extractPlainTranscriptText(segment?.transcript);
+      if (text) return text;
+    }
+
+    return (
+      extractPlainTranscriptText(clip?.combined_transcript) ||
+      extractPlainTranscriptText(clip?.current_version_description) ||
+      extractPlainTranscriptText(clip?.description)
+    );
+  }
+
+  function findTranscriptAnchorOffset(clip: any, words: WordInfo[]): number {
+    const anchorTokens = tokenizeForTranscriptMatch(getClipAnchorTranscriptText(clip));
+    if (anchorTokens.length < 2 || words.length === 0) return 0;
+
+    const probe = anchorTokens.slice(0, Math.min(anchorTokens.length, 8));
+    const wordTokens = words.map((word) => normalizeTranscriptToken(word.word));
+    const minimumMatches = Math.min(probe.length, 4);
+
+    for (let start = 0; start < wordTokens.length; start++) {
+      let matched = 0;
+      for (let offset = 0; offset < probe.length && start + offset < wordTokens.length; offset++) {
+        if (wordTokens[start + offset] !== probe[offset]) break;
+        matched++;
+      }
+      if (matched >= minimumMatches) {
+        return words[start].start;
+      }
+    }
+
+    return 0;
+  }
+
+  function trimTranscriptToClipAnchor(
+    clip: any,
+    words: WordInfo[],
+    whisperSegments: WhisperSegment[]
+  ): { words: WordInfo[]; whisperSegments: WhisperSegment[]; offset: number } {
+    const offset = findTranscriptAnchorOffset(clip, words);
+    if (offset <= 0.25) return { words, whisperSegments, offset: 0 };
+
+    const trimmedWords = words
+      .filter((word) => word.end > offset)
+      .map((word) => ({
+        ...word,
+        start: Math.max(0, word.start - offset),
+        end: Math.max(0, word.end - offset),
+      }))
+      .filter((word) => word.end > word.start);
+
+    const trimmedSegments = whisperSegments
+      .filter((segment) => segment.end > offset)
+      .map((segment) => ({
+        ...segment,
+        start: Math.max(0, segment.start - offset),
+        end: Math.max(0, segment.end - offset),
+        words: segment.words
+          ?.filter((word) => word.end > offset)
+          .map((word) => ({
+            ...word,
+            start: Math.max(0, word.start - offset),
+            end: Math.max(0, word.end - offset),
+          }))
+          .filter((word) => word.end > word.start),
+      }))
+      .filter((segment) => segment.end > segment.start);
+
+    console.log('[ProjectWorkspaceDialog] Trimmed transcript to clip anchor:', {
+      clipId: clip.id,
+      offset,
+      firstWordBefore: words[0]?.word,
+      firstWordAfter: trimmedWords[0]?.word,
+      wordsBefore: words.length,
+      wordsAfter: trimmedWords.length,
+    });
+
+    return { words: trimmedWords, whisperSegments: trimmedSegments, offset };
+  }
+
+  const activeTranscriptDataForPlayback = computed(() => {
+    const clipId = currentlyPlayingClipId.value || lastPlayedClipId.value || selectedClipId.value;
+    const clip = getTimelineClipById(clipId);
+    const isSelfContainedClip = Boolean(clip && resolveClipTranscriptionSourcePath(clip));
+    if (isSelfContainedClip) {
+      return activeClipTranscriptData.value?.clipId === clip.id ? activeClipTranscriptData.value : null;
+    }
+    return transcriptData.value;
+  });
+
   // Get transcript words for subtitle rendering
   const transcriptWords = computed(() => {
-    const words = transcriptData.value?.words || [];
+    const words = activeTranscriptDataForPlayback.value?.words || [];
     console.log('[ProjectWorkspaceDialog] transcriptWords:', words.length);
     return words;
   });
 
   // Get transcript segments (whisper segments) for subtitle rendering
   const transcriptSegments = computed(() => {
-    const segments = transcriptData.value?.whisperSegments || [];
+    const segments = activeTranscriptDataForPlayback.value?.whisperSegments || [];
     console.log('[ProjectWorkspaceDialog] transcriptSegments:', segments.length);
     return segments;
   });
+
+  function transcriptPlaybackUsesSourceAbsolute(activeData: any): boolean {
+    return activeData?.timeBase === 'source-absolute';
+  }
 
   /**
    * For built-clip playback the video is 0-based, but the DB transcript is source-absolute.
    * Remap words/segments to clip-relative times so VideoPlayer can match `currentTime`.
    */
   const videoPlayerTranscriptWords = computed((): WordInfo[] => {
-    const words = transcriptData.value?.words || [];
+    const activeData = activeTranscriptDataForPlayback.value;
+    const words = activeData?.words || [];
+    if (activeData === activeClipTranscriptData.value && !transcriptPlaybackUsesSourceAbsolute(activeData)) return words;
     if (workspaceVideoTimeIsSourceAbsolute.value) return words;
     const clipId = currentlyPlayingClipId.value || lastPlayedClipId.value;
     const clip = getTimelineClipById(clipId);
@@ -1078,7 +1336,9 @@
   });
 
   const videoPlayerTranscriptSegments = computed((): WhisperSegment[] => {
-    const segs = transcriptData.value?.whisperSegments || [];
+    const activeData = activeTranscriptDataForPlayback.value;
+    const segs = activeData?.whisperSegments || [];
+    if (activeData === activeClipTranscriptData.value && !transcriptPlaybackUsesSourceAbsolute(activeData)) return segs;
     if (workspaceVideoTimeIsSourceAbsolute.value) return segs;
     const clipId = currentlyPlayingClipId.value || lastPlayedClipId.value;
     const clip = getTimelineClipById(clipId);
@@ -1127,10 +1387,31 @@
 
   const videoPlayerTranscriptSegmentsForPlayer = computed((): WhisperSegment[] => {
     if (workspacePlaybackIsBuiltExport.value) return [];
-    return videoPlayerTranscriptSegments.value;
+    const segments = videoPlayerTranscriptSegments.value;
+    if (segments.length > 0) return segments;
+
+    const words = videoPlayerTranscriptWords.value;
+    if (words.length === 0) return [];
+
+    return [
+      {
+        id: 0,
+        start: words[0].start,
+        end: words[words.length - 1].end,
+        text: words.map((word) => word.word).join(' ').trim(),
+        words,
+      },
+    ];
   });
 
-  /** One panel row per timed word (or one row per segment when there are no word timings). */
+  const maxSubtitleWordsPerPanelRow = computed(() => {
+    const aspectRatioValue = selectedAspectRatio.value.width / selectedAspectRatio.value.height;
+    if (aspectRatioValue > 1.5) return 6;
+    if (aspectRatioValue > 0.9) return 4;
+    return 3;
+  });
+
+  /** One panel row per visible subtitle chunk (or one row per segment when there are no word timings). */
   const subtitlePanelRows = computed(() => {
     const clipId = selectedClipId.value || currentlyPlayingClipId.value;
     const clip = timelineClips.value.find((c: any) => c.id === clipId);
@@ -1146,7 +1427,8 @@
     return flattenWhisperSegmentsForClipSubtitlePanel(
       allSegments as WhisperSegment[],
       clipStartTime,
-      clipEndTime
+      clipEndTime,
+      maxSubtitleWordsPerPanelRow.value
     );
   });
 
@@ -1157,6 +1439,9 @@
       text: r.text,
       whisperSegmentIndex: r.whisperSegmentIndex,
       wordIndex: r.wordIndex,
+      wordEndIndex: r.wordEndIndex,
+      sourceStart: r.sourceStart,
+      sourceEnd: r.sourceEnd,
     }));
   });
 
@@ -1165,6 +1450,16 @@
     if (!td) return false;
     // Match Transcript tab / parseTranscriptToWords: word-level-only JSON has no whisper `segments` until synthesized.
     return (td.whisperSegments?.length ?? 0) > 0 || (td.words?.length ?? 0) > 0;
+  });
+  const transcriptionConfirmAlreadyTranscribed = computed(() => {
+    return pendingSubtitleTranscriptionClipIds.value.length > 0 ? false : isTranscribed.value;
+  });
+  const pendingSubtitleTranscriptionClipCount = computed(() => pendingSubtitleTranscriptionClipIds.value.length);
+  const pendingSubtitleTranscriptionTotalDuration = computed(() => {
+    return pendingSubtitleTranscriptionClipIds.value.reduce((total, clipId) => {
+      const clip = getTimelineClipById(clipId);
+      return total + (clip ? getClipDurationFromTimelineClip(clip) : 0);
+    }, 0);
   });
 
   // Initialize progress socket
@@ -1379,7 +1674,15 @@
     if (!props.project?.id) return;
 
     const projectId = props.project.id;
-    const { transcribeProject, progress: tProgress, cancelTranscription } = useTranscriptionOnly();
+    const subtitleClipIds = [...pendingSubtitleTranscriptionClipIds.value];
+    const isSubtitleBatch = subtitleClipIds.length > 0;
+    const { transcribeProject, progress: tProgress, cancelTranscription } = useTranscriptionOnly({
+      showSuccessToast: !isSubtitleBatch,
+      showErrorToast: true,
+      showChunkCompletionToast: !isSubtitleBatch,
+      showCacheReuseToast: !isSubtitleBatch,
+      showAudioChunkingToast: !isSubtitleBatch,
+    });
 
     isTranscribing.value = true;
     transcribeProgressValue.value = 0;
@@ -1403,17 +1706,58 @@
     );
 
     try {
-      const result = await transcribeProject(projectId, { organizationId });
+      let transcribedCount = 0;
+      let alreadyTranscribedCount = 0;
 
-      if (result.success) {
-        const { success: showSuccess } = useToast();
+      const clipsToTranscribe = isSubtitleBatch
+        ? subtitleClipIds.map((clipId) => getTimelineClipById(clipId)).filter(Boolean)
+        : [null];
+
+      for (let index = 0; index < clipsToTranscribe.length; index++) {
+        const targetClip = clipsToTranscribe[index];
+        const sourceVideoPath = targetClip ? resolveClipTranscriptionSourcePath(targetClip) : null;
+
+        if (isSubtitleBatch) {
+          transcribeMessage.value = `Transcribing clip ${index + 1} of ${clipsToTranscribe.length}...`;
+        }
+
+        const result = await transcribeProject(projectId, {
+          organizationId,
+          parentProjectId: props.project.parent_id,
+          sourceVideoPath,
+          forceRetranscribe: Boolean(targetClip && isAutoOrManualLiveClip(targetClip)),
+        });
+
+        if (!result.success) {
+          return;
+        }
+
         if (result.alreadyTranscribed) {
+          alreadyTranscribedCount++;
+        } else {
+          transcribedCount++;
+        }
+      }
+
+      if (transcribedCount > 0 || alreadyTranscribedCount > 0) {
+        const { success: showSuccess } = useToast();
+        if (isSubtitleBatch) {
+          const readyCount = transcribedCount + alreadyTranscribedCount;
+          showSuccess(
+            'Transcription Complete',
+            `${readyCount} clip${readyCount !== 1 ? 's' : ''} transcribed.`
+          );
+          showSubtitleEditorDialog.value = true;
+        } else if (alreadyTranscribedCount > 0) {
           showSuccess('Already Transcribed', 'This video already has a transcript.');
         } else {
           showSuccess('Transcription Complete', 'Transcript is ready for viewing.');
         }
+        await loadTranscriptData(projectId);
         // Auto-switch to transcript tab after successful transcription
-        rightPanelTab.value = 'transcript';
+        if (!isSubtitleBatch) {
+          rightPanelTab.value = 'transcript';
+        }
       }
     } catch (err) {
       console.error('[ProjectWorkspaceDialog] Transcription failed:', err);
@@ -1424,6 +1768,7 @@
       transcribeStage.value = '';
       transcribeMessage.value = '';
       cancelTranscriptionFn.value = null;
+      pendingSubtitleTranscriptionClipIds.value = [];
     }
   }
 
@@ -1488,25 +1833,325 @@
     transcribeProgressValue.value = 0;
     transcribeStage.value = 'cancelled';
     transcribeMessage.value = 'Transcription cancelled';
+    pendingSubtitleTranscriptionClipIds.value = [];
     const { success: showSuccess } = useToast();
     showSuccess('Transcription Cancelled', 'Transcription was cancelled.');
   }
 
-  function onToggleSubtitles() {
+  function normalizeVideoPathForCompare(path: string): string {
+    return path.replace(/\\/g, '/').replace(/^file:\/\//, '').toLowerCase();
+  }
+
+  function transcriptSourceMatchesClip(sourceVideoPath: string | null, transcriptRawVideoPath: string | null): boolean {
+    if (!sourceVideoPath || !transcriptRawVideoPath) return false;
+    return normalizeVideoPathForCompare(sourceVideoPath) === normalizeVideoPathForCompare(transcriptRawVideoPath);
+  }
+
+  function isAutoOrManualLiveClip(clip: any): boolean {
+    const prompt = String(clip?.session_prompt || '').toLowerCase();
+    return prompt === 'manual clip creation' || prompt.includes('auto');
+  }
+
+  function resolveClipTranscriptionSourcePath(clip: any): string | null {
+    const isSelfContainedLiveClip = isAutoOrManualLiveClip(clip);
+    const filePath = typeof clip?.file_path === 'string' ? clip.file_path.trim() : '';
+    const filename = typeof clip?.filename === 'string' ? clip.filename.trim() : '';
+    const clipOwnFile = filePath || filename;
+    if (isSelfContainedLiveClip && clipOwnFile) return clipOwnFile;
+
+    const builtFilePath = typeof clip?.built_file_path === 'string' ? clip.built_file_path.trim() : '';
+    return builtFilePath || null;
+  }
+
+  async function findRawVideoForClipSource(sourceVideoPath: string) {
+    const rawVideos = props.project?.id ? await getRawVideosByProjectId(props.project.id) : [];
+    const normalizedSource = normalizeVideoPathForCompare(sourceVideoPath);
+    return (
+      rawVideos.find((video) => normalizeVideoPathForCompare(video.file_path) === normalizedSource) ??
+      (await getRawVideoByPath(sourceVideoPath))
+    );
+  }
+
+  function clipHasEmbeddedSegmentTranscript(clip: any): boolean {
+    return (clip?.segments || []).some((segment: any) => {
+      return Boolean(segment?.transcript_raw_json) || segment?.has_transcript === true;
+    });
+  }
+
+  function projectTranscriptOverlapsClip(clip: any): boolean {
+    const td = transcriptData.value;
+    if (!td || !isTranscribed.value) return false;
+
+    const win = getClipSourceTimeWindow(clip);
+    if (!win) return true;
+
+    // Only use timeline overlap for source-absolute clips. For 0-based self-contained
+    // files, path matching is the safer signal; otherwise one clip transcript could
+    // accidentally make every 0-based clip look covered.
+    if (win.start <= 1) return false;
+
+    const overlaps = (start: number, end: number) => end >= win.start - 0.25 && start <= win.end + 0.25;
+    return (
+      td.words.some((word) => overlaps(word.start, word.end)) ||
+      td.whisperSegments.some((segment) => overlaps(segment.start, segment.end))
+    );
+  }
+
+  function transcriptJsonOverlapsClip(rawJson: string | null | undefined, clip: any): boolean {
+    if (!rawJson) return false;
+
+    const win = getClipSourceTimeWindow(clip);
+    if (!win || win.start <= 1) return false;
+
+    const overlaps = (start: number, end: number) => end >= win.start - 0.25 && start <= win.end + 0.25;
+    const words = parseTranscriptToWords(rawJson);
+    if (words.some((word) => overlaps(word.start, word.end))) return true;
+
+    const whisperSegments = parseWhisperSegmentsForWorkspace(rawJson);
+    return whisperSegments.some((segment) => overlaps(segment.start, segment.end));
+  }
+
+  async function getClipTranscriptStatus(
+    clip: any,
+    clipIdsWithSegmentTranscripts: Set<string>,
+    transcriptSources: Awaited<ReturnType<typeof getTranscriptsWithRawVideosByProjectId>>,
+    selectedProjectTranscriptRawVideoPath: string | null
+  ): Promise<{ hasTranscript: boolean; reason: string; sourceVideoPath: string | null }> {
+    const sourceVideoPath = resolveClipTranscriptionSourcePath(clip);
+
+    if (isAutoOrManualLiveClip(clip) && sourceVideoPath) {
+      return { hasTranscript: false, reason: 'live clip requires fresh clip-file transcription', sourceVideoPath };
+    }
+
+    if (clipIdsWithSegmentTranscripts.has(clip.id)) {
+      return { hasTranscript: true, reason: 'clip_segments.transcript', sourceVideoPath };
+    }
+
+    if (clipHasEmbeddedSegmentTranscript(clip)) {
+      return { hasTranscript: true, reason: 'loaded segment transcript', sourceVideoPath };
+    }
+
+    const matchingSource = transcriptSources.find((source) =>
+      transcriptSourceMatchesClip(sourceVideoPath, source.rawVideo.file_path)
+    );
+    if (matchingSource) {
+      return { hasTranscript: true, reason: 'transcript raw video matches clip source', sourceVideoPath };
+    }
+
+    const overlappingSource = transcriptSources.find((source) =>
+      transcriptJsonOverlapsClip(source.transcript.raw_json, clip)
+    );
+    if (overlappingSource) {
+      return { hasTranscript: true, reason: 'transcript source overlaps clip timeline', sourceVideoPath };
+    }
+
+    if (projectTranscriptOverlapsClip(clip)) {
+      return { hasTranscript: true, reason: 'project transcript overlaps clip timeline', sourceVideoPath };
+    }
+
+    if (isAutoOrManualLiveClip(clip) && isTranscribed.value && !selectedProjectTranscriptRawVideoPath) {
+      return { hasTranscript: true, reason: 'auto/manual clip uses loaded project transcript', sourceVideoPath };
+    }
+
+    if (!props.project?.id) {
+      return { hasTranscript: false, reason: 'no project id', sourceVideoPath };
+    }
+
+    if (!sourceVideoPath) {
+      return {
+        hasTranscript: isTranscribed.value,
+        reason: isTranscribed.value ? 'project transcript without clip source' : 'no clip source or project transcript',
+        sourceVideoPath,
+      };
+    }
+
+    const rawVideo = await findRawVideoForClipSource(sourceVideoPath);
+    if (!rawVideo) {
+      return { hasTranscript: false, reason: 'no raw video row for clip source', sourceVideoPath };
+    }
+
+    const transcript = await getTranscriptByRawVideoId(rawVideo.id);
+    return {
+      hasTranscript: !!transcript,
+      reason: transcript ? 'raw video transcript row' : 'raw video row has no transcript',
+      sourceVideoPath,
+    };
+  }
+
+  async function loadTranscriptDataForSelfContainedClip(clip: any): Promise<void> {
+    if (!props.project?.id || !clip?.id) {
+      activeClipTranscriptData.value = null;
+      return;
+    }
+
+    const sourceVideoPath = resolveClipTranscriptionSourcePath(clip);
+    if (!sourceVideoPath) {
+      activeClipTranscriptData.value = null;
+      return;
+    }
+
+    let transcript: any | null = null;
+    let rawVideoPath: string | null = null;
+
+    const transcriptSources = await getTranscriptsWithRawVideosByProjectId(props.project.id);
+    const matchingSource = transcriptSources.find((source) =>
+      transcriptSourceMatchesClip(sourceVideoPath, source.rawVideo.file_path)
+    );
+
+    if (matchingSource) {
+      transcript = matchingSource.transcript;
+      rawVideoPath = matchingSource.rawVideo.file_path;
+    } else {
+      const rawVideo = await findRawVideoForClipSource(sourceVideoPath);
+      if (rawVideo) {
+        transcript = await getTranscriptByRawVideoId(rawVideo.id);
+        rawVideoPath = rawVideo.file_path;
+      }
+    }
+
+    if (!transcript?.raw_json && isAutoOrManualLiveClip(clip) && projectTranscriptOverlapsClip(clip) && transcriptData.value?.transcript) {
+      activeClipTranscriptData.value = {
+        clipId: clip.id,
+        transcript: transcriptData.value.transcript,
+        segments: [],
+        words: transcriptData.value.words,
+        whisperSegments: transcriptData.value.whisperSegments,
+        timeBase: 'source-absolute',
+      };
+
+      console.log('[ProjectWorkspaceDialog] Using source transcript for live clip playback:', {
+        clipId: clip.id,
+        sourceVideoPath,
+        transcriptId: transcriptData.value.transcript.id,
+        words: transcriptData.value.words.length,
+        segments: transcriptData.value.whisperSegments.length,
+        sourceWindow: getClipSourceTimeWindow(clip),
+      });
+      return;
+    }
+
+    if (!transcript?.raw_json) {
+      console.warn('[ProjectWorkspaceDialog] No matching transcript for self-contained clip playback:', {
+        clipId: clip.id,
+        title: clip.title || clip.name,
+        sourceVideoPath,
+        availableTranscriptPaths: transcriptSources.map((source) => source.rawVideo.file_path),
+      });
+      activeClipTranscriptData.value = null;
+      return;
+    }
+
+    const segments = await getTranscriptSegments(transcript.id);
+    const words = parseTranscriptToWords(transcript.raw_json);
+    const whisperSegments = parseWhisperSegmentsForWorkspace(transcript.raw_json);
+    const anchored = trimTranscriptToClipAnchor(clip, words, whisperSegments);
+
+    activeClipTranscriptData.value = {
+      clipId: clip.id,
+      transcript,
+      segments,
+      words: anchored.words,
+      whisperSegments: anchored.whisperSegments,
+      timeBase: 'clip-relative',
+    };
+
+    console.log('[ProjectWorkspaceDialog] Loaded clip-specific transcript for playback:', {
+      clipId: clip.id,
+      title: clip.title || clip.name,
+      sourceVideoPath,
+      rawVideoPath,
+      transcriptId: transcript.id,
+      words: anchored.words.length,
+      segments: anchored.whisperSegments.length,
+      anchorOffset: anchored.offset,
+    });
+  }
+
+  async function getSelfContainedClipsMissingTranscripts(): Promise<any[]> {
+    const selfContainedClips = subtitleTargetClips.value.filter(
+      (clip: any) => isAutoOrManualLiveClip(clip) && !!resolveClipTranscriptionSourcePath(clip)
+    );
+    const clipIdsWithSegmentTranscripts = new Set(
+      await getClipIdsWithTranscripts(selfContainedClips.map((clip: any) => clip.id))
+    );
+    const projectTranscriptRawVideo = transcriptData.value?.transcript?.raw_video_id
+      ? await getRawVideo(transcriptData.value.transcript.raw_video_id)
+      : null;
+    const projectTranscriptRawVideoPath = projectTranscriptRawVideo?.file_path ?? null;
+    const transcriptSources = props.project?.id
+      ? await getTranscriptsWithRawVideosByProjectId(props.project.id)
+      : [];
+    const missing: any[] = [];
+    const debugRows: any[] = [];
+
+    for (const clip of selfContainedClips) {
+      const status = await getClipTranscriptStatus(
+        clip,
+        clipIdsWithSegmentTranscripts,
+        transcriptSources,
+        projectTranscriptRawVideoPath
+      );
+      debugRows.push({
+        clipId: clip.id,
+        title: clip.title || clip.name,
+        hasTranscript: status.hasTranscript,
+        reason: status.reason,
+        sourceVideoPath: status.sourceVideoPath,
+        projectTranscriptRawVideoPath,
+        segmentCount: getClipTimelineSegments(clip).length,
+      });
+
+      if (!status.hasTranscript) {
+        missing.push(clip);
+      }
+    }
+
+    console.table(debugRows);
+    console.log('[ProjectWorkspaceDialog] Subtitle transcript scan result:', {
+      projectId: props.project?.id,
+      targetClipCount: subtitleTargetClips.value.length,
+      selfContainedClipCount: selfContainedClips.length,
+      missingClipCount: missing.length,
+      isTranscribed: isTranscribed.value,
+      projectTranscriptId: transcriptData.value?.transcript?.id,
+      projectTranscriptRawVideoPath,
+      transcriptSourceCount: transcriptSources.length,
+      transcriptSourcePaths: transcriptSources.map((source) => source.rawVideo.file_path),
+      transcriptWords: transcriptData.value?.words.length ?? 0,
+      transcriptSegments: transcriptData.value?.whisperSegments.length ?? 0,
+      missingClipIds: missing.map((clip) => clip.id),
+    });
+
+    return missing;
+  }
+
+  async function onToggleSubtitles() {
     // Check if user is authenticated
     if (!authStore.isAuthenticated) {
       window.dispatchEvent(new CustomEvent('show-auth-modal'));
       return;
     }
 
+    const targetClipId = resolveTargetClipIdForSubtitleEdit();
+    if (targetClipId) selectedClipId.value = targetClipId;
+    const missingSelfContainedClips = await getSelfContainedClipsMissingTranscripts();
+    const hasSelfContainedSubtitleSources = subtitleTargetClips.value.some((clip: any) =>
+      Boolean(isAutoOrManualLiveClip(clip) && resolveClipTranscriptionSourcePath(clip))
+    );
+    const hasTranscript = missingSelfContainedClips.length === 0 && (hasSelfContainedSubtitleSources || isTranscribed.value);
+
     // Check if project has transcript
-    if (!isTranscribed.value) {
-      // No transcript - show transcription dialog first
+    if (missingSelfContainedClips.length > 0) {
+      pendingSubtitleTranscriptionClipIds.value = missingSelfContainedClips.map((clip: any) => clip.id);
+      showTranscribeConfirmDialog.value = true;
+    } else if (!hasTranscript) {
       const { info: showInfo } = useToast();
       showInfo('Transcript Required', 'Subtitles require a transcript. Please transcribe your video first.');
+      pendingSubtitleTranscriptionClipIds.value = [];
       showTranscribeConfirmDialog.value = true;
     } else {
       // Has transcript - show subtitle editor dialog
+      pendingSubtitleTranscriptionClipIds.value = [];
       showSubtitleEditorDialog.value = true;
     }
   }
@@ -1704,6 +2349,10 @@
   async function onSaveSubtitles(clipIds: string[], presetId: string, applyToAll: boolean) {
     try {
       const defaults = subtitleEditorDefaultSettings.value;
+      const activeClipId =
+        [currentlyPlayingClipId.value, lastPlayedClipId.value, selectedClipId.value].find(
+          (id): id is string => !!id && clipIds.includes(id)
+        ) ?? clipIds[0] ?? null;
 
       if (defaults && clipIds.length > 0) {
         const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } =
@@ -1732,6 +2381,43 @@
       );
 
       await onRefreshClipsData();
+
+      if (activeClipId) {
+        const activeClip = getTimelineClipById(activeClipId);
+        if (activeClip) {
+          activeClip.subtitle_enabled = true;
+          activeClip.subtitle_preset_id = presetId;
+
+          if (defaults) {
+            const merged = {
+              ...JSON.parse(JSON.stringify(defaults)),
+              enabled: true,
+              selectedPresetId: presetId || defaults.selectedPresetId || null,
+            } as SubtitleSettings;
+            activeSubtitleSettings.value = merged;
+            activeSubtitleSettingsClipId.value = activeClipId;
+          } else {
+            loadSubtitleSettingsFromPreset({
+              ...activeClip,
+              subtitle_enabled: true,
+              subtitle_preset_id: presetId,
+            });
+          }
+
+          const layout = mergePlaybackSubtitleDefaults();
+          if (activeSubtitleSettings.value && layout) {
+            activeSubtitleSettings.value = applyWorkspaceLayoutToClipPlaybackSettings(
+              activeSubtitleSettings.value,
+              layout,
+              activeClip
+            );
+          }
+
+          if (currentlyPlayingClipId.value === activeClipId || lastPlayedClipId.value === activeClipId) {
+            await loadTranscriptDataForSelfContainedClip(activeClip);
+          }
+        }
+      }
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to save subtitles:', error);
       const { error: showError } = useToast();
@@ -2251,22 +2937,70 @@
           return null;
         }
 
-        // Use segments from database if available, otherwise create single segment from version timing
+        // Use segments from database if available, otherwise create single segment from version timing.
+        //
+        // Auto-detected and manual livestream clips have their own extracted MP4 file. Their
+        // version.start_time/end_time are LIVESTREAM-ABSOLUTE — they are NOT 0-based against
+        // the clip's own file. Worse, multiple legacy paths (e.g. the build-complete handler)
+        // historically wrote clip_segments rows using those livestream-absolute times, so a
+        // self-contained clip's segments may contain values outside its file's timeline. When
+        // that happens, the timeline bar renders in the wrong place / wrong width. Detect and
+        // ignore those stale rows, defaulting to the full clip duration so the user sees the
+        // entire clip and can trim it down if they want.
         let segments: any[] = [];
-        if (
+        const hasOwnFile =
+          typeof clip.file_path === 'string' && clip.file_path.trim() !== '';
+        const clipDurationFallback =
+          (typeof clip.duration === 'number' && clip.duration > 0
+            ? clip.duration
+            : null) ??
+          (typeof version.end_time === 'number' && typeof version.start_time === 'number'
+            ? version.end_time - version.start_time
+            : 0);
+        const dbSegments =
           clip.current_version_segments &&
           Array.isArray(clip.current_version_segments) &&
           clip.current_version_segments.length > 0
-        ) {
-          // Use the proper segments from database
-          segments = clip.current_version_segments.map((segment: any) => ({
+            ? clip.current_version_segments
+            : null;
+
+        // For self-contained clips, segments must live in clip-local 0-based time. If any
+        // stored segment's end_time clearly exceeds the clip's own file duration (with a
+        // small tolerance for encoder rounding), the row is stale — drop the lot and let
+        // the [0, clipDuration] fallback take over.
+        const segmentsLookStale =
+          hasOwnFile &&
+          clipDurationFallback > 0 &&
+          dbSegments != null &&
+          dbSegments.some(
+            (s: any) =>
+              typeof s?.end_time === 'number' &&
+              s.end_time > clipDurationFallback + 0.5
+          );
+
+        if (dbSegments && !segmentsLookStale) {
+          segments = dbSegments.map((segment: any) => ({
             start_time: segment.start_time,
             end_time: segment.end_time,
             duration: segment.duration || segment.end_time - segment.start_time,
             transcript: segment.transcript || version.description || 'No transcript available',
+            transcript_raw_json: segment.transcript_raw_json || null,
+            has_transcript: typeof segment.transcript === 'string' && segment.transcript.trim() !== '',
           }));
+        } else if (hasOwnFile && clipDurationFallback > 0) {
+          // Self-contained extracted clip with no usable clip_segments row:
+          // default the timeline segment to the FULL clip duration so the user sees
+          // the entire clip and can trim it down if they want.
+          segments = [
+            {
+              start_time: 0,
+              end_time: clipDurationFallback,
+              duration: clipDurationFallback,
+              transcript: version.description || 'No transcript available',
+            },
+          ];
         } else {
-          // Fallback: create single segment from version timing
+          // Fallback: create single segment from version timing (project-source-relative)
           segments = [
             {
               start_time: version.start_time,
@@ -2280,15 +3014,23 @@
         // Determine clip type based on segments
         const clipType = segments.length > 1 ? 'spliced' : 'continuous';
 
+        const timelineTotalDuration =
+          hasOwnFile && clipDurationFallback > 0
+            ? clipDurationFallback
+            : version.end_time - version.start_time;
+
         // Transform to Timeline's Clip interface
         // IMPORTANT: Include current_version_virality_score and session_prompt to match ClipsTab sorting
         return {
           id: clip.id,
+          project_id: clip.project_id,
           title: version.name || clip.name || 'Untitled Clip',
           filename: clip.file_path || 'clip.mp4',
+          file_path: clip.file_path || null,
+          built_file_path: clip.built_file_path || null,
           type: clipType,
           segments: segments,
-          total_duration: version.end_time - version.start_time,
+          total_duration: timelineTotalDuration,
           combined_transcript: version.description || 'No transcript available',
           virality_score: clip.current_version_virality_score || version.virality_score || 0,
           current_version_virality_score: clip.current_version_virality_score || version.virality_score || 0,
@@ -2296,6 +3038,9 @@
           socialMediaPost: `${version.name || 'Clip'} - ${version.description || 'Interesting moment'}`,
           run_number: clip.run_number,
           run_color: clip.session_run_color,
+          detection_session_id: clip.detection_session_id ?? null,
+          session_created_at: clip.session_created_at ?? null,
+          session_run_color: clip.session_run_color ?? null,
           session_prompt: clip.session_prompt, // Include for sorting (manual clips detection)
           subtitle_enabled: clip.subtitle_enabled,
           subtitle_preset_id: clip.subtitle_preset_id,
@@ -2365,6 +3110,7 @@
   async function loadTimelineClips(projectId: string) {
     if (!projectId) {
       timelineClips.value = [];
+      allProjectClips.value = [];
       return;
     }
 
@@ -2374,9 +3120,12 @@
       // Auto-repair any clips missing versions
       await repairClipsMissingVersion(clipsWithVersion);
 
-      timelineClips.value = transformClipsForTimeline(clipsWithVersion);
+      const transformed = transformClipsForTimeline(clipsWithVersion);
+      timelineClips.value = transformed;
+      allProjectClips.value = transformed;
     } catch (error) {
       timelineClips.value = [];
+      allProjectClips.value = [];
     }
   }
 
@@ -2567,6 +3316,7 @@
 
     const targetClipId = resolveTargetClipIdForSubtitleEdit();
     if (!targetClipId) return;
+    activeSubtitleSettingsClipId.value = targetClipId;
 
     const currentClip = getTimelineClipById(targetClipId);
     const ratio = previewAspectRatio.value;
@@ -2575,6 +3325,7 @@
     const positionX = currentClip?.subtitle_position_x ?? existingPr.position?.x ?? 50;
     const positionY = currentClip?.subtitle_position_y ?? existingPr.position?.y ?? prev.positionPercentage ?? 85;
     const width = currentClip?.subtitle_position_width ?? existingPr.maxWidth ?? prev.maxWidth ?? null;
+  const { perRatioConfigs: _perRatioConfigs, ...settingsForRatio } = { ...prev, fontSize };
 
     activeSubtitleSettings.value = {
       ...prev,
@@ -2585,7 +3336,7 @@
         ...(prev.perRatioConfigs ?? {}),
         [ratio]: {
           ...existingPr,
-          fontSize,
+        ...settingsForRatio,
           position: { x: positionX, y: positionY },
           positionPercentage: positionY,
           maxWidth: width ?? existingPr.maxWidth ?? prev.maxWidth,
@@ -2617,10 +3368,14 @@
 
     if (activeSubtitleSettings.value) {
       // Merge the patch with current settings
-      const updatedSettings = { ...activeSubtitleSettings.value, ...patch };
+      let updatedSettings = { ...activeSubtitleSettings.value, ...patch } as SubtitleSettings;
 
       // Try to sync the current dragged position from subtitle_position columns
-      const currentClip = timelineClips.value.find((c: any) => c.id === currentlyPlayingClipId.value);
+      const targetClipId = resolveTargetClipIdForSubtitleEdit();
+      const currentClip = targetClipId ? getTimelineClipById(targetClipId) : null;
+      if (targetClipId) activeSubtitleSettingsClipId.value = targetClipId;
+      const ratio = previewAspectRatio.value;
+      const existingPr = (updatedSettings.perRatioConfigs?.[ratio] ?? {}) as Partial<SubtitleOverride>;
       if (currentClip) {
         console.log('[ProjectWorkspaceDialog] Current clip position before sync:', {
           x: currentClip.subtitle_position_x,
@@ -2641,22 +3396,54 @@
         });
       } else {
         console.warn(
-          '[ProjectWorkspaceDialog] Could not find current clip in timelineClips for position sync. ClipId:',
-          currentlyPlayingClipId.value
+          '[ProjectWorkspaceDialog] Could not find target clip in timelineClips for position sync. ClipId:',
+          targetClipId
         );
       }
 
+      const positionX = currentClip?.subtitle_position_x ?? existingPr.position?.x ?? 50;
+      const positionY =
+        patch.positionPercentage ??
+        currentClip?.subtitle_position_y ??
+        existingPr.position?.y ??
+        updatedSettings.positionPercentage ??
+        85;
+      const width =
+        patch.maxWidth ??
+        currentClip?.subtitle_position_width ??
+        existingPr.maxWidth ??
+        updatedSettings.maxWidth ??
+        null;
+
+      // Build/export merges perRatioConfigs[ratio] over root settings. Keep the active
+      // preview ratio synchronized so the exported subtitles match what VideoPlayer shows.
+      const { perRatioConfigs: _perRatioConfigs, ...settingsForRatio } = updatedSettings;
+      updatedSettings = {
+        ...updatedSettings,
+        positionPercentage: positionY,
+        maxWidth: width ?? updatedSettings.maxWidth,
+        perRatioConfigs: {
+          ...(updatedSettings.perRatioConfigs ?? {}),
+          [ratio]: {
+            ...existingPr,
+            ...settingsForRatio,
+            position: { x: positionX, y: positionY },
+            positionPercentage: positionY,
+            maxWidth: width ?? existingPr.maxWidth ?? updatedSettings.maxWidth,
+          },
+        },
+      };
+
       activeSubtitleSettings.value = updatedSettings;
 
-      // Save the full settings to the database for the currently playing clip
-      // IMPORTANT: Save even if currentClip wasn't found in timelineClips
-      if (currentlyPlayingClipId.value) {
+      // Save the full settings to the database for the clip whose subtitles are being edited.
+      if (targetClipId) {
         try {
           const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } =
             await import('@/services/database/clips');
 
           console.log('[ProjectWorkspaceDialog] About to save full settings to database:', {
-            clipId: currentlyPlayingClipId.value,
+            clipId: targetClipId,
             animationStyle: activeSubtitleSettings.value.animationStyle,
             border1Width: activeSubtitleSettings.value.border1Width,
             border1Color: activeSubtitleSettings.value.border1Color,
@@ -2666,25 +3453,29 @@
             highlightColor: activeSubtitleSettings.value.highlightColor,
           });
 
-          await updateClipFullSubtitleSettings(currentlyPlayingClipId.value, activeSubtitleSettings.value);
+          await updateClipFullSubtitleSettings(targetClipId, activeSubtitleSettings.value);
 
           console.log(
             '[ProjectWorkspaceDialog] Saved subtitle settings to database for clip:',
-            currentlyPlayingClipId.value
+            targetClipId
           );
 
           // Also save position to the separate columns if we have the clip data
           if (currentClip) {
-            const posX = currentClip.subtitle_position_x ?? 50;
-            const posY = currentClip.subtitle_position_y ?? 85;
-            const width = currentClip.subtitle_position_width ?? null;
-            await updateClipSubtitlePosition(currentlyPlayingClipId.value, posX, posY, width);
-            console.log('[ProjectWorkspaceDialog] Synced position columns to match JSON:', { posX, posY, width });
+            currentClip.subtitle_position_x = positionX;
+            currentClip.subtitle_position_y = positionY;
+            currentClip.subtitle_position_width = width;
+            await updateClipSubtitlePosition(targetClipId, positionX, positionY, width);
+            console.log('[ProjectWorkspaceDialog] Synced position columns to match JSON:', {
+              posX: positionX,
+              posY: positionY,
+              width,
+            });
           }
 
           console.log(
             '[ProjectWorkspaceDialog] Saved full subtitle settings for clip with current position:',
-            currentlyPlayingClipId.value
+            targetClipId
           );
 
           // CRITICAL: Wait for clips data to refresh so updated settings are available
@@ -2710,26 +3501,54 @@
     }
   }
 
-  function patchSubtitleTranscriptDraft(panelIndex: number, text: string) {
+  function resolveSubtitlePanelRow(panelIndex: number, sourceRow?: Partial<SubtitlePanelTranscriptRow>) {
     const rows = subtitlePanelRows.value;
-    const row = rows[panelIndex];
-    const td = transcriptData.value;
+    const row = sourceRow ?? rows[panelIndex];
+    return row;
+  }
+
+  function patchSubtitleTranscriptDraft(
+    panelIndex: number,
+    text: string,
+    sourceRow?: Partial<SubtitlePanelTranscriptRow>
+  ) {
+    const row = resolveSubtitlePanelRow(panelIndex, sourceRow);
+    const td = activeTranscriptDataForPlayback.value;
     if (!row || !td?.whisperSegments) return;
+    if (row.whisperSegmentIndex == null) return;
 
     const seg = td.whisperSegments[row.whisperSegmentIndex];
     if (!seg) return;
 
-    if (row.wordIndex != null && seg.words && seg.words[row.wordIndex]) {
-      seg.words[row.wordIndex].word = text;
+    if (row.wordIndex != null && row.wordEndIndex != null && seg.words && seg.words[row.wordIndex]) {
+      const oldWords = seg.words.slice(row.wordIndex, row.wordEndIndex + 1);
+      const replacementTexts = text.trim().split(/\s+/).filter(Boolean);
+      if (oldWords.length === 0 || replacementTexts.length !== oldWords.length) {
+        seg.text = text;
+        return;
+      }
+
+      const sourceStart = row.sourceStart ?? oldWords[0]?.start ?? seg.start;
+      const sourceEnd = row.sourceEnd ?? oldWords[oldWords.length - 1]?.end ?? seg.end;
+      const duration = Math.max(0, sourceEnd - sourceStart);
+      const replacementWords = replacementTexts.map((word, index) => {
+        const existing = oldWords[index];
+        return {
+          word,
+          start: existing?.start ?? sourceStart + (duration * index) / Math.max(1, replacementTexts.length),
+          end: existing?.end ?? sourceStart + (duration * (index + 1)) / Math.max(1, replacementTexts.length),
+          confidence: existing?.confidence,
+        };
+      });
+
+      seg.words.splice(row.wordIndex, oldWords.length, ...replacementWords);
       seg.text = seg.words.map((w) => w.word).join(' ');
       const flat = td.words;
       if (flat?.length) {
-        for (let i = 0; i < flat.length; i++) {
-          const fw = flat[i];
-          if (Math.abs(fw.start - row.sourceStart) < 0.08 && Math.abs(fw.end - row.sourceEnd) < 0.08) {
-            flat[i] = { ...fw, word: text };
-            break;
-          }
+        const flatStart = flat.findIndex((fw) => Math.abs(fw.start - sourceStart) < 0.08);
+        const flatEnd = flat.findIndex((fw) => Math.abs(fw.end - sourceEnd) < 0.08);
+        if (flatStart >= 0 && flatEnd >= flatStart) {
+          flat.splice(flatStart, flatEnd - flatStart + 1, ...replacementWords);
         }
       }
     } else {
@@ -2737,23 +3556,38 @@
     }
   }
 
-  function onSubtitleSegmentDraft(panelIndex: number, text: string) {
-    patchSubtitleTranscriptDraft(panelIndex, text);
+  function onSubtitleSegmentDraft(
+    panelIndex: number,
+    text: string,
+    sourceRow?: Partial<SubtitlePanelTranscriptRow>
+  ) {
+    patchSubtitleTranscriptDraft(panelIndex, text, sourceRow);
   }
 
-  async function onSubtitleSegmentCommit(panelIndex: number, text: string) {
+  async function onSubtitleSegmentCommit(
+    panelIndex: number,
+    text: string,
+    sourceRow?: Partial<SubtitlePanelTranscriptRow>
+  ) {
     const projectId = props.project?.id;
     if (!projectId) return;
 
-    const rows = subtitlePanelRows.value;
-    const row = rows[panelIndex];
+    const row = resolveSubtitlePanelRow(panelIndex, sourceRow);
     if (!row) return;
+    if (row.whisperSegmentIndex == null) return;
+    const activeTranscript = activeTranscriptDataForPlayback.value?.transcript;
 
-    const res = await updateTranscriptWhisperCell(
+    const res = await updateTranscriptWhisperCellRange(
       projectId,
       row.whisperSegmentIndex,
-      row.wordIndex,
-      text
+      row.wordIndex ?? null,
+      row.wordEndIndex ?? null,
+      text,
+      {
+        transcriptId: activeTranscript?.id,
+        sourceStart: row.sourceStart,
+        sourceEnd: row.sourceEnd,
+      }
     );
     if (!res.success) {
       console.error('[ProjectWorkspaceDialog] Transcript save failed:', res.error);
@@ -2768,6 +3602,7 @@
   async function onSubtitlePositionChange(position: { x: number; y: number }, width: number) {
     const targetClipId = resolveTargetClipIdForSubtitleEdit();
     if (!targetClipId) return;
+    activeSubtitleSettingsClipId.value = targetClipId;
 
     // Update the in-memory clip so the computed activeSubtitlePosition reflects immediately
     const clip = getTimelineClipById(targetClipId);
@@ -2784,6 +3619,7 @@
       const ratio = previewAspectRatio.value;
       const prev = activeSubtitleSettings.value as SubtitleSettings;
       const existingPr = (prev.perRatioConfigs?.[ratio] ?? {}) as Partial<SubtitleOverride>;
+      const { perRatioConfigs: _perRatioConfigs, ...settingsForRatio } = prev;
       activeSubtitleSettings.value = {
         ...prev,
         positionPercentage: position.y,
@@ -2792,7 +3628,7 @@
           ...(prev.perRatioConfigs ?? {}),
           [ratio]: {
             ...existingPr,
-            fontSize: prev.fontSize ?? existingPr.fontSize,
+            ...settingsForRatio,
             position: { x: position.x, y: position.y },
             positionPercentage: position.y,
             maxWidth: width,
@@ -3363,6 +4199,7 @@
       borderRadius: 0,
       wordSpacing: 0.35,
     };
+    activeSubtitleSettingsClipId.value = clip.id ?? null;
     console.log(
       '[ProjectWorkspaceDialog] Loaded subtitle settings from preset:',
       preset.id,
@@ -3401,6 +4238,7 @@
     hoveredClipId.value = clip.id;
     hoveredTimelineClipId.value = clip.id;
     console.log('[ProjectWorkspaceDialog] Set currentlyPlayingClipId to:', clip.id);
+    await loadTranscriptDataForSelfContainedClip(clip);
 
     // CRITICAL: Fetch the FULL clip data from the database to get subtitle_settings
     // The clip object passed in might not have all fields populated
@@ -3456,6 +4294,7 @@
           }
 
           activeSubtitleSettings.value = savedSettings;
+          activeSubtitleSettingsClipId.value = fullClip.id ?? clip.id ?? null;
           console.log(
             '[ProjectWorkspaceDialog] Loaded full subtitle settings from database for clip:',
             fullClip.id,
@@ -3483,6 +4322,7 @@
       }
     } else {
       activeSubtitleSettings.value = undefined;
+      activeSubtitleSettingsClipId.value = null;
       console.log('[ProjectWorkspaceDialog] No subtitles for this clip');
     }
 
@@ -3560,61 +4400,126 @@
       const isDifferentFile = currentFilePath.value !== clipOwnFile;
       const needsVideoLoad = !currentFilePath.value || isDifferentFile;
 
+      let loaded = true;
       if (needsVideoLoad) {
         console.log('[ProjectWorkspaceDialog] Loading manual/auto clip as main video source:', clipOwnFile);
-        const loaded = await loadVideoFromPath(clipOwnFile);
-        if (loaded) {
+        loaded = await loadVideoFromPath(clipOwnFile);
+      }
+
+      if (loaded) {
+          workspaceVideoTimeIsSourceAbsolute.value = false;
           // Wait for video to be ready
           await nextTick();
-          await new Promise((resolve) => setTimeout(resolve, 100));
+          let durationAttempts = 0;
+          while (
+            (!videoElement.value?.duration ||
+              !Number.isFinite(videoElement.value.duration)) &&
+            durationAttempts < 50
+          ) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            durationAttempts++;
+          }
 
-          // For manual/auto clips, the clip file starts at 0, but segments are stored with
-          // their original livestream timestamps. We need to adjust them to be 0-based.
+          // For manual/auto clips, the clip file starts at 0. Historically segments were
+          // stored with livestream-absolute timestamps and we subtracted the version's
+          // start_time to project them onto the clip-local 0-based timeline. New clips
+          // (and clips written by the build-complete handler) now persist segments in
+          // 0-based local time directly. Detect which space the row is in: if a segment
+          // already fits inside [0, clipDuration] it's already 0-based — leave it; only
+          // shift rows that look livestream-absolute.
           const clipStartOffset = clip.current_version_start_time ?? clip.start_time ?? 0;
+          const loadedFileDuration =
+            videoElement.value?.duration && Number.isFinite(videoElement.value.duration)
+              ? videoElement.value.duration
+              : 0;
           const clipDuration =
-            duration.value ||
-            clip.total_duration ||
-            clip.current_version_end_time - clip.current_version_start_time ||
-            clip.end_time - clip.start_time ||
+            loadedFileDuration ||
+            (typeof clip.duration === 'number' && clip.duration > 0 ? clip.duration : 0) ||
+            (typeof clip.total_duration === 'number' && clip.total_duration > 0
+              ? clip.total_duration
+              : 0) ||
+            (clip.current_version_end_time ?? 0) - (clip.current_version_start_time ?? 0) ||
+            (clip.end_time ?? 0) - (clip.start_time ?? 0) ||
             0;
 
-          // Get the clip's segments and adjust timestamps to be 0-based
-          let adjustedSegments = [];
-          if (clip.segments && clip.segments.length > 0) {
-            adjustedSegments = clip.segments.map((seg: any, index: number) => ({
-              id: seg.id || `seg-${clip.id}-${index}`,
+          const fullClipSegment = () => [
+            {
+              id: `trim-${clip.id}`,
               clip_version_id: clip.current_version_id || clip.id,
-              segment_index: index,
-              start_time: Math.max(0, seg.start_time - clipStartOffset),
-              end_time: Math.min(clipDuration, seg.end_time - clipStartOffset),
-              duration: seg.duration,
-              transcript: seg.transcript || '',
+              segment_index: 0,
+              source_start_time: clip.current_version_start_time ?? clip.start_time ?? 0,
+              source_end_time: clip.current_version_end_time ?? clip.end_time ?? clipDuration,
+              start_time: 0,
+              end_time: clipDuration,
+              duration: clipDuration,
+              transcript: clip.combined_transcript || clip.current_version_description || '',
               transcript_raw_json: null,
               audio_peaks: null,
               created_at: Date.now(),
-              updated_at: Date.now(),
-            }));
-          } else {
-            // No segments, create one spanning the full clip
-            adjustedSegments = [
-              {
-                id: `trim-${clip.id}`,
+            },
+          ];
+
+          // Get the clip's segments and adjust timestamps to be 0-based
+          let adjustedSegments = [];
+          const sourceSegments = getClipTimelineSegments(clip);
+          if (sourceSegments.length > 0) {
+            adjustedSegments = sourceSegments.map((seg: any, index: number) => {
+              const segEnd =
+                typeof seg.end_time === 'number' ? seg.end_time : 0;
+              const segStart =
+                typeof seg.start_time === 'number' ? seg.start_time : 0;
+              const looksZeroBased =
+                clipDuration > 0 && segEnd <= clipDuration + 0.5 && segStart >= 0;
+              const start_time = looksZeroBased
+                ? Math.max(0, segStart)
+                : Math.max(0, segStart - clipStartOffset);
+              const end_time = looksZeroBased
+                ? Math.min(clipDuration || segEnd, segEnd)
+                : Math.min(clipDuration, segEnd - clipStartOffset);
+              return {
+                id: seg.id || `seg-${clip.id}-${index}`,
                 clip_version_id: clip.current_version_id || clip.id,
-                segment_index: 0,
-                start_time: 0,
-                end_time: clipDuration,
-                duration: clipDuration,
-                transcript: clip.combined_transcript || clip.current_version_description || '',
+                segment_index: index,
+                source_start_time: seg.source_start_time ?? seg.start_time,
+                source_end_time: seg.source_end_time ?? seg.end_time,
+                start_time,
+                end_time,
+                duration: end_time - start_time,
+                transcript: seg.transcript || '',
                 transcript_raw_json: null,
                 audio_peaks: null,
                 created_at: Date.now(),
-                updated_at: Date.now(),
-              },
-            ];
+              };
+            }).filter((seg: any) => {
+              const isValid =
+                clipDuration > 0 &&
+                seg.start_time >= 0 &&
+                seg.end_time > seg.start_time &&
+                seg.end_time <= clipDuration + 0.5;
+              if (!isValid) {
+                console.warn(
+                  '[ProjectWorkspaceDialog] Ignoring stale self-contained clip segment; falling back if none remain:',
+                  {
+                    clipId: clip.id,
+                    start: seg.start_time,
+                    end: seg.end_time,
+                    clipDuration,
+                  }
+                );
+              }
+              return isValid;
+            });
+
+            if (adjustedSegments.length === 0) {
+              adjustedSegments = fullClipSegment();
+            }
+          } else {
+            // No segments, create one spanning the full clip
+            adjustedSegments = fullClipSegment();
           }
 
           console.log('[ProjectWorkspaceDialog] Playing manual/auto clip with adjusted segments:', adjustedSegments);
-          playClipSegments(adjustedSegments);
+          playClipSegments(adjustedSegments as any);
 
           // Update timelineClips to show the adjusted clip in the timeline
           // This is critical - the timeline needs the clip with 0-based timestamps
@@ -3625,6 +4530,8 @@
               filename: clipOwnFile,
               type: 'continuous',
               segments: adjustedSegments.map((seg: any) => ({
+                source_start_time: seg.source_start_time,
+                source_end_time: seg.source_end_time,
                 start_time: seg.start_time,
                 end_time: seg.end_time,
                 duration: seg.duration,
@@ -3639,6 +4546,8 @@
               run_number: clip.run_number,
               run_color: clip.run_color,
               session_prompt: clip.session_prompt,
+              current_version_start_time: clip.current_version_start_time ?? clip.start_time ?? null,
+              current_version_end_time: clip.current_version_end_time ?? clip.end_time ?? null,
               clip_text_overlay: fullClip.clip_text_overlay ?? clip.clip_text_overlay ?? null,
               subtitle_enabled: fullClip.subtitle_enabled,
               subtitle_preset_id: fullClip.subtitle_preset_id ?? null,
@@ -3657,7 +4566,6 @@
           skipPlaybackEndedClear = false;
 
           return;
-        }
       }
     }
 
@@ -4235,6 +5143,37 @@
           // If an initial clip ID was provided, scroll to and select it
           if (props.initialClipId) {
             await scrollToAndSelectClip(props.initialClipId);
+
+            // For self-contained clips (auto-detected livestream clips, manual clips),
+            // also swap the Main Video to the clip's own MP4 so the timeline duration
+            // matches the clip and the segment spans the full track. Without this, the
+            // workspace stays on whichever raw_video was picked by `loadVideoForProject`
+            // (usually the longest project file), which makes other clips' segments
+            // render against a mismatched timeline.
+            const initialClip = timelineClips.value.find(
+              (c: any) => c.id === props.initialClipId
+            );
+            const initialClipFile = initialClip?.file_path || initialClip?.filename;
+            const isSelfContainedClip =
+              initialClip?.session_prompt === 'Manual clip creation' ||
+              (typeof initialClip?.session_prompt === 'string' &&
+                initialClip.session_prompt.includes('auto'));
+            if (
+              isSelfContainedClip &&
+              typeof initialClipFile === 'string' &&
+              initialClipFile.trim() !== '' &&
+              currentFilePath.value !== initialClipFile
+            ) {
+              try {
+                await loadVideoFromPath(initialClipFile);
+                workspaceVideoTimeIsSourceAbsolute.value = false;
+              } catch (err) {
+                console.warn(
+                  '[ProjectWorkspaceDialog] Failed to load initial clip MP4 as main video:',
+                  err
+                );
+              }
+            }
           }
         }
       } else {
@@ -4243,6 +5182,7 @@
         showProgress.value = false;
         // Clear timeline clips
         timelineClips.value = [];
+        allProjectClips.value = [];
         // Reset LOCAL clip generation state (global tracking persists)
         clipGenerationInProgress.value = false;
         // Reset frontend progress tracking
@@ -4317,6 +5257,7 @@
         // Reset local playback state
         resetVideoState();
         timelineClips.value = [];
+        allProjectClips.value = [];
         hoveredClipId.value = null;
         hoveredTimelineClipId.value = null;
         currentlyPlayingClipId.value = null;

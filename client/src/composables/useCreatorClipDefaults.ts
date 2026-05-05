@@ -5,6 +5,8 @@ import type {
   SubtitleSettings,
 } from '@/types';
 import { updateCreatorProfile, getCreatorProfile } from '@/services/database/creator-profiles';
+import { updateProject } from '@/services/database/projects';
+import { setProjectVodPreset } from '@/services/database/vod-presets';
 
 /**
  * Helpers for the per-creator "clip build defaults" feature.
@@ -108,5 +110,34 @@ export function getCreatorSubtitleDefaults(
 ): SubtitleSettings | null {
   if (!defaults || !defaults.subtitleDefaults) return null;
   return JSON.parse(JSON.stringify(defaults.subtitleDefaults));
+}
+
+/**
+ * Apply a creator profile's `clip_build_defaults` to a project when the user
+ * opted in (e.g. "Use creator layout" on the VOD download flow or the
+ * realtime auto-detect dialog). No-ops if there's no profile, no defaults,
+ * or `apply` is falsy. Errors are logged and swallowed so the calling flow
+ * (download / detection) keeps going even if seeding fails.
+ */
+export async function seedCreatorClipLayoutOnProject(
+  projectId: string,
+  creatorProfileId: string | undefined,
+  apply: boolean | undefined
+): Promise<void> {
+  if (!apply || !creatorProfileId) return;
+  try {
+    const profile = await getCreatorProfile(creatorProfileId);
+    if (!profile?.clip_build_defaults) return;
+    const defaults = parseCreatorClipBuildDefaults(profile.clip_build_defaults);
+    if (!defaults) return;
+    await setProjectVodPreset(
+      projectId,
+      null,
+      buildActiveVodPresetFromCreatorDefaults(defaults)
+    );
+    await updateProject(projectId, undefined, undefined, undefined, undefined, creatorProfileId);
+  } catch (e) {
+    console.warn('[useCreatorClipDefaults] seedCreatorClipLayoutOnProject failed:', e);
+  }
 }
 

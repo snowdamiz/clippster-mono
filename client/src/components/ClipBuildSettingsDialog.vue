@@ -1044,13 +1044,138 @@
   const clipProjectId = computed(() => props.clip?.project_id || null);
   const { transcriptData } = useTranscriptData(clipProjectId);
 
+  /**
+   * Normalize a file path for cross-platform comparison.
+   * Self-contained livestream clips (auto/manual) and their raw_video records
+   * are saved with the same string but Windows backslashes vs forward slashes,
+   * casing, or `file://` prefixes can cause direct `===` to miss the match.
+   */
+  function normalizePathForCompare(path: string): string {
+    return path.replace(/\\/g, '/').replace(/^file:\/\//, '').toLowerCase();
+  }
+
+  /**
+   * True for clips that ARE the source file (auto-detected/manual livestream
+   * clips that were extracted to their own file at detection time). For these
+   * clips, `clip.file_path` is the playable extracted clip — not a source VOD —
+   * timestamps in the per-clip transcript are already clip-relative (0..duration),
+   * and the build pipeline treats them as a 0-based whole file.
+   */
+  const isSelfContainedClip = computed(() => {
+    const clip = props.clip;
+    if (!clip) return false;
+    const prompt = String((clip as any).session_prompt || '').toLowerCase();
+    const hasOwnFile = typeof clip.file_path === 'string' && clip.file_path.trim().length > 0;
+    return hasOwnFile && (prompt === 'manual clip creation' || prompt.includes('auto'));
+  });
+
+  /** Duration to use as the clip-relative timeline length for self-contained clips. */
+  function getSelfContainedClipDuration(clip: ClipWithVersion): number {
+    if (clip.current_version_segments && clip.current_version_segments.length > 0) {
+      return clip.current_version_segments.reduce((total, segment) => {
+        const segDuration =
+          Number(segment.duration) || Number(segment.end_time) - Number(segment.start_time);
+        return total + Math.max(0, segDuration || 0);
+      }, 0);
+    }
+    const startTime = clip.current_version_start_time ?? clip.start_time ?? 0;
+    const endTime = clip.current_version_end_time ?? clip.end_time ?? 0;
+    if (endTime > startTime) return endTime - startTime;
+    return clip.duration || 0;
+  }
+
+  /**
+   * Per-clip transcript for self-contained clips. The project-wide transcript
+   * (returned by `getTranscriptByProjectId`) is the LONGEST transcript across
+   * all auto-detected clips in the same project, so it's almost always the
+   * wrong one for the currently selected clip. We instead resolve the clip's
+   * own raw_video by its file_path and load that transcript directly.
+   */
+  interface SelfContainedTranscriptData {
+    words: import('@/utils/timelineUtils').WordInfo[];
+    whisperSegments: import('@/types').WhisperSegment[];
+  }
+  const selfContainedTranscriptData = ref<SelfContainedTranscriptData | null>(null);
+
+  async function loadSelfContainedTranscriptForClip() {
+    selfContainedTranscriptData.value = null;
+    const clip = props.clip;
+    if (!clip || !isSelfContainedClip.value) return;
+    if (!clip.project_id || !clip.file_path) return;
+
+    try {
+      const { getRawVideosByProjectId, getTranscriptByRawVideoId } = await import('@/services/database');
+      const { parseTranscriptToWords } = await import('@/utils/timelineUtils');
+      const rawVideos = await getRawVideosByProjectId(clip.project_id);
+      const targetPath = normalizePathForCompare(clip.file_path);
+      const rawVideo = rawVideos.find((rv) => normalizePathForCompare(rv.file_path) === targetPath);
+      if (!rawVideo) {
+        console.warn(
+          '[ClipBuildSettingsDialog] No raw video matched self-contained clip file_path:',
+          clip.file_path
+        );
+        return;
+      }
+      const transcript = await getTranscriptByRawVideoId(rawVideo.id);
+      if (!transcript?.raw_json) return;
+
+      const words = parseTranscriptToWords(transcript.raw_json);
+      let whisperSegments: import('@/types').WhisperSegment[] = [];
+      try {
+        const parsed = JSON.parse(transcript.raw_json);
+        if (Array.isArray(parsed?.segments)) {
+          whisperSegments = parsed.segments.map((segment: any, index: number) => ({
+            id: segment.id ?? index,
+            start: Number(segment.start) || 0,
+            end: Number(segment.end) || 0,
+            text: segment.text || '',
+            words: Array.isArray(segment.words)
+              ? segment.words.map((w: any) => ({
+                  word: String(w.word || '').trim(),
+                  start: Number(w.start) || 0,
+                  end: Number(w.end) || 0,
+                  confidence: w.confidence,
+                }))
+              : undefined,
+          }));
+        }
+      } catch (err) {
+        console.warn('[ClipBuildSettingsDialog] Failed to parse self-contained whisper segments:', err);
+      }
+
+      selfContainedTranscriptData.value = { words, whisperSegments };
+    } catch (err) {
+      console.warn('[ClipBuildSettingsDialog] Failed to load self-contained transcript:', err);
+    }
+  }
+
+  // Reload the per-clip transcript when the clip changes or the dialog opens.
+  watch(
+    () => [props.modelValue, props.clip?.id, isSelfContainedClip.value] as const,
+    ([open]) => {
+      if (open && isSelfContainedClip.value) {
+        void loadSelfContainedTranscriptForClip();
+      } else {
+        selfContainedTranscriptData.value = null;
+      }
+    },
+    { immediate: true }
+  );
+
   // Get transcript words and segments for the current clip (filtered and adjusted)
   const transcriptWords = computed(() => {
-    if (!transcriptData.value?.words || !props.clip) return [];
-    
+    if (!props.clip) return [];
+
+    if (isSelfContainedClip.value) {
+      // Self-contained clip transcripts are already stored with timestamps
+      // relative to the clip start (0..duration), so no offset/filter is needed.
+      return selfContainedTranscriptData.value?.words || [];
+    }
+
+    if (!transcriptData.value?.words) return [];
     const clipStart = props.clip.current_version_start_time || 0;
     const clipEnd = props.clip.current_version_end_time || clipStart + (props.clip.duration || 0);
-    
+
     // Filter and adjust word timestamps to be relative to clip start
     return transcriptData.value.words
       .filter(w => w.start >= clipStart && w.end <= clipEnd)
@@ -1062,11 +1187,17 @@
   });
 
   const transcriptSegments = computed(() => {
-    if (!transcriptData.value?.whisperSegments || !props.clip) return [];
-    
+    if (!props.clip) return [];
+
+    if (isSelfContainedClip.value) {
+      // Already clip-relative (0..duration). Return as-is.
+      return selfContainedTranscriptData.value?.whisperSegments || [];
+    }
+
+    if (!transcriptData.value?.whisperSegments) return [];
     const clipStart = props.clip.current_version_start_time || 0;
     const clipEnd = props.clip.current_version_end_time || clipStart + (props.clip.duration || 0);
-    
+
     // Filter and adjust segment timestamps to be relative to clip start
     return transcriptData.value.whisperSegments
       .filter(s => s.start >= clipStart && s.end <= clipEnd)
@@ -1131,9 +1262,22 @@
     return base;
   });
 
-  // Clip timing for video preview
-  const clipStartTime = computed(() => props.clip?.current_version_start_time || 0);
-  const clipEndTime = computed(() => props.clip?.current_version_end_time || 0);
+  // Clip timing for video preview.
+  // For self-contained clips (auto/manual livestream), the playable file IS the
+  // clip, so the preview timeline must run 0..duration. The stored
+  // current_version_start_time/end_time are absolute stream timestamps and do
+  // not exist inside the extracted file — using them would seek beyond EOF and
+  // also break subtitle filtering.
+  const clipStartTime = computed(() => {
+    if (isSelfContainedClip.value) return 0;
+    return props.clip?.current_version_start_time || 0;
+  });
+  const clipEndTime = computed(() => {
+    if (isSelfContainedClip.value && props.clip) {
+      return getSelfContainedClipDuration(props.clip);
+    }
+    return props.clip?.current_version_end_time || 0;
+  });
 
   // Check if portrait ratios are selected (need framing options)
   const hasPortraitRatio = computed(() => {
@@ -1265,6 +1409,32 @@
     }
     
     showManualPOIEditor.value = true;
+  }
+
+  const DEFAULT_POI_SUBTITLE_POSITION = { x: 50, y: 85, width: 80 } as const;
+
+  function ensureSubtitlePositionOverrideForRatio(ratio: string) {
+    if (!effectiveSubtitleSettings.value?.enabled) return;
+
+    const existingOverride = subtitleOverrides.value[ratio as keyof SubtitleOverrides];
+    if (existingOverride?.position) return;
+
+    subtitleOverrides.value = {
+      ...subtitleOverrides.value,
+      [ratio]: {
+        ...(existingOverride ?? {}),
+        position: {
+          x: DEFAULT_POI_SUBTITLE_POSITION.x,
+          y: DEFAULT_POI_SUBTITLE_POSITION.y,
+        },
+        positionPercentage: DEFAULT_POI_SUBTITLE_POSITION.y,
+        maxWidth: existingOverride?.maxWidth ?? DEFAULT_POI_SUBTITLE_POSITION.width,
+        fontSize:
+          existingOverride?.fontSize ??
+          effectiveSubtitleSettings.value.fontSize ??
+          32,
+      },
+    };
   }
   const introButtonRef = ref<HTMLElement | null>(null);
   const outroButtonRef = ref<HTMLElement | null>(null);
@@ -1462,12 +1632,7 @@
       };
     }
     
-    // Return defaults
-    return {
-      x: 50,
-      y: 85,
-      width: 80,
-    };
+    return { ...DEFAULT_POI_SUBTITLE_POSITION };
   }
 
   // Open subtitle adjustment dialog for a specific ratio
@@ -1669,41 +1834,68 @@
       const { invoke } = await import('@tauri-apps/api/core');
       const { getRawVideosByProjectId } = await import('@/services/database');
 
-      // Get the project's raw video
-      const projectId = props.clip.project_id;
-      if (!projectId) return;
-
-      const rawVideos = await getRawVideosByProjectId(projectId);
-      if (rawVideos.length === 0) return;
-
-      // Find the raw video that matches the clip's file_path
-      // The clip.file_path is the source VOD file that the clip was detected from
+      // Resolve which file the POI editor should preview, plus where in that
+      // file the clip's first frame lives. Two cases:
+      //
+      //  1. Self-contained clips (auto/manual livestream): the extracted clip
+      //     file IS the source. We use clip.file_path directly and start at 0.
+      //     Each auto-detected clip in the project has its own raw_video record,
+      //     so the legacy "find any raw_video for this project" fallback would
+      //     pick a different clip's file.
+      //
+      //  2. VOD-based clips: the clip.file_path is the source VOD path; we
+      //     match it back to the project's raw_video (with normalized path
+      //     comparison so Windows backslash/case differences don't cause us
+      //     to fall through to a wrong raw_video).
       let rawVideoPath = '';
-      
-      if (props.clip.file_path) {
-        // Try to find the raw video that matches the clip's file_path
-        const matchingRawVideo = rawVideos.find(rv => rv.file_path === props.clip!.file_path);
-        if (matchingRawVideo) {
-          rawVideoPath = matchingRawVideo.file_path;
-          console.log('[BuildSettings] Found matching raw video for clip:', rawVideoPath.split(/[\\/]/).pop());
-        } else {
-          // Fallback: use the first raw video if no exact match found
-          rawVideoPath = rawVideos[0].file_path;
-          console.warn('[BuildSettings] No matching raw video found for clip file_path, using first raw video');
-        }
+      let frameTimestamp = 0;
+
+      if (isSelfContainedClip.value && props.clip.file_path) {
+        rawVideoPath = props.clip.file_path;
+        frameTimestamp = 1;
+        console.log(
+          '[BuildSettings] Self-contained clip — using clip.file_path directly:',
+          rawVideoPath.split(/[\\/]/).pop()
+        );
       } else {
-        // No file_path on clip, use first raw video as fallback
-        rawVideoPath = rawVideos[0].file_path;
-        console.warn('[BuildSettings] Clip has no file_path, using first raw video');
+        const projectId = props.clip.project_id;
+        if (!projectId) return;
+
+        const rawVideos = await getRawVideosByProjectId(projectId);
+        if (rawVideos.length === 0) return;
+
+        if (props.clip.file_path) {
+          const targetPath = normalizePathForCompare(props.clip.file_path);
+          const matchingRawVideo = rawVideos.find(
+            (rv) => normalizePathForCompare(rv.file_path) === targetPath
+          );
+          if (matchingRawVideo) {
+            rawVideoPath = matchingRawVideo.file_path;
+            console.log(
+              '[BuildSettings] Found matching raw video for clip:',
+              rawVideoPath.split(/[\\/]/).pop()
+            );
+          } else {
+            rawVideoPath = rawVideos[0].file_path;
+            console.warn(
+              '[BuildSettings] No matching raw video found for clip file_path, using first raw video'
+            );
+          }
+        } else {
+          rawVideoPath = rawVideos[0].file_path;
+          console.warn('[BuildSettings] Clip has no file_path, using first raw video');
+        }
+
+        const startTime = props.clip.current_version_start_time || 0;
+        frameTimestamp = startTime + 1;
       }
 
       videoPath.value = rawVideoPath; // Store video path for POI editor
-      const startTime = props.clip.current_version_start_time || 0;
 
       // Generate a frame at the clip's start time
       const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
         videoPath: rawVideoPath,
-        timestampSeconds: startTime + 1, // 1 second into the clip
+        timestampSeconds: frameTimestamp,
         outputFilename: `poi_preview_${props.clip.id}`,
       });
 
@@ -1984,6 +2176,7 @@
   // Manual framing config handler - saves to the specific aspect ratio
   function onManualConfigConfirm(config: ManualFramingConfig) {
     const ratio = config.targetAspectRatio as keyof import('@/types').ManualFramingConfigs;
+    ensureSubtitlePositionOverrideForRatio(config.targetAspectRatio);
     manualFramingConfigs.value = {
       ...manualFramingConfigs.value,
       [ratio]: config,

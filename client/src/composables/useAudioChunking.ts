@@ -22,7 +22,12 @@ export interface ChunkingProgress {
   message: string;
 }
 
-export function useAudioChunking() {
+interface UseAudioChunkingOptions {
+  showSuccessToast?: boolean;
+  showErrorToast?: boolean;
+}
+
+export function useAudioChunking(options: UseAudioChunkingOptions = {}) {
   const isExtracting = ref(false);
   const isChunking = ref(false);
   const progress = ref<ChunkingProgress>({
@@ -36,6 +41,8 @@ export function useAudioChunking() {
   const chunks = ref<AudioChunk[]>([]);
   const error = ref<string | null>(null);
   const { success: showSuccess, error: showError } = useToast();
+  const shouldShowSuccessToast = options.showSuccessToast ?? true;
+  const shouldShowErrorToast = options.showErrorToast ?? true;
 
   // Computed properties for easier use
   const isProcessing = computed(() => isExtracting.value || isChunking.value);
@@ -107,6 +114,10 @@ export function useAudioChunking() {
         endTime: endTime ?? null,
       });
 
+      if (audioChunks.length === 0) {
+        throw new Error('No audio chunks were extracted from the video');
+      }
+
       // Update progress
       progress.value = {
         stage: 'completed',
@@ -121,10 +132,12 @@ export function useAudioChunking() {
 
       const totalSize = audioChunks.reduce((sum, chunk) => sum + chunk.file_size, 0);
 
-      showSuccess(
-        'Audio chunked successfully',
-        `Created ${audioChunks.length} chunks totaling ${(totalSize / 1024 / 1024).toFixed(1)}MB`
-      );
+      if (shouldShowSuccessToast) {
+        showSuccess(
+          'Audio chunked successfully',
+          `Created ${audioChunks.length} chunks totaling ${(totalSize / 1024 / 1024).toFixed(1)}MB`
+        );
+      }
 
       return { success: true, chunks: audioChunks };
     } catch (err) {
@@ -140,7 +153,9 @@ export function useAudioChunking() {
         message: `Error: ${errorMessage}`,
       };
 
-      showError('Audio chunking failed', errorMessage);
+      if (shouldShowErrorToast) {
+        showError('Audio chunking failed', errorMessage);
+      }
 
       return { success: false, error: errorMessage };
     } finally {

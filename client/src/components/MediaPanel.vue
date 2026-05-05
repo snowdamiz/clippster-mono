@@ -133,6 +133,7 @@
       :transcript-data="transcriptData"
       :watermark-settings="watermarkSettings"
       :subtitle-settings="props.subtitleSettings"
+      :subtitle-settings-clip-id="props.subtitleSettingsClipId"
       :max-words-for-aspect-ratio="props.maxWordsForAspectRatio"
       :creator-default-intro="props.creatorDefaultIntro"
       :creator-default-outro="props.creatorDefaultOutro"
@@ -196,6 +197,7 @@
     aspectRatio: () => ({ width: 16, height: 9 }),
     maxWordsForAspectRatio: 3,
     subtitleSettings: null,
+    subtitleSettingsClipId: null,
     creatorDefaultIntro: null,
     creatorDefaultOutro: null,
     creatorProfile: null,

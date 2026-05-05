@@ -3,6 +3,7 @@ defmodule ClippsterServerWeb.ClipsController do
   alias ClippsterServer.AI
   alias ClippsterServer.AI.WhisperAPI
   alias ClippsterServer.AI.OpenRouterAPI
+  alias ClippsterServer.AI.StreamerReach
   alias ClippsterServer.AI.SystemPrompt
   alias ClippsterServer.AI.MultimodalClipDetection
   alias ClippsterServer.AI.PromptRulesParser
@@ -3607,11 +3608,32 @@ defmodule ClippsterServerWeb.ClipsController do
       "transcript_start" => transcript_start,
       "transcript_end" => transcript_end,
       "prompt" => user_prompt,
-      "virality_threshold" => virality_threshold
+      "virality_threshold" => requested_virality_threshold
     } = params
 
     audio_context = Map.get(params, "audio_context", "")
     pending_clip = Map.get(params, "pending_clip", nil)
+    pending_clip_transcript = Map.get(params, "pending_clip_transcript", "")
+    transcript_segments = Map.get(params, "transcript_segments", [])
+    transcript_stats = Map.get(params, "transcript_stats", %{})
+    streamer_metadata = parse_streamer_metadata(params)
+
+    # Resolve the streamer reach tier and derive softer thresholds for famous /
+    # top-tier creators. The user's curated list (StreamerReach @curated_tiers)
+    # is the source of truth — streamers on it are known to produce viral
+    # content, so we lower the bar on virality, duration, density, and word
+    # count. We do NOT lower the catastrophic scorecard floors (hook/payoff/
+    # shareability ≥ 35) — fame must not rescue truly bad clips.
+    reach_settings =
+      StreamerReach.realtime_settings(streamer_metadata, requested_virality_threshold)
+
+    virality_threshold = reach_settings.virality_threshold
+
+    if reach_settings.tier in [:famous, :top_tier, :established] do
+      Logger.info(
+        "[ClipsController] Realtime detection — streamer tier=#{reach_settings.tier} (#{reach_settings.tier_label}, matched=#{inspect(reach_settings.matched_name)}), threshold #{requested_virality_threshold} -> #{virality_threshold}, min_duration=#{reach_settings.min_duration}s"
+      )
+    end
 
     case get_user_id_from_token(conn) do
       {:ok, user_id, is_admin} ->
@@ -3644,181 +3666,262 @@ defmodule ClippsterServerWeb.ClipsController do
             # Format pending clip context for AI
             pending_clip_context =
               if pending_clip do
+                pending_transcript_block =
+                  case pending_clip_transcript do
+                    text when is_binary(text) and byte_size(text) > 0 ->
+                      "\nPENDING CLIP TRANSCRIPT SO FAR:\n#{text}\n"
+
+                    _ ->
+                      ""
+                  end
+
                 """
 
-                PENDING CLIP (ongoing scene being tracked):
+                PENDING CLIP (a moment is currently being tracked across windows):
                 Title: "#{pending_clip["title"]}"
                 Time Range: #{pending_clip["start_time"]}s - #{pending_clip["end_time"]}s
                 Description: #{pending_clip["description"]}
                 Context: #{pending_clip["context_summary"]}
-
-                CONTEXT CHANGE DETECTION:
-                Analyze if the current transcript is:
-                1. SAME CONTEXT (continuation of pending clip):
-                   - Same topic/scene/situation as pending clip
-                   - Example: Airport lady still freaking out → SAME CONTEXT
-                   - Example: Gambling session continues → SAME CONTEXT
-                   - Action: Set context_change=false, update pending_clip end_time to #{transcript_end}
-
-                2. NEW CONTEXT (different scene):
-                   - Different topic/scene/situation from pending clip
-                   - Example: Airport scene ends, now talking about gambling → NEW CONTEXT
-                   - Example: Freakout ends, now calm conversation → NEW CONTEXT
-                   - Action: Set context_change=true, create new pending_clip for the new scene
-
-                If SAME CONTEXT: Return {"context_change": false, "pending_clip": {updated clip with new end_time}}
-                If NEW CONTEXT: Return {"context_change": true, "pending_clip": {new clip data for the new scene}}
+                #{pending_transcript_block}
                 """
               else
                 """
 
-                NO PENDING CLIP:
-                This is the first detection or previous clip was saved.
-                If you detect a clip-worthy moment, create a new pending_clip.
-                Set context_change=false (no previous context to change from).
+                NO PENDING CLIP. This window is evaluated standalone — if you detect a clip-worthy moment, return a new pending_clip with context_change=false.
                 """
               end
 
             # Format transcript for AI analysis
             audio_info = if audio_context != "", do: "\n\n#{audio_context}\n", else: ""
+            timing_info = format_realtime_timing_summary(transcript_stats, transcript_segments)
+            segment_timeline = format_realtime_segment_timeline(transcript_segments)
+            reach_context = format_realtime_reach_context(reach_settings)
 
             formatted_transcript = """
-            TRANSCRIPT (#{transcript_start}s - #{transcript_end}s):
-            #{transcript}#{audio_info}#{pending_clip_context}
-            You are a clip detector analyzing livestream content. Find moments that are entertaining, shareable, and worth clipping.
+            TASK
+            ====
+            Inside this 30-second window of livestream transcript, find the EXACT start and end of the clip-worthy moment — or return null if no such moment exists in this window. The clip-worthy moment is a SUBSET of the window. It can start anywhere (beginning, middle, or near the end) and end anywhere (mid-window, or still going at the window edge). Pick start_time and end_time from the PER-SEGMENT TIMELINE timestamps, NEVER from the window edges.
 
-            AUDIO ANALYSIS GUIDANCE:
-            - Volume spikes indicate screaming/yelling/excitement - STRONG clip signal
-            - Multiple volume spikes in short time = very likely clip-worthy moment
-            - Volume spikes + intense/emotional words = high-value clip
-            - Use audio context to identify moments the transcript alone might miss
+            REQUIRED RESPONSE FORMAT
+            ========================
+            Return ONLY this JSON. The response is INVALID and will be rejected if any field below is missing.
 
-            CLIP LENGTH GUIDANCE:
-            - DEFAULT: Find SHORT discrete moments (30-90 seconds)
-            - Most viral clips are 30-60 seconds - punchy, shareable, immediate payoff
-            - ONLY extend beyond 90s if the content REQUIRES full context:
-              - Complete story with setup → climax → resolution that can't be cut
-              - Sustained rant where cutting mid-thought loses all impact
-              - Dramatic reveal that needs the full buildup
-            - If you're unsure whether to extend or create a new clip, prefer SHORTER
-            - A tight 45-second clip beats a bloated 3-minute one every time
-
-            WHEN TO SET context_change=true (create NEW clip instead of extending):
-            - Topic shifts to something unrelated
-            - Energy drops significantly for 15+ seconds then spikes again (new moment)
-            - Natural break/transition in the stream
-            - Pending clip is already 60+ seconds AND current moment could work standalone
-            - Current moment has a strong hook that deserves its own clip
-
-            WHAT QUALIFIES AS 85+ SCORE (CLIP-WORTHY):
-
-            GAMING STREAMS:
-            - Impressive clutch plays or skill moments (1v3+, comeback wins, tournament plays)
-            - Rage/tilt moments with strong reactions (screaming, breaking things, tilting hard)
-            - Hilarious fails or unexpected glitches that cause big reactions
-            - Hype moments (big wins, insane RNG, perfect timing)
-            - Drama with teammates or opponents (arguments, trash talk, beef)
-            - Funny banter or roasts that land perfectly
-
-            IRL STREAMS:
-            - Confrontations or arguments (getting kicked out, disputes, drama)
-            - Unexpected encounters (celebrities, crazy people, weird situations)
-            - Funny or awkward social moments that are highly relatable
-            - Wholesome moments with strong emotional payoff
-            - Surprising reveals or announcements
-            - Chaotic or unpredictable events
-
-            ALL STREAMS:
-            - Strong emotional reactions (genuine crying, explosive laughter, shock)
-            - Drama or controversy (call-outs, hot takes, relationship stuff)
-            - Genuinely funny comedy moments (not just chuckles, but actual hilarious content)
-            - Meme-worthy or highly quotable moments
-            - Moments fans would clip and share in Discord/Twitter
-            - Content that makes you go "oh shit" or laugh out loud
-
-            SCORING EXAMPLES (85+ THRESHOLD):
-            - Score 95: "Streamer accidentally leaks they're dating another streamer"
-            - Score 93: "Insane 1v5 ace clutch in ranked with crowd going wild"
-            - Score 90: "Streamer breaks keyboard in rage after losing tournament"
-            - Score 88: "IRL streamer gets confronted by security, kicked out"
-            - Score 87: "Hilarious fail where streamer falls off chair screaming"
-            - Score 86: "Streamer roasts toxic viewer so hard chat explodes"
-            - Score 85: "Emotional moment where streamer cries after big donation"
-            - Score 85: "Streamer has heated argument with teammate, drama unfolds"
-
-            NOT CLIP-WORTHY (Below 85):
-            - Normal conversation with chat (even if interesting)
-            - Regular gameplay without standout moments
-            - Mild reactions or generic excitement
-            - Mundane IRL activities (walking, eating, shopping)
-            - Standard wins/losses without special context
-            - Filler content between highlights
-
-            IMPORTANT: Score honestly. If it's not genuinely entertaining/shareable, don't force it to 85+.
-            The threshold is #{virality_threshold}. Only return clips that meet or exceed this score.
-
-            CRITICAL - NEW RESPONSE FORMAT (DO NOT USE OLD FORMAT):
-            You MUST return JSON in this EXACT format:
             {
-              "context_change": true/false,
-              "pending_clip": {...} or null
+              "context_change": true | false,
+              "clip_state": "open" | "closed" | null,
+              "pending_clip": null  OR  {
+                "title": "<short title>",
+                "description": "<one-sentence description>",
+                "start_time": <number, absolute stream seconds, anchored on first impactful word from PER-SEGMENT TIMELINE>,
+                "end_time": <number, absolute stream seconds, anchored on last impactful word from PER-SEGMENT TIMELINE>,
+                "virality_score": <integer 0-100; must be >= #{virality_threshold} to auto-save>,
+                "detection_reason": "<why this is clip-worthy>",
+                "context_summary": "<brief scene context>",
+                "hook_score": <integer 0-100>,
+                "payoff_score": <integer 0-100>,
+                "emotion_score": <integer 0-100>,
+                "shareability_score": <integer 0-100>,
+                "density_score": <integer 0-100>,
+                "signal_score": <integer 0-100>,
+                "boundary_score": <integer 0-100>
+              }
             }
 
-            DO NOT return {"clips": [...]} - that format is DEPRECATED.
-            DO NOT return {"clips": [], "extensions": []} - that format is DEPRECATED.
+            clip_state is MANDATORY:
+            - "open" when pending_clip is non-null AND the clip-worthy moment is still actively continuing at/near the end of this 30s window.
+            - "closed" when pending_clip is non-null AND the clip-worthy moment has ended inside this 30s window. This tells the client to create the clip immediately.
+            - null when pending_clip is null.
 
-            EXAMPLES:
+            ALL 7 SCORECARD FIELDS (hook_score, payoff_score, emotion_score, shareability_score, density_score, signal_score, boundary_score) ARE MANDATORY whenever pending_clip is non-null. If you cannot supply all 7, return pending_clip: null and clip_state: null. Responses that omit any scorecard field are auto-rejected by the server.
 
-            Example 1 - No clip detected:
-            {"context_change": false, "pending_clip": null}
+            Scorecard meanings (0-100 each):
+            - hook_score: stop-scroll strength of the first 1-3 seconds
+            - payoff_score: clear resolution, punchline, reveal, escalation, or result
+            - emotion_score: high-arousal emotion (shock, awe, anger, humor, hype, cringe)
+            - shareability_score: would someone send/post this because it is funny, shocking, debatable, or meme-worthy?
+            - density_score: useful/funny/action content vs silence, filler, or waiting
+            - signal_score: live evidence strength from trigger phrase, audio spike, dense speech, etc.
+            - boundary_score: clean start/end with no dead-air intro or trailing silence
 
-            Example 2 - First clip detected (no previous context):
+            HOW TO PICK start_time / end_time
+            =================================
+            Look at the PER-SEGMENT TIMELINE in the WINDOW DATA below. Each numbered line shows absolute first_word and last_word timestamps for that Whisper segment.
+
+            - start_time = absolute timestamp of the FIRST impactful word of the moment (from the timeline). Up to 0.6s of lead-in is allowed; more is forbidden.
+            - end_time = absolute timestamp of the LAST impactful word of the moment (from the timeline). Up to 1.5s of tail is allowed; more is forbidden.
+            - The window edges (#{transcript_start}s and #{transcript_end}s) are buffer boundaries, NOT clip boundaries. NEVER use them as start_time / end_time unless they happen to coincide with the first or last impactful word of the moment.
+            - If the window is mostly silence/filler with no clear hook word, return pending_clip: null. Do NOT pad with silence to manufacture a clip.
+
+            CONTINUATION RULES (apply only when a PENDING CLIP exists below)
+            ================================================================
+            1. SAME scene continues into this window:
+               - context_change = false
+               - clip_state = "open" only if the same scene is still active at/near the window edge; otherwise clip_state = "closed"
+               - KEEP pending_clip.start_time exactly as it was (do NOT change it)
+               - Set end_time = absolute timestamp of the LAST impactful word in this window's timeline (+ ≤1.5s tail)
+               - DO NOT push end_time to #{transcript_end} unless the last impactful word IS at the window edge. If the last 5+ seconds of the window are silence/filler, end_time MUST stop at the last impactful word.
+
+            2. Topic CHANGED mid-window (old scene ended, NEW scene started in the same window):
+               - context_change = true
+               - Emit a NEW pending_clip for the NEW scene with timeline-anchored start_time AND end_time
+               - clip_state describes the NEW scene: "open" if it continues at/near the window edge, "closed" if it also ended inside this window.
+
+            3. Pending moment ENDED mid-window and nothing new is clip-worthy:
+               - context_change = false
+               - Set pending_clip.end_time to the LAST impactful word of the OLD scene
+               - Set clip_state = "closed" so the client creates the clip immediately. Do NOT wait for another window.
+
+            CLIP LENGTH GUIDANCE
+            ====================
+            - Most viral clips are 30-60 seconds: punchy, immediate payoff. Do NOT pad clips to fill the window.
+            - Extend beyond 90s only when the content REQUIRES the full arc (complete story, sustained rant, dramatic reveal needing buildup).
+            - A tight 13-second clip is correct if the moment is only 13 seconds long. Trust the timeline.
+            - Prefer SHORTER over longer when uncertain.
+
+            WHAT QUALIFIES AS 85+ (CLIP-WORTHY)
+            ====================================
+            - Strong emotional reactions (genuine laughter, shock, anger, crying, hype)
+            - Drama / confrontation / call-outs / hot takes / relationship stuff
+            - Impressive plays (clutch wins, comebacks, skill moments) AND rage / fail moments
+            - Surprising reveals, leaks, weird IRL encounters, unexpected confrontations
+            - Meme-worthy / quotable / "send this in Discord" moments
+
+            NOT CLIP-WORTHY (return null)
+            =============================
+            - Normal conversation with chat (even if topically interesting)
+            - Regular gameplay without standout moments
+            - Mild reactions, generic excitement, mundane IRL activities
+            - Filler content between highlights
+
+            QUALITY GATES (auto-rejected if violated — re-anchor or return null)
+            ====================================================================
+            - Leading silence (start_time → first impactful word) MUST be ≤ 1s
+            - Trailing silence (last impactful word → end_time) MUST be ≤ 2s
+            - CATASTROPHIC FLOORS: if hook_score < 35, OR payoff_score < 35, OR shareability_score < 35 → pending_clip MUST be null
+            - virality_score MUST be ≥ #{virality_threshold} to auto-save. Score honestly; do not inflate weak moments.
+
+            WINDOW DATA
+            ===========
+            #{reach_context}
+            LATEST 30s WINDOW (#{transcript_start}s - #{transcript_end}s):
+            #{transcript}#{audio_info}
+            #{timing_info}
+
+            #{segment_timeline}
+            #{pending_clip_context}
+
+            EXAMPLES (study the timestamps — none of them are window edges)
+            ==============================================================
+
+            Example A — No clip detected (window is filler / no hook):
+            {"context_change": false, "clip_state": null, "pending_clip": null}
+
+            Example B — Moment starts MID-window, still going at window edge:
+            (window 900s-930s; PER-SEGMENT TIMELINE shows first impactful word at 917.4s, last at 929.6s, energy still high)
             {
               "context_change": false,
+              "clip_state": "open",
               "pending_clip": {
                 "title": "Airport Lady Freakout Begins",
                 "description": "Woman starts yelling at airport staff",
-                "start_time": #{transcript_start},
-                "end_time": #{transcript_end},
+                "start_time": 916.8,
+                "end_time": 930.0,
                 "virality_score": 88,
-                "detection_reason": "Dramatic confrontation with volume spikes",
-                "context_summary": "Airport freakout scene"
+                "detection_reason": "Confrontation with volume spikes",
+                "context_summary": "Airport freakout",
+                "hook_score": 88,
+                "payoff_score": 78,
+                "emotion_score": 90,
+                "shareability_score": 86,
+                "density_score": 82,
+                "signal_score": 84,
+                "boundary_score": 88
               }
             }
+            // start_time = 916.8 (first_word 917.4 − 0.6s lead-in). end_time = 930.0 because the moment is still going at the window edge. 13.2-second clip — NOT 30 seconds.
 
-            Example 3 - Continuing same scene (extend end_time):
+            Example C — Continuation; SAME scene continues but ENDS mid-window:
+            (pending clip currently 800s-930s. New window 930s-960s. PER-SEGMENT TIMELINE: same scene continues until 942.5s, then 17s of silence/dead air through window end.)
             {
               "context_change": false,
+              "clip_state": "closed",
               "pending_clip": {
-                "title": "Airport Lady Freakout Escalates",
-                "description": "Woman continues yelling, security called",
+                "title": "Airport Lady Freakout Begins",
+                "description": "Woman yells at airport staff, security arrives",
                 "start_time": 800,
-                "end_time": #{transcript_end},
-                "virality_score": 92,
-                "detection_reason": "Escalating confrontation",
-                "context_summary": "Airport freakout scene"
+                "end_time": 944.0,
+                "virality_score": 90,
+                "detection_reason": "Escalation with security arrival",
+                "context_summary": "Airport freakout",
+                "hook_score": 88,
+                "payoff_score": 86,
+                "emotion_score": 92,
+                "shareability_score": 88,
+                "density_score": 80,
+                "signal_score": 84,
+                "boundary_score": 88
               }
             }
+            // KEPT start_time = 800 (original pending). end_time = 944.0 (last impactful word 942.5 + 1.5s tail). NOT 960 — the trailing 17s of silence is excluded. clip_state="closed" means save immediately.
 
-            Example 4 - NEW scene detected (context changed):
+            Example D — Continuation; topic CHANGED mid-window (save old, start new):
+            (pending clip currently 800s-930s. New window 930s-960s. PER-SEGMENT TIMELINE: old scene's last impactful word at 933.2s, then 4s pause, then NEW scene first impactful word at 937.8s, last at 957.1s.)
             {
               "context_change": true,
+              "clip_state": "closed",
               "pending_clip": {
                 "title": "Gambling Hot Streak",
-                "description": "Streamer hits big win",
-                "start_time": #{transcript_start},
-                "end_time": #{transcript_end},
-                "virality_score": 85,
-                "detection_reason": "Exciting gambling moment",
-                "context_summary": "Gambling session"
+                "description": "Streamer hits a huge multiplier",
+                "start_time": 937.2,
+                "end_time": 958.4,
+                "virality_score": 86,
+                "detection_reason": "Big win reaction",
+                "context_summary": "Gambling session",
+                "hook_score": 86,
+                "payoff_score": 84,
+                "emotion_score": 88,
+                "shareability_score": 85,
+                "density_score": 82,
+                "signal_score": 80,
+                "boundary_score": 88
               }
             }
+            // context_change=true triggers the client to save the OLD pending clip. NEW pending starts at 937.2 (first_word 937.8 − 0.6s) and ends at 958.4 (last_word 957.1 + 1.3s tail). clip_state="closed" means the NEW clip should also save immediately.
 
-            RULES:
-            - start_time and end_time are ABSOLUTE timestamps (seconds from stream start)
-            - When extending a scene, keep the original start_time, update end_time to #{transcript_end}
-            - Set context_change=true ONLY when the topic/scene completely changes
-            - Set context_change=false when continuing the same scene OR when no clip detected
+            Example E — Last 13 seconds of window are clip-worthy, rest is filler:
+            (window 1200s-1230s; first 17s mundane chat, then PER-SEGMENT TIMELINE shows hook word at 1217.0s, last word at 1229.5s, still going)
+            {
+              "context_change": false,
+              "clip_state": "open",
+              "pending_clip": {
+                "title": "Streamer Spills Tea",
+                "description": "Reveals dating drama",
+                "start_time": 1216.4,
+                "end_time": 1230.0,
+                "virality_score": 87,
+                "detection_reason": "Surprise reveal",
+                "context_summary": "Personal drama",
+                "hook_score": 90,
+                "payoff_score": 80,
+                "emotion_score": 84,
+                "shareability_score": 88,
+                "density_score": 82,
+                "signal_score": 76,
+                "boundary_score": 86
+              }
+            }
+            // 13.6-second clip. start_time = 1216.4 (NOT 1200) skips the 17s of pre-hook filler. end_time = 1230.0 because the moment is still going at the window edge (the next window will extend it).
+
+            HARD RULES (output is rejected if violated)
+            ============================================
+            1. start_time and end_time MUST come from the PER-SEGMENT TIMELINE timestamps. NEVER copy #{transcript_start} or #{transcript_end} unless they happen to coincide with the first/last impactful word of the moment.
+            2. ALL 7 scorecard fields are MANDATORY whenever pending_clip is non-null. If you cannot supply all 7, return pending_clip: null.
+            3. Leading silence ≤ 1s, trailing silence ≤ 2s.
+            4. Continuation: KEEP existing start_time, push end_time only to the LAST impactful word (+ ≤1.5s tail). NEVER set end_time = #{transcript_end} unless that IS the last impactful word.
+            5. If hook_score < 35 OR payoff_score < 35 OR shareability_score < 35: pending_clip MUST be null.
+            6. virality_score must be ≥ #{virality_threshold} for auto-save. Score honestly.
+            7. Old response formats {"clips": [...]} and {"clips": [], "extensions": []} are DEPRECATED and forbidden.
+            8. clip_state MUST be "closed" whenever pending_clip.end_time is more than 3 seconds before #{transcript_end}. clip_state MUST be "open" only when the clip-worthy moment reaches the window edge.
             """
 
             # Call OpenRouter API using existing generate_clips function
@@ -3830,17 +3933,18 @@ defmodule ClippsterServerWeb.ClipsController do
                 # Parse AI response - extract the new pending clip data and transition signal.
                 # The server still validates/merges below, but an explicit AI context change
                 # should be honored so unrelated live topics do not get stitched together.
-                {ai_context_change, ai_pending_clip} =
+                {ai_context_change, ai_clip_state, ai_pending_clip} =
                   case ai_response do
                     # New format
                     %{"context_change" => change, "pending_clip" => clip} ->
-                      {change == true, clip}
+                      {change == true,
+                       normalize_realtime_clip_state(Map.get(ai_response, "clip_state")), clip}
 
                     # Old format fallback - convert to new format
                     %{"clips" => clips} when is_list(clips) and length(clips) > 0 ->
                       first_clip = List.first(clips)
 
-                      {false,
+                      {false, "open",
                        %{
                          "title" => Map.get(first_clip, "title", "Untitled"),
                          "description" => Map.get(first_clip, "description", ""),
@@ -3857,22 +3961,27 @@ defmodule ClippsterServerWeb.ClipsController do
 
                     # No clips detected
                     _ ->
-                      {false, nil}
+                      {false, nil, nil}
                   end
+
+                ai_pending_clip = normalize_realtime_scorecard(ai_pending_clip)
 
                 # Server-side context change detection.
                 # Honor explicit AI transitions first, then fall back to similarity/overlap merging.
                 # Max clip duration: 180 seconds (3 minutes) - force save if exceeded
                 max_clip_duration = 180
 
+                # If the AI returns no new pending clip while the client already has
+                # one, that is an "idle/no continuation" tick, not a quality rejection.
+                # Return pending_clip: nil so the client can count consecutive nulls
+                # and finalize the existing pending clip.
+                no_new_pending_detection = is_nil(ai_pending_clip) and not is_nil(pending_clip)
+
                 {context_change, final_pending_clip} =
                   cond do
                     # No new clip detected by AI
                     is_nil(ai_pending_clip) ->
-                      # If we have an existing pending clip and AI found nothing new,
-                      # this might mean the context ended - but we need consecutive "nothing" detections
-                      # For now, keep the existing pending clip (context continues until something new appears)
-                      {false, pending_clip}
+                      {false, nil}
 
                     # No existing pending clip - this is a new detection
                     is_nil(pending_clip) ->
@@ -3936,25 +4045,78 @@ defmodule ClippsterServerWeb.ClipsController do
                       end
                   end
 
+                candidate_before_quality_gate = final_pending_clip
+
+                {final_pending_clip, pending_clip_rejection_reason} =
+                  apply_realtime_quality_gate(
+                    final_pending_clip,
+                    transcript,
+                    virality_threshold,
+                    transcript_segments,
+                    reach_settings
+                  )
+
+                clip_state =
+                  infer_realtime_clip_state(ai_clip_state, final_pending_clip, transcript_end)
+
                 Logger.info(
-                  "[ClipsController] Context change: #{context_change}, Pending clip: #{if final_pending_clip, do: "#{final_pending_clip["title"]} (#{final_pending_clip["start_time"]}s - #{final_pending_clip["end_time"]}s)", else: "none"}"
+                  "[ClipsController] Context change: #{context_change}, Clip state: #{inspect(clip_state)}, Pending clip: #{if final_pending_clip, do: "#{final_pending_clip["title"]} (#{final_pending_clip["start_time"]}s - #{final_pending_clip["end_time"]}s)", else: "none"}"
                 )
 
                 json(conn, %{
                   success: true,
                   context_change: context_change,
-                  pending_clip: final_pending_clip
+                  clip_state: clip_state,
+                  pending_clip: final_pending_clip,
+                  no_new_pending_detection: no_new_pending_detection,
+                  pending_clip_rejected:
+                    is_nil(final_pending_clip) and not is_nil(pending_clip) and not context_change and
+                      not no_new_pending_detection,
+                  candidate_rejected:
+                    is_nil(final_pending_clip) and not is_nil(candidate_before_quality_gate),
+                  pending_clip_rejection_reason: pending_clip_rejection_reason,
+                  reach_settings: %{
+                    tier: reach_settings.tier,
+                    tier_label: reach_settings.tier_label,
+                    matched_name: reach_settings.matched_name,
+                    virality_threshold: reach_settings.virality_threshold,
+                    min_duration: reach_settings.min_duration,
+                    min_words_short: reach_settings.min_words_short,
+                    min_words_medium: reach_settings.min_words_medium,
+                    min_words_long: reach_settings.min_words_long,
+                    min_density_short: reach_settings.min_density_short,
+                    min_density_long: reach_settings.min_density_long
+                  }
                 })
 
               {:error, reason} ->
                 Logger.error("[ClipsController] AI detection failed: #{inspect(reason)}")
 
-                conn
-                |> put_status(500)
-                |> json(%{
-                  success: false,
-                  error: "Detection failed",
-                  details: inspect(reason)
+                # Realtime detection is a long-running live loop. A single
+                # transient model/provider failure should not make the client
+                # treat detection as broken or clear a pending clip. Return a
+                # successful no-op tick and let the next interval continue.
+                json(conn, %{
+                  success: true,
+                  context_change: false,
+                  clip_state: "open",
+                  pending_clip: pending_clip,
+                  pending_clip_rejected: false,
+                  candidate_rejected: false,
+                  pending_clip_rejection_reason: nil,
+                  ai_error: inspect(reason),
+                  reach_settings: %{
+                    tier: reach_settings.tier,
+                    tier_label: reach_settings.tier_label,
+                    matched_name: reach_settings.matched_name,
+                    virality_threshold: reach_settings.virality_threshold,
+                    min_duration: reach_settings.min_duration,
+                    min_words_short: reach_settings.min_words_short,
+                    min_words_medium: reach_settings.min_words_medium,
+                    min_words_long: reach_settings.min_words_long,
+                    min_density_short: reach_settings.min_density_short,
+                    min_density_long: reach_settings.min_density_long
+                  }
                 })
             end
         end
@@ -3967,6 +4129,594 @@ defmodule ClippsterServerWeb.ClipsController do
         |> json(%{success: false, error: "Unauthorized"})
     end
   end
+
+  defp normalize_realtime_clip_state("open"), do: "open"
+  defp normalize_realtime_clip_state("closed"), do: "closed"
+  defp normalize_realtime_clip_state(:open), do: "open"
+  defp normalize_realtime_clip_state(:closed), do: "closed"
+  defp normalize_realtime_clip_state(_), do: nil
+
+  defp infer_realtime_clip_state(_requested_state, nil, _transcript_end), do: nil
+
+  defp infer_realtime_clip_state(requested_state, clip, transcript_end) do
+    requested_state =
+      requested_state
+      |> normalize_realtime_clip_state()
+
+    cond do
+      requested_state in ["open", "closed"] ->
+        requested_state
+
+      number_or_default(Map.get(clip, "end_time"), 0) <=
+          number_or_default(transcript_end, 0) - 3 ->
+        "closed"
+
+      true ->
+        "open"
+    end
+  end
+
+  defp apply_realtime_quality_gate(
+         nil,
+         _transcript,
+         _virality_threshold,
+         _segments,
+         _reach_settings
+       ),
+       do: {nil, nil}
+
+  defp apply_realtime_quality_gate(
+         clip,
+         transcript,
+         virality_threshold,
+         segments,
+         reach_settings
+       ) do
+    start_time = number_or_default(Map.get(clip, "start_time"), 0)
+    end_time = number_or_default(Map.get(clip, "end_time"), start_time)
+
+    if is_list(segments) and segments != [] and
+         not realtime_segments_cover_range?(segments, start_time, end_time) do
+      Logger.info(
+        "[ClipsController] Skipping realtime quality gate for #{inspect(Map.get(clip, "title"))}: clip range #{Float.round(start_time, 1)}s-#{Float.round(end_time, 1)}s is not covered by current #{length(segments)} segment window"
+      )
+
+      {clip, nil}
+    else
+      apply_realtime_quality_gate_for_covered_range(
+        clip,
+        transcript,
+        virality_threshold,
+        segments,
+        reach_settings,
+        start_time,
+        end_time
+      )
+    end
+  end
+
+  defp apply_realtime_quality_gate_for_covered_range(
+         clip,
+         transcript,
+         virality_threshold,
+         segments,
+         reach_settings,
+         start_time,
+         end_time
+       ) do
+    initial_stats = realtime_range_stats(segments, transcript, start_time, end_time)
+
+    {clip, trim_reasons} = trim_realtime_clip_boundaries(clip, initial_stats)
+    clip = apply_realtime_scorecard_policy(clip)
+
+    start_time = number_or_default(Map.get(clip, "start_time"), 0)
+    end_time = number_or_default(Map.get(clip, "end_time"), start_time)
+    stats = realtime_range_stats(segments, transcript, start_time, end_time)
+    duration = stats.duration
+
+    # Tier-aware floors. For unknown streamers these match the original values
+    # (4s, 4/8/12 words, 0.35/0.45 density). For famous/top-tier creators we
+    # soften the bar — they reliably produce viral content even at lower
+    # density, so a 13s tight clip with 5 words on Kai Cenat is still a save.
+    min_duration =
+      if reach_settings, do: reach_settings.min_duration, else: 4.0
+
+    min_words =
+      cond do
+        duration <= 12 ->
+          if reach_settings, do: reach_settings.min_words_short, else: 4
+
+        duration <= 20 ->
+          if reach_settings, do: reach_settings.min_words_medium, else: 8
+
+        true ->
+          if reach_settings, do: reach_settings.min_words_long, else: 12
+      end
+
+    min_density =
+      cond do
+        duration <= 12 ->
+          if reach_settings, do: reach_settings.min_density_short, else: 0.35
+
+        true ->
+          if reach_settings, do: reach_settings.min_density_long, else: 0.45
+      end
+
+    rejection_reasons =
+      []
+      |> maybe_add_reason(duration < min_duration, "too_short")
+      |> maybe_add_reason(stats.word_count < min_words, "too_few_words")
+      |> maybe_add_reason(stats.speech_density < min_density, "low_speech_density")
+      |> maybe_add_reason(stats.longest_gap > 14 and duration > 25, "internal_dead_air")
+      |> maybe_add_reason(stats.leading_silence > 3, "leading_dead_air")
+      |> maybe_add_reason(stats.trailing_silence > 5, "trailing_dead_air")
+
+    cond do
+      Map.get(clip, "_realtime_scorecard_rejected") == true ->
+        reason =
+          "scorecard:#{Map.get(clip, "_realtime_scorecard_rejection_reason")}"
+
+        Logger.info(
+          "[ClipsController] Realtime scorecard rejected #{inspect(Map.get(clip, "title"))}: #{reason}"
+        )
+
+        {nil, reason}
+
+      rejection_reasons != [] ->
+        reason = "quality:#{Enum.join(rejection_reasons, ",")}"
+
+        Logger.info(
+          "[ClipsController] Realtime quality gate rejected #{inspect(Map.get(clip, "title"))}: #{Enum.join(rejection_reasons, ", ")} (duration=#{Float.round(duration, 1)}s, words=#{stats.word_count}, density=#{Float.round(stats.speech_density, 2)}wps)"
+        )
+
+        {nil, reason}
+
+      number_or_default(Map.get(clip, "virality_score"), 0) <
+          number_or_default(virality_threshold, 85) ->
+        {nil, "below_virality_threshold"}
+
+      true ->
+        gated_clip =
+          clip
+          |> maybe_append_realtime_scorecard_reason()
+          |> maybe_append_realtime_gate_reason(trim_reasons)
+
+        {gated_clip, nil}
+    end
+  end
+
+  defp normalize_realtime_scorecard(nil), do: nil
+
+  defp normalize_realtime_scorecard(clip) when is_map(clip) do
+    default_score = realtime_scorecard_default(clip)
+
+    Enum.reduce(realtime_scorecard_fields(), clip, fn {field, camel_field}, acc ->
+      value = Map.get(acc, field) || Map.get(acc, camel_field) || default_score
+      Map.put(acc, field, clamp_score(value))
+    end)
+  end
+
+  defp normalize_realtime_scorecard(clip), do: clip
+
+  defp realtime_scorecard_default(clip) do
+    Map.get(clip, "virality_score") ||
+      Map.get(clip, "viralityScore") ||
+      Map.get(clip, "score") ||
+      75
+  end
+
+  # Realtime scorecard policy: only catastrophic floors reject; the multi-component
+  # hard score caps were removed because they consistently capped clips below the
+  # 85 virality threshold and starved auto-detection of any saves.
+  defp apply_realtime_scorecard_policy(clip) do
+    scorecard = realtime_scorecard(clip)
+
+    cond do
+      not realtime_scorecard_complete?(scorecard) ->
+        reject_realtime_scorecard(clip, "missing_scorecard_fields")
+
+      scorecard[:hook_score] < 35 ->
+        reject_realtime_scorecard(clip, "catastrophic_hook_score")
+
+      scorecard[:payoff_score] < 35 ->
+        reject_realtime_scorecard(clip, "catastrophic_payoff_score")
+
+      scorecard[:shareability_score] < 35 ->
+        reject_realtime_scorecard(clip, "catastrophic_shareability_score")
+
+      true ->
+        clip
+    end
+  end
+
+  defp reject_realtime_scorecard(clip, reason) do
+    clip
+    |> Map.put("_realtime_scorecard_rejected", true)
+    |> Map.put("_realtime_scorecard_rejection_reason", reason)
+  end
+
+  defp realtime_scorecard(clip) do
+    Enum.reduce(realtime_scorecard_fields(), %{}, fn {field, _camel_field}, acc ->
+      case Map.get(clip, field) do
+        value when is_number(value) -> Map.put(acc, String.to_atom(field), value)
+        _ -> acc
+      end
+    end)
+  end
+
+  defp realtime_scorecard_complete?(scorecard) do
+    Enum.all?(realtime_scorecard_fields(), fn {field, _camel_field} ->
+      Map.has_key?(scorecard, String.to_atom(field))
+    end)
+  end
+
+  defp realtime_scorecard_fields do
+    [
+      {"hook_score", "hookScore"},
+      {"payoff_score", "payoffScore"},
+      {"emotion_score", "emotionScore"},
+      {"shareability_score", "shareabilityScore"},
+      {"density_score", "densityScore"},
+      {"signal_score", "signalScore"},
+      {"boundary_score", "boundaryScore"}
+    ]
+  end
+
+  defp clamp_score(value) do
+    value
+    |> number_or_default(0)
+    |> max(0)
+    |> min(100)
+  end
+
+  defp format_realtime_timing_summary(stats, segments) do
+    word_count = number_or_default(Map.get(stats, "wordCount") || Map.get(stats, "word_count"), 0)
+
+    density =
+      number_or_default(Map.get(stats, "speechDensity") || Map.get(stats, "speech_density"), 0)
+
+    first_speech =
+      case Map.get(stats, "firstSpeechTime") || Map.get(stats, "first_speech_time") do
+        nil -> "n/a"
+        value -> "#{Float.round(number_or_default(value, 0), 2)}s"
+      end
+
+    last_speech =
+      case Map.get(stats, "lastSpeechTime") || Map.get(stats, "last_speech_time") do
+        nil -> "n/a"
+        value -> "#{Float.round(number_or_default(value, 0), 2)}s"
+      end
+
+    """
+    REALTIME TIMING SUMMARY:
+    - Timed transcript segments available: #{if is_list(segments), do: length(segments), else: 0}
+    - First spoken word at: #{first_speech}  (use as start_time floor)
+    - Last spoken word at: #{last_speech}    (use as end_time ceiling)
+    - Rolling word count: #{round(word_count)}
+    - Rolling speech density: #{Float.round(density, 2)} words/sec
+    - Leading silence: #{Float.round(number_or_default(Map.get(stats, "leadingSilence") || Map.get(stats, "leading_silence"), 0), 1)}s
+    - Trailing silence: #{Float.round(number_or_default(Map.get(stats, "trailingSilence") || Map.get(stats, "trailing_silence"), 0), 1)}s
+    - Longest internal gap: #{Float.round(number_or_default(Map.get(stats, "longestGap") || Map.get(stats, "longest_gap"), 0), 1)}s
+    """
+    |> String.trim()
+  end
+
+  # Format the per-segment Whisper transcription as a numbered list with absolute
+  # timestamps so the LLM can anchor start_time / end_time on actual word boundaries
+  # instead of copying the rolling-window edges.
+  defp format_realtime_segment_timeline(segments) when is_list(segments) and segments != [] do
+    lines =
+      segments
+      |> Enum.with_index(1)
+      |> Enum.map(fn {segment, idx} ->
+        seg_start = number_or_default(Map.get(segment, "start"), 0)
+        seg_end = number_or_default(Map.get(segment, "end"), seg_start)
+        text = Map.get(segment, "text", "") |> to_string() |> String.trim()
+        words = Map.get(segment, "words", [])
+
+        first_word_ts =
+          case words do
+            [first | _] when is_map(first) ->
+              first_start = number_or_default(Map.get(first, "start"), seg_start)
+              "first_word=#{Float.round(first_start, 2)}s"
+
+            _ ->
+              "first_word=#{Float.round(seg_start, 2)}s"
+          end
+
+        last_word_ts =
+          case Enum.reverse(words) do
+            [last | _] when is_map(last) ->
+              last_end = number_or_default(Map.get(last, "end"), seg_end)
+              "last_word=#{Float.round(last_end, 2)}s"
+
+            _ ->
+              "last_word=#{Float.round(seg_end, 2)}s"
+          end
+
+        "##{idx} [#{Float.round(seg_start, 2)}s - #{Float.round(seg_end, 2)}s | #{first_word_ts}, #{last_word_ts}] #{text}"
+      end)
+
+    """
+    PER-SEGMENT TIMELINE (absolute stream seconds — use these to set start_time / end_time):
+    #{Enum.join(lines, "\n")}
+    """
+    |> String.trim()
+  end
+
+  defp format_realtime_segment_timeline(_segments),
+    do:
+      "PER-SEGMENT TIMELINE: (no timed segments available — DO NOT guess timestamps; if no usable timing, return pending_clip: null)"
+
+  defp trim_realtime_clip_boundaries(clip, stats) do
+    clip = Map.put(clip, "start_time", number_or_default(Map.get(clip, "start_time"), 0))
+    clip = Map.put(clip, "end_time", number_or_default(Map.get(clip, "end_time"), 0))
+    reasons = []
+
+    {clip, reasons} =
+      if stats.first_speech_time != nil and stats.leading_silence > 3 do
+        {
+          Map.put(
+            clip,
+            "start_time",
+            max(Map.get(clip, "start_time"), stats.first_speech_time - 0.75)
+          ),
+          ["trimmed_leading_silence" | reasons]
+        }
+      else
+        {clip, reasons}
+      end
+
+    if stats.last_speech_time != nil and stats.trailing_silence > 5 do
+      {
+        Map.put(clip, "end_time", min(Map.get(clip, "end_time"), stats.last_speech_time + 2.0)),
+        ["trimmed_trailing_silence" | reasons]
+      }
+    else
+      {clip, reasons}
+    end
+  end
+
+  defp maybe_append_realtime_gate_reason(clip, []), do: clip
+
+  defp maybe_append_realtime_gate_reason(clip, reasons) do
+    existing_reason =
+      Map.get(clip, "detection_reason") || Map.get(clip, "reason") || ""
+
+    Map.put(
+      clip,
+      "detection_reason",
+      String.trim("#{existing_reason} | Quality gates: #{Enum.join(Enum.reverse(reasons), ", ")}")
+    )
+  end
+
+  defp maybe_append_realtime_scorecard_reason(clip) do
+    scorecard = realtime_scorecard(clip)
+
+    if realtime_scorecard_complete?(scorecard) do
+      existing_reason =
+        Map.get(clip, "detection_reason") || Map.get(clip, "reason") || ""
+
+      scorecard_summary =
+        "Scorecard: hook=#{round(scorecard[:hook_score])}, payoff=#{round(scorecard[:payoff_score])}, emotion=#{round(scorecard[:emotion_score])}, share=#{round(scorecard[:shareability_score])}, density=#{round(scorecard[:density_score])}, signal=#{round(scorecard[:signal_score])}, boundary=#{round(scorecard[:boundary_score])}"
+
+      clip
+      |> Map.put("detection_reason", String.trim("#{existing_reason} | #{scorecard_summary}"))
+      |> strip_realtime_private_fields()
+    else
+      strip_realtime_private_fields(clip)
+    end
+  end
+
+  defp strip_realtime_private_fields(clip) do
+    clip
+    |> Map.delete("_realtime_scorecard_rejected")
+    |> Map.delete("_realtime_scorecard_rejection_reason")
+  end
+
+  defp realtime_range_stats(segments, fallback_text, range_start, range_end)
+       when is_list(segments) do
+    duration = max(range_end - range_start, 0.0)
+
+    events =
+      segments
+      |> Enum.flat_map(&realtime_speech_events(&1, range_start, range_end))
+      |> Enum.sort_by(& &1.start)
+
+    if events == [] do
+      fallback_word_count = if segments == [], do: realtime_word_count(fallback_text), else: 0
+
+      %{
+        duration: duration,
+        word_count: fallback_word_count,
+        spoken_duration: duration,
+        speech_density: if(duration > 0, do: fallback_word_count / duration, else: 0.0),
+        first_speech_time: nil,
+        last_speech_time: nil,
+        leading_silence: 0.0,
+        trailing_silence: 0.0,
+        longest_gap: 0.0
+      }
+    else
+      word_count = Enum.reduce(events, 0, &(&1.words + &2))
+      first_speech_time = List.first(events).start
+      last_speech_time = List.last(events).end
+      spoken_duration = Enum.reduce(events, 0.0, &(max(&1.end - &1.start, 0.0) + &2))
+      longest_gap = realtime_longest_gap(events)
+
+      %{
+        duration: duration,
+        word_count: word_count,
+        spoken_duration: spoken_duration,
+        speech_density: if(duration > 0, do: word_count / duration, else: 0.0),
+        first_speech_time: first_speech_time,
+        last_speech_time: last_speech_time,
+        leading_silence: max(first_speech_time - range_start, 0.0),
+        trailing_silence: max(range_end - last_speech_time, 0.0),
+        longest_gap: longest_gap
+      }
+    end
+  end
+
+  defp realtime_range_stats(_segments, fallback_text, range_start, range_end) do
+    duration = max(range_end - range_start, 0.0)
+    word_count = realtime_word_count(fallback_text)
+
+    %{
+      duration: duration,
+      word_count: word_count,
+      spoken_duration: duration,
+      speech_density: if(duration > 0, do: word_count / duration, else: 0.0),
+      first_speech_time: nil,
+      last_speech_time: nil,
+      leading_silence: 0.0,
+      trailing_silence: 0.0,
+      longest_gap: 0.0
+    }
+  end
+
+  defp realtime_segments_cover_range?(segments, range_start, range_end)
+       when is_list(segments) and segments != [] do
+    segment_bounds =
+      segments
+      |> Enum.filter(&is_map/1)
+      |> Enum.map(fn segment ->
+        start_time = number_or_default(Map.get(segment, "start"), 0)
+        end_time = number_or_default(Map.get(segment, "end"), start_time)
+        {start_time, end_time}
+      end)
+
+    case segment_bounds do
+      [] ->
+        false
+
+      bounds ->
+        earliest_start =
+          bounds
+          |> Enum.map(fn {start_time, _end_time} -> start_time end)
+          |> Enum.min()
+
+        latest_end =
+          bounds
+          |> Enum.map(fn {_start_time, end_time} -> end_time end)
+          |> Enum.max()
+
+        # The client sends only the active 30s window. A pending clip can span
+        # previous windows, so server-side quality checks are only meaningful
+        # when this request's timed segments cover the entire clip range.
+        range_start >= earliest_start - 0.75 and range_end <= latest_end + 0.75
+    end
+  end
+
+  defp realtime_segments_cover_range?(_segments, _range_start, _range_end), do: false
+
+  defp realtime_speech_events(segment, range_start, range_end) when is_map(segment) do
+    start_time = number_or_default(Map.get(segment, "start"), 0)
+    end_time = number_or_default(Map.get(segment, "end"), start_time)
+    words = Map.get(segment, "words", [])
+
+    cond do
+      end_time < range_start or start_time > range_end ->
+        []
+
+      is_list(words) and words != [] ->
+        words
+        |> Enum.filter(&valid_realtime_word?(&1, range_start, range_end))
+        |> Enum.map(fn word ->
+          %{
+            start: max(number_or_default(Map.get(word, "start"), range_start), range_start),
+            end: min(number_or_default(Map.get(word, "end"), range_end), range_end),
+            words: 1
+          }
+        end)
+
+      true ->
+        overlap_start = max(start_time, range_start)
+        overlap_end = min(end_time, range_end)
+        word_count = realtime_word_count(Map.get(segment, "text", ""))
+
+        if overlap_end > overlap_start and word_count > 0 do
+          [%{start: overlap_start, end: overlap_end, words: word_count}]
+        else
+          []
+        end
+    end
+  end
+
+  defp realtime_speech_events(_segment, _range_start, _range_end), do: []
+
+  defp valid_realtime_word?(word, range_start, range_end) when is_map(word) do
+    word_start = number_or_default(Map.get(word, "start"), -1)
+    word_end = number_or_default(Map.get(word, "end"), -1)
+
+    is_binary(Map.get(word, "word")) and String.trim(Map.get(word, "word")) != "" and
+      word_end >= range_start and word_start <= range_end
+  end
+
+  defp valid_realtime_word?(_word, _range_start, _range_end), do: false
+
+  defp realtime_longest_gap([_event]), do: 0.0
+
+  defp realtime_longest_gap(events) do
+    events
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.reduce(0.0, fn [previous, current], longest ->
+      max(longest, current.start - previous.end)
+    end)
+  end
+
+  defp realtime_word_count(text) when is_binary(text) do
+    text
+    |> String.replace(~r/[^[:alnum:]\s']/u, " ")
+    |> String.split(~r/\s+/, trim: true)
+    |> Enum.count(&(String.length(&1) > 1))
+  end
+
+  defp realtime_word_count(_), do: 0
+
+  defp format_realtime_reach_context(reach_settings) do
+    note =
+      case reach_settings.tier do
+        :top_tier ->
+          "This is a TOP-TIER VIRAL CREATOR. Their average moments outperform peak moments from unknown streamers — be more willing to flag mid-strength hooks as clip-worthy."
+
+        :famous ->
+          "This is a FAMOUS CREATOR known for viral content. Loyal fanbase amplifies even average moments. Lower the bar slightly for hook strength."
+
+        :established ->
+          "This is an ESTABLISHED CREATOR with a meaningful audience. Solid moments are worth saving."
+
+        :niche ->
+          "Niche creator. Use standard thresholds."
+
+        _ ->
+          "Unknown creator. Use standard thresholds — only save genuinely viral moments."
+      end
+
+    """
+    STREAMER REACH
+    --------------
+    Tier: #{reach_settings.tier_label}#{if reach_settings.matched_name, do: " (matched: #{reach_settings.matched_name})", else: ""}
+    Auto-save virality threshold for this streamer: #{reach_settings.virality_threshold}
+    Note: #{note}
+    """
+    |> String.trim()
+  end
+
+  defp maybe_add_reason(reasons, true, reason), do: [reason | reasons]
+  defp maybe_add_reason(reasons, false, _reason), do: reasons
+
+  defp number_or_default(value, _default) when is_integer(value), do: value * 1.0
+  defp number_or_default(value, _default) when is_float(value), do: value
+
+  defp number_or_default(value, default) when is_binary(value) do
+    case Float.parse(value) do
+      {number, _} -> number
+      :error -> default
+    end
+  end
+
+  defp number_or_default(_value, default), do: default
 
   # Helper functions for converting old clip format to new pending_clip format
   defp get_clip_start_time(clip, transcript_start) do

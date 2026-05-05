@@ -6,6 +6,7 @@ import {
   getTranscriptChunks,
   updateChunkedTranscriptCompleteness,
   getChunkMetadataForProcessing,
+  deleteChunkedTranscript,
 } from '@/services/database';
 import { useAudioChunking, type AudioChunk } from './useAudioChunking';
 import { useToast } from '@/composables/useToast';
@@ -38,6 +39,7 @@ interface UseChunkedTranscriptCacheOptions {
   showCompletionToast?: boolean;
   showCacheReuseToast?: boolean;
   showErrorToast?: boolean;
+  showAudioChunkingToast?: boolean;
 }
 
 export function useChunkedTranscriptCache(options: UseChunkedTranscriptCacheOptions = {}) {
@@ -72,14 +74,24 @@ export function useChunkedTranscriptCache(options: UseChunkedTranscriptCacheOpti
         // For now, let's assume if it exists we want to check for chunks.
         const existingChunks = await getTranscriptChunks(existingChunked.id);
 
-        // If we have some chunks but not all, we might need to re-process or resume.
-        // But for initialization, if we have a record, let's return it.
-        // If it's complete, return success.
-        if (existingChunked.is_complete) {
+        // Only reuse a complete cache when it actually has chunks. Older failed
+        // attempts could leave a "complete" zero-chunk record, which blocks
+        // re-transcription and surfaces as "No audio chunks were extracted".
+        if (existingChunked.is_complete && existingChunks.length > 0) {
           if (shouldShowCacheReuseToast) {
             showSuccess('Transcript cached', 'Using existing chunked transcript for this video');
           }
           return { success: true, sessionId: existingChunked.id };
+        }
+
+        if (existingChunks.length === 0) {
+          console.warn('[ChunkedTranscriptCache] Removing empty chunked transcript cache:', {
+            chunkedTranscriptId: existingChunked.id,
+            rawVideoId,
+            totalChunks: existingChunked.total_chunks,
+            isComplete: existingChunked.is_complete,
+          });
+          await deleteChunkedTranscript(existingChunked.id);
         }
 
         // If not complete, we might want to resume or overwrite.
@@ -105,7 +117,10 @@ export function useChunkedTranscriptCache(options: UseChunkedTranscriptCacheOpti
       }
 
       // Use audio chunking to get chunk information
-      const { extractAndChunkVideo } = useAudioChunking();
+      const { extractAndChunkVideo } = useAudioChunking({
+        showSuccessToast: options.showAudioChunkingToast ?? options.showCompletionToast,
+        showErrorToast: options.showErrorToast,
+      });
       const chunkingResult = await extractAndChunkVideo(rawVideo.file_path, rawVideoId, {
         chunkDurationMinutes,
         overlapSeconds,
@@ -118,6 +133,10 @@ export function useChunkedTranscriptCache(options: UseChunkedTranscriptCacheOpti
       }
 
       const chunks = chunkingResult.chunks;
+      if (chunks.length === 0) {
+        throw new Error('No audio chunks were extracted from the video');
+      }
+
       const totalDuration = chunks.reduce((sum, chunk) => sum + chunk.duration, 0);
 
       // Create chunked transcript record

@@ -88,12 +88,6 @@ export async function updateClipBuildStatus(
     if (additionalFields?.builtFilePath !== undefined) {
       query += ', built_file_path = ?';
       params.push(additionalFields.builtFilePath);
-
-      // Also update the main file_path field when build is completed
-      if (buildStatus === 'completed') {
-        query += ', file_path = ?';
-        params.push(additionalFields.builtFilePath);
-      }
     }
 
     if (additionalFields?.builtThumbnailPath !== undefined) {

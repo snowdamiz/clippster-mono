@@ -1942,7 +1942,7 @@
         const monitored = monitoredStreamers.value.get(link.monitored_streamer_id);
         if (monitored) {
           const isLive = session && !session.isStopping;
-          const mode = monitored.options.detectClips ? 'AUTO' : 'REC';
+          const mode = monitored.options.mode === 'realtime-detect' ? 'AUTO' : 'REC';
           if (isLive) {
             return `LIVE (${mode})`;
           }
@@ -2159,7 +2159,7 @@
               autoDvr: Boolean(streamer.auto_dvr),
             },
           ],
-          { detectClips }
+          { mode: detectClips ? 'realtime-detect' : 'record' }
         );
       }
 

@@ -318,6 +318,7 @@ export interface MediaPanelProps {
   maxWordsForAspectRatio?: number;
   // Subtitle settings for clip building
   subtitleSettings?: SubtitleSettings | null;
+  subtitleSettingsClipId?: string | null;
   // Creator profile default assets (auto-applied when building clips)
   creatorDefaultIntro?: IntroOutroRef | null;
   creatorDefaultOutro?: IntroOutroRef | null;

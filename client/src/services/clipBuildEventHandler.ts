@@ -257,14 +257,35 @@ async function copyTranscriptToClipSegments(clipId: string, projectId: string): 
       return;
     }
     
-    // Create a single segment with the clip-specific transcript and audio peaks
+    // Create a single segment with the clip-specific transcript and audio peaks.
+    //
+    // For self-contained clips (auto-detected livestream clips, manual clips — anything
+    // with its own extracted MP4 file), the segment must live in the clip's OWN-FILE
+    // 0-based timeline. Using `clip.start_time` / `clip.end_time` here would write
+    // livestream-absolute values (e.g. 551s — 648s for a clip detected late into a
+    // stream), which then makes the workspace timeline render the bar in the wrong
+    // place / wrong width on the clip's 0-based MP4 timeline.
+    //
+    // For non-self-contained clips (VOD clips that play from the project's source video),
+    // the project-source-absolute range is what we want, so we keep that for those.
+    const isSelfContainedClip =
+      typeof clip.file_path === 'string' && clip.file_path.trim() !== '';
+    const segDuration = isSelfContainedClip
+      ? clip.duration && clip.duration > 0
+        ? clip.duration
+        : endTime - startTime
+      : endTime - startTime;
+    const segStart = isSelfContainedClip ? 0 : startTime;
+    const segEnd = isSelfContainedClip
+      ? segDuration
+      : endTime;
+
     const segmentId = generateId();
-    const segmentDuration = endTime - startTime;
-    
+
     await db.execute(
       `INSERT INTO clip_segments (id, clip_version_id, segment_index, start_time, end_time, duration, transcript, transcript_raw_json, audio_peaks, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [segmentId, actualVersionId, 0, startTime, endTime, segmentDuration, clipTranscript, clipRawJson, audioPeaksJson, now]
+      [segmentId, actualVersionId, 0, segStart, segEnd, segDuration, clipTranscript, clipRawJson, audioPeaksJson, now]
     );
     
     const peaksInfo = audioPeaksJson ? ` + ${JSON.parse(audioPeaksJson).length} audio peaks` : '';

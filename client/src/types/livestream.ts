@@ -1,4 +1,5 @@
 export type SupportedLivestreamPlatform = 'PumpFun' | 'YouTube' | 'Twitch' | 'Kick' | 'Rumble' | 'Twitter';
+export type LivestreamMonitoringMode = 'record' | 'realtime-detect';
 
 export interface MonitoredStreamer {
   id: string;
@@ -51,7 +52,7 @@ export interface LiveSession {
   displayName: string;
   platform: SupportedLivestreamPlatform;
   profileImageUrl?: string;
-  detectClips?: boolean;
+  mode: LivestreamMonitoringMode;
   isStopping?: boolean;
   segmentDurationMinutes?: number;
   promptId?: string;
@@ -78,9 +79,7 @@ export interface SegmentJob {
   mintId: string;
   filePath: string;
   projectId: string;
-  detectClips?: boolean;
   duration?: number;
-  promptContent?: string;
 }
 
 export interface ActivityLog {

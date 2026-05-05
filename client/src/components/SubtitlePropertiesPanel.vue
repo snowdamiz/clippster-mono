@@ -106,7 +106,7 @@
       </div>
 
       <!-- ── HIGHLIGHT COLOR (Karaoke/Pop/Zoom Modes) ── -->
-      <div v-if="['karaoke', 'pop', 'zoom'].includes(settings.animationStyle)" class="sp__section">
+      <div v-if="['karaoke', 'pop', 'zoom'].includes(settings.animationStyle)" class="sp__section sp__section--highlight">
         <div class="sp__section-hd">Highlight Color</div>
         <p class="sp__hint sp__mb">Color when word is active</p>
         
@@ -134,7 +134,7 @@
           </button>
         </div>
         
-        <div v-if="showCustomHighlightPicker || isCustomHighlightColor" class="sp__custom-color sp__mt">
+        <div v-if="showCustomHighlightPicker || isCustomHighlightColor" class="sp__custom-color">
           <label class="sp__swatch-wrap">
             <input type="color" :value="settings.highlightColor"
               @input="update('highlightColor', ($event.target as HTMLInputElement).value)" />
@@ -146,7 +146,7 @@
       </div>
 
       <!-- ── FONT ── -->
-      <div class="sp__section">
+      <div class="sp__section sp__section--font">
         <div class="sp__section-hd">Font</div>
         <div class="sp__font-grid">
           <button
@@ -158,7 +158,7 @@
           >{{ f }}</button>
         </div>
 
-        <div class="sp__row2 sp__mt">
+        <div class="sp__row2 sp__font-controls sp__mt">
           <div class="sp__field">
             <span class="sp__label">Size <em class="sp__val">{{ settings.fontSize }}px</em></span>
             <input type="range" class="sp__slider" :value="settings.fontSize" min="8" max="120" step="1"
@@ -185,12 +185,17 @@
       </div>
 
       <!-- ── COLORS ── -->
-      <div class="sp__section">
+      <div class="sp__section sp__section--colors">
         <div class="sp__section-hd">Colors</div>
-        <div class="sp__color-grid">
-          <div class="sp__color-item" v-for="ci in colorItems" :key="ci.key">
+        <p class="sp__hint sp__mb">Subtitle fill and karaoke highlight</p>
+        <div class="sp__colors-grid">
+          <div
+            v-for="ci in colorItems"
+            :key="ci.key"
+            class="sp__colors-row"
+          >
             <span class="sp__label">{{ ci.label }}</span>
-            <div class="sp__swatch-row">
+            <div class="sp__swatch-row sp__colors-swatch-row">
               <label class="sp__swatch-wrap">
                 <input type="color" :value="(settings as any)[ci.key]"
                   @input="update(ci.key as any, ($event.target as HTMLInputElement).value)" />
@@ -204,16 +209,16 @@
       </div>
 
       <!-- ── OUTLINE ── -->
-      <div class="sp__section">
+      <div class="sp__section sp__section--outline">
         <div class="sp__section-hd">Outline</div>
         <p class="sp__hint sp__mb">Layered strokes (Border 1 on top, Border 2 behind it)</p>
-        <div class="sp__row2">
+        <div class="sp__outline-row">
           <div class="sp__field">
             <span class="sp__label">Border 1 <em class="sp__val">{{ settings.border1Width }}px</em></span>
             <input type="range" class="sp__slider" :value="settings.border1Width" min="0" max="20" step="1"
               @input="update('border1Width', Number(($event.target as HTMLInputElement).value))" />
           </div>
-          <div class="sp__field">
+          <div class="sp__field sp__outline-color">
             <span class="sp__label">Border 1 Color</span>
             <div class="sp__swatch-row">
               <label class="sp__swatch-wrap">
@@ -224,13 +229,13 @@
             </div>
           </div>
         </div>
-        <div class="sp__row2 sp__mt">
+        <div class="sp__outline-row">
           <div class="sp__field">
             <span class="sp__label">Border 2 <em class="sp__val">{{ settings.border2Width }}px</em></span>
             <input type="range" class="sp__slider" :value="settings.border2Width" min="0" max="20" step="1"
               @input="update('border2Width', Number(($event.target as HTMLInputElement).value))" />
           </div>
-          <div class="sp__field">
+          <div class="sp__field sp__outline-color">
             <span class="sp__label">Border 2 Color</span>
             <div class="sp__swatch-row">
               <label class="sp__swatch-wrap">
@@ -280,15 +285,16 @@
       </div>
 
       <!-- ── SHADOW ── -->
-      <div class="sp__section">
+      <div class="sp__section sp__section--shadow">
         <div class="sp__section-hd">Shadow</div>
-        <div class="sp__row2">
+        <p class="sp__hint sp__mb">Soft glow behind the subtitle</p>
+        <div class="sp__outline-row">
           <div class="sp__field">
             <span class="sp__label">Blur <em class="sp__val">{{ settings.shadowBlur }}px</em></span>
             <input type="range" class="sp__slider" :value="settings.shadowBlur" min="0" max="30" step="1"
               @input="update('shadowBlur', Number(($event.target as HTMLInputElement).value))" />
           </div>
-          <div class="sp__field">
+          <div class="sp__field sp__outline-color">
             <span class="sp__label">Color</span>
             <div class="sp__swatch-row">
               <label class="sp__swatch-wrap">
@@ -373,6 +379,9 @@ interface TranscriptSegment {
   /** When set, stable row identity for the workspace transcript editor */
   whisperSegmentIndex?: number;
   wordIndex?: number | null;
+  wordEndIndex?: number | null;
+  sourceStart?: number;
+  sourceEnd?: number;
 }
 
 interface Props {
@@ -387,9 +396,9 @@ const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'updateSettings', settings: Partial<SubtitleSettings>): void;
   /** Live in-memory sync (preview) while typing */
-  (e: 'draftSegmentText', segmentIndex: number, text: string): void;
+  (e: 'draftSegmentText', segmentIndex: number, text: string, segment?: TranscriptSegment): void;
   /** Persist to storage (call on blur) */
-  (e: 'commitSegmentText', segmentIndex: number, text: string): void;
+  (e: 'commitSegmentText', segmentIndex: number, text: string, segment?: TranscriptSegment): void;
   (e: 'delete'): void;
 }>();
 
@@ -427,20 +436,26 @@ const segmentRefs = ref<HTMLElement[]>([]);
 const lastScrolledActiveIndex = ref(-1);
 /** Rows edited since last successful blur-commit (flushed on unmount so tab switches still save). */
 const dirtySegmentIndices = ref(new Set<number>());
+const dirtySegmentSources = ref(new Map<number, TranscriptSegment>());
 
 watch(() => props.segments, (segs) => {
   segmentRefs.value = [];
   lastScrolledActiveIndex.value = -1;
-  dirtySegmentIndices.value = new Set();
-  editableSegments.value = segs.map(s => ({ ...s }));
+  editableSegments.value = segs.map((s, index) => {
+    if (dirtySegmentIndices.value.has(index)) {
+      return { ...s, text: editableSegments.value[index]?.text ?? s.text };
+    }
+    return { ...s };
+  });
 }, { immediate: true });
 
 onBeforeUnmount(() => {
   for (const index of dirtySegmentIndices.value) {
     const text = editableSegments.value[index]?.text ?? '';
-    emit('commitSegmentText', index, text);
+    emit('commitSegmentText', index, text, dirtySegmentSources.value.get(index));
   }
   dirtySegmentIndices.value = new Set();
+  dirtySegmentSources.value = new Map();
 });
 
 const activeSegmentIndex = computed(() => {
@@ -622,16 +637,21 @@ function update<K extends keyof SubtitleSettings>(key: K, value: SubtitleSetting
 }
 
 function onSegmentTextInput(index: number, text: string) {
+  if (!dirtySegmentSources.value.has(index) && editableSegments.value[index]) {
+    dirtySegmentSources.value.set(index, { ...editableSegments.value[index] });
+  }
   if (editableSegments.value[index]) {
     editableSegments.value[index].text = text;
   }
   dirtySegmentIndices.value.add(index);
-  emit('draftSegmentText', index, text);
+  emit('draftSegmentText', index, text, dirtySegmentSources.value.get(index));
 }
 
 function onSegmentTextBlur(index: number, text: string) {
+  const sourceSegment = dirtySegmentSources.value.get(index);
   dirtySegmentIndices.value.delete(index);
-  emit('commitSegmentText', index, text);
+  dirtySegmentSources.value.delete(index);
+  emit('commitSegmentText', index, text, sourceSegment);
 }
 
 // Highlight color presets
@@ -744,6 +764,10 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
   gap: 12px 0;
 }
 
+.sp--embedded .sp__font-controls {
+  gap: 14px 0;
+}
+
 .sp--embedded .sp__mt {
   margin-top: 10px;
 }
@@ -761,17 +785,36 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
   margin-top: 1px;
 }
 
-.sp--embedded .sp__color-grid {
-  grid-template-columns: 1fr;
-  gap: 14px 14px;
+.sp--embedded .sp__swatch-row {
+  gap: 8px;
 }
 
-.sp--embedded .sp__color-item {
+.sp--embedded .sp__colors-grid {
+  gap: 6px 8px;
+}
+
+.sp--embedded .sp__colors-row {
   gap: 6px;
 }
 
-.sp--embedded .sp__swatch-row {
-  gap: 8px;
+.sp--embedded .sp__section--colors .sp__colors-row > .sp__label {
+  font-size: 0.6875rem;
+  margin: 0;
+  min-width: 0;
+}
+
+.sp--embedded .sp__section--colors .sp__colors-swatch-row .sp__swatch {
+  width: 24px;
+  height: 24px;
+}
+
+.sp--embedded .sp__section--colors .sp__colors-swatch-row .sp__hex {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
 }
 
 .sp--embedded .sp__swatch {
@@ -787,39 +830,51 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
 }
 
 .sp--embedded .sp__style-grid {
-  gap: 6px;
+  gap: 5px;
 }
 
 .sp--embedded .sp__style-btn {
-  padding: 0.5rem 0.625rem;
-  gap: 0.125rem;
-}
-
-.sp--embedded .sp__style-name {
-  font-size: 0.8125rem;
-}
-
-.sp--embedded .sp__style-desc {
-  font-size: 0.625rem;
-  line-height: 1.35;
-}
-
-.sp--embedded .sp__font-btn {
-  padding: 0.45rem 0.5rem;
+  padding: 0.42rem 0.5rem;
+  gap: 0.3rem;
+  border-radius: 5px;
   font-size: 0.6875rem;
 }
 
+.sp--embedded .sp__style-name {
+  font-size: 0.6875rem;
+  line-height: 1.2;
+}
+
+.sp--embedded .sp__style-desc {
+  font-size: 0.5625rem;
+  line-height: 1.4;
+  opacity: 0.7;
+}
+
+.sp--embedded .sp__style-btn--active .sp__style-desc {
+  opacity: 0.82;
+}
+
+.sp--embedded .sp__font-btn {
+  padding: 0.38rem 0.45rem;
+  font-size: 0.625rem;
+}
+
 .sp--embedded .sp__pill {
-  font-size: 9px;
-  padding: 2px 6px;
+  font-size: 8px;
+  padding: 2px 5px;
 }
 
 .sp--embedded .sp__seg-ctrl {
   border-radius: 5px;
+  gap: 2px;
+  padding: 2px;
 }
 
 .sp--embedded .sp__seg-btn {
-  padding: 0.35rem 0.45rem;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0.4rem 0.55rem;
 }
 
 .sp--embedded .sp__segments {
@@ -858,22 +913,32 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
 }
 
 .sp--embedded .sp__preset-colors {
-  gap: 6px;
+  gap: 5px;
 }
 
 .sp--embedded .sp__color-preset {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
   border-width: 1px;
 }
 
 .sp--embedded .sp__color-preset-check {
-  font-size: 14px;
+  font-size: 11px;
 }
 
 .sp--embedded .sp__color-preset-icon {
-  font-size: 18px;
+  font-size: 12px;
+}
+
+.sp--embedded .sp__section--highlight .sp__custom-color .sp__swatch {
+  width: 24px;
+  height: 24px;
+}
+
+.sp--embedded .sp__section--highlight .sp__custom-color .sp__hex {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.625rem;
 }
 
 /* Header */
@@ -1012,6 +1077,67 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
   gap: 0 10px;
 }
 
+.sp__section--outline .sp__hint,
+.sp__section--shadow .sp__hint {
+  margin: -2px 0 14px;
+  color: var(--sidebar-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+}
+
+.sp__outline-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  padding: 0;
+}
+
+.sp__outline-row + .sp__outline-row {
+  margin-top: 12px;
+}
+
+.sp__section--outline .sp__field,
+.sp__section--shadow .sp__field {
+  gap: 8px;
+}
+
+.sp__section--outline .sp__label,
+.sp__section--shadow .sp__label {
+  justify-content: space-between;
+  width: 100%;
+  color: var(--sidebar-text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.sp__section--outline .sp__val,
+.sp__section--shadow .sp__val {
+  margin-left: 12px;
+  color: var(--sidebar-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+
+.sp__outline-color .sp__swatch-row {
+  align-items: center;
+  gap: 10px;
+}
+
+.sp__outline-color .sp__swatch {
+  width: 34px;
+  height: 34px;
+}
+
+.sp__outline-color .sp__hex {
+  min-width: 0;
+  height: 34px;
+  padding: 0 0.75rem;
+  font-size: 0.75rem;
+}
+
 .sp__field {
   display: flex;
   flex-direction: column;
@@ -1045,61 +1171,68 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
 .sp__style-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
+  gap: 6px;
 }
 
 .sp__style-btn {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.25rem;
-  padding: 0.75rem 1rem;
-  background: var(--sidebar-hover);
+  gap: 0.35rem;
+  padding: 0.5rem 0.65rem;
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--sidebar-border);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--sidebar-text-muted);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   cursor: pointer;
-  transition: all 150ms ease;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
   text-align: left;
 }
 
 .sp__style-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.07);
   border-color: var(--sidebar-border);
   color: var(--sidebar-text);
 }
 
 .sp__style-btn--active {
-  background: rgba(6, 182, 212, 0.15);
+  background: rgba(6, 182, 212, 0.12);
   border-color: var(--sidebar-accent);
   color: var(--sidebar-accent);
 }
 
 .sp__style-name {
   font-weight: 600;
-  font-size: 0.875rem;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 
 .sp__style-desc {
-  font-size: 0.6875rem;
-  opacity: 0.7;
-  line-height: 1.4;
+  font-size: 0.625rem;
+  font-weight: 400;
+  opacity: 0.72;
+  line-height: 1.45;
+}
+
+.sp__style-btn--active .sp__style-desc {
+  opacity: 0.85;
 }
 
 /* Font grid */
 .sp__font-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
+  gap: 3px;
 }
 
 .sp__font-btn {
   background: var(--sidebar-hover);
   border: 1px solid var(--sidebar-border);
   border-radius: 6px;
-  padding: 0.625rem 0.75rem;
-  font-size: 0.8125rem;
+  padding: 0.45rem 0.5rem;
+  font-size: 0.75rem;
   color: var(--sidebar-text-muted);
   cursor: pointer;
   transition: all 150ms ease;
@@ -1118,10 +1251,19 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
   color: var(--sidebar-accent);
 }
 
+.sp__font-controls {
+  column-gap: 18px;
+  align-items: start;
+}
+
+.sp__font-controls .sp__field {
+  min-width: 0;
+}
+
 /* Pills (weight) */
 .sp__pill-row {
   display: flex;
-  gap: 3px;
+  gap: 5px;
   flex-wrap: wrap;
 }
 
@@ -1129,8 +1271,8 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
   background: var(--sidebar-hover);
   border: 1px solid var(--sidebar-border);
   border-radius: 20px;
-  padding: 3px 7px;
-  font-size: 10px;
+  padding: 2px 6px;
+  font-size: 9px;
   color: var(--sidebar-text-muted);
   cursor: pointer;
   transition: all 150ms ease;
@@ -1153,34 +1295,25 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
   display: flex;
   background: var(--sidebar-hover);
   border: 1px solid var(--sidebar-border);
-  border-radius: 6px;
-  overflow: hidden;
+  border-radius: 8px;
+  gap: 2px;
+  padding: 2px;
   width: fit-content;
 }
 
 .sp__seg-btn {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.5rem;
+  min-width: 32px;
+  min-height: 30px;
+  padding: 0.45rem 0.65rem;
   background: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
+  border: 1px solid transparent;
+  border-radius: 6px;
   color: var(--sidebar-text-muted);
   cursor: pointer;
   transition: all 150ms ease;
-}
-
-.sp__seg-btn:first-child {
-  border-radius: 6px 0 0 6px;
-}
-
-.sp__seg-btn:last-child {
-  border-radius: 0 6px 6px 0;
-}
-
-.sp__seg-btn:not(:last-child) {
-  border-right: none;
 }
 
 .sp__seg-btn:hover {
@@ -1195,17 +1328,66 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
   z-index: 1;
 }
 
-/* Color grid */
-.sp__color-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+/* Colors (match highlight custom swatch density) */
+.sp__section--colors .sp__hint.sp__mb {
+  margin-bottom: 8px;
 }
 
-.sp__color-item {
+.sp__section--colors .sp__hint {
+  color: var(--sidebar-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.sp__colors-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.sp__colors-row {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sp__section--colors .sp__colors-row > .sp__label {
+  flex: 0 0 auto;
+  margin: 0;
+  width: auto;
+  min-width: 0;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--sidebar-text);
+}
+
+.sp__colors-swatch-row {
+  flex: 1 1 0%;
+  min-width: 0;
+  gap: 6px;
+  align-items: center;
+}
+
+.sp__section--colors .sp__colors-swatch-row .sp__swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+}
+
+.sp__section--colors .sp__colors-swatch-row .sp__hex {
+  min-width: 0;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
 }
 
 .sp__swatch-row {
@@ -1457,17 +1639,28 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
 }
 
 /* Highlight color presets */
+.sp__section--highlight .sp__hint.sp__mb {
+  margin-bottom: 8px;
+}
+
+.sp__section--highlight .sp__hint {
+  color: var(--sidebar-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
 .sp__preset-colors {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .sp__color-preset {
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
-  border: 2px solid transparent;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid transparent;
   cursor: pointer;
   transition: all 150ms ease;
   position: relative;
@@ -1477,18 +1670,18 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
 }
 
 .sp__color-preset:hover {
-  transform: scale(1.05);
-  border-color: rgba(255, 255, 255, 0.3);
+  transform: scale(1.04);
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
 .sp__color-preset--active {
   border-color: var(--sidebar-accent);
-  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2);
+  box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.35);
 }
 
 .sp__color-preset-check {
   color: white;
-  font-size: 20px;
+  font-size: 12px;
   font-weight: bold;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
   opacity: 0;
@@ -1507,19 +1700,34 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
 }
 
 .sp__color-preset-icon {
-  font-size: 24px;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .sp__color-preset-swatch {
   width: 100%;
   height: 100%;
-  border-radius: 6px;
+  border-radius: 5px;
+}
+
+.sp__section--highlight .sp__custom-color {
+  margin-top: 8px;
 }
 
 .sp__custom-color {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+}
+
+.sp__section--highlight .sp__custom-color .sp__swatch {
+  width: 28px;
+  height: 28px;
+}
+
+.sp__section--highlight .sp__custom-color .sp__hex {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.6875rem;
 }
 
 .sp__mb {
