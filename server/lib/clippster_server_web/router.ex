@@ -1308,6 +1308,12 @@ defmodule ClippsterServerWeb.Router do
       :cancel_org_subscription
     )
 
+    post(
+      "/admin/organizations/:organization_id/sync-stripe-subscription",
+      AdminController,
+      :sync_org_stripe_subscription
+    )
+
     put("/admin/organizations/:organization_id/seats", AdminController, :set_org_seats)
     delete("/admin/organizations/:id", AdminController, :delete_organization)
 

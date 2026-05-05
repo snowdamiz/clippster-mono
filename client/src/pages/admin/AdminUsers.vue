@@ -191,6 +191,9 @@
                         <span v-if="user.subscription?.days_remaining > 0" class="admin-users__sub-days">
                           ({{ user.subscription.days_remaining }}d)
                         </span>
+                        <span v-else-if="isExpiredSubscription(user.subscription) && user.subscription.end_date" class="admin-users__sub-days">
+                          ({{ formatExpiredDate(user.subscription.end_date) }})
+                        </span>
                       </div>
                     </button>
                   </td>
@@ -778,7 +781,7 @@
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { useRouter } from 'vue-router';
-  import { formatDateTime } from '@/utils/dateTimeUtils';
+  import { formatDate as formatDateOnly, formatDateTime } from '@/utils/dateTimeUtils';
   import {
     Users,
     RefreshCw,
@@ -829,6 +832,8 @@
       organization_id?: number | null;
     };
   }
+
+  type UserSubscription = UserType['subscription'];
 
   const authStore = useAuthStore();
 
@@ -996,6 +1001,19 @@
     } catch {
       return 'Invalid date';
     }
+  };
+
+  const formatExpiredDate = (dateString: string | null | undefined) => {
+    if (!dateString) return 'N/A';
+    try {
+      return formatDateOnly(dateString) || 'N/A';
+    } catch {
+      return 'Invalid date';
+    }
+  };
+
+  const isExpiredSubscription = (subscription: UserSubscription | null | undefined) => {
+    return subscription?.status === 'expired';
   };
 
   const formatCredits = (credits: number | 'unlimited') => {
