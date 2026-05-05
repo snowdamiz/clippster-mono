@@ -78,9 +78,14 @@
                   </td>
                   <td class="admin-orgs__td">
                     <div class="admin-orgs__sub-cell">
-                      <span :class="['admin-orgs__status-badge', `admin-orgs__status-badge--${org.subscription_status || 'none'}`]">
-                        {{ org.subscription_status || 'none' }}
-                      </span>
+                      <div class="admin-orgs__status-row">
+                        <span :class="['admin-orgs__status-badge', `admin-orgs__status-badge--${org.subscription_status || 'none'}`]">
+                          {{ org.subscription_status || 'none' }}
+                        </span>
+                        <span v-if="isExpiredSubscription(org) && org.subscription_end_date" class="admin-orgs__expired-date">
+                          ({{ formatExpiredDate(org.subscription_end_date) }})
+                        </span>
+                      </div>
                       <span v-if="org.subscription_tier" class="admin-orgs__tier-label">{{ org.subscription_tier }}</span>
                       <span v-if="org.admin_price_cents != null" class="admin-orgs__price-label">${{ (org.admin_price_cents / 100).toFixed(2) }}/mo</span>
                     </div>
@@ -609,7 +614,7 @@
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
   import { useRouter } from 'vue-router';
-  import { formatDateTime } from '@/utils/dateTimeUtils';
+  import { formatDate as formatDateOnly, formatDateTime } from '@/utils/dateTimeUtils';
   import { Building2, RefreshCw, Loader2, CreditCard, Users, X, AlertCircle, Plus, Crown, Settings, XCircle, ChevronDown, KeyRound, Trash2 } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
@@ -866,6 +871,19 @@
     } catch {
       return 'Invalid date';
     }
+  };
+
+  const formatExpiredDate = (dateString: string | null | undefined) => {
+    if (!dateString) return 'N/A';
+    try {
+      return formatDateOnly(dateString) || 'N/A';
+    } catch {
+      return 'Invalid date';
+    }
+  };
+
+  const isExpiredSubscription = (org: Organization) => {
+    return org.subscription_status === 'expired';
   };
 
   const formatCredits = (credits: number) => {
@@ -1431,6 +1449,12 @@
     gap: 0.25rem;
   }
 
+  .admin-orgs__status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
   .admin-orgs__status-badge {
     display: inline-block;
     padding: 0.125rem 0.5rem;
@@ -1466,6 +1490,11 @@
   }
 
   .admin-orgs__tier-label {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .admin-orgs__expired-date {
     font-size: 0.6875rem;
     color: var(--sidebar-text-muted);
   }

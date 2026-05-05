@@ -34,7 +34,18 @@ defmodule ClippsterServer.Storage do
   Returns the public URL base for R2 assets.
   """
   def public_url_base do
-    Application.get_env(:clippster_server, :r2)[:public_url]
+    case Application.get_env(:clippster_server, :r2)[:public_url] do
+      value when is_binary(value) ->
+        value
+        |> String.trim()
+        |> case do
+          "" -> nil
+          trimmed -> trimmed
+        end
+
+      value ->
+        value
+    end
   end
 
   @doc """
@@ -100,26 +111,27 @@ defmodule ClippsterServer.Storage do
 
   @doc """
   Generates a presigned URL for uploading a file directly to R2.
-  
+
   Returns {:ok, %{upload_url: presigned_url, media_url: public_url}} on success.
   The upload_url is used for the PUT request, media_url is the final public URL.
   """
   def generate_presigned_upload_url(key, opts \\ []) do
-    expires_in = Keyword.get(opts, :expires_in, 600) # 10 minutes default
+    # 10 minutes default
+    expires_in = Keyword.get(opts, :expires_in, 600)
     content_type = Keyword.get(opts, :content_type, "video/mp4")
-    
+
     # Convert keyword list to map for ExAws.S3.presigned_url
     config_map = config() |> Enum.into(%{})
-    
+
     # Generate presigned URL for PUT operation
-    case ExAws.S3.presigned_url(config_map, :put, bucket(), key, 
+    case ExAws.S3.presigned_url(config_map, :put, bucket(), key,
            expires_in: expires_in,
            query_params: [{"Content-Type", content_type}]
          ) do
       {:ok, presigned_url} ->
         public_url = build_public_url(key)
         {:ok, %{upload_url: presigned_url, media_url: public_url}}
-      
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -189,7 +201,8 @@ defmodule ClippsterServer.Storage do
   # Multipart chunk size: 8MB
   @multipart_chunk_size 8 * 1024 * 1024
 
-  defp do_upload(file_binary, key, content_type, byte_size) when byte_size >= @multipart_threshold do
+  defp do_upload(file_binary, key, content_type, byte_size)
+       when byte_size >= @multipart_threshold do
     Logger.info("[Storage] Using multipart R2 upload for key=#{key}")
 
     file_binary
@@ -218,7 +231,9 @@ defmodule ClippsterServer.Storage do
 
   defp chunk_binary(binary, chunk_size) do
     Stream.unfold(binary, fn
-      <<>> -> nil
+      <<>> ->
+        nil
+
       remaining ->
         current_size = min(byte_size(remaining), chunk_size)
         <<chunk::binary-size(current_size), rest::binary>> = remaining

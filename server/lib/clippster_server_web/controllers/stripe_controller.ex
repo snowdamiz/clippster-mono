@@ -257,8 +257,12 @@ defmodule ClippsterServerWeb.StripeController do
                 alias ClippsterServer.Organizations.Organization
                 alias ClippsterServer.Repo
 
+                # Sync the actual Stripe billing period so the DB end_date matches
+                # Stripe's first billing cycle (not the admin-set +30d from creation).
+                period_attrs = stripe_period_changeset_attrs(subscription_id)
+
                 changeset_attrs =
-                  %{setup_completed: true}
+                  %{setup_completed: true, subscription_status: "active"}
                   |> then(fn m ->
                     if subscription_id, do: Map.put(m, :stripe_subscription_id, subscription_id), else: m
                   end)
@@ -266,6 +270,7 @@ defmodule ClippsterServerWeb.StripeController do
                     if customer_id, do: Map.put(m, :stripe_customer_id, customer_id), else: m
                   end)
                   |> Map.put(:subscription_renewal_method, "stripe")
+                  |> Map.merge(period_attrs)
 
                 case org
                      |> Organization.subscription_changeset(changeset_attrs)
@@ -630,7 +635,7 @@ defmodule ClippsterServerWeb.StripeController do
   defp handle_event(%{type: "invoice.payment_succeeded", data: %{object: invoice}}) do
     IO.puts("[Stripe Webhook] Processing invoice.payment_succeeded")
 
-    stripe_subscription_id = safe_get(invoice, "subscription")
+    stripe_subscription_id = invoice_subscription_id(invoice)
     billing_reason = safe_get(invoice, "billing_reason")
     stripe_customer_id = safe_get(invoice, "customer")
 
@@ -644,7 +649,9 @@ defmodule ClippsterServerWeb.StripeController do
         handle_invoice_subscription_create_fallback(stripe_subscription_id, stripe_customer_id, invoice)
 
       true ->
-        IO.puts("[Stripe Webhook] Skipping invoice - billing_reason: #{billing_reason}")
+        IO.puts(
+          "[Stripe Webhook] Skipping invoice - billing_reason: #{billing_reason}, subscription_id: #{inspect(stripe_subscription_id)}"
+        )
     end
   end
 
@@ -652,7 +659,7 @@ defmodule ClippsterServerWeb.StripeController do
   defp handle_event(%{type: "invoice.payment_failed", data: %{object: invoice}}) do
     IO.puts("[Stripe Webhook] Processing invoice.payment_failed")
 
-    stripe_subscription_id = safe_get(invoice, "subscription")
+    stripe_subscription_id = invoice_subscription_id(invoice)
 
     if stripe_subscription_id do
       # Try user subscription first
@@ -879,6 +886,8 @@ defmodule ClippsterServerWeb.StripeController do
 
   # Handle subscription renewal from invoice.payment_succeeded
   defp handle_invoice_renewal(stripe_subscription_id, invoice) do
+    period_start_unix = invoice_period_start_unix(invoice)
+
     # Try user subscription first
     case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
       nil ->
@@ -892,7 +901,14 @@ defmodule ClippsterServerWeb.StripeController do
             )
 
           org ->
-            case ClippsterServer.OrganizationSubscriptions.renew_subscription(org.id) do
+            case ClippsterServer.OrganizationSubscriptions.renew_subscription(org.id,
+                   period_start_unix: period_start_unix
+                 ) do
+              {:ok, :already_renewed} ->
+                IO.puts(
+                  "[Stripe Webhook] Org #{org.id} already renewed for this period (period_start_unix=#{inspect(period_start_unix)}) - skipping"
+                )
+
               {:ok, _result} ->
                 IO.puts("[Stripe Webhook] Renewed org subscription for org #{org.id}")
 
@@ -902,7 +918,12 @@ defmodule ClippsterServerWeb.StripeController do
         end
 
       user ->
-        case Subscriptions.renew_subscription(user.id) do
+        case Subscriptions.renew_subscription(user.id, period_start_unix: period_start_unix) do
+          {:ok, :already_renewed} ->
+            IO.puts(
+              "[Stripe Webhook] User #{user.id} already renewed for this period (period_start_unix=#{inspect(period_start_unix)}) - skipping"
+            )
+
           {:ok, _result} ->
             IO.puts("[Stripe Webhook] Renewed subscription for user #{user.id}")
 
@@ -945,83 +966,149 @@ defmodule ClippsterServerWeb.StripeController do
     end
   end
 
-  # Fallback handler for subscription_create billing reason
-  # This ensures subscriptions are created even if checkout.session.completed webhook failed
+  # Fallback handler for subscription_create billing reason.
+  # This ensures subscriptions are created even if checkout.session.completed webhook failed.
+  # Tries (in order): existing user sub by sub_id, existing org sub by sub_id,
+  # user lookup by customer_id, org lookup by customer_id.
   defp handle_invoice_subscription_create_fallback(stripe_subscription_id, stripe_customer_id, _invoice) do
     IO.puts("[Stripe Webhook] Processing subscription_create fallback for #{stripe_subscription_id}")
 
-    # Check if subscription already exists (checkout.session.completed already handled it)
-    case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
-      nil ->
-        # Subscription not created yet - try to find user by customer ID and fetch subscription details from Stripe
-        case Subscriptions.get_user_by_stripe_customer(stripe_customer_id) do
-          nil ->
-            IO.puts(
-              "[Stripe Webhook] subscription_create fallback: No user found for customer #{stripe_customer_id}"
-            )
+    cond do
+      user = Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) ->
+        ensure_user_subscription_active(user)
 
-          user ->
-            # User exists but subscription wasn't created - fetch subscription from Stripe to get tier
-            case Stripe.Subscription.retrieve(stripe_subscription_id) do
-              {:ok, stripe_sub} ->
-                metadata = stripe_sub.metadata || %{}
-                tier = Map.get(metadata, "subscription_tier") || Map.get(metadata, :subscription_tier)
-                billing_interval = Map.get(metadata, "billing_interval") || Map.get(metadata, :billing_interval) || "monthly"
+      org = ClippsterServer.OrganizationSubscriptions.get_by_stripe_subscription(stripe_subscription_id) ->
+        ensure_org_setup_completed(org, stripe_subscription_id, stripe_customer_id)
 
-                if tier do
-                  IO.puts(
-                    "[Stripe Webhook] subscription_create fallback: Creating #{tier} subscription for user #{user.id}"
-                  )
+      user = Subscriptions.get_user_by_stripe_customer(stripe_customer_id) ->
+        create_user_subscription_from_stripe(user, stripe_subscription_id, stripe_customer_id)
 
-                  case Subscriptions.create_stripe_subscription(
-                         user.id,
-                         tier,
-                         stripe_subscription_id,
-                         stripe_customer_id,
-                         billing_interval
-                       ) do
-                    {:ok, _result} ->
-                      IO.puts(
-                        "[Stripe Webhook] subscription_create fallback: Successfully created subscription for user #{user.id}"
-                      )
+      org = ClippsterServer.OrganizationSubscriptions.get_by_stripe_customer(stripe_customer_id) ->
+        ensure_org_setup_completed(org, stripe_subscription_id, stripe_customer_id)
 
-                    {:error, reason} ->
-                      IO.puts(
-                        "[Stripe Webhook] subscription_create fallback: Failed to create subscription: #{inspect(reason)}"
-                      )
-                  end
-                else
-                  IO.puts(
-                    "[Stripe Webhook] subscription_create fallback: No tier in subscription metadata for user #{user.id}"
-                  )
-                end
+      true ->
+        IO.puts(
+          "[Stripe Webhook] subscription_create fallback: No user or org found for sub #{stripe_subscription_id} / customer #{stripe_customer_id}"
+        )
+    end
+  end
 
-              {:error, reason} ->
-                IO.puts(
-                  "[Stripe Webhook] subscription_create fallback: Failed to retrieve subscription from Stripe: #{inspect(reason)}"
-                )
-            end
-        end
+  defp ensure_user_subscription_active(user) do
+    if user.subscription_status != "active" do
+      IO.puts(
+        "[Stripe Webhook] subscription_create fallback: User #{user.id} has subscription but status is #{user.subscription_status}, activating..."
+      )
 
-      user ->
-        # Subscription already exists - verify it's active
-        if user.subscription_status != "active" do
+      case Subscriptions.reactivate_subscription(user.id) do
+        {:ok, _} ->
           IO.puts(
-            "[Stripe Webhook] subscription_create fallback: User #{user.id} has subscription but status is #{user.subscription_status}, activating..."
+            "[Stripe Webhook] subscription_create fallback: Reactivated subscription for user #{user.id}"
           )
 
-          # Reactivate the subscription
-          case Subscriptions.reactivate_subscription(user.id) do
-            {:ok, _} ->
-              IO.puts("[Stripe Webhook] subscription_create fallback: Reactivated subscription for user #{user.id}")
+        {:error, reason} ->
+          IO.puts(
+            "[Stripe Webhook] subscription_create fallback: Failed to reactivate: #{inspect(reason)}"
+          )
+      end
+    else
+      IO.puts(
+        "[Stripe Webhook] subscription_create fallback: Subscription already active for user #{user.id}"
+      )
+    end
+  end
+
+  defp create_user_subscription_from_stripe(user, stripe_subscription_id, stripe_customer_id) do
+    case Stripe.Subscription.retrieve(stripe_subscription_id) do
+      {:ok, stripe_sub} ->
+        metadata = stripe_sub.metadata || %{}
+        tier = Map.get(metadata, "subscription_tier") || Map.get(metadata, :subscription_tier)
+
+        billing_interval =
+          Map.get(metadata, "billing_interval") || Map.get(metadata, :billing_interval) ||
+            "monthly"
+
+        if tier do
+          IO.puts(
+            "[Stripe Webhook] subscription_create fallback: Creating #{tier} subscription for user #{user.id}"
+          )
+
+          case Subscriptions.create_stripe_subscription(
+                 user.id,
+                 tier,
+                 stripe_subscription_id,
+                 stripe_customer_id,
+                 billing_interval
+               ) do
+            {:ok, _result} ->
+              IO.puts(
+                "[Stripe Webhook] subscription_create fallback: Successfully created subscription for user #{user.id}"
+              )
 
             {:error, reason} ->
-              IO.puts("[Stripe Webhook] subscription_create fallback: Failed to reactivate: #{inspect(reason)}")
+              IO.puts(
+                "[Stripe Webhook] subscription_create fallback: Failed to create subscription: #{inspect(reason)}"
+              )
           end
         else
           IO.puts(
-            "[Stripe Webhook] subscription_create fallback: Subscription already active for user #{user.id}"
+            "[Stripe Webhook] subscription_create fallback: No tier in subscription metadata for user #{user.id}"
           )
+        end
+
+      {:error, reason} ->
+        IO.puts(
+          "[Stripe Webhook] subscription_create fallback: Failed to retrieve subscription from Stripe: #{inspect(reason)}"
+        )
+    end
+  end
+
+  # Org-side recovery for the subscription_create billing reason. Mirrors
+  # handle_org_setup_checkout: marks setup_completed, links sub/customer,
+  # syncs end_date with Stripe's actual billing period.
+  defp ensure_org_setup_completed(org, stripe_subscription_id, stripe_customer_id) do
+    cond do
+      org.setup_completed and org.subscription_status == "active" ->
+        IO.puts(
+          "[Stripe Webhook] subscription_create fallback: Org #{org.id} already set up and active"
+        )
+
+      true ->
+        IO.puts(
+          "[Stripe Webhook] subscription_create fallback: Completing org #{org.id} setup (status=#{org.subscription_status}, setup_completed=#{org.setup_completed})"
+        )
+
+        period_attrs = stripe_period_changeset_attrs(stripe_subscription_id)
+
+        attrs =
+          %{
+            setup_completed: true,
+            subscription_status: "active",
+            subscription_renewal_method: "stripe"
+          }
+          |> then(fn m ->
+            if stripe_subscription_id,
+              do: Map.put(m, :stripe_subscription_id, stripe_subscription_id),
+              else: m
+          end)
+          |> then(fn m ->
+            if stripe_customer_id,
+              do: Map.put(m, :stripe_customer_id, stripe_customer_id),
+              else: m
+          end)
+          |> Map.merge(period_attrs)
+
+        case org
+             |> ClippsterServer.Organizations.Organization.subscription_changeset(attrs)
+             |> ClippsterServer.Repo.update() do
+          {:ok, _updated} ->
+            IO.puts(
+              "[Stripe Webhook] subscription_create fallback: Org #{org.id} setup recovered, period synced"
+            )
+
+          {:error, reason} ->
+            IO.puts(
+              "[Stripe Webhook] subscription_create fallback: Failed to recover org #{org.id}: #{inspect(reason)}"
+            )
         end
     end
   end
@@ -1318,19 +1405,83 @@ defmodule ClippsterServerWeb.StripeController do
         IO.puts("[Stripe Webhook] Org not found for setup checkout: #{org_id}")
 
       org ->
+        # Sync end_date with Stripe's actual billing cycle so admin's initial
+        # +30d math doesn't drift from when the user actually paid.
+        period_attrs = stripe_period_changeset_attrs(stripe_subscription_id)
+
+        attrs =
+          %{
+            setup_completed: true,
+            stripe_subscription_id: stripe_subscription_id,
+            stripe_customer_id: stripe_customer_id,
+            subscription_renewal_method: "stripe",
+            subscription_status: "active"
+          }
+          |> Map.merge(period_attrs)
+
         case org
-             |> Organization.subscription_changeset(%{
-               setup_completed: true,
-               stripe_subscription_id: stripe_subscription_id,
-               stripe_customer_id: stripe_customer_id,
-               subscription_renewal_method: "stripe"
-             })
+             |> Organization.subscription_changeset(attrs)
              |> Repo.update() do
           {:ok, _updated} ->
-            IO.puts("[Stripe Webhook] Org #{org_id} setup completed, Stripe sub linked")
+            IO.puts(
+              "[Stripe Webhook] Org #{org_id} setup completed, Stripe sub linked, period synced: #{inspect(period_attrs)}"
+            )
 
           {:error, reason} ->
             IO.puts("[Stripe Webhook] Failed to complete org setup: #{inspect(reason)}")
+        end
+    end
+  end
+
+  # Fetches the current billing period from Stripe and returns changeset attrs
+  # with subscription_start_date/end_date. Returns %{} on any failure so callers
+  # can safely merge without breaking the rest of the update.
+  defp stripe_period_changeset_attrs(nil), do: %{}
+
+  defp stripe_period_changeset_attrs(stripe_subscription_id) do
+    case fetch_stripe_subscription_period(stripe_subscription_id) do
+      {:ok, {start_dt, end_dt}} ->
+        %{subscription_start_date: start_dt, subscription_end_date: end_dt}
+
+      {:error, reason} ->
+        IO.puts(
+          "[Stripe] Could not fetch subscription period for #{stripe_subscription_id}: #{inspect(reason)} - skipping date sync"
+        )
+
+        %{}
+    end
+  end
+
+  defp fetch_stripe_subscription_period(stripe_subscription_id) do
+    case Stripe.Subscription.retrieve(stripe_subscription_id) do
+      {:ok, sub} ->
+        case extract_subscription_period(sub) do
+          {start_unix, end_unix} when is_integer(start_unix) and is_integer(end_unix) ->
+            {:ok, {DateTime.from_unix!(start_unix), DateTime.from_unix!(end_unix)}}
+
+          _ ->
+            {:error, :no_period}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # In API 2026-01-28+ current_period_start/end moved from the Subscription root
+  # to each items.data[0]. Try root first (older APIs), then items.
+  defp extract_subscription_period(sub) do
+    case {safe_get(sub, "current_period_start"), safe_get(sub, "current_period_end")} do
+      {start_u, end_u} when is_integer(start_u) and is_integer(end_u) ->
+        {start_u, end_u}
+
+      _ ->
+        with items when not is_nil(items) <- safe_get(sub, "items"),
+             data when is_list(data) <- safe_get(items, "data"),
+             [first | _] <- data do
+          {safe_get(first, "current_period_start"), safe_get(first, "current_period_end")}
+        else
+          _ -> {nil, nil}
         end
     end
   end
@@ -1376,6 +1527,42 @@ defmodule ClippsterServerWeb.StripeController do
   defp get_subscription_amount("creator"), do: Decimal.new("54.99")
   defp get_subscription_amount("pro"), do: Decimal.new("204.99")
   defp get_subscription_amount(_), do: Decimal.new("0")
+
+  # Reads the subscription id from an invoice payload across Stripe API versions.
+  # API 2026-01-28+ removed the top-level invoice.subscription field and moved it to
+  # invoice.parent.subscription_details.subscription. Falls back to the old top-level
+  # field for older API versions / plain test payloads.
+  defp invoice_subscription_id(invoice) do
+    safe_get(invoice, "subscription") ||
+      case safe_get(invoice, "parent") do
+        nil ->
+          nil
+
+        parent ->
+          case safe_get(parent, "subscription_details") do
+            nil -> nil
+            details -> safe_get(details, "subscription")
+          end
+      end
+  end
+
+  # Reads the next-cycle period_start (Unix seconds) from an invoice payload.
+  # Used as the renewal anchor for the idempotency guard. Looks at the first
+  # line item's period.start (Stripe charges in advance, so this is the next
+  # cycle's start). Falls back to the top-level invoice.period_start.
+  defp invoice_period_start_unix(invoice) do
+    line_period_start =
+      with lines when not is_nil(lines) <- safe_get(invoice, "lines"),
+           data when is_list(data) <- safe_get(lines, "data"),
+           [first | _] <- data,
+           period when not is_nil(period) <- safe_get(first, "period") do
+        safe_get(period, "start")
+      else
+        _ -> nil
+      end
+
+    line_period_start || safe_get(invoice, "period_start")
+  end
 
   # Safely access a field from either a Stripe struct (dot notation) or a plain map (bracket access).
   # Stripe structs do NOT implement the Access behaviour, so obj["key"] crashes.
