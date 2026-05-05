@@ -451,7 +451,12 @@ defmodule ClippsterServerWeb.StripeController do
 
     case verify_and_construct_event(payload, signature, webhook_secret) do
       {:ok, event} ->
-        handle_event(event)
+        # stripity_stripe's struct converter silently drops fields not defined
+        # on the target struct (e.g. invoice.parent in Stripe API 2026-01-28+).
+        # We pass the raw decoded JSON alongside the struct event so handlers
+        # that need newer fields can read them directly.
+        raw_object = decode_raw_object(payload)
+        handle_event(event, raw_object)
         json(conn, %{received: true})
 
       {:error, reason} ->
@@ -462,6 +467,15 @@ defmodule ClippsterServerWeb.StripeController do
         |> json(%{error: "Webhook verification failed"})
     end
   end
+
+  defp decode_raw_object(payload) when is_binary(payload) do
+    case Jason.decode(payload) do
+      {:ok, %{"data" => %{"object" => obj}}} -> obj
+      _ -> nil
+    end
+  end
+
+  defp decode_raw_object(_), do: nil
 
   defp verify_and_construct_event(payload, signature, webhook_secret)
        when is_binary(webhook_secret) and byte_size(webhook_secret) > 0 do
@@ -493,7 +507,7 @@ defmodule ClippsterServerWeb.StripeController do
     }
   end
 
-  defp handle_event(%{type: "checkout.session.completed", data: %{object: session}}) do
+  defp handle_event(%{type: "checkout.session.completed", data: %{object: session}}, _raw) do
     IO.puts("[Stripe Webhook] Processing checkout.session.completed")
 
     metadata = safe_get(session, "metadata") || %{}
@@ -597,7 +611,7 @@ defmodule ClippsterServerWeb.StripeController do
   end
 
   # Handle subscription created via Stripe
-  defp handle_event(%{type: "customer.subscription.created", data: %{object: subscription}}) do
+  defp handle_event(%{type: "customer.subscription.created", data: %{object: subscription}}, _raw) do
     IO.puts("[Stripe Webhook] Processing customer.subscription.created")
 
     Appsignal.increment_counter("subscriptions.created", 1)
@@ -632,21 +646,25 @@ defmodule ClippsterServerWeb.StripeController do
   end
 
   # Handle successful invoice payment (subscription renewal or initial creation fallback)
-  defp handle_event(%{type: "invoice.payment_succeeded", data: %{object: invoice}}) do
+  defp handle_event(%{type: "invoice.payment_succeeded", data: %{object: invoice}}, raw_invoice) do
     IO.puts("[Stripe Webhook] Processing invoice.payment_succeeded")
 
-    stripe_subscription_id = invoice_subscription_id(invoice)
-    billing_reason = safe_get(invoice, "billing_reason")
-    stripe_customer_id = safe_get(invoice, "customer")
+    # Use the raw decoded JSON when available — stripity_stripe's struct
+    # converter drops fields it doesn't recognize (e.g. invoice.parent in API
+    # 2026-01-28+ where the subscription id moved there).
+    invoice_data = raw_invoice || invoice
+    stripe_subscription_id = invoice_subscription_id(invoice_data)
+    billing_reason = safe_get(invoice_data, "billing_reason")
+    stripe_customer_id = safe_get(invoice_data, "customer")
 
     cond do
       # Handle subscription renewals
       stripe_subscription_id && billing_reason in ["subscription_cycle", "subscription_update"] ->
-        handle_invoice_renewal(stripe_subscription_id, invoice)
+        handle_invoice_renewal(stripe_subscription_id, invoice_data)
 
       # Handle initial subscription creation as fallback (in case checkout.session.completed failed)
       stripe_subscription_id && billing_reason == "subscription_create" ->
-        handle_invoice_subscription_create_fallback(stripe_subscription_id, stripe_customer_id, invoice)
+        handle_invoice_subscription_create_fallback(stripe_subscription_id, stripe_customer_id, invoice_data)
 
       true ->
         IO.puts(
@@ -656,10 +674,11 @@ defmodule ClippsterServerWeb.StripeController do
   end
 
   # Handle failed invoice payment
-  defp handle_event(%{type: "invoice.payment_failed", data: %{object: invoice}}) do
+  defp handle_event(%{type: "invoice.payment_failed", data: %{object: invoice}}, raw_invoice) do
     IO.puts("[Stripe Webhook] Processing invoice.payment_failed")
 
-    stripe_subscription_id = invoice_subscription_id(invoice)
+    invoice_data = raw_invoice || invoice
+    stripe_subscription_id = invoice_subscription_id(invoice_data)
 
     if stripe_subscription_id do
       # Try user subscription first
@@ -707,7 +726,7 @@ defmodule ClippsterServerWeb.StripeController do
   end
 
   # Handle subscription deletion/cancellation
-  defp handle_event(%{type: "customer.subscription.deleted", data: %{object: subscription}}) do
+  defp handle_event(%{type: "customer.subscription.deleted", data: %{object: subscription}}, _raw) do
     IO.puts("[Stripe Webhook] Processing customer.subscription.deleted")
 
     Appsignal.increment_counter("subscriptions.deleted", 1)
@@ -770,7 +789,7 @@ defmodule ClippsterServerWeb.StripeController do
   end
 
   # Handle subscription update (tier change)
-  defp handle_event(%{type: "customer.subscription.updated", data: %{object: subscription}}) do
+  defp handle_event(%{type: "customer.subscription.updated", data: %{object: subscription}}, _raw) do
     IO.puts("[Stripe Webhook] Processing customer.subscription.updated")
 
     stripe_subscription_id = safe_get(subscription, "id")
@@ -878,11 +897,11 @@ defmodule ClippsterServerWeb.StripeController do
     end
   end
 
-  defp handle_event(%{type: event_type}) do
+  defp handle_event(%{type: event_type}, _raw) do
     IO.puts("[Stripe Webhook] Unhandled event type: #{event_type}")
   end
 
-  defp handle_event(_), do: :ok
+  defp handle_event(_, _raw), do: :ok
 
   # Handle subscription renewal from invoice.payment_succeeded
   defp handle_invoice_renewal(stripe_subscription_id, invoice) do

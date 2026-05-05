@@ -2,7 +2,7 @@
   <!-- shrink-0: parent is flex-col; without this the strip collapses and h-12 becomes a few pixels tall -->
   <div class="poi-segment-timeline shrink-0 border-t border-zinc-800 bg-zinc-900/70">
     <!-- Header -->
-    <div class="flex items-center justify-between px-3 py-1.5 border-b border-zinc-700/50">
+    <div class="flex items-center justify-between px-3 pt-3 pb-2 border-b border-zinc-700/50">
       <div class="flex items-center gap-2">
         <div class="text-xs font-semibold text-zinc-200">Time-Based Regions</div>
         <span class="text-[10px] text-zinc-500">{{ segments.length }} segment{{ segments.length !== 1 ? 's' : '' }}</span>
@@ -29,7 +29,7 @@
       <!-- Timeline track: fixed min height so filmstrip stays visible; flex parents cannot squash it -->
       <div 
         ref="timelineRef"
-        class="relative h-12 min-h-[3rem] shrink-0 bg-zinc-900/50 rounded-lg border border-zinc-800/50"
+        class="relative h-16 min-h-[4rem] shrink-0 bg-zinc-900/50 rounded-lg border border-zinc-800/50"
         @click="onTimelineClick"
       >
         <!-- Filmstrip background (with overflow-hidden for rounded corners) -->
