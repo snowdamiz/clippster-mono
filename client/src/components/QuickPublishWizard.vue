@@ -718,9 +718,12 @@
 
                     <!-- SUB-STATE: editing -->
                     <template v-else-if="subtitleSubState === 'editing' && wizardSubtitleSettings">
+                      <div class="build-dialog__subtitle-editing-note">
+                        Position the subtitles on the 16:9 preview, then adjust text, font, outline, color, and animation below.
+                      </div>
                       <div class="build-dialog__subtitle-editor">
 
-                        <!-- Left: plain 16:9 canvas with thumbnail + draggable subtitle -->
+                        <!-- 16:9 canvas with thumbnail + draggable subtitle -->
                         <div class="build-dialog__subtitle-canvas-col">
                           <div
                             ref="subtitleCanvasRef"
@@ -761,14 +764,20 @@
                           <p class="build-dialog__subtitle-canvas-label">Drag to reposition · corners to resize</p>
                         </div>
 
-                        <!-- Right: SubtitlePropertiesPanel -->
+                        <!-- Subtitle style/transcript editor -->
                         <div class="build-dialog__subtitle-panel">
+                          <div class="build-dialog__subtitle-panel-header">
+                            <span>Edit subtitles</span>
+                            <span>16:9</span>
+                          </div>
                           <SubtitlePropertiesPanel
+                            class="build-dialog__subtitle-panel-content"
                             variant="embedded"
                             :settings="wizardSubtitleSettings"
                             :segments="wizardTranscriptSegments"
                             :current-time="0"
                             @update-settings="(s: any) => onWizardSubtitleSettingsUpdate(s)"
+                            @delete="removeWizardSubtitles"
                           />
                         </div>
                       </div>
@@ -1144,7 +1153,16 @@
       :clip-start-time="clipStartTime"
       :clip-end-time="clipEndTime"
       :watermark-settings="watermarkSettings"
+      :subtitle-settings="subtitlesEnabled ? wizardSubtitleSettings : null"
+      :subtitle-position-override="wizardSubtitlePosition"
+      :transcript-words="subtitlesEnabled ? wizardTranscriptWords : []"
+      :transcript-segments="subtitlesEnabled ? wizardTranscriptSegments : []"
+      :clip-id="clip?.id ?? null"
+      :clip-text-overlay-json="clipTextOverlayRaw"
       @confirm="onManualConfigConfirm"
+      @subtitlePositionChange="onManualPoiSubtitlePositionChange"
+      @subtitleSettingsChange="onManualPoiSubtitleSettingsChange"
+      @clip-text-overlay-change="onClipTextOverlayChange"
     />
   </Teleport>
 </template>
@@ -1300,6 +1318,7 @@ const outputFormat = ref<'mp4' | 'mov'>('mp4');
 const manualFramingConfigs = ref<ManualFramingConfigs>({});
 const showManualPOIEditor = ref(false);
 const editingAspectRatio = ref<string>('9:16');
+const clipTextOverlayRaw = ref<string | null>(null);
 
 // Subtitles step
 const subtitlesEnabled = ref(false);
@@ -1309,7 +1328,7 @@ const selectedSubtitlePreset = ref<string | null>('neon-glow');
 const subtitleSubState = ref<'choosing' | 'transcribing' | 'editing'>('choosing');
 const wizardSubtitleSettings = ref<SubtitleSettings | null>(null);
 const wizardSubtitlePosition = ref<{ x: number; y: number; width?: number }>({ x: 50, y: 85, width: 80 });
-const wizardTranscriptSegments = ref<{ start: number; end: number; text: string }[]>([]);
+const wizardTranscriptSegments = ref<WhisperSegment[]>([]);
 const wizardTranscriptWords = ref<WordInfo[]>([]);
 const subtitleFirstFrameUrl = ref<string | null>(null);
 const subtitleTranscribeError = ref<string | null>(null);
@@ -1846,8 +1865,20 @@ async function chooseSubtitlesYes() {
     const { getTranscriptByProjectId, getTranscriptSegments } = await import('@/services/database');
     const transcript = await getTranscriptByProjectId(props.projectId);
     if (transcript) {
+      if (transcript.raw_json) {
+        const { parseTranscriptToWords } = await import('@/utils/timelineUtils');
+        wizardTranscriptWords.value = parseTranscriptToWords(transcript.raw_json);
+        wizardTranscriptSegments.value = parseWhisperSegmentsFromRawJson(transcript.raw_json);
+      }
       const segs = await getTranscriptSegments(transcript.id);
-      wizardTranscriptSegments.value = segs.map((s: any) => ({ start: s.start_time, end: s.end_time, text: s.text }));
+      if (wizardTranscriptSegments.value.length === 0) {
+        wizardTranscriptSegments.value = segs.map((s: any, index: number) => ({
+          id: s.id ?? index,
+          start: s.start_time,
+          end: s.end_time,
+          text: s.text,
+        }));
+      }
     }
   } catch (e) {
     console.warn('[QuickPublishWizard] Failed to load transcript segments after transcription', e);
@@ -1908,6 +1939,31 @@ function buildSubtitleSettingsFromPreset(presetId: string): SubtitleSettings {
   }
 }
 
+function parseWhisperSegmentsFromRawJson(rawJson: string): WhisperSegment[] {
+  try {
+    const parsed = JSON.parse(rawJson);
+    if (!Array.isArray(parsed?.segments)) return [];
+
+    return parsed.segments.map((segment: any, index: number) => ({
+      id: segment.id ?? index,
+      start: Number(segment.start) || 0,
+      end: Number(segment.end) || 0,
+      text: segment.text || '',
+      words: Array.isArray(segment.words)
+        ? segment.words.map((word: any) => ({
+            word: String(word.word || '').trim(),
+            start: Number(word.start) || 0,
+            end: Number(word.end) || 0,
+            confidence: word.confidence,
+          }))
+        : undefined,
+    }));
+  } catch (error) {
+    console.warn('[QuickPublishWizard] Failed to parse whisper segments:', error);
+    return [];
+  }
+}
+
 async function saveWizardSubtitleSettings() {
   if (!props.clip?.id || !wizardSubtitleSettings.value) return;
   const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } = await import('@/services/database/clips');
@@ -1919,6 +1975,14 @@ async function saveWizardSubtitleSettings() {
 function onWizardSubtitleSettingsUpdate(patch: Record<string, unknown>) {
   if (!wizardSubtitleSettings.value) return;
   wizardSubtitleSettings.value = { ...wizardSubtitleSettings.value, ...(patch as Partial<SubtitleSettings>) };
+}
+
+function removeWizardSubtitles() {
+  subtitlesEnabled.value = false;
+  wizardSubtitleSettings.value = null;
+  wizardTranscriptSegments.value = [];
+  wizardTranscriptWords.value = [];
+  subtitleSubState.value = 'choosing';
 }
 
 
@@ -1981,6 +2045,47 @@ function onManualConfigConfirm(config: ManualFramingConfig) {
     ...manualFramingConfigs.value,
     [ratio]: config,
   };
+}
+
+async function onManualPoiSubtitlePositionChange(position: { x: number; y: number; width?: number }) {
+  wizardSubtitlePosition.value = { ...position };
+  if (!props.clip?.id || !subtitlesEnabled.value) return;
+
+  try {
+    const { updateClipSubtitlePosition } = await import('@/services/database/clips');
+    await updateClipSubtitlePosition(props.clip.id, position.x, position.y, position.width);
+  } catch (error) {
+    console.warn('[QuickPublishWizard] Failed to save subtitle position from POI editor:', error);
+  }
+}
+
+async function onManualPoiSubtitleSettingsChange(settings: SubtitleSettings) {
+  wizardSubtitleSettings.value = { ...settings };
+  if (!props.clip?.id || !subtitlesEnabled.value) return;
+
+  try {
+    const { updateClipFullSubtitleSettings } = await import('@/services/database/clips');
+    await updateClipFullSubtitleSettings(props.clip.id, settings);
+  } catch (error) {
+    console.warn('[QuickPublishWizard] Failed to save subtitle settings from POI editor:', error);
+  }
+}
+
+function onClipTextOverlayChange(json: string | null) {
+  clipTextOverlayRaw.value = json;
+}
+
+async function loadClipTextOverlay() {
+  clipTextOverlayRaw.value = null;
+  if (!props.clip?.id) return;
+
+  try {
+    const { getClip } = await import('@/services/database/clips');
+    const row = await getClip(props.clip.id);
+    clipTextOverlayRaw.value = row?.clip_text_overlay ?? null;
+  } catch (error) {
+    console.warn('[QuickPublishWizard] Failed to load clip text overlay:', error);
+  }
 }
 
 // Intro/Outro dropdown functions
@@ -3503,6 +3608,7 @@ watch(
       wizardSubtitlePosition.value = { x: 50, y: 85, width: 80 };
       wizardTranscriptSegments.value = [];
       wizardTranscriptWords.value = [];
+      clipTextOverlayRaw.value = null;
       subtitleFirstFrameUrl.value = null;
       subtitleTranscribeError.value = null;
       wizardTranscription.reset();
@@ -3526,6 +3632,7 @@ watch(
         loadCreatorProfileData(),
         loadAvailableCampaigns(),
         loadAccounts(),
+        loadClipTextOverlay(),
       ]);
       console.warn('[QuickPublishWizard] All data loaded. intros:', intros.value.length, 'outros:', outros.value.length, 'campaigns:', availableCampaigns.value.length);
     }
@@ -5619,6 +5726,14 @@ onUnmounted(() => {
 }
 
 /* ===== Subtitles step: editing layout ===== */
+.build-dialog__subtitle-editing-note {
+  margin: -0.5rem 0 0;
+  color: var(--sidebar-text-muted, #71717a);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
 .build-dialog__subtitle-editor {
   display: flex;
   flex-direction: column;
@@ -5713,7 +5828,38 @@ onUnmounted(() => {
   width: 100%;
   border-radius: 8px;
   border: 1px solid var(--sidebar-border, #2d2d33);
+  background: var(--sidebar-surface, #18181b);
+  display: flex;
+  flex-direction: column;
+  height: clamp(260px, 36vh, 360px);
+  min-height: 260px;
   overflow: hidden;
+}
+
+.build-dialog__subtitle-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid var(--sidebar-border, #2d2d33);
+  color: var(--sidebar-text, #e4e4e7);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  flex-shrink: 0;
+}
+
+.build-dialog__subtitle-panel-header span:last-child {
+  color: var(--sidebar-text-muted, #71717a);
+  font-size: 0.6875rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 500;
+}
+
+.build-dialog__subtitle-panel-content {
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 /* ===== Subtitles step: preset cards ===== */
