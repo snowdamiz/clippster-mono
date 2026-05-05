@@ -422,6 +422,8 @@
         v-if="pendingMode === 'auto'"
         v-model="showRealtimeDialog"
         :prompts="prompts"
+        :creator-layout-eligible="creatorLayoutEligible"
+        :creator-layout-creator-name="creatorLayoutCreatorName"
         @confirm="handleRealtimeDetectionConfirm"
       />
 
@@ -466,6 +468,25 @@
                         {{ duration === 0 ? 'Entire' : `${duration} min` }}
                       </button>
                     </div>
+                  </div>
+
+                  <!-- Creator clip defaults (only when a matching local profile has saved defaults) -->
+                  <div v-if="creatorLayoutEligible" class="segment-dialog__field">
+                    <label class="segment-dialog__label">Creator layout</label>
+                    <label class="segment-dialog__checkbox-row">
+                      <input
+                        v-model="recordUseCreatorLayout"
+                        type="checkbox"
+                        class="segment-dialog__checkbox"
+                      />
+                      <span class="segment-dialog__checkbox-text">Use creator layout</span>
+                    </label>
+                    <p class="segment-dialog__hint">
+                      Apply framing, overlays, and subtitle defaults from
+                      <strong v-if="creatorLayoutCreatorName">{{ creatorLayoutCreatorName }}</strong
+                      ><span v-else>this creator's</span>
+                      profile to clips built from this recording session.
+                    </p>
                   </div>
                 </div>
 
@@ -558,7 +579,10 @@
     createMonitoredStreamer,
     deleteMonitoredStreamer,
     updateMonitoredStreamer,
+    getCreatorProfileByPlatformId,
+    type CreatorProfileWithLinks,
   } from '@/services/database';
+  import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
   import { extractMintId, searchPumpFunTokens, fetchTokenMetadataFromServer, type TokenSearchResult } from '@/services/pumpfun';
   import { extractChannelSlug, checkKickLivestream } from '@/services/kick';
   import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
@@ -608,6 +632,15 @@
   const showRealtimeDialog = ref(false);
   const pendingMode = ref<'auto' | 'record' | null>(null);
   const pendingStreamerSelection = ref<ExtendedStreamer | null>(null);
+  // Creator-layout opt-in for the auto-detect / record dialogs. Resolved from
+  // a local creator profile that matches the streamer's platform + platformId
+  // and has saved `clip_build_defaults`. Eligibility is shared between dialogs;
+  // the record dialog binds its own checkbox via `recordUseCreatorLayout`,
+  // while the realtime dialog manages its checkbox internally.
+  const pendingCreatorProfile = ref<CreatorProfileWithLinks | null>(null);
+  const creatorLayoutEligible = ref(false);
+  const creatorLayoutCreatorName = ref<string | null>(null);
+  const recordUseCreatorLayout = ref(false);
   const selectedDuration = ref<number>(5);
   const availableDurationsAuto = [3, 5, 10, 15, 30];
   const availableDurationsRecord = [3, 5, 10, 15, 30, 60, 0]; // 0 => Entire stream
@@ -1580,6 +1613,12 @@
     selectedPromptId.value = '';
     selectedPromptName.value = '';
     selectedPromptContent.value = '';
+    recordUseCreatorLayout.value = false;
+
+    // Resolve creator-layout eligibility for whichever dialog is about to open.
+    // Mirrors the StreamVods download flow: only local creator profiles with
+    // saved `clip_build_defaults` are eligible.
+    await resolveCreatorLayoutForStreamer(streamer);
 
     if (detectClips) {
       // Load prompts for real-time detection
@@ -1593,7 +1632,61 @@
     }
   }
 
-  async function handleRealtimeDetectionConfirm(data: { promptId: string; promptContent: string }) {
+  /**
+   * Look up a local creator profile that matches the streamer's platform +
+   * platformId and has saved `clip_build_defaults`, and stash it (plus
+   * eligibility flags) so the auto-detect and record dialogs can offer
+   * "Use creator layout" parity with the VOD download flow.
+   */
+  async function resolveCreatorLayoutForStreamer(streamer: ExtendedStreamer) {
+    pendingCreatorProfile.value = null;
+    creatorLayoutEligible.value = false;
+    creatorLayoutCreatorName.value = null;
+    try {
+      const linkPlatform = monitoredPlatformToCreatorLinkPlatform(streamer.platform);
+      if (linkPlatform && streamer.mintId) {
+        const profile = await getCreatorProfileByPlatformId(linkPlatform, streamer.mintId);
+        if (profile && parseCreatorClipBuildDefaults(profile.clip_build_defaults ?? null)) {
+          pendingCreatorProfile.value = profile;
+          creatorLayoutEligible.value = true;
+          creatorLayoutCreatorName.value = profile.name || null;
+        }
+      }
+    } catch (err) {
+      console.warn('[LiveClip] Failed to look up creator layout for streamer:', err);
+    }
+  }
+
+  /**
+   * Map the title-cased `SupportedLivestreamPlatform` used by the live-stream
+   * monitor to the lower-cased `CreatorPlatformLink['platform']` enum.
+   */
+  function monitoredPlatformToCreatorLinkPlatform(
+    platform: Platform
+  ): 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter' | null {
+    switch (platform) {
+      case 'PumpFun':
+        return 'pumpfun';
+      case 'Kick':
+        return 'kick';
+      case 'Twitch':
+        return 'twitch';
+      case 'YouTube':
+        return 'YouTube';
+      case 'Rumble':
+        return 'rumble';
+      case 'Twitter':
+        return 'twitter';
+      default:
+        return null;
+    }
+  }
+
+  async function handleRealtimeDetectionConfirm(data: {
+    promptId: string;
+    promptContent: string;
+    useCreatorLayout: boolean;
+  }) {
     if (!pendingStreamerSelection.value) return;
 
     const streamer = pendingStreamerSelection.value;
@@ -1618,11 +1711,22 @@
     // short segments into the 30s transcript detector.
     await updateSegmentDuration(streamer, 1);
 
+    // Only seed creator layout if the dialog confirmed opt-in AND we resolved
+    // a profile for this streamer. The dialog already gates the flag on
+    // eligibility, but defensively double-check so a stale ref can't leak in.
+    const applyCreatorLayout =
+      data.useCreatorLayout &&
+      creatorLayoutEligible.value &&
+      !!pendingCreatorProfile.value?.id;
+    const creatorProfileId = applyCreatorLayout ? pendingCreatorProfile.value!.id : undefined;
+
     await startMonitoring([streamer], {
       mode: 'realtime-detect',
       segmentDurationMinutes: 1,
       promptId: data.promptId || undefined,
       promptContent: data.promptContent || undefined,
+      creatorProfileId,
+      applyCreatorClipLayout: applyCreatorLayout,
     });
 
     // Move streamer to top of list
@@ -1651,7 +1755,8 @@
     streamer: ExtendedStreamer,
     detectClips: boolean,
     durationOverride?: number,
-    prompt?: { promptId?: string; promptContent?: string }
+    prompt?: { promptId?: string; promptContent?: string },
+    creatorLayout?: { creatorProfileId?: string; applyCreatorClipLayout?: boolean }
   ) {
     if (!isDetectingAny.value) {
       clearLogs();
@@ -1671,6 +1776,8 @@
         : (segmentDurationMinutes ?? streamer.segmentDurationMinutes ?? 5),
       promptId: prompt?.promptId,
       promptContent: prompt?.promptContent,
+      creatorProfileId: creatorLayout?.creatorProfileId,
+      applyCreatorClipLayout: creatorLayout?.applyCreatorClipLayout,
     });
 
     const index = streamers.value.findIndex((s) => s.id === streamer.id);
@@ -1806,10 +1913,30 @@
       }
     }
 
-    await executeStartStreamer(streamer, detectClips, selectedDuration.value, {
-      promptId: selectedPromptId.value || undefined,
-      promptContent: selectedPromptContent.value || undefined,
-    });
+    // For record mode the inline dialog binds `recordUseCreatorLayout` directly.
+    // Defensively re-check eligibility so a stale ref can't leak in. Auto-detect
+    // mode has its own checkbox inside RealtimeDetectionDialog and follows a
+    // different code path, so we only honor the record opt-in here.
+    const applyCreatorLayout =
+      !detectClips &&
+      recordUseCreatorLayout.value &&
+      creatorLayoutEligible.value &&
+      !!pendingCreatorProfile.value?.id;
+    const creatorProfileId = applyCreatorLayout ? pendingCreatorProfile.value!.id : undefined;
+
+    await executeStartStreamer(
+      streamer,
+      detectClips,
+      selectedDuration.value,
+      {
+        promptId: selectedPromptId.value || undefined,
+        promptContent: selectedPromptContent.value || undefined,
+      },
+      {
+        creatorProfileId,
+        applyCreatorClipLayout: applyCreatorLayout,
+      }
+    );
   }
 
   function closeSegmentDialog() {
@@ -2979,6 +3106,35 @@
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--sidebar-text);
+  }
+
+  /* ===== Creator-layout checkbox ===== */
+  .segment-dialog__checkbox-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .segment-dialog__checkbox {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--sidebar-accent);
+    cursor: pointer;
+    margin: 0;
+  }
+
+  .segment-dialog__checkbox-text {
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+  }
+
+  .segment-dialog__hint {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.4;
   }
 
   /* ===== Duration Grid ===== */

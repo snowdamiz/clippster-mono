@@ -10,6 +10,7 @@ import { getOrCreateManualSession } from '@/services/database/clip-detection-ses
 import { createProject } from '@/services/database/projects';
 import { createRawVideo } from '@/services/database/raw-videos';
 import { createTranscript, createTranscriptSegment } from '@/services/database/transcripts';
+import { seedCreatorClipLayoutOnProject } from '@/composables/useCreatorClipDefaults';
 import type { SupportedLivestreamPlatform } from '@/types/livestream';
 import { API_BASE } from '@/lib/apiBase';
 
@@ -760,6 +761,10 @@ export function useRealtimeClipDetection() {
     mintId?: string;
     prompt: string;
     segments?: SegmentInfo[];
+    /** Local creator profile to associate with the auto-generated project. */
+    creatorProfileId?: string;
+    /** When true, seed `active_vod_preset_config` from the creator's clip_build_defaults. */
+    applyCreatorClipLayout?: boolean;
   }) {
     if (state.value.isActive) {
       // Don't silently no-op: the caller almost always thinks they just kicked off
@@ -793,6 +798,18 @@ export function useRealtimeClipDetection() {
       undefined,
       options.platform
     );
+
+    // If the user opted into "Use creator layout" in the realtime detection
+    // dialog, seed `active_vod_preset_config` and link `creator_profile_id`
+    // on the freshly-created project. Mirrors the VOD download flow so
+    // detected clips inherit the creator's framing/subtitle defaults.
+    if (options.applyCreatorClipLayout && options.creatorProfileId) {
+      await seedCreatorClipLayoutOnProject(
+        projectId,
+        options.creatorProfileId,
+        options.applyCreatorClipLayout
+      );
+    }
 
     state.value.isActive = true;
     state.value.sessionId = options.sessionId;

@@ -124,6 +124,10 @@ type StartOptions = {
   segmentDurationMinutes?: number;
   promptId?: string;
   promptContent?: string;
+  /** Local creator profile to seed the auto-detect project's clip layout from. */
+  creatorProfileId?: string;
+  /** When true, persist matched creator's clip_build_defaults into active_vod_preset_config. */
+  applyCreatorClipLayout?: boolean;
 };
 
 const DEFAULT_START_OPTIONS: StartOptions = { mode: 'record' };
@@ -1809,6 +1813,36 @@ export function useLivestreamMonitoring() {
       );
 
       const realtimeMode = isRealtimeDetectMode(options.mode);
+
+      // Record-mode parity with the VOD download flow's "Use creator layout":
+      // when the user opted in via the record dialog, seed the recording
+      // project's `active_vod_preset_config` from the matched creator profile's
+      // `clip_build_defaults` so manual clips built from this session inherit
+      // the framing/subtitle defaults. Realtime mode has its own dedicated
+      // auto-clip project that's seeded inside useRealtimeClipDetection, so we
+      // skip the recording project there to avoid clobbering an existing
+      // parent project that's reused across multiple sessions per day.
+      if (
+        !realtimeMode &&
+        options.applyCreatorClipLayout &&
+        options.creatorProfileId
+      ) {
+        try {
+          const { seedCreatorClipLayoutOnProject } = await import(
+            './useCreatorClipDefaults'
+          );
+          await seedCreatorClipLayoutOnProject(
+            sessionInfo.projectId,
+            options.creatorProfileId,
+            true
+          );
+        } catch (err) {
+          console.warn(
+            '[LiveMonitor] Failed to seed creator clip layout on recording project:',
+            err
+          );
+        }
+      }
       // Realtime detection consumes short recording chunks and makes one AI decision
       // per Whisper batch. Record-only can keep the user's configured segment size.
       const requestedDuration = realtimeMode
@@ -2001,6 +2035,8 @@ export function useLivestreamMonitoring() {
             mintId: streamer.mintId,
             prompt: options.promptContent || 'Detect viral moments',
             segments: activeSessions.value.get(streamer.id)?.segments || [],
+            creatorProfileId: options.creatorProfileId,
+            applyCreatorClipLayout: options.applyCreatorClipLayout,
           });
 
           addActivityLog({
