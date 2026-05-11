@@ -229,6 +229,8 @@ pub struct AudioTrack {
 
     pub end_time: f64,
 
+    pub trim_start: Option<f64>,
+
     pub volume: f64,
 
     pub is_muted: bool,
@@ -2981,6 +2983,8 @@ pub async fn export_video_editor_project(
 
             let fade_out = audio.fade_out.unwrap_or(0.0);
 
+            let trim_start = audio.trim_start.unwrap_or(0.0).max(0.0);
+
             // Build audio filter chain
 
             let mut extras = String::new();
@@ -3176,13 +3180,13 @@ pub async fn export_video_editor_project(
                 let delay_ms = (audio.start_time * 1000.0) as i64;
 
                 filters.push(format!(
-                    "[{}:a]atrim=duration={},asetpts=PTS-STARTPTS{},adelay={}|{}:all=1[a{}]",
-                    audio_index, duration, extras, delay_ms, delay_ms, i
+                    "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{},adelay={}|{}:all=1[a{}]",
+                    audio_index, trim_start, duration, extras, delay_ms, delay_ms, i
                 ));
             } else {
                 filters.push(format!(
-                    "[{}:a]atrim=duration={},asetpts=PTS-STARTPTS{}[a{}]",
-                    audio_index, duration, extras, i
+                    "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}[a{}]",
+                    audio_index, trim_start, duration, extras, i
                 ));
             }
 

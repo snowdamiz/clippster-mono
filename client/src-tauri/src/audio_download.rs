@@ -6,6 +6,21 @@ use tauri::Emitter;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
+#[cfg(target_os = "windows")]
+#[allow(unused_imports)]
+use std::os::windows::process::CommandExt;
+
+/// On Windows, set CREATE_NO_WINDOW flag to prevent a visible console window.
+#[cfg(target_os = "windows")]
+fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command {
+    cmd.creation_flags(0x08000000) // CREATE_NO_WINDOW
+}
+
+#[cfg(not(target_os = "windows"))]
+fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command {
+    cmd
+}
+
 static ACTIVE_AUDIO_DOWNLOADS: Lazy<Mutex<std::collections::HashMap<String, bool>>> = 
     Lazy::new(|| Mutex::new(std::collections::HashMap::new()));
 static ACTIVE_AUDIO_DOWNLOAD_CANCELLERS: Lazy<Mutex<std::collections::HashMap<String, oneshot::Sender<()>>>> = 
@@ -127,12 +142,7 @@ pub async fn download_youtube_audio(
     
     tokio::spawn(async move {
         let mut cmd = tokio::process::Command::new(&ytdlp_path);
-        
-        #[cfg(target_os = "windows")]
-        {
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
-        }
+        no_window(&mut cmd);
         
         let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
             .parent()
@@ -424,7 +434,10 @@ async fn extract_audio_metadata(file_path: &str) -> Option<AudioMetadata> {
         Err(_) => return None,
     };
 
-    let output = tokio::process::Command::new(&ffprobe_path)
+    let mut cmd = tokio::process::Command::new(&ffprobe_path);
+    no_window(&mut cmd);
+
+    let output = cmd
         .args(&[
             "-v", "quiet",
             "-print_format", "json",

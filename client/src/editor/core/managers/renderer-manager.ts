@@ -178,6 +178,7 @@ interface TauriAudioTrack {
 	file_path: string;
 	start_time: number;
 	end_time: number;
+	trim_start: number;
 	volume: number;
 	is_muted: boolean;
 	speed: number;
@@ -754,6 +755,7 @@ export class RendererManager {
 					file_path: filePath,
 					start_time: audioEl.startTime,
 					end_time: audioEl.startTime + audioEl.duration,
+					trim_start: audioEl.trimStart ?? 0,
 					volume: audioEl.volume ?? 1,
 					is_muted: audioEl.muted ?? false,
 					speed: audioEl.speed ?? 1,

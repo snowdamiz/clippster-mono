@@ -285,6 +285,10 @@
   padding: 0;
 }
 
+#root .clipper-public-profile-page .org-card--about .org-card__body {
+  padding: 1.25rem;
+}
+
 /* About grid (inside org-card) */
 #root .clipper-public-profile-page .about-grid {
   display: grid;
@@ -1212,6 +1216,10 @@
     padding: 0.875rem 1rem;
   }
 
+  #root .clipper-public-profile-page .org-card--about .org-card__body {
+    padding: 0.875rem 1rem;
+  }
+
   #root .clipper-public-profile-page .org-sidebar {
     gap: 0.875rem;
   }
@@ -1358,6 +1366,10 @@
   #root .clipper-public-profile-page .org-card__body {
     padding: 0.75rem 0.875rem;
     font-size: 0.8125rem;
+  }
+
+  #root .clipper-public-profile-page .org-card--about .org-card__body {
+    padding: 0.75rem 0.875rem;
   }
 
   #root .clipper-public-profile-page .org-sidebar {
