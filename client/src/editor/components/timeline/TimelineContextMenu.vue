@@ -3,9 +3,12 @@ import { ref, computed, watch, nextTick, onUnmounted } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { invokeAction } from "../../lib/actions";
+import { useToast } from "@/composables/useToast";
+import type { TimelineElement } from "../../types/timeline";
 import {
 	Scissors,
 	Copy,
+	Download,
 	Trash2,
 	ClipboardPaste,
 	VolumeX,
@@ -37,8 +40,10 @@ const emit = defineEmits<{
 
 const { editor } = useEditor();
 const { selectElement, isElementSelected, selectAllInTrack } = useElementSelection();
+const { showToast } = useToast();
 
 const hasElement = computed(() => !!props.elementRef);
+const isExportingSegment = ref(false);
 
 const canUndo = computed(() => editor.command.canUndo());
 const canRedo = computed(() => editor.command.canRedo());
@@ -50,6 +55,13 @@ const elementType = computed(() => {
 	if (!track) return null;
 	const element = track.elements.find((el: { id: string }) => el.id === props.elementRef!.elementId);
 	return element?.type ?? null;
+});
+
+const targetElement = computed<TimelineElement | null>(() => {
+	if (!props.elementRef) return null;
+	const track = editor.timeline.getTrackById({ trackId: props.elementRef.trackId });
+	if (!track) return null;
+	return (track.elements.find((el: { id: string }) => el.id === props.elementRef!.elementId) as TimelineElement | undefined) ?? null;
 });
 
 const isVideoElement = computed(() => elementType.value === "video");
@@ -258,6 +270,62 @@ async function handleReplaceMedia() {
 	};
 	input.click();
 }
+
+async function handleExportSegment() {
+	const element = targetElement.value;
+	const project = editor.project.getActiveOrNull();
+	if (!element || !project || isExportingSegment.value) return;
+
+	emit("close");
+	isExportingSegment.value = true;
+	showToast("Exporting selected segment...", "info", "projects");
+
+	try {
+		const exportId = `editor-segment-export-${Date.now()}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+		const result = await editor.project.export({
+			options: {
+				format: "mp4",
+				quality: "high",
+				fps: project.settings?.fps ?? 30,
+				includeAudio: true,
+				canvasSize: project.settings.canvasSize,
+				timeRange: {
+					startTime: element.startTime,
+					endTime: element.startTime + element.duration,
+				},
+				exportId,
+			},
+		});
+
+		if (!result.success || !result.outputPath) {
+			throw new Error(result.error || "Segment export failed");
+		}
+
+		const { save } = await import("@tauri-apps/plugin-dialog");
+		const { invoke } = await import("@tauri-apps/api/core");
+		const defaultName = `${(element.name || "segment").replace(/[^a-zA-Z0-9-_]/g, "_")}.mp4`;
+		const savePath = await save({
+			defaultPath: defaultName,
+			filters: [{ name: "Video", extensions: ["mp4"] }],
+		});
+
+		if (savePath) {
+			await invoke("copy_clip_to_destination", {
+				sourcePath: result.outputPath,
+				destinationPath: savePath,
+			});
+			showToast(`Segment saved to ${savePath}`, "success", "projects");
+		} else {
+			showToast("Segment exported to Built Clips", "success", "projects");
+		}
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Failed to export segment";
+		console.error("[TimelineContextMenu] Failed to export segment:", error);
+		showToast(message, "error", "projects");
+	} finally {
+		isExportingSegment.value = false;
+	}
+}
 </script>
 
 <template>
@@ -374,6 +442,16 @@ async function handleReplaceMedia() {
 					<MousePointerClick class="size-3.5" />
 					Select all in track
 					<span class="ml-auto text-zinc-500">Ctrl+A</span>
+				</button>
+
+				<button
+					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-white/10"
+					:class="isExportingSegment ? 'text-zinc-600 cursor-wait' : 'text-zinc-300'"
+					:disabled="isExportingSegment"
+					@click="handleExportSegment"
+				>
+					<Download class="size-3.5" />
+					{{ isExportingSegment ? 'Exporting segment...' : 'Export segment' }}
 				</button>
 
 				<!-- Layer ordering -->

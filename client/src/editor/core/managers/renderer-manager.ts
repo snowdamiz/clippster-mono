@@ -276,6 +276,54 @@ interface BrandingExportData {
 	outroDuration: number | null;
 }
 
+type ExportTimeRange = NonNullable<ExportOptions["timeRange"]>;
+
+function normalizeExportTimeRange(
+	timeRange: ExportOptions["timeRange"],
+	fullDuration: number,
+): ExportTimeRange | null {
+	if (!timeRange) return null;
+	const startTime = Math.max(0, Math.min(timeRange.startTime, fullDuration));
+	const endTime = Math.max(0, Math.min(timeRange.endTime, fullDuration));
+	if (endTime <= startTime) return null;
+	return { startTime, endTime };
+}
+
+function getClippedTimelineSpan(
+	startTime: number,
+	endTime: number,
+	timeRange: ExportTimeRange | null,
+	speed = 1,
+): { startTime: number; endTime: number; sourceOffset: number; sourceEndOffset: number } | null {
+	if (!timeRange) {
+		return { startTime, endTime, sourceOffset: 0, sourceEndOffset: 0 };
+	}
+
+	const clippedStart = Math.max(startTime, timeRange.startTime);
+	const clippedEnd = Math.min(endTime, timeRange.endTime);
+	if (clippedEnd <= clippedStart) return null;
+
+	return {
+		startTime: clippedStart - timeRange.startTime,
+		endTime: clippedEnd - timeRange.startTime,
+		sourceOffset: (clippedStart - startTime) * speed,
+		sourceEndOffset: (endTime - clippedEnd) * speed,
+	};
+}
+
+function clipOverlaySpan<T extends { start_time: number; end_time: number }>(
+	overlay: T,
+	timeRange: ExportTimeRange | null,
+): T | null {
+	const clip = getClippedTimelineSpan(overlay.start_time, overlay.end_time, timeRange);
+	if (!clip) return null;
+	return {
+		...overlay,
+		start_time: clip.startTime,
+		end_time: clip.endTime,
+	};
+}
+
 export class RendererManager {
 	private renderTree: RootNode | null = null;
 	private listeners = new Set<() => void>();
@@ -359,9 +407,15 @@ export class RendererManager {
 				return { success: false, error: "No active project" };
 			}
 
-			const duration = this.editor.timeline.getTotalDuration();
-			if (duration === 0) {
+			const fullDuration = this.editor.timeline.getTotalDuration();
+			if (fullDuration === 0) {
 				return { success: false, error: "Project is empty" };
+			}
+
+			const timeRange = normalizeExportTimeRange(options.timeRange, fullDuration);
+			const duration = timeRange ? timeRange.endTime - timeRange.startTime : fullDuration;
+			if (duration <= 0) {
+				return { success: false, error: "Selected segment is empty" };
 			}
 
 			const canvasSize = options.canvasSize ?? activeProject.settings.canvasSize;
@@ -371,7 +425,8 @@ export class RendererManager {
 			const appDataDir = await invoke<string>("get_app_data_dir");
 			const timestamp = Date.now();
 			const sanitizedName = activeProject.metadata.name.replace(/[^a-zA-Z0-9-_]/g, "_");
-			const fileName = `${sanitizedName}_${timestamp}.${extension}`;
+			const rangeSuffix = timeRange ? "_segment" : "";
+			const fileName = `${sanitizedName}${rangeSuffix}_${timestamp}.${extension}`;
 			const outputPath = `${appDataDir}/built_clips/${fileName}`;
 
 			// Ensure the built_clips directory exists
@@ -425,6 +480,7 @@ export class RendererManager {
 				mediaAssets,
 				outputPath,
 				duration,
+				timeRange,
 				fps: exportFps,
 				canvasSize,
 				textOverlays,
@@ -478,6 +534,7 @@ export class RendererManager {
 		mediaAssets,
 		outputPath,
 		duration,
+		timeRange,
 		fps,
 		canvasSize,
 		textOverlays,
@@ -489,6 +546,7 @@ export class RendererManager {
 		mediaAssets: MediaAsset[];
 		outputPath: string;
 		duration: number;
+		timeRange: ExportTimeRange | null;
 		fps: number;
 		canvasSize: { width: number; height: number };
 		textOverlays: TauriTextOverlay[];
@@ -539,8 +597,11 @@ export class RendererManager {
 
 				if (isImage) {
 					const imgEl = el as ImageElement;
-					const start_time = imgEl.startTime;
-					const end_time = imgEl.startTime + imgEl.duration;
+					const clip = getClippedTimelineSpan(imgEl.startTime, imgEl.startTime + imgEl.duration, timeRange);
+					if (!clip) continue;
+
+					const start_time = clip.startTime;
+					const end_time = clip.endTime;
 					const source: TauriVideoSource = {
 						source_path: sourcePath,
 						start_time,
@@ -611,14 +672,22 @@ export class RendererManager {
 					});
 				} else {
 					const videoEl = el as VideoElement;
-					const start_time = videoEl.startTime;
-					const end_time = videoEl.startTime + videoEl.duration;
+					const clip = getClippedTimelineSpan(
+						videoEl.startTime,
+						videoEl.startTime + videoEl.duration,
+						timeRange,
+						videoEl.speed ?? 1,
+					);
+					if (!clip) continue;
+
+					const start_time = clip.startTime;
+					const end_time = clip.endTime;
 					const source: TauriVideoSource = {
 						source_path: sourcePath,
 						start_time,
 						end_time,
-						trim_start: videoEl.trimStart || null,
-						trim_end: videoEl.trimEnd || null,
+						trim_start: (videoEl.trimStart ?? 0) + clip.sourceOffset || null,
+						trim_end: videoEl.trimEnd ? videoEl.trimEnd - clip.sourceEndOffset : null,
 						opacity: videoEl.opacity ?? 1,
 						scale: videoEl.transform?.scale ?? 1,
 						position_x: videoEl.transform?.position?.x ?? 0,
@@ -716,18 +785,28 @@ export class RendererManager {
 				for (const el of track.elements) {
 					const effectEl = el as EffectElement;
 					if (!effectEl.enabled) continue;
+					const clip = getClippedTimelineSpan(effectEl.startTime, effectEl.startTime + effectEl.duration, timeRange);
+					if (!clip) continue;
 					effectOverlays.push({
 						effect_type: effectEl.effectType,
 						enabled: effectEl.enabled,
 						intensity: effectEl.intensity,
 						params: effectEl.params,
-						start_time: effectEl.startTime,
-						end_time: effectEl.startTime + effectEl.duration,
+						start_time: clip.startTime,
+						end_time: clip.endTime,
 					});
 				}
 			} else if (track.type === "audio") {
 				for (const el of track.elements) {
 					const audioEl = el as AudioElement;
+					const clip = getClippedTimelineSpan(
+						audioEl.startTime,
+						audioEl.startTime + audioEl.duration,
+						timeRange,
+						audioEl.speed ?? 1,
+					);
+					if (!clip) continue;
+
 					let filePath: string | null = null;
 
 					if (audioEl.sourceType === "upload") {
@@ -753,9 +832,9 @@ export class RendererManager {
 
 				audioTracks.push({
 					file_path: filePath,
-					start_time: audioEl.startTime,
-					end_time: audioEl.startTime + audioEl.duration,
-					trim_start: audioEl.trimStart ?? 0,
+					start_time: clip.startTime,
+					end_time: clip.endTime,
+					trim_start: (audioEl.trimStart ?? 0) + clip.sourceOffset,
 					volume: audioEl.volume ?? 1,
 					is_muted: audioEl.muted ?? false,
 					speed: audioEl.speed ?? 1,
@@ -789,12 +868,16 @@ export class RendererManager {
 					const incomingId = pair.incoming.id;
 					const targetIdx = videoSourceElementIndex.get(incomingId);
 					if (targetIdx === undefined || targetIdx <= 0) continue;
+					const junctionTime = timeRange
+						? pair.incoming.startTime - timeRange.startTime
+						: pair.incoming.startTime;
+					if (junctionTime < 0 || junctionTime > duration) continue;
 
 					transitionData.push({
 						transition_type: t.type,
 						duration: t.duration,
 						target_element_index: targetIdx,
-						junction_time: pair.incoming.startTime,
+						junction_time: junctionTime,
 					});
 				}
 			}
@@ -806,6 +889,12 @@ export class RendererManager {
 		// If an intro is present, the cover timestamp needs to be offset by the intro duration
 		// so that FFmpeg extracts the frame from the main clip content, not the intro
 		let adjustedCoverTimestamp: number | null = coverTimestamp ?? null;
+		if (adjustedCoverTimestamp !== null && timeRange) {
+			adjustedCoverTimestamp =
+				adjustedCoverTimestamp >= timeRange.startTime && adjustedCoverTimestamp <= timeRange.endTime
+					? adjustedCoverTimestamp - timeRange.startTime
+					: Math.min(1.0, Math.max(0.05, duration / 2));
+		}
 		if (adjustedCoverTimestamp !== null && brandingExport.introDuration) {
 			adjustedCoverTimestamp += brandingExport.introDuration;
 		}
@@ -813,8 +902,12 @@ export class RendererManager {
 		return {
 			video_sources: videoSources,
 			audio_tracks: audioTracks,
-			text_overlays: [...textOverlays, ...captionOverlays],
-			sticker_overlays: stickerOverlays,
+			text_overlays: [...textOverlays, ...captionOverlays]
+				.map((overlay) => clipOverlaySpan(overlay, timeRange))
+				.filter((overlay): overlay is TauriTextOverlay => overlay !== null),
+			sticker_overlays: stickerOverlays
+				.map((overlay) => clipOverlaySpan(overlay, timeRange))
+				.filter((overlay): overlay is TauriStickerOverlay => overlay !== null),
 			effect_overlays: effectOverlays,
 			transitions: transitionData.length > 0 ? transitionData : null,
 			output_path: outputPath,
