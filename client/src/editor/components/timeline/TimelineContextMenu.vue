@@ -23,10 +23,6 @@ import {
 	Snowflake,
 	ArrowLeftRight,
 	RefreshCw,
-	ArrowUp,
-	ArrowDown,
-	ChevronsUp,
-	ChevronsDown,
 } from "lucide-vue-next";
 
 const props = defineProps<{
@@ -216,16 +212,6 @@ function handleToggleReverse() {
 		trackId: props.elementRef.trackId,
 		elementId: props.elementRef.elementId,
 		updates: { reversed: !isReversed.value } as any,
-	});
-	emit("close");
-}
-
-function handleReorderElement(direction: "front" | "back" | "forward" | "backward") {
-	if (!props.elementRef) return;
-	editor.timeline.reorderElement({
-		trackId: props.elementRef.trackId,
-		elementId: props.elementRef.elementId,
-		direction,
 	});
 	emit("close");
 }
@@ -452,46 +438,6 @@ async function handleExportSegment() {
 				>
 					<Download class="size-3.5" />
 					{{ isExportingSegment ? 'Exporting segment...' : 'Export segment' }}
-				</button>
-
-				<!-- Layer ordering -->
-				<div class="mx-2 my-1 h-px bg-white/10" />
-
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="handleReorderElement('front')"
-					title="Move to top layer"
-				>
-					<ChevronsUp class="size-3.5" />
-					Bring to Front
-					<span class="ml-auto text-zinc-500">Ctrl+Shift+]</span>
-				</button>
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="handleReorderElement('forward')"
-					title="Move up one layer"
-				>
-					<ArrowUp class="size-3.5" />
-					Bring Forward
-					<span class="ml-auto text-zinc-500">Ctrl+]</span>
-				</button>
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="handleReorderElement('backward')"
-					title="Move down one layer"
-				>
-					<ArrowDown class="size-3.5" />
-					Send Backward
-					<span class="ml-auto text-zinc-500">Ctrl+[</span>
-				</button>
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="handleReorderElement('back')"
-					title="Move to bottom layer"
-				>
-					<ChevronsDown class="size-3.5" />
-					Send to Back
-					<span class="ml-auto text-zinc-500">Ctrl+Shift+[</span>
 				</button>
 
 				<div class="mx-2 my-1 h-px bg-white/10" />

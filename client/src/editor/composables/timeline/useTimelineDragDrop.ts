@@ -5,8 +5,9 @@
  * Uses pointer-event-based drag (via usePointerDrag) for intra-webview drags.
  * HTML5 DnD is kept only for OS file drops (from Finder/Explorer).
  */
-import { ref, computed, onMounted, onUnmounted, type Ref } from "vue";
-import { useEditor } from "../useEditor";
+import { ref, onMounted, onUnmounted, type Ref } from "vue";
+import { EditorCore } from "../../core";
+import { useTimelineTracks } from "./useTimelineTracks";
 import { usePointerDrag } from "../usePointerDrag";
 import { processMediaAssets } from "../../lib/media/processing";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
@@ -41,7 +42,7 @@ export function useTimelineDragDrop({
 	scrollRef,
 	zoomLevel,
 }: UseTimelineDragDropProps) {
-	const { editor, version } = useEditor();
+	const editor = EditorCore.getInstance();
 	const isDragOver = ref(false);
 	const dropTarget = ref<DropTarget | null>(null);
 	const dragElementType = ref<ElementType | null>(null);
@@ -49,25 +50,17 @@ export function useTimelineDragDrop({
 	// Pointer drag system
 	const { registerDropZone, unregisterDropZone } = usePointerDrag();
 
-	const tracks = computed(() => {
-		void version.value;
-		return editor.timeline.getTracks();
-	});
-	const currentTime = computed(() => {
-		void version.value;
-		return editor.playback.getCurrentTime();
-	});
-	const mediaAssets = computed(() => {
-		void version.value;
-		return editor.media.getAssets();
-	});
-	const activeProject = computed(() => {
-		void version.value;
-		return editor.project.getActiveOrNull();
-	});
+	// `tracks` is read frequently inside drag callbacks, so we keep it reactive
+	// (via the shared timeline subscription). Playback time, media assets and
+	// the active project are only consulted on-demand inside event handlers,
+	// so they are plain getters — no need to spend a subscription on them.
+	const { tracks } = useTimelineTracks();
+	const getCurrentTime = () => editor.playback.getCurrentTime();
+	const getMediaAssets = () => editor.media.getAssets();
+	const getActiveProject = () => editor.project.getActiveOrNull();
 
 	function getSnappedTime(time: number): number {
-		const projectFps = activeProject.value?.settings?.fps ?? 30;
+		const projectFps = getActiveProject()?.settings?.fps ?? 30;
 		return snapTimeToFrame({ time, fps: projectFps });
 	}
 
@@ -85,7 +78,7 @@ export function useTimelineDragDrop({
 			return TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
 		}
 		if (mediaId) {
-			const media = mediaAssets.value.find((m) => m.id === mediaId);
+			const media = getMediaAssets().find((m) => m.id === mediaId);
 			return media?.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
 		}
 		return TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
@@ -141,7 +134,7 @@ export function useTimelineDragDrop({
 			mouseX,
 			mouseY,
 			tracks: tracks.value,
-			playheadTime: currentTime.value,
+			playheadTime: getCurrentTime(),
 			isExternalDrop: false,
 			elementDuration: duration,
 			pixelsPerSecond: TIMELINE_CONSTANTS.PIXELS_PER_SECOND,
@@ -393,7 +386,7 @@ export function useTimelineDragDrop({
 	}
 
 	function executeMediaDrop(target: DropTarget, dragData: MediaDragData) {
-		const mediaAsset = mediaAssets.value.find((m) => m.id === dragData.id);
+		const mediaAsset = getMediaAssets().find((m) => m.id === dragData.id);
 		if (!mediaAsset) return;
 
 		const trackType: TrackType = dragData.mediaType === "audio" ? "audio" : "video";
@@ -458,13 +451,14 @@ export function useTimelineDragDrop({
 	// ── OS file drop (HTML5 DnD — kept for external file drops from Finder) ──
 
 	async function executeFileDrop(files: File[], mouseX: number, mouseY: number) {
-		if (!activeProject.value) return;
+		const activeProject = getActiveProject();
+		if (!activeProject) return;
 
 		const processedAssets = await processMediaAssets({ files });
 
 		for (const asset of processedAssets) {
 			await editor.media.addMediaAsset({
-				projectId: activeProject.value.metadata.id,
+				projectId: activeProject.metadata.id,
 				asset,
 			});
 
@@ -480,7 +474,7 @@ export function useTimelineDragDrop({
 					mouseX,
 					mouseY,
 					tracks: currentTracks,
-					playheadTime: currentTime.value,
+					playheadTime: getCurrentTime(),
 					isExternalDrop: true,
 					elementDuration: duration,
 					pixelsPerSecond: TIMELINE_CONSTANTS.PIXELS_PER_SECOND,

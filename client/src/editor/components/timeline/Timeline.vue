@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { useEditor } from '../../composables/useEditor';
+  import { useTimelineTracks } from '../../composables/timeline/useTimelineTracks';
   import { useTimelineZoom } from '../../composables/timeline/useTimelineZoom';
   import { useElementInteraction } from '../../composables/timeline/element/useElementInteraction';
   import { useElementSelection } from '../../composables/timeline/element/useElementSelection';
@@ -21,6 +22,7 @@
     canTracktHaveAudio,
     canTrackBeHidden,
   } from '../../lib/timeline';
+  import { getDropIndicatorGeometry } from '../../lib/timeline/drop-utils';
   import type { TrackType } from '../../types/timeline';
   import type { SnapPoint } from '../../composables/timeline/useTimelineSnapping';
 
@@ -64,9 +66,12 @@
       playback: false,
       timeline: false,
       scenes: true,
-      selection: true,
+      project: false,
+      media: false,
+      selection: false,
     },
   });
+  const { tracks, totalDuration: timelineDuration } = useTimelineTracks();
   const { clearElementSelection, setElementSelection, selectedElements, selectedTransitionId, selectAllInTrack, selectTransition } = useElementSelection();
 
   // Context menu state
@@ -143,16 +148,6 @@
     );
   }
 
-  const tracks = computed(() => {
-    void version.value;
-    return editor.timeline.getTracks();
-  });
-
-  const timelineDuration = computed(() => {
-    void version.value;
-    return editor.timeline.getTotalDuration() || 0;
-  });
-
   // Refs
   const timelineRef = ref<HTMLDivElement | null>(null);
   const timelineHeaderRef = ref<HTMLDivElement | null>(null);
@@ -162,6 +157,16 @@
   const trackLabelsRef = ref<HTMLDivElement | null>(null);
   const playheadRef = ref<HTMLDivElement | null>(null);
   const trackLabelsScrollRef = ref<HTMLDivElement | null>(null);
+
+  /** Observed height of the tracks scroll viewport — drives vertical centering offset. */
+  const tracksContainerClientHeight = ref(0);
+  const totalTracksHeight = computed(() => getTotalTracksHeight({ tracks: tracks.value }));
+  const tracksVerticalOffset = computed(() => {
+    const containerH = tracksContainerClientHeight.value;
+    const contentH = totalTracksHeight.value;
+    if (containerH <= 0 || contentH >= containerH) return 0;
+    return Math.min(16, Math.floor(containerH - contentH));
+  });
 
   // State
   const isResizing = ref(false);
@@ -225,6 +230,7 @@
       tracksContainerRef,
       tracksScrollRef,
       headerRef: timelineHeaderRef,
+      tracksVerticalOffset,
       snappingEnabled: autoSnapping,
       onSnapPointChange: handleSnapPointChange,
     });
@@ -421,18 +427,13 @@
       (dragState.value.isDragging || isResizing.value)
   );
 
-  const duration = computed(() => {
-    void version.value;
-    return editor.timeline.getTotalDuration();
-  });
-
   const { handleTracksMouseDown, handleTracksClick, handleRulerMouseDown, handleRulerClick } = useTimelineSeek({
     playheadRef,
     trackLabelsRef,
     rulerScrollRef: tracksScrollRef,
     tracksScrollRef,
     zoomLevel,
-    duration,
+    duration: timelineDuration,
     isSelecting,
     clearSelectedElements: clearElementSelection,
     seek: (time: number) => editor.playback.seek({ time }),
@@ -451,7 +452,29 @@
 
   const timelineHeaderHeight = computed(() => timelineHeaderRef.value?.getBoundingClientRect().height ?? 0);
 
-  const totalTracksHeight = computed(() => getTotalTracksHeight({ tracks: tracks.value }));
+  /** Translucent clip-sized preview at the snapped drop time (element drag). */
+  const elementDragClipGhostStyle = computed(() => {
+    if (!dragState.value.isDragging || !dragDropTarget.value) return null;
+    const dt = dragDropTarget.value;
+    if (dt.isNewTrack || dt.targetElementId) return null;
+    const ds = dragState.value;
+    if (!ds.elementId || !ds.trackId) return null;
+    const srcTrack = tracks.value.find((t) => t.id === ds.trackId);
+    const el = srcTrack?.elements.find((e) => e.id === ds.elementId);
+    if (!el) return null;
+    const geo = getDropIndicatorGeometry({ dropTarget: dt, tracks: tracks.value });
+    const zl = zoomLevel.value;
+    const pps = TIMELINE_CONSTANTS.PIXELS_PER_SECOND;
+    const left = ds.currentTime * pps * zl - scrollLeft.value;
+    const width = el.duration * pps * zl;
+    const header = timelineHeaderHeight.value + tracksVerticalOffset.value;
+    return {
+      top: `${geo.y + header}px`,
+      left: `${left}px`,
+      width: `${Math.max(4, width)}px`,
+      height: `${geo.height}px`,
+    };
+  });
 
   const tracksAreaHeight = computed(() => {
     const base = Math.max(tracksContainerHeight.min, totalTracksHeight.value);
@@ -459,8 +482,6 @@
     return base;
   });
 
-  // Vertical centering: offset tracks when content is shorter than container
-  const tracksContainerClientHeight = ref(0);
   let tracksResizeObserver: ResizeObserver | null = null;
 
   onMounted(() => {
@@ -476,13 +497,6 @@
 
   onUnmounted(() => {
     tracksResizeObserver?.disconnect();
-  });
-
-  const tracksVerticalOffset = computed(() => {
-    const containerH = tracksContainerClientHeight.value;
-    const contentH = totalTracksHeight.value;
-    if (containerH <= 0 || contentH >= containerH) return 0;
-    return Math.min(16, Math.floor(containerH - contentH));
   });
 
   function onTrackLabelsWheel(event: WheelEvent) {
@@ -863,6 +877,11 @@
             :zoom-level="zoomLevel"
             :scroll-left="scrollLeft"
           />
+          <div
+            v-if="elementDragClipGhostStyle"
+            class="pointer-events-none absolute z-[44] rounded-sm border border-white/25 bg-white/10 shadow-md backdrop-blur-[1px]"
+            :style="elementDragClipGhostStyle"
+          />
 
           <div
             ref="tracksScrollRef"
@@ -922,7 +941,7 @@
                 <div
                   v-for="(track, index) in tracks"
                   :key="track.id"
-                  class="absolute right-0 left-0"
+                  class="timeline-track-row absolute right-0 left-0"
                   :style="{
                     top: `${getTrackTopWithInsertGap(index)}px`,
                     height: `${getTrackHeight({ type: track.type })}px`,
@@ -931,7 +950,6 @@
                   <TimelineTrackContent
                     :track="track"
                     :zoom-level="zoomLevel"
-                    :drag-state="dragState"
                     :snapping-enabled="autoSnapping"
                     :is-playhead-scrubbing="isPlayheadScrubbing"
                     :razor-mode="razorMode"
@@ -1045,5 +1063,32 @@
   }
   .hide-native-scrollbar::-webkit-scrollbar {
     display: none !important;
+  }
+
+  /* GPU-composited drag visual.
+   *
+   * The drag controller in `useElementInteraction.ts` writes `--drag-x`
+   * and `--drag-y` directly on the matching `[data-element-id]` nodes
+   * each animation frame, then sets `data-drag-active="1"`. The browser
+   * promotes the element to its own compositor layer and translates it
+   * via the GPU, so dragging hundreds of clips at once is buttery smooth.
+   *
+   * We do NOT include `left` here — the element keeps its committed
+   * `left:` value during the drag. Only the transform overlays the visual
+   * delta, and on drop the controller clears the data attribute and the
+   * committed `startTime` is updated by the timeline manager. */
+  .timeline-element[data-drag-active="1"] {
+    transform: translate3d(var(--drag-x, 0), var(--drag-y, 0), 0);
+    z-index: 30;
+    will-change: transform;
+    pointer-events: none;
+  }
+
+  /* Smooth animated insert gap when a drag hovers over a between-track
+   * insertion point. The track row itself still receives an instant top
+   * change from Vue, but the visual transition gives it a CapCut-style
+   * springy feel rather than a hard jump. */
+  .timeline-track-row {
+    transition: top 120ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 </style>

@@ -1,7 +1,6 @@
 <script setup lang="ts">
   import { computed } from 'vue';
   import { EditorCore } from '../../core';
-  import { TIMELINE_CONSTANTS } from '../../constants/timeline-constants';
 
   const props = defineProps<{
     zoomLevel: number;
@@ -20,14 +19,24 @@
   const playheadRef = defineModel<HTMLDivElement | null>('playheadRef', { default: null });
   const editor = EditorCore.getInstance();
 
-  const leftPosition = computed(() => props.playheadPosition * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel);
+  // Important: the visible position (transform) is written *imperatively*
+  // by `useTimelinePlayhead.applyPlayheadPosition` inside an rAF tick.
+  // We do NOT bind `transform` reactively here — that would race with the
+  // composable's writes and tear during scrub/playback.
+  // We DO still bind a transition (only when not scrubbing/playing) so
+  // programmatic seeks animate smoothly.
+  // `props.zoomLevel` is intentionally referenced once below so Vue tracks
+  // it and re-renders the playhead element when zoom changes — the
+  // composable picks that up via its own `watch(zoomLevel)`.
   const effectivePlayheadTime = computed(() => props.playheadTime ?? props.playheadPosition);
-  const transitionDuration = computed(() => {
-    if (props.isScrubbing) return '0ms';
-    if (props.isPlaying) return '0ms';
-    return '100ms';
+  const transitionStyle = computed(() => {
+    const noTransition = props.isScrubbing || props.isPlaying;
+    return {
+      transitionProperty: 'transform',
+      transitionDuration: noTransition ? '0ms' : '100ms',
+      transitionTimingFunction: noTransition ? 'linear' : 'cubic-bezier(0.22, 1, 0.36, 1)',
+    };
   });
-  const transitionTimingFunction = computed(() => (props.isScrubbing ? 'linear' : 'cubic-bezier(0.22, 1, 0.36, 1)'));
 
   function handleKeyDown(event: KeyboardEvent) {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
@@ -52,15 +61,13 @@
     :aria-valuenow="effectivePlayheadTime"
     tabindex="0"
     class="pointer-events-auto absolute z-60 cursor-col-resize will-change-transform"
+    :data-zoom-level="zoomLevel"
     :style="{
       left: 0,
       top: 0,
       height: `${totalHeight}px`,
-      transform: `translateX(${leftPosition - 6}px)`,
-      transitionProperty: 'transform',
-      transitionDuration,
-      transitionTimingFunction,
       width: '12px',
+      ...transitionStyle,
     }"
     @mousedown="emit('playheadMouseDown', $event)"
     @keydown="handleKeyDown"

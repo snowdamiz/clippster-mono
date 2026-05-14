@@ -5,7 +5,7 @@
 import { ref, watch, onUnmounted, type Ref } from "vue";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
 import { getCumulativeHeightBefore, getTrackHeight } from "../../lib/timeline";
-import { useEditor } from "../useEditor";
+import { EditorCore } from "../../core";
 
 interface UseSelectionBoxProps {
 	containerRef: Ref<HTMLElement | null>;
@@ -92,7 +92,7 @@ export function useSelectionBox({
 	tracksScrollRef,
 	zoomLevel,
 }: UseSelectionBoxProps) {
-	const { editor, version } = useEditor();
+	const editor = EditorCore.getInstance();
 
 	const selectionBox = ref<SelectionBoxState | null>(null);
 	const isSelecting = ref(false);
@@ -110,7 +110,6 @@ export function useSelectionBox({
 	function selectElementsInBox(startPos: { x: number; y: number }, endPos: { x: number; y: number }) {
 		if (!containerRef.value) return;
 
-		void version.value;
 		const tracks = editor.timeline.getTracks();
 		const container = containerRef.value;
 		const selectionRectangle = getSelectionRectangleInContent({

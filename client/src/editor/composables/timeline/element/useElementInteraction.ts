@@ -1,15 +1,35 @@
 /**
  * Vue composable equivalent of OpenCut's use-element-interaction.ts
  * Handles drag-and-drop of timeline elements between tracks.
+ *
+ * Performance contract (rewritten for the timeline-perf-polish refactor):
+ * - `mousemove` only stores raw cursor coords; the actual snap/drop/state
+ *   work runs at most once per animation frame via {@link useDragRaf}.
+ * - The snap-point index (sorted Float64Array) is built **once** at drag
+ *   start and binary-searched per frame. No per-frame O(N×M) allocation.
+ * - The dragged element is selected at `mousedown` if it wasn't already.
+ *   Selection state is **never** mutated during a drag (the previous
+ *   implementation called `selectElement` from inside `mousemove`, which
+ *   triggered selection-store re-renders mid-drag).
+ * - `dragState` is still a `shallowRef` so external consumers can read
+ *   `.isDragging` etc., but it is updated only from the rAF callback —
+ *   never directly from the high-frequency `mousemove`.
  */
-import { ref, watch, onUnmounted, computed, type Ref } from "vue";
-import { useEditor } from "../../useEditor";
+import { shallowRef, watch, onUnmounted, type Ref } from "vue";
+import { EditorCore } from "../../../core";
 import { useElementSelection } from "./useElementSelection";
+import { useTimelineTracks } from "../useTimelineTracks";
+import { useDragRaf } from "../useDragRaf";
+import { createDragDomController } from "./useDragDomController";
 import { TIMELINE_CONSTANTS, VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT } from "../../../constants/timeline-constants";
 import { computeDropTarget } from "../../../lib/timeline/drop-utils";
 import { isMainTrack } from "../../../lib/timeline/track-utils";
 import { generateUUID } from "../../../utils/id";
-import { useTimelineSnapping, type SnapPoint } from "../useTimelineSnapping";
+import {
+	useTimelineSnapping,
+	type SnapPoint,
+	type SnapIndex,
+} from "../useTimelineSnapping";
 import type {
 	DropTarget,
 	ElementDragState,
@@ -17,7 +37,20 @@ import type {
 	TimelineTrack,
 } from "../../../types/timeline";
 
-const DRAG_THRESHOLD_PX = 5;
+/**
+ * Distance the cursor must travel before a `mousedown` becomes a drag.
+ * Slightly larger than the previous 5px to give CapCut/Resolve-style
+ * "tap-and-hold-still" tolerance.
+ */
+const DRAG_THRESHOLD_PX = 6;
+
+/**
+ * Magnetic same-track snap radius in pixels. Same value as before; tracked
+ * here so it is co-located with the threshold above.
+ */
+const MAGNETIC_THRESHOLD_PX = 15;
+
+const TITLE_BAR_PX = 16;
 
 interface UseElementInteractionProps {
 	zoomLevel: Ref<number>;
@@ -25,11 +58,11 @@ interface UseElementInteractionProps {
 	tracksContainerRef: Ref<HTMLDivElement | null>;
 	tracksScrollRef: Ref<HTMLDivElement | null>;
 	headerRef?: Ref<HTMLElement | null>;
+	/** Same padding used by track rows (`getTrackTopWithInsertGap`) — required for correct Y hit-testing when zoomed / vertically centered. */
+	tracksVerticalOffset?: Ref<number>;
 	snappingEnabled: Ref<boolean>;
 	onSnapPointChange?: (snapPoint: SnapPoint | null) => void;
 }
-
-const TITLE_BAR_PX = 16;
 
 /** Sole full-width media clip on the main timeline row — stays at t=0 and cannot change tracks. */
 function isMainTrackSolePrimaryMediaClip(track: TimelineTrack, element: TimelineElement): boolean {
@@ -88,6 +121,10 @@ interface PendingDragState {
 	startMouseY: number;
 	startElementTime: number;
 	clickOffsetTime: number;
+	/** Cached snap index built at mousedown, reused for the lifetime of the drag. */
+	snapIndex: SnapIndex;
+	/** Map of trackId → list of (start, end, elementId) used for magnetic same-track snap. */
+	magneticByTrack: Map<string, { start: number; end: number; id: string }[]>;
 }
 
 function getMouseTimeFromClientX({
@@ -136,30 +173,50 @@ export function useElementInteraction({
 	tracksContainerRef,
 	tracksScrollRef,
 	headerRef,
+	tracksVerticalOffset,
 	snappingEnabled,
 	onSnapPointChange,
 }: UseElementInteractionProps) {
-	const { editor, version } = useEditor();
-	const { snapElementEdge } = useTimelineSnapping();
+	const editor = EditorCore.getInstance();
+	const { tracks } = useTimelineTracks();
+	const { buildSnapIndex, snapToIndex } = useTimelineSnapping();
 	const {
 		isElementSelected,
 		selectElement,
 		selectedElements,
 		handleElementClick: handleSelectionClick,
 	} = useElementSelection();
+	const dragRaf = useDragRaf();
+	const dragDom = createDragDomController();
 
-	const tracks = computed(() => {
-		void version.value;
-		return editor.timeline.getTracks();
-	});
+	// `shallowRef` so consumers like Timeline.vue / TimelineElement.vue see
+	// updates as a single object replacement per frame — no deep tracking.
+	const dragState = shallowRef<ElementDragState>({ ...initialDragState });
+	const dragDropTarget = shallowRef<DropTarget | null>(null);
+	const isPendingDrag = shallowRef(false);
 
-	const dragState = ref<ElementDragState>({ ...initialDragState });
-	const dragDropTarget = ref<DropTarget | null>(null);
-	const isPendingDrag = ref(false);
+	// Mutable hot-path state: never assigned to a Vue ref except inside the
+	// rAF callback, which produces a single state replacement per frame.
 	let pendingDrag: PendingDragState | null = null;
 	let lastMouseX = 0;
+	let lastMouseY = 0;
 	let mouseDownLocation: { x: number; y: number } | null = null;
-	let wasAlreadySelectedOnMouseDown = false;
+	let dragSnapCache: PendingDragState | null = null;
+	let dragStartTimeValue = 0;
+	let dragStartMouseY = 0;
+
+	function buildMagneticByTrack(currentTracks: TimelineTrack[], excludeId: string): Map<string, { start: number; end: number; id: string }[]> {
+		const map = new Map<string, { start: number; end: number; id: string }[]>();
+		for (const track of currentTracks) {
+			const arr: { start: number; end: number; id: string }[] = [];
+			for (const el of track.elements) {
+				if (el.id === excludeId) continue;
+				arr.push({ start: el.startTime, end: el.startTime + el.duration, id: el.id });
+			}
+			map.set(track.id, arr);
+		}
+		return map;
+	}
 
 	function getDragDropTarget({
 		clientX,
@@ -190,8 +247,9 @@ export function useElementInteraction({
 		const scrollTop = scrollContainer.scrollTop;
 		const scrollContainerRect = scrollContainer.getBoundingClientRect();
 		const headerHeight = headerRef?.value?.getBoundingClientRect().height ?? 0;
+		const vPad = tracksVerticalOffset?.value ?? 0;
 		const mouseX = clientX - scrollContainerRect.left + scrollLeft;
-		const mouseY = clientY - scrollContainerRect.top + scrollTop - headerHeight;
+		const mouseY = clientY - scrollContainerRect.top + scrollTop - headerHeight - vPad;
 
 		return computeDropTarget({
 			elementType: movingElement.type,
@@ -213,99 +271,91 @@ export function useElementInteraction({
 		frameSnappedTime,
 		movingElement,
 		sourceTrackId,
+		cache,
 	}: {
 		frameSnappedTime: number;
 		movingElement: TimelineElement | null | undefined;
 		sourceTrackId?: string;
-	}) {
+		cache: PendingDragState;
+	}): { snappedTime: number; snapPoint: SnapPoint | null } {
 		if (!snappingEnabled.value || !movingElement) {
 			return { snappedTime: frameSnappedTime, snapPoint: null };
 		}
 
 		const elementDuration = movingElement.duration;
-		const playheadTime = editor.playback.getCurrentTime();
-
-		// Magnetic same-track snap: stronger pull when near a neighbor on the same track
-		const MAGNETIC_THRESHOLD_PX = 15;
 		const pixelsPerSecond = TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value;
 		const magneticThresholdSec = MAGNETIC_THRESHOLD_PX / pixelsPerSecond;
 
+		// Magnetic same-track snap: stronger pull when near a neighbor on the same track.
+		// Uses the cached neighbor list — no per-frame iteration over all tracks.
 		if (sourceTrackId) {
-			const sourceTrack = tracks.value.find((t) => t.id === sourceTrackId);
-			if (sourceTrack) {
+			const neighbors = cache.magneticByTrack.get(sourceTrackId);
+			if (neighbors) {
 				let bestMagneticSnap: { time: number; snapPoint: SnapPoint; distance: number } | null = null;
-				for (const neighbor of sourceTrack.elements) {
-					if (neighbor.id === movingElement.id) continue;
-					const neighborEnd = neighbor.startTime + neighbor.duration;
-					const neighborStart = neighbor.startTime;
-
-					// Dragged element start → neighbor end (close gap on left)
-					const startDist = Math.abs(frameSnappedTime - neighborEnd);
+				for (const neighbor of neighbors) {
+					const startDist = Math.abs(frameSnappedTime - neighbor.end);
 					if (startDist < magneticThresholdSec && (!bestMagneticSnap || startDist < bestMagneticSnap.distance)) {
 						bestMagneticSnap = {
-							time: neighborEnd,
-							snapPoint: { time: neighborEnd, type: "element-end", elementId: neighbor.id, trackId: sourceTrackId },
+							time: neighbor.end,
+							snapPoint: { time: neighbor.end, type: "element-end", elementId: neighbor.id, trackId: sourceTrackId },
 							distance: startDist,
 						};
 					}
-
-					// Dragged element end → neighbor start (close gap on right)
-					const endDist = Math.abs((frameSnappedTime + elementDuration) - neighborStart);
+					const endDist = Math.abs((frameSnappedTime + elementDuration) - neighbor.start);
 					if (endDist < magneticThresholdSec && (!bestMagneticSnap || endDist < bestMagneticSnap.distance)) {
 						bestMagneticSnap = {
-							time: neighborStart - elementDuration,
-							snapPoint: { time: neighborStart, type: "element-start", elementId: neighbor.id, trackId: sourceTrackId },
+							time: neighbor.start - elementDuration,
+							snapPoint: { time: neighbor.start, type: "element-start", elementId: neighbor.id, trackId: sourceTrackId },
 							distance: endDist,
 						};
 					}
 				}
-
 				if (bestMagneticSnap) {
 					return { snappedTime: bestMagneticSnap.time, snapPoint: bestMagneticSnap.snapPoint };
 				}
 			}
 		}
 
-		// Standard cross-track edge snapping
-		const startSnap = snapElementEdge({
+		// Standard cross-track edge snapping via the cached sorted index.
+		// Compare both the start-edge and end-edge of the dragged element and
+		// keep whichever is closer.
+		const startSnap = snapToIndex({
 			targetTime: frameSnappedTime,
-			elementDuration,
-			tracks: tracks.value,
-			playheadTime,
+			index: cache.snapIndex,
 			zoomLevel: zoomLevel.value,
-			excludeElementId: movingElement.id,
-			snapToStart: true,
 		});
 
-		const endSnap = snapElementEdge({
-			targetTime: frameSnappedTime,
-			elementDuration,
-			tracks: tracks.value,
-			playheadTime,
+		const endSnap = snapToIndex({
+			targetTime: frameSnappedTime + elementDuration,
+			index: cache.snapIndex,
 			zoomLevel: zoomLevel.value,
-			excludeElementId: movingElement.id,
-			snapToStart: false,
 		});
 
-		const snapResult = startSnap.snapDistance <= endSnap.snapDistance ? startSnap : endSnap;
-		if (!snapResult.snapPoint) {
-			return { snappedTime: frameSnappedTime, snapPoint: null };
+		// Choose the better of the two; the end-edge candidate snaps the element
+		// such that its trailing edge meets the snap point.
+		const startBetter = startSnap.snapPoint && (!endSnap.snapPoint || startSnap.snapDistance <= endSnap.snapDistance);
+		if (startBetter && startSnap.snapPoint) {
+			return { snappedTime: startSnap.snappedTime, snapPoint: startSnap.snapPoint };
 		}
-
-		return { snappedTime: snapResult.snappedTime, snapPoint: snapResult.snapPoint };
+		if (endSnap.snapPoint) {
+			return {
+				snappedTime: endSnap.snappedTime - elementDuration,
+				snapPoint: endSnap.snapPoint,
+			};
+		}
+		return { snappedTime: frameSnappedTime, snapPoint: null };
 	}
 
-	// Mouse move handler
-	function onMouseMove(event: MouseEvent) {
-		const { clientX, clientY } = event;
-		const ds = dragState.value;
-		let startedDragThisEvent = false;
+	/** rAF-coalesced: process the latest cursor position. */
+	function flushDragFrame() {
+		const clientX = lastMouseX;
+		const clientY = lastMouseY;
+
 		const timeline = timelineRef.value;
 		const scrollContainer = tracksScrollRef.value;
 		if (!timeline || !scrollContainer) return;
-		lastMouseX = clientX;
 
-		// Check if pending drag exceeds threshold
+		// Promote pending drag to active drag once threshold is exceeded.
 		if (isPendingDrag.value && pendingDrag) {
 			const drag = pendingDrag;
 			const deltaX = Math.abs(clientX - drag.startMouseX);
@@ -340,22 +390,23 @@ export function useElementInteraction({
 					currentTime: adjustedTime,
 					currentMouseY,
 				};
-				startedDragThisEvent = true;
+				dragSnapCache = drag;
+				dragStartTimeValue = drag.startElementTime;
+				dragStartMouseY = drag.startMouseY;
+				// Activate the GPU-composited drag visual on every selected element.
+				const ids = collectDragElementIds(drag.elementId);
+				dragDom.begin(ids, tracksScrollRef.value);
+				applyDragDomOffsets(adjustedTime, drag.startElementTime, currentMouseY, drag.startMouseY);
 				pendingDrag = null;
 				isPendingDrag.value = false;
-			} else {
 				return;
 			}
+			// Below threshold this frame; nothing to update yet.
+			return;
 		}
 
-		if (startedDragThisEvent) return;
-
-		if (ds.elementId && ds.trackId) {
-			const alreadySelected = isElementSelected({ trackId: ds.trackId, elementId: ds.elementId });
-			if (!alreadySelected) {
-				selectElement({ trackId: ds.trackId, elementId: ds.elementId });
-			}
-		}
+		const ds = dragState.value;
+		if (!ds.isDragging || !ds.elementId || !ds.trackId || !dragSnapCache) return;
 
 		const activeProject = editor.project.getActive();
 		if (!activeProject) return;
@@ -372,38 +423,77 @@ export function useElementInteraction({
 
 		const sourceTrack = tracks.value.find(({ id }) => id === ds.trackId);
 		const movingElement = sourceTrack?.elements.find(({ id }) => id === ds.elementId);
-		const { snappedTime, snapPoint } = getDragSnapResult({ frameSnappedTime, movingElement, sourceTrackId: ds.trackId ?? undefined });
+		const { snappedTime, snapPoint } = getDragSnapResult({
+			frameSnappedTime,
+			movingElement,
+			sourceTrackId: ds.trackId ?? undefined,
+			cache: dragSnapCache,
+		});
 
 		if (sourceTrack && movingElement && isMainTrackSolePrimaryMediaClip(sourceTrack, movingElement)) {
 			dragState.value = { ...ds, currentTime: 0, currentMouseY: ds.startMouseY };
 			dragDropTarget.value = null;
+			applyDragDomOffsets(0, dragStartTimeValue, ds.startMouseY, dragStartMouseY);
 			onSnapPointChange?.(null);
 			return;
 		}
 
 		dragState.value = { ...ds, currentTime: snappedTime, currentMouseY: clientY };
+		applyDragDomOffsets(snappedTime, dragStartTimeValue, clientY, dragStartMouseY);
 		onSnapPointChange?.(snapPoint);
 
-		if (ds.elementId && ds.trackId) {
-			const verticalDragDirection = getVerticalDragDirection({
-				startMouseY: ds.startMouseY,
-				currentMouseY: clientY,
-			});
-			const dropTarget = getDragDropTarget({
-				clientX,
-				clientY,
-				elementId: ds.elementId,
-				trackId: ds.trackId,
-				currentTracks: tracks.value,
-				snappedTime,
-				verticalDragDirection,
-			});
-			dragDropTarget.value = dropTarget?.isNewTrack ? dropTarget : null;
-		}
+		const verticalDragDirection = getVerticalDragDirection({
+			startMouseY: ds.startMouseY,
+			currentMouseY: clientY,
+		});
+		const dropTarget = getDragDropTarget({
+			clientX,
+			clientY,
+			elementId: ds.elementId,
+			trackId: ds.trackId,
+			currentTracks: tracks.value,
+			snappedTime,
+			verticalDragDirection,
+		});
+		dragDropTarget.value = dropTarget;
+	}
+
+	/**
+	 * Pushes the latest drag offsets into the DOM controller. We compute X
+	 * from the snapped time vs. the committed start time so the element
+	 * visually anchors to the snap point even though Vue still renders it
+	 * at its original `left`.
+	 */
+	function applyDragDomOffsets(currentTime: number, startTimeValue: number, currentMouseY: number, startMouseY: number) {
+		const dx = (currentTime - startTimeValue) * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value;
+		const dy = currentMouseY - startMouseY;
+		dragDom.update(dx, dy);
+	}
+
+	/**
+	 * Returns the set of element ids that visually follow the drag.
+	 * For a single-selection drag that's just the dragged id; for a
+	 * multi-selection drag it's every selected element across all tracks.
+	 */
+	function collectDragElementIds(anchorId: string): Iterable<string> {
+		const live = selectedElements.value;
+		if (live.length <= 1) return [anchorId];
+		const ids = new Set<string>([anchorId]);
+		for (const sel of live) ids.add(sel.elementId);
+		return ids;
+	}
+
+	function onMouseMove(event: MouseEvent) {
+		lastMouseX = event.clientX;
+		lastMouseY = event.clientY;
+		dragRaf.schedule(flushDragFrame);
 	}
 
 	// Mouse up handler for active drag
 	function onMouseUp(event: MouseEvent) {
+		// Make sure any pending rAF work runs against the latest coords first.
+		dragRaf.flush();
+
 		const { clientX, clientY } = event;
 		const ds = dragState.value;
 
@@ -412,10 +502,8 @@ export function useElementInteraction({
 		const sourceTrackEarly = tracks.value.find(({ id }) => id === ds.trackId);
 		const movingElEarly = sourceTrackEarly?.elements.find(({ id }) => id === ds.elementId);
 		if (sourceTrackEarly && movingElEarly && isMainTrackSolePrimaryMediaClip(sourceTrackEarly, movingElEarly)) {
-			dragState.value = { ...initialDragState };
-			dragDropTarget.value = null;
+			resetDragVisual();
 			mouseDownLocation = null;
-			onSnapPointChange?.(null);
 			return;
 		}
 
@@ -424,9 +512,7 @@ export function useElementInteraction({
 			const deltaY = Math.abs(clientY - mouseDownLocation.y);
 			if (deltaX <= DRAG_THRESHOLD_PX && deltaY <= DRAG_THRESHOLD_PX) {
 				mouseDownLocation = null;
-				dragState.value = { ...initialDragState };
-				dragDropTarget.value = null;
-				onSnapPointChange?.(null);
+				resetDragVisual();
 				return;
 			}
 		}
@@ -445,28 +531,24 @@ export function useElementInteraction({
 		});
 
 		if (!dropTarget) {
-			dragState.value = { ...initialDragState };
-			dragDropTarget.value = null;
-			onSnapPointChange?.(null);
+			resetDragVisual();
 			return;
 		}
 
 		const snappedTime = ds.currentTime;
 		const sourceTrack = tracks.value.find(({ id }) => id === ds.trackId);
 		if (!sourceTrack) {
-			dragState.value = { ...initialDragState };
-			dragDropTarget.value = null;
-			onSnapPointChange?.(null);
+			resetDragVisual();
 			return;
 		}
 
 		const timeDelta = snappedTime - ds.startElementTime;
 
-		// Multi-select drag: move all selected elements across all tracks by the same delta
-		if (selectedElements.value.length > 1 && !dropTarget.isNewTrack) {
-			// Group selected elements by track
+		// Multi-select drag: move all selected elements across all tracks by the same delta.
+		const liveSelected = selectedElements.value;
+		if (liveSelected.length > 1 && !dropTarget.isNewTrack) {
 			const byTrack = new Map<string, string[]>();
-			for (const sel of selectedElements.value) {
+			for (const sel of liveSelected) {
 				const arr = byTrack.get(sel.trackId) ?? [];
 				arr.push(sel.elementId);
 				byTrack.set(sel.trackId, arr);
@@ -498,8 +580,15 @@ export function useElementInteraction({
 		// Sync linked element (e.g. extracted audio ↔ source video)
 		syncLinkedElement(ds.elementId, ds.trackId, timeDelta);
 
+		resetDragVisual();
+	}
+
+	/** Clears the in-flight drag state and the GPU drag visual in one place. */
+	function resetDragVisual() {
+		dragDom.end();
 		dragState.value = { ...initialDragState };
 		dragDropTarget.value = null;
+		dragSnapCache = null;
 		onSnapPointChange?.(null);
 	}
 
@@ -526,8 +615,10 @@ export function useElementInteraction({
 
 	// Pending drag mouse up (cancel pending)
 	function onPendingMouseUp() {
+		dragRaf.flush();
 		pendingDrag = null;
 		isPendingDrag.value = false;
+		// No drag DOM to tear down because the drag never started.
 		onSnapPointChange?.(null);
 	}
 
@@ -567,6 +658,7 @@ export function useElementInteraction({
 	onUnmounted(() => {
 		cleanupDrag?.();
 		cleanupPending?.();
+		dragDom.end();
 	});
 
 	function handleElementMouseDown({
@@ -598,7 +690,6 @@ export function useElementInteraction({
 
 		const isMultiSelect = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
 		const alreadySelected = isElementSelected({ trackId: track.id, elementId: element.id });
-		wasAlreadySelectedOnMouseDown = alreadySelected;
 
 		if (isMultiSelect) {
 			handleSelectionClick({ trackId: track.id, elementId: element.id, isMultiKey: true, isAltKey: event.altKey, isShiftKey: event.shiftKey });
@@ -622,6 +713,15 @@ export function useElementInteraction({
 			zoomLevel: zoomLevel.value,
 		});
 
+		// Build the snap index ONCE per drag — reused on every rAF tick.
+		const snapshotTracks = tracks.value;
+		const snapIndex = buildSnapIndex({
+			tracks: snapshotTracks,
+			playheadTime: editor.playback.getCurrentTime(),
+			excludeElementId: element.id,
+		});
+		const magneticByTrack = buildMagneticByTrack(snapshotTracks, element.id);
+
 		pendingDrag = {
 			elementId: element.id,
 			trackId: track.id,
@@ -629,7 +729,11 @@ export function useElementInteraction({
 			startMouseY: event.clientY,
 			startElementTime: element.startTime,
 			clickOffsetTime: clickOffset,
+			snapIndex,
+			magneticByTrack,
 		};
+		lastMouseX = event.clientX;
+		lastMouseY = event.clientY;
 		isPendingDrag.value = true;
 	}
 
@@ -655,26 +759,12 @@ export function useElementInteraction({
 
 		if (event.metaKey || event.ctrlKey || event.shiftKey) return;
 
-		// On plain click (no drag), always collapse to single element selection.
+		// On plain click (no drag), collapse to single element selection.
 		// This handles: clicking an unselected element, or clicking one element
 		// in a multi-selection to narrow it down to just that element.
+		// Note (UX): clicking a clip never moves the playhead — that is left
+		// to ruler/empty-area clicks, matching DaVinci Resolve / CapCut.
 		selectElement({ trackId: track.id, elementId: element.id });
-
-		// If the element was already selected before this click, seek the playhead
-		// to the click position (like clicking empty track area).
-		if (wasAlreadySelectedOnMouseDown) {
-			const scrollContainer = tracksScrollRef.value;
-			if (scrollContainer) {
-				const containerRect = scrollContainer.getBoundingClientRect();
-				const clickTime = getMouseTimeFromClientX({
-					clientX: event.clientX,
-					containerRect,
-					zoomLevel: zoomLevel.value,
-					scrollLeft: scrollContainer.scrollLeft,
-				});
-				editor.playback.seek({ time: clickTime });
-			}
-		}
 	}
 
 	return {
@@ -685,3 +775,4 @@ export function useElementInteraction({
 		getLastMouseX: () => lastMouseX,
 	};
 }
+

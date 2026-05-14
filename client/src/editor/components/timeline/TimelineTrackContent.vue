@@ -6,7 +6,6 @@ import TimelineElement from "./TimelineElement.vue";
 import type {
 	TimelineTrack,
 	TimelineElement as TimelineElementType,
-	ElementDragState,
 } from "../../types/timeline";
 import type { SnapPoint } from "../../composables/timeline/useTimelineSnapping";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
@@ -15,7 +14,6 @@ import { snapTimeToFrame } from "../../lib/time";
 const props = defineProps<{
 	track: TimelineTrack;
 	zoomLevel: number;
-	dragState: ElementDragState;
 	snappingEnabled: boolean;
 	isPlayheadScrubbing?: boolean;
 	razorMode?: boolean;
@@ -37,7 +35,7 @@ const emit = defineEmits<{
 defineExpose({});
 
 const editor = EditorCore.getInstance();
-const { isElementSelected, clearElementSelection } = useElementSelection();
+const { isElementSelected } = useElementSelection();
 
 const rippleShifts = ref<Map<string, number>>(new Map());
 
@@ -68,7 +66,10 @@ function handleElementClick(ev: MouseEvent, el: TimelineElementType) {
 }
 
 function onTrackClick(event: MouseEvent) {
-	clearElementSelection();
+	// Selection clearing is centralized in `handleTracksClick` (useTimelineSeek)
+	// — it gates on `shouldProcessTimelineClick` so we don't clear at the end
+	// of a drag or a rubber-band selection. Clearing here too would cause a
+	// brief selection flicker before that gate runs.
 	emit("trackClick", event);
 }
 
@@ -98,7 +99,6 @@ function onTrackMouseDown(event: MouseEvent) {
 				:track="track"
 				:zoom-level="zoomLevel"
 				:is-selected="isElementSelected({ trackId: track.id, elementId: element.id })"
-				:drag-state="dragState"
 				:snapping-enabled="snappingEnabled"
 				:is-playhead-scrubbing="isPlayheadScrubbing"
 				:is-effect-drop-target="effectDropTargetId === element.id"

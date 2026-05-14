@@ -231,46 +231,6 @@ export function useEditorActions() {
 		editor.timeline.toggleElementsVisibility({ elements: selectedElements.value });
 	});
 
-	useActionHandler("bring-to-front", () => {
-		if (selectedElements.value.length === 0) return;
-		const sel = selectedElements.value[0];
-		editor.timeline.reorderElement({
-			trackId: sel.trackId,
-			elementId: sel.elementId,
-			direction: "front",
-		});
-	});
-
-	useActionHandler("bring-forward", () => {
-		if (selectedElements.value.length === 0) return;
-		const sel = selectedElements.value[0];
-		editor.timeline.reorderElement({
-			trackId: sel.trackId,
-			elementId: sel.elementId,
-			direction: "forward",
-		});
-	});
-
-	useActionHandler("send-backward", () => {
-		if (selectedElements.value.length === 0) return;
-		const sel = selectedElements.value[0];
-		editor.timeline.reorderElement({
-			trackId: sel.trackId,
-			elementId: sel.elementId,
-			direction: "backward",
-		});
-	});
-
-	useActionHandler("send-to-back", () => {
-		if (selectedElements.value.length === 0) return;
-		const sel = selectedElements.value[0];
-		editor.timeline.reorderElement({
-			trackId: sel.trackId,
-			elementId: sel.elementId,
-			direction: "back",
-		});
-	});
-
 	useActionHandler("extract-audio", () => {
 		if (selectedElements.value.length === 0) return;
 
