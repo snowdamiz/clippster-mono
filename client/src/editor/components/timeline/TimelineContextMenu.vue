@@ -264,7 +264,6 @@ async function handleExportSegment() {
 
 	emit("close");
 	isExportingSegment.value = true;
-	showToast("Exporting selected segment...", "info", "projects");
 
 	try {
 		const exportId = `editor-segment-export-${Date.now()}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
@@ -287,6 +286,34 @@ async function handleExportSegment() {
 			throw new Error(result.error || "Segment export failed");
 		}
 
+		const { registerEditorExportBuild } = await import("../../services/registerEditorExportBuild");
+		const { showExportSummaryToast } = await import("../../lib/export-summary-toast");
+
+		let built: "registered" | "failed" | "skipped" = "skipped";
+		try {
+			const aspectLabel = `${project.settings.canvasSize.width}×${project.settings.canvasSize.height}`;
+			const reg = await registerEditorExportBuild({
+				outputPath: result.outputPath,
+				exportedDuration: element.duration,
+				projectId: project.metadata.id,
+				projectName: project.metadata.name,
+				buildOptions: {
+					aspectLabel,
+					quality: "high",
+					frameRate: project.settings?.fps ?? 30,
+					format: "mp4",
+					isForCampaign: false,
+					campaign: null,
+				},
+			});
+			if (reg?.mode === "clip_build" || reg?.mode === "standalone_clip") {
+				built = "registered";
+			}
+		} catch (e) {
+			console.warn("[TimelineContextMenu] Built Clips registration failed:", e);
+			built = "failed";
+		}
+
 		const { save } = await import("@tauri-apps/plugin-dialog");
 		const { invoke } = await import("@tauri-apps/api/core");
 		const defaultName = `${(element.name || "segment").replace(/[^a-zA-Z0-9-_]/g, "_")}.mp4`;
@@ -295,19 +322,26 @@ async function handleExportSegment() {
 			filters: [{ name: "Video", extensions: ["mp4"] }],
 		});
 
+		let extra: string | undefined;
 		if (savePath) {
 			await invoke("copy_clip_to_destination", {
 				sourcePath: result.outputPath,
 				destinationPath: savePath,
 			});
-			showToast(`Segment saved to ${savePath}`, "success", "projects");
-		} else {
-			showToast("Segment exported to Built Clips", "success", "projects");
+			extra = `Also copied to ${savePath}`;
 		}
+
+		showExportSummaryToast({
+			exportOk: true,
+			builtClips: built,
+			transcript: "skipped",
+			extra,
+		});
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Failed to export segment";
 		console.error("[TimelineContextMenu] Failed to export segment:", error);
-		showToast(message, "error", "projects");
+		const { showExportSummaryToast } = await import("../../lib/export-summary-toast");
+		showExportSummaryToast({ exportOk: false, builtClips: "skipped", transcript: "skipped", extra: message });
 	} finally {
 		isExportingSegment.value = false;
 	}

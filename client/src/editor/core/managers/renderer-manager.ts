@@ -45,6 +45,7 @@ import { resolveWatermarkById, resolveOverlayImagePath } from "@/services/databa
 import { resolveIntroOutroById } from "@/services/database/intro-outros";
 import { base64ToUtf8 } from "@/utils/encoding";
 import { resolveTransitionMediaPair } from "../../lib/timeline/transition-pairing";
+import { getSceneTracksForExport, writeSceneFrameSequenceToDisk } from "../../renderer/scene-frame-export";
 
 /** True if any two [start,end) segments overlap (for FFmpeg layer compositing). */
 function videoSegmentsOverlap(segments: { start: number; end: number }[]): boolean {
@@ -265,6 +266,11 @@ interface TauriExportConfig {
 	outro_path: string | null;
 	outro_duration: number | null;
 	export_id?: string | null;
+	scene_frame_pattern?: string | null;
+	scene_frame_count?: number | null;
+	export_format?: string;
+	export_quality?: string;
+	include_audio?: boolean;
 }
 
 interface BrandingExportData {
@@ -441,40 +447,66 @@ export class RendererManager {
 				Math.round(options.fps ?? activeProject.settings?.fps ?? 30),
 			);
 
-			// Pre-render text elements to transparent PNGs for pixel-perfect export
-			const textOverlays = await this.preRenderTextOverlays({ tracks, canvasSize, fps: exportFps });
+			const sessionId =
+				options.exportId != null && String(options.exportId).length > 0
+					? String(options.exportId)
+							.replace(/[^a-zA-Z0-9-_]/g, "_")
+							.slice(0, 80)
+					: `scene_${timestamp}`;
 
-			onProgress?.({ progress: 0.1 });
-			const cancelledAfterText = checkCancelled();
-			if (cancelledAfterText) return cancelledAfterText;
+			let sceneTransitions: import("../../types/transitions").Transition[] = [];
+			try {
+				const scene = this.editor.scenes.getActiveScene();
+				sceneTransitions = scene?.transitions ?? [];
+			} catch {
+				sceneTransitions = [];
+			}
 
-			// Pre-render sticker elements to transparent PNGs for pixel-perfect export
-			const stickerOverlays = await this.preRenderStickerOverlays({ tracks, canvasSize, fps: exportFps });
+			const background = activeProject.settings?.background ?? {
+				type: "color" as const,
+				color: "#000000",
+			};
 
-			onProgress?.({ progress: 0.12 });
-			const cancelledAfterStickers = checkCancelled();
-			if (cancelledAfterStickers) return cancelledAfterStickers;
+			const sceneTracks = getSceneTracksForExport(tracks);
+			const timeOffset = timeRange?.startTime ?? 0;
+			const frameCount = Math.max(1, Math.ceil(duration * exportFps));
 
-			// Pre-render caption elements to transparent PNGs for pixel-perfect export
-			const captionOverlays = await this.preRenderCaptionOverlays({
-				tracks,
-				canvasSize,
-				duration,
+			const { pattern: scenePattern, frameCount: sceneFrameCount } = await writeSceneFrameSequenceToDisk({
+				sessionId,
+				sceneInputs: {
+					tracks: sceneTracks,
+					mediaAssets,
+					duration: fullDuration,
+					canvasSize,
+					background,
+					transitions: sceneTransitions,
+				},
+				exportDuration: duration,
+				timeOffset,
 				fps: exportFps,
+				frameCount,
+				onProgress: (p) => {
+					onProgress?.({ progress: 0.05 + p.progress * 0.14 });
+				},
+				isCancelled: () => !!onCancel?.(),
 			});
 
-			onProgress?.({ progress: 0.15 });
-			const cancelledAfterCaptions = checkCancelled();
-			if (cancelledAfterCaptions) return cancelledAfterCaptions;
+			onProgress?.({ progress: 0.19 });
+			const cancelledAfterFrames = checkCancelled();
+			if (cancelledAfterFrames) return cancelledAfterFrames;
+
+			const textOverlays: TauriTextOverlay[] = [];
+			const stickerOverlays: TauriStickerOverlay[] = [];
+			const captionOverlays: TauriTextOverlay[] = [];
 
 			// Resolve branding config for export
 			const brandingExport = await this.resolveBrandingForExport({ canvasSize });
 
-			onProgress?.({ progress: 0.18 });
+			onProgress?.({ progress: 0.2 });
 			const cancelledAfterBranding = checkCancelled();
 			if (cancelledAfterBranding) return cancelledAfterBranding;
 
-			// Build export config from timeline data
+			// Build export config from timeline data (visuals come from scene PNG sequence)
 			const config = this.buildExportConfig({
 				tracks,
 				mediaAssets,
@@ -489,6 +521,12 @@ export class RendererManager {
 				brandingExport,
 			});
 			config.export_id = options.exportId ?? null;
+			config.scene_frame_pattern = scenePattern;
+			config.scene_frame_count = sceneFrameCount;
+			config.export_format = options.format;
+			config.export_quality = options.quality;
+			config.include_audio = options.includeAudio !== false;
+			config.effect_overlays = [];
 
 			onProgress?.({ progress: 0.2 });
 			const cancelledBeforeEncode = checkCancelled();
@@ -498,13 +536,6 @@ export class RendererManager {
 			await invoke("export_video_editor_project", { config });
 
 			onProgress?.({ progress: 0.95 });
-
-			// Always create clip in database for Built Clips page
-			await this.createClipFromExport({
-				outputPath,
-				duration,
-				projectName: activeProject.metadata.name,
-			});
 
 			onProgress?.({ progress: 1.0 });
 
@@ -1560,111 +1591,6 @@ export class RendererManager {
 		}
 
 		return result;
-	}
-
-	/**
-	 * Create a clip record in the database after successful export.
-	 * This makes the exported video appear in the Built clips section.
-	 */
-	private async createClipFromExport({
-		outputPath,
-		duration,
-		projectName,
-	}: {
-		outputPath: string;
-		duration: number;
-		projectName: string;
-	}): Promise<void> {
-		try {
-			const { getDatabase, generateId, timestamp, getCurrentUserId } = await import("@/services/database/core");
-			const { invoke } = await import("@tauri-apps/api/core");
-
-			// Validate that the project_id exists in the projects table
-			// The clips table has a FOREIGN KEY constraint on project_id
-			const db = await getDatabase();
-
-			await db.execute(
-				`UPDATE clips
-				 SET project_name = COALESCE(project_name, name), project_id = NULL
-				 WHERE source = 'video_editor' AND project_id IS NOT NULL`
-			);
-
-			// Prefer actual muxed duration (matches intro/outro concat and any encoder drift)
-			let clipDuration = duration;
-			try {
-				const meta = await invoke<{ duration: number; width: number; height: number }>(
-					"get_video_metadata",
-					{ videoPath: outputPath },
-				);
-				if (meta.duration > 0.05) {
-					clipDuration = meta.duration;
-				}
-			} catch (err) {
-				console.warn("[RendererManager] Failed to probe exported file duration:", err);
-			}
-
-			// Generate thumbnail — sample early in the file (after intro, duration already includes intro)
-			const thumbnailTimestamp = Math.min(1.0, Math.max(0.05, clipDuration / 2));
-			let thumbnailPath: string | null = null;
-
-			try {
-				thumbnailPath = await invoke<string>("generate_thumbnail_at_timestamp", {
-					videoPath: outputPath,
-					timestampSeconds: thumbnailTimestamp,
-				});
-			} catch (err) {
-				console.warn("[RendererManager] Failed to generate thumbnail:", err);
-				// Non-fatal - clip will be created without thumbnail
-			}
-
-			let fileSize: number | null = null;
-			try {
-				const info = await invoke<{ size: number }>("get_file_info", { path: outputPath });
-				fileSize = info.size;
-			} catch (err) {
-				console.warn("[RendererManager] Failed to get file size:", err);
-			}
-
-			// Create clip in database with status='generated' and build_status='completed'
-			// This ensures it appears in the Built Clips page
-			const clipId = generateId();
-			const now = timestamp();
-			const userId = getCurrentUserId();
-
-			await db.execute(
-				`INSERT INTO clips (
-					id, project_id, project_name, name, file_path, duration, start_time, end_time,
-					status, build_status, built_file_path, built_thumbnail_path,
-					built_duration, built_file_size, built_at, created_at, updated_at, user_id, source
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				[
-					clipId,
-					null,
-					projectName,
-					projectName,
-					outputPath,
-					clipDuration,
-					0,
-					clipDuration,
-					'generated', // Mark as generated so it shows in Built Clips
-					'completed', // Mark build as completed
-					outputPath,
-					thumbnailPath,
-					clipDuration,
-					fileSize,
-					now,
-					now,
-					now,
-					userId,
-					'video_editor', // Label as video editor export
-				]
-			);
-
-			console.log("[RendererManager] Created clip in database:", outputPath);
-		} catch (err) {
-			console.error("[RendererManager] Failed to create clip in database:", err);
-			// Non-fatal - export succeeded, just clip creation failed
-		}
 	}
 
 	subscribe(listener: () => void): () => void {

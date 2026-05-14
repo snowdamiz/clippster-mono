@@ -394,6 +394,37 @@ pub struct ExportConfig {
     pub outro_duration: Option<f64>,
 
     pub export_id: Option<String>,
+
+    /// When set, FFmpeg uses this `image2` pattern (e.g. `.../frame_%05d.png`) as the **video**
+    /// stream after all `video_sources` inputs. Visual compositing from `video_sources` is skipped;
+    /// those inputs are still used for embedded clip audio and probes.
+    #[serde(default)]
+    pub scene_frame_pattern: Option<String>,
+
+    #[serde(default)]
+    pub scene_frame_count: Option<u32>,
+
+    /// `mp4` (default) or `webm`
+    #[serde(default = "default_export_format")]
+    pub export_format: String,
+
+    #[serde(default = "default_export_quality")]
+    pub export_quality: String,
+
+    #[serde(default = "default_include_audio")]
+    pub include_audio: bool,
+}
+
+fn default_export_format() -> String {
+    "mp4".to_string()
+}
+
+fn default_export_quality() -> String {
+    "high".to_string()
+}
+
+fn default_include_audio() -> bool {
+    true
 }
 
 /// Full video editor export with audio tracks, text overlays, and effects
@@ -468,6 +499,106 @@ async fn run_ffmpeg_for_video_editor_export<R: Runtime>(
             _ = tokio::time::sleep(Duration::from_millis(120)) => {}
         }
     }
+}
+
+/// Video/audio codec flags for the final mux (MP4 vs WebM, quality tiers, optional `-an`).
+fn append_export_codec_args(args: &mut Vec<String>, format: &str, quality: &str, include_audio: bool) {
+    let fmt = format.trim().to_ascii_lowercase();
+    let q = quality.trim().to_ascii_lowercase();
+    let crf_h264 = match q.as_str() {
+        "low" => 28,
+        "medium" => 24,
+        "high" => 20,
+        "very_high" => 18,
+        _ => 23,
+    };
+    match fmt.as_str() {
+        "webm" => {
+            args.push("-c:v".to_string());
+            args.push("libvpx-vp9".to_string());
+            args.push("-row-mt".to_string());
+            args.push("1".to_string());
+            args.push("-b:v".to_string());
+            let br = match q.as_str() {
+                "low" => "1200k",
+                "medium" => "2500k",
+                "high" => "5000k",
+                "very_high" => "8000k",
+                _ => "2500k",
+            };
+            args.push(br.to_string());
+            args.push("-deadline".to_string());
+            args.push("good".to_string());
+            args.push("-cpu-used".to_string());
+            args.push("2".to_string());
+            if include_audio {
+                args.push("-c:a".to_string());
+                args.push("libopus".to_string());
+                args.push("-b:a".to_string());
+                args.push("160k".to_string());
+            } else {
+                args.push("-an".to_string());
+            }
+        }
+        _ => {
+            args.push("-c:v".to_string());
+            args.push("libx264".to_string());
+            args.push("-preset".to_string());
+            let preset = match q.as_str() {
+                "very_high" => "slow",
+                "high" => "medium",
+                "low" => "veryfast",
+                _ => "medium",
+            };
+            args.push(preset.to_string());
+            args.push("-crf".to_string());
+            args.push(crf_h264.to_string());
+            if include_audio {
+                args.push("-c:a".to_string());
+                args.push("aac".to_string());
+                args.push("-b:a".to_string());
+                let ab = match q.as_str() {
+                    "low" => "128k",
+                    "very_high" => "256k",
+                    _ => "192k",
+                };
+                args.push(ab.to_string());
+            } else {
+                args.push("-an".to_string());
+            }
+            args.push("-movflags".to_string());
+            args.push("+faststart".to_string());
+        }
+    }
+}
+
+/// Build `[v]` from the pre-rendered scene PNG sequence input (`scene_input_index`).
+fn push_scene_video_filter_chain(
+    filters: &mut Vec<String>,
+    scene_input_index: usize,
+    fps: i32,
+    width: i32,
+    height: i32,
+    total_duration: f64,
+    needs_black_padding: bool,
+    black_padding_duration: f64,
+) {
+    let mut chain = format!(
+        "[{}:v]fps={},scale={}:{}:flags=lanczos:force_original_aspect_ratio=disable,setsar=1,format=yuv420p,setpts=PTS-STARTPTS,trim=duration={}",
+        scene_input_index,
+        fps.max(1),
+        width,
+        height,
+        total_duration
+    );
+    if needs_black_padding {
+        chain.push_str(&format!(
+            ",tpad=stop_mode=add:stop_duration={}:color=black",
+            black_padding_duration
+        ));
+    }
+    chain.push_str("[v]");
+    filters.push(chain);
 }
 
 /// Map editor blend preset names to FFmpeg `blend` filter `all_mode` values.
@@ -1058,6 +1189,29 @@ pub async fn export_video_editor_project(
         }
     }
 
+    if let Some(ref pat) = config.scene_frame_pattern {
+        let first = pat.replace("%05d", "00001");
+        if !Path::new(&first).exists() {
+            return Err(format!("Scene export first frame not found: {}", first));
+        }
+        if let Some(n) = config.scene_frame_count {
+            if n > 0 {
+                let last = pat.replace("%05d", &format!("{:05}", n));
+                if !Path::new(&last).exists() {
+                    return Err(format!("Scene export last frame not found: {}", last));
+                }
+            }
+        }
+    }
+
+    let scene_extra: usize = if config.scene_frame_pattern.is_some() {
+        1
+    } else {
+        0
+    };
+    let use_scene_video = scene_extra > 0;
+    let scene_input_index = config.video_sources.len();
+
     let shell = app.shell();
 
     // Probe each video source for audio streams using ffprobe
@@ -1117,6 +1271,13 @@ pub async fn export_video_editor_project(
         args.push(source.source_path.clone());
     }
 
+    if let Some(ref pat) = config.scene_frame_pattern {
+        args.push("-framerate".to_string());
+        args.push(format!("{}", config.fps.max(1)));
+        args.push("-i".to_string());
+        args.push(pat.clone());
+    }
+
     // Add audio inputs
 
     for audio in &config.audio_tracks {
@@ -1173,6 +1334,7 @@ pub async fn export_video_editor_project(
 
     // Optional intro / outro clips (branding) — appended as extra inputs after all compositing inputs
     let mut next_input_index = config.video_sources.len()
+        + scene_extra
         + config.audio_tracks.len()
         + config.text_overlays.len()
         + config.sticker_overlays.len();
@@ -2356,17 +2518,34 @@ pub async fn export_video_editor_project(
     };
 
     if config.video_sources.is_empty() {
-        // No video sources — generate black video and silent audio for the full duration
+        if use_scene_video {
+            push_scene_video_filter_chain(
+                &mut filters,
+                scene_input_index,
+                config.fps,
+                config.width,
+                config.height,
+                config.total_duration,
+                needs_black_padding,
+                black_padding_duration,
+            );
+            filters.push(format!(
+                "anullsrc=r=48000:cl=stereo,atrim=duration={}[va]",
+                config.total_duration
+            ));
+        } else {
+            // No video sources — generate black video and silent audio for the full duration
 
-        filters.push(format!(
-            "color=c=black:s={}x{}:d={},format=yuv420p[v]",
-            config.width, config.height, config.total_duration
-        ));
+            filters.push(format!(
+                "color=c=black:s={}x{}:d={},format=yuv420p[v]",
+                config.width, config.height, config.total_duration
+            ));
 
-        filters.push(format!(
-            "anullsrc=r=48000:cl=stereo,atrim=duration={}[va]",
-            config.total_duration
-        ));
+            filters.push(format!(
+                "anullsrc=r=48000:cl=stereo,atrim=duration={}[va]",
+                config.total_duration
+            ));
+        }
     } else if config.video_sources.len() == 1 {
         let source = &config.video_sources[0];
 
@@ -2374,35 +2553,48 @@ pub async fn export_video_editor_project(
 
         let duration = source.end_time - source.start_time;
 
-        let transform = build_video_transform_filter(source, config.width, config.height, false);
+        if !use_scene_video {
+            let transform = build_video_transform_filter(source, config.width, config.height, false);
 
-        let effects_str = source
-            .effects
-            .as_ref()
-            .map(|fx| build_effects_filter(fx))
-            .unwrap_or_default();
+            let effects_str = source
+                .effects
+                .as_ref()
+                .map(|fx| build_effects_filter(fx))
+                .unwrap_or_default();
 
-        let effects_suffix = if effects_str.is_empty() {
-            String::new()
+            let effects_suffix = if effects_str.is_empty() {
+                String::new()
+            } else {
+                format!(",{}", effects_str)
+            };
+
+            // Trim video from source trim_start for exact duration, then apply transforms + effects
+
+            if needs_black_padding {
+                filters.push(format!(
+
+                    "[0:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}{},tpad=stop_mode=add:stop_duration={}:color=black[v]",
+
+                    trim_start, duration, transform, effects_suffix, black_padding_duration
+
+                ));
+            } else {
+                filters.push(format!(
+                    "[0:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}{}[v]",
+                    trim_start, duration, transform, effects_suffix
+                ));
+            }
         } else {
-            format!(",{}", effects_str)
-        };
-
-        // Trim video from source trim_start for exact duration, then apply transforms + effects
-
-        if needs_black_padding {
-            filters.push(format!(
-
-                "[0:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}{},tpad=stop_mode=add:stop_duration={}:color=black[v]",
-
-                trim_start, duration, transform, effects_suffix, black_padding_duration
-
-            ));
-        } else {
-            filters.push(format!(
-                "[0:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}{}[v]",
-                trim_start, duration, transform, effects_suffix
-            ));
+            push_scene_video_filter_chain(
+                &mut filters,
+                scene_input_index,
+                config.fps,
+                config.width,
+                config.height,
+                config.total_duration,
+                needs_black_padding,
+                black_padding_duration,
+            );
         }
 
         // Also trim video audio if it exists (mute if flagged)
@@ -2495,62 +2687,75 @@ pub async fn export_video_editor_project(
                 .then(ia.cmp(&ib))
         });
 
-        filters.push(format!(
-            "color=c=black:s={}x{}:d={},format=yuv420p[vlay_base]",
-            w, h, td
-        ));
-
-        let mut cur_v = "[vlay_base]".to_string();
-
-        for (layer_idx, &orig_i) in perm.iter().enumerate() {
-            let source = &config.video_sources[orig_i];
-            let trim_start = source.trim_start.unwrap_or(0.0);
-            let clip_dur = source.end_time - source.start_time;
-            let transparent_layer = !source.track_is_main.unwrap_or(true);
-            let transform = build_video_transform_filter(source, w, h, transparent_layer);
-            let layer_pad_color = if transparent_layer { "black@0" } else { "black" };
-            let effects_str = source
-                .effects
-                .as_ref()
-                .map(|fx| build_effects_filter(fx))
-                .unwrap_or_default();
-            let effects_suffix = if effects_str.is_empty() {
-                String::new()
-            } else {
-                format!(",{}", effects_str)
-            };
-            let st = source.start_time;
-            let en = source.end_time;
-            let pad_end = (td - en).max(0.0);
-
-            let mut vf = format!(
-                "[{}:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}{}",
-                orig_i, trim_start, clip_dur, transform, effects_suffix
-            );
-            vf.push_str(&format!(
-                ",tpad=start_mode=add:start_duration={}:stop_mode=add:stop_duration={}:color={}[vlp{}]",
-                st, pad_end, layer_pad_color, orig_i
+        if !use_scene_video {
+            filters.push(format!(
+                "color=c=black:s={}x{}:d={},format=yuv420p[vlay_base]",
+                w, h, td
             ));
-            filters.push(vf);
 
-            let mode = source.blend_mode.as_deref().unwrap_or("normal");
-            let next_v = if layer_idx + 1 == perm.len() {
-                "[v]".to_string()
-            } else {
-                format!("[vlm{}]", layer_idx)
-            };
+            let mut cur_v = "[vlay_base]".to_string();
 
-            let comb = if mode == "normal" || mode.is_empty() {
-                format!("{}[vlp{}]overlay=0:0:format=auto{}", cur_v, orig_i, next_v)
-            } else {
-                let ffm = map_blend_mode_ffmpeg(mode);
-                format!(
-                    "{}[vlp{}]blend=all_mode={}:all_opacity=1{}",
-                    cur_v, orig_i, ffm, next_v
-                )
-            };
-            filters.push(comb);
-            cur_v = next_v;
+            for (layer_idx, &orig_i) in perm.iter().enumerate() {
+                let source = &config.video_sources[orig_i];
+                let trim_start = source.trim_start.unwrap_or(0.0);
+                let clip_dur = source.end_time - source.start_time;
+                let transparent_layer = !source.track_is_main.unwrap_or(true);
+                let transform = build_video_transform_filter(source, w, h, transparent_layer);
+                let layer_pad_color = if transparent_layer { "black@0" } else { "black" };
+                let effects_str = source
+                    .effects
+                    .as_ref()
+                    .map(|fx| build_effects_filter(fx))
+                    .unwrap_or_default();
+                let effects_suffix = if effects_str.is_empty() {
+                    String::new()
+                } else {
+                    format!(",{}", effects_str)
+                };
+                let st = source.start_time;
+                let en = source.end_time;
+                let pad_end = (td - en).max(0.0);
+
+                let mut vf = format!(
+                    "[{}:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}{}",
+                    orig_i, trim_start, clip_dur, transform, effects_suffix
+                );
+                vf.push_str(&format!(
+                    ",tpad=start_mode=add:start_duration={}:stop_mode=add:stop_duration={}:color={}[vlp{}]",
+                    st, pad_end, layer_pad_color, orig_i
+                ));
+                filters.push(vf);
+
+                let mode = source.blend_mode.as_deref().unwrap_or("normal");
+                let next_v = if layer_idx + 1 == perm.len() {
+                    "[v]".to_string()
+                } else {
+                    format!("[vlm{}]", layer_idx)
+                };
+
+                let comb = if mode == "normal" || mode.is_empty() {
+                    format!("{}[vlp{}]overlay=0:0:format=auto{}", cur_v, orig_i, next_v)
+                } else {
+                    let ffm = map_blend_mode_ffmpeg(mode);
+                    format!(
+                        "{}[vlp{}]blend=all_mode={}:all_opacity=1{}",
+                        cur_v, orig_i, ffm, next_v
+                    )
+                };
+                filters.push(comb);
+                cur_v = next_v;
+            }
+        } else {
+            push_scene_video_filter_chain(
+                &mut filters,
+                scene_input_index,
+                config.fps,
+                w,
+                h,
+                config.total_duration,
+                needs_black_padding,
+                black_padding_duration,
+            );
         }
 
         // Mix embedded audio from each clip on the global timeline
@@ -2660,53 +2865,68 @@ pub async fn export_video_editor_project(
             after_ext[outgoing_idx] = after_ext[outgoing_idx].max(half + gap_after + TRANSITION_TIME_SLACK);
         }
 
-        for i in 0..source_count {
-            let source = &config.video_sources[i];
+        let has_transitions = !transitions.is_empty();
 
-            let trim_start = source.trim_start.unwrap_or(0.0);
-            let duration = source.end_time - source.start_time;
-            let transform = build_video_transform_filter(source, config.width, config.height, false);
+        if !use_scene_video {
+            for i in 0..source_count {
+                let source = &config.video_sources[i];
 
-            let effects_str = source
-                .effects
-                .as_ref()
-                .map(|fx| build_effects_filter(fx))
-                .unwrap_or_default();
+                let trim_start = source.trim_start.unwrap_or(0.0);
+                let duration = source.end_time - source.start_time;
+                let transform = build_video_transform_filter(source, config.width, config.height, false);
 
-            let effects_suffix = if effects_str.is_empty() {
-                String::new()
-            } else {
-                format!(",{}", effects_str)
-            };
+                let effects_str = source
+                    .effects
+                    .as_ref()
+                    .map(|fx| build_effects_filter(fx))
+                    .unwrap_or_default();
 
-            let before = before_ext[i].min(source.start_time.max(0.0));
-            let after = after_ext[i].max(0.0);
-            let effective_duration = (duration + before + after).max(0.0);
-            let padding_suffix = if after > 0.0001 {
-                format!(
-                    ",tpad=stop_mode=clone:stop_duration={:.6},trim=duration={:.6}",
-                    after, effective_duration
-                )
-            } else {
-                String::new()
-            };
+                let effects_suffix = if effects_str.is_empty() {
+                    String::new()
+                } else {
+                    format!(",{}", effects_str)
+                };
 
-            let mut chain = format!(
-                "[{}:v]trim=start={}:duration={},setpts=PTS-STARTPTS{},{}{}",
-                i, trim_start, effective_duration, padding_suffix, transform, effects_suffix
+                let before = before_ext[i].min(source.start_time.max(0.0));
+                let after = after_ext[i].max(0.0);
+                let effective_duration = (duration + before + after).max(0.0);
+                let padding_suffix = if after > 0.0001 {
+                    format!(
+                        ",tpad=stop_mode=clone:stop_duration={:.6},trim=duration={:.6}",
+                        after, effective_duration
+                    )
+                } else {
+                    String::new()
+                };
+
+                let mut chain = format!(
+                    "[{}:v]trim=start={}:duration={},setpts=PTS-STARTPTS{},{}{}",
+                    i, trim_start, effective_duration, padding_suffix, transform, effects_suffix
+                );
+
+                chain.push_str(&format!(
+                    ",fps={},settb=AVTB,setsar=1,format=yuv420p",
+                    config.fps
+                ));
+
+                chain.push_str(&format!("[v{}]", i));
+                filters.push(chain);
+            }
+        } else {
+            push_scene_video_filter_chain(
+                &mut filters,
+                scene_input_index,
+                config.fps,
+                config.width,
+                config.height,
+                config.total_duration,
+                needs_black_padding,
+                black_padding_duration,
             );
-
-            chain.push_str(&format!(
-                ",fps={},settb=AVTB,setsar=1,format=yuv420p",
-                config.fps
-            ));
-
-            chain.push_str(&format!("[v{}]", i));
-            filters.push(chain);
         }
 
-        let has_transitions = !transitions.is_empty();
-        if has_transitions {
+        if !use_scene_video {
+            if has_transitions {
             let mut current_stream = "[v0]".to_string();
             // xfade `offset` is measured on the *first* input stream (the accumulated chain).
             // Using global `junction_time` breaks after the first transition and desyncs A/V.
@@ -2782,6 +3002,7 @@ pub async fn export_video_editor_project(
             } else {
                 filters.push(format!("{}concat=n={}:v=1:a=0[v]", concat_inputs, source_count));
             }
+        }
         }
 
         // Handle audio from video sources.
@@ -2973,7 +3194,7 @@ pub async fn export_video_editor_project(
                 continue;
             }
 
-            let audio_index = video_input_count + i;
+            let audio_index = video_input_count + scene_extra + i;
 
             let duration = audio.end_time - audio.start_time;
 
@@ -3222,7 +3443,7 @@ pub async fn export_video_editor_project(
 
     let mut video_stream = "[v]".to_string();
 
-    let existing_input_count = config.video_sources.len() + config.audio_tracks.len();
+    let existing_input_count = config.video_sources.len() + scene_extra + config.audio_tracks.len();
 
     let fps_i = config.fps.max(1);
     let fps_tb = format!("N/{}/TB", fps_i);
@@ -3652,31 +3873,18 @@ pub async fn export_video_editor_project(
 
     args.push(final_video_map);
 
-    args.push("-map".to_string());
+    if config.include_audio {
+        args.push("-map".to_string());
 
-    args.push(final_audio_map);
+        args.push(final_audio_map);
+    }
 
-    // Output encoding settings
-
-    args.push("-c:v".to_string());
-
-    args.push("libx264".to_string());
-
-    args.push("-preset".to_string());
-
-    args.push("medium".to_string());
-
-    args.push("-crf".to_string());
-
-    args.push("23".to_string());
-
-    args.push("-c:a".to_string());
-
-    args.push("aac".to_string());
-
-    args.push("-b:a".to_string());
-
-    args.push("192k".to_string());
+    append_export_codec_args(
+        &mut args,
+        &config.export_format,
+        &config.export_quality,
+        config.include_audio,
+    );
 
     // Audio sync and quality settings
 
@@ -3687,10 +3895,6 @@ pub async fn export_video_editor_project(
     args.push("-vsync".to_string());
 
     args.push("cfr".to_string());
-
-    args.push("-movflags".to_string());
-
-    args.push("+faststart".to_string());
 
     // Set exact duration
 
@@ -3800,6 +4004,64 @@ pub async fn export_video_editor_project(
     }
 
     Ok(())
+}
+
+/// Write one PNG frame for WYSIWYG scene export (`frame_%05d.png` under a per-session temp dir).
+#[tauri::command]
+pub async fn write_scene_export_frame(
+    session_id: String,
+    frame_index_one_based: u32,
+    png_bytes: Vec<u8>,
+) -> Result<(), String> {
+    let safe_id: String = session_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .take(80)
+        .collect();
+
+    let dir = std::env::temp_dir()
+        .join("clippster_scene_export")
+        .join(format!("session_{}", safe_id));
+
+    std::fs::create_dir_all(&dir).map_err(|e| format!("scene export mkdir: {}", e))?;
+
+    let path = dir.join(format!("frame_{:05}.png", frame_index_one_based));
+    std::fs::write(&path, &png_bytes).map_err(|e| format!("scene export write: {}", e))?;
+    Ok(())
+}
+
+/// Returns `(pattern, frame_count)` for FFmpeg `image2` input after all frames were written.
+#[tauri::command]
+pub fn finalize_scene_export_frames(session_id: String) -> Result<(String, u32), String> {
+    let safe_id: String = session_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .take(80)
+        .collect();
+
+    let dir = std::env::temp_dir()
+        .join("clippster_scene_export")
+        .join(format!("session_{}", safe_id));
+
+    if !dir.is_dir() {
+        return Err("scene export session dir missing".to_string());
+    }
+
+    let mut count: u32 = 0;
+    for entry in std::fs::read_dir(&dir).map_err(|e| format!("read_dir: {}", e))? {
+        let e = entry.map_err(|e| e.to_string())?;
+        let name = e.file_name().to_string_lossy().to_string();
+        if name.starts_with("frame_") && name.ends_with(".png") {
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return Err("no scene export frames written".to_string());
+    }
+
+    let pattern = dir.join("frame_%05d.png");
+    let pattern_str = pattern.to_string_lossy().replace('\\', "/");
+    Ok((pattern_str, count))
 }
 
 /// Simple video editor export - trim a single video source
