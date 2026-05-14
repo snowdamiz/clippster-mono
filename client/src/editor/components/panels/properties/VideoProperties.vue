@@ -9,7 +9,7 @@ import type { VideoEffect } from "../../../types/effects";
 import { getEffectPreset } from "../../../constants/effect-constants";
 import type { ChromakeySettings } from "../../../types/chromakey";
 import { DEFAULT_CHROMAKEY } from "../../../types/chromakey";
-import { Film, Trash2, RotateCcw, VolumeX, Volume2, FlipHorizontal, FlipVertical, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, Crop, RectangleHorizontal, Square, RectangleVertical, Pipette, SlidersHorizontal, Sparkles, Scissors } from "lucide-vue-next";
+import { Film, Trash2, RotateCcw, VolumeX, Volume2, FlipHorizontal, FlipVertical, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, ChevronUp, Crop, RectangleHorizontal, Square, RectangleVertical, Pipette, SlidersHorizontal, Sparkles, Scissors } from "lucide-vue-next";
 import MasksPanel from "./MasksPanel.vue";
 import { useKeyframes } from "../../../composables/useKeyframes";
 import KeyframeToggle from "./KeyframeToggle.vue";
@@ -18,6 +18,7 @@ import ColorCurvesPanel from "./ColorCurvesPanel.vue";
 import ColorWheelsPanel from "./ColorWheelsPanel.vue";
 import LutPanel from "./LutPanel.vue";
 import { Switch } from '@/components/ui/switch';
+import { useClipVolumeInspector } from "../../../composables/panels/useClipVolumeInspector";
 
 const props = defineProps<{
 	element: VideoElement;
@@ -79,20 +80,16 @@ const { hasKeyframes: hasKf, addKeyframe, clearPropertyKeyframes } = useKeyframe
 
 // --- Local input refs synced with element props ---
 const opacityInput = ref(Math.round(props.element.opacity * 100).toString());
-const volumeInput = ref(Math.round((props.element.volume ?? 1) * 100).toString());
 const scaleInput = ref(Math.round(props.element.transform.scale * 100).toString());
 const posXInput = ref(props.element.transform.position.x.toString());
 const posYInput = ref(props.element.transform.position.y.toString());
 const rotateInput = ref(props.element.transform.rotate.toString());
 
 watch(() => props.element.opacity, (v) => { opacityInput.value = Math.round(v * 100).toString(); });
-watch(() => props.element.volume, (v) => { volumeInput.value = Math.round((v ?? 1) * 100).toString(); });
 watch(() => props.element.transform.scale, (v) => { scaleInput.value = Math.round(v * 100).toString(); });
 watch(() => props.element.transform.position.x, (v) => { posXInput.value = v.toString(); });
 watch(() => props.element.transform.position.y, (v) => { posYInput.value = v.toString(); });
 watch(() => props.element.transform.rotate, (v) => { rotateInput.value = v.toString(); });
-
-const volumePercent = computed(() => `${Math.round((props.element.volume ?? 1) * 100)}%`);
 
 const speedTicks = [0.5, 1, 2, 3, 4, 5, 8, 10];
 const currentSpeed = computed(() => props.element.speed ?? 1);
@@ -316,6 +313,12 @@ function update(updates: Record<string, unknown>) {
 	});
 }
 
+const clipVolume = useClipVolumeInspector({
+	elementId: props.element.id,
+	getLinearGain: () => props.element.volume ?? 1,
+	setLinearGain: (gain: number) => update({ volume: gain }),
+});
+
 function updateTransform(partial: Record<string, unknown>) {
 	update({
 		transform: {
@@ -443,24 +446,6 @@ function handleOpacityBlur() {
 	const pct = Number.isNaN(parsed) ? Math.round(props.element.opacity * 100) : clamp(parsed, 0, 100);
 	opacityInput.value = pct.toString();
 	update({ opacity: pct / 100 });
-}
-
-// --- Volume ---
-function handleVolumeSlider(e: Event) {
-	const val = Number((e.target as HTMLInputElement).value);
-	volumeInput.value = val.toString();
-	update({ volume: val / 100 });
-}
-function handleVolumeInput(value: string) {
-	volumeInput.value = value;
-	const parsed = parseInt(value, 10);
-	if (!Number.isNaN(parsed)) update({ volume: clamp(parsed, 0, 200) / 100 });
-}
-function handleVolumeBlur() {
-	const parsed = parseInt(volumeInput.value, 10);
-	const pct = Number.isNaN(parsed) ? Math.round((props.element.volume ?? 1) * 100) : clamp(parsed, 0, 200);
-	volumeInput.value = pct.toString();
-	update({ volume: pct / 100 });
 }
 
 // --- Scale ---
@@ -1126,14 +1111,52 @@ function formatTime(seconds: number): string {
 				<span class="text-sm text-zinc-400">Audio</span>
 			</div>
 			<div class="space-y-4">
-				<!-- Volume -->
+				<!-- Volume (linear gain persisted; dB UI) -->
 				<div class="space-y-2">
-					<span class="text-xs font-medium text-zinc-300">Volume</span>
+					<div class="flex items-center justify-between">
+						<span class="text-xs font-medium text-zinc-300">Volume</span>
+						<span class="text-[10px] text-zinc-500" title="Linear gain 1 = 0 dB (export / playback)">1 = 0 dB</span>
+					</div>
 					<div class="flex items-center gap-2">
-						<input type="range" :value="(element.volume ?? 1) * 100" min="0" max="200" step="1" class="flex-1" @input="handleVolumeSlider" />
-						<div class="flex h-7 w-16 items-center rounded-sm border border-white/10 bg-white/5 px-2">
-							<input type="number" :value="volumeInput" min="0" max="200" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => handleVolumeInput((e.target as HTMLInputElement).value)" @blur="handleVolumeBlur" />
-							<span class="ml-0.5 shrink-0 text-[10px] text-zinc-500">%</span>
+						<input
+							type="range"
+							:value="clipVolume.sliderStep"
+							min="0"
+							:max="clipVolume.sliderMax"
+							step="1"
+							class="flex-1"
+							@pointerdown="clipVolume.onSliderPointerDown"
+							@input="clipVolume.onSliderInput"
+						/>
+						<div class="flex h-7 min-w-[5.25rem] overflow-hidden rounded-sm border border-white/10 bg-white/5">
+							<input
+								type="text"
+								:value="clipVolume.dbField"
+								class="min-w-0 flex-1 bg-transparent px-2 text-center text-xs text-zinc-200 outline-none"
+								@input="(e) => clipVolume.onDbFieldInput((e.target as HTMLInputElement).value)"
+								@blur="clipVolume.onDbFieldBlur"
+								@keydown.enter="($event.target as HTMLInputElement).blur()"
+							/>
+							<div class="flex w-4 shrink-0 flex-col border-l border-white/10">
+								<button
+									type="button"
+									class="flex h-1/2 items-center justify-center text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-200"
+									title="Increase volume by 0.1 dB"
+									@mousedown.prevent
+									@click="clipVolume.nudgeDb(1)"
+								>
+									<ChevronUp class="size-2.5" />
+								</button>
+								<button
+									type="button"
+									class="flex h-1/2 items-center justify-center border-t border-white/10 text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-200"
+									title="Decrease volume by 0.1 dB"
+									@mousedown.prevent
+									@click="clipVolume.nudgeDb(-1)"
+								>
+									<ChevronDown class="size-2.5" />
+								</button>
+							</div>
 						</div>
 					</div>
 				</div>

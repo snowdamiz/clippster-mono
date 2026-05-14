@@ -9,7 +9,7 @@ import { useElementSelection } from "../../composables/timeline/element/useEleme
 import { useBrandingConfig } from "../../composables/useBrandingConfig";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
 import { getLastFrameTime } from "../../lib/time";
-import type { TimelineTrack } from "../../types/timeline";
+import type { TimelineElement, TimelineTrack } from "../../types/timeline";
 import { exposePreviewPerfGlobal } from "../../lib/preview-performance";
 import PreviewOverlay from "./PreviewOverlay.vue";
 import SocialOverlay from "./SocialOverlay.vue";
@@ -131,29 +131,42 @@ const sceneTransitions = computed(() => {
 	}
 });
 
+function isVisualPreviewElement(element: TimelineElement): boolean {
+	return (
+		element.type === "video" ||
+		element.type === "image" ||
+		element.type === "text" ||
+		element.type === "sticker" ||
+		element.type === "effect" ||
+		element.type === "caption"
+	);
+}
+
 // When in crop mode, strip crop from the selected element so canvas shows full frame
 const sceneTracks = computed((): TimelineTrack[] => {
 	const raw = tracks.value;
 	const selectedElement = selectedElements.value[0];
 
-	return raw.map((t) => {
-		const nextElements = t.elements.map((el) => {
-			let next = el;
+	return raw
+		.map((t) => {
+			const nextElements = t.elements.filter(isVisualPreviewElement).map((el) => {
+				let next = el;
 
-			if (
-				isCropMode.value &&
-				selectedElement &&
-				t.id === selectedElement.trackId &&
-				el.id === selectedElement.elementId
-			) {
-				next = { ...next, crop: undefined } as typeof el;
-			}
+				if (
+					isCropMode.value &&
+					selectedElement &&
+					t.id === selectedElement.trackId &&
+					el.id === selectedElement.elementId
+				) {
+					next = { ...next, crop: undefined } as typeof el;
+				}
 
-			return next;
-		});
+				return next;
+			});
 
-		return { ...t, elements: nextElements } as typeof t;
-	});
+			return { ...t, elements: nextElements } as typeof t;
+		})
+		.filter((t) => t.elements.length > 0 || t.type !== "audio");
 });
 
 function schedulePreviewSceneRebuild() {

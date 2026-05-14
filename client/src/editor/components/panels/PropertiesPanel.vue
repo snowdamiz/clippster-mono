@@ -16,7 +16,16 @@ import TransitionProperties from "./properties/TransitionProperties.vue";
 import { Settings } from "lucide-vue-next";
 import type { Transition } from "../../types/transitions";
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		playback: false,
+		project: false,
+		timeline: true,
+		selection: true,
+		scenes: true,
+		media: true,
+	},
+});
 const { selectedElements } = useElementSelection();
 
 const elementsWithTracks = computed(() => {

@@ -15,6 +15,7 @@ import {
 } from "@/utils/waveformRenderer";
 import type { TimelineElement, AudioElement, VideoElement } from "../../types/timeline";
 import type { MediaAsset } from "../../types/assets";
+import { clipVolumeDraftVersion, getClipVolumeDraft } from "../../lib/clip-volume-draft";
 
 interface UseAudioWaveformOptions {
 	element: Ref<TimelineElement>;
@@ -26,12 +27,9 @@ interface UseAudioWaveformOptions {
 	currentTime: Ref<number>;
 }
 
-/** Minimum vertical scale when clip volume is low (timeline stays readable; playback still uses real volume). */
-const TIMELINE_WAVEFORM_VOLUME_FLOOR = 0.32;
-
 function visualVolumeScale(volume: number): number {
-	const v = Math.max(0, Math.min(1, volume));
-	return TIMELINE_WAVEFORM_VOLUME_FLOOR + (1 - TIMELINE_WAVEFORM_VOLUME_FLOOR) * v;
+	if (!Number.isFinite(volume) || volume <= 0) return 0;
+	return Math.min(1.6, Math.sqrt(volume));
 }
 
 /**
@@ -203,9 +201,10 @@ export function useAudioWaveform({
 			// Source duration = timeline duration * speed
 			const sourceDuration = duration * speed;
 
-			// Use element volume only for *visual* scaling. Peaks are extracted at unity gain so
-			// zoomed-in / quiet clips stay visible; visualVolumeScale() keeps low volume readable.
-			const volume = el.type === "audio" ? ((el as AudioElement).volume ?? 1) : ((el as VideoElement).volume ?? 1);
+			// Use element volume only for *visual* scaling. Draft volume lets the waveform
+			// follow the inspector slider live without committing timeline/audio reload work.
+			const draftVolume = getClipVolumeDraft(el.id);
+			const volume = draftVolume ?? (el.type === "audio" ? ((el as AudioElement).volume ?? 1) : ((el as VideoElement).volume ?? 1));
 
 			const peaks = await waveformService.getPeaksForRange(audioUrl, {
 				startTime: trimStart,
@@ -347,10 +346,12 @@ export function useAudioWaveform({
 	watch(
 		[isLoaded, zoomLevel, currentTime, elementWidth, () => {
 			const el = element.value;
+			const draftVolume = getClipVolumeDraft(el.id);
+			if (draftVolume != null) return draftVolume;
 			if (el.type === "audio") return (el as AudioElement).volume;
 			if (el.type === "video") return (el as VideoElement).volume;
 			return 1;
-		}, () => element.value.fadeIn ?? 0, () => element.value.fadeOut ?? 0],
+		}, clipVolumeDraftVersion, () => element.value.fadeIn ?? 0, () => element.value.fadeOut ?? 0],
 		([loaded]) => {
 			if (loaded) {
 				nextTick(() => {

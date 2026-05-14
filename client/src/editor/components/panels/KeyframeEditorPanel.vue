@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import KeyframeGraphEditor from "./KeyframeGraphEditor.vue";
 import { useEditorUIState } from "../../composables/useEditorUIState";
+import { CLIP_GAIN_MAX } from "../../lib/audio-volume-ui";
 
 const { editor, version } = useEditor();
 const { timelineKeyframePlacementActive, setTimelineKeyframePlacementActive } = useEditorUIState();
@@ -55,7 +56,7 @@ const PROPERTIES: { key: KeyframableProperty; label: string; defaultValue: numbe
 	{ key: "positionX", label: "Position X", defaultValue: 0, min: -1000, max: 1000, step: 1 },
 	{ key: "positionY", label: "Position Y", defaultValue: 0, min: -1000, max: 1000, step: 1 },
 	{ key: "rotation", label: "Rotation", defaultValue: 0, min: -360, max: 360, step: 1 },
-	{ key: "volume", label: "Volume", defaultValue: 1, min: 0, max: 2, step: 0.01 },
+	{ key: "volume", label: "Volume (gain)", defaultValue: 1, min: 0, max: CLIP_GAIN_MAX, step: 0.01 },
 	{ key: "speed", label: "Speed", defaultValue: 1, min: 0.1, max: 10, step: 0.01 },
 ];
 
