@@ -17,6 +17,11 @@ import { isMainTrack } from "../lib/timeline";
 import { resolveTransitionMediaPair } from "../lib/timeline/transition-pairing";
 import type { BaseNode } from "./nodes/base-node";
 
+/**
+ * Preview scene cache invalidation: keep in sync with
+ * [`fingerprintTimelineElement`](../lib/scene-input-fingerprint.ts) — any new `VideoNode` /
+ * `ImageNode` / … params must affect that fingerprint.
+ */
 export type BuildSceneParams = {
 	canvasSize: TCanvasSize;
 	tracks: TimelineTrack[];
