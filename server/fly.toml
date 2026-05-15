@@ -12,6 +12,7 @@ primary_region = "iad"
 [env]
   PHX_SERVER = "true"
   PORT = "4000"
+  OPENROUTER_MODEL = "google/gemini-3.1-flash-lite"
   ECTO_IPV6 = "true"
   ERL_AFLAGS = "-proto_dist inet6_tcp"
   RELEASE_DISTRIBUTION = "name"
