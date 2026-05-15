@@ -326,6 +326,6 @@ function onHandleDblClick(propKey: KeyframableProperty, kfId: string) {
 			</svg>
 		</div>
 
-		<p class="text-[8px] text-zinc-600">Drag handles to adjust · Double-click to remove</p>
+		<p class="text-[8px] text-zinc-600">Drag handles to adjust · Double-click to remove · Volume curve uses linear gain (1 = 0 dB); match the inspector dB field.</p>
 	</div>
 </template>

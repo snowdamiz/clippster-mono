@@ -23,6 +23,11 @@ const rulerRef = defineModel<HTMLDivElement | null>("rulerRef", { default: null 
 const { editor, version } = useEditor({
 	subscribe: {
 		playback: false,
+		timeline: true,
+		scenes: true,
+		project: true,
+		media: false,
+		selection: false,
 	},
 });
 

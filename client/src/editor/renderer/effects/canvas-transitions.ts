@@ -611,136 +611,258 @@ function renderPrismSweep(
 	ctx: Ctx, w: number, h: number,
 	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
 ): void {
-	renderProceduralMatte(ctx, w, h, outgoing, incoming, t, "prismSweep");
+	const p = clamp01(t);
+	if (p <= 0) {
+		ctx.drawImage(outgoing, 0, 0, w, h);
+		return;
+	}
+	if (p >= 1) {
+		ctx.drawImage(incoming, 0, 0, w, h);
+		return;
+	}
+
+	ctx.drawImage(outgoing, 0, 0, w, h);
+
+	// Same reveal direction as the old procedural matte, but rendered as a clipped polygon
+	// instead of per-pixel CPU work. This keeps preview playback smooth and export identical.
+	const edge = p * 1.45 - 0.18;
+	const revealPolygon = clipUnitSquareByHalfPlane(0.78, 0.28, edge + 0.04);
+	drawIncomingInUnitPolygon(ctx, w, h, incoming, revealPolygon);
+
+	const stripe = edge;
+	ctx.save();
+	ctx.globalCompositeOperation = "screen";
+	ctx.globalAlpha = Math.max(0, Math.sin(Math.PI * p)) * 0.28;
+	ctx.strokeStyle = "#ffffff";
+	ctx.lineWidth = Math.max(12, Math.min(w, h) * 0.035);
+	drawUnitLineForHalfPlane(ctx, w, h, 0.78, 0.28, stripe);
+	ctx.stroke();
+	ctx.restore();
 }
 
 function renderGlitchBlocks(
 	ctx: Ctx, w: number, h: number,
 	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
 ): void {
-	renderProceduralMatte(ctx, w, h, outgoing, incoming, t, "glitchBlocks");
+	const p = clamp01(t);
+	if (p <= 0) {
+		ctx.drawImage(outgoing, 0, 0, w, h);
+		return;
+	}
+	if (p >= 1) {
+		ctx.drawImage(incoming, 0, 0, w, h);
+		return;
+	}
+
+	ctx.drawImage(outgoing, 0, 0, w, h);
+
+	const rows = 12;
+	const rowH = h / rows;
+	for (let row = 0; row < rows; row++) {
+		const stagger = ((row * 37) % 11) / 11;
+		const reveal = clamp01(p * 1.35 - stagger * 0.35);
+		if (reveal <= 0) continue;
+
+		const y = Math.floor(row * rowH);
+		const rh = Math.ceil((row + 1) * rowH) - y;
+		const fromLeft = row % 2 === 0;
+		const rw = Math.ceil(w * reveal);
+		const sx = fromLeft ? 0 : w - rw;
+		const dx = sx;
+		ctx.drawImage(incoming, sx, y, rw, rh, dx, y, rw, rh);
+	}
+
+	// Bounded glitch accent: a handful of shifted scan bands, never full-frame pixel loops.
+	const jitterPhase = Math.floor(p * 24);
+	const accentRows = 5;
+	ctx.save();
+	ctx.globalAlpha = Math.max(0, Math.sin(Math.PI * p)) * 0.22;
+	for (let i = 0; i < accentRows; i++) {
+		const row = (jitterPhase * 3 + i * 5) % rows;
+		const y = Math.floor(row * rowH);
+		const rh = Math.max(2, Math.ceil(rowH * 0.32));
+		const shift = (((row * 17 + jitterPhase * 11) % 9) - 4) * Math.max(2, w * 0.006);
+		const sx = Math.max(0, -shift);
+		const dx = Math.max(0, shift);
+		const sw = Math.max(1, w - Math.abs(shift));
+		ctx.drawImage(incoming, sx, y, sw, rh, dx, y, sw, rh);
+	}
+	ctx.restore();
 }
 
 function renderShutterFlash(
 	ctx: Ctx, w: number, h: number,
 	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
 ): void {
-	renderProceduralMatte(ctx, w, h, outgoing, incoming, t, "shutterFlash");
+	const p = clamp01(t);
+	if (p <= 0) {
+		ctx.drawImage(outgoing, 0, 0, w, h);
+		return;
+	}
+	if (p >= 1) {
+		ctx.drawImage(incoming, 0, 0, w, h);
+		return;
+	}
+
+	ctx.drawImage(outgoing, 0, 0, w, h);
+
+	const cols = 10;
+	const colW = w / cols;
+	for (let col = 0; col < cols; col++) {
+		const fromTop = col % 2 === 0;
+		const reveal = clamp01(p * 1.22 - (fromTop ? 0 : 0.22));
+		if (reveal <= 0) continue;
+
+		const x = Math.floor(col * colW);
+		const cw = Math.ceil((col + 1) * colW) - x;
+		const rh = Math.ceil(h * reveal);
+		const sy = fromTop ? 0 : h - rh;
+		ctx.drawImage(incoming, x, sy, cw, rh, x, sy, cw, rh);
+	}
+
+	const flash = 0.42 * Math.max(0, 1 - Math.abs(p - 0.5) / 0.16);
+	if (flash > 0) {
+		ctx.save();
+		ctx.globalCompositeOperation = "screen";
+		ctx.globalAlpha = flash;
+		ctx.fillStyle = "#ffffff";
+		ctx.fillRect(0, 0, w, h);
+		ctx.restore();
+	}
 }
 
 function renderInkBloom(
 	ctx: Ctx, w: number, h: number,
 	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
 ): void {
-	renderProceduralMatte(ctx, w, h, outgoing, incoming, t, "inkBloom");
-}
-
-type ProceduralMatteType = "prismSweep" | "glitchBlocks" | "shutterFlash" | "inkBloom";
-
-function renderProceduralMatte(
-	ctx: Ctx,
-	w: number,
-	h: number,
-	outgoing: CanvasImageSource,
-	incoming: CanvasImageSource,
-	t: number,
-	type: ProceduralMatteType,
-): void {
-	if (t <= 0) {
+	const p = clamp01(t);
+	if (p <= 0) {
 		ctx.drawImage(outgoing, 0, 0, w, h);
 		return;
 	}
-	if (t >= 1) {
+	if (p >= 1) {
 		ctx.drawImage(incoming, 0, 0, w, h);
 		return;
 	}
 
-	const outCtx = createScratchContext(w, h);
-	const inCtx = createScratchContext(w, h);
-	outCtx.drawImage(outgoing, 0, 0, w, h);
-	inCtx.drawImage(incoming, 0, 0, w, h);
+	ctx.drawImage(outgoing, 0, 0, w, h);
 
-	const outPixels = outCtx.getImageData(0, 0, w, h);
-	const inPixels = inCtx.getImageData(0, 0, w, h);
-	const result = ctx.createImageData(w, h);
-	const outData = outPixels.data;
-	const inData = inPixels.data;
-	const resultData = result.data;
+	const cx = w / 2;
+	const cy = h / 2;
+	const maxRadius = Math.sqrt(w * w + h * h) / 2;
+	const base = Math.max(0, p * 1.08 - 0.05);
+	const points = 56;
 
-	for (let y = 0; y < h; y++) {
-		const yn = y / Math.max(1, h);
-		for (let x = 0; x < w; x++) {
-			const xn = x / Math.max(1, w);
-			const { mix, flash } = proceduralMatteAt(type, xn, yn, t);
-			const i = (y * w + x) * 4;
-			const inv = 1 - mix;
-			resultData[i] = clampByte(outData[i] * inv + inData[i] * mix + flash);
-			resultData[i + 1] = clampByte(outData[i + 1] * inv + inData[i + 1] * mix + flash);
-			resultData[i + 2] = clampByte(outData[i + 2] * inv + inData[i + 2] * mix + flash);
-			resultData[i + 3] = clampByte(outData[i + 3] * inv + inData[i + 3] * mix);
-		}
+	ctx.save();
+	ctx.beginPath();
+	for (let i = 0; i < points; i++) {
+		const a = (i / points) * Math.PI * 2;
+		const nx = Math.cos(a);
+		const ny = Math.sin(a);
+		const wobble = 1
+			+ 0.09 * Math.sin(a * 5 + p * 8)
+			+ 0.055 * Math.sin(a * 9 - p * 6);
+		const r = maxRadius * base * wobble;
+		const x = cx + nx * r;
+		const y = cy + ny * r;
+		if (i === 0) ctx.moveTo(x, y);
+		else ctx.lineTo(x, y);
 	}
-
-	ctx.putImageData(result, 0, 0);
-}
-
-function proceduralMatteAt(
-	type: ProceduralMatteType,
-	x: number,
-	y: number,
-	p: number,
-): { mix: number; flash: number } {
-	switch (type) {
-		case "prismSweep": {
-			const axis = x * 0.78 + y * 0.28;
-			const mix = clamp01(((p * 1.45 - 0.18) - axis + 0.04) / 0.08);
-			const flash = 60 * Math.max(0, 1 - Math.abs(axis - p) / 0.045) * Math.sin(Math.PI * p);
-			return { mix, flash };
-		}
-		case "glitchBlocks": {
-			const row = Math.floor(y * 12);
-			const stagger = ((row * 37) % 11) / 11;
-			const reveal = clamp01(p * 1.35 - stagger * 0.35);
-			const fromLeft = row % 2 === 0;
-			return { mix: fromLeft ? (x < reveal ? 1 : 0) : (x > 1 - reveal ? 1 : 0), flash: 0 };
-		}
-		case "shutterFlash": {
-			const col = Math.floor(x * 10);
-			const fromTop = col % 2 === 0;
-			const reveal = clamp01(p * 1.22 - (fromTop ? 0 : 0.22));
-			const mix = fromTop ? (y < reveal ? 1 : 0) : (y > 1 - reveal ? 1 : 0);
-			const flash = 90 * Math.max(0, 1 - Math.abs(p - 0.5) / 0.12);
-			return { mix, flash };
-		}
-		case "inkBloom": {
-			const dx = x - 0.5;
-			const dy = y - 0.5;
-			const radius = Math.sqrt(dx * dx + dy * dy);
-			const edge = Math.max(0, p * 0.92 - 0.04)
-				+ 0.035 * Math.sin(24 * dx + 9 * p)
-				+ 0.025 * Math.sin(28 * dy - 7 * p);
-			return { mix: radius < edge ? 1 : 0, flash: 0 };
-		}
-	}
-}
-
-function createScratchContext(w: number, h: number): Ctx {
-	const canvas = typeof OffscreenCanvas !== "undefined"
-		? new OffscreenCanvas(w, h)
-		: document.createElement("canvas");
-	canvas.width = w;
-	canvas.height = h;
-	const scratchCtx = canvas.getContext("2d");
-	if (!scratchCtx) throw new Error("Unable to create transition scratch canvas");
-	return scratchCtx as Ctx;
+	ctx.closePath();
+	ctx.clip();
+	ctx.drawImage(incoming, 0, 0, w, h);
+	ctx.restore();
 }
 
 function clamp01(value: number): number {
 	return Math.max(0, Math.min(1, value));
 }
 
-function clampByte(value: number): number {
-	return Math.max(0, Math.min(255, Math.round(value)));
+type UnitPoint = { x: number; y: number };
+
+function clipUnitSquareByHalfPlane(a: number, b: number, c: number): UnitPoint[] {
+	let polygon: UnitPoint[] = [
+		{ x: 0, y: 0 },
+		{ x: 1, y: 0 },
+		{ x: 1, y: 1 },
+		{ x: 0, y: 1 },
+	];
+
+	const inside = (p: UnitPoint) => a * p.x + b * p.y <= c;
+	const intersect = (p1: UnitPoint, p2: UnitPoint): UnitPoint => {
+		const v1 = a * p1.x + b * p1.y - c;
+		const v2 = a * p2.x + b * p2.y - c;
+		const t = v1 / (v1 - v2 || 1);
+		return {
+			x: p1.x + (p2.x - p1.x) * t,
+			y: p1.y + (p2.y - p1.y) * t,
+		};
+	};
+
+	const output: UnitPoint[] = [];
+	for (let i = 0; i < polygon.length; i++) {
+		const current = polygon[i];
+		const previous = polygon[(i + polygon.length - 1) % polygon.length];
+		const curIn = inside(current);
+		const prevIn = inside(previous);
+		if (curIn) {
+			if (!prevIn) output.push(intersect(previous, current));
+			output.push(current);
+		} else if (prevIn) {
+			output.push(intersect(previous, current));
+		}
+	}
+	polygon = output;
+	return polygon;
+}
+
+function drawIncomingInUnitPolygon(
+	ctx: Ctx,
+	w: number,
+	h: number,
+	incoming: CanvasImageSource,
+	polygon: UnitPoint[],
+): void {
+	if (polygon.length < 3) return;
+	ctx.save();
+	ctx.beginPath();
+	ctx.moveTo(polygon[0].x * w, polygon[0].y * h);
+	for (let i = 1; i < polygon.length; i++) {
+		ctx.lineTo(polygon[i].x * w, polygon[i].y * h);
+	}
+	ctx.closePath();
+	ctx.clip();
+	ctx.drawImage(incoming, 0, 0, w, h);
+	ctx.restore();
+}
+
+function drawUnitLineForHalfPlane(ctx: Ctx, w: number, h: number, a: number, b: number, c: number): void {
+	const points: UnitPoint[] = [];
+	const pushIfValid = (p: UnitPoint) => {
+		if (
+			p.x >= -1e-6 &&
+			p.x <= 1 + 1e-6 &&
+			p.y >= -1e-6 &&
+			p.y <= 1 + 1e-6 &&
+			!points.some((q) => Math.abs(q.x - p.x) < 1e-6 && Math.abs(q.y - p.y) < 1e-6)
+		) {
+			points.push({ x: clamp01(p.x), y: clamp01(p.y) });
+		}
+	};
+
+	if (Math.abs(b) > 1e-9) {
+		pushIfValid({ x: 0, y: c / b });
+		pushIfValid({ x: 1, y: (c - a) / b });
+	}
+	if (Math.abs(a) > 1e-9) {
+		pushIfValid({ x: c / a, y: 0 });
+		pushIfValid({ x: (c - b) / a, y: 1 });
+	}
+
+	if (points.length < 2) return;
+	ctx.beginPath();
+	ctx.moveTo(points[0].x * w, points[0].y * h);
+	ctx.lineTo(points[1].x * w, points[1].y * h);
 }
 
 function renderDiagonalWipe(

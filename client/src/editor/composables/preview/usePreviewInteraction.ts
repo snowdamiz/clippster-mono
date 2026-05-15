@@ -12,6 +12,7 @@ import { useEditor } from "../useEditor";
 import { useElementSelection } from "../timeline/element/useElementSelection";
 import { usePreviewFocus } from "./usePreviewFocus";
 import { useGuideLines } from "./useGuideLines";
+import { useDragRaf } from "../timeline/useDragRaf";
 import type {
 	TimelineTrack,
 	TimelineElement,
@@ -90,13 +91,16 @@ export function usePreviewInteraction({
 	const { editor, version } = useEditor({
 		subscribe: {
 			playback: false,
-			timeline: true,
-			scenes: true,
-			project: false,
-			media: true,
 			selection: false,
+			timeline: true,
+			media: true,
+			scenes: false,
+			project: false,
 		},
 	});
+	const pointerRaf = useDragRaf();
+	let pendingPointerEvent: MouseEvent | null = null;
+	let playbackRafId: number | null = null;
 	const { selectedElements, selectElement, clearElementSelection, isElementSelected } = useElementSelection();
 	const { previewFocused, setPreviewFocused } = usePreviewFocus();
 
@@ -124,17 +128,28 @@ export function usePreviewInteraction({
 	});
 
 	onMounted(() => {
+		// Coalesce playback ticks to one `playbackTime` write per animation frame so
+		// `visibleElements` (text measurement, etc.) is not recomputed at audio-rate.
 		unsubscribePlayback = editor.playback.subscribe(() => {
-			const nextTime = editor.playback.getCurrentTime();
-			if (nextTime !== playbackTime.value) {
-				playbackTime.value = nextTime;
-			}
+			if (playbackRafId !== null) return;
+			playbackRafId = requestAnimationFrame(() => {
+				playbackRafId = null;
+				const nextTime = editor.playback.getCurrentTime();
+				if (nextTime !== playbackTime.value) {
+					playbackTime.value = nextTime;
+				}
+			});
 		});
 	});
 
 	onUnmounted(() => {
 		unsubscribePlayback?.();
 		unsubscribePlayback = null;
+		if (playbackRafId !== null) {
+			cancelAnimationFrame(playbackRafId);
+			playbackRafId = null;
+		}
+		pointerRaf.flush();
 		window.removeEventListener("mousemove", handleMouseMove);
 		window.removeEventListener("mouseup", handleMouseUp);
 		window.removeEventListener("blur", handleMouseUp);
@@ -142,6 +157,8 @@ export function usePreviewInteraction({
 		showCenterGuideX.value = false;
 		showCenterGuideY.value = false;
 	});
+
+	const selectedElementIdSet = computed(() => new Set(selectedElements.value.map((s) => s.elementId)));
 
 	/**
 	 * Get all visual elements visible at the current time, with their bounding boxes.
@@ -196,16 +213,25 @@ export function usePreviewInteraction({
 	});
 
 	/**
-	 * The currently selected element's bounds (if visible).
+	 * All selected elements that are visible at the current time (in selection order).
+	 * Used for multi-select outlines on the canvas.
+	 */
+	const selectedVisibleBoundsList = computed((): ElementBounds[] => {
+		const vis = visibleElements.value;
+		const out: ElementBounds[] = [];
+		for (const sel of selectedElements.value) {
+			const b = vis.find((x) => x.trackId === sel.trackId && x.elementId === sel.elementId);
+			if (b) out.push(b);
+		}
+		return out;
+	});
+
+	/**
+	 * Primary selected element bounds (first visible in selection order).
+	 * Resize/rotate handles and mask editing use this element.
 	 */
 	const selectedBounds = computed((): ElementBounds | null => {
-		if (selectedElements.value.length === 0) return null;
-		const sel = selectedElements.value[0];
-		return (
-			visibleElements.value.find(
-				(b) => b.trackId === sel.trackId && b.elementId === sel.elementId,
-			) ?? null
-		);
+		return selectedVisibleBoundsList.value[0] ?? null;
 	});
 
 	function computeElementBounds({
@@ -504,7 +530,7 @@ export function usePreviewInteraction({
 		window.addEventListener("blur", handleMouseUp);
 	}
 
-	function handleMouseMove(event: MouseEvent) {
+	function runPointerDragFromEvent(event: MouseEvent) {
 		const ds = dragState.value;
 		if (!ds) return;
 
@@ -546,6 +572,19 @@ export function usePreviewInteraction({
 		} else if (ds.type === "rotate") {
 			handleRotate(ds, pos.x, pos.y);
 		}
+	}
+
+	function flushPointerDrag() {
+		const event = pendingPointerEvent;
+		pendingPointerEvent = null;
+		if (!event || !dragState.value) return;
+		runPointerDragFromEvent(event);
+	}
+
+	function handleMouseMove(event: MouseEvent) {
+		if (!dragState.value) return;
+		pendingPointerEvent = event;
+		pointerRaf.schedule(flushPointerDrag);
 	}
 
 	function handleResize(ds: DragState, canvasX: number, canvasY: number) {
@@ -597,7 +636,17 @@ export function usePreviewInteraction({
 		applyRotateDelta(ds.trackId, ds, deltaAngle, newRotation);
 	}
 
-	function handleMouseUp() {
+	function handleMouseUp(event?: Event) {
+		if (dragState.value) {
+			pointerRaf.flush();
+			const e = event instanceof MouseEvent ? event : pendingPointerEvent;
+			pendingPointerEvent = null;
+			if (e) runPointerDragFromEvent(e);
+		} else {
+			pendingPointerEvent = null;
+			pointerRaf.flush();
+		}
+
 		const ds = dragState.value;
 		if (ds) {
 			// Collect all selected element IDs on this track (for batch commit, e.g. caption track)
@@ -803,6 +852,8 @@ export function usePreviewInteraction({
 
 	return {
 		visibleElements,
+		selectedElementIdSet,
+		selectedVisibleBoundsList,
 		selectedBounds,
 		dragState,
 		hoveredElementId,

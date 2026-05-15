@@ -9,10 +9,8 @@ import { useElementSelection } from "../../composables/timeline/element/useEleme
 import { useBrandingConfig } from "../../composables/useBrandingConfig";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
 import { getLastFrameTime } from "../../lib/time";
-import type { TimelineTrack } from "../../types/timeline";
+import type { TimelineElement, TimelineTrack } from "../../types/timeline";
 import { exposePreviewPerfGlobal } from "../../lib/preview-performance";
-import { exposeStressTimelineGlobal } from "../../lib/stress-timeline-dev";
-import { pingPreviewWorker } from "../../renderer/preview-worker-client";
 import PreviewOverlay from "./PreviewOverlay.vue";
 import SocialOverlay from "./SocialOverlay.vue";
 import GuideOverlay from "./GuideOverlay.vue";
@@ -23,6 +21,10 @@ const { editor, version } = useEditor({
 	subscribe: {
 		playback: false,
 		selection: false,
+		timeline: true,
+		media: true,
+		scenes: true,
+		project: true,
 	},
 });
 const { isCropMode, activeSocialOverlay, viewportZoom, previewQuality, fitMode } = useEditorUIState();
@@ -129,29 +131,42 @@ const sceneTransitions = computed(() => {
 	}
 });
 
+function isVisualPreviewElement(element: TimelineElement): boolean {
+	return (
+		element.type === "video" ||
+		element.type === "image" ||
+		element.type === "text" ||
+		element.type === "sticker" ||
+		element.type === "effect" ||
+		element.type === "caption"
+	);
+}
+
 // When in crop mode, strip crop from the selected element so canvas shows full frame
 const sceneTracks = computed((): TimelineTrack[] => {
 	const raw = tracks.value;
 	const selectedElement = selectedElements.value[0];
 
-	return raw.map((t) => {
-		const nextElements = t.elements.map((el) => {
-			let next = el;
+	return raw
+		.map((t) => {
+			const nextElements = t.elements.filter(isVisualPreviewElement).map((el) => {
+				let next = el;
 
-			if (
-				isCropMode.value &&
-				selectedElement &&
-				t.id === selectedElement.trackId &&
-				el.id === selectedElement.elementId
-			) {
-				next = { ...next, crop: undefined } as typeof el;
-			}
+				if (
+					isCropMode.value &&
+					selectedElement &&
+					t.id === selectedElement.trackId &&
+					el.id === selectedElement.elementId
+				) {
+					next = { ...next, crop: undefined } as typeof el;
+				}
 
-			return next;
-		});
+				return next;
+			});
 
-		return { ...t, elements: nextElements } as typeof t;
-	});
+			return { ...t, elements: nextElements } as typeof t;
+		})
+		.filter((t) => t.elements.length > 0 || t.type !== "audio");
 });
 
 function schedulePreviewSceneRebuild() {
@@ -429,11 +444,15 @@ function setQuality(value: "auto" | 360 | 540 | 720 | 1080) {
 
 onMounted(() => {
 	exposePreviewPerfGlobal();
-	exposeStressTimelineGlobal(editor);
 	if (import.meta.env.DEV) {
-		void pingPreviewWorker().then((t) => {
-			if (t != null) console.debug("[Preview] compositor worker ping ok", t);
+		void import("../../lib/stress-timeline-dev").then(({ exposeStressTimelineGlobal }) => {
+			exposeStressTimelineGlobal(editor);
 		});
+		void import("../../renderer/preview-worker-client").then(({ pingPreviewWorker }) =>
+			pingPreviewWorker().then((t) => {
+				if (t != null) console.debug("[Preview] compositor worker ping ok", t);
+			}),
+		);
 	}
 	containerRef.value?.addEventListener('wheel', onWheelZoom, { passive: false });
 	window.addEventListener("keydown", onKeyZoom);

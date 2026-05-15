@@ -15,10 +15,16 @@ defmodule ClippsterServerWeb.ClipsController do
   require Logger
 
   @max_parallel_chunks 10
-  # 3 minutes per chunk for normal mode
-  @chunk_timeout_normal 180_000
+  # 10 minutes per chunk for fallback time-split detection
+  @chunk_timeout_normal 600_000
   # 5 minutes per chunk for multimodal mode
   @chunk_timeout_multimodal 300_000
+  # Gemini 3.1 Flash Lite supports 1M tokens — only split VODs that approach that limit
+  @vod_model_context_tokens 1_000_000
+  @vod_context_safety_margin_tokens 100_000
+  @vod_tokens_per_minute_estimate 700
+  # ~6 hour fallback chunks for extremely long streams
+  @vod_fallback_chunk_duration_seconds 21_600
 
   # Helper to parse numeric strings that may be integers or floats
   defp parse_numeric_string(nil), do: nil
@@ -436,19 +442,31 @@ defmodule ClippsterServerWeb.ClipsController do
 
     reconstructed_transcript = reconstruct_timeline_from_chunks(sorted_chunks)
 
-    # Process chunks with AI. Build conditional news/streamer context for the single model.
+    full_enhanced_transcript = process_whisper_response_enhanced(reconstructed_transcript)
+    ai_transcript = process_whisper_response_for_ai(full_enhanced_transcript)
+
     system_prompt =
       SystemPrompt.get_with_detection_context(
         user_prompt,
-        reconstructed_transcript,
+        ai_transcript,
         streamer_metadata
       )
 
-    total_chunks = length(sorted_chunks)
+    IO.puts(
+      "[ClipsController] Reconstructed #{length(sorted_chunks)} transcription chunks into a single #{Float.round((ai_transcript["duration"] || 0) / 60, 1)} min timeline for AI detection"
+    )
+
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "analyzing",
+      35,
+      "Analyzing full transcript for clip-worthy moments..."
+    )
 
     {all_clips, total_usage_tokens} =
       if multimodal do
-        # Multimodal mode: Each chunk processed by 3 models + decider, all chunks in parallel
+        total_chunks = length(sorted_chunks)
+
         IO.puts("[ClipsController] Starting MULTIMODAL detection with #{total_chunks} chunks...")
 
         ProgressChannel.broadcast_progress(
@@ -466,36 +484,26 @@ defmodule ClippsterServerWeb.ClipsController do
           user_id
         )
       else
-        # Normal mode: All chunks processed in parallel by single model
-        IO.puts("[ClipsController] Starting PARALLEL detection with #{total_chunks} chunks...")
-
-        ProgressChannel.broadcast_progress(
-          project_id,
-          "analyzing",
-          35,
-          "Processing #{total_chunks} chunks in parallel..."
-        )
-
-        process_chunks_parallel_normal(
-          sorted_chunks,
-          system_prompt,
-          user_prompt,
-          project_id,
-          user_id
-        )
+        run_vod_clip_detection(ai_transcript, system_prompt, user_prompt, project_id, user_id)
       end
 
     IO.puts("[ClipsController] All chunks processed. Total clips found: #{length(all_clips)}")
     IO.puts("[ClipsController] Total AI tokens used: #{total_usage_tokens}")
 
-    # Merge overlapping clips from adjacent chunks (due to chunk overlap)
-    IO.puts("[ClipsController] Merging overlapping clips from chunk boundaries...")
-    ProgressChannel.broadcast_progress(project_id, "merging", 92, "Merging overlapping clips...")
-    merged_clips = merge_overlapping_clips(all_clips)
+    merged_clips =
+      if used_time_split_detection?(ai_transcript) do
+        IO.puts("[ClipsController] Merging overlapping clips from chunk boundaries...")
+        ProgressChannel.broadcast_progress(project_id, "merging", 92, "Merging overlapping clips...")
+        merge_overlapping_clips(all_clips)
+      else
+        all_clips
+      end
 
-    IO.puts(
-      "[ClipsController] After merge: #{length(merged_clips)} clips (was #{length(all_clips)})"
-    )
+    if merged_clips != all_clips do
+      IO.puts(
+        "[ClipsController] After merge: #{length(merged_clips)} clips (was #{length(all_clips)})"
+      )
+    end
 
     # Advanced deduplication - catches 2-3 second variations and content duplicates
     IO.puts("[ClipsController] Running advanced duplicate detection...")
@@ -612,6 +620,122 @@ defmodule ClippsterServerWeb.ClipsController do
     end
   end
 
+  defp run_vod_clip_detection(ai_transcript, system_prompt, user_prompt, project_id, user_id) do
+    if transcript_exceeds_context_limit?(ai_transcript) do
+      run_vod_clip_detection_chunked(ai_transcript, system_prompt, user_prompt, project_id, user_id)
+    else
+      run_vod_clip_detection_single(ai_transcript, system_prompt, user_prompt, project_id, user_id)
+    end
+  end
+
+  defp run_vod_clip_detection_result(ai_transcript, system_prompt, user_prompt, project_id, user_id) do
+    {clips, total_tokens} =
+      run_vod_clip_detection(ai_transcript, system_prompt, user_prompt, project_id, user_id)
+
+    {:ok, %{"clips" => clips}, %{"total_tokens" => total_tokens}}
+  end
+
+  defp run_vod_clip_detection_single(
+         ai_transcript,
+         system_prompt,
+         user_prompt,
+         project_id,
+         user_id
+       ) do
+    duration_minutes = Float.round((ai_transcript["duration"] || 0) / 60, 1)
+
+    IO.puts(
+      "[ClipsController] Running single-pass detection on full #{duration_minutes} min transcript"
+    )
+
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "analyzing",
+      50,
+      "Analyzing full #{duration_minutes} min transcript..."
+    )
+
+    case OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt, project_id) do
+      {:ok, ai_response, usage} ->
+        clips = ai_response["clips"] || []
+        log_openrouter_clip_usage(user_id, project_id, usage, "clip_generation")
+        {clips, Map.get(usage, "total_tokens", 0)}
+
+      {:error, reason} ->
+        raise "AI clip detection failed: #{inspect(reason)}"
+    end
+  end
+
+  defp run_vod_clip_detection_chunked(
+         ai_transcript,
+         system_prompt,
+         user_prompt,
+         project_id,
+         user_id
+       ) do
+    transcript_chunks =
+      split_transcript_into_chunks(ai_transcript, @vod_fallback_chunk_duration_seconds)
+
+    total_chunks = length(transcript_chunks)
+
+    IO.puts(
+      "[ClipsController] Transcript exceeds 1M context budget — splitting into #{total_chunks} time-based chunks (~#{Float.round(@vod_fallback_chunk_duration_seconds / 3600, 1)} hr each)"
+    )
+
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "analyzing",
+      50,
+      "Analyzing #{total_chunks} transcript sections..."
+    )
+
+    whisper_style_chunks =
+      Enum.map(transcript_chunks, fn chunk ->
+        %{adjusted_whisper_response: chunk, start_time: chunk["chunk_start_time"] || 0}
+      end)
+
+    process_chunks_parallel_normal(
+      whisper_style_chunks,
+      system_prompt,
+      user_prompt,
+      project_id,
+      user_id
+    )
+  end
+
+  defp transcript_exceeds_context_limit?(ai_transcript) do
+    estimate_transcript_tokens(ai_transcript) >
+      @vod_model_context_tokens - @vod_context_safety_margin_tokens
+  end
+
+  defp used_time_split_detection?(ai_transcript) do
+    transcript_exceeds_context_limit?(ai_transcript)
+  end
+
+  defp estimate_transcript_tokens(ai_transcript) do
+    duration_minutes = (ai_transcript["duration"] || 0) / 60
+    segment_count = ai_transcript["segments"] |> List.wrap() |> length()
+
+    base_tokens = trunc(duration_minutes * @vod_tokens_per_minute_estimate)
+    segment_overhead = segment_count * 50
+    prompt_overhead = 10_000
+
+    base_tokens + segment_overhead + prompt_overhead
+  end
+
+  defp log_openrouter_clip_usage(user_id, project_id, usage, operation_type) do
+    AI.log_usage(%{
+      user_id: user_id,
+      project_id: project_id,
+      provider: "openrouter",
+      model: Map.get(usage, "model") || OpenRouterAPI.default_model(),
+      input_tokens: Map.get(usage, "prompt_tokens"),
+      output_tokens: Map.get(usage, "completion_tokens"),
+      total_tokens: Map.get(usage, "total_tokens"),
+      operation_type: operation_type
+    })
+  end
+
   # Process all chunks in parallel using a single model (normal mode)
   defp process_chunks_parallel_normal(
          sorted_chunks,
@@ -645,18 +769,7 @@ defmodule ClippsterServerWeb.ClipsController do
               clips = ai_response["clips"] || []
               Logger.info("[ClipsController] Chunk #{index + 1}: Found #{length(clips)} clips")
 
-              # Log usage for this chunk
-              AI.log_usage(%{
-                user_id: user_id,
-                project_id: project_id,
-                provider: "openrouter",
-                model:
-                  Map.get(usage, "model") || System.get_env("OPENROUTER_MODEL", "z-ai/glm-4.7"),
-                input_tokens: Map.get(usage, "prompt_tokens"),
-                output_tokens: Map.get(usage, "completion_tokens"),
-                total_tokens: Map.get(usage, "total_tokens"),
-                operation_type: "clip_generation_chunk"
-              })
+              log_openrouter_clip_usage(user_id, project_id, usage, "clip_generation_chunk")
 
               {:ok, clips, Map.get(usage, "total_tokens", 0)}
 
@@ -1546,8 +1659,7 @@ defmodule ClippsterServerWeb.ClipsController do
             segment_count = length(segments)
 
             # Estimate tokens: ~4 chars per token, each segment has ~100 chars average
-            # Split into chunks of ~15 minutes (900 seconds) to stay under context limits
-            chunk_duration_seconds = 900
+            chunk_duration_seconds = @vod_fallback_chunk_duration_seconds
             total_duration = ai_transcript["duration"] || 0
 
             if total_duration > chunk_duration_seconds and segment_count > 100 do
@@ -1615,17 +1727,13 @@ defmodule ClippsterServerWeb.ClipsController do
               end
             end
           else
-            # Normal mode: Single model detection
-            IO.puts("[ClipsController] Sending optimized transcript to OpenRouter API...")
-
-            ProgressChannel.broadcast_progress(
+            run_vod_clip_detection_result(
+              ai_transcript,
+              system_prompt,
+              user_prompt,
               project_id,
-              "analyzing",
-              50,
-              "Analyzing transcript for clip-worthy moments..."
+              user_id
             )
-
-            OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt, project_id)
           end
 
         IO.puts("[ClipsController] AI detection completed")
@@ -1636,18 +1744,9 @@ defmodule ClippsterServerWeb.ClipsController do
             IO.puts("[ClipsController] AI response received from OpenRouter")
             IO.puts("[ClipsController] AI response structure: #{inspect(Map.keys(ai_response))}")
 
-            # Log AI usage
-            AI.log_usage(%{
-              user_id: user_id,
-              project_id: project_id,
-              provider: "openrouter",
-              model:
-                Map.get(usage, "model") || System.get_env("OPENROUTER_MODEL", "z-ai/glm-4.7"),
-              input_tokens: Map.get(usage, "prompt_tokens"),
-              output_tokens: Map.get(usage, "completion_tokens"),
-              total_tokens: Map.get(usage, "total_tokens"),
-              operation_type: "clip_generation"
-            })
+            if multimodal do
+              log_openrouter_clip_usage(user_id, project_id, usage, "clip_generation_multimodal")
+            end
 
             # Step 4: Validate AI response structure
             case validate_ai_response(ai_response) do

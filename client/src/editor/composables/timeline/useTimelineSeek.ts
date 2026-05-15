@@ -4,7 +4,7 @@
 import { type Ref } from "vue";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
 import { getSnappedSeekTime } from "../../lib/time";
-import { useEditor } from "../useEditor";
+import { EditorCore } from "../../core";
 
 interface UseTimelineSeekProps {
 	playheadRef: Ref<HTMLDivElement | null>;
@@ -36,7 +36,7 @@ export function useTimelineSeek({
 	clearSelectedElements,
 	seek,
 }: UseTimelineSeekProps) {
-	const { editor } = useEditor();
+	const editor = EditorCore.getInstance();
 
 	let mouseTracking: MouseTracking = {
 		isMouseDown: false,

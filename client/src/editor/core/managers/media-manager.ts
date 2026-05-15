@@ -20,13 +20,16 @@ export class MediaManager {
 	async addMediaAsset({
 		projectId,
 		asset,
+		mediaAssetId,
 	}: {
 		projectId: string;
 		asset: Omit<MediaAsset, "id">;
+		/** When set, used as the media asset id (must match pre-copied editor-media filename prefix). */
+		mediaAssetId?: string;
 	}): Promise<void> {
 		const newAsset: MediaAsset = {
 			...asset,
-			id: generateUUID(),
+			id: mediaAssetId ?? generateUUID(),
 			name: fileNameFromPathOrName(asset.name),
 		};
 
@@ -38,6 +41,9 @@ export class MediaManager {
 			const resolvedPath = await storageService.saveMediaAsset({ projectId, mediaAsset: newAsset });
 			// Populate filePath on the in-memory asset so export can find it
 			newAsset.filePath = resolvedPath;
+			delete newAsset.alreadyResolvedFilePath;
+			delete newAsset.importFileSizeBytes;
+			delete newAsset.importFileLastModifiedMs;
 			this.notify();
 
 			// Pre-load waveform for video/audio assets so it's ready when added to timeline
