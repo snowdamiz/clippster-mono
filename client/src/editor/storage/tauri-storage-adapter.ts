@@ -261,6 +261,10 @@ class TauriStorageService {
 		const filePath = await this.resolveFilePath({ mediaAsset, projectId });
 
 		const storedDisplayName = fileNameFromPathOrName(mediaAsset.name);
+		const fileSizeForDb =
+			mediaAsset.importFileSizeBytes ?? mediaAsset.file.size;
+		const lastModifiedForDb =
+			mediaAsset.importFileLastModifiedMs ?? mediaAsset.file.lastModified;
 		await db.execute(
 			`INSERT INTO opencut_media_assets
 			 (id, project_id, name, type, file_path, file_size, last_modified, width, height, duration, fps, thumbnail_url, ephemeral)
@@ -280,8 +284,8 @@ class TauriStorageService {
 				storedDisplayName,
 				mediaAsset.type,
 				filePath,
-				mediaAsset.file.size,
-				mediaAsset.file.lastModified,
+				fileSizeForDb,
+				lastModifiedForDb,
 				mediaAsset.width ?? null,
 				mediaAsset.height ?? null,
 				mediaAsset.duration ?? null,
@@ -706,6 +710,10 @@ class TauriStorageService {
 		mediaAsset: MediaAsset;
 		projectId: string;
 	}): Promise<string> {
+		const alreadyResolved = mediaAsset.alreadyResolvedFilePath?.trim();
+		if (alreadyResolved) {
+			return alreadyResolved;
+		}
 		// If the file has a path property (from Tauri file picker), copy it to the
 		// project's managed media directory so the asset persists after reload.
 		const fileWithPath = mediaAsset.file as File & { path?: string };

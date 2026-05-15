@@ -3,7 +3,7 @@
  */
 import { ref, watch, onMounted, onUnmounted, nextTick, type Ref } from "vue";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
-import { useEditor } from "../useEditor";
+import { EditorCore } from "../../core";
 import { zoomToSlider } from "../../lib/timeline/zoom-utils";
 
 interface UseTimelineZoomProps {
@@ -25,7 +25,7 @@ export function useTimelineZoom({
 	tracksScrollRef,
 	rulerScrollRef,
 }: UseTimelineZoomProps) {
-	const { editor } = useEditor();
+	const editor = EditorCore.getInstance();
 
 	const minZoomValue = minZoom ?? ref(TIMELINE_CONSTANTS.ZOOM_MIN);
 
@@ -81,6 +81,11 @@ export function useTimelineZoom({
 		zoomLevel.value = Math.max(minZoomValue.value, Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, nextZoom));
 	}
 
+	// Cursor anchor for the next zoom change. Set on `wheel`, cleared after
+	// the zoom watcher fires. When unset, we fall back to the playhead anchor
+	// so keyboard zoom still feels right.
+	let cursorAnchorClientX: number | null = null;
+
 	function handleWheel(event: WheelEvent) {
 		const isZoomGesture = event.ctrlKey || event.metaKey;
 		const isHorizontalScrollGesture =
@@ -89,6 +94,7 @@ export function useTimelineZoom({
 		if (isHorizontalScrollGesture) return;
 
 		if (isZoomGesture) {
+			cursorAnchorClientX = event.clientX;
 			const zoomMultiplier = event.deltaY > 0 ? 1 / 1.1 : 1.1;
 			setZoomLevel((prev) =>
 				Math.max(minZoomValue.value, Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, prev * zoomMultiplier)),
@@ -96,46 +102,52 @@ export function useTimelineZoom({
 		}
 	}
 
-	// Anchor scroll to playhead on zoom change
+	// Anchor scroll on zoom change. Pixel under the cursor (wheel zoom) or
+	// the playhead (keyboard / button zoom) stays glued — same behavior as
+	// CapCut and DaVinci Resolve.
 	watch(zoomLevel, (newZoom) => {
 		const scrollElement = tracksScrollRef.value;
 		if (previousZoom === newZoom || !scrollElement) {
 			previousZoom = newZoom;
+			cursorAnchorClientX = null;
 			return;
 		}
 
 		const currentScrollLeft = scrollElement.scrollLeft;
-		const playheadTime = editor.playback.getCurrentTime();
 		const sliderPercent = zoomToSlider({ zoomLevel: newZoom, minZoom: minZoomValue.value });
 
+		// Skip the anchor math when fully zoomed out — there is nowhere to scroll.
 		if (sliderPercent >= TIMELINE_CONSTANTS.ZOOM_ANCHOR_PLAYHEAD_THRESHOLD) {
-			const playheadPixelsBefore =
-				playheadTime * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * previousZoom;
-			const playheadPixelsAfter =
-				playheadTime * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * newZoom;
-			const viewportOffset = playheadPixelsBefore - currentScrollLeft;
-			const newScrollLeft = playheadPixelsAfter - viewportOffset;
+			let anchorPixelsBefore: number;
+			if (cursorAnchorClientX !== null) {
+				const rect = scrollElement.getBoundingClientRect();
+				const localX = cursorAnchorClientX - rect.left;
+				anchorPixelsBefore = currentScrollLeft + localX;
+			} else {
+				const playheadTime = editor.playback.getCurrentTime();
+				anchorPixelsBefore = playheadTime * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * previousZoom;
+			}
+			const anchorTime = anchorPixelsBefore / (TIMELINE_CONSTANTS.PIXELS_PER_SECOND * previousZoom);
+			const anchorPixelsAfter = anchorTime * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * newZoom;
+			const viewportOffset = anchorPixelsBefore - currentScrollLeft;
+			const newScrollLeft = anchorPixelsAfter - viewportOffset;
 			const maxScrollLeft = scrollElement.scrollWidth - scrollElement.clientWidth;
 			const clampedScrollLeft = Math.max(0, Math.min(maxScrollLeft, newScrollLeft));
 
 			scrollElement.scrollLeft = clampedScrollLeft;
-			if (rulerScrollRef.value) {
+			if (rulerScrollRef.value && rulerScrollRef.value !== scrollElement) {
 				rulerScrollRef.value.scrollLeft = clampedScrollLeft;
 			}
 		}
 
 		previousZoom = newZoom;
-
-		editor.project.setTimelineViewState({
-			viewState: {
-				zoomLevel: newZoom,
-				scrollLeft: scrollElement.scrollLeft,
-				playheadTime,
-			},
-		});
+		cursorAnchorClientX = null;
+		// Persistence is delegated to `saveScrollPosition` (debounced) so
+		// rapid wheel zoom doesn't fire a SQLite write per frame.
+		queueViewStateSave();
 	});
 
-	function saveScrollPosition() {
+	function queueViewStateSave() {
 		if (scrollSaveTimeout) clearTimeout(scrollSaveTimeout);
 		scrollSaveTimeout = setTimeout(() => {
 			const scrollElement = tracksScrollRef.value;
@@ -149,6 +161,11 @@ export function useTimelineZoom({
 				});
 			}
 		}, 300);
+	}
+
+	/** Public name for `queueViewStateSave` — called from `@scroll` in the template. */
+	function saveScrollPosition() {
+		queueViewStateSave();
 	}
 
 	// Restore scroll position

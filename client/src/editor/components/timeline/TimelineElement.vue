@@ -3,8 +3,8 @@ import { computed, ref, shallowRef, toRef, watch, onMounted, onUnmounted } from 
 import { useEditor } from "../../composables/useEditor";
 import { useTimelineElementResize } from "../../composables/timeline/element/useElementResize";
 import { useElementFade } from "../../composables/timeline/element/useElementFade";
-import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { useVolumeEnvelope } from "../../composables/timeline/element/useVolumeEnvelope";
+import { useElementGeometry } from "../../composables/timeline/element/useElementGeometry";
 import { useFilmstrip } from "../../composables/timeline/useFilmstrip";
 import { useAudioWaveform } from "../../composables/timeline/useAudioWaveform";
 import type { SnapPoint } from "../../composables/timeline/useTimelineSnapping";
@@ -21,7 +21,6 @@ import { invokeAction } from "../../lib/actions";
 import type {
 	TimelineElement as TimelineElementType,
 	TimelineTrack,
-	ElementDragState,
 	VideoElement,
 } from "../../types/timeline";
 import { useEditorUIState } from "../../composables/useEditorUIState";
@@ -34,7 +33,6 @@ const props = defineProps<{
 	track: TimelineTrack;
 	zoomLevel: number;
 	isSelected: boolean;
-	dragState: ElementDragState;
 	snappingEnabled: boolean;
 	rippleShifts?: Map<string, number>;
 	isEffectDropTarget?: boolean;
@@ -61,7 +59,10 @@ const { editor, version } = useEditor({
 		selection: false,
 	},
 });
-const { selectedElements } = useElementSelection();
+// Selection state is provided to TimelineElement via the `:is-selected` prop
+// from the parent track. The drag DOM controller owns the visual sibling-follow
+// during multi-select drags, so this component does not subscribe to the
+// selection store at all (selection clicks no longer re-render every clip).
 const { timelineKeyframePlacementActive } = useEditorUIState();
 
 const trackRefForKeyframes = toRef(() => props.track);
@@ -109,9 +110,12 @@ const { handleResizeStart, resizing, currentTrimStart, currentStartTime, current
 		onResizeStateChange: (p) => emit("resizeStateChange", p),
 	});
 
+// `localRippleShifts` is a `shallowRef` of `Map<string, number>` produced by
+// the resize composable; it only emits a fresh Map when the shift set actually
+// changes. A non-deep watch is sufficient and avoids per-key tracking cost.
 watch(localRippleShifts, (shifts) => {
 	emit("rippleShiftsChange", shifts);
-}, { deep: true });
+});
 
 const isResizing = computed(() => resizing.value !== null);
 
@@ -130,56 +134,21 @@ const contentWidthPx = computed(() => {
 	return rs.initialDuration * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel;
 });
 
-const isBeingDragged = computed(() => props.dragState.elementId === props.element.id);
-
-// Check if this element is a selected sibling during a multi-element drag
-// (not the dragged element itself, but selected on the same track)
-const isSelectedSiblingDrag = computed(() => {
-	if (!props.dragState.isDragging || isBeingDragged.value) return false;
-	if (props.dragState.trackId !== props.track.id) return false;
-	if (!props.isSelected) return false;
-	// Confirm multiple elements on this track are selected
-	const sameTrackCount = selectedElements.value.filter(
-		(sel) => sel.trackId === props.track.id,
-	).length;
-	return sameTrackCount > 1;
+// Geometry: position derives only from committed `element.startTime` and
+// (during resize) the resize composable's preview values. While dragging,
+// the GPU drag visual layer translates the element via `--drag-x` / `--drag-y`
+// CSS custom properties — Vue does not re-render this element each frame.
+const resizeOverride = computed(() => {
+	if (!isResizing.value) return null;
+	return { startTime: currentStartTime.value, duration: currentDuration.value };
 });
-
-const dragOffsetY = computed(() =>
-	isBeingDragged.value && props.dragState.isDragging
-		? props.dragState.currentMouseY - props.dragState.startMouseY
-		: 0,
-);
-
-const elementStartTime = computed(() => {
-	if (isBeingDragged.value && props.dragState.isDragging) {
-		return props.dragState.currentTime;
-	}
-	// Multi-element drag: shift selected siblings by the same time delta
-	if (isSelectedSiblingDrag.value) {
-		const timeDelta = props.dragState.currentTime - props.dragState.startElementTime;
-		return Math.max(0, props.element.startTime + timeDelta);
-	}
-	const shifted = props.rippleShifts?.get(props.element.id);
-	if (shifted !== undefined) {
-		return shifted;
-	}
-	return props.element.startTime;
+const rippleShiftsRef = computed(() => props.rippleShifts);
+const { left: elementLeft, width: elementWidth } = useElementGeometry({
+	element: toRef(props, "element"),
+	zoomLevel: toRef(props, "zoomLevel"),
+	rippleShifts: rippleShiftsRef,
+	resizeOverride,
 });
-
-const displayedStartTime = computed(() =>
-	isResizing.value ? currentStartTime.value : elementStartTime.value,
-);
-const displayedDuration = computed(() =>
-	isResizing.value ? currentDuration.value : props.element.duration,
-);
-
-const elementWidth = computed(
-	() => displayedDuration.value * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel,
-);
-const elementLeft = computed(
-	() => displayedStartTime.value * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel,
-);
 
 const isMuted = computed(
 	() => canElementHaveAudio(props.element) && props.element.muted === true,
@@ -350,26 +319,25 @@ const elementTooltip = computed(() => {
 
 <template>
 	<div
+		:data-element-id="element.id"
+		data-timeline-element-root="1"
+		class="timeline-element absolute top-0 h-full select-none z-10"
 		:class="[
-			'absolute top-0 h-full select-none',
-			isBeingDragged ? 'z-30' : 'z-10',
 			(isVideoElement || isAudioElement) && timelineKeyframePlacementActive && 'cursor-crosshair',
 		]"
 		:style="{
 			left: `${elementLeft}px`,
 			width: `${elementWidth}px`,
-			transform: isBeingDragged && dragState.isDragging ? `translate3d(0, ${dragOffsetY}px, 0)` : undefined,
 		}"
 		:title="elementTooltip"
 	>
 		<!-- Element inner -->
 		<div
 			:class="[
-				'group relative h-full overflow-hidden border-2',
-				(isVideoElement || isAudioElement) && timelineKeyframePlacementActive ? 'cursor-crosshair' : 'cursor-pointer',
+				'group relative h-full overflow-hidden border-2 z-10',
+				(isVideoElement || isAudioElement) && timelineKeyframePlacementActive ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing',
 				(track.type === 'text' || track.type === 'audio' || track.type === 'sticker' || track.type === 'caption' || track.type === 'effect') ? 'rounded-[3px]' : 'rounded-[0.5rem]',
 				trackClasses,
-				isBeingDragged ? 'z-30' : 'z-10',
 				isHidden ? 'opacity-50' : '',
 			]"
 			:style="{ borderColor: borderColor, outline: isSelected ? '1.5px solid rgba(14, 165, 233, 0.6)' : 'none', outlineOffset: '0px' }"
@@ -393,7 +361,7 @@ const elementTooltip = computed(() => {
 			<button
 				type="button"
 				class="absolute inset-0 size-full"
-				:class="(isVideoElement || isAudioElement) && timelineKeyframePlacementActive ? 'cursor-crosshair' : 'cursor-pointer'"
+				:class="(isVideoElement || isAudioElement) && timelineKeyframePlacementActive ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'"
 				@click="emit('elementClick', $event, element)"
 				@mousedown="emit('elementMouseDown', $event, element)"
 				@contextmenu.prevent="emit('elementContextMenu', $event, element)"
@@ -717,7 +685,7 @@ const elementTooltip = computed(() => {
 				</button>
 				<button
 					type="button"
-					class="absolute top-0 bottom-0 right-0 z-50 flex w-[6px] cursor-w-resize items-center justify-center"
+					class="absolute top-0 bottom-0 right-0 z-50 flex w-[6px] cursor-e-resize items-center justify-center"
 					@mousedown="handleResizeStart({ e: $event, elementId: element.id, side: 'right' })"
 					aria-label="Right resize handle"
 				>

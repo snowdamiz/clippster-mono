@@ -251,31 +251,65 @@ export class AudioManager {
 		clipGain,
 		actualStartTime,
 		timelineTime,
+		scheduledTimelineDuration,
+		replaceExistingAutomation = false,
 	}: {
 		clip: AudioClipSource;
 		clipGain: GainNode;
 		actualStartTime: number;
 		timelineTime: number;
+		scheduledTimelineDuration: number;
+		replaceExistingAutomation?: boolean;
 	}): void {
 		const effectiveStart = this.getEffectiveClipStart(clip);
 		const effectiveEnd = this.getEffectiveClipEnd(clip);
-		const elapsedInClip = Math.max(0, timelineTime - effectiveStart);
-		const timeUntilEnd = Math.max(0, effectiveEnd - timelineTime);
-		const naturalFadeIn = clip.fadeIn > 0 ? Math.min(clip.fadeIn, elapsedInClip) / clip.fadeIn : 1;
-		const naturalFadeOut = clip.fadeOut > 0 && timeUntilEnd < clip.fadeOut
-			? Math.max(0, Math.min(1, timeUntilEnd / clip.fadeOut))
-			: 1;
 		const transitionFadeInDuration = Math.max(0, clip.transitionFadeInDuration ?? 0);
 		const transitionFadeOutDuration = Math.max(0, clip.transitionFadeOutDuration ?? 0);
-		const transitionFadeIn = transitionFadeInDuration > 0
-			? Math.max(0, Math.min(1, elapsedInClip / transitionFadeInDuration))
-			: 1;
-		const transitionFadeOut = transitionFadeOutDuration > 0 && timeUntilEnd < transitionFadeOutDuration
-			? Math.max(0, Math.min(1, timeUntilEnd / transitionFadeOutDuration))
-			: 1;
-		const gainFactor = Math.min(naturalFadeIn, naturalFadeOut, transitionFadeIn, transitionFadeOut);
+		const gainAtTimelineTime = (time: number): number => {
+			const elapsedInClip = Math.max(0, time - effectiveStart);
+			const timeUntilEnd = Math.max(0, effectiveEnd - time);
+			const naturalFadeIn = clip.fadeIn > 0 ? Math.min(clip.fadeIn, elapsedInClip) / clip.fadeIn : 1;
+			const naturalFadeOut = clip.fadeOut > 0 && timeUntilEnd < clip.fadeOut
+				? Math.max(0, Math.min(1, timeUntilEnd / clip.fadeOut))
+				: 1;
+			const transitionFadeIn = transitionFadeInDuration > 0
+				? Math.max(0, Math.min(1, elapsedInClip / transitionFadeInDuration))
+				: 1;
+			const transitionFadeOut = transitionFadeOutDuration > 0 && timeUntilEnd < transitionFadeOutDuration
+				? Math.max(0, Math.min(1, timeUntilEnd / transitionFadeOutDuration))
+				: 1;
 
-		clipGain.gain.setValueAtTime(clip.volume * gainFactor, actualStartTime);
+			return clip.volume * Math.min(naturalFadeIn, naturalFadeOut, transitionFadeIn, transitionFadeOut);
+		};
+
+		const windowStart = Math.max(effectiveStart, timelineTime);
+		const windowEnd = Math.min(effectiveEnd, timelineTime + Math.max(0, scheduledTimelineDuration));
+		if (windowEnd <= windowStart) {
+			clipGain.gain.setValueAtTime(gainAtTimelineTime(timelineTime), actualStartTime);
+			return;
+		}
+
+		if (replaceExistingAutomation) {
+			clipGain.gain.cancelScheduledValues(actualStartTime);
+		}
+
+		clipGain.gain.setValueAtTime(gainAtTimelineTime(windowStart), actualStartTime);
+
+		const rampPoints = [
+			effectiveStart + clip.fadeIn,
+			effectiveStart + transitionFadeInDuration,
+			effectiveEnd - clip.fadeOut,
+			effectiveEnd - transitionFadeOutDuration,
+			windowEnd,
+		]
+			.filter((point) => point > windowStart + 0.001 && point <= windowEnd + 0.001)
+			.sort((a, b) => a - b);
+
+		for (const point of rampPoints) {
+			const clampedPoint = Math.min(windowEnd, point);
+			const contextTime = actualStartTime + (clampedPoint - windowStart);
+			clipGain.gain.linearRampToValueAtTime(gainAtTimelineTime(clampedPoint), contextTime);
+		}
 	}
 
 	private async startPlayback({ time }: { time: number }): Promise<void> {
@@ -514,6 +548,8 @@ export class AudioManager {
 				(timelineTime - this.playbackStartTime);
 
 			let actualStartTime: number;
+			let scheduledTimelineTime = timelineTime;
+			let scheduledTimelineDuration = buffer.duration / Math.max(0.1, clip.speed);
 			if (startTimestamp >= audioContext.currentTime) {
 				node.start(startTimestamp);
 				actualStartTime = startTimestamp;
@@ -522,6 +558,8 @@ export class AudioManager {
 				if (offset < buffer.duration) {
 					node.start(audioContext.currentTime, offset);
 					actualStartTime = audioContext.currentTime;
+					scheduledTimelineTime = timelineTime + offset;
+					scheduledTimelineDuration = (buffer.duration - offset) / Math.max(0.1, clip.speed);
 				} else {
 					continue;
 				}
@@ -531,7 +569,8 @@ export class AudioManager {
 				clip,
 				clipGain,
 				actualStartTime,
-				timelineTime,
+				timelineTime: scheduledTimelineTime,
+				scheduledTimelineDuration,
 			});
 
 			this.queuedSources.add(node);
@@ -668,6 +707,10 @@ export class AudioManager {
 			this.playbackStartContextTime +
 			(iteratorStartTime - this.playbackStartTime);
 
+		let actualStart = Math.max(contextStartTime, audioContext.currentTime);
+		let scheduledTimelineTime = iteratorStartTime;
+		let scheduledTimelineDuration = sourceDuration / Math.max(0.1, speed);
+
 		if (contextStartTime >= audioContext.currentTime) {
 			node.start(contextStartTime, sourceOffset, sourceDuration);
 		} else {
@@ -681,17 +724,20 @@ export class AudioManager {
 				);
 				if (lateSourceDuration <= 0) return false;
 				node.start(audioContext.currentTime, lateSourceOffset, lateSourceDuration);
+				scheduledTimelineTime = iteratorStartTime + offset;
+				scheduledTimelineDuration = lateSourceDuration / Math.max(0.1, speed);
 			} else {
 				return false;
 			}
 		}
 
-		const actualStart = Math.max(contextStartTime, audioContext.currentTime);
 		this.applyClipGainAutomation({
 			clip,
 			clipGain,
 			actualStartTime: actualStart,
-			timelineTime: iteratorStartTime,
+			timelineTime: scheduledTimelineTime,
+			scheduledTimelineDuration,
+			replaceExistingAutomation: true,
 		});
 
 		this.queuedSources.add(node);

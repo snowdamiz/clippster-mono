@@ -1,27 +1,60 @@
 /**
  * Vue composable equivalent of OpenCut's use-element-resize.ts
  * Handles resizing (trimming) timeline elements from left/right edges.
+ *
+ * Performance refactor (timeline-perf-polish):
+ * - The snap index is built **once** at resize start (sorted Float64Array)
+ *   and binary-searched per move. The previous implementation rebuilt the
+ *   full O(N) snap-points list every frame.
+ * - Mouse moves are coalesced through {@link useDragRaf} so we do at most
+ *   one trim recomputation + DOM write per animation frame.
+ * - Ripple shifts are emitted as a fresh `Map` reference (not deep-watched)
+ *   so `props.rippleShifts` invalidation only fires when the set actually
+ *   changes — not on every key tick of an internal mutation.
  */
-import { ref, watch, onUnmounted, type Ref } from "vue";
+import { ref, shallowRef, watch, onUnmounted, type Ref } from "vue";
 import type { TimelineElement, TimelineTrack } from "../../../types/timeline";
 import { snapTimeToFrame } from "../../../lib/time"; // used in handleResizeEnd for final commit
 import { EditorCore } from "../../../core";
-import { useTimelineSnapping, type SnapPoint } from "../useTimelineSnapping";
+import {
+	useTimelineSnapping,
+	type SnapPoint,
+	type SnapIndex,
+} from "../useTimelineSnapping";
+import { useDragRaf } from "../useDragRaf";
 import { getMainTrackMagnet } from "../useTimelineTools";
 
 /**
- * While trimming an element's **right** edge on a track, exclude same-track `element-end`
- * snap targets. Snapping the out-handle to another clip's far end pulls the trim across
- * the entire neighbor clip (and subsequent ripple pushes everything to the timeline end).
+ * While trimming an element's **right** edge on a track, we want to exclude
+ * same-track `element-end` snap targets. Snapping the out-handle to another
+ * clip's far end pulls the trim across the entire neighbor clip (and the
+ * subsequent ripple pushes everything to the timeline end). With the new
+ * `snapToIndex` API we just pass a filter callback instead of materializing
+ * a filtered array on each move.
  */
-function filterSnapPointsForRightTrimResize(
-	snapPoints: SnapPoint[],
-	resizingTrackId: string,
-): SnapPoint[] {
-	return snapPoints.filter((sp) => {
+function makeRightTrimFilter(resizingTrackId: string) {
+	return (sp: SnapPoint) => {
 		if (sp.type !== "element-end") return true;
 		return sp.trackId !== resizingTrackId;
-	});
+	};
+}
+
+/**
+ * Frozen empty Map shared across "no ripple" assignments so reassigning to
+ * the shallowRef is a no-op when nothing is shifting.
+ */
+const EMPTY_RIPPLE: Map<string, number> = new Map();
+
+/** Cheap structural compare used to skip rippleShifts updates when nothing changed. */
+function ripplesEqual(a: Map<string, number>, b: Map<string, number>): boolean {
+	if (a === b) return true;
+	if (a.size !== b.size) return false;
+	for (const [k, v] of a) {
+		const w = b.get(k);
+		if (w === undefined) return false;
+		if (Math.abs(w - v) > 1e-6) return false;
+	}
+	return true;
 }
 
 export interface ResizeState {
@@ -52,20 +85,27 @@ export function useTimelineElementResize({
 	onResizeStateChange,
 }: UseTimelineElementResizeProps) {
 	const editor = EditorCore.getInstance();
-	const { findSnapPoints, snapToNearestPoint } = useTimelineSnapping();
+	const { buildSnapIndex, snapToIndex } = useTimelineSnapping();
+	const resizeRaf = useDragRaf();
 
 	const resizing = ref<ResizeState | null>(null);
 	const currentTrimStart = ref(0);
 	const currentTrimEnd = ref(0);
 	const currentStartTime = ref(0);
 	const currentDuration = ref(0);
-	const rippleShifts = ref<Map<string, number>>(new Map());
+	// `shallowRef` so consumers re-render only when we hand them a new Map
+	// (not when we mutate keys inside it). Combined with the rAF batching
+	// below, ripple shift updates fire at most once per frame.
+	const rippleShifts = shallowRef<Map<string, number>>(new Map());
 
 	// Use plain vars for refs that don't need reactivity (perf)
 	let trimStartVal = 0;
 	let trimEndVal = 0;
 	let startTimeVal = 0;
 	let durationVal = 0;
+	// Snap index is built once at resize start and reused per move.
+	let snapIndex: SnapIndex | null = null;
+	let lastResizeClientX = 0;
 
 	function canExtendElementDuration(): boolean {
 		const t = element.value.type;
@@ -102,6 +142,14 @@ export function useTimelineElementResize({
 		currentTrimEnd.value = trimEndVal = el.trimEnd;
 		currentStartTime.value = startTimeVal = el.startTime;
 		currentDuration.value = durationVal = el.duration;
+
+		// Build the snap index once for the lifetime of this resize.
+		snapIndex = buildSnapIndex({
+			tracks: editor.timeline.getTracks(),
+			playheadTime: editor.playback.getCurrentTime(),
+			excludeElementId: el.id,
+		});
+
 		onResizeStateChange?.({ isResizing: true });
 	}
 
@@ -131,17 +179,12 @@ export function useTimelineElementResize({
 		let deltaTime = deltaX / (50 * zoomLevel.value);
 		let resizeSnapPoint: SnapPoint | null = null;
 
-		if (snappingEnabled.value) {
-			const tracks = editor.timeline.getTracks();
-			const playheadTime = editor.playback.getCurrentTime();
-			let snapPoints = findSnapPoints({ tracks, playheadTime, excludeElementId: element.value.id });
-			if (rs.side === "right") {
-				snapPoints = filterSnapPointsForRightTrimResize(snapPoints, track.value.id);
-			}
+		if (snappingEnabled.value && snapIndex) {
+			const filter = rs.side === "right" ? makeRightTrimFilter(track.value.id) : undefined;
 
 			if (rs.side === "left") {
 				const targetStartTime = rs.initialStartTime + deltaTime;
-				const snapResult = snapToNearestPoint({ targetTime: targetStartTime, snapPoints, zoomLevel: zoomLevel.value });
+				const snapResult = snapToIndex({ targetTime: targetStartTime, index: snapIndex, zoomLevel: zoomLevel.value, filter });
 				resizeSnapPoint = snapResult.snapPoint;
 				if (snapResult.snapPoint) {
 					deltaTime = snapResult.snappedTime - rs.initialStartTime;
@@ -149,7 +192,7 @@ export function useTimelineElementResize({
 			} else {
 				const baseEndTime = rs.initialStartTime + rs.initialDuration;
 				const targetEndTime = baseEndTime + deltaTime;
-				const snapResult = snapToNearestPoint({ targetTime: targetEndTime, snapPoints, zoomLevel: zoomLevel.value });
+				const snapResult = snapToIndex({ targetTime: targetEndTime, index: snapIndex, zoomLevel: zoomLevel.value, filter });
 				resizeSnapPoint = snapResult.snapPoint;
 				if (snapResult.snapPoint) {
 					deltaTime = snapResult.snappedTime - baseEndTime;
@@ -235,35 +278,36 @@ export function useTimelineElementResize({
 		}
 
 		// Ripple preview: optionally push overlapping downstream clips (magnet-style).
-		if (rs.side === "right") {
-			if (getMainTrackMagnet()) {
-				const newEndTime = startTimeVal + durationVal;
-				const shifts = new Map<string, number>();
-				// Only consider clips **downstream** of the one being trimmed. Using every
-				// element with startTime < newEnd catches **upstream** clips too (they always
-				// start before a later clip's end), which wrongly shifts them — e.g. shortening
-				// clip 2 moves clip 1 to the ripple boundary during drag.
-				const els = [...track.value.elements]
-					.filter((el) => el.id !== element.value.id)
-					.filter((el) => el.startTime >= rs.initialStartTime - 0.001)
-					.sort((a, b) => a.startTime - b.startTime);
+		// We compute a fresh `Map` and only assign it to the shallowRef when the
+		// contents actually changed — this avoids invalidating subscribed
+		// `TimelineElement`s when the resize is below sub-pixel precision and
+		// nothing has shifted.
+		let nextShifts: Map<string, number> = EMPTY_RIPPLE;
+		if (rs.side === "right" && getMainTrackMagnet()) {
+			const newEndTime = startTimeVal + durationVal;
+			const fresh = new Map<string, number>();
+			// Only consider clips **downstream** of the one being trimmed. Using every
+			// element with startTime < newEnd catches **upstream** clips too (they always
+			// start before a later clip's end), which wrongly shifts them — e.g. shortening
+			// clip 2 moves clip 1 to the ripple boundary during drag.
+			const els = [...track.value.elements]
+				.filter((el) => el.id !== element.value.id)
+				.filter((el) => el.startTime >= rs.initialStartTime - 0.001)
+				.sort((a, b) => a.startTime - b.startTime);
 
-				let pushBoundary = newEndTime;
-				for (const el of els) {
-					if (el.startTime < pushBoundary - 0.001) {
-						shifts.set(el.id, pushBoundary);
-						pushBoundary = pushBoundary + el.duration;
-					} else {
-						break;
-					}
+			let pushBoundary = newEndTime;
+			for (const el of els) {
+				if (el.startTime < pushBoundary - 0.001) {
+					fresh.set(el.id, pushBoundary);
+					pushBoundary = pushBoundary + el.duration;
+				} else {
+					break;
 				}
-				rippleShifts.value = shifts;
-			} else {
-				// Rolling trim: adjust length without preview-shoving later clips (esp. away from accidental snap-to-end).
-				rippleShifts.value = new Map();
 			}
-		} else {
-			rippleShifts.value = new Map();
+			nextShifts = fresh;
+		}
+		if (!ripplesEqual(rippleShifts.value, nextShifts)) {
+			rippleShifts.value = nextShifts;
 		}
 	}
 
@@ -299,13 +343,21 @@ export function useTimelineElementResize({
 		}
 
 		resizing.value = null;
-		rippleShifts.value = new Map();
+		snapIndex = null;
+		if (rippleShifts.value.size > 0) rippleShifts.value = EMPTY_RIPPLE;
+		resizeRaf.flush();
 		onResizeStateChange?.({ isResizing: false });
 		onSnapPointChange?.(null);
 	}
 
-	// Global listeners while resizing
+	// Global listeners while resizing. The mousemove handler is rAF-coalesced
+	// — clientX is captured immediately, the actual trim recomputation runs
+	// at most once per frame.
 	let cleanupListeners: (() => void) | null = null;
+
+	function flushResizeFrame() {
+		updateTrimFromMouseMove(lastResizeClientX);
+	}
 
 	watch(resizing, (rs) => {
 		cleanupListeners?.();
@@ -313,8 +365,14 @@ export function useTimelineElementResize({
 
 		if (!rs) return;
 
-		const onMove = (e: MouseEvent) => updateTrimFromMouseMove(e.clientX);
-		const onUp = () => handleResizeEnd();
+		const onMove = (e: MouseEvent) => {
+			lastResizeClientX = e.clientX;
+			resizeRaf.schedule(flushResizeFrame);
+		};
+		const onUp = () => {
+			resizeRaf.flush();
+			handleResizeEnd();
+		};
 
 		document.addEventListener("mousemove", onMove);
 		document.addEventListener("mouseup", onUp);

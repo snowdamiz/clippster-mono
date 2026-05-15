@@ -20,5 +20,4 @@ export { UpdateCaptionElementCommand } from "./update-caption-element";
 export type { CaptionElementUpdatable } from "./update-caption-element";
 export { FreezeFrameCommand } from "./freeze-frame";
 export { RippleDeleteTimeRangeCommand } from "./ripple-delete-time-range";
-export { ReorderElementCommand } from "./reorder-element";
 export { UpdateMaskCommand } from "./update-mask";

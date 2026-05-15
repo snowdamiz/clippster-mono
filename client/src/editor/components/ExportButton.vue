@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { useEditor } from "../composables/useEditor";
+import type { ExportTranscriptSummary } from "../lib/export-summary-toast";
 import {
 	Download,
 	X,
@@ -556,86 +557,59 @@ async function handleExport() {
 			showSuccess.value = true;
 			progress.value = 0;
 
-			// Register the exported file as a built clip so it appears in Built Clips
 			if (result.outputPath) {
+				const { registerEditorExportBuild } = await import("../services/registerEditorExportBuild");
+				const { showExportSummaryToast } = await import("../lib/export-summary-toast");
+
+				let built: "registered" | "failed" | "skipped" = "skipped";
+				let transcript: ExportTranscriptSummary = "skipped";
+
 				try {
-					const { getVideoEditorSourcesByProjectId } = await import("@/services/database/video-editor-projects");
-					const { createClipBuild, updateClipBuild } = await import("@/services/database/clip-build");
-					const { updateClip, getClip } = await import("@/services/database/clips");
-					const { invoke } = await import("@tauri-apps/api/core");
-					
-					const sources = await getVideoEditorSourcesByProjectId(project.metadata.id);
-					const clipSource = sources.find((s) => s.source_type === "clip" && s.source_id);
-					
-					if (clipSource?.source_id) {
-						// Get clip to determine duration
-						const clip = await getClip(clipSource.source_id);
-						const duration = clip?.duration || 0;
-
-						// Get file size
-						let fileSize = 0;
-						try {
-							const metadata = await invoke<{ size: number }>("get_file_metadata", {
-								path: result.outputPath,
-							});
-							fileSize = metadata.size;
-						} catch (err) {
-							console.warn("[ExportButton] Failed to get file size:", err);
-						}
-
-						// Create a new build record for the editor export
-						const buildId = await createClipBuild(clipSource.source_id, {
-							aspectRatios: [projectAspectLabel.value],
+					const reg = await registerEditorExportBuild({
+						outputPath: result.outputPath,
+						exportedDuration: projectDuration.value,
+						projectId: project.metadata.id,
+						projectName: project.metadata.name,
+						buildOptions: {
+							aspectLabel: projectAspectLabel.value,
 							quality: quality.value,
 							frameRate: frameRate.value,
-							outputFormat: format.value,
-							includeSubtitles: false,
-							organizationId: isForCampaign.value && selectedCampaign.value?.organization?.id 
-								? selectedCampaign.value.organization.id 
+							format: format.value,
+							isForCampaign: isForCampaign.value,
+							campaign: selectedCampaign.value
+								? {
+										id: String(selectedCampaign.value.id),
+										title: selectedCampaign.value.title,
+										organization: selectedCampaign.value.organization
+											? {
+													id: String(selectedCampaign.value.organization.id),
+													name: selectedCampaign.value.organization.name,
+												}
+											: undefined,
+									}
 								: null,
-							organizationName: isForCampaign.value && selectedCampaign.value?.organization?.name 
-								? selectedCampaign.value.organization.name 
-								: null,
-							campaignId: isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.id : null,
-							campaignName: isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.title : null,
-							brandingProfileId: null,
-							brandingType: isForCampaign.value ? 'campaign' : 'personal',
+						},
+					});
+
+					if (reg?.mode === "clip_build" || reg?.mode === "standalone_clip") {
+						built = "registered";
+					}
+					if (reg?.mode === "clip_build") {
+						transcript = await transcribeExportedVideo(reg.clipId, result.outputPath, {
+							suppressToasts: true,
 						});
-
-						// Update the build with completion data
-						await updateClipBuild(buildId, {
-							status: 'completed',
-							filePath: result.outputPath,
-							outputPaths: [result.outputPath],
-							fileSize: fileSize,
-							duration: duration,
-							progress: 100,
-						});
-
-						console.log("[ExportButton] Created build record:", buildId);
-
-						// Save campaign_id to clip record for payment tracking
-						if (isForCampaign.value && selectedCampaign.value) {
-							try {
-								await updateClip(clipSource.source_id, { campaign_id: selectedCampaign.value.id });
-								console.log("[ExportButton] Saved campaign_id to clip:", selectedCampaign.value.id);
-							} catch (err) {
-								console.warn("[ExportButton] Failed to save campaign_id:", err);
-							}
-						}
-
-						// Trigger automatic background transcription for the exported video
-						// This ensures the exported composition (including imported videos and other clips) is fully searchable
-						transcribeExportedVideo(clipSource.source_id, result.outputPath).catch((err) => {
-							console.warn("[ExportButton] Background transcription failed:", err);
-						});
-
-						// Load clip and build data for publish dialog
-						await loadPublishData(clipSource.source_id, result.outputPath);
+						await loadPublishData(reg.clipId, result.outputPath);
 					}
 				} catch (e) {
-					console.warn("[ExportButton] Failed to register export as built clip:", e);
+					console.warn("[ExportButton] Built Clips registration failed:", e);
+					built = "failed";
 				}
+
+				showExportSummaryToast({
+					exportOk: true,
+					builtClips: built,
+					transcript,
+				});
 			}
 		} else {
 			exportError.value = result.error || "Unknown error occurred";
@@ -711,7 +685,12 @@ async function handleDownload() {
 	}
 }
 
-async function transcribeExportedVideo(clipId: string, videoPath: string) {
+async function transcribeExportedVideo(
+	clipId: string,
+	videoPath: string,
+	opts?: { suppressToasts?: boolean },
+): Promise<ExportTranscriptSummary> {
+	const silent = opts?.suppressToasts ?? false;
 	let tempProjectId: string | null = null;
 	let tempRawVideoId: string | null = null;
 	try {
@@ -727,7 +706,7 @@ async function transcribeExportedVideo(clipId: string, videoPath: string) {
 		const clip = await getClipWithBuildStatus(clipId);
 		if (!clip) {
 			console.warn("[ExportButton] Could not find clip for transcription");
-			return;
+			return "skipped";
 		}
 
 		const transcriptTargetProjectId = activeProject.value?.metadata.id ?? clip.project_id ?? null;
@@ -744,8 +723,8 @@ async function transcribeExportedVideo(clipId: string, videoPath: string) {
 		}
 
 		tempProjectId = await createProject(
-			`Export Transcript - ${clip.name || 'Untitled'}`,
-			`Temporary project for transcribing exported video`
+			`Export Transcript - ${clip.name || "Untitled"}`,
+			`Temporary project for transcribing exported video`,
 		);
 
 		console.log("[ExportButton] Created temp project:", tempProjectId);
@@ -769,7 +748,9 @@ async function transcribeExportedVideo(clipId: string, videoPath: string) {
 
 		console.log("[ExportButton] Created raw_video entry:", tempRawVideoId);
 
-		showToast("Generating transcript for exported video...", "info", "clips");
+		if (!silent) {
+			showToast("Generating transcript for exported video...", "info", "clips");
+		}
 
 		const { transcribeProject } = useTranscriptionOnly({
 			showSuccessToast: false,
@@ -784,24 +765,39 @@ async function transcribeExportedVideo(clipId: string, videoPath: string) {
 		if (result.success && !result.alreadyTranscribed) {
 			console.log("[ExportButton] Background transcription completed for clip:", clipId);
 			await copyTranscriptToClip(clipId, tempProjectId, transcriptTargetProjectId);
-			showToast("Transcript generated successfully", "success", "clips");
-		} else if (result.alreadyTranscribed) {
-			console.log("[ExportButton] Transcript already exists");
-			showToast("Transcript already exists", "info", "clips");
-		} else {
-			const errorMsg = result.error || "";
-			if (errorMsg.includes("No audio chunks") || errorMsg.includes("no audio")) {
-				console.log("[ExportButton] Video has no audio track - skipping transcription");
-				showToast("Export complete - video has no audio to transcribe", "info", "clips");
-			} else {
-				throw new Error(result.error || "Transcription failed");
+			if (!silent) {
+				showToast("Transcript generated successfully", "success", "clips");
 			}
+			return "success";
 		}
+		if (result.alreadyTranscribed) {
+			console.log("[ExportButton] Transcript already exists");
+			if (!silent) {
+				showToast("Transcript already exists", "info", "clips");
+			}
+			return "already";
+		}
+		const errorMsg = result.error || "";
+		if (errorMsg.includes("No audio chunks") || errorMsg.includes("no audio")) {
+			console.log("[ExportButton] Video has no audio track - skipping transcription");
+			if (!silent) {
+				showToast("Export complete - video has no audio to transcribe", "info", "clips");
+			}
+			return "no_audio";
+		}
+		throw new Error(result.error || "Transcription failed");
 	} catch (error) {
 		console.error("[ExportButton] Background transcription error:", error);
-		const { useToast } = await import("@/composables/useToast");
-		const { showToast } = useToast();
-		showToast("Transcription failed: " + (error instanceof Error ? error.message : String(error)), "error", "clips");
+		if (!silent) {
+			const { useToast } = await import("@/composables/useToast");
+			const { showToast } = useToast();
+			showToast(
+				"Transcription failed: " + (error instanceof Error ? error.message : String(error)),
+				"error",
+				"clips",
+			);
+		}
+		return "failed";
 	} finally {
 		if (tempRawVideoId || tempProjectId) {
 			try {

@@ -36,7 +36,6 @@ import {
 	FreezeFrameCommand,
 	RippleDeleteTimeRangeCommand,
 	ReorderTrackCommand,
-	ReorderElementCommand,
 	UpdateMaskCommand,
 } from "../../lib/commands/timeline";
 import type { UpdatableElementProps } from "../../lib/commands/timeline";
@@ -397,19 +396,6 @@ export class TimelineManager {
 		elements: { trackId: string; elementId: string }[];
 	}): void {
 		const command = new ToggleElementsMutedCommand(elements);
-		this.editor.command.execute({ command });
-	}
-
-	reorderElement({
-		trackId,
-		elementId,
-		direction,
-	}: {
-		trackId: string;
-		elementId: string;
-		direction: "front" | "back" | "forward" | "backward";
-	}): void {
-		const command = new ReorderElementCommand(trackId, elementId, direction);
 		this.editor.command.execute({ command });
 	}
 

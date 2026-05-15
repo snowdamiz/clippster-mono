@@ -62,8 +62,10 @@ const newTrackLineStyle = computed(() => {
 
 // ── On-track: vertical line X position ──
 const lineX = computed(() => {
-	if (!props.dropTarget || !props.zoomLevel) return 0;
-	const px = props.dropTarget.xPosition * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel;
+	if (!props.dropTarget) return 0;
+	const zl = props.zoomLevel;
+	if (zl == null || !Number.isFinite(zl) || zl <= 0) return 0;
+	const px = props.dropTarget.xPosition * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zl;
 	return px - (props.scrollLeft ?? 0);
 });
 

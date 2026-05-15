@@ -124,7 +124,7 @@
           <!-- Left Column -->
           <div class="main-column">
             <!-- About (bio only — matches org public profile) -->
-            <section v-if="profile.bio?.trim()" class="section">
+            <section v-if="profile.bio?.trim()" class="section section--about">
               <div class="section__header">
                 <div class="section__header-text">
                   <h2 class="section__title">About</h2>
@@ -1298,6 +1298,10 @@
     background: linear-gradient(90deg, rgba(20, 184, 219, 0.04) 0%, transparent 50%);
   }
 
+  .section--about .section__header {
+    padding: 1rem 1.25rem;
+  }
+
   .section__header-icon {
     display: flex;
     align-items: center;
@@ -1346,6 +1350,10 @@
     line-height: 1.65;
     color: var(--sidebar-text-muted);
     white-space: pre-wrap;
+  }
+
+  .section--about .section__bio {
+    padding: 1.25rem;
   }
 
   .clipper-profile-locale {
@@ -2078,6 +2086,14 @@
       gap: 0.75rem;
     }
 
+    .section--about .section__header {
+      padding: 0.875rem 1rem;
+    }
+
+    .section--about .section__bio {
+      padding: 1rem;
+    }
+
     .section__header-icon {
       width: 40px;
       height: 40px;
@@ -2177,6 +2193,14 @@
     .section__header {
       padding: 0.875rem;
       gap: 0.625rem;
+    }
+
+    .section--about .section__header {
+      padding: 0.75rem 0.875rem;
+    }
+
+    .section--about .section__bio {
+      padding: 0.875rem;
     }
 
     .section__header-icon {

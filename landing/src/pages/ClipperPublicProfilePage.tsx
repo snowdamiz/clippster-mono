@@ -347,7 +347,7 @@ export function ClipperPublicProfilePage() {
         <div className="org-grid">
           <div className="org-main">
             {showBio && (
-              <div className="org-card">
+              <div className="org-card org-card--about">
                 <div className="org-card__header">
                   <h2 className="org-card__title">About</h2>
                 </div>

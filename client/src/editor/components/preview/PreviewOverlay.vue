@@ -22,6 +22,8 @@ const canvasHeightRef = computed(() => props.canvasHeight);
 
 const {
 	visibleElements,
+	selectedElementIdSet,
+	selectedVisibleBoundsList,
 	selectedBounds,
 	dragState,
 	hoveredElementId,
@@ -109,10 +111,20 @@ const selectedScreenBounds = computed(() => {
 	return boundsToScreen(selectedBounds.value);
 });
 
+/** Screen-space bounds for every selected visible element (multi-select outlines). */
+const selectedVisibleScreenBoundsList = computed(() => {
+	const out: { elementId: string; screen: NonNullable<ReturnType<typeof boundsToScreen>> }[] = [];
+	for (const b of selectedVisibleBoundsList.value) {
+		const s = boundsToScreen(b);
+		if (s) out.push({ elementId: b.elementId, screen: s });
+	}
+	return out;
+});
+
 const hoveredScreenBounds = computed(() => {
 	if (!hoveredElementId.value) return null;
-	// Don't show hover outline if it's the selected element
-	if (selectedBounds.value && hoveredElementId.value === selectedBounds.value.elementId) return null;
+	// Don't show hover outline on any currently selected element
+	if (selectedElementIdSet.value.has(hoveredElementId.value)) return null;
 	const hovered = visibleElements.value.find((b) => b.elementId === hoveredElementId.value);
 	if (!hovered) return null;
 	return boundsToScreen(hovered);
@@ -160,7 +172,16 @@ function onOverlayMouseDown(event: MouseEvent) {
 	handleCanvasMouseDown(event);
 }
 
-const { editor: editorCore } = useEditor();
+const { editor: editorCore } = useEditor({
+	subscribe: {
+		playback: false,
+		selection: false,
+		timeline: true,
+		scenes: false,
+		project: false,
+		media: false,
+	},
+});
 const maskEditSnapshot = ref<{
 	trackId: string;
 	elementId: string;
@@ -666,27 +687,33 @@ const cursorStyle = computed(() => {
 			</g>
 		</svg>
 
-		<!-- Selection bounding box + handles (hidden in crop mode, only shown when preview is focused) -->
+		<!-- Selection: multi-select shows one outline per visible clip; single-select adds resize/rotate handles -->
 		<svg
-			v-if="selectedScreenBounds && !isCropMode && previewFocused"
+			v-if="selectedVisibleScreenBoundsList.length > 0 && !isCropMode && previewFocused"
 			class="pointer-events-none absolute inset-0 size-full overflow-visible"
 		>
 			<g
+				v-for="(item, idx) in selectedVisibleScreenBoundsList"
+				:key="`${item.elementId}-${idx}`"
+				:transform="`translate(${item.screen.cx}, ${item.screen.cy}) rotate(${item.screen.rotation})`"
+			>
+				<rect
+					:x="-item.screen.width / 2"
+					:y="-item.screen.height / 2"
+					:width="item.screen.width"
+					:height="item.screen.height"
+					fill="none"
+					:stroke="selectedVisibleScreenBoundsList.length > 1 ? 'rgba(59,130,246,0.95)' : '#3b82f6'"
+					stroke-width="2"
+					:stroke-dasharray="selectedVisibleScreenBoundsList.length > 1 ? '6 4' : 'none'"
+				/>
+			</g>
+
+			<g
+				v-if="selectedScreenBounds && selectedVisibleScreenBoundsList.length === 1"
 				:transform="`translate(${selectedScreenBounds.cx}, ${selectedScreenBounds.cy}) rotate(${selectedScreenBounds.rotation})`"
 			>
-				<!-- Bounding box -->
-				<rect
-					:x="-selectedScreenBounds.width / 2"
-					:y="-selectedScreenBounds.height / 2"
-					:width="selectedScreenBounds.width"
-					:height="selectedScreenBounds.height"
-					fill="none"
-					stroke="#3b82f6"
-					stroke-width="2"
-					stroke-dasharray="none"
-				/>
-
-				<!-- Resize handles -->
+				<!-- Resize handles (primary selection only; omitted for multi-select — misleading for mixed transforms) -->
 				<rect
 					v-for="handle in handles"
 					:key="handle"
@@ -703,7 +730,6 @@ const cursorStyle = computed(() => {
 					@mousedown.stop="onHandleMouseDown($event, handle)"
 				/>
 
-				<!-- Rotation handle line -->
 				<line
 					:x1="0"
 					:y1="-selectedScreenBounds.height / 2"
@@ -713,7 +739,6 @@ const cursorStyle = computed(() => {
 					stroke-width="1.5"
 				/>
 
-				<!-- Rotation handle circle -->
 				<circle
 					class="pointer-events-auto"
 					:cx="0"

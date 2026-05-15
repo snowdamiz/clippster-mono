@@ -45,6 +45,7 @@ import { resolveWatermarkById, resolveOverlayImagePath } from "@/services/databa
 import { resolveIntroOutroById } from "@/services/database/intro-outros";
 import { base64ToUtf8 } from "@/utils/encoding";
 import { resolveTransitionMediaPair } from "../../lib/timeline/transition-pairing";
+import { getSceneTracksForExport, writeSceneFrameSequenceToDisk } from "../../renderer/scene-frame-export";
 
 /** True if any two [start,end) segments overlap (for FFmpeg layer compositing). */
 function videoSegmentsOverlap(segments: { start: number; end: number }[]): boolean {
@@ -178,6 +179,7 @@ interface TauriAudioTrack {
 	file_path: string;
 	start_time: number;
 	end_time: number;
+	trim_start: number;
 	volume: number;
 	is_muted: boolean;
 	speed: number;
@@ -264,6 +266,11 @@ interface TauriExportConfig {
 	outro_path: string | null;
 	outro_duration: number | null;
 	export_id?: string | null;
+	scene_frame_pattern?: string | null;
+	scene_frame_count?: number | null;
+	export_format?: string;
+	export_quality?: string;
+	include_audio?: boolean;
 }
 
 interface BrandingExportData {
@@ -273,6 +280,54 @@ interface BrandingExportData {
 	introDuration: number | null;
 	outroPath: string | null;
 	outroDuration: number | null;
+}
+
+type ExportTimeRange = NonNullable<ExportOptions["timeRange"]>;
+
+function normalizeExportTimeRange(
+	timeRange: ExportOptions["timeRange"],
+	fullDuration: number,
+): ExportTimeRange | null {
+	if (!timeRange) return null;
+	const startTime = Math.max(0, Math.min(timeRange.startTime, fullDuration));
+	const endTime = Math.max(0, Math.min(timeRange.endTime, fullDuration));
+	if (endTime <= startTime) return null;
+	return { startTime, endTime };
+}
+
+function getClippedTimelineSpan(
+	startTime: number,
+	endTime: number,
+	timeRange: ExportTimeRange | null,
+	speed = 1,
+): { startTime: number; endTime: number; sourceOffset: number; sourceEndOffset: number } | null {
+	if (!timeRange) {
+		return { startTime, endTime, sourceOffset: 0, sourceEndOffset: 0 };
+	}
+
+	const clippedStart = Math.max(startTime, timeRange.startTime);
+	const clippedEnd = Math.min(endTime, timeRange.endTime);
+	if (clippedEnd <= clippedStart) return null;
+
+	return {
+		startTime: clippedStart - timeRange.startTime,
+		endTime: clippedEnd - timeRange.startTime,
+		sourceOffset: (clippedStart - startTime) * speed,
+		sourceEndOffset: (endTime - clippedEnd) * speed,
+	};
+}
+
+function clipOverlaySpan<T extends { start_time: number; end_time: number }>(
+	overlay: T,
+	timeRange: ExportTimeRange | null,
+): T | null {
+	const clip = getClippedTimelineSpan(overlay.start_time, overlay.end_time, timeRange);
+	if (!clip) return null;
+	return {
+		...overlay,
+		start_time: clip.startTime,
+		end_time: clip.endTime,
+	};
 }
 
 export class RendererManager {
@@ -358,9 +413,15 @@ export class RendererManager {
 				return { success: false, error: "No active project" };
 			}
 
-			const duration = this.editor.timeline.getTotalDuration();
-			if (duration === 0) {
+			const fullDuration = this.editor.timeline.getTotalDuration();
+			if (fullDuration === 0) {
 				return { success: false, error: "Project is empty" };
+			}
+
+			const timeRange = normalizeExportTimeRange(options.timeRange, fullDuration);
+			const duration = timeRange ? timeRange.endTime - timeRange.startTime : fullDuration;
+			if (duration <= 0) {
+				return { success: false, error: "Selected segment is empty" };
 			}
 
 			const canvasSize = options.canvasSize ?? activeProject.settings.canvasSize;
@@ -370,7 +431,8 @@ export class RendererManager {
 			const appDataDir = await invoke<string>("get_app_data_dir");
 			const timestamp = Date.now();
 			const sanitizedName = activeProject.metadata.name.replace(/[^a-zA-Z0-9-_]/g, "_");
-			const fileName = `${sanitizedName}_${timestamp}.${extension}`;
+			const rangeSuffix = timeRange ? "_segment" : "";
+			const fileName = `${sanitizedName}${rangeSuffix}_${timestamp}.${extension}`;
 			const outputPath = `${appDataDir}/built_clips/${fileName}`;
 
 			// Ensure the built_clips directory exists
@@ -385,45 +447,73 @@ export class RendererManager {
 				Math.round(options.fps ?? activeProject.settings?.fps ?? 30),
 			);
 
-			// Pre-render text elements to transparent PNGs for pixel-perfect export
-			const textOverlays = await this.preRenderTextOverlays({ tracks, canvasSize, fps: exportFps });
+			const sessionId =
+				options.exportId != null && String(options.exportId).length > 0
+					? String(options.exportId)
+							.replace(/[^a-zA-Z0-9-_]/g, "_")
+							.slice(0, 80)
+					: `scene_${timestamp}`;
+			const effectiveExportId = options.exportId ?? sessionId;
 
-			onProgress?.({ progress: 0.1 });
-			const cancelledAfterText = checkCancelled();
-			if (cancelledAfterText) return cancelledAfterText;
+			let sceneTransitions: import("../../types/transitions").Transition[] = [];
+			try {
+				const scene = this.editor.scenes.getActiveScene();
+				sceneTransitions = scene?.transitions ?? [];
+			} catch {
+				sceneTransitions = [];
+			}
 
-			// Pre-render sticker elements to transparent PNGs for pixel-perfect export
-			const stickerOverlays = await this.preRenderStickerOverlays({ tracks, canvasSize, fps: exportFps });
+			const background = activeProject.settings?.background ?? {
+				type: "color" as const,
+				color: "#000000",
+			};
 
-			onProgress?.({ progress: 0.12 });
-			const cancelledAfterStickers = checkCancelled();
-			if (cancelledAfterStickers) return cancelledAfterStickers;
+			const sceneTracks = getSceneTracksForExport(tracks);
+			const timeOffset = timeRange?.startTime ?? 0;
+			const frameCount = Math.max(1, Math.ceil(duration * exportFps));
 
-			// Pre-render caption elements to transparent PNGs for pixel-perfect export
-			const captionOverlays = await this.preRenderCaptionOverlays({
-				tracks,
-				canvasSize,
-				duration,
+			const { pattern: scenePattern, frameCount: sceneFrameCount } = await writeSceneFrameSequenceToDisk({
+				sessionId,
+				sceneInputs: {
+					tracks: sceneTracks,
+					mediaAssets,
+					duration: fullDuration,
+					canvasSize,
+					background,
+					transitions: sceneTransitions,
+				},
+				exportDuration: duration,
+				timeOffset,
 				fps: exportFps,
+				frameCount,
+				onProgress: (p) => {
+					onProgress?.({ progress: 0.05 + p.progress * 0.14 });
+				},
+				isCancelled: () => !!onCancel?.(),
 			});
 
-			onProgress?.({ progress: 0.15 });
-			const cancelledAfterCaptions = checkCancelled();
-			if (cancelledAfterCaptions) return cancelledAfterCaptions;
+			onProgress?.({ progress: 0.19 });
+			const cancelledAfterFrames = checkCancelled();
+			if (cancelledAfterFrames) return cancelledAfterFrames;
+
+			const textOverlays: TauriTextOverlay[] = [];
+			const stickerOverlays: TauriStickerOverlay[] = [];
+			const captionOverlays: TauriTextOverlay[] = [];
 
 			// Resolve branding config for export
 			const brandingExport = await this.resolveBrandingForExport({ canvasSize });
 
-			onProgress?.({ progress: 0.18 });
+			onProgress?.({ progress: 0.2 });
 			const cancelledAfterBranding = checkCancelled();
 			if (cancelledAfterBranding) return cancelledAfterBranding;
 
-			// Build export config from timeline data
+			// Build export config from timeline data (visuals come from the scene image sequence)
 			const config = this.buildExportConfig({
 				tracks,
 				mediaAssets,
 				outputPath,
 				duration,
+				timeRange,
 				fps: exportFps,
 				canvasSize,
 				textOverlays,
@@ -431,23 +521,36 @@ export class RendererManager {
 				captionOverlays,
 				brandingExport,
 			});
-			config.export_id = options.exportId ?? null;
+			config.export_id = effectiveExportId;
+			config.scene_frame_pattern = scenePattern;
+			config.scene_frame_count = sceneFrameCount;
+			config.export_format = options.format;
+			config.export_quality = options.quality;
+			config.include_audio = options.includeAudio !== false;
+			config.effect_overlays = [];
 
 			onProgress?.({ progress: 0.2 });
 			const cancelledBeforeEncode = checkCancelled();
 			if (cancelledBeforeEncode) return cancelledBeforeEncode;
 
 			// Call Tauri FFmpeg export command
-			await invoke("export_video_editor_project", { config });
+			const { listen } = await import("@tauri-apps/api/event");
+			const unlistenProgress = await listen<{
+				export_id: string;
+				progress: number;
+			}>("video-editor-export-progress", (event) => {
+				if (event.payload.export_id !== effectiveExportId) return;
+				const encodeProgress = Math.max(0, Math.min(1, event.payload.progress));
+				onProgress?.({ progress: 0.2 + encodeProgress * 0.75 });
+			});
+
+			try {
+				await invoke("export_video_editor_project", { config });
+			} finally {
+				unlistenProgress();
+			}
 
 			onProgress?.({ progress: 0.95 });
-
-			// Always create clip in database for Built Clips page
-			await this.createClipFromExport({
-				outputPath,
-				duration,
-				projectName: activeProject.metadata.name,
-			});
 
 			onProgress?.({ progress: 1.0 });
 
@@ -477,6 +580,7 @@ export class RendererManager {
 		mediaAssets,
 		outputPath,
 		duration,
+		timeRange,
 		fps,
 		canvasSize,
 		textOverlays,
@@ -488,6 +592,7 @@ export class RendererManager {
 		mediaAssets: MediaAsset[];
 		outputPath: string;
 		duration: number;
+		timeRange: ExportTimeRange | null;
 		fps: number;
 		canvasSize: { width: number; height: number };
 		textOverlays: TauriTextOverlay[];
@@ -538,8 +643,11 @@ export class RendererManager {
 
 				if (isImage) {
 					const imgEl = el as ImageElement;
-					const start_time = imgEl.startTime;
-					const end_time = imgEl.startTime + imgEl.duration;
+					const clip = getClippedTimelineSpan(imgEl.startTime, imgEl.startTime + imgEl.duration, timeRange);
+					if (!clip) continue;
+
+					const start_time = clip.startTime;
+					const end_time = clip.endTime;
 					const source: TauriVideoSource = {
 						source_path: sourcePath,
 						start_time,
@@ -610,14 +718,22 @@ export class RendererManager {
 					});
 				} else {
 					const videoEl = el as VideoElement;
-					const start_time = videoEl.startTime;
-					const end_time = videoEl.startTime + videoEl.duration;
+					const clip = getClippedTimelineSpan(
+						videoEl.startTime,
+						videoEl.startTime + videoEl.duration,
+						timeRange,
+						videoEl.speed ?? 1,
+					);
+					if (!clip) continue;
+
+					const start_time = clip.startTime;
+					const end_time = clip.endTime;
 					const source: TauriVideoSource = {
 						source_path: sourcePath,
 						start_time,
 						end_time,
-						trim_start: videoEl.trimStart || null,
-						trim_end: videoEl.trimEnd || null,
+						trim_start: (videoEl.trimStart ?? 0) + clip.sourceOffset || null,
+						trim_end: videoEl.trimEnd ? videoEl.trimEnd - clip.sourceEndOffset : null,
 						opacity: videoEl.opacity ?? 1,
 						scale: videoEl.transform?.scale ?? 1,
 						position_x: videoEl.transform?.position?.x ?? 0,
@@ -715,18 +831,28 @@ export class RendererManager {
 				for (const el of track.elements) {
 					const effectEl = el as EffectElement;
 					if (!effectEl.enabled) continue;
+					const clip = getClippedTimelineSpan(effectEl.startTime, effectEl.startTime + effectEl.duration, timeRange);
+					if (!clip) continue;
 					effectOverlays.push({
 						effect_type: effectEl.effectType,
 						enabled: effectEl.enabled,
 						intensity: effectEl.intensity,
 						params: effectEl.params,
-						start_time: effectEl.startTime,
-						end_time: effectEl.startTime + effectEl.duration,
+						start_time: clip.startTime,
+						end_time: clip.endTime,
 					});
 				}
 			} else if (track.type === "audio") {
 				for (const el of track.elements) {
 					const audioEl = el as AudioElement;
+					const clip = getClippedTimelineSpan(
+						audioEl.startTime,
+						audioEl.startTime + audioEl.duration,
+						timeRange,
+						audioEl.speed ?? 1,
+					);
+					if (!clip) continue;
+
 					let filePath: string | null = null;
 
 					if (audioEl.sourceType === "upload") {
@@ -752,8 +878,9 @@ export class RendererManager {
 
 				audioTracks.push({
 					file_path: filePath,
-					start_time: audioEl.startTime,
-					end_time: audioEl.startTime + audioEl.duration,
+					start_time: clip.startTime,
+					end_time: clip.endTime,
+					trim_start: (audioEl.trimStart ?? 0) + clip.sourceOffset,
 					volume: audioEl.volume ?? 1,
 					is_muted: audioEl.muted ?? false,
 					speed: audioEl.speed ?? 1,
@@ -787,12 +914,16 @@ export class RendererManager {
 					const incomingId = pair.incoming.id;
 					const targetIdx = videoSourceElementIndex.get(incomingId);
 					if (targetIdx === undefined || targetIdx <= 0) continue;
+					const junctionTime = timeRange
+						? pair.incoming.startTime - timeRange.startTime
+						: pair.incoming.startTime;
+					if (junctionTime < 0 || junctionTime > duration) continue;
 
 					transitionData.push({
 						transition_type: t.type,
 						duration: t.duration,
 						target_element_index: targetIdx,
-						junction_time: pair.incoming.startTime,
+						junction_time: junctionTime,
 					});
 				}
 			}
@@ -804,6 +935,12 @@ export class RendererManager {
 		// If an intro is present, the cover timestamp needs to be offset by the intro duration
 		// so that FFmpeg extracts the frame from the main clip content, not the intro
 		let adjustedCoverTimestamp: number | null = coverTimestamp ?? null;
+		if (adjustedCoverTimestamp !== null && timeRange) {
+			adjustedCoverTimestamp =
+				adjustedCoverTimestamp >= timeRange.startTime && adjustedCoverTimestamp <= timeRange.endTime
+					? adjustedCoverTimestamp - timeRange.startTime
+					: Math.min(1.0, Math.max(0.05, duration / 2));
+		}
 		if (adjustedCoverTimestamp !== null && brandingExport.introDuration) {
 			adjustedCoverTimestamp += brandingExport.introDuration;
 		}
@@ -811,8 +948,12 @@ export class RendererManager {
 		return {
 			video_sources: videoSources,
 			audio_tracks: audioTracks,
-			text_overlays: [...textOverlays, ...captionOverlays],
-			sticker_overlays: stickerOverlays,
+			text_overlays: [...textOverlays, ...captionOverlays]
+				.map((overlay) => clipOverlaySpan(overlay, timeRange))
+				.filter((overlay): overlay is TauriTextOverlay => overlay !== null),
+			sticker_overlays: stickerOverlays
+				.map((overlay) => clipOverlaySpan(overlay, timeRange))
+				.filter((overlay): overlay is TauriStickerOverlay => overlay !== null),
 			effect_overlays: effectOverlays,
 			transitions: transitionData.length > 0 ? transitionData : null,
 			output_path: outputPath,
@@ -1465,111 +1606,6 @@ export class RendererManager {
 		}
 
 		return result;
-	}
-
-	/**
-	 * Create a clip record in the database after successful export.
-	 * This makes the exported video appear in the Built clips section.
-	 */
-	private async createClipFromExport({
-		outputPath,
-		duration,
-		projectName,
-	}: {
-		outputPath: string;
-		duration: number;
-		projectName: string;
-	}): Promise<void> {
-		try {
-			const { getDatabase, generateId, timestamp, getCurrentUserId } = await import("@/services/database/core");
-			const { invoke } = await import("@tauri-apps/api/core");
-
-			// Validate that the project_id exists in the projects table
-			// The clips table has a FOREIGN KEY constraint on project_id
-			const db = await getDatabase();
-
-			await db.execute(
-				`UPDATE clips
-				 SET project_name = COALESCE(project_name, name), project_id = NULL
-				 WHERE source = 'video_editor' AND project_id IS NOT NULL`
-			);
-
-			// Prefer actual muxed duration (matches intro/outro concat and any encoder drift)
-			let clipDuration = duration;
-			try {
-				const meta = await invoke<{ duration: number; width: number; height: number }>(
-					"get_video_metadata",
-					{ videoPath: outputPath },
-				);
-				if (meta.duration > 0.05) {
-					clipDuration = meta.duration;
-				}
-			} catch (err) {
-				console.warn("[RendererManager] Failed to probe exported file duration:", err);
-			}
-
-			// Generate thumbnail — sample early in the file (after intro, duration already includes intro)
-			const thumbnailTimestamp = Math.min(1.0, Math.max(0.05, clipDuration / 2));
-			let thumbnailPath: string | null = null;
-
-			try {
-				thumbnailPath = await invoke<string>("generate_thumbnail_at_timestamp", {
-					videoPath: outputPath,
-					timestampSeconds: thumbnailTimestamp,
-				});
-			} catch (err) {
-				console.warn("[RendererManager] Failed to generate thumbnail:", err);
-				// Non-fatal - clip will be created without thumbnail
-			}
-
-			let fileSize: number | null = null;
-			try {
-				const info = await invoke<{ size: number }>("get_file_info", { path: outputPath });
-				fileSize = info.size;
-			} catch (err) {
-				console.warn("[RendererManager] Failed to get file size:", err);
-			}
-
-			// Create clip in database with status='generated' and build_status='completed'
-			// This ensures it appears in the Built Clips page
-			const clipId = generateId();
-			const now = timestamp();
-			const userId = getCurrentUserId();
-
-			await db.execute(
-				`INSERT INTO clips (
-					id, project_id, project_name, name, file_path, duration, start_time, end_time,
-					status, build_status, built_file_path, built_thumbnail_path,
-					built_duration, built_file_size, built_at, created_at, updated_at, user_id, source
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				[
-					clipId,
-					null,
-					projectName,
-					projectName,
-					outputPath,
-					clipDuration,
-					0,
-					clipDuration,
-					'generated', // Mark as generated so it shows in Built Clips
-					'completed', // Mark build as completed
-					outputPath,
-					thumbnailPath,
-					clipDuration,
-					fileSize,
-					now,
-					now,
-					now,
-					userId,
-					'video_editor', // Label as video editor export
-				]
-			);
-
-			console.log("[RendererManager] Created clip in database:", outputPath);
-		} catch (err) {
-			console.error("[RendererManager] Failed to create clip in database:", err);
-			// Non-fatal - export succeeded, just clip creation failed
-		}
 	}
 
 	subscribe(listener: () => void): () => void {

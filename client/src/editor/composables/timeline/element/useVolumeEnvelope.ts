@@ -4,8 +4,7 @@
  *
  * Coordinate system:
  *   x  = offset (0–1) mapped to 0–elementWidthPx
- *   y  = volume (0–2) mapped to: top=2, middle=1, bottom=0
- *        y% = (1 - vol/2) * 100
+ *   y  = volume (0–max boost) mapped to: top=max, middle-ish=unity, bottom=0
  *
  * Export parity: volume keyframes are already serialised and applied in
  * video_editor_export.rs via build_keyframe_expression → FFmpeg volume filter.
@@ -15,9 +14,10 @@ import { computed, ref, type Ref } from "vue";
 import { useKeyframes } from "../../useKeyframes";
 import type { TimelineElement, TimelineTrack } from "../../../types/timeline";
 import type { Keyframe } from "../../../types/keyframes";
+import { CLIP_GAIN_MAX } from "../../../lib/audio-volume-ui";
 
-/** Volume range: 0 = silence, 1 = unity, 2 = +6 dB boost */
-const VOL_MAX = 2;
+/** Volume range: 0 = silence, 1 = unity, CLIP_GAIN_MAX = max inspector boost */
+const VOL_MAX = CLIP_GAIN_MAX;
 
 /** Minimum element width below which the rubber-band is hidden. */
 const MIN_WIDTH_PX = 30;

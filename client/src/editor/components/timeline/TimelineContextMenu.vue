@@ -3,9 +3,12 @@ import { ref, computed, watch, nextTick, onUnmounted } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { invokeAction } from "../../lib/actions";
+import { useToast } from "@/composables/useToast";
+import type { TimelineElement } from "../../types/timeline";
 import {
 	Scissors,
 	Copy,
+	Download,
 	Trash2,
 	ClipboardPaste,
 	VolumeX,
@@ -20,10 +23,6 @@ import {
 	Snowflake,
 	ArrowLeftRight,
 	RefreshCw,
-	ArrowUp,
-	ArrowDown,
-	ChevronsUp,
-	ChevronsDown,
 } from "lucide-vue-next";
 
 const props = defineProps<{
@@ -37,8 +36,10 @@ const emit = defineEmits<{
 
 const { editor } = useEditor();
 const { selectElement, isElementSelected, selectAllInTrack } = useElementSelection();
+const { showToast } = useToast();
 
 const hasElement = computed(() => !!props.elementRef);
+const isExportingSegment = ref(false);
 
 const canUndo = computed(() => editor.command.canUndo());
 const canRedo = computed(() => editor.command.canRedo());
@@ -50,6 +51,13 @@ const elementType = computed(() => {
 	if (!track) return null;
 	const element = track.elements.find((el: { id: string }) => el.id === props.elementRef!.elementId);
 	return element?.type ?? null;
+});
+
+const targetElement = computed<TimelineElement | null>(() => {
+	if (!props.elementRef) return null;
+	const track = editor.timeline.getTrackById({ trackId: props.elementRef.trackId });
+	if (!track) return null;
+	return (track.elements.find((el: { id: string }) => el.id === props.elementRef!.elementId) as TimelineElement | undefined) ?? null;
 });
 
 const isVideoElement = computed(() => elementType.value === "video");
@@ -208,16 +216,6 @@ function handleToggleReverse() {
 	emit("close");
 }
 
-function handleReorderElement(direction: "front" | "back" | "forward" | "backward") {
-	if (!props.elementRef) return;
-	editor.timeline.reorderElement({
-		trackId: props.elementRef.trackId,
-		elementId: props.elementRef.elementId,
-		direction,
-	});
-	emit("close");
-}
-
 const canReplaceMedia = computed(() => isVideoElement.value || elementType.value === "image");
 
 async function handleReplaceMedia() {
@@ -257,6 +255,96 @@ async function handleReplaceMedia() {
 		});
 	};
 	input.click();
+}
+
+async function handleExportSegment() {
+	const element = targetElement.value;
+	const project = editor.project.getActiveOrNull();
+	if (!element || !project || isExportingSegment.value) return;
+
+	emit("close");
+	isExportingSegment.value = true;
+
+	try {
+		const exportId = `editor-segment-export-${Date.now()}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+		const result = await editor.project.export({
+			options: {
+				format: "mp4",
+				quality: "high",
+				fps: project.settings?.fps ?? 30,
+				includeAudio: true,
+				canvasSize: project.settings.canvasSize,
+				timeRange: {
+					startTime: element.startTime,
+					endTime: element.startTime + element.duration,
+				},
+				exportId,
+			},
+		});
+
+		if (!result.success || !result.outputPath) {
+			throw new Error(result.error || "Segment export failed");
+		}
+
+		const { registerEditorExportBuild } = await import("../../services/registerEditorExportBuild");
+		const { showExportSummaryToast } = await import("../../lib/export-summary-toast");
+
+		let built: "registered" | "failed" | "skipped" = "skipped";
+		try {
+			const aspectLabel = `${project.settings.canvasSize.width}×${project.settings.canvasSize.height}`;
+			const reg = await registerEditorExportBuild({
+				outputPath: result.outputPath,
+				exportedDuration: element.duration,
+				projectId: project.metadata.id,
+				projectName: project.metadata.name,
+				buildOptions: {
+					aspectLabel,
+					quality: "high",
+					frameRate: project.settings?.fps ?? 30,
+					format: "mp4",
+					isForCampaign: false,
+					campaign: null,
+				},
+			});
+			if (reg?.mode === "clip_build" || reg?.mode === "standalone_clip") {
+				built = "registered";
+			}
+		} catch (e) {
+			console.warn("[TimelineContextMenu] Built Clips registration failed:", e);
+			built = "failed";
+		}
+
+		const { save } = await import("@tauri-apps/plugin-dialog");
+		const { invoke } = await import("@tauri-apps/api/core");
+		const defaultName = `${(element.name || "segment").replace(/[^a-zA-Z0-9-_]/g, "_")}.mp4`;
+		const savePath = await save({
+			defaultPath: defaultName,
+			filters: [{ name: "Video", extensions: ["mp4"] }],
+		});
+
+		let extra: string | undefined;
+		if (savePath) {
+			await invoke("copy_clip_to_destination", {
+				sourcePath: result.outputPath,
+				destinationPath: savePath,
+			});
+			extra = `Also copied to ${savePath}`;
+		}
+
+		showExportSummaryToast({
+			exportOk: true,
+			builtClips: built,
+			transcript: "skipped",
+			extra,
+		});
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Failed to export segment";
+		console.error("[TimelineContextMenu] Failed to export segment:", error);
+		const { showExportSummaryToast } = await import("../../lib/export-summary-toast");
+		showExportSummaryToast({ exportOk: false, builtClips: "skipped", transcript: "skipped", extra: message });
+	} finally {
+		isExportingSegment.value = false;
+	}
 }
 </script>
 
@@ -376,44 +464,14 @@ async function handleReplaceMedia() {
 					<span class="ml-auto text-zinc-500">Ctrl+A</span>
 				</button>
 
-				<!-- Layer ordering -->
-				<div class="mx-2 my-1 h-px bg-white/10" />
-
 				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="handleReorderElement('front')"
-					title="Move to top layer"
+					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-white/10"
+					:class="isExportingSegment ? 'text-zinc-600 cursor-wait' : 'text-zinc-300'"
+					:disabled="isExportingSegment"
+					@click="handleExportSegment"
 				>
-					<ChevronsUp class="size-3.5" />
-					Bring to Front
-					<span class="ml-auto text-zinc-500">Ctrl+Shift+]</span>
-				</button>
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="handleReorderElement('forward')"
-					title="Move up one layer"
-				>
-					<ArrowUp class="size-3.5" />
-					Bring Forward
-					<span class="ml-auto text-zinc-500">Ctrl+]</span>
-				</button>
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="handleReorderElement('backward')"
-					title="Move down one layer"
-				>
-					<ArrowDown class="size-3.5" />
-					Send Backward
-					<span class="ml-auto text-zinc-500">Ctrl+[</span>
-				</button>
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="handleReorderElement('back')"
-					title="Move to bottom layer"
-				>
-					<ChevronsDown class="size-3.5" />
-					Send to Back
-					<span class="ml-auto text-zinc-500">Ctrl+Shift+[</span>
+					<Download class="size-3.5" />
+					{{ isExportingSegment ? 'Exporting segment...' : 'Export segment' }}
 				</button>
 
 				<div class="mx-2 my-1 h-px bg-white/10" />
