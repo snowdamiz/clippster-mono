@@ -453,6 +453,7 @@ export class RendererManager {
 							.replace(/[^a-zA-Z0-9-_]/g, "_")
 							.slice(0, 80)
 					: `scene_${timestamp}`;
+			const effectiveExportId = options.exportId ?? sessionId;
 
 			let sceneTransitions: import("../../types/transitions").Transition[] = [];
 			try {
@@ -506,7 +507,7 @@ export class RendererManager {
 			const cancelledAfterBranding = checkCancelled();
 			if (cancelledAfterBranding) return cancelledAfterBranding;
 
-			// Build export config from timeline data (visuals come from scene PNG sequence)
+			// Build export config from timeline data (visuals come from the scene image sequence)
 			const config = this.buildExportConfig({
 				tracks,
 				mediaAssets,
@@ -520,7 +521,7 @@ export class RendererManager {
 				captionOverlays,
 				brandingExport,
 			});
-			config.export_id = options.exportId ?? null;
+			config.export_id = effectiveExportId;
 			config.scene_frame_pattern = scenePattern;
 			config.scene_frame_count = sceneFrameCount;
 			config.export_format = options.format;
@@ -533,7 +534,21 @@ export class RendererManager {
 			if (cancelledBeforeEncode) return cancelledBeforeEncode;
 
 			// Call Tauri FFmpeg export command
-			await invoke("export_video_editor_project", { config });
+			const { listen } = await import("@tauri-apps/api/event");
+			const unlistenProgress = await listen<{
+				export_id: string;
+				progress: number;
+			}>("video-editor-export-progress", (event) => {
+				if (event.payload.export_id !== effectiveExportId) return;
+				const encodeProgress = Math.max(0, Math.min(1, event.payload.progress));
+				onProgress?.({ progress: 0.2 + encodeProgress * 0.75 });
+			});
+
+			try {
+				await invoke("export_video_editor_project", { config });
+			} finally {
+				unlistenProgress();
+			}
 
 			onProgress?.({ progress: 0.95 });
 

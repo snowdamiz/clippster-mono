@@ -1,7 +1,7 @@
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
 use once_cell::sync::Lazy;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     sync::{
@@ -10,12 +10,18 @@ use std::{
     },
     time::Duration,
 };
-use tauri::Runtime;
+use tauri::{Emitter, Runtime};
 
 const FFMPEG_EXPORT_CANCELLED: &str = "Export cancelled by user";
 
 static ACTIVE_VIDEO_EDITOR_EXPORTS: Lazy<Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+
+#[derive(Clone, Serialize)]
+struct VideoEditorExportProgressPayload {
+    export_id: String,
+    progress: f64,
+}
 
 #[derive(Debug, Deserialize)]
 
@@ -395,7 +401,7 @@ pub struct ExportConfig {
 
     pub export_id: Option<String>,
 
-    /// When set, FFmpeg uses this `image2` pattern (e.g. `.../frame_%05d.png`) as the **video**
+    /// When set, FFmpeg uses this `image2` pattern (e.g. `.../frame_%05d.jpg`) as the **video**
     /// stream after all `video_sources` inputs. Visual compositing from `video_sources` is skipped;
     /// those inputs are still used for embedded clip audio and probes.
     #[serde(default)]
@@ -456,6 +462,8 @@ async fn run_ffmpeg_for_video_editor_export<R: Runtime>(
     app: &tauri::AppHandle<R>,
     args: &[String],
     cancel_flag: Option<Arc<AtomicBool>>,
+    progress_export_id: Option<String>,
+    progress_total_duration: Option<f64>,
 ) -> Result<Vec<u8>, String> {
     let shell = app.shell();
     let (mut rx, child) = shell
@@ -466,6 +474,8 @@ async fn run_ffmpeg_for_video_editor_export<R: Runtime>(
         .map_err(|e| format!("Failed to spawn FFmpeg: {}", e))?;
 
     let mut stderr_buf = Vec::new();
+    let mut stderr_text_tail = String::new();
+    let mut last_emitted_progress = 0.0_f64;
 
     loop {
         if cancel_flag
@@ -479,7 +489,39 @@ async fn run_ffmpeg_for_video_editor_export<R: Runtime>(
         tokio::select! {
             event = rx.recv() => {
                 match event {
-                    Some(CommandEvent::Stderr(data)) => stderr_buf.extend_from_slice(&data),
+                    Some(CommandEvent::Stderr(data)) => {
+                        stderr_buf.extend_from_slice(&data);
+                        if let (Some(export_id), Some(total_duration)) =
+                            (progress_export_id.as_ref(), progress_total_duration)
+                        {
+                            stderr_text_tail.push_str(&String::from_utf8_lossy(&data));
+                            if stderr_text_tail.len() > 8192 {
+                                stderr_text_tail = stderr_text_tail
+                                    .chars()
+                                    .rev()
+                                    .take(4096)
+                                    .collect::<String>()
+                                    .chars()
+                                    .rev()
+                                    .collect();
+                            }
+                            if let Some(seconds) = parse_ffmpeg_progress_seconds(&stderr_text_tail) {
+                                if total_duration > 0.001 {
+                                    let progress = (seconds / total_duration).clamp(0.0, 0.995);
+                                    if progress - last_emitted_progress >= 0.005 || progress >= 0.995 {
+                                        last_emitted_progress = progress;
+                                        let _ = app.emit(
+                                            "video-editor-export-progress",
+                                            VideoEditorExportProgressPayload {
+                                                export_id: export_id.clone(),
+                                                progress,
+                                            },
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
                     Some(CommandEvent::Terminated(payload)) => {
                         if payload.code == Some(0) {
                             return Ok(stderr_buf);
@@ -499,6 +541,55 @@ async fn run_ffmpeg_for_video_editor_export<R: Runtime>(
             _ = tokio::time::sleep(Duration::from_millis(120)) => {}
         }
     }
+}
+
+fn parse_ffmpeg_progress_seconds(text: &str) -> Option<f64> {
+    let mut latest: Option<f64> = None;
+
+    for line in text.lines().rev().take(80) {
+        let trimmed = line.trim();
+        if let Some(value) = trimmed.strip_prefix("out_time_ms=") {
+            if let Ok(us) = value.trim().parse::<f64>() {
+                latest = Some(us / 1_000_000.0);
+                break;
+            }
+        }
+        if let Some(value) = trimmed.strip_prefix("out_time_us=") {
+            if let Ok(us) = value.trim().parse::<f64>() {
+                latest = Some(us / 1_000_000.0);
+                break;
+            }
+        }
+        if let Some(value) = trimmed.strip_prefix("out_time=") {
+            latest = parse_ffmpeg_timecode(value.trim());
+            if latest.is_some() {
+                break;
+            }
+        }
+
+        // Fallback for FFmpeg's default stats line: "... time=00:00:12.34 ..."
+        if let Some(idx) = trimmed.find("time=") {
+            let after = &trimmed[idx + "time=".len()..];
+            let value = after.split_whitespace().next().unwrap_or("");
+            latest = parse_ffmpeg_timecode(value);
+            if latest.is_some() {
+                break;
+            }
+        }
+    }
+
+    latest
+}
+
+fn parse_ffmpeg_timecode(value: &str) -> Option<f64> {
+    let parts: Vec<&str> = value.split(':').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let hours = parts[0].parse::<f64>().ok()?;
+    let minutes = parts[1].parse::<f64>().ok()?;
+    let seconds = parts[2].parse::<f64>().ok()?;
+    Some(hours * 3600.0 + minutes * 60.0 + seconds)
 }
 
 /// Video/audio codec flags for the final mux (MP4 vs WebM, quality tiers, optional `-an`).
@@ -572,7 +663,7 @@ fn append_export_codec_args(args: &mut Vec<String>, format: &str, quality: &str,
     }
 }
 
-/// Build `[v]` from the pre-rendered scene PNG sequence input (`scene_input_index`).
+/// Build `[v]` from the pre-rendered scene image sequence input (`scene_input_index`).
 fn push_scene_video_filter_chain(
     filters: &mut Vec<String>,
     scene_input_index: usize,
@@ -3888,6 +3979,12 @@ pub async fn export_video_editor_project(
 
     // Audio sync and quality settings
 
+    args.push("-progress".to_string());
+
+    args.push("pipe:2".to_string());
+
+    args.push("-nostats".to_string());
+
     args.push("-async".to_string());
 
     args.push("1".to_string());
@@ -3912,8 +4009,14 @@ pub async fn export_video_editor_project(
         .as_ref()
         .map(|export_id| register_video_editor_export(export_id));
 
-    let export_result =
-        run_ffmpeg_for_video_editor_export(&app, &args, export_cancel_flag.clone()).await;
+    let export_result = run_ffmpeg_for_video_editor_export(
+        &app,
+        &args,
+        export_cancel_flag.clone(),
+        config.export_id.clone(),
+        Some(output_duration_sec),
+    )
+    .await;
 
     if let Err(err) = export_result {
         if let Some(export_id) = &config.export_id {
@@ -3977,7 +4080,9 @@ pub async fn export_video_editor_project(
             cover_path.clone(),
         ];
 
-        match run_ffmpeg_for_video_editor_export(&app, &cover_args, export_cancel_flag).await {
+        match run_ffmpeg_for_video_editor_export(&app, &cover_args, export_cancel_flag, None, None)
+            .await
+        {
             Ok(_) => {
                 println!("[Rust] Cover image saved: {}", cover_path);
             }
@@ -4006,12 +4111,21 @@ pub async fn export_video_editor_project(
     Ok(())
 }
 
-/// Write one PNG frame for WYSIWYG scene export (`frame_%05d.png` under a per-session temp dir).
+fn sanitize_scene_frame_extension(extension: &str) -> &'static str {
+    match extension.trim().trim_start_matches('.').to_ascii_lowercase().as_str() {
+        "jpg" | "jpeg" => "jpg",
+        "png" => "png",
+        _ => "jpg",
+    }
+}
+
+/// Write one encoded frame for WYSIWYG scene export (`frame_%05d.{jpg,png}` under a per-session temp dir).
 #[tauri::command]
 pub async fn write_scene_export_frame(
     session_id: String,
     frame_index_one_based: u32,
-    png_bytes: Vec<u8>,
+    frame_bytes: Vec<u8>,
+    extension: Option<String>,
 ) -> Result<(), String> {
     let safe_id: String = session_id
         .chars()
@@ -4025,14 +4139,18 @@ pub async fn write_scene_export_frame(
 
     std::fs::create_dir_all(&dir).map_err(|e| format!("scene export mkdir: {}", e))?;
 
-    let path = dir.join(format!("frame_{:05}.png", frame_index_one_based));
-    std::fs::write(&path, &png_bytes).map_err(|e| format!("scene export write: {}", e))?;
+    let ext = sanitize_scene_frame_extension(extension.as_deref().unwrap_or("jpg"));
+    let path = dir.join(format!("frame_{:05}.{}", frame_index_one_based, ext));
+    std::fs::write(&path, &frame_bytes).map_err(|e| format!("scene export write: {}", e))?;
     Ok(())
 }
 
 /// Returns `(pattern, frame_count)` for FFmpeg `image2` input after all frames were written.
 #[tauri::command]
-pub fn finalize_scene_export_frames(session_id: String) -> Result<(String, u32), String> {
+pub fn finalize_scene_export_frames(
+    session_id: String,
+    extension: Option<String>,
+) -> Result<(String, u32), String> {
     let safe_id: String = session_id
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
@@ -4047,11 +4165,12 @@ pub fn finalize_scene_export_frames(session_id: String) -> Result<(String, u32),
         return Err("scene export session dir missing".to_string());
     }
 
+    let ext = sanitize_scene_frame_extension(extension.as_deref().unwrap_or("jpg"));
     let mut count: u32 = 0;
     for entry in std::fs::read_dir(&dir).map_err(|e| format!("read_dir: {}", e))? {
         let e = entry.map_err(|e| e.to_string())?;
         let name = e.file_name().to_string_lossy().to_string();
-        if name.starts_with("frame_") && name.ends_with(".png") {
+        if name.starts_with("frame_") && name.ends_with(&format!(".{}", ext)) {
             count += 1;
         }
     }
@@ -4059,7 +4178,7 @@ pub fn finalize_scene_export_frames(session_id: String) -> Result<(String, u32),
         return Err("no scene export frames written".to_string());
     }
 
-    let pattern = dir.join("frame_%05d.png");
+    let pattern = dir.join(format!("frame_%05d.{}", ext));
     let pattern_str = pattern.to_string_lossy().replace('\\', "/");
     Ok((pattern_str, count))
 }
