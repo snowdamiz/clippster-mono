@@ -6,8 +6,10 @@ import { getAllAudioPlaylists, getPlaylistItemsWithAudio, createAudioPlaylist } 
 import type { DownloadedAudio, AudioPlaylist } from '@/services/database/types';
 import { useEditor } from '../../../composables/useEditor';
 import type { MediaAsset } from '../../../types/assets';
-import { hydrateVideoFileFromLocalUrl } from '../../../lib/media/hydrate-video-file-from-url';
+import { generateUUID } from '../../../utils/id';
+import { editorMediaDestinationFilename, playbackFileLabel } from '@/utils/fsNames';
 import { utf8ToBase64Url } from '@/utils/encoding';
+import { hydrateVideoFileFromLocalUrl } from '../../../lib/media/hydrate-video-file-from-url';
 import { Music, Search, Play, Loader2, ListMusic, ChevronLeft, Plus } from 'lucide-vue-next';
 
 const { editor, version } = useEditor();
@@ -117,27 +119,43 @@ function getAudioMimeFromPath(filePath: string): string {
 
 async function addLibraryAudioToProjectMedia(audio: DownloadedAudio) {
 	if (!activeProject.value) return;
-	const path = audio.file_path?.trim();
-	if (!path) return;
+	const sourcePath = audio.file_path?.trim();
+	if (!sourcePath) return;
 	if (addingAudioIds.value.has(audio.id)) return;
 
 	addingAudioIds.value = new Set([...addingAudioIds.value, audio.id]);
 	try {
+		const projectId = activeProject.value.metadata.id;
+		const displayName = audio.title;
+		const mediaAssetId = generateUUID();
+		const fileName = editorMediaDestinationFilename({
+			id: mediaAssetId,
+			displayName,
+			sourcePathHint: sourcePath,
+			kind: 'audio',
+		});
+
+		const destPath = await invoke<string>('copy_file_to_project_media', {
+			sourcePath: sourcePath,
+			projectId,
+			fileName,
+		});
+
 		let videoServerPort = 8642;
 		try {
 			videoServerPort = await invoke<number>('get_video_server_port');
 		} catch {
 			// dev fallback
 		}
-		const encodedPath = utf8ToBase64Url(path);
-		const url = `http://localhost:${videoServerPort}/video/${encodedPath}`;
-		const displayName = audio.title;
-
+		const url = `http://localhost:${videoServerPort}/video/${utf8ToBase64Url(destPath)}`;
+		const mime = getAudioMimeFromPath(destPath);
+		const playbackName = playbackFileLabel(destPath, displayName, 'audio');
+		// Under editor-media, plugin-fs can read bytes; AudioManager uses `mediaAsset.file` for decode.
 		const file = await hydrateVideoFileFromLocalUrl({
 			url,
-			name: displayName,
-			fallbackType: getAudioMimeFromPath(path),
-			diskPath: path,
+			name: playbackName,
+			fallbackType: mime,
+			diskPath: destPath,
 		});
 
 		const asset: Omit<MediaAsset, 'id'> = {
@@ -147,15 +165,16 @@ async function addLibraryAudioToProjectMedia(audio: DownloadedAudio) {
 			url,
 			duration: audio.duration ?? undefined,
 			ephemeral: false,
-			diskImportPath: path,
+			alreadyResolvedFilePath: destPath,
 		};
 		if (audio.thumbnail_url) {
 			asset.thumbnailUrl = audio.thumbnail_url;
 		}
 
 		await editor.media.addMediaAsset({
-			projectId: activeProject.value.metadata.id,
+			projectId,
 			asset,
+			mediaAssetId,
 		});
 	} catch (error) {
 		console.error('Failed to add audio to project media:', error);
