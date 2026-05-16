@@ -609,6 +609,8 @@ export class ProjectManager {
 			duration,
 			canvasSize,
 			background,
+			transitions: [],
+			canvasSourceFraming: this.active.settings.canvasSourceFraming ?? null,
 		});
 
 		const renderer = new CanvasRenderer({

@@ -46,6 +46,8 @@ export function useThumbnailGenerator() {
 				duration,
 				canvasSize: { width: canvasWidth, height: canvasHeight },
 				background,
+				transitions: [],
+				canvasSourceFraming: project.settings?.canvasSourceFraming ?? null,
 			});
 
 			const renderer = new CanvasRenderer({ width: canvasWidth, height: canvasHeight, fps });

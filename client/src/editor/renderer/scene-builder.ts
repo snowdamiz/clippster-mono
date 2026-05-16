@@ -12,6 +12,7 @@ import { CaptionNode } from "./nodes/caption-node";
 import { BlurBackgroundNode } from "./nodes/blur-background-node";
 import { TransitionNode } from "./nodes/transition-node";
 import type { TBackground, TCanvasSize } from "../types/project";
+import type { ManualSourceFramingPayload } from "@/types";
 import { DEFAULT_BLUR_INTENSITY } from "../constants/project-constants";
 import { isMainTrack } from "../lib/timeline";
 import { resolveTransitionMediaPair } from "../lib/timeline/transition-pairing";
@@ -29,6 +30,8 @@ export type BuildSceneParams = {
 	duration: number;
 	background: TBackground;
 	transitions?: Transition[];
+	/** First eligible main-track full-frame video/image uses this framing when set. */
+	canvasSourceFraming?: ManualSourceFramingPayload | null;
 };
 
 type TransitionExtendableNode = BaseNode & {
@@ -40,10 +43,12 @@ function isTransitionExtendableNode(node: BaseNode): node is TransitionExtendabl
 }
 
 export function buildScene(params: BuildSceneParams) {
-	const { tracks, mediaAssets, duration, canvasSize, background, transitions } = params;
+	const { tracks, mediaAssets, duration, canvasSize, background, transitions, canvasSourceFraming } = params;
 
 	const rootNode = new RootNode({ duration });
 	const mediaMap = new Map(mediaAssets.map((m) => [m.id, m]));
+
+	let canvas169FramingAssigned = false;
 
 	const visibleTracks = tracks.filter(
 		(track) => !("hidden" in track && track.hidden),
@@ -106,62 +111,82 @@ export function buildScene(params: BuildSceneParams) {
 				let node: BaseNode | null = null;
 			if (mediaAsset.type === "video") {
 				const videoEl = element as VideoElement;
-			node = new VideoNode({
-				mediaId: mediaAsset.id,
-				elementId: videoEl.id,
-				url: mediaAsset.url ?? "",
-				file: mediaAsset.file,
-				duration: videoEl.duration,
-				timeOffset: videoEl.startTime,
-				trimStart: videoEl.trimStart,
-				trimEnd: videoEl.trimEnd,
-				opacity: videoEl.opacity,
-				transform: videoEl.transform,
-				flip: videoEl.flip,
-				crop: videoEl.crop,
-				colorAdjustments: videoEl.colorAdjustments,
-				colorCurves: videoEl.colorCurves,
-				colorWheels: videoEl.colorWheels,
-				blendMode: videoEl.blendMode,
-				speed: videoEl.speed,
-				reversed: videoEl.reversed,
-				fadeIn: videoEl.fadeIn,
-				fadeOut: videoEl.fadeOut,
-				keyframes: videoEl.keyframes,
-				effects: videoEl.effects,
-				chromakey: videoEl.chromakey,
-				animationIn: videoEl.animationIn,
-				animationOut: videoEl.animationOut,
-				animationLoop: videoEl.animationLoop,
-				masks: videoEl.masks,
-			});
-		}
-		if (mediaAsset.type === "image") {
-			const imageEl = element as ImageElement;
-			node = new ImageNode({
-				url: mediaAsset.url ?? "",
-				duration: imageEl.duration,
-				timeOffset: imageEl.startTime,
-				trimStart: imageEl.trimStart,
-				trimEnd: imageEl.trimEnd,
-				opacity: imageEl.opacity,
-				transform: imageEl.transform,
-				flip: imageEl.flip,
-				crop: imageEl.crop,
-				colorAdjustments: imageEl.colorAdjustments,
-				colorCurves: imageEl.colorCurves,
-				colorWheels: imageEl.colorWheels,
-				blendMode: imageEl.blendMode,
-				fadeIn: imageEl.fadeIn,
-				fadeOut: imageEl.fadeOut,
-				keyframes: imageEl.keyframes,
-				effects: imageEl.effects,
-				chromakey: imageEl.chromakey,
-				animationIn: imageEl.animationIn,
-				animationOut: imageEl.animationOut,
-				animationLoop: imageEl.animationLoop,
-				masks: imageEl.masks,
-			});
+				const crop = videoEl.crop;
+				const hasCrop = !!(crop && (crop.top > 0 || crop.right > 0 || crop.bottom > 0 || crop.left > 0));
+				const assignCanvas169 =
+					isMainTrack(track) &&
+					canvasSourceFraming &&
+					canvasSourceFraming.mode === "use16x9" &&
+					!canvas169FramingAssigned &&
+					!hasCrop;
+				if (assignCanvas169) canvas169FramingAssigned = true;
+				node = new VideoNode({
+					mediaId: mediaAsset.id,
+					elementId: videoEl.id,
+					url: mediaAsset.url ?? "",
+					file: mediaAsset.file,
+					duration: videoEl.duration,
+					timeOffset: videoEl.startTime,
+					trimStart: videoEl.trimStart,
+					trimEnd: videoEl.trimEnd,
+					opacity: videoEl.opacity,
+					transform: videoEl.transform,
+					flip: videoEl.flip,
+					crop: videoEl.crop,
+					colorAdjustments: videoEl.colorAdjustments,
+					colorCurves: videoEl.colorCurves,
+					colorWheels: videoEl.colorWheels,
+					blendMode: videoEl.blendMode,
+					speed: videoEl.speed,
+					reversed: videoEl.reversed,
+					fadeIn: videoEl.fadeIn,
+					fadeOut: videoEl.fadeOut,
+					keyframes: videoEl.keyframes,
+					effects: videoEl.effects,
+					chromakey: videoEl.chromakey,
+					animationIn: videoEl.animationIn,
+					animationOut: videoEl.animationOut,
+					animationLoop: videoEl.animationLoop,
+					masks: videoEl.masks,
+					canvasSourceFraming: assignCanvas169 ? canvasSourceFraming : null,
+				});
+			}
+			if (mediaAsset.type === "image") {
+				const imageEl = element as ImageElement;
+				const crop = imageEl.crop;
+				const hasCrop = !!(crop && (crop.top > 0 || crop.right > 0 || crop.bottom > 0 || crop.left > 0));
+				const assignCanvas169 =
+					isMainTrack(track) &&
+					canvasSourceFraming &&
+					canvasSourceFraming.mode === "use16x9" &&
+					!canvas169FramingAssigned &&
+					!hasCrop;
+				if (assignCanvas169) canvas169FramingAssigned = true;
+				node = new ImageNode({
+					url: mediaAsset.url ?? "",
+					duration: imageEl.duration,
+					timeOffset: imageEl.startTime,
+					trimStart: imageEl.trimStart,
+					trimEnd: imageEl.trimEnd,
+					opacity: imageEl.opacity,
+					transform: imageEl.transform,
+					flip: imageEl.flip,
+					crop: imageEl.crop,
+					colorAdjustments: imageEl.colorAdjustments,
+					colorCurves: imageEl.colorCurves,
+					colorWheels: imageEl.colorWheels,
+					blendMode: imageEl.blendMode,
+					fadeIn: imageEl.fadeIn,
+					fadeOut: imageEl.fadeOut,
+					keyframes: imageEl.keyframes,
+					effects: imageEl.effects,
+					chromakey: imageEl.chromakey,
+					animationIn: imageEl.animationIn,
+					animationOut: imageEl.animationOut,
+					animationLoop: imageEl.animationLoop,
+					masks: imageEl.masks,
+					canvasSourceFraming: assignCanvas169 ? canvasSourceFraming : null,
+				});
 		}
 				if (node) {
 					elementNodeMap.set(element.id, node);

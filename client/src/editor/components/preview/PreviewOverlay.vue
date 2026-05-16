@@ -7,7 +7,10 @@ import {
 } from "../../composables/preview/usePreviewInteraction";
 import { useEditorUIState } from "../../composables/useEditorUIState";
 import { useEditor } from "../../composables/useEditor";
+import type { ManualSourceFramingPayload } from "@/types";
 import type { MaskShape, TimelineTrack } from "../../types/timeline";
+import { SetCanvasSourceFramingCommand } from "../../lib/commands/project/set-canvas-source-framing";
+import { getPlateRectLogical } from "../../renderer/canvas-169-framing-draw";
 import CropOverlay from "./CropOverlay.vue";
 
 const props = defineProps<{
@@ -172,13 +175,13 @@ function onOverlayMouseDown(event: MouseEvent) {
 	handleCanvasMouseDown(event);
 }
 
-const { editor: editorCore } = useEditor({
+const { editor: editorCore, version: editorReactiveVersion } = useEditor({
 	subscribe: {
 		playback: false,
 		selection: false,
 		timeline: true,
 		scenes: false,
-		project: false,
+		project: true,
 		media: false,
 	},
 });
@@ -200,6 +203,149 @@ const maskDragState = ref<{
 	handle?: "tl" | "tr" | "bl" | "br";
 	pointIndex?: number;
 } | null>(null);
+
+const PLATE_DRAG_SNAP_PX = 6;
+
+const activeCanvasSourceFraming = computed(() => {
+	void editorReactiveVersion.value;
+	const s = editorCore.project.getActiveOrNull()?.settings?.canvasSourceFraming;
+	if (!s || s.mode === "none") return null;
+	return s;
+});
+
+const plateScreenRect = computed(() => {
+	void editorReactiveVersion.value;
+	const f = activeCanvasSourceFraming.value;
+	if (!f) return null;
+	const metrics = getCanvasLocalMetrics();
+	if (!metrics) return null;
+	const logical = getPlateRectLogical(props.canvasWidth, props.canvasHeight, f);
+	if (!logical) return null;
+	return {
+		left: metrics.left + logical.left * metrics.scaleX,
+		top: metrics.top + logical.top * metrics.scaleY,
+		width: logical.width * metrics.scaleX,
+		height: logical.height * metrics.scaleY,
+	};
+});
+
+const plateChromeBorderClass = computed(() =>
+	activeCanvasSourceFraming.value?.mode === "use16x9" ? "border-cyan-400" : "border-purple-500",
+);
+
+const plateHandleClass = computed(() =>
+	activeCanvasSourceFraming.value?.mode === "use16x9" ? "bg-cyan-500" : "bg-purple-500",
+);
+
+const plateDragState = ref<{
+	type: "move" | "resize";
+	startClientX: number;
+	startClientY: number;
+	startNormX: number;
+	startNormY: number;
+	startScale: number;
+	corner?: "nw" | "ne" | "sw" | "se";
+} | null>(null);
+
+const plateFramingUndoSnapshot = ref<ManualSourceFramingPayload | null>(null);
+
+function persistPlateFramingDuringDrag(patch: Partial<ManualSourceFramingPayload>) {
+	const base = editorCore.project.getActiveOrNull()?.settings?.canvasSourceFraming;
+	if (!base || base.mode === "none") return;
+	void editorCore.project.updateSettings({
+		settings: { canvasSourceFraming: { ...base, ...patch } },
+		pushHistory: false,
+	});
+}
+
+function onPlateMouseMove(e: MouseEvent) {
+	const d = plateDragState.value;
+	if (!d) return;
+	const metrics = getCanvasLocalMetrics();
+	if (!metrics) return;
+
+	if (d.type === "move") {
+		const dxPx = e.clientX - d.startClientX;
+		const dyPx = e.clientY - d.startClientY;
+		const dCanvasX = dxPx / metrics.scaleX;
+		const dCanvasY = dyPx / metrics.scaleY;
+		let newX = d.startNormX + dCanvasX / props.canvasWidth;
+		let newY = d.startNormY + dCanvasY / props.canvasHeight;
+		if (Math.abs(newX * props.canvasWidth) < PLATE_DRAG_SNAP_PX) newX = 0;
+		if (Math.abs(newY * props.canvasHeight) < PLATE_DRAG_SNAP_PX) newY = 0;
+		persistPlateFramingDuringDrag({ x: newX, y: newY });
+		return;
+	}
+
+	const deltaX = e.clientX - d.startClientX;
+	let scaleDelta = 0;
+	if (d.corner === "se" || d.corner === "ne") scaleDelta = deltaX / 200;
+	else scaleDelta = -deltaX / 200;
+	const scale = Math.max(0.5, Math.min(5, d.startScale + scaleDelta));
+	persistPlateFramingDuringDrag({ scale });
+}
+
+function endPlateDrag() {
+	document.removeEventListener("mousemove", onPlateMouseMove);
+	document.removeEventListener("mouseup", onPlateMouseUp);
+	editorCore.setInteractiveDrag(false);
+	const snap = plateFramingUndoSnapshot.value;
+	plateDragState.value = null;
+	plateFramingUndoSnapshot.value = null;
+	if (!snap) return;
+	const cur = editorCore.project.getActiveOrNull()?.settings?.canvasSourceFraming;
+	if (!cur || cur.mode === "none") return;
+	if (JSON.stringify(snap) === JSON.stringify(cur)) return;
+	void editorCore.command.execute({
+		command: new SetCanvasSourceFramingCommand(snap, { ...cur }),
+	});
+}
+
+function onPlateMouseUp() {
+	endPlateDrag();
+}
+
+function onPlateMouseDown(e: MouseEvent) {
+	if (isCropMode.value) return;
+	const f = activeCanvasSourceFraming.value;
+	if (!f) return;
+	e.preventDefault();
+	e.stopPropagation();
+	plateFramingUndoSnapshot.value = { ...f };
+	plateDragState.value = {
+		type: "move",
+		startClientX: e.clientX,
+		startClientY: e.clientY,
+		startNormX: f.x,
+		startNormY: f.y,
+		startScale: f.scale,
+	};
+	editorCore.setInteractiveDrag(true);
+	document.addEventListener("mousemove", onPlateMouseMove);
+	document.addEventListener("mouseup", onPlateMouseUp);
+}
+
+function onPlateCornerMouseDown(e: MouseEvent, corner: "nw" | "ne" | "sw" | "se") {
+	if (isCropMode.value) return;
+	const f = activeCanvasSourceFraming.value;
+	if (!f) return;
+	e.preventDefault();
+	e.stopPropagation();
+	plateFramingUndoSnapshot.value = { ...f };
+	plateDragState.value = {
+		type: "resize",
+		startClientX: e.clientX,
+		startClientY: e.clientY,
+		startNormX: f.x,
+		startNormY: f.y,
+		startScale: f.scale,
+		corner,
+	};
+	editorCore.setInteractiveDrag(true);
+	document.addEventListener("mousemove", onPlateMouseMove);
+	document.addEventListener("mouseup", onPlateMouseUp);
+}
+
 const selectedElementMasks = computed<MaskShape[]>(() => {
 	if (!selectedBounds.value) return [];
 	const tracks = editorCore.timeline.getTracks();
@@ -437,8 +583,12 @@ function onMaskMouseUp() {
 onUnmounted(() => {
 	document.removeEventListener("mousemove", onMaskMouseMove);
 	document.removeEventListener("mouseup", onMaskMouseUp);
+	document.removeEventListener("mousemove", onPlateMouseMove);
+	document.removeEventListener("mouseup", onPlateMouseUp);
 	maskDragState.value = null;
 	maskEditSnapshot.value = null;
+	plateDragState.value = null;
+	plateFramingUndoSnapshot.value = null;
 	editorCore.setInteractiveDrag(false);
 });
 
@@ -464,6 +614,9 @@ function onOverlayMouseMove(event: MouseEvent) {
 }
 
 const cursorStyle = computed(() => {
+	if (plateDragState.value) {
+		return plateDragState.value.type === "move" ? "grabbing" : "nwse-resize";
+	}
 	if (dragState.value) {
 		if (dragState.value.type === "move") return "grabbing";
 		if (dragState.value.type === "rotate") return "crosshair";
@@ -752,5 +905,49 @@ const cursorStyle = computed(() => {
 				/>
 			</g>
 		</svg>
+
+		<!-- Use 16:9 canvas framing — drag + corner scale like Manual POI -->
+		<div
+			v-if="plateScreenRect && activeCanvasSourceFraming && !isCropMode"
+			class="pointer-events-none absolute inset-0 z-[15] overflow-visible"
+		>
+			<div
+				class="pointer-events-auto absolute box-border border-2"
+				:class="plateChromeBorderClass"
+				:style="{
+					left: `${plateScreenRect.left}px`,
+					top: `${plateScreenRect.top}px`,
+					width: `${plateScreenRect.width}px`,
+					height: `${plateScreenRect.height}px`,
+					cursor: 'move',
+				}"
+				@mousedown.stop="onPlateMouseDown"
+			>
+				<div
+					class="pointer-events-auto absolute left-0 top-0 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-white"
+					:class="plateHandleClass"
+					style="cursor: nwse-resize"
+					@mousedown.stop="onPlateCornerMouseDown($event, 'nw')"
+				/>
+				<div
+					class="pointer-events-auto absolute left-full top-0 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-white"
+					:class="plateHandleClass"
+					style="cursor: nesw-resize"
+					@mousedown.stop="onPlateCornerMouseDown($event, 'ne')"
+				/>
+				<div
+					class="pointer-events-auto absolute left-0 top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-white"
+					:class="plateHandleClass"
+					style="cursor: nesw-resize"
+					@mousedown.stop="onPlateCornerMouseDown($event, 'sw')"
+				/>
+				<div
+					class="pointer-events-auto absolute left-full top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-white"
+					:class="plateHandleClass"
+					style="cursor: nwse-resize"
+					@mousedown.stop="onPlateCornerMouseDown($event, 'se')"
+				/>
+			</div>
+		</div>
 	</div>
 </template>

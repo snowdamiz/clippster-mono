@@ -17,6 +17,7 @@ import {
 import { getPlatformConfig } from "@/config/platforms";
 import { SOCIAL_OVERLAY_PRESETS } from "../constants/social-overlay-constants";
 import type { SocialOverlayPreset } from "../types/social-overlays";
+import type { ManualSourceFramingPayload } from "@/types";
 
 const props = defineProps<{
 	previewContainer: HTMLDivElement | null;
@@ -70,11 +71,7 @@ const aspectPresets = [
 
 const activeProject = computed(() => {
 	void version.value;
-	try {
-		return editor.project.getActive();
-	} catch {
-		return null;
-	}
+	return editor.project.getActiveOrNull();
 });
 
 const projectTitle = computed(() => activeProject.value?.metadata.name || "Untitled");
@@ -88,6 +85,33 @@ const currentAspectLabel = computed(() => {
 
 const is916 = computed(() => canvasWidth.value === 1080 && canvasHeight.value === 1920);
 
+/** Show Use 16:9 when project canvas is not ~16:9 (matches Manual POI target panel). */
+const is169Canvas = computed(() => {
+	const p = activeProject.value;
+	if (!p?.settings?.canvasSize) return true;
+	const w = p.settings.canvasSize.width;
+	const h = p.settings.canvasSize.height;
+	if (w <= 0 || h <= 0) return true;
+	return Math.abs(w / h - 16 / 9) < 0.02;
+});
+
+const canvasSourceFraming = computed(() => activeProject.value?.settings.canvasSourceFraming ?? null);
+
+const use169Checked = computed(() => canvasSourceFraming.value?.mode === "use16x9");
+
+const showCanvasFramingBlur = ref(false);
+const framingBlurButtonRef = ref<HTMLButtonElement | null>(null);
+
+const framingBlurMenuStyle = computed(() => {
+	const el = framingBlurButtonRef.value;
+	if (!el) return {};
+	const rect = el.getBoundingClientRect();
+	return {
+		top: `${rect.bottom + 6}px`,
+		left: `${rect.left}px`,
+	};
+});
+
 watch(is916, (val) => {
 	if (!val) {
 		activeSocialOverlay.value = null;
@@ -96,8 +120,47 @@ watch(is916, (val) => {
 });
 
 function setAspectRatio(preset: { width: number; height: number }) {
-	editor.project.updateSettings({ settings: { canvasSize: preset } });
+	const is169 = Math.abs(preset.width / preset.height - 16 / 9) < 0.02;
+	void editor.project.updateSettings({
+		settings: {
+			canvasSize: preset,
+			...(is169 ? { canvasSourceFraming: undefined } : {}),
+		},
+	});
 	showAspectMenu.value = false;
+}
+
+async function persistCanvasFraming(fr: ManualSourceFramingPayload | null) {
+	await editor.project.updateSettings({
+		settings: { canvasSourceFraming: fr ?? undefined },
+	});
+}
+
+function onToggleUse169(e: Event) {
+	const checked = (e.target as HTMLInputElement).checked;
+	const cur = canvasSourceFraming.value;
+	if (checked) {
+		void persistCanvasFraming({
+			mode: "use16x9",
+			blurEnabled: (cur?.blurAmount ?? 12) > 0,
+			blurAmount: cur?.blurAmount ?? 12,
+			scale: 1,
+			x: 0,
+			y: 0,
+		});
+	} else if (cur?.mode === "use16x9") {
+		void persistCanvasFraming(null);
+	}
+}
+
+function setCanvasFramingBlurAmount(amount: number) {
+	const cur = canvasSourceFraming.value;
+	if (!cur || cur.mode === "none") return;
+	void persistCanvasFraming({
+		...cur,
+		blurAmount: amount,
+		blurEnabled: amount > 0,
+	});
 }
 
 function toggleSocialOverlay(preset: SocialOverlayPreset) {
@@ -302,8 +365,8 @@ function cancelRename() {
 			</button>
 		</div>
 
-	<!-- Center: Aspect ratio + Social overlay + Fullscreen -->
-	<div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2">
+	<!-- Center: Aspect ratio + Use 16:9 + Social overlay + Fullscreen -->
+	<div class="pointer-events-auto absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2">
 		<!-- Aspect ratio dropdown -->
 		<div class="relative">
 			<button
@@ -340,6 +403,61 @@ function cancelRename() {
 			</Teleport>
 			<div v-if="showAspectMenu" class="fixed inset-0 z-[199]" @click="showAspectMenu = false" />
 		</div>
+
+		<!-- Use 16:9 (non-16:9 canvas; same as Manual POI target panel) -->
+		<template v-if="!is169Canvas">
+			<div class="h-3 w-px bg-white/20" />
+			<label
+				class="flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+				:class="use169Checked ? 'bg-cyan-500/20 text-cyan-300' : 'text-zinc-500 hover:text-zinc-300'"
+			>
+				<input
+					type="checkbox"
+					class="size-2.5 rounded border-zinc-600 bg-zinc-800 accent-cyan-500"
+					:checked="use169Checked"
+					@change="onToggleUse169"
+				/>
+				<span>Use 16:9</span>
+			</label>
+			<div v-if="use169Checked" class="relative">
+				<button
+					ref="framingBlurButtonRef"
+					type="button"
+					class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+					@click="showCanvasFramingBlur = !showCanvasFramingBlur"
+				>
+					Blur<span v-if="(canvasSourceFraming?.blurAmount ?? 0) > 0">: {{ canvasSourceFraming?.blurAmount }}</span>
+					<ChevronDown class="size-2.5 transition-transform" :class="{ 'rotate-180': showCanvasFramingBlur }" />
+				</button>
+				<Teleport to="body">
+					<div
+						v-if="showCanvasFramingBlur"
+						class="fixed z-[200] min-w-[140px] rounded-md border border-white/10 bg-[#1e1e22] p-2 shadow-lg"
+						:style="framingBlurMenuStyle"
+						@click.stop
+					>
+						<div class="mb-1 flex items-center justify-between text-[10px] text-zinc-400">
+							<span>Blur</span>
+							<span class="font-mono text-zinc-300">{{ canvasSourceFraming?.blurAmount ?? 0 }}</span>
+						</div>
+						<input
+							type="range"
+							min="0"
+							max="30"
+							step="1"
+							:value="canvasSourceFraming?.blurAmount ?? 0"
+							class="h-1 w-full accent-cyan-500"
+							@input="setCanvasFramingBlurAmount(Number(($event.target as HTMLInputElement).value))"
+						/>
+					</div>
+				</Teleport>
+				<div
+					v-if="showCanvasFramingBlur"
+					class="fixed inset-0 z-[199]"
+					@click="showCanvasFramingBlur = false"
+				/>
+			</div>
+		</template>
 
 		<!-- Social overlay toggle (9:16 only) -->
 		<template v-if="is916">

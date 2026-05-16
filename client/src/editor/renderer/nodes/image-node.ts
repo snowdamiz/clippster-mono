@@ -10,6 +10,8 @@ import type { ChromakeySettings } from "../../types/chromakey";
 import type { ElementAnimation } from "../../types/animations";
 import { computeAnimationTransforms, applyAnimationToContext } from "../effects/canvas-animations";
 import { hasMasks, setupMaskClip } from "./mask-compositor";
+import type { ManualSourceFramingPayload } from "@/types";
+import { drawCanvas169SourceFraming } from "../canvas-169-framing-draw";
 import {
 	createPreviewScaledImageBitmap,
 	getPreviewDecodeGeneration,
@@ -77,6 +79,7 @@ export interface ImageNodeParams {
 	colorWheels?: ColorWheels;
 	blendMode?: BlendMode;
 	masks?: MaskShape[];
+	canvasSourceFraming?: ManualSourceFramingPayload | null;
 }
 
 export class ImageNode extends BaseNode<ImageNodeParams> {
@@ -292,6 +295,17 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 					drawSource,
 					sx, sy, sw, sh,
 					drawX, drawY, drawW, drawH,
+				);
+			} else if (this.params.canvasSourceFraming?.mode === "use16x9") {
+				drawCanvas169SourceFraming(
+					renderer.context,
+					drawSource,
+					mediaW,
+					mediaH,
+					renderer.width,
+					renderer.height,
+					this.params.canvasSourceFraming,
+					undefined,
 				);
 			} else {
 				const containScale = Math.min(

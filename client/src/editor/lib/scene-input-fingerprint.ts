@@ -12,6 +12,7 @@ import type {
 import type { MediaAsset } from "../types/assets";
 import type { Transition } from "../types/transitions";
 import type { TBackground, TCanvasSize } from "../types/project";
+import type { ManualSourceFramingPayload } from "@/types";
 
 /**
  * Per-element payload hashed into `computeSceneInputFingerprint`.
@@ -199,8 +200,9 @@ export function computeSceneInputFingerprint(params: {
 	canvasSize: TCanvasSize;
 	background: TBackground;
 	duration: number;
+	canvasSourceFraming?: ManualSourceFramingPayload | null;
 }): string {
-	const { tracks, mediaAssets, transitions, canvasSize, background, duration } = params;
+	const { tracks, mediaAssets, transitions, canvasSize, background, duration, canvasSourceFraming } = params;
 
 	const mediaPart = mediaAssets
 		.map((m) => `${m.id}:${m.type}:${m.file?.size ?? 0}:${m.width ?? 0}:${m.height ?? 0}`)
@@ -231,5 +233,6 @@ export function computeSceneInputFingerprint(params: {
 
 	const bgPart = JSON.stringify(background);
 	const sizePart = `${canvasSize.width}x${canvasSize.height}`;
-	return `${duration.toFixed(4)}|${sizePart}|${bgPart}|${mediaPart}|${trackPart}|${trPart}`;
+	const framingPart = canvasSourceFraming ? JSON.stringify(canvasSourceFraming) : "";
+	return `${duration.toFixed(4)}|${sizePart}|${bgPart}|${framingPart}|${mediaPart}|${trackPart}|${trPart}`;
 }
