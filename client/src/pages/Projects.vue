@@ -5618,7 +5618,8 @@
     organizationId: number | null = null,
     startTime: number = 0,
     endTime: number = 0,
-    subtitleSettings: { enabled: boolean; presetId: string } | null = null
+    subtitleSettings: { enabled: boolean; presetId: string } | null = null,
+    enhanced: boolean = false
   ) {
     if (!projectToDetect.value || segmentsToDetect.value.length === 0) {
       return;
@@ -5669,6 +5670,7 @@
               startTime: startTime,
               endTime: endTime,
               subtitleSettings: subtitleSettings,
+              enhanced,
               streamerMetadata: {
                 display_name: segment.name,
                 platform: segment.platform,
@@ -5701,7 +5703,7 @@
       if (successCount === totalSegments) {
         success(
           'Detection Complete',
-          `Successfully processed ${successCount} segment${successCount !== 1 ? 's' : ''}. Found ${totalClipsFound} clips total.`
+          `Processed ${successCount} of ${totalSegments} folder video(s). Found ${totalClipsFound} clips total.`
         );
       } else {
         error(

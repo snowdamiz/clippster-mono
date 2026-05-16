@@ -52,6 +52,8 @@ const activeProject = computed(() => {
 	return editor.project.getActiveOrNull();
 });
 
+const canvasSourceFraming = computed(() => activeProject.value?.settings.canvasSourceFraming ?? null);
+
 const projectWidth = computed(() => activeProject.value?.settings?.canvasSize?.width ?? 1920);
 const projectHeight = computed(() => activeProject.value?.settings?.canvasSize?.height ?? 1080);
 
@@ -179,6 +181,7 @@ function schedulePreviewSceneRebuild() {
 		canvasSize: { width: layoutWidth.value, height: layoutHeight.value },
 		background: background.value,
 		transitions: sceneTransitions.value,
+		canvasSourceFraming: canvasSourceFraming.value,
 	};
 
 	const run = () => {
@@ -205,7 +208,7 @@ function schedulePreviewSceneRebuild() {
 }
 
 watch(
-	[sceneTracks, mediaAssets, background, layoutWidth, layoutHeight, sceneTransitions],
+	[sceneTracks, mediaAssets, background, layoutWidth, layoutHeight, sceneTransitions, canvasSourceFraming],
 	schedulePreviewSceneRebuild,
 	{ immediate: true, flush: "post" },
 );

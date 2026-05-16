@@ -33,6 +33,7 @@ mod twitter;
 mod ui_utils;
 mod utils;
 mod video;
+mod video_chunk_extraction;
 mod video_editor_export;
 mod video_server;
 mod waveform;
@@ -1196,6 +1197,7 @@ commands::file_utils::generate_video_thumbnail,
             // Audio commands
             audio::extract_audio_from_video,
             audio::extract_audio_from_segments,
+            video_chunk_extraction::extract_video_chunk_for_analysis,
             audio::extract_and_chunk_audio,
             audio::cancel_audio_extraction,
             audio::extract_audio_to_file,

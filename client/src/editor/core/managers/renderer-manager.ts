@@ -481,6 +481,7 @@ export class RendererManager {
 					canvasSize,
 					background,
 					transitions: sceneTransitions,
+					canvasSourceFraming: activeProject.settings.canvasSourceFraming ?? null,
 				},
 				exportDuration: duration,
 				timeOffset,

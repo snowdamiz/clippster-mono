@@ -8,6 +8,7 @@ export type PreviewQualityPreset = "auto" | 360 | 540 | 720 | 1080;
 let projectWidth = 1920;
 let projectHeight = 1080;
 let quality: PreviewQualityPreset = "auto";
+let decodeSinkSizeOverride: { width: number; height: number } | null = null;
 /** Bumps when settings change so image nodes can drop scaled bitmap caches. */
 let generation = 0;
 
@@ -32,11 +33,22 @@ export function getPreviewDecodeGeneration(): number {
 	return generation;
 }
 
+export function setPreviewDecodeSinkSizeOverride(size: { width: number; height: number } | null): void {
+	decodeSinkSizeOverride = size
+		? {
+				width: Math.max(1, Math.round(size.width)),
+				height: Math.max(1, Math.round(size.height)),
+			}
+		: null;
+	generation++;
+}
+
 /**
  * Target pixel box for decoding video frames (CanvasSink) and downscaling still images.
  * Same aspect ratio as the project canvas; smaller when a fixed quality preset is below project size.
  */
 export function getPreviewDecodeSinkSize(): { width: number; height: number } {
+	if (decodeSinkSizeOverride) return decodeSinkSizeOverride;
 	const targetHeight = quality === "auto"
 		? Math.min(projectHeight, 720)
 		: quality;
