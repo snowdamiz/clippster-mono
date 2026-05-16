@@ -2,19 +2,64 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
   @moduledoc """
   Interface to the OpenRouter API for AI-powered clip generation.
   Uses the Chat Completions API for broad model compatibility (Gemini, DeepSeek, etc.).
+
+  All clip detection (VOD standard, VOD enhanced, and livestream `detect_realtime`) uses
+  `clip_detection_model/0` — pinned to `google/gemini-3.1-flash-lite` (not `OPENROUTER_MODEL`).
   """
 
-  @default_model "google/gemini-3.1-flash-lite"
+  @clip_detection_model "google/gemini-3.1-flash-lite"
   @chat_completions_url "https://openrouter.ai/api/v1/chat/completions"
   @clip_output_max_tokens 32_000
   @full_vod_recv_timeout_ms 600_000
+  @enhanced_vod_recv_timeout_ms 900_000
 
-  def default_model, do: System.get_env("OPENROUTER_MODEL", @default_model)
+  def clip_detection_model, do: @clip_detection_model
 
   def generate_clips(transcript, system_prompt, user_prompt_input, project_id \\ nil) do
-    model = default_model()
+    model = clip_detection_model()
     IO.puts("[OpenRouterAPI] Starting clip generation with model: #{model}")
     generate_clips_with_model(transcript, system_prompt, user_prompt_input, model, project_id)
+  end
+
+  @doc """
+  Enhanced VOD detection: transcript + video (with embedded audio) in one multimodal pass.
+  Returns `{:ok, ai_response, usage}` or `{:error, reason}`.
+  """
+  def generate_clips_enhanced(
+        transcript,
+        video_base64,
+        system_prompt,
+        user_prompt_input,
+        project_id \\ nil,
+        chunk_start_time \\ 0,
+        chunk_end_time \\ 0
+      ) do
+    model = clip_detection_model()
+    IO.puts("[OpenRouterAPI] Starting ENHANCED clip generation with model: #{model}")
+
+    api_key = System.get_env("OPENROUTER_API_KEY")
+
+    if is_nil(api_key) do
+      {:error, "OPENROUTER_API_KEY environment variable not set"}
+    else
+      generate_clips_enhanced_retry(
+        transcript,
+        video_base64,
+        system_prompt,
+        user_prompt_input,
+        model,
+        api_key,
+        0,
+        [],
+        project_id,
+        chunk_start_time,
+        chunk_end_time
+      )
+    end
+  rescue
+    reason ->
+      IO.puts("[OpenRouterAPI] Rescue error in generate_clips_enhanced: #{inspect(reason)}")
+      {:error, "Exception: #{inspect(reason)}"}
   end
 
   defp missing_fields_prompt(system_prompt, []), do: system_prompt
@@ -257,7 +302,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
   end
 
   @doc """
-  Generate clips using a specific model. Used by multimodal detection.
+  Generate clips using a specific model.
   Returns {:ok, ai_response, usage} or {:error, reason}.
   """
   def generate_clips_with_model(
@@ -392,56 +437,70 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
     end
   end
 
-  @doc """
-  Run the decider model to synthesize results from multiple detection models.
-  Returns {:ok, clips, usage} or {:error, reason}.
-  """
-  def decide_final_clips(decider_prompt, model, project_id \\ nil) do
-    IO.puts("[OpenRouterAPI] Running decider model: #{model}")
+  defp generate_clips_enhanced_retry(
+         transcript,
+         video_base64,
+         system_prompt,
+         user_prompt_input,
+         model,
+         api_key,
+         attempt,
+         missing_fields,
+         project_id,
+         chunk_start_time,
+         chunk_end_time
+       ) do
+    max_attempts = 3
+    user_text = build_enhanced_user_text(transcript, user_prompt_input, attempt, chunk_start_time, chunk_end_time)
 
-    api_key = System.get_env("OPENROUTER_API_KEY")
-
-    if is_nil(api_key) do
-      {:error, "OPENROUTER_API_KEY environment variable not set"}
-    else
-      decide_final_clips_impl(decider_prompt, model, api_key, project_id)
-    end
-  rescue
-    reason ->
-      IO.puts("[OpenRouterAPI] Rescue error in decide_final_clips: #{inspect(reason)}")
-      {:error, "Exception: #{inspect(reason)}"}
-  end
-
-  defp decide_final_clips_impl(decider_prompt, model, api_key, _project_id) do
-    payload = %{
-      "model" => model,
-      "messages" => [
-        %{
-          "role" => "user",
-          "content" => decider_prompt
-        }
-      ],
-      "max_tokens" => 4000,
-      # Lower temperature for more consistent synthesis
-      "temperature" => 0.3
-    }
+    payload =
+      build_enhanced_chat_payload(
+        model,
+        system_prompt,
+        user_text,
+        video_base64,
+        missing_fields
+      )
 
     json_payload = Jason.encode!(payload)
-    # 3 min for decider
-    options = [recv_timeout: 180_000, timeout: 180_000]
 
-    api_url = "https://openrouter.ai/api/v1/chat/completions"
+    options = [
+      recv_timeout: @enhanced_vod_recv_timeout_ms,
+      timeout: @enhanced_vod_recv_timeout_ms
+    ]
 
-    case HTTPoison.post(api_url, json_payload, build_headers(api_key), options) do
+    case HTTPoison.post(@chat_completions_url, json_payload, build_headers(api_key), options) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         case Jason.decode(body) do
           {:ok, response} ->
             case extract_clips_from_chat_response(response) do
-              {:ok, result} ->
-                # Extract clips from the result (decider returns {clips, synthesis_notes})
-                clips = Map.get(result, "clips", [])
-                usage = Map.get(response, "usage", %{})
-                {:ok, clips, usage}
+              {:ok, clips} ->
+                case validate_clips_response(clips) do
+                  :ok ->
+                    usage = Map.get(response, "usage", %{})
+                    {:ok, clips, usage}
+
+                  {:error, new_missing_fields} when attempt < max_attempts - 1 ->
+                    IO.puts("[OpenRouterAPI] Enhanced validation failed, retrying...")
+                    :timer.sleep(1000)
+
+                    generate_clips_enhanced_retry(
+                      transcript,
+                      video_base64,
+                      system_prompt,
+                      user_prompt_input,
+                      model,
+                      api_key,
+                      attempt + 1,
+                      new_missing_fields,
+                      project_id,
+                      chunk_start_time,
+                      chunk_end_time
+                    )
+
+                  {:error, new_missing_fields} ->
+                    {:error, "Missing required fields: #{inspect(new_missing_fields)}"}
+                end
 
               {:error, reason} ->
                 {:error, reason}
@@ -452,11 +511,82 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
         end
 
       {:ok, %HTTPoison.Response{status_code: status_code, body: body}} ->
-        {:error, "Decider API error #{status_code}: #{String.slice(body, 0, 200)}"}
+        {:error, "Enhanced API error #{status_code}: #{String.slice(body, 0, 500)}"}
 
       {:error, %HTTPoison.Error{reason: reason}} ->
-        {:error, "Decider network error: #{inspect(reason)}"}
+        {:error, "Enhanced network error: #{inspect(reason)}"}
     end
+  end
+
+  defp build_enhanced_user_text(transcript, user_prompt, attempt, chunk_start_time, chunk_end_time) do
+    transcript_json = Jason.encode!(transcript)
+
+    retry_message =
+      if attempt > 0 do
+        """
+
+        **RETRY NOTICE:** Previous response was missing required fields. Include ALL required fields, especially socialMediaPost for each clip.
+        """
+      else
+        ""
+      end
+
+    timing_context =
+      if chunk_end_time > chunk_start_time do
+        """
+
+        **VIDEO SEGMENT:** This video covers #{Float.round(chunk_start_time, 2)}s to #{Float.round(chunk_end_time, 2)}s of the full VOD.
+        All clip timestamps MUST use absolute seconds from the full video (same timebase as the transcript).
+        """
+      else
+        ""
+      end
+
+    """
+    **USER INSTRUCTIONS:**
+
+    #{user_prompt}
+    #{timing_context}
+
+    **TRANSCRIPT (same time range as the attached video):**
+
+    #{transcript_json}
+
+    Watch the attached video, listen to its audio, and read the transcript together.
+    Detect viral clips according to the user instructions and system prompt.#{retry_message}
+
+    Return compact valid JSON only. Keep titles, reasons, transcripts, and social captions concise.
+    """
+  end
+
+  defp build_enhanced_chat_payload(model, system_prompt, user_text, video_base64, missing_fields) do
+    video_uri = "data:video/mp4;base64,#{video_base64}"
+
+    %{
+      "model" => model,
+      "messages" => [
+        %{
+          "role" => "system",
+          "content" => missing_fields_prompt(system_prompt, missing_fields)
+        },
+        %{
+          "role" => "user",
+          "content" => [
+            %{
+              "type" => "video_url",
+              "video_url" => %{"url" => video_uri}
+            },
+            %{
+              "type" => "text",
+              "text" => user_text
+            }
+          ]
+        }
+      ],
+      "max_tokens" => @clip_output_max_tokens,
+      "temperature" => 0.7
+    }
+    |> maybe_add_gemini_reasoning(model)
   end
 
   # Build payload for chat completions API (broader model compatibility)

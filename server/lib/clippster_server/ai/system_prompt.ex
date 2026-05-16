@@ -320,6 +320,19 @@ defmodule ClippsterServer.AI.SystemPrompt do
     """
   end
 
+  @enhanced_video_addon """
+  **ENHANCED MODEL — VIDEO + AUDIO + TRANSCRIPT:**
+
+  You are also receiving a video segment of this VOD (with embedded audio).
+  Use ALL three signals together:
+  - **Transcript** for precise word-level timestamps and speaking patterns
+  - **Video** for facial reactions, gameplay, on-screen chat/donations, body language, visual punchlines
+  - **Audio** (from the video) for tone, laughter, screaming, silence, and energy
+
+  Cross-reference visual moments with transcript timestamps. A funny face without words can still be clip-worthy.
+  Clip start/end times MUST remain anchored to absolute seconds in the full VOD (transcript timebase).
+  """
+
   @doc """
   Returns the system prompt with conditional detection context for the single-model path.
   """
@@ -329,6 +342,22 @@ defmodule ClippsterServer.AI.SystemPrompt do
 
     """
     #{@system_prompt}
+
+    #{context}
+    """
+  end
+
+  @doc """
+  Returns the system prompt for Enhanced VOD detection (video + transcript).
+  """
+  def get_with_enhanced_detection_context(user_prompt, transcript \\ nil, streamer_metadata \\ nil) do
+    context =
+      ClippsterServer.AI.DetectionContext.build(user_prompt, transcript, streamer_metadata)
+
+    """
+    #{@system_prompt}
+
+    #{@enhanced_video_addon}
 
     #{context}
     """

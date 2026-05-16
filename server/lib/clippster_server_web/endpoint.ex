@@ -68,8 +68,8 @@ defmodule ClippsterServerWeb.Endpoint do
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
     json_decoder: Phoenix.json_library(),
-    # 200MB max request size for large video uploads
-    length: 200_000_000,
+    # 1GB max request size (enhanced VOD sends multiple ~50MB video chunks per request)
+    length: 1_000_000_000,
     # Capture raw body for Stripe webhooks
     body_reader: {ClippsterServerWeb.StripeWebhookPlug, :read_body, []}
 

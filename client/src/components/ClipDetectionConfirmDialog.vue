@@ -85,6 +85,35 @@
                 </div>
               </div>
 
+              <!-- Enhanced Detection -->
+              <div class="detect-clips-dialog__field">
+                <div class="detect-clips-dialog__toggle-box">
+                  <div class="flex items-center justify-between">
+                    <div class="flex-1 min-w-0 pr-3">
+                      <div class="flex items-center gap-2">
+                        <span class="text-sm font-medium">Enhanced Detection</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-400 font-medium">2× credits</span>
+                      </div>
+                      <p class="text-xs mt-1 opacity-70">
+                        Analyzes transcript, video, and audio together for higher-quality clip detection
+                      </p>
+                    </div>
+                    <button
+                      @click="enhancedDetection = !enhancedDetection"
+                      class="detect-clips-dialog__toggle"
+                      :class="{ 'detect-clips-dialog__toggle--active': enhancedDetection }"
+                      role="switch"
+                      :aria-checked="enhancedDetection"
+                    >
+                      <span
+                        class="detect-clips-dialog__toggle-thumb"
+                        :class="{ 'detect-clips-dialog__toggle-thumb--active': enhancedDetection }"
+                      />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <!-- Subtitle Selection -->
               <div class="detect-clips-dialog__field">
                 <div class="detect-clips-dialog__toggle-box">
@@ -369,7 +398,8 @@
       organizationId: number | null,
       startTime: number,
       endTime: number,
-      subtitleSettings?: { enabled: boolean; presetId: string } | null
+      subtitleSettings?: { enabled: boolean; presetId: string } | null,
+      enhanced?: boolean
     ];
   }>();
 
@@ -380,6 +410,9 @@
   const isProcessing = ref(false);
   const error = ref<string>('');
   const prompts = ref<Prompt[]>([]);
+
+  // Enhanced detection (transcript + video + audio)
+  const enhancedDetection = ref(false);
 
   // Subtitle selection
   const subtitlesEnabled = ref(false);
@@ -425,24 +458,18 @@
   // Check if user is admin (has unlimited credits)
   const isAdmin = computed(() => selectedSourceHoursRemaining.value === Infinity);
 
-  // Calculate credits based on duration and transcription status
-  // Must match server's per-step ceil math:
-  //   - Not transcribed: ceil(minutes * 0.3) [transcribe] + ceil(minutes * 0.7) [detect]
-  //   - Already transcribed: ceil(minutes * 0.7) [detect only]
+  // Calculate credits based on duration and transcription status.
+  // Standard rates (matches server): 0.3/min transcribe + 0.7/min detect, or 0.7/min detect-only.
+  // Enhanced is always exactly 2× the standard total (e.g. 60 min → 60 credits → 120 enhanced).
   const calculatedCredits = computed(() => {
-    // For multi-segment mode, use total duration; for single video, use selected range
     const durationToCharge = props.segmentCount ? effectiveDuration.value : selectedDuration.value;
-    const minutesToCharge = durationToCharge / 60; // Convert seconds to minutes
+    const minutesToCharge = durationToCharge / 60;
 
-    if (props.isTranscribed) {
-      // Detection only: ceil(minutes * 0.7)
-      return Math.ceil(minutesToCharge * 0.7);
-    } else {
-      // Transcription + detection, each ceiled separately (matches server)
-      const transcriptionCredits = Math.ceil(minutesToCharge * 0.3);
-      const detectionCredits = Math.ceil(minutesToCharge * 0.7);
-      return transcriptionCredits + detectionCredits;
-    }
+    const standardCredits = props.isTranscribed
+      ? Math.ceil(minutesToCharge * 0.7)
+      : Math.ceil(minutesToCharge * 0.3) + Math.ceil(minutesToCharge * 0.7);
+
+    return enhancedDetection.value ? standardCredits * 2 : standardCredits;
   });
 
   // Computed credit information based on selected source
@@ -567,7 +594,8 @@
         organizationIdForApi.value,
         timeRange.value.startTime,
         timeRange.value.endTime,
-        subtitleSettings
+        subtitleSettings,
+        enhancedDetection.value
       );
       emit('update:modelValue', false);
     } catch (err) {
@@ -615,9 +643,12 @@
         selectedPromptContent.value = '';
         showPromptDropdown.value = false;
 
-        // Reset subtitle selection (default off)
+        // Reset subtitle selection (default off; initialSubtitleDetectionDefaults watcher may apply preset)
         subtitlesEnabled.value = false;
         selectedSubtitlePreset.value = '';
+
+        // Enhanced is opt-in per run — never persist from last detection
+        enhancedDetection.value = false;
 
         // Reset time range to full video duration
         timeRange.value = { startTime: 0, endTime: props.videoDuration };
