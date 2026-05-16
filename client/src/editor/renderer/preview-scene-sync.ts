@@ -5,6 +5,7 @@ import type { TimelineTrack } from "../types/timeline";
 import type { MediaAsset } from "../types/assets";
 import type { Transition } from "../types/transitions";
 import type { TBackground, TCanvasSize } from "../types/project";
+import type { ManualSourceFramingPayload } from "@/types";
 import { previewPerfMarkBuildScene } from "../lib/preview-performance";
 
 export type PreviewSceneInputs = {
@@ -14,6 +15,7 @@ export type PreviewSceneInputs = {
 	canvasSize: TCanvasSize;
 	background: TBackground;
 	transitions: Transition[];
+	canvasSourceFraming?: ManualSourceFramingPayload | null;
 };
 
 export type PreviewSceneCache = {
@@ -29,6 +31,7 @@ export function buildPreviewSceneTree(inputs: PreviewSceneInputs): RootNode {
 		canvasSize: inputs.canvasSize,
 		background: inputs.background,
 		transitions: inputs.transitions,
+		canvasSourceFraming: inputs.canvasSourceFraming ?? null,
 	});
 }
 
@@ -46,6 +49,7 @@ export function getPreviewSceneTreeCached(
 		canvasSize: inputs.canvasSize,
 		background: inputs.background,
 		duration: inputs.duration,
+		canvasSourceFraming: inputs.canvasSourceFraming ?? null,
 	});
 
 	if (cache.fingerprint === fp && cache.tree) {

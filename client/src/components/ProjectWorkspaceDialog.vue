@@ -2466,7 +2466,8 @@
     organizationId: number | null = null,
     startTime: number = 0,
     endTime: number = 0,
-    subtitleSettings: { enabled: boolean; presetId: string } | null = null
+    subtitleSettings: { enabled: boolean; presetId: string } | null = null,
+    enhanced: boolean = false
   ) {
     console.log('[ProjectWorkspaceDialog] === DETECT CLIPS CONFIRMED ===');
     console.log('[ProjectWorkspaceDialog] _promptId:', _promptId);
@@ -2554,6 +2555,7 @@
           startTime,
           endTime,
           subtitleSettings,
+          enhanced,
           streamerMetadata: {
             display_name: props.project?.name,
             platform: props.project?.platform,

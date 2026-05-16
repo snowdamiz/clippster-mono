@@ -77,6 +77,8 @@ interface DragState {
 	originalBounds: ElementBounds;
 	/** Original transforms for all selected elements on the same track */
 	selectedOriginalTransforms?: Record<string, Transform>;
+	/** Last transform values computed from pointer movement during this drag. */
+	latestTransforms?: Record<string, Transform>;
 }
 
 export function usePreviewInteraction({
@@ -94,12 +96,15 @@ export function usePreviewInteraction({
 			selection: false,
 			timeline: true,
 			media: true,
-			scenes: false,
+			// Live preview transforms update tracks through ScenesManager, so the
+			// selection chrome must listen to scenes to stay aligned while dragging.
+			scenes: true,
 			project: false,
 		},
 	});
 	const pointerRaf = useDragRaf();
-	let pendingPointerEvent: MouseEvent | null = null;
+	type ClientPoint = Pick<MouseEvent, "clientX" | "clientY">;
+	let pendingPointerEvent: ClientPoint | null = null;
 	let playbackRafId: number | null = null;
 	const { selectedElements, selectElement, clearElementSelection, isElementSelected } = useElementSelection();
 	const { previewFocused, setPreviewFocused } = usePreviewFocus();
@@ -142,6 +147,8 @@ export function usePreviewInteraction({
 		});
 	});
 
+	const dragEndListenerOptions: AddEventListenerOptions = { capture: true };
+
 	onUnmounted(() => {
 		unsubscribePlayback?.();
 		unsubscribePlayback = null;
@@ -151,7 +158,9 @@ export function usePreviewInteraction({
 		}
 		pointerRaf.flush();
 		window.removeEventListener("mousemove", handleMouseMove);
-		window.removeEventListener("mouseup", handleMouseUp);
+		window.removeEventListener("mouseup", handleMouseUp, dragEndListenerOptions);
+		window.removeEventListener("pointerup", handlePointerDragEnd, dragEndListenerOptions);
+		window.removeEventListener("pointercancel", handlePointerDragEnd, dragEndListenerOptions);
 		window.removeEventListener("blur", handleMouseUp);
 		dragState.value = null;
 		showCenterGuideX.value = false;
@@ -450,17 +459,18 @@ export function usePreviewInteraction({
 		const hit = hitTest(pos.x, pos.y);
 		if (hit) {
 			let releasedBeforeDrag = false;
-			const markReleased = (upEvent: MouseEvent) => {
-				if (upEvent.button === event.button) {
-					releasedBeforeDrag = true;
-				}
-			};
-
 			// If the clicked element is already part of a multi-selection (e.g. caption track),
 			// preserve the selection so the entire group moves together.
 			const alreadySelected = isElementSelected({ trackId: hit.trackId, elementId: hit.elementId });
 			if (!alreadySelected) {
-				window.addEventListener("mouseup", markReleased, { once: true });
+				const markOpts: AddEventListenerOptions = { capture: true };
+				const markReleased = (upEvent: MouseEvent | PointerEvent) => {
+					if (upEvent.button === event.button) {
+						releasedBeforeDrag = true;
+					}
+				};
+				window.addEventListener("mouseup", markReleased, markOpts);
+				window.addEventListener("pointerup", markReleased, markOpts);
 				selectElement({ trackId: hit.trackId, elementId: hit.elementId });
 				// Wait for Vue to flush DOM updates before recording the drag start position.
 				// Selecting a new element may cause the PropertiesPanel to appear on the right,
@@ -468,7 +478,8 @@ export function usePreviewInteraction({
 				// before the layout settles, getBoundingClientRect() returns the pre-shift rect
 				// and any subsequent mousemove produces a phantom delta, making the element jump.
 				await nextTick();
-				window.removeEventListener("mouseup", markReleased);
+				window.removeEventListener("mouseup", markReleased, markOpts);
+				window.removeEventListener("pointerup", markReleased, markOpts);
 			}
 			setPreviewFocused(true);
 			if (releasedBeforeDrag) return;
@@ -477,10 +488,14 @@ export function usePreviewInteraction({
 			startDrag(event, hit, "move");
 		} else {
 			clearElementSelection();
+			// If pointer-up was missed (WebView / pen / capture quirks), a prior drag can
+			// stay active forever; empty-canvas click must reset it.
+			if (dragState.value) handleMouseUp();
 		}
 	}
 
 	function handleHandleMouseDown(event: MouseEvent, handle: HandlePosition, bounds: ElementBounds) {
+		event.preventDefault();
 		event.stopPropagation();
 		// Prevent resize/rotate on locked tracks
 		if (isTrackLocked(bounds.trackId)) return;
@@ -526,11 +541,18 @@ export function usePreviewInteraction({
 		};
 
 		window.addEventListener("mousemove", handleMouseMove);
-		window.addEventListener("mouseup", handleMouseUp);
+		window.addEventListener("mouseup", handleMouseUp, dragEndListenerOptions);
+		window.addEventListener("pointerup", handlePointerDragEnd, dragEndListenerOptions);
+		window.addEventListener("pointercancel", handlePointerDragEnd, dragEndListenerOptions);
 		window.addEventListener("blur", handleMouseUp);
 	}
 
-	function runPointerDragFromEvent(event: MouseEvent) {
+	function handlePointerDragEnd(event: PointerEvent) {
+		if (event.type === "pointerup" && event.pointerType === "mouse" && event.button !== 0) return;
+		handleMouseUp(event);
+	}
+
+	function runPointerDragFromEvent(event: ClientPoint) {
 		const ds = dragState.value;
 		if (!ds) return;
 
@@ -581,8 +603,16 @@ export function usePreviewInteraction({
 		runPointerDragFromEvent(event);
 	}
 
+	function isPrimaryButtonDown(event: MouseEvent): boolean {
+		return (event.buttons & 1) === 1;
+	}
+
 	function handleMouseMove(event: MouseEvent) {
 		if (!dragState.value) return;
+		if (!isPrimaryButtonDown(event)) {
+			handleMouseUp(undefined, false);
+			return;
+		}
 		pendingPointerEvent = event;
 		pointerRaf.schedule(flushPointerDrag);
 	}
@@ -636,10 +666,11 @@ export function usePreviewInteraction({
 		applyRotateDelta(ds.trackId, ds, deltaAngle, newRotation);
 	}
 
-	function handleMouseUp(event?: Event) {
-		if (dragState.value) {
+	function handleMouseUp(event?: Event, applyFinalPointer = true) {
+		if (dragState.value && applyFinalPointer) {
 			pointerRaf.flush();
-			const e = event instanceof MouseEvent ? event : pendingPointerEvent;
+			const e =
+				event instanceof MouseEvent || event instanceof PointerEvent ? event : pendingPointerEvent;
 			pendingPointerEvent = null;
 			if (e) runPointerDragFromEvent(e);
 		} else {
@@ -657,16 +688,18 @@ export function usePreviewInteraction({
 			);
 			selectedOnTrack.add(ds.elementId);
 
-			// Commit the final transform via command for undo/redo
+			// Commit the final transform via command for undo/redo. Use the values
+			// computed by the drag itself; reading back from live scene state is fragile
+			// because the live preview path mutates scenes outside TimelineManager.
 			const track = editor.timeline.getTrackById({ trackId: ds.trackId });
 			if (track) {
 				const selectedOriginal = ds.selectedOriginalTransforms ?? {};
 				const finalTransforms = new Map<string, Transform>();
 
-				for (const el of track.elements) {
-					if (!selectedOnTrack.has(el.id) || !("transform" in el)) continue;
-					const t = (el as any).transform as Transform;
-					finalTransforms.set(el.id, {
+				for (const elId of selectedOnTrack) {
+					const t = ds.latestTransforms?.[elId];
+					if (!t) continue;
+					finalTransforms.set(elId, {
 						scale: t.scale,
 						rotate: t.rotate,
 						position: { x: t.position.x, y: t.position.y },
@@ -689,34 +722,18 @@ export function usePreviewInteraction({
 				}
 
 				if (changed) {
-					// Batch-revert all selected elements to their own original transforms.
-					const currentTracks = editor.timeline.getTracks();
-					const revertedTracks = currentTracks.map((t) => {
-						if (t.id !== ds.trackId) return t;
-						return {
-							...t,
-							elements: t.elements.map((el) => {
-								const orig = selectedOriginal[el.id];
-								return selectedOnTrack.has(el.id) && orig ? { ...el, transform: orig } : el;
-							}),
-						} as typeof t;
-					});
-					editor.timeline.updateTracks(revertedTracks);
-
 					const batchUpdates = [...finalTransforms.entries()]
 						.filter(([elId]) => selectedOriginal[elId])
 						.map(([elementId, transform]) => ({ elementId, transform }));
 
-					if (batchUpdates.length === 1) {
-						editor.timeline.updateElement({
-							trackId: ds.trackId,
-							elementId: batchUpdates[0].elementId,
-							updates: { transform: batchUpdates[0].transform },
-						});
-					} else if (batchUpdates.length > 1) {
+					if (batchUpdates.length > 0) {
 						editor.timeline.updateElementsTransformsBatch({
 							trackId: ds.trackId,
 							updates: batchUpdates,
+							previousTransforms: batchUpdates.map(({ elementId }) => ({
+								elementId,
+								transform: selectedOriginal[elementId],
+							})),
 						});
 					}
 				}
@@ -726,7 +743,9 @@ export function usePreviewInteraction({
 		showCenterGuideX.value = false;
 		showCenterGuideY.value = false;
 		window.removeEventListener("mousemove", handleMouseMove);
-		window.removeEventListener("mouseup", handleMouseUp);
+		window.removeEventListener("mouseup", handleMouseUp, dragEndListenerOptions);
+		window.removeEventListener("pointerup", handlePointerDragEnd, dragEndListenerOptions);
+		window.removeEventListener("pointercancel", handlePointerDragEnd, dragEndListenerOptions);
 		window.removeEventListener("blur", handleMouseUp);
 	}
 
@@ -746,6 +765,7 @@ export function usePreviewInteraction({
 		primaryY: number,
 	) {
 		const selectedOriginal = ds.selectedOriginalTransforms ?? {};
+		const latestTransforms: Record<string, Transform> = {};
 		const currentTracks = editor.timeline.getTracks();
 		const updatedTracks = currentTracks.map((t) => {
 			if (t.id !== trackId) return t;
@@ -755,29 +775,35 @@ export function usePreviewInteraction({
 					const orig = selectedOriginal[el.id];
 					if (!orig) return el;
 					if (el.id === ds.elementId) {
+						const transform = { ...orig, position: { x: primaryX, y: primaryY } };
+						latestTransforms[el.id] = transform;
 						return {
 							...el,
-							transform: { ...orig, position: { x: primaryX, y: primaryY } },
+							transform,
 						};
 					}
+					const transform = {
+						...orig,
+						position: {
+							x: orig.position.x + deltaX,
+							y: orig.position.y + deltaY,
+						},
+					};
+					latestTransforms[el.id] = transform;
 					return {
 						...el,
-						transform: {
-							...orig,
-							position: {
-								x: orig.position.x + deltaX,
-								y: orig.position.y + deltaY,
-							},
-						},
+						transform,
 					};
 				}),
 			} as typeof t;
 		});
+		ds.latestTransforms = latestTransforms;
 		editor.timeline.updateTracks(updatedTracks);
 	}
 
 	function applyScaleDelta(trackId: string, ds: DragState, ratio: number, primaryScale: number) {
 		const selectedOriginal = ds.selectedOriginalTransforms ?? {};
+		const latestTransforms: Record<string, Transform> = {};
 		const currentTracks = editor.timeline.getTracks();
 		const updatedTracks = currentTracks.map((t) => {
 			if (t.id !== trackId) return t;
@@ -787,17 +813,23 @@ export function usePreviewInteraction({
 					const orig = selectedOriginal[el.id];
 					if (!orig) return el;
 					if (el.id === ds.elementId) {
-						return { ...el, transform: { ...orig, scale: primaryScale } };
+						const transform = { ...orig, scale: primaryScale };
+						latestTransforms[el.id] = transform;
+						return { ...el, transform };
 					}
-					return { ...el, transform: { ...orig, scale: Math.max(0.05, orig.scale * ratio) } };
+					const transform = { ...orig, scale: Math.max(0.05, orig.scale * ratio) };
+					latestTransforms[el.id] = transform;
+					return { ...el, transform };
 				}),
 			} as typeof t;
 		});
+		ds.latestTransforms = latestTransforms;
 		editor.timeline.updateTracks(updatedTracks);
 	}
 
 	function applyRotateDelta(trackId: string, ds: DragState, deltaAngle: number, primaryRotation: number) {
 		const selectedOriginal = ds.selectedOriginalTransforms ?? {};
+		const latestTransforms: Record<string, Transform> = {};
 		const currentTracks = editor.timeline.getTracks();
 		const updatedTracks = currentTracks.map((t) => {
 			if (t.id !== trackId) return t;
@@ -807,12 +839,17 @@ export function usePreviewInteraction({
 					const orig = selectedOriginal[el.id];
 					if (!orig) return el;
 					if (el.id === ds.elementId) {
-						return { ...el, transform: { ...orig, rotate: primaryRotation } };
+						const transform = { ...orig, rotate: primaryRotation };
+						latestTransforms[el.id] = transform;
+						return { ...el, transform };
 					}
-					return { ...el, transform: { ...orig, rotate: orig.rotate + deltaAngle } };
+					const transform = { ...orig, rotate: orig.rotate + deltaAngle };
+					latestTransforms[el.id] = transform;
+					return { ...el, transform };
 				}),
 			} as typeof t;
 		});
+		ds.latestTransforms = latestTransforms;
 		editor.timeline.updateTracks(updatedTracks);
 	}
 

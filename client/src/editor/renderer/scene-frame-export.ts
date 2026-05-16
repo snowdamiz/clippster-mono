@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { buildPreviewSceneTree } from "./preview-scene-sync";
 import { CanvasRenderer } from "./canvas-renderer";
 import type { PreviewSceneInputs } from "./preview-scene-sync";
+import { setPreviewDecodeSinkSizeOverride } from "../lib/preview-decode-settings";
+import { videoCache } from "../video-cache/service";
 
 export { getSceneTracksForExport } from "./scene-export-tracks";
 
@@ -76,38 +78,46 @@ export async function writeSceneFrameSequenceToDisk(
 		isCancelled,
 	} = params;
 	const { width, height } = sceneInputs.canvasSize;
-	const tree = buildPreviewSceneTree(sceneInputs);
-	const renderer = new CanvasRenderer({
-		width,
-		height,
-		fps,
-		preferOffscreen: true,
-		previewEffectProcessing: false,
-		backingWidth: width,
-		backingHeight: height,
-	});
 
-	const n = Math.max(1, frameCount);
-	for (let i = 0; i < n; i++) {
-		if (isCancelled?.()) {
-			throw new Error("Export cancelled");
+	setPreviewDecodeSinkSizeOverride({ width, height });
+	videoCache.clearAll();
+	try {
+		const tree = buildPreviewSceneTree(sceneInputs);
+		const renderer = new CanvasRenderer({
+			width,
+			height,
+			fps,
+			preferOffscreen: true,
+			previewEffectProcessing: false,
+			backingWidth: width,
+			backingHeight: height,
+		});
+
+		const n = Math.max(1, frameCount);
+		for (let i = 0; i < n; i++) {
+			if (isCancelled?.()) {
+				throw new Error("Export cancelled");
+			}
+			const localT = Math.min(i / fps, Math.max(exportDuration - 1e-6, 0));
+			const sceneTime = timeOffset + localT;
+			await renderer.render({ node: tree, time: sceneTime });
+			const bytes = await canvasToEncodedBytes(renderer.canvas, imageFormat);
+			await invoke("write_scene_export_frame", {
+				sessionId,
+				frameIndexOneBased: i + 1,
+				frameBytes: Array.from(bytes),
+				extension: getFrameExtension(imageFormat),
+			});
+			onProgress?.({ progress: (i + 1) / n, phase: "frames" });
 		}
-		const localT = Math.min(i / fps, Math.max(exportDuration - 1e-6, 0));
-		const sceneTime = timeOffset + localT;
-		await renderer.render({ node: tree, time: sceneTime });
-		const bytes = await canvasToEncodedBytes(renderer.canvas, imageFormat);
-		await invoke("write_scene_export_frame", {
+
+		const [pattern, count] = await invoke<[string, number]>("finalize_scene_export_frames", {
 			sessionId,
-			frameIndexOneBased: i + 1,
-			frameBytes: Array.from(bytes),
 			extension: getFrameExtension(imageFormat),
 		});
-		onProgress?.({ progress: (i + 1) / n, phase: "frames" });
+		return { pattern, frameCount: count };
+	} finally {
+		setPreviewDecodeSinkSizeOverride(null);
+		videoCache.clearAll();
 	}
-
-	const [pattern, count] = await invoke<[string, number]>("finalize_scene_export_frames", {
-		sessionId,
-		extension: getFrameExtension(imageFormat),
-	});
-	return { pattern, frameCount: count };
 }

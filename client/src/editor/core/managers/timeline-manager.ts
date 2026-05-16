@@ -294,11 +294,13 @@ export class TimelineManager {
 	updateElementsTransformsBatch({
 		trackId,
 		updates,
+		previousTransforms,
 	}: {
 		trackId: string;
 		updates: { elementId: string; transform: Transform }[];
+		previousTransforms?: { elementId: string; transform: Transform }[];
 	}): void {
-		const command = new UpdateElementsTransformsBatchCommand(trackId, updates);
+		const command = new UpdateElementsTransformsBatchCommand(trackId, updates, previousTransforms);
 		this.editor.command.execute({ command });
 	}
 

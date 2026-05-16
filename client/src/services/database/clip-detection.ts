@@ -549,7 +549,7 @@ export async function persistClipDetectionResults(
     processingTimeMs?: number;
     detectionModel?: string;
     serverResponseId?: string | null;
-    multimodal?: boolean;
+    enhanced?: boolean;
     videoFilePath?: string;
     rawVideoId?: string;
   },

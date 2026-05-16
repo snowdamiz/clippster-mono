@@ -9,8 +9,10 @@ import { buildFilterString, hasPostDrawEffects, applyCanvasEffects, applyAdvance
 import { applyChromakey } from "../effects/canvas-chromakey";
 import type { ChromakeySettings } from "../../types/chromakey";
 import type { ElementAnimation } from "../../types/animations";
+import type { ManualSourceFramingPayload } from "@/types";
 import { computeAnimationTransforms, applyAnimationToContext } from "../effects/canvas-animations";
 import { hasMasks, setupMaskClip } from "./mask-compositor";
+import { drawCanvas169SourceFraming } from "../canvas-169-framing-draw";
 
 const VIDEO_EPSILON = 1 / 1000;
 
@@ -46,6 +48,8 @@ export interface VideoNodeParams {
 	colorWheels?: ColorWheels;
 	blendMode?: BlendMode;
 	masks?: MaskShape[];
+	/** Main-track Use 16:9 framing when canvas aspect is not 16:9. */
+	canvasSourceFraming?: ManualSourceFramingPayload | null;
 }
 
 export class VideoNode extends BaseNode<VideoNodeParams> {
@@ -307,6 +311,17 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 						drawSource,
 						sx, sy, sw, sh,
 						drawX, drawY, drawW, drawH,
+					);
+				} else if (this.params.canvasSourceFraming?.mode === "use16x9") {
+					drawCanvas169SourceFraming(
+						renderer.context,
+						drawSource,
+						mediaW,
+						mediaH,
+						renderer.width,
+						renderer.height,
+						this.params.canvasSourceFraming,
+						undefined,
 					);
 				} else {
 					const containScale = Math.min(

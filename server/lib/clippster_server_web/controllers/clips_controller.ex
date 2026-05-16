@@ -5,7 +5,7 @@ defmodule ClippsterServerWeb.ClipsController do
   alias ClippsterServer.AI.OpenRouterAPI
   alias ClippsterServer.AI.StreamerReach
   alias ClippsterServer.AI.SystemPrompt
-  alias ClippsterServer.AI.MultimodalClipDetection
+  alias ClippsterServer.AI.EnhancedClipDetection
   alias ClippsterServer.AI.PromptRulesParser
   alias ClippsterServer.Analytics
   alias ClippsterServer.ClipValidation
@@ -17,14 +17,16 @@ defmodule ClippsterServerWeb.ClipsController do
   @max_parallel_chunks 10
   # 10 minutes per chunk for fallback time-split detection
   @chunk_timeout_normal 600_000
-  # 5 minutes per chunk for multimodal mode
-  @chunk_timeout_multimodal 300_000
-  # Gemini 3.1 Flash Lite supports 1M tokens — only split VODs that approach that limit
+  # 15 minutes per chunk for enhanced video mode
+  @chunk_timeout_enhanced 900_000
+  # Enhanced VOD video chunks align with client audio chunk duration (15 min)
+  @enhanced_vod_chunk_duration_seconds 900
+  # Standard VOD transcript-only: above this duration, run parallel 15m AI passes (single full-VOD calls miss most clips)
+  @vod_force_chunking_above_minutes 15
+  # Gemini 3.1 Flash Lite supports 1M tokens — also split when heuristic approaches that limit
   @vod_model_context_tokens 1_000_000
   @vod_context_safety_margin_tokens 100_000
   @vod_tokens_per_minute_estimate 700
-  # ~6 hour fallback chunks for extremely long streams
-  @vod_fallback_chunk_duration_seconds 21_600
 
   # Helper to parse numeric strings that may be integers or floats
   defp parse_numeric_string(nil), do: nil
@@ -45,6 +47,35 @@ defmodule ClippsterServerWeb.ClipsController do
   end
 
   defp parse_numeric_string(val) when is_number(val), do: val * 1.0
+
+  defp parse_enhanced_param(params) do
+    case Map.get(params, "enhanced", "false") do
+      true -> true
+      "true" -> true
+      _ -> false
+    end
+  end
+
+  defp parse_video_chunk_uploads(params) do
+    params
+    |> Enum.reduce(%{}, fn
+      {"video_chunk_" <> index_str, %Plug.Upload{} = upload}, acc ->
+        case Integer.parse(index_str) do
+          {index, ""} -> Map.put(acc, index, upload)
+          _ -> acc
+        end
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp read_upload_base64(%Plug.Upload{path: path}) do
+    case File.read(path) do
+      {:ok, bytes} -> {:ok, Base.encode64(bytes)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   def detect_chunked(
         conn,
@@ -84,9 +115,14 @@ defmodule ClippsterServerWeb.ClipsController do
                   throw({:error, "chunks must be valid JSON"})
               end
 
-            # Multimodal detection is no longer user-facing. Ignore stale clients/API params.
-            multimodal = false
-            IO.puts("[ClipsController] Multimodal mode disabled for VOD detection")
+            enhanced = parse_enhanced_param(params)
+            video_chunk_uploads = if enhanced, do: parse_video_chunk_uploads(params), else: %{}
+
+            IO.puts("[ClipsController] Enhanced model: #{enhanced}")
+
+            if enhanced and map_size(video_chunk_uploads) == 0 do
+              throw({:error, "Enhanced detection requires video chunks (video_chunk_N uploads)"})
+            end
 
             # Extract optional time range parameters
             start_time = parse_numeric_string(Map.get(params, "start_time")) || 0.0
@@ -181,11 +217,11 @@ defmodule ClippsterServerWeb.ClipsController do
                 {:ok, %{credits: 0.0, job_id: nil, credit_source: :unlimited}}
               else
                 # Deduct credits and create job record for regular users
-                # Apply 2x multiplier for multimodal mode
+                # Apply 2x multiplier for enhanced mode
                 case deduct_credits_and_create_job(user_id, duration_hours, is_first_run,
                        project_id: project_id,
                        organization_id: organization_id,
-                       multimodal: multimodal
+                       enhanced: enhanced
                      ) do
                   {:ok, result} ->
                     {:ok, result}
@@ -276,7 +312,8 @@ defmodule ClippsterServerWeb.ClipsController do
                   credits,
                   is_admin,
                   job_id,
-                  multimodal,
+                  enhanced,
+                  video_chunk_uploads,
                   parse_streamer_metadata(params)
                 )
             end
@@ -306,7 +343,8 @@ defmodule ClippsterServerWeb.ClipsController do
          credits_deducted,
          is_admin,
          job_id,
-         multimodal,
+         enhanced,
+         video_chunk_uploads,
          streamer_metadata
        ) do
     operation = fn ->
@@ -316,7 +354,8 @@ defmodule ClippsterServerWeb.ClipsController do
         chunks_metadata,
         processing_mode,
         user_id,
-        multimodal,
+        enhanced,
+        video_chunk_uploads,
         streamer_metadata
       )
     end
@@ -390,11 +429,12 @@ defmodule ClippsterServerWeb.ClipsController do
          chunks_metadata,
          processing_mode,
          user_id,
-         multimodal,
+         enhanced,
+         video_chunk_uploads,
          streamer_metadata
        ) do
     # Broadcast initial progress
-    mode_label = if multimodal, do: "multimodal", else: "chunked"
+    mode_label = if enhanced, do: "enhanced", else: "chunked"
 
     ProgressChannel.broadcast_progress(
       project_id,
@@ -446,11 +486,19 @@ defmodule ClippsterServerWeb.ClipsController do
     ai_transcript = process_whisper_response_for_ai(full_enhanced_transcript)
 
     system_prompt =
-      SystemPrompt.get_with_detection_context(
-        user_prompt,
-        ai_transcript,
-        streamer_metadata
-      )
+      if enhanced do
+        SystemPrompt.get_with_enhanced_detection_context(
+          user_prompt,
+          ai_transcript,
+          streamer_metadata
+        )
+      else
+        SystemPrompt.get_with_detection_context(
+          user_prompt,
+          ai_transcript,
+          streamer_metadata
+        )
+      end
 
     IO.puts(
       "[ClipsController] Reconstructed #{length(sorted_chunks)} transcription chunks into a single #{Float.round((ai_transcript["duration"] || 0) / 60, 1)} min timeline for AI detection"
@@ -460,24 +508,28 @@ defmodule ClippsterServerWeb.ClipsController do
       project_id,
       "analyzing",
       35,
-      "Analyzing full transcript for clip-worthy moments..."
+      if(enhanced,
+        do: "AI watching video and analyzing transcript...",
+        else: "Analyzing full transcript for clip-worthy moments..."
+      )
     )
 
     {all_clips, total_usage_tokens} =
-      if multimodal do
+      if enhanced do
         total_chunks = length(sorted_chunks)
 
-        IO.puts("[ClipsController] Starting MULTIMODAL detection with #{total_chunks} chunks...")
+        IO.puts("[ClipsController] Starting ENHANCED detection with #{total_chunks} chunks...")
 
         ProgressChannel.broadcast_progress(
           project_id,
           "analyzing",
           35,
-          "Starting multimodal detection (3 AI models per chunk)..."
+          "Starting enhanced detection (video + transcript)..."
         )
 
-        process_chunks_parallel_multimodal(
+        process_chunks_parallel_enhanced(
           sorted_chunks,
+          video_chunk_uploads,
           system_prompt,
           user_prompt,
           project_id,
@@ -491,7 +543,7 @@ defmodule ClippsterServerWeb.ClipsController do
     IO.puts("[ClipsController] Total AI tokens used: #{total_usage_tokens}")
 
     merged_clips =
-      if used_time_split_detection?(ai_transcript) do
+      if enhanced or used_time_split_detection?(ai_transcript) do
         IO.puts("[ClipsController] Merging overlapping clips from chunk boundaries...")
         ProgressChannel.broadcast_progress(project_id, "merging", 92, "Merging overlapping clips...")
         merge_overlapping_clips(all_clips)
@@ -621,16 +673,36 @@ defmodule ClippsterServerWeb.ClipsController do
   end
 
   defp run_vod_clip_detection(ai_transcript, system_prompt, user_prompt, project_id, user_id) do
-    if transcript_exceeds_context_limit?(ai_transcript) do
+    if vod_uses_parallel_transcript_chunks?(ai_transcript) do
       run_vod_clip_detection_chunked(ai_transcript, system_prompt, user_prompt, project_id, user_id)
     else
       run_vod_clip_detection_single(ai_transcript, system_prompt, user_prompt, project_id, user_id)
     end
   end
 
+  defp vod_uses_parallel_transcript_chunks?(ai_transcript) do
+    transcript_exceeds_context_limit?(ai_transcript) or
+      vod_duration_minutes(ai_transcript) > @vod_force_chunking_above_minutes
+  end
+
+  defp vod_duration_minutes(ai_transcript) do
+    (ai_transcript["duration"] || 0) / 60.0
+  end
+
   defp run_vod_clip_detection_result(ai_transcript, system_prompt, user_prompt, project_id, user_id) do
+    chunked? = vod_uses_parallel_transcript_chunks?(ai_transcript)
+
     {clips, total_tokens} =
       run_vod_clip_detection(ai_transcript, system_prompt, user_prompt, project_id, user_id)
+
+    clips =
+      if chunked? do
+        clips
+        |> merge_overlapping_clips()
+        |> deduplicate_clips_advanced()
+      else
+        clips
+      end
 
     {:ok, %{"clips" => clips}, %{"total_tokens" => total_tokens}}
   end
@@ -673,20 +745,22 @@ defmodule ClippsterServerWeb.ClipsController do
          project_id,
          user_id
        ) do
+    chunk_secs = @enhanced_vod_chunk_duration_seconds
+
     transcript_chunks =
-      split_transcript_into_chunks(ai_transcript, @vod_fallback_chunk_duration_seconds)
+      split_transcript_into_chunks(ai_transcript, chunk_secs)
 
     total_chunks = length(transcript_chunks)
 
     IO.puts(
-      "[ClipsController] Transcript exceeds 1M context budget — splitting into #{total_chunks} time-based chunks (~#{Float.round(@vod_fallback_chunk_duration_seconds / 3600, 1)} hr each)"
+      "[ClipsController] Parallel transcript clip detection: #{total_chunks} chunk(s) of ~#{Float.round(chunk_secs / 60, 0)} min (duration #{Float.round(vod_duration_minutes(ai_transcript), 1)} min, or context limit)"
     )
 
     ProgressChannel.broadcast_progress(
       project_id,
       "analyzing",
       50,
-      "Analyzing #{total_chunks} transcript sections..."
+      "Analyzing #{total_chunks} transcript sections (~#{trunc(chunk_secs / 60)} min each)..."
     )
 
     whisper_style_chunks =
@@ -709,7 +783,7 @@ defmodule ClippsterServerWeb.ClipsController do
   end
 
   defp used_time_split_detection?(ai_transcript) do
-    transcript_exceeds_context_limit?(ai_transcript)
+    vod_uses_parallel_transcript_chunks?(ai_transcript)
   end
 
   defp estimate_transcript_tokens(ai_transcript) do
@@ -728,7 +802,7 @@ defmodule ClippsterServerWeb.ClipsController do
       user_id: user_id,
       project_id: project_id,
       provider: "openrouter",
-      model: Map.get(usage, "model") || OpenRouterAPI.default_model(),
+      model: Map.get(usage, "model") || OpenRouterAPI.clip_detection_model(),
       input_tokens: Map.get(usage, "prompt_tokens"),
       output_tokens: Map.get(usage, "completion_tokens"),
       total_tokens: Map.get(usage, "total_tokens"),
@@ -814,9 +888,10 @@ defmodule ClippsterServerWeb.ClipsController do
     results
   end
 
-  # Process all chunks in parallel using multimodal detection (3 models + decider per chunk)
-  defp process_chunks_parallel_multimodal(
+  # Process all chunks in parallel using enhanced video + transcript detection
+  defp process_chunks_parallel_enhanced(
          sorted_chunks,
+         video_chunk_uploads,
          system_prompt,
          user_prompt,
          project_id,
@@ -825,11 +900,7 @@ defmodule ClippsterServerWeb.ClipsController do
     total_chunks = length(sorted_chunks)
 
     Logger.info(
-      "[ClipsController] Starting parallel MULTIMODAL processing of #{total_chunks} chunks"
-    )
-
-    Logger.info(
-      "[ClipsController] Each chunk will be processed by #{length(MultimodalClipDetection.get_detection_models())} models + decider"
+      "[ClipsController] Starting parallel ENHANCED processing of #{total_chunks} chunks"
     )
 
     results =
@@ -838,73 +909,75 @@ defmodule ClippsterServerWeb.ClipsController do
       |> Task.async_stream(
         fn {chunk, index} ->
           Logger.info(
-            "[ClipsController] Multimodal processing chunk #{index + 1}/#{total_chunks}..."
+            "[ClipsController] Enhanced processing chunk #{index + 1}/#{total_chunks}..."
           )
 
-          # Prepare optimized transcript for this chunk (same enhancement as full-VOD /detect path)
+          chunk_start = Map.get(chunk, :start_time, 0)
+          chunk_end = Map.get(chunk, :end_time, chunk_start)
+
           full_enhanced =
             process_whisper_response_enhanced(chunk.adjusted_whisper_response)
 
           ai_transcript = process_whisper_response_for_ai(full_enhanced)
 
-          # Use multimodal detection for this chunk
-          case MultimodalClipDetection.process_chunk_multimodal(
-                 ai_transcript,
-                 system_prompt,
-                 user_prompt,
-                 project_id,
-                 index,
-                 total_chunks
-               ) do
-            {:ok, clips, usage_info} ->
-              Logger.info(
-                "[ClipsController] Multimodal chunk #{index + 1}: Found #{length(clips)} clips"
-              )
-
-              # Log usage for each individual model used in multimodal detection
-              per_model_usage = Map.get(usage_info, "per_model_usage", [])
-
-              Enum.each(per_model_usage, fn model_usage ->
-                AI.log_usage(%{
-                  user_id: user_id,
-                  project_id: project_id,
-                  provider: "openrouter",
-                  model: Map.get(model_usage, "model", "unknown"),
-                  input_tokens: Map.get(model_usage, "input_tokens", 0),
-                  output_tokens: Map.get(model_usage, "output_tokens", 0),
-                  total_tokens: Map.get(model_usage, "total_tokens", 0),
-                  operation_type: "clip_generation_multimodal_detector"
-                })
-              end)
-
-              # Log usage for the decider model
-              decider_model = Map.get(usage_info, "decider_model")
-
-              if decider_model do
-                AI.log_usage(%{
-                  user_id: user_id,
-                  project_id: project_id,
-                  provider: "openrouter",
-                  model: decider_model,
-                  input_tokens: Map.get(usage_info, "decider_input_tokens", 0),
-                  output_tokens: Map.get(usage_info, "decider_output_tokens", 0),
-                  total_tokens: Map.get(usage_info, "decider_tokens", 0),
-                  operation_type: "clip_generation_multimodal_decider"
-                })
-              end
-
-              {:ok, clips, Map.get(usage_info, "total_tokens", 0)}
-
-            {:error, reason} ->
+          case Map.get(video_chunk_uploads, index) do
+            nil ->
               Logger.warning(
-                "[ClipsController] Multimodal error on chunk #{index + 1}: #{inspect(reason)}"
+                "[ClipsController] Missing video upload for enhanced chunk #{index + 1}"
               )
 
-              {:error, reason}
+              {:error, "missing video chunk #{index}"}
+
+            upload ->
+              case read_upload_base64(upload) do
+                {:ok, video_base64} ->
+                  case EnhancedClipDetection.process_chunk_enhanced(
+                         ai_transcript,
+                         video_base64,
+                         system_prompt,
+                         user_prompt,
+                         project_id,
+                         index,
+                         total_chunks,
+                         chunk_start,
+                         chunk_end
+                       ) do
+                    {:ok, ai_response, usage} ->
+                      clips_list =
+                        case ai_response do
+                          %{"clips" => clips} when is_list(clips) -> clips
+                          clips when is_list(clips) -> clips
+                          _ -> []
+                        end
+
+                      Logger.info(
+                        "[ClipsController] Enhanced chunk #{index + 1}: Found #{length(clips_list)} clips"
+                      )
+
+                      log_openrouter_clip_usage(
+                        user_id,
+                        project_id,
+                        usage,
+                        "clip_generation_enhanced"
+                      )
+
+                      {:ok, clips_list, Map.get(usage, "total_tokens", 0)}
+
+                    {:error, reason} ->
+                      Logger.warning(
+                        "[ClipsController] Enhanced error on chunk #{index + 1}: #{inspect(reason)}"
+                      )
+
+                      {:error, reason}
+                  end
+
+                {:error, reason} ->
+                  {:error, "failed to read video chunk: #{inspect(reason)}"}
+              end
           end
         end,
-        max_concurrency: @max_parallel_chunks,
-        timeout: @chunk_timeout_multimodal,
+        max_concurrency: min(4, @max_parallel_chunks),
+        timeout: @chunk_timeout_enhanced,
         on_timeout: :kill_task
       )
       |> Enum.reduce({[], 0}, fn result, {acc_clips, acc_tokens} ->
@@ -916,24 +989,23 @@ defmodule ClippsterServerWeb.ClipsController do
             {acc_clips, acc_tokens}
 
           {:exit, :timeout} ->
-            Logger.warning("[ClipsController] Multimodal chunk processing timed out")
+            Logger.warning("[ClipsController] Enhanced chunk processing timed out")
             {acc_clips, acc_tokens}
 
           {:exit, reason} ->
             Logger.warning(
-              "[ClipsController] Multimodal chunk processing exited: #{inspect(reason)}"
+              "[ClipsController] Enhanced chunk processing exited: #{inspect(reason)}"
             )
 
             {acc_clips, acc_tokens}
         end
       end)
 
-    # Update progress after parallel processing completes
     ProgressChannel.broadcast_progress(
       project_id,
       "analyzing",
       90,
-      "Multimodal processing complete. Aggregating results..."
+      "Enhanced processing complete. Aggregating results..."
     )
 
     results
@@ -1038,9 +1110,9 @@ defmodule ClippsterServerWeb.ClipsController do
     end
   end
 
-  # Process transcript chunks in parallel with multimodal detection
-  defp process_transcript_chunks_multimodal(
+  defp process_transcript_chunks_enhanced(
          transcript_chunks,
+         video_chunk_uploads,
          system_prompt,
          user_prompt,
          project_id,
@@ -1049,74 +1121,61 @@ defmodule ClippsterServerWeb.ClipsController do
     total_chunks = length(transcript_chunks)
 
     Logger.info(
-      "[ClipsController] Starting parallel MULTIMODAL processing of #{total_chunks} transcript chunks"
+      "[ClipsController] Starting parallel ENHANCED processing of #{total_chunks} transcript chunks"
     )
 
     transcript_chunks
     |> Enum.with_index()
     |> Task.async_stream(
       fn {chunk_transcript, index} ->
-        Logger.info(
-          "[ClipsController] Multimodal processing transcript chunk #{index + 1}/#{total_chunks}..."
-        )
+        chunk_start = Map.get(chunk_transcript, "chunk_start_time", 0)
+        chunk_end = Map.get(chunk_transcript, "chunk_end_time", chunk_start)
 
-        case MultimodalClipDetection.process_chunk_multimodal(
-               chunk_transcript,
-               system_prompt,
-               user_prompt,
-               project_id,
-               index,
-               total_chunks
-             ) do
-          {:ok, clips, usage_info} ->
-            Logger.info(
-              "[ClipsController] Multimodal chunk #{index + 1}: Found #{length(clips)} clips"
-            )
+        case Map.get(video_chunk_uploads, index) do
+          nil ->
+            {:error, "missing video chunk #{index}"}
 
-            # Log usage for each individual model used in multimodal detection
-            per_model_usage = Map.get(usage_info, "per_model_usage", [])
+          upload ->
+            case read_upload_base64(upload) do
+              {:ok, video_base64} ->
+                case EnhancedClipDetection.process_chunk_enhanced(
+                       chunk_transcript,
+                       video_base64,
+                       system_prompt,
+                       user_prompt,
+                       project_id,
+                       index,
+                       total_chunks,
+                       chunk_start,
+                       chunk_end
+                     ) do
+                  {:ok, ai_response, usage} ->
+                    clips_list =
+                      case ai_response do
+                        %{"clips" => clips} when is_list(clips) -> clips
+                        _ -> []
+                      end
 
-            Enum.each(per_model_usage, fn model_usage ->
-              AI.log_usage(%{
-                user_id: user_id,
-                project_id: project_id,
-                provider: "openrouter",
-                model: Map.get(model_usage, "model", "unknown"),
-                input_tokens: Map.get(model_usage, "input_tokens", 0),
-                output_tokens: Map.get(model_usage, "output_tokens", 0),
-                total_tokens: Map.get(model_usage, "total_tokens", 0),
-                operation_type: "clip_generation_multimodal_detector"
-              })
-            end)
+                    log_openrouter_clip_usage(
+                      user_id,
+                      project_id,
+                      usage,
+                      "clip_generation_enhanced"
+                    )
 
-            # Log usage for the decider model
-            decider_model = Map.get(usage_info, "decider_model")
+                    {:ok, clips_list, Map.get(usage, "total_tokens", 0)}
 
-            if decider_model do
-              AI.log_usage(%{
-                user_id: user_id,
-                project_id: project_id,
-                provider: "openrouter",
-                model: decider_model,
-                input_tokens: Map.get(usage_info, "decider_input_tokens", 0),
-                output_tokens: Map.get(usage_info, "decider_output_tokens", 0),
-                total_tokens: Map.get(usage_info, "decider_tokens", 0),
-                operation_type: "clip_generation_multimodal_decider"
-              })
+                  {:error, reason} ->
+                    {:error, reason}
+                end
+
+              {:error, reason} ->
+                {:error, reason}
             end
-
-            {:ok, clips, Map.get(usage_info, "total_tokens", 0)}
-
-          {:error, reason} ->
-            Logger.warning(
-              "[ClipsController] Multimodal error on transcript chunk #{index + 1}: #{inspect(reason)}"
-            )
-
-            {:error, reason}
         end
       end,
-      max_concurrency: @max_parallel_chunks,
-      timeout: @chunk_timeout_multimodal,
+      max_concurrency: min(4, @max_parallel_chunks),
+      timeout: @chunk_timeout_enhanced,
       on_timeout: :kill_task
     )
     |> Enum.reduce({[], 0}, fn result, {acc_clips, acc_tokens} ->
@@ -1128,14 +1187,9 @@ defmodule ClippsterServerWeb.ClipsController do
           {acc_clips, acc_tokens}
 
         {:exit, :timeout} ->
-          Logger.warning("[ClipsController] Transcript chunk processing timed out")
           {acc_clips, acc_tokens}
 
-        {:exit, reason} ->
-          Logger.warning(
-            "[ClipsController] Transcript chunk processing exited: #{inspect(reason)}"
-          )
-
+        {:exit, _reason} ->
           {acc_clips, acc_tokens}
       end
     end)
@@ -1151,13 +1205,19 @@ defmodule ClippsterServerWeb.ClipsController do
 
           duration_hours = calculate_audio_duration_hours(params)
           organization_id = Map.get(params, "organization_id") |> parse_org_id()
+          enhanced = parse_enhanced_param(params)
 
           # Deduct credits and create job for tracking/refunds
           credit_result =
             if is_admin do
               {:ok, %{credits: 0.0, job_id: nil, credit_source: :unlimited}}
             else
-              case deduct_credits_for_transcription(user_id, duration_hours, organization_id) do
+              case deduct_credits_for_transcription(
+                     user_id,
+                     duration_hours,
+                     organization_id,
+                     enhanced
+                   ) do
                 {:ok, credits, credit_source} ->
                   # Create job record for refund tracking
                   job_opts = [
@@ -1290,12 +1350,16 @@ defmodule ClippsterServerWeb.ClipsController do
 
             is_first_run = not using_cached_transcript and Map.has_key?(params, "audio")
 
-            # Multimodal detection is no longer user-facing. Ignore stale clients/API params.
-            multimodal = false
+            enhanced = parse_enhanced_param(params)
+            video_chunk_uploads = if enhanced, do: parse_video_chunk_uploads(params), else: %{}
 
             IO.puts("[ClipsController] Using cached transcript: #{using_cached_transcript}")
             IO.puts("[ClipsController] First run: #{is_first_run}")
-            IO.puts("[ClipsController] Multimodal mode disabled for VOD detection")
+            IO.puts("[ClipsController] Enhanced model: #{enhanced}")
+
+            if enhanced and map_size(video_chunk_uploads) == 0 do
+              throw({:error, "Enhanced detection requires video chunks (video_chunk_N uploads)"})
+            end
 
             # Calculate audio duration
             duration_hours = calculate_audio_duration_hours(params)
@@ -1311,11 +1375,11 @@ defmodule ClippsterServerWeb.ClipsController do
                 {:ok, %{credits: 0.0, job_id: nil, credit_source: :unlimited}}
               else
                 # Deduct credits and create job record for regular users
-                # Apply 2x multiplier for multimodal mode
+                # Apply 2x multiplier for enhanced mode
                 case deduct_credits_and_create_job(user_id, duration_hours, is_first_run,
                        project_id: project_id,
                        organization_id: organization_id,
-                       multimodal: multimodal
+                       enhanced: enhanced
                      ) do
                   {:ok, result} ->
                     {:ok, result}
@@ -1382,7 +1446,8 @@ defmodule ClippsterServerWeb.ClipsController do
                   credits,
                   is_admin,
                   job_id,
-                  multimodal
+                  enhanced,
+                  video_chunk_uploads
                 )
             end
         end
@@ -1408,12 +1473,13 @@ defmodule ClippsterServerWeb.ClipsController do
          credits_deducted,
          is_admin,
          job_id,
-         multimodal
+         enhanced,
+         video_chunk_uploads
        ) do
     %{"project_id" => project_id} = params
 
     operation = fn ->
-      execute_clip_detection(params, user_id, is_admin, multimodal)
+      execute_clip_detection(params, user_id, is_admin, enhanced, video_chunk_uploads)
     end
 
     case retry_with_backoff(operation, 3, project_id) do
@@ -1487,12 +1553,12 @@ defmodule ClippsterServerWeb.ClipsController do
     end
   end
 
-  defp execute_clip_detection(params, user_id, _is_admin, multimodal) do
+  defp execute_clip_detection(params, user_id, _is_admin, enhanced, video_chunk_uploads) do
     %{"project_id" => project_id, "prompt" => user_prompt} = params
     using_cached_transcript = Map.get(params, "using_cached_transcript", "false") == "true"
 
     # Broadcast initial progress
-    mode_label = if multimodal, do: "multimodal", else: "standard"
+    mode_label = if enhanced, do: "enhanced", else: "standard"
 
     ProgressChannel.broadcast_progress(
       project_id,
@@ -1649,83 +1715,54 @@ defmodule ClippsterServerWeb.ClipsController do
         streamer_metadata = parse_streamer_metadata(params)
 
         system_prompt =
-          SystemPrompt.get_with_detection_context(user_prompt, ai_transcript, streamer_metadata)
+          if enhanced do
+            SystemPrompt.get_with_enhanced_detection_context(
+              user_prompt,
+              ai_transcript,
+              streamer_metadata
+            )
+          else
+            SystemPrompt.get_with_detection_context(user_prompt, ai_transcript, streamer_metadata)
+          end
 
         ai_result =
-          if multimodal do
-            # Multimodal mode: Use 3 models + decider for enhanced detection
-            # Split large transcripts into chunks to avoid context length limits
-            segments = ai_transcript["segments"] || []
-            segment_count = length(segments)
-
-            # Estimate tokens: ~4 chars per token, each segment has ~100 chars average
-            chunk_duration_seconds = @vod_fallback_chunk_duration_seconds
+          if enhanced do
             total_duration = ai_transcript["duration"] || 0
 
-            if total_duration > chunk_duration_seconds and segment_count > 100 do
-              # Split transcript into time-based chunks
-              IO.puts(
-                "[ClipsController] Large transcript detected (#{segment_count} segments, #{Float.round(total_duration / 60, 1)} min)"
-              )
-
-              IO.puts(
-                "[ClipsController] Splitting into #{Float.round(total_duration / chunk_duration_seconds, 0) |> trunc()} chunks for multimodal processing..."
-              )
-
-              transcript_chunks =
-                split_transcript_into_chunks(ai_transcript, chunk_duration_seconds)
-
-              total_chunks = length(transcript_chunks)
-
-              IO.puts(
-                "[ClipsController] Created #{total_chunks} transcript chunks for multimodal detection"
-              )
-
-              ProgressChannel.broadcast_progress(
-                project_id,
-                "analyzing",
-                50,
-                "Running multimodal detection on #{total_chunks} chunks..."
-              )
-
-              # Process chunks in parallel with multimodal detection
-              {all_clips, total_tokens} =
-                process_transcript_chunks_multimodal(
-                  transcript_chunks,
-                  system_prompt,
-                  user_prompt,
-                  project_id,
-                  user_id
-                )
-
-              {:ok, %{"clips" => all_clips}, %{"total_tokens" => total_tokens}}
-            else
-              # Small transcript - process as single chunk
-              IO.puts("[ClipsController] Using MULTIMODAL detection (3 models + decider)...")
-
-              ProgressChannel.broadcast_progress(
-                project_id,
-                "analyzing",
-                50,
-                "Running multimodal detection with 3 AI models..."
-              )
-
-              case MultimodalClipDetection.process_chunk_multimodal(
-                     ai_transcript,
-                     system_prompt,
-                     user_prompt,
-                     project_id,
-                     0,
-                     1
-                   ) do
-                {:ok, clips, usage_info} ->
-                  {:ok, %{"clips" => clips},
-                   %{"total_tokens" => Map.get(usage_info, "total_tokens", 0)}}
-
-                {:error, reason} ->
-                  {:error, reason}
+            chunk_duration_seconds =
+              if total_duration > @enhanced_vod_chunk_duration_seconds do
+                @enhanced_vod_chunk_duration_seconds
+              else
+                max(trunc(total_duration), 1)
               end
-            end
+
+            transcript_chunks =
+              split_transcript_into_chunks(ai_transcript, chunk_duration_seconds)
+
+            total_chunks = length(transcript_chunks)
+
+            IO.puts(
+              "[ClipsController] Enhanced detection: #{total_chunks} video+transcript chunk(s)"
+            )
+
+            ProgressChannel.broadcast_progress(
+              project_id,
+              "analyzing",
+              50,
+              "Running enhanced detection on #{total_chunks} chunk(s)..."
+            )
+
+            {all_clips, total_tokens} =
+              process_transcript_chunks_enhanced(
+                transcript_chunks,
+                video_chunk_uploads,
+                system_prompt,
+                user_prompt,
+                project_id,
+                user_id
+              )
+
+            {:ok, %{"clips" => all_clips}, %{"total_tokens" => total_tokens}}
           else
             run_vod_clip_detection_result(
               ai_transcript,
@@ -1744,8 +1781,8 @@ defmodule ClippsterServerWeb.ClipsController do
             IO.puts("[ClipsController] AI response received from OpenRouter")
             IO.puts("[ClipsController] AI response structure: #{inspect(Map.keys(ai_response))}")
 
-            if multimodal do
-              log_openrouter_clip_usage(user_id, project_id, usage, "clip_generation_multimodal")
+            if enhanced do
+              log_openrouter_clip_usage(user_id, project_id, usage, "clip_generation_enhanced")
             end
 
             # Step 4: Validate AI response structure
@@ -1895,10 +1932,6 @@ defmodule ClippsterServerWeb.ClipsController do
                 IO.puts("[ClipsController] AI response validation failed: #{reason}")
                 raise "Invalid AI response structure: #{reason}"
             end
-
-          {:error, reason} ->
-            IO.puts("[ClipsController] OpenRouter API failed: #{inspect(reason)}")
-            raise "AI clip generation failed: #{inspect(reason)}"
         end
 
       {:error, reason} ->
@@ -2742,12 +2775,13 @@ defmodule ClippsterServerWeb.ClipsController do
         case Float.parse(to_string(source["duration"])) do
           {duration_seconds, _} ->
             duration_minutes = duration_seconds / 60.0
+            duration_hours = duration_seconds / 3600.0
 
             IO.puts(
-              "[ClipsController] Duration from params: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s)"
+              "[ClipsController] Duration from params: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s) => #{Float.round(duration_hours, 4)} h for billing"
             )
 
-            duration_minutes
+            duration_hours
 
           :error ->
             IO.puts("[ClipsController] Warning: Could not parse duration param")
@@ -2794,12 +2828,13 @@ defmodule ClippsterServerWeb.ClipsController do
         # Basic estimation: assume 1MB = 1 minute of audio (rough approximation)
         file_size_mb = get_file_size_mb(path)
         estimated_minutes = file_size_mb * 1.0
+        estimated_hours = estimated_minutes / 60.0
 
         IO.puts(
-          "[ClipsController] Estimated duration from file size: #{Float.round(estimated_minutes, 3)} minutes"
+          "[ClipsController] Estimated duration from file size: #{Float.round(estimated_minutes, 3)} minutes (#{Float.round(estimated_hours, 4)} h)"
         )
 
-        estimated_minutes
+        estimated_hours
 
       _ ->
         IO.puts("[ClipsController] Warning: Could not estimate duration from audio upload")
@@ -2815,12 +2850,13 @@ defmodule ClippsterServerWeb.ClipsController do
           {:ok, raw_response} ->
             duration_seconds = Map.get(raw_response, "duration", 0.0)
             duration_minutes = duration_seconds / 60.0
+            duration_hours = duration_seconds / 3600.0
 
             IO.puts(
-              "[ClipsController] Duration from transcript: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s)"
+              "[ClipsController] Duration from transcript: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s) => #{Float.round(duration_hours, 4)} h for billing"
             )
 
-            duration_minutes
+            duration_hours
 
           _ ->
             IO.puts("[ClipsController] Warning: Could not parse raw_response from transcript")
@@ -2829,12 +2865,13 @@ defmodule ClippsterServerWeb.ClipsController do
 
       %{"duration" => duration_seconds} when is_number(duration_seconds) ->
         duration_minutes = duration_seconds / 60.0
+        duration_hours = duration_seconds / 3600.0
 
         IO.puts(
-          "[ClipsController] Duration from transcript: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s)"
+          "[ClipsController] Duration from transcript: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s) => #{Float.round(duration_hours, 4)} h for billing"
         )
 
-        duration_minutes
+        duration_hours
 
       _ ->
         IO.puts("[ClipsController] Warning: No duration found in transcript data")
@@ -2854,12 +2891,13 @@ defmodule ClippsterServerWeb.ClipsController do
           |> Kernel.||(0.0)
 
         duration_minutes = max_end_time / 60.0
+        duration_hours = max_end_time / 3600.0
 
         IO.puts(
-          "[ClipsController] Duration from chunks: #{Float.round(duration_minutes, 3)} minutes (#{max_end_time}s)"
+          "[ClipsController] Duration from chunks: #{Float.round(duration_minutes, 3)} minutes (#{max_end_time}s) => #{Float.round(duration_hours, 4)} h for billing"
         )
 
-        duration_minutes
+        duration_hours
 
       _ ->
         IO.puts("[ClipsController] Warning: Could not parse chunks for duration calculation")
@@ -2885,12 +2923,13 @@ defmodule ClippsterServerWeb.ClipsController do
       end)
 
     duration_minutes = total_seconds / 60.0
+    duration_hours = total_seconds / 3600.0
 
     IO.puts(
-      "[ClipsController] Duration from filtered chunks: #{Float.round(duration_minutes, 3)} minutes (#{Float.round(total_seconds, 1)}s)"
+      "[ClipsController] Duration from filtered chunks: #{Float.round(duration_minutes, 3)} minutes (#{Float.round(total_seconds, 1)}s) => #{Float.round(duration_hours, 4)} h for billing"
     )
 
-    duration_minutes
+    duration_hours
   end
 
   defp calculate_duration_from_filtered_chunks(_), do: 0.0
@@ -2910,10 +2949,10 @@ defmodule ClippsterServerWeb.ClipsController do
     end
   end
 
-  # Deduct credits for transcription only (0.3 rate)
+  # Deduct credits for transcription only (0.3 rate, 0.6 when enhanced)
   # Credits are rounded up to whole minutes
-  defp deduct_credits_for_transcription(user_id, duration_minutes, organization_id) do
-    credit_rate = 0.3
+  defp deduct_credits_for_transcription(user_id, duration_minutes, organization_id, enhanced) do
+    credit_rate = if enhanced, do: 0.6, else: 0.3
     credits_to_deduct = Float.ceil(duration_minutes * credit_rate)
 
     case Credits.deduct_credits_with_org_context(user_id, credits_to_deduct, organization_id) do
@@ -2934,19 +2973,19 @@ defmodule ClippsterServerWeb.ClipsController do
   # Deduct credits based on processing type and duration
   # Now supports optional organization_id for org credit deduction
   # Credits are rounded up to whole minutes
-  # Multimodal mode applies a 2x multiplier
+  # Enhanced mode applies a 2x multiplier
   defp deduct_credits_for_processing(
          user_id,
          duration_minutes,
          is_first_run,
          organization_id,
-         multimodal
+         enhanced
        ) do
     # Determine base credit rate based on processing type
     base_rate = if is_first_run, do: 1.0, else: 0.7
 
-    # Apply 2x multiplier for multimodal mode
-    credit_rate = if multimodal, do: base_rate * 2.0, else: base_rate
+    # Apply 2x multiplier for enhanced mode
+    credit_rate = if enhanced, do: base_rate * 2.0, else: base_rate
 
     credits_to_deduct = Float.ceil(duration_minutes * credit_rate)
 
@@ -2957,10 +2996,10 @@ defmodule ClippsterServerWeb.ClipsController do
       "[ClipsController]   Processing type: #{if is_first_run, do: "First run", else: "Followup run"}"
     )
 
-    IO.puts("[ClipsController]   Multimodal mode: #{multimodal}")
+    IO.puts("[ClipsController]   Enhanced mode: #{enhanced}")
 
     IO.puts(
-      "[ClipsController]   Credit rate: #{credit_rate}x#{if multimodal, do: " (2x multimodal multiplier)", else: ""}"
+      "[ClipsController]   Credit rate: #{credit_rate}x#{if enhanced, do: " (2x enhanced multiplier)", else: ""}"
     )
 
     IO.puts("[ClipsController]   Credits to deduct: #{Float.round(credits_to_deduct, 3)}")
@@ -3024,21 +3063,21 @@ defmodule ClippsterServerWeb.ClipsController do
   # Returns {:ok, %{credits: amount, job_id: id, credit_source: source}} on success.
   # The job_id can be used by the client to cancel and get a refund.
   # Supports optional organization_id for org credit deduction.
-  # Supports multimodal mode with 2x credit multiplier.
+  # Supports enhanced mode with 2x credit multiplier.
   defp deduct_credits_and_create_job(user_id, duration_hours, is_first_run, opts) do
     project_id = Keyword.get(opts, :project_id)
     video_url = Keyword.get(opts, :video_url)
     job_type = Keyword.get(opts, :job_type, "clip_detection")
     organization_id = Keyword.get(opts, :organization_id)
-    multimodal = Keyword.get(opts, :multimodal, false)
+    enhanced = Keyword.get(opts, :enhanced, false)
 
-    # First deduct credits (with optional org context and multimodal multiplier)
+    # First deduct credits (with optional org context and enhanced multiplier)
     case deduct_credits_for_processing(
            user_id,
            duration_hours,
            is_first_run,
            organization_id,
-           multimodal
+           enhanced
          ) do
       {:ok, credits_deducted, credit_source}
       when is_number(credits_deducted) and credits_deducted > 0 ->
@@ -4023,7 +4062,7 @@ defmodule ClippsterServerWeb.ClipsController do
             8. clip_state MUST be "closed" whenever pending_clip.end_time is more than 3 seconds before #{transcript_end}. clip_state MUST be "open" only when the clip-worthy moment reaches the window edge.
             """
 
-            # Call OpenRouter API using existing generate_clips function
+            # Livestream realtime: same pinned OpenRouter model as VOD (`clip_detection_model/0`).
             case OpenRouterAPI.generate_clips(formatted_transcript, system_prompt, user_prompt) do
               {:ok, ai_response, _usage} ->
                 # Log the full AI response for debugging

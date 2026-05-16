@@ -22,8 +22,18 @@ export interface ChunkedDetectionOptions {
   startTime?: number; // Start time in seconds for detection range
   endTime?: number; // End time in seconds for detection range
   subtitleSettings?: { enabled: boolean; presetId: string } | null;
+  /** Enhanced VOD detection: transcript + video + audio (2× detection credits). */
+  enhanced?: boolean;
   /** Optional streamer / project context for AI detection (platform, display name, reach tier). */
   streamerMetadata?: Record<string, unknown> | null;
+}
+
+/** Matches server @enhanced_vod_chunk_duration_seconds (15 min). */
+const ENHANCED_CHUNK_DURATION_SECONDS = 900;
+
+interface VideoChunkRange {
+  startTime: number;
+  endTime: number;
 }
 
 export interface DetectionProgress {
@@ -31,6 +41,7 @@ export interface DetectionProgress {
     | 'initializing'
     | 'checking_cache'
     | 'extracting_chunks'
+    | 'extracting_video'
     | 'transcribing_chunks'
     | 'detecting_clips'
     | 'completed'
@@ -70,6 +81,9 @@ export function useChunkedClipDetection() {
 
   // Optional creator reach context for AI detection.
   let currentStreamerMetadata: Record<string, unknown> | null = null;
+
+  // Enhanced VOD detection (transcript + video + audio)
+  let currentEnhanced = false;
 
   function getApiErrorResponse(error: unknown): { status?: number; data?: any } | null {
     const response = (error as { response?: { status?: number; data?: any } } | null)?.response;
@@ -209,11 +223,11 @@ export function useChunkedClipDetection() {
       };
 
       const {
-        chunkDurationMinutes = 25,
+        chunkDurationMinutes = 15,
         overlapSeconds = 30,
         forceReprocess = false,
-        startTime,
-        endTime,
+        startTime = 0,
+        endTime = 0,
       } = options;
 
       // Get project video
@@ -272,7 +286,14 @@ export function useChunkedClipDetection() {
           // Fall back to traditional processing if chunks are empty
           const existingTranscript = await getTranscriptByRawVideoId(projectVideo.id);
           if (existingTranscript) {
-            return await processWithTraditionalTranscript(projectId, prompt, existingTranscript, projectVideo);
+            return await processWithTraditionalTranscript(
+              projectId,
+              prompt,
+              existingTranscript,
+              projectVideo,
+              startTime,
+              endTime
+            );
           }
           // If no traditional transcript either, continue with fresh audio processing
         }
@@ -327,7 +348,7 @@ export function useChunkedClipDetection() {
         message: 'Processing audio for clip detection...',
       };
 
-      return await processWithFreshAudio(projectId, prompt, projectVideo);
+      return await processWithFreshAudio(projectId, prompt, projectVideo, startTime, endTime);
     } catch (error) {
       const errorMessage = getErrorMessage(error);
 
@@ -366,6 +387,101 @@ export function useChunkedClipDetection() {
       abortController = null;
       currentProjectId = null;
       currentStreamerMetadata = null;
+      currentEnhanced = false;
+    }
+  }
+
+  function filterChunksByTimeRange<T extends { start_time: number; end_time: number }>(
+    chunks: T[],
+    startTime: number,
+    endTime: number
+  ): T[] {
+    const sorted = [...chunks].sort((a, b) => a.start_time - b.start_time);
+    if (startTime <= 0 && endTime <= 0) {
+      return sorted;
+    }
+    return sorted.filter((chunk) => {
+      return chunk.end_time > startTime && (endTime <= 0 || chunk.start_time < endTime);
+    });
+  }
+
+  function computeFixedVideoChunkRanges(
+    totalDuration: number,
+    rangeStart: number,
+    rangeEnd: number
+  ): VideoChunkRange[] {
+    const effectiveStart = Math.max(0, rangeStart);
+    const effectiveEnd = rangeEnd > 0 ? Math.min(rangeEnd, totalDuration) : totalDuration;
+    if (effectiveEnd <= effectiveStart) {
+      return [];
+    }
+
+    const ranges: VideoChunkRange[] = [];
+    let cursor = effectiveStart;
+    while (cursor < effectiveEnd) {
+      const chunkEnd = Math.min(cursor + ENHANCED_CHUNK_DURATION_SECONDS, effectiveEnd);
+      ranges.push({ startTime: cursor, endTime: chunkEnd });
+      cursor = chunkEnd;
+    }
+    return ranges;
+  }
+
+  async function appendEnhancedVideoChunks(
+    formData: FormData,
+    videoPath: string,
+    ranges: VideoChunkRange[]
+  ): Promise<void> {
+    if (ranges.length === 0) {
+      throw new Error('Enhanced detection requires at least one video chunk');
+    }
+
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { readFile, remove } = await import('@tauri-apps/plugin-fs');
+
+    for (let i = 0; i < ranges.length; i++) {
+      checkCancelled();
+      const { startTime, endTime } = ranges[i];
+
+      progress.value = {
+        stage: 'extracting_video',
+        progress: 50 + (i / ranges.length) * 10,
+        message: `Extracting video chunk ${i + 1}/${ranges.length} for enhanced analysis...`,
+      };
+
+      const tempPath = await invoke<string>('extract_video_chunk_for_analysis', {
+        videoPath,
+        startTimeSecs: startTime,
+        endTimeSecs: endTime,
+      });
+
+      try {
+        const bytes = await readFile(tempPath);
+        const blob = new Blob([bytes], { type: 'video/mp4' });
+        const file = new File([blob], `video_chunk_${i}.mp4`, { type: 'video/mp4' });
+        formData.append(`video_chunk_${i}`, file);
+      } finally {
+        await remove(tempPath).catch(() => {});
+      }
+    }
+  }
+
+  async function appendDetectionFormFields(
+    formData: FormData,
+    projectVideo: RawVideo,
+    startTime: number,
+    endTime: number,
+    videoChunkRanges?: VideoChunkRange[]
+  ): Promise<void> {
+    if (currentEnhanced) {
+      formData.append('enhanced', 'true');
+      const ranges =
+        videoChunkRanges ??
+        computeFixedVideoChunkRanges(
+          projectVideo.duration ?? 0,
+          startTime,
+          endTime > 0 ? endTime : (projectVideo.duration ?? 0)
+        );
+      await appendEnhancedVideoChunks(formData, projectVideo.file_path, ranges);
     }
   }
 
@@ -422,6 +538,9 @@ export function useChunkedClipDetection() {
         formData.append('duration', chunk.duration.toString());
         if (currentOrganizationId) {
           formData.append('organization_id', currentOrganizationId.toString());
+        }
+        if (currentEnhanced) {
+          formData.append('enhanced', 'true');
         }
         appendStreamerMetadata(formData);
 
@@ -562,10 +681,27 @@ export function useChunkedClipDetection() {
         formData.append('end_time', endTime.toString());
       }
 
+      if (currentEnhanced) {
+        const filteredChunks = filterChunksByTimeRange(cachedMetadata.chunks, startTime, endTime);
+        const videoRanges = filteredChunks.map((chunk) => ({
+          startTime: chunk.start_time,
+          endTime: chunk.end_time,
+        }));
+        await appendDetectionFormFields(
+          formData,
+          projectVideo,
+          startTime,
+          endTime,
+          videoRanges
+        );
+      }
+
       progress.value = {
         stage: 'detecting_clips',
         progress: 60,
-        message: 'Analyzing cached transcript for clips...',
+        message: currentEnhanced
+          ? 'Running enhanced detection (video + transcript)...'
+          : 'Analyzing cached transcript for clips...',
       };
 
       // Check for cancellation before API call
@@ -580,7 +716,7 @@ export function useChunkedClipDetection() {
             'Content-Type': undefined,
           },
           signal: abortController?.signal,
-          timeout: 1200000, // 20 minutes - chunked AI detection is very long-running
+          timeout: currentEnhanced ? 3600000 : 1200000, // Enhanced: up to 60 min
         });
       } catch (err: any) {
         if (err?.response?.status === 402) {
@@ -750,7 +886,9 @@ export function useChunkedClipDetection() {
     projectId: string,
     prompt: string,
     existingTranscript: any,
-    projectVideo: RawVideo
+    projectVideo: RawVideo,
+    startTime: number = 0,
+    endTime: number = 0
   ): Promise<{ success: boolean; sessionId?: string; error?: string; cancelled?: boolean }> {
     try {
       progress.value = {
@@ -781,10 +919,29 @@ export function useChunkedClipDetection() {
         })
       );
 
+      if (startTime > 0 || endTime > 0) {
+        formData.append('start_time', startTime.toString());
+        if (endTime > 0) {
+          formData.append('end_time', endTime.toString());
+        }
+      }
+
+      const transcriptDuration =
+        existingTranscript.duration ?? projectVideo.duration ?? 0;
+      const effectiveEnd = endTime > 0 ? endTime : transcriptDuration;
+      await appendDetectionFormFields(
+        formData,
+        { ...projectVideo, duration: transcriptDuration },
+        startTime,
+        effectiveEnd
+      );
+
       progress.value = {
         stage: 'detecting_clips',
         progress: 80,
-        message: 'Analyzing transcript for clips...',
+        message: currentEnhanced
+          ? 'Running enhanced detection (video + transcript)...'
+          : 'Analyzing transcript for clips...',
       };
 
       // Check for cancellation before API call
@@ -795,7 +952,7 @@ export function useChunkedClipDetection() {
           'Content-Type': undefined,
         },
         signal: abortController?.signal,
-        timeout: 900000, // 15 minutes for AI detection
+        timeout: currentEnhanced ? 3600000 : 900000,
       });
 
       const result = response.data;
@@ -845,7 +1002,9 @@ export function useChunkedClipDetection() {
   async function processWithFreshAudio(
     projectId: string,
     prompt: string,
-    projectVideo: RawVideo
+    projectVideo: RawVideo,
+    startTime: number = 0,
+    endTime: number = 0
   ): Promise<{ success: boolean; sessionId?: string; error?: string; cancelled?: boolean }> {
     try {
       // Trigger focal point detection in background (non-blocking)
@@ -878,12 +1037,6 @@ export function useChunkedClipDetection() {
       const blob = new Blob([bytes], { type: 'audio/ogg' });
       const audioFile = new File([blob], filename, { type: 'audio/ogg' });
 
-      progress.value = {
-        stage: 'detecting_clips',
-        progress: 70,
-        message: 'Detecting clips...',
-      };
-
       // Check for cancellation before API call
       checkCancelled();
 
@@ -901,12 +1054,30 @@ export function useChunkedClipDetection() {
       }
       appendStreamerMetadata(formData);
 
+      if (startTime > 0 || endTime > 0) {
+        formData.append('start_time', startTime.toString());
+        if (endTime > 0) {
+          formData.append('end_time', endTime.toString());
+        }
+      }
+
+      const effectiveEnd = endTime > 0 ? endTime : (projectVideo.duration ?? 0);
+      await appendDetectionFormFields(formData, projectVideo, startTime, effectiveEnd);
+
+      progress.value = {
+        stage: 'detecting_clips',
+        progress: 75,
+        message: currentEnhanced
+          ? 'Running enhanced detection (video + transcript)...'
+          : 'Detecting clips...',
+      };
+
       const response = await api.post('/clips/detect', formData, {
         headers: {
           'Content-Type': undefined,
         },
         signal: abortController?.signal,
-        timeout: 900000, // 15 minutes for AI detection
+        timeout: currentEnhanced ? 3600000 : 900000,
       });
 
       const result = response.data;
@@ -928,7 +1099,8 @@ export function useChunkedClipDetection() {
         result,
         {
           processingTimeMs: 0,
-          detectionModel: 'claude-3.5-sonnet-fresh',
+          detectionModel: currentEnhanced ? 'gemini-enhanced-vod' : 'claude-3.5-sonnet-fresh',
+          enhanced: currentEnhanced,
           serverResponseId: result.jobId || null,
           videoFilePath: projectVideo.file_path,
           rawVideoId: projectVideo.id,
@@ -1000,10 +1172,15 @@ export function useChunkedClipDetection() {
       }
       appendStreamerMetadata(formData);
 
+      const effectiveEnd = projectVideo.duration ?? 0;
+      await appendDetectionFormFields(formData, projectVideo, 0, effectiveEnd);
+
       progress.value = {
         stage: 'detecting_clips',
         progress: 70,
-        message: 'Analyzing transcript for clips...',
+        message: currentEnhanced
+          ? 'Running enhanced detection (video + transcript)...'
+          : 'Analyzing transcript for clips...',
       };
 
       // Check for cancellation before API call
@@ -1014,7 +1191,7 @@ export function useChunkedClipDetection() {
           'Content-Type': undefined,
         },
         signal: abortController?.signal,
-        timeout: 900000, // 15 minutes for AI detection
+        timeout: currentEnhanced ? 3600000 : 900000,
       });
 
       const result = response.data;
@@ -1036,7 +1213,8 @@ export function useChunkedClipDetection() {
         result,
         {
           processingTimeMs: 0,
-          detectionModel: 'claude-3.5-sonnet-fallback',
+          detectionModel: currentEnhanced ? 'gemini-enhanced-vod' : 'claude-3.5-sonnet-fallback',
+          enhanced: currentEnhanced,
           serverResponseId: result.jobId || null,
           videoFilePath: projectVideo.file_path,
           rawVideoId: projectVideo.id,
@@ -1068,6 +1246,7 @@ export function useChunkedClipDetection() {
     currentProjectId = null;
     currentOrganizationId = null;
     currentStreamerMetadata = null;
+    currentEnhanced = false;
     progress.value = { stage: 'initializing', progress: 0, message: '' };
   }
 
