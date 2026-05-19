@@ -13,6 +13,14 @@
             <Star class="profile-action-btn__icon" />
             Endorse
           </button>
+          <button
+            v-if="profile.slug"
+            @click="copyProfileLink"
+            class="profile-action-btn profile-action-btn--outline"
+          >
+            <Share2 class="profile-action-btn__icon" />
+            Share
+          </button>
         </div>
       </template>
       <!-- Loading State -->
@@ -506,6 +514,7 @@
     Briefcase,
     Link,
     Handshake,
+    Share2,
     X,
     Eye,
     Users,
@@ -623,6 +632,17 @@
   const endorsementRating = ref(0);
   const submittingEndorsement = ref(false);
   const endorsementError = ref('');
+
+  const copyProfileLink = () => {
+    const landingUrl = import.meta.env.VITE_LANDING_URL || 'https://clippster.app';
+    const url = `${landingUrl}/clippers/${profile.value?.slug}`;
+    navigator.clipboard.writeText(url).then(() => {
+      toast({
+        title: 'Link Copied',
+        description: 'Profile link copied to clipboard',
+      });
+    });
+  };
 
   const openEndorsementDialog = () => {
     endorsementContent.value = '';
