@@ -28,9 +28,11 @@ import { listOrganizationCampaigns, listMyCampaigns, type Campaign } from '@/ser
 import { listUserPosts, uploadUserMediaForPost, type UserPost } from '@/services/userInstagramApi';
 import { uploadMediaForPost } from '@/services/socialAccountsApi';
 import { invoke } from '@tauri-apps/api/core';
+import { useToast } from '@/composables/useToast';
 
 // ── State ──
 const authStore = useAuthStore();
+const { error: showErrorToast } = useToast();
 const loading = ref(false);
 const error = ref<string | null>(null);
 
@@ -244,6 +246,14 @@ function getEventsForDay(date: Date): CalendarEvent[] {
 }
 
 // ── Helpers ──
+
+function isPastCalendarDay(date: Date): boolean {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
+  return day < today;
+}
 
 function isSameDay(a: Date, b: Date): boolean {
   return (
@@ -569,7 +579,7 @@ function handleSidebarDragMove(position: { x: number; y: number }) {
     const dateStr = dayCell.dataset.calendarDate;
     if (dateStr) {
       const date = new Date(dateStr);
-      if (!isNaN(date.getTime())) {
+      if (!isNaN(date.getTime()) && !isPastCalendarDay(date)) {
         dragOverDay.value = date;
         return;
       }
@@ -595,8 +605,12 @@ function handleSidebarDragEnd(position: { x: number; y: number }) {
       if (dateStr) {
         const date = new Date(dateStr);
         if (!isNaN(date.getTime())) {
-          console.log('[ContentCalendar] Drop on date:', date);
-          openScheduleDialog(draggingClipData.value, date);
+          if (isPastCalendarDay(date)) {
+            showErrorToast('Cannot schedule posts for past dates');
+          } else {
+            console.log('[ContentCalendar] Drop on date:', date);
+            openScheduleDialog(draggingClipData.value, date);
+          }
         }
       }
     }
@@ -608,6 +622,10 @@ function handleSidebarDragEnd(position: { x: number; y: number }) {
 }
 
 function openScheduleDialog(clipData: any, date: Date) {
+  if (isPastCalendarDay(date)) {
+    showErrorToast('Cannot schedule posts for past dates');
+    return;
+  }
   scheduleDialogData.value = {
     clipId: clipData.clipId,
     clipName: clipData.clipName || 'Untitled Clip',

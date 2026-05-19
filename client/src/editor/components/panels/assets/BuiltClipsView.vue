@@ -2,8 +2,7 @@
 import { ref, computed, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../../composables/useEditor";
-import { getAllClips } from "@/services/database/clips";
-import { getClipBuilds } from "@/services/database/clip-build";
+import { getCompletedBuildEntries } from "@/services/database/clip-build";
 import type { Clip, ClipBuild } from "@/services/database/types";
 import type { MediaAsset } from "../../../types/assets";
 import { Film, Plus, Loader2, Check, Search, Briefcase, Building2 } from "lucide-vue-next";
@@ -26,7 +25,6 @@ const { editor, version } = useEditor();
 const { startDrag, wasDragCompleted } = usePointerDrag();
 const thumbnailStore = useClipThumbnailStore();
 
-const clips = ref<Clip[]>([]);
 const allBuilds = ref<BuildEntry[]>([]); // Flattened list of all builds
 const loading = ref(false);
 const addingIds = ref<Set<string>>(new Set());
@@ -151,9 +149,14 @@ function handlePointerDown(e: PointerEvent, entry: BuildEntry) {
 async function loadClips() {
 	loading.value = true;
 	try {
-		clips.value = await getAllClips();
-		await loadBuilds();
-		await loadThumbnails();
+		const entries = await getCompletedBuildEntries();
+		allBuilds.value = entries.map(({ clip, build }) => ({
+			clip,
+			build,
+			key: build.id,
+		}));
+		// Show the list immediately; load thumbnails in the background.
+		void loadThumbnails();
 	} catch (error) {
 		console.error("[BuiltClipsView] Failed to load clips:", error);
 	} finally {
@@ -161,33 +164,8 @@ async function loadClips() {
 	}
 }
 
-async function loadBuilds() {
-	const entries: BuildEntry[] = [];
-	for (const clip of clips.value) {
-		try {
-			const builds = await getClipBuilds(clip.id);
-			for (const build of builds) {
-				if (build.status === 'completed' && build.file_path) {
-					entries.push({
-						clip,
-						build,
-						key: build.id,
-					});
-				}
-			}
-		} catch (error) {
-			console.warn(`[BuiltClipsView] Failed to load builds for clip ${clip.id}:`, error);
-		}
-	}
-	// Sort by created_at descending (newest first)
-	entries.sort((a, b) => (b.build.created_at || 0) - (a.build.created_at || 0));
-	allBuilds.value = entries;
-}
-
 async function loadThumbnails() {
-	// Only thumbnails for clips that actually have completed builds — not every row from getAllClips()
-	const clipIdsWithBuilds = new Set(allBuilds.value.map((e) => e.clip.id));
-	const clipsToThumb = clips.value.filter((c) => clipIdsWithBuilds.has(c.id));
+	const clipsToThumb = [...new Map(allBuilds.value.map((e) => [e.clip.id, e.clip])).values()];
 	await thumbnailStore.loadThumbnails(clipsToThumb);
 
 	// Then collect and batch load build-specific thumbnails (for builds with custom thumbnails)
