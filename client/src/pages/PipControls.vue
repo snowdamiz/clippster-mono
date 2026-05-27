@@ -387,8 +387,25 @@ function startDrag(event: MouseEvent) {
   getCurrentWindow().startDragging();
 }
 
-function togglePlayPause() {
-  emitTo('main', 'pip-toggle-play-pause');
+async function togglePlayPause() {
+  // Apply play/pause on this window's video first so the user gesture unlocks playback.
+  // Main-window play() does not receive the PIP click and can be blocked by autoplay policy.
+  const nextPlaying = !isPlaying.value;
+  isPlaying.value = nextPlaying;
+
+  if (videoRef.value) {
+    if (nextPlaying) {
+      try {
+        await videoRef.value.play();
+      } catch (error) {
+        console.error('[PIP] Failed to start playback:', error);
+      }
+    } else {
+      videoRef.value.pause();
+    }
+  }
+
+  await emitTo('main', 'pip-set-play-state', { playing: nextPlaying });
 }
 
 function toggleMute() {

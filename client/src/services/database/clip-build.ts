@@ -591,6 +591,77 @@ export async function updateClipBuild(
   }
 }
 
+export interface CompletedBuildEntry {
+  clip: Clip;
+  build: ClipBuild;
+}
+
+/** All completed builds with clip metadata — two queries instead of N+1 per clip. */
+export async function getCompletedBuildEntries(): Promise<CompletedBuildEntry[]> {
+  try {
+    const db = await getDatabase();
+    await ensureClipBuildsBrandingSchema(db);
+    const userId = getCurrentUserId();
+
+    const builds = await db.select<ClipBuild[]>(
+      `SELECT * FROM clip_builds
+       WHERE status = 'completed'
+         AND file_path IS NOT NULL
+         AND TRIM(file_path) != ''
+       ORDER BY created_at DESC`,
+    );
+
+    if (builds.length === 0) {
+      return [];
+    }
+
+    const clipIds = [...new Set(builds.map((b) => b.clip_id))];
+    const placeholders = clipIds.map(() => '?').join(',');
+    let clips: Clip[];
+
+    if (userId === null) {
+      clips = await db.select<Clip[]>(
+        `SELECT * FROM clips WHERE id IN (${placeholders})`,
+        clipIds,
+      );
+    } else {
+      clips = await db.select<Clip[]>(
+        `SELECT * FROM clips
+         WHERE id IN (${placeholders})
+           AND (CAST(user_id AS INTEGER) = ? OR user_id IS NULL)`,
+        [...clipIds, userId],
+      );
+      if (clips.length === 0) {
+        clips = await db.select<Clip[]>(
+          `SELECT * FROM clips WHERE id IN (${placeholders})`,
+          clipIds,
+        );
+      }
+    }
+
+    const clipById = new Map(clips.map((c) => [c.id, c]));
+    const entries: CompletedBuildEntry[] = [];
+
+    for (const build of builds) {
+      const clip = clipById.get(build.clip_id);
+      if (!clip) continue;
+      entries.push({
+        clip,
+        build: {
+          ...build,
+          include_subtitles: Boolean(build.include_subtitles),
+          is_published: Boolean(build.is_published),
+        },
+      });
+    }
+
+    return entries;
+  } catch (error) {
+    console.error('[Database] Failed to get completed build entries:', error);
+    throw error;
+  }
+}
+
 // Get all builds for a clip
 export async function getClipBuilds(clipId: string): Promise<ClipBuild[]> {
   try {

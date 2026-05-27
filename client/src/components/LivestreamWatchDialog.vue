@@ -1071,7 +1071,19 @@
       })
     );
 
-    // Listen for play/pause toggle
+    // Listen for play/pause from PIP (PIP applies playback locally; main syncs state)
+    pipEventListeners.push(
+      await listen<{ playing: boolean }>('pip-set-play-state', async (event) => {
+        if (event.payload.playing) {
+          await viewer.play();
+        } else {
+          viewer.pause();
+        }
+        sendPipStateUpdate();
+      })
+    );
+
+    // Legacy event — keep for older PIP builds
     pipEventListeners.push(
       await listen('pip-toggle-play-pause', () => {
         viewer.togglePlayPause();
