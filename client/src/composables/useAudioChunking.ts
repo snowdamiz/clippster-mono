@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { useToast } from '@/composables/useToast';
+import { normalizeLocalFilePathForFs } from '@/utils/normalizeLocalFilePath';
 
 export interface AudioChunk {
   chunk_id: string;
@@ -106,7 +107,7 @@ export function useAudioChunking(options: UseAudioChunkingOptions = {}) {
 
       // Call the Rust function
       const audioChunks = await invoke<AudioChunk[]>('extract_and_chunk_audio', {
-        videoPath,
+        videoPath: normalizeLocalFilePathForFs(videoPath),
         projectId,
         chunkDurationMinutes,
         overlapSeconds,

@@ -254,7 +254,7 @@
 
           <!-- Accounts -->
           <template v-if="activeTab === 'accounts'">
-            <section class="section">
+            <section ref="socialAccountsSectionRef" class="section">
               <div class="section__header">
                 <div class="section__header-icon">
                   <Share2 />
@@ -1252,7 +1252,8 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, onMounted, onUnmounted, markRaw, computed, watch, h } from 'vue';
+  import { ref, reactive, onMounted, onUnmounted, markRaw, computed, watch, h, nextTick } from 'vue';
+  import { useRoute } from 'vue-router';
   import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import {
     UserCircle,
@@ -1379,6 +1380,7 @@
     type EarningsSummary,
   } from '@/services/campaignApi';
   import { useToast } from '@/composables/useToast';
+  import { useSocialTokenMonitor } from '@/composables/useSocialTokenMonitor';
   import { formatLastActive } from '@/utils/timeUtils';
   import { 
     initThumbnailCache, 
@@ -1400,6 +1402,8 @@
   const { toast } = useToast();
   const authStore = useAuthStore();
   const permissionsStore = usePermissionsStore();
+  const route = useRoute();
+  const socialTokenMonitor = useSocialTokenMonitor();
 
   const tabs = computed(() => {
     const base = [
@@ -1419,6 +1423,7 @@
   });
 
   const activeTab = ref('leaderboard');
+  const socialAccountsSectionRef = ref<HTMLElement | null>(null);
   const clipperProfile = ref<ClipperProfile | null>(null);
   const loadingSocialAccounts = ref(true);
   const loadingPaymentMethods = ref(true);
@@ -1973,6 +1978,7 @@
           if (result.success && result.account) {
             toast({ title: 'Success', description: `Instagram account @${result.account.username} connected` });
             loadSocialAccounts();
+            void socialTokenMonitor.checkNow();
             showPlatformSelectionDialog.value = false;
           } else if (result.error) {
             toast({ title: 'Error', description: result.error });
@@ -1993,6 +1999,7 @@
           if (result.success && result.account) {
             toast({ title: 'Success', description: `X account @${result.account.username} connected` });
             loadSocialAccounts();
+            void socialTokenMonitor.checkNow();
             showPlatformSelectionDialog.value = false;
           } else if (result.error) {
             toast({ title: 'Error', description: result.error });
@@ -2013,6 +2020,7 @@
           if (result.success && result.account) {
             toast({ title: 'Success', description: `TikTok account @${result.account.username} connected` });
             loadSocialAccounts();
+            void socialTokenMonitor.checkNow();
             showPlatformSelectionDialog.value = false;
           } else if (result.error) {
             toast({ title: 'Error', description: result.error });
@@ -2033,6 +2041,7 @@
           if (result.success && result.account) {
             toast({ title: 'Success', description: `YouTube account @${result.account.username} connected` });
             loadSocialAccounts();
+            void socialTokenMonitor.checkNow();
             showPlatformSelectionDialog.value = false;
           } else if (result.error) {
             toast({ title: 'Error', description: result.error });
@@ -2181,6 +2190,9 @@
         toast({ title: 'Deleted', description: `${deleteType.value} disconnected` });
         showDeleteDialog.value = false;
         deleteType.value === 'social account' ? await loadSocialAccounts() : await loadPaymentMethods();
+        if (deleteType.value === 'social account') {
+          void socialTokenMonitor.checkNow();
+        }
       } else {
         toast({ title: 'Error', description: response.error || 'Failed to delete' });
       }
@@ -2240,6 +2252,14 @@
     return !!clipperProfile.value;
   });
 
+  const focusSocialAccountsSection = async () => {
+    if (route.query.section !== 'social-accounts') return;
+
+    activeTab.value = 'accounts';
+    await nextTick();
+    socialAccountsSectionRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   // Handle onboarding completion
   const onOnboardingComplete = () => {
     showOnboardingWizard.value = false;
@@ -2255,7 +2275,15 @@
     loadMyCampaigns();
     loadMySubmissions();
     loadEarnings();
+    await focusSocialAccountsSection();
   });
+
+  watch(
+    () => route.query.section,
+    () => {
+      void focusSocialAccountsSection();
+    }
+  );
 
   onUnmounted(() => {
     if (cleanupInstagramAuth) cleanupInstagramAuth();

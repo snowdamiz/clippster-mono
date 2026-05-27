@@ -11,6 +11,7 @@
   import SubscriptionGate from '@/components/SubscriptionGate.vue';
   import BrandingProfileSelector from '@/components/BrandingProfileSelector.vue';
   import AnnouncementDialog from '@/components/AnnouncementDialog.vue';
+  import SocialTokenExpiredDialog from '@/components/SocialTokenExpiredDialog.vue';
   import OrganizationInviteDialog from '@/components/OrganizationInviteDialog.vue';
   import FloatingChat from '@/components/chat/FloatingChat.vue';
   import AudioPlayer from '@/components/AudioPlayer.vue';
@@ -33,6 +34,7 @@
   import { useAppUpdater } from '@/composables/useAppUpdater';
   import { useToast } from '@/composables/useToast';
   import { useActivityTracker } from '@/composables/useActivityTracker';
+  import { useSocialTokenMonitor } from '@/composables/useSocialTokenMonitor';
   import { useMessagingStore } from '@/stores/messaging';
   import { useUserPreferencesStore } from '@/stores/userPreferences';
   import { initGlobalLiveStatusPolling, stopGlobalLiveStatusPolling } from '@/composables/useLivestreamMonitoring';
@@ -50,6 +52,7 @@
   const { state: updateState, checkForUpdates } = useAppUpdater();
   const messagingStore = useMessagingStore();
   const { success } = useToast();
+  const socialTokenMonitor = useSocialTokenMonitor();
 
   // Track user activity to update last_active_at
   // Will be initialized after authentication check completes
@@ -298,12 +301,14 @@
       // Fetch and show any unseen announcements for the newly logged-in user
       await fetchAndEnqueue();
       subscribeToChannel(authStore.user?.account_type ?? 'personal');
+      socialTokenMonitor.start();
       
       // Start polling for organization invitations
       startInvitationPolling();
     } else if (!event.detail?.userId) {
       // User logged out — clear announcement queue and leave channel
       unsubscribe();
+      socialTokenMonitor.stop();
       // Clear plan selection flag
       localStorage.removeItem('has_selected_plan');
       // Stop polling and clear pending invitations
@@ -467,6 +472,7 @@
           // Announcements don't need to block startup - fire and forget
           fetchAndEnqueue().catch((e) => console.error('[App] Failed to fetch announcements:', e));
           subscribeToChannel(authStore.user?.account_type ?? 'personal');
+          socialTokenMonitor.start();
           // Initialize global messaging socket for floating chat
           messagingStore.initializeGlobal().catch((e) => console.error('[App] Failed to init global messaging:', e));
           // Start polling for organization invitations
@@ -562,6 +568,7 @@
     
     // Stop invitation polling
     stopInvitationPolling();
+    socialTokenMonitor.stop();
   });
 </script>
 
@@ -610,6 +617,9 @@
 
       <!-- Global Announcement Dialog -->
       <AnnouncementDialog />
+
+      <!-- Global expired social token dialog -->
+      <SocialTokenExpiredDialog />
 
       <!-- Organization Invite Dialog -->
       <OrganizationInviteDialog
