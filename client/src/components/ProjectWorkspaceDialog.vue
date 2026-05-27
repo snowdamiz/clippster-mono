@@ -213,6 +213,7 @@
                   :transcribe-stage="transcribeStage"
                   :transcribe-message="transcribeMessage"
                   :vod-preset-config="vodPresetConfig"
+                  :clip-detection-disabled="clipDetectionDisabled"
                   :subtitle-settings="buildSubtitleSettingsForActivePreview"
                   :subtitle-settings-clip-id="activeSubtitleSettingsClipId"
                   @detectClips="onDetectClips"
@@ -465,6 +466,11 @@
   import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
   import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
   import { parseTranscriptToWords } from '@/utils/timelineUtils';
+  import {
+    ensureShortVideoAutoClip,
+    isShortVideoAutoClipEligible,
+    SHORT_VIDEO_CLIP_THRESHOLD_SECONDS,
+  } from '@/services/database/auto-clips';
 
   const authStore = useAuthStore();
   const { error: showError } = useToast();
@@ -1562,6 +1568,8 @@
     currentVideo,
   } = useVideoPlayer(projectRef);
 
+  const clipDetectionDisabled = computed(() => isShortVideoAutoClipEligible(duration.value));
+
   // Initialize focal point composable
   const { currentFocalPoint, loadFocalPoints, updateTime, reset: resetFocalPoint } = useVideoFocalPoint();
   const effectiveFocalPoint = computed(() => vodFocalPointOverride.value || currentFocalPoint.value);
@@ -1641,14 +1649,19 @@
   }
 
   async function onDetectClips() {
-    // Check if user is authenticated before showing clip detection dialog
     if (!authStore.isAuthenticated) {
-      // Show auth modal directly without error toast
       window.dispatchEvent(new CustomEvent('show-auth-modal'));
       return;
     }
 
-    // Show confirmation dialog (prompt will be selected within the dialog)
+    if (clipDetectionDisabled.value) {
+      showError(
+        'Clip detection unavailable',
+        `Videos under ${SHORT_VIDEO_CLIP_THRESHOLD_SECONDS} seconds are already a single clip. Transcribe and build from the Clips tab.`
+      );
+      return;
+    }
+
     showDetectConfirmDialog.value = true;
   }
 
@@ -3117,7 +3130,27 @@
     }
 
     try {
-      const clipsWithVersion = await getClipsWithVersionsByProjectId(projectId);
+      let clipsWithVersion = await getClipsWithVersionsByProjectId(projectId);
+
+      if (
+        clipsWithVersion.length === 0 &&
+        isShortVideoAutoClipEligible(duration.value)
+      ) {
+        const rawVideos = await getRawVideosByProjectId(projectId);
+        if (rawVideos.length === 1) {
+          const baseName =
+            rawVideos[0].original_filename?.replace(/\.[^/.]+$/, '') ||
+            props.project?.name ||
+            'Clip';
+          const createdId = await ensureShortVideoAutoClip(projectId, duration.value, {
+            clipName: baseName,
+          });
+          if (createdId) {
+            clipsWithVersion = await getClipsWithVersionsByProjectId(projectId);
+            await mediaPanelRef.value?.refreshClips();
+          }
+        }
+      }
 
       // Auto-repair any clips missing versions
       await repairClipsMissingVersion(clipsWithVersion);

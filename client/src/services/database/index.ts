@@ -23,6 +23,7 @@ export * from './custom-subtitle-presets';
 export * from './intro-outros';
 export * from './livestream-monitoring';
 export * from './manual-clips';
+export * from './auto-clips';
 export * from './organization-assets';
 export * from './audio-assets';
 export * from './audio-settings';

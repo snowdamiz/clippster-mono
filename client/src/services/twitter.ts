@@ -47,6 +47,27 @@ export async function validateTwitterUrl(url: string): Promise<string> {
 }
 
 /**
+ * Extract tweet/status ID from an X/Twitter timeline post URL.
+ * Matches `/status/{id}` and `/statuses/{id}` on x.com or twitter.com.
+ */
+export function extractTwitterStatusId(url: string): string | null {
+  if (!url || typeof url !== 'string') {
+    return null;
+  }
+
+  const trimmed = url.trim();
+  const match = trimmed.match(/\/(?:status|statuses)\/(\d+)/i);
+  return match?.[1] ?? null;
+}
+
+/**
+ * Stable source id for VOD download/search: broadcast, space, or tweet status id.
+ */
+export function extractTwitterSourceId(url: string): string | null {
+  return extractTwitterBroadcastId(url) || extractTwitterStatusId(url);
+}
+
+/**
  * Extract broadcast or space ID from Twitter URL
  */
 export function extractTwitterBroadcastId(url: string): string | null {

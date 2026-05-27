@@ -331,6 +331,8 @@ export interface MediaPanelProps {
   transcribeMessage?: string;
   // VOD preset config for pre-edit settings
   vodPresetConfig?: ActiveVodPresetConfig | null;
+  /** When true, hide AI clip detection (e.g. short videos auto-imported as one clip). */
+  clipDetectionDisabled?: boolean;
 }
 
 // Reference type for intro/outro (matches database IntroOutro type)

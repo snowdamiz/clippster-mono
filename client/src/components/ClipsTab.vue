@@ -59,7 +59,7 @@
 
       <!-- Detect Button (when not detecting and has clips) - Only show if AI is allowed -->
       <button
-        v-else-if="clips.length > 0 && isAIAllowed"
+        v-else-if="clips.length > 0 && isAIAllowed && !clipDetectionDisabled"
         @click="handleDetectClips"
         class="clips-tab-header-btn group flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-lg transition-all"
         title="Run clip detection again"
@@ -617,7 +617,7 @@
             <h4 class="text-sm font-semibold mb-2" style="color: var(--sidebar-text)">No Clips Yet</h4>
 
             <!-- AI Allowed: Show Detect Clips -->
-            <template v-if="isAIAllowed">
+            <template v-if="isAIAllowed && !clipDetectionDisabled">
               <p class="text-xs leading-relaxed mb-6 max-w-[200px]" style="color: var(--sidebar-text-muted)">
                 Start detecting clips from your video using AI-powered analysis
               </p>
@@ -629,6 +629,12 @@
                 <Sparkles class="h-3.5 w-3.5" />
                 Detect Clips
               </button>
+            </template>
+
+            <template v-else-if="isAIAllowed && clipDetectionDisabled">
+              <p class="text-xs leading-relaxed mb-6 max-w-[220px]" style="color: var(--sidebar-text-muted)">
+                This video is already a single clip. Transcribe, edit, and build it from here.
+              </p>
             </template>
 
             <!-- AI Not Allowed: Show Add Clip -->
@@ -1293,6 +1299,7 @@
     playOnCardClick?: boolean;
     showAdjustClipButton?: boolean;
     vodPresetConfig?: import('@/types').ActiveVodPresetConfig | null;
+    clipDetectionDisabled?: boolean;
   }
 
   const props = withDefaults(defineProps<ClipsTabProps>(), {
@@ -1321,6 +1328,7 @@
     playOnCardClick: false,
     vodPresetConfig: null,
     showAdjustClipButton: false,
+    clipDetectionDisabled: false,
   });
 
   // Emits

@@ -1367,6 +1367,10 @@
     type VideoEditorProject,
     hasTranscriptForProject,
   } from '@/services/database';
+  import {
+    isShortVideoAutoClipEligible,
+    SHORT_VIDEO_CLIP_THRESHOLD_SECONDS,
+  } from '@/services/database/auto-clips';
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { useClipThumbnailStore } from '@/stores/clipThumbnails';
   import { persistentCache } from '@/utils/persistentCache';
@@ -5588,14 +5592,44 @@
     return false;
   }
 
+  function getProjectVideoDurationSeconds(projectId: string): number {
+    const videos = projectVideos.value[projectId];
+    if (!videos?.length) {
+      return 0;
+    }
+    return videos.reduce((sum, v) => sum + (v.duration || 0), 0);
+  }
+
+  function isProjectShortVideoOnly(projectId: string): boolean {
+    const children = getFolderChildren(projectId);
+    if (children.length > 0) {
+      const segmentsWithVideo = children.filter((child) => {
+        const vids = projectVideos.value[child.id];
+        return vids && vids.length > 0;
+      });
+      if (segmentsWithVideo.length === 0) {
+        const dur = getProjectVideoDurationSeconds(projectId);
+        return dur > 0 && isShortVideoAutoClipEligible(dur);
+      }
+      return segmentsWithVideo.every((child) =>
+        isShortVideoAutoClipEligible(getProjectVideoDurationSeconds(child.id))
+      );
+    }
+
+    const duration = getProjectVideoDurationSeconds(projectId);
+    return duration > 0 && isShortVideoAutoClipEligible(duration);
+  }
+
   function canDetectClips(projectId: string): boolean {
-    // Check if project has videos directly
+    if (isProjectShortVideoOnly(projectId)) {
+      return false;
+    }
+
     const videos = projectVideos.value[projectId];
     if (videos && videos.length > 0) {
       return true;
     }
 
-    // Check if any children have videos
     const children = getFolderChildren(projectId);
     for (const child of children) {
       const childVideos = projectVideos.value[child.id];
@@ -5608,9 +5642,16 @@
   }
 
   async function startProjectDetection(project: Project) {
-    // Check if user is authenticated
     if (!authStore.isAuthenticated) {
       window.dispatchEvent(new CustomEvent('show-auth-modal'));
+      return;
+    }
+
+    if (isProjectShortVideoOnly(project.id)) {
+      error(
+        'Clip detection unavailable',
+        `Videos under ${SHORT_VIDEO_CLIP_THRESHOLD_SECONDS} seconds are already imported as a full clip. Transcribe and build from the clip instead.`
+      );
       return;
     }
 
