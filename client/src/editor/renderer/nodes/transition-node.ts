@@ -47,11 +47,17 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 	private scratchOut: HTMLCanvasElement | null = null;
 	private scratchIn: HTMLCanvasElement | null = null;
 	private scratchComposite: HTMLCanvasElement | null = null;
+	private scratchOutCtx: CanvasRenderingContext2D | null = null;
+	private scratchInCtx: CanvasRenderingContext2D | null = null;
+	private scratchCompositeCtx: CanvasRenderingContext2D | null = null;
 
 	private ensureScratchCanvases(w: number, h: number): {
 		out: HTMLCanvasElement;
 		in: HTMLCanvasElement;
 		composite: HTMLCanvasElement;
+		outCtx: CanvasRenderingContext2D;
+		inCtx: CanvasRenderingContext2D;
+		compositeCtx: CanvasRenderingContext2D;
 	} {
 		if (!this.scratchOut || this.scratchOut.width !== w || this.scratchOut.height !== h) {
 			this.scratchOut = document.createElement("canvas");
@@ -63,12 +69,28 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 			this.scratchComposite = document.createElement("canvas");
 			this.scratchComposite.width = w;
 			this.scratchComposite.height = h;
+			this.scratchOutCtx = this.scratchOut.getContext("2d");
+			this.scratchInCtx = this.scratchIn.getContext("2d");
+			this.scratchCompositeCtx = this.scratchComposite.getContext("2d");
+			if (!this.scratchOutCtx || !this.scratchInCtx || !this.scratchCompositeCtx) {
+				throw new Error("Failed to create transition scratch canvas contexts");
+			}
 		}
-		return { out: this.scratchOut!, in: this.scratchIn!, composite: this.scratchComposite! };
+		return {
+			out: this.scratchOut!,
+			in: this.scratchIn!,
+			composite: this.scratchComposite!,
+			outCtx: this.scratchOutCtx!,
+			inCtx: this.scratchInCtx!,
+			compositeCtx: this.scratchCompositeCtx!,
+		};
 	}
 
-	private prepareScratchContext(canvas: HTMLCanvasElement, renderer: CanvasRenderer): CanvasRenderingContext2D {
-		const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+	private prepareScratchContext(
+		canvas: HTMLCanvasElement,
+		ctx: CanvasRenderingContext2D,
+		renderer: CanvasRenderer,
+	): CanvasRenderingContext2D {
 		// Reset state left by the previous frame, then apply the same logical->backing transform
 		// CanvasRenderer uses for the main preview canvas. This keeps masks and transforms centered
 		// while compositing at preview backing resolution instead of full project resolution.
@@ -94,13 +116,15 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 		node,
 		time,
 		canvas,
+		ctx,
 	}: {
 		renderer: CanvasRenderer;
 		node: BaseNode;
 		time: number;
 		canvas: HTMLCanvasElement;
+		ctx: CanvasRenderingContext2D;
 	}): Promise<void> {
-		const scratchCtx = this.prepareScratchContext(canvas, renderer);
+		this.prepareScratchContext(canvas, ctx, renderer);
 		const mainCanvasRef = renderer.canvas;
 		const mainCtx = renderer.context;
 		const mainBackingWidth = renderer.backingWidth;
@@ -108,7 +132,7 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 
 		try {
 			renderer.canvas = canvas;
-			renderer.context = scratchCtx;
+			renderer.context = ctx;
 			renderer.backingWidth = canvas.width;
 			renderer.backingHeight = canvas.height;
 			await node.render({ renderer, time });
@@ -209,12 +233,14 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 			: { outgoingTime: time, incomingTime: time };
 
 		if (inTransition) {
+			const prefetches: Promise<void>[] = [];
 			if (this.outgoingNode) {
-				await this.outgoingNode.prefetch({ renderer, time: outgoingTime });
+				prefetches.push(this.outgoingNode.prefetch({ renderer, time: outgoingTime }));
 			}
 			if (this.incomingNode) {
-				await this.incomingNode.prefetch({ renderer, time: incomingTime });
+				prefetches.push(this.incomingNode.prefetch({ renderer, time: incomingTime }));
 			}
+			await Promise.all(prefetches);
 		} else if (time < this.params.junctionTime) {
 			const d = Math.max(1e-6, this.params.duration);
 			const transitionStart = this.params.junctionTime - d / 2;
@@ -268,7 +294,7 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 		const progress = (time - transitionStart) / d;
 		const { outgoingTime, incomingTime } = this.getTransitionLayerDecodeTimes(time);
 
-		const { out: outCanvas, in: inCanvas, composite: compositeCanvas } =
+		const { out: outCanvas, in: inCanvas, composite: compositeCanvas, outCtx, inCtx, compositeCtx } =
 			this.ensureScratchCanvases(canvasW, canvasH);
 
 		const mainCtx = renderer.context;
@@ -279,9 +305,10 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 				node: this.outgoingNode,
 				time: outgoingTime,
 				canvas: outCanvas,
+				ctx: outCtx,
 			});
 		} else {
-			this.prepareScratchContext(outCanvas, renderer);
+			this.prepareScratchContext(outCanvas, outCtx, renderer);
 		}
 
 		if (this.incomingNode) {
@@ -290,30 +317,45 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 				node: this.incomingNode,
 				time: incomingTime,
 				canvas: inCanvas,
+				ctx: inCtx,
 			});
 		} else {
-			this.prepareScratchContext(inCanvas, renderer);
+			this.prepareScratchContext(inCanvas, inCtx, renderer);
 		}
 
-		const compositeCtx = compositeCanvas.getContext("2d", { willReadFrequently: true })!;
-		compositeCtx.setTransform(1, 0, 0, 1, 0, 0);
-		compositeCtx.clearRect(0, 0, canvasW, canvasH);
-		renderTransition(
-			compositeCtx,
-			canvasW,
-			canvasH,
-			outCanvas as CanvasImageSource,
-			inCanvas as CanvasImageSource,
-			progress,
-			this.params.type,
-		);
-
-		mainCtx.save();
-		mainCtx.setTransform(1, 0, 0, 1, 0, 0);
-		mainCtx.globalAlpha = 1;
-		mainCtx.globalCompositeOperation = "source-over";
-		mainCtx.filter = "none";
-		mainCtx.drawImage(compositeCanvas, 0, 0, canvasW, canvasH);
-		mainCtx.restore();
+		if (renderer.canvas instanceof HTMLCanvasElement) {
+			mainCtx.save();
+			mainCtx.setTransform(1, 0, 0, 1, 0, 0);
+			mainCtx.clearRect(0, 0, canvasW, canvasH);
+			renderTransition(
+				mainCtx as CanvasRenderingContext2D,
+				canvasW,
+				canvasH,
+				outCanvas as CanvasImageSource,
+				inCanvas as CanvasImageSource,
+				progress,
+				this.params.type,
+			);
+			mainCtx.restore();
+		} else {
+			compositeCtx.setTransform(1, 0, 0, 1, 0, 0);
+			compositeCtx.clearRect(0, 0, canvasW, canvasH);
+			renderTransition(
+				compositeCtx,
+				canvasW,
+				canvasH,
+				outCanvas as CanvasImageSource,
+				inCanvas as CanvasImageSource,
+				progress,
+				this.params.type,
+			);
+			mainCtx.save();
+			mainCtx.setTransform(1, 0, 0, 1, 0, 0);
+			mainCtx.globalAlpha = 1;
+			mainCtx.globalCompositeOperation = "source-over";
+			mainCtx.filter = "none";
+			mainCtx.drawImage(compositeCanvas, 0, 0, canvasW, canvasH);
+			mainCtx.restore();
+		}
 	}
 }
