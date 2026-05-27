@@ -532,6 +532,37 @@
                 </button>
               </div>
 
+              <!-- Tab-specific guidance -->
+              <div
+                class="folder-dialog__guidance"
+                :class="`folder-dialog__guidance--${folderActiveTab}`"
+              >
+                <div v-if="folderActiveTab === 'segments'" class="folder-dialog__guidance-inner">
+                  <div class="folder-dialog__guidance-icon folder-dialog__guidance-icon--edit">
+                    <Edit :size="16" />
+                  </div>
+                  <div class="folder-dialog__guidance-text">
+                    <p class="folder-dialog__guidance-title">Edit segments</p>
+                    <p class="folder-dialog__guidance-body">
+                      Open a segment to edit subtitles, adjust subtitle positioning, change framing, fine-tune
+                      timing, and modify clip details.
+                    </p>
+                  </div>
+                </div>
+                <div v-else class="folder-dialog__guidance-inner">
+                  <div class="folder-dialog__guidance-icon folder-dialog__guidance-icon--publish">
+                    <Hammer :size="16" />
+                  </div>
+                  <div class="folder-dialog__guidance-text">
+                    <p class="folder-dialog__guidance-title">Quick build &amp; publish</p>
+                    <p class="folder-dialog__guidance-body">
+                      Preview detected clips, build exports, and publish from here. This tab is not for editing
+                      subtitles or positioning — use Segments for that.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <!-- Content -->
               <div
                 class="folder-dialog__content"
@@ -612,6 +643,11 @@
                         {{ getProjectDuration(project.id) }}
                       </div>
 
+                      <div class="folder-dialog__segment-editor-pill">
+                        <Edit :size="12" />
+                        <span>Open editor</span>
+                      </div>
+
                       <!-- Info -->
                       <div class="folder-dialog__segment-info">
                         <h3 class="folder-dialog__segment-name">{{ project.name }}</h3>
@@ -624,10 +660,10 @@
                       <div class="folder-dialog__segment-hover">
                         <button
                           class="folder-dialog__segment-action"
-                          title="Open Workspace"
+                          title="Edit segment — subtitles, positioning, framing, and clip details"
                           @click.stop="openWorkspace(project)"
                         >
-                          <Play :size="20" />
+                          <Edit :size="20" />
                         </button>
                         <button
                           v-if="
@@ -684,7 +720,8 @@
                       </div>
                       <h3 class="folder-dialog__clips-empty-title">No Clips Detected</h3>
                       <p class="folder-dialog__clips-empty-text">
-                        Run clip detection on individual segments to find viral moments.
+                        Run clip detection on a segment first. Detected clips will appear here for preview, quick
+                        builds, and publishing.
                       </p>
                     </div>
 
@@ -727,7 +764,10 @@
                         <PlayIcon :size="40" />
                       </div>
                       <h3 class="folder-dialog__player-empty-title">Select a Clip to Preview</h3>
-                      <p class="folder-dialog__player-empty-text">Click on any clip from the list to preview it here</p>
+                      <p class="folder-dialog__player-empty-text">
+                        Click a clip to preview, build, or publish. To edit subtitles or positioning, open the segment
+                        from the Segments tab.
+                      </p>
                     </div>
 
                     <!-- Video Player -->
@@ -7357,6 +7397,67 @@
     color: var(--sidebar-accent);
   }
 
+  /* ===== Tab guidance ===== */
+  .folder-dialog__guidance {
+    flex-shrink: 0;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--sidebar-border);
+    background-color: rgba(0, 0, 0, 0.15);
+  }
+
+  .folder-dialog__guidance--segments {
+    border-left: 3px solid var(--sidebar-accent);
+  }
+
+  .folder-dialog__guidance--clips {
+    border-left: 3px solid rgba(34, 197, 94, 0.85);
+  }
+
+  .folder-dialog__guidance-inner {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .folder-dialog__guidance-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 8px;
+  }
+
+  .folder-dialog__guidance-icon--edit {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .folder-dialog__guidance-icon--publish {
+    background-color: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+  }
+
+  .folder-dialog__guidance-text {
+    min-width: 0;
+  }
+
+  .folder-dialog__guidance-title {
+    margin: 0 0 0.25rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    line-height: 1.3;
+  }
+
+  .folder-dialog__guidance-body {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--sidebar-text-muted);
+  }
+
   /* ===== Content ===== */
   .folder-dialog__content {
     flex: 1;
@@ -7420,6 +7521,32 @@
   .folder-dialog__segment-card:hover {
     transform: scale(1.02);
     border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .folder-dialog__segment-editor-pill {
+    position: absolute;
+    bottom: 4.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 9999px;
+    background-color: rgba(6, 182, 212, 0.9);
+    color: #fff;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease;
+    white-space: nowrap;
+  }
+
+  .folder-dialog__segment-card:hover .folder-dialog__segment-editor-pill {
+    opacity: 1;
   }
 
   .folder-dialog__segment-card--selected {

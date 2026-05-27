@@ -8,6 +8,7 @@ import { useEditorUIState } from "../../composables/useEditorUIState";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { useBrandingConfig } from "../../composables/useBrandingConfig";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
+import type { RootNode } from "../../renderer/nodes/root-node";
 import { getLastFrameTime } from "../../lib/time";
 import type { TimelineElement, TimelineTrack } from "../../types/timeline";
 import { exposePreviewPerfGlobal } from "../../lib/preview-performance";
@@ -36,6 +37,7 @@ let lastFrame = -1;
 let lastScene: any = null;
 let lastRenderedTime = Number.NEGATIVE_INFINITY;
 let rendering = false;
+let pendingRender: { time: number; frame: number; tree: RootNode } | null = null;
 let idleTickCount = 0;
 let sceneRebuildIdleId: number | null = null;
 
@@ -214,28 +216,77 @@ watch(
 );
 
 let rafTickCount = 0;
+
+function runPreviewRender({
+	canvas,
+	renderer: r,
+	renderTree,
+	commitTime,
+	commitFrame,
+}: {
+	canvas: HTMLCanvasElement;
+	renderer: CanvasRenderer;
+	renderTree: RootNode;
+	commitTime: number;
+	commitFrame: number;
+}) {
+	const commitTree = renderTree;
+	rendering = true;
+	editor.renderer
+		.renderPreviewToTarget({ renderer: r, time: commitTime, targetCanvas: canvas })
+		.then(() => {
+			rendering = false;
+			const currentTree = editor.renderer.getRenderTree();
+			if (currentTree !== commitTree) {
+				if (pendingRender) {
+					requestAnimationFrame(flushPendingPreviewRender);
+				}
+				return;
+			}
+			lastFrame = commitFrame;
+			lastScene = commitTree;
+			lastRenderedTime = commitTime;
+
+			if (pendingRender) {
+				requestAnimationFrame(flushPendingPreviewRender);
+			}
+		})
+		.catch(() => {
+			rendering = false;
+			if (pendingRender) {
+				requestAnimationFrame(flushPendingPreviewRender);
+			}
+		});
+}
+
+function flushPendingPreviewRender() {
+	const canvas = canvasRef.value;
+	const r = renderer.value;
+	if (!canvas || !r || !pendingRender) return;
+
+	const { time, frame, tree } = pendingRender;
+	pendingRender = null;
+	if (rendering) return;
+	runPreviewRender({ canvas, renderer: r, renderTree: tree, commitTime: time, commitFrame: frame });
+}
+
 useRafLoop(() => {
 	rafTickCount++;
 	const canvas = canvasRef.value;
 	const r = renderer.value;
 	const renderTree = editor.renderer.getRenderTree();
 	if (!canvas || !r || !renderTree) return;
-	if (rendering) return;
 
 	const time = editor.playback.getCurrentTime();
 	const lastFrameTime = getLastFrameTime({ duration: renderTree.duration, fps: r.fps });
 	const renderTime = Math.min(time, lastFrameTime);
 	const frame = Math.floor(renderTime * r.fps);
 	const isPlaying = editor.playback.getIsPlaying();
-	// Re-render when the frame index changes, the tree changes, or time moves meaningfully while
-	// playing (avoids missing short transitions if rAF and playback timers rarely align on the
-	// same floor(time*fps) tick). When paused, small scrubs still update via frame index.
 	const timeMoved =
 		isPlaying && Math.abs(renderTime - lastRenderedTime) >= 1 / Math.max(24, r.fps * 2);
 
 	const needsRender = frame !== lastFrame || renderTree !== lastScene || timeMoved;
 
-	// When paused and nothing changed, throttle to ~15Hz after 250ms idle to save GPU.
 	if (!needsRender) {
 		idleTickCount++;
 		if (!isPlaying && idleTickCount > 15 && rafTickCount % 4 !== 0) return;
@@ -243,27 +294,21 @@ useRafLoop(() => {
 	}
 
 	idleTickCount = 0;
-	rendering = true;
-	const commitFrame = frame;
-	const commitTree = renderTree;
-	const commitTime = renderTime;
-	editor.renderer
-		.renderPreviewToTarget({ renderer: r, time: commitTime, targetCanvas: canvas })
-		.then(() => {
-			rendering = false;
-			// Async render can finish after a newer scene tree was published (e.g. transform
-			// drag). Do not advance lastScene to a stale tree — the next rAF will repaint.
-			const currentTree = editor.renderer.getRenderTree();
-			if (currentTree !== commitTree) {
-				return;
-			}
-			lastFrame = commitFrame;
-			lastScene = commitTree;
-			lastRenderedTime = commitTime;
-		})
-		.catch(() => {
-			rendering = false;
-		});
+
+	if (rendering) {
+		// Transitions render two layers + composite and can exceed one rAF; queue the latest frame.
+		pendingRender = { time: renderTime, frame, tree: renderTree };
+		return;
+	}
+
+	pendingRender = null;
+	runPreviewRender({
+		canvas,
+		renderer: r,
+		renderTree,
+		commitTime: renderTime,
+		commitFrame: frame,
+	});
 });
 
 const canvasBackground = computed(() => {

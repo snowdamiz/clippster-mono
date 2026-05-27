@@ -54,34 +54,9 @@ pub fn generate_video_path_hash(video_path: &str) -> String {
     format!("{:x}", hasher.finish())
 }
 
-// Extract local file path from video URL
+// Extract local file path from video URL (delegates to shared resolver).
 pub fn extract_local_path_from_url(video_url: &str) -> Result<String, String> {
-    // Handle localhost video URLs
-    if video_url.starts_with("http://localhost:48276/video/") {
-        let encoded_path = video_url
-            .strip_prefix("http://localhost:48276/video/")
-            .ok_or("Invalid video URL format")?;
-
-        // The path is base64 encoded, decode it
-        use base64::{engine::general_purpose, Engine as _};
-        let decoded_bytes = general_purpose::URL_SAFE_NO_PAD
-            .decode(encoded_path)
-            .or_else(|_| general_purpose::URL_SAFE.decode(encoded_path))
-            .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(encoded_path))
-            .or_else(|_| general_purpose::STANDARD.decode(encoded_path))
-            .map_err(|e| format!("Failed to decode base64 video path: {}", e))?;
-
-        let decoded_path = String::from_utf8(decoded_bytes)
-            .map_err(|e| format!("Failed to convert decoded path to string: {}", e))?;
-
-        Ok(decoded_path)
-    } else if video_url.starts_with("http://") {
-        // For other HTTP URLs, we can't get file metadata
-        Err("Cannot get file metadata for remote URLs".to_string())
-    } else {
-        // Assume it's already a local path
-        Ok(video_url.to_string())
-    }
+    super::ffmpeg_utils::resolve_local_media_path(video_url)
 }
 
 // Get file metadata for cache validation
@@ -912,23 +887,10 @@ pub async fn probe_video_duration(
     app: tauri::AppHandle,
     video_path: String,
 ) -> Result<f64, String> {
-    use tauri_plugin_shell::ShellExt;
-
     let local_path =
         extract_local_path_from_url(&video_path).unwrap_or_else(|_| video_path.clone());
 
-    let shell = app.shell();
-    let output = shell
-        .sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(["-nostdin", "-i", &local_path])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to probe video: {}", e))?;
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let duration = super::ffmpeg_utils::parse_duration_from_ffmpeg_output(&stderr)
-        .map_err(|e| format!("Failed to parse duration: {}", e))?;
+    let duration = super::ffmpeg_utils::probe_media_duration(&app, &local_path).await?;
 
     println!(
         "[Rust] probe_video_duration: {:.2}s for {}",

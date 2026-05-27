@@ -449,18 +449,13 @@ pub async fn extract_and_chunk_audio(
     let video_path_hash = crate::waveform::generate_video_path_hash(&video_path);
     let cached_audio_path_result = crate::waveform::get_audio_cache_file_path(&video_path_hash);
 
-    // Get video duration using FFmpeg header probe (just -i, no decoding)
-    println!("[Rust] Getting video duration (header probe)...");
-    let duration_output = shell
-        .sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(["-i", &video_path])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg for duration: {}", e))?;
+    let local_video_path = crate::ffmpeg_utils::resolve_local_media_path(&video_path)
+        .map_err(|e| format!("Invalid video path: {}", e))?;
 
-    let stderr = String::from_utf8_lossy(&duration_output.stderr);
-    let video_duration = parse_duration_from_ffmpeg_output(&stderr)
+    // Get video duration (ffmpeg stderr, ffprobe fallback)
+    println!("[Rust] Getting video duration for: {}", local_video_path);
+    let video_duration = crate::ffmpeg_utils::probe_media_duration(&app, &local_video_path)
+        .await
         .map_err(|e| format!("Failed to parse video duration: {}", e))?;
 
     println!("[Rust] Video duration: {:.2} seconds", video_duration);
@@ -553,7 +548,7 @@ pub async fn extract_and_chunk_audio(
             .ok_or("Invalid cached path")?
             .to_string()
     } else {
-        video_path.clone()
+        local_video_path.clone()
     };
 
     println!("[Rust] Using source for chunking: {}", source_path_str);

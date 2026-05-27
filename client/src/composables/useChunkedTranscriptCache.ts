@@ -10,6 +10,7 @@ import {
 } from '@/services/database';
 import { useAudioChunking, type AudioChunk } from './useAudioChunking';
 import { useToast } from '@/composables/useToast';
+import { normalizeLocalFilePathForFs } from '@/utils/normalizeLocalFilePath';
 
 export interface ChunkTranscriptionResult {
   chunkId: string;
@@ -121,7 +122,8 @@ export function useChunkedTranscriptCache(options: UseChunkedTranscriptCacheOpti
         showSuccessToast: options.showAudioChunkingToast ?? options.showCompletionToast,
         showErrorToast: options.showErrorToast,
       });
-      const chunkingResult = await extractAndChunkVideo(rawVideo.file_path, rawVideoId, {
+      const videoPathForChunking = normalizeLocalFilePathForFs(rawVideo.file_path);
+      const chunkingResult = await extractAndChunkVideo(videoPathForChunking, rawVideoId, {
         chunkDurationMinutes,
         overlapSeconds,
         startTime,

@@ -8,6 +8,7 @@ defmodule ClippsterServerWeb.UserPostsController do
   require Logger
 
   alias ClippsterServer.Campaigns
+  alias ClippsterServer.Campaigns.ClipperSocialAccount
   alias ClippsterServer.Campaigns.UserPost
   alias ClippsterServer.Organizations
   alias ClippsterServer.Social
@@ -57,6 +58,7 @@ defmodule ClippsterServerWeb.UserPostsController do
          {:ok, media_url} <- get_required_param(params, "media_url"),
          {:ok, account} <- get_user_account(user.id, account_id),
          :ok <- validate_platform(account, platform),
+         :ok <- validate_account_token_for_publish(account, platform_label),
          {:ok, post_data} <- publish_via_post_for_me(account, media_url, params) do
       post_attrs = %{
         user_id: user.id,
@@ -105,10 +107,25 @@ defmodule ClippsterServerWeb.UserPostsController do
         |> put_status(400)
         |> json(%{success: false, error: "Account is not a #{platform_label} account"})
 
+      {:error, :token_expired, message} ->
+        conn
+        |> put_status(401)
+        |> json(%{
+          success: false,
+          error: message,
+          error_code: "social_token_expired",
+          platform: platform
+        })
+
       {:error, :missing_param, param} ->
         conn
         |> put_status(400)
         |> json(%{success: false, error: "Missing required parameter: #{param}"})
+
+      {:error, reason} when is_binary(reason) ->
+        conn
+        |> put_status(422)
+        |> json(%{success: false, error: reason})
 
       {:error, reason} ->
         conn
@@ -493,35 +510,192 @@ defmodule ClippsterServerWeb.UserPostsController do
       {:ok, post} ->
         Logger.info("[UserPosts] PostForMe post created - id: #{post.id}, status: #{post.status}, scheduled_at: #{inspect(post.scheduled_at)}")
         Logger.info("[UserPosts] PostForMe raw response: #{inspect(post.raw)}")
-        
-        # Check for post results to see if there are any errors
-        case PostForMe.list_social_post_results(%{social_post_id: post.id}) do
-          {:ok, %{data: results}} when is_list(results) and length(results) > 0 ->
-            Enum.each(results, fn result ->
-              if result.success == false do
-                Logger.error("[UserPosts] PostForMe publishing failed for post #{post.id}: #{inspect(result.error)}")
-                Logger.error("[UserPosts] PostForMe result details: #{inspect(result)}")
-              else
-                Logger.info("[UserPosts] PostForMe publishing succeeded for post #{post.id}")
-              end
-            end)
-          _ ->
-            Logger.warning("[UserPosts] No PostForMe results found yet for post #{post.id}")
+
+        with :ok <- validate_post_for_me_account_token(post, account.provider_account_id),
+             :ok <- verify_post_for_me_publish_result(post.id, account.provider_account_id, post.status) do
+          {post_url, provider_post_id} = fetch_post_data_from_feed(account.provider_account_id, post.id)
+
+          {:ok,
+           %{
+             post_id: post.id || "pfm_post",
+             post_url: post_url,
+             provider_post_id: provider_post_id
+           }}
         end
-        
-        # Try to fetch the post URL and provider_post_id from the feed
-        {post_url, provider_post_id} = fetch_post_data_from_feed(account.provider_account_id, post.id)
-        {:ok, %{
-          post_id: post.id || "pfm_post", 
-          post_url: post_url,
-          provider_post_id: provider_post_id
-        }}
 
       {:error, reason} ->
         Logger.error("[UserPosts] PostForMe post creation failed: #{inspect(reason)}")
         {:error, reason}
     end
   end
+
+  defp validate_account_token_for_publish(%ClipperSocialAccount{} = account, platform_label) do
+    if account_token_expired?(account) do
+      {:error, :token_expired, token_expired_message(platform_label)}
+    else
+      :ok
+    end
+  end
+
+  defp validate_account_token_for_publish(_account, _platform_label), do: :ok
+
+  defp account_token_expired?(%ClipperSocialAccount{token_expires_at: nil}), do: false
+
+  defp account_token_expired?(%ClipperSocialAccount{token_expires_at: expires_at}) do
+    DateTime.compare(expires_at, DateTime.utc_now()) == :lt
+  end
+
+  defp token_expired_message(platform_label) do
+    "Your #{platform_label} connection has expired. Disconnect and reconnect it in Account Connections, then try again."
+  end
+
+  defp validate_post_for_me_account_token(post, provider_account_id) do
+    post.raw
+    |> Map.get("social_accounts", [])
+    |> Enum.find(fn account -> account["id"] == provider_account_id end)
+    |> case do
+      %{"access_token_expires_at" => expires_at} when is_binary(expires_at) ->
+        if post_for_me_token_expired?(expires_at) do
+          Logger.error(
+            "[UserPosts] PostForMe reports expired token for account #{provider_account_id} (expires #{expires_at})"
+          )
+
+          {:error, :token_expired,
+           token_expired_message(
+             post.raw
+             |> Map.get("social_accounts", [])
+             |> account_platform_label(provider_account_id)
+           )}
+        else
+          :ok
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp account_platform_label(accounts, provider_account_id) do
+    accounts
+    |> Enum.find_value("social", fn account ->
+      if account["id"] == provider_account_id do
+        account["platform"] || "social"
+      end
+    end)
+    |> String.capitalize()
+  end
+
+  defp post_for_me_token_expired?(expires_at) do
+    case DateTime.from_iso8601(expires_at) do
+      {:ok, dt, _} -> DateTime.compare(dt, DateTime.utc_now()) == :lt
+      _ -> false
+    end
+  end
+
+  # PostForMe's social-post-results list may include unrelated rows when filtered by
+  # social_post_id; only trust results that match both the post and target account.
+  defp verify_post_for_me_publish_result(post_id, provider_account_id, initial_status, retries_left \\ 15) do
+    case fetch_post_for_me_result_for_account(post_id, provider_account_id) do
+      {:ok, _result} ->
+        Logger.info(
+          "[UserPosts] PostForMe publishing succeeded for post #{post_id} (account #{provider_account_id})"
+        )
+
+        :ok
+
+      {:error, :failed, error_message} ->
+        Logger.error(
+          "[UserPosts] PostForMe publishing failed for post #{post_id} (account #{provider_account_id}): #{error_message}"
+        )
+
+        {:error, error_message}
+
+      :pending when retries_left > 0 ->
+        Logger.info(
+          "[UserPosts] PostForMe result not ready for post #{post_id} (status=#{initial_status}), retrying in 2s (#{retries_left} left)"
+        )
+
+        Process.sleep(2_000)
+        verify_post_for_me_publish_result(post_id, provider_account_id, initial_status, retries_left - 1)
+
+      :pending ->
+        Logger.warning(
+          "[UserPosts] PostForMe publish result unavailable for post #{post_id} after retries"
+        )
+
+        {:error, "Publish could not be confirmed. Please check your social account and try again."}
+
+      {:error, :api, reason} ->
+        Logger.warning(
+          "[UserPosts] Could not verify PostForMe publish result for post #{post_id}: #{inspect(reason)}"
+        )
+
+        {:error, format_post_for_me_error(reason)}
+    end
+  end
+
+  defp fetch_post_for_me_result_for_account(post_id, provider_account_id) do
+    result_status =
+      case PostForMe.list_social_post_results(%{"social_post_id" => post_id}) do
+        {:ok, %{data: results}} when is_list(results) ->
+          matching =
+            Enum.filter(results, fn result ->
+              result.post_id == post_id and result.social_account_id == provider_account_id
+            end)
+
+          case matching do
+            [] ->
+              :pending
+
+            results ->
+              failures = Enum.filter(results, &(&1.success == false))
+
+              if failures != [] do
+                error_message =
+                  failures
+                  |> Enum.map(fn r -> r.error || "Unknown publish error" end)
+                  |> Enum.join("; ")
+
+                {:error, :failed, error_message}
+              else
+                {:ok, List.first(results)}
+              end
+          end
+
+        {:error, reason} ->
+          {:error, :api, reason}
+      end
+
+    case result_status do
+      :pending -> fetch_post_status_fallback(post_id)
+      other -> other
+    end
+  end
+
+  defp fetch_post_status_fallback(post_id) do
+    case PostForMe.get_social_post(post_id) do
+      {:ok, %{status: status}} when status in ["published", "completed", "success"] ->
+        {:ok, %{success: true}}
+
+      {:ok, %{status: status}} when status in ["failed", "error"] ->
+        {:error, :failed, "Post For Me reported status: #{status}"}
+
+      {:ok, %{status: "processing"}} ->
+        :pending
+
+      {:ok, _} ->
+        :pending
+
+      {:error, reason} ->
+        {:error, :api, reason}
+    end
+  end
+
+  defp format_post_for_me_error(%ClippsterServer.Social.Providers.PostForMe.ApiError{} = error),
+    do: error.message
+
+  defp format_post_for_me_error(reason) when is_binary(reason), do: reason
+  defp format_post_for_me_error(reason), do: inspect(reason)
 
   # Fetch post URL and provider_post_id from PostForMe feed by post ID
   # Retries up to 3 times with 3-second delays to allow PostForMe's feed to index the post
