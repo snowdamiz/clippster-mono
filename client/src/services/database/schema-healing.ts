@@ -83,6 +83,16 @@ export async function healSchema(): Promise<void> {
     // --- Migration 089: auto_dvr_enabled on creator_profiles ---
     await addColumnIfMissing(db, 'creator_profiles', 'auto_dvr_enabled', 'INTEGER DEFAULT 0');
 
+    // --- Migration 100: persistent live monitoring on monitored_streamers ---
+    await addColumnIfMissing(db, 'monitored_streamers', 'persistent_auto_detect', 'INTEGER DEFAULT 0');
+    await addColumnIfMissing(db, 'monitored_streamers', 'persistent_record', 'INTEGER DEFAULT 0');
+    await addColumnIfMissing(db, 'monitored_streamers', 'auto_detect_prompt_id', 'TEXT');
+    await addColumnIfMissing(db, 'monitored_streamers', 'auto_detect_prompt_content', 'TEXT');
+    await addColumnIfMissing(db, 'monitored_streamers', 'auto_detect_use_creator_layout', 'INTEGER DEFAULT 0');
+    await addColumnIfMissing(db, 'monitored_streamers', 'auto_detect_creator_profile_id', 'TEXT');
+    await addColumnIfMissing(db, 'monitored_streamers', 'record_use_creator_layout', 'INTEGER DEFAULT 0');
+    await addColumnIfMissing(db, 'monitored_streamers', 'record_creator_profile_id', 'TEXT');
+
     // --- Migration 099: clip_build_defaults on creator_profiles (opt-in clip-build defaults) ---
     await addColumnIfMissing(db, 'creator_profiles', 'clip_build_defaults', 'TEXT DEFAULT NULL');
 

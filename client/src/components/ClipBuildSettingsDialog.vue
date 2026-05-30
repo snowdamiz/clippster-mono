@@ -552,7 +552,7 @@
                       <!-- Disabled when orgs/campaigns are selected (branding comes from their profiles) -->
                       <div v-if="!isFreeTier" class="build-dialog__intro-outro-section" :class="{ 'build-dialog__intro-outro-section--disabled': hasOrgOrCampaignSelected }">
                       <div v-if="hasOrgOrCampaignSelected" class="build-dialog__disabled-notice">
-                        <span>Intro/Outro controlled by organization or campaign branding</span>
+                        <span>Branding from organization or campaign (applied per build target)</span>
                       </div>
                       <!-- Intro Compact Selector -->
                       <div class="build-dialog__field">
@@ -878,6 +878,7 @@
     SubtitleSettings,
     IntroOutroRef,
   } from '@/types';
+  import { resolveSelectionBrandingPreview } from '@/composables/useOrgCampaignBuildBranding';
 
   // Extended IntroOutro type that can be a local asset or server org asset
   interface IntroOutroItem extends Omit<IntroOutro, 'id'> {
@@ -2300,6 +2301,28 @@
     }
   }
   
+  async function syncBrandingPreviewFromSelection() {
+    if (!hasOrgOrCampaignSelected.value) {
+      selectedIntro.value = props.defaultIntro ? (props.defaultIntro as IntroOutroItem) : null;
+      selectedOutro.value = props.defaultOutro ? (props.defaultOutro as IntroOutroItem) : null;
+      return;
+    }
+
+    const selectedCampaign =
+      availableCampaignSelections.value.find((c) => c.selected)?.campaign ?? null;
+    const selectedOrg = selectedCampaign
+      ? null
+      : availableOrgs.value.find((o) => o.selected)?.profile ?? null;
+
+    try {
+      const branding = await resolveSelectionBrandingPreview(selectedOrg, selectedCampaign);
+      selectedIntro.value = branding.intro;
+      selectedOutro.value = branding.outro;
+    } catch (e) {
+      console.warn('[ClipBuildSettingsDialog] Failed to sync branding preview:', e);
+    }
+  }
+
   // Toggle org selection
   function toggleOrgSelection(index: number) {
     const org = availableOrgs.value[index];
@@ -2307,6 +2330,7 @@
     if (!org.selected) {
       org.aspectRatios = [];
     }
+    void syncBrandingPreviewFromSelection();
   }
   
   // Toggle aspect ratio for org
@@ -2327,6 +2351,7 @@
     if (!campaign.selected) {
       campaign.aspectRatios = [];
     }
+    void syncBrandingPreviewFromSelection();
   }
   
   // Toggle aspect ratio for campaign
@@ -2454,28 +2479,7 @@
   async function selectCampaign(campaign: Campaign) {
     selectedCampaign.value = campaign;
     showCampaignDropdown.value = false;
-    
-    // Fetch campaign branding assets to override org branding
-    await loadCampaignBranding(campaign);
-  }
-
-  // Load campaign branding assets and override org branding
-  async function loadCampaignBranding(campaign: Campaign) {
-    try {
-      // Campaign branding overrides org branding completely
-      // This means: no org watermark, no org overlay, no org intro/outro
-      // Only campaign-specific branding is applied
-      
-      // For now, we'll pass the campaign context to the build command
-      // The build command will fetch the campaign's branding profile assets
-      // and apply them instead of org assets
-      
-      console.log('[ClipBuildSettingsDialog] Campaign selected:', campaign.title);
-      console.log('[ClipBuildSettingsDialog] Campaign branding will override org branding');
-      console.log('[ClipBuildSettingsDialog] Campaign branding_profile_id:', campaign.branding_profile_id);
-    } catch (error) {
-      console.error('[ClipBuildSettingsDialog] Failed to load campaign branding:', error);
-    }
+    await syncBrandingPreviewFromSelection();
   }
 
   // Reset isSubmitting when dialog opens so subsequent builds work

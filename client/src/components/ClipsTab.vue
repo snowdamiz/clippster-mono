@@ -3795,6 +3795,7 @@
               console.log('[ClipsTab] Org profile outro resolved:', profile.outro_id);
             }
           }
+
         } catch (e) {
           console.warn('[ClipsTab] Failed to resolve org branding profile intro/outro:', e);
         }
@@ -3856,6 +3857,44 @@
       } else if (activeCampaignId) {
         targetWatermarkSettings = null;
         console.log('[ClipsTab] Cleared org watermark for campaign build (no campaign watermark set)');
+      } else if (
+        !activeCampaignId &&
+        activeBrandingType === 'org' &&
+        targetResolvedProfile?.watermark_id
+      ) {
+        const { expandWatermarkForBuild } = await import('@/composables/useOrgCampaignBuildBranding');
+        const orgWm = await resolveWatermarkById(targetResolvedProfile.watermark_id);
+        if (orgWm) {
+          let wmSettings: Record<string, unknown> | null = null;
+          if (targetResolvedProfile.watermark_settings) {
+            try {
+              wmSettings =
+                typeof targetResolvedProfile.watermark_settings === 'string'
+                  ? JSON.parse(targetResolvedProfile.watermark_settings)
+                  : targetResolvedProfile.watermark_settings;
+            } catch {
+              wmSettings = null;
+            }
+          }
+          const defaultPos =
+            (wmSettings as Record<string, { position?: { x: number; y: number; opacity: number; scale: number } }>)?.[
+              '16:9'
+            ]?.position ?? { x: 12, y: 92, opacity: 80, scale: 20 };
+
+          const expanded = await expandWatermarkForBuild({
+            enabled: true,
+            watermarkId: targetResolvedProfile.watermark_id,
+            positionX: defaultPos.x,
+            positionY: defaultPos.y,
+            opacity: defaultPos.opacity,
+            scale: defaultPos.scale,
+            perRatioSettings: wmSettings as any,
+          });
+          if (expanded) {
+            targetWatermarkSettings = expanded as unknown as typeof targetWatermarkSettings;
+            console.log('[ClipsTab] Org watermark applied:', targetResolvedProfile.watermark_id);
+          }
+        }
       }
 
       console.log('[ClipsTab] Campaign branding resolution result:', {

@@ -79,6 +79,24 @@
                 </p>
               </div>
 
+              <!-- 60-minute cap (My Creators persistent auto-detect) -->
+              <div
+                v-if="showSixtyMinuteCap"
+                class="realtime-dialog__alert realtime-dialog__alert--info"
+              >
+                <Info :size="16" />
+                <div class="flex-1">
+                  <p class="font-medium text-xs sm:text-sm mb-0.5 sm:mb-1">60-Minute Auto-Detect Limit</p>
+                  <p class="text-[10px] sm:text-xs opacity-80">
+                    Auto-detect runs for up to <strong>60 minutes</strong> or until the stream ends,
+                    whichever comes first. If this was enabled from My Creators, that Auto setting
+                    stays selected for future streams. To detect another 60 minutes of the same
+                    live stream, go to <strong>Live Clip</strong> and click <strong>Auto</strong>
+                    on that stream.
+                  </p>
+                </div>
+              </div>
+
               <!-- Cost Warning -->
               <div class="realtime-dialog__alert realtime-dialog__alert--warning">
                 <AlertCircle :size="16" />
@@ -86,7 +104,12 @@
                   <p class="font-medium text-xs sm:text-sm mb-0.5 sm:mb-1">Cost: 1 Credit Per Minute</p>
                   <p class="text-[10px] sm:text-xs opacity-80">
                     Real-time detection runs continuously and costs <strong>1 credit per minute</strong>.
-                    Detection will only stop when you manually click "Stop" or the stream ends.
+                    <template v-if="showSixtyMinuteCap">
+                      While enabled on My Creators, the automatic run is capped at 60 minutes as described above.
+                    </template>
+                    <template v-else>
+                      Detection will only stop when you manually click "Stop" or the stream ends.
+                    </template>
                   </p>
                   <p v-if="estimatedCost > 0" class="text-[10px] sm:text-xs opacity-60 mt-1">
                     Estimated cost for 1 hour: <strong>{{ estimatedCost }} credits</strong>
@@ -103,7 +126,10 @@
                     <li>AI analyzes the stream in real-time every 30 seconds</li>
                     <li>Clips appear in Projects within 1-2 minutes of detection</li>
                     <li>You can review, edit, and build clips at any time</li>
-                    <li>Detection runs until you stop it or the stream ends</li>
+                    <li v-if="showSixtyMinuteCap">
+                      Use Live Clip Auto again to detect another 60 minutes of the same stream
+                    </li>
+                    <li v-else>Detection runs until you stop it or the stream ends</li>
                   </ul>
                 </div>
               </div>
@@ -116,7 +142,7 @@
               </button>
               <button @click="confirm" class="realtime-dialog__btn realtime-dialog__btn--primary">
                 <Sparkles :size="16" />
-                Start Detection
+                {{ showSixtyMinuteCap ? 'Enable Auto Detect' : 'Start Detection' }}
               </button>
             </div>
           </div>
@@ -143,6 +169,8 @@
     creatorLayoutEligible?: boolean;
     /** Display name of the creator whose layout would be applied. */
     creatorLayoutCreatorName?: string | null;
+    /** Show My Creators 60-minute auto-detect cap messaging. */
+    showSixtyMinuteCap?: boolean;
   }
 
   interface Emits {
@@ -157,6 +185,7 @@
     prompts: () => [],
     creatorLayoutEligible: false,
     creatorLayoutCreatorName: null,
+    showSixtyMinuteCap: false,
   });
 
   const emit = defineEmits<Emits>();

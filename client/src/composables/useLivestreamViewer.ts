@@ -176,6 +176,7 @@ export function useLivestreamViewer() {
     removeKickDvrSession,
     removeTwitchDvrSession,
     removeTwitterDvrSession,
+    tryRemoveEndedTwitterBroadcastById,
     removeYouTubeDvrSession,
     removeRumbleDvrSession,
     registerViewerSession,
@@ -2856,6 +2857,9 @@ export function useLivestreamViewer() {
           } else if (currentPlatform === 'Twitter') {
             await stopTwitterRecordingSession(state.value.tempSessionId);
             removeTwitterDvrSession(currentStreamerId);
+            if (currentStreamerId) {
+              await tryRemoveEndedTwitterBroadcastById(currentStreamerId, 'viewer-closed');
+            }
           }
         } catch (error) {
           console.warn('[LiveViewer] Failed to cleanup temp session:', error);

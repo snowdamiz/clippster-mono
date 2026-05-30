@@ -37,7 +37,11 @@
   import { useSocialTokenMonitor } from '@/composables/useSocialTokenMonitor';
   import { useMessagingStore } from '@/stores/messaging';
   import { useUserPreferencesStore } from '@/stores/userPreferences';
-  import { initGlobalLiveStatusPolling, stopGlobalLiveStatusPolling } from '@/composables/useLivestreamMonitoring';
+  import {
+    initGlobalLiveStatusPolling,
+    stopGlobalLiveStatusPolling,
+    initPersistentLiveMonitoringPolling,
+  } from '@/composables/useLivestreamMonitoring';
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
 
@@ -543,6 +547,10 @@
     // It makes N external API calls and should never block the loading screen.
     initGlobalLiveStatusPolling().catch((error) => {
       console.error('[App] Failed to initialize global live status polling:', error);
+    });
+
+    initPersistentLiveMonitoringPolling().catch((error) => {
+      console.error('[App] Failed to initialize persistent live monitoring polling:', error);
     });
   }
 

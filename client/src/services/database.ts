@@ -235,6 +235,7 @@ export {
 export {
   getAllMonitoredStreamers,
   getAutoDvrStreamers,
+  getPersistentLiveMonitoringStreamers,
   getMonitoredStreamer,
   getMonitoredStreamerByMint,
   createMonitoredStreamer,

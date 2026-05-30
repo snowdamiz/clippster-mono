@@ -97,6 +97,51 @@ export function extractTwitterBroadcastId(url: string): string | null {
 }
 
 /**
+ * True when the URL is a direct live-session link (broadcast, Space, or event).
+ * Profile/handle URLs are not supported for live monitoring.
+ */
+export function isDirectTwitterLiveUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') {
+    return false;
+  }
+  const trimmed = url.trim().toLowerCase();
+  return (
+    trimmed.includes('/i/broadcasts/') ||
+    trimmed.includes('/i/spaces/') ||
+    trimmed.includes('/i/events/')
+  );
+}
+
+/**
+ * True when input looks like a creator profile URL or @handle (not a live session URL).
+ */
+export function isTwitterProfileOrHandleInput(input: string): boolean {
+  if (!input || typeof input !== 'string') {
+    return false;
+  }
+  const trimmed = input.trim();
+  if (trimmed.startsWith('@')) {
+    return true;
+  }
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+    return !trimmed.includes('/i/');
+  }
+  try {
+    const url = new URL(trimmed);
+    if (!url.hostname.includes('twitter.com') && !url.hostname.includes('x.com')) {
+      return false;
+    }
+    if (isDirectTwitterLiveUrl(trimmed)) {
+      return false;
+    }
+    const pathParts = url.pathname.split('/').filter(Boolean);
+    return pathParts.length > 0 && pathParts[0] !== 'i';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Determine if URL is a broadcast (video) or Space (audio)
  */
 export function getTwitterBroadcastType(url: string): 'broadcast' | 'space' | null {

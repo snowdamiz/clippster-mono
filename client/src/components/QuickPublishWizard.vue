@@ -482,7 +482,7 @@
                       <!-- Disabled when orgs/campaigns are selected (branding comes from their profiles) -->
                       <div v-if="!isFreeTier" class="build-dialog__intro-outro-section" :class="{ 'build-dialog__intro-outro-section--disabled': hasOrgOrCampaignSelected }">
                         <div v-if="hasOrgOrCampaignSelected" class="build-dialog__disabled-notice">
-                          <span>Intro/Outro controlled by organization or campaign branding</span>
+                          <span>Branding from organization or campaign (applied per build target)</span>
                         </div>
                         <!-- Intro Compact Selector -->
                         <div class="build-dialog__field">
@@ -1183,6 +1183,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { useAuthStore } from '@/stores/auth';
 import { useFreeTierLimits } from '@/composables/useFreeTierLimits';
 import { useClipBuildPipeline } from '@/composables/useClipBuildPipeline';
+import {
+  resolveOrgBuildBranding,
+  resolveCampaignBuildBranding,
+  resolveSelectionBrandingPreview,
+  type OrgCampaignBuildBranding,
+} from '@/composables/useOrgCampaignBuildBranding';
 import { useBackgroundPublish, type PublishTarget } from '@/composables/useBackgroundPublish';
 import { getMyGlobalBrandingCampaigns, getCampaignsByCreatorProfile, type Campaign } from '@/services/campaignApi';
 import { getUserAssignedCreatorProfiles, type ServerOrganizationCreatorProfile } from '@/services/organizationProfilesApi';
@@ -1607,8 +1613,11 @@ const creatorProfileOutro = computed<IntroOutroItem | null>(() => {
   return null;
 });
 
-// Priority order: Campaign > Creator Profile > Manual Selection
+// Priority order: Org/Campaign build targets > Campaign > Creator Profile > Manual Selection
 const selectedIntro = computed(() => {
+  if (hasOrgOrCampaignSelected.value && orgCampaignBuildPreview.value.intro) {
+    return orgCampaignBuildPreview.value.intro;
+  }
   console.log('[QuickPublishWizard] selectedIntro computed - isForCampaign:', isForCampaign.value, 'campaignIntro:', campaignIntro.value?.name, 'creatorProfileIntro:', creatorProfileIntro.value?.name, 'selectedIntroId:', selectedIntroId.value);
   // Campaign takes highest priority
   if (isForCampaign.value && campaignIntro.value) return campaignIntro.value;
@@ -1619,6 +1628,9 @@ const selectedIntro = computed(() => {
 });
 
 const selectedOutro = computed(() => {
+  if (hasOrgOrCampaignSelected.value && orgCampaignBuildPreview.value.outro) {
+    return orgCampaignBuildPreview.value.outro;
+  }
   console.log('[QuickPublishWizard] selectedOutro computed - isForCampaign:', isForCampaign.value, 'campaignOutro:', campaignOutro.value?.name, 'creatorProfileOutro:', creatorProfileOutro.value?.name, 'selectedOutroId:', selectedOutroId.value);
   // Campaign takes highest priority
   if (isForCampaign.value && campaignOutro.value) return campaignOutro.value;
@@ -2423,303 +2435,42 @@ function getSelectedAccountLabel(platformId: string): string | null {
   return null;
 }
 
+const orgCampaignBuildPreview = ref<OrgCampaignBuildBranding>({
+  intro: null,
+  outro: null,
+  watermark: null,
+});
+
+async function syncBrandingPreviewFromSelection() {
+  if (!hasOrgOrCampaignSelected.value) {
+    orgCampaignBuildPreview.value = { intro: null, outro: null, watermark: null };
+    return;
+  }
+
+  const selectedCampaign =
+    availableCampaignSelections.value.find((c) => c.selected)?.campaign ?? null;
+  const selectedOrg = selectedCampaign
+    ? null
+    : availableOrgs.value.find((o) => o.selected)?.profile ?? null;
+
+  try {
+    orgCampaignBuildPreview.value = await resolveSelectionBrandingPreview(
+      selectedOrg,
+      selectedCampaign
+    );
+  } catch (e) {
+    console.warn('[QuickPublishWizard] Failed to sync branding preview:', e);
+  }
+}
+
 // Helper: Load branding assets for an organization target
 async function loadOrgBranding(orgProfile: ServerOrganizationCreatorProfile) {
-  let intro: IntroOutroItem | null = null;
-  let outro: IntroOutroItem | null = null;
-  let watermark: any = null;
-  
-  // Load intro
-  if (orgProfile.intro?.url) {
-    try {
-      const introResult = await ensureAssetDownloaded({
-        id: orgProfile.intro.id,
-        name: orgProfile.intro.name,
-        asset_type: 'intro',
-        url: orgProfile.intro.url,
-        organization_id: orgProfile.organization_id,
-        organization_name: orgProfile.organization_name || undefined,
-        duration: orgProfile.intro.duration || undefined,
-        thumbnail_url: orgProfile.intro.thumbnail_url || undefined,
-        inserted_at: Date.now().toString(),
-        updated_at: Date.now().toString(),
-      } as unknown as ServerOrganizationAsset);
-      
-      if (introResult.success && introResult.filePath) {
-        intro = {
-          id: `org-intro-${orgProfile.intro.id}`,
-          name: orgProfile.intro.name,
-          file_path: introResult.filePath,
-          type: 'intro' as const,
-          duration: orgProfile.intro.duration ? parseFloat(String(orgProfile.intro.duration)) : null,
-          thumbnail_path: orgProfile.intro.thumbnail_url || null,
-          thumbnail_generation_status: null,
-          created_at: Date.now(),
-          updated_at: Date.now(),
-        };
-      }
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load org intro:', e);
-    }
-  }
-  
-  // Load outro
-  if (orgProfile.outro?.url) {
-    try {
-      const outroResult = await ensureAssetDownloaded({
-        id: orgProfile.outro.id,
-        name: orgProfile.outro.name,
-        asset_type: 'outro',
-        url: orgProfile.outro.url,
-        organization_id: orgProfile.organization_id,
-        organization_name: orgProfile.organization_name || undefined,
-        duration: orgProfile.outro.duration || undefined,
-        thumbnail_url: orgProfile.outro.thumbnail_url || undefined,
-        inserted_at: Date.now().toString(),
-        updated_at: Date.now().toString(),
-      } as unknown as ServerOrganizationAsset);
-      
-      if (outroResult.success && outroResult.filePath) {
-        outro = {
-          id: `org-outro-${orgProfile.outro.id}`,
-          name: orgProfile.outro.name,
-          file_path: outroResult.filePath,
-          type: 'outro' as const,
-          duration: orgProfile.outro.duration ? parseFloat(String(orgProfile.outro.duration)) : null,
-          thumbnail_path: orgProfile.outro.thumbnail_url || null,
-          thumbnail_generation_status: null,
-          created_at: Date.now(),
-          updated_at: Date.now(),
-        };
-      }
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load org outro:', e);
-    }
-  }
-  
-  // Load watermark
-  if (orgProfile.watermark?.url) {
-    try {
-      const filename = `org-watermark-${orgProfile.watermark.id}.png`;
-      const filePath = await invoke<string>('download_org_asset_from_url', {
-        url: orgProfile.watermark.url,
-        filename,
-        assetType: 'watermarks',
-        organizationId: String(orgProfile.organization_id),
-      });
-      
-      let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
-      if (orgProfile.watermark_settings) {
-        try {
-          const wmSettings = typeof orgProfile.watermark_settings === 'string'
-            ? JSON.parse(orgProfile.watermark_settings as unknown as string)
-            : orgProfile.watermark_settings;
-          const ratioConfig = wmSettings['16:9'];
-          if (ratioConfig?.position) defaultPos = ratioConfig.position;
-        } catch (e) {
-          console.warn('[QuickPublishWizard] Failed to parse org watermark settings:', e);
-        }
-      }
-      
-      watermark = {
-        enabled: true,
-        watermarkId: `org-asset-${orgProfile.watermark.id}`,
-        positionX: defaultPos.x,
-        positionY: defaultPos.y,
-        opacity: defaultPos.opacity,
-        scale: defaultPos.scale,
-        perRatioSettings: (orgProfile.watermark_settings as any) ?? null,
-      };
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load org watermark:', e);
-    }
-  }
-  
-  return { intro, outro, watermark };
+  return resolveOrgBuildBranding(orgProfile);
 }
 
 // Helper: Load branding assets for a campaign target
 async function loadCampaignBranding(campaign: Campaign) {
-  let intro: IntroOutroItem | null = null;
-  let outro: IntroOutroItem | null = null;
-  let watermark: any = null;
-  
-  // Campaign intro (global_intro takes priority, then branding_profile.intro)
-  if (campaign.global_intro) {
-    try {
-      const introResult = await ensureAssetDownloaded({
-        id: campaign.global_intro.id,
-        name: campaign.global_intro.name,
-        asset_type: 'intro',
-        url: campaign.global_intro.url,
-        organization_id: campaign.organization_id,
-        organization_name: campaign.organization?.name || undefined,
-        duration: campaign.global_intro.duration || undefined,
-        thumbnail_url: campaign.global_intro.thumbnail_url || undefined,
-        inserted_at: Date.now().toString(),
-        updated_at: Date.now().toString(),
-      } as unknown as ServerOrganizationAsset);
-      
-      if (introResult.success && introResult.filePath) {
-        intro = {
-          id: `campaign-intro-${campaign.global_intro.id}`,
-          name: campaign.global_intro.name,
-          file_path: introResult.filePath,
-          type: 'intro' as const,
-          duration: campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : null,
-          thumbnail_path: campaign.global_intro.thumbnail_url || null,
-          thumbnail_generation_status: null,
-          created_at: Date.now(),
-          updated_at: Date.now(),
-        };
-      }
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load campaign global_intro:', e);
-    }
-  }
-  
-  // Campaign outro (global_outro takes priority, then branding_profile.outro)
-  if (campaign.global_outro) {
-    try {
-      const outroResult = await ensureAssetDownloaded({
-        id: campaign.global_outro.id,
-        name: campaign.global_outro.name,
-        asset_type: 'outro',
-        url: campaign.global_outro.url,
-        organization_id: campaign.organization_id,
-        organization_name: campaign.organization?.name || undefined,
-        duration: campaign.global_outro.duration || undefined,
-        thumbnail_url: campaign.global_outro.thumbnail_url || undefined,
-        inserted_at: Date.now().toString(),
-        updated_at: Date.now().toString(),
-      } as unknown as ServerOrganizationAsset);
-      
-      if (outroResult.success && outroResult.filePath) {
-        outro = {
-          id: `campaign-outro-${campaign.global_outro.id}`,
-          name: campaign.global_outro.name,
-          file_path: outroResult.filePath,
-          type: 'outro' as const,
-          duration: campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : null,
-          thumbnail_path: campaign.global_outro.thumbnail_url || null,
-          thumbnail_generation_status: null,
-          created_at: Date.now(),
-          updated_at: Date.now(),
-        };
-      }
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load campaign global_outro:', e);
-    }
-  }
-  
-  // Fallback to branding_profile intro/outro if global_intro/outro not set
-  const campaignCreatorProfile = campaign.branding_profile || campaign.creator_profiles?.[0] || campaign.creator_profile;
-  
-  if (!intro && campaignCreatorProfile?.intro?.url) {
-    try {
-      const introResult = await ensureAssetDownloaded({
-        id: campaignCreatorProfile.intro.id,
-        name: campaignCreatorProfile.intro.name,
-        asset_type: 'intro',
-        url: campaignCreatorProfile.intro.url,
-        organization_id: campaign.organization_id,
-        organization_name: campaign.organization?.name || undefined,
-        duration: campaignCreatorProfile.intro.duration || undefined,
-        thumbnail_url: campaignCreatorProfile.intro.thumbnail_url || undefined,
-        inserted_at: Date.now().toString(),
-        updated_at: Date.now().toString(),
-      } as unknown as ServerOrganizationAsset);
-      
-      if (introResult.success && introResult.filePath) {
-        intro = {
-          id: `campaign-intro-${campaignCreatorProfile.intro.id}`,
-          name: campaignCreatorProfile.intro.name,
-          file_path: introResult.filePath,
-          type: 'intro' as const,
-          duration: campaignCreatorProfile.intro.duration ? parseFloat(campaignCreatorProfile.intro.duration) : null,
-          thumbnail_path: campaignCreatorProfile.intro.thumbnail_url || null,
-          thumbnail_generation_status: null,
-          created_at: Date.now(),
-          updated_at: Date.now(),
-        };
-      }
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load campaign branding_profile intro:', e);
-    }
-  }
-  
-  if (!outro && campaignCreatorProfile?.outro?.url) {
-    try {
-      const outroResult = await ensureAssetDownloaded({
-        id: campaignCreatorProfile.outro.id,
-        name: campaignCreatorProfile.outro.name,
-        asset_type: 'outro',
-        url: campaignCreatorProfile.outro.url,
-        organization_id: campaign.organization_id,
-        organization_name: campaign.organization?.name || undefined,
-        duration: campaignCreatorProfile.outro.duration || undefined,
-        thumbnail_url: campaignCreatorProfile.outro.thumbnail_url || undefined,
-        inserted_at: Date.now().toString(),
-        updated_at: Date.now().toString(),
-      } as unknown as ServerOrganizationAsset);
-      
-      if (outroResult.success && outroResult.filePath) {
-        outro = {
-          id: `campaign-outro-${campaignCreatorProfile.outro.id}`,
-          name: campaignCreatorProfile.outro.name,
-          file_path: outroResult.filePath,
-          type: 'outro' as const,
-          duration: campaignCreatorProfile.outro.duration ? parseFloat(campaignCreatorProfile.outro.duration) : null,
-          thumbnail_path: campaignCreatorProfile.outro.thumbnail_url || null,
-          thumbnail_generation_status: null,
-          created_at: Date.now(),
-          updated_at: Date.now(),
-        };
-      }
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load campaign branding_profile outro:', e);
-    }
-  }
-  
-  // Campaign watermark
-  if (campaignCreatorProfile?.watermark?.url) {
-    try {
-      const filename = `campaign-watermark-${campaignCreatorProfile.watermark.id}.png`;
-      const filePath = await invoke<string>('download_org_asset_from_url', {
-        url: campaignCreatorProfile.watermark.url,
-        filename,
-        assetType: 'watermarks',
-        organizationId: String(campaign.organization_id),
-      });
-      
-      let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
-      if (campaignCreatorProfile.watermark_settings) {
-        try {
-          const wmSettings = typeof campaignCreatorProfile.watermark_settings === 'string'
-            ? JSON.parse(campaignCreatorProfile.watermark_settings as unknown as string)
-            : campaignCreatorProfile.watermark_settings;
-          const ratioConfig = wmSettings['16:9'];
-          if (ratioConfig?.position) defaultPos = ratioConfig.position;
-        } catch (e) {
-          console.warn('[QuickPublishWizard] Failed to parse campaign watermark settings:', e);
-        }
-      }
-      
-      watermark = {
-        enabled: true,
-        watermarkId: `org-asset-${campaignCreatorProfile.watermark.id}`,
-        positionX: defaultPos.x,
-        positionY: defaultPos.y,
-        opacity: defaultPos.opacity,
-        scale: defaultPos.scale,
-        perRatioSettings: (campaignCreatorProfile.watermark_settings as any) ?? null,
-      };
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load campaign watermark:', e);
-    }
-  }
-  
-  return { intro, outro, watermark };
+  return resolveCampaignBuildBranding(campaign);
 }
 
 // Generate BuildTarget array from org/campaign selections
@@ -2859,7 +2610,15 @@ async function startBuildProcess() {
           console.warn('[QuickPublishWizard] Failed to save campaign_id:', e);
         }
       }
-    } else {
+    }
+
+    if (watermark?.enabled && watermark?.watermarkId) {
+      const { expandWatermarkForBuild } = await import('@/composables/useOrgCampaignBuildBranding');
+      const expanded = await expandWatermarkForBuild(watermark, [target.aspectRatio]);
+      if (expanded) watermark = expanded;
+    }
+
+    if (target.type === 'personal') {
       // Personal build - use selected intro/outro from dialog
       intro = selectedIntro.value;
       outro = selectedOutro.value;
@@ -3422,6 +3181,7 @@ function toggleOrgSelection(index: number) {
   if (!org.selected) {
     org.aspectRatios = [];
   }
+  void syncBrandingPreviewFromSelection();
 }
 
 // Toggle aspect ratio for org
@@ -3442,6 +3202,7 @@ function toggleCampaignSelectionMulti(index: number) {
   if (!campaign.selected) {
     campaign.aspectRatios = [];
   }
+  void syncBrandingPreviewFromSelection();
 }
 
 // Toggle aspect ratio for campaign

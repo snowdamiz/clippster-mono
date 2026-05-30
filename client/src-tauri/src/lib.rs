@@ -888,6 +888,12 @@ pub fn run() {
                             sql: include_str!("../migrations/099_add_clip_text_overlay_to_clips.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 100,
+                            description: "add_persistent_live_monitoring",
+                            sql: include_str!("../migrations/100_add_persistent_live_monitoring.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
