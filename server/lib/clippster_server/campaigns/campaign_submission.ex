@@ -11,6 +11,7 @@ defmodule ClippsterServer.Campaigns.CampaignSubmission do
     Campaign,
     CampaignParticipant,
     CampaignPayment,
+    CampaignSubmissionMetricSnapshot,
     ClipperSocialAccount
   }
 
@@ -32,6 +33,11 @@ defmodule ClippsterServer.Campaigns.CampaignSubmission do
     field :comment_count, :integer, default: 0
     field :share_count, :integer, default: 0
     field :save_count, :integer, default: 0
+    field :reach_count, :integer, default: 0
+    field :impressions_count, :integer, default: 0
+    field :feed_match_status, :string
+    field :verification_warnings, {:array, :string}, default: []
+    field :metrics_last_synced_at, :utc_datetime
 
     # Author metadata from platform API
     field :author_username, :string
@@ -48,6 +54,7 @@ defmodule ClippsterServer.Campaigns.CampaignSubmission do
     belongs_to :social_account, ClipperSocialAccount
     belongs_to :verified_by_user, User, foreign_key: :verified_by_user_id
     has_many :payments, CampaignPayment, foreign_key: :submission_id
+    has_many :metric_snapshots, CampaignSubmissionMetricSnapshot, foreign_key: :submission_id
 
     timestamps(type: :utc_datetime)
   end

@@ -3,7 +3,7 @@
     <!-- Page Heading -->
     <div class="campaigns__heading">
       <h1 class="campaigns__title">Clipping Campaigns</h1>
-      <p class="campaigns__subtitle">Create and manage campaigns for clippers to promote your content</p>
+      <p class="campaigns__subtitle">Launch campaigns for streamers, musicians, podcasts, brands, and creators</p>
     </div>
 
     <!-- Loading State -->
@@ -595,6 +595,33 @@
                       ></textarea>
                       <p class="campaign-wizard__hint">{{ (campaignForm.description || '').length }}/500 characters</p>
                     </div>
+
+                    <div class="campaign-wizard__field">
+                      <label class="campaign-wizard__label">Campaign Type</label>
+                      <CustomDropdown
+                        v-model="campaignForm.content_vertical"
+                        :options="contentVerticalOptions"
+                        placeholder="Select campaign type"
+                        class="campaign-wizard__dropdown"
+                        trigger-class="campaign-wizard__dropdown-trigger"
+                      />
+                      <p class="campaign-wizard__hint">
+                        Helps clippers understand the campaign. Works for streamers, musicians, podcasts, brands, and more.
+                      </p>
+                    </div>
+
+                    <div class="campaign-wizard__field">
+                      <label class="campaign-wizard__label">
+                        Campaign Goal
+                        <span class="campaign-wizard__optional">(optional)</span>
+                      </label>
+                      <input
+                        v-model="campaignForm.campaign_goal"
+                        type="text"
+                        class="campaign-wizard__input"
+                        placeholder="Promote new song, grow podcast audience, launch product..."
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -970,8 +997,23 @@
                   </div>
                 </div>
 
-                <!-- Step 7: Review & Create -->
+                <!-- Step 7: Source Content -->
                 <div v-if="currentStep === 7" class="campaign-wizard__step">
+                  <div class="campaign-wizard__header">
+                    <div class="campaign-wizard__icon">
+                      <Link2 :size="28" />
+                    </div>
+                    <h2 class="campaign-wizard__title">Add source content</h2>
+                    <p class="campaign-wizard__subtitle">
+                      Share video, audio, or reference links clippers can open directly in Clippster
+                    </p>
+                  </div>
+
+                  <CampaignResourcesEditor v-model="campaignResources" />
+                </div>
+
+                <!-- Step 8: Review & Create -->
+                <div v-if="currentStep === 8" class="campaign-wizard__step">
                   <div class="campaign-wizard__header">
                     <div class="campaign-wizard__icon campaign-wizard__icon--success">
                       <Check :size="28" />
@@ -1094,7 +1136,7 @@
 
                 <!-- Skip Link for Optional Steps -->
                 <button
-                  v-if="currentStep >= 2 && currentStep <= 6"
+                  v-if="currentStep >= 2 && currentStep <= 7"
                   @click="nextStep"
                   class="campaign-wizard__skip"
                 >
@@ -1728,6 +1770,12 @@
                             (synced {{ formatRelativeTime(submission.views_last_updated_at) }})
                           </span>
                         </div>
+                        <SubmissionVerificationPanel
+                          :submission="submission"
+                          :analytics="submissionAnalytics[submission.id]"
+                          :syncing="syncingSubmissionId === submission.id"
+                          @sync="syncSubmissionMetricsAction(submission)"
+                        />
                       </div>
                       <div class="campaigns-detail__submission-actions">
                         <span
@@ -2196,6 +2244,7 @@
     ShieldCheck,
     Calculator,
     Image,
+    Link2,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import { Badge } from '@/components/ui/badge';
@@ -2237,6 +2286,10 @@
     updateSubmissionViews,
     uploadCampaignCoverImage,
     setCampaignCreatorProfiles,
+    setCampaignResources,
+    syncSubmissionMetrics,
+    getSubmissionAnalytics,
+    CAMPAIGN_CONTENT_VERTICALS,
     calculateCampaignPayments,
     listCampaignPayments,
     verifyPayment,
@@ -2245,8 +2298,12 @@
     type CampaignSubmission,
     type CampaignPayment,
     type CampaignCreatorProfile,
+    type CampaignResource,
+    type CampaignSubmissionAnalytics,
     getPlatformDisplayName,
   } from '@/services/campaignApi';
+  import CampaignResourcesEditor from '@/components/campaigns/CampaignResourcesEditor.vue';
+  import SubmissionVerificationPanel from '@/components/campaigns/SubmissionVerificationPanel.vue';
   import {
     listOrganizationCreatorProfiles,
     type ServerOrganizationCreatorProfile,
@@ -2283,6 +2340,9 @@
   const detailTab = ref('overview');
   const participants = ref<CampaignParticipant[]>([]);
   const submissions = ref<CampaignSubmission[]>([]);
+  const submissionAnalytics = ref<Record<number, CampaignSubmissionAnalytics>>({});
+  const syncingSubmissionId = ref<number | null>(null);
+  const campaignResources = ref<CampaignResource[]>([]);
   const loadingParticipants = ref(false);
   const loadingSubmissions = ref(false);
 
@@ -2421,11 +2481,19 @@
     // Creator and branding
     creator_profile_id: null as number | null,
     branding_profile_id: null as number | null,
+    content_vertical: null as string | null,
+    campaign_goal: '',
+    content_style_tags: [] as string[],
   });
+
+  const contentVerticalOptions = CAMPAIGN_CONTENT_VERTICALS.map((item) => ({
+    value: item.value,
+    label: item.label,
+  }));
 
   // Wizard state
   const currentStep = ref(1);
-  const totalSteps = 7;
+  const totalSteps = 8;
 
   // Validation for each wizard step
   const canProceed = computed(() => {
@@ -2449,6 +2517,9 @@
         // Campaign Assets - all optional
         return true;
       case 7:
+        // Source materials - optional
+        return true;
+      case 8:
         // Review - always allow proceed to create
         return true;
       default:
@@ -2792,6 +2863,7 @@
     coverImagePreview.value = '';
     selectedCreatorProfileIds.value = [];
     isGlobalBrandingSelected.value = false;
+    campaignResources.value = [];
     currentStep.value = 1;
     error.value = null;
     Object.assign(campaignForm, {
@@ -2812,6 +2884,9 @@
       clips_per_profile: 5,
       creator_profile_id: null,
       branding_profile_id: null,
+      content_vertical: null,
+      campaign_goal: '',
+      content_style_tags: [],
     });
     showCampaignDialog.value = true;
     await loadCreatorProfilesAndAssets();
@@ -2842,7 +2917,11 @@
       clips_per_profile: campaign.clips_per_profile || 5,
       creator_profile_id: campaign.creator_profile_id || null,
       branding_profile_id: campaign.branding_profile_id || null,
+      content_vertical: campaign.content_vertical || null,
+      campaign_goal: campaign.campaign_goal || '',
+      content_style_tags: campaign.content_style_tags || [],
     });
+    campaignResources.value = (campaign.resources || []).map(({ id, campaign_id, inserted_at, updated_at, download_target, ...rest }) => rest);
     showCampaignDialog.value = true;
     await loadCreatorProfilesAndAssets();
   };
@@ -2877,6 +2956,10 @@
         // For global branding, explicitly send null for creator_profile_id
         creator_profile_id: isGlobalBrandingSelected.value ? null : (campaignForm.creator_profile_id || undefined),
         branding_profile_id: campaignForm.branding_profile_id || undefined,
+        content_vertical: campaignForm.content_vertical || undefined,
+        campaign_goal: campaignForm.campaign_goal || undefined,
+        content_style_tags: campaignForm.content_style_tags,
+        resources: campaignResources.value,
       };
 
       console.log('[Campaign Save] About to save with:', {
@@ -2971,11 +3054,57 @@
       const response = await listCampaignSubmissions(Number(props.organizationId), selectedCampaign.value.id);
       if (response.success) {
         submissions.value = response.submissions;
+        await loadSubmissionAnalytics();
       }
     } catch (error) {
       console.error('Failed to load submissions:', error);
     } finally {
       loadingSubmissions.value = false;
+    }
+  };
+
+  const loadSubmissionAnalytics = async () => {
+    if (!props.organizationId) return;
+
+    const entries = await Promise.all(
+      submissions.value.map(async (submission) => {
+        try {
+          const response = await getSubmissionAnalytics(Number(props.organizationId), submission.id);
+          return [submission.id, response.analytics || null] as const;
+        } catch {
+          return [submission.id, null] as const;
+        }
+      })
+    );
+
+    submissionAnalytics.value = Object.fromEntries(entries.filter(([, analytics]) => analytics));
+  };
+
+  const syncSubmissionMetricsAction = async (submission: CampaignSubmission) => {
+    syncingSubmissionId.value = submission.id;
+    try {
+      const response = await syncSubmissionMetrics(Number(props.organizationId), submission.id);
+      if (response.success) {
+        if (response.submission) {
+          submissions.value = submissions.value.map((item) =>
+            item.id === submission.id ? response.submission! : item
+          );
+        }
+        if (response.analytics) {
+          submissionAnalytics.value = {
+            ...submissionAnalytics.value,
+            [submission.id]: response.analytics,
+          };
+        }
+        toast({ title: 'Metrics synced', description: 'Submission metrics updated from PostForMe.' });
+      } else {
+        toast({ title: 'Sync failed', description: response.error || 'Could not sync submission metrics' });
+      }
+    } catch (error) {
+      console.error('Failed to sync submission metrics:', error);
+      toast({ title: 'Sync failed', description: 'Could not sync submission metrics' });
+    } finally {
+      syncingSubmissionId.value = null;
     }
   };
 

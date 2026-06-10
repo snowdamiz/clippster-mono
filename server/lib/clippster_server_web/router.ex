@@ -1086,6 +1086,19 @@ defmodule ClippsterServerWeb.Router do
       :remove_creator_profile
     )
 
+    # Campaign source materials/resources
+    get(
+      "/organizations/:organization_id/campaigns/:id/resources",
+      CampaignController,
+      :list_resources
+    )
+
+    put(
+      "/organizations/:organization_id/campaigns/:id/resources",
+      CampaignController,
+      :set_resources
+    )
+
     # Campaign participants
     get(
       "/organizations/:organization_id/campaigns/:id/participants",
@@ -1140,6 +1153,18 @@ defmodule ClippsterServerWeb.Router do
       "/organizations/:organization_id/submissions/:submission_id/views",
       CampaignController,
       :update_views
+    )
+
+    post(
+      "/organizations/:organization_id/submissions/:submission_id/sync-metrics",
+      CampaignController,
+      :sync_submission_metrics
+    )
+
+    get(
+      "/organizations/:organization_id/submissions/:submission_id/analytics",
+      CampaignController,
+      :submission_analytics
     )
 
     # Campaign payments
