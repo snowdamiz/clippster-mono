@@ -111,12 +111,14 @@
     >
       <div class="flex items-center justify-between gap-3">
         <label class="flex items-center gap-2 cursor-pointer group">
-          <input
-            type="checkbox"
+          <Checkbox
             :checked="selectedRegion.aspectRatioLocked !== false"
-            @change="toggleAspectRatioLock"
-            class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0"
-          />
+            aria-label="Toggle aspect ratio lock"
+            class="h-4 w-4 rounded border-white/45 bg-white/10 text-white hover:border-emerald-300/80 data-[state=checked]:border-emerald-300 data-[state=checked]:bg-emerald-500 focus-visible:ring-emerald-400/50"
+            @update:checked="toggleAspectRatioLock"
+          >
+            <CheckIcon class="h-3.5 w-3.5" />
+          </Checkbox>
           <LockIcon
             v-if="selectedRegion.aspectRatioLocked !== false"
             class="w-3.5 h-3.5 text-emerald-400"
@@ -150,12 +152,14 @@
       <!-- Rounded Corners Control -->
       <div class="flex items-center gap-3 mt-2">
         <label class="flex items-center gap-2 cursor-pointer group shrink-0">
-          <input
-            type="checkbox"
+          <Checkbox
             :checked="selectedRegion.cornerRadiusEnabled === true"
-            @change="toggleCornerRadius"
-            class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-violet-500 focus:ring-violet-500 focus:ring-offset-0"
-          />
+            aria-label="Toggle rounded corners"
+            class="h-4 w-4 rounded border-white/45 bg-white/10 text-white hover:border-violet-300/80 data-[state=checked]:border-violet-300 data-[state=checked]:bg-violet-500 focus-visible:ring-violet-400/50"
+            @update:checked="toggleCornerRadius"
+          >
+            <CheckIcon class="h-3.5 w-3.5" />
+          </Checkbox>
           <RoundCornerIcon class="w-3.5 h-3.5 text-violet-400" />
           <span class="text-xs font-medium text-zinc-300 group-hover:text-zinc-100 transition-colors">Round Corners</span>
         </label>
@@ -333,9 +337,11 @@
     TrashIcon,
     Smartphone,
     CircleDotIcon as RoundCornerIcon,
+    CheckIcon,
   } from 'lucide-vue-next';
   import Hls from 'hls.js';
   import POIRegion from './POIRegion.vue';
+  import { Checkbox } from '@/components/ui/checkbox';
   import type { ManualRegion, ManualRegionRect } from '@/types';
   import { POI_REGION_COLORS } from '@/types';
   import { SOCIAL_OVERLAY_PRESETS } from '@/editor/constants/social-overlay-constants';

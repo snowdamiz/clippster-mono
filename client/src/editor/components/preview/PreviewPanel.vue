@@ -120,6 +120,30 @@ const tracks = computed(() => {
 	return editor.timeline.getTracks();
 });
 
+/** Invalidate decode cache when element timing changes so EOF frames don't stick after trims. */
+const videoTimingSignature = computed(() => {
+	void version.value;
+	const parts: string[] = [];
+	for (const track of editor.timeline.getTracks()) {
+		for (const el of track.elements) {
+			if (el.type === "video") {
+				parts.push(
+					`${el.id}:${el.trimStart}:${el.trimEnd}:${el.duration}:${el.speed ?? 1}`,
+				);
+			}
+		}
+	}
+	return parts.join("|");
+});
+
+let lastVideoTimingSignature = "";
+watch(videoTimingSignature, (signature) => {
+	if (lastVideoTimingSignature && signature !== lastVideoTimingSignature) {
+		videoCache.clearAll();
+	}
+	lastVideoTimingSignature = signature;
+});
+
 const mediaAssets = computed(() => {
 	void version.value;
 	return editor.media.getAssets();

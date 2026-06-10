@@ -421,6 +421,7 @@ export {
   getVideoEditorSourceCount,
   getNextSourceStartTime,
   getVideoEditorProjectsForClip,
+  getVideoEditorProjectsForRawVideo,
   type VideoEditorProject,
   type VideoEditorSource,
   type VideoEditorProjectWithSources,

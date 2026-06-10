@@ -22,6 +22,7 @@ import {
 	FileText,
 	Palette,
 	Stamp,
+	Sparkles,
 	Settings,
 } from "lucide-vue-next";
 
@@ -48,6 +49,7 @@ const TAB_KEYS = [
 	"transitions",
 	"captions",
 	"transcript",
+	"broll",
 	"filters",
 	"branding",
 	"settings",
@@ -64,6 +66,7 @@ const tabConfig: Record<Tab, { icon: any; label: string }> = {
 	transitions: { icon: ArrowRightLeft, label: "Transitions" },
 	captions: { icon: Captions, label: "Captions" },
 	transcript: { icon: FileText, label: "Transcript" },
+	broll: { icon: Sparkles, label: "B-roll" },
 	filters: { icon: Palette, label: "Filters" },
 	branding: { icon: Stamp, label: "Branding" },
 	settings: { icon: Settings, label: "Settings" },

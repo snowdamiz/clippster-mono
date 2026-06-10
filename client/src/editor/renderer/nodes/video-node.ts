@@ -1,7 +1,7 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
 import { videoCache } from "../../video-cache/service";
-import type { Transform, FlipState, ColorAdjustments, CropRect, ColorCurves, ColorWheels, BlendMode, MaskShape } from "../../types/timeline";
+import type { Transform, FlipState, ColorAdjustments, CropRect, ColorCurves, ColorWheels, BlendMode, MaskShape, MediaFitMode } from "../../types/timeline";
 import type { VideoEffect } from "../../types/effects";
 import type { ElementKeyframes } from "../../types/keyframes";
 import { evaluateKeyframeTrack, getKeyframedValue } from "../../types/keyframes";
@@ -13,6 +13,7 @@ import type { ManualSourceFramingPayload } from "@/types";
 import { computeAnimationTransforms, applyAnimationToContext } from "../effects/canvas-animations";
 import { hasMasks, setupMaskClip } from "./mask-compositor";
 import { drawCanvas169SourceFraming } from "../canvas-169-framing-draw";
+import { getElementSourceOutPoint } from "../../lib/timeline/trim-source-utils";
 
 const VIDEO_EPSILON = 1 / 1000;
 
@@ -50,10 +51,12 @@ export interface VideoNodeParams {
 	masks?: MaskShape[];
 	/** Main-track Use 16:9 framing when canvas aspect is not 16:9. */
 	canvasSourceFraming?: ManualSourceFramingPayload | null;
+	mediaFit?: MediaFitMode;
 }
 
 export class VideoNode extends BaseNode<VideoNodeParams> {
 	private prefetchedFrame: import("mediabunny").WrappedCanvas | null = null;
+	private prefetchedFrameTime: number | null = null;
 	private transitionExtension: { before: number; after: number } = { before: 0, after: 0 };
 	private chromakeyCanvas?: HTMLCanvasElement;
 	private chromakeyCtx?: CanvasRenderingContext2D | null;
@@ -109,14 +112,13 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 		const minElapsed = -this.transitionExtension.before;
 		const maxElapsed = this.params.duration + this.transitionExtension.after;
 		const elapsed = Math.max(minElapsed, Math.min(maxElapsed, rawElapsed));
-		const computedTrimEnd =
-			this.params.trimStart + this.params.duration * (this.params.speed ?? 1);
-		// `trimEnd` is often persisted as `0` when unset (e.g. bridge imports). `??` does not
-		// treat `0` as missing, which would clamp every decode request to media time 0.
-		const trimEnd =
-			this.params.trimEnd != null && this.params.trimEnd > this.params.trimStart
-				? this.params.trimEnd
-				: computedTrimEnd;
+		// Derive source out-point from visible timeline duration. Persisted `trimEnd` is tail
+		// trim (unused source after the clip) and must not be used as an absolute decode cap.
+		const trimEnd = getElementSourceOutPoint({
+			trimStart: this.params.trimStart,
+			duration: this.params.duration,
+			speed: this.params.speed,
+		});
 
 		// Extend the source-time clamp window by the transition extension so the decoded frame
 		// actually advances through the source during the transition instead of freezing at the
@@ -151,6 +153,7 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			file: this.params.file,
 			time: videoTime,
 		});
+		this.prefetchedFrameTime = videoTime;
 	}
 
 	async render({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
@@ -160,9 +163,14 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			return;
 		}
 
-		const prefetched = this.prefetchedFrame;
-		this.prefetchedFrame = null;
 		const videoTime = this.getSourceTime(time);
+		const prefetched =
+			this.prefetchedFrameTime !== null &&
+			Math.abs(this.prefetchedFrameTime - videoTime) < 0.05
+				? this.prefetchedFrame
+				: null;
+		this.prefetchedFrame = null;
+		this.prefetchedFrameTime = null;
 		const frame = prefetched ?? (await videoCache.getFrameAt({
 			sinkKey: this.params.elementId,
 			file: this.params.file,
@@ -324,12 +332,13 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 						undefined,
 					);
 				} else {
-					const containScale = Math.min(
-						renderer.width / mediaW,
-						renderer.height / mediaH,
-					);
-					const drawW = mediaW * containScale;
-					const drawH = mediaH * containScale;
+					const fit = this.params.mediaFit ?? "contain";
+					const fitScale =
+						fit === "cover"
+							? Math.max(renderer.width / mediaW, renderer.height / mediaH)
+							: Math.min(renderer.width / mediaW, renderer.height / mediaH);
+					const drawW = mediaW * fitScale;
+					const drawH = mediaH * fitScale;
 					const drawX = (renderer.width - drawW) / 2;
 					const drawY = (renderer.height - drawH) / 2;
 

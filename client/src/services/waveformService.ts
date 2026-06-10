@@ -50,6 +50,21 @@ interface CachedAudioData {
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+/** Video files probed as having no audio stream (stock B-roll, etc.). */
+const noAudioVideoPaths = new Set<string>();
+
+function isNoAudioExtractionError(error: unknown): boolean {
+  const msg = String(error);
+  return (
+    msg.includes('does not contain any stream') ||
+    msg.includes('Output file does not contain')
+  );
+}
+
+function emptyAudioData(duration: number): AudioData {
+  return { channelData: new Float32Array(0), sampleRate: 0, duration };
+}
+
 function openDatabase(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
 
@@ -322,6 +337,10 @@ async function extractAudioViaRust(localPath: string): Promise<string | null> {
     console.log('[WaveformService] ========================================');
     return null;
   } catch (error) {
+    if (isNoAudioExtractionError(error)) {
+      noAudioVideoPaths.add(localPath);
+      return null;
+    }
     console.error('[WaveformService] ✗ Rust audio extraction failed with error:', error);
     console.log('[WaveformService] ========================================');
     return null;
@@ -694,18 +713,42 @@ class WaveformServiceImpl {
       return data;
     }
 
+    // Video-only file (no audio stream) — skip extraction noise
+    if (localPath && noAudioVideoPaths.has(localPath)) {
+      const dur = probedDuration ?? 0;
+      this.setVideoDuration(normalizedPath, dur);
+      return emptyAudioData(dur);
+    }
+
     // Short video (≤5 min): extract audio and load into memory for instant peak calculation
     console.log(`[WaveformService] Short video (${probedDuration !== null ? (probedDuration / 60).toFixed(1) + ' min' : 'unknown duration'}), loading audio into memory`);
     this.peakMode.set(normalizedPath, 'cached');
 
     const extractedAudioPath = await extractAudioViaRust(localPath);
     if (!extractedAudioPath) {
-      console.warn('[WaveformService] FFmpeg extraction failed, attempting direct load');
-      const { data, fileSize } = await extractAudioFromFile(normalizedPath);
-      await setCachedAudio(normalizedPath, data, fileSize);
-      this.peakMode.set(normalizedPath, 'cached');
-      this.setVideoDuration(normalizedPath, data.duration);
-      return data;
+      if (noAudioVideoPaths.has(localPath)) {
+        const dur = probedDuration ?? 0;
+        this.setVideoDuration(normalizedPath, dur);
+        return emptyAudioData(dur);
+      }
+      try {
+        const { data, fileSize } = await extractAudioFromFile(normalizedPath);
+        await setCachedAudio(normalizedPath, data, fileSize);
+        this.peakMode.set(normalizedPath, 'cached');
+        this.setVideoDuration(normalizedPath, data.duration);
+        return data;
+      } catch (error) {
+        if (
+          (error instanceof DOMException && error.name === 'EncodingError') ||
+          isNoAudioExtractionError(error)
+        ) {
+          noAudioVideoPaths.add(localPath);
+          const dur = probedDuration ?? 0;
+          this.setVideoDuration(normalizedPath, dur);
+          return emptyAudioData(dur);
+        }
+        throw error;
+      }
     }
 
     const audioBuffer = await fetchAudioFile(extractedAudioPath);

@@ -1210,6 +1210,8 @@ commands::file_utils::generate_video_thumbnail,
             audio::extract_audio_to_file_wav,
             audio::get_audio_duration,
             download_library_audio,
+            download_broll_media,
+            resolve_broll_media_path,
             
             // Audio download commands
             audio_download::download_youtube_audio,

@@ -1,6 +1,11 @@
+import { watch } from "vue";
 import type { EditorCore } from "../../core";
 import type { AudioClipSource } from "../../lib/media/audio";
 import { createAudioContext, collectAudioClips } from "../../lib/media/audio";
+import {
+	clipVolumeDraftVersion,
+	getClipVolumeDraft,
+} from "../../lib/clip-volume-draft";
 import { buildAudioEffectChain, connectChain } from "../../lib/media/audio-effect-nodes";
 import {
 	ALL_FORMATS,
@@ -117,6 +122,8 @@ export class AudioManager {
 	private clipLoadPromise: Promise<AudioClipSource[]> | null = null;
 	private clipCacheVersion = 0;
 	private lastAudioTimelineSignature = "";
+	private activeClipGains = new Map<string, GainNode[]>();
+	private stopDraftVolumeWatch: (() => void) | null = null;
 
 	constructor(private editor: EditorCore) {
 		this.lastVolume = this.editor.playback.getVolume();
@@ -131,9 +138,16 @@ export class AudioManager {
 		if (typeof window !== "undefined") {
 			window.addEventListener("playback-seek", this.handleSeek);
 		}
+
+		this.stopDraftVolumeWatch = watch(clipVolumeDraftVersion, () => {
+			this.refreshActiveClipPreviewVolumes();
+		});
 	}
 
 	dispose(): void {
+		this.stopDraftVolumeWatch?.();
+		this.stopDraftVolumeWatch = null;
+		this.activeClipGains.clear();
 		this.stopPlayback();
 		for (const unsub of this.unsubscribers) {
 			unsub();
@@ -246,6 +260,44 @@ export class AudioManager {
 		return Math.max(0, timelineTime - this.getEffectiveClipStart(clip));
 	}
 
+	private getEffectiveClipVolume(elementId: string, committedVolume: number): number {
+		return getClipVolumeDraft(elementId) ?? committedVolume;
+	}
+
+	private registerActiveClipGain(elementId: string, gainNode: GainNode): void {
+		const existing = this.activeClipGains.get(elementId) ?? [];
+		existing.push(gainNode);
+		this.activeClipGains.set(elementId, existing);
+	}
+
+	private refreshActiveClipPreviewVolumes(): void {
+		const audioContext = this.audioContext;
+		if (!audioContext || !this.editor.playback.getIsPlaying()) return;
+
+		const timelineNow = this.getPlaybackTime();
+		const now = audioContext.currentTime;
+
+		for (const clip of this.clips) {
+			const gainNodes = this.activeClipGains.get(clip.id);
+			if (!gainNodes || gainNodes.length === 0) continue;
+
+			const effectiveStart = this.getEffectiveClipStart(clip);
+			const effectiveEnd = this.getEffectiveClipEnd(clip);
+			if (timelineNow < effectiveStart || timelineNow >= effectiveEnd) continue;
+
+			for (const clipGain of gainNodes) {
+				this.applyClipGainAutomation({
+					clip,
+					clipGain,
+					actualStartTime: now,
+					timelineTime: timelineNow,
+					scheduledTimelineDuration: Math.max(0.1, effectiveEnd - timelineNow),
+					replaceExistingAutomation: true,
+				});
+			}
+		}
+	}
+
 	private applyClipGainAutomation({
 		clip,
 		clipGain,
@@ -279,7 +331,10 @@ export class AudioManager {
 				? Math.max(0, Math.min(1, timeUntilEnd / transitionFadeOutDuration))
 				: 1;
 
-			return clip.volume * Math.min(naturalFadeIn, naturalFadeOut, transitionFadeIn, transitionFadeOut);
+			return (
+				this.getEffectiveClipVolume(clip.id, clip.volume) *
+				Math.min(naturalFadeIn, naturalFadeOut, transitionFadeIn, transitionFadeOut)
+			);
 		};
 
 		const windowStart = Math.max(effectiveStart, timelineTime);
@@ -395,6 +450,7 @@ export class AudioManager {
 			source.disconnect();
 		}
 		this.queuedSources.clear();
+		this.activeClipGains.clear();
 	}
 
 	private invalidateClipCache(): void {
@@ -506,7 +562,8 @@ export class AudioManager {
 
 		// Per-clip GainNode for volume + fade envelope
 		const clipGain = audioContext.createGain();
-		clipGain.gain.value = clip.volume;
+		clipGain.gain.value = this.getEffectiveClipVolume(clip.id, clip.volume);
+		this.registerActiveClipGain(clip.id, clipGain);
 
 		// Stereo pan node (if pan is non-zero)
 		const panVal = clip.pan ?? 0;
@@ -672,7 +729,8 @@ export class AudioManager {
 
 		// Per-clip GainNode for volume + fade envelope
 		const clipGain = audioContext.createGain();
-		clipGain.gain.value = clip.volume;
+		clipGain.gain.value = this.getEffectiveClipVolume(clip.id, clip.volume);
+		this.registerActiveClipGain(clip.id, clipGain);
 
 		// Stereo pan node
 		const panVal2 = clip.pan ?? 0;

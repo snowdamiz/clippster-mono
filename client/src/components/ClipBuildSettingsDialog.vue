@@ -809,6 +809,7 @@
       :transcript-words="transcriptWords"
       :transcript-segments="transcriptSegments"
       :clip-id="clip?.id ?? null"
+      :project-id="clipProjectId"
       :clip-text-overlay-json="clipTextOverlayRaw"
       @confirm="onManualConfigConfirm"
       @subtitlePositionChange="onSubtitlePositionChange"
@@ -1185,13 +1186,13 @@
     const clipStart = props.clip.current_version_start_time || 0;
     const clipEnd = props.clip.current_version_end_time || clipStart + (props.clip.duration || 0);
 
-    // Filter and adjust word timestamps to be relative to clip start
+    // Include words that overlap the clip window, then normalize to clip-relative time.
     return transcriptData.value.words
-      .filter(w => w.start >= clipStart && w.end <= clipEnd)
-      .map(w => ({
+      .filter((w) => w.end > clipStart && w.start < clipEnd)
+      .map((w) => ({
         ...w,
-        start: w.start - clipStart,
-        end: w.end - clipStart
+        start: Math.max(0, w.start - clipStart),
+        end: Math.min(clipEnd - clipStart, w.end - clipStart),
       }));
   });
 
@@ -1207,18 +1208,20 @@
     const clipStart = props.clip.current_version_start_time || 0;
     const clipEnd = props.clip.current_version_end_time || clipStart + (props.clip.duration || 0);
 
-    // Filter and adjust segment timestamps to be relative to clip start
+    // Include segments that overlap the clip window, then normalize to clip-relative time.
     return transcriptData.value.whisperSegments
-      .filter(s => s.start >= clipStart && s.end <= clipEnd)
-      .map(s => ({
+      .filter((s) => s.end > clipStart && s.start < clipEnd)
+      .map((s) => ({
         ...s,
-        start: s.start - clipStart,
-        end: s.end - clipStart,
-        words: s.words?.map(w => ({
-          ...w,
-          start: w.start - clipStart,
-          end: w.end - clipStart
-        }))
+        start: Math.max(0, s.start - clipStart),
+        end: Math.min(clipEnd - clipStart, s.end - clipStart),
+        words: s.words
+          ?.filter((w) => w.end > clipStart && w.start < clipEnd)
+          .map((w) => ({
+            ...w,
+            start: Math.max(0, w.start - clipStart),
+            end: Math.min(clipEnd - clipStart, w.end - clipStart),
+          })),
       }));
   });
 
@@ -1416,7 +1419,12 @@
     if (!videoPath.value) {
       await loadVideoFrame();
     }
-    
+
+    // Self-contained clips load transcript async; wait so B-roll/subtitles have words in POI.
+    if (isSelfContainedClip.value && !selfContainedTranscriptData.value) {
+      await loadSelfContainedTranscriptForClip();
+    }
+
     showManualPOIEditor.value = true;
   }
 

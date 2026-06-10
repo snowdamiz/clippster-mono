@@ -14,12 +14,14 @@
           ? 'bg-purple-500/20 text-purple-300' 
           : 'text-zinc-400 hover:text-zinc-200'"
       >
-        <input
-          type="checkbox"
+        <Checkbox
           :checked="showSourceFrame"
-          class="w-3 h-3 rounded border-zinc-600 bg-zinc-700 text-purple-500 focus:ring-purple-500 focus:ring-offset-0"
-          @change="onToggleScale16"
-        />
+          aria-label="Enable Scale 16:9"
+          class="h-3.5 w-3.5 rounded border-white/45 bg-white/10 text-white hover:border-purple-300/80 data-[state=checked]:border-purple-300 data-[state=checked]:bg-purple-500 focus-visible:ring-purple-400/50"
+          @update:checked="onToggleScale16"
+        >
+          <CheckIcon class="h-3 w-3" />
+        </Checkbox>
         <span>Scale 16:9</span>
       </label>
 
@@ -29,12 +31,14 @@
           ? 'bg-cyan-500/20 text-cyan-300' 
           : 'text-zinc-400 hover:text-zinc-200'"
       >
-        <input
-          type="checkbox"
+        <Checkbox
           :checked="use16x9Mode"
-          class="w-3 h-3 rounded border-zinc-600 bg-zinc-700 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-0"
-          @change="onToggleUse16x9"
-        />
+          aria-label="Enable Use 16:9"
+          class="h-3.5 w-3.5 rounded border-white/45 bg-white/10 text-white hover:border-cyan-300/80 data-[state=checked]:border-cyan-300 data-[state=checked]:bg-cyan-500 focus-visible:ring-cyan-400/50"
+          @update:checked="onToggleUse16x9"
+        >
+          <CheckIcon class="h-3 w-3" />
+        </Checkbox>
         <span>Use 16:9</span>
       </label>
 
@@ -573,10 +577,11 @@
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
   import { convertFileSrc } from '@tauri-apps/api/core';
-  import { LayoutGridIcon, LayoutIcon } from 'lucide-vue-next';
+  import { CheckIcon, LayoutGridIcon, LayoutIcon } from 'lucide-vue-next';
   import POIRegion from './POIRegion.vue';
   import MediaPreview from '@/components/MediaPreview.vue';
   import SocialOverlay from '@/editor/components/preview/SocialOverlay.vue';
+  import { Checkbox } from '@/components/ui/checkbox';
   import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
   import type { ManualRegion, ManualRegionRect, SubtitleSettings, ManualSourceFramingPayload } from '@/types';
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
@@ -926,20 +931,18 @@
     sourceFrameTransform.value.y = 0;
   }
 
-  function onToggleScale16(ev: Event) {
-    const checked = (ev.target as HTMLInputElement).checked;
-    showSourceFrame.value = checked;
-    if (checked) {
+  function onToggleScale16(checked: boolean | 'indeterminate') {
+    showSourceFrame.value = checked === true;
+    if (checked === true) {
       use16x9Mode.value = false;
       resetSourceFrameToCentered();
     }
     emitSourceFraming();
   }
 
-  function onToggleUse16x9(ev: Event) {
-    const checked = (ev.target as HTMLInputElement).checked;
-    use16x9Mode.value = checked;
-    if (checked) {
+  function onToggleUse16x9(checked: boolean | 'indeterminate') {
+    use16x9Mode.value = checked === true;
+    if (checked === true) {
       showSourceFrame.value = false;
       resetSourceFrameToCentered();
     }

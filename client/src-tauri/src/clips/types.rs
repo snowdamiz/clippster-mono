@@ -767,6 +767,9 @@ pub struct ManualRegion {
     /// Type of media content in this region
     #[serde(skip_serializing_if = "Option::is_none")]
     pub media_type: Option<String>, // "video-crop" | "image" | "video"
+    /// Seconds into external video to start (B-roll trim offset)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_source_offset: Option<f64>,
 }
 
 /// Source frame transform for scaling/positioning entire source

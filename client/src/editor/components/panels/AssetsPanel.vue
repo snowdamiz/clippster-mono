@@ -28,6 +28,7 @@ import TransitionsView from "./assets/TransitionsView.vue";
 import BrandingView from "./assets/BrandingView.vue";
 import UploadMediaView from "./assets/UploadMediaView.vue";
 import TranscriptView from "./assets/TranscriptView.vue";
+import AIBrollView from "./assets/AIBrollView.vue";
 import AudioLibraryView from "./assets/AudioLibraryView.vue";
 // import XSpacesView from "./assets/XSpacesView.vue"; // X Spaces import tab temporarily disabled
 import FoldersView from "./assets/FoldersView.vue";
@@ -379,6 +380,9 @@ function getMediaIcon(type: string) {
 
 		<!-- Transcript view -->
 		<TranscriptView v-else-if="activeTab === 'transcript'" />
+
+		<!-- AI B-roll view -->
+		<AIBrollView v-else-if="activeTab === 'broll'" />
 
 		<!-- Branding view -->
 		<BrandingView v-else-if="activeTab === 'branding'" />

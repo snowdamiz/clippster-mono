@@ -189,6 +189,18 @@
                 </div>
 
                 <!-- Clips Tab -->
+                <div v-show="rightPanelTab === 'clips'" class="workspace-dialog__full-project-bar">
+                  <button
+                    type="button"
+                    class="workspace-dialog__full-project-btn"
+                    :disabled="isCreatingProject"
+                    title="Open the full downloaded video in the video editor"
+                    @click="onEditFullProject"
+                  >
+                    <Clapperboard :size="14" />
+                    <span>{{ isCreatingProject ? 'Opening editor...' : 'Edit full project in editor' }}</span>
+                  </button>
+                </div>
                 <MediaPanel
                   v-show="rightPanelTab === 'clips'"
                   ref="mediaPanelRef"
@@ -402,8 +414,12 @@
   import { resolveIntroOutroById } from '@/services/database/intro-outros';
   import { resolveApplicableProfiles } from '@/composables/useBrandingProfileSelection';
   import { getWatermarkImage } from '@/services/database/watermarks';
-  import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
-  import { X, Film, Smartphone } from 'lucide-vue-next';
+  import {
+    getVideoEditorProjectsForClip,
+    getVideoEditorProjectsForRawVideo,
+    type VideoEditorProject,
+  } from '@/services/database';
+  import { X, Film, Smartphone, Clapperboard } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import type {
     ActiveVodPresetConfig,
@@ -434,7 +450,14 @@
   import { useRouter } from 'vue-router';
   import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
   import QuickPublishWizard from './QuickPublishWizard.vue';
-  import { createVideoEditorProjectFromClip } from '@/services/video-editor-project-creator';
+  import {
+    createVideoEditorProjectFromClip,
+    createVideoEditorProjectFromProject,
+  } from '@/services/video-editor-project-creator';
+  import {
+    pickPrimaryRawVideo,
+    resolveRawVideosForProject,
+  } from '@/services/project-raw-video-resolve';
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
   import { useProgressSocket } from '@/composables/useProgressSocket';
@@ -529,6 +552,12 @@
   // Existing project dialog state (shown when clip has been edited before)
   const showExistingProjectDialog = ref(false);
   const existingProjectForClip = ref<VideoEditorProject | null>(null);
+  const isFullProjectEditorOpen = ref(false);
+  const pendingFullProjectEdit = ref<{
+    projectId: string;
+    projectName: string;
+    rawVideoId: string;
+  } | null>(null);
   const pendingClipToEdit = ref<{
     clipId: string;
     startTime: number;
@@ -4832,8 +4861,75 @@
     }
   }
 
+  async function onEditFullProject() {
+    const project = props.project;
+    if (!project) return;
+
+    try {
+      const rawVideos = await resolveRawVideosForProject(project.id, project.parent_id);
+      const primary = pickPrimaryRawVideo(rawVideos);
+
+      if (!primary) {
+        showError(
+          'No Source Video',
+          'No full-length source video found for this project. Download or attach a video first.',
+        );
+        return;
+      }
+
+      const existingProjects = await getVideoEditorProjectsForRawVideo(primary.id);
+      if (existingProjects.length > 0) {
+        isFullProjectEditorOpen.value = true;
+        existingProjectForClip.value = existingProjects[0];
+        pendingFullProjectEdit.value = {
+          projectId: project.id,
+          projectName: project.name,
+          rawVideoId: primary.id,
+        };
+        showExistingProjectDialog.value = true;
+        return;
+      }
+
+      await openFullProjectInNewEditor(project.id, project.name, project.parent_id);
+    } catch (error) {
+      console.error('[ProjectWorkspaceDialog] Failed to open full project in editor:', error);
+      showError('Failed to Open Editor', 'Could not open the full project in the video editor.');
+    }
+  }
+
+  async function openFullProjectInNewEditor(
+    projectId: string,
+    projectName: string,
+    parentProjectId?: string | null,
+  ) {
+    isCreatingProject.value = true;
+
+    try {
+      const result = await createVideoEditorProjectFromProject({
+        projectId,
+        projectName,
+        parentProjectId,
+      });
+
+      console.log('[ProjectWorkspaceDialog] Full-project video editor created:', {
+        projectId: result.projectId,
+        libraryProjectId: projectId,
+      });
+
+      router.push({ path: '/editor', query: { projectId: result.projectId } });
+    } catch (error) {
+      console.error('[ProjectWorkspaceDialog] Failed to create full-project editor:', error);
+      showError('Failed to Open Editor', 'Could not create video editor project. Please try again.');
+    } finally {
+      isCreatingProject.value = false;
+    }
+  }
+
   // Function to open the clip editor dialog
   async function onEditClip(clipId: string) {
+    isFullProjectEditorOpen.value = false;
+    pendingFullProjectEdit.value = null;
+
     // Find the clip in our local data
     const clip = timelineClips.value.find((c: any) => c.id === clipId);
     if (!clip) {
@@ -4940,6 +5036,19 @@
 
   // Open clip in an existing video editor project
   async function openClipInExistingProject(project: VideoEditorProject) {
+    if (isFullProjectEditorOpen.value) {
+      console.log('[ProjectWorkspaceDialog] Opening existing full-project editor:', {
+        projectId: project.id,
+        rawVideoId: pendingFullProjectEdit.value?.rawVideoId,
+      });
+      isFullProjectEditorOpen.value = false;
+      pendingFullProjectEdit.value = null;
+      showExistingProjectDialog.value = false;
+      existingProjectForClip.value = null;
+      router.push({ path: '/editor', query: { projectId: project.id } });
+      return;
+    }
+
     const pending = pendingClipToEdit.value;
     if (!pending) return;
 
@@ -4979,6 +5088,24 @@
 
   // Handle existing project dialog - create new
   async function onCreateNewProject() {
+    if (isFullProjectEditorOpen.value) {
+      const pending = pendingFullProjectEdit.value;
+      showExistingProjectDialog.value = false;
+      existingProjectForClip.value = null;
+      isFullProjectEditorOpen.value = false;
+
+      if (pending) {
+        await openFullProjectInNewEditor(
+          pending.projectId,
+          pending.projectName,
+          props.project?.parent_id ?? null,
+        );
+      }
+
+      pendingFullProjectEdit.value = null;
+      return;
+    }
+
     const pending = pendingClipToEdit.value;
     if (!pending) return;
 
@@ -4995,6 +5122,8 @@
     showExistingProjectDialog.value = false;
     existingProjectForClip.value = null;
     pendingClipToEdit.value = null;
+    pendingFullProjectEdit.value = null;
+    isFullProjectEditorOpen.value = false;
   }
 
   // Pause video when the clip build settings dialog opens
@@ -5867,6 +5996,40 @@
 
   .workspace-dialog__tab--has-transcript.workspace-dialog__tab--active {
     border-bottom-color: #22c55e;
+  }
+
+  .workspace-dialog__full-project-bar {
+    flex-shrink: 0;
+    padding: 0.5rem 0.75rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .workspace-dialog__full-project-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(6, 182, 212, 0.35);
+    background: rgba(6, 182, 212, 0.12);
+    color: #67e8f9;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .workspace-dialog__full-project-btn:hover:not(:disabled) {
+    background: rgba(6, 182, 212, 0.2);
+    border-color: rgba(6, 182, 212, 0.55);
+    color: #a5f3fc;
+  }
+
+  .workspace-dialog__full-project-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
   }
 
   .workspace-dialog__tab-badge {

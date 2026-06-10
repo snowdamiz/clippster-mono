@@ -211,6 +211,65 @@ export function buildVideoElement({
 	};
 }
 
+/** Full-canvas overlay B-roll clip (muted, cover-fit). */
+export function buildBrollVideoElement({
+	mediaId,
+	name,
+	duration,
+	startTime,
+	trimStart = 0,
+}: {
+	mediaId: string;
+	name: string;
+	duration: number;
+	startTime: number;
+	trimStart?: number;
+}): CreateVideoElement {
+	return {
+		type: "video",
+		mediaId,
+		name,
+		duration,
+		startTime,
+		trimStart,
+		trimEnd: 0,
+		muted: true,
+		hidden: false,
+		mediaFit: "cover",
+		transform: { scale: 1, position: { x: 0, y: 0 }, rotate: 0 },
+		opacity: 1,
+		orderIndex: 0,
+	};
+}
+
+/** Full-canvas overlay B-roll still (cover-fit). */
+export function buildBrollImageElement({
+	mediaId,
+	name,
+	duration,
+	startTime,
+}: {
+	mediaId: string;
+	name: string;
+	duration: number;
+	startTime: number;
+}): CreateImageElement {
+	return {
+		type: "image",
+		mediaId,
+		name,
+		duration,
+		startTime,
+		trimStart: 0,
+		trimEnd: 0,
+		hidden: false,
+		mediaFit: "cover",
+		transform: { scale: 1, position: { x: 0, y: 0 }, rotate: 0 },
+		opacity: 1,
+		orderIndex: 0,
+	};
+}
+
 export function buildImageElement({
 	mediaId,
 	name,

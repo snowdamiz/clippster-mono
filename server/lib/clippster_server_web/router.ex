@@ -308,6 +308,10 @@ defmodule ClippsterServerWeb.Router do
     # AI reference analysis
     post("/ai/reference/analyze", AIChatController, :analyze_reference)
 
+    # AI B-roll planning and stock search
+    post("/ai/broll/suggest", BrollController, :suggest)
+    get("/ai/broll/search", BrollController, :search)
+
     # News feed for AI context enrichment
     get("/news", NewsController, :index)
     get("/news/ai-context", NewsController, :ai_context)

@@ -627,3 +627,20 @@ export async function getVideoEditorProjectsForClip(clipId: string): Promise<Vid
 
   return projects;
 }
+
+/**
+ * Find all video editor projects that contain a specific raw video as a source.
+ */
+export async function getVideoEditorProjectsForRawVideo(
+  rawVideoId: string,
+): Promise<VideoEditorProject[]> {
+  const db = await getDatabase();
+
+  return await db.select<VideoEditorProject[]>(
+    `SELECT DISTINCT p.* FROM video_editor_projects p
+     INNER JOIN video_editor_sources s ON s.project_id = p.id
+     WHERE s.source_id = ? AND s.source_type = 'raw_video'
+     ORDER BY p.updated_at DESC`,
+    [rawVideoId],
+  );
+}
