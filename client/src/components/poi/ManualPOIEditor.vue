@@ -91,6 +91,25 @@
                       @close="doneTextBoxSettings"
                     />
                   </template>
+                  <template v-else-if="showAiBrollPanel">
+                    <AIBrollPanel
+                      class="flex-1 min-h-0"
+                      :suggestions="aiBroll.suggestions.value"
+                      :is-generating="aiBroll.isGenerating.value"
+                      :is-fetching="aiBroll.isFetching.value"
+                      :error="aiBroll.error.value"
+                      :can-generate="canGenerateAiBroll"
+                      :planner-options="aiBroll.options.value"
+                      @close="showAiBrollPanel = false"
+                      @generate="onAiBrollGenerate"
+                      @fetch-all="onAiBrollFetchAll"
+                      @apply="onAiBrollApply"
+                      @apply-all="onAiBrollApplyAll"
+                      @regenerate="onAiBrollRegenerate"
+                      @reject="onAiBrollReject"
+                      @select-candidate="onAiBrollSelectCandidate"
+                    />
+                  </template>
                   <POISourcePanel
                     v-else
                     :regions="regions"
@@ -241,6 +260,7 @@
               <POISegmentTimeline
                 v-if="clipDuration > 0"
                 :segments="segmentConfigs"
+                :broll-markers="aiBroll.brollMarkers.value"
                 :active-segment-id="activeSegmentId"
                 :duration="clipDuration"
                 :current-time="currentTime"
@@ -257,16 +277,16 @@
 
             </div>
 
-            <!-- Feature controls: Subtitles + Clip text box (2-column row) -->
+            <!-- Feature controls: Subtitles + Clip text box + AI B-roll -->
             <div
-              v-if="subtitleSettings || clipId"
+              v-if="subtitleSettings || clipId || projectId"
               class="poi-dialog__divider-t poi-dialog__feature-grid"
             >
               <!-- Subtitles cell -->
               <div v-if="subtitleSettings" class="poi-dialog__feature-cell">
-                <input
-                  type="checkbox"
-                  v-model="subtitlePositioningEnabled"
+                <Checkbox
+                  v-model:checked="subtitlePositioningEnabled"
+                  aria-label="Enable subtitle positioning"
                   class="poi-dialog__checkbox poi-dialog__checkbox--purple shrink-0"
                 />
                 <CaptionsIcon class="h-4 w-4 poi-dialog__icon-purple shrink-0" />
@@ -288,12 +308,6 @@
 
               <!-- Clip text box cell -->
               <div v-if="clipId" class="poi-dialog__feature-cell">
-                <input
-                  type="checkbox"
-                  :checked="clipTextLocal?.enabled === true"
-                  class="poi-dialog__checkbox poi-dialog__checkbox--amber shrink-0"
-                  @change="toggleClipTextEnabled"
-                />
                 <Type class="h-4 w-4 poi-dialog__icon-amber shrink-0" />
                 <div class="flex-1 min-w-0">
                   <span class="poi-dialog__feature-label">Clip text box</span>
@@ -309,6 +323,24 @@
                   {{ clipTextLocal?.enabled ? 'Edit' : 'Add text' }}
                 </button>
                 <span class="text-[10px] shrink-0 font-mono poi-dialog__faint">{{ targetAspectRatio }}</span>
+              </div>
+
+              <!-- AI B-roll cell -->
+              <div v-if="projectId && clipId" class="poi-dialog__feature-cell">
+                <Sparkles class="h-4 w-4 poi-dialog__icon-purple shrink-0" />
+                <div class="flex-1 min-w-0">
+                  <span class="poi-dialog__feature-label">AI B-roll</span>
+                  <span v-if="aiBroll.appliedCount.value > 0" class="text-[10px] ml-2 poi-dialog__muted">
+                    · {{ aiBroll.appliedCount.value }} applied
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  class="poi-dialog__btn poi-dialog__btn--secondary poi-dialog__btn--sm shrink-0"
+                  @click="openAiBrollPanel"
+                >
+                  {{ showAiBrollPanel ? 'Hide' : 'Open' }}
+                </button>
               </div>
             </div>
 
@@ -374,13 +406,16 @@
     Type,
     Volume2Icon,
     VolumeXIcon,
+    Sparkles,
   } from 'lucide-vue-next';
   import Hls from 'hls.js';
   import POISourcePanel from './POISourcePanel.vue';
   import POITargetPanel from './POITargetPanel.vue';
   import POISegmentTimeline from './POISegmentTimeline.vue';
+  import AIBrollPanel from './AIBrollPanel.vue';
   import ClipTextBoxPropertiesPanel from '@/components/ClipTextBoxPropertiesPanel.vue';
   import SubtitlePropertiesPanel from '@/components/SubtitlePropertiesPanel.vue';
+  import { Checkbox } from '@/components/ui/checkbox';
   import type {
     ManualRegion,
     ManualFramingConfig,
@@ -401,6 +436,8 @@
     upsertClipTextPerRatioGeometry,
   } from '@/utils/clipTextBox';
   import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
+  import { useAiBroll } from '@/composables/useAiBroll';
+  import type { AiBrollPlannerOptions } from '@/types/ai-broll';
 
   // Animation styles shown in the subtitle section (matches SubtitlePropertiesPanel)
   const ANIMATION_STYLES = [
@@ -483,6 +520,7 @@
     transcriptWords?: WordInfo[];
     transcriptSegments?: WhisperSegment[];
     clipId?: string | null;
+    projectId?: string | null;
     /** Raw JSON from clips.clip_text_overlay */
     clipTextOverlayJson?: string | null;
   }
@@ -498,6 +536,7 @@
     transcriptWords: () => [],
     transcriptSegments: () => [],
     clipId: null,
+    projectId: null,
     clipTextOverlayJson: null,
   });
 
@@ -523,6 +562,26 @@
   const segmentConfigs = ref<SegmentRegionConfig[]>([]);
   const activeSegmentId = ref<string | null>(null);
 
+  const showAiBrollPanel = ref(false);
+  const aiBroll = useAiBroll();
+
+  const clipDuration = computed(() => {
+    if (props.clipEndTime !== undefined && props.clipStartTime !== undefined) {
+      return Math.max(0, props.clipEndTime - props.clipStartTime);
+    }
+    return props.fullVideoDuration || 0;
+  });
+
+  const canGenerateAiBroll = computed(
+    () =>
+      Boolean(props.clipId) &&
+      (props.transcriptWords.length > 0 || props.transcriptSegments.length > 0),
+  );
+
+  const brollOrientation = computed<'portrait' | 'landscape'>(() =>
+    props.targetAspectRatio === '16:9' ? 'landscape' : 'portrait',
+  );
+
   // Source frame transform (16:9 scaling in 9:16) + mode / blur (synced from POITargetPanel)
   const sourceTransform = ref<{ scale: number; x: number; y: number } | null>(null);
   const sourceFrameMode = ref<ManualSourceFrameMode>('none');
@@ -533,8 +592,9 @@
     () =>
       regions.value.length > 0 ||
       baseRegions.value.length > 0 ||
+      segmentConfigs.value.some((s) => s.regions.length > 0) ||
       sourceFrameMode.value !== 'none' ||
-      Boolean(clipTextLocal.value?.enabled)
+      Boolean(clipTextLocal.value?.enabled),
   );
 
   const textBoxSettingsMode = ref(false);
@@ -768,15 +828,6 @@
     cleanupSeekListeners();
     document.removeEventListener('keydown', handleKeyDown);
     document.removeEventListener('click', handleClickOutside);
-  });
-
-  // Computed clip duration
-  const clipDuration = computed(() => {
-    if (props.clipEndTime !== undefined && props.clipStartTime !== undefined) {
-      return props.clipEndTime - props.clipStartTime;
-    }
-    // Fallback to full video duration for VOD pre-edit use case
-    return props.fullVideoDuration || 0;
   });
 
   // Format time as MM:SS
@@ -1132,6 +1183,81 @@
     input.click();
   }
 
+  function openAiBrollPanel() {
+    showAiBrollPanel.value = !showAiBrollPanel.value;
+    if (showAiBrollPanel.value && props.clipId) {
+      void aiBroll.loadSuggestions(props.clipId);
+    }
+  }
+
+  async function onAiBrollGenerate(options: AiBrollPlannerOptions) {
+    if (!props.clipId) return;
+    // Transcript props are already clip-relative (0..duration), same as subtitles in POITargetPanel.
+    await aiBroll.generateSuggestions({
+      clipId: props.clipId,
+      clipStart: 0,
+      clipEnd: clipDuration.value,
+      aspectRatio: props.targetAspectRatio,
+      transcriptWords: props.transcriptWords,
+      transcriptSegments: props.transcriptSegments,
+      plannerOptions: options,
+    });
+    await aiBroll.fetchAllCandidates(brollOrientation.value);
+  }
+
+  async function onAiBrollFetchAll() {
+    await aiBroll.fetchAllCandidates(brollOrientation.value);
+  }
+
+  async function onAiBrollApply(suggestionId: string) {
+    if (!props.projectId) return;
+    const suggestion = aiBroll.suggestions.value.find((s) => s.id === suggestionId);
+    if (!suggestion) return;
+    try {
+      const result = await aiBroll.applySuggestionToConfig(
+        suggestion,
+        segmentConfigs.value,
+        props.projectId,
+        segmentConfigs.value.length,
+      );
+      segmentConfigs.value = result.segmentConfigs;
+      const appliedSeg = segmentConfigs.value.find((seg) => seg.startTime === suggestion.startTime);
+      activeSegmentId.value = appliedSeg?.segmentId ?? activeSegmentId.value;
+      if (appliedSeg) {
+        regions.value = JSON.parse(JSON.stringify(appliedSeg.regions));
+      }
+    } catch (e) {
+      console.error('[ManualPOIEditor] Failed to apply B-roll:', e);
+    }
+  }
+
+  async function onAiBrollApplyAll() {
+    for (const s of aiBroll.suggestions.value.filter((x) => x.status === 'ready')) {
+      await onAiBrollApply(s.id);
+    }
+  }
+
+  async function onAiBrollRegenerate(suggestionId: string) {
+    const suggestion = aiBroll.suggestions.value.find((s) => s.id === suggestionId);
+    if (!suggestion) return;
+    await aiBroll.regenerateSuggestion(suggestion, brollOrientation.value);
+  }
+
+  async function onAiBrollReject(suggestionId: string) {
+    const suggestion = aiBroll.suggestions.value.find((s) => s.id === suggestionId);
+    if (!suggestion) return;
+    await aiBroll.rejectSuggestion(suggestion);
+  }
+
+  function onAiBrollSelectCandidate(suggestionId: string, candidateId: string) {
+    const idx = aiBroll.suggestions.value.findIndex((s) => s.id === suggestionId);
+    if (idx < 0) return;
+    aiBroll.suggestions.value[idx] = {
+      ...aiBroll.suggestions.value[idx],
+      selectedCandidateId: candidateId,
+    };
+  }
+
   // Handle subtitle position changes (from dragging in POITargetPanel)
   function onSubtitlePositionChange(position: { x: number; y: number; width?: number }) {
     localSubtitlePosition.value = { ...position };
@@ -1190,19 +1316,6 @@
       payload
     );
     void persistClipTextToDb();
-  }
-
-  async function toggleClipTextEnabled(e: Event) {
-    const checked = (e.target as HTMLInputElement).checked;
-    if (checked) {
-      // Enable — same as clicking "Add text"
-      await openTextBoxSettings();
-    } else {
-      // Disable — clear the text box
-      clipTextLocal.value = null;
-      clipTextPositioningEnabled.value = false;
-      await persistClipTextClearDb();
-    }
   }
 
   async function openTextBoxSettings() {
@@ -1793,17 +1906,27 @@
     width: 1rem;
     height: 1rem;
     border-radius: 0.25rem;
-    border: 1px solid var(--sidebar-border);
-    background-color: var(--sidebar-hover);
-    accent-color: var(--sidebar-accent);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    background-color: rgba(255, 255, 255, 0.08);
+    color: white;
+    cursor: pointer;
+    box-shadow: none;
+    transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
   }
 
-  .poi-dialog__checkbox--purple {
-    accent-color: #a855f7;
+  .poi-dialog__checkbox:hover {
+    border-color: rgba(255, 255, 255, 0.55);
+    background-color: rgba(255, 255, 255, 0.12);
   }
 
-  .poi-dialog__checkbox--amber {
-    accent-color: #f59e0b;
+  .poi-dialog__checkbox:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.35);
+  }
+
+  .poi-dialog__checkbox--purple[data-state='checked'] {
+    background-color: #a855f7;
+    border-color: #c084fc;
   }
 
   /* ===== Playback bar ===== */

@@ -1,5 +1,6 @@
 import { ref } from 'vue';
 import { createRawVideo, deleteRawVideo, type RawVideo } from '@/services/database';
+import { ensureShortVideoAutoClip } from '@/services/database/auto-clips';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { useToast } from '@/composables/useToast';
@@ -160,6 +161,16 @@ export function useVideoOperations() {
         projectId,
         ...videoMetadata,
       });
+
+      if (projectId) {
+        try {
+          await ensureShortVideoAutoClip(projectId, videoMetadata.duration, {
+            clipName: result.original_filename.replace(/\.[^/.]+$/, '') || 'Clip',
+          });
+        } catch (autoClipError) {
+          console.warn('[VideoOperations] Short-video auto-clip failed (non-fatal):', autoClipError);
+        }
+      }
 
       return {
         success: true,

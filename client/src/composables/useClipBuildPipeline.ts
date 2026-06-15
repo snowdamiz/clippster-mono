@@ -332,6 +332,53 @@ export function useClipBuildPipeline() {
               resolvedIntroOutroPerRatio = null;
             }
           }
+
+          if (profile?.watermark_id) {
+            const { expandWatermarkForBuild } = await import('@/composables/useOrgCampaignBuildBranding');
+            const { resolveWatermarkById } = await import('@/services/database/watermarks');
+            const orgWm = await resolveWatermarkById(`org-asset-${profile.watermark_id}`);
+            if (orgWm) {
+              let wmSettings: Record<string, unknown> | null = null;
+              if (profile.watermark_settings) {
+                try {
+                  wmSettings =
+                    typeof profile.watermark_settings === 'string'
+                      ? JSON.parse(profile.watermark_settings)
+                      : profile.watermark_settings;
+                } catch {
+                  wmSettings = null;
+                }
+              }
+              const defaultPos =
+                (wmSettings as Record<string, { position?: { x: number; y: number; opacity: number; scale: number } }>)?.[
+                  settings.aspectRatios[0] || '16:9'
+                ]?.position ??
+                (wmSettings as Record<string, { position?: { x: number; y: number; opacity: number; scale: number } }>)?.[
+                  '16:9'
+                ]?.position ?? { x: 12, y: 92, opacity: 80, scale: 20 };
+
+              const expanded = await expandWatermarkForBuild({
+                enabled: true,
+                watermarkId: `org-asset-${profile.watermark_id}`,
+                positionX: defaultPos.x,
+                positionY: defaultPos.y,
+                opacity: defaultPos.opacity,
+                scale: defaultPos.scale,
+                perRatioSettings: wmSettings as any,
+              }, settings.aspectRatios);
+              if (expanded) {
+                resolvedWatermarkSettings = expanded as typeof resolvedWatermarkSettings;
+              }
+            }
+          } else if (profile?.watermark?.url) {
+            const { resolveOrgBuildBranding } = await import('@/composables/useOrgCampaignBuildBranding');
+            const branding = await resolveOrgBuildBranding(profile);
+            if (branding.watermark) {
+              const { expandWatermarkForBuild } = await import('@/composables/useOrgCampaignBuildBranding');
+              const expanded = await expandWatermarkForBuild(branding.watermark, settings.aspectRatios);
+              if (expanded) resolvedWatermarkSettings = expanded as typeof resolvedWatermarkSettings;
+            }
+          }
         } catch (error) {
           console.warn('[BuildPipeline] Failed to resolve org branding:', error);
         }
@@ -410,18 +457,20 @@ export function useClipBuildPipeline() {
               if (ratioConfig?.position) defaultPos = ratioConfig.position;
             }
 
-            resolvedWatermarkSettings = {
-              enabled: true,
-              watermarkId: `org-asset-${watermarkProfile.watermark.id}`,
-              filePath,
-              width: null,
-              height: null,
-              positionX: defaultPos.x,
-              positionY: defaultPos.y,
-              opacity: defaultPos.opacity,
-              scale: defaultPos.scale,
-              perRatioSettings: (watermarkProfile.watermark_settings as any) ?? null,
-            } as any;
+            const { expandWatermarkForBuild } = await import('@/composables/useOrgCampaignBuildBranding');
+            const expanded = await expandWatermarkForBuild(
+              {
+                enabled: true,
+                watermarkId: `org-asset-${watermarkProfile.watermark.id}`,
+                positionX: defaultPos.x,
+                positionY: defaultPos.y,
+                opacity: defaultPos.opacity,
+                scale: defaultPos.scale,
+                perRatioSettings: (watermarkProfile.watermark_settings as any) ?? null,
+              },
+              settings.aspectRatios
+            );
+            resolvedWatermarkSettings = expanded as typeof resolvedWatermarkSettings;
           } else {
             resolvedWatermarkSettings = null;
           }

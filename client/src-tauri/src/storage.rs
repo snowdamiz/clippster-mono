@@ -309,6 +309,15 @@ pub fn get_library_audio_dir() -> Result<PathBuf, String> {
     Ok(library_audio_dir)
 }
 
+/// Durable B-roll media storage per project (stock downloads, AI assets).
+pub fn get_broll_media_dir(project_id: &str) -> Result<PathBuf, String> {
+    let app_dir = get_app_storage_dir()?;
+    let dir = app_dir.join("broll-media").join(project_id);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create broll-media directory: {}", e))?;
+    Ok(dir)
+}
+
 /// Get the livestream recordings directory
 pub fn get_livestream_recordings_dir() -> Result<PathBuf, String> {
     let base_dir = get_storage_base_dir()?;

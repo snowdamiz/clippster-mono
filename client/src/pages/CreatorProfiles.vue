@@ -528,17 +528,23 @@
                         <template v-if="!isCreatorMonitored(creator)">
                           <div class="creator-action-group">
                             <button
-                              @click.stop="startCreatorMonitoring(creator, false)"
+                              @click.stop="onCreatorRecordClick(creator)"
                               class="creator-action-group__btn"
-                              title="Record Only"
+                              :class="{
+                                'creator-action-group__btn--active': isCreatorPersistentRecord(creator),
+                              }"
+                              title="Auto-record when live"
                             >
                               <span class="creator-action-group__rec-dot"></span>
                               Rec
                             </button>
                             <button
-                              @click.stop="startCreatorMonitoring(creator, true)"
+                              @click.stop="onCreatorAutoDetectClick(creator)"
                               class="creator-action-group__btn creator-action-group__btn--primary"
-                              title="Auto-Detect Clips"
+                              :class="{
+                                'creator-action-group__btn--selected': isCreatorPersistentAutoDetect(creator),
+                              }"
+                              title="Auto-detect clips for 60 min when live"
                             >
                               <Sparkles class="creator-btn__icon" />
                               Auto
@@ -781,17 +787,23 @@
                         <template v-if="!isCreatorMonitored(creator)">
                           <div class="creator-action-group">
                             <button
-                              @click.stop="startCreatorMonitoring(creator, false)"
+                              @click.stop="onCreatorRecordClick(creator)"
                               class="creator-action-group__btn"
-                              title="Record Only"
+                              :class="{
+                                'creator-action-group__btn--active': isCreatorPersistentRecord(creator),
+                              }"
+                              title="Auto-record when live"
                             >
                               <span class="creator-action-group__rec-dot"></span>
                               Rec
                             </button>
                             <button
-                              @click.stop="startCreatorMonitoring(creator, true)"
+                              @click.stop="onCreatorAutoDetectClick(creator)"
                               class="creator-action-group__btn creator-action-group__btn--primary"
-                              title="Auto-Detect Clips"
+                              :class="{
+                                'creator-action-group__btn--selected': isCreatorPersistentAutoDetect(creator),
+                              }"
+                              title="Auto-detect clips for 60 min when live"
                             >
                               <Sparkles class="creator-btn__icon" />
                               Auto
@@ -906,6 +918,102 @@
       @close="showPostSubmitDialog = false"
       @submitted="handlePostSubmitted"
     />
+
+    <RealtimeDetectionDialog
+      :model-value="showRealtimeDialog"
+      :prompts="prompts"
+      :creator-layout-eligible="creatorLayoutEligible"
+      :creator-layout-creator-name="creatorLayoutCreatorName"
+      :show-sixty-minute-cap="true"
+      @update:model-value="(open) => { showRealtimeDialog = open; if (!open) closeRealtimeDialog(); }"
+      @confirm="handleRealtimeDetectionConfirm"
+    />
+
+    <AutoDetectLimitDialog
+      :show="showAutoDetectLimitDialog"
+      :active-streamer-name="autoDetectLimitDialogData.activeStreamerName"
+      :requested-streamer-name="autoDetectLimitDialogData.requestedStreamerName"
+      @close="showAutoDetectLimitDialog = false"
+    />
+
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showSegmentDialog"
+          class="segment-dialog__overlay"
+          @click.self="closeSegmentDialog"
+        >
+          <Transition name="dialog" appear>
+            <div
+              v-if="showSegmentDialog"
+              class="segment-dialog"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div class="segment-dialog__accent"></div>
+              <div class="segment-dialog__header">
+                <button class="segment-dialog__close" @click="closeSegmentDialog" title="Close">
+                  <X class="creator-btn__icon" />
+                </button>
+                <div class="segment-dialog__icon">
+                  <Video class="creator-btn__icon" />
+                </div>
+                <h2 class="segment-dialog__title">Record When Live</h2>
+                <p class="segment-dialog__subtitle">
+                  Automatically record when this creator goes live
+                </p>
+              </div>
+              <div class="segment-dialog__content">
+                <div class="segment-dialog__field">
+                  <label class="segment-dialog__label">Segment Duration</label>
+                  <div class="segment-dialog__duration-grid">
+                    <button
+                      v-for="duration in availableDurationsRecord"
+                      :key="duration"
+                      type="button"
+                      class="segment-dialog__duration-btn"
+                      :class="{
+                        'segment-dialog__duration-btn--selected': selectedDuration === duration,
+                      }"
+                      @click="selectedDuration = duration"
+                    >
+                      {{ duration === 0 ? 'Entire' : `${duration} min` }}
+                    </button>
+                  </div>
+                </div>
+                <div v-if="creatorLayoutEligible" class="segment-dialog__field">
+                  <label class="segment-dialog__label">Creator layout</label>
+                  <label class="segment-dialog__checkbox-row">
+                    <input
+                      v-model="recordUseCreatorLayout"
+                      type="checkbox"
+                      class="segment-dialog__checkbox"
+                    />
+                    <span class="segment-dialog__checkbox-text">Use creator layout</span>
+                  </label>
+                </div>
+              </div>
+              <div class="segment-dialog__footer">
+                <button
+                  type="button"
+                  class="segment-dialog__btn segment-dialog__btn--secondary"
+                  @click="closeSegmentDialog"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  class="segment-dialog__btn segment-dialog__btn--primary"
+                  @click="handleRecordDialogConfirm"
+                >
+                  Enable Record
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -924,6 +1032,8 @@
   } from '@/components/ui/dropdown-menu';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import ProfileDialog from '@/components/ProfileDialog.vue';
+  import RealtimeDetectionDialog from '@/components/RealtimeDetectionDialog.vue';
+  import AutoDetectLimitDialog from '@/components/AutoDetectLimitDialog.vue';
   import CreatorDownloadDialog from '@/components/CreatorDownloadDialog.vue';
   import AuthModal from '@/components/AuthModal.vue';
   import AddPostDialog from '@/components/AddPostDialog.vue';
@@ -952,6 +1062,7 @@
   import { useToast } from '@/composables/useToast';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
+  import { useCreatorPageLiveMonitoring } from '@/composables/useCreatorPageLiveMonitoring';
   import { checkKickLivestream } from '@/services/kick';
   import { checkTwitchLivestream } from '@/services/twitch';
   import { getYouTubeChannelInfo } from '@/services/youtube';
@@ -984,6 +1095,7 @@
     Trophy,
     Globe,
     ChevronDown,
+    X,
   } from 'lucide-vue-next';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useLivestreamStore } from '@/stores/livestream';
@@ -1168,8 +1280,29 @@
   const authStore = useAuthStore();
   const { success, error: showError } = useToast();
   const { showGate, requireSubscription } = useSubscriptionGate();
-  const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring, hasDvrRecording } =
+  const { activeSessions, monitoredStreamers, stopMonitoring, hasDvrRecording } =
     useLivestreamMonitoring();
+  const {
+    showRealtimeDialog,
+    showSegmentDialog,
+    showAutoDetectLimitDialog,
+    autoDetectLimitDialogData,
+    prompts,
+    creatorLayoutEligible,
+    creatorLayoutCreatorName,
+    selectedDuration,
+    recordUseCreatorLayout,
+    availableDurationsRecord,
+    isCreatorPersistentAutoDetect,
+    isCreatorPersistentRecord,
+    loadPersistentSettingsForProfiles,
+    onCreatorAutoDetectClick,
+    onCreatorRecordClick,
+    handleRealtimeDetectionConfirm,
+    handleRecordDialogConfirm,
+    closeRealtimeDialog,
+    closeSegmentDialog,
+  } = useCreatorPageLiveMonitoring();
   const { isLiveClipEnabled } = useFeatureFlags();
   const livestreamStore = useLivestreamStore();
 
@@ -1621,13 +1754,36 @@
         }
       }
 
+      await linkMonitoredStreamersForOrgProfiles(displayProfiles);
       creators.value = displayProfiles;
       await initializeAutoDvrTracker(displayProfiles);
+      await loadPersistentSettingsForProfiles(displayProfiles);
     } catch (err) {
       console.error('Failed to load creators:', err);
       showError('Load Failed', 'Failed to load creator profiles');
     } finally {
       loading.value = false;
+    }
+  }
+
+  /** Org profile platform links are not in local SQLite — re-attach monitored_streamer by mint. */
+  async function linkMonitoredStreamersForOrgProfiles(profiles: DisplayCreatorProfile[]) {
+    for (const profile of profiles) {
+      if (!profile.isOrgProfile) continue;
+      for (const link of profile.platform_links) {
+        if (link.monitored_streamer_id || !link.platform_id) continue;
+        if (link.platform !== 'pumpfun' && link.platform !== 'kick' && link.platform !== 'twitch') {
+          continue;
+        }
+        try {
+          const existing = await getMonitoredStreamerByMint(link.platform_id);
+          if (existing) {
+            link.monitored_streamer_id = existing.id;
+          }
+        } catch (err) {
+          console.warn('[CreatorProfiles] Failed to link org monitored streamer:', err);
+        }
+      }
     }
   }
 
@@ -2093,83 +2249,6 @@
     showPersonalPostDialog.value = false;
     personalPostCreator.value = null;
     success('Post Added', 'Your post link has been tracked successfully.');
-  }
-
-  async function startCreatorMonitoring(creator: DisplayCreatorProfile, detectClips: boolean) {
-    const monitorableLink = creator.platform_links.find(
-      (l) => l.platform === 'pumpfun' || l.platform === 'kick' || l.platform === 'twitch'
-    );
-    if (!monitorableLink) {
-      showError('No Supported Platforms', 'Live monitoring is currently only available for PumpFun, Kick, and Twitch streams');
-      return;
-    }
-    if (!monitorableLink.platform_id) {
-      showError('Missing Platform ID', 'Add the platform ID on this creator before starting monitoring.');
-      return;
-    }
-
-    const platformDisplay =
-      monitorableLink.platform === 'kick' ? 'Kick' : monitorableLink.platform === 'twitch' ? 'Twitch' : 'PumpFun';
-
-    try {
-      let streamerId = monitorableLink.monitored_streamer_id;
-
-      if (!streamerId) {
-        const existingByMint = await getMonitoredStreamerByMint(monitorableLink.platform_id);
-        if (existingByMint) {
-          const { updatePlatformLink } = await import('@/services/database');
-          streamerId = existingByMint.id;
-          await updatePlatformLink(monitorableLink.id, { monitored_streamer_id: streamerId });
-          monitorableLink.monitored_streamer_id = streamerId;
-        }
-      }
-
-      if (!streamerId) {
-        const { createMonitoredStreamer, updatePlatformLink } = await import('@/services/database');
-        streamerId = await createMonitoredStreamer(
-          monitorableLink.platform_id,
-          monitorableLink.display_name || creator.name,
-          monitorableLink.profile_image_url || undefined,
-          5,
-          false,
-          monitorableLink.platform
-        );
-        await updatePlatformLink(monitorableLink.id, { monitored_streamer_id: streamerId });
-        monitorableLink.monitored_streamer_id = streamerId;
-      }
-
-      const streamer = await getMonitoredStreamer(streamerId);
-
-      if (streamer) {
-        await startMonitoring(
-          [
-            {
-              id: streamer.id,
-              mintId: streamer.mint_id,
-              displayName: streamer.display_name,
-              platform: platformDisplay,
-              lastCheckTimestamp: streamer.last_check_timestamp,
-              isCurrentlyLive: Boolean(streamer.is_currently_live),
-              currentSessionId: streamer.current_session_id,
-              selected: false,
-              isDetecting: false,
-              profileImageUrl: streamer.profile_image_url || undefined,
-              streamThumbnailUrl: streamer.stream_thumbnail_url || undefined,
-              segmentDurationMinutes: streamer.segment_duration_minutes ?? 5,
-              autoDvr: Boolean(streamer.auto_dvr),
-            },
-          ],
-          { mode: detectClips ? 'realtime-detect' : 'record' }
-        );
-      }
-
-      const mode = detectClips ? 'Auto Detect' : 'Record Only';
-      success('Monitoring Started', `Now monitoring "${creator.name}" (${mode})`);
-    } catch (err) {
-      console.error('Failed to start monitoring:', err);
-      const message = err instanceof Error ? err.message : typeof err === 'string' ? err : 'Failed to start monitoring';
-      showError('Monitoring Failed', message);
-    }
   }
 
   async function stopCreatorMonitoring(creator: DisplayCreatorProfile) {
@@ -2968,6 +3047,18 @@
   .creator-action-group__btn--primary:hover {
     background-color: rgba(139, 92, 246, 0.25);
     color: #c4b5fd;
+  }
+
+  .creator-action-group__btn--active {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+    box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.45);
+  }
+
+  .creator-action-group__btn--selected {
+    background-color: rgba(139, 92, 246, 0.35);
+    color: #e9d5ff;
+    box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.6);
   }
 
   .creator-action-group__rec-dot {

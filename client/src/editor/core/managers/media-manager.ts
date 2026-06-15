@@ -46,13 +46,10 @@ export class MediaManager {
 			delete newAsset.importFileLastModifiedMs;
 			this.notify();
 
-			// Pre-load waveform for video/audio assets so it's ready when added to timeline
+			// Pre-load waveform for video/audio assets so it's ready when added to timeline.
+			// Video-only stock B-roll has no audio stream; waveformService handles that silently.
 			if ((newAsset.type === "video" || newAsset.type === "audio") && resolvedPath) {
-				try {
-					await waveformService.loadAudio(resolvedPath);
-				} catch (waveformError) {
-					console.warn("[MediaManager] Waveform pre-load failed (non-fatal):", waveformError);
-				}
+				void waveformService.loadAudio(resolvedPath).catch(() => {});
 			}
 		} catch (error) {
 			console.error("Failed to save media asset:", error);

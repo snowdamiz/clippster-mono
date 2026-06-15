@@ -348,62 +348,11 @@
         </DialogContent>
       </Dialog>
 
-      <!-- Twitter/X Unavailable Dialog -->
-      <Teleport to="body">
-        <Transition name="modal">
-          <div v-if="showTwitterUnavailableDialog" class="segment-dialog__overlay" @click.self="showTwitterUnavailableDialog = false">
-            <Transition name="dialog" appear>
-              <div v-if="showTwitterUnavailableDialog" class="segment-dialog" role="dialog" aria-modal="true">
-                <!-- Accent bar -->
-                <div class="segment-dialog__accent"></div>
-
-                <!-- Header -->
-                <div class="segment-dialog__header">
-                  <button class="segment-dialog__close" @click="showTwitterUnavailableDialog = false" title="Close">
-                    <X :size="18" />
-                  </button>
-                  <div class="segment-dialog__icon">
-                    <img src="/x.svg" alt="X/Twitter" style="width: 24px; height: 24px;" />
-                  </div>
-                  <h2 class="segment-dialog__title">X/Twitter Live Monitoring Unavailable</h2>
-                  <p class="segment-dialog__subtitle">Currently unavailable for live stream monitoring</p>
-                </div>
-
-                <!-- Content -->
-                <div class="segment-dialog__content">
-                  <p style="font-size: 0.875rem; color: var(--sidebar-text-muted); margin-bottom: 1rem;">
-                    We are actively working on implementing X/Twitter live monitoring capabilities. This feature will be available in a future update.
-                  </p>
-
-                  <!-- VOD Downloads Available Box -->
-                  <div class="twitter-dialog__alert">
-                    <svg style="width: 16px; height: 16px; flex-shrink: 0;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                    </svg>
-                    <div style="flex: 1;">
-                      <p style="font-weight: 500; font-size: 0.875rem; margin-bottom: 0.25rem;">X/Twitter VOD Downloads Available</p>
-                      <p style="font-size: 0.75rem; opacity: 0.8;">
-                        You can still download X/Twitter VODs from the Stream VODs page for offline clip creation.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Footer -->
-                <div class="segment-dialog__footer">
-                  <button
-                    @click="showTwitterUnavailableDialog = false"
-                    class="segment-dialog__btn segment-dialog__btn--primary"
-                    style="flex: none; min-width: 120px;"
-                  >
-                    Got it
-                  </button>
-                </div>
-              </div>
-            </Transition>
-          </div>
-        </Transition>
-      </Teleport>
+      <XBroadcastExplainerDialog
+        :show="showTwitterExplainerDialog"
+        @confirm="confirmTwitterBroadcastAdd"
+        @cancel="cancelTwitterBroadcastAdd"
+      />
 
       <!-- Credit Warning Dialog -->
       <ConfirmationModal
@@ -424,6 +373,7 @@
         :prompts="prompts"
         :creator-layout-eligible="creatorLayoutEligible"
         :creator-layout-creator-name="creatorLayoutCreatorName"
+        :show-sixty-minute-cap="true"
         @confirm="handleRealtimeDetectionConfirm"
       />
 
@@ -588,7 +538,15 @@
   import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
   import { extractYouTubeChannel, getYouTubeChannelInfo } from '@/services/youtube';
   import { extractRumbleChannel, getRumbleChannelInfo } from '@/services/rumble';
-  import { extractTwitterUsername, extractTwitterBroadcastId, getTwitterBroadcastInfo } from '@/services/twitter';
+  import {
+    extractTwitterBroadcastId,
+    getTwitterBroadcastInfo,
+    isDirectTwitterLiveUrl,
+    isTwitterProfileOrHandleInput,
+    normalizeTwitterUrl,
+    validateTwitterUrl,
+  } from '@/services/twitter';
+  import XBroadcastExplainerDialog from '@/components/XBroadcastExplainerDialog.vue';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
@@ -625,7 +583,12 @@
   const searchResults = ref<TokenSearchResult[]>([]);
   const showSearchDialog = ref(false);
   const isSearching = ref(false);
-  const showTwitterUnavailableDialog = ref(false);
+  const showTwitterExplainerDialog = ref(false);
+  const pendingTwitterBroadcast = ref<{
+    url: string;
+    displayName: string;
+    profileImageUrl?: string;
+  } | null>(null);
 
   // Segment & prompt selection dialog state
   const showSegmentDialog = ref(false);
@@ -667,6 +630,11 @@
     clearLogs,
     dvrSessions,
     hasDvrRecording,
+    twitterDvrSessions,
+    kickDvrSessions,
+    twitchDvrSessions,
+    youtubeDvrSessions,
+    rumbleDvrSessions,
     initAutoDvrPolling,
     cleanupStreamerDvr,
   } = useLivestreamMonitoring();
@@ -746,6 +714,7 @@
     window.addEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
     window.addEventListener('realtime-clip-detected', handleRealtimeClipDetected as EventListener);
     window.addEventListener('realtime-detection-stopped', handleRealtimeDetectionStopped as EventListener);
+    window.addEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated as EventListener);
   });
 
   async function checkAllLiveStatuses() {
@@ -851,7 +820,10 @@
       (streamer.platform === 'Twitch' && (!streamer.profileImageUrl || streamer.displayName === streamer.mintId)) ||
       (streamer.platform === 'YouTube' && !streamer.profileImageUrl) ||
       (streamer.platform === 'Rumble' && !streamer.profileImageUrl) ||
-      (streamer.platform === 'Twitter' && (streamer.mintId.includes('/i/broadcasts/') || streamer.mintId.includes('/i/spaces/')));
+      (streamer.platform === 'Twitter' &&
+        (streamer.mintId.includes('/i/broadcasts/') ||
+          streamer.mintId.includes('/i/spaces/') ||
+          streamer.mintId.includes('/i/events/')));
 
     if (!needsUpdate) return;
 
@@ -916,7 +888,11 @@
         }
       } else if (streamer.platform === 'Twitter') {
         // For Twitter broadcasts/spaces, fetch metadata to get username
-        if (streamer.mintId.includes('/i/broadcasts/') || streamer.mintId.includes('/i/spaces/')) {
+        if (
+          streamer.mintId.includes('/i/broadcasts/') ||
+          streamer.mintId.includes('/i/spaces/') ||
+          streamer.mintId.includes('/i/events/')
+        ) {
           const metadata = await getTwitterBroadcastInfo(streamer.mintId);
           const updates: any = {};
 
@@ -983,7 +959,10 @@
         (s.platform === 'Twitch' && (!s.profileImageUrl || s.displayName === s.mintId)) ||
         (s.platform === 'YouTube' && !s.profileImageUrl) ||
         (s.platform === 'Rumble' && !s.profileImageUrl) ||
-        (s.platform === 'Twitter' && (s.mintId.includes('/i/broadcasts/') || s.mintId.includes('/i/spaces/')))
+        (s.platform === 'Twitter' &&
+          (s.mintId.includes('/i/broadcasts/') ||
+            s.mintId.includes('/i/spaces/') ||
+            s.mintId.includes('/i/events/')))
     );
 
     if (needsUpdate.length === 0) return;
@@ -1010,15 +989,40 @@
     window.removeEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
     window.removeEventListener('realtime-clip-detected', handleRealtimeClipDetected as EventListener);
     window.removeEventListener('realtime-detection-stopped', handleRealtimeDetectionStopped as EventListener);
+    window.removeEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated as EventListener);
   });
 
-  watch([activeSessions, monitoredStreamers, dvrSessions], () => syncDetectionState(), { deep: true });
+  async function handleMonitoredStreamersUpdated(event: Event) {
+    const detail = (event as CustomEvent<{ action?: string; streamerId?: string }>).detail;
+    if (detail?.action === 'deleted' && detail.streamerId) {
+      streamers.value = streamers.value.filter((s) => s.id !== detail.streamerId);
+      return;
+    }
+
+    await loadStreamers();
+  }
+
+  function streamerHasTempRecording(streamerId: string): boolean {
+    return (
+      hasDvrRecording(streamerId) ||
+      twitterDvrSessions.value.has(streamerId) ||
+      kickDvrSessions.value.has(streamerId) ||
+      twitchDvrSessions.value.has(streamerId) ||
+      youtubeDvrSessions.value.has(streamerId) ||
+      rumbleDvrSessions.value.has(streamerId)
+    );
+  }
+
+  watch(
+    [activeSessions, monitoredStreamers, dvrSessions, twitterDvrSessions, kickDvrSessions, twitchDvrSessions, youtubeDvrSessions, rumbleDvrSessions],
+    () => syncDetectionState(),
+    { deep: true }
+  );
 
   function syncDetectionState() {
     streamers.value = streamers.value.map((streamer) => {
       const monitored = monitoredStreamers.value.get(streamer.id);
       const session = activeSessions.value.get(streamer.id);
-      const dvrSession = dvrSessions.value.get(streamer.id);
 
       return {
         ...streamer,
@@ -1026,7 +1030,7 @@
         mode: monitored ? (monitored.options.mode === 'realtime-detect' ? 'Auto-Detect' : 'Record Only') : null,
         status: session ? (session.isStopping ? 'STOPPING' : 'LIVE') : monitored ? 'WAITING' : 'IDLE',
         isLive: monitored ? (session ? true : streamer.isLive) : streamer.isLive,
-        hasTempRecording: !!dvrSession,
+        hasTempRecording: streamerHasTempRecording(streamer.id),
       };
     });
   }
@@ -1370,9 +1374,55 @@
       }
     }
 
-    // Handle Twitter - Block for live monitoring
+    // Handle Twitter — direct broadcast/Space/event URLs only
     if (detectedPlatform.value === 'Twitter') {
-      showTwitterUnavailableDialog.value = true;
+      const rawInput = inputValue.value.trim();
+      if (isTwitterProfileOrHandleInput(rawInput)) {
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'Twitter',
+          message:
+            'Paste the link to the current live broadcast (e.g. x.com/i/broadcasts/… or x.com/i/spaces/…). X assigns a new URL each time they go live — profile links cannot be monitored.',
+          status: 'info',
+        });
+        return;
+      }
+
+      let broadcastUrl = rawInput;
+      if (!isDirectTwitterLiveUrl(broadcastUrl)) {
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'Twitter',
+          message:
+            'Invalid X URL. Use a direct broadcast, Space, or event link (x.com/i/broadcasts/…, x.com/i/spaces/…, or x.com/i/events/…).',
+          status: 'info',
+        });
+        return;
+      }
+
+      try {
+        broadcastUrl = await validateTwitterUrl(broadcastUrl);
+      } catch {
+        broadcastUrl = normalizeTwitterUrl(broadcastUrl);
+      }
+
+      let displayName = extractTwitterBroadcastId(broadcastUrl) || 'X Broadcast';
+      let profileImageUrl: string | undefined;
+      try {
+        const metadata = await getTwitterBroadcastInfo(broadcastUrl);
+        if (metadata.title) displayName = metadata.title;
+        if (metadata.thumbnail) profileImageUrl = metadata.thumbnail;
+        if (metadata.username) {
+          displayName = metadata.title ? metadata.title : `@${metadata.username} live`;
+        }
+      } catch (e) {
+        console.warn('[LiveClip] Twitter metadata fetch failed, using defaults:', e);
+      }
+
+      pendingTwitterBroadcast.value = { url: broadcastUrl, displayName, profileImageUrl };
+      showTwitterExplainerDialog.value = true;
       return;
     }
 
@@ -1483,6 +1533,32 @@
         showSearchDialog.value = true;
       }
     }
+  }
+
+  function cancelTwitterBroadcastAdd() {
+    showTwitterExplainerDialog.value = false;
+    pendingTwitterBroadcast.value = null;
+  }
+
+  async function confirmTwitterBroadcastAdd() {
+    const pending = pendingTwitterBroadcast.value;
+    if (!pending) {
+      cancelTwitterBroadcastAdd();
+      return;
+    }
+
+    showTwitterExplainerDialog.value = false;
+    pendingTwitterBroadcast.value = null;
+
+    addActivityLog({
+      streamerId: 'system',
+      streamerName: 'System',
+      platform: 'Twitter',
+      message: `Adding X broadcast "${pending.displayName}"...`,
+      status: 'loading',
+    });
+
+    await confirmAddStreamer(pending.url, pending.displayName, pending.profileImageUrl, 'twitter');
   }
 
   async function confirmAddStreamer(
@@ -1727,6 +1803,7 @@
       promptContent: data.promptContent || undefined,
       creatorProfileId,
       applyCreatorClipLayout: applyCreatorLayout,
+      maxDetectionMinutes: 60,
     });
 
     // Move streamer to top of list
@@ -1778,6 +1855,7 @@
       promptContent: prompt?.promptContent,
       creatorProfileId: creatorLayout?.creatorProfileId,
       applyCreatorClipLayout: creatorLayout?.applyCreatorClipLayout,
+      maxDetectionMinutes: detectClips ? 60 : undefined,
     });
 
     const index = streamers.value.findIndex((s) => s.id === streamer.id);

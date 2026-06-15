@@ -1,6 +1,6 @@
 <template>
   <PageLayout
-    title="VOD Library"
+    title="Video Library"
     description="Manage and organize your video projects"
     :show-header="true"
     :icon="Folder"
@@ -82,8 +82,8 @@
         v-if="projects.length > 0 || loading || getActiveDownloads().length > 0 || getQueuedDownloads().length > 0"
         class="projects__heading"
       >
-        <h1 class="projects__title">VOD Library</h1>
-        <p class="projects__subtitle">Manage and organize your downloaded vods and detect clips</p>
+        <h1 class="projects__title">Video Library</h1>
+        <p class="projects__subtitle">Manage and organize your downloaded videos and detect clips</p>
       </div>
 
       <!-- Loading State -->
@@ -641,11 +641,6 @@
                       <div v-else-if="getProjectDuration(project.id)" class="folder-dialog__segment-duration">
                         <Clock :size="12" />
                         {{ getProjectDuration(project.id) }}
-                      </div>
-
-                      <div class="folder-dialog__segment-editor-pill">
-                        <Edit :size="12" />
-                        <span>Open editor</span>
                       </div>
 
                       <!-- Info -->
@@ -1367,6 +1362,10 @@
     type VideoEditorProject,
     hasTranscriptForProject,
   } from '@/services/database';
+  import {
+    isShortVideoAutoClipEligible,
+    SHORT_VIDEO_CLIP_THRESHOLD_SECONDS,
+  } from '@/services/database/auto-clips';
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { useClipThumbnailStore } from '@/stores/clipThumbnails';
   import { persistentCache } from '@/utils/persistentCache';
@@ -5588,14 +5587,44 @@
     return false;
   }
 
+  function getProjectVideoDurationSeconds(projectId: string): number {
+    const videos = projectVideos.value[projectId];
+    if (!videos?.length) {
+      return 0;
+    }
+    return videos.reduce((sum, v) => sum + (v.duration || 0), 0);
+  }
+
+  function isProjectShortVideoOnly(projectId: string): boolean {
+    const children = getFolderChildren(projectId);
+    if (children.length > 0) {
+      const segmentsWithVideo = children.filter((child) => {
+        const vids = projectVideos.value[child.id];
+        return vids && vids.length > 0;
+      });
+      if (segmentsWithVideo.length === 0) {
+        const dur = getProjectVideoDurationSeconds(projectId);
+        return dur > 0 && isShortVideoAutoClipEligible(dur);
+      }
+      return segmentsWithVideo.every((child) =>
+        isShortVideoAutoClipEligible(getProjectVideoDurationSeconds(child.id))
+      );
+    }
+
+    const duration = getProjectVideoDurationSeconds(projectId);
+    return duration > 0 && isShortVideoAutoClipEligible(duration);
+  }
+
   function canDetectClips(projectId: string): boolean {
-    // Check if project has videos directly
+    if (isProjectShortVideoOnly(projectId)) {
+      return false;
+    }
+
     const videos = projectVideos.value[projectId];
     if (videos && videos.length > 0) {
       return true;
     }
 
-    // Check if any children have videos
     const children = getFolderChildren(projectId);
     for (const child of children) {
       const childVideos = projectVideos.value[child.id];
@@ -5608,9 +5637,16 @@
   }
 
   async function startProjectDetection(project: Project) {
-    // Check if user is authenticated
     if (!authStore.isAuthenticated) {
       window.dispatchEvent(new CustomEvent('show-auth-modal'));
+      return;
+    }
+
+    if (isProjectShortVideoOnly(project.id)) {
+      error(
+        'Clip detection unavailable',
+        `Videos under ${SHORT_VIDEO_CLIP_THRESHOLD_SECONDS} seconds are already imported as a full clip. Transcribe and build from the clip instead.`
+      );
       return;
     }
 
@@ -7521,32 +7557,6 @@
   .folder-dialog__segment-card:hover {
     transform: scale(1.02);
     border-color: rgba(255, 255, 255, 0.15);
-  }
-
-  .folder-dialog__segment-editor-pill {
-    position: absolute;
-    bottom: 4.5rem;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 20;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    border-radius: 9999px;
-    background-color: rgba(6, 182, 212, 0.9);
-    color: #fff;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 200ms ease;
-    white-space: nowrap;
-  }
-
-  .folder-dialog__segment-card:hover .folder-dialog__segment-editor-pill {
-    opacity: 1;
   }
 
   .folder-dialog__segment-card--selected {

@@ -43,7 +43,7 @@
         </div>
         <!-- Detect Button (when not detecting and has clips) - Only show if AI is allowed -->
         <button
-          v-else-if="clips.length > 0 && isAIAllowed"
+          v-else-if="clips.length > 0 && isAIAllowed && !props.clipDetectionDisabled"
           @click="handleDetectClips"
           class="group flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground/80 hover:text-foreground bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.06] hover:border-white/[0.1]"
           title="Run clip detection again"
@@ -142,6 +142,7 @@
       :hide-header="true"
       :play-on-card-click="true"
       :vod-preset-config="props.vodPresetConfig"
+      :clip-detection-disabled="props.clipDetectionDisabled"
       @detect-clips="handleDetectClips"
       @cancel-detection="handleCancelDetection"
       @delete-clip="onDeleteClip"
@@ -206,6 +207,7 @@
     transcribeStage: '',
     transcribeMessage: '',
     vodPresetConfig: null,
+    clipDetectionDisabled: false,
   });
 
   const emit = defineEmits<MediaPanelEmits>();

@@ -4,6 +4,15 @@ import type { Transition } from "../../../../types/transitions";
 import { generateUUID } from "../../../../utils/id";
 import { EditorCore } from "../../../../core";
 import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
+import { getElementSourceSpanSeconds } from "../../../../lib/timeline/trim-source-utils";
+
+function withoutStartFade<T extends { fadeIn?: number }>(element: T): T {
+	return { ...element, fadeIn: undefined };
+}
+
+function withoutEndFade<T extends { fadeOut?: number }>(element: T): T {
+	return { ...element, fadeOut: undefined };
+}
 
 export class SplitElementsCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;
@@ -61,13 +70,22 @@ export class SplitElementsCommand extends Command {
 					const relativeTime = this.splitTime - element.startTime;
 					const leftVisibleDuration = relativeTime;
 					const rightVisibleDuration = element.duration - relativeTime;
+					const speed = "speed" in element ? element.speed : undefined;
+					const leftSourceDuration = getElementSourceSpanSeconds({
+						duration: leftVisibleDuration,
+						speed,
+					});
+					const rightSourceDuration = getElementSourceSpanSeconds({
+						duration: rightVisibleDuration,
+						speed,
+					});
 
 					if (this.retainSide === "left") {
 						return [
 							{
-								...element,
+								...withoutEndFade(element),
 								duration: leftVisibleDuration,
-								trimEnd: element.trimEnd + rightVisibleDuration,
+								trimEnd: element.trimEnd + rightSourceDuration,
 								name: `${element.name} (left)`,
 							},
 						];
@@ -81,11 +99,11 @@ export class SplitElementsCommand extends Command {
 						});
 						return [
 							{
-								...element,
+								...withoutStartFade(element),
 								id: newId,
 								startTime: this.splitTime,
 								duration: rightVisibleDuration,
-								trimStart: element.trimStart + leftVisibleDuration,
+								trimStart: element.trimStart + leftSourceDuration,
 								name: `${element.name} (right)`,
 							},
 						];
@@ -100,17 +118,17 @@ export class SplitElementsCommand extends Command {
 
 					return [
 						{
-							...element,
+							...withoutEndFade(element),
 							duration: leftVisibleDuration,
-							trimEnd: element.trimEnd + rightVisibleDuration,
+							trimEnd: element.trimEnd + rightSourceDuration,
 							name: `${element.name} (left)`,
 						},
 						{
-							...element,
+							...withoutStartFade(element),
 							id: secondElementId,
 							startTime: this.splitTime,
 							duration: rightVisibleDuration,
-							trimStart: element.trimStart + leftVisibleDuration,
+							trimStart: element.trimStart + leftSourceDuration,
 							name: `${element.name} (right)`,
 						},
 					];

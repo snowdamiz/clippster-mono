@@ -59,6 +59,137 @@ function videoSegmentsOverlap(segments: { start: number; end: number }[]): boole
 	return false;
 }
 
+const EXPORT_EPSILON = 1e-6;
+
+function approximately(value: number | undefined, expected: number): boolean {
+	return Math.abs((value ?? expected) - expected) < EXPORT_EPSILON;
+}
+
+function hasAnyEntries<T>(items: T[] | null | undefined): boolean {
+	return Array.isArray(items) && items.length > 0;
+}
+
+function hasNonDefaultTransform(element: VideoElement | ImageElement): boolean {
+	const transform = element.transform;
+	return (
+		!approximately(transform?.scale, 1) ||
+		!approximately(transform?.position?.x, 0) ||
+		!approximately(transform?.position?.y, 0) ||
+		!approximately(transform?.rotate, 0)
+	);
+}
+
+function hasNonDefaultCrop(element: VideoElement | ImageElement): boolean {
+	const crop = element.crop;
+	return !!crop && (
+		!approximately(crop.top, 0) ||
+		!approximately(crop.right, 0) ||
+		!approximately(crop.bottom, 0) ||
+		!approximately(crop.left, 0)
+	);
+}
+
+function hasNonDefaultFlip(element: VideoElement | ImageElement): boolean {
+	const flip = element.flip;
+	return !!flip && (flip.horizontal || flip.vertical);
+}
+
+function hasNonDefaultColor(element: VideoElement | ImageElement): boolean {
+	const color = element.colorAdjustments;
+	return !!color && (
+		!approximately(color.brightness, 0) ||
+		!approximately(color.contrast, 0) ||
+		!approximately(color.saturation, 0) ||
+		!approximately(color.temperature, 0) ||
+		!approximately(color.highlights, 0) ||
+		!approximately(color.shadows, 0) ||
+		!approximately(color.exposure, 0) ||
+		!approximately(color.fade, 0) ||
+		!approximately(color.sharpness, 0) ||
+		(color.tint ?? "") !== ""
+	);
+}
+
+function hasNonDefaultColorWheels(element: VideoElement | ImageElement): boolean {
+	const wheels = element.colorWheels;
+	if (!wheels) return false;
+	return [wheels.shadows, wheels.midtones, wheels.highlights].some((wheel) =>
+		!!wheel && (
+			!approximately(wheel.hue, 0) ||
+			!approximately(wheel.saturation, 0) ||
+			!approximately(wheel.luminance, 0)
+		),
+	);
+}
+
+function hasActiveVisualEffects(element: VideoElement | ImageElement): boolean {
+	return hasAnyEntries(element.effects?.filter((effect) => effect.enabled !== false));
+}
+
+function hasElementKeyframes(keyframes?: ElementKeyframes): boolean {
+	if (!keyframes) return false;
+	return Object.values(keyframes.tracks).some((track) => !!track && track.keyframes.length > 0);
+}
+
+function requiresSceneFrameExport({
+	tracks,
+	sceneTransitions,
+	canvasSourceFraming,
+}: {
+	tracks: TimelineTrack[];
+	sceneTransitions: import("../../types/transitions").Transition[];
+	canvasSourceFraming: unknown;
+}): boolean {
+	if (canvasSourceFraming) return true;
+	if (sceneTransitions.length > 0) return true;
+
+	for (const track of tracks) {
+		if (track.type === "audio") continue;
+
+		if (track.type !== "video") {
+			if (
+				track.elements.length > 0 &&
+				!track.hidden &&
+				track.type !== "text" &&
+				track.type !== "caption" &&
+				track.type !== "sticker" &&
+				track.type !== "effect"
+			) {
+				return true;
+			}
+			continue;
+		}
+
+		if (track.hidden) continue;
+
+		for (const element of track.elements) {
+			if (element.hidden) continue;
+			if (element.type !== "video") return true;
+			if (element.mediaFit && element.mediaFit !== "contain") return true;
+			if (!approximately(element.opacity, 1)) return true;
+			if (!approximately(element.fadeIn, 0) || !approximately(element.fadeOut, 0)) return true;
+			if (hasNonDefaultTransform(element)) return true;
+			if (hasNonDefaultCrop(element)) return true;
+			if (hasNonDefaultFlip(element)) return true;
+			if (hasNonDefaultColor(element)) return true;
+			if (hasAnyEntries(element.colorCurves?.master)) return true;
+			if (hasAnyEntries(element.colorCurves?.red)) return true;
+			if (hasAnyEntries(element.colorCurves?.green)) return true;
+			if (hasAnyEntries(element.colorCurves?.blue)) return true;
+			if (hasNonDefaultColorWheels(element)) return true;
+			if (element.lutPath) return true;
+			if (element.blendMode && element.blendMode !== "normal") return true;
+			if (hasActiveVisualEffects(element)) return true;
+			if (element.chromakey?.enabled) return true;
+			if (hasAnyEntries(element.masks)) return true;
+			if (element.animationIn || element.animationOut || element.animationLoop) return true;
+			if (hasElementKeyframes(element.keyframes)) return true;
+		}
+	}
+
+	return false;
+}
+
 interface TauriAnimationData {
 	anim_type: string;
 	duration: number;
@@ -472,34 +603,67 @@ export class RendererManager {
 			const timeOffset = timeRange?.startTime ?? 0;
 			const frameCount = Math.max(1, Math.ceil(duration * exportFps));
 
-			const { pattern: scenePattern, frameCount: sceneFrameCount } = await writeSceneFrameSequenceToDisk({
-				sessionId,
-				sceneInputs: {
-					tracks: sceneTracks,
-					mediaAssets,
-					duration: fullDuration,
-					canvasSize,
-					background,
-					transitions: sceneTransitions,
-					canvasSourceFraming: activeProject.settings.canvasSourceFraming ?? null,
-				},
-				exportDuration: duration,
-				timeOffset,
-				fps: exportFps,
-				frameCount,
-				onProgress: (p) => {
-					onProgress?.({ progress: 0.05 + p.progress * 0.14 });
-				},
-				isCancelled: () => !!onCancel?.(),
+			let scenePattern: string | null = null;
+			let sceneFrameCount: number | null = null;
+			const useSceneFrames = requiresSceneFrameExport({
+				tracks,
+				sceneTransitions,
+				canvasSourceFraming: activeProject.settings.canvasSourceFraming ?? null,
 			});
+
+			if (useSceneFrames) {
+				const sceneExport = await writeSceneFrameSequenceToDisk({
+					sessionId,
+					sceneInputs: {
+						tracks: sceneTracks,
+						mediaAssets,
+						duration: fullDuration,
+						canvasSize,
+						background,
+						transitions: sceneTransitions,
+						canvasSourceFraming: activeProject.settings.canvasSourceFraming ?? null,
+					},
+					exportDuration: duration,
+					timeOffset,
+					fps: exportFps,
+					frameCount,
+					onProgress: (p) => {
+						onProgress?.({ progress: 0.05 + p.progress * 0.14 });
+					},
+					isCancelled: () => !!onCancel?.(),
+				});
+				scenePattern = sceneExport.pattern;
+				sceneFrameCount = sceneExport.frameCount;
+			} else {
+				console.info("[RendererManager] Using fast FFmpeg export path; scene frame pre-render not required");
+			}
 
 			onProgress?.({ progress: 0.19 });
 			const cancelledAfterFrames = checkCancelled();
 			if (cancelledAfterFrames) return cancelledAfterFrames;
 
-			const textOverlays: TauriTextOverlay[] = [];
-			const stickerOverlays: TauriStickerOverlay[] = [];
-			const captionOverlays: TauriTextOverlay[] = [];
+			const textOverlays = useSceneFrames
+				? []
+				: await this.preRenderTextOverlays({
+						tracks,
+						canvasSize,
+						fps: exportFps,
+					});
+			const stickerOverlays = useSceneFrames
+				? []
+				: await this.preRenderStickerOverlays({
+						tracks,
+						canvasSize,
+						fps: exportFps,
+					});
+			const captionOverlays = useSceneFrames
+				? []
+				: await this.preRenderCaptionOverlays({
+						tracks,
+						canvasSize,
+						duration: fullDuration,
+						fps: exportFps,
+					});
 
 			// Resolve branding config for export
 			const brandingExport = await this.resolveBrandingForExport({ canvasSize });
@@ -508,7 +672,8 @@ export class RendererManager {
 			const cancelledAfterBranding = checkCancelled();
 			if (cancelledAfterBranding) return cancelledAfterBranding;
 
-			// Build export config from timeline data (visuals come from the scene image sequence)
+			// Build export config from timeline data. Complex visual projects use the
+			// scene image sequence; simpler ones let FFmpeg composite pre-rendered overlays.
 			const config = this.buildExportConfig({
 				tracks,
 				mediaAssets,
@@ -523,12 +688,16 @@ export class RendererManager {
 				brandingExport,
 			});
 			config.export_id = effectiveExportId;
-			config.scene_frame_pattern = scenePattern;
-			config.scene_frame_count = sceneFrameCount;
+			if (scenePattern) {
+				config.scene_frame_pattern = scenePattern;
+				config.scene_frame_count = sceneFrameCount ?? undefined;
+			}
 			config.export_format = options.format;
 			config.export_quality = options.quality;
 			config.include_audio = options.includeAudio !== false;
-			config.effect_overlays = [];
+			if (useSceneFrames) {
+				config.effect_overlays = [];
+			}
 
 			onProgress?.({ progress: 0.2 });
 			const cancelledBeforeEncode = checkCancelled();
@@ -829,6 +998,7 @@ export class RendererManager {
 			} else if (track.type === "sticker") {
 				// Stickers are pre-rendered to PNGs by preRenderStickerOverlays — skip here
 			} else if (track.type === "effect") {
+				if (track.hidden) continue;
 				for (const el of track.elements) {
 					const effectEl = el as EffectElement;
 					if (!effectEl.enabled) continue;
@@ -1014,9 +1184,11 @@ export class RendererManager {
 
 		for (const track of tracks) {
 			if (track.type !== "text") continue;
+			if (track.hidden) continue;
 
 			for (const el of track.elements) {
 				const textEl = el as TextElement;
+				if (textEl.hidden) continue;
 				if (!textEl.content?.trim()) continue;
 
 				try {
@@ -1122,9 +1294,11 @@ export class RendererManager {
 
 		for (const track of tracks) {
 			if (track.type !== "sticker") continue;
+			if (track.hidden) continue;
 
 			for (const el of track.elements) {
 				const stickerEl = el as StickerElement;
+				if (stickerEl.hidden) continue;
 				stickerCount++;
 
 				try {
@@ -1253,9 +1427,11 @@ export class RendererManager {
 
 		for (const track of tracks) {
 			if (track.type !== "caption") continue;
+			if (track.hidden) continue;
 
 			for (const el of track.elements) {
 				const captionEl = el as CaptionElement;
+				if (captionEl.hidden) continue;
 				if (!captionEl.lines || captionEl.lines.length === 0) continue;
 				captionCount++;
 

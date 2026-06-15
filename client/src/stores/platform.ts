@@ -10,7 +10,13 @@ import { getKickClips, extractChannelSlug, checkKickLivestream } from '@/service
 import { getTwitchVods, extractChannelName, checkTwitchLivestream, type TwitchVod } from '@/services/twitch';
 import { getYouTubeVods, extractYouTubeChannel, type YouTubeVod } from '@/services/youtube';
 import { getRumbleVods, extractRumbleChannel, checkRumbleLivestream, type RumbleVod } from '@/services/rumble';
-import { extractTwitterBroadcastId, validateTwitterUrl, getTwitterBroadcastInfo } from '@/services/twitter';
+import {
+  extractTwitterBroadcastId,
+  extractTwitterSourceId,
+  extractTwitterStatusId,
+  validateTwitterUrl,
+  getTwitterBroadcastInfo,
+} from '@/services/twitter';
 import { cache } from '@/utils/persistentCache';
 import { isTauri } from '@/lib/instagram-auth';
 
@@ -680,20 +686,20 @@ export const usePlatformStore = defineStore('platform', {
 
           case 'twitter': {
             // Twitter supports broadcast/space URLs and regular tweet video URLs
-            const broadcastId = extractTwitterBroadcastId(trimmedInput);
-            
-            // Check if it's a valid Twitter/X URL (broadcast, space, or regular tweet)
-            const isValidTwitterUrl = trimmedInput.includes('twitter.com') || trimmedInput.includes('x.com');
-            
+            const sourceId = extractTwitterSourceId(trimmedInput);
+
+            const isValidTwitterUrl =
+              trimmedInput.includes('twitter.com') || trimmedInput.includes('x.com');
+
             if (!isValidTwitterUrl) {
-              this.error = 'Invalid X/Twitter URL. Enter a broadcast, space, or tweet video URL.';
+              this.error =
+                'Invalid X/Twitter URL. Enter a timeline video post, broadcast, or space URL.';
               this.loading = false;
               return { success: false, error: this.error };
             }
-            
-            // Use broadcast ID if available, otherwise use the full URL
-            this.currentSearchId = broadcastId || trimmedInput;
-            console.log('[Platform Store] Twitter search - URL:', trimmedInput, 'broadcastId:', broadcastId);
+
+            this.currentSearchId = sourceId || trimmedInput;
+            console.log('[Platform Store] Twitter search - URL:', trimmedInput, 'sourceId:', sourceId);
             result = await this.getTwitterClip(trimmedInput);
             break;
           }
@@ -1131,17 +1137,19 @@ export const usePlatformStore = defineStore('platform', {
       try {
         // Validate the URL
         const validatedUrl = await validateTwitterUrl(url);
-        const broadcastId = extractTwitterBroadcastId(validatedUrl);
-        
-        if (!broadcastId) {
+        const sourceId = extractTwitterSourceId(validatedUrl);
+
+        if (!sourceId) {
           return {
             success: false,
             clips: [],
             hasMore: false,
             total: 0,
-            error: 'Invalid Twitter broadcast/space URL',
+            error: 'Invalid X/Twitter URL. Could not parse post, broadcast, or space id.',
           };
         }
+
+        const isStatusPost = extractTwitterStatusId(validatedUrl) != null;
 
         // Fetch metadata from yt-dlp
         console.log('[Platform] Fetching Twitter metadata for:', validatedUrl);
@@ -1151,33 +1159,34 @@ export const usePlatformStore = defineStore('platform', {
         // Check if metadata fetch failed but we still have the URL
         let warning: string | undefined;
         if (metadata.error) {
-          warning = `Could not fetch broadcast details: ${metadata.error}. You can still download the VOD, but duration and thumbnail may not be available.`;
+          warning = `Could not fetch video details: ${metadata.error}. You can still download the VOD, but duration and thumbnail may not be available.`;
           console.warn('[Platform] Twitter metadata fetch failed:', metadata.error);
         }
 
-        // For Twitter, we return a single "clip" representing the broadcast/space
+        const defaultTitle = isStatusPost
+          ? `X Video ${sourceId.substring(0, Math.min(8, sourceId.length))}...`
+          : `X Broadcast ${sourceId.substring(0, Math.min(8, sourceId.length))}...`;
+
         const clip: PlatformClip = {
-          clipId: broadcastId,
-          title: metadata.title || `X Broadcast ${broadcastId}`,
-          duration: metadata.duration, // Don't default to 0, keep undefined if not available
+          clipId: sourceId,
+          title: metadata.title || defaultTitle,
+          duration: metadata.duration,
           thumbnailUrl: metadata.thumbnail,
           playlistUrl: validatedUrl,
           mp4Url: validatedUrl,
           clipType: 'COMPLETE' as const,
-          createdAt: metadata.timestamp || new Date().toISOString(), // Use actual broadcast timestamp, fallback to current date
+          createdAt: metadata.timestamp || new Date().toISOString(),
           uploader: metadata.username || metadata.uploader,
         };
-        
-        // Add to recent searches with avatar
-        // Store the full URL as both id and displayText so clicking works correctly
-        if (metadata.username || broadcastId) {
+
+        if (metadata.username || sourceId) {
           this.addToRecentSearches(
             validatedUrl,
-            validatedUrl, // displayText is the URL for searching
+            validatedUrl,
             'twitter',
-            metadata.username || broadcastId, // label is the username shown below avatar
+            metadata.username || sourceId,
             {
-              name: metadata.title || `X Broadcast ${broadcastId}`, // name is the title shown in bold
+              name: metadata.title || defaultTitle,
               imageUrl: metadata.avatarUrl,
             }
           );

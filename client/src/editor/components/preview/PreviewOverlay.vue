@@ -32,7 +32,6 @@ const {
 	hoveredElementId,
 	showCenterGuideX,
 	showCenterGuideY,
-	previewFocused,
 	handleCanvasMouseDown,
 	handleHandleMouseDown,
 	handleCanvasMouseMove,
@@ -236,6 +235,12 @@ const plateChromeBorderClass = computed(() =>
 const plateHandleClass = computed(() =>
 	activeCanvasSourceFraming.value?.mode === "use16x9" ? "bg-cyan-500" : "bg-purple-500",
 );
+
+const shouldShowPlateChrome = computed(() => {
+	if (isCropMode.value || !activeCanvasSourceFraming.value) return false;
+	const selectedType = selectedBounds.value?.elementType;
+	return selectedType === "video" || selectedType === "image";
+});
 
 const plateDragState = ref<{
 	type: "move" | "resize";
@@ -842,7 +847,7 @@ const cursorStyle = computed(() => {
 
 		<!-- Selection: multi-select shows one outline per visible clip; single-select adds resize/rotate handles -->
 		<svg
-			v-if="selectedVisibleScreenBoundsList.length > 0 && !isCropMode && previewFocused"
+			v-if="selectedVisibleScreenBoundsList.length > 0 && !isCropMode"
 			class="pointer-events-none absolute inset-0 size-full overflow-visible"
 		>
 			<g
@@ -908,11 +913,11 @@ const cursorStyle = computed(() => {
 
 		<!-- Use 16:9 canvas framing — drag + corner scale like Manual POI -->
 		<div
-			v-if="plateScreenRect && activeCanvasSourceFraming && !isCropMode"
+			v-if="plateScreenRect && shouldShowPlateChrome"
 			class="pointer-events-none absolute inset-0 z-[15] overflow-visible"
 		>
 			<div
-				class="pointer-events-auto absolute box-border border-2"
+				class="pointer-events-none absolute box-border border-2"
 				:class="plateChromeBorderClass"
 				:style="{
 					left: `${plateScreenRect.left}px`,
@@ -921,8 +926,11 @@ const cursorStyle = computed(() => {
 					height: `${plateScreenRect.height}px`,
 					cursor: 'move',
 				}"
-				@mousedown.stop="onPlateMouseDown"
 			>
+				<div class="pointer-events-auto absolute inset-x-0 top-0 h-2 cursor-move" @mousedown.stop="onPlateMouseDown" />
+				<div class="pointer-events-auto absolute inset-x-0 bottom-0 h-2 cursor-move" @mousedown.stop="onPlateMouseDown" />
+				<div class="pointer-events-auto absolute inset-y-0 left-0 w-2 cursor-move" @mousedown.stop="onPlateMouseDown" />
+				<div class="pointer-events-auto absolute inset-y-0 right-0 w-2 cursor-move" @mousedown.stop="onPlateMouseDown" />
 				<div
 					class="pointer-events-auto absolute left-0 top-0 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-white"
 					:class="plateHandleClass"

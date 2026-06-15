@@ -29,7 +29,7 @@ const { editor, version } = useEditor({
 	},
 });
 const { isCropMode, activeSocialOverlay, viewportZoom, previewQuality, fitMode } = useEditorUIState();
-const { selectedElements } = useElementSelection();
+const { selectedElements, clearElementSelection } = useElementSelection();
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const containerRef = ref<HTMLDivElement | null>(null);
@@ -118,6 +118,30 @@ watch([layoutWidth, layoutHeight, fps, previewBackingSize], ([w, h, f, backing])
 const tracks = computed(() => {
 	void version.value;
 	return editor.timeline.getTracks();
+});
+
+/** Invalidate decode cache when element timing changes so EOF frames don't stick after trims. */
+const videoTimingSignature = computed(() => {
+	void version.value;
+	const parts: string[] = [];
+	for (const track of editor.timeline.getTracks()) {
+		for (const el of track.elements) {
+			if (el.type === "video") {
+				parts.push(
+					`${el.id}:${el.trimStart}:${el.trimEnd}:${el.duration}:${el.speed ?? 1}`,
+				);
+			}
+		}
+	}
+	return parts.join("|");
+});
+
+let lastVideoTimingSignature = "";
+watch(videoTimingSignature, (signature) => {
+	if (lastVideoTimingSignature && signature !== lastVideoTimingSignature) {
+		videoCache.clearAll();
+	}
+	lastVideoTimingSignature = signature;
 });
 
 const mediaAssets = computed(() => {
@@ -443,6 +467,13 @@ function fitZoom() {
 	viewportZoom.value = 1;
 }
 
+function onPreviewAreaMouseDown(event: MouseEvent) {
+	if (event.button !== 0) return;
+	const target = event.target as HTMLElement | null;
+	if (target?.closest(".preview-canvas-wrapper")) return;
+	clearElementSelection();
+}
+
 function onKeyZoom(e: KeyboardEvent) {
 	if (!e.ctrlKey && !e.metaKey) return;
 	if (e.key === "0") {
@@ -490,6 +521,13 @@ function setQuality(value: "auto" | 360 | 540 | 720 | 1080) {
 	showQualityDropdown.value = false;
 }
 
+/** Force a preview repaint after timeline scrub/seek so video does not stick on a stale frame. */
+function handlePlaybackSeek() {
+	lastRenderedTime = Number.NEGATIVE_INFINITY;
+	lastFrame = -1;
+	idleTickCount = 0;
+}
+
 onMounted(() => {
 	exposePreviewPerfGlobal();
 	if (import.meta.env.DEV) {
@@ -504,6 +542,7 @@ onMounted(() => {
 	}
 	containerRef.value?.addEventListener('wheel', onWheelZoom, { passive: false });
 	window.addEventListener("keydown", onKeyZoom);
+	window.addEventListener("playback-seek", handlePlaybackSeek);
 });
 
 onUnmounted(() => {
@@ -513,6 +552,7 @@ onUnmounted(() => {
 	}
 	containerRef.value?.removeEventListener('wheel', onWheelZoom);
 	window.removeEventListener("keydown", onKeyZoom);
+	window.removeEventListener("playback-seek", handlePlaybackSeek);
 });
 
 defineExpose({ containerRef });
@@ -543,7 +583,7 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 <template>
 	<div ref="containerRef" class="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-[#0e0e10]">
 		<!-- Canvas + Interactive Overlay -->
-		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto p-4">
+		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto p-4" @mousedown="onPreviewAreaMouseDown">
 			<div
 				class="preview-canvas-wrapper relative rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
 				:style="{

@@ -2,6 +2,7 @@ defmodule ClippsterServerWeb.CampaignController do
   use ClippsterServerWeb, :controller
 
   alias ClippsterServer.Campaigns
+  alias ClippsterServer.Campaigns.CampaignResource
   alias ClippsterServer.Organizations
   alias ClippsterServer.Storage
 
@@ -353,11 +354,21 @@ defmodule ClippsterServerWeb.CampaignController do
           payment_model: Map.get(params, "payment_model", "cpm"),
           per_clip_amount: Map.get(params, "per_clip_amount"),
           clips_per_profile: Map.get(params, "clips_per_profile", 5),
-          assigned_streamer_ids: Map.get(params, "assigned_streamer_ids", [])
+          assigned_streamer_ids: Map.get(params, "assigned_streamer_ids", []),
+          content_vertical: Map.get(params, "content_vertical"),
+          campaign_goal: Map.get(params, "campaign_goal"),
+          content_style_tags: Map.get(params, "content_style_tags", [])
         }
 
         case Campaigns.create_campaign(organization, attrs, user) do
           {:ok, campaign} ->
+            maybe_set_campaign_resources(campaign, Map.get(params, "resources"), user)
+
+            campaign =
+              campaign.id
+              |> Campaigns.get_campaign_with_details()
+              |> Kernel.||(campaign)
+
             json(conn, %{
               success: true,
               campaign: serialize_campaign(campaign)
@@ -410,13 +421,23 @@ defmodule ClippsterServerWeb.CampaignController do
           "payment_model",
           "per_clip_amount",
           "clips_per_profile",
-          "assigned_streamer_ids"
+          "assigned_streamer_ids",
+          "content_vertical",
+          "campaign_goal",
+          "content_style_tags"
         ])
         |> maybe_add_dates(params)
         |> maybe_strip_cover_image_url()
 
       case Campaigns.update_campaign(campaign, attrs, user) do
         {:ok, updated} ->
+          maybe_set_campaign_resources(updated, Map.get(params, "resources"), user)
+
+          updated =
+            updated.id
+            |> Campaigns.get_campaign_with_details()
+            |> Kernel.||(updated)
+
           json(conn, %{
             success: true,
             campaign: serialize_campaign(updated)
@@ -665,6 +686,60 @@ defmodule ClippsterServerWeb.CampaignController do
             conn
             |> put_status(403)
             |> json(%{success: false, error: "Not authorized"})
+        end
+    end
+  end
+
+  @doc """
+  List source materials/resources for a campaign.
+  """
+  def list_resources(conn, %{"organization_id" => org_id, "id" => campaign_id}) do
+    user = conn.assigns.current_user
+
+    if Organizations.is_member?(org_id, user.id) do
+      resources = Campaigns.list_campaign_resources(campaign_id)
+
+      json(conn, %{
+        success: true,
+        resources: Enum.map(resources, &serialize_campaign_resource/1)
+      })
+    else
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Not a member of this organization"})
+    end
+  end
+
+  @doc """
+  Set all source materials/resources for a campaign (replaces existing).
+  """
+  def set_resources(conn, %{"organization_id" => _org_id, "id" => campaign_id} = params) do
+    user = conn.assigns.current_user
+    resources = Map.get(params, "resources", [])
+
+    case Campaigns.get_campaign(campaign_id) do
+      nil ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Campaign not found"})
+
+      campaign ->
+        case Campaigns.set_campaign_resources(campaign, resources, user) do
+          {:ok, updated_resources} ->
+            json(conn, %{
+              success: true,
+              resources: Enum.map(updated_resources, &serialize_campaign_resource/1)
+            })
+
+          {:error, :unauthorized} ->
+            conn
+            |> put_status(403)
+            |> json(%{success: false, error: "Not authorized"})
+
+          {:error, changeset} when is_struct(changeset, Ecto.Changeset) ->
+            conn
+            |> put_status(422)
+            |> json(%{success: false, error: format_errors(changeset)})
         end
     end
   end
@@ -941,8 +1016,12 @@ defmodule ClippsterServerWeb.CampaignController do
             {:ok, updated} ->
               # Check for platform campaign reward milestones
               ClippsterServer.PlatformCampaigns.check_and_grant_rewards(updated.id)
-              
-              json(conn, %{success: true, submission: serialize_submission(updated)})
+
+              json(conn, %{
+                success: true,
+                submission: serialize_submission(updated),
+                analytics: serialize_submission_analytics(updated)
+              })
 
             {:error, changeset} ->
               conn
@@ -954,6 +1033,80 @@ defmodule ClippsterServerWeb.CampaignController do
       conn
       |> put_status(403)
       |> json(%{success: false, error: "Not authorized"})
+    end
+  end
+
+  @doc """
+  Sync submission metrics from PostForMe and record a snapshot.
+  """
+  def sync_submission_metrics(conn, %{
+        "organization_id" => org_id,
+        "submission_id" => submission_id
+      }) do
+    user = conn.assigns.current_user
+
+    if Organizations.is_admin?(org_id, user.id) do
+      case Campaigns.get_submission(submission_id) do
+        nil ->
+          conn
+          |> put_status(404)
+          |> json(%{success: false, error: "Submission not found"})
+
+        submission ->
+          case Campaigns.sync_submission_metrics(submission) do
+            {:ok, updated} ->
+              json(conn, %{
+                success: true,
+                submission: serialize_submission(updated),
+                analytics: serialize_submission_analytics(updated)
+              })
+
+            {:error, reason} ->
+              updated = Campaigns.get_submission(submission_id)
+
+              conn
+              |> put_status(422)
+              |> json(%{
+                success: false,
+                error: to_string(reason),
+                submission: if(updated, do: serialize_submission(updated), else: nil),
+                analytics: if(updated, do: serialize_submission_analytics(updated), else: nil)
+              })
+          end
+      end
+    else
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Not authorized"})
+    end
+  end
+
+  @doc """
+  Get submission analytics summary and snapshot history.
+  """
+  def submission_analytics(conn, %{
+        "organization_id" => org_id,
+        "submission_id" => submission_id
+      }) do
+    user = conn.assigns.current_user
+
+    if Organizations.is_member?(org_id, user.id) do
+      case Campaigns.get_submission(submission_id) do
+        nil ->
+          conn
+          |> put_status(404)
+          |> json(%{success: false, error: "Submission not found"})
+
+        submission ->
+          json(conn, %{
+            success: true,
+            analytics: serialize_submission_analytics(submission)
+          })
+      end
+    else
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Not a member of this organization"})
     end
   end
 
@@ -1080,6 +1233,9 @@ defmodule ClippsterServerWeb.CampaignController do
       per_clip_amount: campaign.per_clip_amount,
       clips_per_profile: campaign.clips_per_profile,
       assigned_streamer_ids: campaign.assigned_streamer_ids,
+      content_vertical: campaign.content_vertical,
+      campaign_goal: campaign.campaign_goal,
+      content_style_tags: campaign.content_style_tags || [],
       inserted_at: campaign.inserted_at,
       updated_at: campaign.updated_at,
       organization:
@@ -1128,6 +1284,11 @@ defmodule ClippsterServerWeb.CampaignController do
             campaign.branding_profile,
           do: serialize_creator_profile(campaign.branding_profile),
           else: nil
+        ),
+      resources:
+        if(Ecto.assoc_loaded?(campaign.resources),
+          do: Enum.map(campaign.resources, &serialize_campaign_resource/1),
+          else: []
         )
     }
   end
@@ -1248,6 +1409,11 @@ defmodule ClippsterServerWeb.CampaignController do
       comment_count: submission.comment_count,
       share_count: submission.share_count,
       save_count: submission.save_count,
+      reach_count: submission.reach_count,
+      impressions_count: submission.impressions_count,
+      feed_match_status: submission.feed_match_status,
+      verification_warnings: submission.verification_warnings || [],
+      metrics_last_synced_at: submission.metrics_last_synced_at,
       # Author metadata from platform
       author_username: submission.author_username,
       author_name: submission.author_name,
@@ -1367,6 +1533,63 @@ defmodule ClippsterServerWeb.CampaignController do
       file_size: asset.file_size,
       mime_type: asset.mime_type
     }
+  end
+
+  defp serialize_campaign_resource(resource) do
+    %{
+      id: resource.id,
+      campaign_id: resource.campaign_id,
+      resource_type: resource.resource_type,
+      source_platform: resource.source_platform,
+      url: resource.url,
+      title: resource.title,
+      description: resource.description,
+      sort_order: resource.sort_order,
+      metadata: resource.metadata || %{},
+      download_target: CampaignResource.build_download_target(resource),
+      inserted_at: resource.inserted_at,
+      updated_at: resource.updated_at
+    }
+  end
+
+  defp serialize_submission_analytics(submission) do
+    summary = Campaigns.get_submission_analytics_summary(submission)
+
+    %{
+      trends: summary.trends,
+      warnings: summary.warnings,
+      feed_match_status: summary.feed_match_status,
+      metrics_last_synced_at: summary.metrics_last_synced_at,
+      snapshots: Enum.map(summary.snapshots, &serialize_metric_snapshot/1)
+    }
+  end
+
+  defp serialize_metric_snapshot(snapshot) do
+    %{
+      id: snapshot.id,
+      source: snapshot.source,
+      provider_account_id: snapshot.provider_account_id,
+      feed_match_status: snapshot.feed_match_status,
+      view_count: snapshot.view_count,
+      like_count: snapshot.like_count,
+      comment_count: snapshot.comment_count,
+      share_count: snapshot.share_count,
+      save_count: snapshot.save_count,
+      reach_count: snapshot.reach_count,
+      impressions_count: snapshot.impressions_count,
+      warnings: snapshot.warnings || [],
+      inserted_at: snapshot.inserted_at
+    }
+  end
+
+  defp maybe_set_campaign_resources(_campaign, nil, _user), do: :ok
+  defp maybe_set_campaign_resources(_campaign, [], _user), do: :ok
+
+  defp maybe_set_campaign_resources(campaign, resources, user) when is_list(resources) do
+    case Campaigns.set_campaign_resources(campaign, resources, user) do
+      {:ok, _} -> :ok
+      {:error, _} -> :ok
+    end
   end
 
   # ============================================================================

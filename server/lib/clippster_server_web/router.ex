@@ -308,6 +308,10 @@ defmodule ClippsterServerWeb.Router do
     # AI reference analysis
     post("/ai/reference/analyze", AIChatController, :analyze_reference)
 
+    # AI B-roll planning and stock search
+    post("/ai/broll/suggest", BrollController, :suggest)
+    get("/ai/broll/search", BrollController, :search)
+
     # News feed for AI context enrichment
     get("/news", NewsController, :index)
     get("/news/ai-context", NewsController, :ai_context)
@@ -1082,6 +1086,19 @@ defmodule ClippsterServerWeb.Router do
       :remove_creator_profile
     )
 
+    # Campaign source materials/resources
+    get(
+      "/organizations/:organization_id/campaigns/:id/resources",
+      CampaignController,
+      :list_resources
+    )
+
+    put(
+      "/organizations/:organization_id/campaigns/:id/resources",
+      CampaignController,
+      :set_resources
+    )
+
     # Campaign participants
     get(
       "/organizations/:organization_id/campaigns/:id/participants",
@@ -1136,6 +1153,18 @@ defmodule ClippsterServerWeb.Router do
       "/organizations/:organization_id/submissions/:submission_id/views",
       CampaignController,
       :update_views
+    )
+
+    post(
+      "/organizations/:organization_id/submissions/:submission_id/sync-metrics",
+      CampaignController,
+      :sync_submission_metrics
+    )
+
+    get(
+      "/organizations/:organization_id/submissions/:submission_id/analytics",
+      CampaignController,
+      :submission_analytics
     )
 
     # Campaign payments

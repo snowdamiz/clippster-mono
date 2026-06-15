@@ -63,7 +63,7 @@ export const navigationItems: NavigationItem[] = [
     group: 'browse',
   },
   {
-    name: 'Download VODs',
+    name: 'Download Video',
     path: '/vods',
     icon: Video,
     group: 'browse',
@@ -90,7 +90,7 @@ export const navigationItems: NavigationItem[] = [
 
   // Create group - content creation tools
   {
-    name: 'VOD Library',
+    name: 'Video Library',
     path: '/projects',
     icon: Folder,
     group: 'create',

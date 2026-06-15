@@ -38,6 +38,8 @@ import { getClip } from "@/services/database/clips";
 import { getRawVideosByProjectId } from "@/services/database/raw-videos";
 import { getCreatorProfileByProjectId } from "@/services/database/creator-profiles";
 import { useBrandingConfig } from "../composables/useBrandingConfig";
+import { TIMELINE_CONSTANTS } from "../constants/timeline-constants";
+import { normalizeTrimEndToTail } from "../lib/timeline/trim-source-utils";
 import { healOrphanVideoMediaReferences } from "../lib/timeline/heal-orphan-video-media";
 
 const DEFAULT_TRANSFORM: Transform = {
@@ -237,7 +239,7 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 		settings: { ...DEFAULT_PROJECT_SETTINGS, sourceProjectId, sourceClipId, sourceClipStartTime, sourceClipEndTime },
 		version: 1,
 		timelineViewState: {
-			zoomLevel: 1,
+			zoomLevel: TIMELINE_CONSTANTS.ZOOM_MIN,
 			scrollLeft: 0,
 			playheadTime: 0,
 		},
@@ -358,12 +360,12 @@ async function buildTimelineTracks(
 		if (duration <= 0) continue;
 
 		const trimStart = source.trim_start || 0;
-		// DB often omits trim_end; `?? 0` produced `trimEnd === 0`, which breaks preview decode
-		// (`0 ?? fallback` keeps 0 in VideoNode). Default to the natural media out-point.
-		const trimEnd =
-			source.trim_end != null && source.trim_end > trimStart
-				? source.trim_end
-				: trimStart + duration;
+		const trimEnd = normalizeTrimEndToTail({
+			trimStart,
+			duration,
+			trimEnd: source.trim_end,
+			speed: source.speed,
+		});
 
 		videoElements.push({
 			id: generateUUID(),

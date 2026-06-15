@@ -13,6 +13,7 @@
 pub mod convert_video;
 pub mod delete_local_storage;
 pub mod download_audio;
+pub mod download_broll;
 pub mod download_management;
 pub mod file_operations;
 pub mod file_utils;
@@ -24,6 +25,7 @@ pub mod system;
 pub use convert_video::*;
 pub use delete_local_storage::*;
 pub use download_audio::*;
+pub use download_broll::*;
 pub use download_management::*;
 pub use file_operations::*;
 pub use focal_detection_commands::*;

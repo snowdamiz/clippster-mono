@@ -671,7 +671,7 @@ defmodule ClippsterServer.Social.Providers.PostForMe do
     %SocialPostResult{
       id: payload["id"],
       social_account_id: payload["social_account_id"],
-      post_id: payload["post_id"],
+      post_id: payload["post_id"] || payload["social_post_id"],
       success: payload["success"],
       error: payload["error"],
       details: payload["details"],

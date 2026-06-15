@@ -146,12 +146,16 @@ export function computeDropTarget({
 	startTimeOverride,
 	excludeElementId,
 }: ComputeDropTargetParams): DropTarget {
-	const xPosition =
+	const xPositionRaw =
 		typeof startTimeOverride === "number"
 			? startTimeOverride
 			: isExternalDrop
 				? playheadTime
 				: Math.max(0, mouseX / (pixelsPerSecond * zoomLevel));
+
+	// Snap drops near the timeline origin so clips land flush at 00:00.
+	const originSnapThresholdSec = 15 / (pixelsPerSecond * zoomLevel);
+	const xPosition = xPositionRaw <= originSnapThresholdSec ? 0 : xPositionRaw;
 
 	const mainTrackIndex = getMainTrackIndex({ tracks });
 

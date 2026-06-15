@@ -234,19 +234,14 @@ export function useTimelineElementResize({
 					currentStartTime.value = startTimeVal = rs.initialStartTime - actualExtension;
 					currentDuration.value = durationVal = rs.initialDuration + actualExtension;
 				} else {
-					const trimDelta = 0 - rs.initialTrimStart;
-					let newStartTime = rs.initialStartTime + trimDelta;
-					let newDuration = rs.initialDuration - trimDelta;
-
-					// Clamp: don't extend past previous element
-					if (newStartTime < prevEnd) {
-						newStartTime = prevEnd;
-						newDuration = rs.initialStartTime + rs.initialDuration - prevEnd;
-					}
+					// Source head is already at trimStart=0 — slide the clip earlier on the timeline.
+					const extensionAmount = Math.abs(calculated);
+					const maxExtension = Math.max(0, rs.initialStartTime - prevEnd);
+					const actualExtension = Math.min(extensionAmount, maxExtension);
 
 					currentTrimStart.value = trimStartVal = 0;
-					currentStartTime.value = startTimeVal = newStartTime;
-					currentDuration.value = durationVal = newDuration;
+					currentStartTime.value = startTimeVal = rs.initialStartTime - actualExtension;
+					currentDuration.value = durationVal = rs.initialDuration + actualExtension;
 				}
 			}
 		} else {

@@ -235,6 +235,7 @@ export {
 export {
   getAllMonitoredStreamers,
   getAutoDvrStreamers,
+  getPersistentLiveMonitoringStreamers,
   getMonitoredStreamer,
   getMonitoredStreamerByMint,
   createMonitoredStreamer,
@@ -420,6 +421,7 @@ export {
   getVideoEditorSourceCount,
   getNextSourceStartTime,
   getVideoEditorProjectsForClip,
+  getVideoEditorProjectsForRawVideo,
   type VideoEditorProject,
   type VideoEditorSource,
   type VideoEditorProjectWithSources,

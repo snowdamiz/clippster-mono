@@ -221,11 +221,15 @@ export interface MaskShape {
 	points?: { x: number; y: number }[];
 }
 
+export type MediaFitMode = "contain" | "cover";
+
 export interface VideoElement extends BaseTimelineElement {
 	type: "video";
 	mediaId: string;
 	muted?: boolean;
 	hidden?: boolean;
+	/** How source media is fitted to the canvas. Overlay B-roll uses `cover`. */
+	mediaFit?: MediaFitMode;
 	transform: Transform;
 	opacity: number;
 	volume?: number; // 0-2, default 1
@@ -249,6 +253,7 @@ export interface ImageElement extends BaseTimelineElement {
 	type: "image";
 	mediaId: string;
 	hidden?: boolean;
+	mediaFit?: MediaFitMode;
 	transform: Transform;
 	opacity: number;
 	flip?: FlipState;

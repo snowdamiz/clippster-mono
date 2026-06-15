@@ -623,9 +623,13 @@
       return;
     }
 
-    // Check for X/Twitter (requires exact broadcast/space URL)
-    if ((lowerVal.includes('twitter.com') || lowerVal.includes('x.com')) && 
-        (lowerVal.includes('/i/broadcasts/') || lowerVal.includes('/i/spaces/'))) {
+    // Check for X/Twitter (timeline post, broadcast, or space URL)
+    if (
+      (lowerVal.includes('twitter.com') || lowerVal.includes('x.com')) &&
+      (lowerVal.includes('/i/broadcasts/') ||
+        lowerVal.includes('/i/spaces/') ||
+        /\/status(?:es)?\/\d+/i.test(lowerVal))
+    ) {
       detectedPlatform.value = 'twitter';
       return;
     }
@@ -1027,7 +1031,7 @@
     if (!detectedPlatform.value) {
       showError(
         'Unknown Platform',
-        'Could not detect the platform. Please enter a valid link or username from PumpFun, Kick, Twitch, YouTube, Rumble, or X/Twitter (broadcast/space URLs only).'
+        'Could not detect the platform. Please enter a valid link or username from PumpFun, Kick, Twitch, YouTube, Rumble, or X/Twitter (post, broadcast, or space URL).'
       );
       return;
     }

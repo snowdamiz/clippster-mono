@@ -3329,9 +3329,10 @@ pub async fn build_multi_region_clip(
                                 input_idx, out_w, out_h, out_w, out_h, label
                             )
                         } else {
+                            let source_offset = region.media_source_offset.unwrap_or(0.0).max(0.0);
                             format!(
-                                "[{}:v]trim=duration={},setpts=PTS-STARTPTS,scale={}:{}:force_original_aspect_ratio=increase,crop={}:{}:(iw-ow)/2:(ih-oh)/2,format=rgba[{}]",
-                                input_idx, duration, out_w, out_h, out_w, out_h, label
+                                "[{}:v]trim=start={},duration={},setpts=PTS-STARTPTS,scale={}:{}:force_original_aspect_ratio=increase,crop={}:{}:(iw-ow)/2:(ih-oh)/2,format=rgba[{}]",
+                                input_idx, source_offset, duration, out_w, out_h, out_w, out_h, label
                             )
                         };
                         filter_parts.push(filter);

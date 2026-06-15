@@ -20,7 +20,13 @@ import {
 	Search,
 	ChevronRight,
 	Plus,
+	Clapperboard,
 } from "lucide-vue-next";
+import {
+	pickPrimaryRawVideo,
+	resolveRawVideosForProject,
+} from "@/services/project-raw-video-resolve";
+import type { RawVideo } from "@/services/database/types";
 import { utf8ToBase64Url } from "@/utils/encoding";
 import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
 import { buildVideoElement } from "../../../lib/timeline/element-utils";
@@ -43,6 +49,10 @@ const searchQuery = ref("");
 const thumbnailCache = ref<Map<string, string>>(new Map());
 const projectThumbnailCache = ref<Map<string, string>>(new Map());
 const addedMediaIds = ref<Map<string, string>>(new Map()); // clipId → mediaAssetId
+const primaryRawVideo = ref<RawVideo | null>(null);
+const isAddingFullProject = ref(false);
+const fullProjectAdded = ref(false);
+const fullProjectMediaId = ref<string | null>(null);
 
 const activeProject = computed(() => {
 	void version.value;
@@ -148,11 +158,33 @@ async function loadProjects() {
 	}
 }
 
+async function loadPrimaryRawVideo(project: Project) {
+	try {
+		const rawVideos = await resolveRawVideosForProject(project.id, project.parent_id);
+		primaryRawVideo.value = pickPrimaryRawVideo(rawVideos);
+		fullProjectAdded.value = false;
+		fullProjectMediaId.value = null;
+
+		if (primaryRawVideo.value) {
+			const assetName = `${project.name} (Full Video)`;
+			const existing = editor.media.getAssets().find((a) => a.name === assetName);
+			if (existing) {
+				fullProjectAdded.value = true;
+				fullProjectMediaId.value = existing.id;
+			}
+		}
+	} catch (error) {
+		console.warn("[ProjectClipsView] Failed to resolve raw video for project:", error);
+		primaryRawVideo.value = null;
+	}
+}
+
 async function selectProject(project: Project) {
 	selectedProject.value = project;
 	searchQuery.value = "";
 	loadingClips.value = true;
 	try {
+		await loadPrimaryRawVideo(project);
 		// Fetch clips from the parent project and all child segment projects
 		const parentClips = await getClipsWithVersionsByProjectId(project.id);
 		const children = await getChildProjects(project.id);
@@ -202,6 +234,106 @@ function goBack() {
 	selectedProject.value = null;
 	projectClips.value = [];
 	searchQuery.value = "";
+	primaryRawVideo.value = null;
+	fullProjectAdded.value = false;
+	fullProjectMediaId.value = null;
+}
+
+function getFullProjectAssetName(): string {
+	return `${selectedProject.value?.name ?? "Project"} (Full Video)`;
+}
+
+async function addFullProjectToEditor() {
+	if (!activeProject.value || !selectedProject.value || !primaryRawVideo.value) return;
+	if (isAddingFullProject.value) return;
+
+	const assetName = getFullProjectAssetName();
+	if (fullProjectAdded.value && fullProjectMediaId.value) {
+		addFullProjectToTimeline();
+		return;
+	}
+
+	isAddingFullProject.value = true;
+
+	try {
+		let videoServerPort: number;
+		try {
+			videoServerPort = await invoke<number>("get_video_server_port");
+		} catch {
+			videoServerPort = 8642;
+		}
+
+		const filePath = primaryRawVideo.value.file_path;
+		const encodedPath = utf8ToBase64Url(filePath);
+		const url = `http://localhost:${videoServerPort}/video/${encodedPath}`;
+		const duration = primaryRawVideo.value.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
+
+		const file = await hydrateVideoFileFromLocalUrl({
+			url,
+			name: assetName,
+			fallbackType: "video/mp4",
+			diskPath: filePath,
+		});
+
+		const asset: Omit<MediaAsset, "id"> = {
+			name: assetName,
+			type: "video",
+			file,
+			url,
+			duration,
+			thumbnailUrl: projectThumbnailCache.value.get(selectedProject.value.id),
+			ephemeral: false,
+			diskImportPath: filePath,
+		};
+
+		await editor.media.addMediaAsset({
+			projectId: activeProject.value.metadata.id,
+			asset,
+		});
+
+		const addedAsset = editor.media.getAssets().find((a) => a.name === assetName);
+		if (addedAsset) {
+			fullProjectMediaId.value = addedAsset.id;
+		}
+		fullProjectAdded.value = true;
+	} catch (error) {
+		console.error("[ProjectClipsView] Failed to add full project:", error);
+	} finally {
+		isAddingFullProject.value = false;
+	}
+}
+
+function addFullProjectToTimeline() {
+	if (!fullProjectMediaId.value) return;
+	const asset = editor.media.getAssets().find((a) => a.id === fullProjectMediaId.value);
+	if (!asset) return;
+	const duration = asset.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
+	const startTime = editor.playback.getCurrentTime();
+	const element: CreateTimelineElement = buildVideoElement({
+		mediaId: asset.id,
+		name: asset.name,
+		duration,
+		startTime,
+	});
+	editor.timeline.insertElement({ element, placement: { mode: "auto" } });
+}
+
+function handleFullProjectClick() {
+	if (fullProjectAdded.value) {
+		addFullProjectToTimeline();
+	} else {
+		void addFullProjectToEditor();
+	}
+}
+
+function handleFullProjectPointerDown(e: PointerEvent) {
+	if (!fullProjectAdded.value || !fullProjectMediaId.value) return;
+	startDrag(e, {
+		id: fullProjectMediaId.value,
+		type: "media",
+		mediaType: "video",
+		name: getFullProjectAssetName(),
+	});
 }
 
 function getMediaAssetId(clip: Clip): string | undefined {
@@ -440,8 +572,75 @@ onMounted(loadProjects);
 
 			<!-- Clip List View (within selected project) -->
 			<template v-else>
+				<div v-if="primaryRawVideo" class="border-b border-white/10 p-3">
+					<p class="mb-2 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+						Full Project
+					</p>
+					<div
+						class="group relative cursor-pointer overflow-hidden rounded-lg border border-cyan-500/30 transition-colors hover:border-cyan-400/50"
+						:class="{
+							'ring-1 ring-green-500/30': fullProjectAdded,
+							'pointer-events-none': isAddingFullProject,
+						}"
+						@click="handleFullProjectClick"
+						@dblclick="addFullProjectToTimeline"
+						@pointerdown="handleFullProjectPointerDown"
+						@dragstart.prevent
+					>
+						<div class="relative aspect-video bg-zinc-800">
+							<img
+								v-if="selectedProject && projectThumbnailCache.get(selectedProject.id)"
+								:src="projectThumbnailCache.get(selectedProject.id)"
+								:alt="getFullProjectAssetName()"
+								class="size-full object-cover"
+								draggable="false"
+							/>
+							<div v-else class="flex size-full items-center justify-center">
+								<Clapperboard class="size-6 text-cyan-400/70" />
+							</div>
+							<div
+								v-if="primaryRawVideo.duration"
+								class="absolute right-1 bottom-1 rounded bg-black/70 px-1 text-xs text-white"
+							>
+								{{ formatDuration(primaryRawVideo.duration) }}
+							</div>
+							<div
+								v-if="isAddingFullProject"
+								class="absolute inset-0 flex items-center justify-center bg-black/60"
+							>
+								<Loader2 class="size-4 animate-spin text-white" />
+							</div>
+							<div
+								v-else-if="fullProjectAdded"
+								class="absolute inset-0 flex items-center justify-center bg-black/50"
+							>
+								<Check class="size-4 text-green-400" />
+							</div>
+							<div
+								v-else
+								class="absolute inset-0 hidden items-center justify-center bg-black/40 group-hover:flex"
+							>
+								<Plus class="size-5 text-white" />
+							</div>
+						</div>
+						<div class="truncate px-2 py-1 text-xs font-medium text-cyan-200">
+							Entire Project
+						</div>
+						<div class="truncate px-2 pb-1 text-[10px] text-zinc-500">
+							Full downloaded video
+						</div>
+					</div>
+				</div>
+
+				<p
+					v-if="primaryRawVideo && filteredClips.length > 0"
+					class="px-3 pt-2 text-[10px] font-medium uppercase tracking-wide text-zinc-500"
+				>
+					Clips
+				</p>
+
 				<div
-					v-if="filteredClips.length === 0"
+					v-if="filteredClips.length === 0 && !primaryRawVideo"
 					class="flex h-full flex-col items-center justify-center gap-2 p-4 text-center"
 				>
 					<Film class="size-8 text-zinc-600" />
@@ -454,7 +653,7 @@ onMounted(loadProjects);
 				</div>
 
 				<div
-					v-else
+					v-else-if="filteredClips.length > 0"
 					class="grid gap-2 p-3"
 					style="grid-template-columns: repeat(3, 1fr)"
 				>
