@@ -120,6 +120,31 @@ export function wouldElementOverlap({
 	});
 }
 
+/** Snap audio inserts near t=0 to the exact timeline origin when nothing blocks it. */
+export function normalizeAudioInsertStartTime({
+	startTime,
+	duration,
+	existingElements,
+	fps = 30,
+}: {
+	startTime: number;
+	duration: number;
+	existingElements: TimelineElement[];
+	fps?: number;
+}): number {
+	const frameDuration = 1 / fps;
+	if (startTime > frameDuration) return startTime;
+
+	const fitsAtOrigin = !wouldElementOverlap({
+		elements: existingElements,
+		startTime: 0,
+		endTime: duration,
+	});
+	if (!fitsAtOrigin) return startTime;
+
+	return 0;
+}
+
 export function buildTextElement({
 	raw,
 	startTime,
@@ -159,6 +184,16 @@ export function buildTextElement({
 		bubbleStyle: t.bubbleStyle ?? DEFAULT_TEXT_ELEMENT.bubbleStyle,
 		bubbleColor: t.bubbleColor,
 		bubblePadding: t.bubblePadding,
+		bubbleOpacity: t.bubbleOpacity ?? (
+			(t.bubbleStyle && t.bubbleStyle !== "none") ||
+			(t.backgroundColor && t.backgroundColor !== "transparent")
+				? 1
+				: undefined
+		),
+		textOpacity: t.textOpacity,
+		blendMode: t.blendMode,
+		fadeIn: t.fadeIn,
+		fadeOut: t.fadeOut,
 		transform: t.transform ?? DEFAULT_TEXT_ELEMENT.transform,
 		opacity: t.opacity ?? DEFAULT_TEXT_ELEMENT.opacity,
 	};

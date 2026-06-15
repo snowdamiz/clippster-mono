@@ -45,6 +45,12 @@ export function extractYouTubeVideoId(input: string): string | null {
     if (match) return match[1];
   }
 
+  // youtube.com/shorts/VIDEO_ID
+  if (trimmed.includes('/shorts/')) {
+    const match = trimmed.match(/\/shorts\/([a-zA-Z0-9_-]{11})/);
+    if (match) return match[1];
+  }
+
   // youtube.com/embed/VIDEO_ID
   if (trimmed.includes('/embed/')) {
     const match = trimmed.match(/\/embed\/([a-zA-Z0-9_-]{11})/);

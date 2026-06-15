@@ -22,6 +22,7 @@ export interface VideoNodeParams {
 	file: File;
 	mediaId: string;
 	elementId: string;
+	decodeKey?: string;
 	duration: number;
 	timeOffset: number;
 	trimStart: number;
@@ -60,6 +61,10 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 	private transitionExtension: { before: number; after: number } = { before: 0, after: 0 };
 	private chromakeyCanvas?: HTMLCanvasElement;
 	private chromakeyCtx?: CanvasRenderingContext2D | null;
+
+	private getDecodeKey() {
+		return this.params.decodeKey ?? this.params.elementId;
+	}
 
 	setTransitionExtension(extension: { before?: number; after?: number }) {
 		this.transitionExtension = {
@@ -149,7 +154,7 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 
 		const videoTime = this.getSourceTime(time);
 		this.prefetchedFrame = await videoCache.getFrameAt({
-			sinkKey: this.params.elementId,
+			sinkKey: this.getDecodeKey(),
 			file: this.params.file,
 			time: videoTime,
 		});
@@ -172,7 +177,7 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 		this.prefetchedFrame = null;
 		this.prefetchedFrameTime = null;
 		const frame = prefetched ?? (await videoCache.getFrameAt({
-			sinkKey: this.params.elementId,
+			sinkKey: this.getDecodeKey(),
 			file: this.params.file,
 			time: videoTime,
 		}));

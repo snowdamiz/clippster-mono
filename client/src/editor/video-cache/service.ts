@@ -20,10 +20,14 @@ interface VideoSinkData {
 
 const SEEK_PREROLL_SEC = 0.5;
 const PREFETCH_QUEUE_SIZE = 3;
+/** Hold the last decoded frame briefly past its display window when the stream is exhausted (EOF). */
+const EOF_HOLD_SEC = 0.5;
 
 export class VideoCache {
 	private sinks = new Map<string, VideoSinkData>();
 	private initPromises = new Map<string, Promise<void>>();
+	/** Serialize per-sink decode so overlapping scrub/playback renders cannot corrupt iterators. */
+	private sinkLocks = new Map<string, Promise<void>>();
 
 	async getFrameAt({
 		sinkKey,
@@ -39,6 +43,38 @@ export class VideoCache {
 		const sinkData = this.sinks.get(sinkKey);
 		if (!sinkData) return null;
 
+		return this.withSinkLock(sinkKey, () => this.getFrameAtLocked({ sinkData, time }));
+	}
+
+	private async withSinkLock<T>(
+		sinkKey: string,
+		fn: () => Promise<T>,
+	): Promise<T> {
+		const previous = this.sinkLocks.get(sinkKey) ?? Promise.resolve();
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const next = previous.then(() => gate);
+		this.sinkLocks.set(sinkKey, next);
+		await previous;
+		try {
+			return await fn();
+		} finally {
+			release();
+			if (this.sinkLocks.get(sinkKey) === next) {
+				this.sinkLocks.delete(sinkKey);
+			}
+		}
+	}
+
+	private async getFrameAtLocked({
+		sinkData,
+		time,
+	}: {
+		sinkData: VideoSinkData;
+		time: number;
+	}): Promise<WrappedCanvas | null> {
 		while (
 			sinkData.prefetchedFrames.length > 0 &&
 			sinkData.prefetchedFrames[0].timestamp <= time
@@ -60,9 +96,15 @@ export class VideoCache {
 			return sinkData.currentFrame;
 		}
 
-		const eofFrame: WrappedCanvas | null = sinkData.currentFrame;
-		if (eofFrame && !sinkData.iterator && eofFrame.timestamp <= time) {
-			return eofFrame;
+		// Decoder exhausted at EOF — hold the last frame only while `time` is still near it.
+		// Do NOT reuse arbitrary cached frames when `time` has jumped forward after a scrub.
+		const exhaustedFrame = sinkData.currentFrame;
+		if (
+			exhaustedFrame &&
+			!sinkData.iterator &&
+			this.isExhaustedStreamHold({ frame: exhaustedFrame, time })
+		) {
+			return exhaustedFrame;
 		}
 
 		if (
@@ -97,8 +139,33 @@ export class VideoCache {
 		return time >= frameStartTime && time < frame.timestamp + frame.duration;
 	}
 
-	private getFrameTimestamp(frame: WrappedCanvas | null): number | null {
-		return frame ? frame.timestamp : null;
+	/** True when the decoder has no more frames and `time` is still at/near the last one. */
+	private isExhaustedStreamHold({
+		frame,
+		time,
+	}: {
+		frame: WrappedCanvas;
+		time: number;
+	}): boolean {
+		if (time < frame.timestamp) return false;
+		const frameEnd = frame.timestamp + frame.duration;
+		return time <= frameEnd + EOF_HOLD_SEC;
+	}
+
+	/** True when a cached frame is still the correct picture for `time` (not a stale scrub artifact). */
+	private isFrameReuseableForTime({
+		frame,
+		frameStartTime,
+		time,
+	}: {
+		frame: WrappedCanvas;
+		frameStartTime: number;
+		time: number;
+	}): boolean {
+		return (
+			this.isFrameValid({ frame, frameStartTime, time }) ||
+			this.isExhaustedStreamHold({ frame, time })
+		);
 	}
 
 	private async iterateToTime({
@@ -200,17 +267,23 @@ export class VideoCache {
 			}
 
 			const exhaustedFrame: WrappedCanvas | null = sinkData.currentFrame;
-			const exhaustedFrameTimestamp = this.getFrameTimestamp(exhaustedFrame);
 			if (
 				exhaustedFrame &&
-				exhaustedFrameTimestamp != null &&
 				!sinkData.iterator &&
-				exhaustedFrameTimestamp <= time
+				this.isExhaustedStreamHold({ frame: exhaustedFrame, time })
 			) {
 				return exhaustedFrame;
 			}
 
-			if (previousFrame && previousFrameTimestamp != null && previousFrameTimestamp <= time) {
+			if (
+				previousFrame &&
+				previousFrameTimestamp != null &&
+				this.isFrameReuseableForTime({
+					frame: previousFrame,
+					frameStartTime: previousFrameTimestamp,
+					time,
+				})
+			) {
 				sinkData.currentFrame = previousFrame;
 				sinkData.currentFrameStartTime = previousFrameTimestamp;
 				return previousFrame;

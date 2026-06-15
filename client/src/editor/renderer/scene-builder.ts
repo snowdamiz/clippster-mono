@@ -16,6 +16,7 @@ import type { ManualSourceFramingPayload } from "@/types";
 import { DEFAULT_BLUR_INTENSITY } from "../constants/project-constants";
 import { isMainTrack } from "../lib/timeline";
 import { resolveTransitionMediaPair } from "../lib/timeline/transition-pairing";
+import { clampSpeed, getElementSourceOutPoint } from "../lib/timeline/trim-source-utils";
 import type { BaseNode } from "./nodes/base-node";
 
 /**
@@ -30,7 +31,7 @@ export type BuildSceneParams = {
 	duration: number;
 	background: TBackground;
 	transitions?: Transition[];
-	/** First eligible main-track full-frame video/image uses this framing when set. */
+	/** Main-track full-frame video/image clips use this framing when set. */
 	canvasSourceFraming?: ManualSourceFramingPayload | null;
 };
 
@@ -42,13 +43,58 @@ function isTransitionExtendableNode(node: BaseNode): node is TransitionExtendabl
 	return typeof (node as { setTransitionExtension?: unknown }).setTransitionExtension === "function";
 }
 
+const TIMELINE_CONTIGUITY_EPSILON = 1 / 1000;
+const SOURCE_CONTINUITY_EPSILON = 1 / 30;
+
+function hasSpeedKeyframes(element: VideoElement): boolean {
+	return (element.keyframes?.tracks?.speed?.keyframes.length ?? 0) > 0;
+}
+
+function canShareContinuousVideoDecodeKey(previous: VideoElement, current: VideoElement): boolean {
+	if (previous.mediaId !== current.mediaId) return false;
+	if (previous.reversed || current.reversed) return false;
+	if (hasSpeedKeyframes(previous) || hasSpeedKeyframes(current)) return false;
+	if (Math.abs(clampSpeed(previous.speed) - clampSpeed(current.speed)) > TIMELINE_CONTIGUITY_EPSILON) return false;
+
+	const previousEndTime = previous.startTime + previous.duration;
+	if (Math.abs(previousEndTime - current.startTime) > TIMELINE_CONTIGUITY_EPSILON) return false;
+
+	const previousSourceOut = getElementSourceOutPoint({
+		trimStart: previous.trimStart,
+		duration: previous.duration,
+		speed: previous.speed,
+	});
+	return Math.abs(previousSourceOut - current.trimStart) <= SOURCE_CONTINUITY_EPSILON;
+}
+
+function buildContinuousVideoDecodeKeys(track: TimelineTrack): Map<string, string> {
+	const decodeKeys = new Map<string, string>();
+	if (track.type !== "video") return decodeKeys;
+
+	const videoElements = track.elements
+		.filter((element): element is VideoElement => element.type === "video")
+		.filter((element) => !("hidden" in element && element.hidden))
+		.slice()
+		.sort((a, b) => (a.startTime !== b.startTime ? a.startTime - b.startTime : a.id.localeCompare(b.id)));
+
+	let previous: VideoElement | null = null;
+	let groupKey = "";
+	for (const element of videoElements) {
+		if (!previous || !canShareContinuousVideoDecodeKey(previous, element)) {
+			groupKey = `continuous-video:${track.id}:${element.mediaId}:${element.id}`;
+		}
+		decodeKeys.set(element.id, groupKey);
+		previous = element;
+	}
+
+	return decodeKeys;
+}
+
 export function buildScene(params: BuildSceneParams) {
 	const { tracks, mediaAssets, duration, canvasSize, background, transitions, canvasSourceFraming } = params;
 
 	const rootNode = new RootNode({ duration });
 	const mediaMap = new Map(mediaAssets.map((m) => [m.id, m]));
-
-	let canvas169FramingAssigned = false;
 
 	const visibleTracks = tracks.filter(
 		(track) => !("hidden" in track && track.hidden),
@@ -79,6 +125,7 @@ export function buildScene(params: BuildSceneParams) {
 	const contentNodes: BaseNode[] = [];
 
 	for (const track of orderedTracksBottomToTop) {
+		const continuousVideoDecodeKeys = buildContinuousVideoDecodeKeys(track);
 		const elements = track.elements
 			.filter((element) => !("hidden" in element && element.hidden))
 			.slice()
@@ -117,12 +164,11 @@ export function buildScene(params: BuildSceneParams) {
 					isMainTrack(track) &&
 					canvasSourceFraming &&
 					canvasSourceFraming.mode === "use16x9" &&
-					!canvas169FramingAssigned &&
 					!hasCrop;
-				if (assignCanvas169) canvas169FramingAssigned = true;
 				node = new VideoNode({
 					mediaId: mediaAsset.id,
 					elementId: videoEl.id,
+					decodeKey: continuousVideoDecodeKeys.get(videoEl.id),
 					url: mediaAsset.url ?? "",
 					file: mediaAsset.file,
 					duration: videoEl.duration,
@@ -160,9 +206,7 @@ export function buildScene(params: BuildSceneParams) {
 					isMainTrack(track) &&
 					canvasSourceFraming &&
 					canvasSourceFraming.mode === "use16x9" &&
-					!canvas169FramingAssigned &&
 					!hasCrop;
-				if (assignCanvas169) canvas169FramingAssigned = true;
 				node = new ImageNode({
 					url: mediaAsset.url ?? "",
 					duration: imageEl.duration,
