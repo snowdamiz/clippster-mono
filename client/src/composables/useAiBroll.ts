@@ -5,6 +5,7 @@ import {
   getAiBrollSuggestionsForClip,
   saveAiBrollSuggestions,
   updateAiBrollSuggestion,
+  upsertAiBrollSuggestion,
 } from '@/services/database/ai-broll-suggestions';
 import { addProjectMedia } from '@/services/database/project-media';
 import type {
@@ -84,6 +85,8 @@ function buildFullCanvasRegion(
   };
 }
 
+export type ManualBrollMediaType = 'video' | 'image' | 'all';
+
 export function useAiBroll() {
   const suggestions = ref<AiBrollSuggestion[]>([]);
   const isGenerating = ref(false);
@@ -94,6 +97,13 @@ export function useAiBroll() {
     style: 'mixed',
     sourceTypes: ['stock', 'library'],
   });
+
+  const manualSearchQuery = ref('');
+  const manualSearchMediaType = ref<ManualBrollMediaType>('video');
+  const manualSearchResults = ref<AiBrollCandidate[]>([]);
+  const selectedManualCandidateId = ref<string | null>(null);
+  const isManualSearching = ref(false);
+  const manualSearchError = ref<string | null>(null);
 
   const appliedCount = computed(
     () => suggestions.value.filter((s) => s.status === 'applied').length,
@@ -300,6 +310,132 @@ export function useAiBroll() {
     replaceSuggestion(rejected);
   }
 
+  async function searchManualStock(
+    query: string,
+    orientation: 'portrait' | 'landscape' = 'portrait',
+    mediaType: ManualBrollMediaType = manualSearchMediaType.value,
+  ) {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      manualSearchError.value = 'Enter a search term';
+      return;
+    }
+
+    isManualSearching.value = true;
+    manualSearchError.value = null;
+    manualSearchQuery.value = trimmed;
+
+    try {
+      if (mediaType === 'all') {
+        const [videos, images] = await Promise.all([
+          searchAiBrollStock({ query: trimmed, orientation, mediaType: 'video', perPage: 6 }),
+          searchAiBrollStock({ query: trimmed, orientation, mediaType: 'image', perPage: 6 }),
+        ]);
+        manualSearchResults.value = [...videos.candidates, ...images.candidates].slice(0, 12);
+      } else {
+        const result = await searchAiBrollStock({
+          query: trimmed,
+          orientation,
+          mediaType,
+          perPage: 12,
+        });
+        manualSearchResults.value = result.candidates;
+      }
+
+      selectedManualCandidateId.value = manualSearchResults.value[0]?.id ?? null;
+      if (manualSearchResults.value.length === 0) {
+        manualSearchError.value = 'No results found. Try a different search.';
+      }
+    } catch (e) {
+      manualSearchResults.value = [];
+      selectedManualCandidateId.value = null;
+      const axiosErr = e as { response?: { data?: { error?: string } }; message?: string };
+      manualSearchError.value =
+        axiosErr.response?.data?.error ??
+        (e instanceof Error ? e.message : 'Stock search failed');
+    } finally {
+      isManualSearching.value = false;
+    }
+  }
+
+  function selectManualCandidate(candidateId: string) {
+    selectedManualCandidateId.value = candidateId;
+  }
+
+  function createManualSuggestion(
+    candidate: AiBrollCandidate,
+    clipId: string,
+    startTime: number,
+    endTime: number,
+    query: string,
+  ): AiBrollSuggestion {
+    return {
+      id: generateId(),
+      clipId,
+      startTime,
+      endTime,
+      transcriptText: '',
+      reason: 'Manual stock search',
+      visualQuery: query.trim() || 'Manual B-roll',
+      sourceType: 'manual',
+      status: 'ready',
+      confidence: 1,
+      candidates: [candidate],
+      selectedCandidateId: candidate.id,
+    };
+  }
+
+  async function applyManualCandidateToConfig(
+    candidate: AiBrollCandidate,
+    params: {
+      clipId: string;
+      projectId: string;
+      startTime: number;
+      duration: number;
+      segmentConfigs: SegmentRegionConfig[];
+      regionIndex: number;
+      query?: string;
+    },
+  ): Promise<{ segmentConfigs: SegmentRegionConfig[]; suggestion: AiBrollSuggestion }> {
+    const endTime = params.startTime + params.duration;
+    const suggestion = createManualSuggestion(
+      candidate,
+      params.clipId,
+      params.startTime,
+      endTime,
+      params.query ?? manualSearchQuery.value,
+    );
+
+    const localPath = await ingestCandidate(suggestion, candidate, params.projectId);
+    const region = buildFullCanvasRegion(
+      localPath,
+      candidate.mediaType,
+      suggestion,
+      candidate,
+      params.regionIndex,
+    );
+
+    const segment: SegmentRegionConfig = {
+      segmentId: generateId(),
+      startTime: params.startTime,
+      endTime,
+      regions: [region],
+    };
+
+    const nextSegments = [...params.segmentConfigs, segment].sort((a, b) => a.startTime - b.startTime);
+    const applied: AiBrollSuggestion = {
+      ...suggestion,
+      status: 'applied',
+      localMediaPath: localPath,
+      selectedCandidateId: candidate.id,
+    };
+
+    suggestions.value = [...suggestions.value, applied];
+    await upsertAiBrollSuggestion(applied);
+
+    return { segmentConfigs: nextSegments, suggestion: applied };
+  }
+
   function suggestionToMarker(s: AiBrollSuggestion) {
     return {
       id: s.id,
@@ -324,14 +460,24 @@ export function useAiBroll() {
     options,
     appliedCount,
     brollMarkers,
+    manualSearchQuery,
+    manualSearchMediaType,
+    manualSearchResults,
+    selectedManualCandidateId,
+    isManualSearching,
+    manualSearchError,
     loadSuggestions,
     generateSuggestions,
     fetchCandidatesForSuggestion,
     fetchAllCandidates,
     applySuggestionToConfig,
+    applyManualCandidateToConfig,
     regenerateSuggestion,
     rejectSuggestion,
     ingestCandidate,
+    searchManualStock,
+    selectManualCandidate,
+    createManualSuggestion,
   };
 }
 

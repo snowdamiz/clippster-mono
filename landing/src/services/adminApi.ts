@@ -231,7 +231,11 @@ export interface PromoCode {
   id: string
   code: string
   name: string | null
-  percent_off: number
+  promo_type: 'percent' | 'bundle'
+  percent_off: number | null
+  fixed_price_cents: number | null
+  access_months: number | null
+  total_credits: number | null
   duration_kind: 'once' | 'repeating' | 'forever'
   duration_months: number | null
   allowed_tiers: string[]
@@ -842,8 +846,12 @@ export async function getPromoCode(id: string): Promise<{ promo: PromoCode | nul
 export async function createPromoCode(payload: {
   code: string
   name?: string
-  percent_off: number
-  duration_kind: 'once' | 'repeating' | 'forever'
+  promo_type?: 'percent' | 'bundle'
+  percent_off?: number
+  fixed_price_cents?: number
+  access_months?: number
+  total_credits?: number
+  duration_kind?: 'once' | 'repeating' | 'forever'
   duration_months?: number
   allowed_tiers: string[]
   allowed_org_tiers?: string[]

@@ -637,6 +637,7 @@
     rumbleDvrSessions,
     initAutoDvrPolling,
     cleanupStreamerDvr,
+    tryRemoveEndedTwitterBroadcastById,
   } = useLivestreamMonitoring();
 
   const { hoursRemaining, fetchBalance } = useCreditBalance();
@@ -717,6 +718,18 @@
     window.addEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated as EventListener);
   });
 
+  async function maybeRemoveEndedTwitterBroadcast(streamer: ExtendedStreamer, isLive: boolean) {
+    if (
+      streamer.platform !== 'Twitter' ||
+      !isDirectTwitterLiveUrl(streamer.mintId) ||
+      isLive ||
+      streamer.isDetecting
+    ) {
+      return;
+    }
+    await tryRemoveEndedTwitterBroadcastById(streamer.id, 'stream-offline');
+  }
+
   async function checkAllLiveStatuses() {
     const promises = streamers.value.map(async (streamer) => {
       if (streamer.isDetecting) return;
@@ -746,6 +759,8 @@
             is_currently_live: status.isLive,
             last_check_timestamp: Date.now(),
           });
+
+          await maybeRemoveEndedTwitterBroadcast(streamer, status.isLive);
           
           // Note: No "went live" toast on the Live page — status is already visible in the UI.
           // The global monitoring composable handles toasts for other pages.
@@ -798,6 +813,8 @@
         dbUpdates.profile_image_url = status.profileImageUrl;
       }
       await updateMonitoredStreamer(streamer.id, dbUpdates);
+
+      await maybeRemoveEndedTwitterBroadcast(streamer, status.isLive);
       
       // Note: No "went live" toast on the Live page — status is already visible in the UI.
       // The global monitoring composable handles toasts for other pages.

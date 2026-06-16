@@ -80,6 +80,18 @@ export async function updateAiBrollSuggestion(suggestion: AiBrollSuggestion): Pr
   );
 }
 
+export async function upsertAiBrollSuggestion(suggestion: AiBrollSuggestion): Promise<void> {
+  if (!(await ensureTable())) return;
+  const db = await getDatabase();
+  const now = timestamp();
+  await db.execute(
+    `INSERT INTO ai_broll_suggestions (id, clip_id, data_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET data_json = excluded.data_json, updated_at = excluded.updated_at`,
+    [suggestion.id, suggestion.clipId, JSON.stringify(suggestion), now, now],
+  );
+}
+
 export async function clearAiBrollSuggestions(clipId: string): Promise<void> {
   if (!(await ensureTable())) return;
   const db = await getDatabase();

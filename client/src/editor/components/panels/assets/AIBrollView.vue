@@ -1,12 +1,13 @@
 <script setup lang="ts">
 
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 
 import { invoke } from '@tauri-apps/api/core';
 
 import { useEditor } from '../../../composables/useEditor';
 
 import { useAiBroll } from '@/composables/useAiBroll';
+import type { ManualBrollMediaType } from '@/composables/useAiBroll';
 
 import AIBrollPanel from '@/components/poi/AIBrollPanel.vue';
 
@@ -34,7 +35,7 @@ import {
 
 } from '@/utils/fsNames';
 
-import { updateAiBrollSuggestion } from '@/services/database/ai-broll-suggestions';
+import { updateAiBrollSuggestion, upsertAiBrollSuggestion } from '@/services/database/ai-broll-suggestions';
 import { videoCache } from '../../../video-cache/service';
 
 
@@ -42,6 +43,7 @@ import { videoCache } from '../../../video-cache/service';
 const { editor, version } = useEditor();
 
 const aiBroll = useAiBroll();
+const isManualBrollAdding = ref(false);
 
 
 
@@ -136,6 +138,16 @@ const canGenerate = computed(
   () => Boolean(projectId.value && brollScopeId.value && transcriptWords.value.length > 0),
 
 );
+
+
+
+const playheadTime = computed(() => {
+
+  void version.value;
+
+  return editor.playback.getCurrentTime();
+
+});
 
 
 
@@ -538,6 +550,186 @@ function onSelectCandidate(suggestionId: string, candidateId: string) {
 
 }
 
+
+
+async function onManualSearch(query: string, mediaType: ManualBrollMediaType) {
+
+  aiBroll.manualSearchMediaType.value = mediaType;
+
+  const orientation = aspectRatio.value === '16:9' ? 'landscape' : 'portrait';
+
+  await aiBroll.searchManualStock(query, orientation, mediaType);
+
+}
+
+
+
+function onManualSelectCandidate(candidateId: string) {
+
+  aiBroll.selectManualCandidate(candidateId);
+
+}
+
+
+
+async function applyManualToTimeline(payload: {
+
+  candidateId: string;
+
+  duration: number;
+
+  startTime: number;
+
+}) {
+
+  if (!projectId.value || !brollScopeId.value) return;
+
+  const candidate = aiBroll.manualSearchResults.value.find((c) => c.id === payload.candidateId);
+
+  if (!candidate) return;
+
+
+
+  const maxDuration = Math.max(0.5, clipDuration.value - payload.startTime);
+
+  const duration = Math.min(payload.duration, maxDuration);
+
+  const suggestion = aiBroll.createManualSuggestion(
+
+    candidate,
+
+    brollScopeId.value,
+
+    payload.startTime,
+
+    payload.startTime + duration,
+
+    aiBroll.manualSearchQuery.value,
+
+  );
+
+
+
+  const localPath = await aiBroll.ingestCandidate(suggestion, candidate, projectId.value);
+
+  const mediaId = await registerMediaFromPath(
+
+    localPath,
+
+    candidate.mediaType,
+
+    `broll_${candidate.providerAssetId}`,
+
+    candidate.duration ?? null,
+
+    candidate.width,
+
+    candidate.height,
+
+  );
+
+  if (!mediaId) return;
+
+
+
+  const trimStart = sourceTrimOffset(candidate.duration, duration);
+
+
+
+  const element =
+
+    candidate.mediaType === 'video'
+
+      ? buildBrollVideoElement({
+
+          mediaId,
+
+          name: `B-roll ${candidate.providerAssetId}`,
+
+          duration,
+
+          startTime: payload.startTime,
+
+          trimStart,
+
+        })
+
+      : buildBrollImageElement({
+
+          mediaId,
+
+          name: `B-roll ${candidate.providerAssetId}`,
+
+          duration,
+
+          startTime: payload.startTime,
+
+        });
+
+
+
+  const insertedElementId = editor.timeline.insertElement({
+
+    element,
+
+    placement: { mode: 'auto' },
+
+  });
+
+  if (candidate.mediaType === 'video') {
+
+    const asset = editor.media.getAssets().find((item) => item.id === mediaId);
+
+    if (asset?.file) {
+
+      void videoCache.getFrameAt({
+
+        sinkKey: insertedElementId,
+
+        file: asset.file,
+
+        time: trimStart,
+
+      }).catch(() => {});
+
+    }
+
+  }
+
+
+
+  const applied = { ...suggestion, status: 'applied' as const, localMediaPath: localPath };
+
+  await upsertAiBrollSuggestion(applied);
+
+  aiBroll.suggestions.value = [...aiBroll.suggestions.value, applied];
+
+}
+
+
+
+async function onManualAdd(payload: { candidateId: string; duration: number; startTime: number }) {
+
+  isManualBrollAdding.value = true;
+
+  try {
+
+    await applyManualToTimeline({
+
+      ...payload,
+
+      startTime: editor.playback.getCurrentTime(),
+
+    });
+
+  } finally {
+
+    isManualBrollAdding.value = false;
+
+  }
+
+}
+
 </script>
 
 
@@ -566,6 +758,22 @@ function onSelectCandidate(suggestionId: string, candidateId: string) {
 
       :clip-duration="clipDuration"
 
+      :playhead-time="playheadTime"
+
+      :manual-search-query="aiBroll.manualSearchQuery.value"
+
+      :manual-search-media-type="aiBroll.manualSearchMediaType.value"
+
+      :manual-search-results="aiBroll.manualSearchResults.value"
+
+      :selected-manual-candidate-id="aiBroll.selectedManualCandidateId.value"
+
+      :is-manual-searching="aiBroll.isManualSearching.value"
+
+      :manual-search-error="aiBroll.manualSearchError.value"
+
+      :is-manual-adding="isManualBrollAdding"
+
       @close="() => {}"
 
       @generate="onGenerate"
@@ -582,11 +790,21 @@ function onSelectCandidate(suggestionId: string, candidateId: string) {
 
       @select-candidate="onSelectCandidate"
 
+      @manual-search="onManualSearch"
+
+      @manual-select-candidate="onManualSelectCandidate"
+
+      @manual-add="onManualAdd"
+
+      @update:manual-search-query="aiBroll.manualSearchQuery.value = $event"
+
+      @update:manual-search-media-type="aiBroll.manualSearchMediaType.value = $event"
+
     />
 
     <p v-if="!canGenerate" class="text-[11px] text-zinc-500 px-3 py-2 border-t border-zinc-800/80">
 
-      Load or generate a transcript to use AI B-roll in the timeline.
+      No transcript loaded — use Manual search to add stock B-roll at the playhead.
 
     </p>
 

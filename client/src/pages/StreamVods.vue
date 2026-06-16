@@ -532,7 +532,6 @@
     type CreatorProfileWithLinks,
   } from '@/services/database';
   import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
-  import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
   import { useAuthStore } from '@/stores/auth';
 
@@ -1182,105 +1181,53 @@
         });
 
         try {
-          // Try local profiles first
-          localCreatorProfile = await getCreatorProfileByPlatformId(
-            detectedPlatform.value as any,
-            platformStore.currentSearchId
-          );
-          if (localCreatorProfile?.watermark_id && localCreatorProfile?.watermark_settings) {
-            console.log('[StreamVods] Found local creator profile with watermark:', localCreatorProfile.name);
-            creatorWatermarkSettings = {
-              watermarkId: localCreatorProfile.watermark_id,
-              watermarkSettings: localCreatorProfile.watermark_settings,
-            };
-          }
+          const {
+            isOrgSuppliedAccount,
+            resolveOrgBuildBranding,
+            profileToDownloadWatermarkSettings,
+          } = await import('@/composables/useBrandingProfileSelection');
 
-          // If not found locally, try organization profiles
-          if (!creatorWatermarkSettings && authStore.isAuthenticated) {
-            console.log('[StreamVods] No local profile found, checking organization profiles...');
-            const orgResponse = await getUserAssignedCreatorProfiles();
-            if (orgResponse.success && orgResponse.profiles.length > 0) {
-              console.log('[StreamVods] Searching', orgResponse.profiles.length, 'organization profiles');
-              // Find a profile with a matching platform link
-              for (const orgProfile of orgResponse.profiles) {
-                // Log all platform links for debugging
-                console.log(
-                  '[StreamVods] Checking org profile:',
-                  orgProfile.name,
-                  'platform_links:',
-                  orgProfile.platform_links.map((l) => ({ platform: l.platform, platform_id: l.platform_id }))
-                );
+          const platformLabel =
+            detectedPlatform.value === 'kick'
+              ? 'Kick'
+              : detectedPlatform.value === 'twitch'
+                ? 'Twitch'
+                : detectedPlatform.value === 'YouTube'
+                  ? 'YouTube'
+                  : detectedPlatform.value === 'pumpfun'
+                    ? 'PumpFun'
+                    : detectedPlatform.value === 'rumble'
+                      ? 'Rumble'
+                      : detectedPlatform.value === 'twitter'
+                        ? 'Twitter'
+                        : detectedPlatform.value;
 
-                const matchingLink = orgProfile.platform_links.find((link) => {
-                  if (link.platform !== detectedPlatform.value) return false;
-
-                  // Extract the normalized ID from the stored platform_id
-                  // This handles cases where the server stores full URLs instead of just IDs
-                  let storedId = link.platform_id;
-                  const platform = link.platform as string; // Type assertion to avoid narrowing issues
-                  if (platform === 'kick') {
-                    // Try to extract channel slug from URL if it's a full URL
-                    const extractedSlug = extractChannelSlug(storedId);
-                    if (extractedSlug) storedId = extractedSlug;
-                  } else if (platform === 'pumpfun') {
-                    // Try to extract mint ID from URL if it's a full URL
-                    const extractedMint = extractMintId(storedId);
-                    if (extractedMint) storedId = extractedMint;
-                  } else if (platform === 'rumble') {
-                    // Try to extract channel name from URL if it's a full URL
-                    const extractedChannel = extractRumbleChannel(storedId);
-                    if (extractedChannel) storedId = extractedChannel;
-                  } else if (platform === 'youtube' || platform === 'YouTube') {
-                    // Try to extract channel ID from URL if it's a full URL
-                    const extractedChannel = extractYouTubeChannel(storedId);
-                    if (extractedChannel) storedId = extractedChannel;
-                  }
-
-                  return storedId.toLowerCase() === platformStore.currentSearchId.toLowerCase();
-                });
-                if (matchingLink) {
-                  console.log('[StreamVods] Found matching org profile:', orgProfile.name, 'link:', matchingLink);
-                  if (orgProfile.watermark_id && orgProfile.watermark_settings) {
-                    // Transform watermark_settings to prefix per-ratio watermarkIds with org-asset-
-                    // The server returns raw server IDs (integers) for per-ratio watermarkIds
-                    const transformedSettings: Record<string, any> = {};
-                    for (const [ratio, config] of Object.entries(orgProfile.watermark_settings)) {
-                      if (config && typeof config === 'object') {
-                        const ratioConfig = config as { watermarkId?: number; position?: any };
-                        transformedSettings[ratio] = {
-                          ...ratioConfig,
-                          // Prefix the per-ratio watermarkId if present
-                          watermarkId: ratioConfig.watermarkId ? `org-asset-${ratioConfig.watermarkId}` : null,
-                        };
-                      } else {
-                        // null means disabled for this ratio
-                        transformedSettings[ratio] = config;
-                      }
-                    }
-
-                    creatorWatermarkSettings = {
-                      watermarkId: `org-asset-${orgProfile.watermark_id}`,
-                      watermarkSettings: JSON.stringify(transformedSettings),
-                    };
-                    console.log('[StreamVods] Using org watermark:', creatorWatermarkSettings.watermarkId);
-                    break;
-                  } else {
-                    console.log('[StreamVods] Org profile has no watermark configured');
-                  }
-                }
+          if (isOrgSuppliedAccount()) {
+            const orgId = authStore.user?.created_by_organization_id;
+            if (orgId != null) {
+              const orgProfile = await resolveOrgBuildBranding(Number(orgId), '', {
+                platform: platformLabel,
+                platformId: platformStore.currentSearchId,
+              });
+              if (orgProfile) {
+                creatorWatermarkSettings = profileToDownloadWatermarkSettings(orgProfile);
+                console.log('[StreamVods] Org-supplied account watermark:', orgProfile.name);
               }
-              if (!creatorWatermarkSettings) {
-                console.log(
-                  '[StreamVods] No matching org profile found. Looking for platform:',
-                  detectedPlatform.value,
-                  'platformId:',
-                  platformStore.currentSearchId
-                );
-              }
+            }
+          } else {
+            localCreatorProfile = await getCreatorProfileByPlatformId(
+              detectedPlatform.value as any,
+              platformStore.currentSearchId
+            );
+            if (localCreatorProfile?.watermark_id && localCreatorProfile?.watermark_settings) {
+              console.log('[StreamVods] Found local creator profile with watermark:', localCreatorProfile.name);
+              creatorWatermarkSettings = {
+                watermarkId: localCreatorProfile.watermark_id,
+                watermarkSettings: localCreatorProfile.watermark_settings,
+              };
             }
           }
         } catch (err) {
-          // Silently ignore - watermark just won't be applied
           console.log('[StreamVods] Could not fetch creator profile for watermark:', err);
         }
       }

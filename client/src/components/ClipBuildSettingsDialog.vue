@@ -449,7 +449,7 @@
                         <div class="build-dialog__multi-select-list">
                           <div
                             v-for="(org, orgIndex) in availableOrgs"
-                            :key="org.profile.id"
+                            :key="org.organizationId"
                             class="build-dialog__multi-select-item"
                           >
                             <!-- Org checkbox -->
@@ -464,7 +464,7 @@
                               >
                                 <CheckIcon v-if="org.selected" class="build-dialog__multi-select-checkbox-icon" />
                               </div>
-                              <span class="build-dialog__multi-select-name">{{ org.profile.organization_name || org.profile.name }}</span>
+                              <span class="build-dialog__multi-select-name">{{ org.organizationName }}</span>
                             </button>
                             
                             <!-- Nested aspect ratio checkboxes (shown when org is selected AND multiple ratios available) -->
@@ -868,10 +868,7 @@
     getCampaignsByCreatorProfile,
     type Campaign,
   } from '@/services/campaignApi';
-  import {
-    getUserAssignedCreatorProfiles,
-    type ServerOrganizationCreatorProfile,
-  } from '@/services/organizationProfilesApi';
+  import { type ServerOrganizationCreatorProfile } from '@/services/organizationProfilesApi';
   import type {
     ManualFramingConfig,
     SubtitleOverride,
@@ -994,7 +991,10 @@
 
   // Multi-org/campaign selection state
   interface OrgSelection {
-    profile: ServerOrganizationCreatorProfile;
+    organizationId: number;
+    organizationName: string;
+    resolvedProfile: import('@/services/database/types').CreatorProfileWithLinks;
+    serverProfile: ServerOrganizationCreatorProfile;
     selected: boolean;
     aspectRatios: string[];
   }
@@ -1051,7 +1051,10 @@
   const overlayPreviewUrls = ref<Record<string, string>>({});
 
   // Use transcript data composable for the clip's project
-  const clipProjectId = computed(() => props.clip?.project_id || null);
+  const clipProjectId = computed(() => {
+    const clip = props.clip as { segment_id?: string; project_id?: string } | null;
+    return clip?.segment_id || clip?.project_id || null;
+  });
   const { transcriptData } = useTranscriptData(clipProjectId);
 
   /**
@@ -2235,39 +2238,29 @@
   async function loadOrgsAndCampaigns() {
     loadingOrgsAndCampaigns.value = true;
     try {
-      // Get streamer name from clip's project or creator profile
-      const streamerName = props.clip?.project_name?.toLowerCase() || '';
-      
-      // 1. Fetch org profiles assigned to user and filter by streamer match
-      const orgRes = await getUserAssignedCreatorProfiles();
-      const matchingOrgs: OrgSelection[] = [];
-      
-      if (orgRes.success && orgRes.profiles.length > 0) {
-        for (const profile of orgRes.profiles) {
-          // Check if this profile matches the streamer (by name or platform links)
-          const profileName = profile.name?.toLowerCase() || '';
-          const hasStreamerMatch = profileName.includes(streamerName) || 
-            streamerName.includes(profileName) ||
-            profile.platform_links?.some(link => 
-              link.display_name?.toLowerCase().includes(streamerName) ||
-              streamerName.includes(link.display_name?.toLowerCase() || '')
-            );
-          
-          // Also include global scope profiles
-          if (hasStreamerMatch || profile.scope === 'global') {
-            matchingOrgs.push({
-              profile,
-              selected: false,
-              aspectRatios: [],
-            });
-          }
-        }
+      const projectId = clipProjectId.value;
+      if (projectId) {
+        const { getEligibleOrgsForBuild } = await import('@/composables/useBrandingProfileSelection');
+        const eligible = await getEligibleOrgsForBuild(projectId);
+        availableOrgs.value = eligible.map((org) => ({
+          organizationId: org.organizationId,
+          organizationName: org.organizationName,
+          resolvedProfile: org.resolvedProfile,
+          serverProfile: org.serverProfile,
+          selected: false,
+          aspectRatios: [],
+        }));
+        console.log(
+          '[ClipBuildSettingsDialog] Eligible orgs for build:',
+          eligible.length,
+          'project:',
+          projectId
+        );
+      } else {
+        availableOrgs.value = [];
       }
-      
-      availableOrgs.value = matchingOrgs;
-      console.log('[ClipBuildSettingsDialog] Found', matchingOrgs.length, 'matching org profiles for streamer:', streamerName);
-      
-      // 2. Fetch campaigns (global branding + creator-profile-specific)
+
+      // Fetch campaigns (global branding + creator-profile-specific)
       const campaignResults: Campaign[] = [];
       
       // Global branding campaigns
@@ -2320,7 +2313,7 @@
       availableCampaignSelections.value.find((c) => c.selected)?.campaign ?? null;
     const selectedOrg = selectedCampaign
       ? null
-      : availableOrgs.value.find((o) => o.selected)?.profile ?? null;
+      : availableOrgs.value.find((o) => o.selected)?.serverProfile ?? null;
 
     try {
       const branding = await resolveSelectionBrandingPreview(selectedOrg, selectedCampaign);
@@ -2385,7 +2378,7 @@
       hasSelectedOrg,
       hasSelectedCampaign,
       result,
-      availableOrgs: availableOrgs.value.map(o => ({ name: o.profile.name, selected: o.selected })),
+      availableOrgs: availableOrgs.value.map(o => ({ name: o.organizationName, selected: o.selected })),
       availableCampaigns: availableCampaignSelections.value.map(c => ({ title: c.campaign.title, selected: c.selected }))
     });
     return result;
@@ -2399,7 +2392,7 @@
     console.log('[BuildDialog] Calculating totalBuildsCount...');
     console.log('[BuildDialog] hasMultipleAspectRatios:', hasMultipleAspectRatios.value);
     console.log('[BuildDialog] selectedRatios:', selectedRatios.value);
-    console.log('[BuildDialog] availableOrgs:', availableOrgs.value.map(o => ({ name: o.profile.name, selected: o.selected, aspectRatios: o.aspectRatios })));
+    console.log('[BuildDialog] availableOrgs:', availableOrgs.value.map(o => ({ name: o.organizationName, selected: o.selected, aspectRatios: o.aspectRatios })));
     console.log('[BuildDialog] availableCampaignSelections:', availableCampaignSelections.value.map(c => ({ name: c.campaign.title, selected: c.selected, aspectRatios: c.aspectRatios })));
     
     // Count org builds (each org × each aspect ratio = 1 build)
@@ -2410,7 +2403,7 @@
         const ratios = hasMultipleAspectRatios.value && org.aspectRatios.length > 0 
           ? org.aspectRatios 
           : selectedRatios.value;
-        console.log(`[BuildDialog] Org "${org.profile.name}" selected, ratios:`, ratios, 'adding', ratios.length);
+        console.log(`[BuildDialog] Org "${org.organizationName}" selected, ratios:`, ratios, 'adding', ratios.length);
         count += ratios.length;
       }
     }
@@ -2533,21 +2526,19 @@
     // Add org build targets
     for (const org of availableOrgs.value) {
       if (org.selected) {
-        // If multiple aspect ratios, use selected ones; otherwise use all selected ratios
         const ratios = hasMultipleAspectRatios.value && org.aspectRatios.length > 0 
           ? org.aspectRatios 
           : [...selectedRatios.value];
         
-        // Create one build target per aspect ratio
         for (const ratio of ratios) {
           buildTargets.push({
             type: 'org',
-            id: org.profile.id,
-            name: org.profile.organization_name || org.profile.name,
-            brandingProfileId: org.profile.id,
+            id: org.organizationId,
+            name: org.organizationName,
+            brandingProfileId: Number(org.resolvedProfile.id) || null,
             aspectRatios: [ratio],
-            organizationId: org.profile.organization_id,
-            organizationName: org.profile.organization_name,
+            organizationId: org.organizationId,
+            organizationName: org.organizationName,
           });
         }
       }

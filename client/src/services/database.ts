@@ -303,6 +303,7 @@ export {
   getCreatorProfileByPlatformId,
   getAllGlobalProfiles,
   getAllStreamerProfiles,
+  getAllPersonalStudioProfiles,
   setProjectBrandingProfile,
   getProjectBrandingProfileId,
 } from './database/creator-profiles';
