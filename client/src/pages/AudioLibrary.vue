@@ -566,6 +566,30 @@
         </div>
       </Transition>
     </Teleport>
+
+    <ConfirmationModal
+      :show="showDeleteAudioDialog"
+      :title="deleteAudioTitle"
+      :message="deleteAudioMessage"
+      :item-name="deleteAudioItemName"
+      :suffix="deleteAudioSuffix"
+      confirm-text="Delete"
+      variant="destructive"
+      @close="handleDeleteAudioDialogClose"
+      @confirm="deleteAudioConfirmed"
+    />
+
+    <ConfirmationModal
+      :show="showDeletePlaylistDialog"
+      title="Delete Playlist"
+      message="Are you sure you want to delete"
+      :item-name="playlistToDelete?.name"
+      suffix="?"
+      confirm-text="Delete"
+      variant="destructive"
+      @close="handleDeletePlaylistDialogClose"
+      @confirm="deletePlaylistConfirmed"
+    />
   </div>
 </template>
 
@@ -577,6 +601,7 @@
   import PageLayout from '@/components/PageLayout.vue';
   import DownloadCard from '@/components/DownloadCard.vue';
   import SpaceStudioDialog from '@/components/SpaceStudioDialog.vue';
+  import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import { useAudioDownloads } from '@/composables/useAudioDownloads';
   import { useAudioPlayer } from '@/composables/useAudioPlayer';
   import { useToast } from '@/composables/useToast';
@@ -629,6 +654,11 @@
   const showPlaylistDetailDialog = ref(false);
   const showEditPlaylistDialog = ref(false);
   const showSpaceStudioDialog = ref(false);
+  const showDeleteAudioDialog = ref(false);
+  const showDeletePlaylistDialog = ref(false);
+  const bulkDeleteAudioMode = ref(false);
+  const audioToDelete = ref<DownloadedAudio | null>(null);
+  const playlistToDelete = ref<AudioPlaylist | null>(null);
   const selectedAudioForPlaylist = ref<DownloadedAudio | null>(null);
   const selectedSpaceAudio = ref<DownloadedAudio | null>(null);
   const selectedPlaylist = ref<AudioPlaylist | null>(null);
@@ -693,23 +723,78 @@
     });
   }
 
-  async function deleteSelectedAudio() {
+  const deleteAudioTitle = computed(() => {
+    if (bulkDeleteAudioMode.value && selectedAudioIds.value.size > 0) {
+      const count = selectedAudioIds.value.size;
+      return `Delete ${count} Audio File${count > 1 ? 's' : ''}`;
+    }
+    return 'Delete Audio';
+  });
+
+  const deleteAudioMessage = computed(() => {
+    if (bulkDeleteAudioMode.value && selectedAudioIds.value.size > 0) {
+      const count = selectedAudioIds.value.size;
+      return `Are you sure you want to delete ${count} audio file${count > 1 ? 's' : ''}?`;
+    }
+    return 'Are you sure you want to delete';
+  });
+
+  const deleteAudioItemName = computed(() => {
+    if (bulkDeleteAudioMode.value) return undefined;
+    return audioToDelete.value?.title;
+  });
+
+  const deleteAudioSuffix = computed(() => {
+    if (bulkDeleteAudioMode.value) return '';
+    return '?';
+  });
+
+  function deleteSelectedAudio() {
     if (selectedAudioIds.value.size === 0) return;
 
-    const count = selectedAudioIds.value.size;
-    const confirmed = confirm(`Delete ${count} audio file${count > 1 ? 's' : ''}?`);
-    if (!confirmed) return;
+    bulkDeleteAudioMode.value = true;
+    audioToDelete.value = null;
+    showDeleteAudioDialog.value = true;
+  }
 
+  function deleteAudio(audio: DownloadedAudio) {
+    bulkDeleteAudioMode.value = false;
+    audioToDelete.value = audio;
+    showDeleteAudioDialog.value = true;
+  }
+
+  function handleDeleteAudioDialogClose() {
+    showDeleteAudioDialog.value = false;
+    audioToDelete.value = null;
+    bulkDeleteAudioMode.value = false;
+  }
+
+  async function deleteAudioConfirmed() {
     try {
-      for (const audioId of selectedAudioIds.value) {
-        await deleteDownloadedAudio(audioId);
+      if (bulkDeleteAudioMode.value && selectedAudioIds.value.size > 0) {
+        const count = selectedAudioIds.value.size;
+
+        for (const audioId of selectedAudioIds.value) {
+          await deleteDownloadedAudio(audioId);
+        }
+
+        success('Deleted', `Deleted ${count} audio file${count > 1 ? 's' : ''}`);
+        clearSelection();
+        await loadAudioFiles();
+      } else if (audioToDelete.value) {
+        const audio = audioToDelete.value;
+
+        await invoke('delete_audio_file', { filePath: audio.file_path });
+        await deleteDownloadedAudio(audio.id);
+
+        success('Deleted', `Deleted: ${audio.title}`);
+        await loadAudioFiles();
       }
-      success('Deleted', `Deleted ${count} audio file${count > 1 ? 's' : ''}`);
-      clearSelection();
-      await loadAudioFiles();
     } catch (error) {
-      console.error('Failed to delete audio files:', error);
-      showError('Delete Failed', 'Failed to delete selected audio files');
+      console.error('Delete error:', error);
+      showError('Delete Failed', error instanceof Error ? error.message : 'Failed to delete audio');
+    } finally {
+      handleDeleteAudioDialogClose();
     }
   }
 
@@ -801,24 +886,6 @@
     }
   }
 
-  async function deleteAudio(audio: DownloadedAudio) {
-    if (!confirm(`Delete "${audio.title}"?`)) return;
-
-    try {
-      // Delete from filesystem
-      await invoke('delete_audio_file', { filePath: audio.file_path });
-      
-      // Delete from database
-      await deleteDownloadedAudio(audio.id);
-      
-      success('Deleted', `Deleted: ${audio.title}`);
-      await loadAudioFiles();
-    } catch (error) {
-      console.error('Delete error:', error);
-      showError('Delete Failed', error instanceof Error ? error.message : String(error));
-    }
-  }
-
   async function createPlaylist() {
     if (!newPlaylistName.value.trim()) return;
 
@@ -858,8 +925,20 @@
     }
   }
 
-  async function deletePlaylist(playlist: AudioPlaylist) {
-    if (!confirm(`Delete playlist "${playlist.name}"?`)) return;
+  function deletePlaylist(playlist: AudioPlaylist) {
+    playlistToDelete.value = playlist;
+    showDeletePlaylistDialog.value = true;
+  }
+
+  function handleDeletePlaylistDialogClose() {
+    showDeletePlaylistDialog.value = false;
+    playlistToDelete.value = null;
+  }
+
+  async function deletePlaylistConfirmed() {
+    if (!playlistToDelete.value) return;
+
+    const playlist = playlistToDelete.value;
 
     try {
       await deleteAudioPlaylist(playlist.id);
@@ -868,6 +947,8 @@
     } catch (error) {
       console.error('Delete playlist error:', error);
       showError('Delete Failed', error instanceof Error ? error.message : String(error));
+    } finally {
+      handleDeletePlaylistDialogClose();
     }
   }
 
