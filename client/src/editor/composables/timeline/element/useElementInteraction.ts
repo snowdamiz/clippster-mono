@@ -50,8 +50,6 @@ const DRAG_THRESHOLD_PX = 6;
  */
 const MAGNETIC_THRESHOLD_PX = 15;
 
-const TITLE_BAR_PX = 16;
-
 interface UseElementInteractionProps {
 	zoomLevel: Ref<number>;
 	timelineRef: Ref<HTMLDivElement | null>;
@@ -74,7 +72,7 @@ function isMainTrackSolePrimaryMediaClip(track: TimelineTrack, element: Timeline
 }
 
 /**
- * Clicks on the linked-audio waveform strip (or audio-only waveform) should not start a move drag;
+ * Clicks on the linked-audio waveform strip should not start a move drag;
  * use the title bar or filmstrip / thumbnail area instead.
  */
 function shouldSuppressTimelineElementDragStart(
@@ -89,10 +87,9 @@ function shouldSuppressTimelineElementDragStart(
 	const h = rect.height;
 	if (h <= 0) return false;
 
-	if (element.type === "audio") {
-		return y > TITLE_BAR_PX;
-	}
-
+	// Audio: volume envelope handles use @pointerdown.stop on their SVG strip.
+	// Allow dragging from anywhere on the clip (unlike video, where the bottom
+	// waveform strip is reserved for volume keyframes on linked audio).
 	if (element.type === "video" || element.type === "image") {
 		const wfFrac = VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT / 100;
 		const waveformTop = h * (1 - wfFrac);
@@ -614,8 +611,12 @@ export function useElementInteraction({
 	}
 
 	// Pending drag mouse up (cancel pending)
-	function onPendingMouseUp() {
+	function onPendingMouseUp(event: MouseEvent) {
 		dragRaf.flush();
+		if (dragState.value.isDragging) {
+			onMouseUp(event);
+			return;
+		}
 		pendingDrag = null;
 		isPendingDrag.value = false;
 		// No drag DOM to tear down because the drag never started.
@@ -625,6 +626,7 @@ export function useElementInteraction({
 	// Watch drag/pending state to attach/detach global listeners
 	let cleanupDrag: (() => void) | null = null;
 	let cleanupPending: (() => void) | null = null;
+	const dragEndListenerOptions: AddEventListenerOptions = { capture: true };
 
 	watch([() => dragState.value.isDragging, isPendingDrag], ([dragging, pending]) => {
 		// Clean up previous
@@ -638,18 +640,18 @@ export function useElementInteraction({
 			const removeMM = () => document.removeEventListener("mousemove", onMouseMove);
 
 			if (dragging) {
-				document.addEventListener("mouseup", onMouseUp);
+				document.addEventListener("mouseup", onMouseUp, dragEndListenerOptions);
 				cleanupDrag = () => {
 					removeMM();
-					document.removeEventListener("mouseup", onMouseUp);
+					document.removeEventListener("mouseup", onMouseUp, dragEndListenerOptions);
 				};
 			}
 
 			if (pending && !dragging) {
-				document.addEventListener("mouseup", onPendingMouseUp);
+				document.addEventListener("mouseup", onPendingMouseUp, dragEndListenerOptions);
 				cleanupPending = () => {
 					removeMM();
-					document.removeEventListener("mouseup", onPendingMouseUp);
+					document.removeEventListener("mouseup", onPendingMouseUp, dragEndListenerOptions);
 				};
 			}
 		}
@@ -700,7 +702,7 @@ export function useElementInteraction({
 			selectElement({ trackId: track.id, elementId: element.id });
 		}
 
-		// Waveform strip: volume editing / inspection only — no move drag. Sole main clip: fixed in place.
+		// Video waveform strip: volume keyframes only — no move drag. Sole main clip: fixed in place.
 		if (shouldSuppressTimelineElementDragStart(event, element, track) || isMainTrackSolePrimaryMediaClip(track, element)) {
 			return;
 		}

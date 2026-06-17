@@ -54,6 +54,8 @@
                   <p class="campaign-dialog__description">{{ campaignDetails.description }}</p>
                 </div>
 
+                <CampaignResourcesPanel :resources="campaignDetails.resources || []" />
+
                 <!-- Creator Profiles Section -->
                 <div
                   v-if="campaignDetails.creator_profiles && campaignDetails.creator_profiles.length > 0"
@@ -400,6 +402,7 @@
     detectPlatformFromUrl,
   } from '@/services/campaignApi';
   import { getPaymentMethodDisplayName } from '@/services/clipperProfileApi';
+  import CampaignResourcesPanel from '@/components/campaigns/CampaignResourcesPanel.vue';
   import { useToast } from '@/composables/useToast';
   import { useAuthStore } from '@/stores/auth';
 

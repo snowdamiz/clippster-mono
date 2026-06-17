@@ -19,9 +19,10 @@ import {
   CalendarDays,
   Headphones,
   Music,
+  Disc,
 } from 'lucide-vue-next';
 
-export type NavigationGroup = 'browse' | 'create' | 'manage' | 'system';
+export type NavigationGroup = 'browse' | 'create' | 'studio' | 'manage' | 'system';
 
 export interface NavigationItem {
   name: string;
@@ -43,8 +44,9 @@ export interface NavigationItem {
 export const navigationGroups: Record<NavigationGroup, { label: string; order: number }> = {
   browse: { label: 'Browse', order: 1 },
   create: { label: 'Create', order: 2 },
-  manage: { label: 'Manage', order: 3 },
-  system: { label: '', order: 4 }, // No label for system group
+  studio: { label: 'Studio', order: 3 },
+  manage: { label: 'Manage', order: 4 },
+  system: { label: '', order: 5 }, // No label for system group
 };
 
 export const navigationItems: NavigationItem[] = [
@@ -63,7 +65,7 @@ export const navigationItems: NavigationItem[] = [
     group: 'browse',
   },
   {
-    name: 'Download VODs',
+    name: 'Download Video',
     path: '/vods',
     icon: Video,
     group: 'browse',
@@ -90,7 +92,7 @@ export const navigationItems: NavigationItem[] = [
 
   // Create group - content creation tools
   {
-    name: 'VOD Library',
+    name: 'Video Library',
     path: '/projects',
     icon: Folder,
     group: 'create',
@@ -118,6 +120,12 @@ export const navigationItems: NavigationItem[] = [
     path: '/ai-video',
     icon: Wand2,
     group: 'create',
+  },
+  {
+    name: 'Recording',
+    path: '/studio/record',
+    icon: Disc,
+    group: 'studio',
   },
 
   // Manage group - organization/settings

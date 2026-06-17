@@ -113,7 +113,27 @@
 
         <!-- Downloaded Audio Section -->
         <div v-if="filteredAudio.length > 0" class="projects__section">
-          <h3 class="projects__section-header">Downloaded Audio</h3>
+          <div class="projects__section-header-row">
+            <h3 class="projects__section-header">Downloaded Audio</h3>
+            <div class="projects__section-actions">
+              <button
+                @click="playAllAudio"
+                class="projects-section-btn"
+                title="Play all"
+              >
+                <Play :size="14" />
+                Play All
+              </button>
+              <button
+                @click="shuffleAllAudio"
+                class="projects-section-btn"
+                title="Shuffle all"
+              >
+                <Shuffle :size="14" />
+                Shuffle All
+              </button>
+            </div>
+          </div>
           <div class="projects__grid">
             <div
               v-for="audio in filteredAudio"
@@ -593,12 +613,13 @@
     X,
     Check,
     GripVertical,
+    Shuffle,
   } from 'lucide-vue-next';
 
   const router = useRouter();
   const { success, error: showError } = useToast();
   const { getActiveDownloads, uploadAudioFile } = useAudioDownloads();
-  const { playTrack, playPlaylist: playPlaylistTracks } = useAudioPlayer();
+  const { playPlaylist: playPlaylistTracks } = useAudioPlayer();
 
   const audioFiles = ref<DownloadedAudio[]>([]);
   const playlists = ref<AudioPlaylist[]>([]);
@@ -850,14 +871,39 @@
     }
   }
 
-  function playAudio(audio: DownloadedAudio) {
-    playTrack({
+  function toAudioTrack(audio: DownloadedAudio) {
+    return {
       id: audio.id.toString(),
       title: audio.title,
       filePath: audio.file_path,
       duration: audio.duration ?? undefined,
       platform: audio.platform ?? undefined,
-    });
+    };
+  }
+
+  function playAudio(audio: DownloadedAudio) {
+    if (showPlaylistDetailDialog.value && playlistTracks.value.length > 0) {
+      const tracks = playlistTracks.value.map(toAudioTrack);
+      const startIndex = tracks.findIndex(t => t.id === audio.id.toString());
+      playPlaylistTracks(tracks, startIndex >= 0 ? startIndex : 0);
+      return;
+    }
+
+    const tracks = filteredAudio.value.map(toAudioTrack);
+    const startIndex = tracks.findIndex(t => t.id === audio.id.toString());
+    playPlaylistTracks(tracks, startIndex >= 0 ? startIndex : 0);
+  }
+
+  async function playAllAudio() {
+    const tracks = filteredAudio.value.map(toAudioTrack);
+    if (tracks.length === 0) return;
+    await playPlaylistTracks(tracks, 0);
+  }
+
+  async function shuffleAllAudio() {
+    const tracks = filteredAudio.value.map(toAudioTrack);
+    if (tracks.length === 0) return;
+    await playPlaylistTracks(tracks, 0, { shuffle: true });
   }
 
   function handleAudioCardClick(audio: DownloadedAudio) {
@@ -1255,6 +1301,33 @@
     color: var(--sidebar-text-muted);
     margin: 0;
     padding-bottom: 0.1rem;
+  }
+
+  .projects__section-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .projects-section-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    color: var(--sidebar-text);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .projects-section-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
   }
 
   /* ===== Content Container ===== */

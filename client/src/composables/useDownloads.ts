@@ -8,6 +8,7 @@ import {
   getDatabase,
 } from '@/services/database';
 import { seedCreatorClipLayoutOnProject } from '@/composables/useCreatorClipDefaults';
+import { ensureShortVideoAutoClip } from '@/services/database/auto-clips';
 import { generateId } from '@/services/database';
 import { trackEvent } from '@/services/analytics';
 import { useToast } from '@/composables/useToast';
@@ -356,6 +357,16 @@ export function useDownloads() {
               }
 
               download.rawVideoId = rawVideoId;
+
+              if (finalProjectId) {
+                try {
+                  await ensureShortVideoAutoClip(finalProjectId, event.payload.duration, {
+                    clipName: download.title,
+                  });
+                } catch (autoClipError) {
+                  console.warn('[Downloads] Short-video auto-clip failed (non-fatal):', autoClipError);
+                }
+              }
 
               // Pre-generate waveform in background for instant loading when user opens editor
               // This runs async and doesn't block the download completion

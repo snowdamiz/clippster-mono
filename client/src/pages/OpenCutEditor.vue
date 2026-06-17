@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import EditorLayout from "@/editor/components/EditorLayout.vue";
 import { EditorCore } from "@/editor/core";
 import { loadClippsterProject } from "@/editor/bridge/project-loader";
+import { TIMELINE_CONSTANTS } from "@/editor/constants/timeline-constants";
 import { Loader2 } from "lucide-vue-next";
 
 const route = useRoute();
@@ -31,6 +32,15 @@ onMounted(async () => {
 		console.log('[OpenCutEditor] Calling loadClippsterProject...');
 		const editor = await loadClippsterProject(projectId);
 		console.log('[OpenCutEditor] Project loaded successfully');
+
+		const currentViewState = editor.project.getTimelineViewState();
+		editor.project.setTimelineViewState({
+			viewState: {
+				...currentViewState,
+				zoomLevel: TIMELINE_CONSTANTS.ZOOM_MIN,
+				scrollLeft: 0,
+			},
+		});
 
 		// Wait for project to be fully loaded and ready
 		// Verify that both project and scene are accessible before rendering

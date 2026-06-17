@@ -482,7 +482,7 @@
     updateVodPreset as updateVodPresetDb,
     deleteVodPreset,
   } from '@/services/database/vod-presets';
-  import { resolveApplicableProfiles } from '@/composables/useBrandingProfileSelection';
+  import { resolveAutoBrandingProfile } from '@/composables/useBrandingProfileSelection';
   import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
 
   interface Props {
@@ -1037,12 +1037,11 @@
           // Auto-pull creator profile settings (handles local + org-assigned + campaign profiles)
           if (props.projectId) {
             try {
-              const candidates = await resolveApplicableProfiles(props.projectId);
-              const profile = candidates.length > 0 ? candidates[0].profile : null;
+              const profile = await resolveAutoBrandingProfile(props.projectId);
 
               if (profile) {
                 hasResolvedProfile.value = true;
-                console.log('[VodPresetEditor] Auto-pulling settings from profile:', profile.name, `(${candidates[0].source})`);
+                console.log('[VodPresetEditor] Auto-pulling settings from profile:', profile.name);
 
                 // Pull layout overlays
                 if (profile.layout_overlays) {

@@ -26,6 +26,9 @@ import { buildActiveElementIndex } from "../../lib/timeline-active-elements";
 // Singleton offscreen canvas for text measurement
 let measureCanvas: HTMLCanvasElement | null = null;
 let measureCtx: CanvasRenderingContext2D | null = null;
+const TEXT_CANVAS_EDGE_PADDING = 32;
+const TEXT_AUTO_FIT_MIN_SCALE = 0.65;
+const TEXT_AUTO_FIT_MAX_LINES = 3;
 
 function getMeasureCtx(): CanvasRenderingContext2D {
 	if (!measureCanvas) {
@@ -33,6 +36,128 @@ function getMeasureCtx(): CanvasRenderingContext2D {
 		measureCtx = measureCanvas.getContext("2d")!;
 	}
 	return measureCtx!;
+}
+
+function measureTextLine(ctx: CanvasRenderingContext2D, text: string, letterSpacing: number): number {
+	if (letterSpacing === 0) return ctx.measureText(text).width;
+	let width = 0;
+	for (let i = 0; i < text.length; i++) {
+		width += ctx.measureText(text[i]).width;
+		if (i < text.length - 1) width += letterSpacing;
+	}
+	return width;
+}
+
+function getMaxLocalTextLineWidth({
+	canvasWidth,
+	anchorX,
+	scale,
+	textAlign,
+	fontSize,
+}: {
+	canvasWidth: number;
+	anchorX: number;
+	scale: number;
+	textAlign: TextElement["textAlign"];
+	fontSize: number;
+}): number {
+	const safeScale = Math.max(0.01, scale || 1);
+	const minWidth = fontSize * 2;
+	let available: number;
+
+	if (textAlign === "left") {
+		available = canvasWidth - anchorX - TEXT_CANVAS_EDGE_PADDING;
+	} else if (textAlign === "right") {
+		available = anchorX - TEXT_CANVAS_EDGE_PADDING;
+	} else {
+		const left = anchorX - TEXT_CANVAS_EDGE_PADDING;
+		const right = canvasWidth - anchorX - TEXT_CANVAS_EDGE_PADDING;
+		available = Math.min(left, right) * 2;
+	}
+
+	return Math.max(minWidth, available / safeScale);
+}
+
+function wrapMeasuredText({
+	ctx,
+	text,
+	maxLineWidth,
+	letterSpacing,
+}: {
+	ctx: CanvasRenderingContext2D;
+	text: string;
+	maxLineWidth: number;
+	letterSpacing: number;
+}): string[] {
+	const wrapped: string[] = [];
+	for (const hardLine of text.split("\n")) {
+		if (!hardLine) {
+			wrapped.push("");
+			continue;
+		}
+
+		const parts = hardLine.split(/(\s+)/).filter((part) => part.length > 0);
+		let current = "";
+		for (const part of parts) {
+			const candidate = current ? current + part : part.trimStart();
+			if (candidate && measureTextLine(ctx, candidate, letterSpacing) <= maxLineWidth) {
+				current = candidate;
+				continue;
+			}
+
+			if (current.trim().length > 0) {
+				wrapped.push(current.trimEnd());
+				current = part.trimStart();
+			}
+
+			while (current && measureTextLine(ctx, current, letterSpacing) > maxLineWidth) {
+				let splitAt = 1;
+				for (let i = 1; i <= current.length; i++) {
+					if (measureTextLine(ctx, current.slice(0, i), letterSpacing) > maxLineWidth) break;
+					splitAt = i;
+				}
+				wrapped.push(current.slice(0, splitAt));
+				current = current.slice(splitAt);
+			}
+		}
+		wrapped.push(current.trimEnd());
+	}
+	return wrapped.length ? wrapped : [""];
+}
+
+function getAutoFitTextLayout({
+	ctx,
+	text,
+	maxLineWidth,
+	letterSpacing,
+	baseFontSize,
+	fontStyle,
+	fontWeight,
+	fontFamily,
+}: {
+	ctx: CanvasRenderingContext2D;
+	text: string;
+	maxLineWidth: number;
+	letterSpacing: number;
+	baseFontSize: number;
+	fontStyle: string;
+	fontWeight: string;
+	fontFamily: string;
+}): { lines: string[]; fontSize: number; maxLineWidth: number } {
+	const minFontSize = Math.max(8, baseFontSize * TEXT_AUTO_FIT_MIN_SCALE);
+	let fallback: { lines: string[]; fontSize: number; maxLineWidth: number } | null = null;
+
+	for (let fontSize = baseFontSize; fontSize >= minFontSize; fontSize -= 1) {
+		ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px "${fontFamily}", sans-serif`;
+		const lines = wrapMeasuredText({ ctx, text, maxLineWidth, letterSpacing });
+		let widest = 0;
+		for (const line of lines) widest = Math.max(widest, measureTextLine(ctx, line, letterSpacing));
+		const layout = { lines, fontSize, maxLineWidth: widest };
+		fallback = layout;
+		if (lines.length <= TEXT_AUTO_FIT_MAX_LINES) return layout;
+	}
+
+	return fallback ?? { lines: [text], fontSize: baseFontSize, maxLineWidth: 0 };
 }
 
 export type HandlePosition =
@@ -60,6 +185,8 @@ export interface ElementBounds {
 	scale: number;
 	/** Original transform reference */
 	transform: Transform;
+	/** Extra clickable padding in canvas coords; does not affect the visible outline. */
+	hitPadding?: number;
 }
 
 interface DragState {
@@ -180,21 +307,27 @@ export function usePreviewInteraction({
 		const ch = canvasHeight.value;
 		const result: ElementBounds[] = [];
 
-		// Mirror scene-builder's orderedTracksBottomToTop:
-		//   orderedTracksTopToBottom = [non-main..., main]
-		//   orderedTracksBottomToTop = [main, ...non-main reversed]
-		// Main is rendered first (bottom), non-main tracks rendered on top in reverse order.
-		// hitTest iterates result in reverse, so the last entry (topmost rendered) is checked first.
+		// Mirror scene-builder's orderedTracksBottomToTop so hit-testing matches
+		// what the user sees on the preview.
+		const isOverlayTrack = (track: TimelineTrack) =>
+			track.type === "text" || track.type === "caption" || track.type === "sticker";
 		const allTracks = tracks.value;
 		const visibleTracks = allTracks.filter((t) => !("hidden" in t && t.hidden));
-		const nonMainTracks = visibleTracks.filter((t) => !isMainTrack(t));
 		const orderedTracks = [
 			...visibleTracks.filter((t) => isMainTrack(t)),
-			...nonMainTracks.slice().reverse(),
+			...visibleTracks.filter((t) => !isMainTrack(t) && !isOverlayTrack(t)),
+			...visibleTracks.filter((t) => isOverlayTrack(t)),
 		];
 
 		for (const track of orderedTracks) {
-			const elements = sortedElementsByTrackId.value.get(track.id) ?? track.elements;
+			const elements = [...(sortedElementsByTrackId.value.get(track.id) ?? track.elements)]
+				.sort((a, b) => {
+					const aOrder = a.orderIndex ?? 0;
+					const bOrder = b.orderIndex ?? 0;
+					if (aOrder !== bOrder) return aOrder - bOrder;
+					if (a.startTime !== b.startTime) return a.startTime - b.startTime;
+					return a.id.localeCompare(b.id);
+				});
 			for (const element of elements) {
 				if ("hidden" in element && element.hidden) continue;
 				const start = element.startTime;
@@ -292,20 +425,28 @@ export function usePreviewInteraction({
 			const fontFamily = textEl.fontFamily ?? "sans-serif";
 			const letterSpacing = textEl.letterSpacing ?? 0;
 			const lineHeight = textEl.lineHeight ?? 1.2;
+			const textAlign = textEl.textAlign ?? "center";
 
 			const ctx = getMeasureCtx();
-			ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px "${fontFamily}", sans-serif`;
-
-			// Measure multiline text
-			const lines = (content || " ").split("\n");
-			let maxLineW = 0;
-			for (const line of lines) {
-				let lineW = ctx.measureText(line).width;
-				if (letterSpacing > 0) lineW += letterSpacing * Math.max(0, line.length - 1);
-				if (lineW > maxLineW) maxLineW = lineW;
-			}
-			const textW = maxLineW;
-			const textH = fontSize * lineHeight * lines.length;
+			const maxLineWidth = getMaxLocalTextLineWidth({
+				canvasWidth: cw,
+				anchorX: cx,
+				scale: transform.scale,
+				textAlign,
+				fontSize,
+			});
+			const textLayout = getAutoFitTextLayout({
+				ctx,
+				text: content || " ",
+				maxLineWidth,
+				letterSpacing,
+				baseFontSize: fontSize,
+				fontStyle,
+				fontWeight,
+				fontFamily,
+			});
+			const textW = textLayout.maxLineWidth;
+			const textH = textLayout.fontSize * lineHeight * textLayout.lines.length;
 
 			// Padding: bubble padding or default
 			const bubbleStyle = textEl.bubbleStyle ?? "none";
@@ -380,6 +521,7 @@ export function usePreviewInteraction({
 			rotation: transform.rotate,
 			scale: transform.scale,
 			transform,
+			hitPadding: element.type === "text" || element.type === "caption" ? 48 : 0,
 		};
 	}
 
@@ -439,8 +581,9 @@ export function usePreviewInteraction({
 		const dy = py - bounds.cy;
 		const localX = dx * cos - dy * sin;
 		const localY = dx * sin + dy * cos;
-		const halfW = bounds.width / 2;
-		const halfH = bounds.height / 2;
+		const hitPadding = bounds.hitPadding ?? 0;
+		const halfW = bounds.width / 2 + hitPadding;
+		const halfH = bounds.height / 2 + hitPadding;
 		return Math.abs(localX) <= halfW && Math.abs(localY) <= halfH;
 	}
 

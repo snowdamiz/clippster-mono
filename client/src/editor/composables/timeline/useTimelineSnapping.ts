@@ -79,6 +79,7 @@ export function useTimelineSnapping({
 		// Single pass to count, then fill — avoids array push overhead.
 		let count = 0;
 		if (enableElementSnapping) {
+			count += 1; // timeline origin (t=0)
 			for (const track of tracks) {
 				for (const element of track.elements) {
 					if (element.id === excludeElementId) continue;
@@ -94,6 +95,7 @@ export function useTimelineSnapping({
 		let i = 0;
 
 		if (enableElementSnapping) {
+			raw[i++] = { t: 0, type: "element-start" };
 			for (const track of tracks) {
 				for (const element of track.elements) {
 					if (element.id === excludeElementId) continue;
@@ -254,6 +256,7 @@ export function useTimelineSnapping({
 		const snapPoints: SnapPoint[] = [];
 
 		if (enableElementSnapping) {
+			snapPoints.push({ time: 0, type: "element-start" });
 			for (const track of tracks) {
 				for (const element of track.elements) {
 					if (element.id === excludeElementId) continue;

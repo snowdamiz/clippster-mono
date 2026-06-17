@@ -27,6 +27,7 @@ mod sidecar;
 mod space_hls_speaker_timeline;
 mod storage;
 mod stripe_callback;
+mod studio;
 mod thumbnail_utils;
 mod twitch;
 mod twitter;
@@ -888,6 +889,12 @@ pub fn run() {
                             sql: include_str!("../migrations/099_add_clip_text_overlay_to_clips.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 100,
+                            description: "add_persistent_live_monitoring",
+                            sql: include_str!("../migrations/100_add_persistent_live_monitoring.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -902,6 +909,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         // Localhost plugin - serves frontend from http://localhost in production to bypass LNA
         .manage(video::VideoFrameState::new()) // Re-enabled VideoFrameState manage initialization
+        .manage(std::sync::Mutex::new(studio::recorder::StudioRecorderState::default()))
         .setup(|app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
@@ -1204,6 +1212,8 @@ commands::file_utils::generate_video_thumbnail,
             audio::extract_audio_to_file_wav,
             audio::get_audio_duration,
             download_library_audio,
+            download_broll_media,
+            resolve_broll_media_path,
             
             // Audio download commands
             audio_download::download_youtube_audio,
@@ -1373,6 +1383,14 @@ avatar_proxy::fetch_avatar_image,
 commands::remotion_export::start_remotion_export,
 commands::remotion_export::cancel_remotion_export,
 commands::remotion_export::stop_remotion_sidecar,
+
+// Studio recording commands
+studio::studio_list_devices,
+studio::studio_start_recording,
+studio::studio_stop_recording,
+studio::studio_get_recording_status,
+studio::studio_finalize_recording,
+studio::studio_save_recording,
 
 ])
 .manage(commands::remotion_export::SidecarState::new())

@@ -61,6 +61,22 @@
         
         <!-- Dark overlay for better contrast -->
         <div class="absolute inset-0 bg-gradient-to-b from-zinc-900/40 via-zinc-900/20 to-zinc-900/40" />
+        <!-- B-roll suggestion markers (non-interactive overlay) -->
+        <div
+          v-for="marker in brollMarkers"
+          :key="marker.id"
+          class="absolute top-0 bottom-0 pointer-events-none z-[5]"
+          :style="getBrollMarkerStyle(marker)"
+        >
+          <div
+            class="absolute inset-0 rounded-sm border border-cyan-400/60 bg-cyan-500/15"
+            :class="{ 'bg-cyan-500/30 border-cyan-300': marker.status === 'applied' }"
+          />
+          <div class="absolute -top-4 left-0 text-[8px] text-cyan-300 truncate max-w-full px-0.5">
+            B-roll
+          </div>
+        </div>
+
         <!-- Segments -->
         <div
           v-for="(segment, index) in segments"
@@ -165,8 +181,17 @@
   import { PlusIcon, XIcon } from 'lucide-vue-next';
   import type { SegmentRegionConfig, ManualRegion } from '@/types';
 
+  interface BrollMarker {
+    id: string;
+    startTime: number;
+    endTime: number;
+    label: string;
+    status: string;
+  }
+
   interface Props {
     segments: SegmentRegionConfig[];
+    brollMarkers?: BrollMarker[];
     activeSegmentId: string | null;
     duration: number;
     currentTime: number | null;
@@ -176,7 +201,9 @@
     clipEndTime?: number;
   }
 
-  const props = defineProps<Props>();
+  const props = withDefaults(defineProps<Props>(), {
+    brollMarkers: () => [],
+  });
 
   const emit = defineEmits<{
     addSegment: [];
@@ -374,6 +401,15 @@
     return {
       left: `${startPercent}%`,
       width: `${endPercent - startPercent}%`,
+    };
+  }
+
+  function getBrollMarkerStyle(marker: BrollMarker) {
+    const startPercent = (marker.startTime / props.duration) * 100;
+    const endPercent = (marker.endTime / props.duration) * 100;
+    return {
+      left: `${startPercent}%`,
+      width: `${Math.max(endPercent - startPercent, 0.5)}%`,
     };
   }
 

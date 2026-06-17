@@ -1,4 +1,9 @@
 // Timeline and Media Types
+import type { AiBrollRegionMetadata } from './ai-broll';
+
+export type { AiBrollRegionMetadata } from './ai-broll';
+export * from './ai-broll';
+
 export interface WordInfo {
   word: string;
   start: number;
@@ -331,6 +336,8 @@ export interface MediaPanelProps {
   transcribeMessage?: string;
   // VOD preset config for pre-edit settings
   vodPresetConfig?: ActiveVodPresetConfig | null;
+  /** When true, hide AI clip detection (e.g. short videos auto-imported as one clip). */
+  clipDetectionDisabled?: boolean;
 }
 
 // Reference type for intro/outro (matches database IntroOutro type)
@@ -678,6 +685,10 @@ export interface ManualRegion {
   mediaType?: 'video-crop' | 'image' | 'video'; // Type of content in this region
   // Aspect ratio locking (prevents distortion when resizing output)
   aspectRatioLocked?: boolean; // Default true - maintains source aspect ratio in output
+  /** Optional AI B-roll provenance (ignored by FFmpeg export) */
+  aiBroll?: AiBrollRegionMetadata;
+  /** Seconds into external video media to start (B-roll trim offset) */
+  mediaSourceOffset?: number;
 }
 
 // Time-based segment configuration for POI regions

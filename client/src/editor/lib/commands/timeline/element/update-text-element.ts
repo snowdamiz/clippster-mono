@@ -25,8 +25,13 @@ export type TextElementUpdatable = Partial<
 		| "bubbleStyle"
 		| "bubbleColor"
 		| "bubblePadding"
+		| "bubbleOpacity"
+		| "textOpacity"
 		| "transform"
 		| "opacity"
+		| "blendMode"
+		| "fadeIn"
+		| "fadeOut"
 	>
 >;
 

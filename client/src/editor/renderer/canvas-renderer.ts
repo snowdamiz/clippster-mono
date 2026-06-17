@@ -9,6 +9,7 @@ export type CanvasRendererParams = {
 	previewEffectProcessing?: boolean;
 	backingWidth?: number;
 	backingHeight?: number;
+	willReadFrequently?: boolean;
 };
 
 export class CanvasRenderer {
@@ -29,6 +30,7 @@ export class CanvasRenderer {
 		previewEffectProcessing = false,
 		backingWidth = width,
 		backingHeight = height,
+		willReadFrequently = false,
 	}: CanvasRendererParams) {
 		this.width = width;
 		this.height = height;
@@ -51,7 +53,7 @@ export class CanvasRenderer {
 			this.canvas.height = this.backingHeight;
 		}
 
-		const context = this.canvas.getContext("2d", { willReadFrequently: true });
+		const context = this.canvas.getContext("2d", { willReadFrequently });
 		if (!context) {
 			throw new Error("Failed to get canvas context");
 		}
@@ -88,11 +90,13 @@ export class CanvasRenderer {
 		height,
 		backingWidth = width,
 		backingHeight = height,
+		willReadFrequently = false,
 	}: {
 		width: number;
 		height: number;
 		backingWidth?: number;
 		backingHeight?: number;
+		willReadFrequently?: boolean;
 	}) {
 		this.width = width;
 		this.height = height;
@@ -106,7 +110,7 @@ export class CanvasRenderer {
 			this.canvas.height = this.backingHeight;
 		}
 
-		const context = this.canvas.getContext("2d", { willReadFrequently: true });
+		const context = this.canvas.getContext("2d", { willReadFrequently });
 		if (!context) {
 			throw new Error("Failed to get canvas context");
 		}

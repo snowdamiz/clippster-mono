@@ -59,7 +59,7 @@
 
       <!-- Detect Button (when not detecting and has clips) - Only show if AI is allowed -->
       <button
-        v-else-if="clips.length > 0 && isAIAllowed"
+        v-else-if="clips.length > 0 && isAIAllowed && !clipDetectionDisabled"
         @click="handleDetectClips"
         class="clips-tab-header-btn group flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-lg transition-all"
         title="Run clip detection again"
@@ -617,7 +617,7 @@
             <h4 class="text-sm font-semibold mb-2" style="color: var(--sidebar-text)">No Clips Yet</h4>
 
             <!-- AI Allowed: Show Detect Clips -->
-            <template v-if="isAIAllowed">
+            <template v-if="isAIAllowed && !clipDetectionDisabled">
               <p class="text-xs leading-relaxed mb-6 max-w-[200px]" style="color: var(--sidebar-text-muted)">
                 Start detecting clips from your video using AI-powered analysis
               </p>
@@ -629,6 +629,12 @@
                 <Sparkles class="h-3.5 w-3.5" />
                 Detect Clips
               </button>
+            </template>
+
+            <template v-else-if="isAIAllowed && clipDetectionDisabled">
+              <p class="text-xs leading-relaxed mb-6 max-w-[220px]" style="color: var(--sidebar-text-muted)">
+                This video is already a single clip. Transcribe, edit, and build it from here.
+              </p>
             </template>
 
             <!-- AI Not Allowed: Show Add Clip -->
@@ -1293,6 +1299,7 @@
     playOnCardClick?: boolean;
     showAdjustClipButton?: boolean;
     vodPresetConfig?: import('@/types').ActiveVodPresetConfig | null;
+    clipDetectionDisabled?: boolean;
   }
 
   const props = withDefaults(defineProps<ClipsTabProps>(), {
@@ -1321,6 +1328,7 @@
     playOnCardClick: false,
     vodPresetConfig: null,
     showAdjustClipButton: false,
+    clipDetectionDisabled: false,
   });
 
   // Emits
@@ -3709,42 +3717,35 @@
 
       if (!activeCampaignId && activeBrandingType === 'org') {
         try {
-          // Use the streamer-matched creator profile from props (already resolved by
-          // ProjectWorkspaceDialog to the correct streamer profile, e.g. "Jerzy" not "Clippster").
-          // Fall back to API lookup by brandingProfileId only if props.creatorProfile is unavailable.
           let profile: any = null;
+          const clipProjectId =
+            clip.project_id ||
+            (clip as { segment_id?: string }).segment_id ||
+            props.projectId;
+          const orgId = activeTarget?.organizationId;
 
-          // Use resolveApplicableProfiles — the proven streamer matching function that
-          // matches via platform links (channel URL e.g. "jerzynft" on Kick).
-          // This is the same function that produces "Found org streamer match: Jerzy" in logs.
-          const { resolveApplicableProfiles } = await import('@/composables/useBrandingProfileSelection');
-          const clipProjectId = clip.project_id || props.projectId;
-          
-          if (clipProjectId) {
-            const candidates = await resolveApplicableProfiles(clipProjectId);
-            const orgId = activeTarget?.organizationId;
-            
-            // Find the org-streamer match within the target org
-            const streamerMatch = candidates.find((c) =>
-              c.source === 'org-streamer' &&
-              (!orgId || (c.profile as any).organization_id === orgId)
-            );
-            
-            // Fall back to org-global within the same org
-            const globalMatch = !streamerMatch
-              ? candidates.find((c) =>
-                  c.source === 'org-global' &&
-                  (!orgId || (c.profile as any).organization_id === orgId)
-                )
-              : null;
-            
-            const matched = streamerMatch || globalMatch;
-            if (matched) {
-              profile = matched.profile;
+          if (clipProjectId && orgId) {
+            const { resolveOrgBuildBranding } = await import('@/composables/useBrandingProfileSelection');
+            profile = await resolveOrgBuildBranding(Number(orgId), clipProjectId);
+
+            if (
+              profile &&
+              activeCampaignBrandingProfileId &&
+              String(profile.id) !== String(activeCampaignBrandingProfileId)
+            ) {
+              console.warn(
+                '[ClipsTab] Org branding profile mismatch: dialog selected',
+                activeCampaignBrandingProfileId,
+                'resolved',
+                profile.id
+              );
+            }
+
+            if (profile) {
               targetResolvedProfile = profile;
-              console.log('[ClipsTab] Org branding: resolved via platform links:', profile.name, '(source:', matched.source, ')');
+              console.log('[ClipsTab] Org branding resolved:', profile.name, 'for org', orgId);
             } else {
-              console.log('[ClipsTab] Org branding: no matching profile found via resolveApplicableProfiles');
+              console.log('[ClipsTab] Org branding: no profile resolved for org', orgId);
             }
           }
 
@@ -3787,6 +3788,7 @@
               console.log('[ClipsTab] Org profile outro resolved:', profile.outro_id);
             }
           }
+
         } catch (e) {
           console.warn('[ClipsTab] Failed to resolve org branding profile intro/outro:', e);
         }
@@ -3848,6 +3850,44 @@
       } else if (activeCampaignId) {
         targetWatermarkSettings = null;
         console.log('[ClipsTab] Cleared org watermark for campaign build (no campaign watermark set)');
+      } else if (
+        !activeCampaignId &&
+        activeBrandingType === 'org' &&
+        targetResolvedProfile?.watermark_id
+      ) {
+        const { expandWatermarkForBuild } = await import('@/composables/useOrgCampaignBuildBranding');
+        const orgWm = await resolveWatermarkById(targetResolvedProfile.watermark_id);
+        if (orgWm) {
+          let wmSettings: Record<string, unknown> | null = null;
+          if (targetResolvedProfile.watermark_settings) {
+            try {
+              wmSettings =
+                typeof targetResolvedProfile.watermark_settings === 'string'
+                  ? JSON.parse(targetResolvedProfile.watermark_settings)
+                  : targetResolvedProfile.watermark_settings;
+            } catch {
+              wmSettings = null;
+            }
+          }
+          const defaultPos =
+            (wmSettings as Record<string, { position?: { x: number; y: number; opacity: number; scale: number } }>)?.[
+              '16:9'
+            ]?.position ?? { x: 12, y: 92, opacity: 80, scale: 20 };
+
+          const expanded = await expandWatermarkForBuild({
+            enabled: true,
+            watermarkId: targetResolvedProfile.watermark_id,
+            positionX: defaultPos.x,
+            positionY: defaultPos.y,
+            opacity: defaultPos.opacity,
+            scale: defaultPos.scale,
+            perRatioSettings: wmSettings as any,
+          });
+          if (expanded) {
+            targetWatermarkSettings = expanded as unknown as typeof targetWatermarkSettings;
+            console.log('[ClipsTab] Org watermark applied:', targetResolvedProfile.watermark_id);
+          }
+        }
       }
 
       console.log('[ClipsTab] Campaign branding resolution result:', {

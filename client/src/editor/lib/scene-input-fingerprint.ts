@@ -50,6 +50,7 @@ export function fingerprintTimelineElement(el: TimelineElement): unknown {
 				...base,
 				mediaId: v.mediaId,
 				muted: v.muted,
+				mediaFit: v.mediaFit,
 				transform: v.transform,
 				opacity: v.opacity,
 				volume: v.volume,
@@ -74,6 +75,7 @@ export function fingerprintTimelineElement(el: TimelineElement): unknown {
 			return {
 				...base,
 				mediaId: im.mediaId,
+				mediaFit: im.mediaFit,
 				transform: im.transform,
 				opacity: im.opacity,
 				flip: im.flip,

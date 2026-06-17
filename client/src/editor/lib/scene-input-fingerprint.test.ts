@@ -3,7 +3,7 @@ import {
 	computeSceneInputFingerprint,
 	fingerprintTimelineElement,
 } from "./scene-input-fingerprint";
-import type { TimelineTrack, VideoElement } from "../types/timeline";
+import type { TextElement, TimelineTrack, VideoElement } from "../types/timeline";
 import type { MediaAsset } from "../types/assets";
 import type { Transition } from "../types/transitions";
 import type { TBackground, TCanvasSize } from "../types/project";
@@ -107,5 +107,43 @@ describe("fingerprintTimelineElement", () => {
 		const fp = fingerprintTimelineElement(v) as { transform: typeof v.transform };
 		expect(fp.transform.position.x).toBe(1);
 		expect(fp.transform.scale).toBe(0.5);
+	});
+
+	it("includes text background styling used by preview and export", () => {
+		const text: TextElement = {
+			id: "t",
+			type: "text",
+			name: "Text",
+			content: "Hello",
+			duration: 1,
+			startTime: 0,
+			trimStart: 0,
+			trimEnd: 0,
+			fontSize: 48,
+			fontFamily: "Inter",
+			color: "#ffffff",
+			backgroundColor: "#3882f6",
+			textAlign: "center",
+			fontWeight: "500",
+			fontStyle: "normal",
+			textDecoration: "none",
+			letterSpacing: 0,
+			lineHeight: 1.2,
+			textCase: "none",
+			bubbleStyle: "rounded",
+			bubbleColor: "#3882f6",
+			bubbleOpacity: 1,
+			transform: { position: { x: 0, y: 0 }, scale: 1, rotate: 0 },
+			opacity: 1,
+		};
+
+		const fp = fingerprintTimelineElement(text) as {
+			backgroundColor: string;
+			bubbleColor: string;
+			bubbleOpacity: number;
+		};
+		expect(fp.backgroundColor).toBe("#3882f6");
+		expect(fp.bubbleColor).toBe("#3882f6");
+		expect(fp.bubbleOpacity).toBe(1);
 	});
 });

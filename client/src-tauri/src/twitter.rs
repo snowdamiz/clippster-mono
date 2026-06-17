@@ -1271,12 +1271,14 @@ struct TwitterRecorderExitPayload {
 #[tauri::command]
 pub fn validate_twitter_url(url: String) -> Result<String, String> {
     let normalized = normalize_twitter_url(&url);
-    
-    // Validate URL format
-    if normalized.contains("/i/broadcasts/") || normalized.contains("/i/spaces/") {
+
+    if is_valid_twitter_vod_url(&normalized) {
         Ok(normalized)
     } else {
-        Err("Invalid Twitter URL. Must be a broadcast or Space URL.".to_string())
+        Err(
+            "Invalid Twitter URL. Must be a broadcast, Space, or timeline video post URL."
+                .to_string(),
+        )
     }
 }
 
@@ -2040,7 +2042,8 @@ pub async fn download_twitter_vod(
         .map_err(|e| format!("Failed to get timestamp: {}", e))?
         .as_secs();
 
-    let filename = format!("twitter_{}_{}_{}.mp4", broadcast_id, safe_title, timestamp);
+    let source_id = extract_twitter_source_id(&vod_url).unwrap_or_else(|_| broadcast_id.clone());
+    let filename = format!("twitter_{}_{}_{}.mp4", source_id, safe_title, timestamp);
     let output_file = paths.videos.join(&filename);
     
     // Clean up when done
@@ -2322,15 +2325,67 @@ fn normalize_twitter_url(url: &str) -> String {
         .replace("https://twitter.com", "https://twitter.com") // Ensure https
 }
 
-/// Extract broadcast or space ID from URL
+/// Extract broadcast or space ID from URL (live/recording paths only).
 fn extract_broadcast_id(url: &str) -> Result<String, String> {
     if let Some(broadcast_part) = url.split("/i/broadcasts/").nth(1) {
-        Ok(broadcast_part.split('/').next().unwrap_or("").to_string())
+        Ok(broadcast_part
+            .split('/')
+            .next()
+            .unwrap_or("")
+            .split('?')
+            .next()
+            .unwrap_or("")
+            .to_string())
     } else if let Some(space_part) = url.split("/i/spaces/").nth(1) {
-        Ok(space_part.split('/').next().unwrap_or("").to_string())
+        Ok(space_part
+            .split('/')
+            .next()
+            .unwrap_or("")
+            .split('?')
+            .next()
+            .unwrap_or("")
+            .to_string())
     } else {
         Err("Could not extract broadcast/space ID from URL".to_string())
     }
+}
+
+fn is_valid_twitter_vod_url(normalized: &str) -> bool {
+    let lower = normalized.to_lowercase();
+    if !(lower.contains("twitter.com") || lower.contains("x.com")) {
+        return false;
+    }
+    lower.contains("/i/broadcasts/")
+        || lower.contains("/i/spaces/")
+        || lower.contains("/status/")
+        || lower.contains("/statuses/")
+}
+
+/// Broadcast, space, or tweet status id — used for VOD download filenames and metadata.
+fn extract_twitter_source_id(url: &str) -> Result<String, String> {
+    if let Ok(id) = extract_broadcast_id(url) {
+        if !id.is_empty() {
+            return Ok(id);
+        }
+    }
+
+    for marker in ["/status/", "/statuses/"] {
+        if let Some(rest) = url.split(marker).nth(1) {
+            let id = rest
+                .split('/')
+                .next()
+                .unwrap_or("")
+                .split('?')
+                .next()
+                .unwrap_or("")
+                .trim();
+            if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) {
+                return Ok(id.to_string());
+            }
+        }
+    }
+
+    Err("Could not extract broadcast, space, or status ID from URL".to_string())
 }
 
 /// Resolve a sidecar binary path using Tauri's naming convention.
@@ -2499,7 +2554,11 @@ pub async fn download_twitter_vod_segment(
     let start_formatted = format_time_for_filename(start_time);
     let end_formatted = format_time_for_filename(end_time);
 
-    let filename = format!("twitter_{}_{}_{}_{}_{}.mp4", broadcast_id, safe_title, start_formatted, end_formatted, timestamp);
+    let source_id = extract_twitter_source_id(&vod_url).unwrap_or_else(|_| broadcast_id.clone());
+    let filename = format!(
+        "twitter_{}_{}_{}_{}_{}.mp4",
+        source_id, safe_title, start_formatted, end_formatted, timestamp
+    );
     let video_path = paths.videos.join(&filename);
 
     {

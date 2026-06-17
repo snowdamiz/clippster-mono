@@ -1351,6 +1351,23 @@ fn extract_video_id(input: &str) -> Option<String> {
             }
         }
     }
+
+    // youtube.com/shorts/VIDEO_ID
+    if let Some(shorts_part) = trimmed.split("/shorts/").nth(1) {
+        let video_id = shorts_part
+            .split('?')
+            .next()
+            .unwrap_or(shorts_part)
+            .split('/')
+            .next()
+            .unwrap_or("")
+            .split('#')
+            .next()
+            .unwrap_or("");
+        if !video_id.is_empty() && video_id.len() == 11 {
+            return Some(video_id.to_string());
+        }
+    }
     
     // youtube.com/embed/VIDEO_ID
     if let Some(embed_part) = trimmed.split("/embed/").nth(1) {
@@ -1528,6 +1545,27 @@ pub fn resolve_ytdlp_binary() -> Result<String, String> {
 
 pub fn resolve_ffmpeg_binary() -> Result<String, String> {
     resolve_sidecar_binary("ffmpeg")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_video_id;
+
+    #[test]
+    fn extracts_video_id_from_shorts_url() {
+        assert_eq!(
+            extract_video_id("https://www.youtube.com/shorts/5byNoWveF7c"),
+            Some("5byNoWveF7c".to_string())
+        );
+    }
+
+    #[test]
+    fn extracts_video_id_from_shorts_url_with_query() {
+        assert_eq!(
+            extract_video_id("https://www.youtube.com/shorts/5byNoWveF7c?si=abc123"),
+            Some("5byNoWveF7c".to_string())
+        );
+    }
 }
 
 fn format_time_for_filename(seconds: f64) -> String {

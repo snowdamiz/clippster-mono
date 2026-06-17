@@ -1,4 +1,5 @@
-import { getDatabase } from './core';
+import { getDatabase, timestamp } from './core';
+import { UNIX_SECONDS_THRESHOLD } from '@/utils/dateTimeUtils';
 
 /**
  * Self-healing schema module.
@@ -28,6 +29,94 @@ export async function addColumnIfMissing(
   if (await hasColumn(db, table, column)) return;
   await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   console.log(`[schema-healing] Added ${table}.${column}`);
+}
+
+/** Fix project timestamps stored as milliseconds instead of Unix seconds. */
+async function healProjectTimestamps(db: any): Promise<void> {
+  try {
+    const corrupted = await db.select<{ id: string; created_at: number; updated_at: number }[]>(
+      `SELECT id, created_at, updated_at FROM projects
+       WHERE created_at > ? OR updated_at > ?`,
+      [UNIX_SECONDS_THRESHOLD, UNIX_SECONDS_THRESHOLD]
+    );
+
+    for (const project of corrupted) {
+      const createdAt =
+        project.created_at > UNIX_SECONDS_THRESHOLD
+          ? Math.floor(project.created_at / 1000)
+          : project.created_at;
+      const updatedAt =
+        project.updated_at > UNIX_SECONDS_THRESHOLD
+          ? Math.floor(project.updated_at / 1000)
+          : project.updated_at;
+
+      await db.execute(
+        'UPDATE projects SET created_at = ?, updated_at = ? WHERE id = ?',
+        [createdAt, updatedAt, project.id]
+      );
+    }
+
+    if (corrupted.length > 0) {
+      console.log(`[schema-healing] Normalized ${corrupted.length} project timestamp(s) from ms to seconds`);
+    }
+  } catch (e) {
+    console.warn('[schema-healing] Project timestamp heal skipped:', e);
+  }
+}
+
+/** Clear watermarks/branding selections left from incorrect auto-apply rules. */
+async function healStaleProjectBranding(db: any): Promise<void> {
+  try {
+    const { resolveAutoBrandingProfile, isOrgSuppliedAccount } = await import(
+      '@/composables/useBrandingProfileSelection'
+    );
+
+    if (isOrgSuppliedAccount()) {
+      return;
+    }
+
+    const projects = await db.select<{ id: string; default_watermark_settings: string | null; selected_branding_profile_id: string | null }[]>(
+      `SELECT id, default_watermark_settings, selected_branding_profile_id FROM projects
+       WHERE default_watermark_settings IS NOT NULL OR selected_branding_profile_id IS NOT NULL`
+    );
+
+    for (const project of projects) {
+      const autoProfile = await resolveAutoBrandingProfile(project.id);
+      const validWatermarkId = autoProfile?.watermark_id ? String(autoProfile.watermark_id) : null;
+
+      if (project.default_watermark_settings) {
+        try {
+          const stored = JSON.parse(project.default_watermark_settings);
+          const storedId = stored?.watermarkId ? String(stored.watermarkId) : null;
+          if (storedId && storedId !== validWatermarkId) {
+            await db.execute(
+              'UPDATE projects SET default_watermark_settings = NULL, updated_at = ? WHERE id = ?',
+              [timestamp(), project.id]
+            );
+            console.log('[schema-healing] Cleared stale default_watermark_settings for project', project.id);
+          }
+        } catch {
+          await db.execute(
+            'UPDATE projects SET default_watermark_settings = NULL, updated_at = ? WHERE id = ?',
+            [timestamp(), project.id]
+          );
+        }
+      }
+
+      if (project.selected_branding_profile_id) {
+        const validProfileId = autoProfile?.id ? String(autoProfile.id) : null;
+        if (project.selected_branding_profile_id !== validProfileId) {
+          await db.execute(
+            'UPDATE projects SET selected_branding_profile_id = NULL, updated_at = ? WHERE id = ?',
+            [timestamp(), project.id]
+          );
+          console.log('[schema-healing] Cleared stale selected_branding_profile_id for project', project.id);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[schema-healing] Stale branding heal skipped:', e);
+  }
 }
 
 export async function healSchema(): Promise<void> {
@@ -82,6 +171,16 @@ export async function healSchema(): Promise<void> {
 
     // --- Migration 089: auto_dvr_enabled on creator_profiles ---
     await addColumnIfMissing(db, 'creator_profiles', 'auto_dvr_enabled', 'INTEGER DEFAULT 0');
+
+    // --- Migration 100: persistent live monitoring on monitored_streamers ---
+    await addColumnIfMissing(db, 'monitored_streamers', 'persistent_auto_detect', 'INTEGER DEFAULT 0');
+    await addColumnIfMissing(db, 'monitored_streamers', 'persistent_record', 'INTEGER DEFAULT 0');
+    await addColumnIfMissing(db, 'monitored_streamers', 'auto_detect_prompt_id', 'TEXT');
+    await addColumnIfMissing(db, 'monitored_streamers', 'auto_detect_prompt_content', 'TEXT');
+    await addColumnIfMissing(db, 'monitored_streamers', 'auto_detect_use_creator_layout', 'INTEGER DEFAULT 0');
+    await addColumnIfMissing(db, 'monitored_streamers', 'auto_detect_creator_profile_id', 'TEXT');
+    await addColumnIfMissing(db, 'monitored_streamers', 'record_use_creator_layout', 'INTEGER DEFAULT 0');
+    await addColumnIfMissing(db, 'monitored_streamers', 'record_creator_profile_id', 'TEXT');
 
     // --- Migration 099: clip_build_defaults on creator_profiles (opt-in clip-build defaults) ---
     await addColumnIfMissing(db, 'creator_profiles', 'clip_build_defaults', 'TEXT DEFAULT NULL');
@@ -194,6 +293,9 @@ export async function healSchema(): Promise<void> {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_audio_playlist_items_position ON audio_playlist_items(playlist_id, position)'
     );
+
+    await healProjectTimestamps(db);
+    await healStaleProjectBranding(db);
 
     healed = true;
     console.log('[schema-healing] Schema healing complete');

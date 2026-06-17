@@ -16,7 +16,8 @@ defmodule ClippsterServer.Campaigns.Campaign do
     CampaignParticipant,
     CampaignSubmission,
     CampaignPayment,
-    CampaignCreatorProfile
+    CampaignCreatorProfile,
+    CampaignResource
   }
 
   @join_types ~w(open application_required)
@@ -24,6 +25,7 @@ defmodule ClippsterServer.Campaigns.Campaign do
   @platforms ~w(tiktok instagram x youtube)
   @payment_methods ~w(paypal crypto venmo cashapp bank_transfer)
   @payment_models ~w(cpm per_clip)
+  @content_verticals ~w(gaming music podcast brand course event news other)
 
   schema "clipping_campaigns" do
     field :title, :string
@@ -52,6 +54,9 @@ defmodule ClippsterServer.Campaigns.Campaign do
     field :max_views, :integer
     field :is_platform_campaign, :boolean, default: false
     field :platform_payment_model, :string
+    field :content_vertical, :string
+    field :campaign_goal, :string
+    field :content_style_tags, {:array, :string}, default: []
 
     belongs_to :organization, Organization
     belongs_to :creator_profile, OrganizationCreatorProfile
@@ -63,6 +68,7 @@ defmodule ClippsterServer.Campaigns.Campaign do
     has_many :payments, CampaignPayment
     has_many :campaign_creator_profiles, CampaignCreatorProfile
     has_many :creator_profiles, through: [:campaign_creator_profiles, :creator_profile]
+    has_many :resources, CampaignResource
 
     timestamps(type: :utc_datetime)
   end
@@ -101,7 +107,10 @@ defmodule ClippsterServer.Campaigns.Campaign do
       :clips_per_profile,
       :assigned_streamer_ids,
       :is_platform_campaign,
-      :platform_payment_model
+      :platform_payment_model,
+      :content_vertical,
+      :campaign_goal,
+      :content_style_tags
     ])
     |> validate_required([:organization_id, :title])
     |> validate_length(:title, min: 3, max: 200)
@@ -156,7 +165,10 @@ defmodule ClippsterServer.Campaigns.Campaign do
       :clips_per_profile,
       :assigned_streamer_ids,
       :is_platform_campaign,
-      :platform_payment_model
+      :platform_payment_model,
+      :content_vertical,
+      :campaign_goal,
+      :content_style_tags
     ])
     |> validate_length(:title, min: 3, max: 200)
     |> validate_length(:description, max: 5000)
@@ -252,4 +264,5 @@ defmodule ClippsterServer.Campaigns.Campaign do
   def platforms, do: @platforms
   def payment_method_types, do: @payment_methods
   def payment_models, do: @payment_models
+  def content_verticals, do: @content_verticals
 end

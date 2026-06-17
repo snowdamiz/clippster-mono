@@ -110,13 +110,15 @@
       class="px-2 py-1.5 border-b border-zinc-700/50 bg-zinc-900/30"
     >
       <div class="flex items-center justify-between gap-3">
-        <label class="flex items-center gap-2 cursor-pointer group">
-          <input
-            type="checkbox"
+        <div class="flex items-center gap-2 group">
+          <Checkbox
             :checked="selectedRegion.aspectRatioLocked !== false"
-            @change="toggleAspectRatioLock"
-            class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0"
-          />
+            aria-label="Toggle aspect ratio lock"
+            class="h-4 w-4 rounded border-white/45 bg-white/10 text-white hover:border-emerald-300/80 data-[state=checked]:border-emerald-300 data-[state=checked]:bg-emerald-500 focus-visible:ring-emerald-400/50"
+            @update:checked="onAspectRatioLockChange"
+          >
+            <CheckIcon class="h-3.5 w-3.5" />
+          </Checkbox>
           <LockIcon
             v-if="selectedRegion.aspectRatioLocked !== false"
             class="w-3.5 h-3.5 text-emerald-400"
@@ -125,7 +127,8 @@
             v-else
             class="w-3.5 h-3.5 text-amber-400"
           />
-          <span class="text-xs font-medium group-hover:text-zinc-200 transition-colors"
+          <span
+            class="text-xs font-medium transition-colors"
             :class="selectedRegion.aspectRatioLocked !== false ? 'text-emerald-300' : 'text-amber-300'"
           >
             {{ selectedRegion.aspectRatioLocked !== false ? 'Aspect Ratio Locked' : 'Aspect Ratio Unlocked' }}
@@ -133,7 +136,7 @@
           <span class="text-[10px] text-zinc-500">
             ({{ selectedRegion.aspectRatioLocked !== false ? 'maintains proportions' : 'free resize' }})
           </span>
-        </label>
+        </div>
         
         <!-- Delete Media button (only shown when region has uploaded media) -->
         <button
@@ -149,16 +152,18 @@
 
       <!-- Rounded Corners Control -->
       <div class="flex items-center gap-3 mt-2">
-        <label class="flex items-center gap-2 cursor-pointer group shrink-0">
-          <input
-            type="checkbox"
+        <div class="flex items-center gap-2 group shrink-0">
+          <Checkbox
             :checked="selectedRegion.cornerRadiusEnabled === true"
-            @change="toggleCornerRadius"
-            class="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-violet-500 focus:ring-violet-500 focus:ring-offset-0"
-          />
+            aria-label="Toggle rounded corners"
+            class="h-4 w-4 rounded border-white/45 bg-white/10 text-white hover:border-violet-300/80 data-[state=checked]:border-violet-300 data-[state=checked]:bg-violet-500 focus-visible:ring-violet-400/50"
+            @update:checked="onCornerRadiusToggle"
+          >
+            <CheckIcon class="h-3.5 w-3.5" />
+          </Checkbox>
           <RoundCornerIcon class="w-3.5 h-3.5 text-violet-400" />
-          <span class="text-xs font-medium text-zinc-300 group-hover:text-zinc-100 transition-colors">Round Corners</span>
-        </label>
+          <span class="text-xs font-medium text-zinc-300">Round Corners</span>
+        </div>
         <template v-if="selectedRegion.cornerRadiusEnabled">
           <input
             type="range"
@@ -333,9 +338,11 @@
     TrashIcon,
     Smartphone,
     CircleDotIcon as RoundCornerIcon,
+    CheckIcon,
   } from 'lucide-vue-next';
   import Hls from 'hls.js';
   import POIRegion from './POIRegion.vue';
+  import { Checkbox } from '@/components/ui/checkbox';
   import type { ManualRegion, ManualRegionRect } from '@/types';
   import { POI_REGION_COLORS } from '@/types';
   import { SOCIAL_OVERLAY_PRESETS } from '@/editor/constants/social-overlay-constants';
@@ -684,13 +691,12 @@
     return props.regions.findIndex((r) => r.id === id);
   }
 
-  // Toggle corner radius for selected region
-  function toggleCornerRadius() {
+  function onCornerRadiusToggle(checked: boolean | 'indeterminate') {
     if (!selectedRegion.value) return;
-    const newEnabled = !(selectedRegion.value.cornerRadiusEnabled === true);
+    const enabled = checked === true;
     emit('updateRegion', selectedRegion.value.id, {
-      cornerRadiusEnabled: newEnabled,
-      cornerRadiusPx: newEnabled ? (selectedRegion.value.cornerRadiusPx ?? 16) : 0,
+      cornerRadiusEnabled: enabled,
+      cornerRadiusPx: enabled ? (selectedRegion.value.cornerRadiusPx ?? 16) : 0,
     });
   }
 
@@ -700,12 +706,9 @@
     emit('updateRegion', selectedRegion.value.id, { cornerRadiusPx: val });
   }
 
-  // Toggle aspect ratio lock for selected region
-  function toggleAspectRatioLock() {
+  function onAspectRatioLockChange(checked: boolean | 'indeterminate') {
     if (!selectedRegion.value) return;
-    
-    const newLockState = !(selectedRegion.value.aspectRatioLocked !== false);
-    emit('updateRegion', selectedRegion.value.id, { aspectRatioLocked: newLockState });
+    emit('updateRegion', selectedRegion.value.id, { aspectRatioLocked: checked === true });
   }
 
   // Delete uploaded media from selected region

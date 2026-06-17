@@ -45,6 +45,29 @@ export async function getAutoDvrStreamers(): Promise<MonitoredStreamerRecord[]> 
   );
 }
 
+/** Streamers with My Creators persistent auto-detect or record enabled. */
+export async function getPersistentLiveMonitoringStreamers(): Promise<MonitoredStreamerRecord[]> {
+  const db = await getDatabase();
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<MonitoredStreamerRecord[]>(
+      `SELECT * FROM monitored_streamers
+       WHERE user_id IS NULL
+         AND (persistent_auto_detect = 1 OR persistent_record = 1)
+       ORDER BY created_at DESC`
+    );
+  }
+
+  return await db.select<MonitoredStreamerRecord[]>(
+    `SELECT * FROM monitored_streamers
+     WHERE (user_id = ? OR user_id IS NULL)
+       AND (persistent_auto_detect = 1 OR persistent_record = 1)
+     ORDER BY created_at DESC`,
+    [userId]
+  );
+}
+
 export async function getMonitoredStreamer(id: string): Promise<MonitoredStreamerRecord | null> {
   const db = await getDatabase();
   const result = await db.select<MonitoredStreamerRecord[]>(
@@ -126,6 +149,14 @@ export async function updateMonitoredStreamer(
     stream_thumbnail_url: string | null;
     segment_duration_minutes: number;
     auto_dvr: number | boolean;
+    persistent_auto_detect: number | boolean;
+    persistent_record: number | boolean;
+    auto_detect_prompt_id: string | null;
+    auto_detect_prompt_content: string | null;
+    auto_detect_use_creator_layout: number | boolean;
+    auto_detect_creator_profile_id: string | null;
+    record_use_creator_layout: number | boolean;
+    record_creator_profile_id: string | null;
   }>
 ): Promise<void> {
   const db = await getDatabase();
@@ -170,6 +201,46 @@ export async function updateMonitoredStreamer(
   if (updates.auto_dvr !== undefined) {
     fields.push('auto_dvr = ?');
     values.push(toSqlBool(updates.auto_dvr));
+  }
+
+  if (updates.persistent_auto_detect !== undefined) {
+    fields.push('persistent_auto_detect = ?');
+    values.push(toSqlBool(updates.persistent_auto_detect));
+  }
+
+  if (updates.persistent_record !== undefined) {
+    fields.push('persistent_record = ?');
+    values.push(toSqlBool(updates.persistent_record));
+  }
+
+  if (updates.auto_detect_prompt_id !== undefined) {
+    fields.push('auto_detect_prompt_id = ?');
+    values.push(updates.auto_detect_prompt_id);
+  }
+
+  if (updates.auto_detect_prompt_content !== undefined) {
+    fields.push('auto_detect_prompt_content = ?');
+    values.push(updates.auto_detect_prompt_content);
+  }
+
+  if (updates.auto_detect_use_creator_layout !== undefined) {
+    fields.push('auto_detect_use_creator_layout = ?');
+    values.push(toSqlBool(updates.auto_detect_use_creator_layout));
+  }
+
+  if (updates.auto_detect_creator_profile_id !== undefined) {
+    fields.push('auto_detect_creator_profile_id = ?');
+    values.push(updates.auto_detect_creator_profile_id);
+  }
+
+  if (updates.record_use_creator_layout !== undefined) {
+    fields.push('record_use_creator_layout = ?');
+    values.push(toSqlBool(updates.record_use_creator_layout));
+  }
+
+  if (updates.record_creator_profile_id !== undefined) {
+    fields.push('record_creator_profile_id = ?');
+    values.push(updates.record_creator_profile_id);
   }
 
   if (fields.length === 0) {

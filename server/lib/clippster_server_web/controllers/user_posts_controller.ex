@@ -594,7 +594,16 @@ defmodule ClippsterServerWeb.UserPostsController do
 
   # PostForMe's social-post-results list may include unrelated rows when filtered by
   # social_post_id; only trust results that match both the post and target account.
-  defp verify_post_for_me_publish_result(post_id, provider_account_id, initial_status, retries_left \\ 15) do
+  # Instagram video uploads often exceed 30s; poll briefly then accept in-flight PostForMe jobs.
+  @post_for_me_verify_retries 15
+  @post_for_me_verify_interval_ms 2_000
+
+  defp verify_post_for_me_publish_result(
+         post_id,
+         provider_account_id,
+         initial_status,
+         retries_left \\ @post_for_me_verify_retries
+       ) do
     case fetch_post_for_me_result_for_account(post_id, provider_account_id) do
       {:ok, _result} ->
         Logger.info(
@@ -612,18 +621,31 @@ defmodule ClippsterServerWeb.UserPostsController do
 
       :pending when retries_left > 0 ->
         Logger.info(
-          "[UserPosts] PostForMe result not ready for post #{post_id} (status=#{initial_status}), retrying in 2s (#{retries_left} left)"
+          "[UserPosts] PostForMe result not ready for post #{post_id} (status=#{initial_status}), retrying in #{div(@post_for_me_verify_interval_ms, 1000)}s (#{retries_left} left)"
         )
 
-        Process.sleep(2_000)
+        Process.sleep(@post_for_me_verify_interval_ms)
         verify_post_for_me_publish_result(post_id, provider_account_id, initial_status, retries_left - 1)
 
       :pending ->
-        Logger.warning(
-          "[UserPosts] PostForMe publish result unavailable for post #{post_id} after retries"
-        )
+        case classify_post_for_me_pending_outcome(post_id) do
+          :accept ->
+            Logger.warning(
+              "[UserPosts] PostForMe publish still in progress for #{post_id} after retries; accepting (Instagram may finish shortly)"
+            )
 
-        {:error, "Publish could not be confirmed. Please check your social account and try again."}
+            :ok
+
+          {:error, :failed, message} ->
+            {:error, message}
+
+          :reject ->
+            Logger.warning(
+              "[UserPosts] PostForMe publish result unavailable for post #{post_id} after retries"
+            )
+
+            {:error, "Publish could not be confirmed. Please check your social account and try again."}
+        end
 
       {:error, :api, reason} ->
         Logger.warning(
@@ -680,7 +702,7 @@ defmodule ClippsterServerWeb.UserPostsController do
       {:ok, %{status: status}} when status in ["failed", "error"] ->
         {:error, :failed, "Post For Me reported status: #{status}"}
 
-      {:ok, %{status: "processing"}} ->
+      {:ok, %{status: status}} when status in ["processing", "scheduled", "pending"] ->
         :pending
 
       {:ok, _} ->
@@ -688,6 +710,24 @@ defmodule ClippsterServerWeb.UserPostsController do
 
       {:error, reason} ->
         {:error, :api, reason}
+    end
+  end
+
+  # When polling times out, accept if PostForMe still has an in-flight publish (common for IG video).
+  defp classify_post_for_me_pending_outcome(post_id) do
+    case PostForMe.get_social_post(post_id) do
+      {:ok, %{status: status}}
+      when status in ["processing", "scheduled", "pending", "published", "completed", "success"] ->
+        :accept
+
+      {:ok, %{status: status}} when status in ["failed", "error"] ->
+        {:error, :failed, "Post For Me reported status: #{status}"}
+
+      {:ok, _} ->
+        :reject
+
+      {:error, _} ->
+        :reject
     end
   end
 

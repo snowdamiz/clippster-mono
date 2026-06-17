@@ -3,6 +3,7 @@ import type { TimelineTrack } from "../../../../types/timeline";
 import { EditorCore } from "../../../../core";
 import { shiftCaptionTimesAfter } from "../../../timeline/caption-sync";
 import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
+import { recomputeTrimEndAfterTimingChange } from "../../../../lib/timeline/trim-source-utils";
 
 /**
  * Changes the speed of a timeline element, adjusts its duration, and
@@ -42,13 +43,21 @@ export class ChangeSpeedCommand extends Command {
 		const newDuration = targetEl.duration * oldSpeed / this.newSpeed;
 		const durationDelta = newDuration - targetEl.duration;
 		const oldEndTime = targetEl.startTime + targetEl.duration;
+		const newTrimEnd = recomputeTrimEndAfterTimingChange({
+			trimStart: targetEl.trimStart,
+			oldDuration: targetEl.duration,
+			newDuration,
+			oldSpeed,
+			newSpeed: this.newSpeed,
+			trimEnd: targetEl.trimEnd,
+		});
 
 		const updatedTracks = this.savedState.map((t) => {
 			if (t.id !== this.trackId) return t;
 
 			const newElements = t.elements.map((el) => {
 				if (el.id === this.elementId) {
-					return { ...el, speed: this.newSpeed, duration: newDuration };
+					return { ...el, speed: this.newSpeed, duration: newDuration, trimEnd: newTrimEnd };
 				}
 				// Ripple-shift elements that start at or after the old end
 				if (durationDelta !== 0 && el.startTime >= oldEndTime - 0.001) {

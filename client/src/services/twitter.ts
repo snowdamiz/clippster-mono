@@ -47,6 +47,27 @@ export async function validateTwitterUrl(url: string): Promise<string> {
 }
 
 /**
+ * Extract tweet/status ID from an X/Twitter timeline post URL.
+ * Matches `/status/{id}` and `/statuses/{id}` on x.com or twitter.com.
+ */
+export function extractTwitterStatusId(url: string): string | null {
+  if (!url || typeof url !== 'string') {
+    return null;
+  }
+
+  const trimmed = url.trim();
+  const match = trimmed.match(/\/(?:status|statuses)\/(\d+)/i);
+  return match?.[1] ?? null;
+}
+
+/**
+ * Stable source id for VOD download/search: broadcast, space, or tweet status id.
+ */
+export function extractTwitterSourceId(url: string): string | null {
+  return extractTwitterBroadcastId(url) || extractTwitterStatusId(url);
+}
+
+/**
  * Extract broadcast or space ID from Twitter URL
  */
 export function extractTwitterBroadcastId(url: string): string | null {
@@ -73,6 +94,51 @@ export function extractTwitterBroadcastId(url: string): string | null {
   }
 
   return null;
+}
+
+/**
+ * True when the URL is a direct live-session link (broadcast, Space, or event).
+ * Profile/handle URLs are not supported for live monitoring.
+ */
+export function isDirectTwitterLiveUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') {
+    return false;
+  }
+  const trimmed = url.trim().toLowerCase();
+  return (
+    trimmed.includes('/i/broadcasts/') ||
+    trimmed.includes('/i/spaces/') ||
+    trimmed.includes('/i/events/')
+  );
+}
+
+/**
+ * True when input looks like a creator profile URL or @handle (not a live session URL).
+ */
+export function isTwitterProfileOrHandleInput(input: string): boolean {
+  if (!input || typeof input !== 'string') {
+    return false;
+  }
+  const trimmed = input.trim();
+  if (trimmed.startsWith('@')) {
+    return true;
+  }
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+    return !trimmed.includes('/i/');
+  }
+  try {
+    const url = new URL(trimmed);
+    if (!url.hostname.includes('twitter.com') && !url.hostname.includes('x.com')) {
+      return false;
+    }
+    if (isDirectTwitterLiveUrl(trimmed)) {
+      return false;
+    }
+    const pathParts = url.pathname.split('/').filter(Boolean);
+    return pathParts.length > 0 && pathParts[0] !== 'i';
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -240,28 +306,51 @@ export interface TwitterLiveStatus {
 }
 
 /**
+ * Parse yt-dlp live flags for X broadcasts/spaces (same fields as YouTube/Rumble).
+ * Ended broadcasts keep title/duration but set is_live=false / live_status=was_live.
+ */
+export function parseTwitterYtdlpIsLive(metadata: Record<string, unknown>): boolean {
+  if (metadata.is_live === true) return true;
+  if (metadata.is_live === false) return false;
+
+  const liveStatus =
+    typeof metadata.live_status === 'string' ? metadata.live_status.toLowerCase() : '';
+  if (liveStatus === 'is_live') return true;
+  if (liveStatus === 'was_live' || liveStatus === 'not_live' || liveStatus === 'post_live') {
+    return false;
+  }
+
+  // Ended replay: was_live without active is_live
+  if (metadata.was_live === true) return false;
+
+  return false;
+}
+
+/**
  * Check if a Twitter broadcast/space is currently live
  */
 export async function checkTwitterLivestream(urlOrUsername: string): Promise<TwitterLiveStatus> {
   try {
-    // If it's a broadcast/space URL, check if we can fetch metadata
-    if (urlOrUsername.includes('/i/broadcasts/') || urlOrUsername.includes('/i/spaces/')) {
-      const metadata = await getTwitterBroadcastInfo(urlOrUsername);
-      
-      // If we got metadata, the broadcast is accessible (likely live or recently ended)
-      // Twitter broadcasts that have ended are typically removed quickly
-      const isLive = !!(metadata.title || metadata.duration);
-      
+    if (isDirectTwitterLiveUrl(urlOrUsername)) {
+      const metadata = await getTwitterBroadcastInfo(urlOrUsername, { skipCache: true });
+
+      if (metadata.error) {
+        return {
+          isLive: false,
+          displayName: metadata.username || metadata.uploader,
+          title: metadata.title,
+        };
+      }
+
       return {
-        isLive,
+        isLive: metadata.isLive ?? false,
         displayName: metadata.username || metadata.uploader,
         profileImageUrl: metadata.avatarUrl || metadata.thumbnail,
         title: metadata.title,
       };
     }
-    
-    // For username-only tracking, we can't determine live status without a broadcast URL
-    // Return offline status
+
+    // Username-only tracking cannot determine live status without a broadcast URL
     return {
       isLive: false,
       displayName: urlOrUsername.replace('@', ''),
@@ -338,9 +427,14 @@ export interface SpaceReplayHints {
 // yt-dlp + GraphQL round-trip that often fails once the guest token has gone stale.
 const _broadcastInfoCache = new Map<string, Awaited<ReturnType<typeof getTwitterBroadcastInfo>>>();
 
-export async function getTwitterBroadcastInfo(url: string): Promise<{
+export async function getTwitterBroadcastInfo(
+  url: string,
+  options?: { skipCache?: boolean }
+): Promise<{
   title?: string;
   duration?: number;
+  /** From yt-dlp is_live / live_status — false when the session has ended. */
+  isLive?: boolean;
   thumbnail?: string;
   uploader?: string;
   username?: string;
@@ -371,6 +465,10 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
   spaceReplayHints?: SpaceReplayHints;
 }> {
   const cacheKey = url;
+  if (!options?.skipCache) {
+    const cached = _broadcastInfoCache.get(cacheKey);
+    if (cached) return cached;
+  }
   try {
     const result = await invoke<string>('get_twitter_broadcast_info', { url });
     const metadata = JSON.parse(result);
@@ -564,9 +662,12 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
         ? (metadata.spaceReplayHints as SpaceReplayHints)
         : undefined;
 
+    const isLive = parseTwitterYtdlpIsLive(metadata);
+
     const broadcastResult = {
       title: metadata.title || metadata.fulltitle,
       duration,
+      isLive,
       thumbnail,
       uploader,
       username,
@@ -580,7 +681,9 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
       uploadDate,
       spaceReplayHints,
     };
-    _broadcastInfoCache.set(cacheKey, broadcastResult);
+    if (!options?.skipCache) {
+      _broadcastInfoCache.set(cacheKey, broadcastResult);
+    }
     return broadcastResult;
   } catch (error) {
     console.error('[Twitter] Failed to get broadcast info:', error);
@@ -591,6 +694,7 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
     const broadcastId = extractTwitterBroadcastId(url);
     return {
       title: broadcastId ? `X Broadcast ${broadcastId.substring(0, 8)}...` : 'X Broadcast',
+      isLive: false,
       error: errorMessage,
     };
   }

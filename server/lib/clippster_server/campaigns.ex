@@ -16,9 +16,13 @@ defmodule ClippsterServer.Campaigns do
     CampaignParticipant,
     CampaignSubmission,
     CampaignPayment,
+    CampaignResource,
+    CampaignSubmissionMetricSnapshot,
     ClipperSocialAccount,
     ClipperPaymentMethod
   }
+
+  alias ClippsterServer.Campaigns.CampaignSubmissionAnalytics
 
   alias ClippsterServer.Social.Providers.PostForMe
 
@@ -57,6 +61,7 @@ defmodule ClippsterServer.Campaigns do
       :creator_profile,
       :global_intro,
       :global_outro,
+      :resources,
       branding_profile: [:intro, :outro, :watermark, :platform_links],
       participants: :user,
       creator_profiles: :platform_links
@@ -106,6 +111,7 @@ defmodule ClippsterServer.Campaigns do
       :creator_profile,
       :global_intro,
       :global_outro,
+      :resources,
       creator_profiles: :platform_links
     ])
     |> Repo.all()
@@ -308,6 +314,63 @@ defmodule ClippsterServer.Campaigns do
       preload: [creator_profile: [:intro, :outro, :watermark, :platform_links]]
     )
     |> Repo.all()
+  end
+
+  @doc """
+  Lists source materials/resources for a campaign.
+  """
+  def list_campaign_resources(campaign_id) do
+    CampaignResource
+    |> where([r], r.campaign_id == ^campaign_id)
+    |> order_by([r], asc: r.sort_order, asc: r.id)
+    |> Repo.all()
+  end
+
+  @doc """
+  Sets campaign resources (replaces all existing).
+  """
+  def set_campaign_resources(%Campaign{} = campaign, resources_attrs, %User{} = user)
+      when is_list(resources_attrs) do
+    if Organizations.is_admin?(campaign.organization_id, user.id) do
+      Repo.transaction(fn ->
+        from(r in CampaignResource, where: r.campaign_id == ^campaign.id)
+        |> Repo.delete_all()
+
+        resources_attrs
+        |> Enum.with_index()
+        |> Enum.each(fn {attrs, index} ->
+          attrs =
+            attrs
+            |> normalize_resource_attrs()
+            |> Map.put(:campaign_id, campaign.id)
+            |> Map.put_new(:sort_order, index)
+
+          %CampaignResource{}
+          |> CampaignResource.create_changeset(attrs)
+          |> Repo.insert!()
+        end)
+
+        list_campaign_resources(campaign.id)
+      end)
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  defp normalize_resource_attrs(attrs) when is_map(attrs) do
+    Enum.reduce(attrs, %{}, fn
+      {key, value}, acc when is_binary(key) ->
+        Map.put(acc, String.to_existing_atom(key), value)
+
+      {key, value}, acc ->
+        Map.put(acc, key, value)
+    end)
+  rescue
+    ArgumentError ->
+      Enum.reduce(attrs, %{}, fn {key, value}, acc ->
+        atom_key = if is_binary(key), do: String.to_atom(key), else: key
+        Map.put(acc, atom_key, value)
+      end)
   end
 
   # ============================================================================
@@ -711,53 +774,91 @@ defmodule ClippsterServer.Campaigns do
   end
 
   defp fetch_metadata_via_postforme(%CampaignSubmission{} = submission, platform) do
-    # Load social account if not loaded
-    submission = 
+    submission =
       case submission.social_account do
-        %Ecto.Association.NotLoaded{} ->
-          Repo.preload(submission, :social_account)
-        _ ->
-          submission
+        %Ecto.Association.NotLoaded{} -> Repo.preload(submission, :social_account)
+        _ -> submission
       end
 
-    # Check if we have a social account with provider_account_id
     case submission.social_account do
       nil ->
-        Logger.warning("[Campaigns] No social account linked for submission #{submission.id}")
-        {:error, :no_social_account}
+        record_submission_snapshot(submission, %{
+          source: "postforme_feed",
+          feed_match_status: "no_account",
+          warnings: ["no_connected_account"]
+        })
 
       %ClipperSocialAccount{provider_account_id: nil} ->
-        Logger.warning("[Campaigns] Social account has no provider_account_id for submission #{submission.id}")
-        {:error, :no_provider_account_id}
+        record_submission_snapshot(submission, %{
+          source: "postforme_feed",
+          feed_match_status: "no_provider_account",
+          warnings: ["no_connected_account"]
+        })
 
       %ClipperSocialAccount{provider_account_id: provider_account_id} ->
-        # Extract post ID from URL for matching
         case extract_post_identifier(platform, submission.clip_url) do
           {:ok, post_id} ->
-            # Fetch feed from PostForMe with metrics expanded
-            case PostForMe.get_social_account_feed(provider_account_id, %{limit: 50, expand: ["metrics"]}) do
+            case PostForMe.get_social_account_feed(provider_account_id, %{
+                   limit: 50,
+                   expand: ["metrics"]
+                 }) do
               {:ok, %{data: feed_items}} when is_list(feed_items) ->
-                # Find matching post in feed by post ID
                 case find_post_in_feed(feed_items, post_id) do
                   {:ok, post_data} ->
                     analytics = extract_feed_analytics(platform, post_data)
-                    
-                    update_submission_metadata(submission, %{
-                      view_count: analytics[:view_count] || 0,
-                      like_count: analytics[:like_count] || 0,
-                      comment_count: analytics[:comment_count] || 0,
-                      share_count: analytics[:share_count] || 0,
-                      save_count: analytics[:save_count] || 0,
-                      author_username: get_in(post_data, ["author", "username"]),
-                      author_name: get_in(post_data, ["author", "name"]),
-                      author_profile_image: get_in(post_data, ["author", "profile_picture"]),
-                      caption: post_data["text"] || post_data["caption"],
-                      platform_post_id: post_id
-                    })
+                    raw_metrics = post_data["metrics"] || %{}
+
+                    snapshot_attrs = %{
+                      source: "postforme_feed",
+                      provider_account_id: provider_account_id,
+                      feed_match_status: "matched",
+                      view_count: analytics[:view_count],
+                      like_count: analytics[:like_count],
+                      comment_count: analytics[:comment_count],
+                      share_count: analytics[:share_count],
+                      save_count: analytics[:save_count],
+                      reach_count: analytics[:reach_count],
+                      impressions_count: analytics[:impressions_count],
+                      raw_metrics: raw_metrics,
+                      feed_item: post_data
+                    }
+
+                    with {:ok, updated_submission} <-
+                           update_submission_metadata(submission, %{
+                             view_count: analytics[:view_count] || submission.view_count || 0,
+                             like_count: analytics[:like_count] || 0,
+                             comment_count: analytics[:comment_count] || 0,
+                             share_count: analytics[:share_count] || 0,
+                             save_count: analytics[:save_count] || 0,
+                             reach_count: analytics[:reach_count] || 0,
+                             impressions_count: analytics[:impressions_count] || 0,
+                             author_username: get_in(post_data, ["author", "username"]),
+                             author_name: get_in(post_data, ["author", "name"]),
+                             author_profile_image: get_in(post_data, ["author", "profile_picture"]),
+                             caption: post_data["text"] || post_data["caption"],
+                             platform_post_id: post_id,
+                             feed_match_status: "matched",
+                             metrics_last_synced_at:
+                               DateTime.utc_now() |> DateTime.truncate(:second)
+                           }),
+                         {:ok, _snapshot} <- record_submission_snapshot(updated_submission, snapshot_attrs) do
+                      {:ok, updated_submission}
+                    end
 
                   {:error, :not_found} ->
-                    Logger.warning("[Campaigns] Post #{post_id} not found in PostForMe feed for platform #{platform}")
-                    {:error, :post_not_in_feed}
+                    Logger.warning(
+                      "[Campaigns] Post #{post_id} not found in PostForMe feed for platform #{platform}"
+                    )
+
+                    record_submission_snapshot(submission, %{
+                      source: "postforme_feed",
+                      provider_account_id: provider_account_id,
+                      feed_match_status: "not_found",
+                      warnings: ["post_not_in_feed"]
+                    })
+
+                  {:error, reason} ->
+                    {:error, reason}
                 end
 
               {:error, reason} ->
@@ -770,11 +871,115 @@ defmodule ClippsterServer.Campaigns do
             end
 
           {:error, reason} ->
-            Logger.warning("[Campaigns] Failed to extract post ID from URL: #{inspect(reason)}")
+            record_submission_snapshot(submission, %{
+              source: "postforme_feed",
+              provider_account_id: provider_account_id,
+              feed_match_status: "invalid_url",
+              warnings: ["invalid_url"]
+            })
+
             {:error, reason}
         end
     end
   end
+
+  @doc """
+  Records a metric snapshot and refreshes submission verification warnings.
+  """
+  def record_submission_snapshot(%CampaignSubmission{} = submission, attrs) do
+    snapshots =
+      CampaignSubmissionMetricSnapshot
+      |> where([s], s.submission_id == ^submission.id)
+      |> order_by([s], desc: s.inserted_at)
+      |> limit(10)
+      |> Repo.all()
+
+    duplicate_url? = duplicate_submission_url?(submission)
+
+    snapshot_attrs =
+      attrs
+      |> Map.put(:submission_id, submission.id)
+      |> Map.put_new(:source, "postforme_feed")
+
+    provisional_snapshot =
+      struct(CampaignSubmissionMetricSnapshot, snapshot_attrs)
+
+    warnings =
+      CampaignSubmissionAnalytics.compute_warnings(submission, [provisional_snapshot | snapshots],
+        duplicate_url?: duplicate_url?,
+        manual_override?: snapshot_attrs[:source] == "manual_override"
+      )
+
+    snapshot_attrs = Map.put(snapshot_attrs, :warnings, warnings)
+
+    Repo.transaction(fn ->
+      {:ok, snapshot} =
+        %CampaignSubmissionMetricSnapshot{}
+        |> CampaignSubmissionMetricSnapshot.create_changeset(snapshot_attrs)
+        |> Repo.insert()
+
+      submission
+      |> Ecto.Changeset.change(%{
+        verification_warnings: warnings,
+        feed_match_status: snapshot.feed_match_status,
+        metrics_last_synced_at:
+          if(snapshot.feed_match_status == "matched",
+            do: DateTime.utc_now() |> DateTime.truncate(:second),
+            else: submission.metrics_last_synced_at
+          )
+      })
+      |> Repo.update!()
+
+      snapshot
+    end)
+  end
+
+  @doc """
+  Lists metric snapshots for a submission (newest first).
+  """
+  def list_submission_metric_snapshots(submission_id, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 30)
+
+    CampaignSubmissionMetricSnapshot
+    |> where([s], s.submission_id == ^submission_id)
+    |> order_by([s], desc: s.inserted_at)
+    |> limit(^limit)
+    |> Repo.all()
+  end
+
+  @doc """
+  Builds analytics summary for a submission from snapshot history.
+  """
+  def get_submission_analytics_summary(%CampaignSubmission{} = submission) do
+    snapshots = list_submission_metric_snapshots(submission.id)
+
+    %{
+      trends: CampaignSubmissionAnalytics.build_trends(snapshots),
+      warnings: submission.verification_warnings || [],
+      feed_match_status: submission.feed_match_status,
+      metrics_last_synced_at: submission.metrics_last_synced_at,
+      snapshots: snapshots
+    }
+  end
+
+  @doc """
+  Re-syncs submission metrics from PostForMe and records a new snapshot.
+  """
+  def sync_submission_metrics(%CampaignSubmission{} = submission) do
+    fetch_and_update_submission_metadata(submission)
+  end
+
+  defp duplicate_submission_url?(%CampaignSubmission{id: id, clip_url: clip_url, campaign_id: campaign_id})
+       when is_binary(clip_url) do
+    from(s in CampaignSubmission,
+      where:
+        s.campaign_id == ^campaign_id and s.clip_url == ^clip_url and s.id != ^id and
+          s.status != "rejected"
+    )
+    |> Repo.exists?()
+  end
+
+  defp duplicate_submission_url?(_), do: false
 
   @doc """
   Updates a submission with metadata from the platform.
@@ -868,30 +1073,30 @@ defmodule ClippsterServer.Campaigns do
 
   defp extract_feed_analytics("instagram", item) do
     m = item["metrics"] || %{}
-    i = m["insights"] || %{}
+    i = m["insights"] || m
 
     %{
-      view_count: i["plays"] || i["video_views"] || i["impressions"] || 0,
+      view_count: i["plays"] || i["video_views"] || i["views"] || i["impressions"] || 0,
       like_count: i["likes"] || 0,
       comment_count: i["comments"] || 0,
       share_count: i["shares"] || 0,
-      save_count: i["saves"] || 0,
-      reach_count: i["reach"] || 0
+      save_count: i["saves"] || i["saved"] || 0,
+      reach_count: i["reach"] || 0,
+      impressions_count: i["impressions"] || 0
     }
   end
 
   defp extract_feed_analytics("tiktok", item) do
     m = item["metrics"] || %{}
 
-    # TikTok consumer: like_count, comment_count, share_count, view_count
-    # TikTok Business: likes, comments, shares, favorites, reach, video_views
     %{
       view_count: m["view_count"] || m["video_views"] || 0,
       like_count: m["like_count"] || m["likes"] || 0,
       comment_count: m["comment_count"] || m["comments"] || 0,
       share_count: m["share_count"] || m["shares"] || 0,
-      save_count: m["favorites"] || 0,
-      reach_count: m["reach"] || 0
+      save_count: m["favorites"] || m["save_count"] || 0,
+      reach_count: m["reach"] || 0,
+      impressions_count: m["impressions"] || m["video_views"] || 0
     }
   end
 
@@ -901,7 +1106,8 @@ defmodule ClippsterServer.Campaigns do
     %{
       view_count: m["views"] || 0,
       like_count: m["likes"] || 0,
-      comment_count: m["comments"] || 0
+      comment_count: m["comments"] || 0,
+      impressions_count: m["views"] || 0
     }
   end
 
@@ -1003,9 +1209,25 @@ defmodule ClippsterServer.Campaigns do
   Updates view count for a submission.
   """
   def update_submission_views(%CampaignSubmission{} = submission, view_count) do
-    submission
-    |> CampaignSubmission.update_views_changeset(%{view_count: view_count})
-    |> Repo.update()
+    with {:ok, updated} <-
+           submission
+           |> CampaignSubmission.update_views_changeset(%{view_count: view_count})
+           |> Repo.update(),
+         {:ok, _snapshot} <-
+           record_submission_snapshot(updated, %{
+             source: "manual_override",
+             feed_match_status: updated.feed_match_status || "matched",
+             view_count: view_count,
+             like_count: updated.like_count,
+             comment_count: updated.comment_count,
+             share_count: updated.share_count,
+             save_count: updated.save_count,
+             reach_count: updated.reach_count,
+             impressions_count: updated.impressions_count,
+             raw_metrics: %{"manual_view_count" => view_count}
+           }) do
+      {:ok, Repo.get!(CampaignSubmission, updated.id)}
+    end
   end
 
   @doc """

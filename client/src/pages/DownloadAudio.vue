@@ -307,7 +307,7 @@
 
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted } from 'vue';
-  import { useRouter } from 'vue-router';
+  import { useRoute, useRouter } from 'vue-router';
   import { formatDate } from '@/utils/dateTimeUtils';
   import PageLayout from '@/components/PageLayout.vue';
   import { usePlatformStore, type PlatformClip } from '@/stores/platform';
@@ -316,6 +316,7 @@
   import { Clock, ChevronDown, X, AlertTriangle, Download, Headphones, Search, Loader2, Check } from 'lucide-vue-next';
   import { type PlatformId } from '@/config/platforms';
 
+  const route = useRoute();
   const router = useRouter();
   const { success, error: showError } = useToast();
   const { startYouTubeAudioDownload } = useAudioDownloads();
@@ -478,6 +479,16 @@
   onMounted(async () => {
     document.addEventListener('click', handleClickOutside);
     await platformStore.refreshRecentSearchMetadata();
+
+    const rawUrl = route.query.url ?? route.query.search;
+    const queryUrl = (Array.isArray(rawUrl) ? rawUrl[0] : rawUrl) as string | undefined;
+
+    if (queryUrl) {
+      searchInput.value = queryUrl;
+      detectPlatform();
+      await handleSearch();
+      router.replace({ path: route.path, query: {} });
+    }
   });
 
   onUnmounted(() => {

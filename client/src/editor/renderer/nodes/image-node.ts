@@ -1,6 +1,6 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
-import type { Transform, FlipState, ColorAdjustments, CropRect, ColorCurves, ColorWheels, BlendMode, MaskShape } from "../../types/timeline";
+import type { Transform, FlipState, ColorAdjustments, CropRect, ColorCurves, ColorWheels, BlendMode, MaskShape, MediaFitMode } from "../../types/timeline";
 import type { VideoEffect } from "../../types/effects";
 import type { ElementKeyframes } from "../../types/keyframes";
 import { getKeyframedValue } from "../../types/keyframes";
@@ -80,6 +80,7 @@ export interface ImageNodeParams {
 	blendMode?: BlendMode;
 	masks?: MaskShape[];
 	canvasSourceFraming?: ManualSourceFramingPayload | null;
+	mediaFit?: MediaFitMode;
 }
 
 export class ImageNode extends BaseNode<ImageNodeParams> {
@@ -308,12 +309,13 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 					undefined,
 				);
 			} else {
-				const containScale = Math.min(
-					renderer.width / mediaW,
-					renderer.height / mediaH,
-				);
-				const drawW = mediaW * containScale;
-				const drawH = mediaH * containScale;
+				const fit = this.params.mediaFit ?? "contain";
+				const fitScale =
+					fit === "cover"
+						? Math.max(renderer.width / mediaW, renderer.height / mediaH)
+						: Math.min(renderer.width / mediaW, renderer.height / mediaH);
+				const drawW = mediaW * fitScale;
+				const drawH = mediaH * fitScale;
 				const drawX = (renderer.width - drawW) / 2;
 				const drawY = (renderer.height - drawH) / 2;
 

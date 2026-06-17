@@ -189,6 +189,18 @@
                 </div>
 
                 <!-- Clips Tab -->
+                <div v-show="rightPanelTab === 'clips'" class="workspace-dialog__full-project-bar">
+                  <button
+                    type="button"
+                    class="workspace-dialog__full-project-btn"
+                    :disabled="isCreatingProject"
+                    title="Open the full downloaded video in the video editor"
+                    @click="onEditFullProject"
+                  >
+                    <Clapperboard :size="14" />
+                    <span>{{ isCreatingProject ? 'Opening editor...' : 'Edit full project in editor' }}</span>
+                  </button>
+                </div>
                 <MediaPanel
                   v-show="rightPanelTab === 'clips'"
                   ref="mediaPanelRef"
@@ -213,6 +225,7 @@
                   :transcribe-stage="transcribeStage"
                   :transcribe-message="transcribeMessage"
                   :vod-preset-config="vodPresetConfig"
+                  :clip-detection-disabled="clipDetectionDisabled"
                   :subtitle-settings="buildSubtitleSettingsForActivePreview"
                   :subtitle-settings-clip-id="activeSubtitleSettingsClipId"
                   @detectClips="onDetectClips"
@@ -399,10 +412,18 @@
     getOrCreateManualSession,
   } from '@/services/database';
   import { resolveIntroOutroById } from '@/services/database/intro-outros';
-  import { resolveApplicableProfiles } from '@/composables/useBrandingProfileSelection';
+  import {
+    resolveApplicableProfiles,
+    resolveAutoBrandingProfile,
+    isOrgSuppliedAccount,
+  } from '@/composables/useBrandingProfileSelection';
   import { getWatermarkImage } from '@/services/database/watermarks';
-  import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
-  import { X, Film, Smartphone } from 'lucide-vue-next';
+  import {
+    getVideoEditorProjectsForClip,
+    getVideoEditorProjectsForRawVideo,
+    type VideoEditorProject,
+  } from '@/services/database';
+  import { X, Film, Smartphone, Clapperboard } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import type {
     ActiveVodPresetConfig,
@@ -433,7 +454,14 @@
   import { useRouter } from 'vue-router';
   import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
   import QuickPublishWizard from './QuickPublishWizard.vue';
-  import { createVideoEditorProjectFromClip } from '@/services/video-editor-project-creator';
+  import {
+    createVideoEditorProjectFromClip,
+    createVideoEditorProjectFromProject,
+  } from '@/services/video-editor-project-creator';
+  import {
+    pickPrimaryRawVideo,
+    resolveRawVideosForProject,
+  } from '@/services/project-raw-video-resolve';
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
   import { useProgressSocket } from '@/composables/useProgressSocket';
@@ -465,6 +493,11 @@
   import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
   import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
   import { parseTranscriptToWords } from '@/utils/timelineUtils';
+  import {
+    ensureShortVideoAutoClip,
+    isShortVideoAutoClipEligible,
+    SHORT_VIDEO_CLIP_THRESHOLD_SECONDS,
+  } from '@/services/database/auto-clips';
 
   const authStore = useAuthStore();
   const { error: showError } = useToast();
@@ -523,6 +556,12 @@
   // Existing project dialog state (shown when clip has been edited before)
   const showExistingProjectDialog = ref(false);
   const existingProjectForClip = ref<VideoEditorProject | null>(null);
+  const isFullProjectEditorOpen = ref(false);
+  const pendingFullProjectEdit = ref<{
+    projectId: string;
+    projectName: string;
+    rawVideoId: string;
+  } | null>(null);
   const pendingClipToEdit = ref<{
     clipId: string;
     startTime: number;
@@ -1562,6 +1601,8 @@
     currentVideo,
   } = useVideoPlayer(projectRef);
 
+  const clipDetectionDisabled = computed(() => isShortVideoAutoClipEligible(duration.value));
+
   // Initialize focal point composable
   const { currentFocalPoint, loadFocalPoints, updateTime, reset: resetFocalPoint } = useVideoFocalPoint();
   const effectiveFocalPoint = computed(() => vodFocalPointOverride.value || currentFocalPoint.value);
@@ -1641,14 +1682,19 @@
   }
 
   async function onDetectClips() {
-    // Check if user is authenticated before showing clip detection dialog
     if (!authStore.isAuthenticated) {
-      // Show auth modal directly without error toast
       window.dispatchEvent(new CustomEvent('show-auth-modal'));
       return;
     }
 
-    // Show confirmation dialog (prompt will be selected within the dialog)
+    if (clipDetectionDisabled.value) {
+      showError(
+        'Clip detection unavailable',
+        `Videos under ${SHORT_VIDEO_CLIP_THRESHOLD_SECONDS} seconds are already a single clip. Transcribe and build from the Clips tab.`
+      );
+      return;
+    }
+
     showDetectConfirmDialog.value = true;
   }
 
@@ -3117,7 +3163,27 @@
     }
 
     try {
-      const clipsWithVersion = await getClipsWithVersionsByProjectId(projectId);
+      let clipsWithVersion = await getClipsWithVersionsByProjectId(projectId);
+
+      if (
+        clipsWithVersion.length === 0 &&
+        isShortVideoAutoClipEligible(duration.value)
+      ) {
+        const rawVideos = await getRawVideosByProjectId(projectId);
+        if (rawVideos.length === 1) {
+          const baseName =
+            rawVideos[0].original_filename?.replace(/\.[^/.]+$/, '') ||
+            props.project?.name ||
+            'Clip';
+          const createdId = await ensureShortVideoAutoClip(projectId, duration.value, {
+            clipName: baseName,
+          });
+          if (createdId) {
+            clipsWithVersion = await getClipsWithVersionsByProjectId(projectId);
+            await mediaPanelRef.value?.refreshClips();
+          }
+        }
+      }
 
       // Auto-repair any clips missing versions
       await repairClipsMissingVersion(clipsWithVersion);
@@ -3795,8 +3861,10 @@
       }
 
       let localProfile: CreatorProfileWithLinks | null = null;
+      const autoProfile = await resolveAutoBrandingProfile(projectId);
+
       const savedBrandingId = await getProjectBrandingProfileId(projectId);
-      if (savedBrandingId) {
+      if (savedBrandingId && !isOrgSuppliedAccount()) {
         try {
           const row = await getCreatorProfile(savedBrandingId);
           if (row) localProfile = row;
@@ -3804,24 +3872,32 @@
           /* ignore */
         }
       }
-      if (!localProfile) {
+      if (!localProfile && !isOrgSuppliedAccount()) {
         localProfile = await getCreatorProfileByProjectId(projectId);
       }
 
-      creatorProfile.value = localProfile;
+      const brandingProfile = isOrgSuppliedAccount() ? autoProfile : localProfile;
+      creatorProfile.value = brandingProfile;
 
-      console.log('[ProjectWorkspaceDialog] Workspace creator profile (local DB only):', {
-        name: localProfile?.name,
-        id: localProfile?.id,
-        context_type: localProfile?.context_type,
+      if (isOrgSuppliedAccount() && autoProfile?.id && !autoProfile.id.startsWith('campaign-')) {
+        const serverId = parseInt(autoProfile.id, 10);
+        creatorProfileServerId.value = isNaN(serverId) ? null : serverId;
+      }
+
+      console.log('[ProjectWorkspaceDialog] Workspace creator profile:', {
+        name: brandingProfile?.name,
+        id: brandingProfile?.id,
+        context_type: brandingProfile?.context_type,
         creatorProfileServerId: creatorProfileServerId.value,
+        orgSupplied: isOrgSuppliedAccount(),
       });
 
-      const applyPersonalBranding =
-        localProfile !== null && isPersonalWorkspaceBrandingProfile(localProfile);
+      const applyAutoBranding =
+        autoProfile !== null &&
+        (isOrgSuppliedAccount() || isPersonalWorkspaceBrandingProfile(autoProfile));
 
-      if (applyPersonalBranding && localProfile) {
-        const profile = localProfile;
+      if (applyAutoBranding && autoProfile) {
+        const profile = autoProfile;
 
         console.log(
           '[ProjectWorkspaceDialog] Applying personal creator branding:',
@@ -3830,8 +3906,8 @@
           profile.watermark_id
         );
 
-        // Apply watermark settings from creator profile, or clear inherited watermark when profile has none
-        if (creatorProfileSpecifiesWatermark(profile)) {
+        // Apply watermark only when project has no stored watermark settings
+        if (!projectHasStoredWatermarkId(project) && creatorProfileSpecifiesWatermark(profile)) {
           console.log(
             '[ProjectWorkspaceDialog] Applying creator watermark:',
             profile.watermark_id,
@@ -3933,7 +4009,7 @@
             // Always ensure parent state gets updated so VideoPlayer receives the watermark immediately
             await onWatermarkSettingsChanged(newSettings);
           }
-        } else {
+        } else if (!projectHasStoredWatermarkId(project)) {
           const cleared: WatermarkSettings = {
             enabled: false,
             watermarkId: null,
@@ -3944,7 +4020,7 @@
             perRatioSettings: null,
           };
           console.log(
-            '[ProjectWorkspaceDialog] Resolved profile has no watermark — clearing inherited project/org watermark'
+            '[ProjectWorkspaceDialog] Resolved profile has no watermark — clearing inherited watermark'
           );
           await nextTick();
           if (mediaPanelRef.value) {
@@ -3985,29 +4061,22 @@
             console.log('[ProjectWorkspaceDialog] Loaded creator default outro:', profile.outro_id);
           }
         }
-      } else if (localProfile && !isPersonalWorkspaceBrandingProfile(localProfile)) {
-        console.log(
-          '[ProjectWorkspaceDialog] Skipping auto-apply of org/campaign branding for workspace:',
-          localProfile.name
-        );
-        if (!projectHasStoredWatermarkId(project)) {
-          const cleared: WatermarkSettings = {
-            enabled: false,
-            watermarkId: null,
-            positionX: 12,
-            positionY: 92,
-            opacity: 80,
-            scale: 20,
-            perRatioSettings: null,
-          };
-          await nextTick();
-          if (mediaPanelRef.value) {
-            mediaPanelRef.value.setWatermarkSettings(cleared);
-          }
-          await onWatermarkSettingsChanged(cleared);
+      } else if (!projectHasStoredWatermarkId(project)) {
+        console.log('[ProjectWorkspaceDialog] No auto branding profile for project:', projectId);
+        const cleared: WatermarkSettings = {
+          enabled: false,
+          watermarkId: null,
+          positionX: 12,
+          positionY: 92,
+          opacity: 80,
+          scale: 20,
+          perRatioSettings: null,
+        };
+        await nextTick();
+        if (mediaPanelRef.value) {
+          mediaPanelRef.value.setWatermarkSettings(cleared);
         }
-      } else {
-        console.log('[ProjectWorkspaceDialog] No local creator profile found for project:', projectId);
+        await onWatermarkSettingsChanged(cleared);
       }
 
       // For free tier users, admin-configured branding OVERRIDES any project/creator watermark
@@ -4799,8 +4868,75 @@
     }
   }
 
+  async function onEditFullProject() {
+    const project = props.project;
+    if (!project) return;
+
+    try {
+      const rawVideos = await resolveRawVideosForProject(project.id, project.parent_id);
+      const primary = pickPrimaryRawVideo(rawVideos);
+
+      if (!primary) {
+        showError(
+          'No Source Video',
+          'No full-length source video found for this project. Download or attach a video first.',
+        );
+        return;
+      }
+
+      const existingProjects = await getVideoEditorProjectsForRawVideo(primary.id);
+      if (existingProjects.length > 0) {
+        isFullProjectEditorOpen.value = true;
+        existingProjectForClip.value = existingProjects[0];
+        pendingFullProjectEdit.value = {
+          projectId: project.id,
+          projectName: project.name,
+          rawVideoId: primary.id,
+        };
+        showExistingProjectDialog.value = true;
+        return;
+      }
+
+      await openFullProjectInNewEditor(project.id, project.name, project.parent_id);
+    } catch (error) {
+      console.error('[ProjectWorkspaceDialog] Failed to open full project in editor:', error);
+      showError('Failed to Open Editor', 'Could not open the full project in the video editor.');
+    }
+  }
+
+  async function openFullProjectInNewEditor(
+    projectId: string,
+    projectName: string,
+    parentProjectId?: string | null,
+  ) {
+    isCreatingProject.value = true;
+
+    try {
+      const result = await createVideoEditorProjectFromProject({
+        projectId,
+        projectName,
+        parentProjectId,
+      });
+
+      console.log('[ProjectWorkspaceDialog] Full-project video editor created:', {
+        projectId: result.projectId,
+        libraryProjectId: projectId,
+      });
+
+      router.push({ path: '/editor', query: { projectId: result.projectId } });
+    } catch (error) {
+      console.error('[ProjectWorkspaceDialog] Failed to create full-project editor:', error);
+      showError('Failed to Open Editor', 'Could not create video editor project. Please try again.');
+    } finally {
+      isCreatingProject.value = false;
+    }
+  }
+
   // Function to open the clip editor dialog
   async function onEditClip(clipId: string) {
+    isFullProjectEditorOpen.value = false;
+    pendingFullProjectEdit.value = null;
+
     // Find the clip in our local data
     const clip = timelineClips.value.find((c: any) => c.id === clipId);
     if (!clip) {
@@ -4907,6 +5043,19 @@
 
   // Open clip in an existing video editor project
   async function openClipInExistingProject(project: VideoEditorProject) {
+    if (isFullProjectEditorOpen.value) {
+      console.log('[ProjectWorkspaceDialog] Opening existing full-project editor:', {
+        projectId: project.id,
+        rawVideoId: pendingFullProjectEdit.value?.rawVideoId,
+      });
+      isFullProjectEditorOpen.value = false;
+      pendingFullProjectEdit.value = null;
+      showExistingProjectDialog.value = false;
+      existingProjectForClip.value = null;
+      router.push({ path: '/editor', query: { projectId: project.id } });
+      return;
+    }
+
     const pending = pendingClipToEdit.value;
     if (!pending) return;
 
@@ -4946,6 +5095,24 @@
 
   // Handle existing project dialog - create new
   async function onCreateNewProject() {
+    if (isFullProjectEditorOpen.value) {
+      const pending = pendingFullProjectEdit.value;
+      showExistingProjectDialog.value = false;
+      existingProjectForClip.value = null;
+      isFullProjectEditorOpen.value = false;
+
+      if (pending) {
+        await openFullProjectInNewEditor(
+          pending.projectId,
+          pending.projectName,
+          props.project?.parent_id ?? null,
+        );
+      }
+
+      pendingFullProjectEdit.value = null;
+      return;
+    }
+
     const pending = pendingClipToEdit.value;
     if (!pending) return;
 
@@ -4962,6 +5129,8 @@
     showExistingProjectDialog.value = false;
     existingProjectForClip.value = null;
     pendingClipToEdit.value = null;
+    pendingFullProjectEdit.value = null;
+    isFullProjectEditorOpen.value = false;
   }
 
   // Pause video when the clip build settings dialog opens
@@ -5834,6 +6003,40 @@
 
   .workspace-dialog__tab--has-transcript.workspace-dialog__tab--active {
     border-bottom-color: #22c55e;
+  }
+
+  .workspace-dialog__full-project-bar {
+    flex-shrink: 0;
+    padding: 0.5rem 0.75rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .workspace-dialog__full-project-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(6, 182, 212, 0.35);
+    background: rgba(6, 182, 212, 0.12);
+    color: #67e8f9;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .workspace-dialog__full-project-btn:hover:not(:disabled) {
+    background: rgba(6, 182, 212, 0.2);
+    border-color: rgba(6, 182, 212, 0.55);
+    color: #a5f3fc;
+  }
+
+  .workspace-dialog__full-project-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
   }
 
   .workspace-dialog__tab-badge {

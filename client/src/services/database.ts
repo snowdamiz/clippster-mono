@@ -235,6 +235,7 @@ export {
 export {
   getAllMonitoredStreamers,
   getAutoDvrStreamers,
+  getPersistentLiveMonitoringStreamers,
   getMonitoredStreamer,
   getMonitoredStreamerByMint,
   createMonitoredStreamer,
@@ -302,6 +303,7 @@ export {
   getCreatorProfileByPlatformId,
   getAllGlobalProfiles,
   getAllStreamerProfiles,
+  getAllPersonalStudioProfiles,
   setProjectBrandingProfile,
   getProjectBrandingProfileId,
 } from './database/creator-profiles';
@@ -420,6 +422,7 @@ export {
   getVideoEditorSourceCount,
   getNextSourceStartTime,
   getVideoEditorProjectsForClip,
+  getVideoEditorProjectsForRawVideo,
   type VideoEditorProject,
   type VideoEditorSource,
   type VideoEditorProjectWithSources,

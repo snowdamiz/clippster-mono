@@ -57,7 +57,7 @@ const showGradient = ref(!!props.element.gradient?.enabled);
 const fadeInInput = ref((props.element.fadeIn ?? 0).toFixed(1));
 const fadeOutInput = ref((props.element.fadeOut ?? 0).toFixed(1));
 const textOpacityInput = ref(Math.round((props.element.textOpacity ?? 1) * 100).toString());
-const bubbleOpacityInput = ref(Math.round((props.element.bubbleOpacity ?? 0.7) * 100).toString());
+const bubbleOpacityInput = ref(Math.round((props.element.bubbleOpacity ?? 1) * 100).toString());
 
 // ── Watchers ──
 watch(() => props.element.fontSize, (v) => { fontSizeInput.value = v.toString(); });
@@ -74,7 +74,7 @@ watch(() => props.element.gradient, (v) => { showGradient.value = !!v?.enabled; 
 watch(() => props.element.fadeIn, (v) => { fadeInInput.value = (v ?? 0).toFixed(1); });
 watch(() => props.element.fadeOut, (v) => { fadeOutInput.value = (v ?? 0).toFixed(1); });
 watch(() => props.element.textOpacity, (v) => { textOpacityInput.value = Math.round((v ?? 1) * 100).toString(); });
-watch(() => props.element.bubbleOpacity, (v) => { bubbleOpacityInput.value = Math.round((v ?? 0.7) * 100).toString(); });
+watch(() => props.element.bubbleOpacity, (v) => { bubbleOpacityInput.value = Math.round((v ?? 1) * 100).toString(); });
 
 function update(updates: Record<string, unknown>) {
 	editor.timeline.updateTextElement({
@@ -86,6 +86,49 @@ function update(updates: Record<string, unknown>) {
 
 function clamp(value: number, min: number, max: number) {
 	return Math.min(max, Math.max(min, value));
+}
+
+function isHexColor(value: string | undefined): value is string {
+	return !!value && /^#[0-9A-Fa-f]{6}$/.test(value);
+}
+
+function getBackgroundColorValue() {
+	if (props.element.bubbleStyle !== "none") {
+		if (isHexColor(props.element.backgroundColor)) return props.element.backgroundColor;
+		return isHexColor(props.element.bubbleColor) ? props.element.bubbleColor : "#3B82F6";
+	}
+	return isHexColor(props.element.backgroundColor) ? props.element.backgroundColor : "#000000";
+}
+
+function hasVisibleBackground() {
+	return props.element.bubbleStyle !== "none" || props.element.backgroundColor !== "transparent";
+}
+
+function updateBackgroundColor(color: string) {
+	if (props.element.bubbleStyle !== "none") {
+		update({ backgroundColor: color, bubbleColor: color, bubbleOpacity: props.element.bubbleOpacity ?? 1 });
+		return;
+	}
+	update({ backgroundColor: color, bubbleOpacity: props.element.bubbleOpacity ?? 1 });
+}
+
+function toggleBackground() {
+	if (props.element.bubbleStyle !== "none") {
+		update({ bubbleStyle: "none", backgroundColor: "transparent", bubbleColor: undefined });
+		return;
+	}
+	update({
+		backgroundColor: props.element.backgroundColor === "transparent" ? "#000000" : "transparent",
+		bubbleOpacity: props.element.bubbleOpacity ?? 1,
+	});
+}
+
+function handleBackgroundOpacityChange(value: string) {
+	const parsed = parseInt(value, 10);
+	if (Number.isNaN(parsed)) return;
+	const pct = clamp(parsed, 0, 100);
+	bubbleOpacityInput.value = pct.toString();
+	update({ bubbleOpacity: pct / 100 });
 }
 
 // ── Font size ──
@@ -446,11 +489,46 @@ const quickStyles = [
 					</div>
 				</div>
 
-				<!-- Color -->
+				<!-- Text color -->
 				<div class="flex items-center gap-2">
-					<label class="text-zinc-500">Color</label>
+					<label class="w-24 text-zinc-500">Font Color</label>
 					<ColorPicker :model-value="element.color" @update:model-value="(v) => update({ color: v })" />
 					<span class="font-mono text-[10px] uppercase text-zinc-400">{{ element.color }}</span>
+				</div>
+
+				<!-- Background color + opacity -->
+				<div class="space-y-2 rounded-md border border-white/5 bg-white/[0.02] p-2">
+					<div class="flex items-center gap-2">
+						<label class="w-24 text-zinc-500">Background</label>
+						<ColorPicker
+							v-if="hasVisibleBackground()"
+							:model-value="getBackgroundColorValue()"
+							@update:model-value="updateBackgroundColor"
+						/>
+						<span v-else class="text-[10px] text-zinc-500">None</span>
+						<span v-if="hasVisibleBackground()" class="font-mono text-[10px] uppercase text-zinc-400">
+							{{ getBackgroundColorValue() }}
+						</span>
+						<button
+							class="ml-auto rounded border border-white/10 px-2 py-1 text-[10px] text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+							@click="toggleBackground"
+						>
+							{{ hasVisibleBackground() ? 'Clear' : 'Add' }}
+						</button>
+					</div>
+					<div v-if="hasVisibleBackground()" class="flex items-center gap-2">
+						<label class="w-24 text-zinc-500">Bg Opacity</label>
+						<input
+							type="range"
+							:value="(element.bubbleOpacity ?? 1) * 100"
+							min="0"
+							max="100"
+							step="1"
+							class="flex-1"
+							@input="(e) => handleBackgroundOpacityChange((e.target as HTMLInputElement).value)"
+						/>
+						<span class="w-10 text-right font-mono text-[10px] text-zinc-400">{{ bubbleOpacityInput }}%</span>
+					</div>
 				</div>
 			</div>
 
@@ -840,7 +918,7 @@ const quickStyles = [
 					<div class="flex items-center gap-2">
 						<input
 							type="range"
-							:value="(element.bubbleOpacity ?? 0.7) * 100"
+							:value="(element.bubbleOpacity ?? 1) * 100"
 							min="0"
 							max="100"
 							step="1"
