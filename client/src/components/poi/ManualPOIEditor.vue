@@ -1,8 +1,8 @@
 <template>
   <Teleport to="body">
-    <Transition name="modal">
+    <Transition name="poi-modal">
       <div v-if="modelValue" class="poi-dialog__overlay">
-        <Transition name="dialog" appear>
+        <Transition name="poi-dialog-transition" appear>
           <div class="poi-dialog" role="dialog" aria-modal="true">
             <!-- Top accent -->
             <div class="poi-dialog__accent" />
@@ -1786,7 +1786,8 @@
   }
 </script>
 
-<style scoped>
+<!-- Unscoped: applies to child components (Checkbox) and avoids build-dialog transition class collisions -->
+<style>
   /* ===== Overlay ===== */
   .poi-dialog__overlay {
     position: fixed;
@@ -1796,7 +1797,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10001;
+    z-index: 10050;
   }
 
   /* ===== Dialog Container ===== */
@@ -1960,32 +1961,35 @@
     color: #fbbf24;
   }
 
-  /* ===== Checkboxes ===== */
+  /* ===== Checkboxes (override ui/checkbox Tailwind defaults) ===== */
   .poi-dialog__checkbox {
-    width: 1rem;
-    height: 1rem;
-    border-radius: 0.25rem;
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    background-color: rgba(255, 255, 255, 0.08);
-    color: white;
+    width: 1rem !important;
+    height: 1rem !important;
+    min-width: 1rem;
+    min-height: 1rem;
+    border-radius: 0.25rem !important;
+    border: 1px solid rgba(255, 255, 255, 0.35) !important;
+    background-color: rgba(255, 255, 255, 0.08) !important;
+    color: white !important;
     cursor: pointer;
-    box-shadow: none;
+    box-shadow: none !important;
     transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
   }
 
   .poi-dialog__checkbox:hover {
-    border-color: rgba(255, 255, 255, 0.55);
-    background-color: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.55) !important;
+    background-color: rgba(255, 255, 255, 0.12) !important;
   }
 
   .poi-dialog__checkbox:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.35);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.35) !important;
   }
 
   .poi-dialog__checkbox--purple[data-state='checked'] {
-    background-color: #a855f7;
-    border-color: #c084fc;
+    background-color: #a855f7 !important;
+    border-color: #c084fc !important;
+    color: white !important;
   }
 
   /* ===== Playback bar ===== */
@@ -2153,31 +2157,31 @@
     opacity: 0.9;
   }
 
-  /* ===== Transitions ===== */
-  .modal-enter-active,
-  .modal-leave-active {
+  /* ===== Transitions (poi-prefixed to avoid build-dialog name collisions) ===== */
+  .poi-modal-enter-active,
+  .poi-modal-leave-active {
     transition: opacity 200ms ease;
   }
 
-  .modal-enter-from,
-  .modal-leave-to {
+  .poi-modal-enter-from,
+  .poi-modal-leave-to {
     opacity: 0;
   }
 
-  .dialog-enter-active {
+  .poi-dialog-transition-enter-active {
     transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .dialog-leave-active {
+  .poi-dialog-transition-leave-active {
     transition: all 150ms ease-in;
   }
 
-  .dialog-enter-from {
+  .poi-dialog-transition-enter-from {
     opacity: 0;
     transform: scale(0.96) translateY(8px);
   }
 
-  .dialog-leave-to {
+  .poi-dialog-transition-leave-to {
     opacity: 0;
     transform: scale(0.98);
   }
