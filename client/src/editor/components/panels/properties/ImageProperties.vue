@@ -8,7 +8,8 @@ import type { VideoEffect } from "../../../types/effects";
 import { getEffectPreset } from "../../../constants/effect-constants";
 import type { ChromakeySettings } from "../../../types/chromakey";
 import { DEFAULT_CHROMAKEY } from "../../../types/chromakey";
-import { Image, Trash2, RotateCcw, FlipHorizontal, FlipVertical, Wand2, Eye, EyeOff, X, ChevronDown, Pipette, SlidersHorizontal, Sparkles, Scissors } from "lucide-vue-next";
+import { Image, Trash2, RotateCcw, FlipHorizontal, FlipVertical, Wand2, Eye, EyeOff, X, ChevronDown, Pipette, SlidersHorizontal, Sparkles, Scissors, Diamond } from "lucide-vue-next";
+import KeyframeEditorPanel from "../KeyframeEditorPanel.vue";
 import { useKeyframes } from "../../../composables/useKeyframes";
 import { useKeyframedInspectorProperty } from "../../../composables/useKeyframedInspectorProperty";
 import KeyframeToggle from "./KeyframeToggle.vue";
@@ -81,7 +82,7 @@ watch(rotationKf.displayValue, (v) => { rotateInput.value = v.toString(); }, { i
 
 const ca = computed(() => ({ ...DEFAULT_COLOR_ADJUSTMENTS, ...props.element.colorAdjustments }));
 
-type TopTab = "image" | "adjust" | "grading" | "animate" | "masks";
+type TopTab = "image" | "adjust" | "grading" | "animate" | "masks" | "keyframes";
 const activeTab = ref<TopTab>("image");
 
 const topTabs: { id: TopTab; label: string; icon: any }[] = [
@@ -90,6 +91,7 @@ const topTabs: { id: TopTab; label: string; icon: any }[] = [
 	{ id: "grading", label: "Grade", icon: Wand2 },
 	{ id: "animate", label: "Animate", icon: Sparkles },
 	{ id: "masks", label: "Masks", icon: Scissors },
+	{ id: "keyframes", label: "Keyframes", icon: Diamond },
 ];
 
 /** Show file name only when `name` was stored as a full path (Windows or POSIX). */
@@ -967,6 +969,11 @@ function formatTime(seconds: number): string {
 						<span class="text-sm text-zinc-400">Masks</span>
 					</div>
 					<MasksPanel :element="element" :track-id="trackId" />
+				</div>
+
+				<!-- Keyframes -->
+				<div v-else-if="activeTab === 'keyframes'">
+					<KeyframeEditorPanel :track-id="trackId" :element="element" />
 				</div>
 			</div>
 		</div>

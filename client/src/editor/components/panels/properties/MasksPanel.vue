@@ -64,11 +64,11 @@ function clamp(value: number, min: number, max: number) {
 </script>
 
 <template>
-	<div class="flex flex-col gap-3 p-3">
-		<div class="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-2">
+	<div class="flex min-w-0 flex-col gap-3 p-3">
+		<div class="flex min-w-0 items-center justify-between gap-2">
 			<span class="text-[11px] text-zinc-400">Mask lock</span>
 			<button
-				class="rounded px-2 py-0.5 text-[10px] transition"
+				class="shrink-0 rounded px-2 py-0.5 text-[10px] transition"
 				:class="!maskEditMode ? 'bg-primary/20 text-primary' : 'bg-white/5 text-zinc-400 hover:bg-white/10'"
 				@click="maskEditMode = !maskEditMode"
 			>
@@ -77,27 +77,33 @@ function clamp(value: number, min: number, max: number) {
 		</div>
 
 		<!-- Add buttons -->
-		<div class="flex gap-2">
+		<div class="grid min-w-0 grid-cols-3 gap-1.5">
 			<button
-				class="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs text-zinc-300 transition hover:bg-white/10"
+				type="button"
+				title="Add rectangle mask"
+				class="flex min-w-0 flex-col items-center gap-1 rounded-md border border-white/10 bg-white/5 px-1 py-2 text-[10px] text-zinc-300 transition hover:bg-white/10"
 				@click="addMask('rectangle')"
 			>
-				<RectangleHorizontal class="size-3.5" />
-				Rectangle
+				<RectangleHorizontal class="size-3.5 shrink-0" />
+				<span class="truncate">Rect</span>
 			</button>
 			<button
-				class="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs text-zinc-300 transition hover:bg-white/10"
+				type="button"
+				title="Add ellipse mask"
+				class="flex min-w-0 flex-col items-center gap-1 rounded-md border border-white/10 bg-white/5 px-1 py-2 text-[10px] text-zinc-300 transition hover:bg-white/10"
 				@click="addMask('ellipse')"
 			>
-				<Circle class="size-3.5" />
-				Ellipse
+				<Circle class="size-3.5 shrink-0" />
+				<span class="truncate">Ellipse</span>
 			</button>
 			<button
-				class="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs text-zinc-300 transition hover:bg-white/10"
+				type="button"
+				title="Add polygon mask"
+				class="flex min-w-0 flex-col items-center gap-1 rounded-md border border-white/10 bg-white/5 px-1 py-2 text-[10px] text-zinc-300 transition hover:bg-white/10"
 				@click="addMask('polygon')"
 			>
-				<Pentagon class="size-3.5" />
-				Polygon
+				<Pentagon class="size-3.5 shrink-0" />
+				<span class="truncate">Polygon</span>
 			</button>
 		</div>
 
@@ -113,7 +119,7 @@ function clamp(value: number, min: number, max: number) {
 		<div
 			v-for="mask in masks"
 			:key="mask.id"
-			class="rounded-md border border-white/10 bg-white/[0.03] p-3"
+			class="min-w-0 rounded-md border border-white/10 bg-white/[0.03] p-3"
 		>
 			<!-- Mask header -->
 			<div class="mb-2.5 flex items-center justify-between">

@@ -1,399 +1,258 @@
 <script setup lang="ts">
-import { ref, computed, toRef, watch } from "vue";
-import { useEditor } from "../../composables/useEditor";
-import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
-import { useKeyframes } from "../../composables/useKeyframes";
-import { EASING_PRESETS } from "../../constants/easing-constants";
+/**
+ * Keyframe editor panel with Values and Curves modes.
+ *
+ * Values mode shows a list of all keyframes for each animatable property with
+ * inline editing of time, value, and easing. Curves mode displays the graph editor.
+ *
+ * While this panel is open, the main timeline accepts clicks on the selected
+ * clip to place keyframes at the clicked position (not only at the playhead).
+ */
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import type { TimelineElement } from "../../types/timeline";
 import type { KeyframableProperty, KeyframeInterpolation } from "../../types/keyframes";
-import { sortedKeyframes } from "../../types/keyframes";
-import type { TimelineTrack, TimelineElement } from "../../types/timeline";
-import {
-	getKeyframePropertyStaticDefault,
-	formatKeyframeDisplayValue,
-	parseKeyframeDisplayValue,
-	getValueForNewKeyframeAtOffset,
-} from "../../lib/keyframe-property-defaults";
-import { Diamond, Plus, Trash2, ChevronDown, X, List, BarChart2 } from "lucide-vue-next";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import type { KeyframePropertyDef } from "../../lib/keyframe-editor-properties";
+import { useEditor } from "../../composables/useEditor";
+import { useEditorUIState } from "../../composables/useEditorUIState";
+import { useKeyframeEditor } from "../../composables/useKeyframeEditor";
+import { KEYFRAME_EASING_OPTIONS } from "../../lib/keyframe-editor-properties";
+import KeyframeToggle from "./properties/KeyframeToggle.vue";
 import KeyframeGraphEditor from "./KeyframeGraphEditor.vue";
-import { useEditorUIState, isWaveformPlacementProperty } from "../../composables/useEditorUIState";
-import { CLIP_GAIN_MAX } from "../../lib/audio-volume-ui";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Diamond, ChevronLeft, ChevronRight, List, LineChart } from "lucide-vue-next";
+
+const props = defineProps<{
+	trackId: string;
+	element: TimelineElement;
+}>();
 
 const { editor, version } = useEditor();
-const {
-	timelineKeyframePlacementActive,
-	setTimelineKeyframePlacementActive,
-	timelineKeyframePlacementProperty,
-	setTimelineKeyframePlacementProperty,
-} = useEditorUIState();
-const { selectedElements } = useElementSelection();
+const { setTimelineKeyframePlacementActive, setTimelineKeyframePlacementProperty } = useEditorUIState();
 
-watch(
-	() => selectedElements.value.length,
-	(len) => {
-		if (len !== 1 && timelineKeyframePlacementActive.value) setTimelineKeyframePlacementActive(false);
-	},
-);
-
-const selectedData = computed(() => {
+const liveTrack = computed(() => {
 	void version.value;
-	if (selectedElements.value.length !== 1) return null;
-	const sel = selectedElements.value[0];
-	let scene;
-	try { scene = editor.scenes.getActiveScene(); } catch { return null; }
-	if (!scene) return null;
-	for (const track of scene.tracks) {
-		if (track.id !== sel.trackId) continue;
-		const el = track.elements.find((e: any) => e.id === sel.elementId);
-		if (el) return { element: el as TimelineElement, track: track as TimelineTrack };
-	}
-	return null;
+	return editor.timeline.getTrackById({ trackId: props.trackId }) ?? null;
+});
+const liveElement = computed(() => {
+	void version.value;
+	return liveTrack.value?.elements.find((e) => e.id === props.element.id) ?? props.element;
 });
 
-const trackRef = computed(() => selectedData.value?.track as TimelineTrack);
-const elementRef = computed(() => selectedData.value?.element as TimelineElement);
-
-// Placeholder refs so useKeyframes can run before selection (composable rules).
-const fallbackTrack = { id: "__none__", type: "video", name: "", elements: [], muted: false, hidden: false, locked: false, isMain: true } as TimelineTrack;
-const fallbackElement = {
-	id: "__none__",
-	type: "video",
-	name: "",
-	duration: 1,
-	startTime: 0,
-	trimStart: 0,
-	trimEnd: 0,
-	mediaId: "",
-	transform: { scale: 1, position: { x: 0, y: 0 }, rotate: 0 },
-	opacity: 1,
-} as TimelineElement;
-
-const kfTrackRef = computed(() => trackRef.value ?? fallbackTrack);
-const kfElementRef = computed(() => elementRef.value ?? fallbackElement);
-const kf = useKeyframes({
-	trackRef: kfTrackRef,
-	elementRef: kfElementRef,
+const ke = useKeyframeEditor({
+	trackRef: computed(() => liveTrack.value!),
+	elementRef: liveElement,
 });
 
-const PROPERTIES: { key: KeyframableProperty; label: string; defaultValue: number; min: number; max: number; step: number }[] = [
-	{ key: "opacity", label: "Opacity", defaultValue: 1, min: 0, max: 1, step: 0.01 },
-	{ key: "scale", label: "Scale", defaultValue: 1, min: 0.1, max: 5, step: 0.01 },
-	{ key: "positionX", label: "Position X", defaultValue: 0, min: -1000, max: 1000, step: 1 },
-	{ key: "positionY", label: "Position Y", defaultValue: 0, min: -1000, max: 1000, step: 1 },
-	{ key: "rotation", label: "Rotation", defaultValue: 0, min: -360, max: 360, step: 1 },
-	{ key: "volume", label: "Volume (gain)", defaultValue: 1, min: 0, max: CLIP_GAIN_MAX, step: 0.01 },
-	{ key: "speed", label: "Speed", defaultValue: 1, min: 0.1, max: 10, step: 0.01 },
-];
+const {
+	applicableProperties,
+	hasKeyframes,
+	getPropertyKeyframes,
+	isOnKeyframe,
+	hasPrevKeyframe,
+	hasNextKeyframe,
+	goToPrevKeyframe,
+	goToNextKeyframe,
+	toggleKeyframing,
+	addOrRemoveKeyframeAtPlayhead,
+	setInterpolation,
+	normalizedPlayhead,
+	seekToOffset,
+} = ke;
 
-const expandedProperties = ref<Set<KeyframableProperty>>(new Set());
-const showGraph = ref(false);
-
-function toggleExpand(prop: KeyframableProperty) {
-	if (expandedProperties.value.has(prop)) {
-		expandedProperties.value.delete(prop);
-	} else {
-		expandedProperties.value.add(prop);
-	}
-}
-
-function getPropertyKeyframes(prop: KeyframableProperty) {
-	if (!elementRef.value?.keyframes) return [];
-	const track = elementRef.value.keyframes.tracks[prop];
-	return sortedKeyframes(track?.keyframes ?? []);
-}
-
-function hasPropertyKeyframes(prop: KeyframableProperty): boolean {
-	return getPropertyKeyframes(prop).length > 0;
-}
-
-function addKeyframeAtPlayhead(prop: KeyframableProperty) {
-	if (!selectedData.value || !elementRef.value) return;
-	const el = elementRef.value;
-	const normalizedTime = kf.getNormalizedPlayheadOffset();
-	const staticDefault = getKeyframePropertyStaticDefault(el, prop);
-	const currentVal = getValueForNewKeyframeAtOffset({
-		elementKeyframes: el.keyframes,
-		property: prop,
-		offset: normalizedTime,
-		staticDefault,
-	});
-	kf.addKeyframe(prop, normalizedTime, currentVal);
-}
-
-function removeKeyframeById(prop: KeyframableProperty, keyframeId: string) {
-	kf.removeKeyframe(prop, keyframeId);
-}
-
-function clearAllKeyframes(prop: KeyframableProperty) {
-	kf.clearPropertyKeyframes(prop);
-}
-
-function updateKeyframeValue(prop: KeyframableProperty, keyframeId: string, value: number) {
-	kf.updateKeyframe(prop, keyframeId, { value });
-}
-
-function updateKeyframeOffset(prop: KeyframableProperty, keyframeId: string, offset: number) {
-	kf.updateKeyframe(prop, keyframeId, { offset: Math.max(0, Math.min(1, offset)) });
-}
-
-function updateKeyframeInterpolation(prop: KeyframableProperty, keyframeId: string, interpolation: KeyframeInterpolation) {
-	kf.updateKeyframe(prop, keyframeId, { interpolation });
-}
-
-function keyframeValueLabel(prop: KeyframableProperty): string {
-	if (prop === "scale") return "%";
-	if (prop === "opacity") return "%";
-	return "";
-}
-
-function displayKeyframeValue(prop: KeyframableProperty, value: number): string {
-	return formatKeyframeDisplayValue(prop, value);
-}
-
-function onKeyframeValueInput(prop: KeyframableProperty, keyframeId: string, raw: number) {
-	const stored = parseKeyframeDisplayValue(prop, raw);
-	updateKeyframeValue(prop, keyframeId, stored);
-}
+const showCurves = ref(false);
 
 function formatOffset(offset: number): string {
-	return `${Math.round(offset * 100)}%`;
+	const el = liveElement.value;
+	if (!el) return "0:00.00";
+	const timeInSeconds = el.startTime + offset * el.duration;
+	const minutes = Math.floor(timeInSeconds / 60);
+	const seconds = (timeInSeconds % 60).toFixed(2);
+	return `${minutes}:${seconds.padStart(5, "0")}`;
 }
 
-function getEasingLabel(interp: KeyframeInterpolation): string {
-	return EASING_PRESETS.find((e) => e.id === interp)?.label ?? interp;
+function updateKeyframeValue(prop: KeyframableProperty, keyframeId: string, displayValue: string, multiplier: number) {
+	const parsed = parseFloat(displayValue);
+	if (Number.isNaN(parsed)) return;
+	const stored = parsed / multiplier;
+	
+	const currentKeyframes = liveElement.value.keyframes;
+	if (!currentKeyframes?.tracks[prop]) return;
+	
+	const updatedKeyframes = {
+		...currentKeyframes,
+		tracks: {
+			...currentKeyframes.tracks,
+			[prop]: {
+				...currentKeyframes.tracks[prop],
+				keyframes: currentKeyframes.tracks[prop].keyframes.map((k) =>
+					k.id === keyframeId ? { ...k, value: stored } : k
+				),
+			},
+		},
+	};
+	
+	editor.timeline.updateElement({
+		trackId: props.trackId,
+		elementId: props.element.id,
+		updates: { keyframes: updatedKeyframes },
+	});
 }
 
-const applicableProperties = computed(() => {
-	if (!elementRef.value) return [];
-	const type = elementRef.value.type;
-	if (type === "audio") return PROPERTIES.filter((p) => p.key === "volume");
-	if (type === "video") return PROPERTIES;
-	if (type === "image") return PROPERTIES.filter((p) => p.key !== "volume" && p.key !== "speed");
-	return PROPERTIES.filter((p) => p.key !== "volume" && p.key !== "speed");
+function onDiamondClick(prop: KeyframableProperty) {
+	setTimelineKeyframePlacementProperty(prop);
+	if (!hasKeyframes(prop)) {
+		toggleKeyframing(prop);
+		return;
+	}
+	addOrRemoveKeyframeAtPlayhead(prop);
+}
+
+onMounted(() => {
+	setTimelineKeyframePlacementActive(true);
 });
 
-watch(applicableProperties, (props) => {
-	if (props.length === 0) return;
-	if (!props.some((p) => p.key === timelineKeyframePlacementProperty.value)) {
-		setTimelineKeyframePlacementProperty(props[0]!.key);
-	}
-}, { immediate: true });
-
-function onPropertyRowClick(prop: KeyframableProperty) {
-	if (timelineKeyframePlacementActive.value) {
-		setTimelineKeyframePlacementProperty(prop);
-	}
-	toggleExpand(prop);
-}
-
-function placementTargetHint(prop: KeyframableProperty): string {
-	return isWaveformPlacementProperty(prop)
-		? "Click the clip waveform on the timeline"
-		: "Click the clip picture area on the timeline";
-}
+onUnmounted(() => {
+	setTimelineKeyframePlacementActive(false);
+});
 </script>
 
 <template>
-	<div class="flex h-full flex-col">
-		<!-- Header -->
-		<div class="flex items-center gap-1.5 border-b border-white/10 px-4 py-2">
-			<Diamond class="size-3.5 text-zinc-500" />
-			<span class="text-xs font-medium text-zinc-400">Keyframes</span>
-			<div
-				v-if="selectedData && (elementRef.type === 'video' || elementRef.type === 'audio' || elementRef.type === 'image')"
-				class="flex items-center gap-1.5 rounded border border-white/10 bg-white/[0.02] px-2 py-0.5"
-				title="When on, click the timeline to add a keyframe for the selected property. Visual properties use the picture area; volume uses the waveform."
-			>
-				<span class="text-[10px] font-medium text-zinc-500">Click timeline to add</span>
-				<Switch
-					:model-value="timelineKeyframePlacementActive"
-					class="scale-90"
-					@update:model-value="setTimelineKeyframePlacementActive"
-				/>
-			</div>
-			<div class="ml-auto flex items-center gap-0.5">
+	<div v-if="liveTrack" class="flex h-full flex-col overflow-hidden">
+		<!-- Mode Toggle (matching Video tab styling) -->
+		<div class="shrink-0 space-y-4 border-b border-white/10 p-3">
+			<div class="flex gap-1 rounded-md border border-white/10 bg-white/[0.03] p-0.5">
 				<button
-					class="flex size-5 items-center justify-center rounded text-zinc-500 transition-colors"
-					:class="!showGraph ? 'bg-white/10 text-zinc-200' : 'hover:bg-white/5 hover:text-zinc-300'"
-					title="List view"
-					@click="showGraph = false"
+					type="button"
+					class="flex flex-1 items-center justify-center gap-1.5 rounded-sm px-2 py-1 text-[10px] font-medium transition-colors"
+					:class="!showCurves ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'"
+					@click="showCurves = false"
 				>
 					<List class="size-3" />
+					Values
 				</button>
 				<button
-					class="flex size-5 items-center justify-center rounded text-zinc-500 transition-colors"
-					:class="showGraph ? 'bg-white/10 text-zinc-200' : 'hover:bg-white/5 hover:text-zinc-300'"
-					title="Graph view"
-					@click="showGraph = true"
+					type="button"
+					class="flex flex-1 items-center justify-center gap-1.5 rounded-sm px-2 py-1 text-[10px] font-medium transition-colors"
+					:class="showCurves ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'"
+					@click="showCurves = true"
 				>
-					<BarChart2 class="size-3" />
+					<LineChart class="size-3" />
+					Curves
 				</button>
 			</div>
 		</div>
 
-		<!-- No element selected -->
-		<div v-if="!selectedData" class="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center">
-			<Diamond class="size-8 text-zinc-600" :stroke-width="1" />
-			<p class="text-xs text-zinc-500">Select an element to edit keyframes</p>
-		</div>
+		<!-- Curves Mode -->
+		<KeyframeGraphEditor
+			v-if="showCurves"
+			:track="liveTrack"
+			:element="liveElement"
+			:properties="applicableProperties"
+			:playhead="normalizedPlayhead"
+		/>
 
-		<!-- Graph view -->
-		<div v-else-if="showGraph" class="flex-1 overflow-y-auto">
-			<KeyframeGraphEditor
-				:track-ref="toRef(() => trackRef)"
-				:element-ref="toRef(() => elementRef)"
-				:applicable-properties="applicableProperties"
-			/>
-		</div>
-
-		<!-- List view -->
-		<div v-else class="flex-1 overflow-y-auto p-3 space-y-1">
-			<p class="mb-2 px-1 text-[10px] leading-relaxed text-zinc-600">
-				Outside the first and last keyframe, the clip uses its base value (e.g. 100% scale). Values animate only between keyframes.
-			</p>
-			<div
-				v-if="timelineKeyframePlacementActive && applicableProperties.length > 0"
-				class="mb-2 flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-2.5 py-1.5"
-			>
-				<span class="shrink-0 text-[10px] font-medium text-amber-400">Add property</span>
-				<Select
-					:model-value="timelineKeyframePlacementProperty"
-					@update:model-value="(v) => setTimelineKeyframePlacementProperty(v as KeyframableProperty)"
-				>
-					<SelectTrigger class="h-6 min-w-0 flex-1 rounded border border-white/10 bg-white/5 px-2 text-[10px] text-zinc-200">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent class="bg-zinc-900 border-white/10">
-						<SelectItem
-							v-for="prop in applicableProperties"
-							:key="prop.key"
-							:value="prop.key"
-							class="text-[10px] text-zinc-200"
-						>
-							{{ prop.label }}
-						</SelectItem>
-					</SelectContent>
-				</Select>
-			</div>
-			<p
-				v-if="timelineKeyframePlacementActive"
-				class="mb-2 px-1 text-[10px] leading-relaxed text-amber-400/80"
-			>
-				{{ placementTargetHint(timelineKeyframePlacementProperty) }}
-			</p>
+		<!-- Values Mode: Flat list matching Video tab styling -->
+		<div v-else class="flex-1 overflow-y-auto">
 			<div
 				v-for="prop in applicableProperties"
 				:key="prop.key"
-				class="rounded-md border bg-white/[0.02]"
-				:class="timelineKeyframePlacementActive && timelineKeyframePlacementProperty === prop.key
-					? 'border-amber-500/40 bg-amber-500/5'
-					: 'border-white/10'"
+				class="space-y-2 border-t border-white/[0.05] px-3 py-4 first:border-t-0"
 			>
-				<!-- Property header -->
-				<button
-					class="flex w-full items-center justify-between px-2.5 py-1.5"
-					:title="timelineKeyframePlacementActive ? `Set timeline click target to ${prop.label}` : undefined"
-					@click="onPropertyRowClick(prop.key)"
-				>
-					<div class="flex items-center gap-1.5">
-						<Diamond
-							class="size-3"
-							:class="hasPropertyKeyframes(prop.key) ? 'text-amber-400' : 'text-zinc-600'"
+				<!-- Property Header (matching Video tab section headers) -->
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-2">
+						<KeyframeToggle
+							:active="hasKeyframes(prop.key)"
+							:label="prop.label"
+							class="shrink-0"
+							@toggle="toggleKeyframing(prop.key)"
 						/>
-						<span class="text-xs font-medium" :class="hasPropertyKeyframes(prop.key) ? 'text-zinc-300' : 'text-zinc-500'">
-							{{ prop.label }}
-						</span>
-						<span v-if="hasPropertyKeyframes(prop.key)" class="rounded-full bg-amber-500/20 px-1.5 text-[9px] font-medium text-amber-400">
-							{{ getPropertyKeyframes(prop.key).length }}
-						</span>
+						<span class="text-xs font-medium text-zinc-300">{{ prop.label }}</span>
 					</div>
-					<div class="flex items-center gap-1">
+					<div v-if="hasKeyframes(prop.key)" class="flex items-center gap-0.5">
 						<button
-							class="flex size-5 items-center justify-center rounded text-zinc-500 hover:bg-white/5 hover:text-amber-400"
-							title="Add keyframe at playhead"
-							@click.stop="setTimelineKeyframePlacementProperty(prop.key); addKeyframeAtPlayhead(prop.key)"
+							type="button"
+							class="flex size-5 items-center justify-center rounded transition-colors"
+							:class="hasPrevKeyframe(prop.key) ? 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200' : 'cursor-default text-zinc-700'"
+							:disabled="!hasPrevKeyframe(prop.key)"
+							title="Previous keyframe"
+							@click="goToPrevKeyframe(prop.key)"
 						>
-							<Plus class="size-3" />
+							<ChevronLeft class="size-3" />
 						</button>
 						<button
-							v-if="hasPropertyKeyframes(prop.key)"
-							class="flex size-5 items-center justify-center rounded text-zinc-500 hover:bg-red-500/10 hover:text-red-400"
-							title="Clear all keyframes"
-							@click.stop="clearAllKeyframes(prop.key)"
+							type="button"
+							class="flex size-5 items-center justify-center rounded transition-colors"
+							:class="isOnKeyframe(prop.key) ? 'text-amber-400 hover:bg-amber-400/10' : 'text-zinc-500 hover:text-amber-400'"
+							:title="isOnKeyframe(prop.key) ? 'Remove keyframe' : 'Add keyframe'"
+							@click="onDiamondClick(prop.key)"
 						>
-							<Trash2 class="size-3" />
+							<Diamond class="size-3" :fill="isOnKeyframe(prop.key) ? 'currentColor' : 'none'" />
 						</button>
-						<ChevronDown
-							class="size-3.5 text-zinc-500 transition-transform"
-							:class="{ 'rotate-180': !expandedProperties.has(prop.key) }"
-						/>
+						<button
+							type="button"
+							class="flex size-5 items-center justify-center rounded transition-colors"
+							:class="hasNextKeyframe(prop.key) ? 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200' : 'cursor-default text-zinc-700'"
+							:disabled="!hasNextKeyframe(prop.key)"
+							title="Next keyframe"
+							@click="goToNextKeyframe(prop.key)"
+						>
+							<ChevronRight class="size-3" />
+						</button>
 					</div>
-				</button>
+				</div>
 
-				<!-- Keyframe list -->
-				<div v-if="expandedProperties.has(prop.key)" class="border-t border-white/10 px-2.5 py-2 space-y-1.5">
-					<div v-if="getPropertyKeyframes(prop.key).length === 0" class="py-2 text-center">
-						<p class="text-[10px] text-zinc-600">No keyframes. Click + to add one.</p>
-					</div>
-
+				<!-- Keyframes (flat rows, no nested cards) -->
+				<div v-if="hasKeyframes(prop.key)" class="space-y-1.5">
 					<div
-						v-for="keyframe in getPropertyKeyframes(prop.key)"
-						:key="keyframe.id"
-						class="flex items-center gap-1.5 rounded bg-white/[0.03] px-2 py-1"
+						v-for="(kf, idx) in getPropertyKeyframes(prop.key)"
+						:key="kf.id"
+						class="flex items-center gap-2"
 					>
-						<!-- Diamond icon -->
-						<Diamond class="size-2.5 shrink-0 text-amber-400" />
+						<!-- Time -->
+						<button
+							type="button"
+							class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono transition-colors"
+							:class="Math.abs(kf.offset - normalizedPlayhead) < 0.005 ? 'bg-amber-500/20 text-amber-400' : 'bg-white/5 text-zinc-500 hover:bg-white/10 hover:text-zinc-300'"
+							@click="seekToOffset(kf.offset)"
+						>
+							{{ formatOffset(kf.offset) }}
+						</button>
 
-						<!-- Offset -->
-						<div class="flex items-center gap-0.5">
-							<span class="text-[9px] text-zinc-500">@</span>
+						<!-- Value (matching Video tab field styling) -->
+						<div class="flex h-7 min-w-0 flex-1 items-center rounded-sm border border-white/10 bg-white/5 px-2">
+							<span class="mr-1 shrink-0 select-none text-[10px] text-zinc-500">{{ prop.inputLabel }}</span>
 							<input
 								type="number"
-								:value="Math.round(keyframe.offset * 100)"
-								min="0"
-								max="100"
-								step="1"
-								class="h-5 w-10 rounded border border-white/10 bg-white/5 px-1 text-center text-[10px] text-zinc-300"
-								@change="(e) => updateKeyframeOffset(prop.key, keyframe.id, Number((e.target as HTMLInputElement).value) / 100)"
+								:value="Math.round(kf.value * prop.displayMultiplier)"
+								:min="prop.min"
+								:max="prop.max"
+								:step="prop.step"
+								class="min-w-0 w-full bg-transparent text-right text-xs text-zinc-200 outline-none"
+								@input="(e) => updateKeyframeValue(prop.key, kf.id, (e.target as HTMLInputElement).value, prop.displayMultiplier)"
 							/>
-							<span class="text-[9px] text-zinc-500">%</span>
+							<span class="ml-0.5 shrink-0 text-[10px] text-zinc-500">{{ prop.unit }}</span>
 						</div>
 
-						<!-- Value -->
-						<input
-							type="number"
-							:value="displayKeyframeValue(prop.key, keyframe.value)"
-							:min="prop.key === 'scale' || prop.key === 'opacity' ? prop.min * 100 : prop.min"
-							:max="prop.key === 'scale' || prop.key === 'opacity' ? prop.max * 100 : prop.max"
-							:step="prop.key === 'scale' || prop.key === 'opacity' ? 1 : prop.step"
-							class="h-5 w-14 rounded border border-white/10 bg-white/5 px-1 text-center text-[10px] text-zinc-300"
-							@change="(e) => onKeyframeValueInput(prop.key, keyframe.id, Number((e.target as HTMLInputElement).value))"
-						/>
-						<span v-if="keyframeValueLabel(prop.key)" class="text-[9px] text-zinc-500">{{ keyframeValueLabel(prop.key) }}</span>
-
-						<!-- Easing dropdown -->
+						<!-- Easing (matching Video tab dropdown styling) -->
 						<Select
-							:model-value="keyframe.interpolation"
-							@update:model-value="(v) => updateKeyframeInterpolation(prop.key, keyframe.id, v as KeyframeInterpolation)"
+							:model-value="kf.interpolation"
+							@update:model-value="(v) => setInterpolation(prop.key, kf.id, v as KeyframeInterpolation)"
 						>
-							<SelectTrigger class="h-5 flex-1 min-w-0 rounded border border-white/10 bg-white/5 px-1 text-[9px] text-zinc-400">
+							<SelectTrigger class="h-7 w-24 shrink-0 rounded-md border border-white/10 bg-white/5 px-2 text-[10px] text-zinc-200">
 								<SelectValue />
 							</SelectTrigger>
-							<SelectContent class="bg-zinc-900 border-white/10">
-								<SelectItem v-for="easing in EASING_PRESETS" :key="easing.id" :value="easing.id" class="text-[9px] text-zinc-200">
-									{{ easing.label }}
+							<SelectContent class="max-h-[250px] border-white/10 bg-zinc-900">
+								<SelectItem
+									v-for="opt in KEYFRAME_EASING_OPTIONS"
+									:key="opt.id"
+									:value="opt.id"
+									class="text-xs text-zinc-200"
+								>
+									{{ opt.label }}
 								</SelectItem>
 							</SelectContent>
 						</Select>
-
-						<!-- Delete -->
-						<button
-							class="flex size-4 shrink-0 items-center justify-center rounded text-zinc-600 hover:text-red-400"
-							@click="removeKeyframeById(prop.key, keyframe.id)"
-						>
-							<X class="size-2.5" />
-						</button>
 					</div>
 				</div>
 			</div>

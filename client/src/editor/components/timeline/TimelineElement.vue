@@ -57,8 +57,8 @@ const emit = defineEmits<{
 const { editor, version } = useEditor({
 	subscribe: {
 		playback: false,
-		timeline: false,
-		scenes: false,
+		timeline: true,
+		scenes: true,
 		project: false,
 		media: true,
 		selection: false,
@@ -79,6 +79,7 @@ const { addKeyframe } = useKeyframes({
 
 function onVisualKeyframePaintPointerDown(ev: PointerEvent) {
 	if (!timelineKeyframePlacementActive.value) return;
+	if (!props.isSelected) return;
 	const el = props.element;
 	if (el.type !== "video" && el.type !== "image") return;
 	const property = timelineKeyframePlacementProperty.value;
@@ -272,7 +273,7 @@ const {
 	showEnvelopeGraphics: volumeShowEnvelopeGraphics,
 	onStripPointerEnter: onVolumeStripPointerEnter,
 	onStripPointerLeave: onVolumeStripPointerLeave,
-	onStripPointerDown: onVolumeStripPointerDown,
+	onStripPointerDown: onVolumeStripPointerDownRaw,
 	onHandleDblClick: onVolumeHandleDblClick,
 } = useVolumeEnvelope({
 	elementRef: toRef(props, "element"),
@@ -280,6 +281,11 @@ const {
 	elementWidthPx: elementWidth,
 	placementProperty: timelineKeyframePlacementProperty,
 });
+
+function onVolumeStripPointerDown(ev: PointerEvent, svg: SVGSVGElement, h: number) {
+	if (timelineKeyframePlacementActive.value && !props.isSelected) return;
+	onVolumeStripPointerDownRaw(ev, svg, h);
+}
 
 const isFading = computed(() => fadeState.value !== null);
 
@@ -295,6 +301,7 @@ const fadeOutPx = computed(() => {
 
 // Keyframe diamond markers: collect all keyframe offsets from all property tracks
 const keyframeDiamonds = computed(() => {
+	void version.value;
 	const kf = props.element.keyframes;
 	if (!kf) return [];
 	const offsets = new Set<number>();

@@ -11,7 +11,6 @@ import StickerProperties from "./properties/StickerProperties.vue";
 import EffectProperties from "./properties/EffectProperties.vue";
 import CaptionProperties from "./properties/CaptionProperties.vue";
 import CaptionMultiProperties from "./properties/CaptionMultiProperties.vue";
-import KeyframeEditorPanel from "./KeyframeEditorPanel.vue";
 import TransitionProperties from "./properties/TransitionProperties.vue";
 import { Settings } from "lucide-vue-next";
 import type { Transition } from "../../types/transitions";
@@ -125,11 +124,6 @@ const selectedTransition = computed((): Transition | null => {
 						:element="(element as CaptionElement)"
 						:track-id="track.id"
 					/>
-				</div>
-
-				<!-- Keyframe editor — fixed height panel below element properties -->
-				<div v-if="selectedElements.length === 1" class="h-56 flex-shrink-0 border-t border-white/10">
-					<KeyframeEditorPanel />
 				</div>
 			</template>
 		</template>
