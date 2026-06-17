@@ -69,10 +69,10 @@
           :style="getBrollMarkerStyle(marker)"
         >
           <div
-            class="absolute inset-0 rounded-sm border border-violet-400/60 bg-violet-500/15"
-            :class="{ 'bg-violet-500/30 border-violet-300': marker.status === 'applied' }"
+            class="absolute inset-0 rounded-sm border border-cyan-400/60 bg-cyan-500/15"
+            :class="{ 'bg-cyan-500/30 border-cyan-300': marker.status === 'applied' }"
           />
-          <div class="absolute -top-4 left-0 text-[8px] text-violet-300 truncate max-w-full px-0.5">
+          <div class="absolute -top-4 left-0 text-[8px] text-cyan-300 truncate max-w-full px-0.5">
             B-roll
           </div>
         </div>

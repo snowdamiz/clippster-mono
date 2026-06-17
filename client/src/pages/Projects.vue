@@ -1295,7 +1295,7 @@
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, watch, nextTick, Transition } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
-  import { formatDateTime, formatDate } from '@/utils/dateTimeUtils';
+  import { formatDateTime, formatDate, toDate } from '@/utils/dateTimeUtils';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import Hls from 'hls.js';
   import {
@@ -1376,7 +1376,7 @@
   import { useLivestreamMonitoring } from '@/composables/useLivestreamMonitoring';
   import { useVideoOperations } from '@/composables/useVideoOperations';
   import { useDownloads } from '@/composables/useDownloads';
-  import { resolveBrandingProfile } from '@/composables/useBrandingProfileSelection';
+  import { resolveAutoBrandingProfile } from '@/composables/useBrandingProfileSelection';
   import PageLayout from '@/components/PageLayout.vue';
   import SkeletonGrid from '@/components/SkeletonGrid.vue';
   import ProjectDialog, { type ProjectFormData } from '@/components/ProjectDialog.vue';
@@ -2834,14 +2834,29 @@
       let watermarkId: string | null = null;
       let watermarkSettingsRaw: string | null = null;
 
+      // Validate stored project watermark against current auto-branding rules
+      async function isStoredWatermarkValid(
+        projectId: string,
+        storedWatermarkId: string
+      ): Promise<boolean> {
+        const autoProfile = await resolveAutoBrandingProfile(projectId);
+        if (!autoProfile?.watermark_id) return false;
+        return String(autoProfile.watermark_id) === String(storedWatermarkId);
+      }
+
       const segmentProject = projects.value.find((p) => p.id === segmentProjectId);
       if (segmentProject?.default_watermark_settings) {
         try {
           const storedSettings = JSON.parse(segmentProject.default_watermark_settings);
-          if (storedSettings.watermarkId) {
+          if (
+            storedSettings.watermarkId &&
+            (await isStoredWatermarkValid(segmentProjectId, storedSettings.watermarkId))
+          ) {
             watermarkId = storedSettings.watermarkId;
             watermarkSettingsRaw = storedSettings.watermarkSettings;
             console.log('[Projects] loadPreviewWatermark: Found project-level watermark:', watermarkId);
+          } else if (storedSettings.watermarkId) {
+            console.log('[Projects] loadPreviewWatermark: Ignoring stale project-level watermark');
           }
         } catch (e) {
           console.warn('[Projects] loadPreviewWatermark: Failed to parse project watermark settings:', e);
@@ -2854,10 +2869,15 @@
         if (parentProject?.default_watermark_settings) {
           try {
             const storedSettings = JSON.parse(parentProject.default_watermark_settings);
-            if (storedSettings.watermarkId) {
+            if (
+              storedSettings.watermarkId &&
+              (await isStoredWatermarkValid(segmentProject.parent_id, storedSettings.watermarkId))
+            ) {
               watermarkId = storedSettings.watermarkId;
               watermarkSettingsRaw = storedSettings.watermarkSettings;
               console.log('[Projects] loadPreviewWatermark: Found parent project-level watermark:', watermarkId);
+            } else if (storedSettings.watermarkId) {
+              console.log('[Projects] loadPreviewWatermark: Ignoring stale parent project-level watermark');
             }
           } catch (e) {
             console.warn('[Projects] loadPreviewWatermark: Failed to parse parent project watermark settings:', e);
@@ -2865,28 +2885,24 @@
         }
       }
 
-      // If no project-level settings, try branding profile resolution (includes org/campaign/local profiles)
+      // If no valid stored settings, resolve auto branding (read-only, no persistence)
       if (!watermarkId) {
-        let creatorProfile = await resolveBrandingProfile(segmentProjectId);
+        let creatorProfile = await resolveAutoBrandingProfile(segmentProjectId);
         console.log(
-          '[Projects] loadPreviewWatermark: Branding profile for segment',
+          '[Projects] loadPreviewWatermark: Auto branding for segment',
           segmentProjectId,
           ':',
           creatorProfile?.name || null
         );
 
-        // If no branding profile on segment, try the parent folder as fallback
-        if (!creatorProfile) {
-          const project = projects.value.find((p) => p.id === segmentProjectId);
-          if (project?.parent_id) {
-            creatorProfile = await resolveBrandingProfile(project.parent_id);
-            console.log(
-              '[Projects] loadPreviewWatermark: Fallback to parent',
-              project.parent_id,
-              ':',
-              creatorProfile?.name || null
-            );
-          }
+        if (!creatorProfile && segmentProject?.parent_id) {
+          creatorProfile = await resolveAutoBrandingProfile(segmentProject.parent_id);
+          console.log(
+            '[Projects] loadPreviewWatermark: Fallback to parent',
+            segmentProject.parent_id,
+            ':',
+            creatorProfile?.name || null
+          );
         }
 
         if (creatorProfile?.watermark_id) {
@@ -3589,7 +3605,7 @@
     try {
       // Use the parent project ID (folder) or the segment's project ID
       const projectId = clip.project_id || clip.segment_id;
-      const profile = await resolveBrandingProfile(projectId);
+      const profile = projectId ? await resolveAutoBrandingProfile(projectId) : null;
 
       if (profile) {
         console.log('[Projects] Found creator profile for folder build:', profile.name);
@@ -5024,15 +5040,8 @@
   });
 
   function getDateLabel(timestamp: number): string {
-    // Wait, services/database/core.ts usually uses Date.now() which is ms.
-    // But let's verify. The migration says INTEGER.
-    // In useFormatters: const now = Math.floor(Date.now() / 1000) -> input timestamp is in seconds.
-    // Let's check if updated_at in DB is seconds or ms.
-    // In database/projects.ts: const now = timestamp();
-    // In database/core.ts: export const timestamp = () => Math.floor(Date.now() / 1000);
-    // So it is SECONDS.
-
-    const d = new Date(timestamp * 1000);
+    const d = toDate(timestamp);
+    if (isNaN(d.getTime())) return 'Unknown';
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const yesterday = new Date(today);

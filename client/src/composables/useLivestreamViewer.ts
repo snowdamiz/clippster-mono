@@ -18,7 +18,6 @@ import {
   getRawVideo,
   type CreatorProfileWithLinks,
 } from '@/services/database';
-import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
 import type {
   LiveStatus,
   LiveSession,
@@ -399,113 +398,45 @@ export function useLivestreamViewer() {
   async function loadCreatorProfile(mintId: string) {
     console.log('[LiveViewer] loadCreatorProfile called for mintId:', mintId);
     try {
-      let profile = await getCreatorProfileByPlatformId('pumpfun', mintId);
-      console.log(
-        '[LiveViewer] Profile lookup result:',
-        profile ? `Found: ${profile.name}` : 'Not found'
+      const { isOrgSuppliedAccount, resolveOrgBuildBranding } = await import(
+        '@/composables/useBrandingProfileSelection'
       );
+      const { useAuthStore } = await import('@/stores/auth');
+      const authStore = useAuthStore();
 
-      // Fallback: some stream IDs include a trailing "pump" suffix; try without it
-      if (!profile && mintId.toLowerCase().endsWith('pump')) {
-        const trimmedMint = mintId.slice(0, -4);
-        console.log('[LiveViewer] Retry profile lookup without pump suffix:', trimmedMint);
-        profile = await getCreatorProfileByPlatformId('pumpfun', trimmedMint);
+      let profile: CreatorProfileWithLinks | null = null;
+
+      if (isOrgSuppliedAccount() && authStore.user?.created_by_organization_id != null) {
+        profile = await resolveOrgBuildBranding(
+          Number(authStore.user.created_by_organization_id),
+          '',
+          { platform: 'PumpFun', platformId: mintId }
+        );
+        if (!profile && mintId.toLowerCase().endsWith('pump')) {
+          profile = await resolveOrgBuildBranding(
+            Number(authStore.user.created_by_organization_id),
+            '',
+            { platform: 'PumpFun', platformId: mintId.slice(0, -4) }
+          );
+        }
+        if (profile) {
+          console.log('[LiveViewer] Org-supplied profile:', profile.name);
+        }
+      } else {
+        profile = await getCreatorProfileByPlatformId('pumpfun', mintId);
         console.log(
-          '[LiveViewer] Fallback lookup result:',
+          '[LiveViewer] Profile lookup result:',
           profile ? `Found: ${profile.name}` : 'Not found'
         );
-      }
 
-      // Last-resort: check org-assigned creator profiles (server-side) for the current user
-      if (!profile) {
-        try {
-          const assigned = await getUserAssignedCreatorProfiles();
-          if (assigned.success && assigned.profiles?.length) {
-            const normalize = (val: string | null | undefined) => val?.trim().toLowerCase() || '';
-            const stripPump = (val: string) =>
-              val.toLowerCase().endsWith('pump') ? val.slice(0, -4) : val;
-            const candidates = Array.from(
-              new Set([normalize(mintId), normalize(stripPump(mintId))])
-            ).filter(Boolean);
-
-            const orgMatch = assigned.profiles.find((p) =>
-              p.platform_links?.some((link) => {
-                const linkNorm = normalize(link.platform_id);
-                const linkNormStripped = normalize(stripPump(link.platform_id));
-                return (
-                  candidates.includes(linkNorm) ||
-                  candidates.includes(linkNormStripped) ||
-                  linkNorm === candidates[0] ||
-                  linkNormStripped === candidates[0]
-                );
-              })
-            );
-
-            if (orgMatch) {
-              console.log('[LiveViewer] Found org-assigned creator profile:', orgMatch.name);
-
-              // Adapt org profile shape to local expectations and prefix org watermark IDs
-              const settingsObj = orgMatch.watermark_settings || null;
-              const perRatioRaw =
-                settingsObj && typeof settingsObj === 'object'
-                  ? (settingsObj as Record<string, any>)
-                  : null;
-
-              // Prefix all per-ratio watermarkIds with org-asset-
-              let perRatio: Record<string, any> | null = null;
-              if (perRatioRaw) {
-                perRatio = {};
-                for (const [ratio, cfg] of Object.entries(perRatioRaw)) {
-                  if (cfg && typeof cfg === 'object') {
-                    const ratioCfg = cfg as { watermarkId?: number | string; position?: any };
-                    perRatio[ratio] = {
-                      ...ratioCfg,
-                      watermarkId:
-                        ratioCfg.watermarkId != null ? `org-asset-${ratioCfg.watermarkId}` : null,
-                    };
-                  } else {
-                    perRatio[ratio] = cfg;
-                  }
-                }
-              }
-
-              const ratio16 = perRatio?.['16:9'];
-              const ratioWatermarkId =
-                ratio16?.watermarkId != null ? String(ratio16.watermarkId) : null;
-
-              profile = {
-                // Minimal fields needed downstream
-                id: String(orgMatch.id),
-                name: orgMatch.name,
-                description: orgMatch.description || null,
-                profile_image_path: null,
-                intro_id: null,
-                outro_id: null,
-                watermark_id:
-                  ratioWatermarkId ||
-                  (orgMatch.watermark_id != null ? `org-asset-${orgMatch.watermark_id}` : null),
-                watermark_settings: perRatio ? JSON.stringify(perRatio) : null,
-                user_id: null,
-                created_at: Date.now(),
-                updated_at: Date.now(),
-                platform_links:
-                  orgMatch.platform_links?.map((l) => ({
-                    ...l,
-                    id: String(l.id ?? l.platform_id ?? Math.random()),
-                    creator_profile_id: String(orgMatch.id),
-                    platform_id: l.platform_id,
-                    platform: l.platform as any,
-                    display_name: l.display_name || null,
-                    profile_image_url: l.profile_image_url || null,
-                    is_primary: l.is_primary ?? false,
-                    created_at: Date.now(),
-                    updated_at: Date.now(),
-                  })) || [],
-              } as unknown as CreatorProfileWithLinks;
-            }
-          }
-        } catch (err) {
-          console.warn('[LiveViewer] Failed to query org-assigned profiles', err);
+        if (!profile && mintId.toLowerCase().endsWith('pump')) {
+          const trimmedMint = mintId.slice(0, -4);
+          console.log('[LiveViewer] Retry profile lookup without pump suffix:', trimmedMint);
+          profile = await getCreatorProfileByPlatformId('pumpfun', trimmedMint);
+          console.log(
+            '[LiveViewer] Fallback lookup result:',
+            profile ? `Found: ${profile.name}` : 'Not found'
+          );
         }
       }
 

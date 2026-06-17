@@ -579,7 +579,7 @@ export interface CreatorProfile {
   disabled?: number | boolean; // Whether the profile is disabled
   layout_overlays: string | null; // JSON string of LayoutOverlay[]
   clip_build_defaults?: string | null; // JSON string of CreatorClipBuildDefaults — opt-in clip-build defaults applied via "Use creator layout" on download
-  scope: 'streamer' | 'global'; // 'streamer' = tied to platform links, 'global' = universal branding
+  scope: 'streamer' | 'global' | 'personal_studio'; // 'streamer' = tied to platform links, 'global' = universal branding, 'personal_studio' = Clippster Studio
   user_id: string | null;
   created_at: number;
   updated_at: number;

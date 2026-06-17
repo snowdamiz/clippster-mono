@@ -3717,42 +3717,35 @@
 
       if (!activeCampaignId && activeBrandingType === 'org') {
         try {
-          // Use the streamer-matched creator profile from props (already resolved by
-          // ProjectWorkspaceDialog to the correct streamer profile, e.g. "Jerzy" not "Clippster").
-          // Fall back to API lookup by brandingProfileId only if props.creatorProfile is unavailable.
           let profile: any = null;
+          const clipProjectId =
+            clip.project_id ||
+            (clip as { segment_id?: string }).segment_id ||
+            props.projectId;
+          const orgId = activeTarget?.organizationId;
 
-          // Use resolveApplicableProfiles — the proven streamer matching function that
-          // matches via platform links (channel URL e.g. "jerzynft" on Kick).
-          // This is the same function that produces "Found org streamer match: Jerzy" in logs.
-          const { resolveApplicableProfiles } = await import('@/composables/useBrandingProfileSelection');
-          const clipProjectId = clip.project_id || props.projectId;
-          
-          if (clipProjectId) {
-            const candidates = await resolveApplicableProfiles(clipProjectId);
-            const orgId = activeTarget?.organizationId;
-            
-            // Find the org-streamer match within the target org
-            const streamerMatch = candidates.find((c) =>
-              c.source === 'org-streamer' &&
-              (!orgId || (c.profile as any).organization_id === orgId)
-            );
-            
-            // Fall back to org-global within the same org
-            const globalMatch = !streamerMatch
-              ? candidates.find((c) =>
-                  c.source === 'org-global' &&
-                  (!orgId || (c.profile as any).organization_id === orgId)
-                )
-              : null;
-            
-            const matched = streamerMatch || globalMatch;
-            if (matched) {
-              profile = matched.profile;
+          if (clipProjectId && orgId) {
+            const { resolveOrgBuildBranding } = await import('@/composables/useBrandingProfileSelection');
+            profile = await resolveOrgBuildBranding(Number(orgId), clipProjectId);
+
+            if (
+              profile &&
+              activeCampaignBrandingProfileId &&
+              String(profile.id) !== String(activeCampaignBrandingProfileId)
+            ) {
+              console.warn(
+                '[ClipsTab] Org branding profile mismatch: dialog selected',
+                activeCampaignBrandingProfileId,
+                'resolved',
+                profile.id
+              );
+            }
+
+            if (profile) {
               targetResolvedProfile = profile;
-              console.log('[ClipsTab] Org branding: resolved via platform links:', profile.name, '(source:', matched.source, ')');
+              console.log('[ClipsTab] Org branding resolved:', profile.name, 'for org', orgId);
             } else {
-              console.log('[ClipsTab] Org branding: no matching profile found via resolveApplicableProfiles');
+              console.log('[ClipsTab] Org branding: no profile resolved for org', orgId);
             }
           }
 

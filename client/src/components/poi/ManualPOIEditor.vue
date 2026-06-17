@@ -100,6 +100,15 @@
                       :error="aiBroll.error.value"
                       :can-generate="canGenerateAiBroll"
                       :planner-options="aiBroll.options.value"
+                      :clip-duration="clipDuration"
+                      :playhead-time="currentTime"
+                      :manual-search-query="aiBroll.manualSearchQuery.value"
+                      :manual-search-media-type="aiBroll.manualSearchMediaType.value"
+                      :manual-search-results="aiBroll.manualSearchResults.value"
+                      :selected-manual-candidate-id="aiBroll.selectedManualCandidateId.value"
+                      :is-manual-searching="aiBroll.isManualSearching.value"
+                      :manual-search-error="aiBroll.manualSearchError.value"
+                      :is-manual-adding="isManualBrollAdding"
                       @close="showAiBrollPanel = false"
                       @generate="onAiBrollGenerate"
                       @fetch-all="onAiBrollFetchAll"
@@ -108,6 +117,11 @@
                       @regenerate="onAiBrollRegenerate"
                       @reject="onAiBrollReject"
                       @select-candidate="onAiBrollSelectCandidate"
+                      @manual-search="onManualBrollSearch"
+                      @manual-select-candidate="onManualBrollSelectCandidate"
+                      @manual-add="onManualBrollAdd"
+                      @update:manual-search-query="aiBroll.manualSearchQuery.value = $event"
+                      @update:manual-search-media-type="aiBroll.manualSearchMediaType.value = $event"
                     />
                   </template>
                   <POISourcePanel
@@ -327,9 +341,9 @@
 
               <!-- AI B-roll cell -->
               <div v-if="projectId && clipId" class="poi-dialog__feature-cell">
-                <Sparkles class="h-4 w-4 poi-dialog__icon-purple shrink-0" />
+                <Sparkles class="h-4 w-4 poi-dialog__icon-cyan shrink-0" />
                 <div class="flex-1 min-w-0">
-                  <span class="poi-dialog__feature-label">AI B-roll</span>
+                  <span class="poi-dialog__feature-label">B-roll</span>
                   <span v-if="aiBroll.appliedCount.value > 0" class="text-[10px] ml-2 poi-dialog__muted">
                     · {{ aiBroll.appliedCount.value }} applied
                   </span>
@@ -437,6 +451,7 @@
   } from '@/utils/clipTextBox';
   import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
   import { useAiBroll } from '@/composables/useAiBroll';
+  import type { ManualBrollMediaType } from '@/composables/useAiBroll';
   import type { AiBrollPlannerOptions } from '@/types/ai-broll';
 
   // Animation styles shown in the subtitle section (matches SubtitlePropertiesPanel)
@@ -563,6 +578,7 @@
   const activeSegmentId = ref<string | null>(null);
 
   const showAiBrollPanel = ref(false);
+  const isManualBrollAdding = ref(false);
   const aiBroll = useAiBroll();
 
   const clipDuration = computed(() => {
@@ -1258,6 +1274,45 @@
     };
   }
 
+  async function onManualBrollSearch(query: string, mediaType: ManualBrollMediaType) {
+    aiBroll.manualSearchMediaType.value = mediaType;
+    await aiBroll.searchManualStock(query, brollOrientation.value, mediaType);
+  }
+
+  function onManualBrollSelectCandidate(candidateId: string) {
+    aiBroll.selectManualCandidate(candidateId);
+  }
+
+  async function onManualBrollAdd(payload: { candidateId: string; duration: number; startTime: number }) {
+    if (!props.projectId || !props.clipId) return;
+    const candidate = aiBroll.manualSearchResults.value.find((c) => c.id === payload.candidateId);
+    if (!candidate) return;
+
+    isManualBrollAdding.value = true;
+    try {
+      const maxDuration = Math.max(0.5, clipDuration.value - payload.startTime);
+      const duration = Math.min(payload.duration, maxDuration);
+      const result = await aiBroll.applyManualCandidateToConfig(candidate, {
+        clipId: props.clipId,
+        projectId: props.projectId,
+        startTime: payload.startTime,
+        duration,
+        segmentConfigs: segmentConfigs.value,
+        regionIndex: segmentConfigs.value.length,
+      });
+      segmentConfigs.value = result.segmentConfigs;
+      const appliedSeg = segmentConfigs.value.find((seg) => seg.startTime === payload.startTime);
+      activeSegmentId.value = appliedSeg?.segmentId ?? activeSegmentId.value;
+      if (appliedSeg) {
+        regions.value = JSON.parse(JSON.stringify(appliedSeg.regions));
+      }
+    } catch (e) {
+      console.error('[ManualPOIEditor] Failed to add manual B-roll:', e);
+    } finally {
+      isManualBrollAdding.value = false;
+    }
+  }
+
   // Handle subtitle position changes (from dragging in POITargetPanel)
   function onSubtitlePositionChange(position: { x: number; y: number; width?: number }) {
     localSubtitlePosition.value = { ...position };
@@ -1895,6 +1950,10 @@
 
   .poi-dialog__icon-purple {
     color: #c084fc;
+  }
+
+  .poi-dialog__icon-cyan {
+    color: var(--sidebar-accent);
   }
 
   .poi-dialog__icon-amber {

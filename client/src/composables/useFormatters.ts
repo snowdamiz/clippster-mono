@@ -1,7 +1,11 @@
+import { toDate } from '@/utils/dateTimeUtils';
+
 export function useFormatters() {
   function getRelativeTime(timestamp: number): string {
-    const now = Math.floor(Date.now() / 1000)
-    const diff = now - timestamp
+    const date = toDate(timestamp);
+    if (isNaN(date.getTime())) return '';
+
+    const diff = Math.floor((Date.now() - date.getTime()) / 1000);
 
     if (diff < 60) return 'just now'
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`

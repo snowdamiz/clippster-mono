@@ -96,6 +96,24 @@ const router = createRouter({
       ],
     },
     {
+      path: '/studio/record/session',
+      name: 'studio-record-session',
+      component: () => import('@/pages/StudioRecordingSession.vue'),
+      meta: { noLayout: true },
+    },
+    {
+      path: '/studio/record',
+      name: 'studio-record',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'studio-record-home',
+          component: () => import('@/pages/StudioRecord.vue'),
+        },
+      ],
+    },
+    {
       path: '/editor',
       name: 'opencut-editor',
       component: () => import('@/pages/OpenCutEditor.vue'),

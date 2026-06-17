@@ -255,8 +255,12 @@ pub async fn check_kick_livestream(channel: String) -> Result<String, String> {
             let json: serde_json::Value = serde_json::from_str(&body)
                 .map_err(|e| format!("Failed to parse api.kick.com response: {}", e))?;
 
-            // Check if livestream data exists in the response
-            let livestream = json.pointer("/data/livestream");
+            // Check if livestream data exists in the response.
+            // Kick returns `"livestream": null` when offline — pointer() still yields
+            // Some(Null), so we must explicitly reject null/empty values.
+            let livestream = json
+                .pointer("/data/livestream")
+                .filter(|v| !v.is_null());
 
             if let Some(ls) = livestream {
                 // Channel has livestream data — it's live
@@ -1095,5 +1099,15 @@ mod tests {
             normalize_channel_slug("https://kick.com/xqc?ref=123"),
             "xqc"
         );
+    }
+
+    #[test]
+    fn test_offline_livestream_null_is_not_live() {
+        let body = r#"{"status":{"error":false,"code":200,"message":"SUCCESS"},"data":{"livestream":null}}"#;
+        let json: serde_json::Value = serde_json::from_str(body).unwrap();
+        let livestream = json
+            .pointer("/data/livestream")
+            .filter(|v| !v.is_null());
+        assert!(livestream.is_none());
     }
 }

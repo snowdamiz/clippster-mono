@@ -50,10 +50,10 @@ export function useAudioPlayer() {
         // Auto-advance to next track if in playlist
         if (activePlaylist.length > 0 && currentTrackIndex.value < activePlaylist.length - 1) {
           playNext();
-        } else if (repeatMode.value === 'all' && activePlaylist.length > 0) {
+        } else         if (repeatMode.value === 'all' && activePlaylist.length > 0) {
           // Restart playlist from beginning
           currentTrackIndex.value = 0;
-          playTrack(activePlaylist[0]);
+          void playTrack(activePlaylist[0], { force: true });
         } else {
           isPlaying.value = false;
           currentTime.value = 0;
@@ -73,13 +73,13 @@ export function useAudioPlayer() {
     }
   }
 
-  async function playTrack(track: AudioTrack) {
+  async function playTrack(track: AudioTrack, options?: { force?: boolean }) {
     initAudioElement();
     
     if (!audioElement.value) return;
     
-    // If same track, just toggle play/pause
-    if (currentTrack.value?.id === track.id) {
+    // If same track, just toggle play/pause (unless forcing a reload, e.g. queue advance)
+    if (!options?.force && currentTrack.value?.id === track.id) {
       togglePlayPause();
       return;
     }
@@ -150,6 +150,7 @@ export function useAudioPlayer() {
     isPlaying.value = false;
     currentTime.value = 0;
     playlist.value = [];
+    shuffledPlaylist.value = [];
     currentTrackIndex.value = 0;
   }
 
@@ -162,16 +163,21 @@ export function useAudioPlayer() {
     return shuffled;
   }
 
-  async function playPlaylist(tracks: AudioTrack[], startIndex = 0) {
+  async function playPlaylist(tracks: AudioTrack[], startIndex = 0, options?: { shuffle?: boolean }) {
     if (tracks.length === 0) return;
-    
+
+    const shouldShuffle = options?.shuffle ?? isShuffle.value;
     playlist.value = tracks;
-    
-    if (isShuffle.value) {
-      // Create shuffled version
+
+    if (shouldShuffle) {
+      isShuffle.value = true;
       shuffledPlaylist.value = shuffleArray(tracks);
-      currentTrackIndex.value = 0;
-      await playTrack(shuffledPlaylist.value[0]);
+      const startTrack = tracks[startIndex];
+      const shuffledStartIndex = startTrack
+        ? shuffledPlaylist.value.findIndex(t => t.id === startTrack.id)
+        : 0;
+      currentTrackIndex.value = shuffledStartIndex >= 0 ? shuffledStartIndex : 0;
+      await playTrack(shuffledPlaylist.value[currentTrackIndex.value]);
     } else {
       shuffledPlaylist.value = [];
       currentTrackIndex.value = startIndex;
@@ -189,7 +195,7 @@ export function useAudioPlayer() {
     const nextIndex = currentTrackIndex.value + 1;
     if (nextIndex < activePlaylist.length) {
       currentTrackIndex.value = nextIndex;
-      await playTrack(activePlaylist[nextIndex]);
+      await playTrack(activePlaylist[nextIndex], { force: true });
     }
   }
 
@@ -203,7 +209,7 @@ export function useAudioPlayer() {
     const prevIndex = currentTrackIndex.value - 1;
     if (prevIndex >= 0) {
       currentTrackIndex.value = prevIndex;
-      await playTrack(activePlaylist[prevIndex]);
+      await playTrack(activePlaylist[prevIndex], { force: true });
     }
   }
 

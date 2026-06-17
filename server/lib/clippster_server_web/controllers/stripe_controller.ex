@@ -524,6 +524,9 @@ defmodule ClippsterServerWeb.StripeController do
     affiliate_code = get_metadata_value(metadata, "affiliate_code")
     org_setup = get_metadata_value(metadata, "org_setup")
 
+    access_months = get_metadata_value(metadata, "access_months")
+    total_credits = get_metadata_value(metadata, "total_credits")
+
     session_id = safe_get(session, "id")
     payment_intent = safe_get(session, "payment_intent")
     stripe_subscription_id = safe_get(session, "subscription")
@@ -562,6 +565,19 @@ defmodule ClippsterServerWeb.StripeController do
           addon_tier,
           stripe_subscription_id,
           promo_code_id
+        )
+
+      # Handle bundle promo one-time payment checkout
+      payment_type == "promo_bundle" && user_id && subscription_tier && promo_code_id ->
+        handle_promo_bundle_checkout(
+          user_id,
+          subscription_tier,
+          promo_code_id,
+          access_months,
+          total_credits,
+          stripe_customer_id,
+          payment_intent,
+          amount_total
         )
 
       # Handle user subscription checkout
@@ -1131,6 +1147,74 @@ defmodule ClippsterServerWeb.StripeController do
         end
     end
   end
+
+  # Handle bundle promo checkout completion (one-time payment)
+  defp handle_promo_bundle_checkout(
+         user_id,
+         tier,
+         promo_code_id,
+         access_months,
+         total_credits,
+         stripe_customer_id,
+         payment_intent,
+         amount_total_cents
+       ) do
+    user_id_int = if is_binary(user_id), do: String.to_integer(user_id), else: user_id
+    access_months_int = parse_metadata_int(access_months, 1)
+    total_credits_int = parse_metadata_int(total_credits, 0)
+
+    amount_usd =
+      case amount_total_cents do
+        nil -> 0
+        cents when is_integer(cents) -> cents / 100
+        cents when is_binary(cents) -> String.to_integer(cents) / 100
+        _ -> 0
+      end
+
+    IO.puts(
+      "[Stripe Webhook] Redeeming bundle promo: user=#{user_id_int}, tier=#{tier}, promo=#{promo_code_id}, months=#{access_months_int}, credits=#{total_credits_int}"
+    )
+
+    case Subscriptions.redeem_promo_bundle(
+           user_id_int,
+           tier,
+           access_months_int,
+           total_credits_int,
+           amount_usd,
+           stripe_customer_id: stripe_customer_id,
+           payment_intent: payment_intent
+         ) do
+      {:ok, _result} ->
+        IO.puts("[Stripe Webhook] Successfully redeemed bundle promo for user #{user_id_int}")
+
+        case PromoCodes.create_redemption(promo_code_id, user_id_int, %{
+               customer_id: stripe_customer_id,
+               invoice_id: payment_intent
+             }) do
+          {:ok, _redemption} ->
+            IO.puts(
+              "[Stripe Webhook] Created bundle promo redemption for user #{user_id_int}, promo #{promo_code_id}"
+            )
+
+          {:error, reason} ->
+            IO.puts("[Stripe Webhook] Failed to create bundle promo redemption: #{inspect(reason)}")
+        end
+
+      {:error, reason} ->
+        IO.puts("[Stripe Webhook] Failed to redeem bundle promo: #{inspect(reason)}")
+    end
+  end
+
+  defp parse_metadata_int(value, _default) when is_integer(value), do: value
+
+  defp parse_metadata_int(value, default) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, _} -> int
+      :error -> default
+    end
+  end
+
+  defp parse_metadata_int(_, default), do: default
 
   # Handle subscription checkout completion
   defp handle_subscription_checkout(

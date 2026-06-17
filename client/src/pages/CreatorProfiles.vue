@@ -363,6 +363,14 @@
                           <Building2 class="creator-card__org-badge-icon" />
                           {{ creator.organization_name }}
                         </span>
+                        <span
+                          v-if="creator.scope === 'personal_studio'"
+                          class="creator-card__org-badge creator-card__studio-badge"
+                          title="Personal profile for Clippster Studio"
+                        >
+                          <Disc class="creator-card__org-badge-icon" :size="12" />
+                          Studio
+                        </span>
                       </div>
                       <div class="creator-card__desc">
                         {{ creator.description || 'No description' }}
@@ -625,6 +633,14 @@
                         >
                           <Building2 class="creator-card__org-badge-icon" />
                           {{ creator.organization_name }}
+                        </span>
+                        <span
+                          v-if="creator.scope === 'personal_studio'"
+                          class="creator-card__org-badge creator-card__studio-badge"
+                          title="Personal profile for Clippster Studio"
+                        >
+                          <Disc class="creator-card__org-badge-icon" :size="12" />
+                          Studio
                         </span>
                       </div>
                       <div class="creator-card__desc">
@@ -1074,6 +1090,7 @@
     Edit,
     Video,
     Download,
+    Disc,
     Trash2,
     Play,
     SkipForward,
@@ -1346,6 +1363,10 @@
   const filteredCreators = computed(() => {
     // First filter by scope (activeTab)
     let result = creators.value.filter((creator) => {
+      if (activeTab.value === 'streamer') {
+        const scope = creator.scope || 'streamer';
+        return scope === 'streamer' || scope === 'personal_studio';
+      }
       return (creator.scope || 'streamer') === activeTab.value;
     });
 

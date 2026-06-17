@@ -61,12 +61,7 @@ defmodule ClippsterServerWeb.SubscriptionController do
         {:ok, promo} ->
           json(conn, %{
             success: true,
-            promo: %{
-              code: promo.code,
-              percent_off: promo.percent_off,
-              duration_kind: promo.duration_kind,
-              duration_months: promo.duration_months
-            }
+            promo: PromoCodes.validated_promo_to_map(promo)
           })
 
         {:error, :invalid_code} ->
@@ -250,14 +245,6 @@ defmodule ClippsterServerWeb.SubscriptionController do
           nil
       end
 
-      success_url =
-        StripeReturn.success_url(conn, params)
-        |> StripeReturn.with_query(session_id: "{CHECKOUT_SESSION_ID}", type: "subscription")
-
-      cancel_url =
-        StripeReturn.cancel_url(conn, params)
-        |> StripeReturn.with_query(type: "subscription")
-
       Logger.debug(
         "Creating checkout for tier: #{tier}, user: #{user_id}, promo_code: #{inspect(promo_code)}"
       )
@@ -288,132 +275,34 @@ defmodule ClippsterServerWeb.SubscriptionController do
         Subscriptions.update_stripe_customer(user_id, customer_id)
       end
 
-      # Calculate price and interval based on billing_interval
-      {stripe_interval, unit_amount_cents, product_description, credits_to_grant} =
-        if billing_interval == "yearly" do
-          # Yearly = 11 months price, but grant 12 months of credits upfront
-          yearly_price = tier_info.usd * 11
-          yearly_credits = tier_info.monthly_credits * 12
+      # Bundle promos use a one-time payment checkout (fixed price + access + credits)
+      case promo_code_info do
+        {:ok, promo} when promo.promo_type == "bundle" ->
+          create_bundle_checkout(
+            conn,
+            user_id,
+            tier,
+            promo,
+            tier_info,
+            customer_id,
+            user,
+            params
+          )
 
-          {"year", trunc(yearly_price * 100), "#{yearly_credits} credits upfront (12 months)",
-           yearly_credits}
-        else
-          {"month", trunc(tier_info.usd * 100), "#{tier_info.monthly_credits} credits per month",
-           tier_info.monthly_credits}
-        end
-
-      # Create Stripe Checkout session for subscription
-      base_session_params = %{
-        mode: "subscription",
-        payment_method_types: ["card"],
-        line_items: [
-          %{
-            price_data: %{
-              currency: "usd",
-              product_data: %{
-                name:
-                  "#{tier_info.name} Subscription#{if billing_interval == "yearly", do: " (Annual)", else: ""}",
-                description: product_description
-              },
-              unit_amount: unit_amount_cents,
-              recurring: %{
-                interval: stripe_interval
-              }
-            },
-            quantity: 1
-          }
-        ],
-        metadata: %{
-          user_id: to_string(user_id),
-          subscription_tier: tier,
-          monthly_credits: to_string(tier_info.monthly_credits),
-          credits_to_grant: to_string(credits_to_grant),
-          billing_interval: billing_interval,
-          type: "subscription"
-        },
-        success_url: success_url,
-        cancel_url: cancel_url
-      }
-
-      # Add promo code to Stripe session if valid
-      # Promo codes take priority over affiliate codes entered at checkout
-      base_session_params =
-        case {promo_code_info, affiliate_code_info} do
-          {{:ok, promo}, _} ->
-            # Valid promo code - apply it
-            base_session_params
-            |> Map.put(:discounts, [%{promotion_code: promo.stripe_promo_code_id}])
-            |> update_in([:metadata], &Map.put(&1, :promo_code_id, promo.id))
-            |> update_in([:metadata], &Map.put(&1, :promo_code, promo.code))
-
-          {_, {:ok, affiliate}} ->
-            # Valid affiliate code entered at checkout - apply discount
-            apply_affiliate_code_discount(base_session_params, affiliate, promo_code)
-
-          _ ->
-            # No promo/affiliate code entered — check if user was referred by an affiliate
-            apply_affiliate_referral_discount(base_session_params, user)
-        end
-
-      # Add customer info - either existing customer ID or email for new customer
-      session_params =
-        cond do
-          customer_id ->
-            Map.put(base_session_params, :customer, customer_id)
-
-          user.email && user.email != "" ->
-            Map.put(base_session_params, :customer_email, user.email)
-
-          true ->
-            # No customer ID and no email - Stripe requires one of these
-            nil
-        end
-
-      # Check if we have valid session params
-      if is_nil(session_params) do
-        Logger.error("Cannot create checkout: user has no email and no Stripe customer ID")
-
-        conn
-        |> put_status(400)
-        |> json(%{
-          success: false,
-          error: "Cannot create checkout session: user email is required"
-        })
-      else
-        Logger.debug("Stripe session params: #{inspect(session_params)}")
-
-        case Stripe.Checkout.Session.create(session_params) do
-          {:ok, session} ->
-            json(conn, %{
-              success: true,
-              session_id: session.id,
-              url: session.url
-            })
-
-          {:error, %Stripe.Error{message: message}} ->
-            Logger.error("Stripe checkout error: #{message}")
-
-            conn
-            |> put_status(500)
-            |> json(%{success: false, error: "Failed to create checkout session: #{message}"})
-
-          {:error, error} ->
-            Logger.error("Stripe checkout error: #{inspect(error)}")
-
-            error_message =
-              case error do
-                %{message: msg} -> msg
-                msg when is_binary(msg) -> msg
-                _ -> "Unknown error"
-              end
-
-            conn
-            |> put_status(500)
-            |> json(%{
-              success: false,
-              error: "Failed to create checkout session: #{error_message}"
-            })
-        end
+        _ ->
+          create_subscription_checkout(
+            conn,
+            user_id,
+            tier,
+            tier_info,
+            promo_code_info,
+            affiliate_code_info,
+            billing_interval,
+            customer_id,
+            user,
+            promo_code,
+            params
+          )
       end
     else
       {:error, :unauthorized} ->
@@ -499,6 +388,202 @@ defmodule ClippsterServerWeb.SubscriptionController do
     else
       # Discount not enabled, but code is still valid for tracking
       update_in(session_params, [:metadata], &Map.put(&1, :affiliate_code, code))
+    end
+  end
+
+  defp create_bundle_checkout(conn, user_id, tier, promo, tier_info, customer_id, user, params) do
+    require Logger
+
+    success_url =
+      StripeReturn.success_url(conn, params)
+      |> StripeReturn.with_query(session_id: "{CHECKOUT_SESSION_ID}", type: "promo_bundle")
+
+    cancel_url =
+      StripeReturn.cancel_url(conn, params)
+      |> StripeReturn.with_query(type: "promo_bundle")
+
+    bundle_name = promo.name || promo.code
+
+    base_session_params = %{
+      mode: "payment",
+      payment_method_types: ["card"],
+      line_items: [
+        %{
+          price_data: %{
+            currency: "usd",
+            product_data: %{
+              name: "#{tier_info.name} Bundle — #{bundle_name}",
+              description:
+                "#{promo.access_months} months platform access + #{promo.total_credits} credits"
+            },
+            unit_amount: promo.fixed_price_cents
+          },
+          quantity: 1
+        }
+      ],
+      metadata: %{
+        user_id: to_string(user_id),
+        subscription_tier: tier,
+        promo_code_id: promo.id,
+        promo_code: promo.code,
+        access_months: to_string(promo.access_months),
+        total_credits: to_string(promo.total_credits),
+        type: "promo_bundle"
+      },
+      success_url: success_url,
+      cancel_url: cancel_url
+    }
+
+    session_params = build_checkout_session_params(base_session_params, customer_id, user)
+    create_stripe_checkout_session(conn, session_params)
+  end
+
+  defp create_subscription_checkout(
+         conn,
+         user_id,
+         tier,
+         tier_info,
+         promo_code_info,
+         affiliate_code_info,
+         billing_interval,
+         customer_id,
+         user,
+         promo_code,
+         params
+       ) do
+    require Logger
+
+    success_url =
+      StripeReturn.success_url(conn, params)
+      |> StripeReturn.with_query(session_id: "{CHECKOUT_SESSION_ID}", type: "subscription")
+
+    cancel_url =
+      StripeReturn.cancel_url(conn, params)
+      |> StripeReturn.with_query(type: "subscription")
+
+    {stripe_interval, unit_amount_cents, product_description, credits_to_grant} =
+      if billing_interval == "yearly" do
+        yearly_price = tier_info.usd * 11
+        yearly_credits = tier_info.monthly_credits * 12
+
+        {"year", trunc(yearly_price * 100), "#{yearly_credits} credits upfront (12 months)",
+         yearly_credits}
+      else
+        {"month", trunc(tier_info.usd * 100), "#{tier_info.monthly_credits} credits per month",
+         tier_info.monthly_credits}
+      end
+
+    base_session_params = %{
+      mode: "subscription",
+      payment_method_types: ["card"],
+      line_items: [
+        %{
+          price_data: %{
+            currency: "usd",
+            product_data: %{
+              name:
+                "#{tier_info.name} Subscription#{if billing_interval == "yearly", do: " (Annual)", else: ""}",
+              description: product_description
+            },
+            unit_amount: unit_amount_cents,
+            recurring: %{
+              interval: stripe_interval
+            }
+          },
+          quantity: 1
+        }
+      ],
+      metadata: %{
+        user_id: to_string(user_id),
+        subscription_tier: tier,
+        monthly_credits: to_string(tier_info.monthly_credits),
+        credits_to_grant: to_string(credits_to_grant),
+        billing_interval: billing_interval,
+        type: "subscription"
+      },
+      success_url: success_url,
+      cancel_url: cancel_url
+    }
+
+    base_session_params =
+      case {promo_code_info, affiliate_code_info} do
+        {{:ok, promo}, _} ->
+          base_session_params
+          |> Map.put(:discounts, [%{promotion_code: promo.stripe_promo_code_id}])
+          |> update_in([:metadata], &Map.put(&1, :promo_code_id, promo.id))
+          |> update_in([:metadata], &Map.put(&1, :promo_code, promo.code))
+
+        {_, {:ok, affiliate}} ->
+          apply_affiliate_code_discount(base_session_params, affiliate, promo_code)
+
+        _ ->
+          apply_affiliate_referral_discount(base_session_params, user)
+      end
+
+    session_params = build_checkout_session_params(base_session_params, customer_id, user)
+    create_stripe_checkout_session(conn, session_params)
+  end
+
+  defp build_checkout_session_params(base_session_params, customer_id, user) do
+    cond do
+      customer_id ->
+        Map.put(base_session_params, :customer, customer_id)
+
+      user.email && user.email != "" ->
+        Map.put(base_session_params, :customer_email, user.email)
+
+      true ->
+        nil
+    end
+  end
+
+  defp create_stripe_checkout_session(conn, nil) do
+    require Logger
+    Logger.error("Cannot create checkout: user has no email and no Stripe customer ID")
+
+    conn
+    |> put_status(400)
+    |> json(%{
+      success: false,
+      error: "Cannot create checkout session: user email is required"
+    })
+  end
+
+  defp create_stripe_checkout_session(conn, session_params) do
+    require Logger
+    Logger.debug("Stripe session params: #{inspect(session_params)}")
+
+    case Stripe.Checkout.Session.create(session_params) do
+      {:ok, session} ->
+        json(conn, %{
+          success: true,
+          session_id: session.id,
+          url: session.url
+        })
+
+      {:error, %Stripe.Error{message: message}} ->
+        Logger.error("Stripe checkout error: #{message}")
+
+        conn
+        |> put_status(500)
+        |> json(%{success: false, error: "Failed to create checkout session: #{message}"})
+
+      {:error, error} ->
+        Logger.error("Stripe checkout error: #{inspect(error)}")
+
+        error_message =
+          case error do
+            %{message: msg} -> msg
+            msg when is_binary(msg) -> msg
+            _ -> "Unknown error"
+          end
+
+        conn
+        |> put_status(500)
+        |> json(%{
+          success: false,
+          error: "Failed to create checkout session: #{error_message}"
+        })
     end
   end
 
@@ -589,32 +674,44 @@ defmodule ClippsterServerWeb.SubscriptionController do
       # Calculate base price (yearly = 11 months)
       base_usd = if billing_interval == "yearly", do: tier_info.usd * 11, else: tier_info.usd
 
-      credits_to_grant =
+      default_credits =
         if billing_interval == "yearly",
           do: tier_info.monthly_credits * 12,
           else: tier_info.monthly_credits
 
       # Apply promo code discount if provided and valid
-      {final_usd, promo_info} =
+      {final_usd, credits_to_grant, promo_info} =
         if promo_code do
           case PromoCodes.validate_promo(promo_code, tier, user_id) do
-            {:ok, promo} ->
-              discount = promo.percent_off / 100
-              discounted_usd = base_usd * (1 - discount)
+            {:ok, promo} when promo.promo_type == "bundle" ->
+              bundle_usd = promo.fixed_price_cents / 100
 
-              {discounted_usd,
+              {bundle_usd, promo.total_credits,
                %{
                  code: promo.code,
+                 promo_type: "bundle",
+                 fixed_price_usd: bundle_usd,
+                 access_months: promo.access_months,
+                 total_credits: promo.total_credits,
+                 original_usd: base_usd
+               }}
+
+            {:ok, promo} ->
+              discounted_usd = PromoCodes.checkout_price_usd(promo, base_usd)
+
+              {discounted_usd, default_credits,
+               %{
+                 code: promo.code,
+                 promo_type: "percent",
                  percent_off: promo.percent_off,
                  original_usd: base_usd
                }}
 
             {:error, _reason} ->
-              # If promo code is invalid, use base price without discount
-              {base_usd, nil}
+              {base_usd, default_credits, nil}
           end
         else
-          {base_usd, nil}
+          {base_usd, default_credits, nil}
         end
 
       sol_amount = final_usd / sol_usd_rate
@@ -680,34 +777,51 @@ defmodule ClippsterServerWeb.SubscriptionController do
     alias ClippsterServer.Credits
 
     promo_code = Map.get(params, "promo_code")
+    billing_interval = Map.get(params, "billing_interval", "monthly")
 
     with {:ok, user_id} <- get_user_id_from_token(conn),
          {:ok, tier_info} <- validate_tier(tier),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
+      base_usd = if billing_interval == "yearly", do: tier_info.usd * 11, else: tier_info.usd
+
       # Calculate expected amount with promo code discount if provided
       {expected_usd, validated_promo} =
         if promo_code do
           case PromoCodes.validate_promo(promo_code, tier, user_id) do
+            {:ok, promo} when promo.promo_type == "bundle" ->
+              {promo.fixed_price_cents / 100, promo}
+
             {:ok, promo} ->
-              discount = promo.percent_off / 100
-              discounted_usd = tier_info.usd * (1 - discount)
-              {discounted_usd, promo}
+              {PromoCodes.checkout_price_usd(promo, base_usd), promo}
 
             {:error, _reason} ->
-              # If promo code is invalid, use base price
-              {tier_info.usd, nil}
+              {base_usd, nil}
           end
         else
-          {tier_info.usd, nil}
+          {base_usd, nil}
         end
 
       expected_sol_amount = expected_usd / sol_usd_rate
 
       case verify_crypto_payment(tx_signature, from_address, expected_sol_amount) do
         {:ok, :verified} ->
-          case Subscriptions.create_crypto_subscription(user_id, tier, tx_signature) do
-            {:ok, %{user: _user, subscription: subscription}} ->
-              # Record promo code redemption if a valid promo was used
+          activation_result =
+            if validated_promo && validated_promo.promo_type == "bundle" do
+              Subscriptions.redeem_promo_bundle(
+                user_id,
+                tier,
+                validated_promo.access_months,
+                validated_promo.total_credits,
+                expected_usd,
+                payment_method: "crypto",
+                payment_intent: tx_signature
+              )
+            else
+              Subscriptions.create_crypto_subscription(user_id, tier, tx_signature, billing_interval)
+            end
+
+          case activation_result do
+            {:ok, %{subscription: subscription}} ->
               if validated_promo do
                 PromoCodes.create_redemption(validated_promo.id, user_id, %{
                   subscription_id: subscription.id
@@ -717,9 +831,16 @@ defmodule ClippsterServerWeb.SubscriptionController do
               {:ok, balance} = Credits.get_user_balance(user_id)
               status = Subscriptions.get_subscription_status(user_id)
 
+              success_message =
+                if validated_promo && validated_promo.promo_type == "bundle" do
+                  "Bundle activated! #{validated_promo.access_months} months access and #{validated_promo.total_credits} credits added."
+                else
+                  "Subscription activated! #{tier_info.monthly_credits} credits added."
+                end
+
               json(conn, %{
                 success: true,
-                message: "Subscription activated! #{tier_info.monthly_credits} credits added.",
+                message: success_message,
                 subscription: status,
                 balance: %{
                   hours_remaining: Decimal.to_float(balance.hours_remaining),

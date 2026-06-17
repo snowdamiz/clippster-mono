@@ -412,7 +412,11 @@
     getOrCreateManualSession,
   } from '@/services/database';
   import { resolveIntroOutroById } from '@/services/database/intro-outros';
-  import { resolveApplicableProfiles } from '@/composables/useBrandingProfileSelection';
+  import {
+    resolveApplicableProfiles,
+    resolveAutoBrandingProfile,
+    isOrgSuppliedAccount,
+  } from '@/composables/useBrandingProfileSelection';
   import { getWatermarkImage } from '@/services/database/watermarks';
   import {
     getVideoEditorProjectsForClip,
@@ -3857,8 +3861,10 @@
       }
 
       let localProfile: CreatorProfileWithLinks | null = null;
+      const autoProfile = await resolveAutoBrandingProfile(projectId);
+
       const savedBrandingId = await getProjectBrandingProfileId(projectId);
-      if (savedBrandingId) {
+      if (savedBrandingId && !isOrgSuppliedAccount()) {
         try {
           const row = await getCreatorProfile(savedBrandingId);
           if (row) localProfile = row;
@@ -3866,24 +3872,32 @@
           /* ignore */
         }
       }
-      if (!localProfile) {
+      if (!localProfile && !isOrgSuppliedAccount()) {
         localProfile = await getCreatorProfileByProjectId(projectId);
       }
 
-      creatorProfile.value = localProfile;
+      const brandingProfile = isOrgSuppliedAccount() ? autoProfile : localProfile;
+      creatorProfile.value = brandingProfile;
 
-      console.log('[ProjectWorkspaceDialog] Workspace creator profile (local DB only):', {
-        name: localProfile?.name,
-        id: localProfile?.id,
-        context_type: localProfile?.context_type,
+      if (isOrgSuppliedAccount() && autoProfile?.id && !autoProfile.id.startsWith('campaign-')) {
+        const serverId = parseInt(autoProfile.id, 10);
+        creatorProfileServerId.value = isNaN(serverId) ? null : serverId;
+      }
+
+      console.log('[ProjectWorkspaceDialog] Workspace creator profile:', {
+        name: brandingProfile?.name,
+        id: brandingProfile?.id,
+        context_type: brandingProfile?.context_type,
         creatorProfileServerId: creatorProfileServerId.value,
+        orgSupplied: isOrgSuppliedAccount(),
       });
 
-      const applyPersonalBranding =
-        localProfile !== null && isPersonalWorkspaceBrandingProfile(localProfile);
+      const applyAutoBranding =
+        autoProfile !== null &&
+        (isOrgSuppliedAccount() || isPersonalWorkspaceBrandingProfile(autoProfile));
 
-      if (applyPersonalBranding && localProfile) {
-        const profile = localProfile;
+      if (applyAutoBranding && autoProfile) {
+        const profile = autoProfile;
 
         console.log(
           '[ProjectWorkspaceDialog] Applying personal creator branding:',
@@ -3892,8 +3906,8 @@
           profile.watermark_id
         );
 
-        // Apply watermark settings from creator profile, or clear inherited watermark when profile has none
-        if (creatorProfileSpecifiesWatermark(profile)) {
+        // Apply watermark only when project has no stored watermark settings
+        if (!projectHasStoredWatermarkId(project) && creatorProfileSpecifiesWatermark(profile)) {
           console.log(
             '[ProjectWorkspaceDialog] Applying creator watermark:',
             profile.watermark_id,
@@ -3995,7 +4009,7 @@
             // Always ensure parent state gets updated so VideoPlayer receives the watermark immediately
             await onWatermarkSettingsChanged(newSettings);
           }
-        } else {
+        } else if (!projectHasStoredWatermarkId(project)) {
           const cleared: WatermarkSettings = {
             enabled: false,
             watermarkId: null,
@@ -4006,7 +4020,7 @@
             perRatioSettings: null,
           };
           console.log(
-            '[ProjectWorkspaceDialog] Resolved profile has no watermark — clearing inherited project/org watermark'
+            '[ProjectWorkspaceDialog] Resolved profile has no watermark — clearing inherited watermark'
           );
           await nextTick();
           if (mediaPanelRef.value) {
@@ -4047,29 +4061,22 @@
             console.log('[ProjectWorkspaceDialog] Loaded creator default outro:', profile.outro_id);
           }
         }
-      } else if (localProfile && !isPersonalWorkspaceBrandingProfile(localProfile)) {
-        console.log(
-          '[ProjectWorkspaceDialog] Skipping auto-apply of org/campaign branding for workspace:',
-          localProfile.name
-        );
-        if (!projectHasStoredWatermarkId(project)) {
-          const cleared: WatermarkSettings = {
-            enabled: false,
-            watermarkId: null,
-            positionX: 12,
-            positionY: 92,
-            opacity: 80,
-            scale: 20,
-            perRatioSettings: null,
-          };
-          await nextTick();
-          if (mediaPanelRef.value) {
-            mediaPanelRef.value.setWatermarkSettings(cleared);
-          }
-          await onWatermarkSettingsChanged(cleared);
+      } else if (!projectHasStoredWatermarkId(project)) {
+        console.log('[ProjectWorkspaceDialog] No auto branding profile for project:', projectId);
+        const cleared: WatermarkSettings = {
+          enabled: false,
+          watermarkId: null,
+          positionX: 12,
+          positionY: 92,
+          opacity: 80,
+          scale: 20,
+          perRatioSettings: null,
+        };
+        await nextTick();
+        if (mediaPanelRef.value) {
+          mediaPanelRef.value.setWatermarkSettings(cleared);
         }
-      } else {
-        console.log('[ProjectWorkspaceDialog] No local creator profile found for project:', projectId);
+        await onWatermarkSettingsChanged(cleared);
       }
 
       // For free tier users, admin-configured branding OVERRIDES any project/creator watermark

@@ -73,8 +73,31 @@
                 </div>
               </div>
 
-              <!-- Auto DVR Toggle (hidden for org mode and global branding profiles) -->
-              <div v-if="mode === 'local' && formData.scope !== 'global'" class="org-dialog__feature-card">
+              <div
+                v-if="mode === 'local' && formData.scope !== 'global'"
+                class="org-dialog__feature-card"
+              >
+                <div class="org-dialog__feature-icon">
+                  <Disc :size="16" />
+                </div>
+                <div class="org-dialog__feature-content">
+                  <div class="org-dialog__feature-header">
+                    <div class="org-dialog__feature-text">
+                      <span class="org-dialog__feature-title">Personal profile for Clippster Studio</span>
+                      <span class="org-dialog__feature-desc">
+                        Use this profile when recording in Studio. Applies watermark live and intro/outro after recording ends.
+                      </span>
+                    </div>
+                    <Switch
+                      :model-value="formData.scope === 'personal_studio'"
+                      @update:model-value="(v: boolean) => (formData.scope = v ? 'personal_studio' : 'streamer')"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Auto DVR Toggle (streamer profiles only) -->
+              <div v-if="mode === 'local' && formData.scope === 'streamer'" class="org-dialog__feature-card">
                 <div class="org-dialog__feature-icon">
                   <Sparkles :size="16" />
                 </div>
@@ -90,7 +113,7 @@
               </div>
 
               <!-- Platform Links Section (hidden for global branding profiles) -->
-              <div v-if="formData.scope !== 'global'" class="org-dialog__section">
+              <div v-if="formData.scope === 'streamer'" class="org-dialog__section">
                 <div class="org-dialog__section-header">
                   <h3 class="org-dialog__section-title">Platform Links</h3>
                   <button type="button" @click="addPlatformLink" class="org-dialog__add-btn">
@@ -640,7 +663,7 @@
 
               <!-- Clip defaults — same layout primitives as Default Assets (asset-row / asset-select pattern) -->
               <div
-                v-if="mode === 'local' && formData.scope !== 'global'"
+                v-if="mode === 'local' && formData.scope === 'streamer'"
                 class="org-dialog__section"
               >
                 <h3 class="org-dialog__section-title">Clip Defaults</h3>
@@ -847,6 +870,7 @@
     Layers,
     Lock,
     AlertCircle,
+    Disc,
   } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
   import {
@@ -943,7 +967,7 @@
     // Local mode props
     creator?: CreatorProfileWithLinks | null;
     // Scope for new profiles ('streamer' or 'global')
-    scope?: 'streamer' | 'global';
+    scope?: 'streamer' | 'global' | 'personal_studio';
   }
 
   const props = defineProps<Props>();
@@ -1033,7 +1057,7 @@
     layout_overlays: LayoutOverlay[];
     platformLinks: PlatformLinkInput[];
     auto_dvr_enabled: boolean;
-    scope: 'streamer' | 'global';
+    scope: 'streamer' | 'global' | 'personal_studio';
     clip_build_defaults: CreatorClipBuildDefaults;
   }>({
     name: '',
@@ -1290,7 +1314,7 @@
             outro_ratio_settings: (props.profile as any).outro_ratio_settings || null,
             layout_overlays: (props.profile.layout_overlays as unknown as LayoutOverlay[]) || [],
             auto_dvr_enabled: Boolean((props.profile as any).auto_dvr_enabled),
-            scope: ((props.profile as any).scope as 'streamer' | 'global') || props.scope || 'streamer',
+            scope: ((props.profile as any).scope as 'streamer' | 'global' | 'personal_studio') || props.scope || 'streamer',
             platformLinks: props.profile.platform_links.map((link) => ({
               id: link.id,
               platform: link.platform as PlatformId,
@@ -2346,7 +2370,7 @@
         watermark_settings: formData.value.watermark_settings,
         intro_outro_settings: formData.value.intro_outro_settings ? JSON.parse(formData.value.intro_outro_settings) : null,
         layout_overlays: cleanOverlaysForServer(),
-        scope: formData.value.scope,
+        scope: formData.value.scope === 'personal_studio' ? 'streamer' : formData.value.scope,
       };
       const response = await updateOrganizationCreatorProfile(props.organizationId, props.profile.id, updateData);
 
@@ -2393,7 +2417,7 @@
         watermark_id: extractNumericId(formData.value.watermark_id),
         watermark_settings: formData.value.watermark_settings || undefined,
         layout_overlays: cleanOverlaysForServer(),
-        scope: formData.value.scope,
+        scope: formData.value.scope === 'personal_studio' ? 'streamer' : formData.value.scope,
       });
 
       if (!response.success || !response.profile) {

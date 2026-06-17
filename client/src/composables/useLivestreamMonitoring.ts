@@ -1641,19 +1641,23 @@ async function initializeListeners() {
       // If we delete from activeSessions here, pollStreamers needs to know not to try to end it again immediately.
       const session = activeSessions.value.get(streamerId);
       if (session) {
-        // We let handleStreamEnd do the heavy lifting to ensure DB updates etc.
-        // But if this event comes from backend, it means the recording stopped.
-        // We can trigger handleStreamEnd manually.
         const streamerEntry = monitoredStreamers.value.get(streamerId);
         if (streamerEntry) {
           await handleStreamEnd(streamerEntry.streamer);
         } else {
-          // If not in monitored list but has active session (e.g. zombie), clean it up
-          // BUT if it is marked as stopping, we wait for recorder-exit to clean it up
           if (!session.isStopping) {
-            activeSessions.value.delete(streamerId);
+            const newMap = new Map(activeSessions.value);
+            newMap.delete(streamerId);
+            activeSessions.value = newMap;
           }
+          if (twitterDvrSessions.value.has(streamerId)) {
+            await stopTwitterDvrRecording(streamerId);
+          }
+          await tryRemoveEndedTwitterBroadcastById(streamerId, 'stream-ended');
         }
+      } else if (twitterDvrSessions.value.has(streamerId)) {
+        await stopTwitterDvrRecording(streamerId);
+        await tryRemoveEndedTwitterBroadcastById(streamerId, 'stream-ended');
       }
 
       addActivityLog({
@@ -2654,6 +2658,15 @@ export async function initGlobalLiveStatusPolling(): Promise<void> {
             is_currently_live: status.isLive ? 1 : 0,
             last_check_timestamp: Math.floor(Date.now() / 1000),
           });
+
+          if (
+            record.platform.toLowerCase() === 'twitter' &&
+            isDirectTwitterLiveUrl(record.mint_id) &&
+            !status.isLive
+          ) {
+            const monitoring = useLivestreamMonitoring();
+            await monitoring.tryRemoveEndedTwitterBroadcastById(record.id, 'global-poll-offline');
+          }
 
           // Show toast if went live (offline → online transition)
           // BUT skip toasts on initial poll to avoid spam when app first opens

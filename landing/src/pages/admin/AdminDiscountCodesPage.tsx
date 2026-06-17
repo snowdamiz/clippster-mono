@@ -36,7 +36,11 @@ type PromoDuration = 'once' | 'repeating' | 'forever'
 interface PromoFormData {
   code: string
   name: string
+  promo_type: 'percent' | 'bundle'
   percent_off: number
+  fixed_price_usd: number | null
+  access_months: number
+  total_credits: number
   duration_kind: PromoDuration
   duration_months: number
   allowed_tiers: string[]
@@ -50,7 +54,11 @@ interface PromoFormData {
 const initialFormData: PromoFormData = {
   code: '',
   name: '',
+  promo_type: 'percent',
   percent_off: 10,
+  fixed_price_usd: null,
+  access_months: 12,
+  total_credits: 0,
   duration_kind: 'repeating',
   duration_months: 3,
   allowed_tiers: [],
@@ -73,7 +81,20 @@ function calculateStats(codes: PromoCode[]) {
   }
 }
 
+function formatDiscount(promo: PromoCode): string {
+  if (promo.promo_type === 'bundle') {
+    const dollars = promo.fixed_price_cents ? (promo.fixed_price_cents / 100).toFixed(2) : '0.00'
+    return `$${dollars} bundle`
+  }
+  return `${promo.percent_off ?? 0}%`
+}
+
 function formatDuration(promo: PromoCode): string {
+  if (promo.promo_type === 'bundle') {
+    const months = promo.access_months ?? 0
+    const credits = promo.total_credits ?? 0
+    return `${months} mo access · ${credits.toLocaleString()} credits`
+  }
   if (promo.duration_kind === 'forever') return 'Forever'
   if (promo.duration_kind === 'once') return 'One-time'
   return `${promo.duration_months} month${(promo.duration_months || 0) > 1 ? 's' : ''}`
@@ -256,7 +277,11 @@ export function AdminDiscountCodesPage() {
     setFormData({
       code: promo.code,
       name: promo.name || '',
-      percent_off: promo.percent_off,
+      promo_type: promo.promo_type || 'percent',
+      percent_off: promo.percent_off ?? 10,
+      fixed_price_usd: promo.fixed_price_cents ? promo.fixed_price_cents / 100 : null,
+      access_months: promo.access_months ?? 12,
+      total_credits: promo.total_credits ?? 0,
       duration_kind: promo.duration_kind,
       duration_months: promo.duration_months || 3,
       allowed_tiers: [...promo.allowed_tiers],
@@ -308,7 +333,18 @@ export function AdminDiscountCodesPage() {
       return
     }
 
-    if (!formData.allowed_tiers.length && !formData.allowed_org_tiers.length && !formData.allowed_credit_packs.length) {
+    if (formData.promo_type === 'bundle') {
+      if (!formData.allowed_tiers.length) {
+        setErrors({ allowed_tiers: 'Bundle deals require at least one user subscription tier' })
+        setSaving(false)
+        return
+      }
+      if (!formData.fixed_price_usd || formData.fixed_price_usd <= 0) {
+        setErrors({ fixed_price_usd: 'Fixed price is required' })
+        setSaving(false)
+        return
+      }
+    } else if (!formData.allowed_tiers.length && !formData.allowed_org_tiers.length && !formData.allowed_credit_packs.length) {
       setErrors({ allowed_tiers: 'At least one tier, organization tier, or credit pack must be selected' })
       setSaving(false)
       return
@@ -323,19 +359,29 @@ export function AdminDiscountCodesPage() {
           notes: formData.notes || undefined,
         })
       } else {
-        await createPromoCode({
+        const payload: Parameters<typeof createPromoCode>[0] = {
           code: formData.code.toUpperCase().trim(),
           name: formData.name || undefined,
-          percent_off: formData.percent_off,
-          duration_kind: formData.duration_kind,
-          duration_months: formData.duration_kind === 'repeating' ? formData.duration_months : undefined,
+          promo_type: formData.promo_type,
           allowed_tiers: formData.allowed_tiers,
-          allowed_org_tiers: formData.allowed_org_tiers,
-          allowed_credit_packs: formData.allowed_credit_packs,
           max_redemptions: formData.max_redemptions || undefined,
           redeem_by: formData.redeem_by || undefined,
           notes: formData.notes || undefined,
-        })
+        }
+
+        if (formData.promo_type === 'bundle') {
+          payload.fixed_price_cents = Math.round((formData.fixed_price_usd || 0) * 100)
+          payload.access_months = formData.access_months
+          payload.total_credits = formData.total_credits
+        } else {
+          payload.percent_off = formData.percent_off
+          payload.duration_kind = formData.duration_kind
+          payload.duration_months = formData.duration_kind === 'repeating' ? formData.duration_months : undefined
+          payload.allowed_org_tiers = formData.allowed_org_tiers
+          payload.allowed_credit_packs = formData.allowed_credit_packs
+        }
+
+        await createPromoCode(payload)
       }
 
       closeCreateModal()
@@ -512,7 +558,7 @@ export function AdminDiscountCodesPage() {
                           </div>
                         </td>
                         <td className="admin-promo__td">
-                          <span className="admin-promo__discount-badge">{promo.percent_off}%</span>
+                          <span className="admin-promo__discount-badge">{formatDiscount(promo)}</span>
                         </td>
                         <td className="admin-promo__td">
                           <span className="admin-promo__duration">{formatDuration(promo)}</span>
@@ -675,6 +721,36 @@ export function AdminDiscountCodesPage() {
                   {errors.name ? <span className="promo-dialog__error">{errors.name}</span> : null}
                 </div>
 
+                {!editingPromo ? (
+                  <div className="promo-dialog__field">
+                    <label className="promo-dialog__label">Code Type *</label>
+                    <div className="promo-dialog__segmented">
+                      <button
+                        type="button"
+                        className={`promo-dialog__segment ${formData.promo_type === 'percent' ? 'promo-dialog__segment--active' : ''}`}
+                        onClick={() => setFormData((prev) => ({ ...prev, promo_type: 'percent' }))}
+                      >
+                        Percentage Discount
+                      </button>
+                      <button
+                        type="button"
+                        className={`promo-dialog__segment ${formData.promo_type === 'bundle' ? 'promo-dialog__segment--active' : ''}`}
+                        onClick={() =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            promo_type: 'bundle',
+                            allowed_org_tiers: [],
+                            allowed_credit_packs: [],
+                          }))
+                        }
+                      >
+                        Bundle Deal
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {formData.promo_type === 'percent' ? (
                 <div className="promo-dialog__field">
                   <label className="promo-dialog__label">Discount Percentage *</label>
                   <div className="promo-dialog__range-row">
@@ -694,7 +770,9 @@ export function AdminDiscountCodesPage() {
                     <div className="promo-dialog__range-value">{formData.percent_off}%</div>
                   </div>
                 </div>
+                ) : null}
 
+                {formData.promo_type === 'percent' ? (
                 <div className="promo-dialog__field">
                   <label className="promo-dialog__label">Duration Type *</label>
                   <div className="promo-dialog__segmented">
@@ -715,10 +793,11 @@ export function AdminDiscountCodesPage() {
                     ))}
                   </div>
                 </div>
+                ) : null}
 
-                {formData.duration_kind === 'repeating' ? (
+                {formData.promo_type === 'percent' && formData.duration_kind === 'repeating' ? (
                   <div className="promo-dialog__field">
-                    <label className="promo-dialog__label">Duration (Months) *</label>
+                    <label className="promo-dialog__label">Discount Duration (Months) *</label>
                     <input
                       value={formData.duration_months}
                       type="number"
@@ -736,6 +815,64 @@ export function AdminDiscountCodesPage() {
                     />
                     {errors.duration_months ? <span className="promo-dialog__error">{errors.duration_months}</span> : null}
                   </div>
+                ) : null}
+
+                {formData.promo_type === 'bundle' ? (
+                  <>
+                    <div className="promo-dialog__row">
+                      <div className="promo-dialog__field">
+                        <label className="promo-dialog__label">Fixed Price (USD) *</label>
+                        <input
+                          value={formData.fixed_price_usd ?? ''}
+                          type="number"
+                          min={1}
+                          step={0.01}
+                          placeholder="175.00"
+                          className={`promo-dialog__input ${errors.fixed_price_usd ? 'promo-dialog__input--error' : ''}`}
+                          onChange={(event) => {
+                            setFormData((prev) => ({
+                              ...prev,
+                              fixed_price_usd: event.target.value ? Number(event.target.value) : null,
+                            }))
+                            setErrors((prev) => ({ ...prev, fixed_price_usd: '' }))
+                          }}
+                        />
+                      </div>
+                      <div className="promo-dialog__field">
+                        <label className="promo-dialog__label">Months of Access *</label>
+                        <input
+                          value={formData.access_months}
+                          type="number"
+                          min={1}
+                          max={120}
+                          placeholder="12"
+                          className="promo-dialog__input"
+                          onChange={(event) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              access_months: Number(event.target.value),
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="promo-dialog__field">
+                      <label className="promo-dialog__label">Total Credits *</label>
+                      <input
+                        value={formData.total_credits}
+                        type="number"
+                        min={0}
+                        placeholder="18000"
+                        className="promo-dialog__input"
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            total_credits: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </div>
+                  </>
                 ) : null}
 
                 <div className="promo-dialog__field">
@@ -761,6 +898,8 @@ export function AdminDiscountCodesPage() {
                   </div>
                 </div>
 
+                {formData.promo_type === 'percent' ? (
+                <>
                 <div className="promo-dialog__field">
                   <label className="promo-dialog__label">
                     Organization Subscription Tiers
@@ -806,6 +945,8 @@ export function AdminDiscountCodesPage() {
                     })}
                   </div>
                 </div>
+                </>
+                ) : null}
 
                 {errors.allowed_tiers ? (
                   <div className="promo-dialog__alert promo-dialog__alert--error">
@@ -917,7 +1058,7 @@ export function AdminDiscountCodesPage() {
               <div className="promo-dialog__stats">
                 <div className="promo-dialog__stat">
                   <span className="promo-dialog__stat-label">Discount</span>
-                  <span className="promo-dialog__stat-value promo-dialog__stat-value--highlight">{viewingPromo.percent_off}%</span>
+                  <span className="promo-dialog__stat-value promo-dialog__stat-value--highlight">{formatDiscount(viewingPromo)}</span>
                 </div>
                 <div className="promo-dialog__stat">
                   <span className="promo-dialog__stat-label">Duration</span>

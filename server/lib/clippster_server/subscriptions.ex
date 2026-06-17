@@ -972,6 +972,75 @@ defmodule ClippsterServer.Subscriptions do
     end
   end
 
+  @doc """
+  Redeems a bundle promo code after one-time payment.
+  Grants platform access for the configured months and total credits immediately.
+  """
+  def redeem_promo_bundle(user_id, tier, access_months, total_credits, amount_usd, opts \\ []) do
+    tier_info = get_tier_info(tier)
+
+    unless tier_info do
+      {:error, :invalid_tier}
+    else
+      stripe_customer_id = Keyword.get(opts, :stripe_customer_id)
+      payment_intent = Keyword.get(opts, :payment_intent)
+      payment_method = Keyword.get(opts, :payment_method, "stripe")
+
+      Repo.transaction(fn ->
+        user = Repo.get!(User, user_id)
+
+        start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+        access_days = trunc(access_months * 365 / 12)
+        end_date = DateTime.add(start_date, access_days, :day)
+
+        {:ok, updated_user} =
+          user
+          |> User.subscription_changeset(%{
+            subscription_status: "active",
+            subscription_tier: tier,
+            subscription_start_date: start_date,
+            subscription_end_date: end_date,
+            subscription_renewal_method: "promo_bundle",
+            stripe_customer_id: stripe_customer_id || user.stripe_customer_id
+          })
+          |> Repo.update()
+
+        stripe_ref =
+          case payment_intent do
+            nil -> nil
+            ref when is_binary(ref) -> "promo_#{ref}"
+            _ -> nil
+          end
+
+        {:ok, subscription} =
+          %Subscription{}
+          |> Subscription.create_changeset(%{
+            user_id: user_id,
+            status: "active",
+            subscription_tier: tier,
+            start_date: start_date,
+            end_date: end_date,
+            hours_included: Decimal.new("0"),
+            credits_granted: Decimal.new(to_string(total_credits)),
+            payment_method: payment_method,
+            stripe_subscription_id: stripe_ref,
+            amount_usd: Decimal.new(to_string(amount_usd))
+          })
+          |> Repo.insert()
+
+        if total_credits > 0 do
+          {:ok, _} = Credits.add_credits(user_id, total_credits)
+        end
+
+        IO.puts(
+          "[Subscriptions] Redeemed bundle promo for user #{user_id}: #{tier} for #{access_months} months, granted #{total_credits} credits"
+        )
+
+        %{user: updated_user, subscription: subscription}
+      end)
+    end
+  end
+
   # ============================================================================
   # Admin Subscription Management
   # ============================================================================

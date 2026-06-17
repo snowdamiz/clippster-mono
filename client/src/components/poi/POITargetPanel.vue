@@ -8,11 +8,12 @@
         <span class="text-[10px] text-zinc-500 font-mono">{{ targetAspectRatio }}</span>
       </div>
 
-      <!-- Scale 16:9 checkbox -->
-      <label class="flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium rounded transition-all cursor-pointer shrink-0"
-        :class="showSourceFrame 
-          ? 'bg-purple-500/20 text-purple-300' 
-          : 'text-zinc-400 hover:text-zinc-200'"
+      <!-- Scale 16:9 checkbox (not wrapped in <label> — Reka Checkbox is a button and double-fires inside labels) -->
+      <div
+        class="flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium rounded transition-all shrink-0"
+        :class="showSourceFrame
+          ? 'bg-purple-500/20 text-purple-300'
+          : 'text-zinc-400'"
       >
         <Checkbox
           :checked="showSourceFrame"
@@ -23,13 +24,14 @@
           <CheckIcon class="h-3 w-3" />
         </Checkbox>
         <span>Scale 16:9</span>
-      </label>
+      </div>
 
       <!-- Use 16:9 checkbox -->
-      <label class="flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium rounded transition-all cursor-pointer shrink-0"
-        :class="use16x9Mode 
-          ? 'bg-cyan-500/20 text-cyan-300' 
-          : 'text-zinc-400 hover:text-zinc-200'"
+      <div
+        class="flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium rounded transition-all shrink-0"
+        :class="use16x9Mode
+          ? 'bg-cyan-500/20 text-cyan-300'
+          : 'text-zinc-400'"
       >
         <Checkbox
           :checked="use16x9Mode"
@@ -40,7 +42,7 @@
           <CheckIcon class="h-3 w-3" />
         </Checkbox>
         <span>Use 16:9</span>
-      </label>
+      </div>
 
       <!-- Blur dropdown (when Scale or Use 16:9 is enabled) -->
       <div

@@ -175,6 +175,7 @@
   // Check if this is the full-screen editor page (no scroll, minimal chrome)
   const currentRoute = useRoute();
   const isEditorPage = computed(() => currentRoute.path === '/editor');
+  const isStudioSessionPage = computed(() => currentRoute.path === '/studio/record/session');
 
   // Authentication Gate: Block all app interaction until user authenticates
   const requiresAuthGate = computed(() => {
@@ -606,7 +607,10 @@
     <!-- Main content area with scrolling -->
     <div
       class="main-content dashboard-container"
-      :class="{ 'pip-content': isPipWindow, 'editor-content': isEditorPage }"
+      :class="{
+        'pip-content': isPipWindow,
+        'editor-content': isEditorPage || isStudioSessionPage,
+      }"
     >
       <!-- Toast notifications provider -->
       <Toast />
