@@ -5,6 +5,8 @@
  * change over the element's local timeline (0 = element start, 1 = element end).
  */
 
+import { keyframeStaticDefault } from "../lib/keyframe-property-defaults";
+
 /** Interpolation method between keyframes */
 export type KeyframeInterpolation =
 	| "linear"
@@ -78,16 +80,17 @@ export function evaluateKeyframeTrack(
 	normalizedTime: number,
 	defaultValue: number,
 ): number {
+	const base = keyframeStaticDefault(track.property, defaultValue);
 	const keyframes = sortedKeyframes(track.keyframes);
-	if (keyframes.length === 0) return defaultValue;
+	if (keyframes.length === 0) return base;
 	if (keyframes.length === 1) return keyframes[0].value;
 
 	const nt = Math.max(0, Math.min(1, normalizedTime));
 	const first = keyframes[0];
 	const last = keyframes[keyframes.length - 1];
 
-	if (nt < first.offset) return defaultValue;
-	if (nt > last.offset) return defaultValue;
+	if (nt < first.offset) return base;
+	if (nt > last.offset) return base;
 
 	// Find surrounding keyframes
 	let left = keyframes[0];
@@ -183,8 +186,9 @@ export function getKeyframedValue({
 	normalizedTime: number;
 	defaultValue: number;
 }): number {
-	if (!elementKeyframes) return defaultValue;
+	const base = keyframeStaticDefault(property, defaultValue);
+	if (!elementKeyframes) return base;
 	const track = elementKeyframes.tracks[property];
-	if (!track || track.keyframes.length === 0) return defaultValue;
-	return evaluateKeyframeTrack(track, normalizedTime, defaultValue);
+	if (!track || track.keyframes.length === 0) return base;
+	return evaluateKeyframeTrack(track, normalizedTime, base);
 }

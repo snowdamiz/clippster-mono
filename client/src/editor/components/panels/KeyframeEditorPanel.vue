@@ -15,7 +15,12 @@ import type { KeyframePropertyDef } from "../../lib/keyframe-editor-properties";
 import { useEditor } from "../../composables/useEditor";
 import { useEditorUIState } from "../../composables/useEditorUIState";
 import { useKeyframeEditor } from "../../composables/useKeyframeEditor";
-import { KEYFRAME_EASING_OPTIONS } from "../../lib/keyframe-editor-properties";
+import {
+	KEYFRAME_EASING_OPTIONS,
+	getKeyframePropertyDef,
+	storedToDisplayValue,
+	displayToStoredValue,
+} from "../../lib/keyframe-editor-properties";
 import KeyframeToggle from "./properties/KeyframeToggle.vue";
 import KeyframeGraphEditor from "./KeyframeGraphEditor.vue";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -70,10 +75,34 @@ function formatOffset(offset: number): string {
 	return `${minutes}:${seconds.padStart(5, "0")}`;
 }
 
-function updateKeyframeValue(prop: KeyframableProperty, keyframeId: string, displayValue: string, multiplier: number) {
+function usesCompactInputLabel(prop: KeyframableProperty): boolean {
+	return prop === "positionX" || prop === "positionY";
+}
+
+function keyframeValueInputClass(prop: KeyframePropertyDef): string {
+	const base = "shrink-0 bg-transparent text-xs tabular-nums text-zinc-200 outline-none";
+	switch (prop.key) {
+		case "scale":
+			return `${base} w-12 text-right`;
+		case "opacity":
+		case "volume":
+			return `${base} w-11 text-right`;
+		case "speed":
+			return `${base} w-14 text-right`;
+		case "positionX":
+		case "positionY":
+			return `${base} w-[4.25rem] text-right`;
+		default:
+			return `${base} w-12 text-right`;
+	}
+}
+
+function updateKeyframeValue(prop: KeyframableProperty, keyframeId: string, displayValue: string) {
+	const def = getKeyframePropertyDef(prop);
 	const parsed = parseFloat(displayValue);
 	if (Number.isNaN(parsed)) return;
-	const stored = parsed / multiplier;
+	const clamped = Math.max(def.min, Math.min(def.max, parsed));
+	const stored = displayToStoredValue(def, clamped);
 	
 	const currentKeyframes = liveElement.value.keyframes;
 	if (!currentKeyframes?.tracks[prop]) return;
@@ -169,35 +198,35 @@ onUnmounted(() => {
 						/>
 						<span class="text-xs font-medium text-zinc-300">{{ prop.label }}</span>
 					</div>
-					<div v-if="hasKeyframes(prop.key)" class="flex items-center gap-0.5">
+					<div v-if="hasKeyframes(prop.key)" class="flex items-center gap-1">
 						<button
 							type="button"
-							class="flex size-5 items-center justify-center rounded transition-colors"
-							:class="hasPrevKeyframe(prop.key) ? 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200' : 'cursor-default text-zinc-700'"
+							class="flex size-6 items-center justify-center rounded transition-colors"
+							:class="hasPrevKeyframe(prop.key) ? 'text-zinc-300 hover:bg-white/5 hover:text-zinc-100' : 'cursor-default text-zinc-600'"
 							:disabled="!hasPrevKeyframe(prop.key)"
 							title="Previous keyframe"
 							@click="goToPrevKeyframe(prop.key)"
 						>
-							<ChevronLeft class="size-3" />
+							<ChevronLeft class="size-3.5" />
 						</button>
 						<button
 							type="button"
-							class="flex size-5 items-center justify-center rounded transition-colors"
-							:class="isOnKeyframe(prop.key) ? 'text-amber-400 hover:bg-amber-400/10' : 'text-zinc-500 hover:text-amber-400'"
+							class="flex size-6 items-center justify-center rounded transition-colors"
+							:class="isOnKeyframe(prop.key) ? 'text-amber-400 hover:bg-amber-400/10' : 'text-zinc-400 hover:text-amber-400'"
 							:title="isOnKeyframe(prop.key) ? 'Remove keyframe' : 'Add keyframe'"
 							@click="onDiamondClick(prop.key)"
 						>
-							<Diamond class="size-3" :fill="isOnKeyframe(prop.key) ? 'currentColor' : 'none'" />
+							<Diamond class="size-3.5" :fill="isOnKeyframe(prop.key) ? 'currentColor' : 'none'" />
 						</button>
 						<button
 							type="button"
-							class="flex size-5 items-center justify-center rounded transition-colors"
-							:class="hasNextKeyframe(prop.key) ? 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200' : 'cursor-default text-zinc-700'"
+							class="flex size-6 items-center justify-center rounded transition-colors"
+							:class="hasNextKeyframe(prop.key) ? 'text-zinc-300 hover:bg-white/5 hover:text-zinc-100' : 'cursor-default text-zinc-600'"
 							:disabled="!hasNextKeyframe(prop.key)"
 							title="Next keyframe"
 							@click="goToNextKeyframe(prop.key)"
 						>
-							<ChevronRight class="size-3" />
+							<ChevronRight class="size-3.5" />
 						</button>
 					</div>
 				</div>
@@ -219,27 +248,31 @@ onUnmounted(() => {
 							{{ formatOffset(kf.offset) }}
 						</button>
 
-						<!-- Value (matching Video tab field styling) -->
-						<div class="flex h-7 min-w-0 flex-1 items-center rounded-sm border border-white/10 bg-white/5 px-2">
-							<span class="mr-1 shrink-0 select-none text-[10px] text-zinc-500">{{ prop.inputLabel }}</span>
+						<!-- Value: hug contents — no extra dead space left of the number -->
+						<div class="inline-flex h-7 w-fit shrink-0 items-center gap-0.5 rounded-sm border border-white/10 bg-white/5 pl-1.5 pr-1">
+							<span
+								v-if="usesCompactInputLabel(prop.key)"
+								class="shrink-0 select-none text-[10px] text-zinc-500"
+							>{{ prop.inputLabel }}</span>
 							<input
 								type="number"
-								:value="Math.round(kf.value * prop.displayMultiplier)"
+								:value="storedToDisplayValue(prop, kf.value)"
 								:min="prop.min"
 								:max="prop.max"
 								:step="prop.step"
-								class="min-w-0 w-full bg-transparent text-right text-xs text-zinc-200 outline-none"
-								@input="(e) => updateKeyframeValue(prop.key, kf.id, (e.target as HTMLInputElement).value, prop.displayMultiplier)"
+								:class="keyframeValueInputClass(prop)"
+								@input="(e) => updateKeyframeValue(prop.key, kf.id, (e.target as HTMLInputElement).value)"
 							/>
-							<span class="ml-0.5 shrink-0 text-[10px] text-zinc-500">{{ prop.unit }}</span>
+							<span class="shrink-0 text-[10px] text-zinc-500">{{ prop.unit }}</span>
 						</div>
 
-						<!-- Easing (matching Video tab dropdown styling) -->
+						<!-- Easing fills remaining row space -->
 						<Select
+							class="min-w-0 flex-1"
 							:model-value="kf.interpolation"
 							@update:model-value="(v) => setInterpolation(prop.key, kf.id, v as KeyframeInterpolation)"
 						>
-							<SelectTrigger class="h-7 w-24 shrink-0 rounded-md border border-white/10 bg-white/5 px-2 text-[10px] text-zinc-200">
+							<SelectTrigger class="h-7 min-w-0 flex-1 rounded-md border border-white/10 bg-white/5 px-2 text-[10px] text-zinc-200">
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent class="max-h-[250px] border-white/10 bg-zinc-900">

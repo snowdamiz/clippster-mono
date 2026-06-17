@@ -561,8 +561,9 @@ export class RendererManager {
 			// Always save to Built Clips directory
 			const appDataDir = await invoke<string>("get_app_data_dir");
 			const timestamp = Date.now();
-			const sanitizedName = activeProject.metadata.name.replace(/[^a-zA-Z0-9-_]/g, "_");
-			const rangeSuffix = timeRange ? "_segment" : "";
+			const nameSource = options.outputFileName?.trim() || activeProject.metadata.name;
+			const sanitizedName = nameSource.replace(/[^a-zA-Z0-9-_]/g, "_");
+			const rangeSuffix = timeRange && !options.outputFileName?.trim() ? "_segment" : "";
 			const fileName = `${sanitizedName}${rangeSuffix}_${timestamp}.${extension}`;
 			const outputPath = `${appDataDir}/built_clips/${fileName}`;
 

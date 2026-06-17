@@ -1,6 +1,26 @@
 import { describe, it, expect } from "vitest";
-import { getValueForNewKeyframeAtOffset } from "./keyframe-property-defaults";
+import { getValueForNewKeyframeAtOffset, getKeyframePropertyStaticDefault } from "./keyframe-property-defaults";
 import type { ElementKeyframes } from "../types/keyframes";
+import type { VideoElement } from "../types/timeline";
+
+describe("getKeyframePropertyStaticDefault", () => {
+	it("defaults scale to 100% when transform.scale is missing", () => {
+		const element = {
+			id: "v1",
+			type: "video",
+			name: "Clip",
+			startTime: 0,
+			duration: 10,
+			trimStart: 0,
+			trimEnd: 0,
+			mediaId: "m1",
+			transform: { scale: undefined as unknown as number, position: { x: 0, y: 0 }, rotate: 0 },
+			opacity: 1,
+		} satisfies VideoElement;
+
+		expect(getKeyframePropertyStaticDefault(element, "scale")).toBe(1);
+	});
+});
 
 describe("getValueForNewKeyframeAtOffset", () => {
 	const elementKeyframes: ElementKeyframes = {

@@ -43,6 +43,19 @@ export function getKeyframePropertyDef(key: KeyframableProperty): KeyframeProper
 	return PROPERTY_DEF_BY_KEY.get(key) ?? KEYFRAME_PROPERTY_DEFS[0];
 }
 
+/** Convert stored keyframe value to the number shown in inspector inputs. */
+export function storedToDisplayValue(def: KeyframePropertyDef, stored: number): string {
+	if (def.displayMultiplier !== 1) {
+		return Math.round(stored * def.displayMultiplier).toString();
+	}
+	return Number(stored.toFixed(2)).toString();
+}
+
+/** Convert inspector input back to stored keyframe value. */
+export function displayToStoredValue(def: KeyframePropertyDef, display: number): number {
+	return display / def.displayMultiplier;
+}
+
 export function getKeyframePropertyLabel(key: KeyframableProperty): string {
 	return PROPERTY_DEF_BY_KEY.get(key)?.label ?? key;
 }

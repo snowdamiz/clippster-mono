@@ -11,7 +11,7 @@ export function getKeyframePropertyStaticDefault(
 		case "opacity":
 			return "opacity" in element && typeof element.opacity === "number" ? element.opacity : 1;
 		case "scale":
-			return "transform" in element ? element.transform.scale : 1;
+			return "transform" in element ? (element.transform.scale ?? 1) : 1;
 		case "positionX":
 			return "transform" in element ? element.transform.position.x : 0;
 		case "positionY":
@@ -27,7 +27,15 @@ export function getKeyframePropertyStaticDefault(
 	}
 }
 
-/** Display multiplier as percentage for scale keyframe UI. */
+/** Fallback when a static property is missing on the element. */
+export function keyframeStaticDefault(property: KeyframableProperty, value: number): number {
+	if (Number.isFinite(value)) return value;
+	if (property === "scale" || property === "opacity" || property === "volume" || property === "speed") {
+		return 1;
+	}
+	return 0;
+}
+
 export function formatKeyframeDisplayValue(property: KeyframableProperty, value: number): string {
 	if (property === "scale") {
 		return Math.round(value * 100).toString();

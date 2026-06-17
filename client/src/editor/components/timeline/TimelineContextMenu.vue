@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onUnmounted } from "vue";
 import { useEditor } from "../../composables/useEditor";
+import { useExportDialog } from "../../composables/useExportDialog";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { invokeAction } from "../../lib/actions";
-import { useToast } from "@/composables/useToast";
 import type { TimelineElement } from "../../types/timeline";
 import {
 	Scissors,
@@ -35,11 +35,10 @@ const emit = defineEmits<{
 }>();
 
 const { editor } = useEditor();
+const { openExportDialog } = useExportDialog();
 const { selectElement, isElementSelected, selectAllInTrack } = useElementSelection();
-const { showToast } = useToast();
 
 const hasElement = computed(() => !!props.elementRef);
-const isExportingSegment = ref(false);
 
 const canUndo = computed(() => editor.command.canUndo());
 const canRedo = computed(() => editor.command.canRedo());
@@ -257,94 +256,18 @@ async function handleReplaceMedia() {
 	input.click();
 }
 
-async function handleExportSegment() {
+function handleExportSegment() {
 	const element = targetElement.value;
-	const project = editor.project.getActiveOrNull();
-	if (!element || !project || isExportingSegment.value) return;
+	if (!element) return;
 
 	emit("close");
-	isExportingSegment.value = true;
-
-	try {
-		const exportId = `editor-segment-export-${Date.now()}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
-		const result = await editor.project.export({
-			options: {
-				format: "mp4",
-				quality: "high",
-				fps: project.settings?.fps ?? 30,
-				includeAudio: true,
-				canvasSize: project.settings.canvasSize,
-				timeRange: {
-					startTime: element.startTime,
-					endTime: element.startTime + element.duration,
-				},
-				exportId,
-			},
-		});
-
-		if (!result.success || !result.outputPath) {
-			throw new Error(result.error || "Segment export failed");
-		}
-
-		const { registerEditorExportBuild } = await import("../../services/registerEditorExportBuild");
-		const { showExportSummaryToast } = await import("../../lib/export-summary-toast");
-
-		let built: "registered" | "failed" | "skipped" = "skipped";
-		try {
-			const aspectLabel = `${project.settings.canvasSize.width}×${project.settings.canvasSize.height}`;
-			const reg = await registerEditorExportBuild({
-				outputPath: result.outputPath,
-				exportedDuration: element.duration,
-				projectId: project.metadata.id,
-				projectName: project.metadata.name,
-				buildOptions: {
-					aspectLabel,
-					quality: "high",
-					frameRate: project.settings?.fps ?? 30,
-					format: "mp4",
-					isForCampaign: false,
-					campaign: null,
-				},
-			});
-			if (reg?.mode === "clip_build" || reg?.mode === "standalone_clip") {
-				built = "registered";
-			}
-		} catch (e) {
-			console.warn("[TimelineContextMenu] Built Clips registration failed:", e);
-			built = "failed";
-		}
-
-		const { save } = await import("@tauri-apps/plugin-dialog");
-		const { invoke } = await import("@tauri-apps/api/core");
-		const defaultName = `${(element.name || "segment").replace(/[^a-zA-Z0-9-_]/g, "_")}.mp4`;
-		const savePath = await save({
-			defaultPath: defaultName,
-			filters: [{ name: "Video", extensions: ["mp4"] }],
-		});
-
-		let extra: string | undefined;
-		if (savePath) {
-			await invoke("copy_clip_to_destination", {
-				sourcePath: result.outputPath,
-				destinationPath: savePath,
-			});
-			extra = `Also copied to ${savePath}`;
-		}
-
-		showExportSummaryToast({
-			exportOk: true,
-			builtClips: built,
-			transcript: "skipped",
-			extra,
-		});
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Failed to export segment";
-		console.error("[TimelineContextMenu] Failed to export segment:", error);
-		const { showExportSummaryToast } = await import("../../lib/export-summary-toast");
-		showExportSummaryToast({ exportOk: false, builtClips: "skipped", transcript: "skipped", extra: message });
-	} finally {
-		isExportingSegment.value = false;
-	}
+	openExportDialog({
+		timeRange: {
+			startTime: element.startTime,
+			endTime: element.startTime + element.duration,
+		},
+		segmentName: element.name || "Segment",
+	});
 }
 </script>
 
@@ -464,16 +387,6 @@ async function handleExportSegment() {
 					<span class="ml-auto text-zinc-500">Ctrl+A</span>
 				</button>
 
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-white/10"
-					:class="isExportingSegment ? 'text-zinc-600 cursor-wait' : 'text-zinc-300'"
-					:disabled="isExportingSegment"
-					@click="handleExportSegment"
-				>
-					<Download class="size-3.5" />
-					{{ isExportingSegment ? 'Exporting segment...' : 'Export segment' }}
-				</button>
-
 				<div class="mx-2 my-1 h-px bg-white/10" />
 
 				<!-- Toggle mute (only for elements that can have audio) -->
@@ -569,6 +482,14 @@ async function handleExportSegment() {
 						Replace media
 					</button>
 				</template>
+
+				<button
+					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
+					@click="handleExportSegment"
+				>
+					<Download class="size-3.5" />
+					Export segment
+				</button>
 
 				<!-- ── Delete ── -->
 				<div class="mx-2 my-1 h-px bg-white/10" />
