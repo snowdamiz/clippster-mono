@@ -21,8 +21,10 @@ import {
 	Sparkles,
 	MessageSquare,
 	Zap,
+	Diamond,
 } from "lucide-vue-next";
 import AnimationProperties from "./AnimationProperties.vue";
+import KeyframeEditorPanel from "../KeyframeEditorPanel.vue";
 
 const props = defineProps<{
 	element: TextElement;
@@ -33,13 +35,14 @@ const { editor } = useEditor();
 const { allFonts, uploadCustomFont, ensureFontLoaded } = useFontManager();
 
 // ── Top-level tabs (CapCut style) ──
-type TopTab = "style" | "effects" | "bubble" | "animate";
+type TopTab = "style" | "effects" | "bubble" | "animate" | "keyframes";
 const activeTopTab = ref<TopTab>("style");
 const topTabs: { id: TopTab; label: string; icon: any }[] = [
 	{ id: 'style', label: 'Style', icon: Baseline },
 	{ id: 'effects', label: 'Effects', icon: Sparkles },
 	{ id: 'bubble', label: 'Bubble', icon: MessageSquare },
 	{ id: 'animate', label: 'Animate', icon: Zap },
+	{ id: 'keyframes', label: 'Keyframes', icon: Diamond },
 ];
 
 // ── Input refs ──
@@ -943,6 +946,10 @@ const quickStyles = [
 				:animation-loop="element.animationLoop"
 				:element-duration="element.duration"
 			/>
+		</div>
+
+		<div v-else-if="activeTopTab === 'keyframes'" class="flex-1 overflow-y-auto">
+			<KeyframeEditorPanel :track-id="trackId" :element="element" />
 		</div>
 		</div>
 

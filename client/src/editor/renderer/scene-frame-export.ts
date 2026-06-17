@@ -100,6 +100,7 @@ export async function writeSceneFrameSequenceToDisk(
 			}
 			const localT = Math.min(i / fps, Math.max(exportDuration - 1e-6, 0));
 			const sceneTime = timeOffset + localT;
+			await tree.prefetch({ renderer, time: sceneTime });
 			await renderer.render({ node: tree, time: sceneTime });
 			const bytes = await canvasToEncodedBytes(renderer.canvas, imageFormat);
 			await invoke("write_scene_export_frame", {

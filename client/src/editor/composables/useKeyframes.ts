@@ -171,6 +171,37 @@ export function useKeyframes({
 		});
 	}
 
+	function getNormalizedPlayheadOffset(): number {
+		const el = elementRef.value;
+		const currentTime = editor.playback.getCurrentTime();
+		if (el.duration <= 0) return 0;
+		return Math.max(0, Math.min(1, (currentTime - el.startTime) / el.duration));
+	}
+
+	function findKeyframeAtOffset(
+		property: KeyframableProperty,
+		offset: number,
+		epsilon = 0.001,
+	): Keyframe | undefined {
+		const track = elementKeyframes.value?.tracks[property];
+		return track?.keyframes.find((k) => Math.abs(k.offset - offset) <= epsilon);
+	}
+
+	/** Update existing keyframe at offset or insert a new one. */
+	function upsertKeyframeAtPlayhead(
+		property: KeyframableProperty,
+		value: number,
+		interpolation: KeyframeInterpolation = "linear",
+	) {
+		const offset = getNormalizedPlayheadOffset();
+		const existing = findKeyframeAtOffset(property, offset);
+		if (existing) {
+			updateKeyframe(property, existing.id, { value });
+		} else {
+			addKeyframe(property, offset, value, interpolation);
+		}
+	}
+
 	return {
 		elementKeyframes,
 		getResolvedValue,
@@ -179,5 +210,8 @@ export function useKeyframes({
 		removeKeyframe,
 		updateKeyframe,
 		clearPropertyKeyframes,
+		getNormalizedPlayheadOffset,
+		findKeyframeAtOffset,
+		upsertKeyframeAtPlayhead,
 	};
 }

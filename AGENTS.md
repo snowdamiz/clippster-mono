@@ -23,3 +23,6 @@ This project is indexed by GitNexus as **clippster-mono** (13228 symbols, 32816 
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+- Use Dry development, refactor as you go along if you notice something is unoptimized or needs to be refactored
+- Never leave legacy code, always remove it as you go along

@@ -1,69 +1,55 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 /**
- * Visual SVG keyframe graph editor.
- * Shows animated property values over the element's normalised time (0–1)
- * as interactive cubic bezier curves with draggable diamond handles.
+ * Value-curve editor for keyframes (Curves mode).
  *
- * Plugs into the existing useKeyframes composable — no new data layer needed.
- * Graph view is toggled from KeyframeEditorPanel.vue.
+ * Curves are sampled from `evaluateKeyframeTrack` — the same function the
+ * renderer uses — so easing shapes match playback. Keyframe diamonds are
+ * draggable in time and value; double-click removes.
  */
-import { ref, computed, type Ref } from "vue";
-import type { KeyframableProperty, KeyframeInterpolation, Keyframe } from "../../types/keyframes";
+import { computed, ref, toRef } from "vue";
+import type { KeyframableProperty } from "../../types/keyframes";
+import { evaluateKeyframeTrack, sortedKeyframes } from "../../types/keyframes";
 import type { TimelineTrack, TimelineElement } from "../../types/timeline";
+import type { KeyframePropertyDef } from "../../lib/keyframe-editor-properties";
+import { getKeyframePropertyStaticDefault } from "../../lib/keyframe-property-defaults";
 import { useKeyframes } from "../../composables/useKeyframes";
 
 const props = defineProps<{
-	trackRef: Ref<TimelineTrack>;
-	elementRef: Ref<TimelineElement>;
-	applicableProperties: {
-		key: KeyframableProperty;
-		label: string;
-		defaultValue: number;
-		min: number;
-		max: number;
-		step: number;
-	}[];
+	track: TimelineTrack;
+	element: TimelineElement;
+	properties: KeyframePropertyDef[];
+	playhead: number;
 }>();
 
-const kf = useKeyframes({ trackRef: props.trackRef, elementRef: props.elementRef });
-
-// ── Graph dimensions ──────────────────────────────────────────────────────
+const kf = useKeyframes({
+	trackRef: toRef(props, "track"),
+	elementRef: toRef(props, "element"),
+});
 
 const GRAPH_W = 280;
-const GRAPH_H = 120;
-const PADDING = { top: 8, right: 8, bottom: 20, left: 28 };
+const GRAPH_H = 140;
+const PADDING = { top: 10, right: 10, bottom: 22, left: 30 };
 const plotW = GRAPH_W - PADDING.left - PADDING.right;
 const plotH = GRAPH_H - PADDING.top - PADDING.bottom;
 
-// ── Property colours ──────────────────────────────────────────────────────
-
-const PROP_COLORS: Record<string, string> = {
-	opacity:   "#3b82f6", // blue
-	scale:     "#22c55e", // green
-	positionX: "#f97316", // orange
-	positionY: "#ef4444", // red
-	rotation:  "#a855f7", // purple
-	volume:    "#facc15", // yellow
-	speed:     "#06b6d4", // cyan
-};
-
-function propColor(key: KeyframableProperty): string {
-	return PROP_COLORS[key] ?? "#94a3b8";
-}
-
-// ── Visibility toggles ────────────────────────────────────────────────────
-
 const visibleProps = ref<Set<KeyframableProperty>>(
-	new Set(props.applicableProperties.map((p) => p.key)),
+	new Set(props.properties.map((p) => p.key)),
 );
 
 function togglePropVisibility(key: KeyframableProperty) {
-	const s = new Set(visibleProps.value);
-	s.has(key) ? s.delete(key) : s.add(key);
-	visibleProps.value = s;
+	const next = new Set(visibleProps.value);
+	if (next.has(key)) next.delete(key);
+	else next.add(key);
+	visibleProps.value = next;
 }
 
-// ── Coordinate helpers ────────────────────────────────────────────────────
+function storedMin(prop: KeyframePropertyDef): number {
+	return prop.min / prop.displayMultiplier;
+}
+
+function storedMax(prop: KeyframePropertyDef): number {
+	return prop.max / prop.displayMultiplier;
+}
 
 function offsetToX(offset: number): number {
 	return PADDING.left + offset * plotW;
@@ -75,113 +61,92 @@ function valueToY(value: number, min: number, max: number): number {
 	return PADDING.top + (1 - norm) * plotH;
 }
 
-// ── SVG path generation ───────────────────────────────────────────────────
+function valueRange(prop: KeyframePropertyDef, keyframes: { value: number }[]): { min: number; max: number } {
+	const track = props.element.keyframes?.tracks?.[prop.key];
+	const defaultVal = getKeyframePropertyStaticDefault(props.element, prop.key);
+	let min = storedMin(prop);
+	let max = storedMax(prop);
 
-function buildPath(
-	keyframes: Keyframe[],
-	min: number,
-	max: number,
-): string {
-	if (keyframes.length === 0) return "";
-	if (keyframes.length === 1) {
-		const kfItem = keyframes[0];
-		const x = offsetToX(kfItem.offset);
-		const y = valueToY(kfItem.value, min, max);
-		return `M ${PADDING.left} ${y} L ${x} ${y} L ${PADDING.left + plotW} ${y}`;
+	for (const k of keyframes) {
+		min = Math.min(min, k.value);
+		max = Math.max(max, k.value);
 	}
 
-	const points: string[] = [];
-	const sorted = [...keyframes].sort((a, b) => a.offset - b.offset);
-
-	// Leading segment
-	const first = sorted[0];
-	points.push(`M ${PADDING.left} ${valueToY(first.value, min, max)}`);
-	points.push(`L ${offsetToX(first.offset)} ${valueToY(first.value, min, max)}`);
-
-	for (let i = 0; i < sorted.length - 1; i++) {
-		const cur = sorted[i];
-		const next = sorted[i + 1];
-		const x0 = offsetToX(cur.offset);
-		const y0 = valueToY(cur.value, min, max);
-		const x1 = offsetToX(next.offset);
-		const y1 = valueToY(next.value, min, max);
-
-		const interp: KeyframeInterpolation = cur.interpolation ?? "linear";
-
-		if (interp === "hold") {
-			points.push(`L ${x1} ${y0}`);
-			points.push(`L ${x1} ${y1}`);
-		} else if (interp === "linear") {
-			points.push(`L ${x1} ${y1}`);
-		} else {
-			// Ease approximated as a cubic bezier
-			const tension = 0.35;
-			const cpx = x0 + (x1 - x0) * tension;
-			const cpy0 = interp.includes("ease-in") ? y0 + (y1 - y0) * 0.1 : y0;
-			const cpx2 = x1 - (x1 - x0) * tension;
-			const cpy1 = interp.includes("ease-out") ? y1 - (y1 - y0) * 0.1 : y1;
-			points.push(`C ${cpx} ${cpy0}, ${cpx2} ${cpy1}, ${x1} ${y1}`);
+	if (track && track.keyframes.length > 0) {
+		for (let i = 0; i <= 48; i++) {
+			const t = i / 48;
+			const v = evaluateKeyframeTrack(track, t, defaultVal);
+			min = Math.min(min, v);
+			max = Math.max(max, v);
 		}
 	}
 
-	// Trailing segment
-	const last = sorted[sorted.length - 1];
-	points.push(`L ${PADDING.left + plotW} ${valueToY(last.value, min, max)}`);
-
-	return points.join(" ");
+	const pad = (max - min) * 0.12 || 0.1;
+	return { min: min - pad, max: max + pad };
 }
 
-// ── Graph data per property ───────────────────────────────────────────────
+function buildSampledPath(prop: KeyframePropertyDef): string {
+	const track = props.element.keyframes?.tracks?.[prop.key];
+	if (!track || track.keyframes.length === 0) return "";
+
+	const defaultVal = getKeyframePropertyStaticDefault(props.element, prop.key);
+	const { min, max } = valueRange(prop, track.keyframes);
+	const parts: string[] = [];
+
+	for (let i = 0; i <= 64; i++) {
+		const t = i / 64;
+		const v = evaluateKeyframeTrack(track, t, defaultVal);
+		const x = offsetToX(t);
+		const y = valueToY(v, min, max);
+		parts.push(`${i === 0 ? "M" : "L"} ${x} ${y}`);
+	}
+
+	return parts.join(" ");
+}
 
 const graphItems = computed(() =>
-	props.applicableProperties
+	props.properties
 		.filter((p) => visibleProps.value.has(p.key))
-		.map((p) => {
-			const kfs = elementRef.value.keyframes?.tracks?.[p.key]?.keyframes ?? [];
-			const sorted = [...kfs].sort((a, b) => a.offset - b.offset);
-			const path = buildPath(sorted, p.min, p.max);
-			const handles = sorted.map((kfItem) => ({
-				id: kfItem.id,
-				x: offsetToX(kfItem.offset),
-				y: valueToY(kfItem.value, p.min, p.max),
-				offset: kfItem.offset,
-				value: kfItem.value,
-				prop: p,
-				kf: kfItem,
-			}));
-			return { prop: p, path, handles };
+		.map((prop) => {
+			const keyframes = sortedKeyframes(props.element.keyframes?.tracks?.[prop.key]?.keyframes ?? []);
+			const { min, max } = valueRange(prop, keyframes);
+			return {
+				prop,
+				path: buildSampledPath(prop),
+				min,
+				max,
+				handles: keyframes.map((kfItem) => ({
+					id: kfItem.id,
+					x: offsetToX(kfItem.offset),
+					y: valueToY(kfItem.value, min, max),
+					propKey: prop.key,
+				})),
+			};
 		}),
 );
 
-// Unwrap the elementRef so template can access it
-const elementRef = props.elementRef;
+const playheadX = computed(() => offsetToX(props.playhead));
 
-// ── Grid lines ────────────────────────────────────────────────────────────
-
-const gridLines = computed(() => {
-	const lines = [];
-	// Vertical time lines at 0%, 25%, 50%, 75%, 100%
-	for (let i = 0; i <= 4; i++) {
-		const x = offsetToX(i / 4);
-		lines.push({ x1: x, y1: PADDING.top, x2: x, y2: PADDING.top + plotH, label: `${i * 25}%`, labelX: x, labelY: GRAPH_H - 4 });
-	}
-	return lines;
-});
-
-// ── Drag handling ─────────────────────────────────────────────────────────
+const gridLines = computed(() =>
+	Array.from({ length: 5 }, (_, i) => {
+		const t = i / 4;
+		const x = offsetToX(t);
+		return { x, label: `${Math.round(t * 100)}%` };
+	}),
+);
 
 const svgRef = ref<SVGSVGElement | null>(null);
-const draggingHandle = ref<{ prop: KeyframableProperty; kfId: string } | null>(null);
+const draggingHandle = ref<{ prop: KeyframableProperty; kfId: string; min: number; max: number } | null>(null);
 
 function onHandlePointerDown(
 	event: PointerEvent,
 	propKey: KeyframableProperty,
 	kfId: string,
-	propMin: number,
-	propMax: number,
+	min: number,
+	max: number,
 ) {
 	event.stopPropagation();
-	draggingHandle.value = { prop: propKey, kfId };
+	draggingHandle.value = { prop: propKey, kfId, min, max };
 
 	const svgEl = svgRef.value;
 	if (!svgEl) return;
@@ -193,11 +158,10 @@ function onHandlePointerDown(
 		if (!draggingHandle.value) return;
 		const svgX = (e.clientX - rect.left) * scaleX;
 		const svgY = (e.clientY - rect.top) * scaleY;
-
 		const newOffset = Math.max(0, Math.min(1, (svgX - PADDING.left) / plotW));
 		const norm = 1 - Math.max(0, Math.min(1, (svgY - PADDING.top) / plotH));
-		const newValue = propMin + norm * (propMax - propMin);
-
+		const { min: vMin, max: vMax } = draggingHandle.value;
+		const newValue = vMin + norm * (vMax - vMin);
 		kf.updateKeyframe(draggingHandle.value.prop, draggingHandle.value.kfId, {
 			offset: newOffset,
 			value: newValue,
@@ -220,112 +184,113 @@ function onHandleDblClick(propKey: KeyframableProperty, kfId: string) {
 </script>
 
 <template>
-	<div class="flex flex-col gap-1.5 p-2">
-		<!-- Property visibility toggles -->
+	<div class="min-w-0 space-y-2">
 		<div class="flex flex-wrap gap-1">
 			<button
-				v-for="p in applicableProperties"
+				v-for="p in properties"
 				:key="p.key"
+				type="button"
 				class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-medium transition-opacity"
 				:class="visibleProps.has(p.key) ? 'opacity-100' : 'opacity-30'"
-				:style="{ borderColor: propColor(p.key), border: '1px solid' }"
+				:style="{ border: `1px solid ${p.color}` }"
 				@click="togglePropVisibility(p.key)"
 			>
-				<span class="inline-block size-2 rounded-full" :style="{ background: propColor(p.key) }" />
+				<span class="inline-block size-2 rounded-full" :style="{ background: p.color }" />
 				{{ p.label }}
 			</button>
 		</div>
 
-		<!-- SVG Graph -->
-		<div class="rounded border border-white/10 bg-black/30">
+		<div class="min-w-0 overflow-hidden rounded-sm border border-white/10 bg-black/30">
 			<svg
 				ref="svgRef"
 				:viewBox="`0 0 ${GRAPH_W} ${GRAPH_H}`"
-				:width="GRAPH_W"
-				:height="GRAPH_H"
 				class="block w-full"
-				style="max-height: 140px"
+				style="max-height: 160px"
 			>
-				<!-- Grid -->
-				<g class="grid-lines">
+				<g>
 					<line
 						v-for="(gl, i) in gridLines"
 						:key="i"
-						:x1="gl.x1" :y1="gl.y1" :x2="gl.x2" :y2="gl.y2"
+						:x1="gl.x"
+						:y1="PADDING.top"
+						:x2="gl.x"
+						:y2="PADDING.top + plotH"
 						stroke="rgba(255,255,255,0.06)"
 						stroke-width="1"
 					/>
-					<!-- Horizontal mid line -->
 					<line
-						:x1="PADDING.left" :y1="PADDING.top + plotH / 2"
-						:x2="PADDING.left + plotW" :y2="PADDING.top + plotH / 2"
+						:x1="PADDING.left"
+						:y1="PADDING.top + plotH / 2"
+						:x2="PADDING.left + plotW"
+						:y2="PADDING.top + plotH / 2"
 						stroke="rgba(255,255,255,0.04)"
 						stroke-width="1"
 					/>
 				</g>
 
-				<!-- Time axis labels -->
 				<text
 					v-for="(gl, i) in gridLines"
 					:key="`label-${i}`"
-					:x="gl.labelX"
-					:y="gl.labelY"
+					:x="gl.x"
+					:y="GRAPH_H - 6"
 					text-anchor="middle"
-					font-size="6"
+					font-size="7"
 					fill="rgba(255,255,255,0.25)"
 				>{{ gl.label }}</text>
 
-				<!-- Property curves and handles -->
+				<line
+					:x1="playheadX"
+					:y1="PADDING.top"
+					:x2="playheadX"
+					:y2="PADDING.top + plotH"
+					stroke="#f59e0b"
+					stroke-width="1"
+					stroke-dasharray="3 2"
+					opacity="0.9"
+				/>
+
 				<g v-for="item in graphItems" :key="item.prop.key">
-					<!-- Curve path -->
 					<path
 						v-if="item.path"
 						:d="item.path"
 						fill="none"
-						:stroke="propColor(item.prop.key)"
+						:stroke="item.prop.color"
 						stroke-width="1.5"
 						stroke-linecap="round"
 						stroke-linejoin="round"
-						opacity="0.85"
+						opacity="0.9"
 					/>
 
-					<!-- Keyframe handles -->
 					<g
 						v-for="h in item.handles"
 						:key="h.id"
-						:style="{ cursor: draggingHandle?.kfId === h.id ? 'grabbing' : 'grab', pointerEvents: 'all' }"
-						@pointerdown="onHandlePointerDown($event, item.prop.key, h.id, item.prop.min, item.prop.max)"
+						:style="{ cursor: draggingHandle?.kfId === h.id ? 'grabbing' : 'grab' }"
+						@pointerdown="onHandlePointerDown($event, item.prop.key, h.id, item.min, item.max)"
 						@dblclick="onHandleDblClick(item.prop.key, h.id)"
 					>
-						<!-- Outer glow -->
-						<circle
-							:cx="h.x" :cy="h.y" r="5"
-							:fill="propColor(item.prop.key)"
-							fill-opacity="0.2"
-						/>
-						<!-- Diamond shape -->
+						<circle :cx="h.x" :cy="h.y" r="6" :fill="item.prop.color" fill-opacity="0.15" />
 						<polygon
 							:points="`${h.x},${h.y - 5} ${h.x + 4},${h.y} ${h.x},${h.y + 5} ${h.x - 4},${h.y}`"
-							:fill="propColor(item.prop.key)"
+							:fill="item.prop.color"
 							stroke="white"
 							stroke-width="0.75"
-							opacity="0.95"
 						/>
 					</g>
 				</g>
 
-				<!-- Empty state -->
 				<text
 					v-if="graphItems.length === 0 || graphItems.every((g) => g.handles.length === 0)"
 					:x="GRAPH_W / 2"
-					:y="GRAPH_H / 2 + 2"
+					:y="GRAPH_H / 2"
 					text-anchor="middle"
-					font-size="8"
-					fill="rgba(255,255,255,0.2)"
-				>No keyframes — use + buttons above to add</text>
+					font-size="9"
+					fill="rgba(255,255,255,0.25)"
+				>No keyframes yet — enable a property and add keyframes</text>
 			</svg>
 		</div>
 
-		<p class="text-[8px] text-zinc-600">Drag handles to adjust · Double-click to remove · Volume curve uses linear gain (1 = 0 dB); match the inspector dB field.</p>
+		<p class="text-[9px] leading-relaxed text-zinc-600">
+			Drag diamonds to adjust time and value. Double-click to remove. Curves use the same easing as playback.
+		</p>
 	</div>
 </template>

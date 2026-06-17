@@ -8,8 +8,10 @@ import type { VideoEffect } from "../../../types/effects";
 import { getEffectPreset } from "../../../constants/effect-constants";
 import type { ChromakeySettings } from "../../../types/chromakey";
 import { DEFAULT_CHROMAKEY } from "../../../types/chromakey";
-import { Image, Trash2, RotateCcw, FlipHorizontal, FlipVertical, Wand2, Eye, EyeOff, X, ChevronDown, Pipette, SlidersHorizontal, Sparkles, Scissors } from "lucide-vue-next";
+import { Image, Trash2, RotateCcw, FlipHorizontal, FlipVertical, Wand2, Eye, EyeOff, X, ChevronDown, Pipette, SlidersHorizontal, Sparkles, Scissors, Diamond } from "lucide-vue-next";
+import KeyframeEditorPanel from "../KeyframeEditorPanel.vue";
 import { useKeyframes } from "../../../composables/useKeyframes";
+import { useKeyframedInspectorProperty } from "../../../composables/useKeyframedInspectorProperty";
 import KeyframeToggle from "./KeyframeToggle.vue";
 import AnimationProperties from "./AnimationProperties.vue";
 import MasksPanel from "./MasksPanel.vue";
@@ -51,10 +53,16 @@ onUnmounted(() => {
 });
 
 const trackRef = computed(() => editor.timeline.getTrackById({ trackId: props.trackId })!);
+const elementRef = toRef(props, "element");
 const { hasKeyframes: hasKf, addKeyframe, clearPropertyKeyframes } = useKeyframes({
 	trackRef,
-	elementRef: toRef(props, 'element'),
+	elementRef,
 });
+
+const scaleKf = useKeyframedInspectorProperty({ trackRef, elementRef, property: "scale" });
+const posXKf = useKeyframedInspectorProperty({ trackRef, elementRef, property: "positionX" });
+const posYKf = useKeyframedInspectorProperty({ trackRef, elementRef, property: "positionY" });
+const rotationKf = useKeyframedInspectorProperty({ trackRef, elementRef, property: "rotation" });
 
 const opacityInput = ref(Math.round(props.element.opacity * 100).toString());
 const scaleInput = ref(Math.round(props.element.transform.scale * 100).toString());
@@ -62,15 +70,19 @@ const posXInput = ref(props.element.transform.position.x.toString());
 const posYInput = ref(props.element.transform.position.y.toString());
 const rotateInput = ref(props.element.transform.rotate.toString());
 
-watch(() => props.element.opacity, (v) => { opacityInput.value = Math.round(v * 100).toString(); });
-watch(() => props.element.transform.scale, (v) => { scaleInput.value = Math.round(v * 100).toString(); });
-watch(() => props.element.transform.position.x, (v) => { posXInput.value = v.toString(); });
-watch(() => props.element.transform.position.y, (v) => { posYInput.value = v.toString(); });
-watch(() => props.element.transform.rotate, (v) => { rotateInput.value = v.toString(); });
+watch(() => props.element.opacity, (v) => {
+	if (!hasKf("opacity")) opacityInput.value = Math.round(v * 100).toString();
+});
+watch(scaleKf.displayValue, (v) => {
+	scaleInput.value = Math.round(v * 100).toString();
+}, { immediate: true });
+watch(posXKf.displayValue, (v) => { posXInput.value = v.toString(); }, { immediate: true });
+watch(posYKf.displayValue, (v) => { posYInput.value = v.toString(); }, { immediate: true });
+watch(rotationKf.displayValue, (v) => { rotateInput.value = v.toString(); }, { immediate: true });
 
 const ca = computed(() => ({ ...DEFAULT_COLOR_ADJUSTMENTS, ...props.element.colorAdjustments }));
 
-type TopTab = "image" | "adjust" | "grading" | "animate" | "masks";
+type TopTab = "image" | "adjust" | "grading" | "animate" | "masks" | "keyframes";
 const activeTab = ref<TopTab>("image");
 
 const topTabs: { id: TopTab; label: string; icon: any }[] = [
@@ -79,6 +91,7 @@ const topTabs: { id: TopTab; label: string; icon: any }[] = [
 	{ id: "grading", label: "Grade", icon: Wand2 },
 	{ id: "animate", label: "Animate", icon: Sparkles },
 	{ id: "masks", label: "Masks", icon: Scissors },
+	{ id: "keyframes", label: "Keyframes", icon: Diamond },
 ];
 
 /** Show file name only when `name` was stored as a full path (Windows or POSIX). */
@@ -179,40 +192,82 @@ function handleOpacityBlur() {
 function handleScaleSlider(e: Event) {
 	const val = Number((e.target as HTMLInputElement).value);
 	scaleInput.value = val.toString();
-	updateTransform({ scale: val / 100 });
+	const scale = val / 100;
+	if (scaleKf.isKeyframed.value) {
+		scaleKf.setKeyframedValue(scale);
+	} else {
+		updateTransform({ scale });
+	}
 }
 function handleScaleInput(value: string) {
 	scaleInput.value = value;
 	const parsed = parseInt(value, 10);
-	if (!Number.isNaN(parsed)) updateTransform({ scale: clamp(parsed, 10, 500) / 100 });
+	if (!Number.isNaN(parsed)) {
+		const scale = clamp(parsed, 10, 500) / 100;
+		if (scaleKf.isKeyframed.value) {
+			scaleKf.setKeyframedValue(scale);
+		} else {
+			updateTransform({ scale });
+		}
+	}
 }
 function handleScaleBlur() {
 	const parsed = parseInt(scaleInput.value, 10);
-	const pct = Number.isNaN(parsed) ? Math.round(props.element.transform.scale * 100) : clamp(parsed, 10, 500);
+	const pct = Number.isNaN(parsed)
+		? Math.round(scaleKf.displayValue.value * 100)
+		: clamp(parsed, 10, 500);
 	scaleInput.value = pct.toString();
-	updateTransform({ scale: pct / 100 });
+	const scale = pct / 100;
+	if (scaleKf.isKeyframed.value) {
+		scaleKf.setKeyframedValue(scale);
+	} else {
+		updateTransform({ scale });
+	}
 }
 
 function handlePosX(value: string) {
 	posXInput.value = value;
 	const parsed = parseFloat(value);
-	if (!Number.isNaN(parsed)) updateTransform({ position: { x: parsed, y: props.element.transform.position.y } });
+	if (!Number.isNaN(parsed)) {
+		if (posXKf.isKeyframed.value) {
+			posXKf.setKeyframedValue(parsed);
+		} else {
+			updateTransform({ position: { x: parsed, y: props.element.transform.position.y } });
+		}
+	}
 }
 function handlePosY(value: string) {
 	posYInput.value = value;
 	const parsed = parseFloat(value);
-	if (!Number.isNaN(parsed)) updateTransform({ position: { x: props.element.transform.position.x, y: parsed } });
+	if (!Number.isNaN(parsed)) {
+		if (posYKf.isKeyframed.value) {
+			posYKf.setKeyframedValue(parsed);
+		} else {
+			updateTransform({ position: { x: props.element.transform.position.x, y: parsed } });
+		}
+	}
 }
 
 function handleRotateSlider(e: Event) {
 	const val = Number((e.target as HTMLInputElement).value);
 	rotateInput.value = val.toString();
-	updateTransform({ rotate: val });
+	if (rotationKf.isKeyframed.value) {
+		rotationKf.setKeyframedValue(val);
+	} else {
+		updateTransform({ rotate: val });
+	}
 }
 function handleRotateInput(value: string) {
 	rotateInput.value = value;
 	const parsed = parseFloat(value);
-	if (!Number.isNaN(parsed)) updateTransform({ rotate: clamp(parsed, -360, 360) });
+	if (!Number.isNaN(parsed)) {
+		const rot = clamp(parsed, -360, 360);
+		if (rotationKf.isKeyframed.value) {
+			rotationKf.setKeyframedValue(rot);
+		} else {
+			updateTransform({ rotate: rot });
+		}
+	}
 }
 
 function resetTransform() {
@@ -361,31 +416,43 @@ function formatTime(seconds: number): string {
 			</div>
 
 			<!-- Scale -->
-			<div class="space-y-1.5">
-				<label class="text-xs text-zinc-500">Scale</label>
+			<div class="space-y-1.5" :class="scaleKf.isKeyframed.value ? 'rounded-md border border-amber-500/20 p-2' : ''">
+				<div class="flex items-center justify-between">
+					<label class="text-xs text-zinc-500">Scale</label>
+					<KeyframeToggle :active="scaleKf.isKeyframed.value" label="scale" @toggle="scaleKf.toggleKeyframe" />
+				</div>
 				<div class="flex items-center gap-2">
-					<input type="range" :value="element.transform.scale * 100" min="10" max="500" step="1" class="flex-1" @input="handleScaleSlider" />
+					<input type="range" :value="scaleKf.displayValue.value * 100" min="10" max="500" step="1" class="flex-1" @input="handleScaleSlider" />
 					<input type="number" :value="scaleInput" min="10" max="500" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handleScaleInput((e.target as HTMLInputElement).value)" @blur="handleScaleBlur" />
 				</div>
 			</div>
 
 			<!-- Position -->
 			<div class="grid grid-cols-2 gap-2">
-				<div class="space-y-1">
-					<label class="text-xs text-zinc-500">Position X</label>
+				<div class="space-y-1" :class="posXKf.isKeyframed.value ? 'rounded-md border border-amber-500/20 p-2' : ''">
+					<div class="flex items-center justify-between">
+						<label class="text-xs text-zinc-500">Position X</label>
+						<KeyframeToggle :active="posXKf.isKeyframed.value" label="position X" @toggle="posXKf.toggleKeyframe" />
+					</div>
 					<input type="number" :value="posXInput" step="1" class="h-7 w-full rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handlePosX((e.target as HTMLInputElement).value)" />
 				</div>
-				<div class="space-y-1">
-					<label class="text-xs text-zinc-500">Position Y</label>
+				<div class="space-y-1" :class="posYKf.isKeyframed.value ? 'rounded-md border border-amber-500/20 p-2' : ''">
+					<div class="flex items-center justify-between">
+						<label class="text-xs text-zinc-500">Position Y</label>
+						<KeyframeToggle :active="posYKf.isKeyframed.value" label="position Y" @toggle="posYKf.toggleKeyframe" />
+					</div>
 					<input type="number" :value="posYInput" step="1" class="h-7 w-full rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handlePosY((e.target as HTMLInputElement).value)" />
 				</div>
 			</div>
 
 			<!-- Rotation -->
-			<div class="space-y-1.5">
-				<label class="text-xs text-zinc-500">Rotation</label>
+			<div class="space-y-1.5" :class="rotationKf.isKeyframed.value ? 'rounded-md border border-amber-500/20 p-2' : ''">
+				<div class="flex items-center justify-between">
+					<label class="text-xs text-zinc-500">Rotation</label>
+					<KeyframeToggle :active="rotationKf.isKeyframed.value" label="rotation" @toggle="rotationKf.toggleKeyframe" />
+				</div>
 				<div class="flex items-center gap-2">
-					<input type="range" :value="element.transform.rotate" min="-360" max="360" step="1" class="flex-1" @input="handleRotateSlider" />
+					<input type="range" :value="rotationKf.displayValue.value" min="-360" max="360" step="1" class="flex-1" @input="handleRotateSlider" />
 					<input type="number" :value="rotateInput" min="-360" max="360" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handleRotateInput((e.target as HTMLInputElement).value)" />
 				</div>
 			</div>
@@ -902,6 +969,11 @@ function formatTime(seconds: number): string {
 						<span class="text-sm text-zinc-400">Masks</span>
 					</div>
 					<MasksPanel :element="element" :track-id="trackId" />
+				</div>
+
+				<!-- Keyframes -->
+				<div v-else-if="activeTab === 'keyframes'">
+					<KeyframeEditorPanel :track-id="trackId" :element="element" />
 				</div>
 			</div>
 		</div>

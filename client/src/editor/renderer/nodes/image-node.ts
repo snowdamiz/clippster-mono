@@ -199,7 +199,7 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		// Apply transform (scale, position, rotation) with keyframe overrides
 		const transform = this.params.transform;
 		if (transform) {
-			const resolvedScale = getKeyframedValue({ elementKeyframes: kf, property: "scale", normalizedTime, defaultValue: transform.scale });
+			const resolvedScale = getKeyframedValue({ elementKeyframes: kf, property: "scale", normalizedTime, defaultValue: transform.scale ?? 1 });
 			const resolvedPosX = getKeyframedValue({ elementKeyframes: kf, property: "positionX", normalizedTime, defaultValue: transform.position.x });
 			const resolvedPosY = getKeyframedValue({ elementKeyframes: kf, property: "positionY", normalizedTime, defaultValue: transform.position.y });
 			const resolvedRotation = getKeyframedValue({ elementKeyframes: kf, property: "rotation", normalizedTime, defaultValue: transform.rotate });
@@ -209,8 +209,9 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 			if (resolvedRotation !== 0) {
 				renderer.context.rotate((resolvedRotation * Math.PI) / 180);
 			}
-			if (resolvedScale !== 1) {
-				renderer.context.scale(resolvedScale, resolvedScale);
+			const safeScale = Number.isFinite(resolvedScale) ? resolvedScale : 1;
+			if (safeScale !== 1) {
+				renderer.context.scale(safeScale, safeScale);
 			}
 			renderer.context.translate(-renderer.width / 2, -renderer.height / 2);
 		}

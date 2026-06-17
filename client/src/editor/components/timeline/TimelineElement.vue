@@ -23,8 +23,13 @@ import type {
 	TimelineTrack,
 	VideoElement,
 } from "../../types/timeline";
-import { useEditorUIState } from "../../composables/useEditorUIState";
+import { useEditorUIState, isVisualPlacementProperty } from "../../composables/useEditorUIState";
 import { useKeyframes } from "../../composables/useKeyframes";
+import {
+	getKeyframePropertyStaticDefault,
+	getValueForNewKeyframeAtOffset,
+} from "../../lib/keyframe-property-defaults";
+import type { KeyframableProperty } from "../../types/keyframes";
 import type { MediaAsset } from "../../types/assets";
 import { mediaSupportsAudio } from "../../lib/media/media-utils";
 
@@ -52,8 +57,8 @@ const emit = defineEmits<{
 const { editor, version } = useEditor({
 	subscribe: {
 		playback: false,
-		timeline: false,
-		scenes: false,
+		timeline: true,
+		scenes: true,
 		project: false,
 		media: true,
 		selection: false,
@@ -63,24 +68,35 @@ const { editor, version } = useEditor({
 // from the parent track. The drag DOM controller owns the visual sibling-follow
 // during multi-select drags, so this component does not subscribe to the
 // selection store at all (selection clicks no longer re-render every clip).
-const { timelineKeyframePlacementActive } = useEditorUIState();
+const { timelineKeyframePlacementActive, timelineKeyframePlacementProperty } = useEditorUIState();
 
 const trackRefForKeyframes = toRef(() => props.track);
 const elementRefForKeyframes = toRef(() => props.element);
-const { addKeyframe, getResolvedValue } = useKeyframes({
+const { addKeyframe } = useKeyframes({
 	trackRef: trackRefForKeyframes,
 	elementRef: elementRefForKeyframes,
 });
 
-function onVideoBodyKeyframePaintPointerDown(ev: PointerEvent) {
-	if (!timelineKeyframePlacementActive.value || props.element.type !== "video") return;
+function onVisualKeyframePaintPointerDown(ev: PointerEvent) {
+	if (!timelineKeyframePlacementActive.value) return;
+	if (!props.isSelected) return;
+	const el = props.element;
+	if (el.type !== "video" && el.type !== "image") return;
+	const property = timelineKeyframePlacementProperty.value;
+	if (!isVisualPlacementProperty(property)) return;
 	ev.stopPropagation();
 	const target = ev.currentTarget as HTMLElement;
 	const rect = target.getBoundingClientRect();
 	const localX = ev.clientX - rect.left;
 	const offset = Math.max(0, Math.min(1, localX / Math.max(1, rect.width)));
-	const video = props.element as VideoElement;
-	addKeyframe("opacity", offset, getResolvedValue("opacity", offset, video.opacity));
+	const staticDefault = getKeyframePropertyStaticDefault(el, property);
+	const value = getValueForNewKeyframeAtOffset({
+		elementKeyframes: el.keyframes,
+		property,
+		offset,
+		staticDefault,
+	});
+	addKeyframe(property, offset, value);
 }
 
 const mediaAssets = computed(() => {
@@ -257,13 +273,19 @@ const {
 	showEnvelopeGraphics: volumeShowEnvelopeGraphics,
 	onStripPointerEnter: onVolumeStripPointerEnter,
 	onStripPointerLeave: onVolumeStripPointerLeave,
-	onStripPointerDown: onVolumeStripPointerDown,
+	onStripPointerDown: onVolumeStripPointerDownRaw,
 	onHandleDblClick: onVolumeHandleDblClick,
 } = useVolumeEnvelope({
 	elementRef: toRef(props, "element"),
 	trackRef: toRef(props, "track"),
 	elementWidthPx: elementWidth,
+	placementProperty: timelineKeyframePlacementProperty,
 });
+
+function onVolumeStripPointerDown(ev: PointerEvent, svg: SVGSVGElement, h: number) {
+	if (timelineKeyframePlacementActive.value && !props.isSelected) return;
+	onVolumeStripPointerDownRaw(ev, svg, h);
+}
 
 const isFading = computed(() => fadeState.value !== null);
 
@@ -279,6 +301,7 @@ const fadeOutPx = computed(() => {
 
 // Keyframe diamond markers: collect all keyframe offsets from all property tracks
 const keyframeDiamonds = computed(() => {
+	void version.value;
 	const kf = props.element.keyframes;
 	if (!kf) return [];
 	const offsets = new Set<number>();
@@ -323,7 +346,7 @@ const elementTooltip = computed(() => {
 		data-timeline-element-root="1"
 		class="timeline-element absolute top-0 h-full select-none z-10"
 		:class="[
-			(isVideoElement || isAudioElement) && timelineKeyframePlacementActive && 'cursor-crosshair',
+			(isVideoElement || isAudioElement || isImageElement) && timelineKeyframePlacementActive && 'cursor-crosshair',
 		]"
 		:style="{
 			left: `${elementLeft}px`,
@@ -335,7 +358,7 @@ const elementTooltip = computed(() => {
 		<div
 			:class="[
 				'group relative h-full overflow-hidden border-2 z-10',
-				(isVideoElement || isAudioElement) && timelineKeyframePlacementActive ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing',
+				(isVideoElement || isAudioElement || isImageElement) && timelineKeyframePlacementActive ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing',
 				(track.type === 'text' || track.type === 'audio' || track.type === 'sticker' || track.type === 'caption' || track.type === 'effect') ? 'rounded-[3px]' : 'rounded-[0.5rem]',
 				trackClasses,
 				isHidden ? 'opacity-50' : '',
@@ -396,7 +419,7 @@ const elementTooltip = computed(() => {
 						preserveAspectRatio="none"
 						:class="[
 							!timelineKeyframePlacementActive && 'pointer-events-none',
-							volumeIsDragging ? 'cursor-ns-resize' : timelineKeyframePlacementActive ? 'cursor-crosshair' : '',
+							volumeIsDragging ? 'cursor-ns-resize' : timelineKeyframePlacementActive && timelineKeyframePlacementProperty === 'volume' ? 'cursor-crosshair' : '',
 						]"
 						@pointerenter="onVolumeStripPointerEnter"
 						@pointerleave="onVolumeStripPointerLeave"
@@ -454,10 +477,13 @@ const elementTooltip = computed(() => {
 							</div>
 						</div>
 						<div
-							v-if="isVideoElement && timelineKeyframePlacementActive"
+							v-if="(isVideoElement || isImageElement) && timelineKeyframePlacementActive && isVisualPlacementProperty(timelineKeyframePlacementProperty)"
 							class="absolute right-0 left-0 z-[27] cursor-crosshair"
-							:style="{ top: '16px', bottom: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%` }"
-							@pointerdown.stop="onVideoBodyKeyframePaintPointerDown"
+							:style="{
+								top: '16px',
+								bottom: isVideoElement && !isMuted ? `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%` : '0',
+							}"
+							@pointerdown.stop="onVisualKeyframePaintPointerDown"
 						/>
 					<!-- Audio waveform: fills the entire bottom section (hidden when muted/audio extracted) -->
 					<canvas
@@ -486,7 +512,7 @@ const elementTooltip = computed(() => {
 						}"
 						:class="[
 							!timelineKeyframePlacementActive && 'pointer-events-none',
-							volumeIsDragging ? 'cursor-ns-resize' : timelineKeyframePlacementActive ? 'cursor-crosshair' : '',
+							volumeIsDragging ? 'cursor-ns-resize' : timelineKeyframePlacementActive && timelineKeyframePlacementProperty === 'volume' ? 'cursor-crosshair' : '',
 						]"
 						@pointerenter="onVolumeStripPointerEnter"
 						@pointerleave="onVolumeStripPointerLeave"
@@ -531,10 +557,13 @@ const elementTooltip = computed(() => {
 						/>
 					</div>
 						<div
-							v-if="isVideoElement && timelineKeyframePlacementActive"
+							v-if="(isVideoElement || isImageElement) && timelineKeyframePlacementActive && isVisualPlacementProperty(timelineKeyframePlacementProperty)"
 							class="absolute right-0 left-0 z-[27] cursor-crosshair"
-							:style="{ top: '16px', bottom: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%` }"
-							@pointerdown.stop="onVideoBodyKeyframePaintPointerDown"
+							:style="{
+								top: '16px',
+								bottom: isVideoElement && !isMuted ? `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%` : '0',
+							}"
+							@pointerdown.stop="onVisualKeyframePaintPointerDown"
 						/>
 					<!-- Audio waveform: fills the entire bottom section (hidden when muted/audio extracted) -->
 					<canvas
@@ -563,7 +592,7 @@ const elementTooltip = computed(() => {
 						}"
 						:class="[
 							!timelineKeyframePlacementActive && 'pointer-events-none',
-							volumeIsDragging ? 'cursor-ns-resize' : timelineKeyframePlacementActive ? 'cursor-crosshair' : '',
+							volumeIsDragging ? 'cursor-ns-resize' : timelineKeyframePlacementActive && timelineKeyframePlacementProperty === 'volume' ? 'cursor-crosshair' : '',
 						]"
 						@pointerenter="onVolumeStripPointerEnter"
 						@pointerleave="onVolumeStripPointerLeave"

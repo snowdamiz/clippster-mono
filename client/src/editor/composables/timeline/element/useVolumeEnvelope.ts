@@ -13,7 +13,7 @@
 import { computed, ref, type Ref } from "vue";
 import { useKeyframes } from "../../useKeyframes";
 import type { TimelineElement, TimelineTrack } from "../../../types/timeline";
-import type { Keyframe } from "../../../types/keyframes";
+import type { Keyframe, KeyframableProperty } from "../../../types/keyframes";
 import { CLIP_GAIN_MAX } from "../../../lib/audio-volume-ui";
 
 /** Volume range: 0 = silence, 1 = unity, CLIP_GAIN_MAX = max inspector boost */
@@ -26,10 +26,13 @@ export function useVolumeEnvelope({
 	elementRef,
 	trackRef,
 	elementWidthPx,
+	placementProperty,
 }: {
 	elementRef: Ref<TimelineElement>;
 	trackRef: Ref<TimelineTrack>;
 	elementWidthPx: Ref<number>;
+	/** When set, strip clicks only add volume keyframes if this is `volume`. */
+	placementProperty?: Ref<KeyframableProperty>;
 }) {
 	const kf = useKeyframes({ trackRef, elementRef });
 
@@ -104,6 +107,10 @@ export function useVolumeEnvelope({
 	) {
 		event.stopPropagation();
 		stripHovered.value = true;
+
+		if (placementProperty && placementProperty.value !== "volume") {
+			return;
+		}
 
 		const rect = svgElement.getBoundingClientRect();
 		const localX = event.clientX - rect.left;
