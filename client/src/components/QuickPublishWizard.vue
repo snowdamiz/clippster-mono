@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="show" class="build-dialog__overlay">
+      <div v-if="show && !showManualPOIEditor" class="build-dialog__overlay">
         <Transition name="dialog" appear>
           <div v-if="show" class="build-dialog" role="dialog" aria-modal="true">
             <!-- Decorative top accent -->
@@ -741,9 +741,9 @@
 
                         <!-- Subtitle style/transcript editor -->
                         <div class="build-dialog__subtitle-panel">
-                          <div class="build-dialog__subtitle-panel-header">
-                            <span>Edit subtitles</span>
-                            <span>16:9</span>
+                          <div class="poi-dialog__sub-header">
+                            <span class="poi-dialog__sub-title">Subtitles</span>
+                            <span class="text-[10px] shrink-0 font-mono poi-dialog__faint">16:9</span>
                           </div>
                           <SubtitlePropertiesPanel
                             class="build-dialog__subtitle-panel-content"
@@ -1116,30 +1116,31 @@
         </Transition>
       </div>
     </Transition>
-
-    <!-- Manual POI Editor Dialog -->
-    <ManualPOIEditor
-      v-model="showManualPOIEditor"
-      :initial-config="getConfigForRatio(editingAspectRatio)"
-      :target-aspect-ratio="editingAspectRatio"
-      :source-aspect-ratio="'16:9'"
-      :thumbnail-url="thumbnailUrl"
-      :video-path="clipPath"
-      :clip-start-time="clipStartTime"
-      :clip-end-time="clipEndTime"
-      :watermark-settings="watermarkSettings"
-      :subtitle-settings="subtitlesEnabled ? wizardSubtitleSettings : null"
-      :subtitle-position-override="wizardSubtitlePosition"
-      :transcript-words="subtitlesEnabled ? wizardTranscriptWords : []"
-      :transcript-segments="subtitlesEnabled ? wizardTranscriptSegments : []"
-      :clip-id="clip?.id ?? null"
-      :clip-text-overlay-json="clipTextOverlayRaw"
-      @confirm="onManualConfigConfirm"
-      @subtitlePositionChange="onManualPoiSubtitlePositionChange"
-      @subtitleSettingsChange="onManualPoiSubtitleSettingsChange"
-      @clip-text-overlay-change="onClipTextOverlayChange"
-    />
   </Teleport>
+
+  <!-- Manual POI Editor — outside wizard teleport so poi-dialog styling is not affected by build-dialog -->
+  <ManualPOIEditor
+    v-model="showManualPOIEditor"
+    :initial-config="getConfigForRatio(editingAspectRatio)"
+    :target-aspect-ratio="editingAspectRatio"
+    :source-aspect-ratio="'16:9'"
+    :thumbnail-url="thumbnailUrl"
+    :video-path="clipPath"
+    :clip-start-time="clipStartTime"
+    :clip-end-time="clipEndTime"
+    :watermark-settings="watermarkSettings"
+    :subtitle-settings="subtitlesEnabled ? wizardSubtitleSettings : null"
+    :subtitle-position-override="wizardSubtitlePosition"
+    :transcript-words="subtitlesEnabled ? wizardTranscriptWords : []"
+    :transcript-segments="subtitlesEnabled ? wizardTranscriptSegments : []"
+    :clip-id="clip?.id ?? null"
+    :project-id="projectId"
+    :clip-text-overlay-json="clipTextOverlayRaw"
+    @confirm="onManualConfigConfirm"
+    @subtitlePositionChange="onManualPoiSubtitlePositionChange"
+    @subtitleSettingsChange="onManualPoiSubtitleSettingsChange"
+    @clip-text-overlay-change="onClipTextOverlayChange"
+  />
 </template>
 
 <script setup lang="ts">

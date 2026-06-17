@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { useEditor } from "../composables/useEditor";
+import { useExportDialog } from "../composables/useExportDialog";
 import type { ExportTranscriptSummary } from "../lib/export-summary-toast";
 import {
 	Download,
@@ -25,8 +26,7 @@ import type { Clip, ClipBuild } from "@/services/database";
 type ClipWithBuilds = Clip & { builds: ClipBuild[] };
 
 const { editor, version } = useEditor();
-
-const isOpen = ref(false);
+const { isOpen, exportTimeRange, exportSegmentName, openExportDialog, closeExportDialog } = useExportDialog();
 const format = ref<"mp4" | "webm">("mp4");
 const quality = ref<"low" | "medium" | "high" | "very_high">("high");
 const frameRate = ref<30 | 60>(30);
@@ -57,12 +57,30 @@ const projectName = computed(() => activeProject.value?.metadata.name || "Untitl
 
 const projectDuration = computed(() => {
 	void version.value;
+	if (exportTimeRange.value) {
+		return exportTimeRange.value.endTime - exportTimeRange.value.startTime;
+	}
 	try {
 		return editor.timeline.getTotalDuration();
 	} catch {
 		return 0;
 	}
 });
+
+const exportDialogSubtitle = computed(() => {
+	const duration = formatDuration(projectDuration.value);
+	if (exportTimeRange.value) {
+		const label = exportSegmentName.value?.trim() || "Selected segment";
+		return `${label} \u2022 ${duration}`;
+	}
+	return `${projectName.value} \u2022 ${duration}`;
+});
+
+const exportDialogTitle = computed(() =>
+	exportTimeRange.value ? "Export Segment" : "Export Configuration",
+);
+
+const exportOutputFileName = computed(() => exportSegmentName.value?.trim() || null);
 
 function formatDuration(seconds: number): string {
 	if (!seconds) return "0:00";
@@ -538,6 +556,8 @@ async function handleExport() {
 				fps: frameRate.value,
 				includeAudio: true,
 				canvasSize: exportCanvasSize.value,
+				timeRange: exportTimeRange.value ?? undefined,
+				outputFileName: exportOutputFileName.value ?? undefined,
 				onProgress: (p: { progress: number }) => { progress.value = p.progress; },
 				onCancel: () => cancelRequested.value,
 				exportId,
@@ -569,7 +589,7 @@ async function handleExport() {
 						outputPath: result.outputPath,
 						exportedDuration: projectDuration.value,
 						projectId: project.metadata.id,
-						projectName: project.metadata.name,
+						projectName: exportOutputFileName.value ?? project.metadata.name,
 						buildOptions: {
 							aspectLabel: projectAspectLabel.value,
 							quality: quality.value,
@@ -633,7 +653,7 @@ function handleCancel() {
 
 function handleClose() {
 	if (!isExporting.value) {
-		isOpen.value = false;
+		closeExportDialog();
 		exportError.value = null;
 		progress.value = 0;
 		showSuccess.value = false;
@@ -648,8 +668,10 @@ async function handleDownload() {
 		const { save } = await import("@tauri-apps/plugin-dialog");
 		const { invoke } = await import("@tauri-apps/api/core");
 
-		// Extract filename from path
-		const filename = exportedPath.value.split(/[\\/]/).pop() || "export.mp4";
+		// Prefer segment title for save-as default; otherwise use the exported file name.
+		const filename = exportOutputFileName.value
+			? `${exportOutputFileName.value.replace(/[^a-zA-Z0-9-_]/g, "_")}.${format.value}`
+			: exportedPath.value.split(/[\\/]/).pop() || `export.${format.value}`;
 
 		// Show save dialog
 		const savePath = await save({
@@ -906,7 +928,7 @@ async function handleCleanupProject() {
 		showToast("Editor project removed", "success", "projects");
 
 		// Close dialog and navigate to video editor projects page
-		isOpen.value = false;
+		closeExportDialog();
 		const { useRouter } = await import("vue-router");
 		const router = useRouter();
 		router.push("/video-editor");
@@ -996,7 +1018,7 @@ function handlePublishNow() {
 				hasProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
 			]"
 			:disabled="!hasProject"
-			@click="hasProject && (isOpen = true)"
+			@click="hasProject && openExportDialog()"
 		>
 			<Download class="export-trigger__icon" />
 			Export
@@ -1019,9 +1041,9 @@ function handlePublishNow() {
 								<div class="export-dialog__icon">
 									<Download :size="24" />
 								</div>
-								<h2 class="export-dialog__title">Export Configuration</h2>
+								<h2 class="export-dialog__title">{{ exportDialogTitle }}</h2>
 								<p class="export-dialog__subtitle">
-									{{ projectName }} &bull; {{ formatDuration(projectDuration) }}
+									{{ exportDialogSubtitle }}
 								</p>
 							</div>
 

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../../composables/useEditor";
 import { getCompletedBuildEntries } from "@/services/database/clip-build";
+import { searchTranscriptSegmentsByClipIds } from "@/services/database";
 import type { Clip, ClipBuild } from "@/services/database/types";
 import type { MediaAsset } from "../../../types/assets";
 import { Film, Plus, Loader2, Check, Search, Briefcase, Building2 } from "lucide-vue-next";
@@ -30,6 +31,8 @@ const loading = ref(false);
 const addingIds = ref<Set<string>>(new Set());
 const addedIds = ref<Set<string>>(new Set());
 const searchQuery = ref("");
+const clipIdsWithTranscriptMatch = ref<Set<string>>(new Set());
+const transcriptSearchTimeoutId = ref<ReturnType<typeof setTimeout> | null>(null);
 const addedMediaIds = ref<Map<string, string>>(new Map()); // buildId → mediaAssetId
 
 const activeProject = computed(() => {
@@ -50,10 +53,47 @@ const filteredBuilds = computed(() => {
 		const clipName = entry.clip.name || entry.clip.project_name || "";
 		const orgName = entry.build.organization_name || "";
 		const campaignName = entry.build.campaign_name || "";
-		return clipName.toLowerCase().includes(q) || 
-			orgName.toLowerCase().includes(q) || 
-			campaignName.toLowerCase().includes(q);
+		return (
+			clipName.toLowerCase().includes(q) ||
+			orgName.toLowerCase().includes(q) ||
+			campaignName.toLowerCase().includes(q) ||
+			clipIdsWithTranscriptMatch.value.has(entry.clip.id)
+		);
 	});
+});
+
+async function performTranscriptSearch(query: string) {
+	if (!query.trim()) {
+		clipIdsWithTranscriptMatch.value = new Set();
+		return;
+	}
+
+	const clipIds = [...new Set(allBuilds.value.map((entry) => entry.clip.id))];
+	if (clipIds.length === 0) {
+		clipIdsWithTranscriptMatch.value = new Set();
+		return;
+	}
+
+	try {
+		const matchedClipIds = await searchTranscriptSegmentsByClipIds(query, clipIds);
+		clipIdsWithTranscriptMatch.value = new Set(matchedClipIds);
+	} catch (error) {
+		console.error("[BuiltClipsView] Failed to search transcripts:", error);
+		clipIdsWithTranscriptMatch.value = new Set();
+	}
+}
+
+function debouncedTranscriptSearch(query: string) {
+	if (transcriptSearchTimeoutId.value !== null) {
+		clearTimeout(transcriptSearchTimeoutId.value);
+	}
+	transcriptSearchTimeoutId.value = setTimeout(() => {
+		void performTranscriptSearch(query);
+	}, 300);
+}
+
+watch(searchQuery, (query) => {
+	debouncedTranscriptSearch(query);
 });
 
 function getCachedThumbnail(buildId: string, clipId: string): string | undefined {
@@ -157,6 +197,9 @@ async function loadClips() {
 		}));
 		// Show the list immediately; load thumbnails in the background.
 		void loadThumbnails();
+		if (searchQuery.value.trim()) {
+			void performTranscriptSearch(searchQuery.value);
+		}
 	} catch (error) {
 		console.error("[BuiltClipsView] Failed to load clips:", error);
 	} finally {
@@ -249,6 +292,12 @@ async function addBuildToEditor(entry: BuildEntry) {
 }
 
 onMounted(loadClips);
+
+onUnmounted(() => {
+	if (transcriptSearchTimeoutId.value !== null) {
+		clearTimeout(transcriptSearchTimeoutId.value);
+	}
+});
 </script>
 
 <template>
@@ -260,7 +309,7 @@ onMounted(loadClips);
 				<input
 					v-model="searchQuery"
 					type="text"
-					placeholder="Search built clips..."
+					placeholder="Search by name or transcript..."
 					class="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-7 pr-3 text-xs text-zinc-200 placeholder-zinc-500 outline-none focus:border-blue-500/50"
 				/>
 			</div>

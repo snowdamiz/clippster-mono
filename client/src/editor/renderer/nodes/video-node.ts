@@ -58,6 +58,8 @@ export interface VideoNodeParams {
 export class VideoNode extends BaseNode<VideoNodeParams> {
 	private prefetchedFrame: import("mediabunny").WrappedCanvas | null = null;
 	private prefetchedFrameTime: number | null = null;
+	private lastGoodFrame: import("mediabunny").WrappedCanvas | null = null;
+	private lastGoodVideoTime: number | null = null;
 	private transitionExtension: { before: number; after: number } = { before: 0, after: 0 };
 	private chromakeyCanvas?: HTMLCanvasElement;
 	private chromakeyCtx?: CanvasRenderingContext2D | null;
@@ -101,7 +103,7 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 		for (let i = 0; i < stepCount; i++) {
 			const sampleElapsed = (i + 0.5) * dt;
 			const normalizedTime = this.params.duration > 0 ? sampleElapsed / this.params.duration : 0;
-			const sampleSpeed = Math.max(0.1, Math.min(10, evaluateKeyframeTrack(speedTrack, normalizedTime)));
+			const sampleSpeed = Math.max(0.1, Math.min(10, evaluateKeyframeTrack(speedTrack, normalizedTime, this.params.speed ?? 1)));
 			sourceOffset += sampleSpeed * dt;
 		}
 
@@ -176,11 +178,23 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 				: null;
 		this.prefetchedFrame = null;
 		this.prefetchedFrameTime = null;
-		const frame = prefetched ?? (await videoCache.getFrameAt({
+		let frame = prefetched ?? (await videoCache.getFrameAt({
 			sinkKey: this.getDecodeKey(),
 			file: this.params.file,
 			time: videoTime,
 		}));
+		if (
+			!frame &&
+			this.lastGoodFrame &&
+			this.lastGoodVideoTime !== null &&
+			Math.abs(videoTime - this.lastGoodVideoTime) < 0.5
+		) {
+			frame = this.lastGoodFrame;
+		}
+		if (frame) {
+			this.lastGoodFrame = frame;
+			this.lastGoodVideoTime = videoTime;
+		}
 
 		if (frame) {
 			renderer.context.save();
@@ -197,6 +211,7 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			const kf = this.params.keyframes;
 
 			let resolvedOpacity = getKeyframedValue({ elementKeyframes: kf, property: "opacity", normalizedTime, defaultValue: this.params.opacity ?? 1 });
+			if (!Number.isFinite(resolvedOpacity)) resolvedOpacity = 1;
 
 			// Apply fade in/out opacity ramp
 			const fadeIn = this.params.fadeIn ?? 0;
@@ -227,7 +242,7 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			// Apply transform (scale, position, rotation) with keyframe overrides
 			const transform = this.params.transform;
 			if (transform) {
-				const resolvedScale = getKeyframedValue({ elementKeyframes: kf, property: "scale", normalizedTime, defaultValue: transform.scale });
+				const resolvedScale = getKeyframedValue({ elementKeyframes: kf, property: "scale", normalizedTime, defaultValue: transform.scale ?? 1 });
 				const resolvedPosX = getKeyframedValue({ elementKeyframes: kf, property: "positionX", normalizedTime, defaultValue: transform.position.x });
 				const resolvedPosY = getKeyframedValue({ elementKeyframes: kf, property: "positionY", normalizedTime, defaultValue: transform.position.y });
 				const resolvedRotation = getKeyframedValue({ elementKeyframes: kf, property: "rotation", normalizedTime, defaultValue: transform.rotate });
@@ -237,8 +252,9 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 				if (resolvedRotation !== 0) {
 					renderer.context.rotate((resolvedRotation * Math.PI) / 180);
 				}
-				if (resolvedScale !== 1) {
-					renderer.context.scale(resolvedScale, resolvedScale);
+				const safeScale = Number.isFinite(resolvedScale) ? resolvedScale : 1;
+				if (safeScale !== 1) {
+					renderer.context.scale(safeScale, safeScale);
 				}
 				renderer.context.translate(-renderer.width / 2, -renderer.height / 2);
 			}

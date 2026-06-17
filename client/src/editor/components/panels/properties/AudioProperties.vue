@@ -7,12 +7,20 @@ import type { AudioEffect } from "../../../types/audio-effects";
 import { AUDIO_EFFECT_PRESETS, AUDIO_EFFECT_CATEGORIES, getAudioEffectPreset } from "../../../constants/audio-effect-constants";
 import { generateUUID } from "../../../utils/id";
 import { useClipVolumeInspector } from "../../../composables/panels/useClipVolumeInspector";
-import { Headphones, Trash2, VolumeX, Volume2, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, ChevronUp, Plus } from "lucide-vue-next";
+import { Headphones, Trash2, VolumeX, Volume2, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, ChevronUp, Plus, Diamond } from "lucide-vue-next";
+import KeyframeEditorPanel from "../KeyframeEditorPanel.vue";
 
 const props = defineProps<{
 	element: AudioElement;
 	trackId: string;
 }>();
+
+type TopTab = "audio" | "keyframes";
+const activeTab = ref<TopTab>("audio");
+const topTabs: { id: TopTab; label: string; icon: typeof Headphones }[] = [
+	{ id: "audio", label: "Audio", icon: Headphones },
+	{ id: "keyframes", label: "Keyframes", icon: Diamond },
+];
 
 const { editor } = useEditor();
 const { selectedElements } = useElementSelection();
@@ -183,7 +191,9 @@ function formatTime(seconds: number): string {
 </script>
 
 <template>
-	<div class="space-y-5 p-4" @pointerdown.capture="handleRangePointerDown">
+	<div class="flex h-full min-h-0 flex-row" @pointerdown.capture="handleRangePointerDown">
+		<div class="min-h-0 flex-1 overflow-y-auto">
+			<div v-if="activeTab === 'audio'" class="space-y-5 p-4">
 		<!-- Header -->
 		<div class="flex items-center gap-2">
 			<Headphones class="size-4 text-zinc-500" />
@@ -622,6 +632,28 @@ function formatTime(seconds: number): string {
 			>
 				<Trash2 class="size-3.5" />
 				Delete Audio
+			</button>
+		</div>
+			</div>
+
+			<div v-else-if="activeTab === 'keyframes'">
+				<KeyframeEditorPanel :track-id="trackId" :element="element" />
+			</div>
+		</div>
+
+		<div class="scrollbar-hidden flex w-10 shrink-0 flex-col items-center gap-2 overflow-y-auto border-l border-white/10 bg-[#0e0e10] py-3">
+			<button
+				v-for="tab in topTabs"
+				:key="tab.id"
+				type="button"
+				:title="tab.label"
+				:class="[
+					'flex flex-col items-center justify-center rounded-md p-1.5 transition-colors',
+					activeTab === tab.id ? 'text-blue-400' : 'text-zinc-500 hover:text-zinc-300',
+				]"
+				@click="activeTab = tab.id"
+			>
+				<component :is="tab.icon" class="size-[15px]" />
 			</button>
 		</div>
 	</div>

@@ -120,9 +120,14 @@ export class CanvasRenderer {
 	}
 
 	private clear() {
-		this.context.setTransform(1, 0, 0, 1, 0, 0);
-		this.context.fillStyle = "black";
-		this.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
+		const ctx = this.context;
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		// Reset paint state leaked by prior frames (effects/animations may leave alpha at 0).
+		ctx.globalAlpha = 1;
+		ctx.globalCompositeOperation = "source-over";
+		ctx.filter = "none";
+		ctx.fillStyle = "black";
+		ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 		this.applyLogicalScale();
 	}
 

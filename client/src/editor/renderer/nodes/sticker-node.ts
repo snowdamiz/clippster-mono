@@ -85,11 +85,12 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
 		const kf = this.params.keyframes;
 		let resolvedOpacity = getKeyframedValue({ elementKeyframes: kf, property: "opacity", normalizedTime, defaultValue: opacity });
-		const resolvedScale = getKeyframedValue({ elementKeyframes: kf, property: "scale", normalizedTime, defaultValue: transform.scale });
+		const resolvedScale = getKeyframedValue({ elementKeyframes: kf, property: "scale", normalizedTime, defaultValue: transform.scale ?? 1 });
 		const resolvedPosX = getKeyframedValue({ elementKeyframes: kf, property: "positionX", normalizedTime, defaultValue: transform.position.x });
 		const resolvedPosY = getKeyframedValue({ elementKeyframes: kf, property: "positionY", normalizedTime, defaultValue: transform.position.y });
 		const resolvedRotation = getKeyframedValue({ elementKeyframes: kf, property: "rotation", normalizedTime, defaultValue: transform.rotate });
-		const size = 200 * resolvedScale;
+		const safeScale = Number.isFinite(resolvedScale) ? resolvedScale : 1;
+		const size = 200 * safeScale;
 		const x = renderer.width / 2 + resolvedPosX - size / 2;
 		const y = renderer.height / 2 + resolvedPosY - size / 2;
 
@@ -175,7 +176,7 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 			elementKeyframes: kf,
 			property: "scale",
 			normalizedTime,
-			defaultValue: transform.scale,
+			defaultValue: transform.scale ?? 1,
 		});
 		const resolvedPosX = getKeyframedValue({
 			elementKeyframes: kf,
@@ -196,7 +197,8 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 			defaultValue: transform.rotate,
 		});
 
-		const size = 200 * resolvedScale;
+		const safeScale = Number.isFinite(resolvedScale) ? resolvedScale : 1;
+		const size = 200 * safeScale;
 		const x = canvasWidth / 2 + resolvedPosX - size / 2;
 		const y = canvasHeight / 2 + resolvedPosY - size / 2;
 
