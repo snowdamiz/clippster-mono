@@ -60,26 +60,40 @@ export interface ElementKeyframes {
 	tracks: Partial<Record<KeyframableProperty, KeyframeTrack>>;
 }
 
+/** Return keyframes sorted by offset ascending (does not mutate the source track). */
+export function sortedKeyframes(keyframes: Keyframe[]): Keyframe[] {
+	return [...keyframes].sort((a, b) => a.offset - b.offset);
+}
+
 /**
  * Evaluate a keyframe track at a given normalized time (0..1).
- * Returns the interpolated value.
+ *
+ * Semantics (matches NLE constant extrapolation):
+ * - One keyframe: that value applies across the whole clip.
+ * - Two or more: `defaultValue` before the first and after the last keyframe;
+ *   interpolate between adjacent keyframes inside the span.
  */
-export function evaluateKeyframeTrack(track: KeyframeTrack, normalizedTime: number): number {
-	const { keyframes } = track;
-	if (keyframes.length === 0) return 0;
+export function evaluateKeyframeTrack(
+	track: KeyframeTrack,
+	normalizedTime: number,
+	defaultValue: number,
+): number {
+	const keyframes = sortedKeyframes(track.keyframes);
+	if (keyframes.length === 0) return defaultValue;
 	if (keyframes.length === 1) return keyframes[0].value;
 
-	// Clamp
-	if (normalizedTime <= keyframes[0].offset) return keyframes[0].value;
-	if (normalizedTime >= keyframes[keyframes.length - 1].offset) {
-		return keyframes[keyframes.length - 1].value;
-	}
+	const nt = Math.max(0, Math.min(1, normalizedTime));
+	const first = keyframes[0];
+	const last = keyframes[keyframes.length - 1];
+
+	if (nt < first.offset) return defaultValue;
+	if (nt > last.offset) return defaultValue;
 
 	// Find surrounding keyframes
 	let left = keyframes[0];
 	let right = keyframes[keyframes.length - 1];
 	for (let i = 0; i < keyframes.length - 1; i++) {
-		if (normalizedTime >= keyframes[i].offset && normalizedTime <= keyframes[i + 1].offset) {
+		if (nt >= keyframes[i].offset && nt <= keyframes[i + 1].offset) {
 			left = keyframes[i];
 			right = keyframes[i + 1];
 			break;
@@ -93,7 +107,7 @@ export function evaluateKeyframeTrack(track: KeyframeTrack, normalizedTime: numb
 	const range = right.offset - left.offset;
 	if (range === 0) return left.value;
 
-	const t = (normalizedTime - left.offset) / range;
+	const t = (nt - left.offset) / range;
 	const easedT = applyEasing(t, left.interpolation);
 
 	return left.value + (right.value - left.value) * easedT;
@@ -172,5 +186,5 @@ export function getKeyframedValue({
 	if (!elementKeyframes) return defaultValue;
 	const track = elementKeyframes.tracks[property];
 	if (!track || track.keyframes.length === 0) return defaultValue;
-	return evaluateKeyframeTrack(track, normalizedTime);
+	return evaluateKeyframeTrack(track, normalizedTime, defaultValue);
 }

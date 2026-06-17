@@ -101,7 +101,7 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 		for (let i = 0; i < stepCount; i++) {
 			const sampleElapsed = (i + 0.5) * dt;
 			const normalizedTime = this.params.duration > 0 ? sampleElapsed / this.params.duration : 0;
-			const sampleSpeed = Math.max(0.1, Math.min(10, evaluateKeyframeTrack(speedTrack, normalizedTime)));
+			const sampleSpeed = Math.max(0.1, Math.min(10, evaluateKeyframeTrack(speedTrack, normalizedTime, this.params.speed ?? 1)));
 			sourceOffset += sampleSpeed * dt;
 		}
 

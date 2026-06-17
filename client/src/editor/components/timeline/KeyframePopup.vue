@@ -2,6 +2,10 @@
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import type { KeyframableProperty, KeyframeInterpolation, Keyframe, ElementKeyframes } from "../../types/keyframes";
+import {
+	formatKeyframeDisplayValue,
+	parseKeyframeDisplayValue,
+} from "../../lib/keyframe-property-defaults";
 import type { TimelineElement, TimelineTrack } from "../../types/timeline";
 import { Trash2, X } from "lucide-vue-next";
 
@@ -80,6 +84,18 @@ const popupStyle = computed(() => {
 		zIndex: 9999,
 	};
 });
+
+function displayValue(property: KeyframableProperty, value: number): string {
+	return formatKeyframeDisplayValue(property, value);
+}
+
+function valueStep(property: KeyframableProperty): string {
+	return property === "scale" || property === "opacity" ? "1" : "0.01";
+}
+
+function onValueChange(property: KeyframableProperty, keyframeId: string, raw: number) {
+	updateValue(property, keyframeId, parseKeyframeDisplayValue(property, raw));
+}
 
 function updateValue(property: KeyframableProperty, keyframeId: string, value: number) {
 	const data = elementData.value;
@@ -251,13 +267,13 @@ onUnmounted(() => {
 
 					<!-- Value -->
 					<div class="flex items-center gap-1.5">
-						<label class="w-10 text-[9px] text-zinc-500">Value</label>
+						<label class="w-10 text-[9px] text-zinc-500">Value{{ property === 'scale' ? ' %' : property === 'opacity' ? ' %' : '' }}</label>
 						<input
 							type="number"
-							:value="keyframe.value"
-							step="0.01"
+							:value="displayValue(property, keyframe.value)"
+							:step="valueStep(property)"
 							class="h-5 flex-1 rounded border border-white/10 bg-white/5 px-1.5 text-[10px] text-zinc-300 outline-none focus:border-yellow-500/30"
-							@change="(e) => updateValue(property, keyframe.id, Number((e.target as HTMLInputElement).value))"
+							@change="(e) => onValueChange(property, keyframe.id, Number((e.target as HTMLInputElement).value))"
 						/>
 					</div>
 

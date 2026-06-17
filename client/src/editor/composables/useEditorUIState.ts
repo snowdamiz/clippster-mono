@@ -1,10 +1,21 @@
 import { ref } from "vue";
 import type { CropRect } from "../types/timeline";
 import type { SocialOverlayPreset } from "../types/social-overlays";
+import type { KeyframableProperty } from "../types/keyframes";
 
 // Shared reactive state for cross-component UI coordination
 /** When true, video/audio clips use a crosshair cursor and accept timeline clicks to add keyframes. When false, clicks select and drag clips normally. */
 const timelineKeyframePlacementActive = ref(false);
+/** Which property timeline clicks add when placement mode is active. */
+const timelineKeyframePlacementProperty = ref<KeyframableProperty>("opacity");
+
+export function isWaveformPlacementProperty(property: KeyframableProperty): boolean {
+	return property === "volume";
+}
+
+export function isVisualPlacementProperty(property: KeyframableProperty): boolean {
+	return !isWaveformPlacementProperty(property);
+}
 
 const cropPanelRequested = ref(false);
 const isCropMode = ref(false);
@@ -73,9 +84,15 @@ export function useEditorUIState() {
 		timelineKeyframePlacementActive.value = value;
 	}
 
+	function setTimelineKeyframePlacementProperty(property: KeyframableProperty) {
+		timelineKeyframePlacementProperty.value = property;
+	}
+
 	return {
 		timelineKeyframePlacementActive,
 		setTimelineKeyframePlacementActive,
+		timelineKeyframePlacementProperty,
+		setTimelineKeyframePlacementProperty,
 		cropPanelRequested,
 		isCropMode,
 		originalCrop,

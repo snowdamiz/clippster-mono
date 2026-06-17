@@ -1891,7 +1891,7 @@ function serializeKeyframes(kf?: import("../../types/keyframes").ElementKeyframe
 		if (!track || track.keyframes.length === 0) continue;
 		result.push({
 			property,
-			keyframes: track.keyframes.map((k) => ({
+			keyframes: [...track.keyframes].sort((a, b) => a.offset - b.offset).map((k) => ({
 				offset: k.offset,
 				value: k.value,
 				interpolation: k.interpolation,

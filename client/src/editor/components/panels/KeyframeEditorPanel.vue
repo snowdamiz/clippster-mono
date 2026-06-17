@@ -5,16 +5,28 @@ import { useElementSelection } from "../../composables/timeline/element/useEleme
 import { useKeyframes } from "../../composables/useKeyframes";
 import { EASING_PRESETS } from "../../constants/easing-constants";
 import type { KeyframableProperty, KeyframeInterpolation } from "../../types/keyframes";
+import { sortedKeyframes } from "../../types/keyframes";
 import type { TimelineTrack, TimelineElement } from "../../types/timeline";
+import {
+	getKeyframePropertyStaticDefault,
+	formatKeyframeDisplayValue,
+	parseKeyframeDisplayValue,
+	getValueForNewKeyframeAtOffset,
+} from "../../lib/keyframe-property-defaults";
 import { Diamond, Plus, Trash2, ChevronDown, X, List, BarChart2 } from "lucide-vue-next";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import KeyframeGraphEditor from "./KeyframeGraphEditor.vue";
-import { useEditorUIState } from "../../composables/useEditorUIState";
+import { useEditorUIState, isWaveformPlacementProperty } from "../../composables/useEditorUIState";
 import { CLIP_GAIN_MAX } from "../../lib/audio-volume-ui";
 
 const { editor, version } = useEditor();
-const { timelineKeyframePlacementActive, setTimelineKeyframePlacementActive } = useEditorUIState();
+const {
+	timelineKeyframePlacementActive,
+	setTimelineKeyframePlacementActive,
+	timelineKeyframePlacementProperty,
+	setTimelineKeyframePlacementProperty,
+} = useEditorUIState();
 const { selectedElements } = useElementSelection();
 
 watch(
@@ -42,12 +54,26 @@ const selectedData = computed(() => {
 const trackRef = computed(() => selectedData.value?.track as TimelineTrack);
 const elementRef = computed(() => selectedData.value?.element as TimelineElement);
 
-const kf = computed(() => {
-	if (!selectedData.value) return null;
-	return useKeyframes({
-		trackRef: toRef(() => trackRef.value),
-		elementRef: toRef(() => elementRef.value),
-	});
+// Placeholder refs so useKeyframes can run before selection (composable rules).
+const fallbackTrack = { id: "__none__", type: "video", name: "", elements: [], muted: false, hidden: false, locked: false, isMain: true } as TimelineTrack;
+const fallbackElement = {
+	id: "__none__",
+	type: "video",
+	name: "",
+	duration: 1,
+	startTime: 0,
+	trimStart: 0,
+	trimEnd: 0,
+	mediaId: "",
+	transform: { scale: 1, position: { x: 0, y: 0 }, rotate: 0 },
+	opacity: 1,
+} as TimelineElement;
+
+const kfTrackRef = computed(() => trackRef.value ?? fallbackTrack);
+const kfElementRef = computed(() => elementRef.value ?? fallbackElement);
+const kf = useKeyframes({
+	trackRef: kfTrackRef,
+	elementRef: kfElementRef,
 });
 
 const PROPERTIES: { key: KeyframableProperty; label: string; defaultValue: number; min: number; max: number; step: number }[] = [
@@ -74,7 +100,7 @@ function toggleExpand(prop: KeyframableProperty) {
 function getPropertyKeyframes(prop: KeyframableProperty) {
 	if (!elementRef.value?.keyframes) return [];
 	const track = elementRef.value.keyframes.tracks[prop];
-	return track?.keyframes ?? [];
+	return sortedKeyframes(track?.keyframes ?? []);
 }
 
 function hasPropertyKeyframes(prop: KeyframableProperty): boolean {
@@ -82,39 +108,52 @@ function hasPropertyKeyframes(prop: KeyframableProperty): boolean {
 }
 
 function addKeyframeAtPlayhead(prop: KeyframableProperty) {
-	if (!kf.value || !elementRef.value) return;
+	if (!selectedData.value || !elementRef.value) return;
 	const el = elementRef.value;
-	const currentTime = editor.playback.getCurrentTime();
-	const normalizedTime = Math.max(0, Math.min(1, (currentTime - el.startTime) / el.duration));
-	const propDef = PROPERTIES.find((p) => p.key === prop);
-	const defaultVal = propDef?.defaultValue ?? 0;
-	const currentVal = kf.value.getResolvedValue(prop, normalizedTime, defaultVal);
-	kf.value.addKeyframe(prop, normalizedTime, currentVal);
+	const normalizedTime = kf.getNormalizedPlayheadOffset();
+	const staticDefault = getKeyframePropertyStaticDefault(el, prop);
+	const currentVal = getValueForNewKeyframeAtOffset({
+		elementKeyframes: el.keyframes,
+		property: prop,
+		offset: normalizedTime,
+		staticDefault,
+	});
+	kf.addKeyframe(prop, normalizedTime, currentVal);
 }
 
 function removeKeyframeById(prop: KeyframableProperty, keyframeId: string) {
-	if (!kf.value) return;
-	kf.value.removeKeyframe(prop, keyframeId);
+	kf.removeKeyframe(prop, keyframeId);
 }
 
 function clearAllKeyframes(prop: KeyframableProperty) {
-	if (!kf.value) return;
-	kf.value.clearPropertyKeyframes(prop);
+	kf.clearPropertyKeyframes(prop);
 }
 
 function updateKeyframeValue(prop: KeyframableProperty, keyframeId: string, value: number) {
-	if (!kf.value) return;
-	kf.value.updateKeyframe(prop, keyframeId, { value });
+	kf.updateKeyframe(prop, keyframeId, { value });
 }
 
 function updateKeyframeOffset(prop: KeyframableProperty, keyframeId: string, offset: number) {
-	if (!kf.value) return;
-	kf.value.updateKeyframe(prop, keyframeId, { offset: Math.max(0, Math.min(1, offset)) });
+	kf.updateKeyframe(prop, keyframeId, { offset: Math.max(0, Math.min(1, offset)) });
 }
 
 function updateKeyframeInterpolation(prop: KeyframableProperty, keyframeId: string, interpolation: KeyframeInterpolation) {
-	if (!kf.value) return;
-	kf.value.updateKeyframe(prop, keyframeId, { interpolation });
+	kf.updateKeyframe(prop, keyframeId, { interpolation });
+}
+
+function keyframeValueLabel(prop: KeyframableProperty): string {
+	if (prop === "scale") return "%";
+	if (prop === "opacity") return "%";
+	return "";
+}
+
+function displayKeyframeValue(prop: KeyframableProperty, value: number): string {
+	return formatKeyframeDisplayValue(prop, value);
+}
+
+function onKeyframeValueInput(prop: KeyframableProperty, keyframeId: string, raw: number) {
+	const stored = parseKeyframeDisplayValue(prop, raw);
+	updateKeyframeValue(prop, keyframeId, stored);
 }
 
 function formatOffset(offset: number): string {
@@ -133,6 +172,26 @@ const applicableProperties = computed(() => {
 	if (type === "image") return PROPERTIES.filter((p) => p.key !== "volume" && p.key !== "speed");
 	return PROPERTIES.filter((p) => p.key !== "volume" && p.key !== "speed");
 });
+
+watch(applicableProperties, (props) => {
+	if (props.length === 0) return;
+	if (!props.some((p) => p.key === timelineKeyframePlacementProperty.value)) {
+		setTimelineKeyframePlacementProperty(props[0]!.key);
+	}
+}, { immediate: true });
+
+function onPropertyRowClick(prop: KeyframableProperty) {
+	if (timelineKeyframePlacementActive.value) {
+		setTimelineKeyframePlacementProperty(prop);
+	}
+	toggleExpand(prop);
+}
+
+function placementTargetHint(prop: KeyframableProperty): string {
+	return isWaveformPlacementProperty(prop)
+		? "Click the clip waveform on the timeline"
+		: "Click the clip picture area on the timeline";
+}
 </script>
 
 <template>
@@ -142,12 +201,11 @@ const applicableProperties = computed(() => {
 			<Diamond class="size-3.5 text-zinc-500" />
 			<span class="text-xs font-medium text-zinc-400">Keyframes</span>
 			<div
-				v-if="selectedData && (elementRef.type === 'video' || elementRef.type === 'audio')"
+				v-if="selectedData && (elementRef.type === 'video' || elementRef.type === 'audio' || elementRef.type === 'image')"
 				class="flex items-center gap-1.5 rounded border border-white/10 bg-white/[0.02] px-2 py-0.5"
-				title="When on, the cursor becomes a crosshair over clips and you can click the timeline to drop keyframes (video: picture area = opacity, waveform = volume; audio: waveform = volume). When off, clicks only select and move clips."
+				title="When on, click the timeline to add a keyframe for the selected property. Visual properties use the picture area; volume uses the waveform."
 			>
 				<span class="text-[10px] font-medium text-zinc-500">Click timeline to add</span>
-				<!-- Reka SwitchRoot uses modelValue / update:modelValue (not checked / update:checked) -->
 				<Switch
 					:model-value="timelineKeyframePlacementActive"
 					class="scale-90"
@@ -191,15 +249,52 @@ const applicableProperties = computed(() => {
 
 		<!-- List view -->
 		<div v-else class="flex-1 overflow-y-auto p-3 space-y-1">
+			<p class="mb-2 px-1 text-[10px] leading-relaxed text-zinc-600">
+				Outside the first and last keyframe, the clip uses its base value (e.g. 100% scale). Values animate only between keyframes.
+			</p>
+			<div
+				v-if="timelineKeyframePlacementActive && applicableProperties.length > 0"
+				class="mb-2 flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-2.5 py-1.5"
+			>
+				<span class="shrink-0 text-[10px] font-medium text-amber-400">Add property</span>
+				<Select
+					:model-value="timelineKeyframePlacementProperty"
+					@update:model-value="(v) => setTimelineKeyframePlacementProperty(v as KeyframableProperty)"
+				>
+					<SelectTrigger class="h-6 min-w-0 flex-1 rounded border border-white/10 bg-white/5 px-2 text-[10px] text-zinc-200">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent class="bg-zinc-900 border-white/10">
+						<SelectItem
+							v-for="prop in applicableProperties"
+							:key="prop.key"
+							:value="prop.key"
+							class="text-[10px] text-zinc-200"
+						>
+							{{ prop.label }}
+						</SelectItem>
+					</SelectContent>
+				</Select>
+			</div>
+			<p
+				v-if="timelineKeyframePlacementActive"
+				class="mb-2 px-1 text-[10px] leading-relaxed text-amber-400/80"
+			>
+				{{ placementTargetHint(timelineKeyframePlacementProperty) }}
+			</p>
 			<div
 				v-for="prop in applicableProperties"
 				:key="prop.key"
-				class="rounded-md border border-white/10 bg-white/[0.02]"
+				class="rounded-md border bg-white/[0.02]"
+				:class="timelineKeyframePlacementActive && timelineKeyframePlacementProperty === prop.key
+					? 'border-amber-500/40 bg-amber-500/5'
+					: 'border-white/10'"
 			>
 				<!-- Property header -->
 				<button
 					class="flex w-full items-center justify-between px-2.5 py-1.5"
-					@click="toggleExpand(prop.key)"
+					:title="timelineKeyframePlacementActive ? `Set timeline click target to ${prop.label}` : undefined"
+					@click="onPropertyRowClick(prop.key)"
 				>
 					<div class="flex items-center gap-1.5">
 						<Diamond
@@ -217,7 +312,7 @@ const applicableProperties = computed(() => {
 						<button
 							class="flex size-5 items-center justify-center rounded text-zinc-500 hover:bg-white/5 hover:text-amber-400"
 							title="Add keyframe at playhead"
-							@click.stop="addKeyframeAtPlayhead(prop.key)"
+							@click.stop="setTimelineKeyframePlacementProperty(prop.key); addKeyframeAtPlayhead(prop.key)"
 						>
 							<Plus class="size-3" />
 						</button>
@@ -268,13 +363,14 @@ const applicableProperties = computed(() => {
 						<!-- Value -->
 						<input
 							type="number"
-							:value="Number(keyframe.value.toFixed(2))"
-							:min="prop.min"
-							:max="prop.max"
-							:step="prop.step"
+							:value="displayKeyframeValue(prop.key, keyframe.value)"
+							:min="prop.key === 'scale' || prop.key === 'opacity' ? prop.min * 100 : prop.min"
+							:max="prop.key === 'scale' || prop.key === 'opacity' ? prop.max * 100 : prop.max"
+							:step="prop.key === 'scale' || prop.key === 'opacity' ? 1 : prop.step"
 							class="h-5 w-14 rounded border border-white/10 bg-white/5 px-1 text-center text-[10px] text-zinc-300"
-							@change="(e) => updateKeyframeValue(prop.key, keyframe.id, Number((e.target as HTMLInputElement).value))"
+							@change="(e) => onKeyframeValueInput(prop.key, keyframe.id, Number((e.target as HTMLInputElement).value))"
 						/>
+						<span v-if="keyframeValueLabel(prop.key)" class="text-[9px] text-zinc-500">{{ keyframeValueLabel(prop.key) }}</span>
 
 						<!-- Easing dropdown -->
 						<Select

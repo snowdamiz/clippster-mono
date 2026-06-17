@@ -1079,24 +1079,27 @@ fn evaluate_keyframe_track_rust(keyframes: &[KeyframePoint], normalized_t: f64, 
     if keyframes.is_empty() {
         return default_value;
     }
-    if keyframes.len() == 1 {
-        return keyframes[0].value;
+    let mut sorted: Vec<KeyframePoint> = keyframes.to_vec();
+    sorted.sort_by(|a, b| a.offset.partial_cmp(&b.offset).unwrap());
+
+    if sorted.len() == 1 {
+        return sorted[0].value;
     }
     let nt = normalized_t.clamp(0.0, 1.0);
-    if nt <= keyframes[0].offset {
-        return keyframes[0].value;
+    if nt < sorted[0].offset {
+        return default_value;
     }
-    let last = &keyframes[keyframes.len() - 1];
-    if nt >= last.offset {
-        return last.value;
+    let last = &sorted[sorted.len() - 1];
+    if nt > last.offset {
+        return default_value;
     }
 
-    let mut left = &keyframes[0];
-    let mut right = &keyframes[keyframes.len() - 1];
-    for i in 0..keyframes.len() - 1 {
-        if nt >= keyframes[i].offset && nt <= keyframes[i + 1].offset {
-            left = &keyframes[i];
-            right = &keyframes[i + 1];
+    let mut left = &sorted[0];
+    let mut right = &sorted[sorted.len() - 1];
+    for i in 0..sorted.len() - 1 {
+        if nt >= sorted[i].offset && nt <= sorted[i + 1].offset {
+            left = &sorted[i];
+            right = &sorted[i + 1];
             break;
         }
     }
@@ -1184,11 +1187,15 @@ fn build_keyframe_expression(
         }
     }
 
-    let last_val = keyframes.last().unwrap().value;
-    let mut expr = format!("{}", last_val);
+    let mut expr = format!("{}", default_value);
     for (t_end, segment_expr) in parts.iter().rev() {
         expr = format!("if(lt(t\\,{})\\,{}\\,{})", t_end, segment_expr, expr);
     }
+
+    // Constant extrapolation: clip base value before the first keyframe.
+    let first = &keyframes[0];
+    let t0 = first.offset * duration;
+    expr = format!("if(lt(t\\,{})\\,{}\\,{})", t0, default_value, expr);
 
     Some(expr)
 }
@@ -4344,4 +4351,45 @@ pub async fn save_overlay_frame_sequence(
     );
 
     Ok((pattern_str, frames.len() as u32))
+}
+
+#[cfg(test)]
+mod keyframe_tests {
+    use super::*;
+
+    fn kf(offset: f64, value: f64) -> KeyframePoint {
+        KeyframePoint {
+            offset,
+            value,
+            interpolation: "linear".to_string(),
+        }
+    }
+
+    #[test]
+    fn evaluate_uses_base_outside_keyframe_span() {
+        let keyframes = vec![kf(0.25, 1.0), kf(0.75, 1.5)];
+        assert!((evaluate_keyframe_track_rust(&keyframes, 0.0, 1.0) - 1.0).abs() < 1e-9);
+        assert!((evaluate_keyframe_track_rust(&keyframes, 0.1, 1.0) - 1.0).abs() < 1e-9);
+        assert!((evaluate_keyframe_track_rust(&keyframes, 0.5, 1.0) - 1.25).abs() < 1e-9);
+        assert!((evaluate_keyframe_track_rust(&keyframes, 0.75, 1.0) - 1.5).abs() < 1e-9);
+        assert!((evaluate_keyframe_track_rust(&keyframes, 0.9, 1.0) - 1.0).abs() < 1e-9);
+        assert!((evaluate_keyframe_track_rust(&keyframes, 1.0, 1.0) - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn evaluate_sorts_unsorted_keyframes() {
+        let keyframes = vec![kf(0.75, 1.5), kf(0.25, 1.0)];
+        assert!((evaluate_keyframe_track_rust(&keyframes, 0.1, 1.0) - 1.0).abs() < 1e-9);
+        assert!((evaluate_keyframe_track_rust(&keyframes, 0.5, 1.0) - 1.25).abs() < 1e-9);
+    }
+
+    #[test]
+    fn build_expression_uses_base_outside_keyframe_span() {
+        let keyframes = vec![kf(0.25, 1.0), kf(0.75, 1.5)];
+        let duration = 10.0;
+        let expr = build_keyframe_expression(&keyframes, duration, 1.0).expect("expr");
+        assert!(expr.contains("if(lt(t\\,2.5)\\,1\\,"), "expected pre-first base in: {}", expr);
+        // After last keyframe (t > 7.5) falls through to base value 1
+        assert!(expr.ends_with("1") || expr.contains(",1)"), "expected post-last base in: {}", expr);
+    }
 }
