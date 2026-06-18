@@ -8,17 +8,10 @@ import { HowItWorks } from './components/HowItWorks'
 // import { Testimonials } from './components/Testimonials'
 import { CTA } from './components/CTA'
 import { Footer } from './components/Footer'
-import { BetaCodeModal } from './components/BetaCodeModal'
 import { AnnouncementDialog } from './components/AnnouncementDialog'
-import { useDownloadContext } from './context/DownloadContext'
 import { useAnnouncements } from './hooks/useAnnouncements'
 
 function App() {
-  const {
-    showBetaCodeModal,
-    setShowBetaCodeModal,
-    enableDownloads
-  } = useDownloadContext()
   const { currentAnnouncement, queueLength, fetchAndEnqueue, dismissCurrent } = useAnnouncements()
 
   // Fetch active announcements on mount (landing page is public — no auth needed)
@@ -39,14 +32,6 @@ function App() {
         <CTA />
       </main>
       <Footer />
-      
-      <BetaCodeModal
-        isOpen={showBetaCodeModal}
-        onClose={() => setShowBetaCodeModal(false)}
-        onSuccess={() => {
-          enableDownloads()
-        }}
-      />
 
       <AnnouncementDialog
         announcement={currentAnnouncement}
