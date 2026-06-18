@@ -22,7 +22,7 @@
             v-if="playlist.length > 0"
             @click="playPrevious"
             class="audio-player__control-btn"
-            :disabled="currentTrackIndex === 0 && !isShuffle && repeatMode !== 'all'"
+            :disabled="!hasPrevious"
             title="Previous"
           >
             <SkipBack :size="16" />
@@ -43,7 +43,7 @@
             v-if="playlist.length > 0"
             @click="playNext"
             class="audio-player__control-btn"
-            :disabled="currentTrackIndex === playlist.length - 1 && !isShuffle && repeatMode !== 'all'"
+            :disabled="!hasNext"
             title="Next"
           >
             <SkipForward :size="16" />
@@ -142,7 +142,8 @@
   const {
     currentTrack,
     playlist,
-    currentTrackIndex,
+    hasNext,
+    hasPrevious,
     isPlaying,
     isShuffle,
     repeatMode,

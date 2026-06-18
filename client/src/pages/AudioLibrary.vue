@@ -769,13 +769,19 @@
     bulkDeleteAudioMode.value = false;
   }
 
+  async function deleteAudioEntry(audio: DownloadedAudio) {
+    await invoke('delete_audio_file', { filePath: audio.file_path });
+    await deleteDownloadedAudio(audio.id);
+  }
+
   async function deleteAudioConfirmed() {
     try {
       if (bulkDeleteAudioMode.value && selectedAudioIds.value.size > 0) {
         const count = selectedAudioIds.value.size;
+        const toDelete = audioFiles.value.filter(a => selectedAudioIds.value.has(a.id));
 
-        for (const audioId of selectedAudioIds.value) {
-          await deleteDownloadedAudio(audioId);
+        for (const audio of toDelete) {
+          await deleteAudioEntry(audio);
         }
 
         success('Deleted', `Deleted ${count} audio file${count > 1 ? 's' : ''}`);
@@ -784,8 +790,7 @@
       } else if (audioToDelete.value) {
         const audio = audioToDelete.value;
 
-        await invoke('delete_audio_file', { filePath: audio.file_path });
-        await deleteDownloadedAudio(audio.id);
+        await deleteAudioEntry(audio);
 
         success('Deleted', `Deleted: ${audio.title}`);
         await loadAudioFiles();

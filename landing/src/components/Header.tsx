@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { Menu, X, Apple, Monitor, Loader2 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
-import { useDownloadContext } from '../context/DownloadContext'
 
 const navLinks: { href: string; label: string; isPage?: boolean }[] = [
   { href: '#product', label: 'Product' },
@@ -15,7 +14,6 @@ export function Header() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const { primaryDownload, otherDownloads, isLoading } = useDownloads()
-  const { downloadsEnabled, openBetaCodeModal } = useDownloadContext()
   const location = useLocation()
   const navigate = useNavigate()
   
@@ -100,16 +98,6 @@ export function Header() {
               <div className="px-5 py-2.5 rounded-lg bg-[#141416] border border-[#1f1f23] text-zinc-300 font-medium text-sm flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-cyan-500" />
               </div>
-            ) : !downloadsEnabled ? (
-              <button
-                onClick={openBetaCodeModal}
-                className="px-5 py-2.5 rounded-lg bg-[#141416] text-zinc-300 font-medium text-sm border border-[#1f1f23] flex items-center gap-2 cursor-pointer hover:border-[rgba(255,255,255,0.1)] hover:text-white transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                </svg>
-                Enter Beta Code
-              </button>
             ) : primaryDownload ? (
               <>
                 {secondaryDownload && (
@@ -179,20 +167,7 @@ export function Header() {
               )
             ))}
             <div className="mt-3 pt-3 border-t border-[#1f1f23] space-y-2">
-              {!downloadsEnabled ? (
-                <button
-                  onClick={() => {
-                    setIsMobileMenuOpen(false)
-                    openBetaCodeModal()
-                  }}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-[rgba(255,255,255,0.05)] text-zinc-300 font-medium border border-[#1f1f23]"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                  </svg>
-                  Enter Beta Code
-                </button>
-              ) : primaryDownload && (
+              {primaryDownload && (
                 <>
                   <a
                     href={primaryDownload.downloadUrl}

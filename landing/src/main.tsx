@@ -10,7 +10,6 @@ import { PricingPage } from './pages/PricingPage'
 import { PrivacyPage } from './pages/PrivacyPage'
 import { TermsPage } from './pages/TermsPage'
 import { ScrollToTop } from './components/ScrollToTop'
-import { DownloadProvider } from './context/DownloadContext'
 import { AuthProvider } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
@@ -113,7 +112,6 @@ createRoot(document.getElementById('root')!).render(
       <ScrollToTop />
       <ToastProvider>
         <AuthProvider>
-          <DownloadProvider>
             <Suspense fallback={<LoadingFallback />}>
               <Routes>
                 {/* Public pages */}
@@ -192,7 +190,6 @@ createRoot(document.getElementById('root')!).render(
                 </Route>
               </Routes>
             </Suspense>
-          </DownloadProvider>
         </AuthProvider>
       </ToastProvider>
     </BrowserRouter>
