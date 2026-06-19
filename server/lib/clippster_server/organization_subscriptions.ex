@@ -618,12 +618,14 @@ defmodule ClippsterServer.OrganizationSubscriptions do
             IO.puts(
               "[OrgSubscriptions] Failed to cancel Stripe base subscription for org #{organization_id}: #{message}"
             )
-            # Continue anyway to mark as cancelled in DB
+
+          # Continue anyway to mark as cancelled in DB
 
           {:error, reason} ->
             IO.puts(
               "[OrgSubscriptions] Failed to cancel Stripe base subscription for org #{organization_id}: #{inspect(reason)}"
             )
+
             # Continue anyway to mark as cancelled in DB
         end
       end
@@ -646,12 +648,14 @@ defmodule ClippsterServer.OrganizationSubscriptions do
               IO.puts(
                 "[OrgSubscriptions] Failed to cancel Stripe add-on #{addon.addon_tier} for org #{organization_id}: #{message}"
               )
-              # Continue with other add-ons
+
+            # Continue with other add-ons
 
             {:error, reason} ->
               IO.puts(
                 "[OrgSubscriptions] Failed to cancel Stripe add-on #{addon.addon_tier} for org #{organization_id}: #{inspect(reason)}"
               )
+
               # Continue with other add-ons
           end
         end
@@ -703,6 +707,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
             IO.puts(
               "[OrgSubscriptions] ADMIN: Failed to cancel Stripe base subscription for org #{organization_id}: #{message}"
             )
+
             # For admin cancellations, rollback if Stripe fails
             Repo.rollback({:stripe_error, message})
 
@@ -710,6 +715,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
             IO.puts(
               "[OrgSubscriptions] ADMIN: Failed to cancel Stripe base subscription for org #{organization_id}: #{inspect(reason)}"
             )
+
             Repo.rollback({:stripe_error, reason})
         end
       end
@@ -732,12 +738,14 @@ defmodule ClippsterServer.OrganizationSubscriptions do
               IO.puts(
                 "[OrgSubscriptions] ADMIN: Failed to cancel Stripe add-on #{addon.addon_tier} for org #{organization_id}: #{message}"
               )
-              # For admin, we log but continue with other add-ons
+
+            # For admin, we log but continue with other add-ons
 
             {:error, reason} ->
               IO.puts(
                 "[OrgSubscriptions] ADMIN: Failed to cancel Stripe add-on #{addon.addon_tier} for org #{organization_id}: #{inspect(reason)}"
               )
+
               # Continue with other add-ons
           end
         end
@@ -756,9 +764,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
       |> where([a], a.organization_id == ^organization_id and a.status == "active")
       |> Repo.update_all(set: [status: "cancelled"])
 
-      IO.puts(
-        "[OrgSubscriptions] ADMIN: Cancelled subscription for org #{organization_id}"
-      )
+      IO.puts("[OrgSubscriptions] ADMIN: Cancelled subscription for org #{organization_id}")
 
       updated_org
     end)

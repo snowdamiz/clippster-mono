@@ -5,7 +5,14 @@ defmodule ClippsterServer.PlatformCampaigns do
 
   import Ecto.Query, warn: false
   alias ClippsterServer.Repo
-  alias ClippsterServer.PlatformCampaigns.{RewardTier, RewardGrant, RevenueAllocationSettings, RevenueAllocationTransaction}
+
+  alias ClippsterServer.PlatformCampaigns.{
+    RewardTier,
+    RewardGrant,
+    RevenueAllocationSettings,
+    RevenueAllocationTransaction
+  }
+
   alias ClippsterServer.Repo
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Credits
@@ -51,8 +58,11 @@ defmodule ClippsterServer.PlatformCampaigns do
     settings = get_revenue_allocation_settings()
 
     if settings.enabled do
-      allocation_amount = 
-        Decimal.mult(payment_amount, Decimal.div(settings.allocation_percentage, Decimal.new("100")))
+      allocation_amount =
+        Decimal.mult(
+          payment_amount,
+          Decimal.div(settings.allocation_percentage, Decimal.new("100"))
+        )
         |> Decimal.round(2)
 
       new_balance = Decimal.add(settings.current_balance, allocation_amount)
@@ -91,7 +101,7 @@ defmodule ClippsterServer.PlatformCampaigns do
   """
   def record_campaign_spend(campaign_id, amount, description \\ nil) do
     settings = get_revenue_allocation_settings()
-    
+
     new_balance = Decimal.sub(settings.current_balance, amount)
     new_total_spent = Decimal.add(settings.total_spent, amount)
 
@@ -189,15 +199,14 @@ defmodule ClippsterServer.PlatformCampaigns do
   Checks if a submission has reached any reward milestones and grants rewards.
   """
   def check_and_grant_rewards(submission_id) do
-    submission = 
+    submission =
       CampaignSubmission
       |> where([s], s.id == ^submission_id)
       |> preload([:campaign, :user])
       |> Repo.one()
 
-    if submission && submission.campaign.is_platform_campaign && 
-       submission.campaign.platform_payment_model == "milestone_rewards" do
-      
+    if submission && submission.campaign.is_platform_campaign &&
+         submission.campaign.platform_payment_model == "milestone_rewards" do
       tiers = list_reward_tiers(submission.campaign_id)
       total_views = submission.total_views || 0
 
@@ -213,17 +222,20 @@ defmodule ClippsterServer.PlatformCampaigns do
 
   defp grant_tier_rewards(submission, tier) do
     # Check if already granted (for non-recurring rewards)
-    existing_grant = 
+    existing_grant =
       RewardGrant
       |> where([g], g.submission_id == ^submission.id and g.reward_tier_id == ^tier.id)
       |> Repo.one()
 
-    should_grant = case existing_grant do
-      nil -> true
-      _grant -> 
-        # For recurring rewards, check if any are enabled and recurring
-        tier.discount_recurring || tier.free_months_recurring || tier.ai_credits_recurring
-    end
+    should_grant =
+      case existing_grant do
+        nil ->
+          true
+
+        _grant ->
+          # For recurring rewards, check if any are enabled and recurring
+          tier.discount_recurring || tier.free_months_recurring || tier.ai_credits_recurring
+      end
 
     if should_grant do
       Repo.transaction(fn ->
@@ -236,28 +248,31 @@ defmodule ClippsterServer.PlatformCampaigns do
         }
 
         # Grant discount
-        grant_attrs = if tier.discount_enabled do
-          coupon_id = create_stripe_coupon(tier, submission.user)
-          Map.put(grant_attrs, :stripe_coupon_id, coupon_id)
-        else
-          grant_attrs
-        end
+        grant_attrs =
+          if tier.discount_enabled do
+            coupon_id = create_stripe_coupon(tier, submission.user)
+            Map.put(grant_attrs, :stripe_coupon_id, coupon_id)
+          else
+            grant_attrs
+          end
 
         # Grant free months
-        grant_attrs = if tier.free_months_enabled do
-          extend_subscription(submission.user, tier)
-          Map.put(grant_attrs, :free_months_granted, tier.free_months_count)
-        else
-          grant_attrs
-        end
+        grant_attrs =
+          if tier.free_months_enabled do
+            extend_subscription(submission.user, tier)
+            Map.put(grant_attrs, :free_months_granted, tier.free_months_count)
+          else
+            grant_attrs
+          end
 
         # Grant AI credits
-        grant_attrs = if tier.ai_credits_enabled do
-          Credits.add_credits(submission.user_id, tier.ai_credits_amount)
-          Map.put(grant_attrs, :ai_credits_granted, tier.ai_credits_amount)
-        else
-          grant_attrs
-        end
+        grant_attrs =
+          if tier.ai_credits_enabled do
+            Credits.add_credits(submission.user_id, tier.ai_credits_amount)
+            Map.put(grant_attrs, :ai_credits_granted, tier.ai_credits_amount)
+          else
+            grant_attrs
+          end
 
         %RewardGrant{}
         |> RewardGrant.changeset(grant_attrs)
@@ -269,28 +284,30 @@ defmodule ClippsterServer.PlatformCampaigns do
   defp create_stripe_coupon(tier, user) do
     # Check if user's tier is eligible
     user_tier = user.subscription_tier || "free"
-    
-    applies_to_tiers = if Enum.empty?(tier.discount_applies_to_tiers) do
-      ["starter", "creator", "pro"]
-    else
-      tier.discount_applies_to_tiers
-    end
+
+    applies_to_tiers =
+      if Enum.empty?(tier.discount_applies_to_tiers) do
+        ["starter", "creator", "pro"]
+      else
+        tier.discount_applies_to_tiers
+      end
 
     if user_tier in applies_to_tiers do
       # Create Stripe coupon
       duration = if tier.discount_recurring, do: "repeating", else: "once"
-      
+
       coupon_params = %{
         percent_off: tier.discount_percent,
         duration: duration,
         name: "Platform Campaign Reward - #{tier.discount_percent}% off"
       }
 
-      coupon_params = if tier.discount_recurring do
-        Map.put(coupon_params, :duration_in_months, tier.discount_duration_months)
-      else
-        coupon_params
-      end
+      coupon_params =
+        if tier.discount_recurring do
+          Map.put(coupon_params, :duration_in_months, tier.discount_duration_months)
+        else
+          coupon_params
+        end
 
       case Stripe.Coupon.create(coupon_params) do
         {:ok, coupon} ->
@@ -315,15 +332,16 @@ defmodule ClippsterServer.PlatformCampaigns do
 
   defp extend_subscription(user, tier) do
     user_tier = user.subscription_tier || "free"
-    
-    applies_to_tiers = if Enum.empty?(tier.free_months_applies_to_tiers) do
-      ["starter", "creator", "pro"]
-    else
-      tier.free_months_applies_to_tiers
-    end
+
+    applies_to_tiers =
+      if Enum.empty?(tier.free_months_applies_to_tiers) do
+        ["starter", "creator", "pro"]
+      else
+        tier.free_months_applies_to_tiers
+      end
 
     if user_tier in applies_to_tiers && user.subscription_end_date do
-      new_end_date = 
+      new_end_date =
         user.subscription_end_date
         |> DateTime.from_naive!("Etc/UTC")
         |> DateTime.add(tier.free_months_count * 30 * 24 * 60 * 60, :second)
@@ -369,21 +387,21 @@ defmodule ClippsterServer.PlatformCampaigns do
   Gets platform campaign statistics.
   """
   def get_platform_campaign_stats do
-    total_campaigns = 
+    total_campaigns =
       Campaigns.Campaign
       |> where([c], c.is_platform_campaign == true)
       |> Repo.aggregate(:count)
 
-    active_campaigns = 
+    active_campaigns =
       Campaigns.Campaign
       |> where([c], c.is_platform_campaign == true and c.status == "active")
       |> Repo.aggregate(:count)
 
-    total_rewards_granted = 
+    total_rewards_granted =
       RewardGrant
       |> Repo.aggregate(:count)
 
-    total_budget_spent = 
+    total_budget_spent =
       Campaigns.Campaign
       |> where([c], c.is_platform_campaign == true)
       |> select([c], sum(c.spent_budget))

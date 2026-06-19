@@ -241,9 +241,10 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
 
   defp extract_profile_url(provider_account, platform, username) do
     # Try metadata first
-    profile_url = get_in(provider_account.metadata, ["profile_url"]) || 
-                  get_in(provider_account.raw, ["profile_url"])
-    
+    profile_url =
+      get_in(provider_account.metadata, ["profile_url"]) ||
+        get_in(provider_account.raw, ["profile_url"])
+
     if profile_url do
       profile_url
     else
@@ -254,7 +255,7 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
 
   defp construct_profile_url(platform, username) when is_binary(username) do
     clean_username = String.replace(username, "@", "")
-    
+
     case platform do
       "instagram" -> "https://instagram.com/#{clean_username}"
       "tiktok" -> "https://tiktok.com/@#{clean_username}"
@@ -271,10 +272,10 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
 
   defp extract_verified_status(provider_account) do
     get_in(provider_account.metadata, ["is_verified"]) ||
-    get_in(provider_account.metadata, ["verified"]) ||
-    get_in(provider_account.raw, ["is_verified"]) ||
-    get_in(provider_account.raw, ["verified"]) ||
-    false
+      get_in(provider_account.metadata, ["verified"]) ||
+      get_in(provider_account.raw, ["is_verified"]) ||
+      get_in(provider_account.raw, ["verified"]) ||
+      false
   end
 
   defp upsert_org_accounts(org_id, user, provider_accounts, platform_override)

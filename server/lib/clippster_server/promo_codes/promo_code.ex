@@ -143,7 +143,11 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
 
     cond do
       Enum.empty?(allowed_tiers) ->
-        add_error(changeset, :allowed_tiers, "bundle promos require at least one user subscription tier")
+        add_error(
+          changeset,
+          :allowed_tiers,
+          "bundle promos require at least one user subscription tier"
+        )
 
       !Enum.empty?(allowed_org_tiers) || !Enum.empty?(allowed_credit_packs) ->
         add_error(

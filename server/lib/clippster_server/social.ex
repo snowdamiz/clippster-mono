@@ -13,6 +13,7 @@ defmodule ClippsterServer.Social do
     SocialAccountAssignment,
     PostSubmission
   }
+
   alias ClippsterServer.Social.Providers.PostForMe
 
   # ============================================================================
@@ -616,7 +617,8 @@ defmodule ClippsterServer.Social do
   Resets them to 'scheduled' so the worker can retry.
   """
   def recover_stale_publishing_posts do
-    stale_threshold = DateTime.utc_now() |> DateTime.add(-300, :second) |> DateTime.truncate(:second)
+    stale_threshold =
+      DateTime.utc_now() |> DateTime.add(-300, :second) |> DateTime.truncate(:second)
 
     {count, _} =
       from(p in PostSubmission,
@@ -627,7 +629,8 @@ defmodule ClippsterServer.Social do
       |> Repo.update_all(
         set: [
           status: "failed",
-          error_message: "Worker crashed during publishing - post may have been published externally",
+          error_message:
+            "Worker crashed during publishing - post may have been published externally",
           locked_at: nil,
           updated_at: DateTime.utc_now() |> DateTime.truncate(:second)
         ]

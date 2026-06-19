@@ -10,6 +10,7 @@ import { PricingPage } from './pages/PricingPage'
 import { PrivacyPage } from './pages/PrivacyPage'
 import { TermsPage } from './pages/TermsPage'
 import { ScrollToTop } from './components/ScrollToTop'
+import { LandingAnalyticsTracker } from './components/LandingAnalyticsTracker'
 import { AuthProvider } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
@@ -71,48 +72,45 @@ const AdminModLogsPage = lazy(() => import('./pages/admin/AdminModLogsPage').the
 const AdminAnnouncementsPage = lazy(() => import('./pages/admin/AdminAnnouncementsPage').then(m => ({ default: m.AdminAnnouncementsPage })))
 const AdminMessagingPage = lazy(() => import('./pages/admin/AdminMessagingPage').then(m => ({ default: m.AdminMessagingPage })))
 
-function renderAdminChildRoutes() {
-  return (
-    <>
-      <Route index element={<AdminHubPage />} />
-      <Route path="users" element={<AdminUsersPage />} />
-      <Route path="organizations" element={<AdminOrganizationsPage />} />
-      <Route path="bug-reports" element={<AdminBugReportsPage />} />
-      <Route path="ai-usage" element={<AdminAiUsagePage />} />
-      <Route path="analytics" element={<AdminAnalyticsPage />} />
-      <Route path="beta-codes" element={<AdminBetaCodesPage />} />
-      <Route path="discount-codes" element={<AdminDiscountCodesPage />} />
-      <Route path="waitlist" element={<AdminWaitlistPage />} />
-      <Route path="settings" element={<AdminSettingsPage />} />
-      <Route path="org-applications" element={<AdminOrgApplicationsPage />} />
-      <Route path="affiliates" element={<AdminAffiliatesPage />} />
-      <Route path="affiliates/:id" element={<AdminAffiliateDetailPage />} />
-      <Route path="users/:id" element={<AdminUserProfilePage />} />
-      <Route path="organizations/:id" element={<AdminOrgDetailPage />} />
-      <Route path="customer-service" element={<AdminCustomerServicePage />} />
-      <Route path="staff-messages" element={<AdminStaffMessagesPage />} />
-      <Route path="mod-logs" element={<AdminModLogsPage />} />
-      <Route path="announcements" element={<AdminAnnouncementsPage />} />
-      <Route path="messaging" element={<AdminMessagingPage />} />
-    </>
-  )
-}
+const adminChildRoutes = (
+  <>
+    <Route index element={<AdminHubPage />} />
+    <Route path="users" element={<AdminUsersPage />} />
+    <Route path="organizations" element={<AdminOrganizationsPage />} />
+    <Route path="bug-reports" element={<AdminBugReportsPage />} />
+    <Route path="ai-usage" element={<AdminAiUsagePage />} />
+    <Route path="analytics" element={<AdminAnalyticsPage />} />
+    <Route path="beta-codes" element={<AdminBetaCodesPage />} />
+    <Route path="discount-codes" element={<AdminDiscountCodesPage />} />
+    <Route path="waitlist" element={<AdminWaitlistPage />} />
+    <Route path="settings" element={<AdminSettingsPage />} />
+    <Route path="org-applications" element={<AdminOrgApplicationsPage />} />
+    <Route path="affiliates" element={<AdminAffiliatesPage />} />
+    <Route path="affiliates/:id" element={<AdminAffiliateDetailPage />} />
+    <Route path="users/:id" element={<AdminUserProfilePage />} />
+    <Route path="organizations/:id" element={<AdminOrgDetailPage />} />
+    <Route path="customer-service" element={<AdminCustomerServicePage />} />
+    <Route path="staff-messages" element={<AdminStaffMessagesPage />} />
+    <Route path="mod-logs" element={<AdminModLogsPage />} />
+    <Route path="announcements" element={<AdminAnnouncementsPage />} />
+    <Route path="messaging" element={<AdminMessagingPage />} />
+  </>
+)
 
-function LoadingFallback() {
-  return (
-    <div className="min-h-screen bg-[#0a0a0b] flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
-    </div>
-  )
-}
+const loadingFallback = (
+  <div className="min-h-screen bg-[#0a0a0b] flex items-center justify-center">
+    <div className="w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
+  </div>
+)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
       <ScrollToTop />
+      <LandingAnalyticsTracker />
       <ToastProvider>
         <AuthProvider>
-            <Suspense fallback={<LoadingFallback />}>
+            <Suspense fallback={loadingFallback}>
               <Routes>
                 {/* Public pages */}
                 <Route path="/" element={<App />} />
@@ -176,7 +174,7 @@ createRoot(document.getElementById('root')!).render(
                     </AdminRoute>
                   }
                 >
-                  {renderAdminChildRoutes()}
+                  {adminChildRoutes}
                 </Route>
                 <Route
                   path="/dashboard/admin/*"
@@ -186,7 +184,7 @@ createRoot(document.getElementById('root')!).render(
                     </AdminRoute>
                   }
                 >
-                  {renderAdminChildRoutes()}
+                  {adminChildRoutes}
                 </Route>
               </Routes>
             </Suspense>

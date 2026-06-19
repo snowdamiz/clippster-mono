@@ -311,7 +311,10 @@ defmodule ClippsterServer.Waitlist do
         {:ok, :sent}
 
       {:error, reason} ->
-        Logger.error("Failed to send waitlist reinvite email to #{entry.email}: #{inspect(reason)}")
+        Logger.error(
+          "Failed to send waitlist reinvite email to #{entry.email}: #{inspect(reason)}"
+        )
+
         {:error, reason}
     end
   end

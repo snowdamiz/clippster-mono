@@ -23,7 +23,9 @@ defmodule ClippsterServerWeb.BrollController do
     end
   rescue
     exception ->
-      Logger.error("[BrollController] suggest failed: #{Exception.format(:error, exception, __STACKTRACE__)}")
+      Logger.error(
+        "[BrollController] suggest failed: #{Exception.format(:error, exception, __STACKTRACE__)}"
+      )
 
       conn
       |> put_status(:internal_server_error)

@@ -18,7 +18,7 @@ defmodule ClippsterServer.Organizations.Organization do
     # Instagram scheduling settings
     field :allow_personal_instagram, :boolean, default: true
     field :scheduling_enabled, :boolean, default: true
-    
+
     # Feature flags
     field :campaigns_enabled, :boolean, default: false
 

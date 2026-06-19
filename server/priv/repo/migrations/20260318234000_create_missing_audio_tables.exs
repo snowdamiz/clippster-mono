@@ -10,7 +10,7 @@ defmodule ClippsterServer.Repo.Migrations.CreateMissingAudioTables do
       add :user_id, :binary_id, null: false
       add :organization_id, :binary_id
       add :is_public, :boolean, default: false
-      
+
       timestamps()
     end
 
@@ -21,7 +21,7 @@ defmodule ClippsterServer.Repo.Migrations.CreateMissingAudioTables do
       add :audio_id, :binary_id, null: false
       add :position, :integer, null: false
       add :added_at, :utc_datetime, null: false
-      
+
       timestamps()
     end
 

@@ -37,17 +37,19 @@ defmodule ClippsterServer.Repo.Migrations.CreatePlatformCampaigns do
       add :campaign_id, references(:clipping_campaigns, on_delete: :delete_all), null: false
       add :submission_id, references(:campaign_submissions, on_delete: :delete_all), null: false
       add :user_id, references(:users, on_delete: :delete_all), null: false
-      add :reward_tier_id, references(:platform_campaign_reward_tiers, on_delete: :delete_all), null: false
-      
+
+      add :reward_tier_id, references(:platform_campaign_reward_tiers, on_delete: :delete_all),
+        null: false
+
       add :granted_at, :utc_datetime, null: false
       add :expiration_date, :utc_datetime
-      
+
       # For discount rewards
       add :stripe_coupon_id, :string
-      
+
       # For free months rewards
       add :free_months_granted, :integer
-      
+
       # For AI credits rewards
       add :ai_credits_granted, :integer
 
@@ -72,7 +74,8 @@ defmodule ClippsterServer.Repo.Migrations.CreatePlatformCampaigns do
 
     # Revenue allocation transactions
     create table(:revenue_allocation_transactions) do
-      add :transaction_type, :string, null: false # "allocation", "campaign_spend", "manual_adjustment"
+      # "allocation", "campaign_spend", "manual_adjustment"
+      add :transaction_type, :string, null: false
       add :amount, :decimal, precision: 12, scale: 2, null: false
       add :balance_after, :decimal, precision: 12, scale: 2, null: false
       add :description, :text
@@ -90,7 +93,8 @@ defmodule ClippsterServer.Repo.Migrations.CreatePlatformCampaigns do
     # Add platform campaign flag to campaigns table
     alter table(:clipping_campaigns) do
       add :is_platform_campaign, :boolean, default: false, null: false
-      add :platform_payment_model, :string # "cpm_flywheel", "milestone_rewards", "regular_budget"
+      # "cpm_flywheel", "milestone_rewards", "regular_budget"
+      add :platform_payment_model, :string
     end
 
     create index(:clipping_campaigns, [:is_platform_campaign])

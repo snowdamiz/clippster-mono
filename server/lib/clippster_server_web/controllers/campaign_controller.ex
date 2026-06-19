@@ -67,7 +67,10 @@ defmodule ClippsterServerWeb.CampaignController do
       not can_access_campaigns?(user) ->
         conn
         |> put_status(403)
-        |> json(%{success: false, error: "Campaigns access requires admin approval. Contact support to request access."})
+        |> json(%{
+          success: false,
+          error: "Campaigns access requires admin approval. Contact support to request access."
+        })
 
       # Free tier users cannot apply to campaigns
       is_free_tier?(user) ->
@@ -78,51 +81,51 @@ defmodule ClippsterServerWeb.CampaignController do
       true ->
         application_note = Map.get(params, "application_note")
 
-      case Campaigns.get_campaign(id) do
-        nil ->
-          conn
-          |> put_status(404)
-          |> json(%{success: false, error: "Campaign not found"})
+        case Campaigns.get_campaign(id) do
+          nil ->
+            conn
+            |> put_status(404)
+            |> json(%{success: false, error: "Campaign not found"})
 
-        campaign ->
-          case Campaigns.apply_to_campaign(campaign, user, application_note) do
-            {:ok, participant} ->
-              json(conn, %{
-                success: true,
-                participant: serialize_participant(participant),
-                message:
-                  if(campaign.join_type == "open",
-                    do: "Joined campaign",
-                    else: "Application submitted"
-                  )
-              })
+          campaign ->
+            case Campaigns.apply_to_campaign(campaign, user, application_note) do
+              {:ok, participant} ->
+                json(conn, %{
+                  success: true,
+                  participant: serialize_participant(participant),
+                  message:
+                    if(campaign.join_type == "open",
+                      do: "Joined campaign",
+                      else: "Application submitted"
+                    )
+                })
 
-            {:error, :campaign_not_active} ->
-              conn
-              |> put_status(400)
-              |> json(%{success: false, error: "Campaign is not active"})
-            
-            {:error, :campaign_not_started} ->
-              conn
-              |> put_status(400)
-              |> json(%{success: false, error: "Campaign has not started yet"})
-            
-            {:error, :campaign_ended} ->
-              conn
-              |> put_status(400)
-              |> json(%{success: false, error: "Campaign has ended"})
+              {:error, :campaign_not_active} ->
+                conn
+                |> put_status(400)
+                |> json(%{success: false, error: "Campaign is not active"})
 
-            {:error, :already_participating} ->
-              conn
-              |> put_status(400)
-              |> json(%{success: false, error: "Already participating in this campaign"})
+              {:error, :campaign_not_started} ->
+                conn
+                |> put_status(400)
+                |> json(%{success: false, error: "Campaign has not started yet"})
 
-            {:error, changeset} ->
-              conn
-              |> put_status(422)
-              |> json(%{success: false, error: format_errors(changeset)})
-          end
-      end
+              {:error, :campaign_ended} ->
+                conn
+                |> put_status(400)
+                |> json(%{success: false, error: "Campaign has ended"})
+
+              {:error, :already_participating} ->
+                conn
+                |> put_status(400)
+                |> json(%{success: false, error: "Already participating in this campaign"})
+
+              {:error, changeset} ->
+                conn
+                |> put_status(422)
+                |> json(%{success: false, error: format_errors(changeset)})
+            end
+        end
     end
   end
 
@@ -229,7 +232,10 @@ defmodule ClippsterServerWeb.CampaignController do
       not can_access_campaigns?(user) ->
         conn
         |> put_status(403)
-        |> json(%{success: false, error: "Campaigns access requires admin approval. Contact support to request access."})
+        |> json(%{
+          success: false,
+          error: "Campaigns access requires admin approval. Contact support to request access."
+        })
 
       # Free tier users cannot submit to campaigns
       is_free_tier?(user) ->
@@ -239,56 +245,56 @@ defmodule ClippsterServerWeb.CampaignController do
 
       true ->
         case Campaigns.get_campaign(campaign_id) do
-        nil ->
-          conn
-          |> put_status(404)
-          |> json(%{success: false, error: "Campaign not found"})
+          nil ->
+            conn
+            |> put_status(404)
+            |> json(%{success: false, error: "Campaign not found"})
 
-        campaign ->
-          attrs = %{
-            clip_url: Map.get(params, "clip_url"),
-            platform: Map.get(params, "platform"),
-            social_account_id: Map.get(params, "social_account_id")
-          }
+          campaign ->
+            attrs = %{
+              clip_url: Map.get(params, "clip_url"),
+              platform: Map.get(params, "platform"),
+              social_account_id: Map.get(params, "social_account_id")
+            }
 
-          case Campaigns.submit_clip(campaign, user, attrs) do
-            {:ok, submission} ->
-              json(conn, %{
-                success: true,
-                submission: serialize_submission(submission)
-              })
+            case Campaigns.submit_clip(campaign, user, attrs) do
+              {:ok, submission} ->
+                json(conn, %{
+                  success: true,
+                  submission: serialize_submission(submission)
+                })
 
-            {:error, :not_a_participant} ->
-              conn
-              |> put_status(403)
-              |> json(%{success: false, error: "You must join the campaign first"})
+              {:error, :not_a_participant} ->
+                conn
+                |> put_status(403)
+                |> json(%{success: false, error: "You must join the campaign first"})
 
-            {:error, :campaign_not_active} ->
-              conn
-              |> put_status(400)
-              |> json(%{success: false, error: "Campaign is not active"})
-            
-            {:error, :campaign_not_started} ->
-              conn
-              |> put_status(400)
-              |> json(%{success: false, error: "Campaign has not started yet"})
-            
-            {:error, :campaign_ended} ->
-              conn
-              |> put_status(400)
-              |> json(%{success: false, error: "Campaign has ended"})
+              {:error, :campaign_not_active} ->
+                conn
+                |> put_status(400)
+                |> json(%{success: false, error: "Campaign is not active"})
 
-            {:error, :platform_not_allowed} ->
-              conn
-              |> put_status(400)
-              |> json(%{success: false, error: "Platform not allowed for this campaign"})
+              {:error, :campaign_not_started} ->
+                conn
+                |> put_status(400)
+                |> json(%{success: false, error: "Campaign has not started yet"})
 
-            {:error, changeset} ->
-              conn
-              |> put_status(422)
-              |> json(%{success: false, error: format_errors(changeset)})
-          end
-      end
+              {:error, :campaign_ended} ->
+                conn
+                |> put_status(400)
+                |> json(%{success: false, error: "Campaign has ended"})
+
+              {:error, :platform_not_allowed} ->
+                conn
+                |> put_status(400)
+                |> json(%{success: false, error: "Platform not allowed for this campaign"})
+
+              {:error, changeset} ->
+                conn
+                |> put_status(422)
+                |> json(%{success: false, error: format_errors(changeset)})
+            end
+        end
     end
   end
 
@@ -948,6 +954,7 @@ defmodule ClippsterServerWeb.CampaignController do
 
           {:error, :insufficient_views} ->
             campaign = Campaigns.get_campaign(submission.campaign_id)
+
             conn
             |> put_status(400)
             |> json(%{
@@ -1120,7 +1127,8 @@ defmodule ClippsterServerWeb.CampaignController do
   def calculate_payments(conn, %{"organization_id" => org_id, "id" => campaign_id}) do
     user = conn.assigns.current_user
 
-    with campaign when not is_nil(campaign) <- Campaigns.get_campaign(String.to_integer(campaign_id)),
+    with campaign when not is_nil(campaign) <-
+           Campaigns.get_campaign(String.to_integer(campaign_id)),
          true <- campaign.organization_id == String.to_integer(org_id),
          true <- Organizations.is_member?(org_id, user.id) do
       case Campaigns.calculate_campaign_payments(campaign, user) do

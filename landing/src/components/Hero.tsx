@@ -1,6 +1,7 @@
 import { ChevronRight, Apple, Monitor, Loader2, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
+import { trackDownloadClick, trackLandingEvent } from '@/services/landingAnalytics'
 
 export function Hero() {
   const { primaryDownload, otherDownloads, isLoading } = useDownloads()
@@ -29,6 +30,7 @@ export function Hero() {
         <Link
           to="/signup"
           className="group inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#1f1f23] bg-[#141416] backdrop-blur-sm hover:border-[rgba(255,255,255,0.1)] transition-all duration-300 mb-8"
+          onClick={() => trackLandingEvent('landing_signup_click', { source: 'hero_beta_badge', button_label: 'Open Beta' })}
         >
           <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/15 text-xs font-medium text-cyan-400">
             <Sparkles className="w-3 h-3" />
@@ -67,6 +69,7 @@ export function Hero() {
               <a
                 href={primaryDownload.downloadUrl}
                 className="group relative px-8 py-4 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 text-white font-semibold text-base hover:from-cyan-400 hover:to-cyan-500 transition-all duration-200 flex items-center gap-3 shadow-xl shadow-cyan-500/20 hover:shadow-cyan-500/30 hover:scale-[1.02]"
+                onClick={() => trackDownloadClick(primaryDownload, 'hero_primary', `Download for ${primaryDownload.label}`)}
               >
                 {/* Subtle glow behind button */}
                 <div className="absolute inset-0 rounded-lg bg-cyan-500/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
@@ -83,6 +86,7 @@ export function Hero() {
                 <a
                   href={secondaryDownload.downloadUrl}
                   className="group px-6 py-4 text-zinc-400 hover:text-cyan-400 transition-colors font-medium flex items-center gap-2"
+                  onClick={() => trackDownloadClick(secondaryDownload, 'hero_secondary', secondaryDownload.label)}
                 >
                   {secondaryDownload.platform.os === 'mac' ? (
                     <Apple className="w-4 h-4" />

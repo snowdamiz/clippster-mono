@@ -148,7 +148,9 @@ defmodule ClippsterServer.Organizations do
         # Total campaigns excludes draft (not public) and includes active, paused, and completed
         campaign_total =
           from(c in Campaign,
-            where: c.organization_id == ^organization.id and c.status in ["active", "paused", "completed"],
+            where:
+              c.organization_id == ^organization.id and
+                c.status in ["active", "paused", "completed"],
             select: count(c.id)
           )
           |> Repo.one()
@@ -178,7 +180,8 @@ defmodule ClippsterServer.Organizations do
         streamers =
           from(p in OrganizationCreatorProfile,
             where:
-              p.organization_id == ^organization.id and p.scope == "streamer" and p.disabled == false,
+              p.organization_id == ^organization.id and p.scope == "streamer" and
+                p.disabled == false,
             preload: [:platform_links],
             order_by: [desc: p.inserted_at]
           )
@@ -194,7 +197,8 @@ defmodule ClippsterServer.Organizations do
         hiring_post =
           from(h in HiringPost,
             where:
-              h.organization_id == ^organization.id and h.status == "active" and h.is_public == true,
+              h.organization_id == ^organization.id and h.status == "active" and
+                h.is_public == true,
             limit: 1
           )
           |> Repo.one()

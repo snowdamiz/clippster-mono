@@ -451,7 +451,15 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
          chunk_end_time
        ) do
     max_attempts = 3
-    user_text = build_enhanced_user_text(transcript, user_prompt_input, attempt, chunk_start_time, chunk_end_time)
+
+    user_text =
+      build_enhanced_user_text(
+        transcript,
+        user_prompt_input,
+        attempt,
+        chunk_start_time,
+        chunk_end_time
+      )
 
     payload =
       build_enhanced_chat_payload(
@@ -518,7 +526,13 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
     end
   end
 
-  defp build_enhanced_user_text(transcript, user_prompt, attempt, chunk_start_time, chunk_end_time) do
+  defp build_enhanced_user_text(
+         transcript,
+         user_prompt,
+         attempt,
+         chunk_start_time,
+         chunk_end_time
+       ) do
     transcript_json = Jason.encode!(transcript)
 
     retry_message =

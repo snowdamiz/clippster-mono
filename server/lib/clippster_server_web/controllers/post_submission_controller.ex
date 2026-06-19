@@ -146,7 +146,9 @@ defmodule ClippsterServerWeb.PostSubmissionController do
 
               case Social.create_post_submission(org_id, submission_attrs, user) do
                 {:ok, submission} ->
-                  Appsignal.increment_counter("social_posts.submitted", 1, %{platform: account.platform})
+                  Appsignal.increment_counter("social_posts.submitted", 1, %{
+                    platform: account.platform
+                  })
 
                   # Attempt to publish asynchronously (mode-dependent provider dispatch)
                   Task.start(fn ->
@@ -359,7 +361,10 @@ defmodule ClippsterServerWeb.PostSubmissionController do
         {:error, reason} ->
           conn
           |> put_status(500)
-          |> json(%{success: false, error: "Failed to generate presigned URL: #{inspect(reason)}"})
+          |> json(%{
+            success: false,
+            error: "Failed to generate presigned URL: #{inspect(reason)}"
+          })
       end
     else
       conn
@@ -535,6 +540,7 @@ defmodule ClippsterServerWeb.PostSubmissionController do
 
         {:error, reason} ->
           error_message = format_provider_error(reason)
+
           Logger.error(
             "[PostSubmission] Post For Me publish failed for submission #{submission.id}: #{error_message}"
           )
@@ -598,7 +604,6 @@ defmodule ClippsterServerWeb.PostSubmissionController do
 
     with {:ok, provider_account_id} <- get_provider_account_id(account),
          {:ok, media_url} <- ensure_accessible_media_url(params["media_url"]) do
-      
       post_params = %{
         caption: params["caption"] || "",
         social_accounts: [provider_account_id],
@@ -606,7 +611,9 @@ defmodule ClippsterServerWeb.PostSubmissionController do
         external_id: "submission:#{submission.id}"
       }
 
-      Logger.info("[PostSubmission] Creating PostForMe post with external_id: submission:#{submission.id}")
+      Logger.info(
+        "[PostSubmission] Creating PostForMe post with external_id: submission:#{submission.id}"
+      )
 
       case PostForMe.create_social_post(post_params) do
         {:ok, pfm_post} ->
@@ -616,7 +623,8 @@ defmodule ClippsterServerWeb.PostSubmissionController do
 
           result = %{
             post_id: pfm_post.id || "pfm_#{submission.id}",
-            post_url: nil  # Will be fetched from feed later
+            # Will be fetched from feed later
+            post_url: nil
           }
 
           Social.mark_post_published(submission, %{
@@ -633,9 +641,12 @@ defmodule ClippsterServerWeb.PostSubmissionController do
       end
     else
       {:error, :missing_provider_account_id} ->
-        Logger.error("[PostSubmission] Account #{account.id} missing PostForMe provider_account_id")
+        Logger.error(
+          "[PostSubmission] Account #{account.id} missing PostForMe provider_account_id"
+        )
+
         Social.mark_post_failed(submission, "Account missing PostForMe provider_account_id")
-      
+
       {:error, reason} ->
         error_msg = if is_binary(reason), do: reason, else: inspect(reason)
         Logger.error("[PostSubmission] Twitter publish failed: #{error_msg}")
@@ -699,7 +710,9 @@ defmodule ClippsterServerWeb.PostSubmissionController do
     end
   end
 
-  defp get_provider_account_id(%SocialAccount{provider_account_id: id}) when is_binary(id) and id != "", do: {:ok, id}
+  defp get_provider_account_id(%SocialAccount{provider_account_id: id})
+       when is_binary(id) and id != "", do: {:ok, id}
+
   defp get_provider_account_id(_), do: {:error, :missing_provider_account_id}
 
   defp ensure_accessible_media_url(media_url) do
@@ -707,7 +720,8 @@ defmodule ClippsterServerWeb.PostSubmissionController do
     if String.contains?(media_url, ".r2.cloudflarestorage.com") do
       case ClippsterServer.Storage.presigned_url(media_url, expires_in: 7_200) do
         {:ok, url} -> {:ok, url}
-        {:error, _} -> {:ok, media_url}  # Fallback to original
+        # Fallback to original
+        {:error, _} -> {:ok, media_url}
       end
     else
       {:ok, media_url}

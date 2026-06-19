@@ -1,5 +1,6 @@
 import { Apple, Monitor, Download, Loader2, Clock } from 'lucide-react'
 import { useDownloads, type PlatformDownload } from '../hooks/usePlatform'
+import { trackDisabledDownloadClick, trackDownloadClick } from '@/services/landingAnalytics'
 
 interface DownloadButtonsProps {
   variant?: 'default' | 'hero' | 'compact'
@@ -25,6 +26,7 @@ export function DownloadButtons({ variant = 'default', className = '', disabled 
 
   const handleDisabledClick = (e: React.MouseEvent) => {
     e.preventDefault()
+    trackDisabledDownloadClick(`download_buttons_${variant}`)
     onDisabledClick?.()
   }
 
@@ -92,6 +94,7 @@ export function DownloadButtons({ variant = 'default', className = '', disabled 
         <a
           href={primaryDownload.downloadUrl}
           className="group relative px-8 py-4 rounded-full bg-white text-black font-semibold text-sm overflow-hidden transition-all duration-300 flex items-center gap-3 shadow-[0_0_40px_rgba(255,255,255,0.15)] hover:shadow-[0_0_50px_rgba(255,255,255,0.2)]"
+          onClick={() => trackDownloadClick(primaryDownload, 'download_buttons_hero_primary', `Download for ${primaryDownload.label}`)}
         >
           {getIcon(primaryDownload, 'lg')}
           <span>Download for {primaryDownload.label}</span>
@@ -102,6 +105,7 @@ export function DownloadButtons({ variant = 'default', className = '', disabled 
           <a
             href={secondaryDownload.downloadUrl}
             className="group px-6 py-4 text-neutral-400 hover:text-white transition-colors font-medium text-sm flex items-center gap-2"
+            onClick={() => trackDownloadClick(secondaryDownload, 'download_buttons_hero_secondary', secondaryDownload.label)}
           >
             {getIcon(secondaryDownload, 'md')}
             <span>{secondaryDownload.label}</span>
@@ -117,6 +121,7 @@ export function DownloadButtons({ variant = 'default', className = '', disabled 
         <a
           href={primaryDownload.downloadUrl}
           className="px-5 py-2 rounded-full bg-white text-black font-medium text-sm hover:bg-neutral-100 transition-colors flex items-center gap-2"
+          onClick={() => trackDownloadClick(primaryDownload, 'download_buttons_compact_primary', 'Download')}
         >
           <Download className="w-4 h-4" />
           Download
@@ -126,6 +131,7 @@ export function DownloadButtons({ variant = 'default', className = '', disabled 
             href={secondaryDownload.downloadUrl}
             className="px-4 py-2 text-neutral-400 hover:text-white transition-colors text-sm flex items-center gap-1.5"
             title={`Download for ${secondaryDownload.label}`}
+            onClick={() => trackDownloadClick(secondaryDownload, 'download_buttons_compact_secondary', secondaryDownload.label)}
           >
             {getIcon(secondaryDownload, 'sm')}
           </a>
@@ -140,6 +146,7 @@ export function DownloadButtons({ variant = 'default', className = '', disabled 
       <a
         href={primaryDownload.downloadUrl}
         className="group px-8 py-4 rounded-full bg-white text-black font-semibold hover:bg-neutral-100 transition-colors flex items-center gap-2 text-base"
+        onClick={() => trackDownloadClick(primaryDownload, 'download_buttons_default_primary', `Download for ${primaryDownload.label}`)}
       >
         {getIcon(primaryDownload, 'lg')}
         Download for {primaryDownload.label}
@@ -148,6 +155,7 @@ export function DownloadButtons({ variant = 'default', className = '', disabled 
         <a
           href={secondaryDownload.downloadUrl}
           className="px-6 py-4 text-neutral-400 hover:text-white transition-colors font-medium flex items-center gap-2"
+          onClick={() => trackDownloadClick(secondaryDownload, 'download_buttons_default_secondary', secondaryDownload.label)}
         >
           {getIcon(secondaryDownload, 'md')}
           {secondaryDownload.label}
@@ -168,6 +176,7 @@ export function DownloadButtonsHeader({ disabled = false, onDisabledClick }: Dow
 
   const handleDisabledClick = (e: React.MouseEvent) => {
     e.preventDefault()
+    trackDisabledDownloadClick('download_buttons_header')
     onDisabledClick?.()
   }
 
@@ -203,6 +212,7 @@ export function DownloadButtonsHeader({ disabled = false, onDisabledClick }: Dow
           href={secondaryDownload.downloadUrl}
           className="p-2 text-neutral-400 hover:text-white transition-colors"
           title={`Download for ${secondaryDownload.label}`}
+          onClick={() => trackDownloadClick(secondaryDownload, 'download_buttons_header_secondary', secondaryDownload.label)}
         >
           {secondaryDownload.platform.os === 'mac' ? (
             <Apple className="w-4 h-4" />
@@ -214,6 +224,7 @@ export function DownloadButtonsHeader({ disabled = false, onDisabledClick }: Dow
       <a
         href={primaryDownload.downloadUrl}
         className="px-4 py-2 rounded-full bg-white text-black font-medium text-sm hover:bg-neutral-100 transition-colors flex items-center gap-2"
+        onClick={() => trackDownloadClick(primaryDownload, 'download_buttons_header_primary', 'Download')}
       >
         {primaryDownload.platform.os === 'mac' ? (
           <Apple className="w-4 h-4" />

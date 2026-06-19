@@ -26,7 +26,9 @@ defmodule ClippsterServer.ClipperProfiles do
     case get_profile_by_user_id(user_id) do
       nil ->
         case create_profile(%{user_id: user_id}) do
-          {:ok, profile} -> {:ok, profile}
+          {:ok, profile} ->
+            {:ok, profile}
+
           {:error, %Ecto.Changeset{errors: errors}} ->
             if Keyword.has_key?(errors, :user_id) do
               case get_profile_by_user_id(user_id) do
@@ -37,7 +39,9 @@ defmodule ClippsterServer.ClipperProfiles do
               {:error, :profile_creation_failed}
             end
         end
-      profile -> {:ok, profile}
+
+      profile ->
+        {:ok, profile}
     end
   end
 
@@ -179,7 +183,7 @@ defmodule ClippsterServer.ClipperProfiles do
 
   defp visible_in_public_directory(query) do
     alias ClippsterServer.Accounts.User
-    
+
     query
     |> join(:inner, [p], u in User, on: p.user_id == u.id)
     |> where([p], p.is_public == true)
@@ -560,7 +564,9 @@ defmodule ClippsterServer.ClipperProfiles do
       endorsements_received = count_endorsements_in_period(profile.id, period_start, period_end)
       total_views = count_views_in_period(profile.user_id, period_start, period_end)
 
-      score = clips_delivered * 10 + div(total_views, 1000) + endorsements_received * 50 + campaigns_active * 25
+      score =
+        clips_delivered * 10 + div(total_views, 1000) + endorsements_received * 50 +
+          campaigns_active * 25
 
       %{
         profile: profile,

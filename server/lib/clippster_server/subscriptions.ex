@@ -381,12 +381,14 @@ defmodule ClippsterServer.Subscriptions do
             IO.puts(
               "[Subscriptions] Failed to cancel Stripe subscription for user #{user_id}: #{message}"
             )
-            # Continue anyway to mark as cancelled in DB
+
+          # Continue anyway to mark as cancelled in DB
 
           {:error, reason} ->
             IO.puts(
               "[Subscriptions] Failed to cancel Stripe subscription for user #{user_id}: #{inspect(reason)}"
             )
+
             # Continue anyway to mark as cancelled in DB
         end
       end
@@ -438,6 +440,7 @@ defmodule ClippsterServer.Subscriptions do
             IO.puts(
               "[Subscriptions] ADMIN: Failed to cancel Stripe subscription for user #{user_id}: #{message}"
             )
+
             # For admin cancellations, we should rollback if Stripe fails
             # to ensure database doesn't get out of sync
             Repo.rollback({:stripe_error, message})
@@ -446,6 +449,7 @@ defmodule ClippsterServer.Subscriptions do
             IO.puts(
               "[Subscriptions] ADMIN: Failed to cancel Stripe subscription for user #{user_id}: #{inspect(reason)}"
             )
+
             Repo.rollback({:stripe_error, reason})
         end
       end
@@ -464,9 +468,7 @@ defmodule ClippsterServer.Subscriptions do
       |> where([s], s.status == "active")
       |> Repo.update_all(set: [status: "cancelled"])
 
-      IO.puts(
-        "[Subscriptions] ADMIN: Cancelled subscription for user #{user_id}"
-      )
+      IO.puts("[Subscriptions] ADMIN: Cancelled subscription for user #{user_id}")
 
       updated_user
     end)

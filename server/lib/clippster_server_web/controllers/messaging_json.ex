@@ -124,18 +124,20 @@ defmodule ClippsterServerWeb.MessagingJSON do
 
   defp render_user(user) do
     # Prioritize clipper profile display_name if available
-    display_name = case user.clipper_profile do
-      %Ecto.Association.NotLoaded{} -> user.name
-      nil -> user.name
-      profile -> profile.display_name || user.name
-    end
+    display_name =
+      case user.clipper_profile do
+        %Ecto.Association.NotLoaded{} -> user.name
+        nil -> user.name
+        profile -> profile.display_name || user.name
+      end
 
     # Prioritize clipper profile avatar if available
-    avatar_url = case user.clipper_profile do
-      %Ecto.Association.NotLoaded{} -> user.avatar_url
-      nil -> user.avatar_url
-      profile -> profile.avatar_url || user.avatar_url
-    end
+    avatar_url =
+      case user.clipper_profile do
+        %Ecto.Association.NotLoaded{} -> user.avatar_url
+        nil -> user.avatar_url
+        profile -> profile.avatar_url || user.avatar_url
+      end
 
     # Presign avatar URL if it's from R2 storage
     presigned_avatar_url = maybe_presign_avatar(avatar_url)

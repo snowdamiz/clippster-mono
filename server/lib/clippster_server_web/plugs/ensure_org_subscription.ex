@@ -90,8 +90,7 @@ defmodule ClippsterServerWeb.EnsureOrgSubscription do
             |> Phoenix.Controller.json(%{
               success: false,
               error: "payment_setup_required",
-              message:
-                "Complete organization billing setup before accessing this resource."
+              message: "Complete organization billing setup before accessing this resource."
             })
             |> halt()
 

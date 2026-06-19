@@ -170,7 +170,11 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
       case Social.refresh_social_account_tokens(account, attrs) do
         {:ok, _updated} ->
           Logger.info("[TokenRefreshWorker] Successfully refreshed account #{account.id}")
-          Appsignal.increment_counter("worker.token_refresh.success", 1, %{platform: account.platform})
+
+          Appsignal.increment_counter("worker.token_refresh.success", 1, %{
+            platform: account.platform
+          })
+
           :ok
 
         {:error, reason} ->
@@ -178,7 +182,10 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
             "[TokenRefreshWorker] Failed to update account #{account.id}: #{inspect(reason)}"
           )
 
-          Appsignal.increment_counter("worker.token_refresh.failed", 1, %{platform: account.platform})
+          Appsignal.increment_counter("worker.token_refresh.failed", 1, %{
+            platform: account.platform
+          })
+
           {:error, reason}
       end
     else
@@ -191,7 +198,10 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
           "[TokenRefreshWorker] Failed to refresh account #{account.id}: #{inspect(reason)}"
         )
 
-        Appsignal.increment_counter("worker.token_refresh.failed", 1, %{platform: account.platform})
+        Appsignal.increment_counter("worker.token_refresh.failed", 1, %{
+          platform: account.platform
+        })
+
         {:error, reason}
     end
   end

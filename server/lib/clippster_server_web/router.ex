@@ -225,6 +225,9 @@ defmodule ClippsterServerWeb.Router do
     # App release info (for download buttons on landing page)
     get("/releases/latest", ReleaseController, :latest)
 
+    # Public landing analytics (anonymous, allowlisted events only)
+    post("/analytics/public/track", AnalyticsController, :track_public)
+
     # Waitlist signup (public)
     post("/waitlist", WaitlistController, :create)
 

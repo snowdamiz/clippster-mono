@@ -20,7 +20,9 @@ defmodule ClippsterServer.Auth.ChallengeStore do
     nonce = :crypto.strong_rand_bytes(32) |> Base.encode64()
     now = DateTime.utc_now()
     timestamp = DateTime.to_unix(now, :millisecond)
-    expires_at = DateTime.add(now, @challenge_ttl_seconds, :second) |> DateTime.truncate(:microsecond)
+
+    expires_at =
+      DateTime.add(now, @challenge_ttl_seconds, :second) |> DateTime.truncate(:microsecond)
 
     attrs = %{
       nonce: nonce,

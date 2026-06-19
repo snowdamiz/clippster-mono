@@ -59,17 +59,23 @@ defmodule ClippsterServerWeb.SchedulingController do
            attrs <- build_scheduling_attrs(params, owner_type),
            # For immediate publish: override scheduled_at to now and use create_immediate_post
            # (bypasses the 5-min minimum validation in schedule_changeset)
-           attrs <- if(immediate, do: Map.put(attrs, :scheduled_at, DateTime.utc_now()), else: attrs),
-           {:ok, post} <- if(immediate,
-             do: Social.create_immediate_post(attrs, user),
-             else: Social.schedule_post(attrs, user)
-           ) do
+           attrs <-
+             if(immediate, do: Map.put(attrs, :scheduled_at, DateTime.utc_now()), else: attrs),
+           {:ok, post} <-
+             if(immediate,
+               do: Social.create_immediate_post(attrs, user),
+               else: Social.schedule_post(attrs, user)
+             ) do
         conn
         |> put_status(201)
         |> json(%{
           success: true,
           post: serialize_post(post),
-          message: if(immediate, do: "Post queued for immediate publishing", else: "Post scheduled successfully")
+          message:
+            if(immediate,
+              do: "Post queued for immediate publishing",
+              else: "Post scheduled successfully"
+            )
         })
       else
         {:error, :unauthorized} ->
@@ -138,10 +144,14 @@ defmodule ClippsterServerWeb.SchedulingController do
               }
 
               case Social.update_scheduled_post_media(post, attrs, user) do
-                {:ok, _updated} -> {:ok, post_id}
+                {:ok, _updated} ->
+                  {:ok, post_id}
+
                 {:error, changeset} when is_struct(changeset, Ecto.Changeset) ->
                   {:error, "Failed to update post #{post_id}: #{inspect(changeset.errors)}"}
-                {:error, reason} -> {:error, "Failed to update post #{post_id}: #{inspect(reason)}"}
+
+                {:error, reason} ->
+                  {:error, "Failed to update post #{post_id}: #{inspect(reason)}"}
               end
             else
               {:error, "Unauthorized for post #{post_id}"}
@@ -748,7 +758,7 @@ defmodule ClippsterServerWeb.SchedulingController do
 
     if Organizations.is_member?(org_id, user.id) do
       Logger.info("[sync_org_analytics] Endpoint called for org #{org_id}")
-      
+
       # Run sync synchronously for debugging
       try do
         sync_org_posts_analytics(org_id)
@@ -771,111 +781,188 @@ defmodule ClippsterServerWeb.SchedulingController do
   defp sync_org_posts_analytics(org_id) do
     # All platforms use PostForMe feed API for analytics
     Logger.info("[sync_org_posts_analytics] Starting sync for org #{org_id}")
-    
+
     case Social.list_post_submissions(org_id, status: "published", limit: 500) do
       {:ok, %{posts: posts}} ->
         Logger.info("[sync_org_posts_analytics] Found #{length(posts)} published posts")
-        
+
         # Log post details for debugging
         for post <- posts do
-          Logger.debug("[sync_org_posts_analytics] Post #{post.id}: platform=#{post.platform}, post_url=#{inspect(post.post_url)}, has_account=#{post.organization_social_account != nil}")
+          Logger.debug(
+            "[sync_org_posts_analytics] Post #{post.id}: platform=#{post.platform}, post_url=#{inspect(post.post_url)}, has_account=#{post.organization_social_account != nil}"
+          )
         end
-        
+
         # Group posts by social account to minimize API calls (one feed fetch per account)
-        filtered_posts = posts
+        filtered_posts =
+          posts
           |> Enum.filter(fn post ->
             has_account = post.organization_social_account != nil
-            has_provider_id = has_account && is_binary(post.organization_social_account.provider_account_id)
-            has_post_identifier = is_binary(post.provider_post_id) || (is_binary(post.post_url) && post.post_url != "")
+
+            has_provider_id =
+              has_account && is_binary(post.organization_social_account.provider_account_id)
+
+            has_post_identifier =
+              is_binary(post.provider_post_id) ||
+                (is_binary(post.post_url) && post.post_url != "")
+
             is_supported = post.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
-            
+
             if not has_account do
-              Logger.warning("[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) has no organization_social_account")
+              Logger.warning(
+                "[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) has no organization_social_account"
+              )
             end
+
             if has_account and not has_provider_id do
-              Logger.warning("[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) account has no provider_account_id")
+              Logger.warning(
+                "[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) account has no provider_account_id"
+              )
             end
+
             if not has_post_identifier do
-              Logger.warning("[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) has no provider_post_id or post_url - cannot sync analytics")
+              Logger.warning(
+                "[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) has no provider_post_id or post_url - cannot sync analytics"
+              )
             end
+
             if not is_supported do
-              Logger.debug("[sync_org_posts_analytics] Post #{post.id} platform #{post.platform} not supported")
+              Logger.debug(
+                "[sync_org_posts_analytics] Post #{post.id} platform #{post.platform} not supported"
+              )
             end
-            
+
             has_account && has_provider_id && has_post_identifier && is_supported
           end)
-        
-        Logger.info("[sync_org_posts_analytics] #{length(filtered_posts)} posts after filtering (need account + provider_id + supported platform)")
-        
-        posts_by_account = Enum.group_by(filtered_posts, fn post -> post.organization_social_account.id end)
+
+        Logger.info(
+          "[sync_org_posts_analytics] #{length(filtered_posts)} posts after filtering (need account + provider_id + supported platform)"
+        )
+
+        posts_by_account =
+          Enum.group_by(filtered_posts, fn post -> post.organization_social_account.id end)
 
         for {_account_id, account_posts} <- posts_by_account do
           account = hd(account_posts).organization_social_account
           platform = hd(account_posts).platform
-          
-          Logger.info("[sync_org_posts_analytics] Processing #{length(account_posts)} #{platform} posts for account #{account.provider_account_id}")
+
+          Logger.info(
+            "[sync_org_posts_analytics] Processing #{length(account_posts)} #{platform} posts for account #{account.provider_account_id}"
+          )
 
           # Fetch feed once per account
           case fetch_post_for_me_feed(account.provider_account_id) do
             {:ok, feed_items} ->
-              Logger.info("[sync_org_posts_analytics] Fetched #{length(feed_items)} feed items from PostForMe")
+              Logger.info(
+                "[sync_org_posts_analytics] Fetched #{length(feed_items)} feed items from PostForMe"
+              )
+
               for post <- account_posts do
                 # Try to match by provider_post_id first (PostForMe social_post_id), then fall back to extracting from URL
-                feed_item = cond do
-                  is_binary(post.provider_post_id) ->
-                    Logger.debug("[sync_org_posts_analytics] Post #{post.id}: matching by provider_post_id #{post.provider_post_id}")
-                    Enum.find(feed_items, fn item -> item["social_post_id"] == post.provider_post_id end)
-                  
-                  is_binary(post.post_url) && post.post_url != "" ->
-                    case extract_post_identifier(post.platform, post.post_url) do
-                      {:ok, post_identifier} ->
-                        Logger.debug("[sync_org_posts_analytics] Post #{post.id}: extracted identifier #{post_identifier} from #{post.post_url}")
-                        match_feed_item(post.platform, feed_items, post_identifier)
-                      {:error, reason} ->
-                        Logger.warning("[sync_org_posts_analytics] Post #{post.id}: failed to extract identifier from #{post.post_url}: #{inspect(reason)}")
-                        nil
-                    end
-                  
-                  true ->
-                    nil
-                end
-                
+                feed_item =
+                  cond do
+                    is_binary(post.provider_post_id) ->
+                      Logger.debug(
+                        "[sync_org_posts_analytics] Post #{post.id}: matching by provider_post_id #{post.provider_post_id}"
+                      )
+
+                      Enum.find(feed_items, fn item ->
+                        item["social_post_id"] == post.provider_post_id
+                      end)
+
+                    is_binary(post.post_url) && post.post_url != "" ->
+                      case extract_post_identifier(post.platform, post.post_url) do
+                        {:ok, post_identifier} ->
+                          Logger.debug(
+                            "[sync_org_posts_analytics] Post #{post.id}: extracted identifier #{post_identifier} from #{post.post_url}"
+                          )
+
+                          match_feed_item(post.platform, feed_items, post_identifier)
+
+                        {:error, reason} ->
+                          Logger.warning(
+                            "[sync_org_posts_analytics] Post #{post.id}: failed to extract identifier from #{post.post_url}: #{inspect(reason)}"
+                          )
+
+                          nil
+                      end
+
+                    true ->
+                      nil
+                  end
+
                 case feed_item do
-                  nil -> 
-                    Logger.warning("[sync_org_posts_analytics] Post #{post.id}: NOT FOUND in feed")
+                  nil ->
+                    Logger.warning(
+                      "[sync_org_posts_analytics] Post #{post.id}: NOT FOUND in feed"
+                    )
+
                     :ok
+
                   item ->
                     Logger.info("[sync_org_posts_analytics] Post #{post.id}: MATCHED feed item")
                     analytics = extract_feed_analytics(post.platform, item, account)
-                    Logger.info("[sync_org_posts_analytics] Post #{post.id}: extracted analytics: #{inspect(analytics)}")
-                    
+
+                    Logger.info(
+                      "[sync_org_posts_analytics] Post #{post.id}: extracted analytics: #{inspect(analytics)}"
+                    )
+
                     # Update post_url if it's missing
                     if is_nil(post.post_url) || post.post_url == "" do
                       if platform_url = item["platform_url"] do
                         case Social.update_post_url(post, platform_url) do
-                          {:ok, _} -> Logger.info("[sync_org_posts_analytics] Post #{post.id}: updated post_url to #{platform_url}")
-                          {:error, reason} -> Logger.error("[sync_org_posts_analytics] Post #{post.id}: failed to update post_url: #{inspect(reason)}")
+                          {:ok, _} ->
+                            Logger.info(
+                              "[sync_org_posts_analytics] Post #{post.id}: updated post_url to #{platform_url}"
+                            )
+
+                          {:error, reason} ->
+                            Logger.error(
+                              "[sync_org_posts_analytics] Post #{post.id}: failed to update post_url: #{inspect(reason)}"
+                            )
                         end
                       end
                     end
-                    
+
                     # Only sync if at least one metric is non-zero to avoid overwriting real data with zeros
-                    metric_keys = [:view_count, :like_count, :comment_count, :save_count, :reach_count, :impressions_count, :share_count]
-                    has_real_data = Enum.any?(metric_keys, fn k -> (Map.get(analytics, k) || 0) > 0 end)
-                    
+                    metric_keys = [
+                      :view_count,
+                      :like_count,
+                      :comment_count,
+                      :save_count,
+                      :reach_count,
+                      :impressions_count,
+                      :share_count
+                    ]
+
+                    has_real_data =
+                      Enum.any?(metric_keys, fn k -> (Map.get(analytics, k) || 0) > 0 end)
+
                     if has_real_data do
                       case Social.sync_post_analytics(post, analytics) do
-                        {:ok, _} -> Logger.info("[sync_org_posts_analytics] Post #{post.id}: analytics synced successfully")
-                        {:error, reason} -> Logger.error("[sync_org_posts_analytics] Post #{post.id}: sync failed: #{inspect(reason)}")
+                        {:ok, _} ->
+                          Logger.info(
+                            "[sync_org_posts_analytics] Post #{post.id}: analytics synced successfully"
+                          )
+
+                        {:error, reason} ->
+                          Logger.error(
+                            "[sync_org_posts_analytics] Post #{post.id}: sync failed: #{inspect(reason)}"
+                          )
                       end
                     else
-                      Logger.debug("[sync_org_posts_analytics] Post #{post.id}: skipping sync - all metrics are zero")
+                      Logger.debug(
+                        "[sync_org_posts_analytics] Post #{post.id}: skipping sync - all metrics are zero"
+                      )
                     end
                 end
               end
 
-            {:error, reason} -> 
-              Logger.error("[sync_org_posts_analytics] Failed to fetch PostForMe feed for account #{account.provider_account_id}: #{inspect(reason)}")
+            {:error, reason} ->
+              Logger.error(
+                "[sync_org_posts_analytics] Failed to fetch PostForMe feed for account #{account.provider_account_id}: #{inspect(reason)}"
+              )
+
               :ok
           end
         end
@@ -885,120 +972,196 @@ defmodule ClippsterServerWeb.SchedulingController do
   defp sync_org_external_posts_analytics(org_id) do
     # All platforms use PostForMe feed API for analytics
     Logger.info("[sync_org_external_posts_analytics] Starting sync for org #{org_id}")
-    
+
     case Social.list_external_post_submissions(org_id, limit: 500) do
       {:ok, %{posts: posts}} ->
         Logger.info("[sync_org_external_posts_analytics] Found #{length(posts)} external posts")
-        
+
         # Log post details for debugging
         for post <- posts do
-          Logger.debug("[sync_org_external_posts_analytics] External post #{post.id}: platform=#{post.platform}, post_url=#{inspect(post.post_url)}, has_user=#{post.submitted_by_user_id != nil}")
+          Logger.debug(
+            "[sync_org_external_posts_analytics] External post #{post.id}: platform=#{post.platform}, post_url=#{inspect(post.post_url)}, has_user=#{post.submitted_by_user_id != nil}"
+          )
         end
-        
+
         # Filter to supported platforms with a submitting user and post_url
         supported_posts =
           Enum.filter(posts, fn sub ->
             has_user = sub.submitted_by_user_id != nil
             has_post_url = is_binary(sub.post_url) && sub.post_url != ""
             is_supported = sub.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
-            
+
             if not has_user do
-              Logger.warning("[sync_org_external_posts_analytics] External post #{sub.id} (#{sub.platform}) has no submitted_by_user_id")
+              Logger.warning(
+                "[sync_org_external_posts_analytics] External post #{sub.id} (#{sub.platform}) has no submitted_by_user_id"
+              )
             end
+
             if not has_post_url do
-              Logger.warning("[sync_org_external_posts_analytics] External post #{sub.id} (#{sub.platform}) has no post_url - cannot sync analytics")
+              Logger.warning(
+                "[sync_org_external_posts_analytics] External post #{sub.id} (#{sub.platform}) has no post_url - cannot sync analytics"
+              )
             end
+
             if not is_supported do
-              Logger.debug("[sync_org_external_posts_analytics] External post #{sub.id} platform #{sub.platform} not supported")
+              Logger.debug(
+                "[sync_org_external_posts_analytics] External post #{sub.id} platform #{sub.platform} not supported"
+              )
             end
-            
+
             has_user && has_post_url && is_supported
           end)
-        
-        Logger.info("[sync_org_external_posts_analytics] #{length(supported_posts)} external posts after filtering")
+
+        Logger.info(
+          "[sync_org_external_posts_analytics] #{length(supported_posts)} external posts after filtering"
+        )
 
         # Group by user to minimize user account lookups
         posts_by_user = Enum.group_by(supported_posts, & &1.submitted_by_user_id)
 
         for {user_id, user_posts} <- posts_by_user do
-          Logger.info("[sync_org_external_posts_analytics] Processing #{length(user_posts)} posts for user #{user_id}")
-          
+          Logger.info(
+            "[sync_org_external_posts_analytics] Processing #{length(user_posts)} posts for user #{user_id}"
+          )
+
           case ClippsterServer.Campaigns.list_user_social_accounts(user_id) do
             accounts when is_list(accounts) ->
-              Logger.debug("[sync_org_external_posts_analytics] User #{user_id} has #{length(accounts)} social accounts")
+              Logger.debug(
+                "[sync_org_external_posts_analytics] User #{user_id} has #{length(accounts)} social accounts"
+              )
+
               # Group user's posts by platform
               posts_by_platform = Enum.group_by(user_posts, & &1.platform)
 
               for {platform, platform_posts} <- posts_by_platform do
                 # Normalize platform for account lookup (x/twitter -> same account)
                 lookup_platform = if platform == "twitter", do: "x", else: platform
-                Logger.info("[sync_org_external_posts_analytics] Processing #{length(platform_posts)} #{platform} posts")
+
+                Logger.info(
+                  "[sync_org_external_posts_analytics] Processing #{length(platform_posts)} #{platform} posts"
+                )
 
                 account =
                   Enum.find(accounts, fn acc ->
                     normalized = if acc.platform == "twitter", do: "x", else: acc.platform
+
                     normalized == lookup_platform and acc.is_active and
                       is_binary(acc.provider_account_id)
                   end)
 
                 if account do
-                  Logger.info("[sync_org_external_posts_analytics] Found #{platform} account with provider_account_id: #{account.provider_account_id}")
+                  Logger.info(
+                    "[sync_org_external_posts_analytics] Found #{platform} account with provider_account_id: #{account.provider_account_id}"
+                  )
+
                   case fetch_post_for_me_feed(account.provider_account_id) do
                     {:ok, feed_items} ->
-                      Logger.info("[sync_org_external_posts_analytics] Fetched #{length(feed_items)} feed items from PostForMe")
-                      
+                      Logger.info(
+                        "[sync_org_external_posts_analytics] Fetched #{length(feed_items)} feed items from PostForMe"
+                      )
+
                       # Log first feed item structure to understand PostForMe's format
                       if length(feed_items) > 0 do
                         first_item = hd(feed_items)
-                        Logger.debug("[sync_org_external_posts_analytics] First feed item structure: #{inspect(first_item)}")
-                        Logger.debug("[sync_org_external_posts_analytics] First feed item keys: #{inspect(Map.keys(first_item))}")
+
+                        Logger.debug(
+                          "[sync_org_external_posts_analytics] First feed item structure: #{inspect(first_item)}"
+                        )
+
+                        Logger.debug(
+                          "[sync_org_external_posts_analytics] First feed item keys: #{inspect(Map.keys(first_item))}"
+                        )
                       end
-                      
+
                       for sub <- platform_posts do
                         case extract_post_identifier(sub.platform, sub.post_url) do
                           {:ok, post_identifier} ->
-                            Logger.debug("[sync_org_external_posts_analytics] External post #{sub.id}: extracted identifier #{post_identifier} from #{sub.post_url}")
-                            
+                            Logger.debug(
+                              "[sync_org_external_posts_analytics] External post #{sub.id}: extracted identifier #{post_identifier} from #{sub.post_url}"
+                            )
+
                             case match_feed_item(sub.platform, feed_items, post_identifier) do
-                              nil -> 
-                                Logger.warning("[sync_org_external_posts_analytics] External post #{sub.id}: identifier #{post_identifier} NOT FOUND in feed")
+                              nil ->
+                                Logger.warning(
+                                  "[sync_org_external_posts_analytics] External post #{sub.id}: identifier #{post_identifier} NOT FOUND in feed"
+                                )
+
                                 :ok
+
                               item ->
-                                Logger.info("[sync_org_external_posts_analytics] External post #{sub.id}: MATCHED feed item")
+                                Logger.info(
+                                  "[sync_org_external_posts_analytics] External post #{sub.id}: MATCHED feed item"
+                                )
+
                                 analytics = extract_feed_analytics(sub.platform, item, account)
-                                Logger.info("[sync_org_external_posts_analytics] External post #{sub.id}: extracted analytics: #{inspect(analytics)}")
-                                
+
+                                Logger.info(
+                                  "[sync_org_external_posts_analytics] External post #{sub.id}: extracted analytics: #{inspect(analytics)}"
+                                )
+
                                 # Only sync if at least one metric is non-zero to avoid overwriting real data with zeros
-                                metric_keys = [:view_count, :like_count, :comment_count, :save_count, :reach_count, :impressions_count, :share_count]
-                                has_real_data = Enum.any?(metric_keys, fn k -> (Map.get(analytics, k) || 0) > 0 end)
-                                
+                                metric_keys = [
+                                  :view_count,
+                                  :like_count,
+                                  :comment_count,
+                                  :save_count,
+                                  :reach_count,
+                                  :impressions_count,
+                                  :share_count
+                                ]
+
+                                has_real_data =
+                                  Enum.any?(metric_keys, fn k ->
+                                    (Map.get(analytics, k) || 0) > 0
+                                  end)
+
                                 if has_real_data do
                                   case Social.sync_external_post_analytics(sub, analytics) do
-                                    {:ok, _} -> Logger.info("[sync_org_external_posts_analytics] External post #{sub.id}: analytics synced successfully")
-                                    {:error, reason} -> Logger.error("[sync_org_external_posts_analytics] External post #{sub.id}: sync failed: #{inspect(reason)}")
+                                    {:ok, _} ->
+                                      Logger.info(
+                                        "[sync_org_external_posts_analytics] External post #{sub.id}: analytics synced successfully"
+                                      )
+
+                                    {:error, reason} ->
+                                      Logger.error(
+                                        "[sync_org_external_posts_analytics] External post #{sub.id}: sync failed: #{inspect(reason)}"
+                                      )
                                   end
                                 else
-                                  Logger.debug("[sync_org_external_posts_analytics] External post #{sub.id}: skipping sync - all metrics are zero")
+                                  Logger.debug(
+                                    "[sync_org_external_posts_analytics] External post #{sub.id}: skipping sync - all metrics are zero"
+                                  )
                                 end
                             end
 
-                          {:error, reason} -> 
-                            Logger.warning("[sync_org_external_posts_analytics] External post #{sub.id}: failed to extract identifier from #{sub.post_url}: #{inspect(reason)}")
+                          {:error, reason} ->
+                            Logger.warning(
+                              "[sync_org_external_posts_analytics] External post #{sub.id}: failed to extract identifier from #{sub.post_url}: #{inspect(reason)}"
+                            )
+
                             :ok
                         end
                       end
 
-                    {:error, reason} -> 
-                      Logger.error("[sync_org_external_posts_analytics] Failed to fetch PostForMe feed for account #{account.provider_account_id}: #{inspect(reason)}")
+                    {:error, reason} ->
+                      Logger.error(
+                        "[sync_org_external_posts_analytics] Failed to fetch PostForMe feed for account #{account.provider_account_id}: #{inspect(reason)}"
+                      )
+
                       :ok
                   end
                 else
-                  Logger.warning("[sync_org_external_posts_analytics] No active #{platform} account found for user #{user_id} with provider_account_id")
+                  Logger.warning(
+                    "[sync_org_external_posts_analytics] No active #{platform} account found for user #{user_id} with provider_account_id"
+                  )
                 end
               end
 
-            _ -> 
-              Logger.warning("[sync_org_external_posts_analytics] Failed to list social accounts for user #{user_id}")
+            _ ->
+              Logger.warning(
+                "[sync_org_external_posts_analytics] Failed to list social accounts for user #{user_id}"
+              )
+
               :ok
           end
         end
@@ -1028,6 +1191,7 @@ defmodule ClippsterServerWeb.SchedulingController do
               account =
                 Enum.find(accounts, fn acc ->
                   normalized = if acc.platform == "twitter", do: "x", else: acc.platform
+
                   normalized == lookup_platform and acc.is_active and
                     is_binary(acc.provider_account_id)
                 end)
@@ -1138,7 +1302,9 @@ defmodule ClippsterServerWeb.SchedulingController do
 
   defp extract_post_identifier("tiktok", url) when is_binary(url) do
     case Regex.run(~r{tiktok\.com/.+/video/(\d+)}, url) do
-      [_, video_id] -> {:ok, video_id}
+      [_, video_id] ->
+        {:ok, video_id}
+
       _ ->
         # Also handle short URLs like vm.tiktok.com/...
         case Regex.run(~r{tiktok\.com/(?:t/)?([A-Za-z0-9]+)}, url) do
@@ -1183,16 +1349,22 @@ defmodule ClippsterServerWeb.SchedulingController do
 
   defp match_feed_item(platform, feed_items, post_id) when platform in ["x", "twitter"] do
     Enum.find(feed_items, fn item ->
-      item_id = item["id"] || item["id_str"] || item["platform_post_id"] || extract_id_from_url(item["url"] || item["platform_url"])
+      item_id =
+        item["id"] || item["id_str"] || item["platform_post_id"] ||
+          extract_id_from_url(item["url"] || item["platform_url"])
+
       to_string(item_id) == to_string(post_id)
     end)
   end
 
   defp match_feed_item("tiktok", feed_items, video_id) do
-    result = Enum.find(feed_items, fn item ->
-      item_id = item["id"] || item["video_id"] || extract_id_from_url(item["share_url"] || item["url"])
-      to_string(item_id) == to_string(video_id)
-    end)
+    result =
+      Enum.find(feed_items, fn item ->
+        item_id =
+          item["id"] || item["video_id"] || extract_id_from_url(item["share_url"] || item["url"])
+
+        to_string(item_id) == to_string(video_id)
+      end)
 
     if result do
       Logger.info("[PostForMe] TikTok feed item structure: #{inspect(result, pretty: true)}")
@@ -1202,10 +1374,11 @@ defmodule ClippsterServerWeb.SchedulingController do
   end
 
   defp match_feed_item("youtube", feed_items, video_id) do
-    result = Enum.find(feed_items, fn item ->
-      item_id = item["id"] || item["video_id"] || extract_youtube_id_from_url(item["url"])
-      to_string(item_id) == to_string(video_id)
-    end)
+    result =
+      Enum.find(feed_items, fn item ->
+        item_id = item["id"] || item["video_id"] || extract_youtube_id_from_url(item["url"])
+        to_string(item_id) == to_string(video_id)
+      end)
 
     if result do
       Logger.info("[PostForMe] YouTube feed item structure: #{inspect(result, pretty: true)}")
@@ -1321,7 +1494,9 @@ defmodule ClippsterServerWeb.SchedulingController do
 
   defp extract_id_from_url(url) when is_binary(url) do
     case Regex.run(~r{/(\d+)/?(?:\?|$)}, url) do
-      [_, id] -> id
+      [_, id] ->
+        id
+
       _ ->
         case Regex.run(~r{/status/(\d+)}, url) do
           [_, id] -> id

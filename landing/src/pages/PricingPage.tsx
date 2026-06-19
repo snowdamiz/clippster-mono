@@ -2,7 +2,8 @@ import { Check, X, ArrowLeft, Apple, Monitor, Minus, Loader2, Sparkles, Zap, Cro
 import { Link } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
 import { CTA } from '../components/CTA'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
+import { trackDownloadClick, trackLandingEvent } from '@/services/landingAnalytics'
 
 // Subscription plans (actual pricing from server)
 // 1 credit = 1 minute of video processing
@@ -420,19 +421,33 @@ export function PricingPage() {
   const { primaryDownload, isLoading } = useDownloads()
   const [openFAQ, setOpenFAQ] = useState<number | null>(0)
 
+  const trackPricingDownload = (source: string, label: string) => {
+    if (primaryDownload) {
+      trackDownloadClick(primaryDownload, source, label)
+      return
+    }
+
+    trackLandingEvent('landing_cta_click', { source, button_label: label })
+  }
+
   return (
     <div className="min-h-screen bg-background overflow-x-hidden">
       {/* Header */}
       <header className="border-b border-zinc-800/50 backdrop-blur-md sticky top-0 z-50 bg-[#0a0a0b]/90">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3 sm:gap-6">
-            <Link to="/" className="flex items-center gap-2 sm:gap-3">
+            <Link
+              to="/"
+              className="flex items-center gap-2 sm:gap-3"
+              onClick={() => trackLandingEvent('landing_nav_click', { source: 'pricing_header_logo', button_label: 'Home', path: '/' })}
+            >
               <img src="/logo-icon.svg" alt="Clippster" className="w-7 h-7 sm:w-8 sm:h-8" />
               <img src="/logo.svg" alt="Clippster" className="h-4 sm:h-5" />
             </Link>
             <Link 
               to="/" 
               className="hidden sm:flex items-center gap-2 text-zinc-500 hover:text-white transition-colors text-sm group"
+              onClick={() => trackLandingEvent('landing_nav_click', { source: 'pricing_header_back', button_label: 'Back to home', path: '/' })}
             >
               <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
               Back to home
@@ -446,6 +461,7 @@ export function PricingPage() {
             <a
               href={primaryDownload.downloadUrl}
               className="group px-5 py-2.5 rounded-full bg-cyan-500 text-white font-medium text-sm hover:bg-cyan-600 transition-all duration-300 flex items-center gap-2 shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30"
+              onClick={() => trackDownloadClick(primaryDownload, 'pricing_header_download', 'Download')}
             >
               {primaryDownload.platform.os === 'mac' ? <Apple className="w-4 h-4" /> : <Monitor className="w-4 h-4" />}
               <span className="hidden sm:inline">Download</span>
@@ -588,6 +604,7 @@ export function PricingPage() {
                             ? 'text-white shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30 hover:scale-[1.02]' 
                             : 'bg-zinc-800 text-white hover:bg-zinc-700'
                         }`}
+                        onClick={() => trackPricingDownload(`pricing_user_plan_${plan.name.toLowerCase().replaceAll(' ', '_')}`, plan.cta)}
                       >
                         {plan.highlight && (
                           <>
@@ -772,6 +789,7 @@ export function PricingPage() {
                               ? 'text-white shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30 hover:scale-[1.02]' 
                               : 'bg-zinc-800 text-white hover:bg-zinc-700'
                           }`}
+                          onClick={() => trackPricingDownload(`pricing_org_plan_${plan.name.toLowerCase().replaceAll(' ', '_')}`, plan.cta)}
                         >
                           {plan.highlight && (
                             <>
@@ -888,7 +906,7 @@ export function PricingPage() {
                 </thead>
                 <tbody>
                   {comparisonFeatures.map((category, catIndex) => (
-                    <>
+                    <Fragment key={category.category}>
                       {/* Category Header */}
                       <tr key={`cat-${category.category}`} className="bg-zinc-900/60 border-y border-zinc-800">
                         <td colSpan={3} className="px-6 py-3.5">
@@ -911,7 +929,7 @@ export function PricingPage() {
                           </td>
                         </tr>
                       ))}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -1177,9 +1195,27 @@ export function PricingPage() {
             </p>
           </div>
           <div className="flex items-center gap-6 text-xs text-zinc-600">
-            <Link to="/" className="hover:text-zinc-400 transition-colors">Home</Link>
-            <Link to="/privacy" className="hover:text-zinc-400 transition-colors">Privacy</Link>
-            <Link to="/terms" className="hover:text-zinc-400 transition-colors">Terms</Link>
+            <Link
+              to="/"
+              className="hover:text-zinc-400 transition-colors"
+              onClick={() => trackLandingEvent('landing_nav_click', { source: 'pricing_footer', button_label: 'Home', path: '/' })}
+            >
+              Home
+            </Link>
+            <Link
+              to="/privacy"
+              className="hover:text-zinc-400 transition-colors"
+              onClick={() => trackLandingEvent('landing_nav_click', { source: 'pricing_footer', button_label: 'Privacy', path: '/privacy' })}
+            >
+              Privacy
+            </Link>
+            <Link
+              to="/terms"
+              className="hover:text-zinc-400 transition-colors"
+              onClick={() => trackLandingEvent('landing_nav_click', { source: 'pricing_footer', button_label: 'Terms', path: '/terms' })}
+            >
+              Terms
+            </Link>
           </div>
         </div>
       </footer>
