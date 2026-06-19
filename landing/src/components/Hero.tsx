@@ -27,14 +27,14 @@ export function Hero() {
       <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
         {/* Announcement badge - cyan themed */}
         <Link
-          to="/pricing"
+          to="/signup"
           className="group inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#1f1f23] bg-[#141416] backdrop-blur-sm hover:border-[rgba(255,255,255,0.1)] transition-all duration-300 mb-8"
         >
           <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/15 text-xs font-medium text-cyan-400">
             <Sparkles className="w-3 h-3" />
-            New
+            Open Beta
           </span>
-          <span className="text-sm text-zinc-400 group-hover:text-zinc-300 transition-colors">Flexible subscriptions + credit packs</span>
+          <span className="text-sm text-zinc-400 group-hover:text-zinc-300 transition-colors">Clippster is open to everyone</span>
           <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-cyan-400 group-hover:translate-x-0.5 transition-all" />
         </Link>
 
