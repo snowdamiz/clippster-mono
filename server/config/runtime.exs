@@ -98,7 +98,7 @@ config :clippster_server, :allow_unverified_stripe_webhooks, config_env() != :pr
 # Resend email configuration (all environments)
 resend_api_key = System.get_env("RESEND_API_KEY")
 
-if resend_api_key do
+if resend_api_key && config_env() != :test do
   config :clippster_server, ClippsterServer.Mailer,
     adapter: Resend.Swoosh.Adapter,
     api_key: resend_api_key
@@ -117,11 +117,18 @@ end
 config :clippster_server,
   jwt_secret: jwt_secret || "dev_secret_key_change_in_production"
 
-# Email auth configuration
+# Email configuration
+email_url_base =
+  System.get_env("EMAIL_URL_BASE") || System.get_env("APP_URL") || "http://localhost:4000"
+
 config :clippster_server, :email_auth,
   from_email: System.get_env("EMAIL_FROM") || "noreply@clippster.app",
+  transactional_from_email: System.get_env("TRANSACTIONAL_EMAIL_FROM") || "noreply@clippster.app",
+  marketing_from_email: System.get_env("MARKETING_EMAIL_FROM") || "updates@clippster.app",
+  support_email: System.get_env("SUPPORT_EMAIL") || "support@clippster.app",
+  unsubscribe_email: System.get_env("UNSUBSCRIBE_EMAIL") || "unsubscribe@clippster.app",
   app_name: "Clippster",
-  verification_url_base: System.get_env("APP_URL") || "http://localhost:4000"
+  verification_url_base: email_url_base
 
 # Instagram API configuration (Instagram Business Login)
 # redirect_uri should point to the server's callback endpoint

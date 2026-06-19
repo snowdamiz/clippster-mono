@@ -147,6 +147,8 @@ defmodule ClippsterServerWeb.Router do
     get("/stripe-success", StripeRedirectController, :success)
     get("/stripe-cancel", StripeRedirectController, :cancel)
     get("/invite/:token", InviteController, :show)
+    get("/email/unsubscribe/:token", AdminMessagingController, :unsubscribe)
+    post("/email/unsubscribe/:token", AdminMessagingController, :unsubscribe)
   end
 
   scope "/api", ClippsterServerWeb do
@@ -155,6 +157,7 @@ defmodule ClippsterServerWeb.Router do
     # Health check endpoints for Fly.io and load balancers
     get("/health", HealthController, :check)
     get("/health/deep", HealthController, :deep_check)
+    post("/email/unsubscribe/:token", AdminMessagingController, :unsubscribe)
 
     # Handle OPTIONS requests for CORS preflight
     options("/*path", AuthController, :options)
@@ -1418,6 +1421,8 @@ defmodule ClippsterServerWeb.Router do
     delete("/admin/announcements/:id", AnnouncementsController, :delete)
 
     # Admin messaging (bulk email campaigns)
+    post("/admin/messaging/preview", AdminMessagingController, :preview_campaign)
+    post("/admin/messaging/test", AdminMessagingController, :send_test_campaign)
     post("/admin/messaging/send", AdminMessagingController, :send_campaign)
     get("/admin/messaging/campaigns", AdminMessagingController, :list_campaigns)
 

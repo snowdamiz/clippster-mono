@@ -3,13 +3,23 @@ defmodule ClippsterServer.AdminMessaging do
   Context for admin bulk email messaging.
   """
   import Ecto.Query
+  require Logger
 
-  alias ClippsterServer.Repo
-  alias ClippsterServer.AdminMessaging.EmailCampaign
+  alias ClippsterServer.AdminMessaging.{
+    EmailCampaign,
+    EmailCampaignRecipient,
+    EmailSuppression
+  }
+
   alias ClippsterServer.Accounts.User
+  alias ClippsterServer.Repo
   alias ClippsterServer.Waitlist.WaitlistEntry
-  alias ClippsterServer.Emails
-  alias ClippsterServer.Mailer
+  alias ClippsterServer.{Emails, Mailer}
+
+  @batch_size 50
+  @batch_delay_ms 1_000
+  @unsubscribe_salt "email-unsubscribe"
+  @unsubscribe_max_age_seconds 60 * 60 * 24 * 365 * 5
 
   @doc """
   Returns all campaigns ordered by most recent.
@@ -23,32 +33,150 @@ defmodule ClippsterServer.AdminMessaging do
   end
 
   @doc """
+  Resolves the requested audience without sending anything.
+  """
+  def preview_campaign(attrs) do
+    audience = input(attrs, "audience")
+    target_email = input(attrs, "target_email")
+
+    with {:ok, recipients} <- resolve_recipients(audience, target_email) do
+      {deliverable, suppressed} = partition_suppressed(recipients)
+
+      {:ok,
+       %{
+         audience: audience,
+         requested_count: length(recipients),
+         recipient_count: length(deliverable),
+         suppressed_count: length(suppressed),
+         sample: Enum.take(deliverable, 3)
+       }}
+    end
+  end
+
+  @doc """
+  Sends a single test email without creating a campaign record.
+  """
+  def send_test_campaign(attrs, _user_id) do
+    subject = input(attrs, "subject")
+    body = input(attrs, "body")
+    preheader = input(attrs, "preheader")
+    test_email = input(attrs, "test_email")
+
+    with :ok <- validate_campaign_content(subject, body),
+         {:ok, [recipient]} <- resolve_recipients("individual", test_email) do
+      case deliver_email(recipient, subject, body, preheader, "individual") do
+        :ok -> {:ok, recipient}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
   Sends a broadcast email campaign.
-  attrs: %{subject, body, audience, target_email (if individual)}
+  attrs: %{subject, body, preheader, audience, target_email}
   user_id: admin user sending the campaign
   """
   def send_campaign(attrs, user_id) do
-    subject = Map.get(attrs, "subject", "")
-    body = Map.get(attrs, "body", "")
-    audience = Map.get(attrs, "audience", "")
-    target_email = Map.get(attrs, "target_email")
+    subject = input(attrs, "subject")
+    body = input(attrs, "body")
+    preheader = input(attrs, "preheader")
+    audience = input(attrs, "audience")
+    target_email = input(attrs, "target_email")
 
-    with {:ok, recipients} <- resolve_recipients(audience, target_email),
-         {:ok, campaign} <- create_campaign_record(attrs, user_id, length(recipients), "sent") do
-      deliver_emails(recipients, subject, body)
-      {:ok, campaign, length(recipients)}
-    else
+    with :ok <- validate_campaign_content(subject, body),
+         {:ok, recipients} <- resolve_recipients(audience, target_email),
+         {deliverable, suppressed} <- partition_suppressed(recipients),
+         :ok <- validate_deliverable_recipients(deliverable, suppressed),
+         {:ok, campaign} <-
+           create_campaign_record(
+             attrs,
+             user_id,
+             length(deliverable),
+             length(suppressed),
+             "sending"
+           ) do
+      recipient_records = create_recipient_records!(campaign, deliverable)
+      stats = deliver_recipients(recipient_records, campaign, subject, body, preheader)
+
+      case finalize_campaign(campaign, stats) do
+        {:ok, updated_campaign} -> {:ok, updated_campaign, stats}
+        {:error, changeset} -> {:error, changeset}
+      end
+    end
+  end
+
+  @doc """
+  Adds an email to the marketing suppression list.
+  """
+  def suppress_email(email, attrs \\ %{}) do
+    normalized_email = normalize_email(email)
+
+    suppression_attrs = %{
+      "email" => normalized_email,
+      "reason" => input(attrs, "reason", "unsubscribe"),
+      "source" => input(attrs, "source")
+    }
+
+    case Repo.get_by(EmailSuppression, email: normalized_email) do
+      nil ->
+        %EmailSuppression{}
+        |> EmailSuppression.changeset(suppression_attrs)
+        |> Repo.insert()
+
+      suppression ->
+        suppression
+        |> EmailSuppression.changeset(suppression_attrs)
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Verifies an unsubscribe token and suppresses the embedded email.
+  """
+  def unsubscribe_with_token(token) when is_binary(token) do
+    case Phoenix.Token.verify(
+           ClippsterServerWeb.Endpoint,
+           @unsubscribe_salt,
+           token,
+           max_age: @unsubscribe_max_age_seconds
+         ) do
+      {:ok, email} ->
+        suppress_email(email, %{"reason" => "unsubscribe", "source" => "unsubscribe_link"})
+
       {:error, reason} ->
-        create_campaign_record(attrs, user_id, 0, "failed")
         {:error, reason}
     end
   end
 
+  def unsubscribe_with_token(_), do: {:error, :invalid}
+
+  defp validate_campaign_content(subject, body) do
+    cond do
+      subject == "" -> {:error, "Subject is required"}
+      body == "" -> {:error, "Body is required"}
+      true -> :ok
+    end
+  end
+
+  defp validate_deliverable_recipients([], suppressed) when length(suppressed) > 0 do
+    {:error, "All resolved recipients have unsubscribed or are suppressed"}
+  end
+
+  defp validate_deliverable_recipients([], _suppressed) do
+    {:error, "No recipients found for this audience"}
+  end
+
+  defp validate_deliverable_recipients(_deliverable, _suppressed), do: :ok
+
   defp resolve_recipients("waitlist", _target_email) do
     emails =
-      Repo.all(from w in WaitlistEntry, select: w.email)
+      Repo.all(
+        from w in WaitlistEntry,
+          where: not is_nil(w.email),
+          select: w.email
+      )
 
-    {:ok, emails}
+    {:ok, normalize_recipient_emails(emails)}
   end
 
   defp resolve_recipients("all_users", _target_email) do
@@ -59,47 +187,173 @@ defmodule ClippsterServer.AdminMessaging do
           select: u.email
       )
 
-    {:ok, emails}
+    {:ok, normalize_recipient_emails(emails)}
   end
 
-  defp resolve_recipients("individual", target_email)
-       when is_binary(target_email) and target_email != "" do
-    {:ok, [target_email]}
-  end
-
-  defp resolve_recipients("individual", _) do
-    {:error, "target_email is required for individual audience"}
+  defp resolve_recipients("individual", target_email) do
+    case normalize_recipient_emails([target_email]) do
+      [email] -> {:ok, [email]}
+      _ -> {:error, "target_email is required for individual audience"}
+    end
   end
 
   defp resolve_recipients(audience, _) do
     {:error, "Invalid audience: #{audience}"}
   end
 
-  defp deliver_emails(recipients, subject, body) do
-    recipients
-    |> Enum.map(fn email ->
-      Emails.admin_broadcast_email(email, subject, body)
-    end)
-    |> Enum.chunk_every(50)
+  defp partition_suppressed(recipients) do
+    suppressed = MapSet.new(suppressed_emails())
+    Enum.split_with(recipients, &(not MapSet.member?(suppressed, &1)))
+  end
+
+  defp suppressed_emails do
+    Repo.all(from s in EmailSuppression, select: s.email)
+  end
+
+  defp deliver_recipients(recipient_records, campaign, subject, body, preheader) do
+    recipient_records
+    |> Enum.chunk_every(@batch_size)
     |> Enum.with_index()
-    |> Enum.each(fn {batch, index} ->
-      if index > 0, do: Process.sleep(1000)
-      Mailer.deliver_many(batch)
+    |> Enum.reduce(%{sent_count: 0, failed_count: 0}, fn {batch, index}, stats ->
+      if index > 0, do: Process.sleep(@batch_delay_ms)
+
+      Enum.reduce(batch, stats, fn recipient, batch_stats ->
+        case deliver_recipient(recipient, campaign, subject, body, preheader) do
+          :ok ->
+            Map.update!(batch_stats, :sent_count, &(&1 + 1))
+
+          {:error, _reason} ->
+            Map.update!(batch_stats, :failed_count, &(&1 + 1))
+        end
+      end)
     end)
   end
 
-  defp create_campaign_record(attrs, user_id, recipient_count, status) do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
+  defp deliver_recipient(recipient, campaign, subject, body, preheader) do
+    case deliver_email(recipient.email, subject, body, preheader, campaign.audience) do
+      :ok ->
+        update_recipient!(recipient, %{
+          status: "sent",
+          sent_at: DateTime.utc_now() |> DateTime.truncate(:second),
+          error: nil
+        })
 
+        :ok
+
+      {:error, reason} ->
+        Logger.error(
+          "Failed to send campaign #{campaign.id} to #{recipient.email}: #{inspect(reason)}"
+        )
+
+        update_recipient!(recipient, %{
+          status: "failed",
+          error: inspect(reason)
+        })
+
+        {:error, reason}
+    end
+  end
+
+  defp deliver_email(email, subject, body, preheader, audience) do
+    result =
+      try do
+        email
+        |> Emails.admin_broadcast_email(subject, body,
+          preheader: preheader,
+          audience: audience
+        )
+        |> Mailer.deliver()
+      rescue
+        error -> {:error, Exception.message(error)}
+      catch
+        kind, reason -> {:error, {kind, reason}}
+      end
+
+    case result do
+      {:ok, _} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp create_campaign_record(attrs, user_id, recipient_count, suppressed_count, status) do
     %EmailCampaign{}
-    |> EmailCampaign.changeset(
-      Map.merge(attrs, %{
-        "sent_by" => user_id,
-        "sent_at" => now,
-        "recipient_count" => recipient_count,
-        "status" => status
-      })
-    )
+    |> EmailCampaign.changeset(%{
+      "subject" => input(attrs, "subject"),
+      "body" => input(attrs, "body"),
+      "preheader" => input(attrs, "preheader"),
+      "audience" => input(attrs, "audience"),
+      "target_email" => input(attrs, "target_email"),
+      "sent_by" => user_id,
+      "recipient_count" => recipient_count,
+      "suppressed_count" => suppressed_count,
+      "status" => status
+    })
     |> Repo.insert()
   end
+
+  defp create_recipient_records!(campaign, recipients) do
+    Enum.map(recipients, fn email ->
+      %EmailCampaignRecipient{}
+      |> EmailCampaignRecipient.changeset(%{
+        campaign_id: campaign.id,
+        email: email,
+        status: "pending"
+      })
+      |> Repo.insert!()
+    end)
+  end
+
+  defp update_recipient!(recipient, attrs) do
+    recipient
+    |> EmailCampaignRecipient.changeset(attrs)
+    |> Repo.update!()
+  end
+
+  defp finalize_campaign(campaign, %{sent_count: sent_count, failed_count: failed_count}) do
+    status =
+      cond do
+        failed_count == 0 and sent_count > 0 -> "sent"
+        sent_count > 0 -> "partial_failed"
+        true -> "failed"
+      end
+
+    campaign
+    |> EmailCampaign.changeset(%{
+      "status" => status,
+      "sent_at" => DateTime.utc_now() |> DateTime.truncate(:second),
+      "sent_count" => sent_count,
+      "failed_count" => failed_count
+    })
+    |> Repo.update()
+  end
+
+  defp normalize_recipient_emails(emails) do
+    emails
+    |> Enum.map(&normalize_email/1)
+    |> Enum.filter(&valid_email?/1)
+    |> Enum.uniq()
+  end
+
+  defp normalize_email(email) do
+    email
+    |> to_string()
+    |> String.trim()
+    |> String.downcase()
+  end
+
+  defp valid_email?(email) do
+    Regex.match?(~r/^[^\s]+@[^\s]+\.[^\s]+$/, email)
+  end
+
+  defp input(attrs, key, default \\ "")
+
+  defp input(attrs, key, default) when is_map(attrs) do
+    value = Map.get(attrs, key) || Map.get(attrs, String.to_atom(key)) || default
+
+    value
+    |> to_string()
+    |> String.trim()
+  end
+
+  defp input(_, _, default), do: default
 end

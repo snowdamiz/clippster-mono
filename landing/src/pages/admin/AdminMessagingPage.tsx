@@ -16,7 +16,7 @@ import {
   Underline,
   User,
   UserPlus,
-  Users,
+  Users
 } from 'lucide-react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { api } from '@/lib/api'
@@ -27,8 +27,12 @@ import './AdminMessagingPage.css'
 interface Campaign {
   id: number
   subject: string
+  preheader?: string | null
   audience: string
   recipient_count: number
+  sent_count: number
+  failed_count: number
+  suppressed_count: number
   status: string
   sent_at: string | null
 }
@@ -37,21 +41,65 @@ interface FormState {
   audience: string
   targetEmail: string
   subject: string
+  preheader: string
   body: string
+  testEmail: string
 }
 
 type EditorMode = 'visual' | 'html' | 'preview'
+
+interface RecipientPreview {
+  requested_count: number
+  recipient_count: number
+  suppressed_count: number
+  sample: string[]
+}
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const AUDIENCE_OPTIONS = [
   { value: 'all_users', label: 'All Users', desc: 'Every registered user', icon: Users },
   { value: 'waitlist', label: 'Waitlist', desc: 'Waitlist signups only', icon: UserPlus },
-  { value: 'individual', label: 'Individual', desc: 'Single email address', icon: User },
+  { value: 'individual', label: 'Individual', desc: 'Single email address', icon: User }
 ]
 
+const WAITLIST_TEMPLATE = {
+  subject: 'Clippster early access is open',
+  preheader: 'Your waitlist spot is ready. Start clipping faster with AI-powered highlights, captions, and exports.',
+  body: `
+<h1 style="margin: 0 0 12px 0; color: #ffffff; font-size: 28px; line-height: 1.2; font-weight: 750;">Early access is open</h1>
+<p style="margin: 0 0 20px 0; color: #d7dde8; font-size: 15px; line-height: 1.7;">You joined the Clippster waitlist, and your spot is ready.</p>
+<p style="margin: 0 0 24px 0; color: #d7dde8; font-size: 15px; line-height: 1.7;">Clippster helps creators turn long streams and videos into polished short-form clips with AI-assisted highlight detection, captions, timeline editing, and platform-ready exports.</p>
+<table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0 0 28px 0;">
+  <tr>
+    <td>
+      <a href="https://clippster.app" style="display: inline-block; background-color: #22d3ee; color: #061014; text-decoration: none; padding: 13px 20px; border-radius: 9px; font-size: 14px; font-weight: 800;">Start Using Clippster</a>
+    </td>
+  </tr>
+</table>
+<div style="background-color: #101820; border: 1px solid #243342; border-radius: 12px; padding: 18px 18px 16px 18px; margin: 0 0 24px 0;">
+  <p style="margin: 0 0 12px 0; color: #ffffff; font-size: 14px; font-weight: 750;">What you can do now</p>
+  <ul style="margin: 0; padding-left: 20px; color: #c8d1df; font-size: 14px; line-height: 1.7;">
+    <li>Find high-potential moments faster with AI clip detection</li>
+    <li>Edit clips in a focused timeline built for short-form content</li>
+    <li>Add captions and export for TikTok, YouTube Shorts, Instagram, and X</li>
+    <li>Keep the workflow in one desktop app instead of bouncing between tools</li>
+  </ul>
+</div>
+<p style="margin: 0 0 20px 0; color: #d7dde8; font-size: 15px; line-height: 1.7;">Thanks for being early. We're building Clippster with creators who care about speed, quality, and not spending their entire day cutting footage.</p>
+<p style="margin: 0; color: #ffffff; font-size: 15px; line-height: 1.7;">See you inside,<br>The Clippster team</p>
+`.trim()
+}
+
 function defaultForm(): FormState {
-  return { audience: 'all_users', targetEmail: '', subject: '', body: '' }
+  return {
+    audience: 'waitlist',
+    targetEmail: '',
+    subject: WAITLIST_TEMPLATE.subject,
+    preheader: WAITLIST_TEMPLATE.preheader,
+    body: WAITLIST_TEMPLATE.body,
+    testEmail: ''
+  }
 }
 
 function audienceLabel(a: string) {
@@ -61,9 +109,65 @@ function audienceLabel(a: string) {
 function formatDate(d: string | null) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
   })
+}
+
+function buildEmailPreviewHtml(body: string, preheader: string, audience: string) {
+  const reason =
+    audience === 'waitlist'
+      ? "You're receiving this email because you joined the Clippster waitlist."
+      : audience === 'individual'
+        ? 'This is a direct message from the Clippster team.'
+        : "You're receiving this email because you have a Clippster account."
+
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+  <body style="margin:0;padding:0;background-color:#0b0c0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(preheader)}</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#0b0c0f;min-height:100vh;">
+      <tr><td align="center" style="padding:36px 18px;">
+        <table role="presentation" width="100%" style="max-width:600px;">
+          <tr><td align="left" style="padding:0 0 18px 0;">
+            <p style="margin:0 0 6px 0;color:#ffffff;font-size:28px;font-weight:750;line-height:1.1;">Clippster</p>
+            <p style="margin:0;color:#67e8f9;font-size:13px;font-weight:600;letter-spacing:0.02em;">The AI-Powered Clipping Studio</p>
+          </td></tr>
+          <tr><td style="background-color:#14161b;border:1px solid #2b3038;border-radius:14px;overflow:hidden;">
+            <div style="height:4px;background:linear-gradient(90deg,#22d3ee 0%,#3b82f6 55%,#22c55e 100%);"></div>
+            <div style="padding:34px 34px 30px 34px;color:#d7dde8;font-size:15px;line-height:1.7;">${body}</div>
+          </td></tr>
+          <tr><td style="padding-top:18px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#101217;border:1px solid #252a33;border-radius:12px;">
+              <tr><td style="padding:18px 20px;">
+                <p style="margin:0 0 6px 0;color:#ffffff;font-size:14px;font-weight:700;">Need help or want to share feedback?</p>
+                <p style="margin:0 0 14px 0;color:#aeb7c6;font-size:13px;line-height:1.55;">Join the Discord community for support, updates, and early product notes.</p>
+                <a href="https://discord.gg/4kTCvKEVuV" style="display:inline-block;background-color:#5865f2;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:700;font-size:13px;">Join Discord</a>
+              </td></tr>
+            </table>
+          </td></tr>
+          <tr><td style="padding:22px 8px 0 8px;text-align:center;">
+            <p style="margin:0;color:#737c8c;font-size:12px;line-height:1.6;">${reason}</p>
+            <p style="margin:12px 0 0 0;color:#596172;font-size:11px;line-height:1.6;">Unsubscribe | Clippster · 412 W 39th St, Vancouver, WA 98660</p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────
@@ -75,19 +179,33 @@ export function AdminMessagingPage() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [loadingPreview, setLoadingPreview] = useState(false)
+  const [previewError, setPreviewError] = useState('')
+  const [recipientPreview, setRecipientPreview] = useState<RecipientPreview>({
+    requested_count: 0,
+    recipient_count: 0,
+    suppressed_count: 0,
+    sample: []
+  })
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const canSend =
     form.subject.trim() &&
     form.body.trim() &&
-    (form.audience !== 'individual' || form.targetEmail.trim())
+    (form.audience !== 'individual' || form.targetEmail.trim()) &&
+    recipientPreview.recipient_count > 0
+
+  const canSendTest = form.subject.trim() && form.body.trim() && form.testEmail.trim()
 
   const confirmRecipientText =
     form.audience === 'all_users'
-      ? 'all registered users'
+      ? `${recipientPreview.recipient_count} registered users`
       : form.audience === 'waitlist'
-        ? 'all waitlist members'
+        ? `${recipientPreview.recipient_count} waitlist members`
         : form.targetEmail
+
+  const emailPreviewHtml = buildEmailPreviewHtml(form.body, form.preheader, form.audience)
 
   // ── API ──────────────────────────────────────────────────────────────────
 
@@ -103,12 +221,56 @@ export function AdminMessagingPage() {
     }
   }, [])
 
-  useEffect(() => { fetchHistory() }, [fetchHistory])
+  useEffect(() => {
+    fetchHistory()
+  }, [fetchHistory])
+
+  const fetchPreview = useCallback(async () => {
+    setLoadingPreview(true)
+    setPreviewError('')
+    try {
+      const payload: Record<string, string> = { audience: form.audience }
+      if (form.audience === 'individual') payload.target_email = form.targetEmail
+      const res = await api.post<RecipientPreview & { success: boolean; error?: string }>(
+        '/admin/messaging/preview',
+        payload
+      )
+      if (res.success === false) throw new Error(res.error || 'Failed to resolve recipients')
+      setRecipientPreview({
+        requested_count: res.requested_count ?? 0,
+        recipient_count: res.recipient_count ?? 0,
+        suppressed_count: res.suppressed_count ?? 0,
+        sample: res.sample ?? []
+      })
+    } catch (err) {
+      setRecipientPreview({ requested_count: 0, recipient_count: 0, suppressed_count: 0, sample: [] })
+      setPreviewError(err instanceof Error ? err.message : 'Failed to resolve recipients')
+    } finally {
+      setLoadingPreview(false)
+    }
+  }, [form.audience, form.targetEmail])
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      fetchPreview()
+    }, 250)
+    return () => window.clearTimeout(timeout)
+  }, [fetchPreview])
 
   // ── Form helpers ─────────────────────────────────────────────────────────
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  function applyWaitlistTemplate() {
+    setForm((prev) => ({
+      ...prev,
+      audience: 'waitlist',
+      subject: WAITLIST_TEMPLATE.subject,
+      preheader: WAITLIST_TEMPLATE.preheader,
+      body: WAITLIST_TEMPLATE.body
+    }))
   }
 
   // ── Toolbar ──────────────────────────────────────────────────────────────
@@ -137,11 +299,13 @@ export function AdminMessagingPage() {
     { title: 'Ordered List', icon: ListOrdered, action: () => wrapSelection('<ol>\n  <li>', '</li>\n</ol>') },
     null,
     {
-      title: 'Link', icon: LinkIcon, action: () => {
+      title: 'Link',
+      icon: LinkIcon,
+      action: () => {
         const url = window.prompt('Enter URL')
         if (url) wrapSelection(`<a href="${url}">`, '</a>')
-      },
-    },
+      }
+    }
   ]
 
   // ── Send ─────────────────────────────────────────────────────────────────
@@ -152,17 +316,38 @@ export function AdminMessagingPage() {
     try {
       const payload: Record<string, string> = {
         subject: form.subject,
+        preheader: form.preheader,
         body: form.body,
-        audience: form.audience,
+        audience: form.audience
       }
       if (form.audience === 'individual') payload.target_email = form.targetEmail
-      await api.post('/admin/messaging/send', payload)
+      const res = await api.post<{ success: boolean; error?: string }>('/admin/messaging/send', payload)
+      if (res.success === false) throw new Error(res.error || 'Failed to send campaign')
       setForm(defaultForm())
       await fetchHistory()
-    } catch {
-      // ignore
+      await fetchPreview()
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Failed to send campaign')
     } finally {
       setSending(false)
+    }
+  }
+
+  async function sendTestCampaign() {
+    setTesting(true)
+    try {
+      const res = await api.post<{ success: boolean; error?: string }>('/admin/messaging/test', {
+        subject: form.subject,
+        preheader: form.preheader,
+        body: form.body,
+        test_email: form.testEmail
+      })
+      if (res.success === false) throw new Error(res.error || 'Failed to send test email')
+      window.alert(`Test email sent to ${form.testEmail}`)
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Failed to send test email')
+    } finally {
+      setTesting(false)
     }
   }
 
@@ -173,11 +358,7 @@ export function AdminMessagingPage() {
       icon={Mail}
       title="Messaging"
       actions={
-        <button
-          className="msg-action-btn"
-          disabled={loadingHistory}
-          onClick={fetchHistory}
-        >
+        <button className="msg-action-btn" disabled={loadingHistory} onClick={fetchHistory}>
           <RefreshCw className={`msg-action-icon${loadingHistory ? ' msg-spin' : ''}`} />
           Refresh
         </button>
@@ -198,8 +379,12 @@ export function AdminMessagingPage() {
             </div>
             <div>
               <h2 className="admin-msg__compose-title">Compose Email</h2>
-              <p className="admin-msg__compose-desc">Fill in the details below to send a campaign</p>
+              <p className="admin-msg__compose-desc">Preview, test, and send a styled campaign</p>
             </div>
+            <button className="admin-msg__template-btn" onClick={applyWaitlistTemplate}>
+              <Mail className="admin-msg__template-icon" />
+              Use waitlist template
+            </button>
           </div>
 
           <div className="admin-msg__compose-body">
@@ -219,6 +404,19 @@ export function AdminMessagingPage() {
                       <span className="admin-msg__audience-desc">{opt.desc}</span>
                     </button>
                   ))}
+                </div>
+                <div className="admin-msg__audience-meta">
+                  {previewError ? (
+                    <span className="admin-msg__audience-error">{previewError}</span>
+                  ) : (
+                    <span className="admin-msg__audience-count">
+                      {recipientPreview.recipient_count} deliverable
+                      {recipientPreview.suppressed_count > 0 && <> · {recipientPreview.suppressed_count} suppressed</>}
+                    </span>
+                  )}
+                  <button className="admin-msg__count-btn" disabled={loadingPreview} onClick={fetchPreview}>
+                    <RefreshCw className={`admin-msg__count-icon${loadingPreview ? ' msg-spin' : ''}`} />
+                  </button>
                 </div>
               </div>
 
@@ -245,6 +443,16 @@ export function AdminMessagingPage() {
                     onChange={(e) => setField('subject', e.target.value)}
                   />
                 </div>
+                <div className="admin-msg__field">
+                  <label className="admin-msg__label">Preheader</label>
+                  <input
+                    className="admin-msg__input"
+                    type="text"
+                    placeholder="Short inbox preview text..."
+                    value={form.preheader}
+                    onChange={(e) => setField('preheader', e.target.value)}
+                  />
+                </div>
               </div>
             </div>
 
@@ -252,13 +460,22 @@ export function AdminMessagingPage() {
             <div className="admin-msg__field">
               <label className="admin-msg__label">Body</label>
               <div className="admin-msg__editor-tabs">
-                <button className={`admin-msg__editor-tab${editorMode === 'visual' ? ' admin-msg__editor-tab--active' : ''}`} onClick={() => setEditorMode('visual')}>
+                <button
+                  className={`admin-msg__editor-tab${editorMode === 'visual' ? ' admin-msg__editor-tab--active' : ''}`}
+                  onClick={() => setEditorMode('visual')}
+                >
                   <Type className="admin-msg__tab-icon" /> Visual
                 </button>
-                <button className={`admin-msg__editor-tab${editorMode === 'html' ? ' admin-msg__editor-tab--active' : ''}`} onClick={() => setEditorMode('html')}>
+                <button
+                  className={`admin-msg__editor-tab${editorMode === 'html' ? ' admin-msg__editor-tab--active' : ''}`}
+                  onClick={() => setEditorMode('html')}
+                >
                   <Code className="admin-msg__tab-icon" /> HTML
                 </button>
-                <button className={`admin-msg__editor-tab${editorMode === 'preview' ? ' admin-msg__editor-tab--active' : ''}`} onClick={() => setEditorMode('preview')}>
+                <button
+                  className={`admin-msg__editor-tab${editorMode === 'preview' ? ' admin-msg__editor-tab--active' : ''}`}
+                  onClick={() => setEditorMode('preview')}
+                >
                   <Eye className="admin-msg__tab-icon" /> Preview
                 </button>
               </div>
@@ -271,7 +488,12 @@ export function AdminMessagingPage() {
                         action === null ? (
                           <div key={i} className="admin-msg__toolbar-divider" />
                         ) : (
-                          <button key={action.title} className="admin-msg__toolbar-btn" title={action.title} onClick={action.action}>
+                          <button
+                            key={action.title}
+                            className="admin-msg__toolbar-btn"
+                            title={action.title}
+                            onClick={action.action}
+                          >
                             <action.icon className="admin-msg__toolbar-icon" />
                           </button>
                         )
@@ -281,7 +503,11 @@ export function AdminMessagingPage() {
                   <textarea
                     ref={textareaRef}
                     className="admin-msg__html-textarea"
-                    placeholder={editorMode === 'visual' ? 'Write your email body here (HTML supported)...' : '<p>Enter your HTML email body here...</p>'}
+                    placeholder={
+                      editorMode === 'visual'
+                        ? 'Write your email body here (HTML supported)...'
+                        : '<p>Enter your HTML email body here...</p>'
+                    }
                     spellCheck={false}
                     value={form.body}
                     onChange={(e) => setField('body', e.target.value)}
@@ -292,7 +518,7 @@ export function AdminMessagingPage() {
               {editorMode === 'preview' && (
                 <div className="admin-msg__preview-wrapper">
                   {form.body ? (
-                    <div className="admin-msg__preview-body" dangerouslySetInnerHTML={{ __html: form.body }} />
+                    <iframe className="admin-msg__preview-frame" title="Email preview" srcDoc={emailPreviewHtml} />
                   ) : (
                     <div className="admin-msg__preview-empty">
                       <Eye className="admin-msg__preview-empty-icon" />
@@ -305,8 +531,29 @@ export function AdminMessagingPage() {
           </div>
 
           <div className="admin-msg__compose-footer">
+            <div className="admin-msg__test">
+              <input
+                className="admin-msg__test-input"
+                type="email"
+                placeholder="Send test to..."
+                value={form.testEmail}
+                onChange={(e) => setField('testEmail', e.target.value)}
+              />
+              <button className="admin-msg__test-btn" disabled={!canSendTest || testing} onClick={sendTestCampaign}>
+                {testing ? (
+                  <Loader2 className="admin-msg__send-icon msg-spin" />
+                ) : (
+                  <Mail className="admin-msg__send-icon" />
+                )}
+                {testing ? 'Sending test...' : 'Send test'}
+              </button>
+            </div>
             <button className="admin-msg__send-btn" disabled={!canSend || sending} onClick={() => setShowConfirm(true)}>
-              {sending ? <Loader2 className="admin-msg__send-icon msg-spin" /> : <Send className="admin-msg__send-icon" />}
+              {sending ? (
+                <Loader2 className="admin-msg__send-icon msg-spin" />
+              ) : (
+                <Send className="admin-msg__send-icon" />
+              )}
               {sending ? 'Sending...' : 'Send Campaign'}
             </button>
           </div>
@@ -335,7 +582,9 @@ export function AdminMessagingPage() {
 
           {!loadingHistory && campaigns.length === 0 && (
             <div className="admin-msg__empty">
-              <div className="admin-msg__empty-icon-wrap"><Mail className="admin-msg__empty-icon-svg" /></div>
+              <div className="admin-msg__empty-icon-wrap">
+                <Mail className="admin-msg__empty-icon-svg" />
+              </div>
               <p className="admin-msg__empty-text">No campaigns sent yet</p>
             </div>
           )}
@@ -361,7 +610,9 @@ export function AdminMessagingPage() {
                       </td>
                       <td className="admin-msg__td admin-msg__td--muted">{campaign.recipient_count}</td>
                       <td className="admin-msg__td">
-                        <span className={`admin-msg__status admin-msg__status--${campaign.status}`}>{campaign.status}</span>
+                        <span className={`admin-msg__status admin-msg__status--${campaign.status}`}>
+                          {campaign.status}
+                        </span>
                       </td>
                       <td className="admin-msg__td admin-msg__td--muted">{formatDate(campaign.sent_at)}</td>
                     </tr>
@@ -391,9 +642,19 @@ export function AdminMessagingPage() {
               <p className="msg-modal__desc">
                 Subject: <span className="msg-modal__highlight">{form.subject}</span>
               </p>
+              {recipientPreview.suppressed_count > 0 && (
+                <p className="msg-modal__desc">
+                  {recipientPreview.suppressed_count} suppressed email
+                  {recipientPreview.suppressed_count === 1 ? '' : 's'} will be skipped.
+                </p>
+              )}
               <div className="msg-modal__actions">
-                <button className="msg-modal__btn msg-modal__btn--send" onClick={sendCampaign}>Send Now</button>
-                <button className="msg-modal__btn msg-modal__btn--cancel" onClick={() => setShowConfirm(false)}>Cancel</button>
+                <button className="msg-modal__btn msg-modal__btn--send" onClick={sendCampaign}>
+                  Send Now
+                </button>
+                <button className="msg-modal__btn msg-modal__btn--cancel" onClick={() => setShowConfirm(false)}>
+                  Cancel
+                </button>
               </div>
             </div>
           </div>
