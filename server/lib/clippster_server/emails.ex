@@ -812,40 +812,6 @@ defmodule ClippsterServer.Emails do
     """
   end
 
-  def waitlist_blast_body_html do
-    """
-    <h1 style="margin: 0 0 12px 0; color: #ffffff; font-size: 28px; line-height: 1.2; font-weight: 750;">Early access is open</h1>
-    <p style="margin: 0 0 20px 0; color: #d7dde8; font-size: 15px; line-height: 1.7;">You joined the Clippster waitlist, and your spot is ready.</p>
-    <p style="margin: 0 0 24px 0; color: #d7dde8; font-size: 15px; line-height: 1.7;">Clippster helps creators turn long streams and videos into polished short-form clips with AI-assisted highlight detection, captions, timeline editing, and platform-ready exports.</p>
-    <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0 0 28px 0;">
-      <tr>
-        <td>
-          <a href="https://clippster.app" style="display: inline-block; background-color: #22d3ee; color: #061014; text-decoration: none; padding: 13px 20px; border-radius: 9px; font-size: 14px; font-weight: 800;">Start Using Clippster</a>
-        </td>
-      </tr>
-    </table>
-    <div style="background-color: #101820; border: 1px solid #243342; border-radius: 12px; padding: 18px 18px 16px 18px; margin: 0 0 24px 0;">
-      <p style="margin: 0 0 12px 0; color: #ffffff; font-size: 14px; font-weight: 750;">What you can do now</p>
-      <ul style="margin: 0; padding-left: 20px; color: #c8d1df; font-size: 14px; line-height: 1.7;">
-        <li>Find high-potential moments faster with AI clip detection</li>
-        <li>Edit clips in a focused timeline built for short-form content</li>
-        <li>Add captions and export for TikTok, YouTube Shorts, Instagram, and X</li>
-        <li>Keep the workflow in one desktop app instead of bouncing between tools</li>
-      </ul>
-    </div>
-    <p style="margin: 0 0 20px 0; color: #d7dde8; font-size: 15px; line-height: 1.7;">Thanks for being early. We're building Clippster with creators who care about speed, quality, and not spending their entire day cutting footage.</p>
-    <p style="margin: 0; color: #ffffff; font-size: 15px; line-height: 1.7;">See you inside,<br>The Clippster team</p>
-    """
-  end
-
-  def waitlist_blast_preheader do
-    "Your waitlist spot is ready. Start clipping faster with AI-powered highlights, captions, and exports."
-  end
-
-  def waitlist_blast_subject do
-    "Clippster early access is open"
-  end
-
   defp admin_broadcast_text(subject, body_html, app_name, unsubscribe_url, audience) do
     plain =
       body_html
@@ -883,7 +849,7 @@ defmodule ClippsterServer.Emails do
   end
 
   defp marketing_reason("waitlist", app_name) do
-    "You're receiving this email because you joined the #{app_name} waitlist."
+    "You're receiving this email because you signed up for #{app_name} updates."
   end
 
   defp marketing_reason("individual", app_name) do

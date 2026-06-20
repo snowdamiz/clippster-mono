@@ -30,9 +30,9 @@
             <h2 class="admin-msg__compose-title">Compose Email</h2>
             <p class="admin-msg__compose-desc">Preview, test, and send a styled campaign</p>
           </div>
-          <button class="admin-msg__template-btn" @click="applyWaitlistTemplate">
+          <button class="admin-msg__template-btn" @click="applyOpenBetaTemplate">
             <Mail class="admin-msg__template-icon" />
-            Use waitlist template
+            Use open beta template
           </button>
         </div>
 
@@ -365,30 +365,30 @@
 
   const { success, error: showError } = useToast();
 
-  const WAITLIST_TEMPLATE = {
-    subject: 'Clippster early access is open',
-    preheader: 'Your waitlist spot is ready. Start clipping faster with AI-powered highlights, captions, and exports.',
+  const OPEN_BETA_TEMPLATE = {
+    subject: 'Clippster is now in open beta',
+    preheader: "Clippster's open beta is live for creators who want faster short-form clip workflows.",
     body: `
-<h1 style="margin: 0 0 12px 0; color: #ffffff; font-size: 28px; line-height: 1.2; font-weight: 750;">Early access is open</h1>
-<p style="margin: 0 0 20px 0; color: #d7dde8; font-size: 15px; line-height: 1.7;">You joined the Clippster waitlist, and your spot is ready.</p>
-<p style="margin: 0 0 24px 0; color: #d7dde8; font-size: 15px; line-height: 1.7;">Clippster helps creators turn long streams and videos into polished short-form clips with AI-assisted highlight detection, captions, timeline editing, and platform-ready exports.</p>
+<h1 style="margin: 0 0 12px 0; color: #ffffff; font-size: 28px; line-height: 1.2; font-weight: 750;">Clippster is now in open beta</h1>
+<p style="margin: 0 0 20px 0; color: #d7dde8; font-size: 15px; line-height: 1.7;">Clippster is opening up to more creators, editors, and teams who want a faster way to turn long videos into polished short-form clips.</p>
+<p style="margin: 0 0 24px 0; color: #d7dde8; font-size: 15px; line-height: 1.7;">The open beta is live now. You can create an account, test the workflow, and help shape the product as we keep improving it.</p>
 <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0 0 28px 0;">
   <tr>
     <td>
-      <a href="https://clippster.app" style="display: inline-block; background-color: #22d3ee; color: #061014; text-decoration: none; padding: 13px 20px; border-radius: 9px; font-size: 14px; font-weight: 800;">Start Using Clippster</a>
+      <a href="https://clippster.app" style="display: inline-block; background-color: #22d3ee; color: #061014; text-decoration: none; padding: 13px 20px; border-radius: 9px; font-size: 14px; font-weight: 800;">Try the Open Beta</a>
     </td>
   </tr>
 </table>
 <div style="background-color: #101820; border: 1px solid #243342; border-radius: 12px; padding: 18px 18px 16px 18px; margin: 0 0 24px 0;">
-  <p style="margin: 0 0 12px 0; color: #ffffff; font-size: 14px; font-weight: 750;">What you can do now</p>
+  <p style="margin: 0 0 12px 0; color: #ffffff; font-size: 14px; font-weight: 750;">What's open now</p>
   <ul style="margin: 0; padding-left: 20px; color: #c8d1df; font-size: 14px; line-height: 1.7;">
-    <li>Find high-potential moments faster with AI clip detection</li>
-    <li>Edit clips in a focused timeline built for short-form content</li>
-    <li>Add captions and export for TikTok, YouTube Shorts, Instagram, and X</li>
-    <li>Keep the workflow in one desktop app instead of bouncing between tools</li>
+    <li>Create an account and start without waiting for an invite code</li>
+    <li>Turn long videos and streams into short-form clips with AI-assisted highlights</li>
+    <li>Edit in the timeline, add captions, and prepare exports for social platforms</li>
+    <li>Send feedback as you test so we can keep improving the beta</li>
   </ul>
 </div>
-<p style="margin: 0 0 20px 0; color: #d7dde8; font-size: 15px; line-height: 1.7;">Thanks for being early. We're building Clippster with creators who care about speed, quality, and not spending their entire day cutting footage.</p>
+<p style="margin: 0 0 20px 0; color: #d7dde8; font-size: 15px; line-height: 1.7;">We would love to have you try the beta and send feedback as you put Clippster through real creator workflows.</p>
 <p style="margin: 0; color: #ffffff; font-size: 15px; line-height: 1.7;">See you inside,<br>The Clippster team</p>
 `.trim(),
   };
@@ -397,9 +397,9 @@
     return {
       audience: 'waitlist',
       targetEmail: '',
-      subject: WAITLIST_TEMPLATE.subject,
-      preheader: WAITLIST_TEMPLATE.preheader,
-      body: WAITLIST_TEMPLATE.body,
+      subject: OPEN_BETA_TEMPLATE.subject,
+      preheader: OPEN_BETA_TEMPLATE.preheader,
+      body: OPEN_BETA_TEMPLATE.body,
       testEmail: '',
     };
   }
@@ -417,7 +417,7 @@
 
   const editor = useEditor({
     extensions: [StarterKit, Underline, Link.configure({ openOnClick: false })],
-    content: WAITLIST_TEMPLATE.body,
+    content: OPEN_BETA_TEMPLATE.body,
     onUpdate({ editor }) {
       form.value.body = editor.getHTML();
     },
@@ -464,12 +464,11 @@
     buildEmailPreviewHtml(form.value.body, form.value.preheader, form.value.audience)
   );
 
-  function applyWaitlistTemplate() {
-    form.value.audience = 'waitlist';
-    form.value.subject = WAITLIST_TEMPLATE.subject;
-    form.value.preheader = WAITLIST_TEMPLATE.preheader;
-    form.value.body = WAITLIST_TEMPLATE.body;
-    editor.value?.commands.setContent(WAITLIST_TEMPLATE.body);
+  function applyOpenBetaTemplate() {
+    form.value.subject = OPEN_BETA_TEMPLATE.subject;
+    form.value.preheader = OPEN_BETA_TEMPLATE.preheader;
+    form.value.body = OPEN_BETA_TEMPLATE.body;
+    editor.value?.commands.setContent(OPEN_BETA_TEMPLATE.body);
     void fetchPreview();
   }
 
@@ -500,7 +499,7 @@
       const res = await api.post('/admin/messaging/send', payload);
       success(res.data.message ?? 'Campaign sent successfully');
       form.value = defaultForm();
-      editor.value?.commands.setContent(WAITLIST_TEMPLATE.body);
+      editor.value?.commands.setContent(OPEN_BETA_TEMPLATE.body);
       await fetchHistory();
       await fetchPreview();
     } catch (err: any) {
@@ -570,7 +569,7 @@
   function buildEmailPreviewHtml(body: string, preheader: string, audience: string) {
     const reason =
       audience === 'waitlist'
-        ? "You're receiving this email because you joined the Clippster waitlist."
+        ? "You're receiving this email because you signed up for Clippster updates."
         : audience === 'individual'
           ? 'This is a direct message from the Clippster team.'
           : "You're receiving this email because you have a Clippster account.";
