@@ -179,6 +179,7 @@ export function AdminMessagingPage() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const [retryingCampaignId, setRetryingCampaignId] = useState<number | null>(null)
   const [testing, setTesting] = useState(false)
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [previewError, setPreviewError] = useState('')
@@ -347,6 +348,30 @@ export function AdminMessagingPage() {
       window.alert(err instanceof Error ? err.message : 'Failed to send test email')
     } finally {
       setTesting(false)
+    }
+  }
+
+  async function retryFailedCampaign(campaign: Campaign) {
+    if (campaign.failed_count <= 0 || campaign.status === 'sending') return
+
+    const confirmed = window.confirm(
+      `Retry ${campaign.failed_count} failed recipient${campaign.failed_count === 1 ? '' : 's'} for "${campaign.subject}"?`
+    )
+    if (!confirmed) return
+
+    setRetryingCampaignId(campaign.id)
+    try {
+      const res = await api.post<{ success: boolean; message?: string; error?: string }>(
+        `/admin/messaging/campaigns/${campaign.id}/retry-failed`,
+        {}
+      )
+      if (res.success === false) throw new Error(res.error || 'Failed to retry recipients')
+      window.alert(res.message || 'Failed recipients retried')
+      await fetchHistory()
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Failed to retry recipients')
+    } finally {
+      setRetryingCampaignId(null)
     }
   }
 
@@ -598,6 +623,7 @@ export function AdminMessagingPage() {
                     <th className="admin-msg__th">Recipients</th>
                     <th className="admin-msg__th">Status</th>
                     <th className="admin-msg__th">Sent</th>
+                    <th className="admin-msg__th">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="admin-msg__tbody">
@@ -607,13 +633,36 @@ export function AdminMessagingPage() {
                       <td className="admin-msg__td">
                         <span className="admin-msg__chip">{audienceLabel(campaign.audience)}</span>
                       </td>
-                      <td className="admin-msg__td admin-msg__td--muted">{campaign.recipient_count}</td>
+                      <td className="admin-msg__td admin-msg__td--muted">
+                        <div className="admin-msg__recipient-count">
+                          <span>{campaign.recipient_count} total</span>
+                          <span>
+                            {campaign.sent_count} sent · {campaign.failed_count} failed
+                          </span>
+                        </div>
+                      </td>
                       <td className="admin-msg__td">
                         <span className={`admin-msg__status admin-msg__status--${campaign.status}`}>
                           {campaign.status}
                         </span>
                       </td>
                       <td className="admin-msg__td admin-msg__td--muted">{formatDate(campaign.sent_at)}</td>
+                      <td className="admin-msg__td">
+                        {campaign.failed_count > 0 && campaign.status !== 'sending' && (
+                          <button
+                            className="admin-msg__retry-btn"
+                            disabled={retryingCampaignId === campaign.id}
+                            onClick={() => retryFailedCampaign(campaign)}
+                          >
+                            <RefreshCw
+                              className={`admin-msg__retry-icon${
+                                retryingCampaignId === campaign.id ? ' msg-spin' : ''
+                              }`}
+                            />
+                            Retry failed
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

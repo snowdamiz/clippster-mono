@@ -65,6 +65,28 @@ defmodule ClippsterServerWeb.AdminMessagingController do
   end
 
   @doc """
+  POST /api/admin/messaging/campaigns/:id/retry-failed
+  Retries only failed recipients for an existing campaign.
+  """
+  def retry_failed_campaign(conn, %{"id" => id}) do
+    case AdminMessaging.retry_failed_recipients(id) do
+      {:ok, campaign, stats} ->
+        json(conn, %{
+          success: true,
+          message:
+            "Retried #{stats.sent_count} failed recipient(s)" <>
+              failed_message(stats.failed_count),
+          campaign: serialize_campaign(campaign)
+        })
+
+      {:error, reason} ->
+        conn
+        |> put_status(422)
+        |> json(%{success: false, error: inspect_reason(reason)})
+    end
+  end
+
+  @doc """
   GET /api/admin/messaging/campaigns
   Lists all sent campaigns.
   """

@@ -1424,6 +1424,13 @@ defmodule ClippsterServerWeb.Router do
     post("/admin/messaging/preview", AdminMessagingController, :preview_campaign)
     post("/admin/messaging/test", AdminMessagingController, :send_test_campaign)
     post("/admin/messaging/send", AdminMessagingController, :send_campaign)
+
+    post(
+      "/admin/messaging/campaigns/:id/retry-failed",
+      AdminMessagingController,
+      :retry_failed_campaign
+    )
+
     get("/admin/messaging/campaigns", AdminMessagingController, :list_campaigns)
 
     # Platform campaigns management

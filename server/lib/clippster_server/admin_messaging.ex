@@ -8,6 +8,7 @@ defmodule ClippsterServer.AdminMessaging do
   alias ClippsterServer.AdminMessaging.{
     EmailCampaign,
     EmailCampaignRecipient,
+    EmailAddress,
     EmailSuppression
   }
 
@@ -16,8 +17,8 @@ defmodule ClippsterServer.AdminMessaging do
   alias ClippsterServer.Waitlist.WaitlistEntry
   alias ClippsterServer.{Emails, Mailer}
 
-  @batch_size 50
-  @batch_delay_ms 1_000
+  @send_interval_ms 300
+  @rate_limit_retry_delays_ms [1_000, 2_000, 4_000]
   @unsubscribe_salt "email-unsubscribe"
   @unsubscribe_max_age_seconds 60 * 60 * 24 * 365 * 5
 
@@ -98,10 +99,22 @@ defmodule ClippsterServer.AdminMessaging do
       recipient_records = create_recipient_records!(campaign, deliverable)
       stats = deliver_recipients(recipient_records, campaign, subject, body, preheader)
 
-      case finalize_campaign(campaign, stats) do
+      case finalize_campaign(campaign) do
         {:ok, updated_campaign} -> {:ok, updated_campaign, stats}
         {:error, changeset} -> {:error, changeset}
       end
+    end
+  end
+
+  @doc """
+  Retries only failed recipients for an existing campaign.
+  """
+  def retry_failed_recipients(campaign_id) do
+    with {:ok, campaign_id} <- parse_campaign_id(campaign_id),
+         %EmailCampaign{} = campaign <- Repo.get(EmailCampaign, campaign_id) do
+      retry_failed_recipients_for_campaign(campaign)
+    else
+      _ -> {:error, "Campaign not found"}
     end
   end
 
@@ -210,22 +223,93 @@ defmodule ClippsterServer.AdminMessaging do
     Repo.all(from s in EmailSuppression, select: s.email)
   end
 
+  defp retry_failed_recipients_for_campaign(campaign) do
+    if campaign.status == "sending" do
+      {:error, "Campaign is already sending"}
+    else
+      do_retry_failed_recipients_for_campaign(campaign)
+    end
+  end
+
+  defp do_retry_failed_recipients_for_campaign(campaign) do
+    failed_records =
+      Repo.all(
+        from r in EmailCampaignRecipient,
+          where: r.campaign_id == ^campaign.id and r.status == "failed",
+          order_by: [asc: r.id]
+      )
+
+    {retryable_records, invalid_records} =
+      Enum.split_with(failed_records, &EmailAddress.valid?(&1.email))
+
+    Enum.each(invalid_records, fn recipient ->
+      update_recipient!(recipient, %{
+        status: "failed",
+        error: "Invalid recipient email"
+      })
+    end)
+
+    cond do
+      failed_records == [] ->
+        {:error, "No failed recipients to retry"}
+
+      retryable_records == [] ->
+        finalize_campaign(campaign)
+        {:error, "No retryable failed recipients found"}
+
+      true ->
+        {:ok, sending_campaign} =
+          campaign
+          |> EmailCampaign.changeset(%{"status" => "sending"})
+          |> Repo.update()
+
+        retryable_records =
+          Enum.map(retryable_records, fn recipient ->
+            update_recipient!(recipient, %{
+              status: "pending",
+              sent_at: nil,
+              error: nil
+            })
+          end)
+
+        stats =
+          deliver_recipients(
+            retryable_records,
+            sending_campaign,
+            sending_campaign.subject,
+            sending_campaign.body,
+            sending_campaign.preheader
+          )
+
+        case finalize_campaign(sending_campaign) do
+          {:ok, updated_campaign} -> {:ok, updated_campaign, stats}
+          {:error, changeset} -> {:error, changeset}
+        end
+    end
+  end
+
+  defp parse_campaign_id(id) when is_integer(id), do: {:ok, id}
+
+  defp parse_campaign_id(id) do
+    case Integer.parse(to_string(id)) do
+      {parsed_id, ""} -> {:ok, parsed_id}
+      _ -> {:error, :invalid}
+    end
+  end
+
   defp deliver_recipients(recipient_records, campaign, subject, body, preheader) do
     recipient_records
-    |> Enum.chunk_every(@batch_size)
     |> Enum.with_index()
-    |> Enum.reduce(%{sent_count: 0, failed_count: 0}, fn {batch, index}, stats ->
-      if index > 0, do: Process.sleep(@batch_delay_ms)
+    |> Enum.reduce(%{sent_count: 0, failed_count: 0}, fn {recipient, index}, stats ->
+      if index > 0, do: Process.sleep(@send_interval_ms)
 
-      Enum.reduce(batch, stats, fn recipient, batch_stats ->
-        case deliver_recipient(recipient, campaign, subject, body, preheader) do
-          :ok ->
-            Map.update!(batch_stats, :sent_count, &(&1 + 1))
+      case deliver_recipient(recipient, campaign, subject, body, preheader) do
+        :ok ->
+          Map.update!(stats, :sent_count, &(&1 + 1))
 
-          {:error, _reason} ->
-            Map.update!(batch_stats, :failed_count, &(&1 + 1))
-        end
-      end)
+        {:error, _reason} ->
+          Map.update!(stats, :failed_count, &(&1 + 1))
+      end
     end)
   end
 
@@ -254,7 +338,7 @@ defmodule ClippsterServer.AdminMessaging do
     end
   end
 
-  defp deliver_email(email, subject, body, preheader, audience) do
+  defp deliver_email(email, subject, body, preheader, audience, attempt \\ 0) do
     result =
       try do
         email
@@ -270,8 +354,22 @@ defmodule ClippsterServer.AdminMessaging do
       end
 
     case result do
-      {:ok, _} -> :ok
-      {:error, reason} -> {:error, reason}
+      {:ok, _} ->
+        :ok
+
+      {:error, reason} ->
+        case retry_delay_ms(reason, attempt) do
+          nil ->
+            {:error, reason}
+
+          delay_ms ->
+            Logger.warning(
+              "Retrying admin campaign email to #{email} after #{delay_ms}ms: #{inspect(reason)}"
+            )
+
+            Process.sleep(delay_ms)
+            deliver_email(email, subject, body, preheader, audience, attempt + 1)
+        end
     end
   end
 
@@ -309,7 +407,9 @@ defmodule ClippsterServer.AdminMessaging do
     |> Repo.update!()
   end
 
-  defp finalize_campaign(campaign, %{sent_count: sent_count, failed_count: failed_count}) do
+  defp finalize_campaign(campaign) do
+    %{sent_count: sent_count, failed_count: failed_count} = campaign_delivery_counts(campaign.id)
+
     status =
       cond do
         failed_count == 0 and sent_count > 0 -> "sent"
@@ -327,6 +427,22 @@ defmodule ClippsterServer.AdminMessaging do
     |> Repo.update()
   end
 
+  defp campaign_delivery_counts(campaign_id) do
+    counts =
+      Repo.all(
+        from r in EmailCampaignRecipient,
+          where: r.campaign_id == ^campaign_id,
+          group_by: r.status,
+          select: {r.status, count(r.id)}
+      )
+      |> Map.new()
+
+    %{
+      sent_count: Map.get(counts, "sent", 0),
+      failed_count: Map.get(counts, "failed", 0)
+    }
+  end
+
   defp normalize_recipient_emails(emails) do
     emails
     |> Enum.map(&normalize_email/1)
@@ -335,14 +451,27 @@ defmodule ClippsterServer.AdminMessaging do
   end
 
   defp normalize_email(email) do
-    email
-    |> to_string()
-    |> String.trim()
-    |> String.downcase()
+    EmailAddress.normalize(email)
   end
 
   defp valid_email?(email) do
-    Regex.match?(~r/^[^\s]+@[^\s]+\.[^\s]+$/, email)
+    EmailAddress.valid?(email)
+  end
+
+  defp retry_delay_ms(reason, attempt) do
+    if retryable_delivery_error?(reason) do
+      Enum.at(@rate_limit_retry_delays_ms, attempt)
+    end
+  end
+
+  defp retryable_delivery_error?(%{status_code: 429}), do: true
+  defp retryable_delivery_error?(%{name: "rate_limit_exceeded"}), do: true
+  defp retryable_delivery_error?(%{name: :rate_limit_exceeded}), do: true
+
+  defp retryable_delivery_error?(reason) do
+    reason
+    |> inspect()
+    |> String.contains?(["rate_limit_exceeded", "status_code: 429"])
   end
 
   defp input(attrs, key, default \\ "")

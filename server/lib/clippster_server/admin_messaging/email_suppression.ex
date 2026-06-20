@@ -2,6 +2,8 @@ defmodule ClippsterServer.AdminMessaging.EmailSuppression do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias ClippsterServer.AdminMessaging.EmailAddress
+
   schema "email_suppressions" do
     field :email, :string
     field :reason, :string, default: "unsubscribe"
@@ -19,20 +21,13 @@ defmodule ClippsterServer.AdminMessaging.EmailSuppression do
     |> normalize_email()
     |> put_suppressed_at()
     |> validate_required([:email, :reason, :suppressed_at])
-    |> validate_format(:email, ~r/^[^\s]+@[^\s]+\.[^\s]+$/,
-      message: "must be a valid email address"
-    )
+    |> EmailAddress.validate_email()
     |> validate_inclusion(:reason, @valid_reasons)
     |> unique_constraint(:email, name: :email_suppressions_email_lower_index)
   end
 
   defp normalize_email(changeset) do
-    update_change(changeset, :email, fn email ->
-      email
-      |> to_string()
-      |> String.trim()
-      |> String.downcase()
-    end)
+    update_change(changeset, :email, &EmailAddress.normalize/1)
   end
 
   defp put_suppressed_at(changeset) do

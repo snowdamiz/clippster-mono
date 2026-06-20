@@ -255,6 +255,7 @@
                 <th class="admin-msg__th">Recipients</th>
                 <th class="admin-msg__th">Status</th>
                 <th class="admin-msg__th">Sent</th>
+                <th class="admin-msg__th">Actions</th>
               </tr>
             </thead>
             <tbody class="admin-msg__tbody">
@@ -263,13 +264,32 @@
                 <td class="admin-msg__td">
                   <span class="admin-msg__chip">{{ audienceLabel(campaign.audience) }}</span>
                 </td>
-                <td class="admin-msg__td admin-msg__td--muted">{{ campaign.recipient_count }}</td>
+                <td class="admin-msg__td admin-msg__td--muted">
+                  <div class="admin-msg__recipient-count">
+                    <span>{{ campaign.recipient_count }} total</span>
+                    <span>{{ campaign.sent_count }} sent · {{ campaign.failed_count }} failed</span>
+                  </div>
+                </td>
                 <td class="admin-msg__td">
                   <span class="admin-msg__status" :class="`admin-msg__status--${campaign.status}`">
                     {{ campaign.status }}
                   </span>
                 </td>
                 <td class="admin-msg__td admin-msg__td--muted">{{ formatDate(campaign.sent_at) }}</td>
+                <td class="admin-msg__td">
+                  <button
+                    v-if="campaign.failed_count > 0 && campaign.status !== 'sending'"
+                    class="admin-msg__retry-btn"
+                    :disabled="retryingCampaignId === campaign.id"
+                    @click="retryFailedCampaign(campaign)"
+                  >
+                    <RefreshCw
+                      class="admin-msg__retry-icon"
+                      :class="{ 'msg-spin': retryingCampaignId === campaign.id }"
+                    />
+                    Retry failed
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -411,6 +431,7 @@
   const showConfirm = ref(false);
   const campaigns = ref<any[]>([]);
   const loadingHistory = ref(false);
+  const retryingCampaignId = ref<number | null>(null);
   const loadingPreview = ref(false);
   const previewError = ref('');
   const recipientPreview = ref({ requested_count: 0, recipient_count: 0, suppressed_count: 0, sample: [] as string[] });
@@ -523,6 +544,26 @@
       showError(err?.response?.data?.error ?? 'Failed to send test email');
     } finally {
       testing.value = false;
+    }
+  }
+
+  async function retryFailedCampaign(campaign: any) {
+    if (campaign.failed_count <= 0 || campaign.status === 'sending') return;
+
+    const confirmed = window.confirm(
+      `Retry ${campaign.failed_count} failed recipient${campaign.failed_count === 1 ? '' : 's'} for "${campaign.subject}"?`
+    );
+    if (!confirmed) return;
+
+    retryingCampaignId.value = campaign.id;
+    try {
+      const res = await api.post(`/admin/messaging/campaigns/${campaign.id}/retry-failed`, {});
+      success(res.data.message ?? 'Failed recipients retried');
+      await fetchHistory();
+    } catch (err: any) {
+      showError(err?.response?.data?.error ?? 'Failed to retry recipients');
+    } finally {
+      retryingCampaignId.value = null;
     }
   }
 
@@ -1288,6 +1329,12 @@
     color: var(--sidebar-text-muted);
     font-size: 0.8125rem;
   }
+  .admin-msg__recipient-count {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    line-height: 1.3;
+  }
   .admin-msg__chip {
     display: inline-flex;
     align-items: center;
@@ -1333,6 +1380,34 @@
     background: rgba(161, 161, 170, 0.1);
     color: #a1a1aa;
     border: 1px solid rgba(161, 161, 170, 0.2);
+  }
+  .admin-msg__retry-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    height: 28px;
+    padding: 0 0.625rem;
+    border-radius: 6px;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.1);
+    color: #fbbf24;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 150ms;
+  }
+  .admin-msg__retry-btn:hover:not(:disabled) {
+    background: rgba(245, 158, 11, 0.16);
+    border-color: rgba(245, 158, 11, 0.55);
+  }
+  .admin-msg__retry-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .admin-msg__retry-icon {
+    width: 12px;
+    height: 12px;
   }
 
   .modal-enter-active,
