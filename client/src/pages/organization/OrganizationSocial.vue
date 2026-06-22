@@ -197,15 +197,15 @@
             :class="{
               'social-accounts__card--active': account.is_active,
               'social-accounts__card--inactive': !account.is_active,
-              'social-accounts__card--expiring': isTokenExpiringSoon(account),
+              'social-accounts__card--expiring': isTokenExpiringSoonForAccount(account),
             }"
           >
             <div
               class="social-accounts__card-indicator"
               :class="{
-                'social-accounts__card-indicator--active': account.is_active && !isTokenExpiringSoon(account),
+                'social-accounts__card-indicator--active': account.is_active && !isTokenExpiringSoonForAccount(account),
                 'social-accounts__card-indicator--inactive': !account.is_active,
-                'social-accounts__card-indicator--expiring': isTokenExpiringSoon(account),
+                'social-accounts__card-indicator--expiring': isTokenExpiringSoonForAccount(account),
               }"
             ></div>
 
@@ -238,7 +238,7 @@
                     Inactive
                   </span>
                   <span
-                    v-else-if="isTokenExpiringSoon(account)"
+                    v-else-if="isTokenExpiringSoonForAccount(account)"
                     class="social-accounts__status-badge social-accounts__status-badge--expiring"
                   >
                     <AlertTriangle class="social-accounts__status-badge-icon" />
@@ -301,12 +301,12 @@
                       <button
                         class="social-accounts__dropdown-item"
                         @click.stop="
-                          refreshToken(account);
+                          reconnectAccount(account);
                           closeMenu();
                         "
                       >
                         <RefreshCw class="social-accounts__dropdown-icon" />
-                        <span>Refresh Token</span>
+                        <span>Reconnect</span>
                       </button>
                       <button
                         v-if="account.is_active"
@@ -461,9 +461,10 @@
     startYoutubeOAuthPopup,
     updateSocialAccount,
     deleteSocialAccount,
-    refreshAccountToken,
     type SocialAccount,
   } from '@/services/socialAccountsApi';
+  import { reconnectOrgSocialPlatform } from '@/utils/socialOAuthReconnect';
+  import { isTokenExpiringSoonForAccount } from '@/utils/socialTokenExpiry';
 
   type ConnectPlatform = 'instagram' | 'tiktok' | 'YouTube' | 'x';
 
@@ -658,18 +659,31 @@
     }
   }
 
-  async function refreshToken(account: SocialAccount) {
+  async function reconnectAccount(account: SocialAccount) {
     if (!organizationId.value) return;
     try {
-      const response = await refreshAccountToken(organizationId.value, account.id);
-      if (response.success) {
-        showToast('Token refresh initiated', 'success');
-      } else {
-        showToast(response.error || 'Failed to refresh token', 'error');
+      if (cleanupAuthListener) {
+        cleanupAuthListener();
+        cleanupAuthListener = null;
       }
+      connectingPlatform.value = account.platform as ConnectPlatform;
+      cleanupAuthListener = await reconnectOrgSocialPlatform(
+        organizationId.value,
+        account.platform,
+        (result) => {
+          if (result.success) {
+            showToast(`${account.platform} reconnected`, 'success');
+            void loadAccounts();
+          } else if (result.error) {
+            showToast(result.error, 'error');
+          }
+          connectingPlatform.value = null;
+        }
+      );
     } catch (error) {
-      console.error('Failed to refresh token:', error);
-      showToast('Failed to refresh token', 'error');
+      console.error('Failed to reconnect account:', error);
+      showToast(error instanceof Error ? error.message : 'Failed to reconnect account', 'error');
+      connectingPlatform.value = null;
     }
   }
 
@@ -697,13 +711,6 @@
       showDeleteDialog.value = false;
       accountToDelete.value = null;
     }
-  }
-
-  function isTokenExpiringSoon(account: SocialAccount): boolean {
-    if (!account.token_expires_at) return false;
-    const expiresAt = new Date(account.token_expires_at);
-    const daysUntilExpiry = (expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-    return daysUntilExpiry < 7;
   }
 
   function formatDate(dateString: string): string {

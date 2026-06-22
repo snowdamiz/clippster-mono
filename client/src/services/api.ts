@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 import { useAuthStore } from '../stores/auth';
+import { isSocialTokenExpiredApiError } from '@/utils/socialAuthErrors';
 
 const getBaseUrl = () => {
   let url = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000/api' : 'https://api.clippster.app/api');
@@ -73,7 +74,8 @@ api.interceptors.response.use(
   async (error: AxiosError): Promise<AxiosError> => {
     const authStore = useAuthStore();
 
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && !isSocialTokenExpiredApiError(error)) {
+      // Social token expiry also used to return 401; never treat that as a session logout.
       // Only auto-logout if user was previously authenticated
       // AND it's been more than 5 seconds since login (to avoid race condition logouts)
       const timeSinceLogin = Date.now() - lastLoginTime;

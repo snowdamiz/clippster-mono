@@ -6,6 +6,9 @@ import { publishToUserInstagram, uploadUserMediaForPost } from '@/services/userI
 import { publishToUserTwitter } from '@/services/userTwitterApi';
 import { publishToUserTiktok } from '@/services/userTiktokApi';
 import { publishToUserYoutube } from '@/services/userYoutubeApi';
+import { useSocialTokenMonitor } from '@/composables/useSocialTokenMonitor';
+import { getSocialPlatformLabel } from '@/utils/socialTokenExpiry';
+import { isSocialTokenExpiredApiError } from '@/utils/socialAuthErrors';
 
 export interface PublishTarget {
   platformId: string;
@@ -70,6 +73,7 @@ function clearActiveJob() {
 
 export function useBackgroundPublish() {
   const { showToast } = useToast();
+  const socialTokenMonitor = useSocialTokenMonitor();
 
   const state = sharedState;
 
@@ -287,12 +291,18 @@ export function useBackgroundPublish() {
             const errorMsg = response?.error || 'Unknown error';
             state.value.publishResults.push({ platformId: target.platformId, success: false, error: errorMsg });
             console.error(`[BackgroundPublish] Failed to publish to ${target.platformId}:`, errorMsg);
+            if (errorMsg.toLowerCase().includes('expired')) {
+              void socialTokenMonitor.checkNow();
+            }
           }
         } catch (publishErr) {
           failedCount++;
           const errorMsg = publishErr instanceof Error ? publishErr.message : String(publishErr);
           state.value.publishResults.push({ platformId: target.platformId, success: false, error: errorMsg });
           console.error(`[BackgroundPublish] Error publishing to ${target.platformId}:`, publishErr);
+          if (isSocialTokenExpiredApiError(publishErr)) {
+            void socialTokenMonitor.checkNow();
+          }
         }
       }
 
@@ -302,7 +312,14 @@ export function useBackgroundPublish() {
         showToast(`Published to ${successfulCount} platform${successfulCount !== 1 ? 's' : ''} successfully!`, 'success');
       }
       if (failedCount > 0) {
-        showToast(`Failed to publish to ${failedCount} platform${failedCount !== 1 ? 's' : ''}`, 'error');
+        const failureDetails = state.value.publishResults
+          .filter((result) => !result.success)
+          .map((result) => `${getSocialPlatformLabel(result.platformId)}: ${result.error || 'Unknown error'}`)
+          .join('; ');
+        showToast(`Failed to publish to ${failedCount} platform${failedCount !== 1 ? 's' : ''}: ${failureDetails}`, 'error');
+        if (state.value.publishResults.some((result) => !result.success && result.error?.toLowerCase().includes('expired'))) {
+          void socialTokenMonitor.checkNow();
+        }
       }
       clearActiveJob();
     } catch (err) {

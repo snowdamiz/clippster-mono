@@ -1,9 +1,9 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="hasVisibleExpiredConnections" class="token-dialog__overlay" @click.self="dismiss">
+      <div v-if="hasVisibleAttentionConnections" class="token-dialog__overlay" @click.self="dismiss">
         <Transition name="dialog" appear>
-          <div v-if="hasVisibleExpiredConnections" class="token-dialog" role="dialog" aria-modal="true">
+          <div v-if="hasVisibleAttentionConnections" class="token-dialog" role="dialog" aria-modal="true">
             <div class="token-dialog__accent"></div>
 
             <div class="token-dialog__header">
@@ -13,7 +13,7 @@
               <div class="token-dialog__icon">
                 <ShieldAlert :size="24" />
               </div>
-              <h2 class="token-dialog__title">Social connection expired</h2>
+              <h2 class="token-dialog__title">{{ dialogTitle }}</h2>
               <p class="token-dialog__subtitle">
                 {{ subtitle }}
               </p>
@@ -29,17 +29,36 @@
 
               <div class="token-dialog__connections">
                 <div
-                  v-for="connection in visibleExpiredConnections"
-                  :key="`${connection.platform}-${connection.id}-${connection.tokenExpiresAt}`"
+                  v-for="connection in visibleAttentionConnections"
+                  :key="`${connection.platform}-${connection.id}-${connection.tokenExpiresAt}-${connection.status}`"
                   class="token-dialog__connection"
                 >
                   <div class="token-dialog__connection-main">
                     <span class="token-dialog__connection-platform">{{ connection.platformLabel }}</span>
                     <span class="token-dialog__connection-user">@{{ connection.username }}</span>
                   </div>
-                  <span class="token-dialog__connection-expired">
-                    Expired {{ formatExpiredDate(connection.tokenExpiresAt) }}
-                  </span>
+                  <div class="token-dialog__connection-actions">
+                    <span
+                      class="token-dialog__connection-status"
+                      :class="{
+                        'token-dialog__connection-status--expired':
+                          connection.status === 'expired' || connection.status === 'disconnected',
+                        'token-dialog__connection-status--soon': connection.status === 'expiring_soon',
+                      }"
+                    >
+                      {{ formatConnectionStatus(connection) }}
+                    </span>
+                    <button
+                      type="button"
+                      class="token-dialog__reconnect-btn"
+                      :disabled="reconnectingPlatform === connection.platform"
+                      @click="reconnect(connection)"
+                    >
+                      <Loader2 v-if="reconnectingPlatform === connection.platform" :size="14" class="token-dialog__spin" />
+                      <RefreshCw v-else :size="14" />
+                      Reconnect
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -49,7 +68,7 @@
                 Dismiss
               </button>
               <button @click="goToAccountConnections" class="token-dialog__btn token-dialog__btn--primary">
-                Go to Account Connections
+                Account Connections
               </button>
             </div>
           </div>
@@ -60,54 +79,119 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { AlertCircle, ShieldAlert, X } from 'lucide-vue-next';
+import { AlertCircle, Loader2, RefreshCw, ShieldAlert, X } from 'lucide-vue-next';
 import { useSocialTokenMonitor } from '@/composables/useSocialTokenMonitor';
+import { useToast } from '@/composables/useToast';
+import { reconnectPersonalSocialPlatform } from '@/utils/socialOAuthReconnect';
+import type { SocialTokenAttention } from '@/utils/socialTokenExpiry';
 
 const router = useRouter();
+const { showToast } = useToast();
 const {
-  visibleExpiredConnections,
-  hasVisibleExpiredConnections,
-  dismissVisibleExpiredConnections,
+  visibleAttentionConnections,
+  hasVisibleAttentionConnections,
+  dismissVisibleAttentionConnections,
+  clearDismissedConnection,
+  checkNow,
 } = useSocialTokenMonitor();
 
-const subtitle = computed(() => {
-  if (visibleExpiredConnections.value.length === 1) {
-    const connection = visibleExpiredConnections.value[0];
-    return `${connection.platformLabel} @${connection.username} needs to be reconnected.`;
-  }
+const reconnectingPlatform = ref<string | null>(null);
 
-  return `${visibleExpiredConnections.value.length} social connections need to be reconnected.`;
+const hasExpired = computed(() =>
+  visibleAttentionConnections.value.some(
+    (connection) => connection.status === 'expired' || connection.status === 'disconnected'
+  )
+);
+
+const dialogTitle = computed(() => {
+  if (hasExpired.value) return 'Social connection needs attention';
+  return 'Social connection expiring soon';
+});
+
+const subtitle = computed(() => {
+  const count = visibleAttentionConnections.value.length;
+  if (count === 1) {
+    const connection = visibleAttentionConnections.value[0];
+    return `${connection.platformLabel} @${connection.username}`;
+  }
+  return `${count} social connections need to be reconnected`;
 });
 
 const bodyText = computed(() => {
-  if (visibleExpiredConnections.value.length === 1) {
-    const connection = visibleExpiredConnections.value[0];
-    return `Your ${connection.platformLabel} connection for @${connection.username} has expired. Disconnect and reconnect it in Account Connections to refresh the token, then try publishing again.`;
+  if (visibleAttentionConnections.value.length === 1) {
+    const connection = visibleAttentionConnections.value[0];
+    if (connection.status === 'disconnected') {
+      return `Your ${connection.platformLabel} connection for @${connection.username} is disconnected. Click Reconnect to sign in again — you don't need to disconnect the account first.`;
+    }
+    if (connection.status === 'expired') {
+      return `Your ${connection.platformLabel} connection for @${connection.username} has expired. Click Reconnect to sign in again — you don't need to disconnect the account first.`;
+    }
+    const soonDays = connection.platform === 'tiktok' ? '1 day' : '2 days';
+    return `Your ${connection.platformLabel} connection for @${connection.username} expires within ${soonDays}. Reconnect now to avoid interrupted publishing.`;
   }
 
-  return 'These social connections have expired. Disconnect and reconnect each one in Account Connections to refresh their tokens, then try publishing again.';
+  if (hasExpired.value) {
+    return 'Some connections are disconnected or expired. Click Reconnect on each account to sign in again. You do not need to disconnect accounts first.';
+  }
+
+  return 'Some connections expire soon. Reconnect now to refresh their tokens and avoid publish failures.';
 });
 
 function dismiss(): void {
-  dismissVisibleExpiredConnections();
+  dismissVisibleAttentionConnections();
 }
 
 function goToAccountConnections(): void {
-  dismissVisibleExpiredConnections();
+  dismissVisibleAttentionConnections();
   router.push({ path: '/clipper-profile', query: { section: 'social-accounts' } });
 }
 
-function formatExpiredDate(value: string): string {
+function formatConnectionStatus(connection: SocialTokenAttention): string {
+  if (connection.status === 'disconnected') return 'Disconnected';
+  if (connection.status === 'expired') {
+    return connection.tokenExpiresAt
+      ? `Expired ${formatDate(connection.tokenExpiresAt)}`
+      : 'Expired';
+  }
+  return connection.tokenExpiresAt
+    ? `Expires ${formatDate(connection.tokenExpiresAt)}`
+    : 'Expires soon';
+}
+
+function formatDate(value: string): string {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'recently';
+  if (Number.isNaN(date.getTime())) return 'soon';
 
   return date.toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
+}
+
+async function reconnect(connection: SocialTokenAttention): Promise<void> {
+  if (reconnectingPlatform.value) return;
+
+  reconnectingPlatform.value = connection.platform;
+  try {
+    const cancel = await reconnectPersonalSocialPlatform(connection.platform, (result) => {
+      reconnectingPlatform.value = null;
+      if (result.success) {
+        showToast(`${connection.platformLabel} reconnected successfully`, 'success');
+        clearDismissedConnection(connection);
+        void checkNow();
+      } else if (result.error) {
+        showToast(result.error, 'error');
+      }
+    });
+    void cancel;
+  } catch (error) {
+    reconnectingPlatform.value = null;
+    const message = error instanceof Error ? error.message : 'Failed to start reconnect';
+    showToast(message, 'error');
+  }
 }
 </script>
 
@@ -261,10 +345,52 @@ function formatExpiredDate(value: string): string {
   white-space: nowrap;
 }
 
-.token-dialog__connection-expired {
+.token-dialog__connection-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.375rem;
   flex-shrink: 0;
+}
+
+.token-dialog__connection-status {
   font-size: 0.75rem;
+}
+
+.token-dialog__connection-status--expired {
+  color: #f87171;
+}
+
+.token-dialog__connection-status--soon {
   color: #fbbf24;
+}
+
+.token-dialog__reconnect-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--sidebar-border);
+  background: var(--sidebar-accent);
+  color: white;
+  cursor: pointer;
+}
+
+.token-dialog__reconnect-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.token-dialog__spin {
+  animation: token-dialog-spin 1s linear infinite;
+}
+
+@keyframes token-dialog-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .token-dialog__footer {

@@ -158,19 +158,16 @@ config :clippster_server, :twitter_oauth,
   client_secret: System.get_env("TWITTER_CLIENT_SECRET"),
   redirect_uri: System.get_env("TWITTER_REDIRECT_URI")
 
-# Social provider mode switch:
-# - legacy: current direct platform integrations only
-# - post_for_me: Post For Me only
-# - dual: write to both, legacy remains read source during rollout
+# Social connections and publishing use Post For Me exclusively.
 social_provider_mode =
-  (System.get_env("SOCIAL_PROVIDER_MODE") || "legacy")
+  (System.get_env("SOCIAL_PROVIDER_MODE") || "post_for_me")
   |> String.trim()
   |> String.downcase()
 
 social_provider_mode =
   if social_provider_mode in ["legacy", "post_for_me", "dual"],
     do: social_provider_mode,
-    else: "legacy"
+    else: "post_for_me"
 
 post_for_me_timeout_ms =
   case Integer.parse(System.get_env("POST_FOR_ME_TIMEOUT_MS") || "") do

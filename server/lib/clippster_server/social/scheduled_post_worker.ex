@@ -14,7 +14,7 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   require Logger
 
   alias ClippsterServer.Social
-  alias ClippsterServer.Social.{PostSubmission, SocialAccount, Platform}
+  alias ClippsterServer.Social.{PostSubmission, SocialAccount}
   alias ClippsterServer.Social.Providers.PostForMe
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Campaigns.ClipperSocialAccount
@@ -227,10 +227,7 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
 
       account ->
         if account.is_active do
-          # Check if token needs refresh and refresh if needed
-          account = maybe_refresh_org_token(account)
-          access_token = SocialAccount.get_access_token(account)
-          {:ok, account, access_token}
+          {:ok, account, nil}
         else
           {:error, :account_inactive}
         end
@@ -247,10 +244,7 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
 
       account ->
         if account.is_active do
-          # Check if token needs refresh and refresh if needed
-          account = maybe_refresh_user_token(account)
-          access_token = ClipperSocialAccount.get_access_token(account)
-          {:ok, account, access_token}
+          {:ok, account, nil}
         else
           {:error, :account_inactive}
         end
@@ -258,116 +252,6 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   end
 
   defp get_user_account(_), do: {:error, :no_account_specified}
-
-  # Refresh org social account token if needed
-  defp maybe_refresh_org_token(%SocialAccount{} = account) do
-    if SocialAccount.token_needs_refresh?(account) do
-      Logger.info("[ScheduledPostWorker] Token needs refresh for org account #{account.id}")
-
-      refresh_token = SocialAccount.get_refresh_token(account)
-
-      case Platform.call(account.platform, :refresh_tokens, [refresh_token]) do
-        {:ok, new_tokens} ->
-          expires_at =
-            if new_tokens[:expires_in] do
-              DateTime.utc_now()
-              |> DateTime.add(new_tokens[:expires_in], :second)
-              |> DateTime.truncate(:second)
-            else
-              nil
-            end
-
-          attrs = %{
-            access_token: new_tokens[:access_token],
-            token_expires_at: expires_at
-          }
-
-          attrs =
-            if new_tokens[:refresh_token] do
-              Map.put(attrs, :refresh_token, new_tokens[:refresh_token])
-            else
-              attrs
-            end
-
-          case Social.refresh_social_account_tokens(account, attrs) do
-            {:ok, updated_account} ->
-              Logger.info(
-                "[ScheduledPostWorker] Successfully refreshed token for org account #{account.id}"
-              )
-
-              updated_account
-
-            {:error, reason} ->
-              Logger.warning(
-                "[ScheduledPostWorker] Failed to save refreshed token: #{inspect(reason)}"
-              )
-
-              account
-          end
-
-        {:error, reason} ->
-          Logger.warning("[ScheduledPostWorker] Failed to refresh org token: #{inspect(reason)}")
-          account
-      end
-    else
-      account
-    end
-  end
-
-  # Refresh user/clipper social account token if needed
-  defp maybe_refresh_user_token(%ClipperSocialAccount{} = account) do
-    if ClipperSocialAccount.token_needs_refresh?(account) do
-      Logger.info("[ScheduledPostWorker] Token needs refresh for user account #{account.id}")
-
-      refresh_token = ClipperSocialAccount.get_refresh_token(account)
-
-      case Platform.call(account.platform, :refresh_tokens, [refresh_token]) do
-        {:ok, new_tokens} ->
-          expires_at =
-            if new_tokens[:expires_in] do
-              DateTime.utc_now()
-              |> DateTime.add(new_tokens[:expires_in], :second)
-              |> DateTime.truncate(:second)
-            else
-              nil
-            end
-
-          attrs = %{
-            access_token: new_tokens[:access_token],
-            token_expires_at: expires_at
-          }
-
-          attrs =
-            if new_tokens[:refresh_token] do
-              Map.put(attrs, :refresh_token, new_tokens[:refresh_token])
-            else
-              attrs
-            end
-
-          case Campaigns.update_social_account_tokens(account, attrs) do
-            {:ok, updated_account} ->
-              Logger.info(
-                "[ScheduledPostWorker] Successfully refreshed token for user account #{account.id}"
-              )
-
-              updated_account
-
-            {:error, reason} ->
-              Logger.warning(
-                "[ScheduledPostWorker] Failed to save refreshed token: #{inspect(reason)}"
-              )
-
-              account
-          end
-
-        {:error, reason} ->
-          Logger.warning("[ScheduledPostWorker] Failed to refresh user token: #{inspect(reason)}")
-          account
-      end
-    else
-      account
-    end
-  end
 
   # All platforms publish via PostForMe API
   defp do_publish(%PostSubmission{} = post, account, _access_token) do

@@ -4,15 +4,15 @@ import { listUserTwitterAccounts } from '@/services/userTwitterApi';
 import { listUserTiktokAccounts } from '@/services/userTiktokApi';
 import { listUserYoutubeAccounts } from '@/services/userYoutubeApi';
 import {
-  getExpiredSocialConnections,
-  type ExpiredSocialConnection,
+  getSocialTokenAttentionList,
   type SocialAccountWithToken,
+  type SocialTokenAttention,
 } from '@/utils/socialTokenExpiry';
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 interface SocialTokenMonitorState {
-  expiredConnections: ExpiredSocialConnection[];
+  attentionConnections: SocialTokenAttention[];
   dismissedConnectionKeys: Set<string>;
   checking: boolean;
   started: boolean;
@@ -20,7 +20,7 @@ interface SocialTokenMonitorState {
 }
 
 const state = reactive<SocialTokenMonitorState>({
-  expiredConnections: [],
+  attentionConnections: [],
   dismissedConnectionKeys: new Set(),
   checking: false,
   started: false,
@@ -29,8 +29,10 @@ const state = reactive<SocialTokenMonitorState>({
 
 let intervalId: number | null = null;
 
-function connectionKey(connection: Pick<ExpiredSocialConnection, 'id' | 'platform' | 'tokenExpiresAt'>): string {
-  return `${connection.platform}:${connection.id}:${connection.tokenExpiresAt}`;
+function connectionKey(
+  connection: Pick<SocialTokenAttention, 'id' | 'platform' | 'tokenExpiresAt' | 'status'>
+): string {
+  return `${connection.platform}:${connection.id}:${connection.tokenExpiresAt}:${connection.status}`;
 }
 
 async function loadUserSocialAccounts(): Promise<SocialAccountWithToken[]> {
@@ -50,11 +52,31 @@ async function loadUserSocialAccounts(): Promise<SocialAccountWithToken[]> {
 }
 
 export function useSocialTokenMonitor() {
-  const visibleExpiredConnections = computed(() =>
-    state.expiredConnections.filter((connection) => !state.dismissedConnectionKeys.has(connectionKey(connection)))
+  const visibleAttentionConnections = computed(() =>
+    state.attentionConnections.filter(
+      (connection) => !state.dismissedConnectionKeys.has(connectionKey(connection))
+    )
   );
 
-  const hasVisibleExpiredConnections = computed(() => visibleExpiredConnections.value.length > 0);
+  const visibleExpiredConnections = computed(() =>
+    visibleAttentionConnections.value.filter((connection) =>
+      ['expired', 'disconnected'].includes(connection.status)
+    )
+  );
+
+  const visibleExpiringSoonConnections = computed(() =>
+    visibleAttentionConnections.value.filter((connection) => connection.status === 'expiring_soon')
+  );
+
+  const hasVisibleAttentionConnections = computed(
+    () => visibleAttentionConnections.value.length > 0
+  );
+
+  /** @deprecated Use hasVisibleAttentionConnections */
+  const hasVisibleExpiredConnections = hasVisibleAttentionConnections;
+
+  /** @deprecated Use visibleAttentionConnections */
+  const visibleExpiredConnectionsLegacy = visibleExpiredConnections;
 
   async function checkNow(): Promise<void> {
     if (state.checking) return;
@@ -62,7 +84,7 @@ export function useSocialTokenMonitor() {
     state.checking = true;
     try {
       const accounts = await loadUserSocialAccounts();
-      state.expiredConnections = getExpiredSocialConnections(accounts);
+      state.attentionConnections = getSocialTokenAttentionList(accounts);
       state.lastCheckedAt = Date.now();
     } catch (error) {
       console.warn('[SocialTokenMonitor] Failed to check social account tokens:', error);
@@ -71,10 +93,19 @@ export function useSocialTokenMonitor() {
     }
   }
 
-  function dismissVisibleExpiredConnections(): void {
-    for (const connection of visibleExpiredConnections.value) {
+  function dismissVisibleAttentionConnections(): void {
+    for (const connection of visibleAttentionConnections.value) {
       state.dismissedConnectionKeys.add(connectionKey(connection));
     }
+  }
+
+  /** @deprecated Use dismissVisibleAttentionConnections */
+  function dismissVisibleExpiredConnections(): void {
+    dismissVisibleAttentionConnections();
+  }
+
+  function clearDismissedConnection(connection: SocialTokenAttention): void {
+    state.dismissedConnectionKeys.delete(connectionKey(connection));
   }
 
   function start(): void {
@@ -93,7 +124,7 @@ export function useSocialTokenMonitor() {
 
   function stop(): void {
     state.started = false;
-    state.expiredConnections = [];
+    state.attentionConnections = [];
     state.dismissedConnectionKeys.clear();
     state.lastCheckedAt = null;
 
@@ -114,10 +145,15 @@ export function useSocialTokenMonitor() {
 
   return {
     state,
-    visibleExpiredConnections,
+    visibleAttentionConnections,
+    visibleExpiredConnections: visibleExpiredConnectionsLegacy,
+    visibleExpiringSoonConnections,
+    hasVisibleAttentionConnections,
     hasVisibleExpiredConnections,
     checkNow,
+    dismissVisibleAttentionConnections,
     dismissVisibleExpiredConnections,
+    clearDismissedConnection,
     start,
     stop,
   };

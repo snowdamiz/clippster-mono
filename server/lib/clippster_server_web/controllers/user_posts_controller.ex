@@ -8,11 +8,12 @@ defmodule ClippsterServerWeb.UserPostsController do
   require Logger
 
   alias ClippsterServer.Campaigns
-  alias ClippsterServer.Campaigns.ClipperSocialAccount
   alias ClippsterServer.Campaigns.UserPost
   alias ClippsterServer.Organizations
   alias ClippsterServer.Social
   alias ClippsterServer.Social.PostSubmission
+  alias ClippsterServer.Social.PostForMeConnectionSync
+  alias ClippsterServer.Social.PostForMeAccountHealth
   alias ClippsterServer.Social.Providers.PostForMe
 
   @doc """
@@ -58,7 +59,7 @@ defmodule ClippsterServerWeb.UserPostsController do
          {:ok, media_url} <- get_required_param(params, "media_url"),
          {:ok, account} <- get_user_account(user.id, account_id),
          :ok <- validate_platform(account, platform),
-         :ok <- validate_account_token_for_publish(account, platform_label),
+         {:ok, account} <- PostForMeConnectionSync.ensure_user_publish_ready(account, platform_label),
          {:ok, post_data} <- publish_via_post_for_me(account, media_url, params) do
       post_attrs = %{
         user_id: user.id,
@@ -102,6 +103,16 @@ defmodule ClippsterServerWeb.UserPostsController do
         |> put_status(404)
         |> json(%{success: false, error: "Account not found"})
 
+      {:error, :account_inactive} ->
+        conn
+        |> put_status(422)
+        |> json(%{
+          success: false,
+          error: PostForMeAccountHealth.disconnected_message(platform_label),
+          error_code: "social_token_expired",
+          platform: platform
+        })
+
       {:error, :wrong_platform} ->
         conn
         |> put_status(400)
@@ -109,7 +120,7 @@ defmodule ClippsterServerWeb.UserPostsController do
 
       {:error, :token_expired, message} ->
         conn
-        |> put_status(401)
+        |> put_status(422)
         |> json(%{
           success: false,
           error: message,
@@ -123,9 +134,38 @@ defmodule ClippsterServerWeb.UserPostsController do
         |> json(%{success: false, error: "Missing required parameter: #{param}"})
 
       {:error, reason} when is_binary(reason) ->
-        conn
-        |> put_status(422)
-        |> json(%{success: false, error: reason})
+        if PostForMeAccountHealth.social_token_expired_error?(reason) do
+          conn
+          |> put_status(422)
+          |> json(%{
+            success: false,
+            error: reason,
+            error_code: "social_token_expired",
+            platform: platform
+          })
+        else
+          conn
+          |> put_status(422)
+          |> json(%{success: false, error: reason})
+        end
+
+      {:error, %PostForMe.ApiError{} = api_error} ->
+        message = api_error.message || "Post For Me publish failed"
+
+        if PostForMeAccountHealth.social_token_expired_error?(api_error) do
+          conn
+          |> put_status(422)
+          |> json(%{
+            success: false,
+            error: message,
+            error_code: "social_token_expired",
+            platform: platform
+          })
+        else
+          conn
+          |> put_status(422)
+          |> json(%{success: false, error: message})
+        end
 
       {:error, reason} ->
         conn
@@ -538,24 +578,8 @@ defmodule ClippsterServerWeb.UserPostsController do
     end
   end
 
-  defp validate_account_token_for_publish(%ClipperSocialAccount{} = account, platform_label) do
-    if account_token_expired?(account) do
-      {:error, :token_expired, token_expired_message(platform_label)}
-    else
-      :ok
-    end
-  end
-
-  defp validate_account_token_for_publish(_account, _platform_label), do: :ok
-
-  defp account_token_expired?(%ClipperSocialAccount{token_expires_at: nil}), do: false
-
-  defp account_token_expired?(%ClipperSocialAccount{token_expires_at: expires_at}) do
-    DateTime.compare(expires_at, DateTime.utc_now()) == :lt
-  end
-
   defp token_expired_message(platform_label) do
-    "Your #{platform_label} connection has expired. Disconnect and reconnect it in Account Connections, then try again."
+    PostForMeAccountHealth.token_expired_message(platform_label)
   end
 
   defp validate_post_for_me_account_token(post, provider_account_id) do

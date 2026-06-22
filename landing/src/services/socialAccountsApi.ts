@@ -18,10 +18,6 @@ export async function deleteSocialAccount(orgId: number | string, accountId: num
   return api.delete<{ success: boolean; error?: string }>(`/organizations/${orgId}/social-accounts/${accountId}`)
 }
 
-export async function refreshAccountToken(orgId: number | string, accountId: number) {
-  return api.post<{ success: boolean; message?: string; error?: string }>(`/organizations/${orgId}/social-accounts/${accountId}/refresh`)
-}
-
 export async function listAccountAssignments(orgId: number | string, accountId: number) {
   return api.get<{ success: boolean; assignments: SocialAccountAssignment[]; error?: string }>(`/organizations/${orgId}/social-accounts/${accountId}/assignments`)
 }
