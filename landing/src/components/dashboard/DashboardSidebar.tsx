@@ -35,6 +35,7 @@ interface NavItem {
   path: string
   adminOnly?: boolean
   comingSoon?: boolean
+  navHidden?: boolean
 }
 
 interface NavGroup {
@@ -55,7 +56,7 @@ const orgNavGroups: NavGroup[] = [
   {
     header: 'Content',
     items: [
-      { label: 'Campaigns', icon: Megaphone, path: 'campaigns' },
+      { label: 'Campaigns', icon: Megaphone, path: 'campaigns', navHidden: true },
       { label: 'Clippers', icon: Scissors, path: 'clippers' },
       { label: 'Shared Clips', icon: Share2, path: 'shared' },
       { label: 'Social Accounts', icon: Globe, path: 'social' },
@@ -140,6 +141,11 @@ export function DashboardSidebar({ variant = 'organization', onNavigate }: Dashb
   const navGroups = useMemo(() => {
     if (isOrganizationSidebar) {
       return orgNavGroups
+        .map((group) => ({
+          ...group,
+          items: group.items.filter((item) => !item.navHidden)
+        }))
+        .filter((group) => group.items.length > 0)
     }
 
     return adminNavGroups
