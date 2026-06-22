@@ -23,7 +23,7 @@
             v-if="selectedLayerId === layer.id"
             class="studio-preview__selection-box"
             :class="selectionClass(layer)"
-            :style="rectToOverlayStyle(layer.rect)"
+            :style="rectToOverlayStyle(getEffectiveLayerRect(layer))"
           >
             <div
               class="studio-preview__resize-handle"
@@ -32,7 +32,7 @@
           </div>
           <div
             class="studio-preview__layer-hit"
-            :style="rectToOverlayStyle(layer.rect)"
+            :style="rectToOverlayStyle(getEffectiveLayerRect(layer))"
             @mousedown.stop="startMove(layer.id, $event)"
           />
         </template>
@@ -141,17 +141,32 @@
     return 'Choose a screen or window';
   });
 
+  function hasScreenSource() {
+    if (props.mode === 'camera') return false;
+    if (backgroundSourceType.value === 'display') return !!props.screenPreviewStream;
+    if (backgroundSourceType.value === 'media') return !!props.mediaSource;
+    return false;
+  }
+
+  const FULL_FRAME_RECT: StudioRect = { x: 0, y: 0, width: 1, height: 1 };
+
+  function cameraDrawsFullFrame() {
+    return props.mode === 'camera' || (props.mode === 'screen_camera' && !hasScreenSource());
+  }
+
+  function getEffectiveLayerRect(layer: StudioLayer): StudioRect {
+    if (layer.kind === 'camera' && cameraDrawsFullFrame()) {
+      return FULL_FRAME_RECT;
+    }
+    return layer.rect;
+  }
+
   const interactiveLayers = computed(() => {
-    const hasScreenSource =
-      backgroundSourceType.value === 'display'
-        ? !!props.screenPreviewStream
-        : backgroundSourceType.value === 'media'
-          ? !!props.mediaSource
-          : false;
+    const screenActive = hasScreenSource();
 
     return sortedLayers(props.layout).filter((layer) => {
       if (!isTransformableLayer(layer, props.mode)) return false;
-      if (layer.kind === 'screen') return hasScreenSource;
+      if (layer.kind === 'screen') return screenActive;
       if (layer.kind === 'camera') return props.mode === 'screen_camera' || props.mode === 'camera';
       return true;
     });
@@ -178,7 +193,8 @@
 
   function getLayerRect(layerId: string): StudioRect | null {
     const layer = props.layout.layers.find((l) => l.id === layerId);
-    return layer ? { ...layer.rect } : null;
+    if (!layer) return null;
+    return { ...getEffectiveLayerRect(layer) };
   }
 
   function patchLayerRect(layerId: string, rect: StudioRect) {
@@ -485,7 +501,7 @@
       } else if (layer.kind === 'camera') {
         if (cameraVideo && cameraVideo.readyState >= 2) {
           if (props.mode === 'camera') {
-            drawVideoCover(ctx, cameraVideo, 0, 0, w, h);
+            drawVideoInRect(ctx, cameraVideo, { ...layer, rect: FULL_FRAME_RECT }, w, h);
           } else if (props.mode === 'screen_camera') {
             ctx.save();
             ctx.globalAlpha = layer.opacity;
@@ -654,6 +670,12 @@
     () => drawFrame(),
     { deep: true }
   );
+
+  watch(interactiveLayers, (layers) => {
+    if (selectedLayerId.value && !layers.some((layer) => layer.id === selectedLayerId.value)) {
+      selectLayer(null);
+    }
+  });
 
   onMounted(() => {
     if (containerRef.value) {
