@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Menu, X, Apple, Monitor, Loader2 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
+import { trackDownloadClick, trackLandingEvent } from '@/services/landingAnalytics'
 
 const navLinks: { href: string; label: string; isPage?: boolean }[] = [
   { href: '#product', label: 'Product' },
@@ -45,6 +46,14 @@ export function Header() {
     }
   }
 
+  const trackNavClick = (href: string, label: string, source: string) => {
+    trackLandingEvent(href === '/pricing' ? 'landing_pricing_click' : 'landing_nav_click', {
+      source,
+      button_label: label,
+      path: href,
+    })
+  }
+
   return (
     <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-200 ${
       isScrolled ? 'bg-[#0a0a0b]/80 backdrop-blur-lg border-b border-[#1f1f23]' : 'border-b border-transparent'
@@ -73,6 +82,7 @@ export function Header() {
                   key={link.href}
                   to={link.href}
                   className="px-4 py-2 text-zinc-400 hover:text-white transition-colors text-sm"
+                  onClick={() => trackNavClick(link.href, link.label, 'header_desktop_nav')}
                 >
                   {link.label}
                 </Link>
@@ -82,6 +92,7 @@ export function Header() {
                   href={link.href}
                   onClick={(e) => {
                     e.preventDefault()
+                    trackNavClick(link.href, link.label, 'header_desktop_nav')
                     handleNavClick(link.href)
                   }}
                   className="px-4 py-2 text-zinc-400 hover:text-white transition-colors text-sm"
@@ -105,6 +116,7 @@ export function Header() {
                     href={secondaryDownload.downloadUrl}
                     className="p-2 text-zinc-400 hover:text-cyan-400 transition-colors"
                     title={`Download for ${secondaryDownload.label}`}
+                    onClick={() => trackDownloadClick(secondaryDownload, 'header_desktop_secondary', secondaryDownload.label)}
                   >
                     {secondaryDownload.platform.os === 'mac' ? (
                       <Apple className="w-4 h-4" />
@@ -116,6 +128,7 @@ export function Header() {
                 <a
                   href={primaryDownload.downloadUrl}
                   className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 text-white font-medium text-sm hover:from-cyan-400 hover:to-cyan-500 transition-colors flex items-center gap-2 shadow-lg shadow-cyan-500/20"
+                  onClick={() => trackDownloadClick(primaryDownload, 'header_desktop_primary', 'Download')}
                 >
                   {primaryDownload.platform.os === 'mac' ? (
                     <Apple className="w-4 h-4" />
@@ -148,7 +161,10 @@ export function Header() {
                   key={link.href}
                   to={link.href}
                   className="px-4 py-3 text-zinc-300 hover:text-white hover:bg-[rgba(255,255,255,0.05)] rounded-lg transition-colors"
-                  onClick={() => setIsMobileMenuOpen(false)}
+                  onClick={() => {
+                    trackNavClick(link.href, link.label, 'header_mobile_nav')
+                    setIsMobileMenuOpen(false)
+                  }}
                 >
                   {link.label}
                 </Link>
@@ -157,7 +173,9 @@ export function Header() {
                   key={link.href}
                   href={link.href}
                   className="px-4 py-3 text-zinc-300 hover:text-white hover:bg-[rgba(255,255,255,0.05)] rounded-lg transition-colors"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.preventDefault()
+                    trackNavClick(link.href, link.label, 'header_mobile_nav')
                     setIsMobileMenuOpen(false)
                     handleNavClick(link.href)
                   }}
@@ -172,7 +190,10 @@ export function Header() {
                   <a
                     href={primaryDownload.downloadUrl}
                     className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 text-white font-medium"
-                    onClick={() => setIsMobileMenuOpen(false)}
+                    onClick={() => {
+                      trackDownloadClick(primaryDownload, 'header_mobile_primary', `Download for ${primaryDownload.label}`)
+                      setIsMobileMenuOpen(false)
+                    }}
                   >
                     {primaryDownload.platform.os === 'mac' ? (
                       <Apple className="w-4 h-4" />
@@ -185,7 +206,10 @@ export function Header() {
                     <a
                       href={secondaryDownload.downloadUrl}
                       className="flex items-center justify-center gap-2 px-4 py-3 text-zinc-400 hover:text-cyan-400 rounded-lg"
-                      onClick={() => setIsMobileMenuOpen(false)}
+                      onClick={() => {
+                        trackDownloadClick(secondaryDownload, 'header_mobile_secondary', secondaryDownload.label)
+                        setIsMobileMenuOpen(false)
+                      }}
                     >
                       {secondaryDownload.platform.os === 'mac' ? (
                         <Apple className="w-4 h-4" />

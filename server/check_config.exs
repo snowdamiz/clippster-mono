@@ -5,7 +5,10 @@ IO.puts("SOCIAL_PROVIDER_MODE env: #{System.get_env("SOCIAL_PROVIDER_MODE") || "
 
 IO.puts("\n=== Application Config ===")
 social_config = Application.get_env(:clippster_server, :social, [])
-IO.puts("social_provider_mode config: #{Keyword.get(social_config, :social_provider_mode, "NOT SET")}")
+
+IO.puts(
+  "social_provider_mode config: #{Keyword.get(social_config, :social_provider_mode, "NOT SET")}"
+)
 
 IO.puts("\n=== ProviderMode Module ===")
 IO.puts("ProviderMode.mode(): #{ProviderMode.mode()}")

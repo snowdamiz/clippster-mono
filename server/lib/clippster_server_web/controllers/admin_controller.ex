@@ -6,7 +6,15 @@ defmodule ClippsterServerWeb.AdminController do
   alias ClippsterServer.AI
   alias ClippsterServer.AppSettings
   alias ClippsterServer.BetaCodes
-  alias ClippsterServer.{Accounts, Credits, Subscriptions, Organizations, OrganizationSubscriptions}
+
+  alias ClippsterServer.{
+    Accounts,
+    Credits,
+    Subscriptions,
+    Organizations,
+    OrganizationSubscriptions
+  }
+
   alias ClippsterServer.Storage
   alias ClippsterServer.PromoCodes
   alias ClippsterServer.ClipperProfiles.LeaderboardWorker
@@ -817,7 +825,8 @@ defmodule ClippsterServerWeb.AdminController do
 
             json(conn, %{
               success: true,
-              message: "Successfully cancelled subscription for user (immediate - no future charges)",
+              message:
+                "Successfully cancelled subscription for user (immediate - no future charges)",
               subscription: subscription_info
             })
 
@@ -1565,7 +1574,13 @@ defmodule ClippsterServerWeb.AdminController do
       UserSchema
       |> where([u], ilike(u.email, ^pattern))
       |> limit(10)
-      |> select([u], %{id: u.id, email: u.email, name: u.name, avatar_url: u.avatar_url, owned_organization_id: u.owned_organization_id})
+      |> select([u], %{
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        avatar_url: u.avatar_url,
+        owned_organization_id: u.owned_organization_id
+      })
       |> ClippsterServer.Repo.all()
 
     json(conn, %{success: true, users: users})
@@ -1672,7 +1687,12 @@ defmodule ClippsterServerWeb.AdminController do
         case OrganizationSubscriptions.admin_cancel_subscription(org_id) do
           {:ok, _org} ->
             status = OrganizationSubscriptions.get_subscription_status(org_id)
-            json(conn, %{success: true, message: "Subscription cancelled (immediate - no future charges)", subscription: status})
+
+            json(conn, %{
+              success: true,
+              message: "Subscription cancelled (immediate - no future charges)",
+              subscription: status
+            })
 
           {:error, :not_active} ->
             conn |> put_status(400) |> json(%{success: false, error: "No active subscription"})

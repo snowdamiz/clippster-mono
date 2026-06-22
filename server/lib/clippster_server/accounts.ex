@@ -107,7 +107,9 @@ defmodule ClippsterServer.Accounts do
 
       # Set free tier credit grant timestamp so worker grants credits after 30 days
       now = DateTime.utc_now() |> DateTime.truncate(:second)
-      {:ok, user} = user |> User.free_tier_changeset(%{free_tier_last_credit_grant: now}) |> Repo.update()
+
+      {:ok, user} =
+        user |> User.free_tier_changeset(%{free_tier_last_credit_grant: now}) |> Repo.update()
 
       user
     end)
@@ -167,7 +169,8 @@ defmodule ClippsterServer.Accounts do
 
     Repo.transaction(fn ->
       # Download and store avatar in R2 if it's an external URL
-      avatar_url = download_and_store_avatar(Map.get(oauth_info, :avatar_url), provider, provider_id)
+      avatar_url =
+        download_and_store_avatar(Map.get(oauth_info, :avatar_url), provider, provider_id)
 
       user_attrs = %{
         provider: provider,
@@ -188,7 +191,9 @@ defmodule ClippsterServer.Accounts do
 
       # Set free tier credit grant timestamp so worker grants credits after 30 days
       now = DateTime.utc_now() |> DateTime.truncate(:second)
-      {:ok, user} = user |> User.free_tier_changeset(%{free_tier_last_credit_grant: now}) |> Repo.update()
+
+      {:ok, user} =
+        user |> User.free_tier_changeset(%{free_tier_last_credit_grant: now}) |> Repo.update()
 
       user
     end)
@@ -211,9 +216,11 @@ defmodule ClippsterServer.Accounts do
   defp update_oauth_info(user, oauth_info) do
     # Only download new avatar if the external URL has changed
     new_avatar_url = Map.get(oauth_info, :avatar_url)
-    avatar_url = 
+
+    avatar_url =
       if new_avatar_url && new_avatar_url != user.avatar_url && is_external_url?(new_avatar_url) do
-        download_and_store_avatar(new_avatar_url, user.provider, user.provider_id) || user.avatar_url
+        download_and_store_avatar(new_avatar_url, user.provider, user.provider_id) ||
+          user.avatar_url
       else
         user.avatar_url
       end
@@ -232,7 +239,9 @@ defmodule ClippsterServer.Accounts do
   # Links a new OAuth provider to an existing user (e.g., user created with email/password, now logging in with Google)
   defp link_oauth_provider(user, provider, provider_id, oauth_info) do
     # Download and store avatar in R2 if it's an external URL
-    avatar_url = download_and_store_avatar(Map.get(oauth_info, :avatar_url), provider, provider_id) || user.avatar_url
+    avatar_url =
+      download_and_store_avatar(Map.get(oauth_info, :avatar_url), provider, provider_id) ||
+        user.avatar_url
 
     oauth_attrs = %{
       provider: provider,
@@ -258,7 +267,9 @@ defmodule ClippsterServer.Accounts do
 
       user ->
         # Download and store avatar in R2 if it's an external URL
-        avatar_url = download_and_store_avatar(Map.get(oauth_info, :avatar_url), "google", user_id) || user.avatar_url
+        avatar_url =
+          download_and_store_avatar(Map.get(oauth_info, :avatar_url), "google", user_id) ||
+            user.avatar_url
 
         user_attrs = %{
           email: Map.get(oauth_info, :email),

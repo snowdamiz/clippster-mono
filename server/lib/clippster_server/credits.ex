@@ -596,7 +596,12 @@ defmodule ClippsterServer.Credits do
   Returns {:ok, total_refunded} where total_refunded is the sum of all credits
   returned to the user.
   """
-  def cancel_jobs_by_project_and_type(project_id, user_id, job_type, reason \\ "Subsequent step failed") do
+  def cancel_jobs_by_project_and_type(
+        project_id,
+        user_id,
+        job_type,
+        reason \\ "Subsequent step failed"
+      ) do
     jobs =
       ProcessingJob
       |> where([j], j.project_id == ^project_id)

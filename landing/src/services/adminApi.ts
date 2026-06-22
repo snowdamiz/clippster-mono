@@ -197,12 +197,51 @@ export interface AiUsageResponse {
   }>
 }
 
+export interface AnalyticsRange {
+  total: number
+  today: number
+  this_week: number
+}
+
 export interface AnalyticsStats {
-  [eventType: string]: {
-    total: number
-    today: number
-    this_week: number
-  }
+  [eventType: string]: AnalyticsRange
+}
+
+export interface AnalyticsBreakdownItem extends AnalyticsRange {
+  label: string
+}
+
+export interface LandingAnalyticsOverview {
+  page_views: AnalyticsRange
+  unique_visitors: AnalyticsRange
+  sessions: AnalyticsRange
+  download_clicks: AnalyticsRange
+  disabled_download_clicks: AnalyticsRange
+  conversion_rate: number
+}
+
+export interface LandingAnalyticsRecentEvent {
+  id: number
+  event_type: string
+  metadata: Record<string, string | number | boolean | null>
+  inserted_at: string
+}
+
+export interface LandingAnalyticsStats {
+  overview: LandingAnalyticsOverview
+  visits_by_page: AnalyticsBreakdownItem[]
+  referrers: AnalyticsBreakdownItem[]
+  campaigns: AnalyticsBreakdownItem[]
+  devices: AnalyticsBreakdownItem[]
+  browsers: AnalyticsBreakdownItem[]
+  downloads_by_platform: AnalyticsBreakdownItem[]
+  downloads_by_source: AnalyticsBreakdownItem[]
+  recent_events: LandingAnalyticsRecentEvent[]
+}
+
+export interface AnalyticsDashboard {
+  stats: AnalyticsStats
+  landing: LandingAnalyticsStats | null
 }
 
 export interface BetaCode {
@@ -792,12 +831,15 @@ export async function getAiUsageStats(): Promise<AiUsageResponse> {
   }
 }
 
-export async function getAnalyticsStats(): Promise<AnalyticsStats> {
+export async function getAnalyticsStats(): Promise<AnalyticsDashboard> {
   const res = assertSuccess(
-    await api.get<{ success: boolean; stats?: AnalyticsStats; error?: string }>('/admin/analytics'),
+    await api.get<{ success: boolean; stats?: AnalyticsStats; landing?: LandingAnalyticsStats; error?: string }>('/admin/analytics'),
     'Failed to load analytics',
   )
-  return res.stats || {}
+  return {
+    stats: res.stats || {},
+    landing: res.landing || null,
+  }
 }
 
 export async function listBetaCodes(): Promise<{ codes: BetaCode[]; stats: BetaCodeStats }> {

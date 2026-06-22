@@ -5,30 +5,41 @@ defmodule ClippsterServer.AdminMessaging.EmailCampaign do
   schema "admin_email_campaigns" do
     field :subject, :string
     field :body, :string
+    field :preheader, :string
     field :audience, :string
     field :target_email, :string
     field :sent_at, :utc_datetime
     field :recipient_count, :integer, default: 0
+    field :sent_count, :integer, default: 0
+    field :failed_count, :integer, default: 0
+    field :suppressed_count, :integer, default: 0
     field :status, :string, default: "draft"
 
     belongs_to :sender, ClippsterServer.Accounts.User, foreign_key: :sent_by
+
+    has_many :recipients, ClippsterServer.AdminMessaging.EmailCampaignRecipient,
+      foreign_key: :campaign_id
 
     timestamps(type: :utc_datetime)
   end
 
   @valid_audiences ~w(waitlist all_users individual)
-  @valid_statuses ~w(draft sent failed)
+  @valid_statuses ~w(draft sending sent partial_failed failed)
 
   def changeset(campaign, attrs) do
     campaign
     |> cast(attrs, [
       :subject,
       :body,
+      :preheader,
       :audience,
       :target_email,
       :sent_by,
       :sent_at,
       :recipient_count,
+      :sent_count,
+      :failed_count,
+      :suppressed_count,
       :status
     ])
     |> validate_required([:subject, :body, :audience])

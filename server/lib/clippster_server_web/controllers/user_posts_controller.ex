@@ -8,11 +8,12 @@ defmodule ClippsterServerWeb.UserPostsController do
   require Logger
 
   alias ClippsterServer.Campaigns
-  alias ClippsterServer.Campaigns.ClipperSocialAccount
   alias ClippsterServer.Campaigns.UserPost
   alias ClippsterServer.Organizations
   alias ClippsterServer.Social
   alias ClippsterServer.Social.PostSubmission
+  alias ClippsterServer.Social.PostForMeConnectionSync
+  alias ClippsterServer.Social.PostForMeAccountHealth
   alias ClippsterServer.Social.Providers.PostForMe
 
   @doc """
@@ -58,7 +59,7 @@ defmodule ClippsterServerWeb.UserPostsController do
          {:ok, media_url} <- get_required_param(params, "media_url"),
          {:ok, account} <- get_user_account(user.id, account_id),
          :ok <- validate_platform(account, platform),
-         :ok <- validate_account_token_for_publish(account, platform_label),
+         {:ok, account} <- PostForMeConnectionSync.ensure_user_publish_ready(account, platform_label),
          {:ok, post_data} <- publish_via_post_for_me(account, media_url, params) do
       post_attrs = %{
         user_id: user.id,
@@ -102,6 +103,16 @@ defmodule ClippsterServerWeb.UserPostsController do
         |> put_status(404)
         |> json(%{success: false, error: "Account not found"})
 
+      {:error, :account_inactive} ->
+        conn
+        |> put_status(422)
+        |> json(%{
+          success: false,
+          error: PostForMeAccountHealth.disconnected_message(platform_label),
+          error_code: "social_token_expired",
+          platform: platform
+        })
+
       {:error, :wrong_platform} ->
         conn
         |> put_status(400)
@@ -109,7 +120,7 @@ defmodule ClippsterServerWeb.UserPostsController do
 
       {:error, :token_expired, message} ->
         conn
-        |> put_status(401)
+        |> put_status(422)
         |> json(%{
           success: false,
           error: message,
@@ -123,9 +134,38 @@ defmodule ClippsterServerWeb.UserPostsController do
         |> json(%{success: false, error: "Missing required parameter: #{param}"})
 
       {:error, reason} when is_binary(reason) ->
-        conn
-        |> put_status(422)
-        |> json(%{success: false, error: reason})
+        if PostForMeAccountHealth.social_token_expired_error?(reason) do
+          conn
+          |> put_status(422)
+          |> json(%{
+            success: false,
+            error: reason,
+            error_code: "social_token_expired",
+            platform: platform
+          })
+        else
+          conn
+          |> put_status(422)
+          |> json(%{success: false, error: reason})
+        end
+
+      {:error, %PostForMe.ApiError{} = api_error} ->
+        message = api_error.message || "Post For Me publish failed"
+
+        if PostForMeAccountHealth.social_token_expired_error?(api_error) do
+          conn
+          |> put_status(422)
+          |> json(%{
+            success: false,
+            error: message,
+            error_code: "social_token_expired",
+            platform: platform
+          })
+        else
+          conn
+          |> put_status(422)
+          |> json(%{success: false, error: message})
+        end
 
       {:error, reason} ->
         conn
@@ -508,12 +548,21 @@ defmodule ClippsterServerWeb.UserPostsController do
 
     case PostForMe.create_social_post(post_params) do
       {:ok, post} ->
-        Logger.info("[UserPosts] PostForMe post created - id: #{post.id}, status: #{post.status}, scheduled_at: #{inspect(post.scheduled_at)}")
+        Logger.info(
+          "[UserPosts] PostForMe post created - id: #{post.id}, status: #{post.status}, scheduled_at: #{inspect(post.scheduled_at)}"
+        )
+
         Logger.info("[UserPosts] PostForMe raw response: #{inspect(post.raw)}")
 
         with :ok <- validate_post_for_me_account_token(post, account.provider_account_id),
-             :ok <- verify_post_for_me_publish_result(post.id, account.provider_account_id, post.status) do
-          {post_url, provider_post_id} = fetch_post_data_from_feed(account.provider_account_id, post.id)
+             :ok <-
+               verify_post_for_me_publish_result(
+                 post.id,
+                 account.provider_account_id,
+                 post.status
+               ) do
+          {post_url, provider_post_id} =
+            fetch_post_data_from_feed(account.provider_account_id, post.id)
 
           {:ok,
            %{
@@ -529,24 +578,8 @@ defmodule ClippsterServerWeb.UserPostsController do
     end
   end
 
-  defp validate_account_token_for_publish(%ClipperSocialAccount{} = account, platform_label) do
-    if account_token_expired?(account) do
-      {:error, :token_expired, token_expired_message(platform_label)}
-    else
-      :ok
-    end
-  end
-
-  defp validate_account_token_for_publish(_account, _platform_label), do: :ok
-
-  defp account_token_expired?(%ClipperSocialAccount{token_expires_at: nil}), do: false
-
-  defp account_token_expired?(%ClipperSocialAccount{token_expires_at: expires_at}) do
-    DateTime.compare(expires_at, DateTime.utc_now()) == :lt
-  end
-
   defp token_expired_message(platform_label) do
-    "Your #{platform_label} connection has expired. Disconnect and reconnect it in Account Connections, then try again."
+    PostForMeAccountHealth.token_expired_message(platform_label)
   end
 
   defp validate_post_for_me_account_token(post, provider_account_id) do
@@ -625,7 +658,13 @@ defmodule ClippsterServerWeb.UserPostsController do
         )
 
         Process.sleep(@post_for_me_verify_interval_ms)
-        verify_post_for_me_publish_result(post_id, provider_account_id, initial_status, retries_left - 1)
+
+        verify_post_for_me_publish_result(
+          post_id,
+          provider_account_id,
+          initial_status,
+          retries_left - 1
+        )
 
       :pending ->
         case classify_post_for_me_pending_outcome(post_id) do
@@ -644,7 +683,8 @@ defmodule ClippsterServerWeb.UserPostsController do
               "[UserPosts] PostForMe publish result unavailable for post #{post_id} after retries"
             )
 
-            {:error, "Publish could not be confirmed. Please check your social account and try again."}
+            {:error,
+             "Publish could not be confirmed. Please check your social account and try again."}
         end
 
       {:error, :api, reason} ->
@@ -748,31 +788,47 @@ defmodule ClippsterServerWeb.UserPostsController do
       {:ok, feed_items} ->
         # Find the post in the feed by social_post_id
         case Enum.find(feed_items, fn item ->
-          item["social_post_id"] == post_id
-        end) do
-          nil when retries_left > 0 -> 
-            Logger.info("[UserPosts] Post #{post_id} not found in feed yet, retrying in 3 seconds (#{retries_left} retries left)")
+               item["social_post_id"] == post_id
+             end) do
+          nil when retries_left > 0 ->
+            Logger.info(
+              "[UserPosts] Post #{post_id} not found in feed yet, retrying in 3 seconds (#{retries_left} retries left)"
+            )
+
             Process.sleep(3000)
             fetch_post_data_from_feed_with_retry(provider_account_id, post_id, retries_left - 1)
-          
+
           nil ->
-            Logger.warning("[UserPosts] Post #{post_id} not found in feed after all retries, URL and provider_post_id will be nil")
+            Logger.warning(
+              "[UserPosts] Post #{post_id} not found in feed after all retries, URL and provider_post_id will be nil"
+            )
+
             {nil, nil}
-          
-          item -> 
+
+          item ->
             url = item["platform_url"]
             provider_id = item["platform_post_id"]
-            Logger.info("[UserPosts] Found post data in feed: url=#{url}, provider_post_id=#{provider_id}")
+
+            Logger.info(
+              "[UserPosts] Found post data in feed: url=#{url}, provider_post_id=#{provider_id}"
+            )
+
             {url, provider_id}
         end
 
       {:error, reason} when retries_left > 0 ->
-        Logger.warning("[UserPosts] Failed to fetch feed for data lookup: #{inspect(reason)}, retrying in 3 seconds")
+        Logger.warning(
+          "[UserPosts] Failed to fetch feed for data lookup: #{inspect(reason)}, retrying in 3 seconds"
+        )
+
         Process.sleep(3000)
         fetch_post_data_from_feed_with_retry(provider_account_id, post_id, retries_left - 1)
 
       {:error, reason} ->
-        Logger.warning("[UserPosts] Failed to fetch feed for data lookup after all retries: #{inspect(reason)}")
+        Logger.warning(
+          "[UserPosts] Failed to fetch feed for data lookup after all retries: #{inspect(reason)}"
+        )
+
         {nil, nil}
     end
   end
@@ -780,108 +836,174 @@ defmodule ClippsterServerWeb.UserPostsController do
   # Backfill missing post_url values by fetching from PostForMe feed
   defp backfill_missing_post_urls(posts, user_id) do
     # Find posts missing post_url
-    posts_needing_urls = Enum.filter(posts, fn post ->
-      is_nil(post.post_url) || post.post_url == ""
-    end)
+    posts_needing_urls =
+      Enum.filter(posts, fn post ->
+        is_nil(post.post_url) || post.post_url == ""
+      end)
 
     if length(posts_needing_urls) > 0 do
-      Logger.info("[sync_user_posts_analytics] Attempting to backfill #{length(posts_needing_urls)} posts with missing post_url")
+      Logger.info(
+        "[sync_user_posts_analytics] Attempting to backfill #{length(posts_needing_urls)} posts with missing post_url"
+      )
 
       # Get user's social accounts
       case Campaigns.list_user_social_accounts(user_id) do
         accounts when is_list(accounts) ->
-          Logger.info("[sync_user_posts_analytics] User has #{length(accounts)} social accounts: #{inspect(Enum.map(accounts, fn a -> %{id: a.id, platform: a.platform, provider_account_id: a.provider_account_id, is_active: a.is_active} end))}")
-          
+          Logger.info(
+            "[sync_user_posts_analytics] User has #{length(accounts)} social accounts: #{inspect(Enum.map(accounts, fn a -> %{id: a.id, platform: a.platform, provider_account_id: a.provider_account_id, is_active: a.is_active} end))}"
+          )
+
           # Group posts by platform
           posts_by_platform = Enum.group_by(posts_needing_urls, & &1.platform)
-          Logger.info("[sync_user_posts_analytics] Posts grouped by platform: #{inspect(Map.keys(posts_by_platform))}")
+
+          Logger.info(
+            "[sync_user_posts_analytics] Posts grouped by platform: #{inspect(Map.keys(posts_by_platform))}"
+          )
 
           # Fetch URLs for each platform
-          updated_posts = for {platform, platform_posts} <- posts_by_platform do
-            # Normalize platform name
-            lookup_platform = if platform == "twitter", do: "x", else: platform
-            Logger.info("[sync_user_posts_analytics] Looking for account: platform=#{platform}, lookup=#{lookup_platform}")
+          updated_posts =
+            for {platform, platform_posts} <- posts_by_platform do
+              # Normalize platform name
+              lookup_platform = if platform == "twitter", do: "x", else: platform
 
-            # Find active account with provider_account_id
-            account = Enum.find(accounts, fn acc ->
-              normalized = if acc.platform == "twitter", do: "x", else: acc.platform
-              normalized == lookup_platform && acc.is_active && is_binary(acc.provider_account_id)
-            end)
+              Logger.info(
+                "[sync_user_posts_analytics] Looking for account: platform=#{platform}, lookup=#{lookup_platform}"
+              )
 
-            Logger.info("[sync_user_posts_analytics] Account found: #{inspect(account != nil)}")
-            
-            if account do
-              # Fetch feed for this platform
-              case fetch_post_for_me_feed(account.provider_account_id) do
-                {:ok, feed_items} ->
-                  # Debug: log first feed item structure
-                  if length(feed_items) > 0 do
-                    Logger.info("[sync_user_posts_analytics] Sample feed item keys: #{inspect(Map.keys(Enum.at(feed_items, 0)))}")
-                    Logger.info("[sync_user_posts_analytics] Sample feed item: #{inspect(Enum.at(feed_items, 0))}")
-                  end
-                  
-                  # Try to find URL and provider_post_id for each post
-                  Enum.map(platform_posts, fn post ->
-                    Logger.info("[sync_user_posts_analytics] Trying to match post #{post.id}: post_id=#{post.post_id}, provider_post_id=#{inspect(post.provider_post_id)}")
-                    
-                    # Try to match by provider_post_id first, then by post_id
-                    feed_item = cond do
-                      post.provider_post_id && post.provider_post_id != "" ->
-                        Logger.info("[sync_user_posts_analytics] Matching by provider_post_id: #{post.provider_post_id}")
-                        Enum.find(feed_items, fn item ->
-                          match = item["platform_post_id"] == post.provider_post_id
-                          if match, do: Logger.info("[sync_user_posts_analytics] MATCHED by provider_post_id!")
-                          match
-                        end)
-                      post.post_id ->
-                        Logger.info("[sync_user_posts_analytics] Matching by post_id: #{post.post_id}")
-                        Enum.find(feed_items, fn item ->
-                          match = item["social_post_id"] == post.post_id
-                          if match, do: Logger.info("[sync_user_posts_analytics] MATCHED by social_post_id!")
-                          match
-                        end)
-                      true -> nil
+              # Find active account with provider_account_id
+              account =
+                Enum.find(accounts, fn acc ->
+                  normalized = if acc.platform == "twitter", do: "x", else: acc.platform
+
+                  normalized == lookup_platform && acc.is_active &&
+                    is_binary(acc.provider_account_id)
+                end)
+
+              Logger.info("[sync_user_posts_analytics] Account found: #{inspect(account != nil)}")
+
+              if account do
+                # Fetch feed for this platform
+                case fetch_post_for_me_feed(account.provider_account_id) do
+                  {:ok, feed_items} ->
+                    # Debug: log first feed item structure
+                    if length(feed_items) > 0 do
+                      Logger.info(
+                        "[sync_user_posts_analytics] Sample feed item keys: #{inspect(Map.keys(Enum.at(feed_items, 0)))}"
+                      )
+
+                      Logger.info(
+                        "[sync_user_posts_analytics] Sample feed item: #{inspect(Enum.at(feed_items, 0))}"
+                      )
                     end
 
-                    case feed_item do
-                      nil ->
-                        Logger.warning("[sync_user_posts_analytics] Post #{post.id} (post_id: #{post.post_id}, provider_post_id: #{inspect(post.provider_post_id)}) not found in feed")
-                        post
-                      item ->
-                        url = item["platform_url"]
-                        provider_id = item["platform_post_id"]
-                        
-                        # Build update attrs for fields that are missing
-                        update_attrs = %{}
-                        update_attrs = if is_nil(post.post_url) || post.post_url == "", do: Map.put(update_attrs, :post_url, url), else: update_attrs
-                        update_attrs = if is_nil(post.provider_post_id) || post.provider_post_id == "", do: Map.put(update_attrs, :provider_post_id, provider_id), else: update_attrs
+                    # Try to find URL and provider_post_id for each post
+                    Enum.map(platform_posts, fn post ->
+                      Logger.info(
+                        "[sync_user_posts_analytics] Trying to match post #{post.id}: post_id=#{post.post_id}, provider_post_id=#{inspect(post.provider_post_id)}"
+                      )
 
-                        if map_size(update_attrs) > 0 do
-                          Logger.info("[sync_user_posts_analytics] Backfilling post #{post.id}: #{inspect(update_attrs)}")
-                          # Update the post in the database
-                          case Campaigns.update_user_post(post, update_attrs) do
-                            {:ok, updated_post} -> updated_post
-                            {:error, _} -> post
-                          end
-                        else
-                          post
+                      # Try to match by provider_post_id first, then by post_id
+                      feed_item =
+                        cond do
+                          post.provider_post_id && post.provider_post_id != "" ->
+                            Logger.info(
+                              "[sync_user_posts_analytics] Matching by provider_post_id: #{post.provider_post_id}"
+                            )
+
+                            Enum.find(feed_items, fn item ->
+                              match = item["platform_post_id"] == post.provider_post_id
+
+                              if match,
+                                do:
+                                  Logger.info(
+                                    "[sync_user_posts_analytics] MATCHED by provider_post_id!"
+                                  )
+
+                              match
+                            end)
+
+                          post.post_id ->
+                            Logger.info(
+                              "[sync_user_posts_analytics] Matching by post_id: #{post.post_id}"
+                            )
+
+                            Enum.find(feed_items, fn item ->
+                              match = item["social_post_id"] == post.post_id
+
+                              if match,
+                                do:
+                                  Logger.info(
+                                    "[sync_user_posts_analytics] MATCHED by social_post_id!"
+                                  )
+
+                              match
+                            end)
+
+                          true ->
+                            nil
                         end
-                    end
-                  end)
 
-                {:error, reason} ->
-                  Logger.error("[sync_user_posts_analytics] Failed to fetch feed for backfill: #{inspect(reason)}")
-                  platform_posts
+                      case feed_item do
+                        nil ->
+                          Logger.warning(
+                            "[sync_user_posts_analytics] Post #{post.id} (post_id: #{post.post_id}, provider_post_id: #{inspect(post.provider_post_id)}) not found in feed"
+                          )
+
+                          post
+
+                        item ->
+                          url = item["platform_url"]
+                          provider_id = item["platform_post_id"]
+
+                          # Build update attrs for fields that are missing
+                          update_attrs = %{}
+
+                          update_attrs =
+                            if is_nil(post.post_url) || post.post_url == "",
+                              do: Map.put(update_attrs, :post_url, url),
+                              else: update_attrs
+
+                          update_attrs =
+                            if is_nil(post.provider_post_id) || post.provider_post_id == "",
+                              do: Map.put(update_attrs, :provider_post_id, provider_id),
+                              else: update_attrs
+
+                          if map_size(update_attrs) > 0 do
+                            Logger.info(
+                              "[sync_user_posts_analytics] Backfilling post #{post.id}: #{inspect(update_attrs)}"
+                            )
+
+                            # Update the post in the database
+                            case Campaigns.update_user_post(post, update_attrs) do
+                              {:ok, updated_post} -> updated_post
+                              {:error, _} -> post
+                            end
+                          else
+                            post
+                          end
+                      end
+                    end)
+
+                  {:error, reason} ->
+                    Logger.error(
+                      "[sync_user_posts_analytics] Failed to fetch feed for backfill: #{inspect(reason)}"
+                    )
+
+                    platform_posts
+                end
+              else
+                Logger.warning(
+                  "[sync_user_posts_analytics] No active #{platform} account found for backfill"
+                )
+
+                platform_posts
               end
-            else
-              Logger.warning("[sync_user_posts_analytics] No active #{platform} account found for backfill")
-              platform_posts
             end
-          end
-          |> List.flatten()
+            |> List.flatten()
 
           # Merge updated posts back into the full list
           updated_post_ids = MapSet.new(updated_posts, & &1.id)
+
           posts
           |> Enum.map(fn post ->
             if MapSet.member?(updated_post_ids, post.id) do
@@ -952,17 +1074,19 @@ defmodule ClippsterServerWeb.UserPostsController do
 
   defp serialize_post(%{} = post) when is_map(post) do
     # Generate presigned URLs for R2 storage URLs
-    thumbnail_url = if post.thumbnail_url && String.contains?(post.thumbnail_url, ".r2.cloudflarestorage.com") do
-      ClippsterServer.Storage.presigned_url!(post.thumbnail_url, expires_in: 3600)
-    else
-      post.thumbnail_url
-    end
+    thumbnail_url =
+      if post.thumbnail_url && String.contains?(post.thumbnail_url, ".r2.cloudflarestorage.com") do
+        ClippsterServer.Storage.presigned_url!(post.thumbnail_url, expires_in: 3600)
+      else
+        post.thumbnail_url
+      end
 
-    media_url = if post.media_url && String.contains?(post.media_url, ".r2.cloudflarestorage.com") do
-      ClippsterServer.Storage.presigned_url!(post.media_url, expires_in: 3600)
-    else
-      post.media_url
-    end
+    media_url =
+      if post.media_url && String.contains?(post.media_url, ".r2.cloudflarestorage.com") do
+        ClippsterServer.Storage.presigned_url!(post.media_url, expires_in: 3600)
+      else
+        post.media_url
+      end
 
     %{
       id: post.id,
@@ -1009,10 +1133,20 @@ defmodule ClippsterServerWeb.UserPostsController do
       not is_nil(creator_profile_id) ->
         case Organizations.get_creator_profile(creator_profile_id) do
           nil ->
-            Logger.warning("[UserPosts] Dual-track skipped: creator profile #{creator_profile_id} not found")
+            Logger.warning(
+              "[UserPosts] Dual-track skipped: creator profile #{creator_profile_id} not found"
+            )
 
           profile ->
-            create_org_submission(user, account, post_data, params, platform, profile, campaign_id)
+            create_org_submission(
+              user,
+              account,
+              post_data,
+              params,
+              platform,
+              profile,
+              campaign_id
+            )
         end
 
       not is_nil(campaign_id) ->
@@ -1022,9 +1156,10 @@ defmodule ClippsterServerWeb.UserPostsController do
 
           campaign ->
             # Campaign belongs to an org; look up the creator profile if linked
-            creator_profile = if campaign.creator_profile_id,
-              do: Organizations.get_creator_profile(campaign.creator_profile_id),
-              else: nil
+            creator_profile =
+              if campaign.creator_profile_id,
+                do: Organizations.get_creator_profile(campaign.creator_profile_id),
+                else: nil
 
             submission_attrs = %{
               organization_id: campaign.organization_id,
@@ -1055,45 +1190,59 @@ defmodule ClippsterServerWeb.UserPostsController do
                   post_id: post_data.post_id,
                   post_url: post_data.post_url
                 })
-                
+
                 # Submit to campaign - clip_url will be populated later from PostForMe feed sync
-                Logger.info("[UserPosts] Attempting to submit clip to campaign #{campaign.id} for user #{user.id}")
-                
+                Logger.info(
+                  "[UserPosts] Attempting to submit clip to campaign #{campaign.id} for user #{user.id}"
+                )
+
                 campaign_submission_attrs = %{
                   platform: platform,
                   platform_post_id: post_data.post_id,
                   social_account_id: account.id
                 }
-                
-                Logger.info("[UserPosts] Campaign submission attrs: #{inspect(campaign_submission_attrs)}")
-                
+
+                Logger.info(
+                  "[UserPosts] Campaign submission attrs: #{inspect(campaign_submission_attrs)}"
+                )
+
                 case Campaigns.submit_clip(campaign, user, campaign_submission_attrs) do
                   {:ok, campaign_submission} ->
-                    Logger.info("[UserPosts] ✅ Successfully submitted clip to campaign #{campaign.id}, submission ID: #{campaign_submission.id}")
-                    
+                    Logger.info(
+                      "[UserPosts] ✅ Successfully submitted clip to campaign #{campaign.id}, submission ID: #{campaign_submission.id}"
+                    )
+
                   {:error, :not_a_participant} ->
-                    Logger.error("[UserPosts] ❌ User #{user.id} is not a participant in campaign #{campaign.id}")
-                    
+                    Logger.error(
+                      "[UserPosts] ❌ User #{user.id} is not a participant in campaign #{campaign.id}"
+                    )
+
                   {:error, :campaign_not_active} ->
                     Logger.error("[UserPosts] ❌ Campaign #{campaign.id} is not active")
-                    
+
                   {:error, :campaign_not_started} ->
                     Logger.error("[UserPosts] ❌ Campaign #{campaign.id} has not started yet")
-                    
+
                   {:error, :campaign_ended} ->
                     Logger.error("[UserPosts] ❌ Campaign #{campaign.id} has ended")
-                    
+
                   {:error, :platform_not_allowed} ->
-                    Logger.error("[UserPosts] ❌ Platform #{platform} is not allowed for campaign #{campaign.id}")
-                    
+                    Logger.error(
+                      "[UserPosts] ❌ Platform #{platform} is not allowed for campaign #{campaign.id}"
+                    )
+
                   {:error, reason} ->
                     Logger.error("[UserPosts] ❌ Failed to submit to campaign: #{inspect(reason)}")
                 end
-                
-                Logger.info("[UserPosts] Dual-tracked to org #{campaign.organization_id} via campaign #{campaign.id}")
+
+                Logger.info(
+                  "[UserPosts] Dual-tracked to org #{campaign.organization_id} via campaign #{campaign.id}"
+                )
 
               {:error, reason} ->
-                Logger.warning("[UserPosts] Dual-track failed for campaign #{campaign_id}: #{inspect(reason)}")
+                Logger.warning(
+                  "[UserPosts] Dual-track failed for campaign #{campaign_id}: #{inspect(reason)}"
+                )
             end
         end
 
@@ -1120,11 +1269,15 @@ defmodule ClippsterServerWeb.UserPostsController do
         is_supported = post.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
 
         if not has_post_url do
-          Logger.warning("[sync_user_posts_analytics] Post #{post.id} (#{post.platform}) has no post_url - cannot sync analytics")
+          Logger.warning(
+            "[sync_user_posts_analytics] Post #{post.id} (#{post.platform}) has no post_url - cannot sync analytics"
+          )
         end
 
         if not is_supported do
-          Logger.debug("[sync_user_posts_analytics] Post #{post.id} platform #{post.platform} not supported")
+          Logger.debug(
+            "[sync_user_posts_analytics] Post #{post.id} platform #{post.platform} not supported"
+          )
         end
 
         has_post_url && is_supported
@@ -1150,69 +1303,119 @@ defmodule ClippsterServerWeb.UserPostsController do
             end)
 
           if account do
-            Logger.info("[sync_user_posts_analytics] Processing #{length(platform_posts)} #{platform} posts for account #{account.provider_account_id}")
+            Logger.info(
+              "[sync_user_posts_analytics] Processing #{length(platform_posts)} #{platform} posts for account #{account.provider_account_id}"
+            )
 
             # Fetch feed once per platform
             case fetch_post_for_me_feed(account.provider_account_id) do
               {:ok, feed_items} ->
-                Logger.info("[sync_user_posts_analytics] Fetched #{length(feed_items)} feed items from PostForMe")
+                Logger.info(
+                  "[sync_user_posts_analytics] Fetched #{length(feed_items)} feed items from PostForMe"
+                )
 
                 for post <- platform_posts do
                   case extract_post_identifier(post.platform, post.post_url) do
                     {:ok, post_identifier} ->
-                      Logger.debug("[sync_user_posts_analytics] Post #{post.id}: extracted identifier #{post_identifier} from #{post.post_url}")
+                      Logger.debug(
+                        "[sync_user_posts_analytics] Post #{post.id}: extracted identifier #{post_identifier} from #{post.post_url}"
+                      )
 
                       case match_feed_item(post.platform, feed_items, post_identifier) do
                         nil ->
-                          Logger.warning("[sync_user_posts_analytics] Post #{post.id}: identifier #{post_identifier} NOT FOUND in feed")
+                          Logger.warning(
+                            "[sync_user_posts_analytics] Post #{post.id}: identifier #{post_identifier} NOT FOUND in feed"
+                          )
+
                           :ok
 
                         item ->
-                          Logger.info("[sync_user_posts_analytics] Post #{post.id}: MATCHED feed item")
+                          Logger.info(
+                            "[sync_user_posts_analytics] Post #{post.id}: MATCHED feed item"
+                          )
+
                           analytics = extract_feed_analytics(post.platform, item, account)
-                          Logger.info("[sync_user_posts_analytics] Post #{post.id}: extracted analytics: #{inspect(analytics)}")
+
+                          Logger.info(
+                            "[sync_user_posts_analytics] Post #{post.id}: extracted analytics: #{inspect(analytics)}"
+                          )
 
                           # Only sync if at least one metric is non-zero to avoid overwriting real data with zeros
-                          metric_keys = [:view_count, :like_count, :comment_count, :save_count, :reach_count, :impressions_count, :share_count]
-                          has_real_data = Enum.any?(metric_keys, fn k -> (Map.get(analytics, k) || 0) > 0 end)
-                          
+                          metric_keys = [
+                            :view_count,
+                            :like_count,
+                            :comment_count,
+                            :save_count,
+                            :reach_count,
+                            :impressions_count,
+                            :share_count
+                          ]
+
+                          has_real_data =
+                            Enum.any?(metric_keys, fn k -> (Map.get(analytics, k) || 0) > 0 end)
+
                           if has_real_data do
                             case Campaigns.update_user_post_analytics(post, analytics) do
-                              {:ok, updated_post} -> 
-                                Logger.info("[sync_user_posts_analytics] Post #{post.id}: analytics synced successfully")
-                                
+                              {:ok, updated_post} ->
+                                Logger.info(
+                                  "[sync_user_posts_analytics] Post #{post.id}: analytics synced successfully"
+                                )
+
                                 # If this post has a campaign_id, update the CampaignSubmission with the real URL
                                 if updated_post.campaign_id && updated_post.post_url do
-                                  case ClippsterServer.Repo.get_by(ClippsterServer.Campaigns.CampaignSubmission, 
-                                    campaign_id: updated_post.campaign_id,
-                                    platform_post_id: updated_post.post_id) do
-                                    nil -> 
-                                      Logger.debug("[sync_user_posts_analytics] No CampaignSubmission found for post #{post.id}")
+                                  case ClippsterServer.Repo.get_by(
+                                         ClippsterServer.Campaigns.CampaignSubmission,
+                                         campaign_id: updated_post.campaign_id,
+                                         platform_post_id: updated_post.post_id
+                                       ) do
+                                    nil ->
+                                      Logger.debug(
+                                        "[sync_user_posts_analytics] No CampaignSubmission found for post #{post.id}"
+                                      )
+
                                     campaign_submission ->
-                                      Campaigns.update_submission_metadata(campaign_submission, %{clip_url: updated_post.post_url})
-                                      Logger.info("[sync_user_posts_analytics] Updated CampaignSubmission clip_url for post #{post.id}")
+                                      Campaigns.update_submission_metadata(campaign_submission, %{
+                                        clip_url: updated_post.post_url
+                                      })
+
+                                      Logger.info(
+                                        "[sync_user_posts_analytics] Updated CampaignSubmission clip_url for post #{post.id}"
+                                      )
                                   end
                                 end
-                                
-                              {:error, reason} -> Logger.error("[sync_user_posts_analytics] Post #{post.id}: sync failed: #{inspect(reason)}")
+
+                              {:error, reason} ->
+                                Logger.error(
+                                  "[sync_user_posts_analytics] Post #{post.id}: sync failed: #{inspect(reason)}"
+                                )
                             end
                           else
-                            Logger.debug("[sync_user_posts_analytics] Post #{post.id}: skipping sync - all metrics are zero")
+                            Logger.debug(
+                              "[sync_user_posts_analytics] Post #{post.id}: skipping sync - all metrics are zero"
+                            )
                           end
                       end
 
                     {:error, reason} ->
-                      Logger.warning("[sync_user_posts_analytics] Post #{post.id}: failed to extract identifier from #{post.post_url}: #{inspect(reason)}")
+                      Logger.warning(
+                        "[sync_user_posts_analytics] Post #{post.id}: failed to extract identifier from #{post.post_url}: #{inspect(reason)}"
+                      )
+
                       :ok
                   end
                 end
 
               {:error, reason} ->
-                Logger.error("[sync_user_posts_analytics] Failed to fetch PostForMe feed for account #{account.provider_account_id}: #{inspect(reason)}")
+                Logger.error(
+                  "[sync_user_posts_analytics] Failed to fetch PostForMe feed for account #{account.provider_account_id}: #{inspect(reason)}"
+                )
+
                 :ok
             end
           else
-            Logger.warning("[sync_user_posts_analytics] No active #{platform} account with provider_account_id found")
+            Logger.warning(
+              "[sync_user_posts_analytics] No active #{platform} account with provider_account_id found"
+            )
           end
         end
 
@@ -1223,24 +1426,40 @@ defmodule ClippsterServerWeb.UserPostsController do
 
   # Fetch feed from PostForMe API
   defp fetch_post_for_me_feed(provider_account_id) do
-    result = PostForMe.get_social_account_feed(provider_account_id, %{limit: 50, expand: ["metrics"]})
-    Logger.info("[fetch_post_for_me_feed] Raw result type: #{inspect(result |> elem(0))}, structure: #{inspect(result, limit: 3, printable_limit: 200)}")
-    
+    result =
+      PostForMe.get_social_account_feed(provider_account_id, %{limit: 50, expand: ["metrics"]})
+
+    Logger.info(
+      "[fetch_post_for_me_feed] Raw result type: #{inspect(result |> elem(0))}, structure: #{inspect(result, limit: 3, printable_limit: 200)}"
+    )
+
     case result do
       {:ok, %{data: feed_items}} when is_list(feed_items) ->
-        Logger.info("[fetch_post_for_me_feed] Matched %{data: list} with #{length(feed_items)} items")
+        Logger.info(
+          "[fetch_post_for_me_feed] Matched %{data: list} with #{length(feed_items)} items"
+        )
+
         {:ok, feed_items}
 
       {:ok, %{"data" => feed_items}} when is_list(feed_items) ->
-        Logger.info("[fetch_post_for_me_feed] Matched %{\"data\" => list} with #{length(feed_items)} items")
+        Logger.info(
+          "[fetch_post_for_me_feed] Matched %{\"data\" => list} with #{length(feed_items)} items"
+        )
+
         {:ok, feed_items}
 
       {:ok, feed_items} when is_list(feed_items) ->
-        Logger.info("[fetch_post_for_me_feed] Matched plain list with #{length(feed_items)} items")
+        Logger.info(
+          "[fetch_post_for_me_feed] Matched plain list with #{length(feed_items)} items"
+        )
+
         {:ok, feed_items}
 
       {:ok, other} ->
-        Logger.warning("[fetch_post_for_me_feed] Unexpected ok shape: #{inspect(other, limit: 3, printable_limit: 500)}")
+        Logger.warning(
+          "[fetch_post_for_me_feed] Unexpected ok shape: #{inspect(other, limit: 3, printable_limit: 500)}"
+        )
+
         {:error, :unexpected_response}
 
       {:error, reason} ->
@@ -1257,7 +1476,8 @@ defmodule ClippsterServerWeb.UserPostsController do
     end
   end
 
-  defp extract_post_identifier(platform, url) when platform in ["x", "twitter"] and is_binary(url) do
+  defp extract_post_identifier(platform, url)
+       when platform in ["x", "twitter"] and is_binary(url) do
     case Regex.run(~r{(?:twitter\.com|x\.com)/.+/status/(\d+)}, url) do
       [_, tweet_id] -> {:ok, tweet_id}
       _ -> {:error, :invalid_url}
@@ -1438,17 +1658,19 @@ defmodule ClippsterServerWeb.UserPostsController do
 
   defp serialize_post_map(%PostSubmission{} = post) do
     # Generate presigned URLs for R2 storage URLs
-    thumbnail_url = if post.thumbnail_url && String.contains?(post.thumbnail_url, ".r2.cloudflarestorage.com") do
-      ClippsterServer.Storage.presigned_url!(post.thumbnail_url, expires_in: 3600)
-    else
-      post.thumbnail_url
-    end
+    thumbnail_url =
+      if post.thumbnail_url && String.contains?(post.thumbnail_url, ".r2.cloudflarestorage.com") do
+        ClippsterServer.Storage.presigned_url!(post.thumbnail_url, expires_in: 3600)
+      else
+        post.thumbnail_url
+      end
 
-    media_url = if post.media_url && String.contains?(post.media_url, ".r2.cloudflarestorage.com") do
-      ClippsterServer.Storage.presigned_url!(post.media_url, expires_in: 3600)
-    else
-      post.media_url
-    end
+    media_url =
+      if post.media_url && String.contains?(post.media_url, ".r2.cloudflarestorage.com") do
+        ClippsterServer.Storage.presigned_url!(post.media_url, expires_in: 3600)
+      else
+        post.media_url
+      end
 
     %{
       id: post.id,
@@ -1511,31 +1733,31 @@ defmodule ClippsterServerWeb.UserPostsController do
         # Download directly from R2 using ExAws
         bucket = ClippsterServer.Storage.bucket()
         config = ClippsterServer.Storage.config()
-        
+
         case ExAws.S3.get_object(bucket, key) |> ExAws.request(config) do
           {:ok, %{body: body}} ->
             {:ok, body}
-          
+
           {:error, reason} ->
             Logger.error("[download_video] S3 download failed for key #{key}: #{inspect(reason)}")
             {:error, reason}
         end
-      
+
       {:error, _} ->
         # Not an R2 URL, try direct HTTP download
         headers = [{"User-Agent", "ClippsterServer/1.0"}]
         options = [timeout: 30_000, recv_timeout: 30_000, follow_redirect: true, max_redirect: 5]
-        
+
         case HTTPoison.get(url, headers, options) do
-          {:ok, %{status_code: 200, body: body}} -> 
+          {:ok, %{status_code: 200, body: body}} ->
             {:ok, body}
-          
-          {:ok, %{status_code: status, body: body}} -> 
+
+          {:ok, %{status_code: status, body: body}} ->
             Logger.error("[download_video] HTTP #{status} for URL: #{url}")
             Logger.error("[download_video] Response body: #{inspect(body)}")
             {:error, "HTTP #{status}"}
-          
-          {:error, reason} -> 
+
+          {:error, reason} ->
             Logger.error("[download_video] Request failed: #{inspect(reason)}")
             {:error, reason}
         end
@@ -1558,11 +1780,16 @@ defmodule ClippsterServerWeb.UserPostsController do
 
     # Extract frame at 1 second with scale to 640px width
     args = [
-      "-i", video_path,
-      "-ss", "00:00:01",
-      "-vframes", "1",
-      "-vf", "scale=640:-1",
-      "-q:v", "2",
+      "-i",
+      video_path,
+      "-ss",
+      "00:00:01",
+      "-vframes",
+      "1",
+      "-vf",
+      "scale=640:-1",
+      "-q:v",
+      "2",
       output_path
     ]
 
@@ -1621,10 +1848,15 @@ defmodule ClippsterServerWeb.UserPostsController do
           post_id: post_data.post_id,
           post_url: post_data.post_url
         })
-        Logger.info("[UserPosts] Dual-tracked to org #{profile.organization_id} via creator profile #{profile.id}")
+
+        Logger.info(
+          "[UserPosts] Dual-tracked to org #{profile.organization_id} via creator profile #{profile.id}"
+        )
 
       {:error, reason} ->
-        Logger.warning("[UserPosts] Dual-track failed for creator profile #{profile.id}: #{inspect(reason)}")
+        Logger.warning(
+          "[UserPosts] Dual-track failed for creator profile #{profile.id}: #{inspect(reason)}"
+        )
     end
   end
 end

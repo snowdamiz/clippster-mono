@@ -350,7 +350,11 @@ defmodule ClippsterServer.AI.SystemPrompt do
   @doc """
   Returns the system prompt for Enhanced VOD detection (video + transcript).
   """
-  def get_with_enhanced_detection_context(user_prompt, transcript \\ nil, streamer_metadata \\ nil) do
+  def get_with_enhanced_detection_context(
+        user_prompt,
+        transcript \\ nil,
+        streamer_metadata \\ nil
+      ) do
     context =
       ClippsterServer.AI.DetectionContext.build(user_prompt, transcript, streamer_metadata)
 

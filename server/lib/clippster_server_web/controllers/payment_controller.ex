@@ -29,12 +29,14 @@ defmodule ClippsterServerWeb.PaymentController do
 
     # Filter packs based on user's subscription tier
     user = conn.assigns[:current_user]
-    filtered_packs = if user && user.subscription_tier == "basic" do
-      # Basic tier can only purchase large pack
-      Map.take(packs, ["large"])
-    else
-      packs
-    end
+
+    filtered_packs =
+      if user && user.subscription_tier == "basic" do
+        # Basic tier can only purchase large pack
+        Map.take(packs, ["large"])
+      else
+        packs
+      end
 
     case ClippsterServer.PriceService.get_sol_price() do
       {:ok, sol_usd_rate} ->

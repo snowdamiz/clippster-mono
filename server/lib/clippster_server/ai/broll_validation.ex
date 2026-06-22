@@ -44,7 +44,8 @@ defmodule ClippsterServer.AI.BrollValidation do
       "transcriptText" =>
         as_string(Map.get(raw, "transcriptText") || Map.get(raw, "transcript_text") || ""),
       "reason" => as_string(Map.get(raw, "reason") || ""),
-      "visualQuery" => as_string(Map.get(raw, "visualQuery") || Map.get(raw, "visual_query") || ""),
+      "visualQuery" =>
+        as_string(Map.get(raw, "visualQuery") || Map.get(raw, "visual_query") || ""),
       "generationPrompt" =>
         optional_string(Map.get(raw, "generationPrompt") || Map.get(raw, "generation_prompt")),
       "sourceType" =>

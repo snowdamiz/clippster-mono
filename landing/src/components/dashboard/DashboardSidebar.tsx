@@ -18,6 +18,7 @@ import {
   KeyRound,
   ListChecks,
   LogOut,
+  Mail,
   MessageSquare,
   Percent,
   Shield
@@ -90,6 +91,7 @@ const adminNavGroups: NavGroup[] = [
       { label: 'Beta Codes', icon: KeyRound, path: 'beta-codes', adminOnly: true },
       { label: 'Discount Codes', icon: Percent, path: 'discount-codes', adminOnly: true },
       { label: 'Waitlist', icon: Users, path: 'waitlist', adminOnly: true },
+      { label: 'Email Blasts', icon: Mail, path: 'messaging', adminOnly: true },
       { label: 'Affiliates', icon: Handshake, path: 'affiliates', adminOnly: true },
     ]
   },

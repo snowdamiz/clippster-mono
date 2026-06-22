@@ -35,16 +35,22 @@ defmodule ClippsterServerWeb.InviteController do
   defp invite_html(invitation, token) do
     org_name = invitation.organization.name
     org_logo = invitation.organization.logo_url
-    inviter_name = if invitation.invited_by_user, do: invitation.invited_by_user.name || invitation.invited_by_user.email, else: "Someone"
+
+    inviter_name =
+      if invitation.invited_by_user,
+        do: invitation.invited_by_user.name || invitation.invited_by_user.email,
+        else: "Someone"
+
     role = invitation.role
     email = invitation.email
     api = api_base()
 
-    logo_html = if org_logo && org_logo != "" do
-      "<img src=\"#{org_logo}\" alt=\"#{org_name}\" style=\"width: 64px; height: 64px; border-radius: 12px; object-fit: cover; margin-bottom: 16px;\" />"
-    else
-      "<div style=\"width: 64px; height: 64px; border-radius: 12px; background: linear-gradient(135deg, #06b6d4, #0891b2); display: flex; align-items: center; justify-content: center; margin-bottom: 16px; font-size: 28px; font-weight: 700; color: #fff;\">#{String.first(org_name)}</div>"
-    end
+    logo_html =
+      if org_logo && org_logo != "" do
+        "<img src=\"#{org_logo}\" alt=\"#{org_name}\" style=\"width: 64px; height: 64px; border-radius: 12px; object-fit: cover; margin-bottom: 16px;\" />"
+      else
+        "<div style=\"width: 64px; height: 64px; border-radius: 12px; background: linear-gradient(135deg, #06b6d4, #0891b2); display: flex; align-items: center; justify-content: center; margin-bottom: 16px; font-size: 28px; font-weight: 700; color: #fff;\">#{String.first(org_name)}</div>"
+      end
 
     """
     <!DOCTYPE html>
@@ -433,6 +439,7 @@ defmodule ClippsterServerWeb.InviteController do
   end
 
   defp escape_html(nil), do: ""
+
   defp escape_html(str) do
     str
     |> String.replace("&", "&amp;")

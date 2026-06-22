@@ -1,10 +1,10 @@
 defmodule ClippsterServerWeb.PlatformCampaignController do
   use ClippsterServerWeb, :controller
-  
+
   alias ClippsterServer.PlatformCampaigns
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Repo
-  
+
   require Logger
 
   # Admin-only actions
@@ -77,20 +77,22 @@ defmodule ClippsterServerWeb.PlatformCampaignController do
     limit = Map.get(params, "limit", "100") |> String.to_integer()
     offset = Map.get(params, "offset", "0") |> String.to_integer()
 
-    transactions = PlatformCampaigns.list_revenue_allocation_transactions(limit: limit, offset: offset)
+    transactions =
+      PlatformCampaigns.list_revenue_allocation_transactions(limit: limit, offset: offset)
 
-    transactions_data = Enum.map(transactions, fn t ->
-      %{
-        id: t.id,
-        type: t.transaction_type,
-        amount: Decimal.to_float(t.amount),
-        balance_after: Decimal.to_float(t.balance_after),
-        description: t.description,
-        campaign_id: t.campaign_id,
-        subscription_id: t.subscription_id,
-        created_at: t.inserted_at
-      }
-    end)
+    transactions_data =
+      Enum.map(transactions, fn t ->
+        %{
+          id: t.id,
+          type: t.transaction_type,
+          amount: Decimal.to_float(t.amount),
+          balance_after: Decimal.to_float(t.balance_after),
+          description: t.description,
+          campaign_id: t.campaign_id,
+          subscription_id: t.subscription_id,
+          created_at: t.inserted_at
+        }
+      end)
 
     json(conn, %{
       success: true,
@@ -123,7 +125,7 @@ defmodule ClippsterServerWeb.PlatformCampaignController do
 
     # Create campaign directly via changeset (no org required for platform campaigns)
     changeset = Campaigns.Campaign.create_changeset(%Campaigns.Campaign{}, campaign_attrs)
-    
+
     case Repo.insert(changeset) do
       {:ok, campaign} ->
         # Create reward tiers if milestone_rewards model
@@ -161,7 +163,7 @@ defmodule ClippsterServerWeb.PlatformCampaignController do
     if campaign && campaign.is_platform_campaign do
       # Update campaign directly via changeset (no org check for platform campaigns)
       changeset = Campaigns.Campaign.update_changeset(campaign, params)
-      
+
       case Repo.update(changeset) do
         {:ok, updated_campaign} ->
           # Update reward tiers if provided
@@ -169,7 +171,7 @@ defmodule ClippsterServerWeb.PlatformCampaignController do
             # Delete existing tiers
             existing_tiers = PlatformCampaigns.list_reward_tiers(campaign_id)
             Enum.each(existing_tiers, &PlatformCampaigns.delete_reward_tier/1)
-            
+
             # Create new tiers
             create_reward_tiers(campaign_id, params["reward_tiers"])
           end
@@ -198,8 +200,8 @@ defmodule ClippsterServerWeb.PlatformCampaignController do
   """
   def list_campaigns(conn, _params) do
     import Ecto.Query
-    
-    campaigns = 
+
+    campaigns =
       from(c in Campaigns.Campaign,
         where: c.is_platform_campaign == true,
         order_by: [desc: c.inserted_at],
@@ -219,7 +221,7 @@ defmodule ClippsterServerWeb.PlatformCampaignController do
   Get a single platform campaign
   """
   def get_campaign(conn, %{"id" => campaign_id}) do
-    campaign = 
+    campaign =
       Campaigns.Campaign
       |> Repo.get(campaign_id)
       |> Repo.preload([:reward_tiers])
@@ -283,20 +285,21 @@ defmodule ClippsterServerWeb.PlatformCampaignController do
   def get_campaign_rewards(conn, %{"campaign_id" => campaign_id}) do
     grants = PlatformCampaigns.list_campaign_reward_grants(campaign_id)
 
-    grants_data = Enum.map(grants, fn grant ->
-      %{
-        id: grant.id,
-        user_id: grant.user_id,
-        user_email: grant.user.email,
-        submission_id: grant.submission_id,
-        tier_number: grant.reward_tier.tier_number,
-        views_required: grant.reward_tier.views_required,
-        granted_at: grant.granted_at,
-        stripe_coupon_id: grant.stripe_coupon_id,
-        free_months_granted: grant.free_months_granted,
-        ai_credits_granted: grant.ai_credits_granted
-      }
-    end)
+    grants_data =
+      Enum.map(grants, fn grant ->
+        %{
+          id: grant.id,
+          user_id: grant.user_id,
+          user_email: grant.user.email,
+          submission_id: grant.submission_id,
+          tier_number: grant.reward_tier.tier_number,
+          views_required: grant.reward_tier.views_required,
+          granted_at: grant.granted_at,
+          stripe_coupon_id: grant.stripe_coupon_id,
+          free_months_granted: grant.free_months_granted,
+          ai_credits_granted: grant.ai_credits_granted
+        }
+      end)
 
     json(conn, %{
       success: true,
@@ -307,11 +310,12 @@ defmodule ClippsterServerWeb.PlatformCampaignController do
   # Helper functions
 
   defp format_campaign(campaign) do
-    reward_tiers = if Ecto.assoc_loaded?(campaign.reward_tiers) do
-      Enum.map(campaign.reward_tiers, &format_reward_tier/1)
-    else
-      []
-    end
+    reward_tiers =
+      if Ecto.assoc_loaded?(campaign.reward_tiers) do
+        Enum.map(campaign.reward_tiers, &format_reward_tier/1)
+      else
+        []
+      end
 
     %{
       id: campaign.id,

@@ -186,7 +186,7 @@ defmodule ClippsterServer.Campaigns do
   """
   def auto_complete_expired_campaigns do
     now = DateTime.utc_now()
-    
+
     expired_campaigns =
       from(c in Campaign,
         where: c.status == "active",
@@ -194,16 +194,18 @@ defmodule ClippsterServer.Campaigns do
         where: c.ends_at <= ^now
       )
       |> Repo.all()
-    
+
     Enum.each(expired_campaigns, fn campaign ->
       case do_complete_campaign(campaign) do
-        {:ok, _} -> :ok
-        {:error, reason} -> 
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
           require Logger
           Logger.error("Failed to auto-complete campaign #{campaign.id}: #{inspect(reason)}")
       end
     end)
-    
+
     {:ok, length(expired_campaigns)}
   end
 
@@ -383,14 +385,14 @@ defmodule ClippsterServer.Campaigns do
   """
   def apply_to_campaign(%Campaign{} = campaign, %User{} = user, application_note \\ nil) do
     now = DateTime.utc_now()
-    
+
     cond do
       campaign.status != "active" ->
         {:error, :campaign_not_active}
-      
+
       not is_nil(campaign.starts_at) and DateTime.compare(now, campaign.starts_at) == :lt ->
         {:error, :campaign_not_started}
-      
+
       not is_nil(campaign.ends_at) and DateTime.compare(now, campaign.ends_at) == :gt ->
         {:error, :campaign_ended}
 
@@ -583,46 +585,48 @@ defmodule ClippsterServer.Campaigns do
   """
   def list_user_campaigns_by_creator_profile(user_id, creator_profile_id) do
     # Query 1: Campaigns with specific creator profile
-    specific_campaigns = from(p in CampaignParticipant,
-      where: p.user_id == ^user_id and p.status == "approved",
-      join: c in Campaign,
-      on: c.id == p.campaign_id,
-      join: ccp in CampaignCreatorProfile,
-      on: ccp.campaign_id == c.id,
-      where: ccp.creator_profile_id == ^creator_profile_id,
-      where: c.status == "active",
-      preload: [
-        campaign: [
-          :organization,
-          :creator_profile,
-          :global_intro,
-          :global_outro,
-          branding_profile: [:intro, :outro, :watermark, :platform_links],
-          creator_profiles: :platform_links
-        ]
-      ],
-      distinct: true
-    )
+    specific_campaigns =
+      from(p in CampaignParticipant,
+        where: p.user_id == ^user_id and p.status == "approved",
+        join: c in Campaign,
+        on: c.id == p.campaign_id,
+        join: ccp in CampaignCreatorProfile,
+        on: ccp.campaign_id == c.id,
+        where: ccp.creator_profile_id == ^creator_profile_id,
+        where: c.status == "active",
+        preload: [
+          campaign: [
+            :organization,
+            :creator_profile,
+            :global_intro,
+            :global_outro,
+            branding_profile: [:intro, :outro, :watermark, :platform_links],
+            creator_profiles: :platform_links
+          ]
+        ],
+        distinct: true
+      )
 
     # Query 2: Global branding campaigns (creator_profile_id = null, no assigned streamers)
-    global_campaigns = from(p in CampaignParticipant,
-      where: p.user_id == ^user_id and p.status == "approved",
-      join: c in Campaign,
-      on: c.id == p.campaign_id,
-      where: is_nil(c.creator_profile_id),
-      where: c.status == "active",
-      preload: [
-        campaign: [
-          :organization,
-          :creator_profile,
-          :global_intro,
-          :global_outro,
-          branding_profile: [:intro, :outro, :watermark, :platform_links],
-          creator_profiles: :platform_links
-        ]
-      ],
-      distinct: true
-    )
+    global_campaigns =
+      from(p in CampaignParticipant,
+        where: p.user_id == ^user_id and p.status == "approved",
+        join: c in Campaign,
+        on: c.id == p.campaign_id,
+        where: is_nil(c.creator_profile_id),
+        where: c.status == "active",
+        preload: [
+          campaign: [
+            :organization,
+            :creator_profile,
+            :global_intro,
+            :global_outro,
+            branding_profile: [:intro, :outro, :watermark, :platform_links],
+            creator_profiles: :platform_links
+          ]
+        ],
+        distinct: true
+      )
 
     # Combine both queries and remove duplicates, order by joined date
     (Repo.all(specific_campaigns) ++ Repo.all(global_campaigns))
@@ -711,10 +715,10 @@ defmodule ClippsterServer.Campaigns do
 
       campaign.status != "active" ->
         {:error, :campaign_not_active}
-      
+
       not is_nil(campaign.starts_at) and DateTime.compare(now, campaign.starts_at) == :lt ->
         {:error, :campaign_not_started}
-      
+
       not is_nil(campaign.ends_at) and DateTime.compare(now, campaign.ends_at) == :gt ->
         {:error, :campaign_ended}
 
@@ -834,14 +838,16 @@ defmodule ClippsterServer.Campaigns do
                              impressions_count: analytics[:impressions_count] || 0,
                              author_username: get_in(post_data, ["author", "username"]),
                              author_name: get_in(post_data, ["author", "name"]),
-                             author_profile_image: get_in(post_data, ["author", "profile_picture"]),
+                             author_profile_image:
+                               get_in(post_data, ["author", "profile_picture"]),
                              caption: post_data["text"] || post_data["caption"],
                              platform_post_id: post_id,
                              feed_match_status: "matched",
                              metrics_last_synced_at:
                                DateTime.utc_now() |> DateTime.truncate(:second)
                            }),
-                         {:ok, _snapshot} <- record_submission_snapshot(updated_submission, snapshot_attrs) do
+                         {:ok, _snapshot} <-
+                           record_submission_snapshot(updated_submission, snapshot_attrs) do
                       {:ok, updated_submission}
                     end
 
@@ -866,7 +872,10 @@ defmodule ClippsterServer.Campaigns do
                 {:error, reason}
 
               other ->
-                Logger.warning("[Campaigns] Unexpected PostForMe feed response: #{inspect(other)}")
+                Logger.warning(
+                  "[Campaigns] Unexpected PostForMe feed response: #{inspect(other)}"
+                )
+
                 {:error, :unexpected_response}
             end
 
@@ -969,7 +978,11 @@ defmodule ClippsterServer.Campaigns do
     fetch_and_update_submission_metadata(submission)
   end
 
-  defp duplicate_submission_url?(%CampaignSubmission{id: id, clip_url: clip_url, campaign_id: campaign_id})
+  defp duplicate_submission_url?(%CampaignSubmission{
+         id: id,
+         clip_url: clip_url,
+         campaign_id: campaign_id
+       })
        when is_binary(clip_url) do
     from(s in CampaignSubmission,
       where:
@@ -995,7 +1008,8 @@ defmodule ClippsterServer.Campaigns do
   # ============================================================================
 
   # Extract platform-specific identifier from post URL
-  defp extract_post_identifier(platform, url) when platform in ["x", "twitter"] and is_binary(url) do
+  defp extract_post_identifier(platform, url)
+       when platform in ["x", "twitter"] and is_binary(url) do
     case Regex.run(~r{(?:twitter\.com|x\.com)/.+/status/(\d+)}, url) do
       [_, tweet_id] -> {:ok, tweet_id}
       _ -> {:error, :invalid_url}
@@ -1140,8 +1154,8 @@ defmodule ClippsterServer.Campaigns do
 
     if Organizations.is_admin?(campaign.organization_id, verifier.id) do
       # For CPM campaigns, enforce minimum views requirement
-      if campaign.payment_model != "per_clip" and 
-         submission.view_count < campaign.min_views_for_payment do
+      if campaign.payment_model != "per_clip" and
+           submission.view_count < campaign.min_views_for_payment do
         {:error, :insufficient_views}
       else
         case submission
@@ -1173,7 +1187,7 @@ defmodule ClippsterServer.Campaigns do
       Repo.transaction(fn ->
         # Check if submission has a payment that needs to be returned to budget
         payment = Repo.get_by(CampaignPayment, submission_id: submission.id)
-        
+
         # Update submission status to rejected
         case submission
              |> CampaignSubmission.reject_changeset(%{rejection_reason: reason})
@@ -1182,15 +1196,15 @@ defmodule ClippsterServer.Campaigns do
             # If there was a payment, return the amount to the budget
             if payment do
               new_spent_budget = Decimal.sub(campaign.spent_budget, payment.amount)
-              
+
               campaign
               |> Ecto.Changeset.change(%{spent_budget: new_spent_budget})
               |> Repo.update!()
-              
+
               # Delete the payment record since submission is rejected
               Repo.delete!(payment)
             end
-            
+
             # Send notification
             updated_submission = Repo.preload(updated_submission, [:campaign, :user])
             ClippsterServer.Notifications.notify_submission_rejected(updated_submission, reason)
@@ -1323,20 +1337,21 @@ defmodule ClippsterServer.Campaigns do
         # Enforce min/max views range for payment calculation
         # Views must be >= min_views_for_payment (already filtered in query)
         # Views are capped at max_views if set
-        views = cond do
-          # If max_views is set and submission exceeds it, cap at max_views
-          campaign.max_views && submission.view_count > campaign.max_views ->
-            campaign.max_views
-          
-          # Otherwise use actual view count
-          true ->
-            submission.view_count
-        end
-        
+        views =
+          cond do
+            # If max_views is set and submission exceeds it, cap at max_views
+            campaign.max_views && submission.view_count > campaign.max_views ->
+              campaign.max_views
+
+            # Otherwise use actual view count
+            true ->
+              submission.view_count
+          end
+
         cpm = Decimal.to_float(campaign.cpm)
         cpm_views = campaign.cpm_views || 1000
 
-        amount = (views / cpm_views) * cpm
+        amount = views / cpm_views * cpm
         Decimal.from_float(amount) |> Decimal.round(2)
     end
   end
@@ -1379,10 +1394,12 @@ defmodule ClippsterServer.Campaigns do
 
         # Calculate and create payments within budget
         {payments, final_spent} =
-          Enum.reduce_while(submissions, {[], campaign.spent_budget}, fn submission, {acc_payments, current_spent} ->
+          Enum.reduce_while(submissions, {[], campaign.spent_budget}, fn submission,
+                                                                         {acc_payments,
+                                                                          current_spent} ->
             amount = calculate_payment_amount(submission, campaign)
             new_spent = Decimal.add(current_spent, amount)
-            
+
             # Check if this payment would exceed budget
             if Decimal.compare(new_spent, campaign.budget) == :gt do
               # Budget exhausted, stop processing
@@ -1792,9 +1809,12 @@ defmodule ClippsterServer.Campaigns do
 
     # Combine and sort by published_at/inserted_at descending
     (personal_posts ++ org_posts)
-    |> Enum.sort_by(fn post -> 
-      post.published_at || post.inserted_at || ~U[1970-01-01 00:00:00Z]
-    end, {:desc, DateTime})
+    |> Enum.sort_by(
+      fn post ->
+        post.published_at || post.inserted_at || ~U[1970-01-01 00:00:00Z]
+      end,
+      {:desc, DateTime}
+    )
   end
 
   @doc """
@@ -1869,7 +1889,8 @@ defmodule ClippsterServer.Campaigns do
       total_comments: (personal_stats.total_comments || 0) + (org_stats.total_comments || 0),
       total_saves: (personal_stats.total_saves || 0) + (org_stats.total_saves || 0),
       total_reach: (personal_stats.total_reach || 0) + (org_stats.total_reach || 0),
-      total_impressions: (personal_stats.total_impressions || 0) + (org_stats.total_impressions || 0)
+      total_impressions:
+        (personal_stats.total_impressions || 0) + (org_stats.total_impressions || 0)
     }
   end
 

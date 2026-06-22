@@ -147,6 +147,8 @@ defmodule ClippsterServerWeb.Router do
     get("/stripe-success", StripeRedirectController, :success)
     get("/stripe-cancel", StripeRedirectController, :cancel)
     get("/invite/:token", InviteController, :show)
+    get("/email/unsubscribe/:token", AdminMessagingController, :unsubscribe)
+    post("/email/unsubscribe/:token", AdminMessagingController, :unsubscribe)
   end
 
   scope "/api", ClippsterServerWeb do
@@ -155,6 +157,7 @@ defmodule ClippsterServerWeb.Router do
     # Health check endpoints for Fly.io and load balancers
     get("/health", HealthController, :check)
     get("/health/deep", HealthController, :deep_check)
+    post("/email/unsubscribe/:token", AdminMessagingController, :unsubscribe)
 
     # Handle OPTIONS requests for CORS preflight
     options("/*path", AuthController, :options)
@@ -167,14 +170,6 @@ defmodule ClippsterServerWeb.Router do
     get("/auth/google", AuthController, :google_request)
     get("/auth/google/callback", AuthController, :google_callback)
     get("/auth/postforme/callback", PostForMeAuthController, :callback)
-
-    # X (Twitter) OAuth routes (for Tauri desktop app)
-    get("/auth/twitter/start", TwitterAuthController, :start_oauth)
-    get("/auth/twitter/callback", TwitterAuthController, :oauth_callback)
-
-    # User X (Twitter) OAuth routes (for individual users/clippers)
-    get("/auth/user-twitter/start", UserTwitterAuthController, :start_oauth)
-    get("/auth/user-twitter/callback", UserTwitterAuthController, :oauth_callback)
 
     # Email authentication routes
     post("/auth/email/register", EmailAuthController, :register)
@@ -224,6 +219,9 @@ defmodule ClippsterServerWeb.Router do
 
     # App release info (for download buttons on landing page)
     get("/releases/latest", ReleaseController, :latest)
+
+    # Public landing analytics (anonymous, allowlisted events only)
+    post("/analytics/public/track", AnalyticsController, :track_public)
 
     # Waitlist signup (public)
     post("/waitlist", WaitlistController, :create)
@@ -697,12 +695,6 @@ defmodule ClippsterServerWeb.Router do
       "/organizations/:organization_id/social-accounts/:id",
       SocialAccountController,
       :delete
-    )
-
-    post(
-      "/organizations/:organization_id/social-accounts/:id/refresh",
-      SocialAccountController,
-      :refresh_token
     )
 
     # Social account assignments
@@ -1415,7 +1407,16 @@ defmodule ClippsterServerWeb.Router do
     delete("/admin/announcements/:id", AnnouncementsController, :delete)
 
     # Admin messaging (bulk email campaigns)
+    post("/admin/messaging/preview", AdminMessagingController, :preview_campaign)
+    post("/admin/messaging/test", AdminMessagingController, :send_test_campaign)
     post("/admin/messaging/send", AdminMessagingController, :send_campaign)
+
+    post(
+      "/admin/messaging/campaigns/:id/retry-failed",
+      AdminMessagingController,
+      :retry_failed_campaign
+    )
+
     get("/admin/messaging/campaigns", AdminMessagingController, :list_campaigns)
 
     # Platform campaigns management

@@ -40,7 +40,8 @@ defmodule ClippsterServer.Workers.FreeTierCreditWorker do
     Logger.info("[FreeTierCreditWorker] Granted credits to #{count} free-tier users.")
     schedule_next_run()
 
-    {:noreply, %{state | last_run: DateTime.utc_now(), users_granted: state.users_granted + count}}
+    {:noreply,
+     %{state | last_run: DateTime.utc_now(), users_granted: state.users_granted + count}}
   end
 
   @impl true
@@ -69,7 +70,10 @@ defmodule ClippsterServer.Workers.FreeTierCreditWorker do
   end
 
   defp grant_due_credits do
-    cutoff = DateTime.utc_now() |> DateTime.add(-@grant_interval_days, :day) |> DateTime.truncate(:second)
+    cutoff =
+      DateTime.utc_now()
+      |> DateTime.add(-@grant_interval_days, :day)
+      |> DateTime.truncate(:second)
 
     # Find free-tier users whose last grant was >= 30 days ago (or null, for safety)
     eligible_users =
@@ -101,7 +105,10 @@ defmodule ClippsterServer.Workers.FreeTierCreditWorker do
           count
 
         {:error, reason} ->
-          Logger.warning("[FreeTierCreditWorker] Failed to grant credits to user #{user.id}: #{inspect(reason)}")
+          Logger.warning(
+            "[FreeTierCreditWorker] Failed to grant credits to user #{user.id}: #{inspect(reason)}"
+          )
+
           count
       end
     end)

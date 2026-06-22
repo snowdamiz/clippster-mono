@@ -190,7 +190,7 @@ defmodule ClippsterServerWeb.HiringController do
   @doc "Browse all active public hiring posts"
   def index(conn, params) do
     user = conn.assigns[:current_user]
-    
+
     # Basic tier users cannot view hiring posts
     if user && user.subscription_tier == "basic" do
       json(conn, %{
@@ -229,7 +229,7 @@ defmodule ClippsterServerWeb.HiringController do
   @doc "Get a single hiring post detail"
   def show(conn, %{"id" => id}) do
     user = conn.assigns[:current_user]
-    
+
     # Basic tier users cannot view hiring posts
     if user && user.subscription_tier == "basic" do
       conn
@@ -254,42 +254,41 @@ defmodule ClippsterServerWeb.HiringController do
   @doc "Submit an application to a hiring post"
   def apply(conn, %{"id" => id} = params) do
     user = conn.assigns[:current_user]
-    
+
     # Basic tier users cannot apply to hiring posts
     if user.subscription_tier == "basic" do
       conn
       |> put_status(403)
       |> json(%{success: false, error: "Upgrade to Starter or higher to apply to hiring posts"})
     else
+      case Hiring.apply_to_hiring_post(String.to_integer(id), user.id, params["message"]) do
+        {:ok, application} ->
+          json(conn, %{success: true, application: serialize_application(application)})
 
-    case Hiring.apply_to_hiring_post(String.to_integer(id), user.id, params["message"]) do
-      {:ok, application} ->
-        json(conn, %{success: true, application: serialize_application(application)})
+        {:error, :not_found} ->
+          json(conn |> put_status(404), %{success: false, error: "Hiring post not found"})
 
-      {:error, :not_found} ->
-        json(conn |> put_status(404), %{success: false, error: "Hiring post not found"})
-
-      {:error, :post_not_active} ->
-        json(conn |> put_status(422), %{
-          success: false,
-          error: "This hiring post is no longer accepting applications"
-        })
-
-      {:error, %Ecto.Changeset{} = changeset} ->
-        if Keyword.has_key?(changeset.errors, :hiring_post_id_user_id) ||
-             Keyword.has_key?(changeset.errors, :hiring_post_id) do
+        {:error, :post_not_active} ->
           json(conn |> put_status(422), %{
             success: false,
-            error: "You have already applied to this hiring post"
+            error: "This hiring post is no longer accepting applications"
           })
-        else
-          json(conn |> put_status(422), %{
-            success: false,
-            error: "Validation failed",
-            errors: format_changeset_errors(changeset)
-          })
-        end
-    end
+
+        {:error, %Ecto.Changeset{} = changeset} ->
+          if Keyword.has_key?(changeset.errors, :hiring_post_id_user_id) ||
+               Keyword.has_key?(changeset.errors, :hiring_post_id) do
+            json(conn |> put_status(422), %{
+              success: false,
+              error: "You have already applied to this hiring post"
+            })
+          else
+            json(conn |> put_status(422), %{
+              success: false,
+              error: "Validation failed",
+              errors: format_changeset_errors(changeset)
+            })
+          end
+      end
     end
   end
 

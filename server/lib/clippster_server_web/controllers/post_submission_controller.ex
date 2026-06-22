@@ -8,7 +8,9 @@ defmodule ClippsterServerWeb.PostSubmissionController do
   require Logger
 
   alias ClippsterServer.Social
-  alias ClippsterServer.Social.{ProviderMode, SocialAccount, Platform}
+  alias ClippsterServer.Social.SocialAccount
+  alias ClippsterServer.Social.PostForMeConnectionSync
+  alias ClippsterServer.Social.PostForMeAccountHealth
   alias ClippsterServer.Social.Providers.PostForMe
   alias ClippsterServer.Organizations
 
@@ -113,67 +115,79 @@ defmodule ClippsterServerWeb.PostSubmissionController do
           |> json(%{success: false, error: "Social account not found"})
 
         account ->
-          unless account.is_active do
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: "Social account is not active"})
-          else
-            if ProviderMode.post_for_me?() and
-                 (is_nil(account.provider_account_id) or account.provider_account_id == "") do
+          platform_label = platform_display_name(account.platform)
+
+          case PostForMeConnectionSync.ensure_org_publish_ready(account, platform_label) do
+            {:error, :token_expired, message} ->
               conn
               |> put_status(422)
               |> json(%{
                 success: false,
-                error:
-                  "This social account is missing a Post For Me provider_account_id. Reconnect it via /api/social/connect-url first."
+                error: message,
+                error_code: "social_token_expired",
+                platform: account.platform
               })
-            else
-              # Create the post submission record first
-              submission_attrs = %{
-                organization_social_account_id: account.id,
-                organization_creator_profile_id: params["creator_profile_id"],
-                platform: account.platform,
-                media_type: params["media_type"],
-                caption: params["caption"],
-                media_url: params["media_url"],
-                thumbnail_url: params["thumbnail_url"],
-                campaign_id: params["campaign_id"],
-                clip_id: params["clip_id"],
-                clip_build_id: params["clip_build_id"],
-                aspect_ratio: params["aspect_ratio"],
-                build_type: params["build_type"]
-              }
 
-              case Social.create_post_submission(org_id, submission_attrs, user) do
-                {:ok, submission} ->
-                  Appsignal.increment_counter("social_posts.submitted", 1, %{platform: account.platform})
-
-                  # Attempt to publish asynchronously (mode-dependent provider dispatch)
-                  Task.start(fn ->
-                    dispatch_publish(submission, account, params)
-                  end)
-
-                  conn
-                  |> put_status(202)
-                  |> json(%{
-                    success: true,
-                    post: serialize_post(submission),
-                    message: "Post is being published"
-                  })
-
-                {:error, changeset} when is_struct(changeset, Ecto.Changeset) ->
-                  conn
-                  |> put_status(422)
-                  |> json(%{success: false, error: format_errors(changeset)})
-
-                {:error, reason} ->
-                  conn
-                  |> put_status(400)
-                  |> json(%{success: false, error: to_string(reason)})
+            {:ok, account} ->
+              if is_nil(account.provider_account_id) or account.provider_account_id == "" do
+                conn
+                |> put_status(422)
+                |> json(%{
+                  success: false,
+                  error:
+                    "This social account is missing a Post For Me provider_account_id. Reconnect it via Account Connections first."
+                })
+              else
+                publish_org_submission(conn, org_id, account, params, user)
               end
-            end
           end
       end
+    end
+  end
+
+  defp publish_org_submission(conn, org_id, account, params, user) do
+    submission_attrs = %{
+      organization_social_account_id: account.id,
+      organization_creator_profile_id: params["creator_profile_id"],
+      platform: account.platform,
+      media_type: params["media_type"],
+      caption: params["caption"],
+      media_url: params["media_url"],
+      thumbnail_url: params["thumbnail_url"],
+      campaign_id: params["campaign_id"],
+      clip_id: params["clip_id"],
+      clip_build_id: params["clip_build_id"],
+      aspect_ratio: params["aspect_ratio"],
+      build_type: params["build_type"]
+    }
+
+    case Social.create_post_submission(org_id, submission_attrs, user) do
+      {:ok, submission} ->
+        Appsignal.increment_counter("social_posts.submitted", 1, %{
+          platform: account.platform
+        })
+
+        Task.start(fn ->
+          dispatch_publish(submission, account, params)
+        end)
+
+        conn
+        |> put_status(202)
+        |> json(%{
+          success: true,
+          post: serialize_post(submission),
+          message: "Post is being published"
+        })
+
+      {:error, changeset} when is_struct(changeset, Ecto.Changeset) ->
+        conn
+        |> put_status(422)
+        |> json(%{success: false, error: format_errors(changeset)})
+
+      {:error, reason} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: to_string(reason)})
     end
   end
 
@@ -359,7 +373,10 @@ defmodule ClippsterServerWeb.PostSubmissionController do
         {:error, reason} ->
           conn
           |> put_status(500)
-          |> json(%{success: false, error: "Failed to generate presigned URL: #{inspect(reason)}"})
+          |> json(%{
+            success: false,
+            error: "Failed to generate presigned URL: #{inspect(reason)}"
+          })
       end
     else
       conn
@@ -464,25 +481,7 @@ defmodule ClippsterServerWeb.PostSubmissionController do
   # ============================================================================
 
   defp dispatch_publish(submission, account, params) do
-    case ProviderMode.mode() do
-      "post_for_me" ->
-        publish_to_post_for_me(submission, account, params)
-
-      "dual" ->
-        # Legacy remains source-of-truth while dual-writing to Post For Me for rollout parity.
-        if is_binary(account.provider_account_id) and account.provider_account_id != "" do
-          Task.start(fn -> mirror_to_post_for_me(submission, account, params) end)
-        else
-          Logger.debug(
-            "[PostSubmission] Skipping Post For Me mirror for submission #{submission.id}: no provider_account_id"
-          )
-        end
-
-        publish_to_platform(submission, account, params)
-
-      _ ->
-        publish_to_platform(submission, account, params)
-    end
+    publish_to_post_for_me(submission, account, params)
   end
 
   defp publish_to_post_for_me(submission, account, params) do
@@ -535,6 +534,7 @@ defmodule ClippsterServerWeb.PostSubmissionController do
 
         {:error, reason} ->
           error_message = format_provider_error(reason)
+
           Logger.error(
             "[PostSubmission] Post For Me publish failed for submission #{submission.id}: #{error_message}"
           )
@@ -553,166 +553,10 @@ defmodule ClippsterServerWeb.PostSubmissionController do
     end
   end
 
-  defp mirror_to_post_for_me(submission, account, params) do
-    with {:ok, provider_account_id} <- get_provider_account_id(account),
-         {:ok, media_url} <- ensure_post_for_me_media_url(params["media_url"]),
-         {:ok, post} <-
-           PostForMe.create_social_post(%{
-             caption: params["caption"] || "",
-             social_accounts: [provider_account_id],
-             media: [%{url: media_url}],
-             external_id: "submission:#{submission.id}:dual"
-           }) do
-      metadata_attrs = %{
-        provider: "post_for_me",
-        provider_post_id: post.id,
-        provider_payload: post.raw
-      }
+  defp get_provider_account_id(%SocialAccount{provider_account_id: id})
+       when is_binary(id) and id != "", do: {:ok, id}
 
-      case Social.update_post_provider_metadata(submission, metadata_attrs) do
-        {:ok, _updated} ->
-          Logger.info(
-            "[PostSubmission] Dual-write mirrored submission #{submission.id} to Post For Me"
-          )
-
-        {:error, reason} ->
-          Logger.warning(
-            "[PostSubmission] Dual-write metadata save failed for submission #{submission.id}: #{inspect(reason)}"
-          )
-      end
-    else
-      {:error, reason} ->
-        Logger.warning(
-          "[PostSubmission] Dual-write mirror failed for submission #{submission.id}: #{format_provider_error(reason)}"
-        )
-    end
-  end
-
-  defp publish_to_twitter(submission, account, params) do
-    Logger.info(
-      "[PostSubmission] Starting X publish for submission #{submission.id} via PostForMe"
-    )
-
-    Logger.info("[PostSubmission] Media URL: #{params["media_url"]}")
-    Logger.info("[PostSubmission] Platform User ID: #{account.platform_user_id}")
-
-    with {:ok, provider_account_id} <- get_provider_account_id(account),
-         {:ok, media_url} <- ensure_accessible_media_url(params["media_url"]) do
-      
-      post_params = %{
-        caption: params["caption"] || "",
-        social_accounts: [provider_account_id],
-        media: [%{url: media_url}],
-        external_id: "submission:#{submission.id}"
-      }
-
-      Logger.info("[PostSubmission] Creating PostForMe post with external_id: submission:#{submission.id}")
-
-      case PostForMe.create_social_post(post_params) do
-        {:ok, pfm_post} ->
-          Logger.info(
-            "[PostSubmission] Twitter post created successfully via PostForMe! Post ID: #{pfm_post.id}"
-          )
-
-          result = %{
-            post_id: pfm_post.id || "pfm_#{submission.id}",
-            post_url: nil  # Will be fetched from feed later
-          }
-
-          Social.mark_post_published(submission, %{
-            post_id: result.post_id,
-            post_url: result.post_url,
-            posted_at: DateTime.utc_now()
-          })
-
-        {:error, reason} ->
-          error_msg = if is_binary(reason), do: reason, else: inspect(reason)
-          Logger.error("[PostSubmission] Twitter post creation failed: #{error_msg}")
-
-          Social.mark_post_failed(submission, error_msg)
-      end
-    else
-      {:error, :missing_provider_account_id} ->
-        Logger.error("[PostSubmission] Account #{account.id} missing PostForMe provider_account_id")
-        Social.mark_post_failed(submission, "Account missing PostForMe provider_account_id")
-      
-      {:error, reason} ->
-        error_msg = if is_binary(reason), do: reason, else: inspect(reason)
-        Logger.error("[PostSubmission] Twitter publish failed: #{error_msg}")
-        Social.mark_post_failed(submission, error_msg)
-    end
-  end
-
-  defp publish_to_platform(submission, %{platform: platform} = account, params)
-       when platform in ["twitter", "x"] do
-    publish_to_twitter(submission, account, params)
-  end
-
-  defp publish_to_platform(submission, account, params) do
-    Logger.info(
-      "[PostSubmission] Starting publish for submission #{submission.id} to #{account.platform}"
-    )
-
-    Logger.info("[PostSubmission] Media URL: #{params["media_url"]}")
-    Logger.info("[PostSubmission] Platform User ID: #{account.platform_user_id}")
-
-    access_token = SocialAccount.get_access_token(account)
-
-    if is_nil(access_token) or access_token == "" do
-      Logger.error("[PostSubmission] No access token found for account #{account.id}")
-
-      Social.mark_post_failed(submission, "No access token available")
-    else
-      Logger.info(
-        "[PostSubmission] Access token available (length: #{String.length(access_token)})"
-      )
-
-      publish_opts = %{
-        caption: params["caption"] || "",
-        media_type: params["media_type"],
-        ig_user_id: account.platform_user_id
-      }
-
-      Logger.info("[PostSubmission] Publishing with opts: #{inspect(publish_opts)}")
-
-      case Platform.call(account.platform, :publish_media, [
-             access_token,
-             params["media_url"],
-             publish_opts
-           ]) do
-        {:ok, result} ->
-          Logger.info("[PostSubmission] Publish successful! Post ID: #{result.post_id}")
-
-          # Update submission with post details
-          Social.mark_post_published(submission, %{
-            post_id: result.post_id,
-            post_url: result.post_url,
-            posted_at: DateTime.utc_now()
-          })
-
-        {:error, reason} ->
-          error_msg = if is_binary(reason), do: reason, else: inspect(reason)
-          Logger.error("[PostSubmission] Publish failed: #{error_msg}")
-
-          Social.mark_post_failed(submission, error_msg)
-      end
-    end
-  end
-
-  defp get_provider_account_id(%SocialAccount{provider_account_id: id}) when is_binary(id) and id != "", do: {:ok, id}
   defp get_provider_account_id(_), do: {:error, :missing_provider_account_id}
-
-  defp ensure_accessible_media_url(media_url) do
-    # Generate presigned URL for R2 storage
-    if String.contains?(media_url, ".r2.cloudflarestorage.com") do
-      case ClippsterServer.Storage.presigned_url(media_url, expires_in: 7_200) do
-        {:ok, url} -> {:ok, url}
-        {:error, _} -> {:ok, media_url}  # Fallback to original
-      end
-    else
-      {:ok, media_url}
-    end
-  end
 
   defp serialize_post(post) do
     %{
@@ -823,9 +667,22 @@ defmodule ClippsterServerWeb.PostSubmissionController do
 
   defp build_org_platform_config(_platform, _params), do: nil
 
-  defp format_provider_error(%PostForMe.ApiError{message: message}), do: message
+  defp format_provider_error(%PostForMe.ApiError{message: message}) do
+    if PostForMeAccountHealth.social_token_expired_error?(message) do
+      message || PostForMeAccountHealth.token_expired_message("social")
+    else
+      message
+    end
+  end
+
   defp format_provider_error(error) when is_binary(error), do: error
   defp format_provider_error(error), do: inspect(error)
+
+  defp platform_display_name("instagram"), do: "Instagram"
+  defp platform_display_name("tiktok"), do: "TikTok"
+  defp platform_display_name("youtube"), do: "YouTube"
+  defp platform_display_name(platform) when platform in ["x", "twitter"], do: "X"
+  defp platform_display_name(platform), do: String.capitalize(platform || "social")
 
   defp parse_int(nil, default), do: default
   defp parse_int(value, _default) when is_integer(value), do: value

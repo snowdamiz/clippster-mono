@@ -118,7 +118,8 @@ defmodule ClippsterServer.PromoCodes do
           # Create Stripe coupon for percentage discounts
           with {:ok, promo} <- Repo.insert(changeset),
                {:ok, stripe_coupon_id} <- create_stripe_coupon(promo),
-               {:ok, stripe_promo_code_id} <- create_stripe_promotion_code(promo, stripe_coupon_id) do
+               {:ok, stripe_promo_code_id} <-
+                 create_stripe_promotion_code(promo, stripe_coupon_id) do
             # Update promo code with Stripe IDs
             {:ok, updated_promo} =
               promo
@@ -328,7 +329,8 @@ defmodule ClippsterServer.PromoCodes do
     cents / 100
   end
 
-  def checkout_price_usd(%PromoCode{percent_off: percent_off}, base_usd) when is_number(base_usd) do
+  def checkout_price_usd(%PromoCode{percent_off: percent_off}, base_usd)
+      when is_number(base_usd) do
     discount = percent_off / 100
     base_usd * (1 - discount)
   end
@@ -635,7 +637,8 @@ defmodule ClippsterServer.PromoCodes do
             {:error, :expired_code}
 
           # Check max redemptions
-          stripe_promo.max_redemptions && stripe_promo.times_redeemed >= stripe_promo.max_redemptions ->
+          stripe_promo.max_redemptions &&
+              stripe_promo.times_redeemed >= stripe_promo.max_redemptions ->
             {:error, :max_redemptions_reached}
 
           # Check if user already redeemed (query Stripe subscriptions)
@@ -701,7 +704,8 @@ defmodule ClippsterServer.PromoCodes do
       allowed_credit_packs: [],
       is_active: stripe_promo.active,
       max_redemptions: stripe_promo.max_redemptions,
-      redeem_by: if(stripe_promo.expires_at, do: DateTime.from_unix!(stripe_promo.expires_at), else: nil),
+      redeem_by:
+        if(stripe_promo.expires_at, do: DateTime.from_unix!(stripe_promo.expires_at), else: nil),
       stripe_coupon_id: coupon.id,
       stripe_promo_code_id: stripe_promo.id,
       # Virtual fields for compatibility

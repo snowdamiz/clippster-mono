@@ -5146,7 +5146,8 @@
   // Handle Publish Now action
   async function onPublishNow(clip: ClipWithVersion) {
     clipToPublish.value = clip;
-    clipToPublishPath.value = currentVideo.value?.file_path || '';
+    const { resolveClipPublishPath } = await import('@/utils/selfContainedClip');
+    clipToPublishPath.value = resolveClipPublishPath(clip, currentVideo.value?.file_path || '');
     clipToPublishThumbnail.value = clip.built_thumbnail_path || null;
     showPublishWizard.value = true;
   }

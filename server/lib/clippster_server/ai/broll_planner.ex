@@ -84,7 +84,9 @@ defmodule ClippsterServer.AI.BrollPlanner do
 
   defp build_user_prompt(params, duration, density, style, aspect) do
     words = Map.get(params, "transcriptWords") || Map.get(params, :transcript_words) || []
-    segments = Map.get(params, "transcriptSegments") || Map.get(params, :transcript_segments) || []
+
+    segments =
+      Map.get(params, "transcriptSegments") || Map.get(params, :transcript_segments) || []
 
     """
     Clip duration: #{duration} seconds

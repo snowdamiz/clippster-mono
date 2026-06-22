@@ -89,7 +89,10 @@ defmodule ClippsterServerWeb.StripeController do
       {:error, :tier_restriction} ->
         conn
         |> put_status(403)
-        |> json(%{success: false, error: "Basic tier can only purchase the Large credit pack (1,800 credits)"})
+        |> json(%{
+          success: false,
+          error: "Basic tier can only purchase the Large credit pack (1,800 credits)"
+        })
     end
   end
 
@@ -251,7 +254,8 @@ defmodule ClippsterServerWeb.StripeController do
               # Accept "paid" or "no_payment_required"; for subscriptions the
               # initial invoice may still be "unpaid" briefly — trust the session
               # existing and the subscription_id being present as confirmation.
-              is_paid = payment_status in ["paid", "no_payment_required"] || !is_nil(subscription_id)
+              is_paid =
+                payment_status in ["paid", "no_payment_required"] || !is_nil(subscription_id)
 
               if is_paid do
                 alias ClippsterServer.Organizations.Organization
@@ -264,7 +268,9 @@ defmodule ClippsterServerWeb.StripeController do
                 changeset_attrs =
                   %{setup_completed: true, subscription_status: "active"}
                   |> then(fn m ->
-                    if subscription_id, do: Map.put(m, :stripe_subscription_id, subscription_id), else: m
+                    if subscription_id,
+                      do: Map.put(m, :stripe_subscription_id, subscription_id),
+                      else: m
                   end)
                   |> then(fn m ->
                     if customer_id, do: Map.put(m, :stripe_customer_id, customer_id), else: m
@@ -680,7 +686,11 @@ defmodule ClippsterServerWeb.StripeController do
 
       # Handle initial subscription creation as fallback (in case checkout.session.completed failed)
       stripe_subscription_id && billing_reason == "subscription_create" ->
-        handle_invoice_subscription_create_fallback(stripe_subscription_id, stripe_customer_id, invoice_data)
+        handle_invoice_subscription_create_fallback(
+          stripe_subscription_id,
+          stripe_customer_id,
+          invoice_data
+        )
 
       true ->
         IO.puts(
@@ -987,7 +997,9 @@ defmodule ClippsterServerWeb.StripeController do
 
             # Allocate revenue to platform fund if enabled
             case Subscriptions.get_active_subscription(user.id) do
-              nil -> :ok
+              nil ->
+                :ok
+
               subscription ->
                 ClippsterServer.PlatformCampaigns.allocate_subscription_revenue(
                   subscription.id,
@@ -1005,14 +1017,23 @@ defmodule ClippsterServerWeb.StripeController do
   # This ensures subscriptions are created even if checkout.session.completed webhook failed.
   # Tries (in order): existing user sub by sub_id, existing org sub by sub_id,
   # user lookup by customer_id, org lookup by customer_id.
-  defp handle_invoice_subscription_create_fallback(stripe_subscription_id, stripe_customer_id, _invoice) do
-    IO.puts("[Stripe Webhook] Processing subscription_create fallback for #{stripe_subscription_id}")
+  defp handle_invoice_subscription_create_fallback(
+         stripe_subscription_id,
+         stripe_customer_id,
+         _invoice
+       ) do
+    IO.puts(
+      "[Stripe Webhook] Processing subscription_create fallback for #{stripe_subscription_id}"
+    )
 
     cond do
       user = Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) ->
         ensure_user_subscription_active(user)
 
-      org = ClippsterServer.OrganizationSubscriptions.get_by_stripe_subscription(stripe_subscription_id) ->
+      org =
+          ClippsterServer.OrganizationSubscriptions.get_by_stripe_subscription(
+            stripe_subscription_id
+          ) ->
         ensure_org_setup_completed(org, stripe_subscription_id, stripe_customer_id)
 
       user = Subscriptions.get_user_by_stripe_customer(stripe_customer_id) ->
@@ -1197,7 +1218,9 @@ defmodule ClippsterServerWeb.StripeController do
             )
 
           {:error, reason} ->
-            IO.puts("[Stripe Webhook] Failed to create bundle promo redemption: #{inspect(reason)}")
+            IO.puts(
+              "[Stripe Webhook] Failed to create bundle promo redemption: #{inspect(reason)}"
+            )
         end
 
       {:error, reason} ->
@@ -1292,7 +1315,9 @@ defmodule ClippsterServerWeb.StripeController do
 
         # Allocate revenue to platform fund if enabled
         case Subscriptions.get_active_subscription(user_id_int) do
-          nil -> :ok
+          nil ->
+            :ok
+
           subscription ->
             ClippsterServer.PlatformCampaigns.allocate_subscription_revenue(
               subscription.id,
@@ -1684,7 +1709,9 @@ defmodule ClippsterServerWeb.StripeController do
         rescue
           ArgumentError -> nil
         end
-      val -> val
+
+      val ->
+        val
     end
   end
 

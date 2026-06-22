@@ -5,7 +5,9 @@ defmodule ClippsterServer.Campaigns.CampaignResourceTest do
 
   describe "detect_source_platform/1" do
     test "detects supported platforms" do
-      assert CampaignResource.detect_source_platform("https://www.youtube.com/watch?v=abc") == "youtube"
+      assert CampaignResource.detect_source_platform("https://www.youtube.com/watch?v=abc") ==
+               "youtube"
+
       assert CampaignResource.detect_source_platform("https://kick.com/streamer") == "kick"
       assert CampaignResource.detect_source_platform("https://www.twitch.tv/streamer") == "twitch"
       assert CampaignResource.detect_source_platform("https://rumble.com/v/abc") == "rumble"

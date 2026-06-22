@@ -73,16 +73,17 @@ defmodule ClippsterServerWeb.SubscriptionController do
                 if affiliate.discount_enabled do
                   # Use first_month_discount_pct for initial subscription
                   pct = Decimal.to_float(affiliate.first_month_discount_pct || Decimal.new("0"))
-                  
+
                   # Determine duration based on discount type
                   {kind, months} =
                     case affiliate.discount_type do
                       "one_time" -> {"once", nil}
                       "recurring" -> {"forever", nil}
-                      "tiered" -> {"repeating", 3}  # Default to 3 months for tiered
+                      # Default to 3 months for tiered
+                      "tiered" -> {"repeating", 3}
                       _ -> {"once", nil}
                     end
-                  
+
                   {pct, kind, months}
                 else
                   # No discount, but code is still valid for referral tracking
@@ -188,22 +189,22 @@ defmodule ClippsterServerWeb.SubscriptionController do
       {promo_code_info, affiliate_code_info} =
         if promo_code do
           case PromoCodes.validate_promo(promo_code, tier, user_id) do
-            {:ok, promo} -> 
+            {:ok, promo} ->
               {{:ok, promo}, nil}
-            
+
             {:error, :invalid_code} ->
               # Not a promo code - check if it's an affiliate code
               case ClippsterServer.Affiliates.get_affiliate_by_code(promo_code) do
                 %{status: "active"} = affiliate ->
                   # Valid affiliate code
                   {nil, {:ok, affiliate}}
-                
+
                 _ ->
                   # Not a valid promo code or affiliate code
                   {{:error, :invalid_code}, nil}
               end
-            
-            error -> 
+
+            error ->
               {error, nil}
           end
         else
@@ -817,7 +818,12 @@ defmodule ClippsterServerWeb.SubscriptionController do
                 payment_intent: tx_signature
               )
             else
-              Subscriptions.create_crypto_subscription(user_id, tier, tx_signature, billing_interval)
+              Subscriptions.create_crypto_subscription(
+                user_id,
+                tier,
+                tx_signature,
+                billing_interval
+              )
             end
 
           case activation_result do
@@ -1037,7 +1043,9 @@ defmodule ClippsterServerWeb.SubscriptionController do
       # Cancel Stripe subscription if active
       if user.subscription_status in ["active"] do
         if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
-          case Stripe.Subscription.update(user.stripe_subscription_id, %{cancel_at_period_end: true}) do
+          case Stripe.Subscription.update(user.stripe_subscription_id, %{
+                 cancel_at_period_end: true
+               }) do
             {:ok, _} ->
               IO.puts(
                 "[Subscriptions] Cancelled Stripe subscription for deactivating user #{user_id}"

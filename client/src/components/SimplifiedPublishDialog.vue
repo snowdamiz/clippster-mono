@@ -213,15 +213,15 @@
                           <button type="button" @click="selectAccount(platformId, '')" class="publish-dialog__dropdown-item" :class="{ 'publish-dialog__dropdown-item--selected': !platformConfigs[platformId]?.accountId }">
                             Select account...
                           </button>
-                          <template v-if="getOrgAccountsForPlatform(platformId).length > 0">
-                            <div class="publish-dialog__dropdown-group">Organization</div>
-                            <button v-for="account in getOrgAccountsForPlatform(platformId)" :key="`org-${account.id}`" type="button" @click="selectAccount(platformId, `org:${account.id}`)" class="publish-dialog__dropdown-item" :class="{ 'publish-dialog__dropdown-item--selected': platformConfigs[platformId]?.accountId === `org:${account.id}` }">
-                              @{{ account.username }}
-                            </button>
-                          </template>
                           <template v-if="getPersonalAccountsForPlatform(platformId).length > 0">
                             <div class="publish-dialog__dropdown-group">Personal</div>
                             <button v-for="account in getPersonalAccountsForPlatform(platformId)" :key="`user-${account.id}`" type="button" @click="selectAccount(platformId, `user:${account.id}`)" class="publish-dialog__dropdown-item" :class="{ 'publish-dialog__dropdown-item--selected': platformConfigs[platformId]?.accountId === `user:${account.id}` }">
+                              @{{ account.username }}
+                            </button>
+                          </template>
+                          <template v-if="getOrgAccountsForPlatform(platformId).length > 0">
+                            <div class="publish-dialog__dropdown-group">Organization</div>
+                            <button v-for="account in getOrgAccountsForPlatform(platformId)" :key="`org-${account.id}`" type="button" @click="selectAccount(platformId, `org:${account.id}`)" class="publish-dialog__dropdown-item" :class="{ 'publish-dialog__dropdown-item--selected': platformConfigs[platformId]?.accountId === `org:${account.id}` }">
                               @{{ account.username }}
                             </button>
                           </template>
@@ -271,13 +271,17 @@ import TiktokLogo from '@/components/icons/TiktokLogo.vue';
 import type { ClipBuild, Clip } from '@/services/database';
 import { useBackgroundPublish } from '@/composables/useBackgroundPublish';
 import { markBuildAsPublished } from '@/services/database/clip-build';
-import { listSocialAccounts, type SocialAccount } from '@/services/socialAccountsApi';
+import { getMyAssignedAccounts, listSocialAccounts, type SocialAccount } from '@/services/socialAccountsApi';
 import { listUserTwitterAccounts, type UserTwitterAccount } from '@/services/userTwitterApi';
 import { listUserTiktokAccounts, type UserTiktokAccount } from '@/services/userTiktokApi';
 import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services/userInstagramApi';
 import { listUserYoutubeAccounts, type UserYoutubeAccount } from '@/services/userYoutubeApi';
 import { listMyCampaigns, type Campaign } from '@/services/campaignApi';
-import { listOrganizationCreatorProfiles, type ServerOrganizationCreatorProfile } from '@/services/organizationProfilesApi';
+import {
+  getMyAssignedCreatorProfiles,
+  listOrganizationCreatorProfiles,
+  type ServerOrganizationCreatorProfile,
+} from '@/services/organizationProfilesApi';
 import { useAuthStore } from '@/stores/auth';
 type ClipWithBuilds = Clip & { builds: ClipBuild[] };
 
@@ -395,15 +399,22 @@ watch(postingContext, () => {
   }
 });
 
-// Legacy tracking compat (still used in handlePublish for effectiveOrgId)
-const trackingOrgId = computed(() =>
-  postingContext.value === 'org' && props.build?.organization_id
-    ? String(props.build.organization_id)
-    : null
-);
 const trackingCampaignId = computed(() =>
   postingContext.value === 'campaign' ? selectedCampaignId.value : (props.build?.campaign_id ?? null)
 );
+
+const effectiveOrgId = computed((): number | null => {
+  if (props.build?.organization_id) return Number(props.build.organization_id);
+  if (authStore.user?.created_by_organization_id) {
+    return Number(authStore.user.created_by_organization_id);
+  }
+  if (authStore.user?.owned_organization_id) {
+    return Number(authStore.user.owned_organization_id);
+  }
+  return null;
+});
+
+const isOrgAdmin = ref(false);
 
 // Load available social accounts
 const orgAccounts = ref<SocialAccount[]>([]);
@@ -450,14 +461,17 @@ function getPersonalAccountsForPlatform(platformId: string): (UserTwitterAccount
   }
 }
 
+function matchesPlatformAccount(accountPlatform: string, platformId: string): boolean {
+  const platform = accountPlatform.toLowerCase();
+  if (platformId === 'twitter') return platform === 'twitter' || platform === 'x';
+  if (platformId === 'youtube') return platform === 'youtube' || platform === 'youtube_shorts';
+  return platform === platformId;
+}
+
 function getOrgAccountsForPlatform(platformId: string): SocialAccount[] {
-  const platformMap: Record<string, string> = {
-    instagram: 'instagram',
-    twitter: 'twitter',
-    tiktok: 'tiktok',
-    youtube: 'youtube',
-  };
-  return orgAccounts.value.filter((a) => a.platform === platformMap[platformId]);
+  return orgAccounts.value.filter(
+    (a) => a.is_active && matchesPlatformAccount(a.platform, platformId)
+  );
 }
 
 function getSelectedAccountLabel(platformId: string): string | null {
@@ -499,14 +513,59 @@ const canPublish = computed(() => {
   return true;
 });
 
+async function resolveOrgAdmin(orgId: number) {
+  const ownedOrgId = authStore.user?.owned_organization_id;
+  if (ownedOrgId != null && Number(ownedOrgId) === orgId) {
+    isOrgAdmin.value = true;
+    return;
+  }
+
+  const orgsResult = await authStore.getOrganizations();
+  if (orgsResult.success && orgsResult.organizations) {
+    const membership = orgsResult.organizations.find((org: { id: number; role?: string }) => Number(org.id) === orgId);
+    isOrgAdmin.value = membership?.role === 'owner' || membership?.role === 'admin';
+    return;
+  }
+
+  isOrgAdmin.value = false;
+}
+
+async function loadOrgAccounts() {
+  const orgId = effectiveOrgId.value;
+  if (!orgId) {
+    orgAccounts.value = [];
+    return;
+  }
+
+  await resolveOrgAdmin(orgId);
+
+  const orgResult = isOrgAdmin.value
+    ? await listSocialAccounts(orgId)
+    : await getMyAssignedAccounts(orgId);
+
+  if (orgResult.success) {
+    orgAccounts.value = (orgResult.accounts || []).filter((a) => a.is_active);
+  } else {
+    orgAccounts.value = [];
+  }
+}
+
 async function loadOrgCreatorProfiles() {
-  const orgId = authStore.user?.owned_organization_id;
+  const orgId = effectiveOrgId.value;
   if (!orgId) return;
   loadingOrgProfiles.value = true;
   try {
-    const res = await listOrganizationCreatorProfiles(orgId);
+    const res = isOrgAdmin.value
+      ? await listOrganizationCreatorProfiles(orgId)
+      : await getMyAssignedCreatorProfiles();
+
     if (res.success) {
-      orgCreatorProfiles.value = res.profiles.filter(p => !p.disabled);
+      orgCreatorProfiles.value = res.profiles.filter((p) => {
+        if ('disabled' in p && p.disabled) return false;
+        if ('organization_id' in p && p.organization_id !== orgId) return false;
+        return true;
+      }) as ServerOrganizationCreatorProfile[];
+
       if (orgCreatorProfiles.value.length === 1) {
         selectedOrgProfileId.value = orgCreatorProfiles.value[0].id;
       }
@@ -543,20 +602,7 @@ function formatDuration(seconds: number | null | undefined): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-onMounted(async () => {
-  // Load org accounts if build is tied to an org
-  if (props.build?.organization_id) {
-    const orgResult = await listSocialAccounts(props.build.organization_id);
-    if (orgResult.success) {
-      orgAccounts.value = orgResult.accounts || [];
-    }
-  } else if (authStore.user?.owned_organization_id) {
-    const orgResult = await listSocialAccounts(authStore.user.owned_organization_id);
-    if (orgResult.success) {
-      orgAccounts.value = orgResult.accounts || [];
-    }
-  }
-
+async function loadPersonalAccounts() {
   const [twitterRes, tiktokRes, instagramRes, youtubeRes] = await Promise.all([
     listUserTwitterAccounts(),
     listUserTiktokAccounts(),
@@ -568,9 +614,21 @@ onMounted(async () => {
   if (tiktokRes.success) personalTiktokAccounts.value = tiktokRes.accounts || [];
   if (instagramRes.success) personalInstagramAccounts.value = instagramRes.accounts || [];
   if (youtubeRes.success) personalYoutubeAccounts.value = youtubeRes.accounts || [];
+}
 
-  await Promise.all([loadOrgCreatorProfiles(), loadCampaigns()]);
-});
+async function loadDialogData() {
+  await loadOrgAccounts();
+  await Promise.all([loadOrgCreatorProfiles(), loadCampaigns(), loadPersonalAccounts()]);
+}
+
+onMounted(loadDialogData);
+
+watch(
+  () => props.modelValue,
+  (isOpen) => {
+    if (isOpen) loadDialogData();
+  }
+);
 
 async function handlePublish() {
   if (!canPublish.value || isPublishing.value) return;
@@ -604,20 +662,19 @@ async function handlePublish() {
       [aspectRatio]: props.filePath,
     };
 
-    const effectiveOrgId = props.build?.organization_id
-      || (authStore.user?.owned_organization_id ? Number(authStore.user.owned_organization_id) : null);
+    const orgIdForPublish = effectiveOrgId.value;
 
     await backgroundPublish.startUpload(
       aspectRatioOutputPaths,
       props.thumbnailUrl || null,
-      effectiveOrgId
+      orgIdForPublish
     );
 
     const buildType = props.build?.branding_type === 'none' ? 'personal' : props.build?.branding_type;
     const metadata = {
       clipId: props.clip?.id,
       clipBuildId: props.build?.id,
-      organizationId: effectiveOrgId ?? undefined,
+      organizationId: orgIdForPublish ?? undefined,
       campaignId: props.build?.campaign_id || trackingCampaignId.value || undefined,
       creatorProfileId: postingContext.value === 'org'
         ? (selectedOrgProfileId.value ?? undefined)
@@ -630,7 +687,7 @@ async function handlePublish() {
     backgroundPublish.queuePublish(
       publishTargets,
       caption.value,
-      effectiveOrgId,
+      orgIdForPublish,
       props.thumbnailUrl || null,
       metadata
     );

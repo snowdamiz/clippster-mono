@@ -1,5 +1,6 @@
 import { Twitter, Github, MessageCircle, Building2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { trackLandingEvent } from '@/services/landingAnalytics'
 
 type LinkItem = { label: string; href: string; isPage?: boolean }
 
@@ -66,6 +67,7 @@ export function Footer() {
                   href="#"
                   aria-label={label}
                   className="w-10 h-10 rounded-[10px] bg-[#141416] border border-[#1f1f23] flex items-center justify-center text-zinc-500 hover:text-cyan-400 hover:border-[rgba(255,255,255,0.1)] transition-colors"
+                  onClick={() => trackLandingEvent('landing_external_link_click', { source: 'footer_social', button_label: label })}
                 >
                   <Icon className="w-4 h-4" />
                 </a>
@@ -84,6 +86,13 @@ export function Footer() {
                       <Link 
                         to={item.href} 
                         className="text-sm text-zinc-500 hover:text-cyan-400 transition-colors"
+                        onClick={() =>
+                          trackLandingEvent(item.href === '/pricing' ? 'landing_pricing_click' : 'landing_nav_click', {
+                            source: 'footer_link',
+                            button_label: item.label,
+                            path: item.href,
+                          })
+                        }
                       >
                         {item.label}
                       </Link>
@@ -91,6 +100,13 @@ export function Footer() {
                       <a 
                         href={item.href} 
                         className="text-sm text-zinc-500 hover:text-cyan-400 transition-colors"
+                        onClick={() =>
+                          trackLandingEvent(item.href === '#pricing' ? 'landing_pricing_click' : 'landing_nav_click', {
+                            source: 'footer_link',
+                            button_label: item.label,
+                            path: item.href,
+                          })
+                        }
                       >
                         {item.label}
                       </a>
@@ -108,9 +124,25 @@ export function Footer() {
             © {new Date().getFullYear()} Clippster. All rights reserved.
           </p>
           <div className="flex items-center gap-6 text-xs text-zinc-600">
-            <Link to="/privacy" className="hover:text-cyan-400 transition-colors">Privacy Policy</Link>
-            <Link to="/terms" className="hover:text-cyan-400 transition-colors">Terms of Service</Link>
-            <Link to="/dashboard" className="flex items-center gap-1.5 hover:text-zinc-400 transition-colors">
+            <Link
+              to="/privacy"
+              className="hover:text-cyan-400 transition-colors"
+              onClick={() => trackLandingEvent('landing_nav_click', { source: 'footer_bottom', button_label: 'Privacy Policy', path: '/privacy' })}
+            >
+              Privacy Policy
+            </Link>
+            <Link
+              to="/terms"
+              className="hover:text-cyan-400 transition-colors"
+              onClick={() => trackLandingEvent('landing_nav_click', { source: 'footer_bottom', button_label: 'Terms of Service', path: '/terms' })}
+            >
+              Terms of Service
+            </Link>
+            <Link
+              to="/dashboard"
+              className="flex items-center gap-1.5 hover:text-zinc-400 transition-colors"
+              onClick={() => trackLandingEvent('landing_cta_click', { source: 'footer_bottom', button_label: 'Organization Portal', path: '/dashboard' })}
+            >
               <Building2 className="w-3 h-3" />
               Organization Portal
             </Link>

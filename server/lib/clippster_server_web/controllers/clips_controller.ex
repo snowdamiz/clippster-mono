@@ -545,7 +545,14 @@ defmodule ClippsterServerWeb.ClipsController do
     merged_clips =
       if enhanced or used_time_split_detection?(ai_transcript) do
         IO.puts("[ClipsController] Merging overlapping clips from chunk boundaries...")
-        ProgressChannel.broadcast_progress(project_id, "merging", 92, "Merging overlapping clips...")
+
+        ProgressChannel.broadcast_progress(
+          project_id,
+          "merging",
+          92,
+          "Merging overlapping clips..."
+        )
+
         merge_overlapping_clips(all_clips)
       else
         all_clips
@@ -674,9 +681,21 @@ defmodule ClippsterServerWeb.ClipsController do
 
   defp run_vod_clip_detection(ai_transcript, system_prompt, user_prompt, project_id, user_id) do
     if vod_uses_parallel_transcript_chunks?(ai_transcript) do
-      run_vod_clip_detection_chunked(ai_transcript, system_prompt, user_prompt, project_id, user_id)
+      run_vod_clip_detection_chunked(
+        ai_transcript,
+        system_prompt,
+        user_prompt,
+        project_id,
+        user_id
+      )
     else
-      run_vod_clip_detection_single(ai_transcript, system_prompt, user_prompt, project_id, user_id)
+      run_vod_clip_detection_single(
+        ai_transcript,
+        system_prompt,
+        user_prompt,
+        project_id,
+        user_id
+      )
     end
   end
 
@@ -689,7 +708,13 @@ defmodule ClippsterServerWeb.ClipsController do
     (ai_transcript["duration"] || 0) / 60.0
   end
 
-  defp run_vod_clip_detection_result(ai_transcript, system_prompt, user_prompt, project_id, user_id) do
+  defp run_vod_clip_detection_result(
+         ai_transcript,
+         system_prompt,
+         user_prompt,
+         project_id,
+         user_id
+       ) do
     chunked? = vod_uses_parallel_transcript_chunks?(ai_transcript)
 
     {clips, total_tokens} =

@@ -2,6 +2,7 @@ import { Apple, Monitor, ChevronDown, Loader2, Sparkles } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useDownloads, type PlatformDownload } from '../hooks/usePlatform'
+import { trackDownloadClick, trackLandingEvent } from '@/services/landingAnalytics'
 
 export function CTA() {
   const { primaryDownload, otherDownloads, isLoading } = useDownloads()
@@ -67,6 +68,7 @@ export function CTA() {
             <a
               href={primaryDownload.downloadUrl}
               className="group relative px-8 py-4 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 text-white font-semibold hover:from-cyan-400 hover:to-cyan-500 transition-all duration-200 flex items-center gap-3 shadow-xl shadow-cyan-500/20 hover:shadow-cyan-500/30 hover:scale-[1.02]"
+              onClick={() => trackDownloadClick(primaryDownload, 'cta_primary', `Download for ${primaryDownload.label}`)}
             >
               {/* Subtle glow behind button */}
               <div className="absolute inset-0 rounded-lg bg-cyan-500/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
@@ -94,7 +96,10 @@ export function CTA() {
                       key={`${download.platform.os}-${download.platform.arch}`}
                       href={download.downloadUrl}
                       className="flex items-center gap-3 px-4 py-3 hover:bg-[rgba(6,182,212,0.1)] transition-colors text-zinc-300 hover:text-cyan-400"
-                      onClick={() => setShowDropdown(false)}
+                      onClick={() => {
+                        trackDownloadClick(download, 'cta_other_versions', download.label)
+                        setShowDropdown(false)
+                      }}
                     >
                       {getIcon(download, 'sm')}
                       <span className="text-sm font-medium">{download.label}</span>
@@ -111,6 +116,7 @@ export function CTA() {
           <Link
             to="/pricing"
             className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-cyan-400 transition-colors group"
+            onClick={() => trackLandingEvent('landing_pricing_click', { source: 'cta_pricing_link', button_label: 'View pricing plans' })}
           >
             View pricing plans 
             <span className="group-hover:translate-x-0.5 transition-transform">→</span>
