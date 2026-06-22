@@ -3,6 +3,10 @@
   "version": "0.1.1",
   "private": true,
   "license": "UNLICENSED",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "client": "cd client && yarn dev",
     "server": "cd server && mix phx.server",
@@ -22,7 +26,12 @@
     "css-to-tailwind": "node scripts/css-to-tailwind.mjs",
     "wipe-db": "node scripts/wipe-db.mjs",
     "deploy:server": "node scripts/deploy-fly.mjs server",
-    "deploy:landing": "node scripts/deploy-fly.mjs landing"
+    "deploy:landing": "node scripts/deploy-fly.mjs landing",
+    "mobile": "yarn workspace mobile start",
+    "mobile:ios": "yarn workspace mobile ios",
+    "mobile:android": "yarn workspace mobile android",
+    "mobile:typecheck": "yarn workspace mobile typecheck",
+    "mobile:lint": "yarn workspace mobile lint"
   },
   "devDependencies": {
     "@vue/compiler-sfc": "^3.5.13",

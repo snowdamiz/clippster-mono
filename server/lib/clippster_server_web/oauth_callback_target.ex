@@ -46,6 +46,29 @@ defmodule ClippsterServerWeb.OAuthCallbackTarget do
     end
   end
 
+  @mobile_scheme "clippster"
+
+  def normalize_mobile_redirect_uri(uri) when is_binary(uri) do
+    parsed = uri |> String.trim() |> URI.parse()
+    path = parsed.path || ""
+
+    cond do
+      parsed.scheme != @mobile_scheme ->
+        {:error, :invalid_scheme}
+
+      is_nil(parsed.host) or parsed.host == "" ->
+        {:error, :missing_host}
+
+      not String.contains?(path, "google") ->
+        {:error, :invalid_path}
+
+      true ->
+        {:ok, %URI{parsed | fragment: nil} |> URI.to_string()}
+    end
+  end
+
+  def normalize_mobile_redirect_uri(_), do: {:error, :invalid_redirect_uri}
+
   def append_query(url, params) when is_binary(url) and is_map(params) do
     uri = URI.parse(url)
     existing = URI.decode_query(uri.query || "")

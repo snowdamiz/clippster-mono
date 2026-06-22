@@ -13,6 +13,7 @@
   import AnnouncementDialog from '@/components/AnnouncementDialog.vue';
   import SocialTokenExpiredDialog from '@/components/SocialTokenExpiredDialog.vue';
   import OrganizationInviteDialog from '@/components/OrganizationInviteDialog.vue';
+  import CloudConflictDialog from '@/components/sync/CloudConflictDialog.vue';
   import FloatingChat from '@/components/chat/FloatingChat.vue';
   import AudioPlayer from '@/components/AudioPlayer.vue';
   import { useAnnouncements } from '@/composables/useAnnouncements';
@@ -640,6 +641,8 @@
         @accept="handleAcceptInvitation"
         @decline="handleDeclineInvitation"
       />
+
+      <CloudConflictDialog />
 
       <!-- Floating Chat Widget (Messenger-style popout) -->
       <FloatingChat />

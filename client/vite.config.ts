@@ -18,6 +18,10 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@clippster/cloud-sync-schema": path.resolve(
+        __dirname,
+        "../packages/cloud-sync-schema/src/index.ts",
+      ),
     },
   },
 

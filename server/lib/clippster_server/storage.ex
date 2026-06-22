@@ -157,6 +157,15 @@ defmodule ClippsterServer.Storage do
   end
 
   @doc """
+  Generates a storage key for user cloud media assets.
+  Format: users/{user_id}/projects/{project_id}/{asset_id}/{filename}
+  """
+  def generate_cloud_media_key(user_id, project_id, asset_id, filename) do
+    sanitized_filename = sanitize_filename(filename)
+    "users/#{user_id}/projects/#{project_id}/#{asset_id}/#{sanitized_filename}"
+  end
+
+  @doc """
   Generates a unique storage key for a message attachment.
   Format: messaging/{org_id}/{conversation_id}/{timestamp}_{filename}
   """
