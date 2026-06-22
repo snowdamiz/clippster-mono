@@ -281,7 +281,7 @@
                   Connect Account
                 </button>
               </div>
-              <div v-else class="list">
+              <div v-else class="list list--social-accounts">
                 <div v-for="account in socialAccounts" :key="account.id" class="list-item">
                   <div class="list-item__icon" :class="getPlatformIconClass(account.platform)">
                     <component :is="getPlatformIcon(account.platform)" />
@@ -300,7 +300,19 @@
                       </template>
                     </span>
                   </div>
-                  <div class="list-item__actions">
+                  <div
+                    class="list-item__actions"
+                    :class="{ 'list-item__actions--visible': needsTokenAttention(account) }"
+                  >
+                    <button
+                      class="refresh"
+                      :disabled="reconnectingAccountId === account.id"
+                      title="Reconnect to refresh token"
+                      @click="reconnectSocialAccount(account)"
+                    >
+                      <Loader2 v-if="reconnectingAccountId === account.id" class="animate-spin" />
+                      <RefreshCw v-else />
+                    </button>
                     <button @click="viewAccountPosts(account)" title="View Posts"><Eye /></button>
                     <button class="danger" @click="confirmDeleteSocialAccount(account)" title="Disconnect">
                       <Trash2 />
@@ -1343,7 +1355,11 @@
     type UserPost,
     type UserAnalyticsSummary,
   } from '@/services/userInstagramApi';
-  import { isTokenExpiringSoonForAccount } from '@/utils/socialTokenExpiry';
+  import {
+    isTokenExpiredForAccount,
+    isTokenExpiringSoonForAccount,
+  } from '@/utils/socialTokenExpiry';
+  import { reconnectPersonalSocialPlatform } from '@/utils/socialOAuthReconnect';
   import {
     startUserTwitterOAuth,
     listUserTwitterAccounts,
@@ -1825,10 +1841,13 @@
   const deleteType = ref<'social account' | 'payment method'>('social account');
   const deleteTarget = ref<UserInstagramAccount | UserTwitterAccount | UserTiktokAccount | UserYoutubeAccount | ClipperPaymentMethod | null>(null);
 
+  const reconnectingAccountId = ref<number | null>(null);
+
   let cleanupInstagramAuth: (() => void) | null = null;
   let cleanupTwitterAuth: (() => void) | null = null;
   let cleanupTiktokAuth: (() => void) | null = null;
   let cleanupYoutubeAuth: (() => void) | null = null;
+  let cleanupReconnectAuth: (() => void) | null = null;
 
   const XLogo = markRaw({
     render() {
@@ -2094,6 +2113,43 @@
     }
   };
 
+  const needsTokenAttention = (account: UserInstagramAccount | UserTwitterAccount | any) =>
+    isTokenExpiredForAccount(account) || isTokenExpiringSoonForAccount(account);
+
+  const reconnectSocialAccount = async (
+    account: UserInstagramAccount | UserTwitterAccount | UserTiktokAccount | UserYoutubeAccount
+  ) => {
+    if (reconnectingAccountId.value) return;
+
+    try {
+      if (cleanupReconnectAuth) {
+        cleanupReconnectAuth();
+        cleanupReconnectAuth = null;
+      }
+
+      reconnectingAccountId.value = account.id;
+      cleanupReconnectAuth = await reconnectPersonalSocialPlatform(account.platform, (result) => {
+        reconnectingAccountId.value = null;
+        if (result.success) {
+          toast({
+            title: 'Success',
+            description: `${getPlatformName(account.platform)} reconnected`,
+          });
+          void loadSocialAccounts();
+          void socialTokenMonitor.checkNow();
+        } else if (result.error) {
+          toast({ title: 'Error', description: result.error });
+        }
+      });
+    } catch (error) {
+      reconnectingAccountId.value = null;
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to reconnect account',
+      });
+    }
+  };
+
   const confirmDeleteSocialAccount = (account: UserInstagramAccount | UserTwitterAccount | any) => {
     deleteType.value = 'social account';
     deleteTarget.value = account;
@@ -2290,6 +2346,7 @@
     if (cleanupTwitterAuth) cleanupTwitterAuth();
     if (cleanupTiktokAuth) cleanupTiktokAuth();
     if (cleanupYoutubeAuth) cleanupYoutubeAuth();
+    if (cleanupReconnectAuth) cleanupReconnectAuth();
   });
 </script>
 
@@ -3755,7 +3812,12 @@
     transition: opacity 150ms ease;
   }
 
-  .list-item:hover .list-item__actions {
+  .list-item:hover .list-item__actions,
+  .list-item__actions--visible {
+    opacity: 1;
+  }
+
+  .list--social-accounts .list-item__actions {
     opacity: 1;
   }
 
@@ -3788,6 +3850,19 @@
 
   .list-item__actions button.danger svg {
     color: #f87171;
+  }
+
+  .list-item__actions button.refresh svg {
+    color: #fbbf24;
+  }
+
+  .list-item__actions button.refresh:hover {
+    background: rgba(245, 158, 11, 0.12);
+  }
+
+  .list-item__actions button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .text-btn {

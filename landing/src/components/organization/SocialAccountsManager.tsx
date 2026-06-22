@@ -50,12 +50,12 @@ function isTokenExpiringSoon(account: SocialAccount): boolean {
   return isTokenExpiringSoonForAccount(account)
 }
 
-type ConnectPlatform = 'instagram' | 'tiktok' | 'YouTube' | 'x'
+type ConnectPlatform = 'instagram' | 'tiktok' | 'youtube' | 'x'
 
 function reconnectPlatform(account: SocialAccount): ConnectPlatform {
   if (account.platform === 'instagram') return 'instagram'
   if (account.platform === 'tiktok') return 'tiktok'
-  if (account.platform === 'youtube') return 'YouTube'
+  if (account.platform === 'youtube') return 'youtube'
   return 'x'
 }
 
