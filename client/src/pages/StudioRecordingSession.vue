@@ -27,11 +27,6 @@
     <main class="studio-session__body">
       <section class="studio-session__preview-shell">
         <aside class="studio-session__preview-sources">
-          <button type="button" class="studio-session__rail-back" @click.stop="handleBack">
-            <ArrowLeft :size="16" />
-            <span>Back to recordings</span>
-          </button>
-
           <div class="studio-session__side-panel">
             <StudioSourcesPanel
               v-model:mode="recorder.mode.value"
@@ -91,6 +86,7 @@
               :templates="templates.templates.value"
               :active-template-id="activeTemplateId"
               @apply="applyTemplate"
+              @delete="deleteTemplate"
               @upload-template="uploadTemplateOverlay"
             />
           </div>
@@ -497,6 +493,13 @@
     if (template.brandingProfileId) {
       selectedProfileId.value = template.brandingProfileId;
       onProfileSelected(template.brandingProfileId);
+    }
+  }
+
+  function deleteTemplate(templateId: string) {
+    templates.deleteTemplate(templateId);
+    if (activeTemplateId.value === templateId) {
+      activeTemplateId.value = null;
     }
   }
 
@@ -946,33 +949,9 @@
     min-height: 0;
     min-width: 0;
     display: grid;
-    grid-template-rows: auto minmax(0, 1.25fr) minmax(120px, 0.75fr);
+    grid-template-rows: minmax(0, 1.25fr) minmax(120px, 0.75fr);
     gap: 0.5rem;
     overflow: hidden;
-  }
-
-  .studio-session__rail-back {
-    position: relative;
-    z-index: 2;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.45rem;
-    min-height: 34px;
-    width: 100%;
-    flex-shrink: 0;
-    border: none;
-    border-radius: 0;
-    background: transparent;
-    color: var(--sidebar-text);
-    cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 700;
-    -webkit-app-region: no-drag;
-  }
-
-  .studio-session__rail-back:hover {
-    background: var(--sidebar-hover);
   }
 
   .studio-session__preview-right {
