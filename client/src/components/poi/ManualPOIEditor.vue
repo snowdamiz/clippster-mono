@@ -1122,6 +1122,15 @@
     }
   );
 
+  watch(
+    () => [props.modelValue, props.videoPath] as const,
+    ([isOpen, path]) => {
+      if (isOpen && path) {
+        void loadVideoUrl();
+      }
+    }
+  );
+
   // Add a new region
   function addRegion(region: ManualRegion) {
     regions.value.push(region);
