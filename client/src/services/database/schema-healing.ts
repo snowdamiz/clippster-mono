@@ -34,11 +34,11 @@ export async function addColumnIfMissing(
 /** Fix project timestamps stored as milliseconds instead of Unix seconds. */
 async function healProjectTimestamps(db: any): Promise<void> {
   try {
-    const corrupted = await db.select<{ id: string; created_at: number; updated_at: number }[]>(
+    const corrupted = (await db.select(
       `SELECT id, created_at, updated_at FROM projects
        WHERE created_at > ? OR updated_at > ?`,
       [UNIX_SECONDS_THRESHOLD, UNIX_SECONDS_THRESHOLD]
-    );
+    )) as { id: string; created_at: number; updated_at: number }[];
 
     for (const project of corrupted) {
       const createdAt =
@@ -75,10 +75,10 @@ async function healStaleProjectBranding(db: any): Promise<void> {
       return;
     }
 
-    const projects = await db.select<{ id: string; default_watermark_settings: string | null; selected_branding_profile_id: string | null }[]>(
+    const projects = (await db.select(
       `SELECT id, default_watermark_settings, selected_branding_profile_id FROM projects
        WHERE default_watermark_settings IS NOT NULL OR selected_branding_profile_id IS NOT NULL`
-    );
+    )) as { id: string; default_watermark_settings: string | null; selected_branding_profile_id: string | null }[];
 
     for (const project of projects) {
       const autoProfile = await resolveAutoBrandingProfile(project.id);

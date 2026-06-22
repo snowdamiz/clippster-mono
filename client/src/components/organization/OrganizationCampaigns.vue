@@ -2300,6 +2300,7 @@
     type CampaignCreatorProfile,
     type CampaignResource,
     type CampaignSubmissionAnalytics,
+    type CampaignContentVertical,
     getPlatformDisplayName,
   } from '@/services/campaignApi';
   import CampaignResourcesEditor from '@/components/campaigns/CampaignResourcesEditor.vue';
@@ -2481,7 +2482,7 @@
     // Creator and branding
     creator_profile_id: null as number | null,
     branding_profile_id: null as number | null,
-    content_vertical: null as string | null,
+    content_vertical: null as CampaignContentVertical | null,
     campaign_goal: '',
     content_style_tags: [] as string[],
   });
@@ -3077,7 +3078,12 @@
       })
     );
 
-    submissionAnalytics.value = Object.fromEntries(entries.filter(([, analytics]) => analytics));
+    submissionAnalytics.value = entries.reduce<Record<number, CampaignSubmissionAnalytics>>((acc, [submissionId, analytics]) => {
+      if (analytics) {
+        acc[submissionId] = analytics;
+      }
+      return acc;
+    }, {});
   };
 
   const syncSubmissionMetricsAction = async (submission: CampaignSubmission) => {

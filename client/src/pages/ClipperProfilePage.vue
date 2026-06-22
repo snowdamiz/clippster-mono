@@ -1335,7 +1335,6 @@
     listUserInstagramAccounts,
     disconnectUserInstagramAccount,
     startUserInstagramOAuth,
-  import { isTokenExpiringSoonForAccount } from '@/utils/socialTokenExpiry';
     getUserAnalyticsSummary,
     listUserPosts,
     syncUserAnalytics,
@@ -1344,6 +1343,7 @@
     type UserPost,
     type UserAnalyticsSummary,
   } from '@/services/userInstagramApi';
+  import { isTokenExpiringSoonForAccount } from '@/utils/socialTokenExpiry';
   import {
     startUserTwitterOAuth,
     listUserTwitterAccounts,

@@ -6,7 +6,7 @@
     </p>
 
     <div class="campaign-resources-panel__list">
-      <div v-for="resource in resources" :key="resource.id || resource.title" class="campaign-resources-panel__item">
+      <div v-for="(resource, index) in resources" :key="resource.id ?? resource.title ?? index" class="campaign-resources-panel__item">
         <div class="campaign-resources-panel__meta">
           <span class="campaign-resources-panel__type">{{ formatType(resource.resource_type) }}</span>
           <strong>{{ resource.title || resource.url || 'Untitled material' }}</strong>

@@ -377,6 +377,7 @@
     }
   }
 
+  function confirmDelete(account: SocialAccount) {
     accountToDelete.value = account;
     showDeleteDialog.value = true;
   }
