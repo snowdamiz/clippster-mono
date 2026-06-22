@@ -237,6 +237,12 @@ export function ensureLayoutForMode(layout: StudioLayout, mode: StudioRecordingM
       ...next,
       layers: next.layers.filter((l) => l.id !== STUDIO_LAYER_IDS.screen),
     };
+    const cameraLayer = getLayerById(next, STUDIO_LAYER_IDS.camera);
+    if (cameraLayer) {
+      next = updateLayer(next, STUDIO_LAYER_IDS.camera, {
+        rect: { x: 0, y: 0, width: 1, height: 1 },
+      });
+    }
   }
 
   return next;
@@ -254,6 +260,11 @@ export function migrateTemplate(template: StudioTemplate & { cameraPip?: StudioR
 
   if (template.cameraPip) {
     migrated = updateLayer(migrated, STUDIO_LAYER_IDS.camera, { rect: { ...template.cameraPip } });
+  }
+  if (template.mode === 'camera') {
+    migrated = updateLayer(migrated, STUDIO_LAYER_IDS.camera, {
+      rect: { x: 0, y: 0, width: 1, height: 1 },
+    });
   }
   if (template.watermarkOverride) {
     migrated = addLayer(migrated, createWatermarkLayer({ ...template.watermarkOverride }));

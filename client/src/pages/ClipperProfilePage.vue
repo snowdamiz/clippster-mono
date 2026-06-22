@@ -294,7 +294,7 @@
                       <template v-if="account.connected_at">
                         · Connected {{ formatDate(account.connected_at) }}
                       </template>
-                      <template v-if="isTokenExpiringSoon(account)">
+                      <template v-if="isTokenExpiringSoonForAccount(account)">
                         ·
                         <span class="token-expiring">Token expiring soon</span>
                       </template>
@@ -1335,7 +1335,7 @@
     listUserInstagramAccounts,
     disconnectUserInstagramAccount,
     startUserInstagramOAuth,
-    isTokenExpiringSoon,
+  import { isTokenExpiringSoonForAccount } from '@/utils/socialTokenExpiry';
     getUserAnalyticsSummary,
     listUserPosts,
     syncUserAnalytics,

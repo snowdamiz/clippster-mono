@@ -3,7 +3,9 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
   Shared Post For Me connect completion logic for user/org flows.
   """
 
-  alias ClippsterServer.{Accounts, Campaigns, Social}
+  alias ClippsterServer.{Accounts, Campaigns, Social, Repo}
+  alias ClippsterServer.Campaigns.ClipperSocialAccount
+  alias ClippsterServer.Social.SocialAccount
   alias ClippsterServer.Social.ProviderMode
   alias ClippsterServer.Social.PostForMeConnectionSession
   alias ClippsterServer.Social.Providers.PostForMe
@@ -235,9 +237,30 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
       profile_image_url: provider_account.profile_photo_url,
       profile_url: extract_profile_url(provider_account, normalized_platform, username),
       is_verified: extract_verified_status(provider_account),
-      is_active: provider_account.status != "disconnected"
+      is_active: provider_account.status != "disconnected",
+      token_expires_at: extract_token_expires_at(provider_account)
     }
   end
+
+  def extract_token_expires_at(provider_account) do
+    raw = provider_account.raw || %{}
+
+    expires_at_str =
+      raw["access_token_expires_at"] ||
+        get_in(provider_account.metadata || %{}, ["access_token_expires_at"]) ||
+        raw["token_expires_at"]
+
+    parse_token_expires_at(expires_at_str)
+  end
+
+  defp parse_token_expires_at(expires_at_str) when is_binary(expires_at_str) do
+    case DateTime.from_iso8601(expires_at_str) do
+      {:ok, dt, _} -> DateTime.truncate(dt, :second)
+      _ -> nil
+    end
+  end
+
+  defp parse_token_expires_at(_), do: nil
 
   defp extract_profile_url(provider_account, platform, username) do
     # Try metadata first
@@ -333,7 +356,8 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
       profile_image_url: provider_account.profile_photo_url,
       profile_url: extract_profile_url(provider_account, normalized_platform, username),
       is_verified: extract_verified_status(provider_account),
-      is_active: provider_account.status != "disconnected"
+      is_active: provider_account.status != "disconnected",
+      token_expires_at: extract_token_expires_at(provider_account)
     }
   end
 
@@ -356,5 +380,117 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
       nil -> nil
       account -> account.platform
     end
+  end
+
+  @doc """
+  Refreshes provider connection state on local Post For Me accounts (best-effort).
+  Syncs `is_active` from provider status and `token_expires_at` when available.
+  """
+  def sync_user_accounts_from_provider(user) do
+    user.id
+    |> Campaigns.list_user_social_accounts()
+    |> sync_provider_accounts(&update_user_from_provider/2)
+  end
+
+  def sync_org_accounts_from_provider(accounts) do
+    sync_provider_accounts(accounts, &update_org_from_provider/2)
+  end
+
+  @doc false
+  def sync_user_token_expiry(user), do: sync_user_accounts_from_provider(user)
+
+  @doc false
+  def sync_org_token_expiry(accounts), do: sync_org_accounts_from_provider(accounts)
+
+  def sync_user_account_for_publish(%ClipperSocialAccount{} = account) do
+    [account]
+    |> sync_provider_accounts(&update_user_from_provider/2)
+    |> List.first()
+  end
+
+  def sync_org_account_for_publish(%Social.SocialAccount{} = account) do
+    [account]
+    |> sync_provider_accounts(&update_org_from_provider/2)
+    |> List.first()
+  end
+
+  def ensure_user_publish_ready(%ClipperSocialAccount{} = account, platform_label) do
+    account = sync_user_account_for_publish(account)
+
+    case ClippsterServer.Social.PostForMeAccountHealth.validate_publishable(
+           account,
+           platform_label
+         ) do
+      :ok -> {:ok, account}
+      {:error, :token_expired, message} -> {:error, :token_expired, message}
+    end
+  end
+
+  def ensure_org_publish_ready(%SocialAccount{} = account, platform_label) do
+    account = sync_org_account_for_publish(account)
+
+    case ClippsterServer.Social.PostForMeAccountHealth.validate_publishable(
+           account,
+           platform_label
+         ) do
+      :ok -> {:ok, account}
+      {:error, :token_expired, message} -> {:error, :token_expired, message}
+    end
+  end
+
+  defp sync_provider_accounts(accounts, update_fn) do
+    provider_accounts =
+      Enum.filter(accounts, fn account ->
+        account.provider == "post_for_me" and is_binary(account.provider_account_id)
+      end)
+
+    if provider_accounts == [] do
+      accounts
+    else
+      case PostForMe.list_social_accounts(%{}) do
+        {:ok, listing} ->
+          provider_by_id = Map.new(listing.data, &{&1.id, &1})
+
+          Enum.map(accounts, fn account ->
+            case Map.get(provider_by_id, account.provider_account_id) do
+              nil ->
+                account
+
+              provider_account ->
+                attrs = provider_status_attrs(provider_account)
+
+                if provider_state_changed?(account, attrs) do
+                  case update_fn.(account, attrs) do
+                    {:ok, updated} -> updated
+                    _ -> account
+                  end
+                else
+                  account
+                end
+            end
+          end)
+
+        _ ->
+          accounts
+      end
+    end
+  end
+
+  defp provider_status_attrs(provider_account) do
+    ClippsterServer.Social.PostForMeAccountHealth.provider_status_attrs(provider_account)
+  end
+
+  defp provider_state_changed?(account, attrs) do
+    account.is_active != attrs.is_active or account.token_expires_at != attrs.token_expires_at
+  end
+
+  defp update_user_from_provider(%ClipperSocialAccount{} = account, attrs) do
+    account
+    |> ClipperSocialAccount.update_changeset(attrs)
+    |> Repo.update()
+  end
+
+  defp update_org_from_provider(%SocialAccount{} = account, attrs) do
+    Social.update_social_account(account, attrs)
   end
 end

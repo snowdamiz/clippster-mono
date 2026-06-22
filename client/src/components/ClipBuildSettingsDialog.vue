@@ -877,6 +877,12 @@
     IntroOutroRef,
   } from '@/types';
   import { resolveSelectionBrandingPreview } from '@/composables/useOrgCampaignBuildBranding';
+  import {
+    getSelfContainedClipDuration,
+    isSelfContainedClip as checkSelfContainedClip,
+    normalizePathForCompare,
+    resolveClipVideoSourceForPreview,
+  } from '@/utils/selfContainedClip';
 
   // Extended IntroOutro type that can be a local asset or server org asset
   interface IntroOutroItem extends Omit<IntroOutro, 'id'> {
@@ -1046,6 +1052,7 @@
   const videoFrameUrl = ref<string | null>(null);
   const loadingVideoFrame = ref(false);
   const videoPath = ref<string | null>(null);
+  let loadVideoFrameGeneration = 0;
 
   // Overlay preview state for ManualPOIEditor
   const overlayPreviewUrls = ref<Record<string, string>>({});
@@ -1057,45 +1064,8 @@
   });
   const { transcriptData } = useTranscriptData(clipProjectId);
 
-  /**
-   * Normalize a file path for cross-platform comparison.
-   * Self-contained livestream clips (auto/manual) and their raw_video records
-   * are saved with the same string but Windows backslashes vs forward slashes,
-   * casing, or `file://` prefixes can cause direct `===` to miss the match.
-   */
-  function normalizePathForCompare(path: string): string {
-    return path.replace(/\\/g, '/').replace(/^file:\/\//, '').toLowerCase();
-  }
-
-  /**
-   * True for clips that ARE the source file (auto-detected/manual livestream
-   * clips that were extracted to their own file at detection time). For these
-   * clips, `clip.file_path` is the playable extracted clip — not a source VOD —
-   * timestamps in the per-clip transcript are already clip-relative (0..duration),
-   * and the build pipeline treats them as a 0-based whole file.
-   */
-  const isSelfContainedClip = computed(() => {
-    const clip = props.clip;
-    if (!clip) return false;
-    const prompt = String((clip as any).session_prompt || '').toLowerCase();
-    const hasOwnFile = typeof clip.file_path === 'string' && clip.file_path.trim().length > 0;
-    return hasOwnFile && (prompt === 'manual clip creation' || prompt.includes('auto'));
-  });
-
-  /** Duration to use as the clip-relative timeline length for self-contained clips. */
-  function getSelfContainedClipDuration(clip: ClipWithVersion): number {
-    if (clip.current_version_segments && clip.current_version_segments.length > 0) {
-      return clip.current_version_segments.reduce((total, segment) => {
-        const segDuration =
-          Number(segment.duration) || Number(segment.end_time) - Number(segment.start_time);
-        return total + Math.max(0, segDuration || 0);
-      }, 0);
-    }
-    const startTime = clip.current_version_start_time ?? clip.start_time ?? 0;
-    const endTime = clip.current_version_end_time ?? clip.end_time ?? 0;
-    if (endTime > startTime) return endTime - startTime;
-    return clip.duration || 0;
-  }
+  /** True when the clip's extracted MP4 is the full playable source (0-based). */
+  const isSelfContainedClip = computed(() => checkSelfContainedClip(props.clip));
 
   /**
    * Per-clip transcript for self-contained clips. The project-wide transcript
@@ -1418,10 +1388,8 @@
     console.log('[ClipBuildSettingsDialog] Config for ratio:', config);
     console.log('[ClipBuildSettingsDialog] All manualFramingConfigs:', manualFramingConfigs.value);
     
-    // Ensure video path is loaded before opening POI editor
-    if (!videoPath.value) {
-      await loadVideoFrame();
-    }
+    // Always reload so a prior clip's cached path cannot leak into POI editor.
+    await loadVideoFrame();
 
     // Self-contained clips load transcript async; wait so B-roll/subtitles have words in POI.
     if (isSelfContainedClip.value && !selfContainedTranscriptData.value) {
@@ -1847,79 +1815,41 @@
 
   // Load a frame from the video for the POI editor preview
   async function loadVideoFrame() {
-    if (!props.clip || loadingVideoFrame.value) return;
+    if (!props.clip) return;
 
+    const clipId = props.clip.id;
+    const generation = ++loadVideoFrameGeneration;
     loadingVideoFrame.value = true;
+
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const { getRawVideosByProjectId } = await import('@/services/database');
 
-      // Resolve which file the POI editor should preview, plus where in that
-      // file the clip's first frame lives. Two cases:
-      //
-      //  1. Self-contained clips (auto/manual livestream): the extracted clip
-      //     file IS the source. We use clip.file_path directly and start at 0.
-      //     Each auto-detected clip in the project has its own raw_video record,
-      //     so the legacy "find any raw_video for this project" fallback would
-      //     pick a different clip's file.
-      //
-      //  2. VOD-based clips: the clip.file_path is the source VOD path; we
-      //     match it back to the project's raw_video (with normalized path
-      //     comparison so Windows backslash/case differences don't cause us
-      //     to fall through to a wrong raw_video).
-      let rawVideoPath = '';
-      let frameTimestamp = 0;
-
-      if (isSelfContainedClip.value && props.clip.file_path) {
-        rawVideoPath = props.clip.file_path;
-        frameTimestamp = 1;
-        console.log(
-          '[BuildSettings] Self-contained clip — using clip.file_path directly:',
-          rawVideoPath.split(/[\\/]/).pop()
-        );
-      } else {
-        const projectId = props.clip.project_id;
-        if (!projectId) return;
-
-        const rawVideos = await getRawVideosByProjectId(projectId);
-        if (rawVideos.length === 0) return;
-
-        if (props.clip.file_path) {
-          const targetPath = normalizePathForCompare(props.clip.file_path);
-          const matchingRawVideo = rawVideos.find(
-            (rv) => normalizePathForCompare(rv.file_path) === targetPath
-          );
-          if (matchingRawVideo) {
-            rawVideoPath = matchingRawVideo.file_path;
-            console.log(
-              '[BuildSettings] Found matching raw video for clip:',
-              rawVideoPath.split(/[\\/]/).pop()
-            );
-          } else {
-            rawVideoPath = rawVideos[0].file_path;
-            console.warn(
-              '[BuildSettings] No matching raw video found for clip file_path, using first raw video'
-            );
-          }
-        } else {
-          rawVideoPath = rawVideos[0].file_path;
-          console.warn('[BuildSettings] Clip has no file_path, using first raw video');
-        }
-
-        const startTime = props.clip.current_version_start_time || 0;
-        frameTimestamp = startTime + 1;
+      const source = await resolveClipVideoSourceForPreview(props.clip, props.clip.project_id);
+      if (generation !== loadVideoFrameGeneration || props.clip?.id !== clipId || !source) {
+        return;
       }
 
-      videoPath.value = rawVideoPath; // Store video path for POI editor
+      const { filePath: rawVideoPath, frameTimestamp } = source;
 
-      // Generate a frame at the clip's start time
+      console.log('[BuildSettings] POI preview source:', {
+        clipId,
+        file: rawVideoPath.split(/[\\/]/).pop(),
+        frameTimestamp,
+        selfContained: source.isSelfContained,
+      });
+
+      videoPath.value = rawVideoPath;
+
       const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
         videoPath: rawVideoPath,
         timestampSeconds: frameTimestamp,
-        outputFilename: `poi_preview_${props.clip.id}`,
+        outputFilename: `poi_preview_${clipId}`,
       });
 
-      // Convert to data URL for display
+      if (generation !== loadVideoFrameGeneration || props.clip?.id !== clipId) {
+        return;
+      }
+
       const dataUrl = await invoke<string>('read_file_as_data_url', {
         filePath: thumbnailPath,
       });
@@ -1927,10 +1857,11 @@
       videoFrameUrl.value = dataUrl;
     } catch (error) {
       console.warn('[BuildSettings] Failed to load video frame:', error);
-      // Use thumbnail URL prop as fallback
       videoFrameUrl.value = props.thumbnailUrl || null;
     } finally {
-      loadingVideoFrame.value = false;
+      if (generation === loadVideoFrameGeneration) {
+        loadingVideoFrame.value = false;
+      }
     }
   }
 

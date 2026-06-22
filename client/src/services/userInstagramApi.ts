@@ -5,6 +5,7 @@
 
 import api from './api';
 import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
+import { isSocialTokenExpiringSoon, isTokenExpiringSoonForAccount } from '@/utils/socialTokenExpiry';
 
 // ============================================
 // Types
@@ -452,15 +453,10 @@ export async function getUserAnalyticsSummary(options?: {
 // ============================================
 
 /**
- * Check if account token is expiring soon
+ * Check if account token is expiring soon (within 2 days).
  */
-export function isTokenExpiringSoon(account: UserInstagramAccount): boolean {
-  if (!account.token_expires_at) return false;
-
-  const expiresAt = new Date(account.token_expires_at);
-  const daysUntilExpiry = (expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-
-  return daysUntilExpiry < 7;
+export function isTokenExpiringSoon(account: { token_expires_at?: string | null; is_active?: boolean; platform?: string; provider_status?: string | null }): boolean {
+  return isTokenExpiringSoonForAccount(account);
 }
 
 /**

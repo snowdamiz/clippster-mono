@@ -307,27 +307,6 @@ export async function deleteSocialAccount(
   }
 }
 
-/**
- * Trigger token refresh for an account.
- */
-export async function refreshAccountToken(
-  organizationId: string | number,
-  accountId: number
-): Promise<{ success: boolean; message?: string; error?: string }> {
-  try {
-    const response = await api.post<{ success: boolean; message?: string }>(
-      `/organizations/${organizationId}/social-accounts/${accountId}/refresh`
-    );
-    return response.data;
-  } catch (error: any) {
-    console.error('[SocialAccountsApi] Failed to refresh token:', error);
-    return {
-      success: false,
-      error: error.response?.data?.error || error.message || 'Failed to refresh token',
-    };
-  }
-}
-
 // ============================================
 // Account Assignment API Functions
 // ============================================

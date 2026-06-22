@@ -7,6 +7,16 @@ const STORAGE_VERSION_KEY = 'clippster_studio_templates_version';
 const CURRENT_VERSION = 2;
 const REMOVED_DEFAULT_TEMPLATE_IDS = new Set(['tpl-streamer-frame', 'tpl-gameplay-lower-third']);
 
+export const DEFAULT_STUDIO_TEMPLATE_IDS = new Set([
+  'tpl-camera',
+  'tpl-screen',
+  'tpl-screen-pip',
+]);
+
+export function isDefaultStudioTemplate(id: string): boolean {
+  return DEFAULT_STUDIO_TEMPLATE_IDS.has(id);
+}
+
 function getDefaultTemplates(): StudioTemplate[] {
   const now = Date.now();
   return [
