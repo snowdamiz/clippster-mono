@@ -51,12 +51,12 @@
                     <button
                       type="button"
                       class="token-dialog__reconnect-btn"
-                      :disabled="reconnectingPlatform === connection.platform"
+                      :disabled="reconnectingAccountId === connection.id"
+                      :title="'Reconnect to refresh token'"
                       @click="reconnect(connection)"
                     >
-                      <Loader2 v-if="reconnectingPlatform === connection.platform" :size="14" class="token-dialog__spin" />
+                      <Loader2 v-if="reconnectingAccountId === connection.id" :size="14" class="token-dialog__spin" />
                       <RefreshCw v-else :size="14" />
-                      Reconnect
                     </button>
                   </div>
                 </div>
@@ -66,9 +66,6 @@
             <div class="token-dialog__footer">
               <button @click="dismiss" class="token-dialog__btn token-dialog__btn--secondary">
                 Dismiss
-              </button>
-              <button @click="goToAccountConnections" class="token-dialog__btn token-dialog__btn--primary">
-                Account Connections
               </button>
             </div>
           </div>
@@ -80,14 +77,12 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { useRouter } from 'vue-router';
 import { AlertCircle, Loader2, RefreshCw, ShieldAlert, X } from 'lucide-vue-next';
 import { useSocialTokenMonitor } from '@/composables/useSocialTokenMonitor';
 import { useToast } from '@/composables/useToast';
 import { reconnectPersonalSocialPlatform } from '@/utils/socialOAuthReconnect';
 import type { SocialTokenAttention } from '@/utils/socialTokenExpiry';
 
-const router = useRouter();
 const { showToast } = useToast();
 const {
   visibleAttentionConnections,
@@ -97,7 +92,7 @@ const {
   checkNow,
 } = useSocialTokenMonitor();
 
-const reconnectingPlatform = ref<string | null>(null);
+const reconnectingAccountId = ref<number | null>(null);
 
 const hasExpired = computed(() =>
   visibleAttentionConnections.value.some(
@@ -123,29 +118,24 @@ const bodyText = computed(() => {
   if (visibleAttentionConnections.value.length === 1) {
     const connection = visibleAttentionConnections.value[0];
     if (connection.status === 'disconnected') {
-      return `Your ${connection.platformLabel} connection for @${connection.username} is disconnected. Click Reconnect to sign in again — you don't need to disconnect the account first.`;
+      return `Your ${connection.platformLabel} connection for @${connection.username} is disconnected. Click the refresh icon to sign in again — you don't need to disconnect the account first.`;
     }
     if (connection.status === 'expired') {
-      return `Your ${connection.platformLabel} connection for @${connection.username} has expired. Click Reconnect to sign in again — you don't need to disconnect the account first.`;
+      return `Your ${connection.platformLabel} connection for @${connection.username} has expired. Click the refresh icon to sign in again — you don't need to disconnect the account first.`;
     }
     const soonDays = connection.platform === 'tiktok' ? '1 day' : '2 days';
-    return `Your ${connection.platformLabel} connection for @${connection.username} expires within ${soonDays}. Reconnect now to avoid interrupted publishing.`;
+    return `Your ${connection.platformLabel} connection for @${connection.username} expires within ${soonDays}. Click the refresh icon to renew it now.`;
   }
 
   if (hasExpired.value) {
-    return 'Some connections are disconnected or expired. Click Reconnect on each account to sign in again. You do not need to disconnect accounts first.';
+    return 'Some connections are disconnected or expired. Click the refresh icon on each account to sign in again. You do not need to disconnect accounts first.';
   }
 
-  return 'Some connections expire soon. Reconnect now to refresh their tokens and avoid publish failures.';
+  return 'Some connections expire soon. Click the refresh icon on each account to renew their tokens and avoid publish failures.';
 });
 
 function dismiss(): void {
   dismissVisibleAttentionConnections();
-}
-
-function goToAccountConnections(): void {
-  dismissVisibleAttentionConnections();
-  router.push({ path: '/clipper-profile', query: { section: 'social-accounts' } });
 }
 
 function formatConnectionStatus(connection: SocialTokenAttention): string {
@@ -172,12 +162,12 @@ function formatDate(value: string): string {
 }
 
 async function reconnect(connection: SocialTokenAttention): Promise<void> {
-  if (reconnectingPlatform.value) return;
+  if (reconnectingAccountId.value) return;
 
-  reconnectingPlatform.value = connection.platform;
+  reconnectingAccountId.value = connection.id;
   try {
     const cancel = await reconnectPersonalSocialPlatform(connection.platform, (result) => {
-      reconnectingPlatform.value = null;
+      reconnectingAccountId.value = null;
       if (result.success) {
         showToast(`${connection.platformLabel} reconnected successfully`, 'success');
         clearDismissedConnection(connection);
@@ -188,7 +178,7 @@ async function reconnect(connection: SocialTokenAttention): Promise<void> {
     });
     void cancel;
   } catch (error) {
-    reconnectingPlatform.value = null;
+    reconnectingAccountId.value = null;
     const message = error instanceof Error ? error.message : 'Failed to start reconnect';
     showToast(message, 'error');
   }
@@ -368,14 +358,14 @@ async function reconnect(connection: SocialTokenAttention): Promise<void> {
 .token-dialog__reconnect-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0.375rem 0.625rem;
-  font-size: 0.75rem;
-  font-weight: 600;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border-radius: 6px;
-  border: 1px solid var(--sidebar-border);
-  background: var(--sidebar-accent);
-  color: white;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
   cursor: pointer;
 }
 
