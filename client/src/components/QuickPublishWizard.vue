@@ -1125,7 +1125,7 @@
     :target-aspect-ratio="editingAspectRatio"
     :source-aspect-ratio="'16:9'"
     :thumbnail-url="thumbnailUrl"
-    :video-path="clipPath"
+    :video-path="effectiveClipPath"
     :clip-start-time="clipStartTime"
     :clip-end-time="clipEndTime"
     :watermark-settings="watermarkSettings"
@@ -1208,6 +1208,11 @@ import type {
   WhisperSegment,
 } from '@/types';
 import { maxWordsChunkForAspectRatioString } from '@/utils/subtitleVisibleWords';
+import {
+  getSelfContainedClipDuration,
+  isSelfContainedClip as checkSelfContainedClip,
+  resolveClipPublishPath,
+} from '@/utils/selfContainedClip';
 
 interface IntroOutroItem extends Omit<IntroOutro, 'id'> {
   id: string;
@@ -1408,14 +1413,20 @@ const buildState = computed(() => buildPipeline.state.value);
 const isBuilding = computed(() => buildState.value.status === 'building');
 
 const clipDuration = computed(() => {
+  if (props.clip && checkSelfContainedClip(props.clip)) {
+    return getSelfContainedClipDuration(props.clip);
+  }
   if (!props.clip?.current_version_end_time || !props.clip?.current_version_start_time) {
     return props.clip?.duration || 0;
   }
   return props.clip.current_version_end_time - props.clip.current_version_start_time;
 });
 
+const effectiveClipPath = computed(() =>
+  resolveClipPublishPath(props.clip, props.clipPath)
+);
+
 // For livestream clips, the extracted clip starts at 0 and ends at the clip duration
-// The clip file itself is the source, not a segment of a larger video
 const clipStartTime = computed(() => 0);
 const clipEndTime = computed(() => clipDuration.value);
 
@@ -1755,9 +1766,9 @@ async function chooseSubtitlesYes() {
   // Ensure a raw_video record exists for the clip file so transcribeProject can find it
   try {
     const { getRawVideoByPath, createRawVideo } = await import('@/services/database');
-    const existing = await getRawVideoByPath(props.clipPath);
+    const existing = await getRawVideoByPath(effectiveClipPath.value);
     if (!existing) {
-      await createRawVideo(props.clipPath, { projectId: props.projectId });
+      await createRawVideo(effectiveClipPath.value, { projectId: props.projectId });
     }
   } catch (e) {
     console.warn('[QuickPublishWizard] Failed to ensure raw_video for clip:', e);
@@ -2739,7 +2750,7 @@ async function startBuildProcess() {
       clip: props.clip!,
       projectId: props.projectId!,
       settings,
-      videoPath: props.clipPath!,
+      videoPath: effectiveClipPath.value,
     }).catch((err) => {
       console.error('[QuickPublishWizard] Build failed for target:', target.name, err);
     });

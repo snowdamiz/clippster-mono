@@ -721,6 +721,12 @@
   import type { AnalyzeSpeakersResponse } from '@/services/speaker-detection-api';
   import type { FramingStrategy as DbFramingStrategy, ParsedStrategyData } from '@/services/database/speaker-detection';
   import { normalizeLocalFilePathForFs } from '@/utils/normalizeLocalFilePath';
+  import {
+    getSelfContainedClipDuration as getSharedSelfContainedClipDuration,
+    isSelfContainedClip as checkSelfContainedClip,
+    isClipBuildOutputPath as isClipBuildOutputPathUtil,
+    normalizePathForCompare,
+  } from '@/utils/selfContainedClip';
 
   // Helper to ensure value is boolean (handles string "true"/"false" and numbers)
   function toBoolean(value: unknown): boolean {
@@ -1184,40 +1190,15 @@
   }
 
   function isSelfContainedLiveClip(clip: ClipWithVersion): boolean {
-    const prompt = String((clip as any).session_prompt || '').toLowerCase();
-    const hasOwnFile = typeof clip.file_path === 'string' && clip.file_path.trim().length > 0;
-    return hasOwnFile && (prompt === 'manual clip creation' || prompt.includes('auto'));
+    return checkSelfContainedClip(clip);
   }
 
   function isClipBuildOutputPath(filePath: string | null | undefined): boolean {
-    if (!filePath) return false;
-    const normalizedPath = filePath.replace(/\\/g, '/').toLowerCase();
-    const fileName = normalizedPath.split('/').pop() || '';
-
-    return (
-      normalizedPath.includes('/clips/project_') ||
-      normalizedPath.includes('/run-') ||
-      normalizedPath.includes('/manual-builds/') ||
-      /_\d+-\d+_\d+\.(mp4|mov)$/.test(fileName)
-    );
+    return isClipBuildOutputPathUtil(filePath);
   }
 
   function getSelfContainedClipDuration(clip: ClipWithVersion): number {
-    if (clip.current_version_segments && clip.current_version_segments.length > 0) {
-      return clip.current_version_segments.reduce((total, segment) => {
-        const duration = Number(segment.duration) || Number(segment.end_time) - Number(segment.start_time);
-        return total + Math.max(0, duration);
-      }, 0);
-    }
-
-    const startTime = clip.current_version_start_time ?? clip.start_time ?? 0;
-    const endTime = clip.current_version_end_time ?? clip.end_time ?? 0;
-    if (endTime > startTime) return endTime - startTime;
-    return clip.duration || 0;
-  }
-
-  function normalizePathForCompare(path: string): string {
-    return path.replace(/\\/g, '/').replace(/^file:\/\//, '').toLowerCase();
+    return getSharedSelfContainedClipDuration(clip);
   }
 
   async function loadSelfContainedClipTranscript(

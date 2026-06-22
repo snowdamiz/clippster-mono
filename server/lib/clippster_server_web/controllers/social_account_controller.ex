@@ -31,7 +31,9 @@ defmodule ClippsterServerWeb.SocialAccountController do
       include_inactive = params["include_inactive"] == "true"
 
       accounts =
-        Social.list_organization_social_accounts(org_id, include_inactive: include_inactive)
+        org_id
+        |> Social.list_organization_social_accounts(include_inactive: include_inactive)
+        |> then(&PostForMeConnectionSync.sync_org_accounts_from_provider/1)
 
       json(conn, %{
         success: true,
@@ -139,24 +141,14 @@ defmodule ClippsterServerWeb.SocialAccountController do
   def connect_url(conn, %{"organization_id" => org_id} = params) do
     user = conn.assigns.current_user
 
-    cond do
-      not ProviderMode.post_for_me_enabled?() ->
-        conn
-        |> put_status(400)
-        |> json(%{
-          success: false,
-          error: "SOCIAL_PROVIDER_MODE must be post_for_me or dual to use this endpoint"
-        })
+    if not Organizations.is_admin?(org_id, user.id) do
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Only organization admins can connect social accounts"})
+    else
+      platform = ProviderMode.normalize_platform(params["platform"] || "")
 
-      not Organizations.is_admin?(org_id, user.id) ->
-        conn
-        |> put_status(403)
-        |> json(%{success: false, error: "Only organization admins can connect social accounts"})
-
-      true ->
-        platform = ProviderMode.normalize_platform(params["platform"] || "")
-
-        if platform == "" do
+      if platform == "" do
           conn
           |> put_status(422)
           |> json(%{success: false, error: "platform is required"})
@@ -303,14 +295,6 @@ defmodule ClippsterServerWeb.SocialAccountController do
     user = conn.assigns.current_user
 
     cond do
-      not ProviderMode.post_for_me_enabled?() ->
-        conn
-        |> put_status(400)
-        |> json(%{
-          success: false,
-          error: "SOCIAL_PROVIDER_MODE must be post_for_me or dual to use this endpoint"
-        })
-
       not Organizations.is_admin?(org_id, user.id) ->
         conn
         |> put_status(403)
@@ -469,24 +453,6 @@ defmodule ClippsterServerWeb.SocialAccountController do
     end
   end
 
-  @doc """
-  Manually trigger token refresh for an account.
-  POST /organizations/:organization_id/social-accounts/:id/refresh
-  Admin only.
-  """
-  def refresh_token(conn, %{"organization_id" => org_id, "id" => account_id}) do
-    user = conn.assigns.current_user
-
-    unless Organizations.is_admin?(org_id, user.id) do
-      conn
-      |> put_status(403)
-      |> json(%{success: false, error: "Only admins can refresh tokens"})
-    else
-      ClippsterServer.Social.TokenRefreshWorker.refresh_account(account_id)
-      json(conn, %{success: true, message: "Token refresh initiated"})
-    end
-  end
-
   # ============================================================================
   # Account Assignments
   # ============================================================================
@@ -620,6 +586,7 @@ defmodule ClippsterServerWeb.SocialAccountController do
       display_name: account.display_name,
       profile_image_url: account.profile_image_url,
       is_active: account.is_active,
+      provider_status: provider_status(account),
       connected_at: account.connected_at,
       token_expires_at: account.token_expires_at,
       inserted_at: account.inserted_at,
@@ -658,6 +625,10 @@ defmodule ClippsterServerWeb.SocialAccountController do
       avatar_url: user.avatar_url
     }
   end
+
+  defp provider_status(%{is_active: true}), do: "connected"
+  defp provider_status(%{is_active: false}), do: "disconnected"
+  defp provider_status(_), do: nil
 
   defp parse_datetime(nil), do: nil
 

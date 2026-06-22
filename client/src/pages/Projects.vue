@@ -2188,16 +2188,55 @@
   const folderDropdownButtonRefs = ref<Map<string, HTMLElement>>(new Map());
   const clipToPreview = ref<ClipWithVersionAndSegment | null>(null);
 
-  // Computed property to get video file path for clip preview
-  const clipPreviewVideoPath = computed(() => {
-    if (!clipToPreview.value) return null;
-    const segmentId = clipToPreview.value.segment_id || clipToPreview.value.project_id;
+  function isAutoOrManualLiveClip(clip: ClipWithVersionAndSegment): boolean {
+    const prompt = String(clip.session_prompt || '').toLowerCase();
+    return prompt === 'manual clip creation' || prompt.includes('auto');
+  }
+
+  function isClipPreviewBuiltExport(clip: ClipWithVersionAndSegment): boolean {
+    return !!(clip.built_file_path && clip.built_file_path.trim() !== '');
+  }
+
+  function isClipPreviewSelfContained(clip: ClipWithVersionAndSegment): boolean {
+    if (isClipPreviewBuiltExport(clip)) return true;
+    const clipOwnFile = clip.file_path?.trim();
+    return isAutoOrManualLiveClip(clip) && !!clipOwnFile;
+  }
+
+  function resolveClipPreviewVideoPath(clip: ClipWithVersionAndSegment): string | null {
+    const builtFilePath = clip.built_file_path?.trim();
+    if (builtFilePath) return builtFilePath;
+
+    const clipOwnFile = clip.file_path?.trim();
+    if (isAutoOrManualLiveClip(clip) && clipOwnFile) return clipOwnFile;
+
+    const segmentId = clip.segment_id || clip.project_id;
     if (!segmentId) return null;
     const videos = projectVideos.value[segmentId];
     if (videos && videos.length > 0) {
       return videos[0].file_path;
     }
     return null;
+  }
+
+  function getSelfContainedClipDuration(clip: ClipWithVersionAndSegment): number {
+    if (clip.current_version_segments && clip.current_version_segments.length > 0) {
+      return clip.current_version_segments.reduce((total, segment) => {
+        const duration = Number(segment.duration) || Number(segment.end_time) - Number(segment.start_time);
+        return total + Math.max(0, duration);
+      }, 0);
+    }
+
+    const startTime = clip.current_version_start_time ?? clip.start_time ?? 0;
+    const endTime = clip.current_version_end_time ?? clip.end_time ?? 0;
+    if (endTime > startTime) return endTime - startTime;
+    return clip.built_duration ?? clip.duration ?? 0;
+  }
+
+  // Computed property to get video file path for clip preview
+  const clipPreviewVideoPath = computed(() => {
+    if (!clipToPreview.value) return null;
+    return resolveClipPreviewVideoPath(clipToPreview.value);
   });
 
   // Computed style for watermark position
@@ -2789,6 +2828,8 @@
     if (newClip) {
       await prepareInlineVideo();
       await loadPreviewWatermark(newClip);
+      await nextTick();
+      applyClipSegmentsToInlinePlayer();
     } else {
       cleanupInlineHls();
       inlineVideoSrc.value = null;
@@ -3168,20 +3209,100 @@
   // Get clip segments for stitched clips, or single segment for continuous clips
   function getClipSegments(): Array<{ start_time: number; end_time: number; duration: number }> {
     if (!clipToPreview.value) return [];
+    const clip = clipToPreview.value;
 
-    // Check if clip has multiple segments (stitched clip)
-    if (clipToPreview.value.current_version_segments && clipToPreview.value.current_version_segments.length > 0) {
-      return clipToPreview.value.current_version_segments.map((seg) => ({
+    if (isClipPreviewBuiltExport(clip)) {
+      const duration =
+        clip.built_duration ??
+        (getSelfContainedClipDuration(clip) ||
+          (inlineVideoRef.value?.duration && Number.isFinite(inlineVideoRef.value.duration)
+            ? inlineVideoRef.value.duration
+            : 0));
+      if (duration > 0) {
+        return [{ start_time: 0, end_time: duration, duration }];
+      }
+      return [{ start_time: 0, end_time: 0, duration: 0 }];
+    }
+
+    if (clip.current_version_segments && clip.current_version_segments.length > 0) {
+      if (isClipPreviewSelfContained(clip)) {
+        const clipStartOffset = clip.current_version_start_time ?? clip.start_time ?? 0;
+        const clipDuration = getSelfContainedClipDuration(clip);
+
+        const adjustedSegments = clip.current_version_segments
+          .map((seg) => {
+            const segEnd = typeof seg.end_time === 'number' ? seg.end_time : 0;
+            const segStart = typeof seg.start_time === 'number' ? seg.start_time : 0;
+            const looksZeroBased = clipDuration > 0 && segEnd <= clipDuration + 0.5 && segStart >= 0;
+            const start_time = looksZeroBased
+              ? Math.max(0, segStart)
+              : Math.max(0, segStart - clipStartOffset);
+            const end_time = looksZeroBased
+              ? Math.min(clipDuration || segEnd, segEnd)
+              : Math.min(clipDuration, segEnd - clipStartOffset);
+            return {
+              start_time,
+              end_time,
+              duration: end_time - start_time,
+            };
+          })
+          .filter((seg) => seg.end_time > seg.start_time);
+
+        if (adjustedSegments.length > 0) {
+          return adjustedSegments;
+        }
+
+        if (clipDuration > 0) {
+          return [{ start_time: 0, end_time: clipDuration, duration: clipDuration }];
+        }
+      }
+
+      return clip.current_version_segments.map((seg) => ({
         start_time: seg.start_time,
         end_time: seg.end_time,
         duration: seg.duration || seg.end_time - seg.start_time,
       }));
     }
 
-    // Fallback: single continuous segment
-    const startTime = clipToPreview.value?.current_version?.start_time ?? clipToPreview.value?.start_time ?? 0;
-    const endTime = clipToPreview.value?.current_version?.end_time ?? clipToPreview.value?.end_time ?? 0;
+    if (isClipPreviewSelfContained(clip)) {
+      const clipDuration = getSelfContainedClipDuration(clip);
+      if (clipDuration > 0) {
+        return [{ start_time: 0, end_time: clipDuration, duration: clipDuration }];
+      }
+    }
+
+    // Fallback: single continuous segment on the source video timeline
+    const startTime = clip.current_version?.start_time ?? clip.start_time ?? 0;
+    const endTime = clip.current_version?.end_time ?? clip.end_time ?? 0;
     return [{ start_time: startTime, end_time: endTime, duration: endTime - startTime }];
+  }
+
+  function applyClipSegmentsToInlinePlayer() {
+    if (!inlineVideoRef.value || !clipToPreview.value) return;
+
+    inlineVideoSegments.value = getClipSegments();
+    inlineCurrentSegmentIndex.value = 0;
+
+    if (
+      isClipPreviewBuiltExport(clipToPreview.value) &&
+      inlineVideoSegments.value.length === 1 &&
+      inlineVideoSegments.value[0].duration === 0 &&
+      inlineVideoRef.value.duration &&
+      Number.isFinite(inlineVideoRef.value.duration)
+    ) {
+      const duration = inlineVideoRef.value.duration;
+      inlineVideoSegments.value = [{ start_time: 0, end_time: duration, duration }];
+    }
+
+    inlineVideoClipDuration.value = inlineVideoSegments.value.reduce((total, seg) => total + seg.duration, 0);
+
+    if (inlineVideoSegments.value.length > 0) {
+      inlineVideoRef.value.currentTime = inlineVideoSegments.value[0].start_time;
+    }
+
+    inlineVideoCurrentTime.value = 0;
+    inlineVideoProgress.value = 0;
+    inlineVideoPlaying.value = false;
   }
 
   // Get clip start and end times (for backward compatibility)
@@ -3198,22 +3319,7 @@
   // Handle inline video loaded - seek to clip start time
   function onInlineVideoLoaded() {
     if (inlineVideoRef.value && clipToPreview.value) {
-      // Load segments for this clip
-      inlineVideoSegments.value = getClipSegments();
-      inlineCurrentSegmentIndex.value = 0;
-
-      // Calculate total duration (sum of all segments)
-      inlineVideoClipDuration.value = inlineVideoSegments.value.reduce((total, seg) => total + seg.duration, 0);
-
-      // Seek to first segment start
-      if (inlineVideoSegments.value.length > 0) {
-        inlineVideoRef.value.currentTime = inlineVideoSegments.value[0].start_time;
-      }
-
-      inlineVideoCurrentTime.value = 0;
-      inlineVideoProgress.value = 0;
-      // Don't auto-play - let user start playback manually
-      inlineVideoPlaying.value = false;
+      applyClipSegmentsToInlinePlayer();
     }
   }
 

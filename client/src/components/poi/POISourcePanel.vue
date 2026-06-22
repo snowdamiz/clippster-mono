@@ -112,10 +112,10 @@
       <div class="flex items-center justify-between gap-3">
         <div class="flex items-center gap-2 group">
           <Checkbox
-            :checked="selectedRegion.aspectRatioLocked !== false"
+            :model-value="selectedRegion.aspectRatioLocked !== false"
             aria-label="Toggle aspect ratio lock"
             class="h-4 w-4 rounded border-white/45 bg-white/10 text-white hover:border-emerald-300/80 data-[state=checked]:border-emerald-300 data-[state=checked]:bg-emerald-500 focus-visible:ring-emerald-400/50"
-            @update:checked="onAspectRatioLockChange"
+            @update:model-value="onAspectRatioLockChange"
           >
             <CheckIcon class="h-3.5 w-3.5" />
           </Checkbox>
@@ -154,10 +154,10 @@
       <div class="flex items-center gap-3 mt-2">
         <div class="flex items-center gap-2 group shrink-0">
           <Checkbox
-            :checked="selectedRegion.cornerRadiusEnabled === true"
+            :model-value="selectedRegion.cornerRadiusEnabled === true"
             aria-label="Toggle rounded corners"
             class="h-4 w-4 rounded border-white/45 bg-white/10 text-white hover:border-violet-300/80 data-[state=checked]:border-violet-300 data-[state=checked]:bg-violet-500 focus-visible:ring-violet-400/50"
-            @update:checked="onCornerRadiusToggle"
+            @update:model-value="onCornerRadiusToggle"
           >
             <CheckIcon class="h-3.5 w-3.5" />
           </Checkbox>

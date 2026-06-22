@@ -8,10 +8,10 @@ import {
   listSocialAccounts,
   deleteSocialAccount,
   updateSocialAccount,
-  refreshAccountToken,
   assignSocialAccount,
   unassignSocialAccount
 } from '@/services/socialAccountsApi'
+import { isTokenExpiringSoonForAccount } from '@/utils/socialTokenExpiry'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Dialog } from '@/components/ui/Dialog'
@@ -54,10 +54,14 @@ function getPlatformIcon(platform: string) {
 }
 
 function isTokenExpiringSoon(account: SocialAccount): boolean {
-  if (!account.token_expires_at) return false
-  const expiresAt = new Date(account.token_expires_at)
-  const daysUntilExpiry = (expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-  return daysUntilExpiry < 7
+  return isTokenExpiringSoonForAccount(account)
+}
+
+function reconnectPlatform(account: SocialAccount): ConnectPlatform {
+  if (account.platform === 'instagram') return 'instagram'
+  if (account.platform === 'tiktok') return 'tiktok'
+  if (account.platform === 'youtube') return 'YouTube'
+  return 'x'
 }
 
 /* ───── Account Actions ───── */
@@ -66,14 +70,14 @@ function AccountActions({
   account,
   isAdmin,
   onManageAssignments,
-  onRefreshToken,
+  onReconnect,
   onToggleActive,
   onDisconnect
 }: {
   account: SocialAccount
   isAdmin: boolean
   onManageAssignments: (a: SocialAccount) => void
-  onRefreshToken: (a: SocialAccount) => void
+  onReconnect: (a: SocialAccount) => void
   onToggleActive: (a: SocialAccount, active: boolean) => void
   onDisconnect: (a: SocialAccount) => void
 }) {
@@ -116,12 +120,12 @@ function AccountActions({
             <button
               className="w-full flex items-center gap-3 px-3 py-2.5 text-[0.8125rem] text-white bg-transparent border-none rounded-md cursor-pointer transition-all duration-150 text-left hover:bg-cyan-500/10 hover:text-cyan-400"
               onClick={() => {
-                onRefreshToken(account)
+                onReconnect(account)
                 setOpen(false)
               }}
             >
               <RefreshCw className="w-4 h-4" />
-              <span>Refresh Token</span>
+              <span>Reconnect</span>
             </button>
             {account.is_active ? (
               <button
@@ -519,18 +523,22 @@ export function OrgSocial() {
     }
   }
 
-  const handleRefreshToken = async (account: SocialAccount) => {
+  const handleReconnect = (account: SocialAccount) => {
     if (!organizationId) return
-    try {
-      const result = await refreshAccountToken(organizationId, account.id)
+    const platform = reconnectPlatform(account)
+    setConnectingPlatform(platform)
+    openOAuth(platform, organizationId, (result) => {
+      setConnectingPlatform(null)
+      const platformLabel = PLATFORM_LABELS[platform]
       if (result.success) {
-        toast.success('Token refresh initiated')
-      } else {
-        toast.error(result.error || 'Failed to refresh token')
+        const handle = result.username || result.account?.username || account.username
+        toast.success(`${platformLabel} @${handle} reconnected`)
+        loadAccounts()
+        loadOrganization()
+      } else if (result.error) {
+        toast.error(result.error)
       }
-    } catch {
-      toast.error('Failed to refresh token')
-    }
+    })
   }
 
   const handleDelete = async () => {
@@ -822,12 +830,12 @@ export function OrgSocial() {
                           <span className="text-[0.9375rem] font-semibold text-white">@{account.username}</span>
                           {!account.is_active ? (
                             <span className="inline-flex items-center gap-1 px-2 py-[3px] rounded text-[0.625rem] font-bold uppercase tracking-wide bg-red-500/15 text-red-500">
-                              Inactive
+                              Disconnected
                             </span>
                           ) : expiring ? (
                             <span className="inline-flex items-center gap-1 px-2 py-[3px] rounded text-[0.625rem] font-bold uppercase tracking-wide bg-amber-500/15 text-amber-500">
                               <AlertTriangle className="w-2.5 h-2.5" />
-                              Token Expiring
+                              Reconnect Soon
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2 py-[3px] rounded text-[0.625rem] font-bold uppercase tracking-wide bg-emerald-500/15 text-emerald-500">
@@ -873,7 +881,7 @@ export function OrgSocial() {
                         account={account}
                         isAdmin={!!isAdmin}
                         onManageAssignments={setAssignTarget}
-                        onRefreshToken={handleRefreshToken}
+                        onReconnect={handleReconnect}
                         onToggleActive={handleToggleActive}
                         onDisconnect={setDeleteTarget}
                       />

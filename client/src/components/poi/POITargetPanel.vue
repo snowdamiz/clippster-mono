@@ -16,10 +16,10 @@
           : 'text-zinc-400'"
       >
         <Checkbox
-          :checked="showSourceFrame"
+          :model-value="showSourceFrame"
           aria-label="Enable Scale 16:9"
           class="h-3.5 w-3.5 rounded border-white/45 bg-white/10 text-white hover:border-purple-300/80 data-[state=checked]:border-purple-300 data-[state=checked]:bg-purple-500 focus-visible:ring-purple-400/50"
-          @update:checked="onToggleScale16"
+          @update:model-value="onToggleScale16"
         >
           <CheckIcon class="h-3 w-3" />
         </Checkbox>
@@ -34,10 +34,10 @@
           : 'text-zinc-400'"
       >
         <Checkbox
-          :checked="use16x9Mode"
+          :model-value="use16x9Mode"
           aria-label="Enable Use 16:9"
           class="h-3.5 w-3.5 rounded border-white/45 bg-white/10 text-white hover:border-cyan-300/80 data-[state=checked]:border-cyan-300 data-[state=checked]:bg-cyan-500 focus-visible:ring-cyan-400/50"
-          @update:checked="onToggleUse16x9"
+          @update:model-value="onToggleUse16x9"
         >
           <CheckIcon class="h-3 w-3" />
         </Checkbox>
