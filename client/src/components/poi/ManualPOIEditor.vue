@@ -299,7 +299,7 @@
               <!-- Subtitles cell -->
               <div v-if="subtitleSettings" class="poi-dialog__feature-cell">
                 <Checkbox
-                  v-model:checked="subtitlePositioningEnabled"
+                  v-model="subtitlePositioningEnabled"
                   aria-label="Enable subtitle positioning"
                   class="poi-dialog__checkbox poi-dialog__checkbox--purple shrink-0"
                 />
