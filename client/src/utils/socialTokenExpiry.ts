@@ -1,11 +1,5 @@
 export type SocialPlatformId = 'instagram' | 'twitter' | 'x' | 'tiktok' | 'youtube';
 
-/** Warn users this many days before a Post For Me token expires. */
-export const SOCIAL_TOKEN_EXPIRING_SOON_DAYS = 2;
-
-/** TikTok tokens expire frequently — warn sooner. */
-export const SOCIAL_TOKEN_TIKTOK_EXPIRING_SOON_DAYS = 1;
-
 export interface SocialAccountWithToken {
   id: number;
   platform: SocialPlatformId | string;
@@ -16,7 +10,7 @@ export interface SocialAccountWithToken {
   provider_status?: 'connected' | 'disconnected' | string | null;
 }
 
-export type SocialTokenAttentionStatus = 'expired' | 'expiring_soon' | 'disconnected';
+export type SocialTokenAttentionStatus = 'expired' | 'disconnected';
 
 export interface SocialTokenAttention {
   id: number;
@@ -49,10 +43,6 @@ export function isSocialAccountDisconnected(account: SocialAccountWithToken): bo
   return account.is_active === false;
 }
 
-export function getExpiringSoonDays(platform: string): number {
-  return platform === 'tiktok' ? SOCIAL_TOKEN_TIKTOK_EXPIRING_SOON_DAYS : SOCIAL_TOKEN_EXPIRING_SOON_DAYS;
-}
-
 export function isSocialTokenExpired(tokenExpiresAt?: string | null): boolean {
   if (!tokenExpiresAt) return false;
 
@@ -60,19 +50,6 @@ export function isSocialTokenExpired(tokenExpiresAt?: string | null): boolean {
   if (Number.isNaN(expiresAt)) return false;
 
   return expiresAt <= Date.now();
-}
-
-export function isSocialTokenExpiringSoon(
-  tokenExpiresAt?: string | null,
-  withinDays: number = SOCIAL_TOKEN_EXPIRING_SOON_DAYS
-): boolean {
-  if (!tokenExpiresAt || isSocialTokenExpired(tokenExpiresAt)) return false;
-
-  const expiresAt = new Date(tokenExpiresAt).getTime();
-  if (Number.isNaN(expiresAt)) return false;
-
-  const daysUntilExpiry = (expiresAt - Date.now()) / (1000 * 60 * 60 * 24);
-  return daysUntilExpiry <= withinDays;
 }
 
 export function toSocialTokenAttention(
@@ -90,17 +67,9 @@ export function toSocialTokenAttention(
     };
   }
 
-  if (!account.token_expires_at) return null;
-
-  const expiringSoonDays = getExpiringSoonDays(account.platform);
-
-  const status: SocialTokenAttentionStatus | null = isSocialTokenExpired(account.token_expires_at)
-    ? 'expired'
-    : isSocialTokenExpiringSoon(account.token_expires_at, expiringSoonDays)
-      ? 'expiring_soon'
-      : null;
-
-  if (!status) return null;
+  if (!account.token_expires_at || !isSocialTokenExpired(account.token_expires_at)) {
+    return null;
+  }
 
   return {
     id: account.id,
@@ -109,7 +78,7 @@ export function toSocialTokenAttention(
     username: account.username || account.display_name || `Account ${account.id}`,
     displayName: account.display_name || null,
     tokenExpiresAt: account.token_expires_at,
-    status,
+    status: 'expired',
   };
 }
 
@@ -146,12 +115,9 @@ export function isSocialTokenAttentionUrgent(account: SocialTokenAttention): boo
   return account.status === 'expired' || account.status === 'disconnected';
 }
 
-export function isTokenExpiringSoonForAccount(account: SocialAccountWithToken): boolean {
-  if (isSocialAccountDisconnected(account)) return true;
-  return isSocialTokenExpiringSoon(
-    account.token_expires_at,
-    getExpiringSoonDays(account.platform)
-  );
+/** Near access-token expiry is not actionable; reconnect only on expired/disconnected state. */
+export function isTokenExpiringSoonForAccount(_account: SocialAccountWithToken): boolean {
+  return false;
 }
 
 export function isTokenExpiredForAccount(account: SocialAccountWithToken): boolean {

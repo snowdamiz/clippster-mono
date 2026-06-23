@@ -108,7 +108,14 @@ defmodule ClippsterServer.Campaigns.UserPost do
   """
   def update_changeset(post, attrs) do
     post
-    |> cast(attrs, [:post_url, :provider_post_id, :caption, :media_url, :thumbnail_url])
+    |> cast(attrs, [
+      :post_url,
+      :provider_post_id,
+      :caption,
+      :media_url,
+      :thumbnail_url,
+      :provider_payload
+    ])
   end
 
   def platforms, do: @known_platforms

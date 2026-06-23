@@ -39,12 +39,7 @@
                   </div>
                   <div class="token-dialog__connection-actions">
                     <span
-                      class="token-dialog__connection-status"
-                      :class="{
-                        'token-dialog__connection-status--expired':
-                          connection.status === 'expired' || connection.status === 'disconnected',
-                        'token-dialog__connection-status--soon': connection.status === 'expiring_soon',
-                      }"
+                      class="token-dialog__connection-status token-dialog__connection-status--expired"
                     >
                       {{ formatConnectionStatus(connection) }}
                     </span>
@@ -94,16 +89,7 @@ const {
 
 const reconnectingAccountId = ref<number | null>(null);
 
-const hasExpired = computed(() =>
-  visibleAttentionConnections.value.some(
-    (connection) => connection.status === 'expired' || connection.status === 'disconnected'
-  )
-);
-
-const dialogTitle = computed(() => {
-  if (hasExpired.value) return 'Social connection needs attention';
-  return 'Social connection expiring soon';
-});
+const dialogTitle = computed(() => 'Social connection needs attention');
 
 const subtitle = computed(() => {
   const count = visibleAttentionConnections.value.length;
@@ -120,18 +106,10 @@ const bodyText = computed(() => {
     if (connection.status === 'disconnected') {
       return `Your ${connection.platformLabel} connection for @${connection.username} is disconnected. Click the refresh icon to sign in again — you don't need to disconnect the account first.`;
     }
-    if (connection.status === 'expired') {
-      return `Your ${connection.platformLabel} connection for @${connection.username} has expired. Click the refresh icon to sign in again — you don't need to disconnect the account first.`;
-    }
-    const soonDays = connection.platform === 'tiktok' ? '1 day' : '2 days';
-    return `Your ${connection.platformLabel} connection for @${connection.username} expires within ${soonDays}. Click the refresh icon to renew it now.`;
+    return `Your ${connection.platformLabel} connection for @${connection.username} has expired. Click the refresh icon to sign in again — you don't need to disconnect the account first.`;
   }
 
-  if (hasExpired.value) {
-    return 'Some connections are disconnected or expired. Click the refresh icon on each account to sign in again. You do not need to disconnect accounts first.';
-  }
-
-  return 'Some connections expire soon. Click the refresh icon on each account to renew their tokens and avoid publish failures.';
+  return 'Some connections are disconnected or expired. Click the refresh icon on each account to sign in again. You do not need to disconnect accounts first.';
 });
 
 function dismiss(): void {
@@ -140,14 +118,9 @@ function dismiss(): void {
 
 function formatConnectionStatus(connection: SocialTokenAttention): string {
   if (connection.status === 'disconnected') return 'Disconnected';
-  if (connection.status === 'expired') {
-    return connection.tokenExpiresAt
-      ? `Expired ${formatDate(connection.tokenExpiresAt)}`
-      : 'Expired';
-  }
   return connection.tokenExpiresAt
-    ? `Expires ${formatDate(connection.tokenExpiresAt)}`
-    : 'Expires soon';
+    ? `Expired ${formatDate(connection.tokenExpiresAt)}`
+    : 'Expired';
 }
 
 function formatDate(value: string): string {

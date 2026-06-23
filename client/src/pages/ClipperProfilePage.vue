@@ -599,9 +599,18 @@
                   </div>
                   <div class="post-card__content">
                     <div class="post-card__header">
-                      <span class="post-card__status" :class="`post-card__status--${post.status}`">
-                        {{ post.status }}
-                      </span>
+                      <div class="post-card__status-group">
+                        <span class="post-card__status" :class="`post-card__status--${post.status}`">
+                          {{ post.status }}
+                        </span>
+                        <span
+                          class="post-card__platform"
+                          :class="`post-card__platform--${normalizePostPlatform(post.platform)}`"
+                          :title="getPlatformDisplayName(post.platform)"
+                        >
+                          <component :is="getPostPlatformIcon(post.platform)" :size="12" />
+                        </span>
+                      </div>
                       <a v-if="post.post_url" :href="post.post_url" target="_blank" class="post-card__link">
                         View on {{ getPlatformDisplayName(post.platform) }}
                       </a>
@@ -1316,6 +1325,7 @@
   import YoutubePublishDialog from '@/components/YoutubePublishDialog.vue';
   import ClipperProfileOnboardingWizard from '@/components/ClipperProfileOnboardingWizard.vue';
   import AddPostDialog from '@/components/AddPostDialog.vue';
+  import XLogo from '@/components/icons/XLogo.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
@@ -1364,21 +1374,18 @@
     startUserTwitterOAuth,
     listUserTwitterAccounts,
     disconnectUserTwitterAccount,
-    isTwitterTokenExpiringSoon,
     type UserTwitterAccount,
   } from '@/services/userTwitterApi';
   import {
     startUserTiktokOAuth,
     listUserTiktokAccounts,
     disconnectUserTiktokAccount,
-    isTiktokTokenExpiringSoon,
     type UserTiktokAccount,
   } from '@/services/userTiktokApi';
   import {
     startUserYoutubeOAuth,
     listUserYoutubeAccounts,
     disconnectUserYoutubeAccount,
-    isYoutubeTokenExpiringSoon,
     type UserYoutubeAccount,
   } from '@/services/userYoutubeApi';
   import { getMyClipperProfile, getExperienceLevelLabel, getSpecialtyTagLabel, type ClipperProfile } from '@/services/clipperProfilesApi';
@@ -1631,9 +1638,35 @@
       'twitter': 'X',
       'youtube': 'YouTube',
       'tiktok': 'TikTok',
+      'tiktok_business': 'TikTok',
       'facebook': 'Facebook'
     };
     return platformNames[platform?.toLowerCase()] || platform || 'Platform';
+  };
+
+  const TiktokIcon = {
+    template:
+      '<svg viewBox="0 0 24 24" fill="currentColor" width="1em" height="1em"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V9.01a8.16 8.16 0 004.76 1.52v-3.4a4.85 4.85 0 01-1-.44z"/></svg>',
+  };
+
+  const normalizePostPlatform = (platform: string): string => {
+    const normalized = platform?.toLowerCase();
+    return normalized === 'twitter' ? 'x' : normalized || 'unknown';
+  };
+
+  const getPostPlatformIcon = (platform: string) => {
+    switch (normalizePostPlatform(platform)) {
+      case 'x':
+        return XLogo;
+      case 'tiktok':
+      case 'tiktok_business':
+        return TiktokIcon;
+      case 'youtube':
+        return Youtube;
+      case 'instagram':
+      default:
+        return Instagram;
+    }
   };
 
   const switchLeaderboardPeriod = (period: 'weekly' | 'monthly') => {
@@ -2118,7 +2151,7 @@
   };
 
   const needsTokenAttention = (account: UserInstagramAccount | UserTwitterAccount | any) =>
-    isTokenExpiredForAccount(account) || isTokenExpiringSoonForAccount(account);
+    isTokenExpiredForAccount(account);
 
   const reconnectSocialAccount = async (
     account: UserInstagramAccount | UserTwitterAccount | UserTiktokAccount | UserYoutubeAccount
@@ -3483,6 +3516,42 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+  }
+
+  .post-card__status-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .post-card__platform {
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(39, 39, 42, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #a1a1aa;
+    font-size: 0.75rem;
+  }
+
+  .post-card__platform--instagram {
+    color: #f472b6;
+  }
+
+  .post-card__platform--x {
+    color: #f4f4f5;
+  }
+
+  .post-card__platform--tiktok,
+  .post-card__platform--tiktok_business {
+    color: #22d3ee;
+  }
+
+  .post-card__platform--youtube {
+    color: #ef4444;
   }
 
   .post-card__status--published {

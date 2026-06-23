@@ -10,10 +10,12 @@ import {
 } from '@/utils/socialTokenExpiry';
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
+const FOCUS_CHECK_STALE_MS = 5 * 60 * 1000;
+const DISMISS_STORAGE_KEY = 'clippster_dismissed_social_token_warnings';
 
 interface SocialTokenMonitorState {
   attentionConnections: SocialTokenAttention[];
-  dismissedConnectionKeys: Set<string>;
+  dismissedConnectionKeys: Record<string, true>;
   checking: boolean;
   started: boolean;
   lastCheckedAt: number | null;
@@ -21,7 +23,7 @@ interface SocialTokenMonitorState {
 
 const state = reactive<SocialTokenMonitorState>({
   attentionConnections: [],
-  dismissedConnectionKeys: new Set(),
+  dismissedConnectionKeys: {},
   checking: false,
   started: false,
   lastCheckedAt: null,
@@ -29,10 +31,46 @@ const state = reactive<SocialTokenMonitorState>({
 
 let intervalId: number | null = null;
 
-function connectionKey(
-  connection: Pick<SocialTokenAttention, 'id' | 'platform' | 'tokenExpiresAt' | 'status'>
+function connectionDismissKey(
+  connection: Pick<SocialTokenAttention, 'id' | 'platform' | 'status'>
 ): string {
-  return `${connection.platform}:${connection.id}:${connection.tokenExpiresAt}:${connection.status}`;
+  return `${connection.platform}:${connection.id}:urgent`;
+}
+
+function allConnectionDismissKeys(
+  connection: Pick<SocialTokenAttention, 'id' | 'platform'>
+): string[] {
+  return [
+    `${connection.platform}:${connection.id}:warning`,
+    `${connection.platform}:${connection.id}:urgent`,
+  ];
+}
+
+function loadPersistedWarningDismissals(): Record<string, true> {
+  try {
+    const raw = localStorage.getItem(DISMISS_STORAGE_KEY);
+    if (!raw) return {};
+
+    const keys = JSON.parse(raw) as string[];
+    return Object.fromEntries(keys.map((key) => [key, true as const]));
+  } catch {
+    return {};
+  }
+}
+
+function persistWarningDismissals(keys: Record<string, true>): void {
+  const keysToPersist = Object.keys(keys);
+
+  if (keysToPersist.length === 0) {
+    localStorage.removeItem(DISMISS_STORAGE_KEY);
+    return;
+  }
+
+  localStorage.setItem(DISMISS_STORAGE_KEY, JSON.stringify(keysToPersist));
+}
+
+function isConnectionDismissed(connection: SocialTokenAttention): boolean {
+  return Boolean(state.dismissedConnectionKeys[connectionDismissKey(connection)]);
 }
 
 async function loadUserSocialAccounts(): Promise<SocialAccountWithToken[]> {
@@ -53,20 +91,10 @@ async function loadUserSocialAccounts(): Promise<SocialAccountWithToken[]> {
 
 export function useSocialTokenMonitor() {
   const visibleAttentionConnections = computed(() =>
-    state.attentionConnections.filter(
-      (connection) => !state.dismissedConnectionKeys.has(connectionKey(connection))
-    )
+    state.attentionConnections.filter((connection) => !isConnectionDismissed(connection))
   );
 
-  const visibleExpiredConnections = computed(() =>
-    visibleAttentionConnections.value.filter((connection) =>
-      ['expired', 'disconnected'].includes(connection.status)
-    )
-  );
-
-  const visibleExpiringSoonConnections = computed(() =>
-    visibleAttentionConnections.value.filter((connection) => connection.status === 'expiring_soon')
-  );
+  const visibleExpiredConnections = computed(() => visibleAttentionConnections.value);
 
   const hasVisibleAttentionConnections = computed(
     () => visibleAttentionConnections.value.length > 0
@@ -93,10 +121,20 @@ export function useSocialTokenMonitor() {
     }
   }
 
+  function checkNowIfStale(): void {
+    if (state.lastCheckedAt && Date.now() - state.lastCheckedAt < FOCUS_CHECK_STALE_MS) {
+      return;
+    }
+
+    void checkNow();
+  }
+
   function dismissVisibleAttentionConnections(): void {
     for (const connection of visibleAttentionConnections.value) {
-      state.dismissedConnectionKeys.add(connectionKey(connection));
+      state.dismissedConnectionKeys[connectionDismissKey(connection)] = true;
     }
+
+    persistWarningDismissals(state.dismissedConnectionKeys);
   }
 
   /** @deprecated Use dismissVisibleAttentionConnections */
@@ -105,16 +143,24 @@ export function useSocialTokenMonitor() {
   }
 
   function clearDismissedConnection(connection: SocialTokenAttention): void {
-    state.dismissedConnectionKeys.delete(connectionKey(connection));
+    for (const key of allConnectionDismissKeys(connection)) {
+      delete state.dismissedConnectionKeys[key];
+    }
+
+    persistWarningDismissals(state.dismissedConnectionKeys);
   }
 
   function start(): void {
     if (state.started) return;
 
     state.started = true;
+    state.dismissedConnectionKeys = {
+      ...loadPersistedWarningDismissals(),
+      ...state.dismissedConnectionKeys,
+    };
     void checkNow();
 
-    window.addEventListener('focus', checkNow);
+    window.addEventListener('focus', checkNowIfStale);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     intervalId = window.setInterval(() => {
@@ -122,13 +168,17 @@ export function useSocialTokenMonitor() {
     }, CHECK_INTERVAL_MS);
   }
 
-  function stop(): void {
+  function stop(options?: { clearPersistedDismissals?: boolean }): void {
     state.started = false;
     state.attentionConnections = [];
-    state.dismissedConnectionKeys.clear();
+    state.dismissedConnectionKeys = {};
     state.lastCheckedAt = null;
 
-    window.removeEventListener('focus', checkNow);
+    if (options?.clearPersistedDismissals) {
+      localStorage.removeItem(DISMISS_STORAGE_KEY);
+    }
+
+    window.removeEventListener('focus', checkNowIfStale);
     document.removeEventListener('visibilitychange', handleVisibilityChange);
 
     if (intervalId !== null) {
@@ -139,7 +189,7 @@ export function useSocialTokenMonitor() {
 
   function handleVisibilityChange(): void {
     if (document.visibilityState === 'visible') {
-      void checkNow();
+      checkNowIfStale();
     }
   }
 
@@ -147,7 +197,6 @@ export function useSocialTokenMonitor() {
     state,
     visibleAttentionConnections,
     visibleExpiredConnections: visibleExpiredConnectionsLegacy,
-    visibleExpiringSoonConnections,
     hasVisibleAttentionConnections,
     hasVisibleExpiredConnections,
     checkNow,
