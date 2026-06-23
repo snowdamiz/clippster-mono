@@ -380,8 +380,7 @@
             path: `${basePath}/campaigns`,
             icon: Megaphone,
             group: 'create',
-            disabled: true,
-            badge: 'Coming Soon',
+            navHidden: true,
           },
           { name: 'Clippers', path: `${basePath}/clippers`, icon: Scissors, group: 'create' },
           { name: 'Shared Clips', path: `${basePath}/shared`, icon: Share2, group: 'create' },
@@ -474,10 +473,15 @@
   // ===== Navigation Filtering =====
   function getVisibleGroupItems(items: NavigationItem[]): NavigationItem[] {
     if (useOrganizationSidebar.value) {
-      return items.filter((item) => item.name !== 'Admin' && item.name !== 'Bug Report');
+      return items.filter(
+        (item) => item.name !== 'Admin' && item.name !== 'Bug Report' && !item.navHidden
+      );
     }
 
     return items.filter((item) => {
+      if (item.navHidden) {
+        return false;
+      }
       // Hide Admin and Bug Report from navigation - they're now in the profile dropdown
       if (item.name === 'Admin' || item.name === 'Bug Report') {
         return false;
@@ -525,16 +529,6 @@
       if (item.path === '/ai-video') {
         const user = authStore.user as any;
         const hasAccess = user?.is_admin || user?.ai_editor_enabled;
-        return {
-          ...item,
-          disabled: !hasAccess,
-          badge: hasAccess ? item.badge : 'Coming Soon',
-        };
-      }
-      // Dynamically disable Campaigns for non-authorized users
-      if (item.path === '/campaigns') {
-        const user = authStore.user as any;
-        const hasAccess = user?.is_admin || user?.campaigns_enabled;
         return {
           ...item,
           disabled: !hasAccess,

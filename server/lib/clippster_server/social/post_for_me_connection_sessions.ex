@@ -20,10 +20,39 @@ defmodule ClippsterServer.Social.PostForMeConnectionSessions do
       |> Map.put_new(:expires_at, DateTime.add(now, ttl_seconds(), :second))
       |> Map.put_new(:account_ids, [])
 
-    %PostForMeConnectionSession{}
-    |> PostForMeConnectionSession.create_changeset(attrs)
-    |> Repo.insert()
+    with :ok <- maybe_clear_sessions_for_reconnect(attrs) do
+      %PostForMeConnectionSession{}
+      |> PostForMeConnectionSession.create_changeset(attrs)
+      |> Repo.insert()
+    end
   end
+
+  @doc """
+  Removes prior connection sessions that share a Post For Me external_id.
+
+  Reconnect flows must reuse the provider's existing external_id, which would
+  otherwise violate the unique index on this table.
+  """
+  def clear_sessions_for_external_id(external_id) when is_binary(external_id) do
+    trimmed = String.trim(external_id)
+
+    if trimmed == "" do
+      :ok
+    else
+      from(s in PostForMeConnectionSession, where: s.external_id == ^trimmed)
+      |> Repo.delete_all()
+
+      :ok
+    end
+  end
+
+  def clear_sessions_for_external_id(_), do: :ok
+
+  defp maybe_clear_sessions_for_reconnect(%{reconnect: true, external_id: external_id}) do
+    clear_sessions_for_external_id(external_id)
+  end
+
+  defp maybe_clear_sessions_for_reconnect(_attrs), do: :ok
 
   def get_session(id) when is_binary(id), do: Repo.get(PostForMeConnectionSession, id)
   def get_session(_), do: nil

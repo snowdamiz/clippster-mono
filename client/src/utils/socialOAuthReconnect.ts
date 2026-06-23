@@ -8,6 +8,10 @@ import {
   startTiktokOAuthPopup,
   startYoutubeOAuthPopup,
 } from '@/services/socialAccountsApi';
+import {
+  type OrgSocialConnectOptions,
+  type UserSocialConnectOptions,
+} from '@/services/userSocialConnect';
 import { getSocialPlatformLabel } from '@/utils/socialTokenExpiry';
 
 type OAuthResult = { success: boolean; error?: string };
@@ -26,7 +30,8 @@ function normalizeOrgPlatform(platform: string): string {
  */
 export async function reconnectPersonalSocialPlatform(
   platform: string,
-  onResult?: (result: OAuthResult) => void
+  onResult?: (result: OAuthResult) => void,
+  options?: UserSocialConnectOptions
 ): Promise<() => void> {
   const normalized = normalizePlatform(platform);
 
@@ -36,13 +41,13 @@ export async function reconnectPersonalSocialPlatform(
 
   switch (normalized) {
     case 'instagram':
-      return startUserInstagramOAuth(handler);
+      return startUserInstagramOAuth(handler, options);
     case 'twitter':
-      return startUserTwitterOAuth(handler);
+      return startUserTwitterOAuth(handler, options);
     case 'tiktok':
-      return startUserTiktokOAuth(handler);
+      return startUserTiktokOAuth(handler, options);
     case 'youtube':
-      return startUserYoutubeOAuth(handler);
+      return startUserYoutubeOAuth(handler, options);
     default:
       throw new Error(`Reconnect is not supported for ${getSocialPlatformLabel(platform)}`);
   }
@@ -54,7 +59,8 @@ export async function reconnectPersonalSocialPlatform(
 export async function reconnectOrgSocialPlatform(
   organizationId: string | number,
   platform: string,
-  onResult?: (result: OAuthResult) => void
+  onResult?: (result: OAuthResult) => void,
+  options?: OrgSocialConnectOptions
 ): Promise<() => void> {
   const normalized = normalizeOrgPlatform(platform);
 
@@ -64,13 +70,13 @@ export async function reconnectOrgSocialPlatform(
 
   switch (normalized) {
     case 'instagram':
-      return startInstagramOAuthPopup(organizationId, handler);
+      return startInstagramOAuthPopup(organizationId, handler, options);
     case 'x':
-      return startTwitterOAuthPopup(organizationId, handler);
+      return startTwitterOAuthPopup(organizationId, handler, options);
     case 'tiktok':
-      return startTiktokOAuthPopup(organizationId, handler);
+      return startTiktokOAuthPopup(organizationId, handler, options);
     case 'youtube':
-      return startYoutubeOAuthPopup(organizationId, handler);
+      return startYoutubeOAuthPopup(organizationId, handler, options);
     default:
       throw new Error(`Reconnect is not supported for ${getSocialPlatformLabel(platform)}`);
   }

@@ -5,6 +5,7 @@
  */
 
 import api from './api';
+import { buildUserConnectUrlBody, type UserSocialConnectOptions } from './userSocialConnect';
 
 // ============================================
 // Types
@@ -73,7 +74,8 @@ function getAuthToken(): string {
  * Opens OAuth in system browser and polls for result.
  */
 export async function startUserYoutubeOAuth(
-  onResult?: (result: YoutubeAuthResult) => void
+  onResult?: (result: YoutubeAuthResult) => void,
+  options?: UserSocialConnectOptions
 ): Promise<() => void> {
   const authToken = getAuthToken();
 
@@ -85,7 +87,7 @@ export async function startUserYoutubeOAuth(
 
   const connectResponse = await api.post<PostForMeConnectUrlResponse>(
     '/user/social/connect-url',
-    { platform: 'youtube' }
+    buildUserConnectUrlBody('youtube', options)
   );
 
   if (!connectResponse.data.success || !connectResponse.data.auth_url) {
