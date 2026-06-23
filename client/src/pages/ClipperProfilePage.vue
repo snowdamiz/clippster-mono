@@ -2132,19 +2132,26 @@
       }
 
       reconnectingAccountId.value = account.id;
-      cleanupReconnectAuth = await reconnectPersonalSocialPlatform(account.platform, (result) => {
-        reconnectingAccountId.value = null;
-        if (result.success) {
-          toast({
-            title: 'Success',
-            description: `${getPlatformName(account.platform)} reconnected`,
-          });
-          void loadSocialAccounts();
-          void socialTokenMonitor.checkNow();
-        } else if (result.error) {
-          toast({ title: 'Error', description: result.error });
+      cleanupReconnectAuth = await reconnectPersonalSocialPlatform(
+        account.platform,
+        (result) => {
+          reconnectingAccountId.value = null;
+          if (result.success) {
+            toast({
+              title: 'Success',
+              description: `${getPlatformName(account.platform)} reconnected`,
+            });
+            void loadSocialAccounts();
+            void socialTokenMonitor.checkNow();
+          } else if (result.error) {
+            toast({ title: 'Error', description: result.error });
+          }
+        },
+        {
+          socialAccountId: account.id,
+          providerAccountId: account.provider_account_id ?? undefined,
         }
-      });
+      );
     } catch (error) {
       reconnectingAccountId.value = null;
       toast({

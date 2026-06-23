@@ -5,6 +5,7 @@
  */
 
 import api from './api';
+import { buildUserConnectUrlBody, type UserSocialConnectOptions } from './userSocialConnect';
 
 // ============================================
 // Types
@@ -76,7 +77,8 @@ function getAuthToken(): string {
  * Opens OAuth in system browser and listens for result via Tauri event.
  */
 export async function startUserTwitterOAuth(
-  onResult?: (result: TwitterAuthResult) => void
+  onResult?: (result: TwitterAuthResult) => void,
+  options?: UserSocialConnectOptions
 ): Promise<() => void> {
   const authToken = getAuthToken();
 
@@ -91,7 +93,7 @@ export async function startUserTwitterOAuth(
     // Preferred flow: Post For Me generic OAuth
     const connectResponse = await api.post<PostForMeConnectUrlResponse>(
       '/user/social/connect-url',
-      { platform: 'x' }
+      buildUserConnectUrlBody('x', options)
     );
 
     if (!connectResponse.data.success || !connectResponse.data.auth_url) {

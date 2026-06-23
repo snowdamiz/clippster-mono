@@ -116,6 +116,15 @@ defmodule ClippsterServer.Social.Providers.PostForMe do
   end
 
   @doc """
+  Fetches a single connected social account by Post For Me ID (`spc_*`).
+  """
+  def get_social_account(id) when is_binary(id) do
+    with {:ok, payload} <- request(:get, "/v1/social-accounts/#{id}") do
+      map_social_account_response(payload)
+    end
+  end
+
+  @doc """
   Disconnects a social account by Post For Me ID (`spc_*`).
   """
   def disconnect_social_account(id) when is_binary(id) do
