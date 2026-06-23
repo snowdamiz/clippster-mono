@@ -10,6 +10,207 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
   alias ClippsterServer.Social.PostForMeConnectionSession
   alias ClippsterServer.Social.Providers.PostForMe
 
+  @doc """
+  Resolves the Post For Me external_id for an existing provider account.
+
+  Reconnect must reuse this value — creating a new external_id causes
+  "External Id already exists for account" errors from Post For Me.
+  """
+  def resolve_provider_external_id(provider_account_id) when is_binary(provider_account_id) do
+    trimmed = String.trim(provider_account_id)
+
+    if trimmed == "" do
+      {:error, :missing_provider_account_id}
+    else
+      case PostForMe.get_social_account(trimmed) do
+        {:ok, account} ->
+          case account.external_id do
+            external_id when is_binary(external_id) and external_id != "" ->
+              {:ok, external_id}
+
+            _ ->
+              {:error, :missing_external_id}
+          end
+
+        {:error, _} ->
+          with {:ok, listing} <- PostForMe.list_social_accounts(%{id: trimmed}),
+               account when not is_nil(account) <- find_provider_account(listing.data, trimmed) do
+            case account.external_id do
+              external_id when is_binary(external_id) and external_id != "" ->
+                {:ok, external_id}
+
+              _ ->
+                {:error, :missing_external_id}
+            end
+          else
+            _ -> {:error, :provider_account_not_found}
+          end
+      end
+    end
+  end
+
+  def resolve_provider_external_id(_), do: {:error, :missing_provider_account_id}
+
+  def resolve_provider_external_id_from_payload(%{provider_payload: payload})
+      when is_map(payload) do
+    case Map.get(payload, "external_id") || Map.get(payload, :external_id) do
+      external_id when is_binary(external_id) and external_id != "" -> {:ok, external_id}
+      _ -> {:error, :missing_external_id}
+    end
+  end
+
+  def resolve_provider_external_id_from_payload(_), do: {:error, :missing_external_id}
+
+  def build_user_connect_session_attrs(user, platform, params, return_mode, return_url) do
+    base = %{
+      scope: "user",
+      user_id: user.id,
+      platform: platform,
+      return_mode: return_mode,
+      return_url: return_url
+    }
+
+    case reconnect_requested?(params) do
+      true ->
+        with {:ok, provider_account_id, local_account} <-
+               resolve_user_reconnect_account(user, params),
+             {:ok, external_id} <-
+               resolve_reconnect_external_id(provider_account_id, local_account) do
+          {:ok,
+           Map.merge(base, %{
+             external_id: external_id,
+             account_ids: [provider_account_id],
+             reconnect: true
+           })}
+        end
+
+      false ->
+        {:ok, base}
+    end
+  end
+
+  def build_org_connect_session_attrs(org_id, user_id, platform, params, return_mode, return_url) do
+    base = %{
+      scope: "org",
+      organization_id: org_id,
+      user_id: user_id,
+      platform: platform,
+      return_mode: return_mode,
+      return_url: return_url
+    }
+
+    case reconnect_requested?(params) do
+      true ->
+        with {:ok, provider_account_id, local_account} <-
+               resolve_org_reconnect_account(org_id, params),
+             {:ok, external_id} <-
+               resolve_reconnect_external_id(provider_account_id, local_account) do
+          {:ok,
+           Map.merge(base, %{
+             external_id: external_id,
+             account_ids: [provider_account_id],
+             reconnect: true
+           })}
+        end
+
+      false ->
+        {:ok, base}
+    end
+  end
+
+  defp reconnect_requested?(params) when is_map(params) do
+    provider_id = params["provider_account_id"] || params["providerAccountId"]
+    social_id = params["social_account_id"] || params["socialAccountId"]
+
+    (is_binary(provider_id) and String.trim(provider_id) != "") or
+      parse_optional_integer(social_id) != nil
+  end
+
+  defp reconnect_requested?(_), do: false
+
+  defp resolve_user_reconnect_account(user, params) do
+    provider_account_id = params["provider_account_id"] || params["providerAccountId"]
+    social_account_id = parse_optional_integer(params["social_account_id"] || params["socialAccountId"])
+
+    cond do
+      is_binary(provider_account_id) and String.trim(provider_account_id) != "" ->
+        trimmed = String.trim(provider_account_id)
+
+        case Campaigns.get_social_account_by_provider(user.id, "post_for_me", trimmed) do
+          nil -> {:error, :account_not_found}
+          account -> {:ok, trimmed, account}
+        end
+
+      not is_nil(social_account_id) ->
+        case Campaigns.get_social_account(social_account_id) do
+          %{user_id: account_user_id} = account when account_user_id == user.id ->
+            if is_binary(account.provider_account_id) and account.provider_account_id != "" do
+              {:ok, account.provider_account_id, account}
+            else
+              {:error, :missing_provider_account_id}
+            end
+
+          _ ->
+            {:error, :account_not_found}
+        end
+
+      true ->
+        {:error, :missing_reconnect_account}
+    end
+  end
+
+  defp resolve_org_reconnect_account(org_id, params) do
+    provider_account_id = params["provider_account_id"] || params["providerAccountId"]
+    social_account_id = parse_optional_integer(params["social_account_id"] || params["socialAccountId"])
+
+    cond do
+      is_binary(provider_account_id) and String.trim(provider_account_id) != "" ->
+        trimmed = String.trim(provider_account_id)
+
+        case Social.get_social_account_by_provider(org_id, "post_for_me", trimmed) do
+          nil -> {:error, :account_not_found}
+          account -> {:ok, trimmed, account}
+        end
+
+      not is_nil(social_account_id) ->
+        case Social.get_social_account(social_account_id) do
+          %{organization_id: account_org_id} = account when account_org_id == org_id ->
+            if is_binary(account.provider_account_id) and account.provider_account_id != "" do
+              {:ok, account.provider_account_id, account}
+            else
+              {:error, :missing_provider_account_id}
+            end
+
+          _ ->
+            {:error, :account_not_found}
+        end
+
+      true ->
+        {:error, :missing_reconnect_account}
+    end
+  end
+
+  defp resolve_reconnect_external_id(provider_account_id, local_account) do
+    case resolve_provider_external_id(provider_account_id) do
+      {:ok, external_id} ->
+        {:ok, external_id}
+
+      {:error, _} ->
+        resolve_provider_external_id_from_payload(local_account)
+    end
+  end
+
+  defp parse_optional_integer(value) when is_integer(value), do: value
+
+  defp parse_optional_integer(value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {parsed, _} -> parsed
+      :error -> nil
+    end
+  end
+
+  defp parse_optional_integer(_), do: nil
+
   def complete_user_connect(user, account_ids, external_id, platform) do
     with {:ok, listing} <- list_provider_accounts(account_ids, external_id, platform),
          {:ok, synced_accounts} <- upsert_user_accounts(user, listing.data, platform) do
@@ -100,6 +301,10 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
       nil -> {:error, :user_not_found}
       user -> {:ok, user}
     end
+  end
+
+  defp find_provider_account(accounts, provider_account_id) when is_list(accounts) do
+    Enum.find(accounts, fn account -> account.id == provider_account_id end)
   end
 
   defp list_provider_accounts(account_ids, external_id, platform) do

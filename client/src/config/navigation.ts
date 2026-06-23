@@ -39,6 +39,7 @@ export interface NavigationItem {
   action?: 'dialog'; // New property to handle dialog actions instead of routing
   restrictedHidden?: boolean; // Hide for restricted accounts
   affiliateOnly?: boolean; // Only show for affiliate users
+  navHidden?: boolean; // Temporarily hidden from navigation (code retained for later use)
 }
 
 export const navigationGroups: Record<NavigationGroup, { label: string; order: number }> = {
@@ -87,7 +88,7 @@ export const navigationItems: NavigationItem[] = [
     path: '/campaigns',
     icon: Megaphone,
     group: 'browse',
-    restrictedHidden: true,
+    adminOnly: true,
   },
 
   // Create group - content creation tools

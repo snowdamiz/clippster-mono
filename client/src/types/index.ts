@@ -673,6 +673,8 @@ export interface ManualRegion {
   id: string;
   color: string; // e.g., "#4F9DFF" for visual distinction
   label?: string; // Optional label like "Speaker", "Gameplay"
+  /** Clip-wide sequential number for default labels (Region 1, Region 2, …). */
+  displayNumber?: number;
   // Source crop (normalized 0-1 coordinates on source video)
   source: ManualRegionRect;
   // Output position (normalized 0-1 coordinates on target canvas)

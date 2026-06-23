@@ -229,7 +229,7 @@
             :key="region.id"
             :rect="region.source"
             :color="region.color"
-            :label="region.label || `Region ${getRegionIndex(region.id) + 1}`"
+            :label="regionLabel(region)"
             :is-selected="selectedRegionId === region.id"
             :container-width="containerWidth"
             :container-height="containerHeight"
@@ -283,7 +283,7 @@
                 :style="{ backgroundColor: selectedRegion?.color }"
               />
               <span class="text-xs text-zinc-300 font-medium">
-                {{ selectedRegion?.label || `Region ${getRegionIndex(selectedRegionId || '') + 1}` }}
+                {{ selectedRegion ? regionLabel(selectedRegion) : '' }}
               </span>
               <span class="text-[10px] text-zinc-500">
                 {{ selectedRegionMediaType === 'video' ? 'Video' : 'Image' }} media
@@ -319,7 +319,7 @@
           "
         >
           <div class="w-2 h-2 rounded-sm" :style="{ backgroundColor: region.color }" />
-          {{ region.label || `Region ${getRegionIndex(region.id) + 1}` }}
+          {{ regionLabel(region) }}
         </button>
       </div>
     </div>
@@ -347,6 +347,7 @@
   import { POI_REGION_COLORS } from '@/types';
   import { SOCIAL_OVERLAY_PRESETS } from '@/editor/constants/social-overlay-constants';
   import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
+  import { getRegionDisplayLabel } from '@/utils/poiRegionNumbering';
 
   interface Props {
     regions: ManualRegion[];
@@ -365,6 +366,8 @@
     targetAspectRatio?: string;
     /** Preview-only social chrome on output (TikTok / Reels / Shorts). */
     socialOverlayPreset?: SocialOverlayPreset | null;
+    /** Next clip-wide region number for new regions in the current edit context. */
+    nextRegionNumber?: number;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -377,6 +380,7 @@
     allowMediaUpload: true,
     targetAspectRatio: '16:9',
     socialOverlayPreset: null,
+    nextRegionNumber: 1,
   });
 
   const emit = defineEmits<{
@@ -686,9 +690,13 @@
     };
   });
 
-  // Get region index for labeling
+  // Get region index for labeling (array position — prefer displayNumber via regionLabel)
   function getRegionIndex(id: string): number {
     return props.regions.findIndex((r) => r.id === id);
+  }
+
+  function regionLabel(region: ManualRegion): string {
+    return getRegionDisplayLabel(region, getRegionIndex(region.id));
   }
 
   function onCornerRadiusToggle(checked: boolean | 'indeterminate') {
@@ -761,9 +769,12 @@
     const outputWidth = 1.0;
     const outputHeight = outputWidth / actualCropAspect;
     
+    const displayNumber = props.nextRegionNumber;
     const newRegion: ManualRegion = {
       id: generateId(),
       color: getNextColor(),
+      displayNumber,
+      label: `Region ${displayNumber}`,
       source: {
         x: 0.25,
         y: 0.25,

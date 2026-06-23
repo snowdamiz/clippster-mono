@@ -678,6 +678,10 @@
             showToast(result.error, 'error');
           }
           connectingPlatform.value = null;
+        },
+        {
+          socialAccountId: account.id,
+          providerAccountId: account.provider_account_id ?? undefined,
         }
       );
     } catch (error) {

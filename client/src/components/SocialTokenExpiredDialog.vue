@@ -166,16 +166,20 @@ async function reconnect(connection: SocialTokenAttention): Promise<void> {
 
   reconnectingAccountId.value = connection.id;
   try {
-    const cancel = await reconnectPersonalSocialPlatform(connection.platform, (result) => {
-      reconnectingAccountId.value = null;
-      if (result.success) {
-        showToast(`${connection.platformLabel} reconnected successfully`, 'success');
-        clearDismissedConnection(connection);
-        void checkNow();
-      } else if (result.error) {
-        showToast(result.error, 'error');
-      }
-    });
+    const cancel = await reconnectPersonalSocialPlatform(
+      connection.platform,
+      (result) => {
+        reconnectingAccountId.value = null;
+        if (result.success) {
+          showToast(`${connection.platformLabel} reconnected successfully`, 'success');
+          clearDismissedConnection(connection);
+          void checkNow();
+        } else if (result.error) {
+          showToast(result.error, 'error');
+        }
+      },
+      { socialAccountId: connection.id }
+    );
     void cancel;
   } catch (error) {
     reconnectingAccountId.value = null;

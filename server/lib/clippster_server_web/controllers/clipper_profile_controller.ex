@@ -44,14 +44,15 @@ defmodule ClippsterServerWeb.ClipperProfileController do
           return_mode = normalize_return_mode(params["return_mode"], "tauri")
 
           with {:ok, return_url} <- normalize_return_url(return_mode, params["return_url"]),
-               {:ok, session} <-
-                 PostForMeConnectionSessions.create_session(%{
-                   scope: "user",
-                   user_id: user.id,
-                   platform: platform,
-                   return_mode: return_mode,
-                   return_url: return_url
-                 }) do
+               {:ok, session_attrs} <-
+                 PostForMeConnectionSync.build_user_connect_session_attrs(
+                   user,
+                   platform,
+                   params,
+                   return_mode,
+                   return_url
+                 ),
+               {:ok, session} <- PostForMeConnectionSessions.create_session(session_attrs) do
             payload =
               %{
                 platform: platform,
@@ -94,6 +95,40 @@ defmodule ClippsterServerWeb.ClipperProfileController do
               conn
               |> put_status(422)
               |> json(%{success: false, error: "return_url is invalid or not allowed"})
+
+            {:error, :account_not_found} ->
+              conn
+              |> put_status(404)
+              |> json(%{success: false, error: "Social account not found"})
+
+            {:error, :missing_provider_account_id} ->
+              conn
+              |> put_status(422)
+              |> json(%{
+                success: false,
+                error: "This account cannot be refreshed. Disconnect and connect it again."
+              })
+
+            {:error, :missing_external_id} ->
+              conn
+              |> put_status(422)
+              |> json(%{
+                success: false,
+                error: "Could not resolve Post For Me external id for this account"
+              })
+
+            {:error, :provider_account_not_found} ->
+              conn
+              |> put_status(404)
+              |> json(%{success: false, error: "Post For Me account not found"})
+
+            {:error, :missing_reconnect_account} ->
+              conn
+              |> put_status(422)
+              |> json(%{
+                success: false,
+                error: "provider_account_id or social_account_id is required to refresh"
+              })
 
             {:error, changeset} ->
               conn
