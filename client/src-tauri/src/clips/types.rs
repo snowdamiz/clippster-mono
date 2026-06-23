@@ -798,6 +798,23 @@ pub struct SegmentRegionConfig {
     pub regions: Vec<ManualRegion>,
 }
 
+/// Time-based B-roll overlay, independent from framing segments.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrollRegionConfig {
+    /// Unique B-roll identifier
+    pub broll_id: String,
+    /// Start time relative to clip start (seconds)
+    pub start_time: f64,
+    /// End time relative to clip start (seconds)
+    pub end_time: f64,
+    /// Full-canvas or user-positioned media region
+    pub region: ManualRegion,
+    /// Optional source suggestion identifier
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggestion_id: Option<String>,
+}
+
 /// Manual framing configuration with multiple regions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -823,6 +840,9 @@ pub struct ManualFramingConfig {
     /// Segment-based region configurations
     #[serde(skip_serializing_if = "Option::is_none")]
     pub segment_configs: Option<Vec<SegmentRegionConfig>>,
+    /// Timed B-roll overlays, composited independently from segments
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub broll_configs: Option<Vec<BrollRegionConfig>>,
 }
 
 /// Segment-specific framing configuration (legacy)

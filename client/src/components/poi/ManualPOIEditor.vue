@@ -275,7 +275,8 @@
               <POISegmentTimeline
                 v-if="clipDuration > 0"
                 :segments="segmentConfigs"
-                :broll-markers="aiBroll.brollMarkers.value"
+                :broll-regions="brollConfigs"
+                :active-broll-id="activeBrollId"
                 :active-segment-id="activeSegmentId"
                 :duration="clipDuration"
                 :current-time="currentTime"
@@ -287,6 +288,9 @@
                 @delete-segment="deleteSegment"
                 @select-segment="selectSegment"
                 @update-segment="updateSegment"
+                @select-broll="selectBroll"
+                @delete-broll="deleteBroll"
+                @update-broll="updateBroll"
                 @seek-time="handleSeekTime"
               />
 
@@ -432,6 +436,7 @@
   import SubtitlePropertiesPanel from '@/components/SubtitlePropertiesPanel.vue';
   import { Checkbox } from '@/components/ui/checkbox';
   import type {
+    BrollRegionConfig,
     ManualRegion,
     ManualFramingConfig,
     ManualSourceFramingPayload,
@@ -579,10 +584,17 @@
 
   // Segment management state
   const segmentConfigs = ref<SegmentRegionConfig[]>([]);
+  const brollConfigs = ref<BrollRegionConfig[]>([]);
 
   function segmentAtTime(time: number): SegmentRegionConfig | undefined {
     return segmentConfigs.value.find(
       (seg) => time >= seg.startTime && time <= seg.endTime,
+    );
+  }
+
+  function brollsAtTime(time: number): BrollRegionConfig[] {
+    return brollConfigs.value.filter(
+      (broll) => time >= broll.startTime && time <= broll.endTime,
     );
   }
 
@@ -617,6 +629,7 @@
     () =>
       baseRegions.value.length > 0 ||
       segmentConfigs.value.some((s) => s.regions.length > 0) ||
+      brollConfigs.value.length > 0 ||
       sourceFrameMode.value !== 'none' ||
       Boolean(clipTextLocal.value?.enabled),
   );
@@ -702,10 +715,15 @@
   /** Regions shown in source/target panels — segment regions while playhead is in a segment, else base. */
   const displayRegions = computed(() => {
     const seg = segmentAtTime(currentTime.value);
-    return seg ? seg.regions : baseRegions.value;
+    const framingRegions = seg ? seg.regions : baseRegions.value;
+    return [...framingRegions, ...brollsAtTime(currentTime.value).map((broll) => broll.region)];
   });
 
   const activeSegmentId = computed(() => segmentAtTime(currentTime.value)?.segmentId ?? null);
+  const activeBrollId = computed(() => {
+    if (!selectedRegionId.value) return null;
+    return brollConfigs.value.find((broll) => broll.region.id === selectedRegionId.value)?.brollId ?? null;
+  });
 
   const nextRegionNumber = computed(() =>
     getNextRegionDisplayNumber([
@@ -720,6 +738,7 @@
     for (const seg of segmentConfigs.value) {
       for (const r of seg.regions) ids.add(r.id);
     }
+    for (const broll of brollConfigs.value) ids.add(broll.region.id);
     return ids.size;
   });
 
@@ -1075,10 +1094,15 @@
             props.initialConfig.segmentConfigs && props.initialConfig.segmentConfigs.length > 0
               ? JSON.parse(JSON.stringify(props.initialConfig.segmentConfigs))
               : [];
+          brollConfigs.value =
+            props.initialConfig.brollConfigs && props.initialConfig.brollConfigs.length > 0
+              ? JSON.parse(JSON.stringify(props.initialConfig.brollConfigs))
+              : [];
           ensureGlobalDisplayNumbers(baseRegions.value, segmentConfigs.value);
         } else {
           baseRegions.value = [];
           segmentConfigs.value = [];
+          brollConfigs.value = [];
         }
 
         selectedRegionId.value = displayRegions.value[0]?.id ?? null;
@@ -1180,6 +1204,12 @@
     const index = list.findIndex((r) => r.id === id);
     if (index !== -1) {
       list[index] = { ...list[index], ...update };
+      return;
+    }
+
+    const broll = brollConfigs.value.find((item) => item.region.id === id);
+    if (broll) {
+      broll.region = { ...broll.region, ...update };
     }
   }
 
@@ -1189,8 +1219,15 @@
       const index = list.findIndex((r) => r.id === id);
       if (index !== -1) {
         list.splice(index, 1);
-        break;
+        if (selectedRegionId.value === id) {
+          selectedRegionId.value = displayRegions.value[0]?.id ?? null;
+        }
+        return;
       }
+    }
+    const brollIndex = brollConfigs.value.findIndex((broll) => broll.region.id === id);
+    if (brollIndex !== -1) {
+      brollConfigs.value.splice(brollIndex, 1);
     }
     if (selectedRegionId.value === id) {
       selectedRegionId.value = displayRegions.value[0]?.id ?? null;
@@ -1283,16 +1320,15 @@
     try {
       const result = await aiBroll.applySuggestionToConfig(
         suggestion,
-        segmentConfigs.value,
+        brollConfigs.value,
         props.projectId,
-        segmentConfigs.value.length,
+        brollConfigs.value.length,
       );
-      segmentConfigs.value = result.segmentConfigs;
-      const appliedSeg = segmentConfigs.value.find((seg) => seg.startTime === suggestion.startTime);
-      if (appliedSeg) {
-        ensureGlobalDisplayNumbers(baseRegions.value, segmentConfigs.value);
-        currentTime.value = appliedSeg.startTime;
-        selectedRegionId.value = appliedSeg.regions[0]?.id ?? null;
+      brollConfigs.value = result.brollConfigs;
+      const appliedBroll = brollConfigs.value.find((broll) => broll.suggestionId === suggestion.id);
+      if (appliedBroll) {
+        currentTime.value = appliedBroll.startTime;
+        selectedRegionId.value = appliedBroll.region.id;
       }
     } catch (e) {
       console.error('[ManualPOIEditor] Failed to apply B-roll:', e);
@@ -1349,15 +1385,14 @@
         projectId: props.projectId,
         startTime: payload.startTime,
         duration,
-        segmentConfigs: segmentConfigs.value,
-        regionIndex: segmentConfigs.value.length,
+        brollConfigs: brollConfigs.value,
+        regionIndex: brollConfigs.value.length,
       });
-      segmentConfigs.value = result.segmentConfigs;
-      const appliedSeg = segmentConfigs.value.find((seg) => seg.startTime === payload.startTime);
-      if (appliedSeg) {
-        ensureGlobalDisplayNumbers(baseRegions.value, segmentConfigs.value);
-        currentTime.value = appliedSeg.startTime;
-        selectedRegionId.value = appliedSeg.regions[0]?.id ?? null;
+      brollConfigs.value = result.brollConfigs;
+      const appliedBroll = brollConfigs.value.find((broll) => broll.suggestionId === result.suggestion.id);
+      if (appliedBroll) {
+        currentTime.value = appliedBroll.startTime;
+        selectedRegionId.value = appliedBroll.region.id;
       }
     } catch (e) {
       console.error('[ManualPOIEditor] Failed to add manual B-roll:', e);
@@ -1700,6 +1735,33 @@
     }
   }
 
+  function selectBroll(brollId: string) {
+    const broll = brollConfigs.value.find((item) => item.brollId === brollId);
+    if (!broll) return;
+    currentTime.value = broll.startTime;
+    selectedRegionId.value = broll.region.id;
+  }
+
+  function deleteBroll(brollId: string) {
+    const index = brollConfigs.value.findIndex((item) => item.brollId === brollId);
+    if (index === -1) return;
+    const [removed] = brollConfigs.value.splice(index, 1);
+    if (selectedRegionId.value === removed.region.id) {
+      selectedRegionId.value = displayRegions.value[0]?.id ?? null;
+    }
+  }
+
+  function updateBroll(brollId: string, updates: { startTime?: number; endTime?: number }) {
+    const broll = brollConfigs.value.find((item) => item.brollId === brollId);
+    if (!broll) return;
+    if (updates.startTime !== undefined) {
+      broll.startTime = updates.startTime;
+    }
+    if (updates.endTime !== undefined) {
+      broll.endTime = updates.endTime;
+    }
+  }
+
   // Handle seek time from timeline playhead drag
   function handleSeekTime(time: number) {
     currentTime.value = time;
@@ -1709,6 +1771,7 @@
   function resetRegions() {
     baseRegions.value = [];
     segmentConfigs.value = [];
+    brollConfigs.value = [];
     selectedRegionId.value = null;
   }
 
@@ -1737,6 +1800,7 @@
       targetAspectRatio: props.targetAspectRatio,
       sourceAspectRatio: props.sourceAspectRatio,
       segmentConfigs: segmentConfigs.value.length > 0 ? JSON.parse(JSON.stringify(segmentConfigs.value)) : undefined,
+      brollConfigs: brollConfigs.value.length > 0 ? JSON.parse(JSON.stringify(brollConfigs.value)) : undefined,
       sourceTransform: sourceTransform.value ? JSON.parse(JSON.stringify(sourceTransform.value)) : undefined,
       sourceFrameMode: sourceFrameMode.value !== 'none' ? sourceFrameMode.value : undefined,
       blurEnabled: sourceFrameMode.value !== 'none' ? poiBlurEnabled.value : undefined,
