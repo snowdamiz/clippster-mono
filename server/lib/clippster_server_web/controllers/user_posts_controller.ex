@@ -669,7 +669,7 @@ defmodule ClippsterServerWeb.UserPostsController do
         )
 
       :pending ->
-        case classify_post_for_me_pending_outcome(post_id) do
+        case classify_post_for_me_pending_outcome(post_id, provider_account_id) do
           :accept ->
             Logger.warning(
               "[UserPosts] PostForMe publish still in progress for #{post_id} after retries; accepting (Instagram may finish shortly)"
@@ -755,21 +755,23 @@ defmodule ClippsterServerWeb.UserPostsController do
     end
   end
 
-  # When polling times out, accept if PostForMe still has an in-flight publish (common for IG video).
-  defp classify_post_for_me_pending_outcome(post_id) do
-    case PostForMe.get_social_post(post_id) do
-      {:ok, %{status: status}}
-      when status in ["processing", "scheduled", "pending", "published", "completed", "success"] ->
+  # When polling times out, only accept if PostForMe confirms success for this account.
+  defp classify_post_for_me_pending_outcome(post_id, provider_account_id) do
+    case fetch_post_for_me_result_for_account(post_id, provider_account_id) do
+      {:ok, _} ->
         :accept
 
-      {:ok, %{status: status}} when status in ["failed", "error"] ->
-        {:error, :failed, "Post For Me reported status: #{status}"}
+      {:error, :failed, message} ->
+        {:error, :failed, message}
 
-      {:ok, _} ->
-        :reject
+      _ ->
+        case PostForMe.get_social_post(post_id) do
+          {:ok, %{status: status}} when status in ["failed", "error"] ->
+            {:error, :failed, "Post For Me reported status: #{status}"}
 
-      {:error, _} ->
-        :reject
+          _ ->
+            :reject
+        end
     end
   end
 
@@ -786,11 +788,33 @@ defmodule ClippsterServerWeb.UserPostsController do
   end
 
   defp fetch_post_data_from_feed_with_retry(provider_account_id, post_id, retries_left) do
+    case PostForMeFeedAnalytics.resolve_publish_metadata(provider_account_id, post_id) do
+      {:ok, %{post_url: url, provider_post_id: provider_id}}
+      when is_binary(url) or is_binary(provider_id) ->
+        {url, provider_id}
+
+      {:error, {:publish_failed, _error}} ->
+        {nil, nil}
+
+      {:error, :not_found} when retries_left > 0 ->
+        Logger.info(
+          "[UserPosts] Post #{post_id} publish metadata not ready, retrying in 3 seconds (#{retries_left} retries left)"
+        )
+
+        Process.sleep(3000)
+        fetch_post_data_from_feed_with_retry(provider_account_id, post_id, retries_left - 1)
+
+      _ ->
+        fetch_post_data_from_feed_legacy(provider_account_id, post_id, retries_left)
+    end
+  end
+
+  defp fetch_post_data_from_feed_legacy(provider_account_id, post_id, retries_left) do
     case fetch_post_for_me_feed(provider_account_id) do
       {:ok, feed_items} ->
-        # Find the post in the feed by social_post_id
         case Enum.find(feed_items, fn item ->
-               item["social_post_id"] == post_id
+               to_string(item["platform_post_id"] || "") == post_id or
+                 feed_item_has_social_post_id?(item, post_id)
              end) do
           nil when retries_left > 0 ->
             Logger.info(
@@ -833,6 +857,10 @@ defmodule ClippsterServerWeb.UserPostsController do
 
         {nil, nil}
     end
+  end
+
+  defp feed_item_has_social_post_id?(item, post_id) do
+    to_string(item["social_post_id"] || "") == post_id
   end
 
   defp fetch_post_for_me_feed(provider_account_id),

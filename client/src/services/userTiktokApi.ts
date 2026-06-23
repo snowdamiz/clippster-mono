@@ -263,14 +263,3 @@ export async function publishToUserTiktok(
   }
 }
 
-/**
- * Check if account token is expiring soon
- */
-export function isTiktokTokenExpiringSoon(account: UserTiktokAccount): boolean {
-  if (!account.token_expires_at) return false;
-
-  const expiresAt = new Date(account.token_expires_at);
-  const daysUntilExpiry = (expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-
-  return daysUntilExpiry < 7;
-}

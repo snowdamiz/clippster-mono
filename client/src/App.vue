@@ -313,7 +313,7 @@
     } else if (!event.detail?.userId) {
       // User logged out — clear announcement queue and leave channel
       unsubscribe();
-      socialTokenMonitor.stop();
+      socialTokenMonitor.stop({ clearPersistedDismissals: true });
       // Clear plan selection flag
       localStorage.removeItem('has_selected_plan');
       // Stop polling and clear pending invitations

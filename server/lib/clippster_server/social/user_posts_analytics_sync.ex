@@ -43,25 +43,23 @@ defmodule ClippsterServer.Social.UserPostsAnalyticsSync do
 
     case Campaigns.list_user_social_accounts(user_id) do
       accounts when is_list(accounts) ->
-        posts_by_platform = Enum.group_by(syncable_posts, & &1.platform)
+        accounts_by_id = Map.new(accounts, &{&1.id, &1})
 
-        for {platform, platform_posts} <- posts_by_platform do
-          lookup_platform = normalize_platform(platform)
-
-          account =
-            Enum.find(accounts, fn acc ->
-              normalize_platform(acc.platform) == lookup_platform && acc.is_active &&
-                is_binary(acc.provider_account_id)
-            end)
+        syncable_posts
+        |> Enum.group_by(& &1.clipper_social_account_id)
+        |> Enum.each(fn {account_id, account_posts} ->
+          account = account_for_posts(account_id, account_posts, accounts_by_id, accounts)
 
           if account do
-            sync_platform_posts(platform_posts, platform, account)
+            platform = List.first(account_posts).platform
+
+            sync_platform_posts(account_posts, platform, account)
           else
             Logger.warning(
-              "[UserPostsAnalyticsSync] No active #{platform} account with provider_account_id found"
+              "[UserPostsAnalyticsSync] No social account found for posts (account_id=#{inspect(account_id)})"
             )
           end
-        end
+        end)
 
         sync_user_post_submissions(user_id)
 
@@ -114,6 +112,7 @@ defmodule ClippsterServer.Social.UserPostsAnalyticsSync do
         (is_binary(post.post_id) && post.post_id != "")
 
     is_supported = post.platform in @supported_platforms
+    is_published = post.status == "published"
 
     if not has_identifier do
       Logger.warning(
@@ -121,7 +120,7 @@ defmodule ClippsterServer.Social.UserPostsAnalyticsSync do
       )
     end
 
-    has_identifier && is_supported
+    has_identifier && is_supported && is_published
   end
 
   defp sync_platform_posts(posts, platform, account) do
@@ -132,6 +131,7 @@ defmodule ClippsterServer.Social.UserPostsAnalyticsSync do
         )
 
         Enum.each(posts, fn post ->
+          post = resolve_post_metadata(post, account)
           sync_single_post(post, platform, feed_items)
         end)
 
@@ -141,6 +141,66 @@ defmodule ClippsterServer.Social.UserPostsAnalyticsSync do
         )
     end
   end
+
+  defp resolve_post_metadata(%{status: "failed"} = post, _account), do: post
+
+  defp resolve_post_metadata(post, account) do
+    if is_binary(post.post_id) && post.post_id != "" &&
+         is_binary(account.provider_account_id) do
+      case PostForMeFeedAnalytics.resolve_publish_metadata(
+             account.provider_account_id,
+             post.post_id
+           ) do
+        {:error, {:publish_failed, error}} ->
+          Logger.warning(
+            "[UserPostsAnalyticsSync] Post #{post.id} publish failed on platform: #{error}"
+          )
+
+          mark_post_failed(post, error)
+
+        {:ok, metadata} ->
+          attrs =
+            %{}
+            |> maybe_put_attr(:post_url, metadata.post_url)
+            |> maybe_put_attr(:provider_post_id, metadata.provider_post_id)
+
+          if map_size(attrs) > 0 do
+            case Campaigns.update_user_post(post, attrs) do
+              {:ok, updated} -> updated
+              {:error, _} -> Map.merge(post, attrs)
+            end
+          else
+            post
+          end
+
+        {:error, :not_found} ->
+          post
+
+        {:error, reason} ->
+          Logger.debug(
+            "[UserPostsAnalyticsSync] Could not resolve publish metadata for post #{post.id}: #{inspect(reason)}"
+          )
+
+          post
+      end
+    else
+      post
+    end
+  end
+
+  defp maybe_put_attr(attrs, _key, nil), do: attrs
+  defp maybe_put_attr(attrs, _key, ""), do: attrs
+
+  defp maybe_put_attr(attrs, key, value), do: Map.put(attrs, key, value)
+
+  defp mark_post_failed(post, error) do
+    case Campaigns.mark_user_post_failed(post, error) do
+      {:ok, updated} -> updated
+      {:error, _} -> struct(post, status: "failed")
+    end
+  end
+
+  defp sync_single_post(%{status: "failed"}, _platform, _feed_items), do: :ok
 
   defp sync_single_post(post, platform, feed_items) do
     case PostForMeFeedAnalytics.match_post_in_feed(platform, feed_items, post) do
@@ -218,11 +278,25 @@ defmodule ClippsterServer.Social.UserPostsAnalyticsSync do
 
       case Campaigns.list_user_social_accounts(user_id) do
         accounts when is_list(accounts) ->
-          posts_by_platform = Enum.group_by(posts_needing_urls, & &1.platform)
-          backfilled_by_id = backfill_posts_by_platform(posts_by_platform, accounts)
+          accounts_by_id = Map.new(accounts, &{&1.id, &1})
 
-          Enum.map(posts, fn post ->
-            Map.get(backfilled_by_id, post.id, post)
+          posts_needing_urls
+          |> Enum.group_by(& &1.clipper_social_account_id)
+          |> Enum.flat_map(fn {account_id, account_posts} ->
+            account = account_for_posts(account_id, account_posts, accounts_by_id, accounts)
+
+            if account do
+              platform = List.first(account_posts).platform
+              backfill_posts_for_account(account_posts, platform, account)
+            else
+              Enum.map(account_posts, fn post -> {post.id, post} end)
+            end
+          end)
+          |> Map.new()
+          |> then(fn backfilled_by_id ->
+            Enum.map(posts, fn post ->
+              Map.get(backfilled_by_id, post.id, post)
+            end)
           end)
 
         _ ->
@@ -231,39 +305,23 @@ defmodule ClippsterServer.Social.UserPostsAnalyticsSync do
     end
   end
 
-  defp backfill_posts_by_platform(posts_by_platform, accounts) do
-    posts_by_platform
-    |> Enum.flat_map(fn {platform, platform_posts} ->
-      lookup_platform = normalize_platform(platform)
+  defp backfill_posts_for_account(platform_posts, platform, account) do
+    case PostForMeFeedAnalytics.fetch_feed(account.provider_account_id) do
+      {:ok, feed_items} ->
+        Enum.map(platform_posts, fn post ->
+          case PostForMeFeedAnalytics.match_post_in_feed(platform, feed_items, post) do
+            nil ->
+              {post.id, post}
 
-      account =
-        Enum.find(accounts, fn acc ->
-          normalize_platform(acc.platform) == lookup_platform && acc.is_active &&
-            is_binary(acc.provider_account_id)
+            item ->
+              update_attrs = build_backfill_attrs(post, item)
+              {post.id, maybe_persist_backfill(post, update_attrs)}
+          end
         end)
 
-      if account do
-        case PostForMeFeedAnalytics.fetch_feed(account.provider_account_id) do
-          {:ok, feed_items} ->
-            Enum.map(platform_posts, fn post ->
-              case PostForMeFeedAnalytics.match_post_in_feed(platform, feed_items, post) do
-                nil ->
-                  {post.id, post}
-
-                item ->
-                  update_attrs = build_backfill_attrs(post, item)
-                  {post.id, maybe_persist_backfill(post, update_attrs)}
-              end
-            end)
-
-          _ ->
-            Enum.map(platform_posts, fn post -> {post.id, post} end)
-        end
-      else
+      _ ->
         Enum.map(platform_posts, fn post -> {post.id, post} end)
-      end
-    end)
-    |> Map.new()
+    end
   end
 
   defp build_backfill_attrs(post, item) do
@@ -297,6 +355,27 @@ defmodule ClippsterServer.Social.UserPostsAnalyticsSync do
 
   defp normalize_platform("twitter"), do: "x"
   defp normalize_platform(platform), do: platform
+
+  defp account_for_posts(account_id, posts, accounts_by_id, accounts)
+       when is_integer(account_id) do
+    case Map.get(accounts_by_id, account_id) do
+      %{provider_account_id: id, is_active: true} = account when is_binary(id) -> account
+      _ -> fallback_account_by_platform(posts, accounts)
+    end
+  end
+
+  defp account_for_posts(_account_id, posts, _accounts_by_id, accounts) do
+    fallback_account_by_platform(posts, accounts)
+  end
+
+  defp fallback_account_by_platform(posts, accounts) do
+    platform = posts |> List.first() |> Map.get(:platform) |> normalize_platform()
+
+    Enum.find(accounts, fn acc ->
+      normalize_platform(acc.platform) == platform && acc.is_active &&
+        is_binary(acc.provider_account_id)
+    end)
+  end
 
   defp sync_user_post_submissions(user_id) do
     import Ecto.Query

@@ -5,7 +5,6 @@
 
 import api from './api';
 import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
-import { getExpiringSoonDays, isSocialTokenExpiringSoon } from '@/utils/socialTokenExpiry';
 import { buildUserConnectUrlBody, type UserSocialConnectOptions } from './userSocialConnect';
 
 // ============================================
@@ -453,17 +452,6 @@ export async function getUserAnalyticsSummary(options?: {
 // ============================================
 // Helper Functions
 // ============================================
-
-/**
- * Check if account token is expiring soon (within 2 days).
- */
-export function isTokenExpiringSoon(account: { token_expires_at?: string | null; is_active?: boolean; platform?: string; provider_status?: string | null }): boolean {
-  if (account.provider_status === 'disconnected' || account.is_active === false) return true;
-  return isSocialTokenExpiringSoon(
-    account.token_expires_at,
-    getExpiringSoonDays(account.platform || 'instagram')
-  );
-}
 
 /**
  * Format follower count

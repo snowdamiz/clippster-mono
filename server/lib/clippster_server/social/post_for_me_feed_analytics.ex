@@ -3,6 +3,8 @@ defmodule ClippsterServer.Social.PostForMeFeedAnalytics do
   Extracts post analytics from Post For Me social account feed items.
   """
 
+  require Logger
+
   alias ClippsterServer.Social.Providers.PostForMe
 
   @feed_opts %{limit: 50, expand: ["metrics"]}
@@ -41,6 +43,47 @@ defmodule ClippsterServer.Social.PostForMeFeedAnalytics do
     end
   end
 
+  @doc """
+  Looks up publish metadata from Post For Me social-post-results.
+  Returns `{:ok, metadata}` or `{:error, reason}`.
+  """
+  def resolve_publish_metadata(provider_account_id, social_post_id)
+      when is_binary(provider_account_id) and is_binary(social_post_id) do
+    case PostForMe.list_social_post_results(%{"social_post_id" => social_post_id}) do
+      {:ok, %{data: results}} when is_list(results) ->
+        matching =
+          Enum.filter(results, fn result ->
+            result.post_id == social_post_id and result.social_account_id == provider_account_id
+          end)
+
+        case matching do
+          [] ->
+            {:error, :not_found}
+
+          results ->
+            failures = Enum.filter(results, &(&1.success == false))
+
+            if failures != [] do
+              error =
+                failures
+                |> Enum.map(fn r -> r.error || "Publish failed" end)
+                |> Enum.uniq()
+                |> Enum.join("; ")
+
+              {:error, {:publish_failed, error}}
+            else
+              result = List.first(results)
+              {:ok, metadata_from_result(result)}
+            end
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  def resolve_publish_metadata(_, _), do: {:error, :missing_identifiers}
+
   def find_post_in_feed(feed_items, post_id) when is_list(feed_items) do
     post_id_str = to_string(post_id)
 
@@ -52,34 +95,14 @@ defmodule ClippsterServer.Social.PostForMeFeedAnalytics do
 
   @doc """
   Matches a user post struct/map against a Post For Me feed.
-  Tries provider_post_id (social_post_id), post_id (social_post_id), then URL identifier.
+  Tries platform_post_id, Post For Me post id resolution, then URL identifier.
   """
   def match_post_in_feed(platform, feed_items, post) when is_list(feed_items) do
-    cond do
-      is_binary(post.provider_post_id) && post.provider_post_id != "" ->
-        Enum.find(feed_items, fn item ->
-          item["social_post_id"] == post.provider_post_id ||
-            to_string(item["platform_post_id"] || "") == post.provider_post_id ||
-            feed_item_matches_id?(item, post.provider_post_id)
-        end)
+    post = normalize_post(post)
 
-      is_binary(post.post_id) && post.post_id != "" ->
-        Enum.find(feed_items, fn item ->
-          item["social_post_id"] == post.post_id || feed_item_matches_id?(item, post.post_id)
-        end)
-
-      is_binary(post.post_url) && post.post_url != "" ->
-        case extract_post_identifier(platform, post.post_url) do
-          {:ok, post_identifier} ->
-            match_feed_item_by_identifier(platform, feed_items, post_identifier)
-
-          {:error, _} ->
-            nil
-        end
-
-      true ->
-        nil
-    end
+    match_by_social_post_id(feed_items, post.post_id) ||
+      match_by_platform_post_id(feed_items, post.provider_post_id) ||
+      match_by_url(platform, feed_items, post.post_url)
   end
 
   def extract_analytics(platform, item) when platform in ["x", "twitter"] do
@@ -149,9 +172,59 @@ defmodule ClippsterServer.Social.PostForMeFeedAnalytics do
 
   def extract_analytics(_platform, _item), do: %{}
 
+  defp normalize_post(%_{} = post), do: Map.from_struct(post)
+  defp normalize_post(post) when is_map(post), do: post
+
+  defp metadata_from_result(%{platform_data: platform_data} = result) when is_map(platform_data) do
+    %{
+      provider_post_id:
+        to_string(platform_data["platform_post_id"] || platform_data["id"] || "") |> nil_if_empty(),
+      post_url: platform_data["platform_url"] || platform_data["url"],
+      success: result.success
+    }
+  end
+
+  defp metadata_from_result(_result), do: %{provider_post_id: nil, post_url: nil, success: true}
+
+  defp match_by_social_post_id(_feed_items, nil), do: nil
+  defp match_by_social_post_id(_feed_items, ""), do: nil
+
+  defp match_by_social_post_id(feed_items, social_post_id) do
+    id = to_string(social_post_id)
+
+    Enum.find(feed_items, fn item ->
+      to_string(item["social_post_id"] || "") == id
+    end)
+  end
+
+  defp match_by_platform_post_id(_feed_items, nil), do: nil
+  defp match_by_platform_post_id(_feed_items, ""), do: nil
+
+  defp match_by_platform_post_id(feed_items, platform_post_id) do
+    id = to_string(platform_post_id)
+
+    Enum.find(feed_items, fn item ->
+      to_string(item["platform_post_id"] || "") == id ||
+        feed_item_matches_id?(item, id)
+    end)
+  end
+
+  defp match_by_url(_platform, _feed_items, nil), do: nil
+  defp match_by_url(_platform, _feed_items, ""), do: nil
+
+  defp match_by_url(platform, feed_items, post_url) do
+    case extract_post_identifier(platform, strip_url_query(post_url)) do
+      {:ok, post_identifier} ->
+        match_feed_item_by_identifier(platform, feed_items, post_identifier)
+
+      {:error, _} ->
+        nil
+    end
+  end
+
   defp feed_item_matches_id?(item, post_id_str) do
     item_id =
-      item["id"] || item["social_post_id"] || item["platform_post_id"] ||
+      item["social_post_id"] || item["platform_post_id"] || item["id"] || item["video_id"] ||
         get_in(item, ["platform_data", "id"])
 
     not is_nil(item_id) && to_string(item_id) == post_id_str
@@ -172,7 +245,7 @@ defmodule ClippsterServer.Social.PostForMeFeedAnalytics do
        when platform in ["x", "twitter"] do
     Enum.find(feed_items, fn item ->
       item_id =
-        item["id"] || item["id_str"] || item["platform_post_id"] ||
+        item["platform_post_id"] || item["id"] || item["id_str"] ||
           extract_id_from_url(item["url"] || item["platform_url"])
 
       to_string(item_id) == to_string(post_id)
@@ -182,7 +255,8 @@ defmodule ClippsterServer.Social.PostForMeFeedAnalytics do
   defp match_feed_item_by_identifier("tiktok", feed_items, video_id) do
     Enum.find(feed_items, fn item ->
       item_id =
-        item["id"] || item["video_id"] || extract_id_from_url(item["share_url"] || item["url"])
+        item["platform_post_id"] || item["id"] || item["video_id"] ||
+          extract_id_from_url(item["share_url"] || item["url"] || item["platform_url"])
 
       to_string(item_id) == to_string(video_id)
     end)
@@ -190,7 +264,10 @@ defmodule ClippsterServer.Social.PostForMeFeedAnalytics do
 
   defp match_feed_item_by_identifier("youtube", feed_items, video_id) do
     Enum.find(feed_items, fn item ->
-      item_id = item["id"] || item["video_id"] || extract_youtube_id_from_url(item["url"])
+      item_id =
+        item["platform_post_id"] || item["id"] || item["video_id"] ||
+          extract_youtube_id_from_url(item["url"] || item["platform_url"])
+
       to_string(item_id) == to_string(video_id)
     end)
   end
@@ -265,4 +342,11 @@ defmodule ClippsterServer.Social.PostForMeFeedAnalytics do
       true -> nil
     end
   end
+
+  defp strip_url_query(url) when is_binary(url) do
+    url |> String.split("?", parts: 2) |> List.first()
+  end
+
+  defp nil_if_empty(""), do: nil
+  defp nil_if_empty(value), do: value
 end

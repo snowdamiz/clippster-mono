@@ -1372,7 +1372,13 @@
   // Check if a specific ratio has been configured
   function isRatioConfigured(ratio: string): boolean {
     const config = manualFramingConfigs.value[ratio as keyof import('@/types').ManualFramingConfigs];
-    return config !== undefined && config.regions.length > 0;
+    const hasFraming = config !== undefined && config.regions.length > 0;
+    const clipText = parseClipTextOverlayJson(clipTextOverlayRaw.value);
+    const hasClipTextForRatio =
+      !!clipText?.enabled &&
+      (Object.keys(clipText.perRatioConfigs ?? {}).length === 0 ||
+        Boolean(clipText.perRatioConfigs?.[ratio]));
+    return hasFraming || hasClipTextForRatio;
   }
 
   // Get config for editing

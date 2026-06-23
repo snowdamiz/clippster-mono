@@ -309,8 +309,8 @@
     },
     {
       id: 'shared',
-      title: 'Shared Clips',
-      description: 'Distribute clips to team members',
+      title: 'Shared Content',
+      description: 'Distribute clips and audio to team members',
       icon: Share2,
       route: `/organization/${organizationId.value}/shared`,
       color: 'pink',
