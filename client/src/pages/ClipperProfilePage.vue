@@ -1653,6 +1653,10 @@
   const loadLeaderboard = async () => {
     loadingLeaderboard.value = true;
     try {
+      if (leaderboardType.value === 'posts') {
+        await syncUserAnalytics();
+      }
+
       const response = await import('@/services/clipperProfilesApi').then((m) =>
         m.getLeaderboard(leaderboardPeriod.value, leaderboardType.value)
       );
