@@ -15,6 +15,7 @@ export interface UserInstagramAccount {
   id: number;
   platform: 'instagram';
   platform_user_id: string;
+  provider_account_id?: string | null;
   username: string;
   display_name: string | null;
   profile_image_url: string | null;
