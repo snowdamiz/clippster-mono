@@ -996,6 +996,45 @@ async fn ffprobe_format_duration<R: Runtime>(
     Ok(s.parse().ok())
 }
 
+/// Video filter for intro/outro clips before concat with the main export.
+fn intro_outro_video_filter(
+    input_index: usize,
+    width: i32,
+    height: i32,
+    fps: i32,
+    duration_sec: f64,
+    output_label: &str,
+) -> String {
+    format!(
+        "[{idx}:v]setpts=PTS-STARTPTS,scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},trim=duration={dur},setpts=PTS-STARTPTS[{label}]",
+        idx = input_index,
+        w = width,
+        h = height,
+        fps = fps,
+        dur = duration_sec,
+        label = output_label,
+    )
+}
+
+/// Audio filter for intro/outro clips before concat.
+/// Resets non-zero audio start PTS (common in uploaded outros) so sound aligns with video.
+fn intro_outro_audio_filter(input_index: usize, duration_sec: f64, output_label: &str) -> String {
+    format!(
+        "[{idx}:a]asetpts=PTS-STARTPTS,atrim=duration={dur},asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0:48000[{label}]",
+        idx = input_index,
+        dur = duration_sec,
+        label = output_label,
+    )
+}
+
+fn intro_outro_silent_audio_filter(duration_sec: f64, output_label: &str) -> String {
+    format!(
+        "anullsrc=r=48000:cl=stereo,atrim=duration={dur},asetpts=PTS-STARTPTS[{label}]",
+        dur = duration_sec,
+        label = output_label,
+    )
+}
+
 // -----------------------------------------------------------------------------
 // Keyframe evaluation — aligned with client/src/editor/types/keyframes.ts
 // Preview uses full easing; export densifies non-linear / hold curves to samples
@@ -3898,20 +3937,11 @@ pub async fn export_video_editor_project(
     if use_intro {
         let ii = intro_input_idx.unwrap();
         let d = intro_duration_sec;
-        filters.push(format!(
-            "[{}:v]scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={},trim=duration={},setpts=PTS-STARTPTS[ib_v]",
-            ii, w, h, w, h, fps, d
-        ));
+        filters.push(intro_outro_video_filter(ii, w, h, fps, d, "ib_v"));
         if intro_has_audio {
-            filters.push(format!(
-                "[{}:a]atrim=duration={},asetpts=PTS-STARTPTS,aresample=48000[ib_a]",
-                ii, d
-            ));
+            filters.push(intro_outro_audio_filter(ii, d, "ib_a"));
         } else {
-            filters.push(format!(
-                "anullsrc=r=48000:cl=stereo,atrim=duration={},asetpts=PTS-STARTPTS[ib_a]",
-                d
-            ));
+            filters.push(intro_outro_silent_audio_filter(d, "ib_a"));
         }
         filters.push(format!(
             "[ib_v][ib_a]{}{}concat=n=2:v=1:a=1[mid_v][mid_a]",
@@ -3929,20 +3959,11 @@ pub async fn export_video_editor_project(
     if use_outro {
         let oi = outro_input_idx.unwrap();
         let d = outro_duration_sec;
-        filters.push(format!(
-            "[{}:v]scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={},trim=duration={},setpts=PTS-STARTPTS[ob_v]",
-            oi, w, h, w, h, fps, d
-        ));
+        filters.push(intro_outro_video_filter(oi, w, h, fps, d, "ob_v"));
         if outro_has_audio {
-            filters.push(format!(
-                "[{}:a]atrim=duration={},asetpts=PTS-STARTPTS,aresample=48000[ob_a]",
-                oi, d
-            ));
+            filters.push(intro_outro_audio_filter(oi, d, "ob_a"));
         } else {
-            filters.push(format!(
-                "anullsrc=r=48000:cl=stereo,atrim=duration={},asetpts=PTS-STARTPTS[ob_a]",
-                d
-            ));
+            filters.push(intro_outro_silent_audio_filter(d, "ob_a"));
         }
         filters.push(format!(
             "{}{}[ob_v][ob_a]concat=n=2:v=1:a=1[fvout][faout]",

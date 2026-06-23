@@ -593,6 +593,18 @@ defmodule ClippsterServerWeb.Router do
     post("/shared-clips/:id/mark-downloaded", SharedClipController, :mark_downloaded)
     post("/shared-clips/:id/post", SharedClipController, :mark_posted)
 
+    # Organization shared audio (admin endpoints)
+    get("/organizations/:organization_id/shared-audio", SharedAudioController, :index)
+    get("/organizations/:organization_id/shared-audio/:id", SharedAudioController, :show)
+    post("/organizations/:organization_id/shared-audio", SharedAudioController, :create)
+    delete("/organizations/:organization_id/shared-audio/:id", SharedAudioController, :delete)
+    get("/organizations/:organization_id/shared-audio/:id/stats", SharedAudioController, :stats)
+
+    # User's shared audio (member endpoints)
+    get("/user/shared-audio", SharedAudioController, :user_audio)
+    post("/shared-audio/:id/mark-viewed", SharedAudioController, :mark_viewed)
+    post("/shared-audio/:id/mark-downloaded", SharedAudioController, :mark_downloaded)
+
     # Organization creator profiles
     get(
       "/organizations/:organization_id/creator-profiles",

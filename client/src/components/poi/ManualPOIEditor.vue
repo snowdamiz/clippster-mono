@@ -445,6 +445,7 @@
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
   import {
     createDefaultClipTextBoxState,
+    ensureClipTextPerRatioEntry,
     mergeClipTextBoxForRatio,
     parseClipTextOverlayJson,
     serializeClipTextBoxState,
@@ -1383,6 +1384,7 @@
 
   async function persistClipTextToDb() {
     if (!props.clipId || !clipTextLocal.value) return;
+    clipTextLocal.value = ensureClipTextPerRatioEntry(clipTextLocal.value, props.targetAspectRatio);
     const { updateClipTextOverlay } = await import('@/services/database/clips');
     await updateClipTextOverlay(props.clipId, clipTextLocal.value);
     emit('clipTextOverlayChange', serializeClipTextBoxState(clipTextLocal.value));
@@ -1436,7 +1438,14 @@
     await persistClipTextToDb();
   }
 
-  function doneTextBoxSettings() {
+  async function doneTextBoxSettings() {
+    if (clipTextLocal.value?.enabled) {
+      clipTextLocal.value = ensureClipTextPerRatioEntry(
+        clipTextLocal.value,
+        props.targetAspectRatio
+      );
+      await persistClipTextToDb();
+    }
     textBoxSettingsMode.value = false;
   }
 
@@ -1711,8 +1720,16 @@
   }
 
   // Confirm and emit the configuration
-  function confirmConfig() {
+  async function confirmConfig() {
     if (!canApplyFraming.value) return;
+
+    if (clipTextLocal.value?.enabled && props.clipId) {
+      clipTextLocal.value = ensureClipTextPerRatioEntry(
+        clipTextLocal.value,
+        props.targetAspectRatio
+      );
+      await persistClipTextToDb();
+    }
 
     const config: ManualFramingConfig = {
       mode: 'manual',

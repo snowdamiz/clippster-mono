@@ -28,10 +28,16 @@ defmodule ClippsterServer.Organizations.SharedClipCleanupWorker do
 
   @impl true
   def handle_info(:cleanup, state) do
-    Logger.info("[SharedClipCleanupWorker] Starting expired clips cleanup...")
+    Logger.info("[SharedClipCleanupWorker] Starting expired shared content cleanup...")
 
-    {:ok, count} = Organizations.cleanup_expired_shared_clips()
-    Logger.info("[SharedClipCleanupWorker] Cleanup complete. Deleted #{count} expired clips.")
+    {:ok, clip_count} = Organizations.cleanup_expired_shared_clips()
+    {:ok, audio_count} = Organizations.cleanup_expired_shared_audio()
+
+    Logger.info(
+      "[SharedClipCleanupWorker] Cleanup complete. Deleted #{clip_count} expired clips and #{audio_count} expired audio files."
+    )
+
+    count = clip_count + audio_count
     schedule_next_cleanup()
 
     {:noreply,

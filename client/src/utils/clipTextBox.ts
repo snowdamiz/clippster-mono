@@ -134,6 +134,32 @@ export function mergeClipTextBoxForRatio(state: ClipTextBoxState, ratio: string)
   };
 }
 
+/**
+ * Mark the clip text box as configured for a POI aspect ratio using current geometry.
+ * Called when the user adds/edits text in ManualPOIEditor so export can scope per ratio.
+ */
+export function ensureClipTextPerRatioEntry(state: ClipTextBoxState, ratio: string): ClipTextBoxState {
+  if (!state.enabled) return state;
+  const existing = state.perRatioConfigs?.[ratio];
+  if (existing?.position) {
+    return state;
+  }
+  return upsertClipTextPerRatioGeometry(state, ratio, {
+    x: state.positionX,
+    y: state.positionY,
+    widthPct: state.widthPct,
+    fontSize: state.style.fontSize,
+  });
+}
+
+/** True when this aspect ratio should receive the clip text box on export. */
+export function isClipTextBoxEnabledForRatio(state: ClipTextBoxState, ratio: string): boolean {
+  if (!state.enabled) return false;
+  const keys = Object.keys(state.perRatioConfigs ?? {});
+  if (keys.length === 0) return true;
+  return keys.includes(ratio);
+}
+
 /** Persist POI drag/resize for the active target aspect ratio. */
 export function upsertClipTextPerRatioGeometry(
   state: ClipTextBoxState,
@@ -164,26 +190,31 @@ export function upsertClipTextPerRatioGeometry(
 }
 
 /** Shape expected by ClipsTab → build_clip_from_segments (camelCase) */
-export function clipTextBoxToExportPayload(clipId: string, state: ClipTextBoxState) {
+export function clipTextBoxToExportPayload(
+  clipId: string,
+  state: ClipTextBoxState,
+  ratio?: string
+) {
+  const merged = ratio ? mergeClipTextBoxForRatio(state, ratio) : state;
   const per =
     state.perRatioConfigs && Object.keys(state.perRatioConfigs).length > 0
       ? state.perRatioConfigs
       : undefined;
   return {
     id: `${clipId}-clip-text-box`,
-    text: state.text,
-    startTime: state.startTime,
-    endTime: state.endTime,
-    positionX: state.positionX,
-    positionY: state.positionY,
+    text: merged.text,
+    startTime: merged.startTime,
+    endTime: merged.endTime,
+    positionX: merged.positionX,
+    positionY: merged.positionY,
     style: {
-      ...state.style,
-      maxWidth: state.widthPct,
-      width: state.widthPct,
+      ...merged.style,
+      maxWidth: merged.widthPct,
+      width: merged.widthPct,
     },
     animation: 'none' as const,
     perRatioConfigs: per,
-    previewHeight: state.previewHeight ?? 1080,
+    previewHeight: merged.previewHeight ?? 1080,
   };
 }
 
@@ -194,4 +225,27 @@ export async function getClipTextBoxOverlaysForExport(clipId: string) {
   const s = parseClipTextOverlayJson(row?.clip_text_overlay);
   if (!s?.enabled) return null;
   return [clipTextBoxToExportPayload(clipId, s)];
+}
+
+/** Merge clip-editor text overlays with the persisted clip text box for export. */
+export function mergeClipTextBoxIntoExportOverlays(
+  clipId: string,
+  existing: Array<{
+    id: string;
+    text: string;
+    startTime: number;
+    endTime: number;
+    positionX: number;
+    positionY: number;
+    style: TextOverlayStyle;
+    animation: string;
+    perRatioConfigs?: Record<string, TextOverlayRatioConfig>;
+    previewHeight?: number;
+  }> | null,
+  clipTextRaw: string | null | undefined
+) {
+  const clipTextBoxState = parseClipTextOverlayJson(clipTextRaw);
+  if (!clipTextBoxState?.enabled) return existing;
+  const clipBoxPayload = clipTextBoxToExportPayload(clipId, clipTextBoxState);
+  return existing ? [...existing, clipBoxPayload] : [clipBoxPayload];
 }

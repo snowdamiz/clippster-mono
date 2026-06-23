@@ -26,6 +26,15 @@ use super::video_processor::{
 };
 use super::{is_build_cancelled, CancellationToken};
 
+/// Clip text boxes configured per-aspect-ratio in POI only apply to listed ratios.
+/// When per_ratio_configs is empty, the overlay applies to every output ratio.
+fn text_overlay_applies_for_aspect_ratio(overlay: &TextOverlaySettings, aspect_ratio: &str) -> bool {
+    match &overlay.per_ratio_configs {
+        Some(configs) if !configs.is_empty() => configs.contains_key(aspect_ratio),
+        _ => true,
+    }
+}
+
 // Helper function to sanitize a clip name for use as a folder name
 fn sanitize_clip_name(name: &str) -> String {
     // Replace invalid filesystem characters with underscores
@@ -779,16 +788,21 @@ pub async fn build_clip_internal_simple(
             // Handle text overlays - partition into simple (ASS) and advanced (image-based)
             let mut rendered_text_images: Vec<(String, TextOverlaySettings)> = Vec::new();
             let final_subtitle_file = if let Some(overlays) = &text_overlays {
-                println!("[Rust] TEXT OVERLAY DEBUG: Received {} text overlays for {}", overlays.len(), aspect_ratio_str);
-                for (i, ovl) in overlays.iter().enumerate() {
+                let overlays_for_ratio: Vec<TextOverlaySettings> = overlays
+                    .iter()
+                    .filter(|ovl| text_overlay_applies_for_aspect_ratio(ovl, &aspect_ratio_str))
+                    .cloned()
+                    .collect();
+                println!("[Rust] TEXT OVERLAY DEBUG: Received {} text overlays for {} ({} apply to this ratio)", overlays.len(), aspect_ratio_str, overlays_for_ratio.len());
+                for (i, ovl) in overlays_for_ratio.iter().enumerate() {
                     println!("[Rust] TEXT OVERLAY [{}]: id={}, text='{}', start={}, end={}, pos=({}, {}), bg_enabled={}", 
                         i, ovl.id, ovl.text, ovl.start_time, ovl.end_time, ovl.position_x, ovl.position_y, ovl.style.background_enabled);
                 }
-                if !overlays.is_empty() {
+                if !overlays_for_ratio.is_empty() {
                     let subtitle_offset = intro_duration.unwrap_or(0.0);
                     
                     // Partition overlays: simple ones use ASS, advanced ones get rendered to PNG
-                    let (simple_overlays, advanced_overlays) = partition_overlays(overlays, &aspect_ratio_str);
+                    let (simple_overlays, advanced_overlays) = partition_overlays(&overlays_for_ratio, &aspect_ratio_str);
                     
                     println!("[Rust] Text overlays for {}: {} simple (ASS), {} advanced (PNG)", 
                         aspect_ratio_str, simple_overlays.len(), advanced_overlays.len());

@@ -21,6 +21,8 @@ defmodule ClippsterServer.Organizations do
     OrganizationProfileAssignment,
     OrganizationSharedClip,
     SharedClipRecipient,
+    OrganizationSharedAudio,
+    SharedAudioRecipient,
     OrganizationApplication
   }
 
@@ -2397,6 +2399,214 @@ defmodule ClippsterServer.Organizations do
       true ->
         # Check if recipient
         recipient = Repo.get_by(SharedClipRecipient, shared_clip_id: clip_id, user_id: user_id)
+        recipient != nil
+    end
+  end
+
+  # ============================================================================
+  # Shared Audio
+  # ============================================================================
+
+  @doc """
+  Creates a new shared audio file for an organization.
+  Uploads the file to R2 storage and creates recipient records.
+  """
+  def create_shared_audio(organization_id, user_id, attrs, file_binary, filename, opts \\ []) do
+    content_type = Keyword.get(opts, :content_type, "audio/mpeg")
+    recipient_user_ids = Keyword.get(opts, :recipient_user_ids, [])
+
+    key = Storage.generate_key(organization_id, "shared-audio", filename)
+
+    with {:ok, url} <- Storage.upload_file(file_binary, key, content_type: content_type) do
+      Repo.transaction(fn ->
+        audio_attrs =
+          attrs
+          |> Map.put(:organization_id, organization_id)
+          |> Map.put(:uploaded_by_user_id, user_id)
+          |> Map.put(:url, url)
+          |> Map.put(:mime_type, content_type)
+          |> Map.put(:file_size, byte_size(file_binary))
+
+        {:ok, audio} =
+          %OrganizationSharedAudio{}
+          |> OrganizationSharedAudio.create_changeset(audio_attrs)
+          |> Repo.insert()
+
+        share_with_all = Map.get(attrs, :share_with_all, true)
+
+        if share_with_all do
+          create_audio_recipients_for_all_members(audio.id, organization_id)
+        else
+          create_audio_recipients_for_users(audio.id, recipient_user_ids)
+        end
+
+        audio
+      end)
+    end
+  end
+
+  defp create_audio_recipients_for_all_members(audio_id, organization_id) do
+    members = list_members(organization_id)
+
+    Enum.each(members, fn member ->
+      %SharedAudioRecipient{}
+      |> SharedAudioRecipient.create_changeset(%{
+        shared_audio_id: audio_id,
+        user_id: member.user_id
+      })
+      |> Repo.insert()
+    end)
+  end
+
+  defp create_audio_recipients_for_users(audio_id, user_ids) do
+    Enum.each(user_ids, fn user_id ->
+      %SharedAudioRecipient{}
+      |> SharedAudioRecipient.create_changeset(%{
+        shared_audio_id: audio_id,
+        user_id: user_id
+      })
+      |> Repo.insert()
+    end)
+  end
+
+  def get_shared_audio(audio_id) do
+    Repo.get(OrganizationSharedAudio, audio_id)
+  end
+
+  def get_shared_audio_for_org(organization_id, audio_id) do
+    OrganizationSharedAudio
+    |> where([a], a.id == ^audio_id and a.organization_id == ^organization_id)
+    |> preload(recipients: :user, uploaded_by: [])
+    |> Repo.one()
+  end
+
+  def list_shared_audio(organization_id) do
+    now = DateTime.utc_now()
+
+    OrganizationSharedAudio
+    |> where([a], a.organization_id == ^organization_id and a.expires_at > ^now)
+    |> order_by([a], desc: a.inserted_at)
+    |> preload([:uploaded_by, :recipients])
+    |> Repo.all()
+  end
+
+  def list_shared_audio_for_user(user_id) do
+    now = DateTime.utc_now()
+
+    OrganizationSharedAudio
+    |> join(:inner, [a], r in SharedAudioRecipient, on: r.shared_audio_id == a.id)
+    |> where([a, r], r.user_id == ^user_id and a.expires_at > ^now)
+    |> order_by([a], desc: a.inserted_at)
+    |> preload([:organization, :uploaded_by])
+    |> select([a, r], %{audio: a, recipient: r})
+    |> Repo.all()
+  end
+
+  def delete_shared_audio(audio_id, %User{} = user) do
+    with audio when not is_nil(audio) <- get_shared_audio(audio_id),
+         true <- is_admin?(audio.organization_id, user.id) do
+      if audio.url, do: Storage.delete_file_by_url(audio.url)
+      Repo.delete(audio)
+    else
+      nil -> {:error, :not_found}
+      false -> {:error, :unauthorized}
+    end
+  end
+
+  def mark_shared_audio_viewed(audio_id, user_id) do
+    case get_or_create_audio_recipient(audio_id, user_id) do
+      {:ok, recipient} ->
+        recipient
+        |> SharedAudioRecipient.mark_viewed_changeset()
+        |> Repo.update()
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  def mark_shared_audio_downloaded(audio_id, user_id) do
+    case get_or_create_audio_recipient(audio_id, user_id) do
+      {:ok, recipient} ->
+        recipient
+        |> SharedAudioRecipient.mark_downloaded_changeset()
+        |> Repo.update()
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp get_or_create_audio_recipient(audio_id, user_id) do
+    case Repo.get_by(SharedAudioRecipient, shared_audio_id: audio_id, user_id: user_id) do
+      nil ->
+        audio = get_shared_audio(audio_id)
+
+        cond do
+          is_nil(audio) ->
+            {:error, :audio_not_found}
+
+          OrganizationSharedAudio.expired?(audio) ->
+            {:error, :audio_expired}
+
+          not is_member?(audio.organization_id, user_id) ->
+            {:error, :not_a_member}
+
+          true ->
+            %SharedAudioRecipient{}
+            |> SharedAudioRecipient.create_changeset(%{shared_audio_id: audio_id, user_id: user_id})
+            |> Repo.insert()
+        end
+
+      recipient ->
+        {:ok, recipient}
+    end
+  end
+
+  def get_shared_audio_stats(audio_id) do
+    query =
+      from r in SharedAudioRecipient,
+        where: r.shared_audio_id == ^audio_id,
+        select: %{
+          total: count(r.id),
+          viewed: count(r.viewed_at),
+          downloaded: count(r.downloaded_at)
+        }
+
+    Repo.one(query) || %{total: 0, viewed: 0, downloaded: 0}
+  end
+
+  def cleanup_expired_shared_audio do
+    now = DateTime.utc_now()
+
+    expired_audio =
+      OrganizationSharedAudio
+      |> where([a], a.expires_at < ^now)
+      |> Repo.all()
+
+    Enum.each(expired_audio, fn audio ->
+      if audio.url, do: Storage.delete_file_by_url(audio.url)
+      Repo.delete(audio)
+    end)
+
+    {:ok, length(expired_audio)}
+  end
+
+  def has_shared_audio_access?(audio_id, user_id) do
+    audio = get_shared_audio(audio_id)
+
+    cond do
+      is_nil(audio) ->
+        false
+
+      OrganizationSharedAudio.expired?(audio) ->
+        false
+
+      is_admin?(audio.organization_id, user_id) ->
+        true
+
+      true ->
+        recipient = Repo.get_by(SharedAudioRecipient, shared_audio_id: audio_id, user_id: user_id)
         recipient != nil
     end
   end
