@@ -298,11 +298,11 @@
 
             <!-- Feature controls: Subtitles + Clip text box + AI B-roll -->
             <div
-              v-if="subtitleSettings || clipId || projectId"
+              v-if="localSubtitleSettings || clipId || projectId"
               class="poi-dialog__divider-t poi-dialog__feature-grid"
             >
               <!-- Subtitles cell -->
-              <div v-if="subtitleSettings" class="poi-dialog__feature-cell">
+              <div v-if="localSubtitleSettings" class="poi-dialog__feature-cell">
                 <Checkbox
                   v-model="subtitlePositioningEnabled"
                   aria-label="Enable subtitle positioning"
@@ -311,16 +311,23 @@
                 <CaptionsIcon class="h-4 w-4 poi-dialog__icon-purple shrink-0" />
                 <div class="flex-1 min-w-0">
                   <span class="poi-dialog__feature-label">Subtitles</span>
-                  <span v-if="subtitlePositioningEnabled" class="text-[10px] ml-2 poi-dialog__muted">
+                  <span v-if="isSubtitleTranscribing" class="text-[10px] ml-2 poi-dialog__muted">
+                    · {{ subtitleTranscribeStatusText }}
+                  </span>
+                  <span v-else-if="!hasTranscript" class="text-[10px] ml-2 poi-dialog__muted">
+                    · Transcript needed
+                  </span>
+                  <span v-else-if="subtitlePositioningEnabled" class="text-[10px] ml-2 poi-dialog__muted">
                     · Drag to reposition
                   </span>
                 </div>
                 <button
                   type="button"
                   class="poi-dialog__btn poi-dialog__btn--secondary poi-dialog__btn--sm shrink-0"
-                  @click="openSubtitleSettings"
+                  :disabled="isSubtitleTranscribing"
+                  @click="hasTranscript ? openSubtitleSettings() : requestSubtitleTranscription()"
                 >
-                  Edit
+                  {{ subtitleButtonLabel }}
                 </button>
                 <span class="text-[10px] shrink-0 font-mono poi-dialog__faint">{{ targetAspectRatio }}</span>
               </div>
@@ -545,6 +552,10 @@
     // Optional transcript data for subtitle rendering
     transcriptWords?: WordInfo[];
     transcriptSegments?: WhisperSegment[];
+    isSubtitleTranscribing?: boolean;
+    subtitleTranscribeProgress?: number;
+    subtitleTranscribeStage?: string;
+    subtitleTranscribeMessage?: string;
     clipId?: string | null;
     projectId?: string | null;
     /** Raw JSON from clips.clip_text_overlay */
@@ -561,6 +572,10 @@
     subtitlePositionOverride: null,
     transcriptWords: () => [],
     transcriptSegments: () => [],
+    isSubtitleTranscribing: false,
+    subtitleTranscribeProgress: 0,
+    subtitleTranscribeStage: '',
+    subtitleTranscribeMessage: '',
     clipId: null,
     projectId: null,
     clipTextOverlayJson: null,
@@ -572,6 +587,7 @@
     subtitlePositionChange: [position: { x: number; y: number; width?: number; presetId?: string }];
     subtitleSettingsChange: [settings: SubtitleSettings];
     clipTextOverlayChange: [json: string | null];
+    requestSubtitleTranscription: [];
   }>();
 
   const selectedRegionId = ref<string | null>(null);
@@ -615,6 +631,22 @@
       (props.transcriptWords.length > 0 || props.transcriptSegments.length > 0),
   );
 
+  const hasTranscript = computed(
+    () => props.transcriptWords.length > 0 || props.transcriptSegments.length > 0,
+  );
+
+  const subtitleTranscribeStatusText = computed(() => {
+    if (props.subtitleTranscribeMessage) return props.subtitleTranscribeMessage;
+    if (props.subtitleTranscribeStage) return props.subtitleTranscribeStage.replace(/_/g, ' ');
+    const progress = Math.round(props.subtitleTranscribeProgress || 0);
+    return progress > 0 ? `Generating ${progress}%` : 'Generating';
+  });
+
+  const subtitleButtonLabel = computed(() => {
+    if (props.isSubtitleTranscribing) return 'Generating...';
+    return hasTranscript.value ? 'Edit' : 'Generate subtitles';
+  });
+
   const brollOrientation = computed<'portrait' | 'landscape'>(() =>
     props.targetAspectRatio === '16:9' ? 'landscape' : 'portrait',
   );
@@ -645,6 +677,11 @@
     if (!localSubtitleSettings.value) return;
     subtitleSettingsRevert = JSON.parse(JSON.stringify(localSubtitleSettings.value));
     subtitleSettingsMode.value = true;
+  }
+
+  function requestSubtitleTranscription() {
+    if (props.isSubtitleTranscribing) return;
+    emit('requestSubtitleTranscription');
   }
 
   function doneSubtitleSettings() {
@@ -940,8 +977,11 @@
 
   // Handle time update from video
   function onTimeUpdate(time: number) {
-    // Convert absolute time to clip-relative time
-    currentTime.value = time - props.clipStartTime;
+    // Raw VOD previews report absolute source time; extracted clip previews report 0-based time.
+    currentTime.value =
+      props.clipStartTime > 0 && time >= props.clipStartTime
+        ? time - props.clipStartTime
+        : time;
 
     // Loop back to start if we've reached the end (while still playing)
     if (currentTime.value >= clipDuration.value && isPlaying.value) {

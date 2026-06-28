@@ -751,15 +751,18 @@
     { immediate: true, deep: true }
   );
 
-  const clipTextRelativeTime = computed(() => {
+  const clipRelativePreviewTime = computed(() => {
     const absoluteTime = props.videoTime || 0;
-    return absoluteTime - (props.clipStartTime || 0);
+    const clipStart = props.clipStartTime || 0;
+    return clipStart > 0 && absoluteTime >= clipStart
+      ? absoluteTime - clipStart
+      : absoluteTime;
   });
 
   const showClipTextBoxOverlay = computed(() => {
     const d = props.clipTextBoxDisplay;
     if (!d?.enabled) return false;
-    const t = clipTextRelativeTime.value;
+    const t = clipRelativePreviewTime.value;
     return t >= d.startTime && t < d.endTime;
   });
 
@@ -1484,10 +1487,8 @@
   // Compute visible words — same rules as VideoPlayer (no ±20s window, no full-segment dump on gaps)
   const visibleWords = computed((): WordInfo[] => {
     if (!props.subtitleSettings) return [];
-    const absoluteTime = props.videoTime || 0;
-    const clipRelativeTime = absoluteTime - (props.clipStartTime || 0);
     return getVisibleSubtitleWordsForClipTime(
-      clipRelativeTime,
+      clipRelativePreviewTime.value,
       props.transcriptWords,
       props.transcriptSegments,
       props.subtitleSettings.animationStyle,
@@ -1518,8 +1519,7 @@
       );
     }
 
-    const absoluteTime = props.videoTime || 0;
-    const clipRelativeTime = absoluteTime - (props.clipStartTime || 0);
+    const clipRelativeTime = clipRelativePreviewTime.value;
 
     if (clipRelativeTime >= word.start && clipRelativeTime < word.end) {
       return true;

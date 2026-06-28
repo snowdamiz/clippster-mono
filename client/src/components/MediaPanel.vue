@@ -143,6 +143,10 @@
       :play-on-card-click="true"
       :vod-preset-config="props.vodPresetConfig"
       :clip-detection-disabled="props.clipDetectionDisabled"
+      :is-transcribing="props.isTranscribing"
+      :transcribe-progress="props.transcribeProgress"
+      :transcribe-stage="props.transcribeStage"
+      :transcribe-message="props.transcribeMessage"
       @detect-clips="handleDetectClips"
       @cancel-detection="handleCancelDetection"
       @delete-clip="onDeleteClip"
@@ -156,6 +160,7 @@
       @add-clip="handleAddClip"
       @publish-now="onPublishNow"
       @build-dialog-open="(open) => emit('buildDialogOpen', open)"
+      @request-subtitle-transcription="(clipId) => emit('requestSubtitleTranscription', clipId)"
     />
   </div>
 </template>
