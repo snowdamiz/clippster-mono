@@ -387,6 +387,7 @@ export interface MediaPanelEmits {
   (e: 'viewTranscript'): void;
   (e: 'publishNow', clip: any): void;
   (e: 'buildDialogOpen', open: boolean): void;
+  (e: 'requestSubtitleTranscription', clipId: string): void;
 }
 
 export interface TimelinePlayheadProps {
@@ -701,6 +702,16 @@ export interface SegmentRegionConfig {
   regions: ManualRegion[]; // Region configuration for this time segment
 }
 
+// Time-based B-roll overlays. These are separate from segmentConfigs so POI
+// framing segments can still control camera regions independently.
+export interface BrollRegionConfig {
+  brollId: string;
+  startTime: number; // Relative to clip start (seconds)
+  endTime: number; // Relative to clip start (seconds)
+  region: ManualRegion;
+  suggestionId?: string;
+}
+
 /** How the 16:9 source is framed in the target preview (e.g. 9:16) */
 export type ManualSourceFrameMode = 'none' | 'scale' | 'use16x9';
 
@@ -721,6 +732,8 @@ export interface ManualFramingConfig {
   sourceAspectRatio?: string; // "16:9" typically
   // Segment-based configurations (for dynamic camera position changes)
   segmentConfigs?: SegmentRegionConfig[];
+  // Timed B-roll overlays, independent from segment-based camera regions
+  brollConfigs?: BrollRegionConfig[];
   /** Mutually exclusive with "scale" in UI: blur letterbox vs scaled source frame */
   sourceFrameMode?: ManualSourceFrameMode;
   /** Blur on scaled 16:9 frame, or on Use 16:9 background */

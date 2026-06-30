@@ -113,7 +113,7 @@ defmodule ClippsterServerWeb.BrollController do
         successes
         |> Enum.map(fn {_provider, candidates} -> candidates end)
         |> interleave_candidates()
-        |> Enum.take(12)
+        |> Enum.take(Keyword.get(opts, :per_page, 20))
 
       {:ok, "mixed", candidates}
     end

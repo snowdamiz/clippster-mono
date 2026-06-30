@@ -673,7 +673,12 @@
       :initial-framing-configs="savedFramingConfigs"
       :vod-preset-config="vodPresetConfig"
       :creator-profile-server-id="creatorProfileServerId"
+      :is-subtitle-transcribing="isTranscribing"
+      :subtitle-transcribe-progress="transcribeProgress"
+      :subtitle-transcribe-stage="transcribeStage"
+      :subtitle-transcribe-message="transcribeMessage"
       @confirm="onBuildConfirm"
+      @request-subtitle-transcription="onRequestSubtitleTranscription"
     />
   </div>
 </template>
@@ -1281,6 +1286,10 @@
     showAdjustClipButton?: boolean;
     vodPresetConfig?: import('@/types').ActiveVodPresetConfig | null;
     clipDetectionDisabled?: boolean;
+    isTranscribing?: boolean;
+    transcribeProgress?: number;
+    transcribeStage?: string;
+    transcribeMessage?: string;
   }
 
   const props = withDefaults(defineProps<ClipsTabProps>(), {
@@ -1310,6 +1319,10 @@
     vodPresetConfig: null,
     showAdjustClipButton: false,
     clipDetectionDisabled: false,
+    isTranscribing: false,
+    transcribeProgress: 0,
+    transcribeStage: '',
+    transcribeMessage: '',
   });
 
   // Emits
@@ -1327,6 +1340,7 @@
     adjustClip: [clipId: string];
     publishNow: [clip: ClipWithVersion];
     buildDialogOpen: [open: boolean];
+    requestSubtitleTranscription: [clipId: string];
   }>();
 
   // AI Permission check
@@ -2369,6 +2383,10 @@
 
   function onPublishNow(clip: ClipWithVersion) {
     emit('publishNow', clip);
+  }
+
+  function onRequestSubtitleTranscription(clipId: string) {
+    emit('requestSubtitleTranscription', clipId);
   }
 
   function onAdjustClip(clipId: string) {
