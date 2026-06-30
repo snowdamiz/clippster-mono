@@ -2978,6 +2978,16 @@ fn collect_external_media_paths_for_multi_region(config: &ManualFramingConfig) -
             }
         }
     }
+    if let Some(brolls) = &config.broll_configs {
+        for broll in brolls {
+            let r = &broll.region;
+            if matches!(r.media_type.as_deref(), Some("image") | Some("video")) {
+                if let Some(ref id) = r.media_asset_id {
+                    push_path(id);
+                }
+            }
+        }
+    }
     out
 }
 
@@ -3107,7 +3117,9 @@ pub async fn build_multi_region_clip(
         Some("use16x9")
     );
     println!("[Rust] use_16x9 mode detected: {}", use_16x9);
-    if working_config.regions.is_empty() && working_config.source_transform.is_none() && !use_16x9 {
+    let has_broll = working_config.broll_configs.is_some()
+        && !working_config.broll_configs.as_ref().unwrap().is_empty();
+    if working_config.regions.is_empty() && working_config.source_transform.is_none() && !use_16x9 && !has_broll {
         return Err("MultiRegion config has no regions defined and no sourceTransform".to_string());
     }
 
@@ -3538,6 +3550,27 @@ pub async fn build_multi_region_clip(
     } else {
         // No segments - build regions normally without enable filters
         region_labels = build_region_filters(&working_config.regions, "r", None)?;
+    }
+
+    if let Some(brolls) = &working_config.broll_configs {
+        for (broll_idx, broll) in brolls.iter().enumerate() {
+            let broll_enable = format!(
+                "enable=gte(t,{})*lte(t,{})",
+                broll.start_time.max(0.0),
+                broll.end_time.max(broll.start_time + 0.001)
+            );
+            println!(
+                "[Rust] Building B-roll {} ({:.2}s - {:.2}s) as independent overlay",
+                broll_idx, broll.start_time, broll.end_time
+            );
+            let broll_regions = vec![broll.region.clone()];
+            let broll_labels = build_region_filters(
+                &broll_regions,
+                &format!("broll{}_r", broll_idx),
+                Some(broll_enable),
+            )?;
+            region_labels.extend(broll_labels);
+        }
     }
 
     if region_labels.is_empty() {

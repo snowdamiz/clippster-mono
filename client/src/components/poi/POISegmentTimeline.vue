@@ -61,20 +61,50 @@
         
         <!-- Dark overlay for better contrast -->
         <div class="absolute inset-0 bg-gradient-to-b from-zinc-900/40 via-zinc-900/20 to-zinc-900/40" />
-        <!-- B-roll suggestion markers (non-interactive overlay) -->
+        <!-- B-roll overlays (independent from framing segments) -->
         <div
-          v-for="marker in brollMarkers"
-          :key="marker.id"
-          class="absolute top-0 bottom-0 pointer-events-none z-[5]"
-          :style="getBrollMarkerStyle(marker)"
+          v-for="broll in brollRegions"
+          :key="broll.brollId"
+          class="absolute top-1 bottom-1 group z-[12]"
+          :style="getBrollStyle(broll)"
+          @click.stop="selectBroll(broll.brollId)"
         >
           <div
-            class="absolute inset-0 rounded-sm border border-cyan-400/60 bg-cyan-500/15"
-            :class="{ 'bg-cyan-500/30 border-cyan-300': marker.status === 'applied' }"
-          />
-          <div class="absolute -top-4 left-0 text-[8px] text-cyan-300 truncate max-w-full px-0.5">
-            B-roll
+            class="absolute inset-0 rounded-md border-2 transition-all cursor-move"
+            :class="activeBrollId === broll.brollId ? 'border-cyan-300 bg-cyan-500/35 shadow-lg shadow-cyan-500/20' : 'border-cyan-500/70 bg-cyan-500/20 hover:border-cyan-300'"
+            @mousedown.stop="(e) => startDragBroll(e, broll.brollId)"
+          >
+            <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <span class="text-[10px] font-semibold tracking-wide text-cyan-100">B-roll</span>
+              <span class="mt-0.5 text-[9px] font-mono text-cyan-200/80">
+                {{ formatTime(broll.startTime) }} - {{ formatTime(broll.endTime) }}
+              </span>
+            </div>
           </div>
+
+          <div
+            class="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize z-10 bg-cyan-300/80 hover:w-1.5"
+            title="Drag to adjust B-roll start time"
+            @mousedown.stop="(e) => startResizeBroll(e, broll.brollId, 'start')"
+          />
+
+          <div
+            class="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize z-10 bg-cyan-300/80 hover:w-1.5"
+            title="Drag to adjust B-roll end time"
+            @mousedown.stop="(e) => startResizeBroll(e, broll.brollId, 'end')"
+          />
+
+          <button
+            @click.stop="deleteBroll(broll.brollId)"
+            class="absolute -top-8 left-1/2 -translate-x-1/2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white transition-all shadow-lg hover:scale-110 z-30"
+            :class="{
+              'opacity-100': activeBrollId === broll.brollId,
+              'opacity-0 group-hover:opacity-100': activeBrollId !== broll.brollId
+            }"
+            title="Delete B-roll"
+          >
+            <XIcon class="w-3.5 h-3.5" />
+          </button>
         </div>
 
         <!-- Segments -->
@@ -179,19 +209,12 @@
 <script setup lang="ts">
   import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
   import { PlusIcon, XIcon } from 'lucide-vue-next';
-  import type { SegmentRegionConfig, ManualRegion } from '@/types';
-
-  interface BrollMarker {
-    id: string;
-    startTime: number;
-    endTime: number;
-    label: string;
-    status: string;
-  }
+  import type { BrollRegionConfig, SegmentRegionConfig } from '@/types';
 
   interface Props {
     segments: SegmentRegionConfig[];
-    brollMarkers?: BrollMarker[];
+    brollRegions?: BrollRegionConfig[];
+    activeBrollId?: string | null;
     activeSegmentId: string | null;
     duration: number;
     currentTime: number | null;
@@ -202,7 +225,8 @@
   }
 
   const props = withDefaults(defineProps<Props>(), {
-    brollMarkers: () => [],
+    brollRegions: () => [],
+    activeBrollId: null,
   });
 
   const emit = defineEmits<{
@@ -210,6 +234,9 @@
     deleteSegment: [segmentId: string];
     selectSegment: [segmentId: string];
     updateSegment: [segmentId: string, updates: { startTime?: number; endTime?: number }];
+    selectBroll: [brollId: string];
+    deleteBroll: [brollId: string];
+    updateBroll: [brollId: string, updates: { startTime?: number; endTime?: number }];
     seekTime: [time: number];
   }>();
 
@@ -226,6 +253,13 @@
   const dragStartTime = ref(0);
 
   const isDraggingPlayhead = ref(false);
+  const isResizingBroll = ref(false);
+  const resizingBrollId = ref<string | null>(null);
+  const resizingBrollEdge = ref<'start' | 'end' | null>(null);
+  const isDraggingBroll = ref(false);
+  const draggingBrollId = ref<string | null>(null);
+  const brollDragStartX = ref(0);
+  const brollDragStartTime = ref(0);
 
   let filmstripResizeObserver: ResizeObserver | null = null;
   let filmstripGeneration = 0;
@@ -404,9 +438,9 @@
     };
   }
 
-  function getBrollMarkerStyle(marker: BrollMarker) {
-    const startPercent = (marker.startTime / props.duration) * 100;
-    const endPercent = (marker.endTime / props.duration) * 100;
+  function getBrollStyle(broll: BrollRegionConfig) {
+    const startPercent = (broll.startTime / props.duration) * 100;
+    const endPercent = (broll.endTime / props.duration) * 100;
     return {
       left: `${startPercent}%`,
       width: `${Math.max(endPercent - startPercent, 0.5)}%`,
@@ -438,6 +472,14 @@
   // Select segment
   function selectSegment(segmentId: string) {
     emit('selectSegment', segmentId);
+  }
+
+  function selectBroll(brollId: string) {
+    emit('selectBroll', brollId);
+  }
+
+  function deleteBroll(brollId: string) {
+    emit('deleteBroll', brollId);
   }
 
   // Handle timeline click
@@ -583,6 +625,114 @@
     
     document.removeEventListener('mousemove', onDragMove);
     document.removeEventListener('mouseup', stopDrag);
+  }
+
+  function startResizeBroll(e: MouseEvent, brollId: string, edge: 'start' | 'end') {
+    e.preventDefault();
+    e.stopPropagation();
+
+    isResizingBroll.value = true;
+    resizingBrollId.value = brollId;
+    resizingBrollEdge.value = edge;
+    selectBroll(brollId);
+
+    document.addEventListener('mousemove', onResizeBrollMove);
+    document.addEventListener('mouseup', stopResizeBroll);
+  }
+
+  function onResizeBrollMove(e: MouseEvent) {
+    if (!isResizingBroll.value || !timelineRef.value || !resizingBrollId.value || !resizingBrollEdge.value) return;
+
+    const rect = timelineRef.value.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mousePercent = Math.max(0, Math.min(1, mouseX / rect.width));
+    let newTime = mousePercent * props.duration;
+
+    const snapThreshold = 0.5;
+    if (props.currentTime !== null && Math.abs(newTime - props.currentTime) < snapThreshold) {
+      newTime = props.currentTime;
+    }
+
+    const broll = props.brollRegions.find((item) => item.brollId === resizingBrollId.value);
+    if (!broll) return;
+
+    if (resizingBrollEdge.value === 'start') {
+      const maxStart = broll.endTime - 0.5;
+      const clampedStart = Math.max(0, Math.min(newTime, maxStart));
+      emit('updateBroll', resizingBrollId.value, { startTime: clampedStart });
+    } else {
+      const minEnd = broll.startTime + 0.5;
+      const clampedEnd = Math.min(props.duration, Math.max(newTime, minEnd));
+      emit('updateBroll', resizingBrollId.value, { endTime: clampedEnd });
+    }
+  }
+
+  function stopResizeBroll() {
+    isResizingBroll.value = false;
+    resizingBrollId.value = null;
+    resizingBrollEdge.value = null;
+
+    document.removeEventListener('mousemove', onResizeBrollMove);
+    document.removeEventListener('mouseup', stopResizeBroll);
+  }
+
+  function startDragBroll(e: MouseEvent, brollId: string) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const broll = props.brollRegions.find((item) => item.brollId === brollId);
+    if (!broll) return;
+
+    isDraggingBroll.value = true;
+    draggingBrollId.value = brollId;
+    brollDragStartX.value = e.clientX;
+    brollDragStartTime.value = broll.startTime;
+    selectBroll(brollId);
+
+    document.addEventListener('mousemove', onDragBrollMove);
+    document.addEventListener('mouseup', stopDragBroll);
+  }
+
+  function onDragBrollMove(e: MouseEvent) {
+    if (!isDraggingBroll.value || !timelineRef.value || !draggingBrollId.value) return;
+
+    const broll = props.brollRegions.find((item) => item.brollId === draggingBrollId.value);
+    if (!broll) return;
+
+    const rect = timelineRef.value.getBoundingClientRect();
+    const deltaX = e.clientX - brollDragStartX.value;
+    const deltaTime = (deltaX / rect.width) * props.duration;
+    const brollDuration = broll.endTime - broll.startTime;
+    let newStartTime = brollDragStartTime.value + deltaTime;
+
+    newStartTime = Math.max(0, Math.min(newStartTime, props.duration - brollDuration));
+    let newEndTime = newStartTime + brollDuration;
+
+    const snapThreshold = 0.5;
+    if (props.currentTime !== null) {
+      if (Math.abs(newStartTime - props.currentTime) < snapThreshold) {
+        newStartTime = props.currentTime;
+        newEndTime = newStartTime + brollDuration;
+      } else if (Math.abs(newEndTime - props.currentTime) < snapThreshold) {
+        newEndTime = props.currentTime;
+        newStartTime = newEndTime - brollDuration;
+      }
+    }
+
+    emit('updateBroll', draggingBrollId.value, {
+      startTime: newStartTime,
+      endTime: newEndTime,
+    });
+  }
+
+  function stopDragBroll() {
+    isDraggingBroll.value = false;
+    draggingBrollId.value = null;
+    brollDragStartX.value = 0;
+    brollDragStartTime.value = 0;
+
+    document.removeEventListener('mousemove', onDragBrollMove);
+    document.removeEventListener('mouseup', stopDragBroll);
   }
 </script>
 

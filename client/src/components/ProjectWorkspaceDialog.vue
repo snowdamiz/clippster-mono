@@ -240,6 +240,7 @@
                   @addClip="onAddClip"
                   @publishNow="onPublishNow"
                   @buildDialogOpen="onBuildDialogOpen"
+                  @requestSubtitleTranscription="onRequestSubtitleTranscription"
                   @transcribeProject="onTranscribeProject"
                   @cancelTranscription="onCancelTranscription"
                   @viewTranscript="rightPanelTab = 'transcript'"
@@ -1713,6 +1714,16 @@
       window.dispatchEvent(new CustomEvent('show-auth-modal'));
       return;
     }
+    showTranscribeConfirmDialog.value = true;
+  }
+
+  function onRequestSubtitleTranscription(clipId: string) {
+    if (!authStore.isAuthenticated) {
+      window.dispatchEvent(new CustomEvent('show-auth-modal'));
+      return;
+    }
+    pendingSubtitleTranscriptionClipIds.value = [clipId];
+    selectedClipId.value = clipId;
     showTranscribeConfirmDialog.value = true;
   }
 

@@ -808,6 +808,10 @@
       :subtitle-position-override="getSubtitlePositionForRatio(editingAspectRatio)"
       :transcript-words="transcriptWords"
       :transcript-segments="transcriptSegments"
+      :is-subtitle-transcribing="isSubtitleTranscribing"
+      :subtitle-transcribe-progress="subtitleTranscribeProgress"
+      :subtitle-transcribe-stage="subtitleTranscribeStage"
+      :subtitle-transcribe-message="subtitleTranscribeMessage"
       :clip-id="clip?.id ?? null"
       :project-id="clipProjectId"
       :clip-text-overlay-json="clipTextOverlayRaw"
@@ -815,6 +819,7 @@
       @subtitlePositionChange="onSubtitlePositionChange"
       @subtitleSettingsChange="onSubtitleSettingsChange"
       @clip-text-overlay-change="onClipTextOverlayChange"
+      @request-subtitle-transcription="onRequestSubtitleTranscription"
     />
 
     <!-- Subtitle Adjustment Dialog -->
@@ -931,12 +936,17 @@
     publishMode?: boolean;
     // Single ratio mode - when true, only one aspect ratio can be selected at a time
     singleRatioMode?: boolean;
+    isSubtitleTranscribing?: boolean;
+    subtitleTranscribeProgress?: number;
+    subtitleTranscribeStage?: string;
+    subtitleTranscribeMessage?: string;
   }>();
 
   const emit = defineEmits<{
     'update:modelValue': [value: boolean];
     confirm: [settings: BuildSettings];
     'build-complete': [buildIds: string[]];
+    requestSubtitleTranscription: [clipId: string];
   }>();
 
   // Build target for multi-org/campaign builds
@@ -1052,6 +1062,7 @@
   const videoFrameUrl = ref<string | null>(null);
   const loadingVideoFrame = ref(false);
   const videoPath = ref<string | null>(null);
+  const poiPreviewUsesSelfContainedSource = ref(false);
   let loadVideoFrameGeneration = 0;
 
   // Overlay preview state for ManualPOIEditor
@@ -1062,7 +1073,9 @@
     const clip = props.clip as { segment_id?: string; project_id?: string } | null;
     return clip?.segment_id || clip?.project_id || null;
   });
-  const { transcriptData } = useTranscriptData(clipProjectId);
+  const { transcriptData, loadTranscriptData } = useTranscriptData(clipProjectId);
+  const requestedSubtitleTranscription = ref(false);
+  const subtitleTranscriptionWasRunning = ref(false);
 
   /** True when the clip's extracted MP4 is the full playable source (0-based). */
   const isSelfContainedClip = computed(() => checkSelfContainedClip(props.clip));
@@ -1254,11 +1267,11 @@
   // not exist inside the extracted file — using them would seek beyond EOF and
   // also break subtitle filtering.
   const clipStartTime = computed(() => {
-    if (isSelfContainedClip.value) return 0;
+    if (isSelfContainedClip.value || poiPreviewUsesSelfContainedSource.value) return 0;
     return props.clip?.current_version_start_time || 0;
   });
   const clipEndTime = computed(() => {
-    if (isSelfContainedClip.value && props.clip) {
+    if ((isSelfContainedClip.value || poiPreviewUsesSelfContainedSource.value) && props.clip) {
       return getSelfContainedClipDuration(props.clip);
     }
     return props.clip?.current_version_end_time || 0;
@@ -1404,6 +1417,31 @@
 
     showManualPOIEditor.value = true;
   }
+
+  function onRequestSubtitleTranscription() {
+    if (!props.clip?.id) return;
+    requestedSubtitleTranscription.value = true;
+    emit('requestSubtitleTranscription', props.clip.id);
+  }
+
+  watch(
+    () => props.isSubtitleTranscribing,
+    async (isRunning) => {
+      if (isRunning) {
+        subtitleTranscriptionWasRunning.value = true;
+        return;
+      }
+
+      if (!requestedSubtitleTranscription.value || !subtitleTranscriptionWasRunning.value) return;
+      requestedSubtitleTranscription.value = false;
+      subtitleTranscriptionWasRunning.value = false;
+
+      await loadTranscriptData(clipProjectId.value);
+      if (isSelfContainedClip.value) {
+        await loadSelfContainedTranscriptForClip();
+      }
+    }
+  );
 
   const DEFAULT_POI_SUBTITLE_POSITION = { x: 50, y: 85, width: 80 } as const;
 
@@ -1574,6 +1612,7 @@
         selectedIntro.value = null;
         selectedOutro.value = null;
         videoPath.value = null;
+        poiPreviewUsesSelfContainedSource.value = false;
         isForCampaign.value = false;
         selectedCampaign.value = null;
         availableCampaigns.value = [];
@@ -1826,6 +1865,7 @@
     const clipId = props.clip.id;
     const generation = ++loadVideoFrameGeneration;
     loadingVideoFrame.value = true;
+    poiPreviewUsesSelfContainedSource.value = false;
 
     try {
       const { invoke } = await import('@tauri-apps/api/core');
@@ -1836,6 +1876,7 @@
       }
 
       const { filePath: rawVideoPath, frameTimestamp } = source;
+      poiPreviewUsesSelfContainedSource.value = source.isSelfContained;
 
       console.log('[BuildSettings] POI preview source:', {
         clipId,
