@@ -12,7 +12,7 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
   require Logger
 
   alias ClippsterServer.Social
-  alias ClippsterServer.Social.{PostSubmission, PostForMeFeedAnalytics}
+  alias ClippsterServer.Social.{PostSubmission, PostForMeFeedAnalytics, AnalyticsMerge}
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Campaigns.UserPost
 
@@ -157,11 +157,19 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
              post.platform,
              post_id
            ),
+         true <- AnalyticsMerge.has_real_metrics?(insights),
          {:ok, _updated} <- Social.sync_post_analytics(post, insights) do
       Logger.debug("[AnalyticsSyncWorker] Synced post #{post.id}")
       Appsignal.increment_counter("worker.analytics_sync.success", 1, %{platform: post.platform})
       :ok
     else
+      false ->
+        Logger.debug(
+          "[AnalyticsSyncWorker] Skipping post #{post.id} - incoming metrics are all zero"
+        )
+
+        {:error, :zero_metrics}
+
       {:error, :no_account} ->
         Logger.warning("[AnalyticsSyncWorker] No account found for post #{post.id}")
         {:error, :no_account}
@@ -195,11 +203,19 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
              post.platform,
              post_id
            ),
+         true <- AnalyticsMerge.has_real_metrics?(insights),
          {:ok, _updated} <- Campaigns.update_user_post_analytics(post, insights) do
       Logger.debug("[AnalyticsSyncWorker] Synced user post #{post.id}")
       Appsignal.increment_counter("worker.analytics_sync.success", 1, %{platform: post.platform})
       :ok
     else
+      false ->
+        Logger.debug(
+          "[AnalyticsSyncWorker] Skipping user post #{post.id} - incoming metrics are all zero"
+        )
+
+        {:error, :zero_metrics}
+
       {:error, :no_account} ->
         Logger.warning("[AnalyticsSyncWorker] No account found for user post #{post.id}")
         {:error, :no_account}
