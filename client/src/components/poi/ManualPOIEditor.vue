@@ -133,6 +133,9 @@
                     :target-aspect-ratio="targetAspectRatio"
                     :social-overlay-preset="socialOverlayPreset"
                     :next-region-number="nextRegionNumber"
+                    :show-scaled-16x9-tab="sourceFrameMode === 'scale'"
+                    :show-subtitles-tab="subtitlePositioningEnabled"
+                    :show-text-box-tab="Boolean(clipTextLocal?.enabled)"
                     :video-url="videoUrl"
                     :video-time="absoluteVideoTime"
                     :is-playing="isPlaying"
@@ -174,7 +177,8 @@
                     :overlay-previews="resolvedOverlays"
                     :subtitle-settings="localSubtitleSettings"
                     :subtitle-position="localSubtitlePosition"
-                    :subtitle-positioning-enabled="subtitlePositioningEnabled"
+                    :subtitle-preview-visible="subtitlePositioningEnabled"
+                    :subtitle-positioning-enabled="subtitlePositioningActive"
                     :transcript-words="transcriptWords"
                     :transcript-segments="transcriptSegments"
                     :initial-source-framing="targetPanelInitialFraming"
@@ -304,9 +308,10 @@
               <!-- Subtitles cell -->
               <div v-if="localSubtitleSettings" class="poi-dialog__feature-cell">
                 <Checkbox
-                  v-model="subtitlePositioningEnabled"
+                  :model-value="subtitlePositioningEnabled"
                   aria-label="Enable subtitle positioning"
                   class="poi-dialog__checkbox poi-dialog__checkbox--purple shrink-0"
+                  @update:model-value="onSubtitlePositioningToggle"
                 />
                 <CaptionsIcon class="h-4 w-4 poi-dialog__icon-purple shrink-0" />
                 <div class="flex-1 min-w-0">
@@ -318,7 +323,7 @@
                     · Transcript needed
                   </span>
                   <span v-else-if="subtitlePositioningEnabled" class="text-[10px] ml-2 poi-dialog__muted">
-                    · Drag to reposition
+                    · Select Subtitles tab to position on export preview
                   </span>
                 </div>
                 <button
@@ -337,8 +342,8 @@
                 <Type class="h-4 w-4 poi-dialog__icon-amber shrink-0" />
                 <div class="flex-1 min-w-0">
                   <span class="poi-dialog__feature-label">Clip text box</span>
-                  <span v-if="clipTextBoxPositioningActive" class="text-[10px] ml-2 poi-dialog__muted">
-                    · Drag on export preview
+                  <span v-if="clipTextLocal?.enabled" class="text-[10px] ml-2 poi-dialog__muted">
+                    · Select Text box tab to position on export preview
                   </span>
                 </div>
                 <button
@@ -471,6 +476,12 @@
     ensureGlobalDisplayNumbers,
     getNextRegionDisplayNumber,
   } from '@/utils/poiRegionNumbering';
+  import {
+    POI_OVERLAY_SCALED_16X9_ID,
+    POI_OVERLAY_SUBTITLES_ID,
+    POI_OVERLAY_TEXTBOX_ID,
+    isPoiOverlaySelection,
+  } from '@/utils/poiOverlaySelection';
 
   // Animation styles shown in the subtitle section (matches SubtitlePropertiesPanel)
   const ANIMATION_STYLES = [
@@ -704,15 +715,22 @@
     emit('subtitleSettingsChange', localSubtitleSettings.value);
   }
   const clipTextLocal = ref<ClipTextBoxState | null>(null);
-  const clipTextPositioningEnabled = ref(false);
 
   const clipTextBoxForTarget = computed(() => {
     if (!clipTextLocal.value?.enabled) return null;
     return mergeClipTextBoxForRatio(clipTextLocal.value, props.targetAspectRatio);
   });
 
+  const subtitlePositioningActive = computed(
+    () =>
+      subtitlePositioningEnabled.value &&
+      selectedRegionId.value === POI_OVERLAY_SUBTITLES_ID
+  );
+
   const clipTextBoxPositioningActive = computed(
-    () => Boolean(clipTextLocal.value?.enabled && clipTextPositioningEnabled.value)
+    () =>
+      Boolean(clipTextLocal.value?.enabled) &&
+      selectedRegionId.value === POI_OVERLAY_TEXTBOX_ID
   );
 
   watch(
@@ -723,9 +741,6 @@
         return;
       }
       clipTextLocal.value = parseClipTextOverlayJson(raw);
-      if (clipTextLocal.value?.enabled) {
-        clipTextPositioningEnabled.value = true;
-      }
     },
     { immediate: true }
   );
@@ -780,7 +795,8 @@
   });
 
   watch(displayRegions, (regions) => {
-    if (selectedRegionId.value && !regions.some((r) => r.id === selectedRegionId.value)) {
+    if (!selectedRegionId.value || isPoiOverlaySelection(selectedRegionId.value)) return;
+    if (!regions.some((r) => r.id === selectedRegionId.value)) {
       selectedRegionId.value = regions[0]?.id ?? null;
     }
   });
@@ -1281,6 +1297,7 @@
 
   // Handle source framing updates from POITargetPanel (scale / use16x9 / blur / transform)
   function handleSourceTransformUpdate(payload: ManualSourceFramingPayload) {
+    const prevMode = sourceFrameMode.value;
     sourceFrameMode.value = payload.mode;
     poiBlurEnabled.value = payload.blurEnabled;
     poiBlurAmount.value = payload.blurAmount;
@@ -1292,6 +1309,11 @@
         x: payload.x,
         y: payload.y,
       };
+    }
+    if (payload.mode === 'scale' && prevMode !== 'scale') {
+      selectedRegionId.value = POI_OVERLAY_SCALED_16X9_ID;
+    } else if (payload.mode !== 'scale' && selectedRegionId.value === POI_OVERLAY_SCALED_16X9_ID) {
+      selectedRegionId.value = displayRegions.value[0]?.id ?? null;
     }
   }
 
@@ -1441,6 +1463,16 @@
     }
   }
 
+  function onSubtitlePositioningToggle(checked: boolean | 'indeterminate') {
+    const enabled = checked === true;
+    subtitlePositioningEnabled.value = enabled;
+    if (enabled) {
+      selectedRegionId.value = POI_OVERLAY_SUBTITLES_ID;
+    } else if (selectedRegionId.value === POI_OVERLAY_SUBTITLES_ID) {
+      selectedRegionId.value = displayRegions.value[0]?.id ?? null;
+    }
+  }
+
   // Handle subtitle position changes (from dragging in POITargetPanel)
   function onSubtitlePositionChange(position: { x: number; y: number; width?: number }) {
     localSubtitlePosition.value = { ...position };
@@ -1474,6 +1506,9 @@
 
   async function onClipTextPanelDelete() {
     clipTextLocal.value = null;
+    if (selectedRegionId.value === POI_OVERLAY_TEXTBOX_ID) {
+      selectedRegionId.value = displayRegions.value[0]?.id ?? null;
+    }
     await persistClipTextClearDb();
   }
 
@@ -1509,8 +1544,8 @@
       clipTextLocal.value = createDefaultClipTextBoxState(clipDuration.value);
     }
     textBoxSettingsMode.value = true;
-    clipTextPositioningEnabled.value = true;
     await persistClipTextToDb();
+    selectedRegionId.value = POI_OVERLAY_TEXTBOX_ID;
   }
 
   async function doneTextBoxSettings() {
@@ -1520,6 +1555,7 @@
         props.targetAspectRatio
       );
       await persistClipTextToDb();
+      selectedRegionId.value = POI_OVERLAY_TEXTBOX_ID;
     }
     textBoxSettingsMode.value = false;
   }
@@ -1528,6 +1564,9 @@
     const revert = textBoxRevertJson.value;
     if (revert == null) {
       clipTextLocal.value = null;
+      if (selectedRegionId.value === POI_OVERLAY_TEXTBOX_ID) {
+        selectedRegionId.value = displayRegions.value[0]?.id ?? null;
+      }
       await persistClipTextClearDb();
     } else {
       clipTextLocal.value = parseClipTextOverlayJson(revert);
