@@ -8,6 +8,7 @@ defmodule ClippsterServer.Campaigns.UserPost do
 
   alias ClippsterServer.Accounts.User
   alias ClippsterServer.Campaigns.ClipperSocialAccount
+  alias ClippsterServer.Social.AnalyticsMerge
   alias ClippsterServer.Social.ProviderMode
 
   @known_platforms ~w(
@@ -81,8 +82,10 @@ defmodule ClippsterServer.Campaigns.UserPost do
   Changeset for updating analytics data.
   """
   def analytics_changeset(post, attrs) do
+    merged_attrs = AnalyticsMerge.merge_metrics(post, attrs)
+
     post
-    |> cast(attrs, [
+    |> cast(merged_attrs, [
       :view_count,
       :like_count,
       :comment_count,
