@@ -304,9 +304,27 @@
       </div>
     </div>
 
-    <!-- Region List -->
-    <div v-if="regions.length > 0" class="px-2 py-1.5 border-t border-zinc-700/50 max-h-24 overflow-y-auto">
+    <!-- Scaled 16:9 + region + overlay tab row -->
+    <div
+      v-if="showScaled16x9Tab || regions.length > 0 || showSubtitlesTab || showTextBoxTab"
+      class="px-2 py-1.5 border-t border-zinc-700/50 max-h-24 overflow-y-auto"
+    >
       <div class="flex flex-wrap gap-1.5">
+        <button
+          v-if="showScaled16x9Tab"
+          type="button"
+          @click="selectRegion(POI_OVERLAY_SCALED_16X9_ID)"
+          class="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors"
+          :class="
+            selectedRegionId === POI_OVERLAY_SCALED_16X9_ID
+              ? 'bg-zinc-700 text-white'
+              : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300'
+          "
+        >
+          <div class="w-2 h-2 rounded-sm bg-purple-500" />
+          Scaled 16:9
+        </button>
+
         <button
           v-for="region in regions"
           :key="region.id"
@@ -320,6 +338,36 @@
         >
           <div class="w-2 h-2 rounded-sm" :style="{ backgroundColor: region.color }" />
           {{ regionLabel(region) }}
+        </button>
+
+        <button
+          v-if="showSubtitlesTab"
+          type="button"
+          @click="selectRegion(POI_OVERLAY_SUBTITLES_ID)"
+          class="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors"
+          :class="
+            selectedRegionId === POI_OVERLAY_SUBTITLES_ID
+              ? 'bg-zinc-700 text-white'
+              : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300'
+          "
+        >
+          <div class="w-2 h-2 rounded-sm bg-purple-400" />
+          Subtitles
+        </button>
+
+        <button
+          v-if="showTextBoxTab"
+          type="button"
+          @click="selectRegion(POI_OVERLAY_TEXTBOX_ID)"
+          class="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors"
+          :class="
+            selectedRegionId === POI_OVERLAY_TEXTBOX_ID
+              ? 'bg-zinc-700 text-white'
+              : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300'
+          "
+        >
+          <div class="w-2 h-2 rounded-sm bg-amber-400" />
+          Text box
         </button>
       </div>
     </div>
@@ -348,6 +396,12 @@
   import { SOCIAL_OVERLAY_PRESETS } from '@/editor/constants/social-overlay-constants';
   import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
   import { getRegionDisplayLabel } from '@/utils/poiRegionNumbering';
+  import {
+    POI_OVERLAY_SCALED_16X9_ID,
+    POI_OVERLAY_SUBTITLES_ID,
+    POI_OVERLAY_TEXTBOX_ID,
+    isPoiOverlaySelection,
+  } from '@/utils/poiOverlaySelection';
 
   interface Props {
     regions: ManualRegion[];
@@ -368,6 +422,12 @@
     socialOverlayPreset?: SocialOverlayPreset | null;
     /** Next clip-wide region number for new regions in the current edit context. */
     nextRegionNumber?: number;
+    /** Show Scaled 16:9 tab before region tabs (when Scale 16:9 mode is active). */
+    showScaled16x9Tab?: boolean;
+    /** Show Subtitles tab after region tabs (when subtitle positioning is enabled). */
+    showSubtitlesTab?: boolean;
+    /** Show Text box tab after region tabs (when clip text box is enabled). */
+    showTextBoxTab?: boolean;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -381,6 +441,9 @@
     targetAspectRatio: '16:9',
     socialOverlayPreset: null,
     nextRegionNumber: 1,
+    showScaled16x9Tab: false,
+    showSubtitlesTab: false,
+    showTextBoxTab: false,
   });
 
   const emit = defineEmits<{
@@ -453,7 +516,7 @@
 
   // Get the selected region
   const selectedRegion = computed(() => {
-    if (!props.selectedRegionId) return null;
+    if (!props.selectedRegionId || isPoiOverlaySelection(props.selectedRegionId)) return null;
     return props.regions.find(r => r.id === props.selectedRegionId) || null;
   });
 

@@ -219,12 +219,18 @@
 
         <!-- 16:9 Source Frame Overlay (when Scale 16:9 is enabled)
              Must stay above the full-canvas click-catcher (z-[4]) or drag/corner scale never receives events.
-             Use z-[5] to align with region preview layer; region nodes after this in the DOM still stack above. -->
+             Raised above region output handles when the Scaled 16:9 tab is selected. -->
         <div
           v-if="showSourceFrame"
-          class="absolute border-2 border-purple-500 cursor-move z-[5]"
+          class="absolute border-2 border-purple-500"
+          :class="[
+            isScaled16x9Selected
+              ? 'z-[15] cursor-move pointer-events-auto'
+              : 'z-[5] pointer-events-none',
+            isScaled16x9Selected && isDraggingSourceFrame ? 'ring-2 ring-purple-300' : '',
+          ]"
           :style="sourceFrameStyle"
-          @mousedown="startDragSourceFrame"
+          @mousedown="isScaled16x9Selected ? startDragSourceFrame($event) : undefined"
         >
           <!-- Source video/thumbnail preview -->
           <canvas
@@ -249,6 +255,7 @@
 
           <!-- Corner resize handles -->
           <div
+            v-if="isScaled16x9Selected"
             v-for="corner in ['nw', 'ne', 'sw', 'se']"
             :key="corner"
             class="absolute w-3 h-3 bg-purple-500 border border-white pointer-events-auto"
@@ -342,14 +349,15 @@
           :is-selected="selectedRegionId === region.id"
           :container-width="containerWidth"
           :container-height="containerHeight"
-          :resizable="true"
-          :draggable="true"
+          :resizable="!isScaled16x9Selected"
+          :draggable="!isScaled16x9Selected"
           :show-controls="false"
           :show-resize-handles="true"
           :aspect-ratio-locked="region.aspectRatioLocked !== false"
           :snap-to-center="true"
           :snap-threshold="SNAP_THRESHOLD"
           :corner-radius-px="getScaledCornerRadius(region)"
+          :class="{ 'pointer-events-none': isScaled16x9Selected }"
           @update="(rect) => updateRegionOutput(region.id, rect)"
           @select="selectRegion(region.id)"
           @drag-start="onDragStart"
@@ -374,19 +382,23 @@
 
         <!-- Subtitle draggable/resizable box -->
         <div
-          v-if="subtitleSettings && subtitlePositioningEnabled"
+          v-if="subtitleSettings && subtitlePreviewVisible"
           class="absolute z-20 pointer-events-auto"
           :style="subtitleBoxStyle"
         >
           <!-- Drag body -->
           <div
-            class="w-full h-full flex items-center justify-center cursor-move select-none"
+            class="w-full h-full flex items-center justify-center select-none"
             :class="[
-              isDraggingSubtitles ? 'ring-2 ring-purple-400' : 'ring-1 ring-purple-500/60 hover:ring-purple-400',
+              subtitlePositioningEnabled
+                ? isDraggingSubtitles
+                  ? 'ring-2 ring-purple-400 cursor-move'
+                  : 'ring-1 ring-purple-500/60 hover:ring-purple-400 cursor-move'
+                : 'ring-1 ring-purple-500/30 cursor-default',
               subtitleSettings?.animationStyle === 'single-word' ? 'overflow-visible' : 'overflow-hidden',
             ]"
             style="border-radius: 4px; background: rgba(88,28,135,0.15);"
-            @mousedown.prevent="startDragSubtitles"
+            @mousedown.prevent="subtitlePositioningEnabled ? startDragSubtitles($event) : undefined"
           >
             <!-- Actual transcript words (when available) -->
             <div
@@ -481,7 +493,7 @@
 
           <!-- Corner resize handles (hidden for single-word style since width is auto) -->
           <div
-            v-if="subtitleSettings?.animationStyle !== 'single-word'"
+            v-if="subtitlePositioningEnabled && subtitleSettings?.animationStyle !== 'single-word'"
             v-for="corner in ['nw','ne','sw','se']"
             :key="corner"
             class="absolute w-2.5 h-2.5 bg-purple-500 border border-white pointer-events-auto z-30"
@@ -569,6 +581,7 @@
   import type { ManualRegion, ManualRegionRect, SubtitleSettings, ManualSourceFramingPayload } from '@/types';
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
   import { getRegionDisplayLabel } from '@/utils/poiRegionNumbering';
+  import { POI_OVERLAY_SCALED_16X9_ID } from '@/utils/poiOverlaySelection';
   import { scaleUse169BlurForPoiPreview, use169BlurSliderToCssPx } from '@/utils/use169Blur';
   import { getVisibleSubtitleWordsForClipTime } from '@/utils/subtitleVisibleWords';
 
@@ -623,6 +636,9 @@
     subtitleSettings?: SubtitleSettings | null;
     // Optional subtitle position for preview
     subtitlePosition?: { x: number; y: number; width?: number } | null;
+    /** Show subtitle overlay on export preview (checkbox enabled). */
+    subtitlePreviewVisible?: boolean;
+    /** Allow drag/resize when Subtitles tab is selected in source panel. */
     subtitlePositioningEnabled?: boolean;
     // Optional transcript data for subtitle rendering
     transcriptWords?: WordInfo[];
@@ -645,6 +661,7 @@
     watermarkPreview: null,
     subtitleSettings: null,
     subtitlePosition: null,
+    subtitlePreviewVisible: false,
     subtitlePositioningEnabled: false,
     transcriptWords: () => [],
     transcriptSegments: () => [],
@@ -668,6 +685,10 @@
   const containerHeight = ref(0);
 
   const isTarget916 = computed(() => props.targetAspectRatio === '9:16');
+
+  const isScaled16x9Selected = computed(
+    () => props.selectedRegionId === POI_OVERLAY_SCALED_16X9_ID
+  );
 
   // Source frame scaling state
   const showSourceFrame = ref(false);

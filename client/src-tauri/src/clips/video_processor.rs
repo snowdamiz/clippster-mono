@@ -3494,13 +3494,12 @@ pub async fn build_multi_region_clip(
         
         // Build base regions (active outside all segments)
         // Enable condition: NOT in any segment time range
-        // IMPORTANT: Segment times are absolute, but after FFmpeg trim (-ss), timeline starts at 0
-        // So we need to convert segment times to be relative to clip start
+        // POI segment_configs times are clip-relative (0 = clip start), matching broll_configs
+        // and ManualPOIEditor. FFmpeg output timeline also starts at 0 after -ss trim.
         let mut base_enable_parts = Vec::new();
         for seg in segments.iter() {
-            // Convert absolute segment times to relative (from clip start)
-            let relative_start = seg.start_time - start_time;
-            let relative_end = seg.end_time - start_time;
+            let relative_start = seg.start_time;
+            let relative_end = seg.end_time;
             
             // For each segment, add condition: NOT (t >= start AND t <= end)
             // Which is: t < start OR t > end
@@ -3525,9 +3524,8 @@ pub async fn build_multi_region_clip(
         
         // Build segment-specific regions
         for (seg_idx, seg) in segments.iter().enumerate() {
-            // Convert absolute segment times to relative (from clip start)
-            let relative_start = seg.start_time - start_time;
-            let relative_end = seg.end_time - start_time;
+            let relative_start = seg.start_time;
+            let relative_end = seg.end_time;
             
             // Enable condition: t >= start AND t <= end
             let seg_enable = format!(
