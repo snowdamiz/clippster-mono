@@ -3,12 +3,18 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
   Shared Post For Me connect completion logic for user/org flows.
   """
 
+  require Logger
+
   alias ClippsterServer.{Accounts, Campaigns, Social, Repo}
   alias ClippsterServer.Campaigns.ClipperSocialAccount
+  alias ClippsterServer.Campaigns.UserPost
   alias ClippsterServer.Social.SocialAccount
   alias ClippsterServer.Social.ProviderMode
   alias ClippsterServer.Social.PostForMeConnectionSession
   alias ClippsterServer.Social.Providers.PostForMe
+  alias ClippsterServer.Social.UserPostsAnalyticsSync
+
+  import Ecto.Query
 
   @doc """
   Resolves the Post For Me external_id for an existing provider account.
@@ -214,6 +220,9 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
   def complete_user_connect(user, account_ids, external_id, platform) do
     with {:ok, listing} <- list_provider_accounts(account_ids, external_id, platform),
          {:ok, synced_accounts} <- upsert_user_accounts(user, listing.data, platform) do
+      reassign_user_posts_to_connected_accounts(user, synced_accounts)
+      Task.start(fn -> UserPostsAnalyticsSync.sync_for_user(user.id) end)
+
       {:ok,
        %{
          platform: normalized_primary_platform(synced_accounts, platform),
@@ -405,18 +414,88 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
   end
 
   defp upsert_user_account(user, attrs) do
-    case Campaigns.get_social_account_by_provider(
-           user.id,
-           "post_for_me",
-           attrs.provider_account_id
-         ) do
+    existing =
+      Campaigns.get_social_account_by_provider(
+        user.id,
+        "post_for_me",
+        attrs.provider_account_id
+      ) || find_existing_user_account_by_platform_identity(user.id, attrs)
+
+    case existing do
       nil ->
         Campaigns.create_social_account(user, attrs)
 
-      existing ->
-        Campaigns.update_social_account(existing, attrs, user)
+      account ->
+        Campaigns.update_social_account(account, attrs, user)
     end
   end
+
+  defp find_existing_user_account_by_platform_identity(user_id, attrs) do
+    platform = Map.get(attrs, :platform)
+    platform_user_id = Map.get(attrs, :platform_user_id)
+
+    if is_binary(platform) and platform != "" and is_binary(platform_user_id) and
+         platform_user_id != "" do
+      platform_aliases = platform_identity_aliases(platform)
+
+      from(a in ClipperSocialAccount,
+        where: a.user_id == ^user_id,
+        where: a.provider == "post_for_me",
+        where: a.platform in ^platform_aliases,
+        where: a.platform_user_id == ^platform_user_id,
+        order_by: [desc: a.updated_at],
+        limit: 1
+      )
+      |> Repo.one()
+    else
+      nil
+    end
+  end
+
+  defp platform_identity_aliases(platform) do
+    normalized = ProviderMode.normalize_platform(platform)
+
+    case normalized do
+      "x" -> ["x", "twitter"]
+      "twitter" -> ["x", "twitter"]
+      other -> [other]
+    end
+  end
+
+  @doc """
+  Moves published posts from inactive duplicate Post For Me accounts onto the active account
+  for the same platform identity after reconnect.
+  """
+  def reassign_user_posts_to_connected_accounts(user, accounts) when is_list(accounts) do
+    Enum.each(accounts, fn account ->
+      inactive_account_ids =
+        from(a in ClipperSocialAccount,
+          where: a.user_id == ^user.id,
+          where: a.id != ^account.id,
+          where: a.platform in ^platform_identity_aliases(account.platform),
+          where: a.is_active == false,
+          select: a.id
+        )
+        |> Repo.all()
+
+      if inactive_account_ids != [] do
+        {updated, _} =
+          from(p in UserPost,
+            where: p.user_id == ^user.id,
+            where: p.clipper_social_account_id in ^inactive_account_ids
+          )
+          |> Repo.update_all(set: [clipper_social_account_id: account.id])
+
+        if updated > 0 do
+          Logger.info(
+            "[PostForMeConnectionSync] Reassigned #{updated} user posts to account #{account.id} (#{account.platform})"
+          )
+        end
+      end
+    end)
+  end
+
+  def reassign_user_posts_to_connected_accounts(_user, _accounts), do: :ok
 
   defp provider_account_to_user_attrs(provider_account, platform_override) do
     normalized_platform =

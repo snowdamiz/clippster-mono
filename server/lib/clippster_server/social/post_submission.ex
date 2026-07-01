@@ -7,6 +7,7 @@ defmodule ClippsterServer.Social.PostSubmission do
   import Ecto.Changeset
 
   alias ClippsterServer.Social.ProviderMode
+  alias ClippsterServer.Social.AnalyticsMerge
   alias ClippsterServer.Organizations.{Organization, OrganizationCreatorProfile}
   alias ClippsterServer.Social.SocialAccount
   alias ClippsterServer.Campaigns.ClipperSocialAccount
@@ -324,8 +325,10 @@ defmodule ClippsterServer.Social.PostSubmission do
       # Don't update if manual override is set
       submission |> change()
     else
+      merged_attrs = AnalyticsMerge.merge_metrics(submission, attrs)
+
       submission
-      |> cast(attrs, [
+      |> cast(merged_attrs, [
         :view_count,
         :like_count,
         :comment_count,

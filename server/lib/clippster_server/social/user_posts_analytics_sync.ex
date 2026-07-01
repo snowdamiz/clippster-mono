@@ -9,19 +9,10 @@ defmodule ClippsterServer.Social.UserPostsAnalyticsSync do
   alias ClippsterServer.Repo
   alias ClippsterServer.Social
   alias ClippsterServer.Social.PostForMeFeedAnalytics
+  alias ClippsterServer.Social.AnalyticsMerge
   alias ClippsterServer.Social.PostSubmission
 
   @supported_platforms ["instagram", "x", "twitter", "tiktok", "youtube", "facebook"]
-
-  @metric_keys [
-    :view_count,
-    :like_count,
-    :comment_count,
-    :save_count,
-    :reach_count,
-    :impressions_count,
-    :share_count
-  ]
 
   @doc """
   Syncs analytics for all published user posts belonging to a user.
@@ -234,9 +225,7 @@ defmodule ClippsterServer.Social.UserPostsAnalyticsSync do
     end
   end
 
-  defp has_real_metrics?(analytics) do
-    Enum.any?(@metric_keys, fn key -> (Map.get(analytics, key) || 0) > 0 end)
-  end
+  defp has_real_metrics?(analytics), do: AnalyticsMerge.has_real_metrics?(analytics)
 
   defp maybe_backfill_post_url(post, item) do
     if (is_nil(post.post_url) || post.post_url == "") && is_binary(item["platform_url"]) do

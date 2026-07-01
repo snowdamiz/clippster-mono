@@ -2168,6 +2168,9 @@
             });
             void loadSocialAccounts();
             void socialTokenMonitor.checkNow();
+            if (activeTab.value === 'posts') {
+              void loadPostsAnalytics();
+            }
           } else if (result.error) {
             toast({ title: 'Error', description: result.error });
           }
