@@ -198,6 +198,8 @@ export function useElementInteraction({
 	let lastMouseX = 0;
 	let lastMouseY = 0;
 	let mouseDownLocation: { x: number; y: number } | null = null;
+	/** True when the current pointer gesture completed an element move drag. */
+	let didDragElementsThisGesture = false;
 	let dragSnapCache: PendingDragState | null = null;
 	let dragStartTimeValue = 0;
 	let dragStartMouseY = 0;
@@ -577,6 +579,7 @@ export function useElementInteraction({
 		// Sync linked element (e.g. extracted audio ↔ source video)
 		syncLinkedElement(ds.elementId, ds.trackId, timeDelta);
 
+		didDragElementsThisGesture = true;
 		resetDragVisual();
 	}
 
@@ -617,6 +620,17 @@ export function useElementInteraction({
 			onMouseUp(event);
 			return;
 		}
+
+		// Plain click with small pointer jitter: collapse multi-selection to the clicked clip
+		// so Delete / toolbar actions only affect the intended segment.
+		const cancelled = pendingDrag;
+		if (
+			cancelled &&
+			!(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+		) {
+			selectElement({ trackId: cancelled.trackId, elementId: cancelled.elementId });
+		}
+
 		pendingDrag = null;
 		isPendingDrag.value = false;
 		// No drag DOM to tear down because the drag never started.
@@ -689,6 +703,7 @@ export function useElementInteraction({
 		}
 
 		event.stopPropagation();
+		didDragElementsThisGesture = false;
 
 		const isMultiSelect = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
 		const alreadySelected = isElementSelected({ trackId: track.id, elementId: element.id });
@@ -750,16 +765,17 @@ export function useElementInteraction({
 	}) {
 		event.stopPropagation();
 
-		if (mouseDownLocation) {
-			const deltaX = Math.abs(event.clientX - mouseDownLocation.x);
-			const deltaY = Math.abs(event.clientY - mouseDownLocation.y);
-			if (deltaX > DRAG_THRESHOLD_PX || deltaY > DRAG_THRESHOLD_PX) {
-				mouseDownLocation = null;
-				return;
-			}
+		if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+
+		// Skip only when this gesture actually moved clips — not for small pointer jitter
+		// that stays below the drag threshold (that case is handled in onPendingMouseUp).
+		if (didDragElementsThisGesture) {
+			didDragElementsThisGesture = false;
+			mouseDownLocation = null;
+			return;
 		}
 
-		if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+		mouseDownLocation = null;
 
 		// On plain click (no drag), collapse to single element selection.
 		// This handles: clicking an unselected element, or clicking one element

@@ -4017,7 +4017,7 @@ pub async fn export_video_editor_project(
 
     args.push("1".to_string());
 
-    args.push("-vsync".to_string());
+    args.push("-fps_mode".to_string());
 
     args.push("cfr".to_string());
 

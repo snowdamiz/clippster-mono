@@ -7,8 +7,6 @@ import { useEditor } from "../useEditor";
 import { useElementSelection } from "../timeline/element/useElementSelection";
 import { SetTransitionCommand } from "../../lib/commands/scene";
 import { getElementsAtTime } from "../../lib/timeline";
-import { isMainTrack } from "../../lib/timeline/track-utils";
-import { getMainTrackMagnet } from "../timeline/useTimelineTools";
 import type { ClipboardItem, CreateTimelineElement } from "../../types/timeline";
 
 export function useEditorActions() {
@@ -157,56 +155,9 @@ export function useEditorActions() {
 
 		if (selectedElements.value.length === 0) return;
 
-		const tracks = editor.timeline.getTracks();
-		const mainTrack = tracks.find((t) => isMainTrack(t));
-		const shouldRipple = getMainTrackMagnet() && mainTrack;
-
-		// Collect info about main track elements being deleted (before deletion)
-		let deletedMainElements: Array<{ startTime: number; duration: number }> = [];
-		if (shouldRipple && mainTrack) {
-			for (const sel of selectedElements.value) {
-				if (sel.trackId === mainTrack.id) {
-					const el = mainTrack.elements.find((e) => e.id === sel.elementId);
-					if (el) {
-						deletedMainElements.push({ startTime: el.startTime, duration: el.duration });
-					}
-				}
-			}
-		}
-
 		const elementsToDelete = [...selectedElements.value];
 		clearElementSelection();
-
 		editor.timeline.deleteElements({ elements: elementsToDelete });
-
-		// Ripple: shift subsequent main track elements left to close gaps
-		if (deletedMainElements.length > 0 && mainTrack) {
-			// Sort deleted elements by startTime ascending
-			deletedMainElements.sort((a, b) => a.startTime - b.startTime);
-
-			// Calculate total gap to shift by (sum of all deleted durations)
-			// Use the earliest deleted element's start as the gap boundary
-			const gapStart = deletedMainElements[0].startTime;
-			const totalGapDuration = deletedMainElements.reduce((sum, d) => sum + d.duration, 0);
-
-			// Get current state of main track after deletion
-			const currentTracks = editor.timeline.getTracks();
-			const currentMainTrack = currentTracks.find((t) => isMainTrack(t));
-			if (currentMainTrack) {
-				// Find elements that start at or after the gap
-				const elementIdsToShift = currentMainTrack.elements
-					.filter((e) => e.startTime >= gapStart)
-					.map((e) => e.id);
-
-				if (elementIdsToShift.length > 0) {
-					editor.timeline.moveElementsBatch({
-						trackId: currentMainTrack.id,
-						elementIds: elementIdsToShift,
-						timeDelta: -totalGapDuration,
-					});
-				}
-			}
-		}
 	});
 
 	useActionHandler("select-all", () => {
