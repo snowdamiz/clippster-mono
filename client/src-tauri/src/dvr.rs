@@ -637,7 +637,7 @@ pub async fn build_vod_from_dvr(
     args.extend_from_slice(&[
         "-r".to_string(),
         "30".to_string(), // Force constant 30fps output
-        "-vsync".to_string(),
+        "-fps_mode".to_string(),
         "cfr".to_string(), // Constant frame rate
         "-c:a".to_string(),
         "aac".to_string(),

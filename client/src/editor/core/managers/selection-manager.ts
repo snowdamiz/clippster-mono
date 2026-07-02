@@ -15,7 +15,7 @@ export class SelectionManager {
 	}
 
 	getSelectedElements(): ElementRef[] {
-		return this.selectedElements;
+		return [...this.selectedElements];
 	}
 
 	getSelectedTransitionId(): string | null {
