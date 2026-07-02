@@ -2,6 +2,8 @@
 import { ref, computed, watch } from "vue";
 import { useEditor } from "../composables/useEditor";
 import { useExportDialog } from "../composables/useExportDialog";
+import { useElementSelection } from "../composables/timeline/element/useElementSelection";
+import { getExportRangeFromSelectedElements } from "../lib/timeline";
 import type { ExportTranscriptSummary } from "../lib/export-summary-toast";
 import {
 	Download,
@@ -26,6 +28,7 @@ import type { Clip, ClipBuild } from "@/services/database";
 type ClipWithBuilds = Clip & { builds: ClipBuild[] };
 
 const { editor, version } = useEditor();
+const { selectedElements } = useElementSelection();
 const { isOpen, exportTimeRange, exportSegmentName, openExportDialog, closeExportDialog } = useExportDialog();
 const format = ref<"mp4" | "webm">("mp4");
 const quality = ref<"low" | "medium" | "high" | "very_high">("high");
@@ -79,6 +82,23 @@ const exportDialogSubtitle = computed(() => {
 const exportDialogTitle = computed(() =>
 	exportTimeRange.value ? "Export Segment" : "Export Configuration",
 );
+
+function handleOpenExportDialog() {
+	const selectionExport = getExportRangeFromSelectedElements({
+		elements: selectedElements.value,
+		getElement: ({ trackId, elementId }) => {
+			const track = editor.timeline.getTrackById({ trackId });
+			return track?.elements.find((el) => el.id === elementId) ?? null;
+		},
+	});
+
+	if (selectionExport) {
+		openExportDialog(selectionExport);
+		return;
+	}
+
+	openExportDialog();
+}
 
 const exportOutputFileName = computed(() => exportSegmentName.value?.trim() || null);
 
@@ -1018,7 +1038,7 @@ function handlePublishNow() {
 				hasProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
 			]"
 			:disabled="!hasProject"
-			@click="hasProject && openExportDialog()"
+			@click="hasProject && handleOpenExportDialog()"
 		>
 			<Download class="export-trigger__icon" />
 			Export
