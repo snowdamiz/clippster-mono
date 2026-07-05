@@ -1,24 +1,31 @@
 import { describe, expect, it } from "vitest";
-import type { TimelineTrack } from "../../types/timeline";
+import type { VideoElement, VideoTrack } from "../../types/timeline";
 import { collapseMainVideoTrackGaps } from "./main-track-layout";
 
 function makeMainTrack(
 	elements: Array<{ id: string; startTime: number; duration: number }>,
-): TimelineTrack {
+): VideoTrack {
 	return {
 		id: "main",
 		type: "video",
+		name: "Main",
 		isMain: true,
-		elements: elements.map((el) => ({
-			id: el.id,
-			type: "video" as const,
-			name: el.id,
-			startTime: el.startTime,
-			duration: el.duration,
-			trimStart: 0,
-			trimEnd: 0,
-			mediaId: "media-1",
-		})),
+		muted: false,
+		hidden: false,
+		elements: elements.map(
+			(el): VideoElement => ({
+				id: el.id,
+				type: "video",
+				name: el.id,
+				startTime: el.startTime,
+				duration: el.duration,
+				trimStart: 0,
+				trimEnd: 0,
+				mediaId: "media-1",
+				transform: { position: { x: 0, y: 0 }, scale: 1, rotate: 0 },
+				opacity: 1,
+			}),
+		),
 	};
 }
 
@@ -28,16 +35,18 @@ function deleteFromMainTrack({
 	collapseGaps,
 	fps = 30,
 }: {
-	track: TimelineTrack;
+	track: VideoTrack;
 	deleteIds: string[];
 	collapseGaps: boolean;
 	fps?: number;
-}): TimelineTrack {
-	const filtered = {
+}): VideoTrack {
+	const filtered: VideoTrack = {
 		...track,
 		elements: track.elements.filter((element) => !deleteIds.includes(element.id)),
 	};
-	return collapseGaps ? collapseMainVideoTrackGaps(filtered, fps) : filtered;
+	return collapseGaps
+		? (collapseMainVideoTrackGaps(filtered, fps) as VideoTrack)
+		: filtered;
 }
 
 describe("main-track delete ripple", () => {
