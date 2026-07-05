@@ -2,8 +2,6 @@
 import { ref, computed, watch } from "vue";
 import { useEditor } from "../composables/useEditor";
 import { useExportDialog } from "../composables/useExportDialog";
-import { useElementSelection } from "../composables/timeline/element/useElementSelection";
-import { getExportRangeFromSelectedElements } from "../lib/timeline";
 import type { ExportTranscriptSummary } from "../lib/export-summary-toast";
 import {
 	Download,
@@ -28,7 +26,6 @@ import type { Clip, ClipBuild } from "@/services/database";
 type ClipWithBuilds = Clip & { builds: ClipBuild[] };
 
 const { editor, version } = useEditor();
-const { selectedElements } = useElementSelection();
 const { isOpen, exportTimeRange, exportSegmentName, openExportDialog, closeExportDialog } = useExportDialog();
 const format = ref<"mp4" | "webm">("mp4");
 const quality = ref<"low" | "medium" | "high" | "very_high">("high");
@@ -84,19 +81,8 @@ const exportDialogTitle = computed(() =>
 );
 
 function handleOpenExportDialog() {
-	const selectionExport = getExportRangeFromSelectedElements({
-		elements: selectedElements.value,
-		getElement: ({ trackId, elementId }) => {
-			const track = editor.timeline.getTrackById({ trackId });
-			return track?.elements.find((el) => el.id === elementId) ?? null;
-		},
-	});
-
-	if (selectionExport) {
-		openExportDialog(selectionExport);
-		return;
-	}
-
+	// Always export the full timeline from the header Export button.
+	// Per-segment export is available from the timeline context menu.
 	openExportDialog();
 }
 
