@@ -177,6 +177,13 @@ export class AudioManager {
 		if (isPlaying !== this.lastIsPlaying) {
 			this.lastIsPlaying = isPlaying;
 			if (isPlaying) {
+				// Resume the AudioContext synchronously while still inside the user
+				// gesture (click/keyboard). Deferred resume after async clip loading
+				// can fail in embedded webviews and leave video playing without audio.
+				const audioContext = this.ensureAudioContext();
+				if (audioContext?.state === "suspended") {
+					void audioContext.resume();
+				}
 				void this.startPlayback({
 					time: this.editor.playback.getCurrentTime(),
 				});
@@ -418,13 +425,13 @@ export class AudioManager {
 			const clipStart = this.getEffectiveClipStart(clip);
 			const clipEnd = this.getEffectiveClipEnd(clip);
 			if (clipEnd <= currentTime) continue;
-			if (clip.startTime > windowEnd) continue;
 			if (clipStart > windowEnd) continue;
 
 			this.activeClipIds.add(clip.id);
 			this.runClipIterator({ clip, startTime: currentTime, sessionId: this.playbackSessionId })
 				.catch((err) => {
 					console.warn(`[AudioManager] Audio playback failed for clip ${clip.id}:`, err);
+					this.activeClipIds.delete(clip.id);
 				});
 		}
 	}
@@ -533,119 +540,131 @@ export class AudioManager {
 		sessionId: number;
 	}): Promise<void> {
 		const audioContext = this.ensureAudioContext();
-		if (!audioContext) return;
-
-		if (await this.runNativeFallback({ clip, startTime, sessionId })) {
+		if (!audioContext) {
+			this.activeClipIds.delete(clip.id);
 			return;
 		}
 
-		const sink = await this.getAudioSink({ clip });
-		if (!this.editor.playback.getIsPlaying()) return;
-		if (sessionId !== this.playbackSessionId) return;
+		let didSchedule = false;
+		try {
+			if (await this.runNativeFallback({ clip, startTime, sessionId })) {
+				didSchedule = true;
+				return;
+			}
 
-		// If mediabunny sink is unavailable (e.g. codec not supported on this platform),
-		// fall back to native Web Audio API decoding
-		if (!sink) {
-			return;
-		}
-
-		const clipStart = clip.startTime;
-		const effectiveClipStart = this.getEffectiveClipStart(clip);
-		const clipEnd = this.getEffectiveClipEnd(clip);
-
-		const iteratorStartTime = Math.max(startTime, effectiveClipStart);
-		const sourceStartTime =
-			clip.trimStart + this.getEffectiveClipElapsed({ clip, timelineTime: iteratorStartTime }) * clip.speed;
-
-		const iterator = sink.buffers(sourceStartTime);
-		this.clipIterators.set(clip.id, iterator);
-
-		// Per-clip GainNode for volume + fade envelope
-		const clipGain = audioContext.createGain();
-		clipGain.gain.value = this.getEffectiveClipVolume(clip.id, clip.volume);
-		this.registerActiveClipGain(clip.id, clipGain);
-
-		// Stereo pan node (if pan is non-zero)
-		const panVal = clip.pan ?? 0;
-		if (Math.abs(panVal) > 0.01 && typeof StereoPannerNode !== "undefined") {
-			const panNode = audioContext.createStereoPanner();
-			panNode.pan.value = Math.max(-1, Math.min(1, panVal));
-			clipGain.connect(panNode);
-			panNode.connect(this.masterGain ?? audioContext.destination);
-		} else {
-			clipGain.connect(this.masterGain ?? audioContext.destination);
-		}
-
-		for await (const { buffer, timestamp } of iterator) {
+			const sink = await this.getAudioSink({ clip });
 			if (!this.editor.playback.getIsPlaying()) return;
 			if (sessionId !== this.playbackSessionId) return;
 
-			const timelineTime = effectiveClipStart + (timestamp - clip.trimStart) / clip.speed;
-			if (timelineTime >= clipEnd) break;
-
-			const node = audioContext.createBufferSource();
-			node.buffer = buffer;
-
-			// Apply speed via playbackRate with pitch correction
-			if (clip.speed !== 1) {
-				node.playbackRate.value = clip.speed;
-				node.detune.value = -1200 * Math.log2(clip.speed);
+			// If mediabunny sink is unavailable (e.g. codec not supported on this platform),
+			// fall back to native Web Audio API decoding
+			if (!sink) {
+				return;
 			}
 
-			// Insert audio effect chain between source and gain
-			if (clip.audioEffects && clip.audioEffects.length > 0) {
-				const effectNodes = buildAudioEffectChain(audioContext, clip.audioEffects);
-				connectChain(node, effectNodes, clipGain);
+			const effectiveClipStart = this.getEffectiveClipStart(clip);
+			const clipEnd = this.getEffectiveClipEnd(clip);
+
+			const iteratorStartTime = Math.max(startTime, effectiveClipStart);
+			const sourceStartTime =
+				clip.trimStart + this.getEffectiveClipElapsed({ clip, timelineTime: iteratorStartTime }) * clip.speed;
+
+			const iterator = sink.buffers(sourceStartTime);
+			this.clipIterators.set(clip.id, iterator);
+
+			// Per-clip GainNode for volume + fade envelope
+			const clipGain = audioContext.createGain();
+			clipGain.gain.value = this.getEffectiveClipVolume(clip.id, clip.volume);
+			this.registerActiveClipGain(clip.id, clipGain);
+
+			// Stereo pan node (if pan is non-zero)
+			const panVal = clip.pan ?? 0;
+			if (Math.abs(panVal) > 0.01 && typeof StereoPannerNode !== "undefined") {
+				const panNode = audioContext.createStereoPanner();
+				panNode.pan.value = Math.max(-1, Math.min(1, panVal));
+				clipGain.connect(panNode);
+				panNode.connect(this.masterGain ?? audioContext.destination);
 			} else {
-				node.connect(clipGain);
+				clipGain.connect(this.masterGain ?? audioContext.destination);
 			}
 
-			const startTimestamp =
-				this.playbackStartContextTime +
-				(timelineTime - this.playbackStartTime);
+			for await (const { buffer, timestamp } of iterator) {
+				if (!this.editor.playback.getIsPlaying()) return;
+				if (sessionId !== this.playbackSessionId) return;
 
-			let actualStartTime: number;
-			let scheduledTimelineTime = timelineTime;
-			let scheduledTimelineDuration = buffer.duration / Math.max(0.1, clip.speed);
-			if (startTimestamp >= audioContext.currentTime) {
-				node.start(startTimestamp);
-				actualStartTime = startTimestamp;
-			} else {
-				const offset = audioContext.currentTime - startTimestamp;
-				if (offset < buffer.duration) {
-					node.start(audioContext.currentTime, offset);
-					actualStartTime = audioContext.currentTime;
-					scheduledTimelineTime = timelineTime + offset;
-					scheduledTimelineDuration = (buffer.duration - offset) / Math.max(0.1, clip.speed);
+				const timelineTime = effectiveClipStart + (timestamp - clip.trimStart) / clip.speed;
+				if (timelineTime >= clipEnd) break;
+
+				const node = audioContext.createBufferSource();
+				node.buffer = buffer;
+
+				// Apply speed via playbackRate with pitch correction
+				if (clip.speed !== 1) {
+					node.playbackRate.value = clip.speed;
+					node.detune.value = -1200 * Math.log2(clip.speed);
+				}
+
+				// Insert audio effect chain between source and gain
+				if (clip.audioEffects && clip.audioEffects.length > 0) {
+					const effectNodes = buildAudioEffectChain(audioContext, clip.audioEffects);
+					connectChain(node, effectNodes, clipGain);
 				} else {
-					continue;
+					node.connect(clipGain);
+				}
+
+				const startTimestamp =
+					this.playbackStartContextTime +
+					(timelineTime - this.playbackStartTime);
+
+				let actualStartTime: number;
+				let scheduledTimelineTime = timelineTime;
+				let scheduledTimelineDuration = buffer.duration / Math.max(0.1, clip.speed);
+				if (startTimestamp >= audioContext.currentTime) {
+					node.start(startTimestamp);
+					actualStartTime = startTimestamp;
+				} else {
+					const offset = audioContext.currentTime - startTimestamp;
+					if (offset < buffer.duration) {
+						node.start(audioContext.currentTime, offset);
+						actualStartTime = audioContext.currentTime;
+						scheduledTimelineTime = timelineTime + offset;
+						scheduledTimelineDuration = (buffer.duration - offset) / Math.max(0.1, clip.speed);
+					} else {
+						continue;
+					}
+				}
+
+				didSchedule = true;
+
+				this.applyClipGainAutomation({
+					clip,
+					clipGain,
+					actualStartTime,
+					timelineTime: scheduledTimelineTime,
+					scheduledTimelineDuration,
+				});
+
+				this.queuedSources.add(node);
+				node.addEventListener("ended", () => {
+					node.disconnect();
+					this.queuedSources.delete(node);
+				});
+
+				// Track last buffer time for health monitoring
+				this.clipLastBufferTime.set(clip.id, performance.now());
+
+				const aheadTime = timelineTime - this.getPlaybackTime();
+				if (aheadTime >= this.audioQueueAheadSeconds) {
+					await this.waitUntilCaughtUp({
+						timelineTime,
+						targetAhead: this.audioQueueResumeThresholdSeconds,
+					});
+					if (sessionId !== this.playbackSessionId) return;
 				}
 			}
-
-			this.applyClipGainAutomation({
-				clip,
-				clipGain,
-				actualStartTime,
-				timelineTime: scheduledTimelineTime,
-				scheduledTimelineDuration,
-			});
-
-			this.queuedSources.add(node);
-			node.addEventListener("ended", () => {
-				node.disconnect();
-				this.queuedSources.delete(node);
-			});
-
-			// Track last buffer time for health monitoring
-			this.clipLastBufferTime.set(clip.id, performance.now());
-
-			const aheadTime = timelineTime - this.getPlaybackTime();
-			if (aheadTime >= this.audioQueueAheadSeconds) {
-				await this.waitUntilCaughtUp({
-					timelineTime,
-					targetAhead: this.audioQueueResumeThresholdSeconds,
-				});
-				if (sessionId !== this.playbackSessionId) return;
+		} finally {
+			if (!didSchedule) {
+				this.activeClipIds.delete(clip.id);
 			}
 		}
 
