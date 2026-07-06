@@ -45,6 +45,7 @@ import { resolveWatermarkById, resolveOverlayImagePath } from "@/services/databa
 import { resolveIntroOutroById } from "@/services/database/intro-outros";
 import { base64ToUtf8 } from "@/utils/encoding";
 import { resolveTransitionMediaPair } from "../../lib/timeline/transition-pairing";
+import { isMainTrack } from "../../lib/timeline/track-utils";
 import { getSceneTracksForExport, writeSceneFrameSequenceToDisk } from "../../renderer/scene-frame-export";
 
 /** True if any two [start,end) segments overlap (for FFmpeg layer compositing). */
@@ -131,6 +132,14 @@ function hasElementKeyframes(keyframes?: ElementKeyframes): boolean {
 	return Object.values(keyframes.tracks).some((track) => !!track && track.keyframes.length > 0);
 }
 
+function countMainStorySegments(track: VideoTrack): number {
+	return track.elements.filter(
+		(element) =>
+			(element.type === "video" || element.type === "image") &&
+			!("hidden" in element && element.hidden),
+	).length;
+}
+
 function requiresSceneFrameExport({
 	tracks,
 	sceneTransitions,
@@ -142,6 +151,14 @@ function requiresSceneFrameExport({
 }): boolean {
 	if (canvasSourceFraming) return true;
 	if (sceneTransitions.length > 0) return true;
+
+	// Split / multi-segment main-track edits must use the same scene renderer as preview.
+	// The fast FFmpeg concat path can export black video when several trims reference one file.
+	for (const track of tracks) {
+		if (isMainTrack(track) && countMainStorySegments(track) > 1) {
+			return true;
+		}
+	}
 
 	for (const track of tracks) {
 		if (track.type === "audio") continue;
@@ -635,8 +652,13 @@ export class RendererManager {
 				});
 				scenePattern = sceneExport.pattern;
 				sceneFrameCount = sceneExport.frameCount;
+				console.info(
+					"[RendererManager] Scene frame pre-render enabled for WYSIWYG export parity",
+				);
 			} else {
-				console.info("[RendererManager] Using fast FFmpeg export path; scene frame pre-render not required");
+				console.info(
+					"[RendererManager] Using fast FFmpeg export path; scene frame pre-render not required",
+				);
 			}
 
 			onProgress?.({ progress: 0.19 });
@@ -903,7 +925,7 @@ export class RendererManager {
 						source_path: sourcePath,
 						start_time,
 						end_time,
-						trim_start: (videoEl.trimStart ?? 0) + clip.sourceOffset || null,
+						trim_start: (videoEl.trimStart ?? 0) + clip.sourceOffset,
 						trim_end: videoEl.trimEnd ? videoEl.trimEnd - clip.sourceEndOffset : null,
 						opacity: videoEl.opacity ?? 1,
 						scale: videoEl.transform?.scale ?? 1,
