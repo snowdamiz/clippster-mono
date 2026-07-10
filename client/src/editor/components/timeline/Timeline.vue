@@ -565,14 +565,10 @@
   }
 
   function zoomToFit() {
-    const scrollEl = tracksScrollRef.value;
-    if (!scrollEl) return;
-    const totalDur = editor.timeline.getTotalDuration();
-    if (totalDur <= 0) return;
-    const viewportWidth = scrollEl.clientWidth;
-    const fitZoom = viewportWidth / (totalDur * TIMELINE_CONSTANTS.PIXELS_PER_SECOND);
-    setZoomLevel(Math.max(minZoomLevel.value, Math.min(fitZoom, TIMELINE_CONSTANTS.ZOOM_MAX)));
-    scrollEl.scrollLeft = 0;
+    setZoomLevel(minZoomLevel.value);
+    if (tracksScrollRef.value) {
+      tracksScrollRef.value.scrollLeft = 0;
+    }
   }
 
   // Track reorder via pointer events

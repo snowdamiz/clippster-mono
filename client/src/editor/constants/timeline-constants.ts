@@ -49,7 +49,10 @@ export const TIMELINE_CONSTANTS = {
 	PIXELS_PER_SECOND: 50,
 	DEFAULT_ELEMENT_DURATION: 5,
 	PADDING_TOP_PX: 0,
+	/** Fallback zoom when timeline width is unknown; not a floor for zoom-to-fit. */
 	ZOOM_MIN: 0.1,
+	/** Numerical floor only — allows very long timelines to zoom out enough to fit. */
+	ZOOM_ABSOLUTE_MIN: 1e-6,
 	/**
 	 * User-facing max (slider right, wheel, +/-). ~18× ≈ 30 px/frame @ 30 fps — aligns slider 100%
 	 * with the “5f / 10f ruler” zoom shown in QA; higher breaks filmstrip/waveform.
