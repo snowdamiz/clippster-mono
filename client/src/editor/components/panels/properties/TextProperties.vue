@@ -25,6 +25,7 @@ import {
 } from "lucide-vue-next";
 import AnimationProperties from "./AnimationProperties.vue";
 import KeyframeEditorPanel from "../KeyframeEditorPanel.vue";
+import ElementTimingFields from "./ElementTimingFields.vue";
 
 const props = defineProps<{
 	element: TextElement;
@@ -290,15 +291,6 @@ function handleDelete() {
 	editor.timeline.deleteElements({
 		elements: [{ trackId: props.trackId, elementId: props.element.id }],
 	});
-}
-
-// ── Time formatting ──
-function formatTime(seconds: number): string {
-	const m = Math.floor(seconds / 60);
-	const s = seconds % 60;
-	const whole = Math.floor(s);
-	const ms = Math.round((s - whole) * 100);
-	return `${m}:${whole.toString().padStart(2, "0")}.${ms.toString().padStart(2, "0")}`;
 }
 
 // ── Fade In/Out ──
@@ -714,13 +706,9 @@ const quickStyles = [
 					</button>
 				</div>
 			</div>
-			<!-- ── Timing info ── -->
-			<div class="flex items-center gap-3 border-t border-white/10 pt-3">
-				<span class="text-[10px] text-zinc-500">Start: {{ formatTime(element.startTime) }}</span>
-				<span class="text-[10px] text-zinc-500">|</span>
-				<span class="text-[10px] text-zinc-500">End: {{ formatTime(element.startTime + element.duration) }}</span>
-				<span class="text-[10px] text-zinc-500">|</span>
-				<span class="text-[10px] text-zinc-500">Duration: {{ element.duration.toFixed(2) }}s</span>
+			<!-- ── Timing ── -->
+			<div class="border-t border-white/10 pt-3">
+				<ElementTimingFields :element="element" :track-id="trackId" />
 			</div>
 
 			<!-- ── Fade In/Out ── -->

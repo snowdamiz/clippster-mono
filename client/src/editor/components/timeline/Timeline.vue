@@ -22,7 +22,6 @@
     canTracktHaveAudio,
     canTrackBeHidden,
   } from '../../lib/timeline';
-  import { getDropIndicatorGeometry } from '../../lib/timeline/drop-utils';
   import type { TrackType } from '../../types/timeline';
   import type { SnapPoint } from '../../composables/timeline/useTimelineSnapping';
 
@@ -223,7 +222,7 @@
     rulerScrollRef: tracksScrollRef,
   });
 
-  const { dragState, dragDropTarget, handleElementMouseDown, handleElementClick, getLastMouseX } =
+  const { dragState, dragDropTarget, dragRippleShifts, handleElementMouseDown, handleElementClick, getLastMouseX } =
     useElementInteraction({
       zoomLevel,
       timelineRef,
@@ -249,12 +248,6 @@
     tracksScrollRef,
     playheadRef,
     autoFollow,
-  });
-
-  const playheadTotalHeight = computed(() => {
-    const tracksH = tracksScrollRef.value?.clientHeight;
-    const timelineH = timelineRef.value?.clientHeight;
-    return Math.max(0, (tracksH ?? timelineH ?? 400) - 4);
   });
 
   const scrollLeft = computed(() => tracksScrollRef.value?.scrollLeft ?? 0);
@@ -452,35 +445,18 @@
 
   const timelineHeaderHeight = computed(() => timelineHeaderRef.value?.getBoundingClientRect().height ?? 0);
 
-  /** Translucent clip-sized preview at the snapped drop time (element drag). */
-  const elementDragClipGhostStyle = computed(() => {
-    if (!dragState.value.isDragging || !dragDropTarget.value) return null;
-    const dt = dragDropTarget.value;
-    if (dt.isNewTrack || dt.targetElementId) return null;
-    const ds = dragState.value;
-    if (!ds.elementId || !ds.trackId) return null;
-    const srcTrack = tracks.value.find((t) => t.id === ds.trackId);
-    const el = srcTrack?.elements.find((e) => e.id === ds.elementId);
-    if (!el) return null;
-    const geo = getDropIndicatorGeometry({ dropTarget: dt, tracks: tracks.value });
-    const zl = zoomLevel.value;
-    const pps = TIMELINE_CONSTANTS.PIXELS_PER_SECOND;
-    const left = ds.currentTime * pps * zl - scrollLeft.value;
-    const width = el.duration * pps * zl;
-    const header = timelineHeaderHeight.value + tracksVerticalOffset.value;
-    return {
-      top: `${geo.y + header}px`,
-      left: `${left}px`,
-      width: `${Math.max(4, width)}px`,
-      height: `${geo.height}px`,
-    };
-  });
-
   const tracksAreaHeight = computed(() => {
     const base = Math.max(tracksContainerHeight.min, totalTracksHeight.value);
     if (activeNewTrackDrop.value) return base + INSERT_GAP_SIZE;
     return base;
   });
+
+  const playheadTotalHeight = computed(() => {
+    // Full scrollable track stack (not viewport) so the line reaches every track.
+    return Math.max(0, tracksAreaHeight.value + tracksVerticalOffset.value + 24);
+  });
+
+  const scrollTop = computed(() => tracksScrollRef.value?.scrollTop ?? 0);
 
   let tracksResizeObserver: ResizeObserver | null = null;
 
@@ -565,14 +541,10 @@
   }
 
   function zoomToFit() {
-    const scrollEl = tracksScrollRef.value;
-    if (!scrollEl) return;
-    const totalDur = editor.timeline.getTotalDuration();
-    if (totalDur <= 0) return;
-    const viewportWidth = scrollEl.clientWidth;
-    const fitZoom = viewportWidth / (totalDur * TIMELINE_CONSTANTS.PIXELS_PER_SECOND);
-    setZoomLevel(Math.max(minZoomLevel.value, Math.min(fitZoom, TIMELINE_CONSTANTS.ZOOM_MAX)));
-    scrollEl.scrollLeft = 0;
+    setZoomLevel(minZoomLevel.value);
+    if (tracksScrollRef.value) {
+      tracksScrollRef.value.scrollLeft = 0;
+    }
   }
 
   // Track reorder via pointer events
@@ -867,6 +839,9 @@
             :drag-element-type="dragElementType"
             :zoom-level="zoomLevel"
             :scroll-left="scrollLeft"
+            :scroll-top="scrollTop"
+            :insert-gap-index="activeNewTrackDrop?.index ?? null"
+            :insert-gap-size="INSERT_GAP_SIZE"
           />
           <DragLine
             :drop-target="dragDropTarget"
@@ -876,11 +851,9 @@
             :drag-element-type="dragElementTypeForReorder"
             :zoom-level="zoomLevel"
             :scroll-left="scrollLeft"
-          />
-          <div
-            v-if="elementDragClipGhostStyle"
-            class="pointer-events-none absolute z-[44] rounded-sm border border-white/25 bg-white/10 shadow-md backdrop-blur-[1px]"
-            :style="elementDragClipGhostStyle"
+            :scroll-top="scrollTop"
+            :insert-gap-index="activeNewTrackDrop?.index ?? null"
+            :insert-gap-size="INSERT_GAP_SIZE"
           />
 
           <div
@@ -941,7 +914,7 @@
                 <div
                   v-for="(track, index) in tracks"
                   :key="track.id"
-                  class="timeline-track-row absolute right-0 left-0"
+                  class="timeline-track-row absolute right-0 left-0 overflow-hidden"
                   :style="{
                     top: `${getTrackTopWithInsertGap(index)}px`,
                     height: `${getTrackHeight({ type: track.type })}px`,
@@ -954,6 +927,7 @@
                     :is-playhead-scrubbing="isPlayheadScrubbing"
                     :razor-mode="razorMode"
                     :effect-drop-target-id="effectDropTargetTrackId === track.id ? effectDropTargetId : null"
+                    :drag-ripple-shifts="dragRippleShifts"
                     @snap-point-change="handleSnapPointChange"
                     @resize-state-change="handleResizeStateChange"
                     @element-mouse-down="handleElementMouseDown"

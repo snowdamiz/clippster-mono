@@ -197,6 +197,21 @@ export const EFFECT_PRESETS: VideoEffectPreset[] = defineEffectPresets([
 		ffmpegFilterKind: "drawbox-letterbox",
 		defaults: { type: "letterbox", enabled: true, intensity: 100, barSize: 12, color: "#000000" },
 	},
+	{
+		type: "colorOverlay",
+		label: "Solid Color",
+		description: "Solid color tint with blend modes (Color Burn default)",
+		category: "color",
+		icon: "colorOverlay",
+		ffmpegFilterKind: "geq-color-overlay",
+		defaults: {
+			type: "colorOverlay",
+			enabled: true,
+			intensity: 50,
+			color: "#ff4500",
+			blendMode: "color-burn",
+		},
+	},
 ]);
 
 export function getEffectPreset(type: string): VideoEffectPreset | undefined {

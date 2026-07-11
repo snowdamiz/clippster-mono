@@ -610,6 +610,7 @@
     getAllDownloadedAudio,
     createDownloadedAudio,
     deleteDownloadedAudio,
+    updateDownloadedAudio,
   } from '@/services/database/downloaded-audio';
   import {
     getAllAudioPlaylists,
@@ -694,9 +695,32 @@
       console.log('[AudioLibrary] All audio files loaded:', audioFiles.value.length);
       console.log('[AudioLibrary] Audio files with platforms:', audioFiles.value.map(a => ({ title: a.title, platform: a.platform })));
       console.log('[AudioLibrary] Files with platform=Twitter:', audioFiles.value.filter(a => a.platform === 'Twitter').length);
+      void repairMissingThumbnails();
     } catch (error) {
       console.error('Failed to load audio files:', error);
       showError('Load Failed', 'Failed to load audio files');
+    }
+  }
+
+  async function repairMissingThumbnails() {
+    const missing = audioFiles.value.filter((audio) => !audio.thumbnail_url && audio.source_url);
+    if (missing.length === 0) return;
+
+    for (const audio of missing) {
+      const thumbPath = audio.file_path.replace(/\.[^.]+$/, '.jpg');
+      try {
+        await invoke('generate_audio_thumbnail', {
+          sourceUrl: audio.source_url,
+          outputPath: thumbPath,
+        });
+        await updateDownloadedAudio(audio.id, { thumbnail_url: thumbPath });
+        const index = audioFiles.value.findIndex((item) => item.id === audio.id);
+        if (index >= 0) {
+          audioFiles.value[index] = { ...audioFiles.value[index], thumbnail_url: thumbPath };
+        }
+      } catch (error) {
+        console.warn('[AudioLibrary] Failed to generate thumbnail for', audio.title, error);
+      }
     }
   }
 
