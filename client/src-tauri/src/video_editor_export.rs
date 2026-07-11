@@ -2518,6 +2518,147 @@ pub async fn export_video_editor_project(
                     ));
                 }
 
+                "colorOverlay" => {
+                    let a = (effect.intensity / 100.0).clamp(0.0, 1.0);
+                    let color = effect
+                        .params
+                        .get("color")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("#ff4500");
+                    let (cr, cg, cb) = parse_hex_rgb01(color).unwrap_or((1.0, 0.271, 0.0));
+                    let mode = effect
+                        .params
+                        .get("blendMode")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("color-burn");
+
+                    // CSS/canvas blend of solid color over backdrop, then lerp by intensity.
+                    // Expressions use r/g/b(X\,Y) as backdrop; cr/cg/cb as source (0–1).
+                    let blend_r = match mode {
+                        "multiply" => format!("{cr}*r(X\\,Y)/255", cr = cr),
+                        "screen" => format!("1-({inv_cr})*(1-r(X\\,Y)/255)", inv_cr = 1.0 - cr),
+                        "overlay" => format!(
+                            "if(lt(r(X\\,Y)\\,128)\\,2*{cr}*r(X\\,Y)/255\\,1-2*(1-{cr})*(1-r(X\\,Y)/255))",
+                            cr = cr
+                        ),
+                        "darken" => format!("min({cr}\\,r(X\\,Y)/255)", cr = cr),
+                        "lighten" => format!("max({cr}\\,r(X\\,Y)/255)", cr = cr),
+                        "color-dodge" => {
+                            if cr >= 0.999 {
+                                "1".to_string()
+                            } else {
+                                format!("min(1\\, (r(X\\,Y)/255)/(1-{cr}))", cr = cr)
+                            }
+                        }
+                        "color-burn" => {
+                            if cr <= 0.001 {
+                                "0".to_string()
+                            } else {
+                                format!("max(0\\,1-(1-r(X\\,Y)/255)/{cr})", cr = cr)
+                            }
+                        }
+                        "difference" => format!("abs(r(X\\,Y)/255-{cr})", cr = cr),
+                        "exclusion" => format!(
+                            "r(X\\,Y)/255+{cr}-2*(r(X\\,Y)/255)*{cr}",
+                            cr = cr
+                        ),
+                        "soft-light" => format!(
+                            "if(lt({cr}\\,0.5)\\,(r(X\\,Y)/255)-(1-2*{cr})*(r(X\\,Y)/255)*(1-r(X\\,Y)/255)\\,(r(X\\,Y)/255)+(2*{cr}-1)*(sqrt(r(X\\,Y)/255)-(r(X\\,Y)/255)))",
+                            cr = cr
+                        ),
+                        "hard-light" => format!(
+                            "if(lt({cr}\\,0.5)\\,2*{cr}*r(X\\,Y)/255\\,1-2*(1-{cr})*(1-r(X\\,Y)/255))",
+                            cr = cr
+                        ),
+                        _ => format!("{cr}*r(X\\,Y)/255", cr = cr), // multiply fallback
+                    };
+                    let blend_g = match mode {
+                        "multiply" => format!("{cg}*g(X\\,Y)/255", cg = cg),
+                        "screen" => format!("1-({inv_cg})*(1-g(X\\,Y)/255)", inv_cg = 1.0 - cg),
+                        "overlay" => format!(
+                            "if(lt(g(X\\,Y)\\,128)\\,2*{cg}*g(X\\,Y)/255\\,1-2*(1-{cg})*(1-g(X\\,Y)/255))",
+                            cg = cg
+                        ),
+                        "darken" => format!("min({cg}\\,g(X\\,Y)/255)", cg = cg),
+                        "lighten" => format!("max({cg}\\,g(X\\,Y)/255)", cg = cg),
+                        "color-dodge" => {
+                            if cg >= 0.999 {
+                                "1".to_string()
+                            } else {
+                                format!("min(1\\, (g(X\\,Y)/255)/(1-{cg}))", cg = cg)
+                            }
+                        }
+                        "color-burn" => {
+                            if cg <= 0.001 {
+                                "0".to_string()
+                            } else {
+                                format!("max(0\\,1-(1-g(X\\,Y)/255)/{cg})", cg = cg)
+                            }
+                        }
+                        "difference" => format!("abs(g(X\\,Y)/255-{cg})", cg = cg),
+                        "exclusion" => format!(
+                            "g(X\\,Y)/255+{cg}-2*(g(X\\,Y)/255)*{cg}",
+                            cg = cg
+                        ),
+                        "soft-light" => format!(
+                            "if(lt({cg}\\,0.5)\\,(g(X\\,Y)/255)-(1-2*{cg})*(g(X\\,Y)/255)*(1-g(X\\,Y)/255)\\,(g(X\\,Y)/255)+(2*{cg}-1)*(sqrt(g(X\\,Y)/255)-(g(X\\,Y)/255)))",
+                            cg = cg
+                        ),
+                        "hard-light" => format!(
+                            "if(lt({cg}\\,0.5)\\,2*{cg}*g(X\\,Y)/255\\,1-2*(1-{cg})*(1-g(X\\,Y)/255))",
+                            cg = cg
+                        ),
+                        _ => format!("{cg}*g(X\\,Y)/255", cg = cg),
+                    };
+                    let blend_b = match mode {
+                        "multiply" => format!("{cb}*b(X\\,Y)/255", cb = cb),
+                        "screen" => format!("1-({inv_cb})*(1-b(X\\,Y)/255)", inv_cb = 1.0 - cb),
+                        "overlay" => format!(
+                            "if(lt(b(X\\,Y)\\,128)\\,2*{cb}*b(X\\,Y)/255\\,1-2*(1-{cb})*(1-b(X\\,Y)/255))",
+                            cb = cb
+                        ),
+                        "darken" => format!("min({cb}\\,b(X\\,Y)/255)", cb = cb),
+                        "lighten" => format!("max({cb}\\,b(X\\,Y)/255)", cb = cb),
+                        "color-dodge" => {
+                            if cb >= 0.999 {
+                                "1".to_string()
+                            } else {
+                                format!("min(1\\, (b(X\\,Y)/255)/(1-{cb}))", cb = cb)
+                            }
+                        }
+                        "color-burn" => {
+                            if cb <= 0.001 {
+                                "0".to_string()
+                            } else {
+                                format!("max(0\\,1-(1-b(X\\,Y)/255)/{cb})", cb = cb)
+                            }
+                        }
+                        "difference" => format!("abs(b(X\\,Y)/255-{cb})", cb = cb),
+                        "exclusion" => format!(
+                            "b(X\\,Y)/255+{cb}-2*(b(X\\,Y)/255)*{cb}",
+                            cb = cb
+                        ),
+                        "soft-light" => format!(
+                            "if(lt({cb}\\,0.5)\\,(b(X\\,Y)/255)-(1-2*{cb})*(b(X\\,Y)/255)*(1-b(X\\,Y)/255)\\,(b(X\\,Y)/255)+(2*{cb}-1)*(sqrt(b(X\\,Y)/255)-(b(X\\,Y)/255)))",
+                            cb = cb
+                        ),
+                        "hard-light" => format!(
+                            "if(lt({cb}\\,0.5)\\,2*{cb}*b(X\\,Y)/255\\,1-2*(1-{cb})*(1-b(X\\,Y)/255))",
+                            cb = cb
+                        ),
+                        _ => format!("{cb}*b(X\\,Y)/255", cb = cb),
+                    };
+
+                    // Mix: (1-a)*backdrop + a*blend, output 0–255 for geq
+                    effect_filters.push(format!(
+                        "geq=r='((1-{a})*(r(X\\,Y)/255)+{a}*({br}))*255':g='((1-{a})*(g(X\\,Y)/255)+{a}*({bg}))*255':b='((1-{a})*(b(X\\,Y)/255)+{a}*({bb}))*255'",
+                        a = a,
+                        br = blend_r,
+                        bg = blend_g,
+                        bb = blend_b
+                    ));
+                }
+
                 "rgbSplit" => {
                     let amount = get_f64("amount", 8.0);
 
