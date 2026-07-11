@@ -1035,6 +1035,34 @@ fn intro_outro_silent_audio_filter(duration_sec: f64, output_label: &str) -> Str
     )
 }
 
+/// Timeline-visible duration maps to this many source seconds at the given speed.
+fn timeline_to_source_duration(timeline_duration: f64, speed: f64) -> f64 {
+    timeline_duration * speed.max(0.001)
+}
+
+/// Position audio on the export timeline and pad through `total_duration`.
+fn append_audio_timeline_tail(
+    chain: &mut String,
+    start_time: f64,
+    stream_end_time: f64,
+    total_duration: f64,
+) {
+    if start_time > 0.001 {
+        let delay_ms = (start_time * 1000.0).round().max(0.0) as i64;
+        chain.push_str(&format!(",adelay={}|{}:all=1", delay_ms, delay_ms));
+    }
+    let tail_pad = (total_duration - stream_end_time).max(0.0);
+    if tail_pad > 0.0001 {
+        chain.push_str(&format!(",apad=pad_dur={}", tail_pad));
+    }
+}
+
+fn amix_longest_filter(input_labels: &str, input_count: usize, output_label: &str) -> String {
+    format!(
+        "{input_labels}amix=inputs={input_count}:duration=longest:dropout_transition=0:normalize=0{output_label}"
+    )
+}
+
 // -----------------------------------------------------------------------------
 // Keyframe evaluation — aligned with client/src/editor/types/keyframes.ts
 // Preview uses full easing; export densifies non-linear / hold curves to samples
@@ -2782,19 +2810,26 @@ pub async fn export_video_editor_project(
             }
         }
 
-        if source_has_audio[0] {
-            filters.push(format!(
-                "[0:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}[va]",
-                trim_start, duration, audio_extras
-            ));
+        let source_audio_duration = timeline_to_source_duration(duration, spd);
+        let mut video_audio_chain = if source_has_audio[0] {
+            format!(
+                "[0:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}",
+                trim_start, source_audio_duration, audio_extras
+            )
         } else {
-            // No audio stream in video source — generate silent audio
-
-            filters.push(format!(
-                "anullsrc=r=48000:cl=stereo,atrim=duration={}[va]",
+            format!(
+                "anullsrc=r=48000:cl=stereo,atrim=duration={},asetpts=PTS-STARTPTS",
                 duration
-            ));
-        }
+            )
+        };
+        append_audio_timeline_tail(
+            &mut video_audio_chain,
+            source.start_time,
+            source.end_time,
+            config.total_duration,
+        );
+        video_audio_chain.push_str("[va]");
+        filters.push(video_audio_chain);
     } else if config.video_sources.len() > 1 && video_sources_overlap {
         // Timeline layers overlap in time: composite bottom → top (main track first, then overlays)
         // using `overlay` for normal blend and `blend` for multiply / screen / etc.
@@ -2949,7 +2984,10 @@ pub async fn export_video_editor_project(
             let mut chain = if source_has_audio[orig_i] {
                 format!(
                     "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}",
-                    orig_i, trim_start, base_duration, audio_extras
+                    orig_i,
+                    trim_start,
+                    timeline_to_source_duration(base_duration, spd),
+                    audio_extras
                 )
             } else {
                 format!(
@@ -2970,10 +3008,7 @@ pub async fn export_video_editor_project(
             audio_mix_inputs.push_str(&format!("[vaol{}]", orig_i));
         }
 
-        filters.push(format!(
-            "{}amix=inputs={}:duration=longest:dropout_transition=0[va]",
-            audio_mix_inputs, perm.len()
-        ));
+        filters.push(amix_longest_filter(&audio_mix_inputs, perm.len(), "[va]"));
     } else if config.video_sources.len() > 1 {
         // Multi-source timeline: support per-junction transitions with centered overlap.
         // We extend clip drawable ranges by half-duration on each side (clone edge frames)
@@ -3220,7 +3255,10 @@ pub async fn export_video_editor_project(
                 let mut chain = if source_has_audio[i] {
                     format!(
                         "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}",
-                        i, trim_start, effective_duration, audio_extras
+                        i,
+                        trim_start,
+                        timeline_to_source_duration(effective_duration, spd),
+                        audio_extras
                     )
                 } else {
                     format!(
@@ -3253,10 +3291,7 @@ pub async fn export_video_editor_project(
                 audio_mix_inputs.push_str(&format!("[va{}]", i));
             }
 
-            filters.push(format!(
-                "{}amix=inputs={}:duration=longest:dropout_transition=0[va]",
-                audio_mix_inputs, source_count
-            ));
+            filters.push(amix_longest_filter(&audio_mix_inputs, source_count, "[va]"));
         } else {
             let mut audio_concat_inputs = String::new();
 
@@ -3302,7 +3337,11 @@ pub async fn export_video_editor_project(
                 if source_has_audio[i] {
                     filters.push(format!(
                         "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}[va{}]",
-                        i, trim_start, duration, audio_extras, i
+                        i,
+                        trim_start,
+                        timeline_to_source_duration(duration, spd),
+                        audio_extras,
+                        i
                     ));
                 } else {
                     filters.push(format!(
@@ -3318,6 +3357,13 @@ pub async fn export_video_editor_project(
                 "{}concat=n={}:v=0:a=1[va]",
                 audio_concat_inputs, source_count
             ));
+
+            if black_padding_duration > 0.0001 {
+                filters.push(format!(
+                    "[va]apad=pad_dur={}[va]",
+                    black_padding_duration
+                ));
+            }
         }
     }
 
@@ -3333,9 +3379,10 @@ pub async fn export_video_editor_project(
 
             let audio_index = video_input_count + scene_extra + i;
 
-            let duration = audio.end_time - audio.start_time;
+            let timeline_duration = audio.end_time - audio.start_time;
 
             let speed = audio.speed.unwrap_or(1.0);
+            let source_duration = timeline_to_source_duration(timeline_duration, speed);
 
             let fade_in = audio.fade_in.unwrap_or(0.0);
 
@@ -3368,7 +3415,7 @@ pub async fn export_video_editor_project(
             // Fade out
 
             if fade_out > 0.01 {
-                let fade_start = (duration - fade_out).max(0.0);
+                let fade_start = (timeline_duration - fade_out).max(0.0);
 
                 extras.push_str(&format!(",afade=t=out:st={}:d={}", fade_start, fade_out));
             }
@@ -3532,21 +3579,19 @@ pub async fn export_video_editor_project(
                 }
             }
 
-            // Trim and reset PTS, then use adelay for timeline positioning
-
-            if audio.start_time > 0.001 {
-                let delay_ms = (audio.start_time * 1000.0) as i64;
-
-                filters.push(format!(
-                    "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{},adelay={}|{}:all=1[a{}]",
-                    audio_index, trim_start, duration, extras, delay_ms, delay_ms, i
-                ));
-            } else {
-                filters.push(format!(
-                    "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}[a{}]",
-                    audio_index, trim_start, duration, extras, i
-                ));
-            }
+            // Trim source audio, apply effects/fades, position on the timeline, and pad through export end.
+            let mut audio_chain = format!(
+                "[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}",
+                audio_index, trim_start, source_duration, extras
+            );
+            append_audio_timeline_tail(
+                &mut audio_chain,
+                audio.start_time,
+                audio.end_time,
+                config.total_duration,
+            );
+            audio_chain.push_str(&format!("[a{}]", i));
+            filters.push(audio_chain);
 
             audio_mix_inputs.push(format!("[a{}]", i));
         }
@@ -3554,10 +3599,10 @@ pub async fn export_video_editor_project(
         // Mix all audio streams
 
         if audio_mix_inputs.len() > 1 {
-            filters.push(format!(
-                "{}amix=inputs={}:duration=longest:dropout_transition=0[aout]",
-                audio_mix_inputs.join(""),
-                audio_mix_inputs.len()
+            filters.push(amix_longest_filter(
+                &audio_mix_inputs.join(""),
+                audio_mix_inputs.len(),
+                "[aout]",
             ));
         } else {
             // Just passthrough video audio

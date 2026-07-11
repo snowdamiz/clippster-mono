@@ -19,6 +19,7 @@ import AnimationProperties from "./AnimationProperties.vue";
 import ColorCurvesPanel from "./ColorCurvesPanel.vue";
 import ColorWheelsPanel from "./ColorWheelsPanel.vue";
 import LutPanel from "./LutPanel.vue";
+import ElementTimingFields from "./ElementTimingFields.vue";
 import { Switch } from '@/components/ui/switch';
 import { useClipVolumeInspector } from "../../../composables/panels/useClipVolumeInspector";
 
@@ -592,11 +593,6 @@ function handleDelete() {
 	});
 }
 
-function formatTime(seconds: number): string {
-	const min = Math.floor(seconds / 60);
-	const sec = (seconds % 60).toFixed(2);
-	return `${min}:${sec.padStart(5, "0")}`;
-}
 </script>
 
 <template>
@@ -618,6 +614,8 @@ function formatTime(seconds: number): string {
 					<ChevronDown class="size-3.5 transition-transform duration-150" :class="{ 'rotate-180': openVideoSections.has('basic') }" />
 				</button>
 				<div v-if="openVideoSections.has('basic')" class="space-y-4 p-3">
+					<ElementTimingFields :element="element" :track-id="trackId" />
+
 					<!-- Transform -->
 					<div class="space-y-2">
 						<div class="flex items-center justify-between">
