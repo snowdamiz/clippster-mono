@@ -12,6 +12,9 @@ const props = defineProps<{
 	dragElementType?: ElementType | null;
 	zoomLevel?: number;
 	scrollLeft?: number;
+	scrollTop?: number;
+	insertGapIndex?: number | null;
+	insertGapSize?: number;
 }>();
 
 const DROP_COLORS: Record<string, string> = {
@@ -33,26 +36,30 @@ const geometry = computed(() => {
 	return getDropIndicatorGeometry({
 		dropTarget: props.dropTarget,
 		tracks: props.tracks,
+		insertGapIndex: props.insertGapIndex ?? null,
+		insertGapSize: props.insertGapSize ?? 0,
 	});
 });
 
 const shouldShow = computed(() => {
 	if (!props.isVisible || !props.dropTarget || !geometry.value) return false;
-	// Effect-on-element highlighting is handled by TimelineElement
 	if (props.dropTarget.targetElementId) return false;
-	// New-track gaps are handled by Timeline.vue (tracks spread apart)
 	if (props.dropTarget.isNewTrack) return false;
 	return true;
 });
 
 const isNewTrack = computed(() => geometry.value?.isNewTrack ?? false);
 
-// ── New-track: thin colored line between tracks ──
+const overlayTop = computed(() => {
+	if (!geometry.value) return 0;
+	return geometry.value.y + (props.headerHeight ?? 0) - (props.scrollTop ?? 0);
+});
+
 const newTrackLineStyle = computed(() => {
 	if (!geometry.value) return {};
 	const c = color.value;
 	return {
-		top: `${geometry.value.y + (props.headerHeight ?? 0)}px`,
+		top: `${overlayTop.value}px`,
 		height: '4px',
 		transform: 'translateY(-50%)',
 		backgroundColor: c,
@@ -60,7 +67,6 @@ const newTrackLineStyle = computed(() => {
 	};
 });
 
-// ── On-track: vertical line X position ──
 const lineX = computed(() => {
 	if (!props.dropTarget) return 0;
 	const zl = props.zoomLevel;
@@ -69,24 +75,22 @@ const lineX = computed(() => {
 	return px - (props.scrollLeft ?? 0);
 });
 
-// ── On-track: track highlight overlay ──
 const trackHighlightStyle = computed(() => {
 	if (!geometry.value) return {};
 	const c = color.value;
 	return {
-		top: `${geometry.value.y + (props.headerHeight ?? 0)}px`,
+		top: `${overlayTop.value}px`,
 		height: `${geometry.value.height}px`,
 		boxShadow: `inset 0 0 0 1px ${c}66`,
 		backgroundColor: c + '0d',
 	};
 });
 
-// ── On-track: vertical insertion line ──
 const verticalLineStyle = computed(() => {
 	if (!geometry.value) return {};
 	const c = color.value;
 	return {
-		top: `${geometry.value.y + (props.headerHeight ?? 0)}px`,
+		top: `${overlayTop.value}px`,
 		height: `${geometry.value.height}px`,
 		left: `${lineX.value}px`,
 		backgroundColor: c,
@@ -97,21 +101,17 @@ const verticalLineStyle = computed(() => {
 
 <template>
 	<template v-if="shouldShow">
-		<!-- New track indicator: thin colored line between tracks -->
 		<div
 			v-if="isNewTrack"
 			class="pointer-events-none absolute right-0 left-0 z-50 rounded-full"
 			:style="newTrackLineStyle"
 		/>
 
-		<!-- On-track indicator: track highlight + vertical insertion line -->
 		<template v-else>
-			<!-- Track highlight overlay -->
 			<div
 				class="pointer-events-none absolute right-0 left-0 z-40 rounded-sm"
 				:style="trackHighlightStyle"
 			/>
-			<!-- Vertical insertion line -->
 			<div
 				class="pointer-events-none absolute z-50 w-[2px] rounded-full"
 				:style="verticalLineStyle"

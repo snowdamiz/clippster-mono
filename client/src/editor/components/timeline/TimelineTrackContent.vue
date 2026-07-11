@@ -18,6 +18,8 @@ const props = defineProps<{
 	isPlayheadScrubbing?: boolean;
 	razorMode?: boolean;
 	effectDropTargetId?: string | null;
+	/** Live neighbor shifts while dragging (magnetic rearrange preview). */
+	dragRippleShifts?: Map<string, number>;
 }>();
 
 const emit = defineEmits<{
@@ -37,11 +39,20 @@ defineExpose({});
 const editor = EditorCore.getInstance();
 const { isElementSelected } = useElementSelection();
 
-const rippleShifts = ref<Map<string, number>>(new Map());
+const resizeRippleShifts = ref<Map<string, number>>(new Map());
 
 function onRippleShiftsChange(shifts: Map<string, number>) {
-	rippleShifts.value = shifts;
+	resizeRippleShifts.value = shifts;
 }
+
+const rippleShifts = computed(() => {
+	const merged = new Map<string, number>();
+	if (props.dragRippleShifts) {
+		for (const [id, start] of props.dragRippleShifts) merged.set(id, start);
+	}
+	for (const [id, start] of resizeRippleShifts.value) merged.set(id, start);
+	return merged;
+});
 
 const hasSelectedElements = computed(() =>
 	props.track.elements.some((element) =>

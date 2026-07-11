@@ -352,9 +352,14 @@ export function getDropLineY({
 export function getDropIndicatorGeometry({
 	dropTarget,
 	tracks,
+	insertGapIndex = null,
+	insertGapSize = 0,
 }: {
 	dropTarget: DropTarget;
 	tracks: TimelineTrack[];
+	/** Track index at which an insert gap is open (tracks at/after this are shifted down). */
+	insertGapIndex?: number | null;
+	insertGapSize?: number;
 }): { y: number; height: number; isNewTrack: boolean } {
 	const safeTrackIndex = Math.min(
 		Math.max(dropTarget.trackIndex, 0),
@@ -366,11 +371,17 @@ export function getDropIndicatorGeometry({
 		y += TRACK_HEIGHTS[tracks[i].type] + TRACK_GAP;
 	}
 
+	if (
+		insertGapIndex != null &&
+		insertGapSize > 0 &&
+		safeTrackIndex >= insertGapIndex
+	) {
+		y += insertGapSize;
+	}
+
 	if (dropTarget.isNewTrack) {
-		// Center in the gap between tracks (y is at the top of trackIndex,
-		// i.e. the bottom edge of the gap — shift up by half the gap)
-		const gapCenterY = safeTrackIndex > 0 ? y - TRACK_GAP / 2 : 0;
-		return { y: gapCenterY, height: TRACK_GAP, isNewTrack: true };
+		const gapCenterY = safeTrackIndex > 0 ? y - TRACK_GAP / 2 - (insertGapSize > 0 ? insertGapSize / 2 : 0) : 0;
+		return { y: gapCenterY, height: TRACK_GAP + insertGapSize, isNewTrack: true };
 	}
 
 	const trackHeight =

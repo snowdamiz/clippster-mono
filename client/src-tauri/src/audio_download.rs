@@ -6,6 +6,8 @@ use tauri::Emitter;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
+use crate::thumbnail_utils::generate_thumbnail_hybrid;
+
 #[cfg(target_os = "windows")]
 #[allow(unused_imports)]
 use std::os::windows::process::CommandExt;
@@ -130,6 +132,8 @@ pub async fn download_youtube_audio(
     let title_clone = title.clone();
     let vod_url_clone = vod_url.clone();
     let channel_name_clone = channel_name.clone();
+    let ytdlp_path_clone = ytdlp_path.clone();
+    let ffmpeg_path_clone = ffmpeg_path.clone();
 
     // Send initial progress
     let _ = app.emit("download-progress", DownloadProgress {
@@ -156,8 +160,6 @@ pub async fn download_youtube_audio(
             .arg("-x") // Extract audio
             .arg("--audio-format").arg("mp3")
             .arg("--audio-quality").arg("0") // Best quality
-            .arg("--write-thumbnail") // Download thumbnail
-            .arg("--convert-thumbnails").arg("jpg") // Convert to jpg
             .arg("--concurrent-fragments").arg("4")
             .arg("--no-part")
             .arg("--newline")
@@ -309,13 +311,27 @@ pub async fn download_youtube_audio(
                             .ok()
                             .map(|m| m.len());
                         
-                        // Find thumbnail file (yt-dlp saves it as .jpg next to the audio file)
+                        // Generate thumbnail using the same hybrid approach as video downloads
                         let thumbnail_path = std::path::Path::new(&output_file_str)
                             .with_extension("jpg");
-                        let thumbnail_url = if thumbnail_path.exists() {
-                            Some(thumbnail_path.to_string_lossy().to_string())
-                        } else {
-                            None
+                        let thumbnail_url = match generate_thumbnail_hybrid(
+                            &ytdlp_path_clone,
+                            &ffmpeg_path_clone,
+                            &vod_url_clone,
+                            &thumbnail_path,
+                            "00:00:05",
+                        ).await {
+                            Ok(()) => {
+                                println!(
+                                    "[AudioDownload] Thumbnail generated: {}",
+                                    thumbnail_path.display()
+                                );
+                                Some(thumbnail_path.to_string_lossy().to_string())
+                            }
+                            Err(e) => {
+                                println!("[AudioDownload] Thumbnail generation failed: {}", e);
+                                None
+                            }
                         };
                         
                         // Determine platform based on channel_name
@@ -550,6 +566,28 @@ pub async fn upload_audio_file(
         thumbnail_url: None,
         error: None,
     })
+}
+
+/// Generate a thumbnail for an existing audio file from its source URL
+#[tauri::command]
+pub async fn generate_audio_thumbnail(
+    source_url: String,
+    output_path: String,
+) -> Result<String, String> {
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    let ffmpeg_path = resolve_ffmpeg_binary()?;
+    let thumbnail_path = std::path::Path::new(&output_path);
+
+    generate_thumbnail_hybrid(
+        &ytdlp_path,
+        &ffmpeg_path,
+        &source_url,
+        thumbnail_path,
+        "00:00:05",
+    )
+    .await?;
+
+    Ok(output_path)
 }
 
 /// Cancel an audio download

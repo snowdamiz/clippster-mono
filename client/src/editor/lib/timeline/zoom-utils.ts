@@ -18,10 +18,10 @@ export function getTimelineZoomMin({
 	const zoomToFit =
 		availableWidth / (safeDuration * TIMELINE_CONSTANTS.PIXELS_PER_SECOND);
 
-	// Keep min-zoom (slider left) within [ZOOM_MIN, ZOOM_MAX]; fit cap is separate so ZOOM_MAX
-	// can stay low for stable filmstrip/waveform without breaking zoom-to-fit math.
+	// Min zoom is "fit entire timeline" — do not clamp to ZOOM_MIN (0.1) or long clips stay
+	// wider than the viewport even with the slider fully left. ZOOM_MAX only caps short timelines.
 	return Math.min(
-		Math.max(TIMELINE_CONSTANTS.ZOOM_MIN, zoomToFit),
+		Math.max(TIMELINE_CONSTANTS.ZOOM_ABSOLUTE_MIN, zoomToFit),
 		TIMELINE_CONSTANTS.ZOOM_FIT_COMPUTE_CAP,
 		TIMELINE_CONSTANTS.ZOOM_MAX,
 	);
