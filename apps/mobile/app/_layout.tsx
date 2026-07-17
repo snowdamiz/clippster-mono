@@ -62,6 +62,7 @@ export default function RootLayout() {
             <Stack.Screen name="index" />
             <Stack.Screen name="(auth)" />
             <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="auth/google/callback" options={{ headerShown: false }} />
             <Stack.Screen name="project/[id]" options={{ headerShown: true, title: 'Project' }} />
             <Stack.Screen name="schedule/[buildId]" options={{ headerShown: false }} />
             <Stack.Screen name="campaign/[id]" options={{ headerShown: false }} />

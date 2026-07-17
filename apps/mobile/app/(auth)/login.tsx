@@ -71,12 +71,14 @@ export default function LoginScreen() {
               <Button
                 title="Continue with Google"
                 variant="google"
-                onPress={async () => {
-                  clearError();
-                  const result = await authenticateWithGoogle();
-                  if (result.success) {
-                    router.replace('/(tabs)/projects');
-                  }
+                onPress={() => {
+                  // Must invoke immediately from the press gesture (no awaits before
+                  // startGoogleAuth) or web browsers block the OAuth redirect/popup.
+                  void authenticateWithGoogle().then((result) => {
+                    if (result.success) {
+                      router.replace('/(tabs)/projects');
+                    }
+                  });
                 }}
                 disabled={loading}
               />

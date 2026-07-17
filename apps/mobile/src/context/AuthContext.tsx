@@ -34,6 +34,7 @@ interface AuthContextValue {
   verifyEmailOtp: (email: string, otp: string) => Promise<AuthResult>;
   resendVerificationEmail: (email: string) => Promise<AuthResult>;
   authenticateWithGoogle: () => Promise<AuthResult>;
+  completeGoogleSession: (token: string, user: AuthUser) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
   clearPendingVerification: () => void;
@@ -198,10 +199,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const authenticateWithGoogle = useCallback(async (): Promise<AuthResult> => {
-    setLoading(true);
-    setError(null);
+    // Do not setState before startGoogleAuth — browsers block the auth session
+    // if window.open / ASWebAuthenticationSession is delayed past the user gesture.
     try {
       const result = await startGoogleAuth();
+      setLoading(true);
       if (result.success && result.token && result.user) {
         await applySession(result.user, result.token, 'google');
       } else if (result.error) {
@@ -216,6 +218,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     }
   }, [applySession]);
+
+  const completeGoogleSession = useCallback(
+    async (nextToken: string, nextUser: AuthUser) => {
+      await applySession(nextUser, nextToken, 'google');
+    },
+    [applySession],
+  );
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -232,6 +241,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       verifyEmailOtp,
       resendVerificationEmail,
       authenticateWithGoogle,
+      completeGoogleSession,
       logout,
       clearError: () => setError(null),
       clearPendingVerification: () => setPendingVerificationEmail(null),
@@ -250,6 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       verifyEmailOtp,
       resendVerificationEmail,
       authenticateWithGoogle,
+      completeGoogleSession,
       logout,
     ],
   );

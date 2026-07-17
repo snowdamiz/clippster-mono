@@ -1,5 +1,6 @@
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
+import { Platform } from 'react-native';
 import type { AuthResult, AuthUser } from '@clippster/shared-types';
 import { getApiBaseUrl } from '@/lib/config';
 import { saveAuthSession } from './authStorage';
@@ -7,9 +8,17 @@ import { saveAuthSession } from './authStorage';
 WebBrowser.maybeCompleteAuthSession();
 
 const GOOGLE_CALLBACK_PATH = 'auth/google/callback';
+/** Server only accepts clippster:// redirects for mobile=true mode. */
+const NATIVE_REDIRECT_URI = 'clippster://auth/google/callback';
 
 export function getGoogleRedirectUri(): string {
-  return Linking.createURL(GOOGLE_CALLBACK_PATH);
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}/${GOOGLE_CALLBACK_PATH}`;
+    }
+    return Linking.createURL(GOOGLE_CALLBACK_PATH);
+  }
+  return NATIVE_REDIRECT_URI;
 }
 
 export function parseGoogleCallbackUrl(url: string): {
@@ -38,8 +47,23 @@ export function parseGoogleCallbackUrl(url: string): {
   return { token, user, error };
 }
 
+/**
+ * Starts Google OAuth.
+ * - Web: full-page redirect (`web=true`) — same pattern as the landing app; avoids popup blockers.
+ * - Native: system auth session with `clippster://` deep-link callback.
+ *
+ * Must be called synchronously from a user gesture (e.g. button onPress) with no
+ * awaits/setState before this runs, or browsers will block the session.
+ */
 export async function startGoogleAuth(): Promise<AuthResult> {
-  const redirectUri = getGoogleRedirectUri();
+  if (Platform.OS === 'web') {
+    const origin = encodeURIComponent(window.location.origin);
+    window.location.assign(`${getApiBaseUrl()}/auth/google?web=true&origin=${origin}`);
+    // Page navigates away — never resolves.
+    return new Promise<AuthResult>(() => {});
+  }
+
+  const redirectUri = NATIVE_REDIRECT_URI;
   const authUrl = `${getApiBaseUrl()}/auth/google?mobile=true&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
   const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
