@@ -11,8 +11,8 @@ interface SharedClipCardProps {
 
 function expiryColor(days: number): string {
   if (days >= 5) return tokens.colors.primary;
-  if (days >= 2) return '#eab308';
-  return '#ef4444';
+  if (days >= 2) return tokens.colors.warning;
+  return tokens.colors.destructive;
 }
 
 export function SharedClipCard({ clip, onPress }: SharedClipCardProps) {
@@ -38,7 +38,7 @@ export function SharedClipCard({ clip, onPress }: SharedClipCardProps) {
               {getExpirationText(clip.days_until_expiration)}
             </Text>
             {clip.branding_required ? (
-              <Text className="text-xs text-yellow-400">Branding required</Text>
+              <Text className="text-xs text-warning">Branding required</Text>
             ) : null}
             {clip.downloaded_at ? (
               <Text className="text-xs text-green-400">Downloaded</Text>

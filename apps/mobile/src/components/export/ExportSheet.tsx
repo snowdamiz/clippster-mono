@@ -23,7 +23,7 @@ export function ExportSheet({ visible, progress, onClose, onExport }: ExportShee
   const building = progress?.state === 'building';
 
   return (
-    <View className="absolute inset-0 z-50 justify-end bg-black/50">
+    <View className="absolute inset-0 z-50 justify-end bg-black/70">
       <View className="rounded-t-2xl bg-background">
         <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
           <Text className="text-lg font-semibold text-foreground">Export clip</Text>
@@ -80,7 +80,7 @@ export function ExportSheet({ visible, progress, onClose, onExport }: ExportShee
           {building ? (
             <Pressable
               onPress={() => cancelClipBuild()}
-              className="items-center rounded-lg border border-red-500 py-3"
+              className="items-center rounded-lg border border-destructive py-3"
             >
               <Text className="text-red-400">Cancel export</Text>
             </Pressable>
@@ -96,7 +96,7 @@ export function ExportSheet({ visible, progress, onClose, onExport }: ExportShee
                 }}
                 className="items-center rounded-lg bg-primary py-3"
               >
-                <Text className="font-semibold text-white">Start export</Text>
+                <Text className="font-semibold text-primary-foreground">Start export</Text>
               </Pressable>
               {progress?.state === 'complete' && progress.buildIds?.length ? (
                 <Pressable

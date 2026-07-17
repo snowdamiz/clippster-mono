@@ -407,7 +407,7 @@ export default function ProfileScreen() {
                   </Text>
                 </View>
                 <Pressable onPress={() => deleteLink(link.id)}>
-                  <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                  <Ionicons name="trash-outline" size={20} color={tokens.colors.destructive} />
                 </Pressable>
               </View>
             ))}
@@ -441,7 +441,7 @@ export default function ProfileScreen() {
                   ) : null}
                 </View>
                 <Pressable onPress={() => deletePortfolio(clip.id)}>
-                  <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                  <Ionicons name="trash-outline" size={20} color={tokens.colors.destructive} />
                 </Pressable>
               </View>
             ))}

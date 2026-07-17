@@ -101,7 +101,7 @@ export default function CampaignDetailScreen() {
             Platforms: {campaign.allowed_platforms.map(getPlatformDisplayName).join(', ')}
           </Text>
           {campaign.require_watermark ? (
-            <Text className="text-sm text-yellow-400">Watermark required for submissions</Text>
+            <Text className="text-sm text-warning">Watermark required for submissions</Text>
           ) : null}
         </Card>
 
@@ -133,7 +133,7 @@ export default function CampaignDetailScreen() {
           </Card>
         ) : participation?.status === 'pending' ? (
           <Card>
-            <Text className="text-yellow-400">Application pending approval</Text>
+            <Text className="text-warning">Application pending approval</Text>
           </Card>
         ) : isApproved ? (
           <Button title="Submit clip" onPress={() => router.push(`/campaign/${campaignId}/submit`)} />

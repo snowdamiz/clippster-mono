@@ -124,7 +124,7 @@ export default function PostsScreen() {
               onPress={() => setFilter(item.id)}
               className={`rounded-full px-3 py-1.5 ${active ? 'bg-primary' : 'bg-surface border border-border'}`}
             >
-              <Text className={`text-sm ${active ? 'text-white' : 'text-muted'}`}>{item.label}</Text>
+              <Text className={`text-sm ${active ? 'text-primary-foreground' : 'text-muted'}`}>{item.label}</Text>
             </Pressable>
           );
         })}

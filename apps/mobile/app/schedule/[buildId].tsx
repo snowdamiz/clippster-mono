@@ -386,7 +386,7 @@ export default function ScheduleScreen() {
         </View>
 
         {aspectWarning ? (
-          <Text className="text-xs text-yellow-400">
+          <Text className="text-xs text-warning">
             {selectedPlatform?.name} works best with {selectedPlatform?.preferredAspectRatio} clips.
           </Text>
         ) : null}

@@ -12,6 +12,7 @@ import {
   getRawVideoByProjectId,
   setProjectVodPresetConfig,
 } from '@/services/database';
+import { tokens } from '@/theme/tokens';
 
 export default function FramingScreen() {
   const { projectId } = useLocalSearchParams<{ projectId: string }>();
@@ -72,7 +73,7 @@ export default function FramingScreen() {
       <View className="flex-1 bg-background">
         {loading || !config ? (
           <View className="flex-1 items-center justify-center">
-            <ActivityIndicator color="#8b5cf6" />
+            <ActivityIndicator color={tokens.colors.primary} />
           </View>
         ) : (
           <FramingEditor

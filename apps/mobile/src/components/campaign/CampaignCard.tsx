@@ -49,7 +49,7 @@ export function CampaignCard({ campaign, onPress, joined, participationStatus }:
           </Text>
           <Text className="rounded-md bg-surfaceMuted px-2 py-1 text-xs text-foreground">{joinLabel}</Text>
           {campaign.require_watermark ? (
-            <Text className="rounded-md bg-yellow-500/20 px-2 py-1 text-xs text-yellow-400">
+            <Text className="rounded-md bg-warning/20 px-2 py-1 text-xs text-warning">
               Branding required
             </Text>
           ) : null}

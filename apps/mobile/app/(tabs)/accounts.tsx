@@ -53,7 +53,7 @@ function AccountCard({
         {expired ? (
           <Text className="mt-1 text-xs text-red-400">Token expired — reconnect required</Text>
         ) : expiringSoon ? (
-          <Text className="mt-1 text-xs text-yellow-400">Token expiring soon</Text>
+          <Text className="mt-1 text-xs text-warning">Token expiring soon</Text>
         ) : account.is_active ? (
           <Text className="mt-1 text-xs text-green-400">Active</Text>
         ) : null}

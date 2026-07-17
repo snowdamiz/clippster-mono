@@ -28,12 +28,8 @@ export default function Root({ children }: { children: ReactNode }) {
   );
 }
 
+// App is dark-only; matches the desktop client background (#0a0a0b).
 const responsiveBackground = `
 body {
-  background-color: #fff;
-}
-@media (prefers-color-scheme: dark) {
-  body {
-    background-color: #000;
-  }
+  background-color: #0a0a0b;
 }`;

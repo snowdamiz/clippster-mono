@@ -48,7 +48,7 @@ export function SourcePanel({ config, onChange, canvasWidth, canvasHeight }: Sou
       <View className="mb-2 flex-row items-center justify-between px-4">
         <Text className="text-sm font-semibold text-foreground">Source regions</Text>
         <Pressable onPress={addRegion} className="rounded bg-primary px-3 py-1">
-          <Text className="text-xs text-white">Add region</Text>
+          <Text className="text-xs text-primary-foreground">Add region</Text>
         </Pressable>
       </View>
 
@@ -117,7 +117,7 @@ export function SourcePanel({ config, onChange, canvasWidth, canvasHeight }: Sou
               <Pressable
                 onPress={() => removeRegion(region.id)}
                 style={{ position: 'absolute', left: left + w - 20, top: top - 8 }}
-                className="h-5 w-5 items-center justify-center rounded-full bg-red-500"
+                className="h-5 w-5 items-center justify-center rounded-full bg-destructive"
               >
                 <Text className="text-[10px] text-white">×</Text>
               </Pressable>

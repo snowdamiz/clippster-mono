@@ -247,7 +247,7 @@ export function SegmentTimeline({
                 }}
                 onLongPress={() => onSeek(seg.start_time + clipStart)}
                 className={`h-full rounded border-2 ${
-                  selected ? 'border-yellow-400 bg-primary/30' : 'border-primary bg-primary/20'
+                  selected ? 'border-warning bg-primary/30' : 'border-primary bg-primary/20'
                 }`}
               >
                 <View className="absolute left-0 top-0 h-full w-4 items-center justify-center">

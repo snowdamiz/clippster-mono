@@ -72,7 +72,7 @@ export function FramingEditor({
               targetRatio === ratio ? 'bg-primary' : 'bg-surface'
             }`}
           >
-            <Text className={targetRatio === ratio ? 'text-white' : 'text-foreground'}>
+            <Text className={targetRatio === ratio ? 'text-primary-foreground' : 'text-foreground'}>
               {ratio}
             </Text>
           </Pressable>
@@ -123,7 +123,7 @@ export function FramingEditor({
           disabled={saving}
           className="items-center rounded-lg bg-primary py-3"
         >
-          <Text className="font-semibold text-white">{saving ? 'Saving...' : 'Save framing'}</Text>
+          <Text className="font-semibold text-primary-foreground">{saving ? 'Saving...' : 'Save framing'}</Text>
         </Pressable>
       </View>
     </ScrollView>

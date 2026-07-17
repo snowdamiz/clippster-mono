@@ -53,7 +53,7 @@ export function CloudVodSettings({ projectId }: { projectId: string }) {
         <Text className="text-xs text-muted">{formatBytes(quotaRemaining)} cloud storage remaining</Text>
       ) : null}
       {upload?.status === 'uploading' && progress != null ? (
-        <Text className="text-xs text-yellow-400">Uploading… {progress}%</Text>
+        <Text className="text-xs text-warning">Uploading… {progress}%</Text>
       ) : null}
       {upload?.status === 'failed' ? (
         <Text className="text-xs text-red-400">{upload.error ?? 'Upload failed'}</Text>

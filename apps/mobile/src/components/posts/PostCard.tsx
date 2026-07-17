@@ -7,9 +7,9 @@ import { tokens } from '@/theme/tokens';
 
 const STATUS_COLORS: Record<ScheduledPostStatus, string> = {
   pending: tokens.colors.muted,
-  scheduled: '#60a5fa',
-  publishing: '#fbbf24',
-  published: '#4ade80',
+  scheduled: tokens.colors.primary,
+  publishing: tokens.colors.warning,
+  published: tokens.colors.success,
   failed: tokens.colors.destructive,
   canceled: tokens.colors.muted,
 };

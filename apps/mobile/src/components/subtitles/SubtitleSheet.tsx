@@ -28,7 +28,7 @@ export function SubtitleSheet({
   if (!visible) return null;
 
   return (
-    <View className="absolute inset-0 z-50 justify-end bg-black/50">
+    <View className="absolute inset-0 z-50 justify-end bg-black/70">
       <View className="max-h-[70%] rounded-t-2xl bg-background">
         <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
           <Text className="text-lg font-semibold text-foreground">Subtitles</Text>
@@ -96,7 +96,7 @@ export function SubtitleSheet({
             }}
             className="items-center rounded-lg bg-primary py-3"
           >
-            <Text className="font-semibold text-white">Save subtitles</Text>
+            <Text className="font-semibold text-primary-foreground">Save subtitles</Text>
           </Pressable>
         </View>
       </View>

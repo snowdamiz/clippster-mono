@@ -34,7 +34,7 @@ export function ConflictSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onDismiss}>
-      <View className="flex-1 justify-end bg-black/50">
+      <View className="flex-1 justify-end bg-black/70">
         <View className="gap-4 rounded-t-2xl bg-background p-6">
           <Text className="text-xl font-semibold text-foreground">Sync conflict</Text>
           <Text className="text-sm text-muted">

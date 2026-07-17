@@ -38,6 +38,7 @@ import {
   updateClipTextOverlay,
 } from '@/services/database';
 import { transcriptWordsForClip } from '@/lib/subtitleVisibleWords';
+import { tokens } from '@/theme/tokens';
 import { CloudVodSettings } from '@/components/sync/CloudVodSettings';
 
 function formatTime(seconds: number): string {
@@ -417,7 +418,7 @@ export default function ProjectDetailScreen() {
       <View className="flex-1 bg-background">
         {loading ? (
           <View className="flex-1 items-center justify-center">
-            <ActivityIndicator color="#8b5cf6" />
+            <ActivityIndicator color={tokens.colors.primary} />
           </View>
         ) : !videoPath || !project || !id ? (
           <View className="flex-1 items-center justify-center px-6">

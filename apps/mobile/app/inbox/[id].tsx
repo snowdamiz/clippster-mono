@@ -92,7 +92,7 @@ export default function SharedClipDetailScreen() {
             {getExpirationText(clip.days_until_expiration)}
           </Text>
           {clip.branding_required ? (
-            <Text className="text-yellow-400">Org branding is required when exporting this clip.</Text>
+            <Text className="text-warning">Org branding is required when exporting this clip.</Text>
           ) : null}
         </Card>
 

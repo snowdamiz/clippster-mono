@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import type { MediaPlatform, VodListItem } from '@clippster/shared-types';
 import { MOBILE_PLATFORMS, detectPlatformFromUrl, getPlatformConfig } from '@/config/platforms';
 import { mediaApi } from '@/services/api';
+import { tokens } from '@/theme/tokens';
 import {
   cancelDownload,
   enqueueDownload,
@@ -168,7 +169,7 @@ export default function DownloadScreen() {
               />
             </View>
             {loadingVods ? (
-              <ActivityIndicator className="mt-4" color="#8b5cf6" />
+              <ActivityIndicator className="mt-4" color={tokens.colors.primary} />
             ) : (
               <FlatList
                 className="mt-4"

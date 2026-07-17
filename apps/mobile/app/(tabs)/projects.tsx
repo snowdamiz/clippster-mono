@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import type { Project } from '@clippster/shared-types';
 import type { CloudSyncStatus } from '@clippster/cloud-sync-schema';
 import { createProject, getAllProjects, getRawVideoByProjectId } from '@/services/database';
+import { tokens } from '@/theme/tokens';
 import { getProjectSyncStatuses, queueProjectSync, syncAllProjects } from '@/services/cloudSync';
 import {
   getDownloadJobs,
@@ -41,7 +42,7 @@ const SYNC_BADGE_LABEL: Record<CloudSyncStatus, string> = {
 
 const SYNC_BADGE_COLOR: Record<CloudSyncStatus, string> = {
   synced: 'text-green-400',
-  pending: 'text-yellow-400',
+  pending: 'text-warning',
   conflict: 'text-red-400',
   'local-only': 'text-muted',
 };
@@ -129,7 +130,7 @@ export default function ProjectsScreen() {
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#8b5cf6" />
+          <ActivityIndicator color={tokens.colors.primary} />
         </View>
       ) : (
         <FlatList

@@ -48,7 +48,7 @@ export function POISegmentTimeline({
       <View className="mb-2 flex-row items-center justify-between">
         <Text className="text-sm font-semibold text-foreground">Time segments</Text>
         <Pressable onPress={addSegment} className="rounded bg-primary px-3 py-1">
-          <Text className="text-xs text-white">Add</Text>
+          <Text className="text-xs text-primary-foreground">Add</Text>
         </Pressable>
       </View>
 

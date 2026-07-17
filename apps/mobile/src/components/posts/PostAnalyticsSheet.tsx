@@ -142,7 +142,7 @@ export function PostAnalyticsSheet({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View className="flex-1 justify-end bg-black/50">
+      <View className="flex-1 justify-end bg-black/70">
         <View className="max-h-[85%] rounded-t-2xl bg-background">
           <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
             <Text className="text-lg font-semibold text-foreground">
@@ -198,7 +198,7 @@ export function PostAnalyticsSheet({
                 <AnalyticsGrid analytics={post.analytics} />
 
                 {post.status === 'failed' && post.error_message ? (
-                  <View className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3">
+                  <View className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3">
                     <Text className="text-sm text-red-400">{post.error_message}</Text>
                   </View>
                 ) : null}
