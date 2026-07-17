@@ -1225,9 +1225,14 @@ export function AdminUsersPage() {
                     </div>
                   ) : null}
 
-                  {!userToEditSubscription?.subscription?.tier_name ? (
+                  {!userToEditSubscription?.subscription?.tier_name ||
+                  userToEditSubscription?.subscription?.status === 'expired' ? (
                     <div className="admin-users__subscription-section">
-                      <h3 className="admin-users__subscription-section-title">Grant Subscription</h3>
+                      <h3 className="admin-users__subscription-section-title">
+                        {userToEditSubscription?.subscription?.status === 'expired'
+                          ? 'Grant New Subscription'
+                          : 'Grant Subscription'}
+                      </h3>
                       <div className="admin-users__subscription-form-grid">
                         <div>
                           <label className="admin-users__subscription-form-label">Tier</label>
@@ -1369,7 +1374,8 @@ export function AdminUsersPage() {
                     </div>
                   ) : null}
 
-                  {userToEditSubscription?.subscription?.tier_name ? (
+                  {userToEditSubscription?.subscription?.tier_name &&
+                  userToEditSubscription?.subscription?.status !== 'expired' ? (
                     <div className="admin-users__subscription-section admin-users__subscription-section--danger">
                       <h3 className="admin-users__subscription-section-title admin-users__subscription-section-title--danger">
                         Cancel Subscription

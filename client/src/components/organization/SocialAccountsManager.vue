@@ -368,6 +368,10 @@
             showToast(result.error, 'error', 'organization');
           }
           connecting.value = false;
+        },
+        {
+          socialAccountId: account.id,
+          providerAccountId: account.provider_account_id ?? undefined,
         }
       );
     } catch (error) {
@@ -377,6 +381,7 @@
     }
   }
 
+  function confirmDelete(account: SocialAccount) {
     accountToDelete.value = account;
     showDeleteDialog.value = true;
   }

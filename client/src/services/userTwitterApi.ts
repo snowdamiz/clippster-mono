@@ -5,6 +5,7 @@
  */
 
 import api from './api';
+import { buildUserConnectUrlBody, type UserSocialConnectOptions } from './userSocialConnect';
 
 // ============================================
 // Types
@@ -14,6 +15,7 @@ export interface UserTwitterAccount {
   id: number;
   platform: 'twitter';
   platform_user_id: string;
+  provider_account_id?: string | null;
   username: string;
   display_name: string | null;
   profile_image_url: string | null;
@@ -76,7 +78,8 @@ function getAuthToken(): string {
  * Opens OAuth in system browser and listens for result via Tauri event.
  */
 export async function startUserTwitterOAuth(
-  onResult?: (result: TwitterAuthResult) => void
+  onResult?: (result: TwitterAuthResult) => void,
+  options?: UserSocialConnectOptions
 ): Promise<() => void> {
   const authToken = getAuthToken();
 
@@ -91,7 +94,7 @@ export async function startUserTwitterOAuth(
     // Preferred flow: Post For Me generic OAuth
     const connectResponse = await api.post<PostForMeConnectUrlResponse>(
       '/user/social/connect-url',
-      { platform: 'x' }
+      buildUserConnectUrlBody('x', options)
     );
 
     if (!connectResponse.data.success || !connectResponse.data.auth_url) {
@@ -290,14 +293,3 @@ export async function publishToUserTwitter(
 // Helper Functions
 // ============================================
 
-/**
- * Check if account token is expiring soon
- */
-export function isTwitterTokenExpiringSoon(account: UserTwitterAccount): boolean {
-  if (!account.token_expires_at) return false;
-
-  const expiresAt = new Date(account.token_expires_at);
-  const daysUntilExpiry = (expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-
-  return daysUntilExpiry < 7;
-}

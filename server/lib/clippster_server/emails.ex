@@ -43,9 +43,9 @@ defmodule ClippsterServer.Emails do
   end
 
   @doc """
-  Creates an email change verification email.
+  Creates an email change verification email with OTP + magic link.
   """
-  def email_change_verification_email(email, verification_token) do
+  def email_change_verification_email(email, otp_code, verification_token) do
     app_name = app_name()
     base_url = email_url_base()
 
@@ -54,8 +54,8 @@ defmodule ClippsterServer.Emails do
     email
     |> transactional_email()
     |> subject("Verify your new #{app_name} email address")
-    |> html_body(email_change_html(verification_url, app_name))
-    |> text_body(email_change_text(verification_url, app_name))
+    |> html_body(email_change_html(otp_code, verification_url, app_name))
+    |> text_body(email_change_text(otp_code, verification_url, app_name))
   end
 
   defp email_config do
@@ -322,7 +322,7 @@ defmodule ClippsterServer.Emails do
     """
   end
 
-  defp email_change_html(verification_url, app_name) do
+  defp email_change_html(otp_code, verification_url, app_name) do
     """
     <!DOCTYPE html>
     <html lang="en">
@@ -336,7 +336,6 @@ defmodule ClippsterServer.Emails do
         <tr>
           <td align="center" style="padding: 40px 20px;">
             <table role="presentation" width="100%" style="max-width: 480px;">
-              <!-- Logo/Header -->
               <tr>
                 <td align="center" style="padding-bottom: 24px;">
                   <h1 style="margin: 0 0 8px 0; font-size: 36px; font-weight: 700; color: #ffffff; letter-spacing: -0.02em;">#{app_name}</h1>
@@ -344,21 +343,36 @@ defmodule ClippsterServer.Emails do
                 </td>
               </tr>
 
-              <!-- Main Card -->
               <tr>
                 <td style="background: linear-gradient(180deg, #18181b 0%, #09090b 100%); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); padding: 40px;">
-                  <!-- Accent Bar -->
                   <div style="height: 4px; background: linear-gradient(90deg, #06b6d4 0%, #0891b2 100%); border-radius: 2px; margin-bottom: 32px;"></div>
 
-                  <!-- Title -->
                   <h2 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #ffffff; text-align: center;">
                     Verify your new email
                   </h2>
                   <p style="margin: 0 0 32px 0; font-size: 14px; color: #a1a1aa; text-align: center;">
-                    Click the button below to confirm your new email address
+                    Enter this code in the app to confirm your new email address
                   </p>
 
-                  <!-- Button -->
+                  <div style="background: rgba(6, 182, 212, 0.1); border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
+                    <p style="margin: 0 0 8px 0; font-size: 12px; color: #a1a1aa; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">
+                      Your verification code
+                    </p>
+                    <p style="margin: 0; font-size: 36px; font-weight: 700; color: #06b6d4; letter-spacing: 8px; font-family: 'SF Mono', Monaco, 'Courier New', monospace;">
+                      #{otp_code}
+                    </p>
+                  </div>
+
+                  <p style="margin: 0 0 24px 0; font-size: 13px; color: #71717a; text-align: center;">
+                    This code expires in <strong style="color: #a1a1aa;">10 minutes</strong>
+                  </p>
+
+                  <div style="height: 1px; background: rgba(255, 255, 255, 0.1); margin: 24px 0;"></div>
+
+                  <p style="margin: 0 0 16px 0; font-size: 14px; color: #a1a1aa; text-align: center;">
+                    Or click this button to verify:
+                  </p>
+
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                     <tr>
                       <td align="center">
@@ -370,12 +384,11 @@ defmodule ClippsterServer.Emails do
                   </table>
 
                   <p style="margin: 24px 0 0 0; font-size: 13px; color: #71717a; text-align: center;">
-                    This link expires in <strong style="color: #a1a1aa;">1 hour</strong>
+                    The link expires in <strong style="color: #a1a1aa;">1 hour</strong>
                   </p>
                 </td>
               </tr>
 
-              <!-- Footer -->
               <tr>
                 <td style="padding-top: 32px; text-align: center;">
                   <p style="margin: 0; font-size: 12px; color: #52525b;">
@@ -392,15 +405,19 @@ defmodule ClippsterServer.Emails do
     """
   end
 
-  defp email_change_text(verification_url, app_name) do
+  defp email_change_text(otp_code, verification_url, app_name) do
     """
     Verify your new #{app_name} email address
 
     #{app_name} - The AI-Powered Clipping Studio
 
-    Click this link to verify your new email address: #{verification_url}
+    Your verification code: #{otp_code}
 
-    This link expires in 1 hour.
+    This code expires in 10 minutes.
+
+    Or click this link to verify your new email address: #{verification_url}
+
+    The link expires in 1 hour.
 
     If you didn't request this email change, please contact support immediately.
     """

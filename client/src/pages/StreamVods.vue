@@ -543,8 +543,39 @@
   const platformStore = usePlatformStore();
   const authStore = useAuthStore();
 
-  // Component state
-  const searchInput = ref('');
+  /** Map `?platform=` query values to PlatformId (handles org/API `youtube` vs app `YouTube`). */
+  function normalizeVodRoutePlatform(raw: string): PlatformId | null {
+    const key = raw.trim().toLowerCase();
+    const map: Record<string, PlatformId> = {
+      pumpfun: 'pumpfun',
+      kick: 'kick',
+      twitch: 'twitch',
+      youtube: 'YouTube',
+      rumble: 'rumble',
+      twitter: 'twitter',
+    };
+    return map[key] ?? null;
+  }
+
+  /** Read deep-link search from route so first paint already shows creator + loading. */
+  function readPendingRouteSearch(): { platform: PlatformId; search: string } | null {
+    const rawPlatform = route.query.platform;
+    const queryPlatform = (
+      Array.isArray(rawPlatform) ? rawPlatform[0] : rawPlatform
+    ) as string | undefined;
+    const rawSearch = route.query.search ?? route.query.id;
+    const querySearch = (Array.isArray(rawSearch) ? rawSearch[0] : rawSearch) as string | undefined;
+
+    if (!queryPlatform || !querySearch) return null;
+    const platform = normalizeVodRoutePlatform(queryPlatform);
+    if (!platform) return null;
+    return { platform, search: querySearch };
+  }
+
+  const pendingRouteSearch = readPendingRouteSearch();
+
+  // Component state — seed from route query so View VODs isn't a blank page
+  const searchInput = ref(pendingRouteSearch?.search ?? '');
   const showDownloadDialog = ref(false);
   const clipToDownload = ref<PlatformClip | null>(null);
   const downloadStarting = ref(false);
@@ -573,8 +604,13 @@
   const downloadedVodIds = ref<Set<string>>(new Set());
 
   // Auto-detected platform from input
-  const detectedPlatform = ref<PlatformId | null>(null);
+  const detectedPlatform = ref<PlatformId | null>(pendingRouteSearch?.platform ?? null);
   const currentPlatformConfig = computed(() => platformConfigs[detectedPlatform.value || platformStore.activePlatform]);
+
+  // Show searching UI immediately when arriving via creator "View VODs"
+  if (pendingRouteSearch) {
+    platformStore.setLoading(true);
+  }
   
   // YouTube tab state (Live Streams vs Videos)
   const youtubeTab = ref<'streams' | 'videos'>('streams');
@@ -662,20 +698,6 @@
     loadDownloadedVodIds();
   }
 
-  /** Map `?platform=` query values to PlatformId (handles org/API `youtube` vs app `YouTube`). */
-  function normalizeVodRoutePlatform(raw: string): PlatformId | null {
-    const key = raw.trim().toLowerCase();
-    const map: Record<string, PlatformId> = {
-      pumpfun: 'pumpfun',
-      kick: 'kick',
-      twitch: 'twitch',
-      youtube: 'YouTube',
-      rumble: 'rumble',
-      twitter: 'twitter',
-    };
-    return map[key] ?? null;
-  }
-
   // Initialize
   onMounted(async () => {
     document.addEventListener('click', handleClickOutside);
@@ -684,34 +706,21 @@
     // Clean up any audio platform searches (YouTube/Twitter) from VOD recent searches
     // These were incorrectly added before the fix
     platformStore.cleanupAudioSearchesFromVodList();
-    
+
+    // Deep-linked search (View VODs): start immediately — don't wait on metadata refresh
+    if (pendingRouteSearch) {
+      // Clear query params from URL to prevent re-search on navigation
+      router.replace({ path: route.path, query: {} });
+
+      void platformStore.refreshRecentSearchMetadata();
+      void loadDownloadedVodIds();
+      await handleSearch();
+      return;
+    }
+
     await platformStore.refreshRecentSearchMetadata();
     await loadDownloadedVodIds();
     detectPlatform();
-
-    // Check for query params (from Creator Profiles: platform + id; elsewhere: platform + search)
-    const rawPlatform = route.query.platform;
-    const queryPlatform = (
-      Array.isArray(rawPlatform) ? rawPlatform[0] : rawPlatform
-    ) as string | undefined;
-    const rawSearch = route.query.search ?? route.query.id;
-    const querySearch = (Array.isArray(rawSearch) ? rawSearch[0] : rawSearch) as string | undefined;
-
-    if (queryPlatform && querySearch) {
-      const normalizedPlatform = normalizeVodRoutePlatform(queryPlatform);
-
-      if (normalizedPlatform) {
-        detectedPlatform.value = normalizedPlatform;
-        searchInput.value = querySearch;
-
-        // Clear query params from URL to prevent re-search on navigation
-        router.replace({ path: route.path, query: {} });
-
-        // Trigger search
-        await handleSearch();
-        return;
-      }
-    }
 
     // Restore platform state if clips are already loaded (e.g., returning from another page)
     if (platformStore.clips.length > 0) {
@@ -1012,12 +1021,14 @@
   async function handleSearch() {
     const input = searchInput.value.trim();
     if (!input) {
+      platformStore.setLoading(false);
       showError('Invalid Input', 'Please enter a stream link, mint ID, or username');
       return;
     }
 
     // Check if user is authenticated
     if (!authStore.isAuthenticated) {
+      platformStore.setLoading(false);
       showAuthModal.value = true;
       return;
     }
@@ -1028,6 +1039,7 @@
     }
 
     if (!detectedPlatform.value) {
+      platformStore.setLoading(false);
       showError(
         'Unknown Platform',
         'Could not detect the platform. Please enter a valid link or username from PumpFun, Kick, Twitch, YouTube, Rumble, or X/Twitter (post, broadcast, or space URL).'
@@ -1038,6 +1050,7 @@
     // Check if platform is coming soon
     const config = platformConfigs[detectedPlatform.value];
     if (config.isComingSoon) {
+      platformStore.setLoading(false);
       showError(
         `${config.name} Coming Soon`,
         config.comingSoonMessage || `${config.name} integration is not yet available.`

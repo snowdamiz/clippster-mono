@@ -212,6 +212,13 @@ export async function getWatermarkByServerId(serverId: number): Promise<Watermar
 // Organization Audio Asset Functions
 // ============================================
 
+/** Server ID offset for shared audio (distinct from organization_assets IDs). */
+export const SHARED_AUDIO_SERVER_ID_OFFSET = 2_000_000_000;
+
+export function sharedAudioServerId(sharedAudioId: number): number {
+  return SHARED_AUDIO_SERVER_ID_OFFSET + sharedAudioId;
+}
+
 export async function createOrganizationAudioAsset(
   name: string,
   filePath: string,

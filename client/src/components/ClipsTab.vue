@@ -672,7 +672,12 @@
       :initial-framing-mode="savedFramingMode"
       :initial-framing-configs="savedFramingConfigs"
       :vod-preset-config="vodPresetConfig"
+      :creator-profile="creatorProfile"
       :creator-profile-server-id="creatorProfileServerId"
+      :is-subtitle-transcribing="isTranscribing"
+      :subtitle-transcribe-progress="transcribeProgress"
+      :subtitle-transcribe-stage="transcribeStage"
+      :subtitle-transcribe-message="transcribeMessage"
       @confirm="onBuildConfirm"
     />
   </div>
@@ -1281,6 +1286,10 @@
     showAdjustClipButton?: boolean;
     vodPresetConfig?: import('@/types').ActiveVodPresetConfig | null;
     clipDetectionDisabled?: boolean;
+    isTranscribing?: boolean;
+    transcribeProgress?: number;
+    transcribeStage?: string;
+    transcribeMessage?: string;
   }
 
   const props = withDefaults(defineProps<ClipsTabProps>(), {
@@ -1310,6 +1319,10 @@
     vodPresetConfig: null,
     showAdjustClipButton: false,
     clipDetectionDisabled: false,
+    isTranscribing: false,
+    transcribeProgress: 0,
+    transcribeStage: '',
+    transcribeMessage: '',
   });
 
   // Emits
@@ -1350,6 +1363,19 @@
   watch(showBuildSettingsDialog, (open) => {
     if (!open) emit('buildDialogOpen', false);
   });
+
+  // Keep the open build/POI clip in sync when subtitles are enabled from Edit Subtitles.
+  watch(
+    () => [props.subtitleSettings, props.subtitleSettingsClipId] as const,
+    ([settings, clipId]) => {
+      if (!showBuildSettingsDialog.value || !clipToBuild.value || !settings?.enabled) return;
+      if (clipToBuild.value.id !== clipId) return;
+      const clip = clipToBuild.value as any;
+      clip.subtitle_enabled = true;
+      clip.subtitle_preset_id = settings.selectedPresetId ?? clip.subtitle_preset_id;
+      clip.subtitle_settings = settings;
+    }
+  );
 
   // Derive SubtitleSettings from the clip being built (reads preset from DB data on the clip)
   const derivedSubtitleSettings = computed((): SubtitleSettings | null => {
@@ -2939,7 +2965,7 @@
       // Load audio settings for the project
       const { getProjectAudioSettings, getFullClipEdit } = await import('@/services/database');
       const { getClip } = await import('@/services/database/clips');
-      const { parseClipTextOverlayJson, clipTextBoxToExportPayload } = await import('@/utils/clipTextBox');
+      const { parseClipTextOverlayJson, mergeClipTextBoxIntoExportOverlays } = await import('@/utils/clipTextBox');
       let audioSettings = null;
       let videoFilterSegments = null; // Time-based video filter segments from clip editor
       let textOverlaysForExport: Array<{
@@ -3095,31 +3121,6 @@
             perRatioConfigs: overlay.per_ratio_configs_data ? JSON.parse(overlay.per_ratio_configs_data) : undefined,
           }));
           console.log('[ClipsTab] Loaded text overlays for export:', textOverlaysForExport.length);
-        }
-
-        const clipRowForText = await getClip(clip.id);
-        const clipTextBoxState = parseClipTextOverlayJson(clipRowForText?.clip_text_overlay);
-        console.log('[ClipsTab] Clip text box state from DB:', {
-          clipId: clip.id,
-          hasClipTextOverlay: !!clipRowForText?.clip_text_overlay,
-          rawLength: clipRowForText?.clip_text_overlay?.length ?? 0,
-          parsed: clipTextBoxState,
-          enabled: clipTextBoxState?.enabled,
-        });
-        if (clipTextBoxState?.enabled) {
-          const clipBoxPayload = clipTextBoxToExportPayload(clip.id, clipTextBoxState);
-          textOverlaysForExport = textOverlaysForExport
-            ? [...textOverlaysForExport, clipBoxPayload]
-            : [clipBoxPayload];
-          console.log('[ClipsTab] Merged workspace/POI clip text box for export:', {
-            text: clipBoxPayload.text,
-            startTime: clipBoxPayload.startTime,
-            endTime: clipBoxPayload.endTime,
-            positionX: clipBoxPayload.positionX,
-            positionY: clipBoxPayload.positionY,
-            hasPerRatioConfigs: !!clipBoxPayload.perRatioConfigs,
-            perRatioKeys: clipBoxPayload.perRatioConfigs ? Object.keys(clipBoxPayload.perRatioConfigs) : [],
-          });
         }
 
         // Extract stickers for burning into video
@@ -3339,6 +3340,45 @@
           freshClipData,
           settings.aspectRatios
         );
+      }
+
+      // Merge clip text box from DB (outside audio/clip-edit try so POI saves are never skipped)
+      try {
+        const clipTextRaw = freshClipData?.clip_text_overlay ?? (await getClip(clip.id))?.clip_text_overlay;
+        const clipTextBoxState = parseClipTextOverlayJson(clipTextRaw);
+        console.log('[ClipsTab] Clip text box state from DB:', {
+          clipId: clip.id,
+          hasClipTextOverlay: !!clipTextRaw,
+          rawLength: clipTextRaw?.length ?? 0,
+          parsed: clipTextBoxState,
+          enabled: clipTextBoxState?.enabled,
+          perRatioKeys: clipTextBoxState?.perRatioConfigs
+            ? Object.keys(clipTextBoxState.perRatioConfigs)
+            : [],
+        });
+        textOverlaysForExport = mergeClipTextBoxIntoExportOverlays(
+          clip.id,
+          textOverlaysForExport,
+          clipTextRaw
+        );
+        if (clipTextBoxState?.enabled) {
+          const clipBoxPayload = textOverlaysForExport?.find((o) => o.id === `${clip.id}-clip-text-box`);
+          if (clipBoxPayload) {
+            console.log('[ClipsTab] Merged workspace/POI clip text box for export:', {
+              text: clipBoxPayload.text,
+              startTime: clipBoxPayload.startTime,
+              endTime: clipBoxPayload.endTime,
+              positionX: clipBoxPayload.positionX,
+              positionY: clipBoxPayload.positionY,
+              hasPerRatioConfigs: !!clipBoxPayload.perRatioConfigs,
+              perRatioKeys: clipBoxPayload.perRatioConfigs
+                ? Object.keys(clipBoxPayload.perRatioConfigs)
+                : [],
+            });
+          }
+        }
+      } catch (clipTextErr) {
+        console.warn('[ClipsTab] Could not load clip text box for export:', clipTextErr);
       }
 
       // Helper: build SubtitleSettings from a CAPTION_PRESETS id

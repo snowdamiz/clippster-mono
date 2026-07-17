@@ -5,7 +5,7 @@
 
 import api from './api';
 import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
-import { isSocialTokenExpiringSoon, isTokenExpiringSoonForAccount } from '@/utils/socialTokenExpiry';
+import { buildUserConnectUrlBody, type UserSocialConnectOptions } from './userSocialConnect';
 
 // ============================================
 // Types
@@ -15,6 +15,7 @@ export interface UserInstagramAccount {
   id: number;
   platform: 'instagram';
   platform_user_id: string;
+  provider_account_id?: string | null;
   username: string;
   display_name: string | null;
   profile_image_url: string | null;
@@ -145,7 +146,8 @@ function getAuthToken(): string {
  * Opens OAuth in system browser and polls for result.
  */
 export async function startUserInstagramOAuth(
-  onResult?: (result: InstagramAuthResult) => void
+  onResult?: (result: InstagramAuthResult) => void,
+  options?: UserSocialConnectOptions
 ): Promise<() => void> {
   const authToken = getAuthToken();
 
@@ -160,7 +162,7 @@ export async function startUserInstagramOAuth(
     // Preferred flow: Post For Me generic OAuth
     const connectResponse = await api.post<PostForMeConnectUrlResponse>(
       '/user/social/connect-url',
-      { platform: 'instagram' }
+      buildUserConnectUrlBody('instagram', options)
     );
 
     if (!connectResponse.data.success || !connectResponse.data.auth_url) {
@@ -451,13 +453,6 @@ export async function getUserAnalyticsSummary(options?: {
 // ============================================
 // Helper Functions
 // ============================================
-
-/**
- * Check if account token is expiring soon (within 2 days).
- */
-export function isTokenExpiringSoon(account: { token_expires_at?: string | null; is_active?: boolean; platform?: string; provider_status?: string | null }): boolean {
-  return isTokenExpiringSoonForAccount(account);
-}
 
 /**
  * Format follower count

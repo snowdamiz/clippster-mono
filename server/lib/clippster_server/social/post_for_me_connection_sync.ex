@@ -3,16 +3,226 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
   Shared Post For Me connect completion logic for user/org flows.
   """
 
+  require Logger
+
   alias ClippsterServer.{Accounts, Campaigns, Social, Repo}
   alias ClippsterServer.Campaigns.ClipperSocialAccount
+  alias ClippsterServer.Campaigns.UserPost
   alias ClippsterServer.Social.SocialAccount
   alias ClippsterServer.Social.ProviderMode
   alias ClippsterServer.Social.PostForMeConnectionSession
   alias ClippsterServer.Social.Providers.PostForMe
+  alias ClippsterServer.Social.UserPostsAnalyticsSync
+
+  import Ecto.Query
+
+  @doc """
+  Resolves the Post For Me external_id for an existing provider account.
+
+  Reconnect must reuse this value — creating a new external_id causes
+  "External Id already exists for account" errors from Post For Me.
+  """
+  def resolve_provider_external_id(provider_account_id) when is_binary(provider_account_id) do
+    trimmed = String.trim(provider_account_id)
+
+    if trimmed == "" do
+      {:error, :missing_provider_account_id}
+    else
+      case PostForMe.get_social_account(trimmed) do
+        {:ok, account} ->
+          case account.external_id do
+            external_id when is_binary(external_id) and external_id != "" ->
+              {:ok, external_id}
+
+            _ ->
+              {:error, :missing_external_id}
+          end
+
+        {:error, _} ->
+          with {:ok, listing} <- PostForMe.list_social_accounts(%{id: trimmed}),
+               account when not is_nil(account) <- find_provider_account(listing.data, trimmed) do
+            case account.external_id do
+              external_id when is_binary(external_id) and external_id != "" ->
+                {:ok, external_id}
+
+              _ ->
+                {:error, :missing_external_id}
+            end
+          else
+            _ -> {:error, :provider_account_not_found}
+          end
+      end
+    end
+  end
+
+  def resolve_provider_external_id(_), do: {:error, :missing_provider_account_id}
+
+  def resolve_provider_external_id_from_payload(%{provider_payload: payload})
+      when is_map(payload) do
+    case Map.get(payload, "external_id") || Map.get(payload, :external_id) do
+      external_id when is_binary(external_id) and external_id != "" -> {:ok, external_id}
+      _ -> {:error, :missing_external_id}
+    end
+  end
+
+  def resolve_provider_external_id_from_payload(_), do: {:error, :missing_external_id}
+
+  def build_user_connect_session_attrs(user, platform, params, return_mode, return_url) do
+    base = %{
+      scope: "user",
+      user_id: user.id,
+      platform: platform,
+      return_mode: return_mode,
+      return_url: return_url
+    }
+
+    case reconnect_requested?(params) do
+      true ->
+        with {:ok, provider_account_id, local_account} <-
+               resolve_user_reconnect_account(user, params),
+             {:ok, external_id} <-
+               resolve_reconnect_external_id(provider_account_id, local_account) do
+          {:ok,
+           Map.merge(base, %{
+             external_id: external_id,
+             account_ids: [provider_account_id],
+             reconnect: true
+           })}
+        end
+
+      false ->
+        {:ok, base}
+    end
+  end
+
+  def build_org_connect_session_attrs(org_id, user_id, platform, params, return_mode, return_url) do
+    base = %{
+      scope: "org",
+      organization_id: org_id,
+      user_id: user_id,
+      platform: platform,
+      return_mode: return_mode,
+      return_url: return_url
+    }
+
+    case reconnect_requested?(params) do
+      true ->
+        with {:ok, provider_account_id, local_account} <-
+               resolve_org_reconnect_account(org_id, params),
+             {:ok, external_id} <-
+               resolve_reconnect_external_id(provider_account_id, local_account) do
+          {:ok,
+           Map.merge(base, %{
+             external_id: external_id,
+             account_ids: [provider_account_id],
+             reconnect: true
+           })}
+        end
+
+      false ->
+        {:ok, base}
+    end
+  end
+
+  defp reconnect_requested?(params) when is_map(params) do
+    provider_id = params["provider_account_id"] || params["providerAccountId"]
+    social_id = params["social_account_id"] || params["socialAccountId"]
+
+    (is_binary(provider_id) and String.trim(provider_id) != "") or
+      parse_optional_integer(social_id) != nil
+  end
+
+  defp reconnect_requested?(_), do: false
+
+  defp resolve_user_reconnect_account(user, params) do
+    provider_account_id = params["provider_account_id"] || params["providerAccountId"]
+    social_account_id = parse_optional_integer(params["social_account_id"] || params["socialAccountId"])
+
+    cond do
+      is_binary(provider_account_id) and String.trim(provider_account_id) != "" ->
+        trimmed = String.trim(provider_account_id)
+
+        case Campaigns.get_social_account_by_provider(user.id, "post_for_me", trimmed) do
+          nil -> {:error, :account_not_found}
+          account -> {:ok, trimmed, account}
+        end
+
+      not is_nil(social_account_id) ->
+        case Campaigns.get_social_account(social_account_id) do
+          %{user_id: account_user_id} = account when account_user_id == user.id ->
+            if is_binary(account.provider_account_id) and account.provider_account_id != "" do
+              {:ok, account.provider_account_id, account}
+            else
+              {:error, :missing_provider_account_id}
+            end
+
+          _ ->
+            {:error, :account_not_found}
+        end
+
+      true ->
+        {:error, :missing_reconnect_account}
+    end
+  end
+
+  defp resolve_org_reconnect_account(org_id, params) do
+    provider_account_id = params["provider_account_id"] || params["providerAccountId"]
+    social_account_id = parse_optional_integer(params["social_account_id"] || params["socialAccountId"])
+
+    cond do
+      is_binary(provider_account_id) and String.trim(provider_account_id) != "" ->
+        trimmed = String.trim(provider_account_id)
+
+        case Social.get_social_account_by_provider(org_id, "post_for_me", trimmed) do
+          nil -> {:error, :account_not_found}
+          account -> {:ok, trimmed, account}
+        end
+
+      not is_nil(social_account_id) ->
+        case Social.get_social_account(social_account_id) do
+          %{organization_id: account_org_id} = account when account_org_id == org_id ->
+            if is_binary(account.provider_account_id) and account.provider_account_id != "" do
+              {:ok, account.provider_account_id, account}
+            else
+              {:error, :missing_provider_account_id}
+            end
+
+          _ ->
+            {:error, :account_not_found}
+        end
+
+      true ->
+        {:error, :missing_reconnect_account}
+    end
+  end
+
+  defp resolve_reconnect_external_id(provider_account_id, local_account) do
+    case resolve_provider_external_id(provider_account_id) do
+      {:ok, external_id} ->
+        {:ok, external_id}
+
+      {:error, _} ->
+        resolve_provider_external_id_from_payload(local_account)
+    end
+  end
+
+  defp parse_optional_integer(value) when is_integer(value), do: value
+
+  defp parse_optional_integer(value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {parsed, _} -> parsed
+      :error -> nil
+    end
+  end
+
+  defp parse_optional_integer(_), do: nil
 
   def complete_user_connect(user, account_ids, external_id, platform) do
     with {:ok, listing} <- list_provider_accounts(account_ids, external_id, platform),
          {:ok, synced_accounts} <- upsert_user_accounts(user, listing.data, platform) do
+      reassign_user_posts_to_connected_accounts(user, synced_accounts)
+      Task.start(fn -> UserPostsAnalyticsSync.sync_for_user(user.id) end)
+
       {:ok,
        %{
          platform: normalized_primary_platform(synced_accounts, platform),
@@ -100,6 +310,10 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
       nil -> {:error, :user_not_found}
       user -> {:ok, user}
     end
+  end
+
+  defp find_provider_account(accounts, provider_account_id) when is_list(accounts) do
+    Enum.find(accounts, fn account -> account.id == provider_account_id end)
   end
 
   defp list_provider_accounts(account_ids, external_id, platform) do
@@ -200,18 +414,88 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
   end
 
   defp upsert_user_account(user, attrs) do
-    case Campaigns.get_social_account_by_provider(
-           user.id,
-           "post_for_me",
-           attrs.provider_account_id
-         ) do
+    existing =
+      Campaigns.get_social_account_by_provider(
+        user.id,
+        "post_for_me",
+        attrs.provider_account_id
+      ) || find_existing_user_account_by_platform_identity(user.id, attrs)
+
+    case existing do
       nil ->
         Campaigns.create_social_account(user, attrs)
 
-      existing ->
-        Campaigns.update_social_account(existing, attrs, user)
+      account ->
+        Campaigns.update_social_account(account, attrs, user)
     end
   end
+
+  defp find_existing_user_account_by_platform_identity(user_id, attrs) do
+    platform = Map.get(attrs, :platform)
+    platform_user_id = Map.get(attrs, :platform_user_id)
+
+    if is_binary(platform) and platform != "" and is_binary(platform_user_id) and
+         platform_user_id != "" do
+      platform_aliases = platform_identity_aliases(platform)
+
+      from(a in ClipperSocialAccount,
+        where: a.user_id == ^user_id,
+        where: a.provider == "post_for_me",
+        where: a.platform in ^platform_aliases,
+        where: a.platform_user_id == ^platform_user_id,
+        order_by: [desc: a.updated_at],
+        limit: 1
+      )
+      |> Repo.one()
+    else
+      nil
+    end
+  end
+
+  defp platform_identity_aliases(platform) do
+    normalized = ProviderMode.normalize_platform(platform)
+
+    case normalized do
+      "x" -> ["x", "twitter"]
+      "twitter" -> ["x", "twitter"]
+      other -> [other]
+    end
+  end
+
+  @doc """
+  Moves published posts from inactive duplicate Post For Me accounts onto the active account
+  for the same platform identity after reconnect.
+  """
+  def reassign_user_posts_to_connected_accounts(user, accounts) when is_list(accounts) do
+    Enum.each(accounts, fn account ->
+      inactive_account_ids =
+        from(a in ClipperSocialAccount,
+          where: a.user_id == ^user.id,
+          where: a.id != ^account.id,
+          where: a.platform in ^platform_identity_aliases(account.platform),
+          where: a.is_active == false,
+          select: a.id
+        )
+        |> Repo.all()
+
+      if inactive_account_ids != [] do
+        {updated, _} =
+          from(p in UserPost,
+            where: p.user_id == ^user.id,
+            where: p.clipper_social_account_id in ^inactive_account_ids
+          )
+          |> Repo.update_all(set: [clipper_social_account_id: account.id])
+
+        if updated > 0 do
+          Logger.info(
+            "[PostForMeConnectionSync] Reassigned #{updated} user posts to account #{account.id} (#{account.platform})"
+          )
+        end
+      end
+    end)
+  end
+
+  def reassign_user_posts_to_connected_accounts(_user, _accounts), do: :ok
 
   defp provider_account_to_user_attrs(provider_account, platform_override) do
     normalized_platform =

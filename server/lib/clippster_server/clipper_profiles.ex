@@ -510,6 +510,7 @@ defmodule ClippsterServer.ClipperProfiles do
 
     case leaderboard_type do
       "posts" ->
+        ClippsterServer.Social.UserPostsAnalyticsSync.sync_for_period(period_start, period_end)
         calculate_live_posts_leaderboard(profiles, period_start, period_end, limit)
 
       "campaigns" ->

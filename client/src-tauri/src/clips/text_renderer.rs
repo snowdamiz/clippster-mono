@@ -95,7 +95,24 @@ pub fn partition_overlays(
     (simple, advanced)
 }
 
-/// Render a text overlay to a PNG image using SVG
+/// Resolve center-anchored position (0-100%) for an aspect ratio.
+fn get_position_for_ratio(overlay: &TextOverlaySettings, aspect_ratio: &str) -> (f64, f64) {
+    if let Some(ref configs) = overlay.per_ratio_configs {
+        if let Some(config) = configs.get(aspect_ratio) {
+            return (config.position.x, config.position.y);
+        }
+    }
+    (overlay.position_x, overlay.position_y)
+}
+
+/// Scale font size from preview height to the actual render frame height.
+fn scaled_font_size(style: &TextOverlayStyle, overlay: &TextOverlaySettings, frame_height: u32) -> f32 {
+    let preview_height = overlay.preview_height.unwrap_or(1080.0).max(1.0);
+    let scale = frame_height as f64 / preview_height;
+    (style.font_size as f64 * scale).max(8.0) as f32
+}
+
+/// Render a text overlay to a full-frame PNG (text baked at its export position).
 pub fn render_text_overlay_to_png(
     overlay: &TextOverlaySettings,
     video_width: u32,
@@ -103,55 +120,88 @@ pub fn render_text_overlay_to_png(
     aspect_ratio: &str,
     output_dir: &Path,
 ) -> Result<String, String> {
-    println!("[Rust] render_text_overlay_to_png: id={}, text='{}', aspect={}, video={}x{}", 
-        overlay.id, overlay.text, aspect_ratio, video_width, video_height);
-    
-    // Get style for this aspect ratio
-    let style = get_style_for_ratio(overlay, aspect_ratio).ok_or("No style found for overlay")?;
-    println!("[Rust] Got style: font={}, size={}, bg_enabled={}", 
-        style.font_family, style.font_size, style.background_enabled);
+    println!(
+        "[Rust] render_text_overlay_to_png: id={}, text='{}', aspect={}, video={}x{}",
+        overlay.id, overlay.text, aspect_ratio, video_width, video_height
+    );
 
-    // Generate SVG for this text overlay
-    let svg_content = generate_text_svg(overlay, &style, video_width, video_height)?;
+    let style = get_style_for_ratio(overlay, aspect_ratio).ok_or("No style found for overlay")?;
+    let (pos_x_pct, pos_y_pct) = get_position_for_ratio(overlay, aspect_ratio);
+    let font_size = scaled_font_size(&style, overlay, video_height);
+    println!(
+        "[Rust] Got style: font={}, size={} (scaled from {}), bg_enabled={}, pos=({}%, {}%)",
+        style.font_family,
+        font_size,
+        style.font_size,
+        style.background_enabled,
+        pos_x_pct,
+        pos_y_pct
+    );
+
+    let svg_content = generate_text_svg(
+        overlay,
+        &style,
+        video_width,
+        video_height,
+        pos_x_pct,
+        pos_y_pct,
+        font_size,
+    )?;
     println!("[Rust] Generated SVG content ({} bytes)", svg_content.len());
 
-    // Render SVG to PNG using resvg
+    // Sanitize id for Windows filenames (UUIDs are fine; keep this defensive).
+    let safe_id = overlay
+        .id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect::<String>();
     let output_path = output_dir.join(format!(
         "text_overlay_{}_{}.png",
-        overlay.id,
-        aspect_ratio.replace(":", "x")
+        safe_id,
+        aspect_ratio.replace(':', "x")
     ));
     render_svg_to_png(&svg_content, &output_path, video_width, video_height)?;
-    
-    // Verify file exists
+
     if output_path.exists() {
         let metadata = std::fs::metadata(&output_path);
-        println!("[Rust] PNG file created: {} (size: {} bytes)", 
-            output_path.display(), 
-            metadata.map(|m| m.len()).unwrap_or(0));
+        println!(
+            "[Rust] PNG file created: {} (size: {} bytes)",
+            output_path.display(),
+            metadata.map(|m| m.len()).unwrap_or(0)
+        );
     } else {
-        println!("[Rust] WARNING: PNG file not found after render: {}", output_path.display());
+        println!(
+            "[Rust] WARNING: PNG file not found after render: {}",
+            output_path.display()
+        );
     }
 
     Ok(output_path.to_string_lossy().to_string())
 }
 
-/// Generate SVG markup for a text overlay
+/// Generate SVG markup for a text overlay with text centered at (pos_x_pct, pos_y_pct).
 fn generate_text_svg(
     overlay: &TextOverlaySettings,
     style: &TextOverlayStyle,
     video_width: u32,
     video_height: u32,
+    pos_x_pct: f64,
+    pos_y_pct: f64,
+    font_size: f32,
 ) -> Result<String, String> {
-    let text = escape_xml(&overlay.text);
+    let display_text = match style.text_transform.as_deref() {
+        Some("uppercase") => overlay.text.to_uppercase(),
+        Some("lowercase") => overlay.text.to_lowercase(),
+        _ => overlay.text.clone(),
+    };
+    let text = escape_xml(&display_text);
     let font_family = &style.font_family;
-    let font_size = style.font_size;
     let font_weight = style.font_weight;
     let color = &style.color;
 
-    // Calculate position (center of video for now, actual position handled by FFmpeg overlay)
-    let center_x = video_width as f64 / 2.0;
-    let center_y = video_height as f64 / 2.0;
+    // Bake position into the full-frame PNG (matches subtitle overlay compositing).
+    let center_x = (pos_x_pct / 100.0 * video_width as f64).clamp(0.0, video_width as f64);
+    let center_y = (pos_y_pct / 100.0 * video_height as f64).clamp(0.0, video_height as f64);
 
     let mut svg = format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}">"#,
@@ -214,8 +264,13 @@ fn generate_text_svg(
     } else if style.background_enabled {
         // Simple background box
         let bg_color = style.background_color.as_deref().unwrap_or("#000000");
-        let padding = style.padding as f64;
-        let border_radius = style.border_radius as f64;
+        let size_scale = if style.font_size > 0.0 {
+            font_size as f64 / style.font_size as f64
+        } else {
+            1.0
+        };
+        let padding = style.padding as f64 * size_scale;
+        let border_radius = style.border_radius as f64 * size_scale;
 
         // Estimate text dimensions (rough)
         let text_width = text.len() as f64 * (font_size as f64) * 0.6;

@@ -203,10 +203,24 @@ export interface EmbossEffect extends VideoEffectBase {
 	angle: number; // 0-360 light direction
 }
 
+/** Blend modes for solid-color overlay — must match FFmpeg `map_blend_mode_ffmpeg` / canvas composite. */
+export type ColorOverlayBlendMode =
+	| "multiply"
+	| "screen"
+	| "overlay"
+	| "soft-light"
+	| "hard-light"
+	| "darken"
+	| "lighten"
+	| "color-dodge"
+	| "color-burn"
+	| "difference"
+	| "exclusion";
+
 export interface ColorOverlayEffect extends VideoEffectBase {
 	type: "colorOverlay";
 	color: string; // overlay color
-	blendMode: "multiply" | "screen" | "overlay" | "color"; // blend mode
+	blendMode: ColorOverlayBlendMode;
 }
 
 export interface DuotoneEffect extends VideoEffectBase {

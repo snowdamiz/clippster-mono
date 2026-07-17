@@ -489,3 +489,27 @@ export function getElementsAtTime({
 
 	return result;
 }
+
+export function getExportRangeFromSelectedElements({
+	elements,
+	getElement,
+}: {
+	elements: { trackId: string; elementId: string }[];
+	getElement: (ref: { trackId: string; elementId: string }) => TimelineElement | null;
+}): { timeRange: { startTime: number; endTime: number }; segmentName: string } | null {
+	if (elements.length === 0) return null;
+
+	const resolved = elements
+		.map((ref) => getElement(ref))
+		.filter((el): el is TimelineElement => el !== null);
+	if (resolved.length === 0) return null;
+
+	const startTime = Math.min(...resolved.map((el) => el.startTime));
+	const endTime = Math.max(...resolved.map((el) => el.startTime + el.duration));
+	const segmentName =
+		resolved.length === 1
+			? resolved[0].name?.trim() || "Selected segment"
+			: `${resolved.length} selected segments`;
+
+	return { timeRange: { startTime, endTime }, segmentName };
+}

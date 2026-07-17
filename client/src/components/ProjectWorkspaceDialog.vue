@@ -366,10 +366,10 @@
   <!-- Subtitle Editor Dialog -->
   <SubtitleEditorDialog
     :model-value="showSubtitleEditorDialog"
-    :clips="subtitleTargetClips"
+    :clips="subtitleEditorClips"
     :project-id="project?.id"
     :default-subtitle-settings="subtitleEditorDefaultSettings"
-    @update:model-value="showSubtitleEditorDialog = $event"
+    @update:model-value="onSubtitleEditorOpenChange"
     @save="onSaveSubtitles"
   />
 
@@ -536,6 +536,8 @@
 
   // Subtitle editor state
   const showSubtitleEditorDialog = ref(false);
+  /** When set, Edit Subtitles targets these clips only (e.g. POI generate-subtitles flow). */
+  const subtitleEditorClipIds = ref<string[]>([]);
 
   // Right panel tab state
   const rightPanelTab = ref<'clips' | 'transcript' | 'subtitles' | 'text'>('clips');
@@ -605,6 +607,21 @@
   const subtitleTargetClips = computed(() => {
     return allProjectClips.value.length > 0 ? allProjectClips.value : timelineClips.value;
   });
+
+  const subtitleEditorClips = computed(() => {
+    if (subtitleEditorClipIds.value.length === 0) return subtitleTargetClips.value;
+    const resolved = subtitleEditorClipIds.value
+      .map((clipId) => getTimelineClipById(clipId))
+      .filter(Boolean);
+    // Fallback stubs so Save still works if the clip isn't in timeline/project lists yet.
+    if (resolved.length > 0) return resolved;
+    return subtitleEditorClipIds.value.map((id) => ({ id }));
+  });
+
+  function onSubtitleEditorOpenChange(open: boolean) {
+    showSubtitleEditorDialog.value = open;
+    if (!open) subtitleEditorClipIds.value = [];
+  }
 
   /** Timeline + DB clips often expose `current_version_segments`; older paths used `segments` only. */
   function getClipTimelineSegments(clip: any): any[] {
@@ -1793,6 +1810,8 @@
             'Transcription Complete',
             `${readyCount} clip${readyCount !== 1 ? 's' : ''} transcribed.`
           );
+          // Keep POI-targeted clip ids for Edit Subtitles (pending list is cleared in finally).
+          subtitleEditorClipIds.value = subtitleClipIds;
           showSubtitleEditorDialog.value = true;
         } else if (alreadyTranscribedCount > 0) {
           showSuccess('Already Transcribed', 'This video already has a transcript.');
@@ -2196,8 +2215,9 @@
       pendingSubtitleTranscriptionClipIds.value = [];
       showTranscribeConfirmDialog.value = true;
     } else {
-      // Has transcript - show subtitle editor dialog
+      // Has transcript - show subtitle editor dialog for all project clips
       pendingSubtitleTranscriptionClipIds.value = [];
+      subtitleEditorClipIds.value = [];
       showSubtitleEditorDialog.value = true;
     }
   }
@@ -2396,21 +2416,27 @@
     try {
       const defaults = subtitleEditorDefaultSettings.value;
       const activeClipId =
-        [currentlyPlayingClipId.value, lastPlayedClipId.value, selectedClipId.value].find(
+        [selectedClipId.value, currentlyPlayingClipId.value, lastPlayedClipId.value].find(
           (id): id is string => !!id && clipIds.includes(id)
         ) ?? clipIds[0] ?? null;
 
+      let mergedSettings: SubtitleSettings | null = null;
       if (defaults && clipIds.length > 0) {
         const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } =
           await import('@/services/database/clips');
-        const merged: SubtitleSettings = {
+        mergedSettings = {
           ...JSON.parse(JSON.stringify(defaults)),
           enabled: true,
           selectedPresetId: presetId || defaults.selectedPresetId || null,
         };
         for (const id of clipIds) {
-          await updateClipFullSubtitleSettings(id, merged);
-          await updateClipSubtitlePosition(id, 50, merged.positionPercentage ?? 85, merged.maxWidth ?? undefined);
+          await updateClipFullSubtitleSettings(id, mergedSettings);
+          await updateClipSubtitlePosition(
+            id,
+            50,
+            mergedSettings.positionPercentage ?? 85,
+            mergedSettings.maxWidth ?? undefined
+          );
         }
       } else {
         const { updateMultipleClipsSubtitleSettings } = await import('@/services/database/clips');
@@ -2433,14 +2459,15 @@
         if (activeClip) {
           activeClip.subtitle_enabled = true;
           activeClip.subtitle_preset_id = presetId;
+          if (mergedSettings) {
+            activeClip.subtitle_settings =
+              typeof activeClip.subtitle_settings === 'string'
+                ? JSON.stringify(mergedSettings)
+                : mergedSettings;
+          }
 
-          if (defaults) {
-            const merged = {
-              ...JSON.parse(JSON.stringify(defaults)),
-              enabled: true,
-              selectedPresetId: presetId || defaults.selectedPresetId || null,
-            } as SubtitleSettings;
-            activeSubtitleSettings.value = merged;
+          if (mergedSettings) {
+            activeSubtitleSettings.value = mergedSettings;
             activeSubtitleSettingsClipId.value = activeClipId;
           } else {
             loadSubtitleSettingsFromPreset({
@@ -2462,6 +2489,10 @@
           if (currentlyPlayingClipId.value === activeClipId || lastPlayedClipId.value === activeClipId) {
             await loadTranscriptDataForSelfContainedClip(activeClip);
           }
+        } else if (mergedSettings) {
+          // Clip may only exist in the build/POI flow; still push settings so ManualPOIEditor updates.
+          activeSubtitleSettings.value = mergedSettings;
+          activeSubtitleSettingsClipId.value = activeClipId;
         }
       }
     } catch (error) {

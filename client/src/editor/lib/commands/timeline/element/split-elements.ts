@@ -4,6 +4,7 @@ import type { Transition } from "../../../../types/transitions";
 import { generateUUID } from "../../../../utils/id";
 import { EditorCore } from "../../../../core";
 import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
+import { isMainTrack } from "../../../../lib/timeline/track-utils";
 import { getElementSourceSpanSeconds } from "../../../../lib/timeline/trim-source-utils";
 
 function withoutStartFade<T extends { fadeIn?: number }>(element: T): T {
@@ -164,8 +165,37 @@ export class SplitElementsCommand extends Command {
 		}
 
 		if (this.rightSideElements.length > 0) {
-			editor.selection.setSelectedElements({ elements: this.rightSideElements });
+			const toSelect =
+				this.rightSideElements.length === 1
+					? this.rightSideElements
+					: [this.pickSingleSplitSelection({ editor, refs: this.rightSideElements })];
+			editor.selection.setSelectedElements({ elements: toSelect });
 		}
+	}
+
+	private pickSingleSplitSelection({
+		editor,
+		refs,
+	}: {
+		editor: EditorCore;
+		refs: { trackId: string; elementId: string }[];
+	}): { trackId: string; elementId: string } {
+		const tracks = editor.timeline.getTracks();
+		const ranked = refs
+			.map((ref) => {
+				const track = tracks.find((t) => t.id === ref.trackId);
+				const element = track?.elements.find((e) => e.id === ref.elementId);
+				return {
+					ref,
+					startTime: element?.startTime ?? 0,
+					isMain: track ? isMainTrack(track) : false,
+				};
+			})
+			.sort((a, b) => {
+				if (a.isMain !== b.isMain) return a.isMain ? -1 : 1;
+				return b.startTime - a.startTime;
+			});
+		return ranked[0]?.ref ?? refs[refs.length - 1];
 	}
 
 	undo(): void {

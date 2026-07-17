@@ -331,6 +331,19 @@ pub async fn open_google_auth_window(
     Ok(())
 }
 
+/// Opens a pre-built Google OAuth URL (e.g. Gmail account switch) and listens
+/// on the local callback server for the result — same as login.
+#[tauri::command]
+pub async fn open_google_auth_url(app: tauri::AppHandle, auth_url: String) -> Result<(), String> {
+    *GOOGLE_AUTH_RESULT.lock().unwrap() = None;
+    start_google_callback_server(app.clone());
+
+    tauri_plugin_opener::open_url(auth_url, None::<&str>)
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn start_post_for_me_oauth(
     _app: tauri::AppHandle,

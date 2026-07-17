@@ -451,6 +451,7 @@
       :watermark-settings="folderCreatorWatermarkSettings"
       :default-intro="folderCreatorDefaultIntro"
       :default-outro="folderCreatorDefaultOutro"
+      :creator-profile="folderCreatorProfile"
       :creator-profile-server-id="folderCreatorProfileServerId"
       @confirm="onFolderBuildConfirm"
     />

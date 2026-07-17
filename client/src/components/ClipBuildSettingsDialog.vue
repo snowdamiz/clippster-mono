@@ -438,6 +438,72 @@
 
                     <div class="build-dialog__addons-section">
 
+                      <!-- Personal creator branding (auto-applied; shown only when matched personal profile has branding) -->
+                      <div
+                        v-if="showPersonalBrandingSection"
+                        class="build-dialog__field build-dialog__multi-select-section"
+                        :class="{ 'build-dialog__personal-branding--overridden': hasOrgOrCampaignSelected }"
+                      >
+                        <div class="build-dialog__section-header">
+                          <User class="build-dialog__section-icon" />
+                          <span class="build-dialog__section-title">Personal Branding</span>
+                        </div>
+                        <p class="build-dialog__section-hint">
+                          {{
+                            hasOrgOrCampaignSelected
+                              ? 'Overridden by organization or campaign for selected builds'
+                              : 'Applied automatically to personal builds'
+                          }}
+                        </p>
+                        <div class="build-dialog__multi-select-list">
+                          <div class="build-dialog__multi-select-item build-dialog__personal-branding-item">
+                            <div class="build-dialog__personal-branding-row">
+                              <div class="build-dialog__personal-branding-avatar">
+                                <img
+                                  v-if="personalCreatorAvatarUrl"
+                                  :src="personalCreatorAvatarUrl"
+                                  alt=""
+                                  class="build-dialog__personal-branding-avatar-img"
+                                />
+                                <User v-else class="build-dialog__personal-branding-avatar-icon" />
+                              </div>
+                              <div class="build-dialog__personal-branding-info">
+                                <span class="build-dialog__multi-select-name">{{ personalCreatorProfile?.name }}</span>
+                                <div class="build-dialog__personal-branding-badges">
+                                  <span
+                                    v-if="personalBrandingHasWatermark"
+                                    class="build-dialog__badge build-dialog__badge--global"
+                                  >
+                                    Watermark
+                                  </span>
+                                  <span
+                                    v-if="personalBrandingHasIntro"
+                                    class="build-dialog__badge build-dialog__badge--global"
+                                  >
+                                    Intro
+                                  </span>
+                                  <span
+                                    v-if="personalBrandingHasOutro"
+                                    class="build-dialog__badge build-dialog__badge--global"
+                                  >
+                                    Outro
+                                  </span>
+                                </div>
+                              </div>
+                              <span
+                                class="build-dialog__personal-branding-status"
+                                :class="{
+                                  'build-dialog__personal-branding-status--active': !hasOrgOrCampaignSelected,
+                                  'build-dialog__personal-branding-status--overridden': hasOrgOrCampaignSelected,
+                                }"
+                              >
+                                {{ hasOrgOrCampaignSelected ? 'Overridden' : 'Active' }}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
                       <!-- Organization Builds Section (shown only when orgs with matching streamer exist) -->
                       <div v-if="availableOrgs.length > 0" class="build-dialog__field build-dialog__multi-select-section">
                         <div class="build-dialog__section-header">
@@ -808,6 +874,10 @@
       :subtitle-position-override="getSubtitlePositionForRatio(editingAspectRatio)"
       :transcript-words="transcriptWords"
       :transcript-segments="transcriptSegments"
+      :is-subtitle-transcribing="poiSubtitleTranscribing"
+      :subtitle-transcribe-progress="poiSubtitleTranscribeProgress"
+      :subtitle-transcribe-stage="poiSubtitleTranscribeStage"
+      :subtitle-transcribe-message="poiSubtitleTranscribeMessage"
       :clip-id="clip?.id ?? null"
       :project-id="clipProjectId"
       :clip-text-overlay-json="clipTextOverlayRaw"
@@ -815,6 +885,7 @@
       @subtitlePositionChange="onSubtitlePositionChange"
       @subtitleSettingsChange="onSubtitleSettingsChange"
       @clip-text-overlay-change="onClipTextOverlayChange"
+      @request-subtitle-transcription="onRequestSubtitleTranscription"
     />
 
     <!-- Subtitle Adjustment Dialog -->
@@ -852,14 +923,19 @@
     Building2,
     Megaphone,
     Globe,
+    User,
   } from 'lucide-vue-next';
+  import { convertFileSrc } from '@tauri-apps/api/core';
   import type { ClipWithVersion, WatermarkSettings } from '@/services/database';
+  import type { CreatorProfileWithLinks } from '@/services/database/types';
   import { getAllIntroOutros, type IntroOutro } from '@/services/database';
   import { getUserOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
   import { resolveOverlayImagePath } from '@/services/database/watermarks';
   import { useAuthStore } from '@/stores/auth';
   import { useFreeTierLimits } from '@/composables/useFreeTierLimits';
   import { useTranscriptData } from '@/composables/useTranscriptData';
+  import { useTranscriptionOnly } from '@/composables/useTranscriptionOnly';
+  import { useToast } from '@/composables/useToast';
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
   import { parseClipTextOverlayJson } from '@/utils/clipTextBox';
   import SubtitleAdjustmentDialog from './SubtitleAdjustmentDialog.vue';
@@ -927,10 +1003,16 @@
     vodPresetConfig?: import('@/types').ActiveVodPresetConfig | null;
     // Server ID of the creator profile for this clip (used to fetch profile-specific campaigns)
     creatorProfileServerId?: number | null;
+    /** Matched personal creator profile (used to surface auto-applied branding in Add-ons). */
+    creatorProfile?: CreatorProfileWithLinks | null;
     // Publish mode - when true, shows "Build & Publish" and emits build-complete event
     publishMode?: boolean;
     // Single ratio mode - when true, only one aspect ratio can be selected at a time
     singleRatioMode?: boolean;
+    isSubtitleTranscribing?: boolean;
+    subtitleTranscribeProgress?: number;
+    subtitleTranscribeStage?: string;
+    subtitleTranscribeMessage?: string;
   }>();
 
   const emit = defineEmits<{
@@ -1052,6 +1134,7 @@
   const videoFrameUrl = ref<string | null>(null);
   const loadingVideoFrame = ref(false);
   const videoPath = ref<string | null>(null);
+  const poiPreviewUsesSelfContainedSource = ref(false);
   let loadVideoFrameGeneration = 0;
 
   // Overlay preview state for ManualPOIEditor
@@ -1062,7 +1145,34 @@
     const clip = props.clip as { segment_id?: string; project_id?: string } | null;
     return clip?.segment_id || clip?.project_id || null;
   });
-  const { transcriptData } = useTranscriptData(clipProjectId);
+  const { transcriptData, loadTranscriptData } = useTranscriptData(clipProjectId);
+  const { error: showErrorToast, success: showSuccessToast } = useToast();
+
+  // Local free clip transcription (POI Generate subtitles) — no confirm dialog, no credits.
+  const localSubtitleTranscribing = ref(false);
+  const localSubtitleTranscribeProgress = ref(0);
+  const localSubtitleTranscribeStage = ref('');
+  const localSubtitleTranscribeMessage = ref('');
+  let cancelLocalSubtitleTranscription: (() => void) | null = null;
+
+  const poiSubtitleTranscribing = computed(
+    () => localSubtitleTranscribing.value || Boolean(props.isSubtitleTranscribing)
+  );
+  const poiSubtitleTranscribeProgress = computed(() =>
+    localSubtitleTranscribing.value
+      ? localSubtitleTranscribeProgress.value
+      : props.subtitleTranscribeProgress || 0
+  );
+  const poiSubtitleTranscribeStage = computed(() =>
+    localSubtitleTranscribing.value
+      ? localSubtitleTranscribeStage.value
+      : props.subtitleTranscribeStage || ''
+  );
+  const poiSubtitleTranscribeMessage = computed(() =>
+    localSubtitleTranscribing.value
+      ? localSubtitleTranscribeMessage.value
+      : props.subtitleTranscribeMessage || ''
+  );
 
   /** True when the clip's extracted MP4 is the full playable source (0-based). */
   const isSelfContainedClip = computed(() => checkSelfContainedClip(props.clip));
@@ -1254,11 +1364,11 @@
   // not exist inside the extracted file — using them would seek beyond EOF and
   // also break subtitle filtering.
   const clipStartTime = computed(() => {
-    if (isSelfContainedClip.value) return 0;
+    if (isSelfContainedClip.value || poiPreviewUsesSelfContainedSource.value) return 0;
     return props.clip?.current_version_start_time || 0;
   });
   const clipEndTime = computed(() => {
-    if (isSelfContainedClip.value && props.clip) {
+    if ((isSelfContainedClip.value || poiPreviewUsesSelfContainedSource.value) && props.clip) {
       return getSelfContainedClipDuration(props.clip);
     }
     return props.clip?.current_version_end_time || 0;
@@ -1372,7 +1482,13 @@
   // Check if a specific ratio has been configured
   function isRatioConfigured(ratio: string): boolean {
     const config = manualFramingConfigs.value[ratio as keyof import('@/types').ManualFramingConfigs];
-    return config !== undefined && config.regions.length > 0;
+    const hasFraming = config !== undefined && config.regions.length > 0;
+    const clipText = parseClipTextOverlayJson(clipTextOverlayRaw.value);
+    const hasClipTextForRatio =
+      !!clipText?.enabled &&
+      (Object.keys(clipText.perRatioConfigs ?? {}).length === 0 ||
+        Boolean(clipText.perRatioConfigs?.[ratio]));
+    return hasFraming || hasClipTextForRatio;
   }
 
   // Get config for editing
@@ -1398,6 +1514,190 @@
 
     showManualPOIEditor.value = true;
   }
+
+  function resolveClipSourcePathForFreeTranscription(): string | null {
+    // Only clip-owned media — never the full project VOD (would free-transcribe hours of video).
+    if (!isSelfContainedClip.value && !poiPreviewUsesSelfContainedSource.value) {
+      return null;
+    }
+
+    const clipPath = typeof videoPath.value === 'string' ? videoPath.value.trim() : '';
+    if (clipPath) return clipPath;
+
+    const clip = props.clip as { file_path?: string; filename?: string } | null;
+    const own = (clip?.file_path || clip?.filename || '').trim();
+    return own || null;
+  }
+
+  async function enableSubtitlesForClipAfterTranscription() {
+    if (!props.clip?.id) return;
+
+    const base =
+      effectiveSubtitleSettings.value ||
+      props.subtitleSettings ||
+      ({
+        enabled: true,
+        selectedPresetId: 'tiktok-bold',
+        fontFamily: 'Montserrat',
+        fontSize: 48,
+        fontWeight: 900,
+        textColor: '#FFFFFF',
+        backgroundColor: 'rgba(0,0,0,0)',
+        backgroundEnabled: false,
+        position: 'bottom',
+        positionPercentage: 85,
+        maxWidth: 80,
+        animationStyle: 'none',
+        highlightColor: '#FACC15',
+        border1Width: 0,
+        border1Color: '#000000',
+        border2Width: 3,
+        border2Color: '#000000',
+        shadowBlur: 0,
+        shadowOffsetX: 2,
+        shadowOffsetY: 2,
+        shadowColor: '#000000',
+        lineHeight: 1.2,
+        letterSpacing: 0,
+        textAlign: 'center',
+        textOffsetX: 0,
+        textOffsetY: 0,
+        padding: 0,
+        borderRadius: 0,
+        wordSpacing: 0.35,
+        multiColorEnabled: false,
+        multiColorMode: 'default',
+        colorPalette: [],
+      } as SubtitleSettings);
+
+    const enabledSettings: SubtitleSettings = {
+      ...JSON.parse(JSON.stringify(base)),
+      enabled: true,
+      selectedPresetId: base.selectedPresetId || 'tiktok-bold',
+    };
+
+    localSubtitleSettings.value = enabledSettings;
+    ensureSubtitlePositionOverrideForRatio(editingAspectRatio.value);
+
+    try {
+      const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } =
+        await import('@/services/database/clips');
+      await updateClipFullSubtitleSettings(props.clip.id, enabledSettings);
+      await updateClipSubtitlePosition(
+        props.clip.id,
+        50,
+        enabledSettings.positionPercentage ?? 85,
+        enabledSettings.maxWidth ?? undefined
+      );
+    } catch (err) {
+      console.warn('[ClipBuildSettingsDialog] Failed to persist enabled subtitles after transcription:', err);
+    }
+  }
+
+  async function onRequestSubtitleTranscription() {
+    if (!props.clip?.id || localSubtitleTranscribing.value) return;
+
+    if (!authStore.isAuthenticated) {
+      window.dispatchEvent(new CustomEvent('show-auth-modal'));
+      return;
+    }
+
+    const projectId = clipProjectId.value;
+    const sourceVideoPath = resolveClipSourcePathForFreeTranscription();
+    if (!projectId || !sourceVideoPath) {
+      showErrorToast(
+        'Transcript Unavailable',
+        !isSelfContainedClip.value && !poiPreviewUsesSelfContainedSource.value
+          ? 'This clip shares the project video. Generate a project transcript from the workspace, then try again.'
+          : 'Could not find a video file for this clip to transcribe.'
+      );
+      return;
+    }
+
+    const FREE_CLIP_MAX_SECONDS = 30 * 60;
+    const clipSeconds = props.clip
+      ? Math.max(0, getSelfContainedClipDuration(props.clip) || clipDuration.value || 0)
+      : 0;
+    if (clipSeconds <= 0) {
+      showErrorToast('Transcript Unavailable', 'Could not determine this clip\'s duration.');
+      return;
+    }
+    if (clipSeconds > FREE_CLIP_MAX_SECONDS) {
+      showErrorToast(
+        'Clip Too Long',
+        'Free clip transcription is limited to 30 minutes. Use project transcription for longer videos.'
+      );
+      return;
+    }
+
+    const { transcribeProject, progress: tProgress, cancelTranscription } = useTranscriptionOnly({
+      showSuccessToast: false,
+      showErrorToast: true,
+      showChunkCompletionToast: false,
+      showCacheReuseToast: false,
+      showAudioChunkingToast: false,
+    });
+
+    cancelLocalSubtitleTranscription = cancelTranscription;
+    localSubtitleTranscribing.value = true;
+    localSubtitleTranscribeProgress.value = 0;
+    localSubtitleTranscribeStage.value = 'initializing';
+    localSubtitleTranscribeMessage.value = 'Generating transcript for this clip...';
+
+    const stopWatch = watch(
+      tProgress,
+      (p) => {
+        localSubtitleTranscribeProgress.value = p.progress;
+        localSubtitleTranscribeStage.value = p.stage;
+        localSubtitleTranscribeMessage.value = p.message;
+      },
+      { deep: true }
+    );
+
+    try {
+      const result = await transcribeProject(projectId, {
+        organizationId: null,
+        sourceVideoPath,
+        forceRetranscribe: isSelfContainedClip.value,
+        freeSingleClip: true,
+        freeSingleClipTotalDurationSeconds: clipSeconds,
+      });
+
+      if (!result.success) {
+        return;
+      }
+
+      await loadTranscriptData(projectId);
+      if (isSelfContainedClip.value) {
+        await loadSelfContainedTranscriptForClip();
+      }
+      await enableSubtitlesForClipAfterTranscription();
+
+      showSuccessToast(
+        result.alreadyTranscribed ? 'Transcript Ready' : 'Transcript Generated',
+        'Subtitles are ready for this clip.'
+      );
+    } catch (err) {
+      console.error('[ClipBuildSettingsDialog] Free clip transcription failed:', err);
+    } finally {
+      stopWatch();
+      cancelLocalSubtitleTranscription = null;
+      localSubtitleTranscribing.value = false;
+      localSubtitleTranscribeProgress.value = 0;
+      localSubtitleTranscribeStage.value = '';
+      localSubtitleTranscribeMessage.value = '';
+    }
+  }
+
+  // When subtitles are enabled while POI is open, seed position for the active ratio.
+  watch(
+    () => effectiveSubtitleSettings.value?.enabled,
+    (enabled) => {
+      if (enabled && showManualPOIEditor.value) {
+        ensureSubtitlePositionOverrideForRatio(editingAspectRatio.value);
+      }
+    }
+  );
 
   const DEFAULT_POI_SUBTITLE_POSITION = { x: 50, y: 85, width: 80 } as const;
 
@@ -1568,6 +1868,7 @@
         selectedIntro.value = null;
         selectedOutro.value = null;
         videoPath.value = null;
+        poiPreviewUsesSelfContainedSource.value = false;
         isForCampaign.value = false;
         selectedCampaign.value = null;
         availableCampaigns.value = [];
@@ -1820,6 +2121,7 @@
     const clipId = props.clip.id;
     const generation = ++loadVideoFrameGeneration;
     loadingVideoFrame.value = true;
+    poiPreviewUsesSelfContainedSource.value = false;
 
     try {
       const { invoke } = await import('@tauri-apps/api/core');
@@ -1830,6 +2132,7 @@
       }
 
       const { filePath: rawVideoPath, frameTimestamp } = source;
+      poiPreviewUsesSelfContainedSource.value = source.isSelfContained;
 
       console.log('[BuildSettings] POI preview source:', {
         clipId,
@@ -2313,6 +2616,59 @@
       availableCampaigns: availableCampaignSelections.value.map(c => ({ title: c.campaign.title, selected: c.selected }))
     });
     return result;
+  });
+
+  /** Personal/local creator only — never surface org or campaign profiles as "Personal Branding". */
+  const personalCreatorProfile = computed((): CreatorProfileWithLinks | null => {
+    const profile = props.creatorProfile ?? null;
+    if (!profile) return null;
+    if (profile.context_type === 'organization' || profile.context_type === 'campaign') return null;
+    if (typeof profile.id === 'string' && profile.id.startsWith('campaign-')) return null;
+    return profile;
+  });
+
+  const personalBrandingHasWatermark = computed(() => {
+    const profile = personalCreatorProfile.value;
+    if (!profile) return false;
+    if (props.watermarkSettings?.enabled && props.watermarkSettings?.watermarkId) return true;
+    return !!profile.watermark_id;
+  });
+
+  const personalBrandingHasIntro = computed(() => {
+    const profile = personalCreatorProfile.value;
+    if (!profile) return false;
+    return !!(props.defaultIntro || profile.intro_id);
+  });
+
+  const personalBrandingHasOutro = computed(() => {
+    const profile = personalCreatorProfile.value;
+    if (!profile) return false;
+    return !!(props.defaultOutro || profile.outro_id);
+  });
+
+  const showPersonalBrandingSection = computed(() => {
+    if (!personalCreatorProfile.value) return false;
+    return (
+      personalBrandingHasWatermark.value ||
+      personalBrandingHasIntro.value ||
+      personalBrandingHasOutro.value
+    );
+  });
+
+  const personalCreatorAvatarUrl = computed(() => {
+    const profile = personalCreatorProfile.value;
+    if (!profile) return null;
+    const primaryLink = profile.platform_links?.find((l) => l.is_primary) ?? profile.platform_links?.[0];
+    const remoteUrl = primaryLink?.profile_image_url;
+    if (remoteUrl && /^https?:\/\//i.test(remoteUrl)) return remoteUrl;
+    const path = profile.profile_image_path;
+    if (!path) return null;
+    if (/^https?:\/\//i.test(path) || path.startsWith('data:')) return path;
+    try {
+      return convertFileSrc(path);
+    } catch {
+      return null;
+    }
   });
   
   // Get total number of builds that will be created
@@ -3882,6 +4238,77 @@
   /* ===== Multi-Select Section ===== */
   .build-dialog__multi-select-section {
     margin-bottom: 1rem;
+  }
+
+  .build-dialog__personal-branding--overridden {
+    opacity: 0.65;
+  }
+
+  .build-dialog__personal-branding-item {
+    border-color: rgba(6, 182, 212, 0.25);
+    background: rgba(6, 182, 212, 0.04);
+  }
+
+  .build-dialog__personal-branding-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.5rem;
+  }
+
+  .build-dialog__personal-branding-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .build-dialog__personal-branding-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .build-dialog__personal-branding-avatar-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .build-dialog__personal-branding-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .build-dialog__personal-branding-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .build-dialog__personal-branding-status {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  .build-dialog__personal-branding-status--active {
+    color: var(--sidebar-accent);
+  }
+
+  .build-dialog__personal-branding-status--overridden {
+    color: var(--sidebar-text-muted);
   }
 
   .build-dialog__section-header {

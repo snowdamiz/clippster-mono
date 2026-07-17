@@ -28,7 +28,7 @@ export async function searchAiBrollStock(params: {
       orientation: params.orientation ?? 'portrait',
       media_type: params.mediaType ?? 'video',
       page: params.page ?? 1,
-      per_page: params.perPage ?? 8,
+      per_page: params.perPage ?? 20,
     },
   });
   return response.data;

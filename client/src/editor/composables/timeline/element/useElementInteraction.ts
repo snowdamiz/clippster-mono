@@ -23,7 +23,8 @@ import { useDragRaf } from "../useDragRaf";
 import { createDragDomController } from "./useDragDomController";
 import { TIMELINE_CONSTANTS, VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT } from "../../../constants/timeline-constants";
 import { computeDropTarget } from "../../../lib/timeline/drop-utils";
-import { isMainTrack } from "../../../lib/timeline/track-utils";
+import { getCumulativeHeightBefore, isMainTrack } from "../../../lib/timeline/track-utils";
+import { computeDragRipplePreview } from "../../../lib/timeline/ripple";
 import { generateUUID } from "../../../utils/id";
 import {
 	useTimelineSnapping,
@@ -36,6 +37,8 @@ import type {
 	TimelineElement,
 	TimelineTrack,
 } from "../../../types/timeline";
+
+const EMPTY_RIPPLE = new Map<string, number>();
 
 /**
  * Distance the cursor must travel before a `mousedown` becomes a drag.
@@ -190,6 +193,7 @@ export function useElementInteraction({
 	// updates as a single object replacement per frame — no deep tracking.
 	const dragState = shallowRef<ElementDragState>({ ...initialDragState });
 	const dragDropTarget = shallowRef<DropTarget | null>(null);
+	const dragRippleShifts = shallowRef<Map<string, number>>(EMPTY_RIPPLE);
 	const isPendingDrag = shallowRef(false);
 
 	// Mutable hot-path state: never assigned to a Vue ref except inside the
@@ -198,6 +202,8 @@ export function useElementInteraction({
 	let lastMouseX = 0;
 	let lastMouseY = 0;
 	let mouseDownLocation: { x: number; y: number } | null = null;
+	/** True when the current pointer gesture completed an element move drag. */
+	let didDragElementsThisGesture = false;
 	let dragSnapCache: PendingDragState | null = null;
 	let dragStartTimeValue = 0;
 	let dragStartMouseY = 0;
@@ -390,10 +396,32 @@ export function useElementInteraction({
 				dragSnapCache = drag;
 				dragStartTimeValue = drag.startElementTime;
 				dragStartMouseY = drag.startMouseY;
-				// Activate the GPU-composited drag visual on every selected element.
 				const ids = collectDragElementIds(drag.elementId);
 				dragDom.begin(ids, tracksScrollRef.value);
-				applyDragDomOffsets(adjustedTime, drag.startElementTime, currentMouseY, drag.startMouseY);
+				const initialDrop = getDragDropTarget({
+					clientX,
+					clientY: currentMouseY,
+					elementId: drag.elementId,
+					trackId: drag.trackId,
+					currentTracks: tracks.value,
+					snappedTime: adjustedTime,
+					verticalDragDirection: getVerticalDragDirection({
+						startMouseY: drag.startMouseY,
+						currentMouseY,
+					}),
+				});
+				dragDropTarget.value = initialDrop;
+				applyDragDomOffsets(adjustedTime, drag.startElementTime, initialDrop, drag.trackId);
+				if (movEl) {
+					updateDragRipplePreview(
+						drag.trackId,
+						drag.elementId,
+						drag.startElementTime,
+						movEl.duration,
+						adjustedTime,
+						initialDrop,
+					);
+				}
 				pendingDrag = null;
 				isPendingDrag.value = false;
 				return;
@@ -430,14 +458,11 @@ export function useElementInteraction({
 		if (sourceTrack && movingElement && isMainTrackSolePrimaryMediaClip(sourceTrack, movingElement)) {
 			dragState.value = { ...ds, currentTime: 0, currentMouseY: ds.startMouseY };
 			dragDropTarget.value = null;
-			applyDragDomOffsets(0, dragStartTimeValue, ds.startMouseY, dragStartMouseY);
+			applyDragDomOffsets(0, dragStartTimeValue, null, ds.trackId);
+			if (dragRippleShifts.value.size > 0) dragRippleShifts.value = EMPTY_RIPPLE;
 			onSnapPointChange?.(null);
 			return;
 		}
-
-		dragState.value = { ...ds, currentTime: snappedTime, currentMouseY: clientY };
-		applyDragDomOffsets(snappedTime, dragStartTimeValue, clientY, dragStartMouseY);
-		onSnapPointChange?.(snapPoint);
 
 		const verticalDragDirection = getVerticalDragDirection({
 			startMouseY: ds.startMouseY,
@@ -452,21 +477,83 @@ export function useElementInteraction({
 			snappedTime,
 			verticalDragDirection,
 		});
+		dragState.value = { ...ds, currentTime: snappedTime, currentMouseY: clientY };
 		dragDropTarget.value = dropTarget;
+		applyDragDomOffsets(snappedTime, dragStartTimeValue, dropTarget, ds.trackId);
+		if (movingElement) {
+			updateDragRipplePreview(
+				ds.trackId,
+				ds.elementId,
+				ds.startElementTime,
+				movingElement.duration,
+				snappedTime,
+				dropTarget,
+			);
+		}
+		onSnapPointChange?.(snapPoint);
 	}
 
 	/**
-	 * Pushes the latest drag offsets into the DOM controller. We compute X
-	 * from the snapped time vs. the committed start time so the element
-	 * visually anchors to the snap point even though Vue still renders it
-	 * at its original `left`.
+	 * Pushes the latest drag offsets into the DOM controller. X comes from
+	 * snapped time vs committed start. Y snaps to the target track top so the
+	 * clip never floats between rows.
 	 */
-	function applyDragDomOffsets(currentTime: number, startTimeValue: number, currentMouseY: number, startMouseY: number) {
-		const dx = (currentTime - startTimeValue) * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value;
-		const dy = currentMouseY - startMouseY;
+	function applyDragDomOffsets(
+		currentTime: number,
+		startTimeValue: number,
+		dropTarget: DropTarget | null,
+		sourceTrackId: string | null,
+	) {
+		const dx =
+			(currentTime - startTimeValue) *
+			TIMELINE_CONSTANTS.PIXELS_PER_SECOND *
+			zoomLevel.value;
+		let dy = 0;
+		if (dropTarget && !dropTarget.isNewTrack && sourceTrackId) {
+			const sourceIdx = tracks.value.findIndex((t) => t.id === sourceTrackId);
+			const targetIdx = dropTarget.trackIndex;
+			if (sourceIdx >= 0 && targetIdx >= 0) {
+				const sourceTop = getCumulativeHeightBefore({
+					tracks: tracks.value,
+					trackIndex: sourceIdx,
+				});
+				const targetTop = getCumulativeHeightBefore({
+					tracks: tracks.value,
+					trackIndex: targetIdx,
+				});
+				dy = targetTop - sourceTop;
+			}
+		}
 		dragDom.update(dx, dy);
 	}
 
+	function updateDragRipplePreview(
+		sourceTrackId: string,
+		elementId: string,
+		oldStartTime: number,
+		duration: number,
+		newStartTime: number,
+		dropTarget: DropTarget | null,
+	) {
+		const targetTrack =
+			dropTarget && !dropTarget.isNewTrack
+				? tracks.value[dropTarget.trackIndex]
+				: tracks.value.find((t) => t.id === sourceTrackId);
+		if (!targetTrack) {
+			if (dragRippleShifts.value.size > 0) dragRippleShifts.value = EMPTY_RIPPLE;
+			return;
+		}
+		const next = computeDragRipplePreview({
+			tracks: tracks.value,
+			sourceTrackId,
+			targetTrackId: targetTrack.id,
+			elementId,
+			oldStartTime,
+			duration,
+			newStartTime,
+		});
+		dragRippleShifts.value = next.size > 0 ? next : EMPTY_RIPPLE;
+	}
 	/**
 	 * Returns the set of element ids that visually follow the drag.
 	 * For a single-selection drag that's just the dragged id; for a
@@ -577,6 +664,7 @@ export function useElementInteraction({
 		// Sync linked element (e.g. extracted audio ↔ source video)
 		syncLinkedElement(ds.elementId, ds.trackId, timeDelta);
 
+		didDragElementsThisGesture = true;
 		resetDragVisual();
 	}
 
@@ -585,6 +673,7 @@ export function useElementInteraction({
 		dragDom.end();
 		dragState.value = { ...initialDragState };
 		dragDropTarget.value = null;
+		if (dragRippleShifts.value.size > 0) dragRippleShifts.value = EMPTY_RIPPLE;
 		dragSnapCache = null;
 		onSnapPointChange?.(null);
 	}
@@ -617,6 +706,17 @@ export function useElementInteraction({
 			onMouseUp(event);
 			return;
 		}
+
+		// Plain click with small pointer jitter: collapse multi-selection to the clicked clip
+		// so Delete / toolbar actions only affect the intended segment.
+		const cancelled = pendingDrag;
+		if (
+			cancelled &&
+			!(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+		) {
+			selectElement({ trackId: cancelled.trackId, elementId: cancelled.elementId });
+		}
+
 		pendingDrag = null;
 		isPendingDrag.value = false;
 		// No drag DOM to tear down because the drag never started.
@@ -689,6 +789,7 @@ export function useElementInteraction({
 		}
 
 		event.stopPropagation();
+		didDragElementsThisGesture = false;
 
 		const isMultiSelect = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
 		const alreadySelected = isElementSelected({ trackId: track.id, elementId: element.id });
@@ -750,16 +851,17 @@ export function useElementInteraction({
 	}) {
 		event.stopPropagation();
 
-		if (mouseDownLocation) {
-			const deltaX = Math.abs(event.clientX - mouseDownLocation.x);
-			const deltaY = Math.abs(event.clientY - mouseDownLocation.y);
-			if (deltaX > DRAG_THRESHOLD_PX || deltaY > DRAG_THRESHOLD_PX) {
-				mouseDownLocation = null;
-				return;
-			}
+		if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+
+		// Skip only when this gesture actually moved clips — not for small pointer jitter
+		// that stays below the drag threshold (that case is handled in onPendingMouseUp).
+		if (didDragElementsThisGesture) {
+			didDragElementsThisGesture = false;
+			mouseDownLocation = null;
+			return;
 		}
 
-		if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+		mouseDownLocation = null;
 
 		// On plain click (no drag), collapse to single element selection.
 		// This handles: clicking an unselected element, or clicking one element
@@ -772,6 +874,7 @@ export function useElementInteraction({
 	return {
 		dragState,
 		dragDropTarget,
+		dragRippleShifts,
 		handleElementMouseDown,
 		handleElementClick,
 		getLastMouseX: () => lastMouseX,

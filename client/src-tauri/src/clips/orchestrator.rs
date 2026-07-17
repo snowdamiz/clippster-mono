@@ -776,10 +776,23 @@ pub async fn build_clip_internal_simple(
                 None // Using pre-rendered overlays, no ASS file needed
             };
 
-            // Handle text overlays - partition into simple (ASS) and advanced (image-based)
+            // Handle text overlays - partition into simple (ASS) and advanced (image-based).
+            // per_ratio_configs are geometry/style overrides only (missing keys → root fallback).
             let mut rendered_text_images: Vec<(String, TextOverlaySettings)> = Vec::new();
             let final_subtitle_file = if let Some(overlays) = &text_overlays {
-                println!("[Rust] TEXT OVERLAY DEBUG: Received {} text overlays for {}", overlays.len(), aspect_ratio_str);
+                // Output canvas size (matches multi-region / framing builds: 1080 base width)
+                let output_w: u32 = 1080;
+                let output_h: u32 = {
+                    let h = ((output_w as f32) * aspect_ratio.height / aspect_ratio.width).round() as u32;
+                    if h % 2 == 0 { h } else { h + 1 }
+                };
+                println!(
+                    "[Rust] TEXT OVERLAY DEBUG: Received {} text overlays for {} (canvas {}x{})",
+                    overlays.len(),
+                    aspect_ratio_str,
+                    output_w,
+                    output_h
+                );
                 for (i, ovl) in overlays.iter().enumerate() {
                     println!("[Rust] TEXT OVERLAY [{}]: id={}, text='{}', start={}, end={}, pos=({}, {}), bg_enabled={}", 
                         i, ovl.id, ovl.text, ovl.start_time, ovl.end_time, ovl.position_x, ovl.position_y, ovl.style.background_enabled);
@@ -788,17 +801,17 @@ pub async fn build_clip_internal_simple(
                     let subtitle_offset = intro_duration.unwrap_or(0.0);
                     
                     // Partition overlays: simple ones use ASS, advanced ones get rendered to PNG
-                    let (simple_overlays, advanced_overlays) = partition_overlays(overlays, &aspect_ratio_str);
+                    let (mut simple_overlays, advanced_overlays) = partition_overlays(overlays, &aspect_ratio_str);
                     
                     println!("[Rust] Text overlays for {}: {} simple (ASS), {} advanced (PNG)", 
                         aspect_ratio_str, simple_overlays.len(), advanced_overlays.len());
                     
-                    // Render advanced overlays to PNG images
+                    // Render advanced overlays to PNG images at OUTPUT dimensions
                     for overlay in &advanced_overlays {
                         match render_text_overlay_to_png(
                             overlay,
-                            video_info.width,
-                            video_info.height,
+                            output_w,
+                            output_h,
                             &aspect_ratio_str,
                             &clip_base_dir,
                         ) {
@@ -807,13 +820,13 @@ pub async fn build_clip_internal_simple(
                                 rendered_text_images.push((image_path, overlay.clone()));
                             }
                             Err(e) => {
-                                println!("[Rust] Warning: Failed to render advanced text overlay {}: {}", overlay.id, e);
-                                // Fall back to ASS for this overlay (add to simple list)
+                                println!("[Rust] Warning: Failed to render advanced text overlay {}: {} — falling back to ASS", overlay.id, e);
+                                simple_overlays.push(overlay.clone());
                             }
                         }
                     }
                     
-                    // Process simple overlays with ASS
+                    // Process simple overlays with ASS (PlayRes matches output canvas)
                     if !simple_overlays.is_empty() {
                         if let Some(ref sub_path) = subtitle_file {
                             // Merge simple text overlays into existing subtitle ASS file
@@ -821,8 +834,8 @@ pub async fn build_clip_internal_simple(
                             merge_text_overlays_into_ass(
                                 sub_path,
                                 &simple_overlays,
-                                video_info.width,
-                                video_info.height,
+                                output_w,
+                                output_h,
                                 subtitle_offset,
                                 &aspect_ratio_str
                             ).map_err(|e| format!("Failed to merge text overlays: {}", e))?;
@@ -835,8 +848,8 @@ pub async fn build_clip_internal_simple(
                             generate_text_overlay_ass_file(
                                 &simple_overlays,
                                 &text_overlay_path,
-                                video_info.width,
-                                video_info.height,
+                                output_w,
+                                output_h,
                                 subtitle_offset,
                                 text_overlay_fonts_dir.as_deref(),
                                 &aspect_ratio_str

@@ -15,19 +15,19 @@ import type {
 import { EditorCore } from "../../../../core";
 
 export type UpdatableVideoProps = Partial<
-	Pick<VideoElement, "mediaId" | "opacity" | "transform" | "muted" | "hidden" | "volume" | "speed" | "reversed" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut" | "masks">
+	Pick<VideoElement, "mediaId" | "opacity" | "transform" | "muted" | "hidden" | "volume" | "speed" | "reversed" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut" | "masks" | "keyframes">
 >;
 
 export type UpdatableImageProps = Partial<
-	Pick<ImageElement, "mediaId" | "opacity" | "transform" | "hidden" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut" | "masks">
+	Pick<ImageElement, "mediaId" | "opacity" | "transform" | "hidden" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut" | "masks" | "keyframes">
 >;
 
 export type UpdatableAudioProps = Partial<
-	Pick<AudioElement, "volume" | "muted" | "speed" | "reversed" | "fadeIn" | "fadeOut" | "audioEffects">
+	Pick<AudioElement, "volume" | "muted" | "speed" | "reversed" | "fadeIn" | "fadeOut" | "audioEffects" | "keyframes">
 >;
 
 export type UpdatableStickerProps = Partial<
-	Pick<StickerElement, "opacity" | "transform" | "color" | "hidden" | "fadeIn" | "fadeOut">
+	Pick<StickerElement, "opacity" | "transform" | "color" | "hidden" | "fadeIn" | "fadeOut" | "keyframes">
 >;
 
 export type UpdatableEffectProps = Partial<

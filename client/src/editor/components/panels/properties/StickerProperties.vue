@@ -5,6 +5,7 @@ import { useElementSelection } from "../../../composables/timeline/element/useEl
 import type { StickerElement } from "../../../types/timeline";
 import { Sticker, Trash2, RotateCcw, Diamond } from "lucide-vue-next";
 import AnimationProperties from "./AnimationProperties.vue";
+import ElementTimingFields from "./ElementTimingFields.vue";
 import KeyframeEditorPanel from "../KeyframeEditorPanel.vue";
 
 const props = defineProps<{
@@ -145,11 +146,6 @@ function handleDelete() {
 	});
 }
 
-function formatTime(seconds: number): string {
-	const min = Math.floor(seconds / 60);
-	const sec = (seconds % 60).toFixed(2);
-	return `${min}:${sec.padStart(5, "0")}`;
-}
 </script>
 
 <template>
@@ -168,16 +164,7 @@ function formatTime(seconds: number): string {
 				<label class="text-xs text-zinc-500">Name</label>
 				<p class="text-sm">{{ element.name }}</p>
 			</div>
-			<div class="flex gap-4">
-				<div class="space-y-1">
-					<label class="text-xs text-zinc-500">Start</label>
-					<p class="text-sm">{{ formatTime(element.startTime) }}</p>
-				</div>
-				<div class="space-y-1">
-					<label class="text-xs text-zinc-500">Duration</label>
-					<p class="text-sm">{{ formatTime(element.duration) }}</p>
-				</div>
-			</div>
+			<ElementTimingFields :element="element" :track-id="trackId" />
 		</div>
 
 		<!-- Opacity -->

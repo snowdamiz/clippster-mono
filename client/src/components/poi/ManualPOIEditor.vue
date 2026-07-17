@@ -126,12 +126,16 @@
                   </template>
                   <POISourcePanel
                     v-else
-                    :regions="regions"
+                    :regions="displayRegions"
                     :selected-region-id="selectedRegionId"
                     :thumbnail-url="thumbnailUrl"
                     :source-aspect-ratio="sourceAspectRatio"
                     :target-aspect-ratio="targetAspectRatio"
                     :social-overlay-preset="socialOverlayPreset"
+                    :next-region-number="nextRegionNumber"
+                    :show-scaled-16x9-tab="sourceFrameMode === 'scale'"
+                    :show-subtitles-tab="subtitlePositioningEnabled"
+                    :show-text-box-tab="Boolean(clipTextLocal?.enabled)"
                     :video-url="videoUrl"
                     :video-time="absoluteVideoTime"
                     :is-playing="isPlaying"
@@ -160,7 +164,7 @@
                 <!-- Target Panel (Right) -->
                 <div class="flex-1">
                   <POITargetPanel
-                    :regions="regions"
+                    :regions="displayRegions"
                     :selected-region-id="selectedRegionId"
                     :thumbnail-url="thumbnailUrl"
                     :target-aspect-ratio="targetAspectRatio"
@@ -173,7 +177,8 @@
                     :overlay-previews="resolvedOverlays"
                     :subtitle-settings="localSubtitleSettings"
                     :subtitle-position="localSubtitlePosition"
-                    :subtitle-positioning-enabled="subtitlePositioningEnabled"
+                    :subtitle-preview-visible="subtitlePositioningEnabled"
+                    :subtitle-positioning-enabled="subtitlePositioningActive"
                     :transcript-words="transcriptWords"
                     :transcript-segments="transcriptSegments"
                     :initial-source-framing="targetPanelInitialFraming"
@@ -274,7 +279,8 @@
               <POISegmentTimeline
                 v-if="clipDuration > 0"
                 :segments="segmentConfigs"
-                :broll-markers="aiBroll.brollMarkers.value"
+                :broll-regions="brollConfigs"
+                :active-broll-id="activeBrollId"
                 :active-segment-id="activeSegmentId"
                 :duration="clipDuration"
                 :current-time="currentTime"
@@ -286,6 +292,9 @@
                 @delete-segment="deleteSegment"
                 @select-segment="selectSegment"
                 @update-segment="updateSegment"
+                @select-broll="selectBroll"
+                @delete-broll="deleteBroll"
+                @update-broll="updateBroll"
                 @seek-time="handleSeekTime"
               />
 
@@ -293,29 +302,37 @@
 
             <!-- Feature controls: Subtitles + Clip text box + AI B-roll -->
             <div
-              v-if="subtitleSettings || clipId || projectId"
+              v-if="localSubtitleSettings || clipId || projectId"
               class="poi-dialog__divider-t poi-dialog__feature-grid"
             >
               <!-- Subtitles cell -->
-              <div v-if="subtitleSettings" class="poi-dialog__feature-cell">
+              <div v-if="localSubtitleSettings" class="poi-dialog__feature-cell">
                 <Checkbox
-                  v-model="subtitlePositioningEnabled"
+                  :model-value="subtitlePositioningEnabled"
                   aria-label="Enable subtitle positioning"
                   class="poi-dialog__checkbox poi-dialog__checkbox--purple shrink-0"
+                  @update:model-value="onSubtitlePositioningToggle"
                 />
                 <CaptionsIcon class="h-4 w-4 poi-dialog__icon-purple shrink-0" />
                 <div class="flex-1 min-w-0">
                   <span class="poi-dialog__feature-label">Subtitles</span>
-                  <span v-if="subtitlePositioningEnabled" class="text-[10px] ml-2 poi-dialog__muted">
-                    · Drag to reposition
+                  <span v-if="isSubtitleTranscribing" class="text-[10px] ml-2 poi-dialog__muted">
+                    · {{ subtitleTranscribeStatusText }}
+                  </span>
+                  <span v-else-if="!hasTranscript" class="text-[10px] ml-2 poi-dialog__muted">
+                    · Transcript needed
+                  </span>
+                  <span v-else-if="subtitlePositioningEnabled" class="text-[10px] ml-2 poi-dialog__muted">
+                    · Select Subtitles tab to position on export preview
                   </span>
                 </div>
                 <button
                   type="button"
                   class="poi-dialog__btn poi-dialog__btn--secondary poi-dialog__btn--sm shrink-0"
-                  @click="openSubtitleSettings"
+                  :disabled="isSubtitleTranscribing"
+                  @click="hasTranscript ? openSubtitleSettings() : requestSubtitleTranscription()"
                 >
-                  Edit
+                  {{ subtitleButtonLabel }}
                 </button>
                 <span class="text-[10px] shrink-0 font-mono poi-dialog__faint">{{ targetAspectRatio }}</span>
               </div>
@@ -325,8 +342,8 @@
                 <Type class="h-4 w-4 poi-dialog__icon-amber shrink-0" />
                 <div class="flex-1 min-w-0">
                   <span class="poi-dialog__feature-label">Clip text box</span>
-                  <span v-if="clipTextBoxPositioningActive" class="text-[10px] ml-2 poi-dialog__muted">
-                    · Drag on export preview
+                  <span v-if="clipTextLocal?.enabled" class="text-[10px] ml-2 poi-dialog__muted">
+                    · Select Text box tab to position on export preview
                   </span>
                 </div>
                 <button
@@ -365,11 +382,11 @@
                   <AlertCircleIcon class="w-4 h-4 inline mr-1" />
                   Add a region, enable Scale 16:9 / Use 16:9, or enable the clip text box
                 </span>
-                <span v-else-if="sourceFrameMode !== 'none' && regions.length === 0" class="poi-dialog__faint">
+                <span v-else-if="sourceFrameMode !== 'none' && displayRegions.length === 0" class="poi-dialog__faint">
                   {{ sourceFrameMode === 'use16x9' ? 'Use 16:9' : 'Scale 16:9' }} configured
                 </span>
                 <span v-else class="poi-dialog__faint">
-                  {{ regions.length }} region{{ regions.length !== 1 ? 's' : '' }} configured
+                  {{ totalRegionCount }} region{{ totalRegionCount !== 1 ? 's' : '' }} configured
                 </span>
               </div>
               <div class="flex items-center gap-2.5">
@@ -431,6 +448,7 @@
   import SubtitlePropertiesPanel from '@/components/SubtitlePropertiesPanel.vue';
   import { Checkbox } from '@/components/ui/checkbox';
   import type {
+    BrollRegionConfig,
     ManualRegion,
     ManualFramingConfig,
     ManualSourceFramingPayload,
@@ -444,6 +462,7 @@
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
   import {
     createDefaultClipTextBoxState,
+    ensureClipTextPerRatioEntry,
     mergeClipTextBoxForRatio,
     parseClipTextOverlayJson,
     serializeClipTextBoxState,
@@ -453,6 +472,16 @@
   import { useAiBroll } from '@/composables/useAiBroll';
   import type { ManualBrollMediaType } from '@/composables/useAiBroll';
   import type { AiBrollPlannerOptions } from '@/types/ai-broll';
+  import {
+    ensureGlobalDisplayNumbers,
+    getNextRegionDisplayNumber,
+  } from '@/utils/poiRegionNumbering';
+  import {
+    POI_OVERLAY_SCALED_16X9_ID,
+    POI_OVERLAY_SUBTITLES_ID,
+    POI_OVERLAY_TEXTBOX_ID,
+    isPoiOverlaySelection,
+  } from '@/utils/poiOverlaySelection';
 
   // Animation styles shown in the subtitle section (matches SubtitlePropertiesPanel)
   const ANIMATION_STYLES = [
@@ -534,6 +563,10 @@
     // Optional transcript data for subtitle rendering
     transcriptWords?: WordInfo[];
     transcriptSegments?: WhisperSegment[];
+    isSubtitleTranscribing?: boolean;
+    subtitleTranscribeProgress?: number;
+    subtitleTranscribeStage?: string;
+    subtitleTranscribeMessage?: string;
     clipId?: string | null;
     projectId?: string | null;
     /** Raw JSON from clips.clip_text_overlay */
@@ -550,6 +583,10 @@
     subtitlePositionOverride: null,
     transcriptWords: () => [],
     transcriptSegments: () => [],
+    isSubtitleTranscribing: false,
+    subtitleTranscribeProgress: 0,
+    subtitleTranscribeStage: '',
+    subtitleTranscribeMessage: '',
     clipId: null,
     projectId: null,
     clipTextOverlayJson: null,
@@ -561,21 +598,32 @@
     subtitlePositionChange: [position: { x: number; y: number; width?: number; presetId?: string }];
     subtitleSettingsChange: [settings: SubtitleSettings];
     clipTextOverlayChange: [json: string | null];
+    requestSubtitleTranscription: [];
   }>();
 
-  // Local state
-  const regions = ref<ManualRegion[]>([]);
   const selectedRegionId = ref<string | null>(null);
 
   /** Preview-only TikTok / Reels / Shorts chrome on the 9:16 output (toggle lives on source panel). */
   const socialOverlayPreset = ref<SocialOverlayPreset | null>(null);
 
-  // Base regions - apply to entire clip when no segment is active
+  // Base regions — default framing outside all segments
   const baseRegions = ref<ManualRegion[]>([]);
 
   // Segment management state
   const segmentConfigs = ref<SegmentRegionConfig[]>([]);
-  const activeSegmentId = ref<string | null>(null);
+  const brollConfigs = ref<BrollRegionConfig[]>([]);
+
+  function segmentAtTime(time: number): SegmentRegionConfig | undefined {
+    return segmentConfigs.value.find(
+      (seg) => time >= seg.startTime && time <= seg.endTime,
+    );
+  }
+
+  function brollsAtTime(time: number): BrollRegionConfig[] {
+    return brollConfigs.value.filter(
+      (broll) => time >= broll.startTime && time <= broll.endTime,
+    );
+  }
 
   const showAiBrollPanel = ref(false);
   const isManualBrollAdding = ref(false);
@@ -594,6 +642,22 @@
       (props.transcriptWords.length > 0 || props.transcriptSegments.length > 0),
   );
 
+  const hasTranscript = computed(
+    () => props.transcriptWords.length > 0 || props.transcriptSegments.length > 0,
+  );
+
+  const subtitleTranscribeStatusText = computed(() => {
+    if (props.subtitleTranscribeMessage) return props.subtitleTranscribeMessage;
+    if (props.subtitleTranscribeStage) return props.subtitleTranscribeStage.replace(/_/g, ' ');
+    const progress = Math.round(props.subtitleTranscribeProgress || 0);
+    return progress > 0 ? `Generating ${progress}%` : 'Generating';
+  });
+
+  const subtitleButtonLabel = computed(() => {
+    if (props.isSubtitleTranscribing) return 'Generating...';
+    return hasTranscript.value ? 'Edit' : 'Generate subtitles';
+  });
+
   const brollOrientation = computed<'portrait' | 'landscape'>(() =>
     props.targetAspectRatio === '16:9' ? 'landscape' : 'portrait',
   );
@@ -606,9 +670,9 @@
 
   const canApplyFraming = computed(
     () =>
-      regions.value.length > 0 ||
       baseRegions.value.length > 0 ||
       segmentConfigs.value.some((s) => s.regions.length > 0) ||
+      brollConfigs.value.length > 0 ||
       sourceFrameMode.value !== 'none' ||
       Boolean(clipTextLocal.value?.enabled),
   );
@@ -624,6 +688,11 @@
     if (!localSubtitleSettings.value) return;
     subtitleSettingsRevert = JSON.parse(JSON.stringify(localSubtitleSettings.value));
     subtitleSettingsMode.value = true;
+  }
+
+  function requestSubtitleTranscription() {
+    if (props.isSubtitleTranscribing) return;
+    emit('requestSubtitleTranscription');
   }
 
   function doneSubtitleSettings() {
@@ -646,15 +715,22 @@
     emit('subtitleSettingsChange', localSubtitleSettings.value);
   }
   const clipTextLocal = ref<ClipTextBoxState | null>(null);
-  const clipTextPositioningEnabled = ref(false);
 
   const clipTextBoxForTarget = computed(() => {
     if (!clipTextLocal.value?.enabled) return null;
     return mergeClipTextBoxForRatio(clipTextLocal.value, props.targetAspectRatio);
   });
 
+  const subtitlePositioningActive = computed(
+    () =>
+      subtitlePositioningEnabled.value &&
+      selectedRegionId.value === POI_OVERLAY_SUBTITLES_ID
+  );
+
   const clipTextBoxPositioningActive = computed(
-    () => Boolean(clipTextLocal.value?.enabled && clipTextPositioningEnabled.value)
+    () =>
+      Boolean(clipTextLocal.value?.enabled) &&
+      selectedRegionId.value === POI_OVERLAY_TEXTBOX_ID
   );
 
   watch(
@@ -665,9 +741,6 @@
         return;
       }
       clipTextLocal.value = parseClipTextOverlayJson(raw);
-      if (clipTextLocal.value?.enabled) {
-        clipTextPositioningEnabled.value = true;
-      }
     },
     { immediate: true }
   );
@@ -690,6 +763,43 @@
   // Video playback state
   const isPlaying = ref(false);
   const currentTime = ref(0);
+
+  /** Regions shown in source/target panels — segment regions while playhead is in a segment, else base. */
+  const displayRegions = computed(() => {
+    const seg = segmentAtTime(currentTime.value);
+    const framingRegions = seg ? seg.regions : baseRegions.value;
+    return [...framingRegions, ...brollsAtTime(currentTime.value).map((broll) => broll.region)];
+  });
+
+  const activeSegmentId = computed(() => segmentAtTime(currentTime.value)?.segmentId ?? null);
+  const activeBrollId = computed(() => {
+    if (!selectedRegionId.value) return null;
+    return brollConfigs.value.find((broll) => broll.region.id === selectedRegionId.value)?.brollId ?? null;
+  });
+
+  const nextRegionNumber = computed(() =>
+    getNextRegionDisplayNumber([
+      baseRegions.value,
+      ...segmentConfigs.value.map((s) => s.regions),
+    ]),
+  );
+
+  const totalRegionCount = computed(() => {
+    const ids = new Set<string>();
+    for (const r of baseRegions.value) ids.add(r.id);
+    for (const seg of segmentConfigs.value) {
+      for (const r of seg.regions) ids.add(r.id);
+    }
+    for (const broll of brollConfigs.value) ids.add(broll.region.id);
+    return ids.size;
+  });
+
+  watch(displayRegions, (regions) => {
+    if (!selectedRegionId.value || isPoiOverlaySelection(selectedRegionId.value)) return;
+    if (!regions.some((r) => r.id === selectedRegionId.value)) {
+      selectedRegionId.value = regions[0]?.id ?? null;
+    }
+  });
   const videoUrl = ref<string | null>(null);
   const videoLoading = ref(false);
   const videoError = ref<string | null>(null);
@@ -883,8 +993,11 @@
 
   // Handle time update from video
   function onTimeUpdate(time: number) {
-    // Convert absolute time to clip-relative time
-    currentTime.value = time - props.clipStartTime;
+    // Raw VOD previews report absolute source time; extracted clip previews report 0-based time.
+    currentTime.value =
+      props.clipStartTime > 0 && time >= props.clipStartTime
+        ? time - props.clipStartTime
+        : time;
 
     // Loop back to start if we've reached the end (while still playing)
     if (currentTime.value >= clipDuration.value && isPlaying.value) {
@@ -1031,28 +1144,24 @@
     async (isOpen) => {
       if (isOpen) {
         // Load initial configuration
-        if (props.initialConfig && props.initialConfig.regions.length > 0) {
-          // Deep clone the regions
-          regions.value = JSON.parse(JSON.stringify(props.initialConfig.regions));
-          
-          // Load segment configurations if present
-          if (props.initialConfig.segmentConfigs && props.initialConfig.segmentConfigs.length > 0) {
-            segmentConfigs.value = JSON.parse(JSON.stringify(props.initialConfig.segmentConfigs));
-            // Don't auto-activate first segment - let the watch on currentTime determine active segment
-            activeSegmentId.value = null;
-            // Save base regions if we have regions but no active segment
-            if (regions.value.length > 0) {
-              baseRegions.value = JSON.parse(JSON.stringify(regions.value));
-            }
-          } else {
-            segmentConfigs.value = [];
-            activeSegmentId.value = null;
-          }
+        if (props.initialConfig) {
+          baseRegions.value = JSON.parse(JSON.stringify(props.initialConfig.regions ?? []));
+          segmentConfigs.value =
+            props.initialConfig.segmentConfigs && props.initialConfig.segmentConfigs.length > 0
+              ? JSON.parse(JSON.stringify(props.initialConfig.segmentConfigs))
+              : [];
+          brollConfigs.value =
+            props.initialConfig.brollConfigs && props.initialConfig.brollConfigs.length > 0
+              ? JSON.parse(JSON.stringify(props.initialConfig.brollConfigs))
+              : [];
+          ensureGlobalDisplayNumbers(baseRegions.value, segmentConfigs.value);
         } else {
-          regions.value = [];
+          baseRegions.value = [];
           segmentConfigs.value = [];
-          activeSegmentId.value = null;
+          brollConfigs.value = [];
         }
+
+        selectedRegionId.value = displayRegions.value[0]?.id ?? null;
 
         if (props.initialConfig) {
           sourceFrameMode.value = props.initialConfig.sourceFrameMode ?? 'none';
@@ -1071,8 +1180,6 @@
           poiBlurAmount.value = 12;
           sourceTransform.value = null;
         }
-
-        selectedRegionId.value = regions.value.length > 0 ? regions.value[0].id : null;
 
         // Reset playback state
         isPlaying.value = false;
@@ -1131,27 +1238,55 @@
     }
   );
 
-  // Add a new region
+  function editableRegions(): ManualRegion[] {
+    const seg = segmentAtTime(currentTime.value);
+    return seg ? seg.regions : baseRegions.value;
+  }
+
+  // Add a new region to the active time context (base or current segment)
   function addRegion(region: ManualRegion) {
-    regions.value.push(region);
+    if (region.displayNumber == null) {
+      region.displayNumber = nextRegionNumber.value;
+    }
+    if (!region.label) {
+      region.label = `Region ${region.displayNumber}`;
+    }
+    editableRegions().push(region);
   }
 
   // Update a region
   function updateRegion(id: string, update: Partial<ManualRegion>) {
-    const index = regions.value.findIndex((r) => r.id === id);
+    const list = editableRegions();
+    const index = list.findIndex((r) => r.id === id);
     if (index !== -1) {
-      regions.value[index] = { ...regions.value[index], ...update };
+      list[index] = { ...list[index], ...update };
+      return;
+    }
+
+    const broll = brollConfigs.value.find((item) => item.region.id === id);
+    if (broll) {
+      broll.region = { ...broll.region, ...update };
     }
   }
 
   // Delete a region
   function deleteRegion(id: string) {
-    const index = regions.value.findIndex((r) => r.id === id);
-    if (index !== -1) {
-      regions.value.splice(index, 1);
+    for (const list of [baseRegions.value, ...segmentConfigs.value.map((s) => s.regions)]) {
+      const index = list.findIndex((r) => r.id === id);
+      if (index !== -1) {
+        list.splice(index, 1);
+        if (selectedRegionId.value === id) {
+          selectedRegionId.value = displayRegions.value[0]?.id ?? null;
+        }
+        return;
+      }
+    }
+    const brollIndex = brollConfigs.value.findIndex((broll) => broll.region.id === id);
+    if (brollIndex !== -1) {
+      brollConfigs.value.splice(brollIndex, 1);
     }
     if (selectedRegionId.value === id) {
-      selectedRegionId.value = regions.value.length > 0 ? regions.value[0].id : null;
+      selectedRegionId.value = displayRegions.value[0]?.id ?? null;
     }
   }
 
@@ -1162,6 +1297,7 @@
 
   // Handle source framing updates from POITargetPanel (scale / use16x9 / blur / transform)
   function handleSourceTransformUpdate(payload: ManualSourceFramingPayload) {
+    const prevMode = sourceFrameMode.value;
     sourceFrameMode.value = payload.mode;
     poiBlurEnabled.value = payload.blurEnabled;
     poiBlurAmount.value = payload.blurAmount;
@@ -1173,6 +1309,11 @@
         x: payload.x,
         y: payload.y,
       };
+    }
+    if (payload.mode === 'scale' && prevMode !== 'scale') {
+      selectedRegionId.value = POI_OVERLAY_SCALED_16X9_ID;
+    } else if (payload.mode !== 'scale' && selectedRegionId.value === POI_OVERLAY_SCALED_16X9_ID) {
+      selectedRegionId.value = displayRegions.value[0]?.id ?? null;
     }
   }
 
@@ -1241,15 +1382,15 @@
     try {
       const result = await aiBroll.applySuggestionToConfig(
         suggestion,
-        segmentConfigs.value,
+        brollConfigs.value,
         props.projectId,
-        segmentConfigs.value.length,
+        brollConfigs.value.length,
       );
-      segmentConfigs.value = result.segmentConfigs;
-      const appliedSeg = segmentConfigs.value.find((seg) => seg.startTime === suggestion.startTime);
-      activeSegmentId.value = appliedSeg?.segmentId ?? activeSegmentId.value;
-      if (appliedSeg) {
-        regions.value = JSON.parse(JSON.stringify(appliedSeg.regions));
+      brollConfigs.value = result.brollConfigs;
+      const appliedBroll = brollConfigs.value.find((broll) => broll.suggestionId === suggestion.id);
+      if (appliedBroll) {
+        currentTime.value = appliedBroll.startTime;
+        selectedRegionId.value = appliedBroll.region.id;
       }
     } catch (e) {
       console.error('[ManualPOIEditor] Failed to apply B-roll:', e);
@@ -1306,19 +1447,29 @@
         projectId: props.projectId,
         startTime: payload.startTime,
         duration,
-        segmentConfigs: segmentConfigs.value,
-        regionIndex: segmentConfigs.value.length,
+        brollConfigs: brollConfigs.value,
+        regionIndex: brollConfigs.value.length,
       });
-      segmentConfigs.value = result.segmentConfigs;
-      const appliedSeg = segmentConfigs.value.find((seg) => seg.startTime === payload.startTime);
-      activeSegmentId.value = appliedSeg?.segmentId ?? activeSegmentId.value;
-      if (appliedSeg) {
-        regions.value = JSON.parse(JSON.stringify(appliedSeg.regions));
+      brollConfigs.value = result.brollConfigs;
+      const appliedBroll = brollConfigs.value.find((broll) => broll.suggestionId === result.suggestion.id);
+      if (appliedBroll) {
+        currentTime.value = appliedBroll.startTime;
+        selectedRegionId.value = appliedBroll.region.id;
       }
     } catch (e) {
       console.error('[ManualPOIEditor] Failed to add manual B-roll:', e);
     } finally {
       isManualBrollAdding.value = false;
+    }
+  }
+
+  function onSubtitlePositioningToggle(checked: boolean | 'indeterminate') {
+    const enabled = checked === true;
+    subtitlePositioningEnabled.value = enabled;
+    if (enabled) {
+      selectedRegionId.value = POI_OVERLAY_SUBTITLES_ID;
+    } else if (selectedRegionId.value === POI_OVERLAY_SUBTITLES_ID) {
+      selectedRegionId.value = displayRegions.value[0]?.id ?? null;
     }
   }
 
@@ -1340,6 +1491,7 @@
 
   async function persistClipTextToDb() {
     if (!props.clipId || !clipTextLocal.value) return;
+    clipTextLocal.value = ensureClipTextPerRatioEntry(clipTextLocal.value, props.targetAspectRatio);
     const { updateClipTextOverlay } = await import('@/services/database/clips');
     await updateClipTextOverlay(props.clipId, clipTextLocal.value);
     emit('clipTextOverlayChange', serializeClipTextBoxState(clipTextLocal.value));
@@ -1354,6 +1506,9 @@
 
   async function onClipTextPanelDelete() {
     clipTextLocal.value = null;
+    if (selectedRegionId.value === POI_OVERLAY_TEXTBOX_ID) {
+      selectedRegionId.value = displayRegions.value[0]?.id ?? null;
+    }
     await persistClipTextClearDb();
   }
 
@@ -1389,11 +1544,19 @@
       clipTextLocal.value = createDefaultClipTextBoxState(clipDuration.value);
     }
     textBoxSettingsMode.value = true;
-    clipTextPositioningEnabled.value = true;
     await persistClipTextToDb();
+    selectedRegionId.value = POI_OVERLAY_TEXTBOX_ID;
   }
 
-  function doneTextBoxSettings() {
+  async function doneTextBoxSettings() {
+    if (clipTextLocal.value?.enabled) {
+      clipTextLocal.value = ensureClipTextPerRatioEntry(
+        clipTextLocal.value,
+        props.targetAspectRatio
+      );
+      await persistClipTextToDb();
+      selectedRegionId.value = POI_OVERLAY_TEXTBOX_ID;
+    }
     textBoxSettingsMode.value = false;
   }
 
@@ -1401,6 +1564,9 @@
     const revert = textBoxRevertJson.value;
     if (revert == null) {
       clipTextLocal.value = null;
+      if (selectedRegionId.value === POI_OVERLAY_TEXTBOX_ID) {
+        selectedRegionId.value = displayRegions.value[0]?.id ?? null;
+      }
       await persistClipTextClearDb();
     } else {
       clipTextLocal.value = parseClipTextOverlayJson(revert);
@@ -1578,6 +1744,11 @@
           fontSize: settings.fontSize
         });
         localSubtitleSettings.value = { ...settings };
+        // Enable positioning when subtitles are turned on while the editor is already open
+        // (e.g. after Generate Transcript → Edit Subtitles from this dialog).
+        if (settings.enabled && props.modelValue) {
+          subtitlePositioningEnabled.value = true;
+        }
       }
     },
     { immediate: true, deep: true }
@@ -1590,78 +1761,49 @@
     { deep: true }
   );
 
-  // Add a new segment
+  // Add a new segment (starts empty — add regions after seeking into the segment)
   function addSegment() {
-    // Create segment at current playhead position (or at end if no playhead)
-    const startTime = currentTime.value !== null ? currentTime.value : 
-                      (segmentConfigs.value.length > 0 ? segmentConfigs.value[segmentConfigs.value.length - 1].endTime : 0);
-    
-    // Default duration: 5 seconds or 1/4 of clip duration, whichever is smaller
+    const startTime =
+      currentTime.value !== null
+        ? currentTime.value
+        : segmentConfigs.value.length > 0
+          ? segmentConfigs.value[segmentConfigs.value.length - 1].endTime
+          : 0;
+
     const defaultDuration = Math.min(5, clipDuration.value / 4);
     const endTime = Math.min(startTime + defaultDuration, clipDuration.value);
-    
+
     if (startTime >= clipDuration.value) return;
-    
-    // If this is the first segment and we're not currently in a segment, save current regions as base
-    if (segmentConfigs.value.length === 0 && activeSegmentId.value === null) {
-      baseRegions.value = JSON.parse(JSON.stringify(regions.value));
-    }
-    
+
     const newSegment: SegmentRegionConfig = {
       segmentId: `segment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       startTime,
       endTime,
-      regions: JSON.parse(JSON.stringify(regions.value)), // Copy current regions
+      regions: [],
     };
-    
+
     segmentConfigs.value.push(newSegment);
-    
-    // Sort segments by start time
     segmentConfigs.value.sort((a, b) => a.startTime - b.startTime);
-    
-    activeSegmentId.value = newSegment.segmentId;
+
+    currentTime.value = startTime;
+    selectedRegionId.value = null;
   }
 
   // Delete a segment
   function deleteSegment(segmentId: string) {
-    const index = segmentConfigs.value.findIndex(s => s.segmentId === segmentId);
+    const index = segmentConfigs.value.findIndex((s) => s.segmentId === segmentId);
     if (index !== -1) {
       segmentConfigs.value.splice(index, 1);
-      if (activeSegmentId.value === segmentId) {
-        activeSegmentId.value = segmentConfigs.value[0]?.segmentId || null;
-      }
+      selectedRegionId.value = displayRegions.value[0]?.id ?? null;
     }
   }
 
-  // Select a segment
+  // Select a segment — seek to its start so segment regions become active for editing
   function selectSegment(segmentId: string) {
-    const segment = segmentConfigs.value.find(s => s.segmentId === segmentId);
+    const segment = segmentConfigs.value.find((s) => s.segmentId === segmentId);
     if (!segment) return;
-    
-    // Check if current time is actually within this segment's range
-    const isWithinSegment = currentTime.value >= segment.startTime && currentTime.value <= segment.endTime;
-    
-    if (isWithinSegment) {
-      // Save current regions before switching
-      if (activeSegmentId.value && activeSegmentId.value !== segmentId) {
-        // Save current segment's regions
-        const currentSegment = segmentConfigs.value.find(s => s.segmentId === activeSegmentId.value);
-        if (currentSegment) {
-          currentSegment.regions = JSON.parse(JSON.stringify(regions.value));
-        }
-      } else if (activeSegmentId.value === null) {
-        // Save base regions
-        baseRegions.value = JSON.parse(JSON.stringify(regions.value));
-      }
-      
-      // Switch to segment and load its regions
-      activeSegmentId.value = segmentId;
-      regions.value = JSON.parse(JSON.stringify(segment.regions));
-    } else {
-      // We're outside the segment - don't activate it, just seek to its start time
-      // This will trigger the watch on currentTime which will handle the segment switch
-      currentTime.value = segment.startTime;
-    }
+    currentTime.value = segment.startTime;
+    selectedRegionId.value = segment.regions[0]?.id ?? null;
   }
 
   // Update segment times (from timeline drag/resize)
@@ -1677,69 +1819,43 @@
     }
   }
 
+  function selectBroll(brollId: string) {
+    const broll = brollConfigs.value.find((item) => item.brollId === brollId);
+    if (!broll) return;
+    currentTime.value = broll.startTime;
+    selectedRegionId.value = broll.region.id;
+  }
+
+  function deleteBroll(brollId: string) {
+    const index = brollConfigs.value.findIndex((item) => item.brollId === brollId);
+    if (index === -1) return;
+    const [removed] = brollConfigs.value.splice(index, 1);
+    if (selectedRegionId.value === removed.region.id) {
+      selectedRegionId.value = displayRegions.value[0]?.id ?? null;
+    }
+  }
+
+  function updateBroll(brollId: string, updates: { startTime?: number; endTime?: number }) {
+    const broll = brollConfigs.value.find((item) => item.brollId === brollId);
+    if (!broll) return;
+    if (updates.startTime !== undefined) {
+      broll.startTime = updates.startTime;
+    }
+    if (updates.endTime !== undefined) {
+      broll.endTime = updates.endTime;
+    }
+  }
+
   // Handle seek time from timeline playhead drag
   function handleSeekTime(time: number) {
     currentTime.value = time;
-    // Video elements in POISourcePanel and POITargetPanel will sync via their watch on videoTime prop
   }
 
-  // Watch for time changes and auto-switch segments (works during playback AND manual scrubbing)
-  watch(currentTime, (time) => {
-    if (segmentConfigs.value.length === 0) {
-      // No segments - ensure we're using base regions
-      if (activeSegmentId.value !== null) {
-        activeSegmentId.value = null;
-        if (baseRegions.value.length > 0) {
-          regions.value = JSON.parse(JSON.stringify(baseRegions.value));
-        }
-      }
-      return;
-    }
-    
-    // Find which segment the current time falls into
-    const activeSegment = segmentConfigs.value.find(
-      seg => time >= seg.startTime && time <= seg.endTime
-    );
-    
-    if (activeSegment) {
-      // We're inside a segment
-      if (activeSegment.segmentId !== activeSegmentId.value) {
-        // Save current regions before switching
-        if (activeSegmentId.value) {
-          const currentSegment = segmentConfigs.value.find(s => s.segmentId === activeSegmentId.value);
-          if (currentSegment) {
-            currentSegment.regions = JSON.parse(JSON.stringify(regions.value));
-          }
-        } else {
-          // We were in base regions, save them
-          baseRegions.value = JSON.parse(JSON.stringify(regions.value));
-        }
-        
-        // Switch to the segment
-        activeSegmentId.value = activeSegment.segmentId;
-        regions.value = JSON.parse(JSON.stringify(activeSegment.regions));
-      }
-    } else {
-      // We're outside all segments - use base regions
-      if (activeSegmentId.value !== null) {
-        // Save current segment's regions
-        const currentSegment = segmentConfigs.value.find(s => s.segmentId === activeSegmentId.value);
-        if (currentSegment) {
-          currentSegment.regions = JSON.parse(JSON.stringify(regions.value));
-        }
-        
-        // Switch to base regions
-        activeSegmentId.value = null;
-        if (baseRegions.value.length > 0) {
-          regions.value = JSON.parse(JSON.stringify(baseRegions.value));
-        }
-      }
-    }
-  }, { immediate: true });
-
-  // Reset all regions
+  // Reset all regions and segments
   function resetRegions() {
-    regions.value = [];
+    baseRegions.value = [];
+    segmentConfigs.value = [];
+    brollConfigs.value = [];
     selectedRegionId.value = null;
   }
 
@@ -1751,31 +1867,24 @@
   }
 
   // Confirm and emit the configuration
-  function confirmConfig() {
+  async function confirmConfig() {
     if (!canApplyFraming.value) return;
 
-    // Save current regions
-    if (activeSegmentId.value) {
-      // Save current segment's regions
-      const activeSegment = segmentConfigs.value.find(s => s.segmentId === activeSegmentId.value);
-      if (activeSegment) {
-        activeSegment.regions = JSON.parse(JSON.stringify(regions.value));
-      }
-    } else {
-      // Save base regions
-      baseRegions.value = JSON.parse(JSON.stringify(regions.value));
+    if (clipTextLocal.value?.enabled && props.clipId) {
+      clipTextLocal.value = ensureClipTextPerRatioEntry(
+        clipTextLocal.value,
+        props.targetAspectRatio
+      );
+      await persistClipTextToDb();
     }
-
-    // Use base regions as the default regions in config
-    // Segments will override these for their specific time ranges
-    const finalRegions = baseRegions.value.length > 0 ? baseRegions.value : regions.value;
 
     const config: ManualFramingConfig = {
       mode: 'manual',
-      regions: JSON.parse(JSON.stringify(finalRegions)),
+      regions: JSON.parse(JSON.stringify(baseRegions.value)),
       targetAspectRatio: props.targetAspectRatio,
       sourceAspectRatio: props.sourceAspectRatio,
       segmentConfigs: segmentConfigs.value.length > 0 ? JSON.parse(JSON.stringify(segmentConfigs.value)) : undefined,
+      brollConfigs: brollConfigs.value.length > 0 ? JSON.parse(JSON.stringify(brollConfigs.value)) : undefined,
       sourceTransform: sourceTransform.value ? JSON.parse(JSON.stringify(sourceTransform.value)) : undefined,
       sourceFrameMode: sourceFrameMode.value !== 'none' ? sourceFrameMode.value : undefined,
       blurEnabled: sourceFrameMode.value !== 'none' ? poiBlurEnabled.value : undefined,

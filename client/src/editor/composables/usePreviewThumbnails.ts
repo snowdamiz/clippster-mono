@@ -265,6 +265,15 @@ async function applyEffectToCanvas(
 			ctx.restore();
 			break;
 		}
+		case "colorOverlay": {
+			ctx.save();
+			ctx.globalCompositeOperation = "color-burn";
+			ctx.globalAlpha = 0.55;
+			ctx.fillStyle = "#ff4500";
+			ctx.fillRect(0, 0, w, h);
+			ctx.restore();
+			break;
+		}
 		case "posterize": {
 			const imgData = ctx.getImageData(0, 0, w, h);
 			const d = imgData.data;

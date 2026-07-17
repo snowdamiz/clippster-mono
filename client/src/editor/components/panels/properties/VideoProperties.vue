@@ -7,6 +7,7 @@ import type { VideoElement, ColorAdjustments, CropRect, ColorCurves, ColorWheels
 import { DEFAULT_COLOR_ADJUSTMENTS } from "../../../types/timeline";
 import type { VideoEffect } from "../../../types/effects";
 import { getEffectPreset } from "../../../constants/effect-constants";
+import { COLOR_OVERLAY_BLEND_OPTIONS } from "../../../constants/color-overlay-constants";
 import type { ChromakeySettings } from "../../../types/chromakey";
 import { DEFAULT_CHROMAKEY } from "../../../types/chromakey";
 import { Film, Trash2, RotateCcw, VolumeX, Volume2, FlipHorizontal, FlipVertical, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, ChevronUp, Crop, RectangleHorizontal, Square, RectangleVertical, Pipette, SlidersHorizontal, Sparkles, Scissors, Diamond } from "lucide-vue-next";
@@ -19,6 +20,7 @@ import AnimationProperties from "./AnimationProperties.vue";
 import ColorCurvesPanel from "./ColorCurvesPanel.vue";
 import ColorWheelsPanel from "./ColorWheelsPanel.vue";
 import LutPanel from "./LutPanel.vue";
+import ElementTimingFields from "./ElementTimingFields.vue";
 import { Switch } from '@/components/ui/switch';
 import { useClipVolumeInspector } from "../../../composables/panels/useClipVolumeInspector";
 
@@ -592,11 +594,6 @@ function handleDelete() {
 	});
 }
 
-function formatTime(seconds: number): string {
-	const min = Math.floor(seconds / 60);
-	const sec = (seconds % 60).toFixed(2);
-	return `${min}:${sec.padStart(5, "0")}`;
-}
 </script>
 
 <template>
@@ -618,6 +615,8 @@ function formatTime(seconds: number): string {
 					<ChevronDown class="size-3.5 transition-transform duration-150" :class="{ 'rotate-180': openVideoSections.has('basic') }" />
 				</button>
 				<div v-if="openVideoSections.has('basic')" class="space-y-4 p-3">
+					<ElementTimingFields :element="element" :track-id="trackId" />
+
 					<!-- Transform -->
 					<div class="space-y-2">
 						<div class="flex items-center justify-between">
@@ -1104,6 +1103,30 @@ function formatTime(seconds: number): string {
 										@input="(e) => updateEffectParam(effect.id, 'levels', Number((e.target as HTMLInputElement).value))" />
 									<input type="number" :value="(effect as any).levels" min="2" max="16" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
 										@input="(e) => updateEffectParam(effect.id, 'levels', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- Solid Color / colorOverlay -->
+							<template v-if="effect.type === 'colorOverlay'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Color</span>
+									<div class="relative">
+										<input type="color" :value="(effect as any).color ?? '#ff4500'" class="absolute inset-0 h-5 w-5 cursor-pointer opacity-0"
+											@input="(e) => updateEffectParam(effect.id, 'color', (e.target as HTMLInputElement).value)" />
+										<div class="size-5 rounded border border-white/10" :style="{ backgroundColor: (effect as any).color ?? '#ff4500' }" />
+									</div>
+								</div>
+								<div class="space-y-1">
+									<span class="text-[10px] text-zinc-500">Blend</span>
+									<select
+										:value="(effect as any).blendMode ?? 'color-burn'"
+										class="w-full rounded-sm border border-white/10 bg-[#1a1a1e] px-2 py-1 text-[10px] text-zinc-200 outline-none"
+										@change="(e) => updateEffectParam(effect.id, 'blendMode', (e.target as HTMLSelectElement).value)"
+									>
+										<option v-for="opt in COLOR_OVERLAY_BLEND_OPTIONS" :key="opt.value" :value="opt.value">
+											{{ opt.label }}
+										</option>
+									</select>
 								</div>
 							</template>
 						</div>

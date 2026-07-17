@@ -18,7 +18,7 @@ import type { MonitoredStreamer } from '@/types/livestream';
 
 export interface CreatorPageProfile extends CreatorProfileWithLinks {
   isOrgProfile?: boolean;
-  organization_id?: number;
+  organization_id?: number | null;
   server_id?: number;
 }
 

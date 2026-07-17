@@ -673,6 +673,8 @@ export interface ManualRegion {
   id: string;
   color: string; // e.g., "#4F9DFF" for visual distinction
   label?: string; // Optional label like "Speaker", "Gameplay"
+  /** Clip-wide sequential number for default labels (Region 1, Region 2, …). */
+  displayNumber?: number;
   // Source crop (normalized 0-1 coordinates on source video)
   source: ManualRegionRect;
   // Output position (normalized 0-1 coordinates on target canvas)
@@ -699,6 +701,16 @@ export interface SegmentRegionConfig {
   regions: ManualRegion[]; // Region configuration for this time segment
 }
 
+// Time-based B-roll overlays. These are separate from segmentConfigs so POI
+// framing segments can still control camera regions independently.
+export interface BrollRegionConfig {
+  brollId: string;
+  startTime: number; // Relative to clip start (seconds)
+  endTime: number; // Relative to clip start (seconds)
+  region: ManualRegion;
+  suggestionId?: string;
+}
+
 /** How the 16:9 source is framed in the target preview (e.g. 9:16) */
 export type ManualSourceFrameMode = 'none' | 'scale' | 'use16x9';
 
@@ -719,6 +731,8 @@ export interface ManualFramingConfig {
   sourceAspectRatio?: string; // "16:9" typically
   // Segment-based configurations (for dynamic camera position changes)
   segmentConfigs?: SegmentRegionConfig[];
+  // Timed B-roll overlays, independent from segment-based camera regions
+  brollConfigs?: BrollRegionConfig[];
   /** Mutually exclusive with "scale" in UI: blur letterbox vs scaled source frame */
   sourceFrameMode?: ManualSourceFrameMode;
   /** Blur on scaled 16:9 frame, or on Use 16:9 background */

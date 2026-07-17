@@ -118,6 +118,18 @@
         <!-- Background fill -->
         <div class="absolute inset-0 bg-zinc-900" />
 
+        <!-- Single decoder for all source-video previews in this panel -->
+        <video
+          v-if="videoUrl"
+          ref="masterVideoRef"
+          :src="videoUrl"
+          class="absolute w-px h-px opacity-0 pointer-events-none"
+          preload="auto"
+          muted
+          playsinline
+          @loadedmetadata="onMasterVideoLoaded"
+        />
+
         <!-- Transparent click-catcher to deselect regions when clicking empty space -->
         <div
           class="absolute inset-0 z-[4]"
@@ -153,22 +165,14 @@
           v-if="use16x9Mode"
           class="absolute inset-0 overflow-hidden z-[0]"
         >
-          <video
+          <canvas
             v-if="videoUrl"
-            ref="use16x9BgVideoRef"
-            :key="`u9bg-${videoUrl}-${videoCacheBuster}`"
-            :src="videoUrl"
-            :poster="thumbnailUrl || undefined"
-            class="absolute inset-0 w-full h-full object-cover scale-[1.08] pointer-events-none"
+            ref="use16x9BgCanvasRef"
+            class="absolute inset-0 w-full h-full pointer-events-none scale-[1.08]"
             :style="{ filter: `blur(${use16x9BgBlurPx}px)` }"
-            preload="auto"
-            muted
-            playsinline
-            @loadedmetadata="(e) => onVideoLoaded(e.target as HTMLVideoElement)"
           />
           <img
             v-else-if="thumbnailUrl"
-            :key="`u9bg-img-${thumbnailUrl}-${videoCacheBuster}`"
             :src="thumbnailUrl"
             class="absolute inset-0 w-full h-full object-cover scale-[1.08] pointer-events-none"
             :style="{ filter: `blur(${use16x9BgBlurPx}px)` }"
@@ -184,21 +188,13 @@
           :style="sourceFrameStyle"
           @mousedown="startDragSourceFrame"
         >
-          <video
+          <canvas
             v-if="videoUrl"
-            ref="use16x9SharpVideoRef"
-            :key="`u9fg-${videoUrl}-${videoCacheBuster}`"
-            :src="videoUrl"
-            :poster="thumbnailUrl || undefined"
-            class="absolute inset-0 w-full h-full object-contain pointer-events-none"
-            preload="auto"
-            muted
-            playsinline
-            @loadedmetadata="(e) => onVideoLoaded(e.target as HTMLVideoElement)"
+            ref="use16x9SharpCanvasRef"
+            class="absolute inset-0 w-full h-full pointer-events-none"
           />
           <img
             v-else-if="thumbnailUrl"
-            :key="`u9fg-img-${thumbnailUrl}-${videoCacheBuster}`"
             :src="thumbnailUrl"
             class="absolute inset-0 w-full h-full object-contain pointer-events-none"
             alt=""
@@ -223,30 +219,28 @@
 
         <!-- 16:9 Source Frame Overlay (when Scale 16:9 is enabled)
              Must stay above the full-canvas click-catcher (z-[4]) or drag/corner scale never receives events.
-             Use z-[5] to align with region preview layer; region nodes after this in the DOM still stack above. -->
+             Raised above region output handles when the Scaled 16:9 tab is selected. -->
         <div
           v-if="showSourceFrame"
-          class="absolute border-2 border-purple-500 cursor-move z-[5]"
+          class="absolute border-2 border-purple-500"
+          :class="[
+            isScaled16x9Selected
+              ? 'z-[15] cursor-move pointer-events-auto'
+              : 'z-[5] pointer-events-none',
+            isScaled16x9Selected && isDraggingSourceFrame ? 'ring-2 ring-purple-300' : '',
+          ]"
           :style="sourceFrameStyle"
-          @mousedown="startDragSourceFrame"
+          @mousedown="isScaled16x9Selected ? startDragSourceFrame($event) : undefined"
         >
           <!-- Source video/thumbnail preview -->
-          <video
+          <canvas
             v-if="videoUrl"
-            ref="sourceFrameVideoRef"
-            :key="`${videoUrl}-${videoCacheBuster}`"
-            :src="videoUrl"
-            :poster="thumbnailUrl || undefined"
-            class="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-50"
+            ref="sourceFrameCanvasRef"
+            class="absolute inset-0 w-full h-full pointer-events-none opacity-50"
             :style="scaleSourceBlurStyle"
-            preload="auto"
-            muted
-            playsinline
-            @loadedmetadata="(e) => onVideoLoaded(e.target as HTMLVideoElement)"
           />
           <img
             v-else-if="thumbnailUrl"
-            :key="`${thumbnailUrl}-${videoCacheBuster}`"
             :src="thumbnailUrl"
             class="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-50"
             :style="scaleSourceBlurStyle"
@@ -261,6 +255,7 @@
 
           <!-- Corner resize handles -->
           <div
+            v-if="isScaled16x9Selected"
             v-for="corner in ['nw', 'ne', 'sw', 'se']"
             :key="corner"
             class="absolute w-3 h-3 bg-purple-500 border border-white pointer-events-auto"
@@ -309,27 +304,20 @@
           <!-- Uploaded video media -->
           <video
             v-else-if="region.mediaAssetId && region.mediaType === 'video'"
-            :ref="(el) => setVideoRef(region.id, el as HTMLVideoElement)"
+            :ref="(el) => setUploadedMediaVideoRef(region.id, el as HTMLVideoElement)"
             :src="regionMediaSrc(region.mediaAssetId)"
             class="absolute inset-0 w-full h-full object-cover pointer-events-none"
             preload="metadata"
             muted
             playsinline
             loop
-            @loadedmetadata="(e) => onVideoLoaded(e.target as HTMLVideoElement)"
+            @loadedmetadata="(e) => onUploadedMediaVideoLoaded(e.target as HTMLVideoElement)"
           />
-          <!-- Video crop preview (default behavior) -->
-          <video
+          <!-- Video crop preview (canvas fed from shared master decoder) -->
+          <canvas
             v-else-if="videoUrl"
-            :ref="(el) => setVideoRef(region.id, el as HTMLVideoElement)"
-            :src="videoUrl"
-            :poster="thumbnailUrl || undefined"
-            class="absolute max-w-none pointer-events-none"
-            :style="getCroppedImageStyle(region)"
-            preload="auto"
-            muted
-            playsinline
-            @loadedmetadata="(e) => onVideoLoaded(e.target as HTMLVideoElement)"
+            :ref="(el) => setRegionCanvasRef(region.id, el as HTMLCanvasElement)"
+            class="absolute inset-0 w-full h-full pointer-events-none"
           />
           <!-- Thumbnail crop preview (fallback) -->
           <img
@@ -346,7 +334,7 @@
             class="absolute inset-0 flex items-center justify-center"
             :style="{ backgroundColor: region.color + '20' }"
           >
-            <span class="text-[9px] text-zinc-500">{{ region.label || `R${getRegionIndex(region.id) + 1}` }}</span>
+            <span class="text-[9px] text-zinc-500">{{ regionLabel(region) }}</span>
           </div>
         </div>
 
@@ -357,18 +345,19 @@
           :key="`output-${region.id}`"
           :rect="region.output"
           :color="region.color"
-          :label="region.label || `Region ${getRegionIndex(region.id) + 1}`"
+          :label="regionLabel(region)"
           :is-selected="selectedRegionId === region.id"
           :container-width="containerWidth"
           :container-height="containerHeight"
-          :resizable="true"
-          :draggable="true"
+          :resizable="!isScaled16x9Selected"
+          :draggable="!isScaled16x9Selected"
           :show-controls="false"
           :show-resize-handles="true"
           :aspect-ratio-locked="region.aspectRatioLocked !== false"
           :snap-to-center="true"
           :snap-threshold="SNAP_THRESHOLD"
           :corner-radius-px="getScaledCornerRadius(region)"
+          :class="{ 'pointer-events-none': isScaled16x9Selected }"
           @update="(rect) => updateRegionOutput(region.id, rect)"
           @select="selectRegion(region.id)"
           @drag-start="onDragStart"
@@ -393,19 +382,23 @@
 
         <!-- Subtitle draggable/resizable box -->
         <div
-          v-if="subtitleSettings && subtitlePositioningEnabled"
+          v-if="subtitleSettings && subtitlePreviewVisible"
           class="absolute z-20 pointer-events-auto"
           :style="subtitleBoxStyle"
         >
           <!-- Drag body -->
           <div
-            class="w-full h-full flex items-center justify-center cursor-move select-none"
+            class="w-full h-full flex items-center justify-center select-none"
             :class="[
-              isDraggingSubtitles ? 'ring-2 ring-purple-400' : 'ring-1 ring-purple-500/60 hover:ring-purple-400',
+              subtitlePositioningEnabled
+                ? isDraggingSubtitles
+                  ? 'ring-2 ring-purple-400 cursor-move'
+                  : 'ring-1 ring-purple-500/60 hover:ring-purple-400 cursor-move'
+                : 'ring-1 ring-purple-500/30 cursor-default',
               subtitleSettings?.animationStyle === 'single-word' ? 'overflow-visible' : 'overflow-hidden',
             ]"
             style="border-radius: 4px; background: rgba(88,28,135,0.15);"
-            @mousedown.prevent="startDragSubtitles"
+            @mousedown.prevent="subtitlePositioningEnabled ? startDragSubtitles($event) : undefined"
           >
             <!-- Actual transcript words (when available) -->
             <div
@@ -500,7 +493,7 @@
 
           <!-- Corner resize handles (hidden for single-word style since width is auto) -->
           <div
-            v-if="subtitleSettings?.animationStyle !== 'single-word'"
+            v-if="subtitlePositioningEnabled && subtitleSettings?.animationStyle !== 'single-word'"
             v-for="corner in ['nw','ne','sw','se']"
             :key="corner"
             class="absolute w-2.5 h-2.5 bg-purple-500 border border-white pointer-events-auto z-30"
@@ -577,7 +570,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+  import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { CheckIcon, LayoutGridIcon, LayoutIcon } from 'lucide-vue-next';
   import POIRegion from './POIRegion.vue';
@@ -587,6 +580,8 @@
   import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
   import type { ManualRegion, ManualRegionRect, SubtitleSettings, ManualSourceFramingPayload } from '@/types';
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
+  import { getRegionDisplayLabel } from '@/utils/poiRegionNumbering';
+  import { POI_OVERLAY_SCALED_16X9_ID } from '@/utils/poiOverlaySelection';
   import { scaleUse169BlurForPoiPreview, use169BlurSliderToCssPx } from '@/utils/use169Blur';
   import { getVisibleSubtitleWordsForClipTime } from '@/utils/subtitleVisibleWords';
 
@@ -641,6 +636,9 @@
     subtitleSettings?: SubtitleSettings | null;
     // Optional subtitle position for preview
     subtitlePosition?: { x: number; y: number; width?: number } | null;
+    /** Show subtitle overlay on export preview (checkbox enabled). */
+    subtitlePreviewVisible?: boolean;
+    /** Allow drag/resize when Subtitles tab is selected in source panel. */
     subtitlePositioningEnabled?: boolean;
     // Optional transcript data for subtitle rendering
     transcriptWords?: WordInfo[];
@@ -663,6 +661,7 @@
     watermarkPreview: null,
     subtitleSettings: null,
     subtitlePosition: null,
+    subtitlePreviewVisible: false,
     subtitlePositioningEnabled: false,
     transcriptWords: () => [],
     transcriptSegments: () => [],
@@ -686,6 +685,10 @@
   const containerHeight = ref(0);
 
   const isTarget916 = computed(() => props.targetAspectRatio === '9:16');
+
+  const isScaled16x9Selected = computed(
+    () => props.selectedRegionId === POI_OVERLAY_SCALED_16X9_ID
+  );
 
   // Source frame scaling state
   const showSourceFrame = ref(false);
@@ -769,15 +772,18 @@
     { immediate: true, deep: true }
   );
 
-  const clipTextRelativeTime = computed(() => {
+  const clipRelativePreviewTime = computed(() => {
     const absoluteTime = props.videoTime || 0;
-    return absoluteTime - (props.clipStartTime || 0);
+    const clipStart = props.clipStartTime || 0;
+    return clipStart > 0 && absoluteTime >= clipStart
+      ? absoluteTime - clipStart
+      : absoluteTime;
   });
 
   const showClipTextBoxOverlay = computed(() => {
     const d = props.clipTextBoxDisplay;
     if (!d?.enabled) return false;
-    const t = clipTextRelativeTime.value;
+    const t = clipRelativePreviewTime.value;
     return t >= d.startTime && t < d.endTime;
   });
 
@@ -1026,60 +1032,256 @@
     { deep: true }
   );
 
-  watch([containerWidth, containerHeight], () => emitSourceFraming());
-
-  // Video refs for each region
-  const videoRefs = ref<Map<string, HTMLVideoElement>>(new Map());
-  
-  // Source frame video ref
-  const sourceFrameVideoRef = ref<HTMLVideoElement | null>(null);
-  const use16x9BgVideoRef = ref<HTMLVideoElement | null>(null);
-  const use16x9SharpVideoRef = ref<HTMLVideoElement | null>(null);
-  
-  // Cache buster for forcing video reload
-  const videoCacheBuster = ref(Date.now());
-  
-  // Watch for videoUrl or thumbnailUrl changes and force reload
-  watch([() => props.videoUrl, () => props.thumbnailUrl], ([newVideoUrl, newThumbUrl], [oldVideoUrl, oldThumbUrl]) => {
-    if (newVideoUrl !== oldVideoUrl || newThumbUrl !== oldThumbUrl) {
-      // Force complete recreation by changing cache buster
-      videoCacheBuster.value = Date.now();
-      
-      // Also force reload if video element exists
-      if (sourceFrameVideoRef.value) {
-        sourceFrameVideoRef.value.load();
-      }
-      if (use16x9BgVideoRef.value) {
-        use16x9BgVideoRef.value.load();
-      }
-      if (use16x9SharpVideoRef.value) {
-        use16x9SharpVideoRef.value.load();
-      }
-    }
+  watch([containerWidth, containerHeight], () => {
+    emitSourceFraming();
+    redrawSourcePreviews();
   });
 
+  const masterVideoRef = ref<HTMLVideoElement | null>(null);
+  const regionCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
+  const uploadedMediaVideoRefs = ref<Map<string, HTMLVideoElement>>(new Map());
+  const use16x9BgCanvasRef = ref<HTMLCanvasElement | null>(null);
+  const use16x9SharpCanvasRef = ref<HTMLCanvasElement | null>(null);
+  const sourceFrameCanvasRef = ref<HTMLCanvasElement | null>(null);
+
+  let previewRafId: number | null = null;
+
+  function regionLabel(region: ManualRegion): string {
+    return getRegionDisplayLabel(region, getRegionIndex(region.id));
+  }
+
+  function setRegionCanvasRef(regionId: string, el: HTMLCanvasElement | null) {
+    if (el) {
+      regionCanvasRefs.value.set(regionId, el);
+    } else {
+      regionCanvasRefs.value.delete(regionId);
+    }
+  }
+
+  function setUploadedMediaVideoRef(regionId: string, el: HTMLVideoElement | null) {
+    if (el) {
+      uploadedMediaVideoRefs.value.set(regionId, el);
+    } else {
+      uploadedMediaVideoRefs.value.delete(regionId);
+    }
+  }
+
+  function setupCanvasPixels(canvas: HTMLCanvasElement) {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.round(rect.width * dpr));
+    const h = Math.max(1, Math.round(rect.height * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    return { w, h };
+  }
+
+  function drawVideoCover(
+    ctx: CanvasRenderingContext2D,
+    video: HTMLVideoElement,
+    cw: number,
+    ch: number,
+  ) {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return;
+    const scale = Math.max(cw / vw, ch / vh);
+    const dw = vw * scale;
+    const dh = vh * scale;
+    const dx = (cw - dw) / 2;
+    const dy = (ch - dh) / 2;
+    ctx.drawImage(video, dx, dy, dw, dh);
+  }
+
+  function drawVideoContain(
+    ctx: CanvasRenderingContext2D,
+    video: HTMLVideoElement,
+    cw: number,
+    ch: number,
+  ) {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return;
+    const scale = Math.min(cw / vw, ch / vh);
+    const dw = vw * scale;
+    const dh = vh * scale;
+    const dx = (cw - dw) / 2;
+    const dy = (ch - dh) / 2;
+    ctx.drawImage(video, dx, dy, dw, dh);
+  }
+
+  function drawRegionCrop(
+    ctx: CanvasRenderingContext2D,
+    video: HTMLVideoElement,
+    region: ManualRegion,
+    cw: number,
+    ch: number,
+  ) {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh || !region.source.width || !region.source.height) return;
+    const sx = region.source.x * vw;
+    const sy = region.source.y * vh;
+    const sw = region.source.width * vw;
+    const sh = region.source.height * vh;
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, cw, ch);
+  }
+
+  function redrawSourcePreviews() {
+    const video = masterVideoRef.value;
+    if (!video || video.readyState < 2) return;
+
+    if (use16x9Mode.value && use16x9BgCanvasRef.value) {
+      const canvas = use16x9BgCanvasRef.value;
+      const { w, h } = setupCanvasPixels(canvas);
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, w, h);
+        drawVideoCover(ctx, video, w, h);
+      }
+    }
+
+    if (use16x9Mode.value && use16x9SharpCanvasRef.value) {
+      const canvas = use16x9SharpCanvasRef.value;
+      const { w, h } = setupCanvasPixels(canvas);
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, w, h);
+        drawVideoContain(ctx, video, w, h);
+      }
+    }
+
+    if (showSourceFrame.value && sourceFrameCanvasRef.value) {
+      const canvas = sourceFrameCanvasRef.value;
+      const { w, h } = setupCanvasPixels(canvas);
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, w, h);
+        drawVideoCover(ctx, video, w, h);
+      }
+    }
+
+    for (const region of props.regions) {
+      if (region.mediaAssetId) continue;
+      const canvas = regionCanvasRefs.value.get(region.id);
+      if (!canvas || !props.videoUrl) continue;
+      const { w, h } = setupCanvasPixels(canvas);
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, w, h);
+        drawRegionCrop(ctx, video, region, w, h);
+      }
+    }
+  }
+
+  function syncVideoElementTime(video: HTMLVideoElement, time: number) {
+    if (Math.abs(video.currentTime - time) > 0.1) {
+      video.currentTime = time;
+      if (props.isPlaying) {
+        video.play().catch(() => {});
+      }
+    }
+  }
+
+  function syncAllVideoTimes(time: number) {
+    if (masterVideoRef.value) {
+      syncVideoElementTime(masterVideoRef.value, time);
+    }
+    uploadedMediaVideoRefs.value.forEach((video) => {
+      syncVideoElementTime(video, time);
+    });
+  }
+
+  function onMasterVideoLoaded() {
+    syncAllVideoTimes(props.videoTime ?? 0);
+    redrawSourcePreviews();
+    if (props.isPlaying) {
+      masterVideoRef.value?.play().catch(() => {});
+      startPreviewLoop();
+    }
+  }
+
+  function onUploadedMediaVideoLoaded(video: HTMLVideoElement) {
+    syncVideoElementTime(video, props.videoTime ?? 0);
+    if (props.isPlaying) {
+      video.play().catch(() => {});
+    }
+  }
+
+  function startPreviewLoop() {
+    if (previewRafId !== null) return;
+    const tick = () => {
+      redrawSourcePreviews();
+      if (props.isPlaying) {
+        previewRafId = requestAnimationFrame(tick);
+      } else {
+        previewRafId = null;
+      }
+    };
+    previewRafId = requestAnimationFrame(tick);
+  }
+
+  function stopPreviewLoop() {
+    if (previewRafId !== null) {
+      cancelAnimationFrame(previewRafId);
+      previewRafId = null;
+    }
+  }
+
   watch(
-    [sourceFrameVideoRef, use16x9SharpVideoRef, showSourceFrame, use16x9Mode],
-    () => {
-      videoRefs.value.delete('__sourceFrame__');
-      let v: HTMLVideoElement | null = null;
-      if (showSourceFrame.value) v = sourceFrameVideoRef.value;
-      else if (use16x9Mode.value) v = use16x9SharpVideoRef.value;
-      if (v) videoRefs.value.set('__sourceFrame__', v);
+    () => props.isPlaying,
+    (playing) => {
+      if (masterVideoRef.value) {
+        if (playing) {
+          masterVideoRef.value.play().catch(() => {});
+          startPreviewLoop();
+        } else {
+          masterVideoRef.value.pause();
+          stopPreviewLoop();
+          redrawSourcePreviews();
+        }
+      }
+      uploadedMediaVideoRefs.value.forEach((video) => {
+        if (playing) {
+          video.play().catch(() => {});
+        } else {
+          video.pause();
+        }
+      });
     },
-    { immediate: true }
   );
 
   watch(
-    [use16x9BgVideoRef, use16x9Mode],
-    () => {
-      videoRefs.value.delete('__use16x9Bg__');
-      if (use16x9Mode.value && use16x9BgVideoRef.value) {
-        videoRefs.value.set('__use16x9Bg__', use16x9BgVideoRef.value);
-      }
+    () => props.videoTime,
+    (time) => {
+      syncAllVideoTimes(time);
+      redrawSourcePreviews();
     },
-    { immediate: true }
+    { immediate: true },
   );
+
+  watch(
+    () => props.regions,
+    () => {
+      redrawSourcePreviews();
+    },
+    { deep: true },
+  );
+
+  /** Canvases for Use/Scale 16:9 are v-if mounted — wait for DOM + layout before paint. */
+  function scheduleRedrawSourcePreviews() {
+    nextTick(() => {
+      requestAnimationFrame(() => {
+        redrawSourcePreviews();
+      });
+    });
+  }
+
+  watch([showSourceFrame, use16x9Mode, () => props.videoUrl], () => {
+    scheduleRedrawSourcePreviews();
+  });
 
   // Compute source frame style (16:9 frame positioned in 9:16 container)
   const sourceFrameStyle = computed(() => {
@@ -1195,75 +1397,6 @@
     document.addEventListener('mousemove', onResize);
     document.addEventListener('mouseup', stopResize);
   }
-
-  // Set video ref for a region
-  function setVideoRef(regionId: string, el: HTMLVideoElement | null) {
-    if (el) {
-      videoRefs.value.set(regionId, el);
-      // Note: currentTime will be set in onVideoLoaded after metadata loads
-    } else {
-      videoRefs.value.delete(regionId);
-    }
-  }
-
-  // Handle video loaded - set initial time after metadata is available
-  function onVideoLoaded(video: HTMLVideoElement) {
-    if (video) {
-      const targetTime = props.videoTime ?? 0;
-      console.log('[POITargetPanel] Video metadata loaded, forcing seek to:', targetTime, 'current:', video.currentTime);
-      
-      // Ensure video is seekable before setting time
-      if (video.readyState >= 2) {
-        video.currentTime = targetTime;
-      } else {
-        // Wait for canplay event
-        const handleCanPlay = () => {
-          console.log('[POITargetPanel] Video can play, seeking to:', targetTime);
-          video.currentTime = targetTime;
-          video.removeEventListener('canplay', handleCanPlay);
-        };
-        video.addEventListener('canplay', handleCanPlay, { once: true });
-      }
-      
-      // If we're already playing, start this video too
-      if (props.isPlaying) {
-        video.play().catch(console.error);
-      }
-    }
-  }
-
-  // Watch for play/pause changes
-  watch(
-    () => props.isPlaying,
-    (playing) => {
-      videoRefs.value.forEach((video) => {
-        if (playing) {
-          video.play().catch(console.error);
-        } else {
-          video.pause();
-        }
-      });
-    }
-  );
-
-  // Watch for time changes (seeking)
-  watch(
-    () => props.videoTime,
-    (time) => {
-      videoRefs.value.forEach((video) => {
-        // Use 0.1 second threshold to allow accurate seeking while avoiding feedback loops
-        if (Math.abs(video.currentTime - time) > 0.1) {
-          console.log('[POITargetPanel] Seeking video from', video.currentTime, 'to', time);
-          video.currentTime = time;
-          // If we're playing and just seeked, make sure playback continues
-          if (props.isPlaying) {
-            video.play().catch(console.error);
-          }
-        }
-      });
-    },
-    { immediate: true }
-  );
 
   // Parse aspect ratio string to numbers
   function parseAspectRatio(ratio: string): { width: number; height: number } {
@@ -1384,10 +1517,8 @@
   // Compute visible words — same rules as VideoPlayer (no ±20s window, no full-segment dump on gaps)
   const visibleWords = computed((): WordInfo[] => {
     if (!props.subtitleSettings) return [];
-    const absoluteTime = props.videoTime || 0;
-    const clipRelativeTime = absoluteTime - (props.clipStartTime || 0);
     return getVisibleSubtitleWordsForClipTime(
-      clipRelativeTime,
+      clipRelativePreviewTime.value,
       props.transcriptWords,
       props.transcriptSegments,
       props.subtitleSettings.animationStyle,
@@ -1418,8 +1549,7 @@
       );
     }
 
-    const absoluteTime = props.videoTime || 0;
-    const clipRelativeTime = absoluteTime - (props.clipStartTime || 0);
+    const clipRelativeTime = clipRelativePreviewTime.value;
 
     if (clipRelativeTime >= word.start && clipRelativeTime < word.end) {
       return true;
@@ -1826,6 +1956,7 @@
   });
 
   onUnmounted(() => {
+    stopPreviewLoop();
     if (resizeObserver) {
       resizeObserver.disconnect();
     }

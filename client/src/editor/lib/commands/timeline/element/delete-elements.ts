@@ -6,7 +6,11 @@ import { collapseMainVideoTracksIfPresent, isMainTrack } from "../../../../lib/t
 export class DeleteElementsCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;
 
-	constructor(private elements: { trackId: string; elementId: string }[]) {
+	constructor(
+		private elements: { trackId: string; elementId: string }[],
+		/** When true (main-track magnet on), pack main video segments after deletion. */
+		private collapseMainTrackGaps = true,
+	) {
 		super();
 	}
 
@@ -36,7 +40,11 @@ export class DeleteElementsCommand extends Command {
 			.filter((track) => track.elements.length > 0 || isMainTrack(track));
 
 		const fps = editor.project.getActive()?.settings?.fps ?? 30;
-		editor.timeline.updateTracks(collapseMainVideoTracksIfPresent(updatedTracks, fps));
+		editor.timeline.updateTracks(
+			this.collapseMainTrackGaps
+				? collapseMainVideoTracksIfPresent(updatedTracks, fps)
+				: updatedTracks,
+		);
 	}
 
 	undo(): void {

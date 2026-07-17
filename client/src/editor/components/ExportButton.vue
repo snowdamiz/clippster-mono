@@ -80,6 +80,12 @@ const exportDialogTitle = computed(() =>
 	exportTimeRange.value ? "Export Segment" : "Export Configuration",
 );
 
+function handleOpenExportDialog() {
+	// Always export the full timeline from the header Export button.
+	// Per-segment export is available from the timeline context menu.
+	openExportDialog();
+}
+
 const exportOutputFileName = computed(() => exportSegmentName.value?.trim() || null);
 
 function formatDuration(seconds: number): string {
@@ -1018,7 +1024,7 @@ function handlePublishNow() {
 				hasProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
 			]"
 			:disabled="!hasProject"
-			@click="hasProject && openExportDialog()"
+			@click="hasProject && handleOpenExportDialog()"
 		>
 			<Download class="export-trigger__icon" />
 			Export

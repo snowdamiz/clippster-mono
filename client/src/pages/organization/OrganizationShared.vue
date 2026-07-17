@@ -1,28 +1,69 @@
 <template>
   <PageLayout
-    title="Shared Clips"
-    description="Distribute video clips to team members for editing and posting"
+    title="Shared Content"
+    description="Distribute clips and audio to team members for editing and posting"
     :show-header="true"
     :icon="Share2"
-    :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Shared Clips' }]"
+    :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Shared Content' }]"
   >
     <template #firstBreadcrumb>
       <OrganizationBreadcrumb />
     </template>
     <template #actions>
-      <button v-if="isAdmin" class="shared-clips__header-btn" @click="showShareClipDialog = true">
+      <button
+        v-if="isAdmin && activeTab === 'clips'"
+        class="shared-clips__header-btn"
+        @click="showShareClipDialog = true"
+      >
         <Plus class="shared-clips__header-btn-icon" />
         Share Clip
+      </button>
+      <button
+        v-if="isAdmin && activeTab === 'audio'"
+        class="shared-clips__header-btn shared-clips__header-btn--audio"
+        @click="showShareAudioDialog = true"
+      >
+        <Plus class="shared-clips__header-btn-icon" />
+        Share Audio
       </button>
     </template>
 
     <div class="shared-clips">
       <!-- Page Heading -->
       <div class="shared-clips__heading">
-        <h1 class="shared-clips__title">Clip Distribution</h1>
-        <p class="shared-clips__subtitle">Manage and track video clips shared with your team members</p>
+        <h1 class="shared-clips__title">Content Distribution</h1>
+        <p class="shared-clips__subtitle">Share video clips and audio with your team members</p>
+        <div class="shared-clips__tabs">
+          <button
+            class="shared-clips__tab"
+            :class="{ 'shared-clips__tab--active shared-clips__tab--clips': activeTab === 'clips' }"
+            @click="activeTab = 'clips'"
+          >
+            <Film :size="16" />
+            Clips
+          </button>
+          <button
+            class="shared-clips__tab"
+            :class="{ 'shared-clips__tab--active shared-clips__tab--audio': activeTab === 'audio' }"
+            @click="activeTab = 'audio'"
+          >
+            <Music :size="16" />
+            Audio
+          </button>
+        </div>
       </div>
 
+      <!-- Audio Tab -->
+      <SharedAudioSection
+        v-if="activeTab === 'audio'"
+        ref="audioSectionRef"
+        :organization-id="organizationId ?? ''"
+        :organization-name="organizationName"
+        :is-admin="isAdmin"
+        @share-audio="showShareAudioDialog = true"
+      />
+
+      <template v-if="activeTab === 'clips'">
       <!-- Filters Section -->
       <section class="shared-clips__section">
         <div class="shared-clips__section-header">
@@ -382,6 +423,7 @@
           </div>
         </div>
       </section>
+      </template>
 
       <!-- Delete Confirmation Dialog -->
       <Teleport to="body">
@@ -453,11 +495,21 @@
 
       <!-- Share Clip Dialog -->
       <ShareClipDialog
+        v-if="activeTab === 'clips'"
         v-model:open="showShareClipDialog"
         :organization-id="organizationId ?? ''"
         :members="members"
         @created="handleSharedClipCreated"
         @close="showShareClipDialog = false"
+      />
+
+      <!-- Share Audio Dialog -->
+      <ShareAudioDialog
+        v-model:open="showShareAudioDialog"
+        :organization-id="organizationId ?? ''"
+        :members="members"
+        @created="handleSharedAudioCreated"
+        @close="showShareAudioDialog = false"
       />
     </div>
   </PageLayout>
@@ -496,8 +548,11 @@
     X,
     Loader2,
     ChevronDown,
+    Music,
   } from 'lucide-vue-next';
   import ShareClipDialog from '@/components/organization/ShareClipDialog.vue';
+  import ShareAudioDialog from '@/components/organization/ShareAudioDialog.vue';
+  import SharedAudioSection from '@/components/organization/SharedAudioSection.vue';
   import PageLayout from '@/components/PageLayout.vue';
   import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import { useToast } from '@/composables/useToast';
@@ -510,7 +565,7 @@
   } from '@/services/sharedClipsApi';
 
   const { success: showSuccess, error: showError } = useToast();
-  const { organizationId, isAdmin, members: rawMembers } = useOrganization();
+  const { organizationId, isAdmin, members: rawMembers, organization } = useOrganization();
 
   // Filter and map members to match ShareClipDialog expected type
   const members = computed(() =>
@@ -527,6 +582,11 @@
   );
 
   const showShareClipDialog = ref(false);
+  const showShareAudioDialog = ref(false);
+  const activeTab = ref<'clips' | 'audio'>('clips');
+  const audioSectionRef = ref<InstanceType<typeof SharedAudioSection> | null>(null);
+
+  const organizationName = computed(() => organization.value?.name || 'Organization');
   const loading = ref(true);
   const error = ref<string | null>(null);
   const clips = ref<SharedClip[]>([]);
@@ -695,6 +755,12 @@
     showSuccess('Clip shared successfully');
   }
 
+  function handleSharedAudioCreated() {
+    showShareAudioDialog.value = false;
+    audioSectionRef.value?.loadAudio();
+    showSuccess('Audio shared successfully');
+  }
+
   // Format helpers
   function formatFileSize(bytes: number | null): string {
     if (!bytes) return 'Unknown';
@@ -813,6 +879,43 @@
     color: var(--sidebar-text-muted);
     margin: 0;
     line-height: 1.5;
+  }
+
+  .shared-clips__tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1.25rem;
+  }
+
+  .shared-clips__tab {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .shared-clips__tab--active.shared-clips__tab--clips {
+    background: rgba(6, 182, 212, 0.15);
+    border-color: rgba(6, 182, 212, 0.4);
+    color: var(--sidebar-accent);
+  }
+
+  .shared-clips__tab--active.shared-clips__tab--audio {
+    background: rgba(168, 85, 247, 0.15);
+    border-color: rgba(168, 85, 247, 0.4);
+    color: #c084fc;
+  }
+
+  .shared-clips__header-btn--audio {
+    background: linear-gradient(135deg, #a855f7, #7c3aed);
   }
 
   /* ===== Stats Overview ===== */

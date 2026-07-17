@@ -281,7 +281,7 @@
                   Connect Account
                 </button>
               </div>
-              <div v-else class="list">
+              <div v-else class="list list--social-accounts">
                 <div v-for="account in socialAccounts" :key="account.id" class="list-item">
                   <div class="list-item__icon" :class="getPlatformIconClass(account.platform)">
                     <component :is="getPlatformIcon(account.platform)" />
@@ -300,7 +300,19 @@
                       </template>
                     </span>
                   </div>
-                  <div class="list-item__actions">
+                  <div
+                    class="list-item__actions"
+                    :class="{ 'list-item__actions--visible': needsTokenAttention(account) }"
+                  >
+                    <button
+                      class="refresh"
+                      :disabled="reconnectingAccountId === account.id"
+                      title="Reconnect to refresh token"
+                      @click="reconnectSocialAccount(account)"
+                    >
+                      <Loader2 v-if="reconnectingAccountId === account.id" class="animate-spin" />
+                      <RefreshCw v-else />
+                    </button>
                     <button @click="viewAccountPosts(account)" title="View Posts"><Eye /></button>
                     <button class="danger" @click="confirmDeleteSocialAccount(account)" title="Disconnect">
                       <Trash2 />
@@ -587,9 +599,18 @@
                   </div>
                   <div class="post-card__content">
                     <div class="post-card__header">
-                      <span class="post-card__status" :class="`post-card__status--${post.status}`">
-                        {{ post.status }}
-                      </span>
+                      <div class="post-card__status-group">
+                        <span class="post-card__status" :class="`post-card__status--${post.status}`">
+                          {{ post.status }}
+                        </span>
+                        <span
+                          class="post-card__platform"
+                          :class="`post-card__platform--${normalizePostPlatform(post.platform)}`"
+                          :title="getPlatformDisplayName(post.platform)"
+                        >
+                          <component :is="getPostPlatformIcon(post.platform)" :size="12" />
+                        </span>
+                      </div>
                       <a v-if="post.post_url" :href="post.post_url" target="_blank" class="post-card__link">
                         View on {{ getPlatformDisplayName(post.platform) }}
                       </a>
@@ -847,16 +868,16 @@
                 </div>
               </div>
 
-              <!-- Referral Link -->
+              <!-- Referral Code -->
               <div class="aff-tab__link-card">
                 <div class="aff-tab__link-header">
-                  <Link2 class="aff-tab__link-icon" />
-                  <span class="aff-tab__link-label">Your Referral Link</span>
+                  <Hash class="aff-tab__link-icon" />
+                  <span class="aff-tab__link-label">Your Referral Code</span>
                   <span class="aff-tab__status" :class="`aff-tab__status--${affiliateInfo.status}`">{{ affiliateInfo.status }}</span>
                 </div>
                 <div class="aff-tab__link-row">
-                  <code class="aff-tab__link-url">{{ affiliateReferralUrl }}</code>
-                  <button class="aff-tab__copy-btn" @click="copyAffiliateLink">
+                  <code class="aff-tab__link-url">{{ affiliateInfo.referral_code }}</code>
+                  <button class="aff-tab__copy-btn" @click="copyAffiliateCode">
                     <Copy v-if="!affCopied" :size="14" />
                     <Check v-else :size="14" class="aff-tab__copy-ok" />
                     {{ affCopied ? 'Copied!' : 'Copy' }}
@@ -908,7 +929,7 @@
                 <div v-if="affiliateReferrals.length === 0" class="empty-state">
                   <Handshake class="empty-state__icon" />
                   <p class="empty-state__title">No referrals yet</p>
-                  <p class="empty-state__text">Share your link to start earning commissions</p>
+                  <p class="empty-state__text">Share your code to start earning commissions</p>
                 </div>
                 <div v-else class="aff-tab__table-wrapper">
                   <table class="aff-tab__table">
@@ -1252,7 +1273,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, onMounted, onUnmounted, markRaw, computed, watch, h, nextTick } from 'vue';
+  import { ref, reactive, onMounted, onUnmounted, markRaw, computed, watch, nextTick } from 'vue';
   import { useRoute } from 'vue-router';
   import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import {
@@ -1289,7 +1310,7 @@
     FileVideo,
     RefreshCw,
     Handshake,
-    Link2,
+    Hash,
     Copy,
     Check,
     Briefcase,
@@ -1304,6 +1325,7 @@
   import YoutubePublishDialog from '@/components/YoutubePublishDialog.vue';
   import ClipperProfileOnboardingWizard from '@/components/ClipperProfileOnboardingWizard.vue';
   import AddPostDialog from '@/components/AddPostDialog.vue';
+  import XLogo from '@/components/icons/XLogo.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
@@ -1335,7 +1357,6 @@
     listUserInstagramAccounts,
     disconnectUserInstagramAccount,
     startUserInstagramOAuth,
-  import { isTokenExpiringSoonForAccount } from '@/utils/socialTokenExpiry';
     getUserAnalyticsSummary,
     listUserPosts,
     syncUserAnalytics,
@@ -1345,24 +1366,26 @@
     type UserAnalyticsSummary,
   } from '@/services/userInstagramApi';
   import {
+    isTokenExpiredForAccount,
+    isTokenExpiringSoonForAccount,
+  } from '@/utils/socialTokenExpiry';
+  import { reconnectPersonalSocialPlatform } from '@/utils/socialOAuthReconnect';
+  import {
     startUserTwitterOAuth,
     listUserTwitterAccounts,
     disconnectUserTwitterAccount,
-    isTwitterTokenExpiringSoon,
     type UserTwitterAccount,
   } from '@/services/userTwitterApi';
   import {
     startUserTiktokOAuth,
     listUserTiktokAccounts,
     disconnectUserTiktokAccount,
-    isTiktokTokenExpiringSoon,
     type UserTiktokAccount,
   } from '@/services/userTiktokApi';
   import {
     startUserYoutubeOAuth,
     listUserYoutubeAccounts,
     disconnectUserYoutubeAccount,
-    isYoutubeTokenExpiringSoon,
     type UserYoutubeAccount,
   } from '@/services/userYoutubeApi';
   import { getMyClipperProfile, getExperienceLevelLabel, getSpecialtyTagLabel, type ClipperProfile } from '@/services/clipperProfilesApi';
@@ -1463,11 +1486,6 @@
     { value: 'crypto', label: 'Crypto (Solana USDC)' },
     { value: 'paypal', label: 'PayPal' },
   ];
-
-  const affiliateReferralUrl = computed(() => {
-    if (!affiliateInfo.value) return '';
-    return `https://clippster.app/?ref=${affiliateInfo.value.referral_code}`;
-  });
 
   // Hiring Tab State
   const loadingHiringPosts = ref(false);
@@ -1615,9 +1633,35 @@
       'twitter': 'X',
       'youtube': 'YouTube',
       'tiktok': 'TikTok',
+      'tiktok_business': 'TikTok',
       'facebook': 'Facebook'
     };
     return platformNames[platform?.toLowerCase()] || platform || 'Platform';
+  };
+
+  const TiktokIcon = {
+    template:
+      '<svg viewBox="0 0 24 24" fill="currentColor" width="1em" height="1em"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V9.01a8.16 8.16 0 004.76 1.52v-3.4a4.85 4.85 0 01-1-.44z"/></svg>',
+  };
+
+  const normalizePostPlatform = (platform: string): string => {
+    const normalized = platform?.toLowerCase();
+    return normalized === 'twitter' ? 'x' : normalized || 'unknown';
+  };
+
+  const getPostPlatformIcon = (platform: string) => {
+    switch (normalizePostPlatform(platform)) {
+      case 'x':
+        return XLogo;
+      case 'tiktok':
+      case 'tiktok_business':
+        return TiktokIcon;
+      case 'youtube':
+        return Youtube;
+      case 'instagram':
+      default:
+        return Instagram;
+    }
   };
 
   const switchLeaderboardPeriod = (period: 'weekly' | 'monthly') => {
@@ -1637,6 +1681,10 @@
   const loadLeaderboard = async () => {
     loadingLeaderboard.value = true;
     try {
+      if (leaderboardType.value === 'posts') {
+        await syncUserAnalytics();
+      }
+
       const response = await import('@/services/clipperProfilesApi').then((m) =>
         m.getLeaderboard(leaderboardPeriod.value, leaderboardType.value)
       );
@@ -1684,9 +1732,10 @@
     }
   };
 
-  const copyAffiliateLink = async () => {
+  const copyAffiliateCode = async () => {
+    if (!affiliateInfo.value) return;
     try {
-      await navigator.clipboard.writeText(affiliateReferralUrl.value);
+      await navigator.clipboard.writeText(affiliateInfo.value.referral_code);
       affCopied.value = true;
       setTimeout(() => { affCopied.value = false; }, 2000);
     } catch {
@@ -1825,18 +1874,13 @@
   const deleteType = ref<'social account' | 'payment method'>('social account');
   const deleteTarget = ref<UserInstagramAccount | UserTwitterAccount | UserTiktokAccount | UserYoutubeAccount | ClipperPaymentMethod | null>(null);
 
+  const reconnectingAccountId = ref<number | null>(null);
+
   let cleanupInstagramAuth: (() => void) | null = null;
   let cleanupTwitterAuth: (() => void) | null = null;
   let cleanupTiktokAuth: (() => void) | null = null;
   let cleanupYoutubeAuth: (() => void) | null = null;
-
-  const XLogo = markRaw({
-    render() {
-      return h('svg', { viewBox: '0 0 24 24', fill: 'currentColor', width: '1em', height: '1em' }, [
-        h('path', { d: 'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z' }),
-      ]);
-    },
-  });
+  let cleanupReconnectAuth: (() => void) | null = null;
 
   const availablePlatforms = [
     {
@@ -2094,6 +2138,53 @@
     }
   };
 
+  const needsTokenAttention = (account: UserInstagramAccount | UserTwitterAccount | any) =>
+    isTokenExpiredForAccount(account);
+
+  const reconnectSocialAccount = async (
+    account: UserInstagramAccount | UserTwitterAccount | UserTiktokAccount | UserYoutubeAccount
+  ) => {
+    if (reconnectingAccountId.value) return;
+
+    try {
+      if (cleanupReconnectAuth) {
+        cleanupReconnectAuth();
+        cleanupReconnectAuth = null;
+      }
+
+      reconnectingAccountId.value = account.id;
+      cleanupReconnectAuth = await reconnectPersonalSocialPlatform(
+        account.platform,
+        (result) => {
+          reconnectingAccountId.value = null;
+          if (result.success) {
+            toast({
+              title: 'Success',
+              description: `${getPlatformName(account.platform)} reconnected`,
+            });
+            void loadSocialAccounts();
+            void socialTokenMonitor.checkNow();
+            if (activeTab.value === 'posts') {
+              void loadPostsAnalytics();
+            }
+          } else if (result.error) {
+            toast({ title: 'Error', description: result.error });
+          }
+        },
+        {
+          socialAccountId: account.id,
+          providerAccountId: account.provider_account_id ?? undefined,
+        }
+      );
+    } catch (error) {
+      reconnectingAccountId.value = null;
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to reconnect account',
+      });
+    }
+  };
+
   const confirmDeleteSocialAccount = (account: UserInstagramAccount | UserTwitterAccount | any) => {
     deleteType.value = 'social account';
     deleteTarget.value = account;
@@ -2290,6 +2381,7 @@
     if (cleanupTwitterAuth) cleanupTwitterAuth();
     if (cleanupTiktokAuth) cleanupTiktokAuth();
     if (cleanupYoutubeAuth) cleanupYoutubeAuth();
+    if (cleanupReconnectAuth) cleanupReconnectAuth();
   });
 </script>
 
@@ -3417,6 +3509,42 @@
     letter-spacing: 0.04em;
   }
 
+  .post-card__status-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .post-card__platform {
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(39, 39, 42, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #a1a1aa;
+    font-size: 0.75rem;
+  }
+
+  .post-card__platform--instagram {
+    color: #f472b6;
+  }
+
+  .post-card__platform--x {
+    color: #f4f4f5;
+  }
+
+  .post-card__platform--tiktok,
+  .post-card__platform--tiktok_business {
+    color: #22d3ee;
+  }
+
+  .post-card__platform--youtube {
+    color: #ef4444;
+  }
+
   .post-card__status--published {
     background: rgba(16, 185, 129, 0.15);
     color: #10b981;
@@ -3755,7 +3883,12 @@
     transition: opacity 150ms ease;
   }
 
-  .list-item:hover .list-item__actions {
+  .list-item:hover .list-item__actions,
+  .list-item__actions--visible {
+    opacity: 1;
+  }
+
+  .list--social-accounts .list-item__actions {
     opacity: 1;
   }
 
@@ -3788,6 +3921,19 @@
 
   .list-item__actions button.danger svg {
     color: #f87171;
+  }
+
+  .list-item__actions button.refresh svg {
+    color: #fbbf24;
+  }
+
+  .list-item__actions button.refresh:hover {
+    background: rgba(245, 158, 11, 0.12);
+  }
+
+  .list-item__actions button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .text-btn {

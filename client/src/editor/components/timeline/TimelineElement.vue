@@ -183,6 +183,28 @@ const tileWidth = computed(() => {
 	return trackHeight.value * (16 / 9);
 });
 
+/** When the clip is narrower than one tile (zoomed out), use cover instead of repeat-x. */
+const imageBackgroundStyle = computed(() => {
+	const tw = tileWidth.value;
+	const ew = elementWidth.value;
+	if (ew < tw - 0.5) {
+		return {
+			backgroundImage: imageUrl.value ? `url(${imageUrl.value})` : undefined,
+			backgroundRepeat: "no-repeat",
+			backgroundSize: "cover",
+			backgroundPosition: "center center",
+			pointerEvents: "none" as const,
+		};
+	}
+	return {
+		backgroundImage: imageUrl.value ? `url(${imageUrl.value})` : undefined,
+		backgroundRepeat: "repeat-x",
+		backgroundSize: `${tw}px 100%`,
+		backgroundPosition: "left center",
+		pointerEvents: "none" as const,
+	};
+});
+
 const trackClasses = computed(() => getTrackClasses({ type: props.track.type }));
 const borderColor = computed(() => getTrackBorderColor({ type: props.track.type }));
 
@@ -363,7 +385,10 @@ const elementTooltip = computed(() => {
 				trackClasses,
 				isHidden ? 'opacity-50' : '',
 			]"
-			:style="{ borderColor: borderColor, outline: isSelected ? '1.5px solid rgba(14, 165, 233, 0.6)' : 'none', outlineOffset: '0px' }"
+			:style="{
+				borderColor: borderColor,
+				boxShadow: isSelected ? 'inset 0 0 0 1.5px rgba(14, 165, 233, 0.6)' : 'none',
+			}"
 		>
 			<!-- Track name label (sits in the top blue bar, not over content) -->
 			<div
@@ -547,13 +572,7 @@ const elementTooltip = computed(() => {
 					>
 						<div
 							class="absolute inset-0"
-							:style="{
-								backgroundImage: `url(${imageUrl})`,
-								backgroundRepeat: 'repeat-x',
-								backgroundSize: `${tileWidth}px 100%`,
-								backgroundPosition: 'left center',
-								pointerEvents: 'none',
-							}"
+							:style="imageBackgroundStyle"
 						/>
 					</div>
 						<div

@@ -20,6 +20,7 @@ import {
 	validateElementTrackCompatibility,
 } from "../../../../lib/timeline/track-utils";
 import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
+import { ripplePushOverlaps } from "../../../../lib/timeline/ripple";
 import type { MediaAsset } from "../../../../types/assets";
 import { TIMELINE_CONSTANTS } from "../../../../constants/timeline-constants";
 
@@ -215,7 +216,13 @@ export class InsertElementCommand extends Command {
 
 			const updatedTracks = tracks.map((track) =>
 				track.id === targetTrack.id
-					? { ...track, elements: [...track.elements, normalizedElement] }
+					? {
+							...track,
+							elements: ripplePushOverlaps(
+								[...track.elements, normalizedElement],
+								normalizedElement.id,
+							),
+						}
 					: track,
 			) as TimelineTrack[];
 
@@ -264,7 +271,13 @@ export class InsertElementCommand extends Command {
 
 			const updatedTracks = tracks.map((track) =>
 				track.id === existingTrack.id
-					? { ...track, elements: [...track.elements, normalizedElement] }
+					? {
+							...track,
+							elements: ripplePushOverlaps(
+								[...track.elements, normalizedElement],
+								normalizedElement.id,
+							),
+						}
 					: track,
 			) as TimelineTrack[];
 

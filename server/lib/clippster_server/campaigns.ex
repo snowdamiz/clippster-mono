@@ -1912,6 +1912,13 @@ defmodule ClippsterServer.Campaigns do
     |> Repo.update()
   end
 
+  def mark_user_post_failed(%UserPost{} = post, error_message) when is_binary(error_message) do
+    post
+    |> UserPost.status_changeset(%{status: "failed"})
+    |> Ecto.Changeset.put_change(:provider_payload, %{"publish_error" => error_message})
+    |> Repo.update()
+  end
+
   @doc """
   Gets posts needing analytics sync (for background worker).
   """

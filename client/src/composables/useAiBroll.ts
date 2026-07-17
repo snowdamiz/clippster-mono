@@ -15,7 +15,7 @@ import type {
   AiBrollStyle,
   AiBrollSuggestion,
 } from '@/types/ai-broll';
-import type { ManualFramingConfig, ManualRegion, SegmentRegionConfig } from '@/types';
+import type { BrollRegionConfig, ManualRegion } from '@/types';
 
 const REGION_COLORS = ['#4F9DFF', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6', '#06B6D4'];
 
@@ -212,6 +212,7 @@ export function useAiBroll() {
     suggestion: AiBrollSuggestion,
     candidate: AiBrollCandidate,
     projectId: string,
+    options: { addToProjectMedia?: boolean } = {},
   ): Promise<string> {
     const ext = candidate.mediaType === 'image' ? 'jpg' : 'mp4';
     const filename = `broll_${candidate.provider}_${candidate.providerAssetId}.${ext}`;
@@ -222,14 +223,16 @@ export function useAiBroll() {
       filename,
     });
 
-    await addProjectMedia(projectId, {
-      mediaType: candidate.mediaType,
-      filePath: localPath,
-      fileName: filename,
-      duration: candidate.duration ?? null,
-      width: candidate.width || null,
-      height: candidate.height || null,
-    });
+    if (options.addToProjectMedia !== false) {
+      await addProjectMedia(projectId, {
+        mediaType: candidate.mediaType,
+        filePath: localPath,
+        fileName: filename,
+        duration: candidate.duration ?? null,
+        width: candidate.width || null,
+        height: candidate.height || null,
+      });
+    }
 
     return localPath;
   }
@@ -241,12 +244,33 @@ export function useAiBroll() {
     }
   }
 
+  function buildBrollConfig(
+    suggestion: AiBrollSuggestion,
+    candidate: AiBrollCandidate,
+    localPath: string,
+    regionIndex: number,
+  ): BrollRegionConfig {
+    return {
+      brollId: generateId(),
+      startTime: suggestion.startTime,
+      endTime: suggestion.endTime,
+      suggestionId: suggestion.id,
+      region: buildFullCanvasRegion(
+        localPath,
+        candidate.mediaType,
+        suggestion,
+        candidate,
+        regionIndex,
+      ),
+    };
+  }
+
   async function applySuggestionToConfig(
     suggestion: AiBrollSuggestion,
-    segmentConfigs: SegmentRegionConfig[],
+    brollConfigs: BrollRegionConfig[],
     projectId: string,
     regionIndex: number,
-  ): Promise<{ segmentConfigs: SegmentRegionConfig[]; suggestion: AiBrollSuggestion }> {
+  ): Promise<{ brollConfigs: BrollRegionConfig[]; suggestion: AiBrollSuggestion }> {
     let working = suggestion;
     if (working.candidates.length === 0) {
       working = await fetchCandidatesForSuggestion(working);
@@ -258,23 +282,11 @@ export function useAiBroll() {
       throw new Error('No candidate media available');
     }
 
-    const localPath = await ingestCandidate(working, candidate, projectId);
-    const region = buildFullCanvasRegion(
-      localPath,
-      candidate.mediaType,
-      working,
-      candidate,
-      regionIndex,
-    );
-
-    const segment: SegmentRegionConfig = {
-      segmentId: generateId(),
-      startTime: working.startTime,
-      endTime: working.endTime,
-      regions: [region],
-    };
-
-    const nextSegments = [...segmentConfigs, segment].sort((a, b) => a.startTime - b.startTime);
+    const localPath = await ingestCandidate(working, candidate, projectId, {
+      addToProjectMedia: false,
+    });
+    const brollConfig = buildBrollConfig(working, candidate, localPath, regionIndex);
+    const nextBrollConfigs = [...brollConfigs, brollConfig].sort((a, b) => a.startTime - b.startTime);
     const applied: AiBrollSuggestion = {
       ...working,
       status: 'applied',
@@ -284,7 +296,7 @@ export function useAiBroll() {
     await updateAiBrollSuggestion(applied);
     replaceSuggestion(applied);
 
-    return { segmentConfigs: nextSegments, suggestion: applied };
+    return { brollConfigs: nextBrollConfigs, suggestion: applied };
   }
 
   async function regenerateSuggestion(
@@ -328,16 +340,16 @@ export function useAiBroll() {
     try {
       if (mediaType === 'all') {
         const [videos, images] = await Promise.all([
-          searchAiBrollStock({ query: trimmed, orientation, mediaType: 'video', perPage: 6 }),
-          searchAiBrollStock({ query: trimmed, orientation, mediaType: 'image', perPage: 6 }),
+          searchAiBrollStock({ query: trimmed, orientation, mediaType: 'video', perPage: 10 }),
+          searchAiBrollStock({ query: trimmed, orientation, mediaType: 'image', perPage: 10 }),
         ]);
-        manualSearchResults.value = [...videos.candidates, ...images.candidates].slice(0, 12);
+        manualSearchResults.value = [...videos.candidates, ...images.candidates].slice(0, 20);
       } else {
         const result = await searchAiBrollStock({
           query: trimmed,
           orientation,
           mediaType,
-          perPage: 12,
+          perPage: 20,
         });
         manualSearchResults.value = result.candidates;
       }
@@ -392,11 +404,11 @@ export function useAiBroll() {
       projectId: string;
       startTime: number;
       duration: number;
-      segmentConfigs: SegmentRegionConfig[];
+      brollConfigs: BrollRegionConfig[];
       regionIndex: number;
       query?: string;
     },
-  ): Promise<{ segmentConfigs: SegmentRegionConfig[]; suggestion: AiBrollSuggestion }> {
+  ): Promise<{ brollConfigs: BrollRegionConfig[]; suggestion: AiBrollSuggestion }> {
     const endTime = params.startTime + params.duration;
     const suggestion = createManualSuggestion(
       candidate,
@@ -406,23 +418,11 @@ export function useAiBroll() {
       params.query ?? manualSearchQuery.value,
     );
 
-    const localPath = await ingestCandidate(suggestion, candidate, params.projectId);
-    const region = buildFullCanvasRegion(
-      localPath,
-      candidate.mediaType,
-      suggestion,
-      candidate,
-      params.regionIndex,
-    );
-
-    const segment: SegmentRegionConfig = {
-      segmentId: generateId(),
-      startTime: params.startTime,
-      endTime,
-      regions: [region],
-    };
-
-    const nextSegments = [...params.segmentConfigs, segment].sort((a, b) => a.startTime - b.startTime);
+    const localPath = await ingestCandidate(suggestion, candidate, params.projectId, {
+      addToProjectMedia: false,
+    });
+    const brollConfig = buildBrollConfig(suggestion, candidate, localPath, params.regionIndex);
+    const nextBrollConfigs = [...params.brollConfigs, brollConfig].sort((a, b) => a.startTime - b.startTime);
     const applied: AiBrollSuggestion = {
       ...suggestion,
       status: 'applied',
@@ -433,7 +433,7 @@ export function useAiBroll() {
     suggestions.value = [...suggestions.value, applied];
     await upsertAiBrollSuggestion(applied);
 
-    return { segmentConfigs: nextSegments, suggestion: applied };
+    return { brollConfigs: nextBrollConfigs, suggestion: applied };
   }
 
   function suggestionToMarker(s: AiBrollSuggestion) {

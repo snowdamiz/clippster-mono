@@ -31,3 +31,6 @@ config :logger, level: :warning
 
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
+
+# Allow controller tests to pass pre-verified Google userinfo without calling Google APIs
+config :clippster_server, :allow_test_google_info, true

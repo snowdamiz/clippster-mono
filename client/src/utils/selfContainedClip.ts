@@ -45,7 +45,7 @@ export function isSelfContainedClip(clip: ClipForSourceResolution | null | undef
   if (!clip) return false;
   const filePath = typeof clip.file_path === 'string' ? clip.file_path.trim() : '';
   if (!filePath || isClipBuildOutputPath(filePath)) return false;
-  return isAutoOrManualLiveClip(clip);
+  return isAutoOrManualLiveClip(clip) && isExtractedLiveClipFilePath(filePath);
 }
 
 export function getSelfContainedClipDuration(clip: ClipForSourceResolution): number {
@@ -129,8 +129,7 @@ export async function resolveClipVideoSourceForPreview(
     const matchingRawVideo = rawVideos.find((rv) => normalizePathForCompare(rv.file_path) === targetPath);
 
     if (matchingRawVideo) {
-      const extractedFile =
-        isExtractedLiveClipFilePath(clipFilePath) || isAutoOrManualLiveClip(clip);
+      const extractedFile = isExtractedLiveClipFilePath(clipFilePath);
       if (extractedFile) {
         return { filePath: matchingRawVideo.file_path, frameTimestamp: 1, isSelfContained: true };
       }

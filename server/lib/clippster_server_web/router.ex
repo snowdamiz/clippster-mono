@@ -417,11 +417,15 @@ defmodule ClippsterServerWeb.Router do
     delete("/organization-applications/:id", OrganizationApplicationController, :delete_own)
     post("/organization-applications/:id/logo", OrganizationApplicationController, :upload_logo)
 
-    # OAuth account linking routes
+    # OAuth account linking / Gmail switch routes
     post("/auth/link/google", AuthController, :link_google_account)
+    post("/auth/switch/google", AuthController, :switch_google_account)
+    get("/auth/google/switch", AuthController, :google_switch_url)
 
     # Account management routes (email/password changes)
     post("/account/change-email", AccountController, :change_email)
+    post("/account/verify-email-change-otp", AccountController, :verify_email_change_otp)
+    post("/account/resend-email-change", AccountController, :resend_email_change)
     post("/account/change-password", AccountController, :change_password)
 
     # Account type selection (for new users)
@@ -651,6 +655,18 @@ defmodule ClippsterServerWeb.Router do
     post("/shared-clips/:id/mark-viewed", SharedClipController, :mark_viewed)
     post("/shared-clips/:id/mark-downloaded", SharedClipController, :mark_downloaded)
     post("/shared-clips/:id/post", SharedClipController, :mark_posted)
+
+    # Organization shared audio (admin endpoints)
+    get("/organizations/:organization_id/shared-audio", SharedAudioController, :index)
+    get("/organizations/:organization_id/shared-audio/:id", SharedAudioController, :show)
+    post("/organizations/:organization_id/shared-audio", SharedAudioController, :create)
+    delete("/organizations/:organization_id/shared-audio/:id", SharedAudioController, :delete)
+    get("/organizations/:organization_id/shared-audio/:id/stats", SharedAudioController, :stats)
+
+    # User's shared audio (member endpoints)
+    get("/user/shared-audio", SharedAudioController, :user_audio)
+    post("/shared-audio/:id/mark-viewed", SharedAudioController, :mark_viewed)
+    post("/shared-audio/:id/mark-downloaded", SharedAudioController, :mark_downloaded)
 
     # Organization creator profiles
     get(

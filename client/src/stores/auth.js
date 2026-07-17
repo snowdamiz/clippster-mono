@@ -558,27 +558,198 @@ export const useAuthStore = defineStore('auth', {
     },
 
     /**
-     * Change user's email address.
-     * Requires current password for verification.
+     * Switch the linked Gmail/Google account while keeping the same Clippster user
+     * (projects, credits, subscription, etc. stay attached to this user id).
      */
-    async changeEmail(newEmail, password) {
+    async switchGoogleAccount() {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const previousUserId = this.user?.id;
+        const api = await getApi();
+        const { data: startData } = await api.get('/auth/google/switch');
+
+        if (!startData?.success || !startData?.url) {
+          throw new Error(startData?.error || 'Failed to start Google account switch');
+        }
+
+        await invoke('open_google_auth_url', { authUrl: startData.url });
+
+        const result = await new Promise((resolve, reject) => {
+          let unlisten = null;
+          let pollInterval = null;
+          let timeoutId = null;
+
+          const cleanup = () => {
+            if (unlisten) unlisten();
+            if (pollInterval) clearInterval(pollInterval);
+            if (timeoutId) clearTimeout(timeoutId);
+          };
+
+          listen('google-auth-complete', (event) => {
+            cleanup();
+            resolve(event.payload);
+          }).then((u) => {
+            unlisten = u;
+          });
+
+          pollInterval = setInterval(async () => {
+            try {
+              const polledResult = await invoke('poll_google_auth_result');
+              if (polledResult) {
+                cleanup();
+                resolve(polledResult);
+              }
+            } catch (error) {
+              console.error('Poll error:', error);
+            }
+          }, 1000);
+
+          timeoutId = setTimeout(() => {
+            cleanup();
+            reject(new Error('Account switch timeout - please try again'));
+          }, 300000);
+        });
+
+        if (!result.success) {
+          throw new Error(result.error || 'Google account switch failed');
+        }
+
+        // Safety: never adopt a different Clippster user id from a switch flow
+        if (previousUserId && result.user?.id && result.user.id !== previousUserId) {
+          throw new Error(
+            'Account switch aborted: Google returned a different Clippster user. Your original account was not modified.'
+          );
+        }
+
+        this.token = result.token;
+        this.email = result.user.email;
+        this.user = { ...this.user, ...result.user };
+        this.authProvider = 'google';
+        this.isAuthenticated = true;
+
+        localStorage.setItem('auth_token', result.token);
+        localStorage.setItem('email', result.user.email || '');
+        localStorage.setItem('user', JSON.stringify(this.user));
+        localStorage.setItem('auth_provider', 'google');
+
+        await setUserContext(this.user.id);
+        emitAuthStateChanged(this.user.id);
+
+        return { success: true, user: this.user };
+      } catch (error) {
+        this.error = error.response?.data?.error || error.message;
+        return { success: false, error: this.error };
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    /**
+     * Request an email change. Sends OTP to the new address.
+     * Email users: pass { password }.
+     * OAuth → email conversion: pass { newPassword }.
+     */
+    async changeEmail(newEmail, credentials = {}) {
       this.loading = true;
       this.error = null;
 
       try {
         const api = await getApi();
-        const response = await api.post('/account/change-email', {
-          new_email: newEmail,
-          password,
-        });
+        const body = { new_email: newEmail };
 
+        if (credentials.newPassword) {
+          body.new_password = credentials.newPassword;
+        } else if (typeof credentials === 'string') {
+          // Back-compat: changeEmail(email, password)
+          body.password = credentials;
+        } else if (credentials.password) {
+          body.password = credentials.password;
+        }
+
+        const response = await api.post('/account/change-email', body);
         const data = response.data;
 
         if (!data.success) {
           throw new Error(data.error || 'Failed to change email');
         }
 
-        return { success: true, message: data.message };
+        return {
+          success: true,
+          message: data.message,
+          pendingEmail: data.pending_email,
+          otpRequired: data.otp_required === true,
+          convertingFromOauth: data.converting_from_oauth === true,
+        };
+      } catch (error) {
+        this.error = error.response?.data?.error || error.message;
+        return { success: false, error: this.error };
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    /**
+     * Verify pending email change with the OTP sent to the new inbox.
+     */
+    async verifyEmailChangeOtp(otp) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const api = await getApi();
+        const response = await api.post('/account/verify-email-change-otp', { otp });
+        const data = response.data;
+
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to verify email change');
+        }
+
+        if (data.token) {
+          this.token = data.token;
+          localStorage.setItem('auth_token', data.token);
+        }
+
+        if (data.user) {
+          this.user = { ...this.user, ...data.user };
+          this.email = data.user.email;
+          this.authProvider = data.user.provider || 'email';
+          localStorage.setItem('user', JSON.stringify(this.user));
+          localStorage.setItem('email', data.user.email || '');
+          localStorage.setItem('auth_provider', this.authProvider);
+        }
+
+        return { success: true, message: data.message, user: this.user };
+      } catch (error) {
+        this.error = error.response?.data?.error || error.message;
+        return { success: false, error: this.error };
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    /**
+     * Resend OTP for a pending email change.
+     */
+    async resendEmailChangeVerification() {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const api = await getApi();
+        const response = await api.post('/account/resend-email-change', {});
+        const data = response.data;
+
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to resend verification code');
+        }
+
+        return {
+          success: true,
+          message: data.message,
+          pendingEmail: data.pending_email,
+        };
       } catch (error) {
         this.error = error.response?.data?.error || error.message;
         return { success: false, error: this.error };

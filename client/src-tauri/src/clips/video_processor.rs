@@ -2978,6 +2978,16 @@ fn collect_external_media_paths_for_multi_region(config: &ManualFramingConfig) -
             }
         }
     }
+    if let Some(brolls) = &config.broll_configs {
+        for broll in brolls {
+            let r = &broll.region;
+            if matches!(r.media_type.as_deref(), Some("image") | Some("video")) {
+                if let Some(ref id) = r.media_asset_id {
+                    push_path(id);
+                }
+            }
+        }
+    }
     out
 }
 
@@ -3107,7 +3117,9 @@ pub async fn build_multi_region_clip(
         Some("use16x9")
     );
     println!("[Rust] use_16x9 mode detected: {}", use_16x9);
-    if working_config.regions.is_empty() && working_config.source_transform.is_none() && !use_16x9 {
+    let has_broll = working_config.broll_configs.is_some()
+        && !working_config.broll_configs.as_ref().unwrap().is_empty();
+    if working_config.regions.is_empty() && working_config.source_transform.is_none() && !use_16x9 && !has_broll {
         return Err("MultiRegion config has no regions defined and no sourceTransform".to_string());
     }
 
@@ -3482,13 +3494,12 @@ pub async fn build_multi_region_clip(
         
         // Build base regions (active outside all segments)
         // Enable condition: NOT in any segment time range
-        // IMPORTANT: Segment times are absolute, but after FFmpeg trim (-ss), timeline starts at 0
-        // So we need to convert segment times to be relative to clip start
+        // POI segment_configs times are clip-relative (0 = clip start), matching broll_configs
+        // and ManualPOIEditor. FFmpeg output timeline also starts at 0 after -ss trim.
         let mut base_enable_parts = Vec::new();
         for seg in segments.iter() {
-            // Convert absolute segment times to relative (from clip start)
-            let relative_start = seg.start_time - start_time;
-            let relative_end = seg.end_time - start_time;
+            let relative_start = seg.start_time;
+            let relative_end = seg.end_time;
             
             // For each segment, add condition: NOT (t >= start AND t <= end)
             // Which is: t < start OR t > end
@@ -3513,9 +3524,8 @@ pub async fn build_multi_region_clip(
         
         // Build segment-specific regions
         for (seg_idx, seg) in segments.iter().enumerate() {
-            // Convert absolute segment times to relative (from clip start)
-            let relative_start = seg.start_time - start_time;
-            let relative_end = seg.end_time - start_time;
+            let relative_start = seg.start_time;
+            let relative_end = seg.end_time;
             
             // Enable condition: t >= start AND t <= end
             let seg_enable = format!(
@@ -3538,6 +3548,27 @@ pub async fn build_multi_region_clip(
     } else {
         // No segments - build regions normally without enable filters
         region_labels = build_region_filters(&working_config.regions, "r", None)?;
+    }
+
+    if let Some(brolls) = &working_config.broll_configs {
+        for (broll_idx, broll) in brolls.iter().enumerate() {
+            let broll_enable = format!(
+                "enable=gte(t,{})*lte(t,{})",
+                broll.start_time.max(0.0),
+                broll.end_time.max(broll.start_time + 0.001)
+            );
+            println!(
+                "[Rust] Building B-roll {} ({:.2}s - {:.2}s) as independent overlay",
+                broll_idx, broll.start_time, broll.end_time
+            );
+            let broll_regions = vec![broll.region.clone()];
+            let broll_labels = build_region_filters(
+                &broll_regions,
+                &format!("broll{}_r", broll_idx),
+                Some(broll_enable),
+            )?;
+            region_labels.extend(broll_labels);
+        }
     }
 
     if region_labels.is_empty() {
@@ -5360,49 +5391,39 @@ pub async fn apply_rendered_text_overlays_to_video(
     filter_parts.push("[0:v]null[base]".to_string());
     let mut current_label = "base".to_string();
 
-    // Process each rendered text overlay
+    // Process each rendered text overlay.
+    // PNGs are full-frame with text already positioned; scale to the video size
+    // (same approach as pre-rendered subtitle overlays) then composite at 0,0.
+    println!(
+        "[Rust] Compositing {} text overlay PNG(s) onto {}x{} ({})",
+        rendered_overlays.len(),
+        video_width,
+        video_height,
+        aspect_ratio
+    );
     for (idx, (image_path, overlay)) in rendered_overlays.iter().enumerate() {
-        // Get position for this aspect ratio (fallback to default)
-        let (pos_x_pct, pos_y_pct) = if let Some(ref configs) = overlay.per_ratio_configs {
-            if let Some(config) = configs.get(aspect_ratio) {
-                (config.position.x, config.position.y)
-            } else {
-                (overlay.position_x, overlay.position_y)
-            }
-        } else {
-            (overlay.position_x, overlay.position_y)
-        };
-
-        // Calculate pixel position (center-anchored)
-        let pos_x = (pos_x_pct / 100.0 * video_width) as i32;
-        let pos_y = (pos_y_pct / 100.0 * video_height) as i32;
-
         let text_label = format!("txt{}", idx);
+        let scaled_label = format!("txts{}", idx);
+        let base_ref_label = format!("tbase{}", idx);
         let next_label = format!("to{}", idx);
 
         // Prepare the text image (ensure RGBA format)
-        let text_filter = format!("[{}:v]format=rgba[{}]", input_count, text_label);
+        filter_parts.push(format!("[{}:v]format=rgba[{}]", input_count, text_label));
 
-        filter_parts.push(text_filter);
+        // Scale full-frame PNG to match the actual output video dimensions
+        filter_parts.push(format!(
+            "[{}][{}]scale2ref=w=iw:h=ih[{}][{}]",
+            text_label, current_label, scaled_label, base_ref_label
+        ));
 
-        // Overlay with timing and center-anchor positioning
-        // Add time_offset (intro duration) to timing so overlays appear at correct time
         let adjusted_start = overlay.start_time + time_offset;
         let adjusted_end = overlay.end_time + time_offset;
-        let overlay_filter = format!(
-            "[{}][{}]overlay=x={}-(overlay_w/2):y={}-(overlay_h/2):enable='between(t,{:.3},{:.3})'[{}]",
-            current_label,
-            text_label,
-            pos_x,
-            pos_y,
-            adjusted_start,
-            adjusted_end,
-            next_label
-        );
+        filter_parts.push(format!(
+            "[{}][{}]overlay=x=0:y=0:enable='between(t,{:.3},{:.3})'[{}]",
+            base_ref_label, scaled_label, adjusted_start, adjusted_end, next_label
+        ));
 
-        filter_parts.push(overlay_filter);
         current_label = next_label;
-
         overlay_inputs.push(image_path.clone());
         input_count += 1;
     }
