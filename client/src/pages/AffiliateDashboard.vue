@@ -43,16 +43,16 @@
           </div>
         </div>
 
-        <!-- Referral Link -->
+        <!-- Referral Code -->
         <div class="aff-tab__link-card">
           <div class="aff-tab__link-header">
-            <Link2 class="aff-tab__link-icon" />
-            <span class="aff-tab__link-label">Your Referral Link</span>
+            <Hash class="aff-tab__link-icon" />
+            <span class="aff-tab__link-label">Your Referral Code</span>
             <span class="aff-tab__status" :class="`aff-tab__status--${affiliateInfo.status}`">{{ affiliateInfo.status }}</span>
           </div>
           <div class="aff-tab__link-row">
-            <code class="aff-tab__link-url">{{ referralUrl }}</code>
-            <button class="aff-tab__copy-btn" @click="copyLink">
+            <code class="aff-tab__link-url">{{ affiliateInfo.referral_code }}</code>
+            <button class="aff-tab__copy-btn" @click="copyCode">
               <Copy v-if="!copied" :size="14" />
               <Check v-else :size="14" class="aff-tab__copy-ok" />
               {{ copied ? 'Copied!' : 'Copy' }}
@@ -104,7 +104,7 @@
           <div v-if="referrals.length === 0" class="empty-state">
             <Handshake class="empty-state__icon" />
             <p class="empty-state__title">No referrals yet</p>
-            <p class="empty-state__text">Share your link to start earning commissions</p>
+            <p class="empty-state__text">Share your code to start earning commissions</p>
           </div>
           <div v-else class="aff-tab__table-wrapper">
             <table class="aff-tab__table">
@@ -201,13 +201,13 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, computed, onMounted } from 'vue';
+  import { ref, reactive, onMounted } from 'vue';
   import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import {
     Handshake,
     Loader2,
     AlertTriangle,
-    Link2,
+    Hash,
     Copy,
     Check,
     TrendingUp,
@@ -253,11 +253,6 @@
     paypal_email: '',
   });
 
-  const referralUrl = computed(() => {
-    if (!affiliateInfo.value) return '';
-    return `https://clippster.app/?ref=${affiliateInfo.value.referral_code}`;
-  });
-
   async function fetchAll() {
     loading.value = true;
     error.value = null;
@@ -287,14 +282,16 @@
     }
   }
 
-  async function copyLink() {
+  async function copyCode() {
+    if (!affiliateInfo.value) return;
+    const code = affiliateInfo.value.referral_code;
     try {
-      await navigator.clipboard.writeText(referralUrl.value);
+      await navigator.clipboard.writeText(code);
       copied.value = true;
       setTimeout(() => { copied.value = false; }, 2000);
     } catch {
       const input = document.createElement('input');
-      input.value = referralUrl.value;
+      input.value = code;
       document.body.appendChild(input);
       input.select();
       document.execCommand('copy');
@@ -357,7 +354,7 @@
   .skeleton-row { height: 2.5rem; border-radius: 8px; background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
   .skeleton-row--lg { height: 4rem; }
 
-  /* Referral Link Card */
+  /* Referral Code Card */
   .aff-tab__link-card {
     padding: 1.25rem; border-radius: 10px;
     border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));

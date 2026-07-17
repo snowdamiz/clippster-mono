@@ -868,16 +868,16 @@
                 </div>
               </div>
 
-              <!-- Referral Link -->
+              <!-- Referral Code -->
               <div class="aff-tab__link-card">
                 <div class="aff-tab__link-header">
-                  <Link2 class="aff-tab__link-icon" />
-                  <span class="aff-tab__link-label">Your Referral Link</span>
+                  <Hash class="aff-tab__link-icon" />
+                  <span class="aff-tab__link-label">Your Referral Code</span>
                   <span class="aff-tab__status" :class="`aff-tab__status--${affiliateInfo.status}`">{{ affiliateInfo.status }}</span>
                 </div>
                 <div class="aff-tab__link-row">
-                  <code class="aff-tab__link-url">{{ affiliateReferralUrl }}</code>
-                  <button class="aff-tab__copy-btn" @click="copyAffiliateLink">
+                  <code class="aff-tab__link-url">{{ affiliateInfo.referral_code }}</code>
+                  <button class="aff-tab__copy-btn" @click="copyAffiliateCode">
                     <Copy v-if="!affCopied" :size="14" />
                     <Check v-else :size="14" class="aff-tab__copy-ok" />
                     {{ affCopied ? 'Copied!' : 'Copy' }}
@@ -929,7 +929,7 @@
                 <div v-if="affiliateReferrals.length === 0" class="empty-state">
                   <Handshake class="empty-state__icon" />
                   <p class="empty-state__title">No referrals yet</p>
-                  <p class="empty-state__text">Share your link to start earning commissions</p>
+                  <p class="empty-state__text">Share your code to start earning commissions</p>
                 </div>
                 <div v-else class="aff-tab__table-wrapper">
                   <table class="aff-tab__table">
@@ -1310,7 +1310,7 @@
     FileVideo,
     RefreshCw,
     Handshake,
-    Link2,
+    Hash,
     Copy,
     Check,
     Briefcase,
@@ -1486,11 +1486,6 @@
     { value: 'crypto', label: 'Crypto (Solana USDC)' },
     { value: 'paypal', label: 'PayPal' },
   ];
-
-  const affiliateReferralUrl = computed(() => {
-    if (!affiliateInfo.value) return '';
-    return `https://clippster.app/?ref=${affiliateInfo.value.referral_code}`;
-  });
 
   // Hiring Tab State
   const loadingHiringPosts = ref(false);
@@ -1737,9 +1732,10 @@
     }
   };
 
-  const copyAffiliateLink = async () => {
+  const copyAffiliateCode = async () => {
+    if (!affiliateInfo.value) return;
     try {
-      await navigator.clipboard.writeText(affiliateReferralUrl.value);
+      await navigator.clipboard.writeText(affiliateInfo.value.referral_code);
       affCopied.value = true;
       setTimeout(() => { affCopied.value = false; }, 2000);
     } catch {

@@ -2221,16 +2221,16 @@
     }
   }
 
-  async function viewCreatorVods(creator: DisplayCreatorProfile) {
+  function viewCreatorVods(creator: DisplayCreatorProfile) {
     const primaryLink = creator.platform_links.find((l) => l.is_primary) || creator.platform_links[0];
     if (!primaryLink) {
       showError('No Platform', 'This creator has no platform links configured');
       return;
     }
 
-    // Track profile usage context
+    // Navigate immediately — tracking shouldn't delay the VOD search UI
     const { trackProfileUsage } = useProfileContext();
-    await trackProfileUsage(creator);
+    void trackProfileUsage(creator);
 
     router.push({
       path: '/vods',

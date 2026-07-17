@@ -26,6 +26,10 @@ export interface TranscriptionOptions {
   parentProjectId?: string | null;
   sourceVideoPath?: string | null;
   forceRetranscribe?: boolean;
+  /** Skip credit charges for a single short clip (POI generate-subtitles). */
+  freeSingleClip?: boolean;
+  /** Full clip duration in seconds; required with freeSingleClip so chunked uploads can't bypass the free cap. */
+  freeSingleClipTotalDurationSeconds?: number;
 }
 
 interface UseTranscriptionOnlyOptions {
@@ -72,6 +76,8 @@ export function useTranscriptionOnly(options: UseTranscriptionOnlyOptions = {}) 
   });
   let abortController: AbortController | null = null;
   let currentOrganizationId: number | null = null;
+  let currentFreeSingleClip = false;
+  let currentFreeSingleClipTotalDurationSeconds: number | null = null;
 
   function normalizePathForCompare(path: string): string {
     return path.replace(/\\/g, '/').replace(/^file:\/\//, '').toLowerCase();
@@ -175,6 +181,12 @@ export function useTranscriptionOnly(options: UseTranscriptionOnlyOptions = {}) 
       isCancelled.value = false;
       abortController = new AbortController();
       currentOrganizationId = options.organizationId ?? null;
+      currentFreeSingleClip = Boolean(options.freeSingleClip);
+      currentFreeSingleClipTotalDurationSeconds =
+        typeof options.freeSingleClipTotalDurationSeconds === 'number' &&
+        options.freeSingleClipTotalDurationSeconds > 0
+          ? options.freeSingleClipTotalDurationSeconds
+          : null;
 
       isProcessing.value = true;
       progress.value = {
@@ -342,6 +354,15 @@ export function useTranscriptionOnly(options: UseTranscriptionOnlyOptions = {}) 
       formData.append('duration', chunk.duration.toString());
       if (currentOrganizationId) {
         formData.append('organization_id', currentOrganizationId.toString());
+      }
+      if (currentFreeSingleClip) {
+        formData.append('free_single_clip', 'true');
+        if (currentFreeSingleClipTotalDurationSeconds != null) {
+          formData.append(
+            'free_single_clip_total_duration',
+            currentFreeSingleClipTotalDurationSeconds.toString()
+          );
+        }
       }
 
       const maxRetries = 3;

@@ -5391,49 +5391,39 @@ pub async fn apply_rendered_text_overlays_to_video(
     filter_parts.push("[0:v]null[base]".to_string());
     let mut current_label = "base".to_string();
 
-    // Process each rendered text overlay
+    // Process each rendered text overlay.
+    // PNGs are full-frame with text already positioned; scale to the video size
+    // (same approach as pre-rendered subtitle overlays) then composite at 0,0.
+    println!(
+        "[Rust] Compositing {} text overlay PNG(s) onto {}x{} ({})",
+        rendered_overlays.len(),
+        video_width,
+        video_height,
+        aspect_ratio
+    );
     for (idx, (image_path, overlay)) in rendered_overlays.iter().enumerate() {
-        // Get position for this aspect ratio (fallback to default)
-        let (pos_x_pct, pos_y_pct) = if let Some(ref configs) = overlay.per_ratio_configs {
-            if let Some(config) = configs.get(aspect_ratio) {
-                (config.position.x, config.position.y)
-            } else {
-                (overlay.position_x, overlay.position_y)
-            }
-        } else {
-            (overlay.position_x, overlay.position_y)
-        };
-
-        // Calculate pixel position (center-anchored)
-        let pos_x = (pos_x_pct / 100.0 * video_width) as i32;
-        let pos_y = (pos_y_pct / 100.0 * video_height) as i32;
-
         let text_label = format!("txt{}", idx);
+        let scaled_label = format!("txts{}", idx);
+        let base_ref_label = format!("tbase{}", idx);
         let next_label = format!("to{}", idx);
 
         // Prepare the text image (ensure RGBA format)
-        let text_filter = format!("[{}:v]format=rgba[{}]", input_count, text_label);
+        filter_parts.push(format!("[{}:v]format=rgba[{}]", input_count, text_label));
 
-        filter_parts.push(text_filter);
+        // Scale full-frame PNG to match the actual output video dimensions
+        filter_parts.push(format!(
+            "[{}][{}]scale2ref=w=iw:h=ih[{}][{}]",
+            text_label, current_label, scaled_label, base_ref_label
+        ));
 
-        // Overlay with timing and center-anchor positioning
-        // Add time_offset (intro duration) to timing so overlays appear at correct time
         let adjusted_start = overlay.start_time + time_offset;
         let adjusted_end = overlay.end_time + time_offset;
-        let overlay_filter = format!(
-            "[{}][{}]overlay=x={}-(overlay_w/2):y={}-(overlay_h/2):enable='between(t,{:.3},{:.3})'[{}]",
-            current_label,
-            text_label,
-            pos_x,
-            pos_y,
-            adjusted_start,
-            adjusted_end,
-            next_label
-        );
+        filter_parts.push(format!(
+            "[{}][{}]overlay=x=0:y=0:enable='between(t,{:.3},{:.3})'[{}]",
+            base_ref_label, scaled_label, adjusted_start, adjusted_end, next_label
+        ));
 
-        filter_parts.push(overlay_filter);
         current_label = next_label;
-
         overlay_inputs.push(image_path.clone());
         input_count += 1;
     }

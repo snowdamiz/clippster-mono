@@ -136,7 +136,8 @@ export function mergeClipTextBoxForRatio(state: ClipTextBoxState, ratio: string)
 
 /**
  * Mark the clip text box as configured for a POI aspect ratio using current geometry.
- * Called when the user adds/edits text in ManualPOIEditor so export can scope per ratio.
+ * Used by ManualPOIEditor / framing checklist; export applies the box to all ratios and
+ * uses perRatioConfigs only for position/style overrides.
  */
 export function ensureClipTextPerRatioEntry(state: ClipTextBoxState, ratio: string): ClipTextBoxState {
   if (!state.enabled) return state;
@@ -152,7 +153,7 @@ export function ensureClipTextPerRatioEntry(state: ClipTextBoxState, ratio: stri
   });
 }
 
-/** True when this aspect ratio should receive the clip text box on export. */
+/** True when this aspect ratio has POI geometry configured (or none yet → treat as enabled). */
 export function isClipTextBoxEnabledForRatio(state: ClipTextBoxState, ratio: string): boolean {
   if (!state.enabled) return false;
   const keys = Object.keys(state.perRatioConfigs ?? {});

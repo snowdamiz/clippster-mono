@@ -1744,6 +1744,11 @@
           fontSize: settings.fontSize
         });
         localSubtitleSettings.value = { ...settings };
+        // Enable positioning when subtitles are turned on while the editor is already open
+        // (e.g. after Generate Transcript → Edit Subtitles from this dialog).
+        if (settings.enabled && props.modelValue) {
+          subtitlePositioningEnabled.value = true;
+        }
       }
     },
     { immediate: true, deep: true }

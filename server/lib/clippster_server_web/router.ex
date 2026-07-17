@@ -358,11 +358,15 @@ defmodule ClippsterServerWeb.Router do
     delete("/organization-applications/:id", OrganizationApplicationController, :delete_own)
     post("/organization-applications/:id/logo", OrganizationApplicationController, :upload_logo)
 
-    # OAuth account linking routes
+    # OAuth account linking / Gmail switch routes
     post("/auth/link/google", AuthController, :link_google_account)
+    post("/auth/switch/google", AuthController, :switch_google_account)
+    get("/auth/google/switch", AuthController, :google_switch_url)
 
     # Account management routes (email/password changes)
     post("/account/change-email", AccountController, :change_email)
+    post("/account/verify-email-change-otp", AccountController, :verify_email_change_otp)
+    post("/account/resend-email-change", AccountController, :resend_email_change)
     post("/account/change-password", AccountController, :change_password)
 
     # Account type selection (for new users)

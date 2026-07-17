@@ -387,7 +387,6 @@ export interface MediaPanelEmits {
   (e: 'viewTranscript'): void;
   (e: 'publishNow', clip: any): void;
   (e: 'buildDialogOpen', open: boolean): void;
-  (e: 'requestSubtitleTranscription', clipId: string): void;
 }
 
 export interface TimelinePlayheadProps {
