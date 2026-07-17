@@ -148,9 +148,9 @@
               <div class="subtitle-editor-dialog__alert subtitle-editor-dialog__alert--info">
                 <Info :size="16" />
                 <div class="flex-1">
-                  <p class="font-medium text-xs sm:text-sm mb-0.5 sm:mb-1">Applies to All Clips</p>
+                  <p class="font-medium text-xs sm:text-sm mb-0.5 sm:mb-1">{{ applyScopeTitle }}</p>
                   <p class="text-[10px] sm:text-xs opacity-80">
-                    This style will enable subtitles for every detected or manually added clip. Remove subtitles from a single clip from its subtitle properties panel.
+                    {{ applyScopeDescription }}
                   </p>
                 </div>
               </div>
@@ -188,7 +188,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch } from 'vue';
+  import { computed, ref, watch } from 'vue';
   import { Captions, Info, Loader2, X, AlertCircle } from 'lucide-vue-next';
   import type { Clip, SubtitleSettings } from '@/types';
 
@@ -214,6 +214,15 @@
   const selectedPreset = ref<string>('');
   const isSaving = ref(false);
   const error = ref<string>('');
+
+  const applyScopeTitle = computed(() =>
+    props.clips.length === 1 ? 'Applies to This Clip' : 'Applies to All Clips'
+  );
+  const applyScopeDescription = computed(() =>
+    props.clips.length === 1
+      ? 'This style will enable subtitles for the clip open in the framing editor. You can adjust style and position there after saving.'
+      : 'This style will enable subtitles for every detected or manually added clip. Remove subtitles from a single clip from its subtitle properties panel.'
+  );
 
   function close() {
     if (!isSaving.value) {
@@ -277,7 +286,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10000;
+    /* Above ManualPOIEditor (10050) so Edit Subtitles stays visible after POI transcription */
+    z-index: 10100;
   }
 
   .subtitle-editor-dialog {

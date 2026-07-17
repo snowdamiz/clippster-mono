@@ -30,6 +30,15 @@ defmodule ClippsterServer.Accounts.User do
     field :password_reset_token, :string
     field :password_reset_sent_at, :utc_datetime
 
+    # Email change (pending verification on the new address)
+    field :email_change_token, :string
+    field :email_change_otp, :string
+    field :email_change_new_email, :string
+    field :email_change_sent_at, :utc_datetime
+    field :email_change_attempts, :integer, default: 0
+    # Pending password while converting OAuth → email (applied on verify)
+    field :email_change_password_hash, :string
+
     # Organization fields
     # "personal" | "organization" | nil (pending)
     field :account_type, :string
@@ -154,6 +163,20 @@ defmodule ClippsterServer.Accounts.User do
   end
 
   @doc """
+  Changeset for switching the linked Google/Gmail identity on an existing user.
+  Preserves the user primary key so owned data (credits, projects, etc.) stays intact.
+  """
+  def switch_google_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:email, :name, :avatar_url, :provider, :provider_id])
+    |> validate_required([:provider, :provider_id, :email])
+    |> validate_inclusion(:provider, ["google"])
+    |> put_change(:email_verified, true)
+    |> unique_constraint(:email)
+    |> unique_constraint([:provider, :provider_id])
+  end
+
+  @doc """
   Changeset for email/password registration.
   """
   def email_registration_changeset(user, attrs) do
@@ -238,26 +261,56 @@ defmodule ClippsterServer.Accounts.User do
   end
 
   @doc """
-  Changeset for email change request.
+  Changeset for email change request (OTP + magic link).
   """
   def email_change_request_changeset(user, attrs) do
     user
-    |> cast(attrs, [:email_change_token, :email_change_new_email, :email_change_sent_at])
+    |> cast(attrs, [
+      :email_change_token,
+      :email_change_otp,
+      :email_change_new_email,
+      :email_change_sent_at,
+      :email_change_attempts,
+      :email_change_password_hash
+    ])
   end
 
   @doc """
-  Changeset for confirming email change.
+  Changeset for confirming email change (and optional OAuth → email conversion).
   """
   def email_change_confirm_changeset(user, attrs) do
     user
-    |> cast(attrs, [:email])
+    |> cast(attrs, [:email, :provider, :provider_id, :password_hash, :email_verified])
     |> validate_required([:email])
     |> validate_email()
     |> put_change(:email_change_token, nil)
+    |> put_change(:email_change_otp, nil)
     |> put_change(:email_change_new_email, nil)
     |> put_change(:email_change_sent_at, nil)
+    |> put_change(:email_change_attempts, 0)
+    |> put_change(:email_change_password_hash, nil)
     |> put_email_provider_id()
     |> unique_constraint(:email)
+    |> unique_constraint([:provider, :provider_id])
+  end
+
+  @doc """
+  Increments failed email-change OTP attempts.
+  """
+  def increment_email_change_attempts_changeset(user) do
+    user
+    |> change()
+    |> put_change(:email_change_attempts, (user.email_change_attempts || 0) + 1)
+  end
+
+  @doc """
+  Validates a new password for OAuth → email conversion (does not persist).
+  """
+  def validate_new_password_changeset(password) when is_binary(password) do
+    %__MODULE__{}
+    |> cast(%{password: password}, [:password])
+    |> validate_required([:password])
+    |> validate_password()
   end
 
   @doc """

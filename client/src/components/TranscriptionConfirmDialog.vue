@@ -309,7 +309,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10000;
+    /* Above ManualPOIEditor (10050) so Generate Transcript is visible from POI subtitle flow */
+    z-index: 10100;
   }
 
   /* ===== Dialog Container ===== */

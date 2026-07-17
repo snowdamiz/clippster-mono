@@ -1113,6 +1113,7 @@ defmodule ClippsterServer.Subscriptions do
   @doc """
   Admin-initiated subscription extension.
   Extends the subscription end date by the specified number of days.
+  If the subscription is already expired, days are added from now (not the past end date).
   Optionally grants monthly credits.
   """
   def admin_extend_subscription(user_id, days, grant_credits \\ false) do
@@ -1130,17 +1131,39 @@ defmodule ClippsterServer.Subscriptions do
         Repo.rollback(:invalid_tier)
       end
 
-      # Calculate new end date
-      current_end = user.subscription_end_date || DateTime.utc_now()
-      new_end = DateTime.add(current_end, days, :day)
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      current_end = user.subscription_end_date
+      expired? = subscription_period_expired?(user, now)
 
-      # Update user subscription end date
-      {:ok, updated_user} =
-        user
-        |> User.subscription_changeset(%{
+      # Active subs extend from current end; expired/missing ends start from now
+      period_start =
+        cond do
+          is_nil(current_end) -> now
+          expired? -> now
+          true -> current_end
+        end
+
+      new_end = DateTime.add(period_start, days, :day)
+
+      changeset_attrs =
+        %{
           subscription_status: "active",
           subscription_end_date: new_end
-        })
+        }
+        |> then(fn attrs ->
+          if expired? do
+            Map.merge(attrs, %{
+              subscription_start_date: period_start,
+              subscription_renewal_method: user.subscription_renewal_method || "admin"
+            })
+          else
+            attrs
+          end
+        end)
+
+      {:ok, updated_user} =
+        user
+        |> User.subscription_changeset(changeset_attrs)
         |> Repo.update()
 
       # Create subscription history record for extension
@@ -1150,7 +1173,7 @@ defmodule ClippsterServer.Subscriptions do
           user_id: user_id,
           status: "active",
           subscription_tier: tier,
-          start_date: current_end,
+          start_date: period_start,
           end_date: new_end,
           hours_included: Decimal.new("0"),
           credits_granted:
@@ -1177,6 +1200,7 @@ defmodule ClippsterServer.Subscriptions do
   @doc """
   Admin-initiated tier change.
   Changes the subscription tier for a user.
+  If the subscription is expired, starts a fresh period from now.
   Optionally grants monthly credits for the new tier.
   """
   def admin_change_tier(user_id, new_tier, grant_credits \\ false) do
@@ -1187,13 +1211,19 @@ defmodule ClippsterServer.Subscriptions do
     else
       Repo.transaction(fn ->
         user = Repo.get!(User, user_id)
+        now = DateTime.utc_now() |> DateTime.truncate(:second)
+        expired? = subscription_period_expired?(user, now)
 
-        # Determine start and end dates
-        start_date =
-          user.subscription_start_date || DateTime.utc_now() |> DateTime.truncate(:second)
-
-        end_date =
-          user.subscription_end_date || DateTime.add(start_date, @subscription_days, :day)
+        # Keep remaining time for active subs; expired/missing ends start a new period
+        {start_date, end_date} =
+          if expired? or is_nil(user.subscription_end_date) do
+            {now, DateTime.add(now, @subscription_days, :day)}
+          else
+            {
+              user.subscription_start_date || now,
+              user.subscription_end_date
+            }
+          end
 
         # Update user's tier and ensure subscription is active
         {:ok, updated_user} =
@@ -1207,47 +1237,45 @@ defmodule ClippsterServer.Subscriptions do
           })
           |> Repo.update()
 
-        # Optionally grant credits for new tier
+        credits_granted =
+          if grant_credits,
+            do: Decimal.new(to_string(tier_info.monthly_credits)),
+            else: Decimal.new("0")
+
         if grant_credits do
           {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
-
-          # Create subscription history record for tier change
-          {:ok, subscription} =
-            %Subscription{}
-            |> Subscription.create_changeset(%{
-              user_id: user_id,
-              status: "active",
-              subscription_tier: new_tier,
-              start_date: start_date,
-              end_date: end_date,
-              hours_included: Decimal.new("0"),
-              credits_granted: Decimal.new(to_string(tier_info.monthly_credits)),
-              payment_method: "admin",
-              amount_usd: Decimal.new("0")
-            })
-            |> Repo.insert()
-
-          %{user: updated_user, subscription: subscription}
-        else
-          # Create subscription history record even without credits
-          {:ok, subscription} =
-            %Subscription{}
-            |> Subscription.create_changeset(%{
-              user_id: user_id,
-              status: "active",
-              subscription_tier: new_tier,
-              start_date: start_date,
-              end_date: end_date,
-              hours_included: Decimal.new("0"),
-              credits_granted: Decimal.new("0"),
-              payment_method: "admin",
-              amount_usd: Decimal.new("0")
-            })
-            |> Repo.insert()
-
-          %{user: updated_user, subscription: subscription}
         end
+
+        {:ok, subscription} =
+          %Subscription{}
+          |> Subscription.create_changeset(%{
+            user_id: user_id,
+            status: "active",
+            subscription_tier: new_tier,
+            start_date: start_date,
+            end_date: end_date,
+            hours_included: Decimal.new("0"),
+            credits_granted: credits_granted,
+            payment_method: "admin",
+            amount_usd: Decimal.new("0")
+          })
+          |> Repo.insert()
+
+        %{user: updated_user, subscription: subscription}
       end)
+    end
+  end
+
+  defp subscription_period_expired?(user, now) do
+    cond do
+      user.subscription_status == "expired" ->
+        true
+
+      is_nil(user.subscription_end_date) ->
+        false
+
+      true ->
+        DateTime.compare(now, user.subscription_end_date) == :gt
     end
   end
 

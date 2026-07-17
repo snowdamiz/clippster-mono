@@ -56,6 +56,41 @@ defmodule ClippsterServerWeb.ClipsController do
     end
   end
 
+  # Free single-clip transcription (POI generate-subtitles). Caps abuse at 30 minutes.
+  @free_single_clip_max_seconds 30 * 60
+
+  defp parse_free_single_clip_param(params) do
+    case Map.get(params, "free_single_clip", "false") do
+      true -> true
+      "true" -> true
+      "1" -> true
+      1 -> true
+      _ -> false
+    end
+  end
+
+  defp audio_duration_seconds_from_params(params) when is_map(params) do
+    case Map.get(params, "duration") do
+      nil -> nil
+      val ->
+        case Float.parse(to_string(val)) do
+          {seconds, _} -> seconds
+          :error -> nil
+        end
+    end
+  end
+
+  defp free_single_clip_total_duration_seconds(params) when is_map(params) do
+    case Map.get(params, "free_single_clip_total_duration") do
+      nil -> nil
+      val ->
+        case Float.parse(to_string(val)) do
+          {seconds, _} -> seconds
+          :error -> nil
+        end
+    end
+  end
+
   defp parse_video_chunk_uploads(params) do
     params
     |> Enum.reduce(%{}, fn
@@ -1229,69 +1264,102 @@ defmodule ClippsterServerWeb.ClipsController do
           audio_upload = params["audio"]
 
           duration_hours = calculate_audio_duration_hours(params)
+          duration_seconds = audio_duration_seconds_from_params(params)
+          total_clip_seconds = free_single_clip_total_duration_seconds(params)
           organization_id = Map.get(params, "organization_id") |> parse_org_id()
           enhanced = parse_enhanced_param(params)
+          free_single_clip = parse_free_single_clip_param(params)
+
+          # Require the full clip duration (not just this chunk) to be within the free cap.
+          free_single_clip_eligible =
+            free_single_clip and
+              is_number(duration_seconds) and
+              duration_seconds > 0 and
+              duration_seconds <= @free_single_clip_max_seconds and
+              is_number(total_clip_seconds) and
+              total_clip_seconds > 0 and
+              total_clip_seconds <= @free_single_clip_max_seconds
 
           # Deduct credits and create job for tracking/refunds
           credit_result =
-            if is_admin do
-              {:ok, %{credits: 0.0, job_id: nil, credit_source: :unlimited}}
-            else
-              case deduct_credits_for_transcription(
-                     user_id,
-                     duration_hours,
-                     organization_id,
-                     enhanced
-                   ) do
-                {:ok, credits, credit_source} ->
-                  # Create job record for refund tracking
-                  job_opts = [
-                    project_id: project_id,
-                    job_type: "transcription"
-                  ]
+            cond do
+              is_admin ->
+                {:ok, %{credits: 0.0, job_id: nil, credit_source: :unlimited}}
 
-                  job_opts =
-                    if credit_source == :organization and organization_id,
-                      do: [{:organization_id, organization_id} | job_opts],
-                      else: job_opts
+              free_single_clip and not free_single_clip_eligible ->
+                {:halt,
+                 conn
+                 |> put_status(400)
+                 |> json(%{
+                   success: false,
+                   error: "Free single-clip transcription is limited to 30 minutes",
+                   details:
+                     "This clip is too long for free transcription. Use project transcription instead."
+                 })}
 
-                  case Credits.create_processing_job(user_id, credits, duration_hours, job_opts) do
-                    {:ok, job} ->
-                      IO.puts(
-                        "[ClipsController] Created transcription job #{job.id} for tracking (#{Float.round(credits, 3)} credits from #{credit_source})"
-                      )
+              free_single_clip_eligible ->
+                IO.puts(
+                  "[ClipsController] Free single-clip transcription (#{Float.round(duration_seconds, 1)}s) — skipping credit deduction"
+                )
 
-                      {:ok, %{credits: credits, job_id: job.id, credit_source: credit_source}}
+                {:ok, %{credits: 0.0, job_id: nil, credit_source: :free_single_clip}}
 
-                    {:error, _} ->
-                      {:ok, %{credits: credits, job_id: nil, credit_source: credit_source}}
-                  end
+              true ->
+                case deduct_credits_for_transcription(
+                       user_id,
+                       duration_hours,
+                       organization_id,
+                       enhanced
+                     ) do
+                  {:ok, credits, credit_source} ->
+                    # Create job record for refund tracking
+                    job_opts = [
+                      project_id: project_id,
+                      job_type: "transcription"
+                    ]
 
-                {:error, :insufficient_credits, remaining, needed} ->
-                  {:halt,
-                   conn
-                   |> put_status(402)
-                   |> json(%{
-                     success: false,
-                     error: "Insufficient credits",
-                     details:
-                       "Need #{Float.round(needed, 3)} credits, have #{Float.round(remaining, 3)}",
-                     credits_required: needed,
-                     credits_remaining: remaining
-                   })}
+                    job_opts =
+                      if credit_source == :organization and organization_id,
+                        do: [{:organization_id, organization_id} | job_opts],
+                        else: job_opts
 
-                {:error, :not_a_member, details} ->
-                  {:halt,
-                   conn
-                   |> put_status(403)
-                   |> json(%{success: false, error: "Not authorized", details: details})}
+                    case Credits.create_processing_job(user_id, credits, duration_hours, job_opts) do
+                      {:ok, job} ->
+                        IO.puts(
+                          "[ClipsController] Created transcription job #{job.id} for tracking (#{Float.round(credits, 3)} credits from #{credit_source})"
+                        )
 
-                {:error, _reason, _} ->
-                  {:halt,
-                   conn
-                   |> put_status(500)
-                   |> json(%{success: false, error: "Credit deduction failed"})}
-              end
+                        {:ok, %{credits: credits, job_id: job.id, credit_source: credit_source}}
+
+                      {:error, _} ->
+                        {:ok, %{credits: credits, job_id: nil, credit_source: credit_source}}
+                    end
+
+                  {:error, :insufficient_credits, remaining, needed} ->
+                    {:halt,
+                     conn
+                     |> put_status(402)
+                     |> json(%{
+                       success: false,
+                       error: "Insufficient credits",
+                       details:
+                         "Need #{Float.round(needed, 3)} credits, have #{Float.round(remaining, 3)}",
+                       credits_required: needed,
+                       credits_remaining: remaining
+                     })}
+
+                  {:error, :not_a_member, details} ->
+                    {:halt,
+                     conn
+                     |> put_status(403)
+                     |> json(%{success: false, error: "Not authorized", details: details})}
+
+                  {:error, _reason, _} ->
+                    {:halt,
+                     conn
+                     |> put_status(500)
+                     |> json(%{success: false, error: "Credit deduction failed"})}
+                end
             end
 
           case credit_result do

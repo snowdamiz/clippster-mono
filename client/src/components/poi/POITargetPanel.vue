@@ -570,7 +570,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+  import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { CheckIcon, LayoutGridIcon, LayoutIcon } from 'lucide-vue-next';
   import POIRegion from './POIRegion.vue';
@@ -1270,8 +1270,17 @@
     { deep: true },
   );
 
+  /** Canvases for Use/Scale 16:9 are v-if mounted — wait for DOM + layout before paint. */
+  function scheduleRedrawSourcePreviews() {
+    nextTick(() => {
+      requestAnimationFrame(() => {
+        redrawSourcePreviews();
+      });
+    });
+  }
+
   watch([showSourceFrame, use16x9Mode, () => props.videoUrl], () => {
-    redrawSourcePreviews();
+    scheduleRedrawSourcePreviews();
   });
 
   // Compute source frame style (16:9 frame positioned in 9:16 container)

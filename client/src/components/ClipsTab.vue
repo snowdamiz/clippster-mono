@@ -672,13 +672,13 @@
       :initial-framing-mode="savedFramingMode"
       :initial-framing-configs="savedFramingConfigs"
       :vod-preset-config="vodPresetConfig"
+      :creator-profile="creatorProfile"
       :creator-profile-server-id="creatorProfileServerId"
       :is-subtitle-transcribing="isTranscribing"
       :subtitle-transcribe-progress="transcribeProgress"
       :subtitle-transcribe-stage="transcribeStage"
       :subtitle-transcribe-message="transcribeMessage"
       @confirm="onBuildConfirm"
-      @request-subtitle-transcription="onRequestSubtitleTranscription"
     />
   </div>
 </template>
@@ -1340,7 +1340,6 @@
     adjustClip: [clipId: string];
     publishNow: [clip: ClipWithVersion];
     buildDialogOpen: [open: boolean];
-    requestSubtitleTranscription: [clipId: string];
   }>();
 
   // AI Permission check
@@ -1364,6 +1363,19 @@
   watch(showBuildSettingsDialog, (open) => {
     if (!open) emit('buildDialogOpen', false);
   });
+
+  // Keep the open build/POI clip in sync when subtitles are enabled from Edit Subtitles.
+  watch(
+    () => [props.subtitleSettings, props.subtitleSettingsClipId] as const,
+    ([settings, clipId]) => {
+      if (!showBuildSettingsDialog.value || !clipToBuild.value || !settings?.enabled) return;
+      if (clipToBuild.value.id !== clipId) return;
+      const clip = clipToBuild.value as any;
+      clip.subtitle_enabled = true;
+      clip.subtitle_preset_id = settings.selectedPresetId ?? clip.subtitle_preset_id;
+      clip.subtitle_settings = settings;
+    }
+  );
 
   // Derive SubtitleSettings from the clip being built (reads preset from DB data on the clip)
   const derivedSubtitleSettings = computed((): SubtitleSettings | null => {
@@ -2383,10 +2395,6 @@
 
   function onPublishNow(clip: ClipWithVersion) {
     emit('publishNow', clip);
-  }
-
-  function onRequestSubtitleTranscription(clipId: string) {
-    emit('requestSubtitleTranscription', clipId);
   }
 
   function onAdjustClip(clipId: string) {

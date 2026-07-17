@@ -571,9 +571,14 @@
                   </div>
                 </div>
 
-                <!-- Grant Subscription Section -->
-                <div v-if="!userToEditSubscription?.subscription?.tier_name" class="admin-users__subscription-section">
-                  <h3 class="admin-users__subscription-section-title">Grant Subscription</h3>
+                <!-- Grant Subscription Section (also for expired — lets admin start a fresh period) -->
+                <div
+                  v-if="!userToEditSubscription?.subscription?.tier_name || userToEditSubscription?.subscription?.status === 'expired'"
+                  class="admin-users__subscription-section"
+                >
+                  <h3 class="admin-users__subscription-section-title">
+                    {{ userToEditSubscription?.subscription?.status === 'expired' ? 'Grant New Subscription' : 'Grant Subscription' }}
+                  </h3>
                   <div class="admin-users__subscription-form-grid">
                     <div>
                       <label class="admin-users__subscription-form-label">Tier</label>
@@ -686,7 +691,7 @@
 
                 <!-- Cancel Subscription Section -->
                 <div
-                  v-if="userToEditSubscription?.subscription?.tier_name"
+                  v-if="userToEditSubscription?.subscription?.tier_name && userToEditSubscription?.subscription?.status !== 'expired'"
                   class="admin-users__subscription-section admin-users__subscription-section--danger"
                 >
                   <h3 class="admin-users__subscription-section-title admin-users__subscription-section-title--danger">
@@ -1309,12 +1314,16 @@
         if (userIndex !== -1) {
           users.value[userIndex] = { ...users.value[userIndex], subscription: response.data.subscription };
         }
+        if (userToEditSubscription.value) {
+          userToEditSubscription.value = { ...userToEditSubscription.value, subscription: response.data.subscription };
+        }
         await fetchSubscriptionHistory(userToEditSubscription.value.id);
+        await fetchUsers();
       } else {
         throw new Error(response.data.error || 'Failed to extend subscription');
       }
-    } catch (err) {
-      subscriptionError.value = err instanceof Error ? err.message : 'Failed to extend subscription';
+    } catch (err: any) {
+      subscriptionError.value = err?.response?.data?.error || err?.message || 'Failed to extend subscription';
     } finally {
       updatingSubscriptionUserId.value = null;
     }
@@ -1334,12 +1343,16 @@
         if (userIndex !== -1) {
           users.value[userIndex] = { ...users.value[userIndex], subscription: response.data.subscription };
         }
+        if (userToEditSubscription.value) {
+          userToEditSubscription.value = { ...userToEditSubscription.value, subscription: response.data.subscription };
+        }
         await fetchSubscriptionHistory(userToEditSubscription.value.id);
+        await fetchUsers();
       } else {
         throw new Error(response.data.error || 'Failed to change tier');
       }
-    } catch (err) {
-      subscriptionError.value = err instanceof Error ? err.message : 'Failed to change tier';
+    } catch (err: any) {
+      subscriptionError.value = err?.response?.data?.error || err?.message || 'Failed to change tier';
     } finally {
       updatingSubscriptionUserId.value = null;
     }

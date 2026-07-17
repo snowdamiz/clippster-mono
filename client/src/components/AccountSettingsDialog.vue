@@ -38,26 +38,162 @@
 
               <!-- ==================== ACCOUNT TAB ==================== -->
               <template v-if="activeTab === 'account'">
-                <!-- Not Email User Message -->
-                <div v-if="!isEmailUser" class="account-settings__info-box">
+                <!-- Google Account -->
+                <template v-if="authProvider === 'google'">
+                  <div class="account-settings__info-box">
+                    <Info :size="20" />
+                    <div>
+                      <p class="account-settings__info-title">Google Account</p>
+                      <p class="account-settings__info-text">
+                        Switch Gmail accounts, or convert to email/password login. Your projects,
+                        credits, and settings stay on this account.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="account-settings__section">
+                    <h3 class="account-settings__section-title">Connected Gmail</h3>
+                    <div class="account-settings__section-items">
+                      <div class="account-settings__field">
+                        <label class="account-settings__label">Current Email</label>
+                        <input
+                          type="text"
+                          :value="currentEmail"
+                          class="account-settings__input"
+                          disabled
+                          readonly
+                        />
+                      </div>
+
+                      <button
+                        class="account-settings__button"
+                        @click="handleSwitchGoogle"
+                        :disabled="saving || emailChangeStep === 'otp'"
+                      >
+                        <RefreshCw :size="16" />
+                        {{ saving && savingType === 'google' ? 'Switching...' : 'Switch Google Account' }}
+                      </button>
+
+                      <p v-if="googleSuccess" class="account-settings__success">
+                        <CheckCircle :size="16" />
+                        {{ googleSuccess }}
+                      </p>
+                      <p v-if="googleError" class="account-settings__error">
+                        <AlertCircle :size="16" />
+                        {{ googleError }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="account-settings__section">
+                    <h3 class="account-settings__section-title">Switch to Email / Password</h3>
+                    <div class="account-settings__section-items">
+                      <template v-if="emailChangeStep === 'otp'">
+                        <p class="account-settings__info-text">
+                          Enter the 6-digit code sent to <strong>{{ pendingEmail }}</strong>
+                        </p>
+                        <div class="account-settings__field">
+                          <label class="account-settings__label">Verification Code</label>
+                          <input
+                            v-model="emailChangeOtp"
+                            type="text"
+                            inputmode="numeric"
+                            maxlength="6"
+                            class="account-settings__input"
+                            placeholder="000000"
+                            :disabled="saving"
+                            @input="onOtpInput"
+                          />
+                        </div>
+                        <button
+                          class="account-settings__button"
+                          @click="handleVerifyEmailOtp"
+                          :disabled="emailChangeOtp.length !== 6 || saving"
+                        >
+                          <Mail :size="16" />
+                          {{ saving && savingType === 'email-otp' ? 'Verifying...' : 'Verify & Convert' }}
+                        </button>
+                        <button
+                          class="account-settings__button account-settings__button--secondary"
+                          @click="handleResendEmailOtp"
+                          :disabled="saving"
+                        >
+                          Resend Code
+                        </button>
+                        <button
+                          class="account-settings__button account-settings__button--secondary"
+                          @click="cancelEmailChange"
+                          :disabled="saving"
+                        >
+                          Cancel
+                        </button>
+                      </template>
+                      <template v-else>
+                        <div class="account-settings__field">
+                          <label class="account-settings__label">New Email</label>
+                          <input
+                            v-model="newEmail"
+                            type="email"
+                            class="account-settings__input"
+                            placeholder="you@example.com"
+                            :disabled="saving"
+                          />
+                        </div>
+                        <div class="account-settings__field">
+                          <label class="account-settings__label">Create Password</label>
+                          <input
+                            v-model="oauthNewPassword"
+                            type="password"
+                            class="account-settings__input"
+                            placeholder="Min 8 characters"
+                            :disabled="saving"
+                          />
+                        </div>
+                        <div class="account-settings__field">
+                          <label class="account-settings__label">Confirm Password</label>
+                          <input
+                            v-model="oauthConfirmPassword"
+                            type="password"
+                            class="account-settings__input"
+                            placeholder="Confirm password"
+                            :disabled="saving"
+                          />
+                        </div>
+                        <button
+                          class="account-settings__button"
+                          @click="handleConvertToEmail"
+                          :disabled="!canConvertToEmail || saving"
+                        >
+                          <Mail :size="16" />
+                          {{ saving && savingType === 'email' ? 'Sending Code...' : 'Send Verification Code' }}
+                        </button>
+                      </template>
+
+                      <p v-if="emailSuccess" class="account-settings__success">
+                        <CheckCircle :size="16" />
+                        {{ emailSuccess }}
+                      </p>
+                      <p v-if="emailError" class="account-settings__error">
+                        <AlertCircle :size="16" />
+                        {{ emailError }}
+                      </p>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- Wallet Account Message -->
+                <div v-else-if="!isEmailUser" class="account-settings__info-box">
                   <Info :size="20" />
                   <div>
-                    <p class="account-settings__info-title">
-                      {{ authProvider === 'google' ? 'Google Account' : 'Wallet Account' }}
-                    </p>
+                    <p class="account-settings__info-title">Wallet Account</p>
                     <p class="account-settings__info-text">
-                      {{
-                        authProvider === 'google'
-                          ? 'You signed in with Google. Email and password management is handled by your Google account.'
-                          : 'You signed in with a wallet. Email and password management is not available for wallet accounts.'
-                      }}
+                      You signed in with a wallet. Email and password management is not available for wallet accounts.
                     </p>
                   </div>
                 </div>
 
                 <!-- Email User Settings -->
                 <template v-else>
-                  <!-- Email Section -->
                   <div class="account-settings__section">
                     <h3 class="account-settings__section-title">Email Address</h3>
                     <div class="account-settings__section-items">
@@ -72,36 +208,76 @@
                         />
                       </div>
 
-                      <div class="account-settings__field">
-                        <label class="account-settings__label">New Email</label>
-                        <input
-                          v-model="newEmail"
-                          type="email"
-                          class="account-settings__input"
-                          placeholder="Enter new email address"
+                      <template v-if="emailChangeStep === 'otp'">
+                        <p class="account-settings__info-text">
+                          Enter the 6-digit code sent to <strong>{{ pendingEmail }}</strong>
+                        </p>
+                        <div class="account-settings__field">
+                          <label class="account-settings__label">Verification Code</label>
+                          <input
+                            v-model="emailChangeOtp"
+                            type="text"
+                            inputmode="numeric"
+                            maxlength="6"
+                            class="account-settings__input"
+                            placeholder="000000"
+                            :disabled="saving"
+                            @input="onOtpInput"
+                          />
+                        </div>
+                        <button
+                          class="account-settings__button"
+                          @click="handleVerifyEmailOtp"
+                          :disabled="emailChangeOtp.length !== 6 || saving"
+                        >
+                          <Mail :size="16" />
+                          {{ saving && savingType === 'email-otp' ? 'Verifying...' : 'Verify Email' }}
+                        </button>
+                        <button
+                          class="account-settings__button account-settings__button--secondary"
+                          @click="handleResendEmailOtp"
                           :disabled="saving"
-                        />
-                      </div>
-
-                      <div class="account-settings__field">
-                        <label class="account-settings__label">Password (for verification)</label>
-                        <input
-                          v-model="emailPassword"
-                          type="password"
-                          class="account-settings__input"
-                          placeholder="Enter your current password"
+                        >
+                          Resend Code
+                        </button>
+                        <button
+                          class="account-settings__button account-settings__button--secondary"
+                          @click="cancelEmailChange"
                           :disabled="saving"
-                        />
-                      </div>
-
-                      <button
-                        class="account-settings__button"
-                        @click="handleChangeEmail"
-                        :disabled="!canChangeEmail || saving"
-                      >
-                        <Mail :size="16" />
-                        {{ saving && savingType === 'email' ? 'Changing Email...' : 'Change Email' }}
-                      </button>
+                        >
+                          Cancel
+                        </button>
+                      </template>
+                      <template v-else>
+                        <div class="account-settings__field">
+                          <label class="account-settings__label">New Email</label>
+                          <input
+                            v-model="newEmail"
+                            type="email"
+                            class="account-settings__input"
+                            placeholder="Enter new email address"
+                            :disabled="saving"
+                          />
+                        </div>
+                        <div class="account-settings__field">
+                          <label class="account-settings__label">Password (for verification)</label>
+                          <input
+                            v-model="emailPassword"
+                            type="password"
+                            class="account-settings__input"
+                            placeholder="Enter your current password"
+                            :disabled="saving"
+                          />
+                        </div>
+                        <button
+                          class="account-settings__button"
+                          @click="handleChangeEmail"
+                          :disabled="!canChangeEmail || saving"
+                        >
+                          <Mail :size="16" />
+                          {{ saving && savingType === 'email' ? 'Sending Code...' : 'Change Email' }}
+                        </button>
+                      </template>
 
                       <p v-if="emailSuccess" class="account-settings__success">
                         <CheckCircle :size="16" />
@@ -114,7 +290,6 @@
                     </div>
                   </div>
 
-                  <!-- Password Section -->
                   <div class="account-settings__section">
                     <h3 class="account-settings__section-title">Password</h3>
                     <div class="account-settings__section-items">
@@ -128,7 +303,6 @@
                           :disabled="saving"
                         />
                       </div>
-
                       <div class="account-settings__field">
                         <label class="account-settings__label">New Password</label>
                         <input
@@ -139,7 +313,6 @@
                           :disabled="saving"
                         />
                       </div>
-
                       <div class="account-settings__field">
                         <label class="account-settings__label">Confirm New Password</label>
                         <input
@@ -150,7 +323,6 @@
                           :disabled="saving"
                         />
                       </div>
-
                       <button
                         class="account-settings__button"
                         @click="handleChangePassword"
@@ -159,7 +331,6 @@
                         <Lock :size="16" />
                         {{ saving && savingType === 'password' ? 'Changing Password...' : 'Change Password' }}
                       </button>
-
                       <p v-if="passwordSuccess" class="account-settings__success">
                         <CheckCircle :size="16" />
                         {{ passwordSuccess }}
@@ -333,7 +504,7 @@
 
 <script setup>
 import { ref, computed, markRaw } from 'vue';
-import { X, Settings, Mail, Lock, CheckCircle, AlertCircle, Info, Clock, Bell, User, Trash2 } from 'lucide-vue-next';
+import { X, Settings, Mail, Lock, CheckCircle, AlertCircle, Info, Clock, Bell, User, Trash2, RefreshCw } from 'lucide-vue-next';
 import { useAuthStore } from '@/stores/auth';
 import { useUserPreferencesStore } from '@/stores/userPreferences';
 import DeleteDataTab from '@/components/settings/DeleteDataTab.vue';
@@ -393,14 +564,21 @@ const emailPassword = ref('');
 const currentPassword = ref('');
 const newPassword = ref('');
 const confirmPassword = ref('');
+const oauthNewPassword = ref('');
+const oauthConfirmPassword = ref('');
+const emailChangeOtp = ref('');
+const pendingEmail = ref('');
+const emailChangeStep = ref('form'); // 'form' | 'otp'
 
 // UI state
 const saving = ref(false);
-const savingType = ref(''); // 'email' or 'password'
+const savingType = ref(''); // 'email' | 'email-otp' | 'password' | 'google'
 const emailSuccess = ref('');
 const emailError = ref('');
 const passwordSuccess = ref('');
 const passwordError = ref('');
+const googleSuccess = ref('');
+const googleError = ref('');
 
 // Computed
 const currentEmail = computed(() => authStore.email || authStore.user?.email || '');
@@ -409,6 +587,14 @@ const isEmailUser = computed(() => authProvider.value === 'email');
 
 const canChangeEmail = computed(() => {
   return newEmail.value.trim() && emailPassword.value.trim() && newEmail.value !== currentEmail.value;
+});
+
+const canConvertToEmail = computed(() => {
+  return (
+    newEmail.value.trim() &&
+    oauthNewPassword.value.length >= 8 &&
+    oauthNewPassword.value === oauthConfirmPassword.value
+  );
 });
 
 const canChangePassword = computed(() => {
@@ -443,10 +629,51 @@ const resetForm = () => {
   currentPassword.value = '';
   newPassword.value = '';
   confirmPassword.value = '';
+  oauthNewPassword.value = '';
+  oauthConfirmPassword.value = '';
+  emailChangeOtp.value = '';
+  pendingEmail.value = '';
+  emailChangeStep.value = 'form';
   emailSuccess.value = '';
   emailError.value = '';
   passwordSuccess.value = '';
   passwordError.value = '';
+  googleSuccess.value = '';
+  googleError.value = '';
+};
+
+const onOtpInput = (event) => {
+  emailChangeOtp.value = String(event.target.value || '').replace(/\D/g, '').slice(0, 6);
+};
+
+const cancelEmailChange = () => {
+  emailChangeStep.value = 'form';
+  emailChangeOtp.value = '';
+  pendingEmail.value = '';
+  emailSuccess.value = '';
+  emailError.value = '';
+};
+
+const handleSwitchGoogle = async () => {
+  googleError.value = '';
+  googleSuccess.value = '';
+  saving.value = true;
+  savingType.value = 'google';
+
+  try {
+    const result = await authStore.switchGoogleAccount();
+
+    if (result.success) {
+      googleSuccess.value = `Switched to ${result.user?.email || 'new Google account'}. Your existing data was kept.`;
+    } else {
+      googleError.value = result.error || 'Failed to switch Google account';
+    }
+  } catch (error) {
+    googleError.value = error.message || 'An error occurred';
+  } finally {
+    saving.value = false;
+    savingType.value = '';
+  }
 };
 
 const handleChangeEmail = async () => {
@@ -456,14 +683,104 @@ const handleChangeEmail = async () => {
   savingType.value = 'email';
 
   try {
-    const result = await authStore.changeEmail(newEmail.value, emailPassword.value);
+    const result = await authStore.changeEmail(newEmail.value, { password: emailPassword.value });
 
     if (result.success) {
-      emailSuccess.value = result.message || 'Verification email sent! Please check your inbox.';
-      newEmail.value = '';
+      pendingEmail.value = result.pendingEmail || newEmail.value;
+      emailChangeStep.value = 'otp';
+      emailSuccess.value = result.message || `Verification code sent to ${pendingEmail.value}`;
       emailPassword.value = '';
     } else {
       emailError.value = result.error || 'Failed to change email';
+    }
+  } catch (error) {
+    emailError.value = error.message || 'An error occurred';
+  } finally {
+    saving.value = false;
+    savingType.value = '';
+  }
+};
+
+const handleConvertToEmail = async () => {
+  emailError.value = '';
+  emailSuccess.value = '';
+
+  if (oauthNewPassword.value !== oauthConfirmPassword.value) {
+    emailError.value = 'Passwords do not match';
+    return;
+  }
+
+  if (oauthNewPassword.value.length < 8) {
+    emailError.value = 'Password must be at least 8 characters';
+    return;
+  }
+
+  saving.value = true;
+  savingType.value = 'email';
+
+  try {
+    const result = await authStore.changeEmail(newEmail.value, {
+      newPassword: oauthNewPassword.value,
+    });
+
+    if (result.success) {
+      pendingEmail.value = result.pendingEmail || newEmail.value;
+      emailChangeStep.value = 'otp';
+      emailSuccess.value = result.message || `Verification code sent to ${pendingEmail.value}`;
+      oauthNewPassword.value = '';
+      oauthConfirmPassword.value = '';
+    } else {
+      emailError.value = result.error || 'Failed to start email conversion';
+    }
+  } catch (error) {
+    emailError.value = error.message || 'An error occurred';
+  } finally {
+    saving.value = false;
+    savingType.value = '';
+  }
+};
+
+const handleVerifyEmailOtp = async () => {
+  emailError.value = '';
+  emailSuccess.value = '';
+  saving.value = true;
+  savingType.value = 'email-otp';
+
+  try {
+    const result = await authStore.verifyEmailChangeOtp(emailChangeOtp.value);
+
+    if (result.success) {
+      emailSuccess.value =
+        result.message || `Email updated to ${result.user?.email || pendingEmail.value}`;
+      emailChangeStep.value = 'form';
+      emailChangeOtp.value = '';
+      pendingEmail.value = '';
+      newEmail.value = '';
+    } else {
+      emailError.value = result.error || 'Invalid verification code';
+    }
+  } catch (error) {
+    emailError.value = error.message || 'An error occurred';
+  } finally {
+    saving.value = false;
+    savingType.value = '';
+  }
+};
+
+const handleResendEmailOtp = async () => {
+  emailError.value = '';
+  emailSuccess.value = '';
+  saving.value = true;
+  savingType.value = 'email';
+
+  try {
+    const result = await authStore.resendEmailChangeVerification();
+
+    if (result.success) {
+      emailSuccess.value = result.message || 'Verification code resent';
+      emailChangeOtp.value = '';
+    } else {
+      emailError.value = result.error || 'Failed to resend code';
     }
   } catch (error) {
     emailError.value = error.message || 'An error occurred';
@@ -517,7 +834,7 @@ const handleChangePassword = async () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.75);
+  background-color: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
@@ -527,15 +844,15 @@ const handleChangePassword = async () => {
 }
 
 .account-settings {
-  background: linear-gradient(180deg, #18181b 0%, #09090b 100%);
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: var(--sidebar-surface);
+  border-radius: 12px;
+  border: 1px solid var(--sidebar-border);
   width: 100%;
   max-width: 600px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
   position: relative;
   overflow: hidden;
 }
@@ -546,12 +863,12 @@ const handleChangePassword = async () => {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #8b5cf6 0%, #7c3aed 100%);
+  background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
 }
 
 .account-settings__header {
   padding: 32px 32px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--sidebar-border);
   position: relative;
 }
 
@@ -561,19 +878,19 @@ const handleChangePassword = async () => {
   right: 16px;
   background: transparent;
   border: none;
-  color: #71717a;
+  color: var(--sidebar-text-muted);
   cursor: pointer;
   padding: 8px;
   border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: all 150ms ease;
 }
 
 .account-settings__close:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #a1a1aa;
+  background-color: var(--sidebar-hover);
+  color: var(--sidebar-text);
 }
 
 .account-settings__close:disabled {
@@ -584,26 +901,26 @@ const handleChangePassword = async () => {
 .account-settings__icon {
   width: 48px;
   height: 48px;
-  background: rgba(139, 92, 246, 0.1);
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  background-color: rgba(6, 182, 212, 0.15);
+  border: none;
   border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #8b5cf6;
+  color: var(--sidebar-accent);
   margin-bottom: 16px;
 }
 
 .account-settings__title {
   font-size: 24px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--sidebar-text);
   margin: 0 0 8px 0;
 }
 
 .account-settings__subtitle {
   font-size: 14px;
-  color: #a1a1aa;
+  color: var(--sidebar-text-muted);
   margin: 0;
 }
 
@@ -611,7 +928,7 @@ const handleChangePassword = async () => {
   display: flex;
   gap: 0;
   padding: 0 32px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--sidebar-border);
 }
 
 .account-settings__tab {
@@ -622,27 +939,40 @@ const handleChangePassword = async () => {
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
-  color: #71717a;
+  color: var(--sidebar-text-muted);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 150ms ease;
   white-space: nowrap;
 }
 
 .account-settings__tab:hover {
-  color: #a1a1aa;
+  color: var(--sidebar-text);
 }
 
 .account-settings__tab--active {
-  color: #8b5cf6;
-  border-bottom-color: #8b5cf6;
+  color: var(--sidebar-accent);
+  border-bottom-color: var(--sidebar-accent);
 }
 
 .account-settings__content {
   padding: 24px 32px 32px;
   overflow-y: auto;
   flex: 1;
+}
+
+.account-settings__content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.account-settings__content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.account-settings__content::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
 }
 
 /* Toggle Row */
@@ -664,12 +994,12 @@ const handleChangePassword = async () => {
 .account-settings__toggle-label {
   font-size: 14px;
   font-weight: 500;
-  color: #ffffff;
+  color: var(--sidebar-text);
 }
 
 .account-settings__toggle-desc {
   font-size: 12px;
-  color: #71717a;
+  color: var(--sidebar-text-muted);
 }
 
 /* Toggle Switch */
@@ -678,17 +1008,17 @@ const handleChangePassword = async () => {
   width: 44px;
   height: 24px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
   cursor: pointer;
   position: relative;
-  transition: all 0.2s;
+  transition: all 150ms ease;
   padding: 0;
 }
 
 .account-settings__toggle--on {
-  background: rgba(139, 92, 246, 0.4);
-  border-color: rgba(139, 92, 246, 0.6);
+  background: rgba(6, 182, 212, 0.35);
+  border-color: rgba(6, 182, 212, 0.5);
 }
 
 .account-settings__toggle:disabled {
@@ -703,13 +1033,13 @@ const handleChangePassword = async () => {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #71717a;
-  transition: all 0.2s;
+  background: var(--sidebar-text-muted);
+  transition: all 150ms ease;
 }
 
 .account-settings__toggle--on .account-settings__toggle-knob {
   left: 22px;
-  background: #8b5cf6;
+  background: var(--sidebar-accent);
 }
 
 /* Button Group */
@@ -718,20 +1048,20 @@ const handleChangePassword = async () => {
   gap: 0;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--sidebar-border);
 }
 
 .account-settings__button-option {
   flex: 1;
   padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--sidebar-hover);
   border: none;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  color: #a1a1aa;
+  border-right: 1px solid var(--sidebar-border);
+  color: var(--sidebar-text-muted);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 150ms ease;
 }
 
 .account-settings__button-option:last-child {
@@ -739,13 +1069,13 @@ const handleChangePassword = async () => {
 }
 
 .account-settings__button-option:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-  color: #ffffff;
+  background-color: var(--sidebar-active);
+  color: var(--sidebar-text);
 }
 
 .account-settings__button-option--active {
-  background: rgba(139, 92, 246, 0.2);
-  color: #8b5cf6;
+  background: rgba(6, 182, 212, 0.15);
+  color: var(--sidebar-accent);
 }
 
 .account-settings__button-option:disabled {
@@ -765,24 +1095,24 @@ const handleChangePassword = async () => {
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
   border-radius: 8px;
-  color: #a1a1aa;
+  color: var(--sidebar-text-muted);
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 150ms ease;
 }
 
 .account-settings__position-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-  color: #ffffff;
+  background-color: var(--sidebar-active);
+  color: var(--sidebar-text);
 }
 
 .account-settings__position-btn--active {
-  background: rgba(139, 92, 246, 0.15);
-  border-color: rgba(139, 92, 246, 0.4);
-  color: #8b5cf6;
+  background: rgba(6, 182, 212, 0.15);
+  border-color: rgba(6, 182, 212, 0.4);
+  color: var(--sidebar-accent);
 }
 
 .account-settings__position-btn:disabled {
@@ -818,10 +1148,10 @@ const handleChangePassword = async () => {
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: rgba(139, 92, 246, 0.08);
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  background: rgba(6, 182, 212, 0.08);
+  border: 1px solid rgba(6, 182, 212, 0.15);
   border-radius: 8px;
-  color: #a78bfa;
+  color: var(--sidebar-accent);
   font-size: 13px;
 }
 
@@ -835,22 +1165,22 @@ const handleChangePassword = async () => {
   display: flex;
   gap: 12px;
   padding: 16px;
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(6, 182, 212, 0.08);
+  border: 1px solid rgba(6, 182, 212, 0.15);
   border-radius: 12px;
-  color: #60a5fa;
+  color: var(--sidebar-accent);
 }
 
 .account-settings__info-title {
   font-weight: 600;
   margin: 0 0 4px 0;
-  color: #ffffff;
+  color: var(--sidebar-text);
 }
 
 .account-settings__info-text {
   font-size: 14px;
   margin: 0;
-  color: #a1a1aa;
+  color: var(--sidebar-text-muted);
 }
 
 .account-settings__section {
@@ -864,7 +1194,7 @@ const handleChangePassword = async () => {
 .account-settings__section-title {
   font-size: 16px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--sidebar-text);
   margin: 0 0 16px 0;
 }
 
@@ -883,23 +1213,27 @@ const handleChangePassword = async () => {
 .account-settings__label {
   font-size: 13px;
   font-weight: 500;
-  color: #a1a1aa;
+  color: var(--sidebar-text-muted);
 }
 
 .account-settings__input {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
   border-radius: 8px;
   padding: 12px 16px;
   font-size: 14px;
-  color: #ffffff;
-  transition: all 0.2s;
+  color: var(--sidebar-text);
+  transition: all 150ms ease;
+}
+
+.account-settings__input::placeholder {
+  color: var(--sidebar-text-muted);
 }
 
 .account-settings__input:focus {
   outline: none;
-  border-color: #8b5cf6;
-  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--sidebar-accent);
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
 }
 
 .account-settings__input:disabled {
@@ -912,7 +1246,7 @@ const handleChangePassword = async () => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
   border: none;
   border-radius: 8px;
   padding: 12px 24px;
@@ -920,13 +1254,13 @@ const handleChangePassword = async () => {
   font-weight: 600;
   color: #ffffff;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 150ms ease;
   margin-top: 8px;
 }
 
 .account-settings__button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
 }
 
 .account-settings__button:disabled {
@@ -934,15 +1268,30 @@ const handleChangePassword = async () => {
   cursor: not-allowed;
 }
 
+.account-settings__button--secondary {
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  color: var(--sidebar-text);
+  box-shadow: none;
+}
+
+.account-settings__button--secondary:hover:not(:disabled) {
+  background-color: var(--sidebar-active);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+  transform: none;
+  color: var(--sidebar-text);
+}
+
 .account-settings__success {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background-color: rgba(6, 182, 212, 0.08);
+  border: 1px solid rgba(6, 182, 212, 0.15);
   border-radius: 8px;
-  color: #4ade80;
+  color: var(--sidebar-accent);
   font-size: 14px;
   margin: 0;
 }
@@ -952,8 +1301,8 @@ const handleChangePassword = async () => {
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
   border-radius: 8px;
   color: #f87171;
   font-size: 14px;

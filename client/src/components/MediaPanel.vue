@@ -160,7 +160,6 @@
       @add-clip="handleAddClip"
       @publish-now="onPublishNow"
       @build-dialog-open="(open) => emit('buildDialogOpen', open)"
-      @request-subtitle-transcription="(clipId) => emit('requestSubtitleTranscription', clipId)"
     />
   </div>
 </template>
