@@ -23,7 +23,16 @@ const emit = defineEmits<{
 	(e: "close"): void;
 }>();
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		timeline: true,
+		playback: false,
+		scenes: false,
+		project: false,
+		media: false,
+		selection: false,
+	},
+});
 
 const EASING_OPTIONS = KEYFRAME_EASING_OPTIONS;
 

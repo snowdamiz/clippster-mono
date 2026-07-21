@@ -2424,18 +2424,19 @@
       if (defaults && clipIds.length > 0) {
         const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } =
           await import('@/services/database/clips');
-        mergedSettings = {
+        const settings: SubtitleSettings = {
           ...JSON.parse(JSON.stringify(defaults)),
           enabled: true,
           selectedPresetId: presetId || defaults.selectedPresetId || null,
         };
+        mergedSettings = settings;
         for (const id of clipIds) {
-          await updateClipFullSubtitleSettings(id, mergedSettings);
+          await updateClipFullSubtitleSettings(id, settings);
           await updateClipSubtitlePosition(
             id,
             50,
-            mergedSettings.positionPercentage ?? 85,
-            mergedSettings.maxWidth ?? undefined
+            settings.positionPercentage ?? 85,
+            settings.maxWidth ?? undefined
           );
         }
       } else {

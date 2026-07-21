@@ -192,19 +192,16 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 		const transitionStart = this.params.junctionTime - d / 2;
 		const progress = Math.max(0, Math.min(1, (time - transitionStart) / d));
 		const widenedHalf = this.getSampleHalfWidth();
-		const extraIncomingLead = Math.max(0, widenedHalf - d / 2);
-		const outgoingTime = time;
-		let incomingTime = time + (1 - progress) * extraIncomingLead;
+		const extraOutgoingTail = Math.max(0, widenedHalf - d / 2);
 
-		const inB = this.getClipTimelineBounds(this.incomingNode);
-		if (inB) {
-			incomingTime = Math.max(
-				Math.min(incomingTime, inB.end),
-				Math.max(inB.start, this.params.junctionTime),
-			);
-		}
-
-		return { outgoingTime, incomingTime };
+		// Keep both decode clocks monotonic. The old incoming lead shrank as
+		// progress increased, forcing the second decoder to seek backwards during
+		// playback. That seek reused its last good frame and looked like a brief
+		// freeze immediately after the cut.
+		return {
+			outgoingTime: time + progress * extraOutgoingTail,
+			incomingTime: time,
+		};
 	}
 
 	private isInPeerTransitionWindow(time: number): boolean {

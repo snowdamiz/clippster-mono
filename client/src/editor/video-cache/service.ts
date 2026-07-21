@@ -8,6 +8,7 @@ import {
 import { getPreviewDecodeSinkSize } from "../lib/preview-decode-settings";
 
 interface VideoSinkData {
+	input: Input;
 	sink: CanvasSink;
 	iterator: AsyncGenerator<WrappedCanvas, void, unknown> | null;
 	currentFrame: WrappedCanvas | null;
@@ -26,6 +27,7 @@ const EOF_HOLD_SEC = 0.5;
 export class VideoCache {
 	private sinks = new Map<string, VideoSinkData>();
 	private initPromises = new Map<string, Promise<void>>();
+	private resourceVersions = new Map<string, number>();
 	/** Serialize per-sink decode so overlapping scrub/playback renders cannot corrupt iterators. */
 	private sinkLocks = new Map<string, Promise<void>>();
 
@@ -385,24 +387,30 @@ export class VideoCache {
 			return;
 		}
 
-		const initPromise = this.initializeSink({ sinkKey, file });
+		const version = this.resourceVersions.get(sinkKey) ?? 0;
+		const initPromise = this.initializeSink({ sinkKey, file, version });
 		this.initPromises.set(sinkKey, initPromise);
 
 		try {
 			await initPromise;
 		} finally {
-			this.initPromises.delete(sinkKey);
+			if (this.initPromises.get(sinkKey) === initPromise) {
+				this.initPromises.delete(sinkKey);
+			}
 		}
 	}
 	private async initializeSink({
 		sinkKey,
 		file,
+		version,
 	}: {
 		sinkKey: string;
 		file: File;
+		version: number;
 	}): Promise<void> {
+		let input: Input | null = null;
 		try {
-			const input = new Input({
+			input = new Input({
 				source: new BlobSource(file),
 				formats: ALL_FORMATS,
 			});
@@ -425,7 +433,12 @@ export class VideoCache {
 				height,
 			});
 
+			if ((this.resourceVersions.get(sinkKey) ?? 0) !== version) {
+				input.dispose();
+				return;
+			}
 			this.sinks.set(sinkKey, {
+				input,
 				sink,
 				iterator: null,
 				currentFrame: null,
@@ -436,18 +449,24 @@ export class VideoCache {
 				prefetchPromise: null,
 			});
 		} catch (error) {
+			input?.dispose();
 			console.error(`Failed to initialize video sink for ${sinkKey}:`, error);
 			throw error;
 		}
 	}
 
 	clearVideo({ sinkKey }: { sinkKey: string }): void {
+		this.resourceVersions.set(
+			sinkKey,
+			(this.resourceVersions.get(sinkKey) ?? 0) + 1,
+		);
 		const sinkData = this.sinks.get(sinkKey);
 		if (sinkData) {
 			if (sinkData.iterator) {
 				void sinkData.iterator.return();
 			}
 
+			sinkData.input.dispose();
 			this.sinks.delete(sinkKey);
 		}
 
@@ -455,7 +474,11 @@ export class VideoCache {
 	}
 
 	clearAll(): void {
-		for (const [sinkKey] of this.sinks) {
+		const sinkKeys = new Set([
+			...this.sinks.keys(),
+			...this.initPromises.keys(),
+		]);
+		for (const sinkKey of sinkKeys) {
 			this.clearVideo({ sinkKey });
 		}
 	}

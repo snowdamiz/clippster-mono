@@ -4,8 +4,7 @@ import { useEditor } from "../composables/useEditor";
 import { useEditorUIState } from "../composables/useEditorUIState";
 import { useRouter } from "vue-router";
 import ExportButton from "./ExportButton.vue";
-import { ArrowLeft, ChevronDown, Maximize, Minimize, Smartphone } from "lucide-vue-next";
-import ShortcutsDialog from "./dialogs/ShortcutsDialog.vue";
+import { ArrowLeft, ChevronDown, Keyboard, Loader2, Maximize, Minimize, Smartphone } from "lucide-vue-next";
 import ChatFab from "@/components/chat/ChatFab.vue";
 import {
 	getVideoEditorSourcesByProjectId,
@@ -21,14 +20,24 @@ import type { ManualSourceFramingPayload } from "@/types";
 
 const props = defineProps<{
 	previewContainer: HTMLDivElement | null;
+	isSaving: boolean;
+	lastSavedAt: Date | null;
 }>();
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		playback: false,
+		timeline: false,
+		scenes: false,
+		media: false,
+		selection: false,
+	},
+});
 const { activeSocialOverlay } = useEditorUIState();
 const router = useRouter();
 
 const isExiting = ref(false);
-const showShortcutsDialog = ref(false);
 const showAspectMenu = ref(false);
 const showSocialMenu = ref(false);
 const showDropdown = ref(false);
@@ -185,6 +194,10 @@ function handleFullscreenChange() {
 	isFullscreen.value = !!document.fullscreenElement;
 }
 
+function openShortcuts() {
+	window.dispatchEvent(new CustomEvent("toggle-shortcuts-modal"));
+}
+
 onMounted(() => {
 	document.addEventListener("fullscreenchange", handleFullscreenChange);
 });
@@ -325,6 +338,7 @@ function cancelRename() {
 				type="button"
 				class="flex items-center justify-center rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
 				:disabled="isExiting"
+				:aria-label="isExiting ? 'Saving and exiting editor' : 'Back to projects'"
 				@click="handleExit"
 			>
 				<ArrowLeft class="size-4" />
@@ -373,6 +387,8 @@ function cancelRename() {
 				ref="aspectButtonRef"
 				type="button"
 				class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+				aria-label="Change canvas aspect ratio"
+				:aria-expanded="showAspectMenu"
 				@click="showAspectMenu = !showAspectMenu"
 			>
 				{{ currentAspectLabel }}
@@ -472,6 +488,9 @@ function cancelRename() {
 							? 'text-cyan-400 bg-cyan-500/15'
 							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
 					]"
+					aria-label="Toggle social preview overlay"
+					:aria-pressed="Boolean(activeSocialOverlay)"
+					:aria-expanded="showSocialMenu"
 					@click="showSocialMenu = !showSocialMenu"
 				>
 					<Smartphone class="size-3.5" />
@@ -518,6 +537,8 @@ function cancelRename() {
 		<button
 			type="button"
 			class="flex items-center rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
+			:aria-label="isFullscreen ? 'Exit preview fullscreen' : 'Open preview fullscreen'"
+			:aria-pressed="isFullscreen"
 			@click="toggleFullscreen"
 		>
 			<Minimize v-if="isFullscreen" class="size-3.5" />
@@ -526,11 +547,26 @@ function cancelRename() {
 	</div>
 
 		<nav class="flex items-center gap-2">
+			<span
+				class="hidden items-center gap-1 text-[10px] text-zinc-500 xl:flex"
+				:title="lastSavedAt ? `Last saved at ${lastSavedAt.toLocaleTimeString()}` : 'Autosave is enabled'"
+				aria-live="polite"
+			>
+				<Loader2 v-if="isSaving" class="size-3 animate-spin" />
+				{{ isSaving ? "Saving…" : lastSavedAt ? "Saved" : "Autosave on" }}
+			</span>
+			<button
+				type="button"
+				class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+				aria-label="Open keyboard shortcuts"
+				title="Keyboard shortcuts (?)"
+				@click="openShortcuts"
+			>
+				<Keyboard class="size-3.5" />
+				<span class="hidden 2xl:inline">Shortcuts</span>
+			</button>
 			<ChatFab compact />
 			<ExportButton />
 		</nav>
-
-		<!-- Shortcuts dialog -->
-		<ShortcutsDialog v-model:open="showShortcutsDialog" />
 	</header>
 </template>

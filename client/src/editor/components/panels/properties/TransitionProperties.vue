@@ -12,7 +12,7 @@ const props = defineProps<{
 	transition: Transition;
 }>();
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 const { clearElementSelection } = useElementSelection();
 
 const localDuration = ref(props.transition.duration);

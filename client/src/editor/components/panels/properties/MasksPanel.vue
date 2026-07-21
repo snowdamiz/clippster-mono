@@ -11,7 +11,7 @@ const props = defineProps<{
 	trackId: string;
 }>();
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 const { maskEditMode } = useEditorUIState();
 
 const masks = computed<MaskShape[]>(() => props.element.masks ?? []);

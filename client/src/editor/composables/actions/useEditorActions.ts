@@ -10,7 +10,7 @@ import { getElementsAtTime } from "../../lib/timeline";
 import type { ClipboardItem, CreateTimelineElement } from "../../types/timeline";
 
 export function useEditorActions() {
-	const { editor } = useEditor();
+	const { editor } = useEditor({ subscribe: false });
 	const { selectedElements, setElementSelection, clearElementSelection } = useElementSelection();
 
 	useActionHandler("toggle-play", () => {

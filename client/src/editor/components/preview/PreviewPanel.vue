@@ -15,7 +15,10 @@ import { exposePreviewPerfGlobal } from "../../lib/preview-performance";
 import PreviewOverlay from "./PreviewOverlay.vue";
 import SocialOverlay from "./SocialOverlay.vue";
 import GuideOverlay from "./GuideOverlay.vue";
-import { configurePreviewDecode } from "../../lib/preview-decode-settings";
+import {
+	AdaptivePreviewQualityController,
+	configurePreviewDecode,
+} from "../../lib/preview-decode-settings";
 import { videoCache } from "../../video-cache/service";
 
 const { editor, version } = useEditor({
@@ -38,15 +41,45 @@ let lastScene: any = null;
 let lastRenderedTime = Number.NEGATIVE_INFINITY;
 let rendering = false;
 let pendingRender: { time: number; frame: number; tree: RootNode } | null = null;
-let idleTickCount = 0;
 let sceneRebuildIdleId: number | null = null;
+let requestPreviewFrame = () => {};
+let freezeCaptureCanvas: HTMLCanvasElement | null = null;
 
-// Register canvas on editor core so freeze-frame can capture it
-watch(canvasRef, (canvas) => {
-	editor.setPreviewCanvas(canvas);
-});
+/**
+ * Freeze capture remains project-sized without painting a full-resolution canvas
+ * every preview frame. Its pixels are populated from the latest display frame only
+ * when the existing freeze action calls toBlob().
+ */
+function syncFreezeCaptureCanvas() {
+	const displayCanvas = canvasRef.value;
+	if (!displayCanvas) {
+		freezeCaptureCanvas = null;
+		editor.setPreviewCanvas(null);
+		return;
+	}
+
+	const capture = freezeCaptureCanvas ?? document.createElement("canvas");
+	freezeCaptureCanvas = capture;
+	capture.width = Math.max(1, Math.round(projectWidth.value));
+	capture.height = Math.max(1, Math.round(projectHeight.value));
+	capture.toBlob = (callback, type, quality) => {
+		const context = capture.getContext("2d");
+		const currentDisplay = canvasRef.value;
+		if (!context || !currentDisplay) {
+			callback(null);
+			return;
+		}
+		context.setTransform(1, 0, 0, 1, 0, 0);
+		context.clearRect(0, 0, capture.width, capture.height);
+		context.drawImage(currentDisplay, 0, 0, capture.width, capture.height);
+		HTMLCanvasElement.prototype.toBlob.call(capture, callback, type, quality);
+	};
+	editor.setPreviewCanvas(capture);
+}
+
 onUnmounted(() => {
 	editor.setPreviewCanvas(null);
+	freezeCaptureCanvas = null;
 });
 
 const activeProject = computed(() => {
@@ -65,12 +98,15 @@ const projectHeight = computed(() => activeProject.value?.settings?.canvasSize?.
  */
 const layoutWidth = computed(() => Math.max(1, Math.round(projectWidth.value)));
 const layoutHeight = computed(() => Math.max(1, Math.round(projectHeight.value)));
+const adaptiveQuality = new AdaptivePreviewQualityController();
+const autoPreviewHeight = ref(adaptiveQuality.height);
+const effectivePreviewHeight = computed(() =>
+	previewQuality.value === "auto" ? autoPreviewHeight.value : previewQuality.value,
+);
 const previewBackingSize = computed(() => {
 	const width = Math.max(1, Math.round(projectWidth.value));
 	const height = Math.max(1, Math.round(projectHeight.value));
-	const targetHeight = previewQuality.value === "auto"
-		? Math.min(height, 720)
-		: Math.min(previewQuality.value, 720);
+	const targetHeight = Math.min(height, effectivePreviewHeight.value);
 	const scale = Math.min(1, targetHeight / height);
 	return {
 		width: Math.max(1, Math.round(width * scale)),
@@ -79,17 +115,20 @@ const previewBackingSize = computed(() => {
 });
 
 watch(
-	[projectWidth, projectHeight, previewQuality],
+	[projectWidth, projectHeight, previewQuality, autoPreviewHeight],
 	() => {
 		configurePreviewDecode({
 			projectWidth: projectWidth.value,
 			projectHeight: projectHeight.value,
 			previewQuality: previewQuality.value,
+			autoQualityHeight: autoPreviewHeight.value,
 		});
 		videoCache.clearAll();
 	},
 	{ immediate: true },
 );
+
+watch([canvasRef, projectWidth, projectHeight], syncFreezeCaptureCanvas, { flush: "post" });
 
 const fps = computed(() => activeProject.value?.settings?.fps ?? 30);
 const background = computed(() => activeProject.value?.settings?.background ?? { type: "color" as const, color: "#000000" });
@@ -112,6 +151,7 @@ watch([layoutWidth, layoutHeight, fps, previewBackingSize], ([w, h, f, backing])
 	lastFrame = -1;
 	lastScene = null;
 	lastRenderedTime = Number.NEGATIVE_INFINITY;
+	requestPreviewFrame();
 }, { immediate: true });
 
 // Rebuild render tree when tracks/media/settings change
@@ -239,8 +279,6 @@ watch(
 	{ immediate: true, flush: "post" },
 );
 
-let rafTickCount = 0;
-
 function runPreviewRender({
 	canvas,
 	renderer: r,
@@ -255,15 +293,23 @@ function runPreviewRender({
 	commitFrame: number;
 }) {
 	const commitTree = renderTree;
+	const renderStartedAt = performance.now();
 	rendering = true;
 	editor.renderer
 		.renderPreviewToTarget({ renderer: r, time: commitTime, targetCanvas: canvas })
 		.then(() => {
 			rendering = false;
+			if (previewQuality.value === "auto") {
+				const nextHeight = adaptiveQuality.recordFrame(
+					performance.now() - renderStartedAt,
+					1000 / Math.max(1, r.fps),
+				);
+				if (nextHeight !== null) autoPreviewHeight.value = nextHeight;
+			}
 			const currentTree = editor.renderer.getRenderTree();
 			if (currentTree !== commitTree) {
 				if (pendingRender) {
-					requestAnimationFrame(flushPendingPreviewRender);
+					requestPreviewFrame();
 				}
 				return;
 			}
@@ -272,30 +318,18 @@ function runPreviewRender({
 			lastRenderedTime = commitTime;
 
 			if (pendingRender) {
-				requestAnimationFrame(flushPendingPreviewRender);
+				requestPreviewFrame();
 			}
 		})
 		.catch(() => {
 			rendering = false;
 			if (pendingRender) {
-				requestAnimationFrame(flushPendingPreviewRender);
+				requestPreviewFrame();
 			}
 		});
 }
 
-function flushPendingPreviewRender() {
-	const canvas = canvasRef.value;
-	const r = renderer.value;
-	if (!canvas || !r || !pendingRender) return;
-
-	const { time, frame, tree } = pendingRender;
-	pendingRender = null;
-	if (rendering) return;
-	runPreviewRender({ canvas, renderer: r, renderTree: tree, commitTime: time, commitFrame: frame });
-}
-
-useRafLoop(() => {
-	rafTickCount++;
+const previewLoop = useRafLoop(() => {
 	const canvas = canvasRef.value;
 	const r = renderer.value;
 	const renderTree = editor.renderer.getRenderTree();
@@ -311,13 +345,7 @@ useRafLoop(() => {
 
 	const needsRender = frame !== lastFrame || renderTree !== lastScene || timeMoved;
 
-	if (!needsRender) {
-		idleTickCount++;
-		if (!isPlaying && idleTickCount > 15 && rafTickCount % 4 !== 0) return;
-		return;
-	}
-
-	idleTickCount = 0;
+	if (!needsRender) return;
 
 	if (rendering) {
 		// Transitions render two layers + composite and can exceed one rAF; queue the latest frame.
@@ -333,7 +361,12 @@ useRafLoop(() => {
 		commitTime: renderTime,
 		commitFrame: frame,
 	});
+}, {
+	autoStart: false,
+	fps: () => Math.max(1, fps.value),
+	pauseWhenHidden: true,
 });
+requestPreviewFrame = previewLoop.requestFrame;
 
 const canvasBackground = computed(() => {
 	const bg = background.value;
@@ -525,7 +558,19 @@ function setQuality(value: "auto" | 360 | 540 | 720 | 1080) {
 function handlePlaybackSeek() {
 	lastRenderedTime = Number.NEGATIVE_INFINITY;
 	lastFrame = -1;
-	idleTickCount = 0;
+	requestPreviewFrame();
+}
+
+let unsubscribePlayback: (() => void) | null = null;
+let unsubscribeRenderer: (() => void) | null = null;
+
+function syncPreviewLoopToPlayback() {
+	if (editor.playback.getIsPlaying()) {
+		previewLoop.start();
+	} else {
+		previewLoop.stop();
+		requestPreviewFrame();
+	}
 }
 
 onMounted(() => {
@@ -543,6 +588,10 @@ onMounted(() => {
 	containerRef.value?.addEventListener('wheel', onWheelZoom, { passive: false });
 	window.addEventListener("keydown", onKeyZoom);
 	window.addEventListener("playback-seek", handlePlaybackSeek);
+	unsubscribePlayback = editor.playback.subscribe(syncPreviewLoopToPlayback);
+	unsubscribeRenderer = editor.renderer.subscribe(requestPreviewFrame);
+	syncPreviewLoopToPlayback();
+	requestPreviewFrame();
 });
 
 onUnmounted(() => {
@@ -553,6 +602,10 @@ onUnmounted(() => {
 	containerRef.value?.removeEventListener('wheel', onWheelZoom);
 	window.removeEventListener("keydown", onKeyZoom);
 	window.removeEventListener("playback-seek", handlePlaybackSeek);
+	unsubscribePlayback?.();
+	unsubscribeRenderer?.();
+	unsubscribePlayback = null;
+	unsubscribeRenderer = null;
 });
 
 defineExpose({ containerRef });
@@ -594,8 +647,8 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 			>
 				<canvas
 					ref="canvasRef"
-					:width="projectWidth"
-					:height="projectHeight"
+					:width="previewBackingSize.width"
+					:height="previewBackingSize.height"
 					class="block h-full w-full rounded-sm"
 					:style="{
 						background: canvasBackground,

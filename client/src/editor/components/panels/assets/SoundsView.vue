@@ -19,7 +19,7 @@ import {
 } from "lucide-vue-next";
 import PanelSearchBar from "./PanelSearchBar.vue";
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 
 const searchQuery = ref("");
 const isSearching = ref(false);

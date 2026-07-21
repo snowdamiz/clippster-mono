@@ -34,7 +34,16 @@ import { hydrateVideoFileFromLocalUrl } from "../../../lib/media/hydrate-video-f
 import { usePointerDrag } from "../../../composables/usePointerDrag";
 import type { CreateTimelineElement } from "../../../types/timeline";
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		media: true,
+		playback: false,
+		timeline: false,
+		scenes: false,
+		selection: false,
+	},
+});
 const { startDrag, wasDragCompleted } = usePointerDrag();
 
 const projects = ref<Project[]>([]);

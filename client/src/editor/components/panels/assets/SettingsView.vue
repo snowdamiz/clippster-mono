@@ -2,7 +2,16 @@
 import { ref, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		playback: false,
+		timeline: false,
+		scenes: false,
+		media: false,
+		selection: false,
+	},
+});
 
 const activeProject = computed(() => {
 	void version.value;

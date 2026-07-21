@@ -23,7 +23,16 @@ export function useKeyframes({
 	trackRef: Ref<TimelineTrack>;
 	elementRef: Ref<TimelineElement>;
 }) {
-	const { editor, version } = useEditor();
+	const { editor, version } = useEditor({
+		subscribe: {
+			timeline: true,
+			playback: false,
+			scenes: false,
+			project: false,
+			media: false,
+			selection: false,
+		},
+	});
 
 	const elementKeyframes = computed((): ElementKeyframes | undefined => {
 		void version.value;

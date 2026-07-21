@@ -117,13 +117,18 @@ export class AudioManager {
 	private lastVolume = 1;
 	private unsubscribers: Array<() => void> = [];
 	private nativeBuffers = new Map<string, AudioBuffer>();
+	private nativeBufferLoads = new Map<string, Promise<AudioBuffer | null>>();
 	private nativeFailedKeys = new Set<string>();
+	private sinkLoads = new Map<string, Promise<AudioBufferSink | null>>();
 	private clipsReady = false;
 	private clipLoadPromise: Promise<AudioClipSource[]> | null = null;
 	private clipCacheVersion = 0;
 	private lastAudioTimelineSignature = "";
 	private activeClipGains = new Map<string, GainNode[]>();
 	private stopDraftVolumeWatch: (() => void) | null = null;
+	private waitTimers = new Map<ReturnType<typeof setInterval>, () => void>();
+	private resourceGeneration = 0;
+	private disposed = false;
 
 	constructor(private editor: EditorCore) {
 		this.lastVolume = this.editor.playback.getVolume();
@@ -145,6 +150,8 @@ export class AudioManager {
 	}
 
 	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
 		this.stopDraftVolumeWatch?.();
 		this.stopDraftVolumeWatch = null;
 		this.activeClipGains.clear();
@@ -157,6 +164,7 @@ export class AudioManager {
 			window.removeEventListener("playback-seek", this.handleSeek);
 		}
 		this.stopHealthCheck();
+		this.invalidateClipCache();
 		this.disposeSinks();
 		if (this.audioContext) {
 			void this.audioContext.close();
@@ -217,8 +225,6 @@ export class AudioManager {
 		this.disposeSinks();
 
 		if (!this.editor.playback.getIsPlaying()) {
-			// Preload audio buffers for clips on timeline
-			void this.preloadClips();
 			return;
 		}
 
@@ -393,10 +399,6 @@ export class AudioManager {
 		if (!this.editor.playback.getIsPlaying()) return;
 		if (sessionId !== this.playbackSessionId) return;
 
-		await this.preloadNativeBuffers(this.clips);
-		if (!this.editor.playback.getIsPlaying()) return;
-		if (sessionId !== this.playbackSessionId) return;
-
 		// Anchor after audio prep. If decoding was late, start from the current playhead
 		// instead of trying to catch up from the original click and skipping large regions.
 		this.playbackStartTime = this.editor.playback.getCurrentTime();
@@ -437,11 +439,16 @@ export class AudioManager {
 	}
 
 	private stopPlayback(): void {
-		if (this.scheduleTimer && typeof window !== "undefined") {
+		if (this.scheduleTimer !== null && typeof window !== "undefined") {
 			window.clearInterval(this.scheduleTimer);
 		}
 		this.scheduleTimer = null;
 		this.stopHealthCheck();
+		for (const [timer, resolve] of this.waitTimers) {
+			clearInterval(timer);
+			resolve();
+		}
+		this.waitTimers.clear();
 
 		for (const iterator of this.clipIterators.values()) {
 			void iterator.return();
@@ -547,18 +554,16 @@ export class AudioManager {
 
 		let didSchedule = false;
 		try {
-			if (await this.runNativeFallback({ clip, startTime, sessionId })) {
-				didSchedule = true;
-				return;
-			}
-
 			const sink = await this.getAudioSink({ clip });
 			if (!this.editor.playback.getIsPlaying()) return;
 			if (sessionId !== this.playbackSessionId) return;
 
-			// If mediabunny sink is unavailable (e.g. codec not supported on this platform),
-			// fall back to native Web Audio API decoding
+			// Stream through MediaBunny first. Whole-file native decoding is only
+			// a compatibility fallback for codecs unavailable through WebCodecs.
 			if (!sink) {
+				if (await this.runNativeFallback({ clip, startTime, sessionId })) {
+					didSchedule = true;
+				}
 				return;
 			}
 
@@ -681,30 +686,38 @@ export class AudioManager {
 	 */
 	private async getNativeAudioBuffer(clip: AudioClipSource): Promise<AudioBuffer | null> {
 		const audioContext = this.ensureAudioContext();
-		if (!audioContext) return null;
+		if (!audioContext || this.disposed) return null;
 		if (this.nativeFailedKeys.has(clip.sourceKey)) return null;
 
 		const existing = this.nativeBuffers.get(clip.sourceKey);
 		if (existing) return existing;
 
-		try {
-			const arrayBuffer = await clip.file.arrayBuffer();
-			const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
-			this.nativeBuffers.set(clip.sourceKey, audioBuffer);
-			return audioBuffer;
-		} catch (err) {
-			console.warn(`[AudioManager] Native decode failed for ${clip.sourceKey}:`, err);
-			this.nativeFailedKeys.add(clip.sourceKey);
-			return null;
-		}
-	}
+		const pending = this.nativeBufferLoads.get(clip.sourceKey);
+		if (pending) return pending;
 
-	private async preloadNativeBuffers(clips: AudioClipSource[]): Promise<void> {
-		await Promise.all(
-			clips
-				.filter((clip) => !clip.muted)
-				.map((clip) => this.getNativeAudioBuffer(clip).then(() => undefined)),
-		);
+		const generation = this.resourceGeneration;
+		let load!: Promise<AudioBuffer | null>;
+		load = (async (): Promise<AudioBuffer | null> => {
+			try {
+				const arrayBuffer = await clip.file.arrayBuffer();
+				const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+				if (this.disposed || generation !== this.resourceGeneration) return null;
+				this.nativeBuffers.set(clip.sourceKey, audioBuffer);
+				return audioBuffer;
+			} catch (err) {
+				if (!this.disposed && generation === this.resourceGeneration) {
+					console.warn(`[AudioManager] Native decode failed for ${clip.sourceKey}:`, err);
+					this.nativeFailedKeys.add(clip.sourceKey);
+				}
+				return null;
+			} finally {
+				if (this.nativeBufferLoads.get(clip.sourceKey) === load) {
+					this.nativeBufferLoads.delete(clip.sourceKey);
+				}
+			}
+		})();
+		this.nativeBufferLoads.set(clip.sourceKey, load);
+		return load;
 	}
 
 	private async runNativeFallback({
@@ -833,9 +846,14 @@ export class AudioManager {
 		targetAhead: number;
 	}): Promise<void> {
 		return new Promise((resolve) => {
+			if (this.disposed) {
+				resolve();
+				return;
+			}
 			const checkInterval = setInterval(() => {
 				if (!this.editor.playback.getIsPlaying()) {
 					clearInterval(checkInterval);
+					this.waitTimers.delete(checkInterval);
 					resolve();
 					return;
 				}
@@ -843,9 +861,11 @@ export class AudioManager {
 				const playbackTime = this.getPlaybackTime();
 				if (timelineTime - playbackTime < targetAhead) {
 					clearInterval(checkInterval);
+					this.waitTimers.delete(checkInterval);
 					resolve();
 				}
 			}, 100);
+			this.waitTimers.set(checkInterval, resolve);
 		});
 	}
 
@@ -853,6 +873,7 @@ export class AudioManager {
 		// Bump session ID first so any in-flight runClipIterator bails immediately
 		// before it can call .next() on a disposed Input (prevents InputDisposedError)
 		this.playbackSessionId++;
+		this.resourceGeneration++;
 
 		for (const iterator of this.clipIterators.values()) {
 			void iterator.return();
@@ -866,7 +887,9 @@ export class AudioManager {
 		}
 		this.inputs.clear();
 		this.sinks.clear();
+		this.sinkLoads.clear();
 		this.nativeBuffers.clear();
+		this.nativeBufferLoads.clear();
 		this.nativeFailedKeys.clear();
 	}
 
@@ -875,11 +898,19 @@ export class AudioManager {
 	}: {
 		clip: AudioClipSource;
 	}): Promise<AudioBufferSink | null> {
+		if (this.disposed) return null;
 		const existingSink = this.sinks.get(clip.sourceKey);
 		if (existingSink) return existingSink;
 
-		try {
-			const input = new Input({
+		const pending = this.sinkLoads.get(clip.sourceKey);
+		if (pending) return pending;
+
+		const generation = this.resourceGeneration;
+		let load!: Promise<AudioBufferSink | null>;
+		load = (async (): Promise<AudioBufferSink | null> => {
+			let input: Input | null = null;
+			try {
+				input = new Input({
 				source: new BlobSource(clip.file),
 				formats: ALL_FORMATS,
 			});
@@ -897,21 +928,25 @@ export class AudioManager {
 			}
 
 			const sink = new AudioBufferSink(audioTrack);
+			if (this.disposed || generation !== this.resourceGeneration) {
+				input.dispose();
+				return null;
+			}
 			this.inputs.set(clip.sourceKey, input);
 			this.sinks.set(clip.sourceKey, sink);
 			return sink;
-		} catch (error) {
-			console.warn(`[AudioManager] Failed to initialize audio sink for ${clip.file.name}:`, error);
-			return null;
-		}
-	}
-
-	/**
-	 * Preload audio buffers for clips on timeline (called when timeline changes)
-	 */
-	private async preloadClips(): Promise<void> {
-		const clips = await this.ensureClipsLoaded();
-		await this.preloadNativeBuffers(clips);
+			} catch (error) {
+				console.warn(`[AudioManager] Failed to initialize audio sink for ${clip.file.name}:`, error);
+				input?.dispose();
+				return null;
+			} finally {
+				if (this.sinkLoads.get(clip.sourceKey) === load) {
+					this.sinkLoads.delete(clip.sourceKey);
+				}
+			}
+		})();
+		this.sinkLoads.set(clip.sourceKey, load);
+		return load;
 	}
 
 	/**
@@ -930,7 +965,7 @@ export class AudioManager {
 	 * Stop health check timer
 	 */
 	private stopHealthCheck(): void {
-		if (this.clipHealthCheckTimer && typeof window !== "undefined") {
+		if (this.clipHealthCheckTimer !== null && typeof window !== "undefined") {
 			window.clearInterval(this.clipHealthCheckTimer);
 		}
 		this.clipHealthCheckTimer = null;

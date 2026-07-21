@@ -16,7 +16,16 @@ const emit = defineEmits<{
 	(e: "rulerMouseDown", event: MouseEvent): void;
 }>();
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		scenes: true,
+		project: true,
+		timeline: true,
+		playback: false,
+		media: false,
+		selection: false,
+	},
+});
 
 const bookmarks = computed(() => {
 	void version.value;

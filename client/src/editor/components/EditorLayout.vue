@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { useEditorActions } from "../composables/actions/useEditorActions";
 import { useKeybindingsListener } from "../composables/useKeybindings";
-import { useAutoSave } from "../composables/useAutoSave";
-import { useElementSelection } from "../composables/timeline/element/useElementSelection";
+import { useSaveStatus } from "../composables/useSaveStatus";
 import { providePointerDrag } from "../composables/usePointerDrag";
 import KeyboardShortcutsModal from "./KeyboardShortcutsModal.vue";
 import EditorHeader from "./EditorHeader.vue";
@@ -24,19 +23,15 @@ import {
 	Stamp,
 	Sparkles,
 	Settings,
+	PanelRightClose,
+	PanelRightOpen,
 } from "lucide-vue-next";
 
 // Register global editor actions and keybindings
 useEditorActions();
 useKeybindingsListener();
-useAutoSave();
+const { isSaving, lastSavedAt } = useSaveStatus();
 providePointerDrag();
-
-const { selectedElements, selectedTransitionId } = useElementSelection();
-
-const showPropertiesPanel = computed(
-	() => selectedElements.value.length > 0 || selectedTransitionId.value !== null,
-);
 
 const previewPanelRef = ref<InstanceType<typeof PreviewPanel> | null>(null);
 
@@ -73,6 +68,7 @@ const tabConfig: Record<Tab, { icon: any; label: string }> = {
 };
 
 const activeTab = ref<Tab | null>("media");
+const propertiesCollapsed = ref(false);
 const shortcutsOpen = ref(false);
 
 function toggleShortcutsModal() {
@@ -124,19 +120,25 @@ onUnmounted(() => {
 <template>
 	<div class="flex h-full w-full flex-col overflow-hidden bg-[#0e0e10] text-white">
 		<!-- Header -->
-		<EditorHeader :preview-container="previewPanelRef?.containerRef ?? null" />
+		<EditorHeader
+			:preview-container="previewPanelRef?.containerRef ?? null"
+			:is-saving="isSaving"
+			:last-saved-at="lastSavedAt"
+		/>
 
 		<!-- Main content row -->
 		<div class="flex flex-1 min-h-0 overflow-hidden">
 			<!-- Icon sidebar (left border) -->
-			<div class="flex w-10 shrink-0 flex-col items-center gap-2 border-r border-white/10 bg-[#0e0e10] py-3 overflow-y-auto scrollbar-hidden">
+			<div class="flex w-14 shrink-0 flex-col items-center gap-2 border-r border-white/10 bg-[#0e0e10] py-3 overflow-y-auto scrollbar-hidden">
 				<button
 					v-for="tabKey in TAB_KEYS"
 					:key="tabKey"
 					type="button"
 					:title="tabConfig[tabKey].label"
+					:aria-label="`${tabConfig[tabKey].label} panel`"
+					:aria-pressed="activeTab === tabKey"
 					:class="[
-						'flex flex-col items-center justify-center rounded-md p-1.5 transition-colors',
+						'flex w-full flex-col items-center justify-center rounded-md p-1.5 transition-colors',
 						activeTab === tabKey
 							? 'text-blue-400'
 							: 'text-zinc-500 hover:text-zinc-300',
@@ -144,6 +146,9 @@ onUnmounted(() => {
 					@click="activeTab = activeTab === tabKey ? null : tabKey"
 				>
 					<component :is="tabConfig[tabKey].icon" class="size-[15px]" />
+					<span v-if="activeTab === tabKey" class="mt-0.5 max-w-11 truncate text-[8px] leading-none">
+						{{ tabConfig[tabKey].label }}
+					</span>
 				</button>
 			</div>
 
@@ -157,9 +162,30 @@ onUnmounted(() => {
 				<PreviewPanel ref="previewPanelRef" />
 			</div>
 
-			<!-- Right panel: Properties -->
-			<div v-if="showPropertiesPanel" class="w-80 shrink-0 border-l border-white/10 bg-[#18181b] overflow-hidden">
-				<PropertiesPanel />
+			<!-- Right panel: pinned so selection changes never resize the preview -->
+			<div
+				:class="[
+					'flex shrink-0 flex-col border-l border-white/10 bg-[#18181b] overflow-hidden transition-[width] duration-150',
+					propertiesCollapsed ? 'w-10' : 'w-80',
+				]"
+			>
+				<div class="flex h-9 items-center border-b border-white/10 px-2">
+					<span v-if="!propertiesCollapsed" class="flex-1 text-xs font-medium text-zinc-400">Properties</span>
+					<button
+						type="button"
+						class="ml-auto flex size-6 items-center justify-center rounded text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-200"
+						:aria-label="propertiesCollapsed ? 'Expand properties panel' : 'Collapse properties panel'"
+						:aria-pressed="propertiesCollapsed"
+						:title="propertiesCollapsed ? 'Expand properties panel' : 'Collapse properties panel'"
+						@click="propertiesCollapsed = !propertiesCollapsed"
+					>
+						<PanelRightOpen v-if="propertiesCollapsed" class="size-3.5" />
+						<PanelRightClose v-else class="size-3.5" />
+					</button>
+				</div>
+				<div v-if="!propertiesCollapsed" class="min-h-0 flex-1">
+					<PropertiesPanel />
+				</div>
 			</div>
 		</div>
 

@@ -10,6 +10,7 @@ import { useClipVolumeInspector } from "../../../composables/panels/useClipVolum
 import { Headphones, Trash2, VolumeX, Volume2, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, ChevronUp, Plus, Diamond } from "lucide-vue-next";
 import KeyframeEditorPanel from "../KeyframeEditorPanel.vue";
 import ElementTimingFields from "./ElementTimingFields.vue";
+import { useRafBatchedUpdate } from "../../../composables/useRafBatchedUpdate";
 
 const props = defineProps<{
 	element: AudioElement;
@@ -23,7 +24,16 @@ const topTabs: { id: TopTab; label: string; icon: typeof Headphones }[] = [
 	{ id: "keyframes", label: "Keyframes", icon: Diamond },
 ];
 
-const { editor } = useEditor();
+const { editor } = useEditor({
+	subscribe: {
+		playback: false,
+		timeline: false,
+		scenes: false,
+		project: false,
+		media: false,
+		selection: false,
+	},
+});
 const { selectedElements } = useElementSelection();
 
 function isRangeInputTarget(target: EventTarget | null): boolean {
@@ -37,6 +47,7 @@ function handleRangePointerDown(event: PointerEvent) {
 }
 
 function stopRangeInteraction() {
+	flushUpdate();
 	editor.setInteractiveDrag(false);
 }
 
@@ -100,13 +111,15 @@ function handleSpeedBlur() {
 	commitSpeed(val);
 }
 
-function update(updates: Record<string, unknown>) {
+function commitUpdate(updates: Record<string, unknown>) {
 	editor.timeline.updateElement({
 		trackId: props.trackId,
 		elementId: props.element.id,
 		updates,
 	});
 }
+
+const { update, flush: flushUpdate } = useRafBatchedUpdate(commitUpdate);
 
 const clipVolume = useClipVolumeInspector({
 	elementId: props.element.id,

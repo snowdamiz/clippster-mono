@@ -142,12 +142,15 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			);
 		}
 
-		const sourceElapsed = Math.max(0, elapsed + this.transitionExtension.before);
-		const sourceOffset = this.getIntegratedSourceOffset(sourceElapsed);
+		// Transition extensions expand the legal decode window; they must not shift
+		// the clip's normal source mapping. Adding `before` here made every incoming
+		// clip start partway through its source, then seek backwards as the
+		// transition ended — visible as a short frozen frame on clip two.
+		const sourceOffset = this.getIntegratedSourceOffset(elapsed);
 
 		return Math.max(
-			Math.max(0, this.params.trimStart),
-			Math.min(trimEnd + beforeSource + afterSource, this.params.trimStart + sourceOffset),
+			Math.max(0, this.params.trimStart - beforeSource),
+			Math.min(trimEnd + afterSource, this.params.trimStart + sourceOffset),
 		);
 	}
 

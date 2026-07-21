@@ -25,7 +25,16 @@ import type { Clip, ClipBuild } from "@/services/database";
 
 type ClipWithBuilds = Clip & { builds: ClipBuild[] };
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		timeline: true,
+		media: true,
+		playback: false,
+		scenes: false,
+		selection: false,
+	},
+});
 const { isOpen, exportTimeRange, exportSegmentName, openExportDialog, closeExportDialog } = useExportDialog();
 const format = ref<"mp4" | "webm">("mp4");
 const quality = ref<"low" | "medium" | "high" | "very_high">("high");

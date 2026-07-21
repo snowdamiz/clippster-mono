@@ -10,6 +10,7 @@ import type {
 import type { SnapPoint } from "../../composables/timeline/useTimelineSnapping";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
 import { snapTimeToFrame } from "../../lib/time";
+import { isElementInVisibleRange, type TimelineVisibleRange } from "../../composables/timeline/useTimelineViewport";
 
 const props = defineProps<{
 	track: TimelineTrack;
@@ -18,8 +19,12 @@ const props = defineProps<{
 	isPlayheadScrubbing?: boolean;
 	razorMode?: boolean;
 	effectDropTargetId?: string | null;
+	transitionDropElementIds?: string[];
 	/** Live neighbor shifts while dragging (magnetic rearrange preview). */
 	dragRippleShifts?: Map<string, number>;
+	visibleRange: TimelineVisibleRange;
+	activeElementId?: string | null;
+	isTimelineInteractive?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -57,6 +62,28 @@ const rippleShifts = computed(() => {
 const hasSelectedElements = computed(() =>
 	props.track.elements.some((element) =>
 		isElementSelected({ trackId: props.track.id, elementId: element.id }),
+	),
+);
+
+const retainedElementIds = computed(() => {
+	const retained = new Set<string>();
+	for (const element of props.track.elements) {
+		if (isElementSelected({ trackId: props.track.id, elementId: element.id })) {
+			retained.add(element.id);
+		}
+	}
+	if (props.activeElementId) retained.add(props.activeElementId);
+	return retained;
+});
+
+const visibleElements = computed(() =>
+	props.track.elements.filter((element) =>
+		isElementInVisibleRange(
+			element,
+			props.visibleRange,
+			retainedElementIds.value,
+			rippleShifts.value.get(element.id),
+		),
 	),
 );
 
@@ -104,7 +131,7 @@ function onTrackMouseDown(event: MouseEvent) {
 				class="flex size-full items-center justify-center rounded-sm border-2 border-dashed border-white/10 text-xs text-zinc-600"
 			/>
 			<TimelineElement
-				v-for="element in track.elements"
+				v-for="element in visibleElements"
 				:key="element.id"
 				:element="element"
 				:track="track"
@@ -113,7 +140,9 @@ function onTrackMouseDown(event: MouseEvent) {
 				:snapping-enabled="snappingEnabled"
 				:is-playhead-scrubbing="isPlayheadScrubbing"
 				:is-effect-drop-target="effectDropTargetId === element.id"
+				:is-transition-drop-target="transitionDropElementIds?.includes(element.id)"
 				:ripple-shifts="rippleShifts"
+				:is-timeline-interactive="isTimelineInteractive"
 				@snap-point-change="(sp) => emit('snapPointChange', sp)"
 				@resize-state-change="(p) => emit('resizeStateChange', p)"
 				@ripple-shifts-change="onRippleShiftsChange"
