@@ -1,6 +1,6 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
-import { videoCache } from "../../video-cache/service";
+import { videoCache, type StablePreviewFrame } from "../../video-cache/service";
 import type { Transform, FlipState, ColorAdjustments, CropRect, ColorCurves, ColorWheels, BlendMode, MaskShape, MediaFitMode } from "../../types/timeline";
 import type { VideoEffect } from "../../types/effects";
 import type { ElementKeyframes } from "../../types/keyframes";
@@ -16,6 +16,33 @@ import { drawCanvas169SourceFraming } from "../canvas-169-framing-draw";
 import { getElementSourceOutPoint } from "../../lib/timeline/trim-source-utils";
 
 const VIDEO_EPSILON = 1 / 1000;
+/**
+ * Lead time to kick off an upcoming cold decoder. Realtime composition never
+ * waits on that decode — it must finish before the playhead arrives.
+ */
+const SEGMENT_PREWARM_LEAD_SEC = 2.5;
+
+export function canReuseLastDecodedFrame({
+	frameTimestamp,
+	frameDuration,
+	requestedTime,
+	fps,
+}: {
+	frameTimestamp: number;
+	frameDuration: number;
+	requestedTime: number;
+	fps: number;
+}): boolean {
+	if (requestedTime < frameTimestamp) return false;
+	const frameSec = 1 / Math.max(1, fps);
+	// Cap hold to two display frames. Trusting a large decoder-reported duration
+	// freezes the first frame of every segment while audio keeps playing.
+	const hold = Math.min(
+		Number.isFinite(frameDuration) && frameDuration > 0 ? frameDuration : frameSec,
+		2 * frameSec,
+	);
+	return requestedTime <= frameTimestamp + hold;
+}
 
 export interface VideoNodeParams {
 	url: string;
@@ -23,6 +50,8 @@ export interface VideoNodeParams {
 	mediaId: string;
 	elementId: string;
 	decodeKey?: string;
+	/** Start this decoder before the timeline reaches a non-continuous cut. */
+	prewarmBeforeStart?: boolean;
 	duration: number;
 	timeOffset: number;
 	trimStart: number;
@@ -55,11 +84,14 @@ export interface VideoNodeParams {
 	mediaFit?: MediaFitMode;
 }
 
+type RenderableVideoFrame =
+	| import("mediabunny").WrappedCanvas
+	| StablePreviewFrame;
+
 export class VideoNode extends BaseNode<VideoNodeParams> {
-	private prefetchedFrame: import("mediabunny").WrappedCanvas | null = null;
+	private prefetchedFrame: RenderableVideoFrame | null = null;
 	private prefetchedFrameTime: number | null = null;
-	private lastGoodFrame: import("mediabunny").WrappedCanvas | null = null;
-	private lastGoodVideoTime: number | null = null;
+	private lastGoodFrame: RenderableVideoFrame | null = null;
 	private transitionExtension: { before: number; after: number } = { before: 0, after: 0 };
 	private chromakeyCanvas?: HTMLCanvasElement;
 	private chromakeyCtx?: CanvasRenderingContext2D | null;
@@ -142,28 +174,143 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			);
 		}
 
-		// Transition extensions expand the legal decode window; they must not shift
-		// the clip's normal source mapping. Adding `before` here made every incoming
-		// clip start partway through its source, then seek backwards as the
-		// transition ended — visible as a short frozen frame on clip two.
-		const sourceOffset = this.getIntegratedSourceOffset(elapsed);
+		// Incoming transition pre-roll starts at the clip's source in-point and
+		// advances continuously through the overlap. Without this offset, clips
+		// trimmed at source time 0 clamp to their first frame for the entire
+		// pre-junction half of the transition.
+		const sourceElapsed = Math.max(0, elapsed + this.transitionExtension.before);
+		const sourceOffset = this.getIntegratedSourceOffset(sourceElapsed);
 
 		return Math.max(
-			Math.max(0, this.params.trimStart - beforeSource),
-			Math.min(trimEnd + afterSource, this.params.trimStart + sourceOffset),
+			Math.max(0, this.params.trimStart),
+			Math.min(trimEnd + beforeSource + afterSource, this.params.trimStart + sourceOffset),
 		);
 	}
 
-	async prefetch({ renderer: _renderer, time }: { renderer: CanvasRenderer; time: number }) {
+	private requestRealtimeFrames(sinkKey: string, times: number[]) {
+		for (const time of times) {
+			videoCache.requestPreviewFrame({
+				sinkKey,
+				file: this.params.file,
+				time,
+			});
+		}
+	}
+
+	/**
+	 * Block until the first realtime frames for this clip are in the stable
+	 * preview cache. Used only before play / while paused — never from the
+	 * realtime composition path (that path must stay non-blocking).
+	 */
+	async prepareRealtimeEntry({
+		renderer,
+		time,
+	}: {
+		renderer: CanvasRenderer;
+		time: number;
+	}): Promise<void> {
+		const fps = Math.max(1, renderer.fps);
+		const sinkKey = this.getDecodeKey();
+		const targets: number[] = [];
+
+		if (this.isInRange(time)) {
+			targets.push(this.getSourceTime(time));
+			const next = time + 1 / fps;
+			if (this.isInRange(next)) targets.push(this.getSourceTime(next));
+		} else if (
+			this.params.prewarmBeforeStart &&
+			time < this.params.timeOffset &&
+			time >= this.params.timeOffset - SEGMENT_PREWARM_LEAD_SEC
+		) {
+			targets.push(this.getSourceTime(this.params.timeOffset));
+			targets.push(this.getSourceTime(this.params.timeOffset + 1 / fps));
+		}
+
+		for (const videoTime of targets) {
+			if (
+				videoCache.peekPreviewFrame({
+					sinkKey,
+					time: videoTime,
+					fps,
+				})
+			) {
+				continue;
+			}
+			await videoCache.preparePreviewFrame({
+				sinkKey,
+				file: this.params.file,
+				time: videoTime,
+			});
+		}
+	}
+
+	async prefetch({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
+		const isRealtime = renderer.framePolicy === "realtime";
+		const fps = Math.max(1, renderer.fps);
+		const sinkKey = this.getDecodeKey();
+
+		if (
+			(isRealtime || renderer.prewarmUpcoming) &&
+			this.params.prewarmBeforeStart &&
+			time < this.params.timeOffset &&
+			time >= this.params.timeOffset - SEGMENT_PREWARM_LEAD_SEC
+		) {
+			const startTimes = [
+				this.getSourceTime(this.params.timeOffset),
+				this.getSourceTime(this.params.timeOffset + 1 / fps),
+			];
+			if (isRealtime) {
+				if (
+					!videoCache.peekPreviewFrame({
+						sinkKey,
+						time: startTimes[0]!,
+						fps,
+					})
+				) {
+					this.requestRealtimeFrames(sinkKey, startTimes);
+				}
+				return;
+			}
+			// While paused/scrubbing, fully prepare the stable cache so pressing
+			// play at a cut does not start cold.
+			void this.prepareRealtimeEntry({ renderer, time });
+		}
 		if (!this.isInRange(time)) return;
 
 		const videoTime = this.getSourceTime(time);
+		if (isRealtime) {
+			// Live playback: one sequential getFrameAt on this sink. Do NOT also
+			// fire requestPreviewFrame for the same sink — that races the sink
+			// lock / decode slots and stalls the decoder after a few seconds.
+			this.prefetchedFrame = await videoCache.getFrameAt({
+				sinkKey,
+				file: this.params.file,
+				time: videoTime,
+			});
+			this.prefetchedFrameTime = this.prefetchedFrame ? videoTime : null;
+			return;
+		}
+
 		this.prefetchedFrame = await videoCache.getFrameAt({
-			sinkKey: this.getDecodeKey(),
+			sinkKey,
 			file: this.params.file,
 			time: videoTime,
 		});
 		this.prefetchedFrameTime = videoTime;
+	}
+
+	async prewarm({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
+		if (!this.isInRange(time)) return;
+		if (renderer.framePolicy !== "realtime") {
+			await this.prefetch({ renderer, time });
+			return;
+		}
+		const videoTime = this.getSourceTime(time);
+		await videoCache.preparePreviewFrame({
+			sinkKey: this.getDecodeKey(),
+			file: this.params.file,
+			time: videoTime,
+		});
 	}
 
 	async render({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
@@ -181,22 +328,27 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 				: null;
 		this.prefetchedFrame = null;
 		this.prefetchedFrameTime = null;
-		let frame = prefetched ?? (await videoCache.getFrameAt({
-			sinkKey: this.getDecodeKey(),
-			file: this.params.file,
-			time: videoTime,
-		}));
+		let frame: RenderableVideoFrame | null =
+			prefetched ??
+			(await videoCache.getFrameAt({
+				sinkKey: this.getDecodeKey(),
+				file: this.params.file,
+				time: videoTime,
+			}));
 		if (
 			!frame &&
 			this.lastGoodFrame &&
-			this.lastGoodVideoTime !== null &&
-			Math.abs(videoTime - this.lastGoodVideoTime) < 0.5
+			canReuseLastDecodedFrame({
+				frameTimestamp: this.lastGoodFrame.timestamp,
+				frameDuration: this.lastGoodFrame.duration,
+				requestedTime: videoTime,
+				fps: renderer.fps,
+			})
 		) {
 			frame = this.lastGoodFrame;
 		}
 		if (frame) {
 			this.lastGoodFrame = frame;
-			this.lastGoodVideoTime = videoTime;
 		}
 
 		if (frame) {

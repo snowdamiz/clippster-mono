@@ -4,6 +4,11 @@ import { useEditor } from "../composables/useEditor";
 import { useExportDialog } from "../composables/useExportDialog";
 import type { ExportTranscriptSummary } from "../lib/export-summary-toast";
 import {
+	getConfiguredFramingConfigs,
+	isManualFramingConfigConfigured,
+	pairExportVariants,
+} from "../lib/export-framing";
+import {
 	Download,
 	X,
 	RotateCcw,
@@ -46,6 +51,7 @@ const copied = ref(false);
 const cancelRequested = ref(false);
 const currentExportId = ref<string | null>(null);
 const exportedPath = ref<string | null>(null);
+const exportedVariants = ref<Array<{ ratio: string; path: string }>>([]);
 const showSuccess = ref(false);
 const showPublishDialog = ref(false);
 const publishClip = ref<ClipWithBuilds | null>(null);
@@ -230,7 +236,7 @@ function toggleRatio(ratio: string) {
 // Manual framing helpers
 function isRatioConfigured(ratio: string): boolean {
 	const config = manualFramingConfigs.value[ratio as keyof ManualFramingConfigs];
-	return config !== undefined && config.regions.length > 0;
+	return isManualFramingConfigConfigured(config);
 }
 
 function getConfigForRatio(ratio: string): ManualFramingConfig | null {
@@ -383,6 +389,7 @@ watch(isOpen, async (open) => {
 		cancelRequested.value = false;
 		showSuccess.value = false;
 		exportedPath.value = null;
+		exportedVariants.value = [];
 		selectedRatios.value = ["16:9"];
 		framingMode.value = "manual";
 		manualFramingConfigs.value = {};
@@ -411,6 +418,12 @@ watch(hasPortraitRatio, (show) => {
 async function handleExport() {
 	const project = activeProject.value;
 	if (!project) return;
+	const portraitRatios = selectedPortraitRatios.value;
+	const missingFramingRatio = portraitRatios.find((ratio) => !isRatioConfigured(ratio));
+	if (missingFramingRatio) {
+		exportError.value = `Configure manual framing for ${missingFramingRatio} before exporting.`;
+		return;
+	}
 
 	// Free tier: 1 export/day limit
 	const { useAuthStore } = await import("@/stores/auth");
@@ -573,22 +586,46 @@ async function handleExport() {
 				canvasSize: exportCanvasSize.value,
 				timeRange: exportTimeRange.value ?? undefined,
 				outputFileName: exportOutputFileName.value ?? undefined,
-				onProgress: (p: { progress: number }) => { progress.value = p.progress; },
+				onProgress: (p: { progress: number }) => {
+					progress.value = portraitRatios.length > 0 ? p.progress * 0.75 : p.progress;
+				},
 				onCancel: () => cancelRequested.value,
 				exportId,
 			},
 		});
 
-		isExporting.value = false;
 		currentExportId.value = null;
 
 		if (result.cancelled) {
+			isExporting.value = false;
 			progress.value = 0;
 			return;
 		}
 
 		if (result.success) {
 			exportedPath.value = result.outputPath || null;
+			exportedVariants.value = [];
+
+			if (result.outputPath && portraitRatios.length > 0) {
+				progress.value = 0.78;
+				const { invoke } = await import("@tauri-apps/api/core");
+				const configs = getConfiguredFramingConfigs(
+					portraitRatios,
+					manualFramingConfigs.value,
+				);
+				const variantPaths = await invoke<string[]>("build_editor_export_variants", {
+					videoPath: result.outputPath,
+					duration: projectDuration.value,
+					aspectRatios: portraitRatios,
+					manualFramingConfigs: configs,
+					quality: quality.value,
+					frameRate: frameRate.value,
+				});
+				exportedVariants.value = pairExportVariants(portraitRatios, variantPaths);
+				progress.value = 0.98;
+			}
+
+			isExporting.value = false;
 			showSuccess.value = true;
 			progress.value = 0;
 
@@ -647,6 +684,7 @@ async function handleExport() {
 				});
 			}
 		} else {
+			isExporting.value = false;
 			exportError.value = result.error || "Unknown error occurred";
 		}
 	} catch (err) {
@@ -673,34 +711,34 @@ function handleClose() {
 		progress.value = 0;
 		showSuccess.value = false;
 		exportedPath.value = null;
+		exportedVariants.value = [];
 	}
 }
 
-async function handleDownload() {
-	if (!exportedPath.value) return;
+async function handleDownload(sourcePath = exportedPath.value) {
+	if (!sourcePath) return;
 
 	try {
 		const { save } = await import("@tauri-apps/plugin-dialog");
 		const { invoke } = await import("@tauri-apps/api/core");
 
 		// Prefer segment title for save-as default; otherwise use the exported file name.
-		const filename = exportOutputFileName.value
-			? `${exportOutputFileName.value.replace(/[^a-zA-Z0-9-_]/g, "_")}.${format.value}`
-			: exportedPath.value.split(/[\\/]/).pop() || `export.${format.value}`;
+		const extension = sourcePath.split(".").pop()?.toLowerCase() || format.value;
+		const filename = sourcePath.split(/[\\/]/).pop() || `export.${extension}`;
 
 		// Show save dialog
 		const savePath = await save({
 			defaultPath: filename,
 			filters: [{
 				name: "Video",
-				extensions: [format.value],
+				extensions: [extension],
 			}],
 		});
 
 		if (savePath) {
 			// Copy file to selected location using the same command as clip building
 			await invoke("copy_clip_to_destination", {
-				sourcePath: exportedPath.value,
+				sourcePath,
 				destinationPath: savePath,
 			});
 			
@@ -1072,7 +1110,9 @@ function handlePublishNow() {
 												<Check :size="32" />
 											</div>
 											<h3 class="export-dialog__success-title">Export Complete!</h3>
-											<p class="export-dialog__success-subtitle">Your video has been saved to Built Clips</p>
+											<p class="export-dialog__success-subtitle">
+												{{ 1 + exportedVariants.length }} video{{ exportedVariants.length > 0 ? 's have' : ' has' }} been saved to Built Clips
+											</p>
 										</div>
 
 										<div class="export-dialog__success-actions">
@@ -1080,9 +1120,18 @@ function handlePublishNow() {
 												<Share2 :size="16" />
 												Publish Now
 											</button>
-											<button class="export-dialog__success-btn" @click="handleDownload">
+											<button class="export-dialog__success-btn" @click="handleDownload()">
 												<Download :size="16" />
-												Download to Local File
+												Download {{ projectAspectLabel }}
+											</button>
+											<button
+												v-for="variant in exportedVariants"
+												:key="variant.ratio"
+												class="export-dialog__success-btn"
+												@click="handleDownload(variant.path)"
+											>
+												<Download :size="16" />
+												Download {{ variant.ratio }}
 											</button>
 											<button class="export-dialog__success-btn export-dialog__success-btn--warning" @click="handleCleanupProject">
 												<Trash2 :size="16" />
@@ -1436,7 +1485,7 @@ function handlePublishNow() {
 							<div class="export-dialog__footer">
 								<div class="export-dialog__footer-left">
 									<button
-										v-if="isExporting"
+										v-if="isExporting && currentExportId"
 										@click="handleCancel"
 										class="export-dialog__btn export-dialog__btn--back"
 									>
@@ -1501,6 +1550,8 @@ function handlePublishNow() {
 			:source-aspect-ratio="'16:9'"
 			:thumbnail-url="videoFrameUrl"
 			:video-path="firstVideoPath"
+			:timeline-preview-canvas="editor.getLivePreviewCanvas()"
+			:use-timeline-playback="true"
 			:clip-start-time="0"
 			:clip-end-time="projectDuration"
 			@confirm="onManualConfigConfirm"

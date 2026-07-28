@@ -115,6 +115,16 @@ export function previewPerfMarkSceneCacheHit(count = 1): void {
 	counters.sceneCacheHits += normalizedCount(count);
 }
 
+export function previewPerfMarkDropped(count = 1): void {
+	if (!isPreviewPerfEnabled()) return;
+	counters.droppedFrames += normalizedCount(count);
+}
+
+export function previewPerfMarkCoalesced(count = 1): void {
+	if (!isPreviewPerfEnabled()) return;
+	counters.coalescedFrames += normalizedCount(count);
+}
+
 export function previewPerfSnapshotDomResources(
 	snapshot: { domNodes?: number; resourceCount?: number } = {},
 ): PreviewPerfResourceSnapshot | null {

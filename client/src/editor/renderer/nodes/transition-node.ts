@@ -3,6 +3,12 @@ import { BaseNode } from "./base-node";
 import { renderTransition } from "../effects/canvas-transitions";
 import type { TransitionType } from "../../types/transitions";
 
+/**
+ * Lead time to start decoding the incoming side. Realtime composition never
+ * awaits that work — awaiting freezes the last presented frame while audio runs.
+ */
+const TRANSITION_PREWARM_LEAD_SEC = 2.5;
+
 export interface TransitionNodeParams {
 	type: TransitionType;
 	/** Duration of the transition overlap in seconds */
@@ -25,6 +31,54 @@ export interface TransitionNodeParams {
 	suppressIncomingOutsideWindow?: boolean;
 }
 
+export function getTransitionWindow({
+	duration,
+	junctionTime,
+}: Pick<TransitionNodeParams, "duration" | "junctionTime">): {
+	start: number;
+	end: number;
+} {
+	const safeDuration = Math.max(1e-6, duration);
+	return {
+		start: junctionTime - safeDuration / 2,
+		end: junctionTime + safeDuration / 2,
+	};
+}
+
+/** How far past the natural clip end sampleSpread pulls the outgoing decode clock. */
+export function getTransitionOutgoingExtraTail({
+	duration,
+	sampleSpread,
+}: Pick<TransitionNodeParams, "duration" | "sampleSpread">): number {
+	const safeDuration = Math.max(1e-6, duration);
+	if (sampleSpread == null || sampleSpread <= safeDuration + 1e-9) {
+		return 0;
+	}
+	const widenedHalf = Math.max(safeDuration, sampleSpread) / 2;
+	return Math.max(0, widenedHalf - safeDuration / 2);
+}
+
+export function getTransitionSampleTimes({
+	time,
+	duration,
+	junctionTime,
+	sampleSpread,
+}: Pick<TransitionNodeParams, "duration" | "junctionTime" | "sampleSpread"> & {
+	time: number;
+}): { outgoingTime: number; incomingTime: number } {
+	const safeDuration = Math.max(1e-6, duration);
+	const extraOutgoingTail = getTransitionOutgoingExtraTail({ duration, sampleSpread });
+	if (extraOutgoingTail <= 1e-9) {
+		return { outgoingTime: time, incomingTime: time };
+	}
+	const { start } = getTransitionWindow({ duration, junctionTime });
+	const progress = Math.max(0, Math.min(1, (time - start) / safeDuration));
+	return {
+		outgoingTime: time + progress * extraOutgoingTail,
+		incomingTime: time,
+	};
+}
+
 /**
  * Composites two child nodes (outgoing + incoming) using a transition effect.
  * During the transition window, both children are rendered to scratch canvases
@@ -36,6 +90,7 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 	/** The incoming (right) video node */
 	incomingNode: BaseNode | null = null;
 	private incomingPrewarmed = false;
+	private incomingPrewarmPromise: Promise<void> | null = null;
 
 	/**
 	 * Reused scratch layers for transition compositing.
@@ -144,23 +199,6 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 		}
 	}
 
-	private getSampleHalfWidth(): number {
-		const d = Math.max(1e-6, this.params.duration);
-		const spread = Math.max(d, this.params.sampleSpread ?? d);
-		return spread / 2;
-	}
-
-	private useWidenedLayerSpread(): boolean {
-		const spread = this.params.sampleSpread;
-		const d = Math.max(1e-6, this.params.duration);
-		return spread != null && spread > d + 1e-9;
-	}
-
-	private getLayerSpreadHalf(): number {
-		const d = Math.max(1e-6, this.params.duration);
-		return this.useWidenedLayerSpread() ? this.getSampleHalfWidth() : d / 2;
-	}
-
 	private getClipTimelineBounds(node: BaseNode | null): { start: number; end: number } | null {
 		if (!node) return null;
 		const p = (node as { params?: { timeOffset?: number; duration?: number } }).params;
@@ -183,25 +221,16 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 	}
 
 	/** Only valid when {@link isInTransition} is true for `time`. */
-	private getTransitionLayerDecodeTimes(time: number): { outgoingTime: number; incomingTime: number } {
-		if (!this.useWidenedLayerSpread()) {
-			return { outgoingTime: time, incomingTime: time };
-		}
-
-		const d = Math.max(1e-6, this.params.duration);
-		const transitionStart = this.params.junctionTime - d / 2;
-		const progress = Math.max(0, Math.min(1, (time - transitionStart) / d));
-		const widenedHalf = this.getSampleHalfWidth();
-		const extraOutgoingTail = Math.max(0, widenedHalf - d / 2);
-
-		// Keep both decode clocks monotonic. The old incoming lead shrank as
-		// progress increased, forcing the second decoder to seek backwards during
-		// playback. That seek reused its last good frame and looked like a brief
-		// freeze immediately after the cut.
-		return {
-			outgoingTime: time + progress * extraOutgoingTail,
-			incomingTime: time,
-		};
+	private getTransitionLayerDecodeTimes(time: number): {
+		outgoingTime: number;
+		incomingTime: number;
+	} {
+		return getTransitionSampleTimes({
+			time,
+			duration: this.params.duration,
+			junctionTime: this.params.junctionTime,
+			sampleSpread: this.params.sampleSpread,
+		});
 	}
 
 	private isInPeerTransitionWindow(time: number): boolean {
@@ -211,9 +240,7 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 	}
 
 	private isInTransition(time: number): boolean {
-		const d = Math.max(1e-6, this.params.duration);
-		const start = this.params.junctionTime - d / 2;
-		const end = this.params.junctionTime + d / 2;
+		const { start, end } = getTransitionWindow(this.params);
 		return time >= start && time < end;
 	}
 
@@ -230,6 +257,8 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 			: { outgoingTime: time, incomingTime: time };
 
 		if (inTransition) {
+			// Decode both sides in parallel. Do not await a late prewarm here —
+			// that freezes the previous canvas while audio keeps moving.
 			const prefetches: Promise<void>[] = [];
 			if (this.outgoingNode) {
 				prefetches.push(this.outgoingNode.prefetch({ renderer, time: outgoingTime }));
@@ -239,9 +268,8 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 			}
 			await Promise.all(prefetches);
 		} else if (time < this.params.junctionTime) {
-			const d = Math.max(1e-6, this.params.duration);
-			const transitionStart = this.params.junctionTime - d / 2;
-			const prewarmStart = transitionStart - Math.min(0.5, d / 2);
+			const { start: transitionStart } = getTransitionWindow(this.params);
+			const prewarmStart = transitionStart - TRANSITION_PREWARM_LEAD_SEC;
 			if (time < prewarmStart) {
 				this.incomingPrewarmed = false;
 			}
@@ -253,8 +281,21 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 				time >= prewarmStart &&
 				!this.incomingPrewarmed
 			) {
-				await this.incomingNode.prefetch({ renderer, time: transitionStart });
 				this.incomingPrewarmed = true;
+				// Position the incoming sink at the transition entry. Do not
+				// advance past that — leaving the sink ahead forces a seek
+				// when the window opens.
+				const prewarm = this.incomingNode
+					.prewarm({ renderer, time: transitionStart })
+					.catch(() => {
+						// The normal in-window prefetch path retries decoding.
+					})
+					.finally(() => {
+						if (this.incomingPrewarmPromise === prewarm) {
+							this.incomingPrewarmPromise = null;
+						}
+					});
+				this.incomingPrewarmPromise = prewarm;
 			}
 		} else if (
 			this.incomingNode &&
@@ -287,7 +328,7 @@ export class TransitionNode extends BaseNode<TransitionNodeParams> {
 
 		const { width: canvasW, height: canvasH } = renderer.getBackingSize();
 		const d = Math.max(1e-6, this.params.duration);
-		const transitionStart = this.params.junctionTime - d / 2;
+		const { start: transitionStart } = getTransitionWindow(this.params);
 		const progress = (time - transitionStart) / d;
 		const { outgoingTime, incomingTime } = this.getTransitionLayerDecodeTimes(time);
 

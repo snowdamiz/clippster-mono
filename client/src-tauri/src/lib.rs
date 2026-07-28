@@ -1282,6 +1282,7 @@ commands::file_utils::generate_video_thumbnail,
 
             // Clips commands
             clips::build_clip_from_segments,
+            clips::build_editor_export_variants,
             clips::cancel_clip_build,
             clips::is_clip_build_active,
             clips::save_subtitle_overlay_png,

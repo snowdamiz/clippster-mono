@@ -4,6 +4,7 @@ import { CanvasRenderer } from "./canvas-renderer";
 import type { PreviewSceneInputs } from "./preview-scene-sync";
 import { setPreviewDecodeSinkSizeOverride } from "../lib/preview-decode-settings";
 import { videoCache } from "../video-cache/service";
+import { getRenderFrame } from "./frame-policy";
 
 export { getSceneTracksForExport } from "./scene-export-tracks";
 
@@ -57,6 +58,30 @@ export type SceneFrameExportParams = {
 	isCancelled?: () => boolean;
 };
 
+export function getSceneFrameTime({
+	frameIndex,
+	fps,
+	exportDuration,
+	timeOffset,
+	sceneDuration,
+}: {
+	frameIndex: number;
+	fps: number;
+	exportDuration: number;
+	timeOffset: number;
+	sceneDuration: number;
+}): number {
+	const localTime = Math.min(
+		frameIndex / Math.max(1, fps),
+		Math.max(exportDuration - 1e-6, 0),
+	);
+	return getRenderFrame({
+		time: timeOffset + localTime,
+		fps,
+		duration: sceneDuration,
+	}).time;
+}
+
 /**
  * Renders the same scene tree as preview at full layout resolution and writes image frames for FFmpeg.
  * JPEG is the default staging format because these are already opaque final video frames; avoiding
@@ -87,6 +112,7 @@ export async function writeSceneFrameSequenceToDisk(
 			width,
 			height,
 			fps,
+			framePolicy: "exact-export",
 			preferOffscreen: true,
 			previewEffectProcessing: false,
 			backingWidth: width,
@@ -94,23 +120,32 @@ export async function writeSceneFrameSequenceToDisk(
 		});
 
 		const n = Math.max(1, frameCount);
+		const pendingWrites: Promise<unknown>[] = [];
 		for (let i = 0; i < n; i++) {
 			if (isCancelled?.()) {
 				throw new Error("Export cancelled");
 			}
-			const localT = Math.min(i / fps, Math.max(exportDuration - 1e-6, 0));
-			const sceneTime = timeOffset + localT;
-			await tree.prefetch({ renderer, time: sceneTime });
+			const sceneTime = getSceneFrameTime({
+				frameIndex: i,
+				fps,
+				exportDuration,
+				timeOffset,
+				sceneDuration: sceneInputs.duration,
+			});
 			await renderer.render({ node: tree, time: sceneTime });
 			const bytes = await canvasToEncodedBytes(renderer.canvas, imageFormat);
-			await invoke("write_scene_export_frame", {
+			pendingWrites.push(invoke("write_scene_export_frame", {
 				sessionId,
 				frameIndexOneBased: i + 1,
 				frameBytes: Array.from(bytes),
 				extension: getFrameExtension(imageFormat),
-			});
+			}));
+			if (pendingWrites.length >= 2) {
+				await pendingWrites.shift();
+			}
 			onProgress?.({ progress: (i + 1) / n, phase: "frames" });
 		}
+		await Promise.all(pendingWrites);
 
 		const [pattern, count] = await invoke<[string, number]>("finalize_scene_export_frames", {
 			sessionId,

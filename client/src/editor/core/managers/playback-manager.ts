@@ -8,12 +8,27 @@ export class PlaybackManager {
 	private previousVolume = 1;
 	private playbackRate = 1;
 	private listeners = new Set<() => void>();
+	private beforePlayListeners = new Set<() => Promise<void>>();
 	private playbackTimer: number | null = null;
 	private lastUpdate = 0;
+	private playRequest = 0;
+	private isPreparingToPlay = false;
 
 	constructor(private editor: EditorCore) {}
 
-	play(): void {
+	async play(): Promise<void> {
+		if (this.isPlaying || this.isPreparingToPlay) return;
+		const request = ++this.playRequest;
+		this.isPreparingToPlay = true;
+		try {
+			await Promise.all(
+				[...this.beforePlayListeners].map((listener) => listener()),
+			);
+		} catch (error) {
+			console.warn("[Playback] Preview preparation failed:", error);
+		}
+		if (request !== this.playRequest) return;
+
 		const duration = this.editor.timeline.getTotalDuration();
 
 		if (duration > 0) {
@@ -23,21 +38,24 @@ export class PlaybackManager {
 		}
 
 		this.isPlaying = true;
+		this.isPreparingToPlay = false;
 		this.startTimer();
 		this.notify();
 	}
 
 	pause(): void {
+		this.playRequest += 1;
+		this.isPreparingToPlay = false;
 		this.isPlaying = false;
 		this.stopTimer();
 		this.notify();
 	}
 
 	toggle(): void {
-		if (this.isPlaying) {
+		if (this.isPlaying || this.isPreparingToPlay) {
 			this.pause();
 		} else {
-			this.play();
+			void this.play();
 		}
 	}
 
@@ -114,6 +132,11 @@ export class PlaybackManager {
 	subscribe(listener: () => void): () => void {
 		this.listeners.add(listener);
 		return () => this.listeners.delete(listener);
+	}
+
+	onBeforePlay(listener: () => Promise<void>): () => void {
+		this.beforePlayListeners.add(listener);
+		return () => this.beforePlayListeners.delete(listener);
 	}
 
 	private notify(): void {

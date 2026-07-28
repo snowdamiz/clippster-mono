@@ -43,6 +43,7 @@ describe('CanvasRenderer preview backing size', () => {
       fps: 30,
     });
     const node = {
+      prefetch: vi.fn(),
       render: vi.fn(),
     } as unknown as BaseNode;
 
@@ -57,7 +58,8 @@ describe('CanvasRenderer preview backing size', () => {
       0,
       0
     );
-    expect(node.render).toHaveBeenCalledWith({ renderer, time: 0 });
+    expect(node.prefetch).toHaveBeenCalledWith({ renderer, time: 0 });
+    expect(node.render).toHaveBeenCalledWith({ renderer, time: 0, skipPrefetch: true });
   });
 
   it('paints at the display canvas backing dimensions', async () => {
@@ -74,7 +76,7 @@ describe('CanvasRenderer preview backing size', () => {
       height: 540,
       getContext: () => targetContext,
     } as unknown as HTMLCanvasElement;
-    const node = { render: vi.fn() } as unknown as BaseNode;
+    const node = { prefetch: vi.fn(), render: vi.fn() } as unknown as BaseNode;
 
     await renderer.renderToCanvas({ node, time: 1, targetCanvas });
 

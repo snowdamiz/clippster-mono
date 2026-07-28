@@ -4,6 +4,8 @@ import {
 	previewPerfBeginFrame,
 	previewPerfEndFrame,
 	previewPerfMarkBuildScene,
+	previewPerfMarkCoalesced,
+	previewPerfMarkDropped,
 	previewPerfMarkRenderToCanvas,
 	previewPerfMarkSceneCacheHit,
 	previewPerfMarkWaveformPaint,
@@ -64,10 +66,12 @@ describe("preview performance instrumentation", () => {
 		previewPerfEndFrame({ dropped: true, coalesced: true });
 		previewPerfBeginFrame();
 		previewPerfEndFrame({ coalesced: 3 });
+		previewPerfMarkDropped(2);
+		previewPerfMarkCoalesced(2);
 
 		const stats = getPreviewPerfRollingStats();
-		expect(stats.droppedFrames).toBe(1);
-		expect(stats.coalescedFrames).toBe(4);
+		expect(stats.droppedFrames).toBe(3);
+		expect(stats.coalescedFrames).toBe(6);
 		expect(stats.last?.coalescedFrames).toBe(3);
 	});
 

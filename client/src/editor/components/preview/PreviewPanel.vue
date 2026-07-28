@@ -9,9 +9,15 @@ import { useElementSelection } from "../../composables/timeline/element/useEleme
 import { useBrandingConfig } from "../../composables/useBrandingConfig";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
 import type { RootNode } from "../../renderer/nodes/root-node";
-import { getLastFrameTime } from "../../lib/time";
+import { getRenderFrame } from "../../renderer/frame-policy";
+import { PreviewFrameScheduler } from "../../renderer/preview-frame-scheduler";
 import type { TimelineElement, TimelineTrack } from "../../types/timeline";
-import { exposePreviewPerfGlobal } from "../../lib/preview-performance";
+import {
+	exposePreviewPerfGlobal,
+	previewPerfMarkCoalesced,
+	previewPerfMarkDropped,
+} from "../../lib/preview-performance";
+import { prepareSceneForRealtimePlayback } from "../../renderer/prepare-realtime-playback";
 import PreviewOverlay from "./PreviewOverlay.vue";
 import SocialOverlay from "./SocialOverlay.vue";
 import GuideOverlay from "./GuideOverlay.vue";
@@ -39,11 +45,10 @@ const containerRef = ref<HTMLDivElement | null>(null);
 let lastFrame = -1;
 let lastScene: any = null;
 let lastRenderedTime = Number.NEGATIVE_INFINITY;
-let rendering = false;
-let pendingRender: { time: number; frame: number; tree: RootNode } | null = null;
 let sceneRebuildIdleId: number | null = null;
 let requestPreviewFrame = () => {};
 let freezeCaptureCanvas: HTMLCanvasElement | null = null;
+let frameScheduler: PreviewFrameScheduler | null = null;
 
 /**
  * Freeze capture remains project-sized without painting a full-resolution canvas
@@ -114,21 +119,42 @@ const previewBackingSize = computed(() => {
 	};
 });
 
+let pendingDecodeCacheReset = false;
+
 watch(
 	[projectWidth, projectHeight, previewQuality, autoPreviewHeight],
-	() => {
+	([width, height, quality], previous) => {
 		configurePreviewDecode({
 			projectWidth: projectWidth.value,
 			projectHeight: projectHeight.value,
 			previewQuality: previewQuality.value,
 			autoQualityHeight: autoPreviewHeight.value,
 		});
+		// Auto-quality steps during playback must not destroy live decoders:
+		// clearAll() cold-restarts every video sink (a visible multi-frame stall
+		// while audio keeps running). Existing sinks keep their old decode size
+		// until playback stops; new sinks pick up the new size immediately.
+		const onlyAutoHeightChanged =
+			previous !== undefined &&
+			width === previous[0] &&
+			height === previous[1] &&
+			quality === previous[2];
+		if (onlyAutoHeightChanged && editor.playback.getIsPlaying()) {
+			pendingDecodeCacheReset = true;
+			return;
+		}
+		pendingDecodeCacheReset = false;
 		videoCache.clearAll();
 	},
 	{ immediate: true },
 );
 
 watch([canvasRef, projectWidth, projectHeight], syncFreezeCaptureCanvas, { flush: "post" });
+watch(
+	canvasRef,
+	(canvas) => editor.setLivePreviewCanvas(canvas),
+	{ immediate: true, flush: "post" },
+);
 
 const fps = computed(() => activeProject.value?.settings?.fps ?? 30);
 const background = computed(() => activeProject.value?.settings?.background ?? { type: "color" as const, color: "#000000" });
@@ -143,6 +169,8 @@ watch([layoutWidth, layoutHeight, fps, previewBackingSize], ([w, h, f, backing])
 		width: w,
 		height: h,
 		fps: f,
+		framePolicy: "realtime",
+		prewarmUpcoming: true,
 		preferOffscreen: false,
 		previewEffectProcessing: true,
 		backingWidth: backing.width,
@@ -151,6 +179,7 @@ watch([layoutWidth, layoutHeight, fps, previewBackingSize], ([w, h, f, backing])
 	lastFrame = -1;
 	lastScene = null;
 	lastRenderedTime = Number.NEGATIVE_INFINITY;
+	frameScheduler?.invalidate();
 	requestPreviewFrame();
 }, { immediate: true });
 
@@ -279,87 +308,64 @@ watch(
 	{ immediate: true, flush: "post" },
 );
 
-function runPreviewRender({
-	canvas,
-	renderer: r,
-	renderTree,
-	commitTime,
-	commitFrame,
-}: {
-	canvas: HTMLCanvasElement;
-	renderer: CanvasRenderer;
-	renderTree: RootNode;
-	commitTime: number;
-	commitFrame: number;
-}) {
-	const commitTree = renderTree;
-	const renderStartedAt = performance.now();
-	rendering = true;
-	editor.renderer
-		.renderPreviewToTarget({ renderer: r, time: commitTime, targetCanvas: canvas })
-		.then(() => {
-			rendering = false;
-			if (previewQuality.value === "auto") {
-				const nextHeight = adaptiveQuality.recordFrame(
-					performance.now() - renderStartedAt,
-					1000 / Math.max(1, r.fps),
-				);
-				if (nextHeight !== null) autoPreviewHeight.value = nextHeight;
-			}
-			const currentTree = editor.renderer.getRenderTree();
-			if (currentTree !== commitTree) {
-				if (pendingRender) {
-					requestPreviewFrame();
-				}
-				return;
-			}
-			lastFrame = commitFrame;
-			lastScene = commitTree;
-			lastRenderedTime = commitTime;
-
-			if (pendingRender) {
-				requestPreviewFrame();
-			}
-		})
-		.catch(() => {
-			rendering = false;
-			if (pendingRender) {
-				requestPreviewFrame();
-			}
+frameScheduler = new PreviewFrameScheduler({
+	render: async (request, signal) => {
+		const canvas = canvasRef.value;
+		const r = renderer.value;
+		if (!canvas || !r) return;
+		r.framePolicy = request.mode === "playback" ? "realtime" : "exact-preview";
+		await editor.renderer.renderPreviewToTarget({
+			renderer: r,
+			time: request.time,
+			targetCanvas: canvas,
+			renderTree: request.tree,
+			signal,
 		});
-}
+	},
+	onPresented: (request, costMs) => {
+		const r = renderer.value;
+		if (!r) return;
+		lastFrame = request.frameIndex;
+		lastScene = request.tree;
+		lastRenderedTime = request.time;
+		if (previewQuality.value === "auto") {
+			const nextHeight = adaptiveQuality.recordFrame(
+				costMs,
+				1000 / Math.max(1, r.fps),
+			);
+			if (nextHeight !== null) autoPreviewHeight.value = nextHeight;
+		}
+	},
+	onDropped: previewPerfMarkDropped,
+	onCoalesced: previewPerfMarkCoalesced,
+	onError: (error) => {
+		console.warn("[Preview] Frame render failed:", error);
+	},
+});
 
 const previewLoop = useRafLoop(() => {
-	const canvas = canvasRef.value;
 	const r = renderer.value;
 	const renderTree = editor.renderer.getRenderTree();
-	if (!canvas || !r || !renderTree) return;
+	if (!canvasRef.value || !r || !renderTree) return;
 
 	const time = editor.playback.getCurrentTime();
-	const lastFrameTime = getLastFrameTime({ duration: renderTree.duration, fps: r.fps });
-	const renderTime = Math.min(time, lastFrameTime);
-	const frame = Math.floor(renderTime * r.fps);
+	const renderFrame = getRenderFrame({
+		time,
+		fps: r.fps,
+		duration: renderTree.duration,
+	});
 	const isPlaying = editor.playback.getIsPlaying();
-	const timeMoved =
-		isPlaying && Math.abs(renderTime - lastRenderedTime) >= 1 / Math.max(24, r.fps * 2);
-
-	const needsRender = frame !== lastFrame || renderTree !== lastScene || timeMoved;
+	const needsRender =
+		renderFrame.frameIndex !== lastFrame ||
+		renderTree !== lastScene ||
+		renderFrame.time !== lastRenderedTime;
 
 	if (!needsRender) return;
-
-	if (rendering) {
-		// Transitions render two layers + composite and can exceed one rAF; queue the latest frame.
-		pendingRender = { time: renderTime, frame, tree: renderTree };
-		return;
-	}
-
-	pendingRender = null;
-	runPreviewRender({
-		canvas,
-		renderer: r,
-		renderTree,
-		commitTime: renderTime,
-		commitFrame: frame,
+	frameScheduler?.request({
+		frameIndex: renderFrame.frameIndex,
+		time: renderFrame.time,
+		tree: renderTree,
+		mode: isPlaying ? "playback" : "exact",
 	});
 }, {
 	autoStart: false,
@@ -556,6 +562,8 @@ function setQuality(value: "auto" | 360 | 540 | 720 | 1080) {
 
 /** Force a preview repaint after timeline scrub/seek so video does not stick on a stale frame. */
 function handlePlaybackSeek() {
+	videoCache.cancelPreviewRequests();
+	frameScheduler?.invalidate();
 	lastRenderedTime = Number.NEGATIVE_INFINITY;
 	lastFrame = -1;
 	requestPreviewFrame();
@@ -563,12 +571,52 @@ function handlePlaybackSeek() {
 
 let unsubscribePlayback: (() => void) | null = null;
 let unsubscribeRenderer: (() => void) | null = null;
+let unsubscribeBeforePlay: (() => void) | null = null;
+
+async function preparePlaybackStart() {
+	const canvas = canvasRef.value;
+	const r = renderer.value;
+	const tree = editor.renderer.getRenderTree();
+	if (!canvas || !r || !tree) return;
+
+	frameScheduler?.invalidate();
+	const frame = getRenderFrame({
+		time: editor.playback.getCurrentTime(),
+		fps: r.fps,
+		duration: tree.duration,
+	});
+	// Fill the stable realtime frame cache for every on-screen and soon-to-start
+	// video BEFORE the clock starts. Realtime composition never awaits decode,
+	// so these frames must already be ready when play begins.
+	await prepareSceneForRealtimePlayback({
+		root: tree,
+		renderer: r,
+		time: frame.time,
+	});
+	if (editor.renderer.getRenderTree() !== tree) return;
+
+	r.framePolicy = "exact-preview";
+	await editor.renderer.renderPreviewToTarget({
+		renderer: r,
+		time: frame.time,
+		targetCanvas: canvas,
+		renderTree: tree,
+	});
+	if (editor.renderer.getRenderTree() !== tree) return;
+	lastFrame = frame.frameIndex;
+	lastScene = tree;
+	lastRenderedTime = frame.time;
+}
 
 function syncPreviewLoopToPlayback() {
 	if (editor.playback.getIsPlaying()) {
 		previewLoop.start();
 	} else {
 		previewLoop.stop();
+		if (pendingDecodeCacheReset) {
+			pendingDecodeCacheReset = false;
+			videoCache.clearAll();
+		}
 		requestPreviewFrame();
 	}
 }
@@ -589,12 +637,16 @@ onMounted(() => {
 	window.addEventListener("keydown", onKeyZoom);
 	window.addEventListener("playback-seek", handlePlaybackSeek);
 	unsubscribePlayback = editor.playback.subscribe(syncPreviewLoopToPlayback);
+	unsubscribeBeforePlay = editor.playback.onBeforePlay(preparePlaybackStart);
 	unsubscribeRenderer = editor.renderer.subscribe(requestPreviewFrame);
 	syncPreviewLoopToPlayback();
 	requestPreviewFrame();
 });
 
 onUnmounted(() => {
+	editor.setLivePreviewCanvas(null);
+	frameScheduler?.dispose();
+	frameScheduler = null;
 	if (sceneRebuildIdleId !== null && typeof cancelIdleCallback !== "undefined") {
 		cancelIdleCallback(sceneRebuildIdleId);
 		sceneRebuildIdleId = null;
@@ -603,8 +655,10 @@ onUnmounted(() => {
 	window.removeEventListener("keydown", onKeyZoom);
 	window.removeEventListener("playback-seek", handlePlaybackSeek);
 	unsubscribePlayback?.();
+	unsubscribeBeforePlay?.();
 	unsubscribeRenderer?.();
 	unsubscribePlayback = null;
+	unsubscribeBeforePlay = null;
 	unsubscribeRenderer = null;
 });
 

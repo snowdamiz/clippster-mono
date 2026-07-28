@@ -1,5 +1,6 @@
 import type { BaseNode } from "./nodes/base-node";
 import { getPreviewEffectProcessingSize } from "../lib/preview-decode-settings";
+import type { FrameRenderPolicy } from "./frame-policy";
 
 export type CanvasRendererParams = {
 	width: number;
@@ -10,6 +11,14 @@ export type CanvasRendererParams = {
 	backingWidth?: number;
 	backingHeight?: number;
 	willReadFrequently?: boolean;
+	framePolicy?: FrameRenderPolicy;
+	/**
+	 * Interactive preview renderers set this so paused/exact renders still warm
+	 * decoders for upcoming segment cuts (pressing play right before a cut must
+	 * not stall on a cold decoder). One-off renderers (thumbnails, covers,
+	 * export) leave it off.
+	 */
+	prewarmUpcoming?: boolean;
 };
 
 export class CanvasRenderer {
@@ -21,6 +30,8 @@ export class CanvasRenderer {
 	backingHeight: number;
 	fps: number;
 	previewEffectProcessing: boolean;
+	framePolicy: FrameRenderPolicy;
+	prewarmUpcoming: boolean;
 
 	constructor({
 		width,
@@ -31,6 +42,8 @@ export class CanvasRenderer {
 		backingWidth = width,
 		backingHeight = height,
 		willReadFrequently = false,
+		framePolicy = "exact-preview",
+		prewarmUpcoming = false,
 	}: CanvasRendererParams) {
 		this.width = width;
 		this.height = height;
@@ -38,6 +51,8 @@ export class CanvasRenderer {
 		this.backingHeight = Math.max(1, Math.round(backingHeight));
 		this.fps = fps;
 		this.previewEffectProcessing = previewEffectProcessing;
+		this.framePolicy = framePolicy;
+		this.prewarmUpcoming = prewarmUpcoming;
 
 		if (preferOffscreen) {
 			try {
@@ -131,21 +146,59 @@ export class CanvasRenderer {
 		this.applyLogicalScale();
 	}
 
-	async render({ node, time }: { node: BaseNode; time: number }) {
+	async prefetchFrame({
+		node,
+		time,
+		signal,
+	}: {
+		node: BaseNode;
+		time: number;
+		signal?: AbortSignal;
+	}) {
+		if (signal?.aborted) return;
+		await node.prefetch({ renderer: this, time });
+	}
+
+	async composeFrame({
+		node,
+		time,
+		signal,
+	}: {
+		node: BaseNode;
+		time: number;
+		signal?: AbortSignal;
+	}) {
+		if (signal?.aborted) return;
 		this.clear();
-		await node.render({ renderer: this, time });
+		await node.render({ renderer: this, time, skipPrefetch: true });
+	}
+
+	async render({
+		node,
+		time,
+		signal,
+	}: {
+		node: BaseNode;
+		time: number;
+		signal?: AbortSignal;
+	}) {
+		await this.prefetchFrame({ node, time, signal });
+		await this.composeFrame({ node, time, signal });
 	}
 
 	async renderToCanvas({
 		node,
 		time,
 		targetCanvas,
+		signal,
 	}: {
 		node: BaseNode;
 		time: number;
 		targetCanvas: HTMLCanvasElement;
+		signal?: AbortSignal;
 	}) {
-		await this.render({ node, time });
+		await this.render({ node, time, signal });
+		if (signal?.aborted) return;
 
 		const ctx = targetCanvas.getContext("2d");
 		if (!ctx) {

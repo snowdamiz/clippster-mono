@@ -26,6 +26,7 @@ export class EditorCore {
 	public readonly transcript: TranscriptManager;
 
 	private _previewCanvas: HTMLCanvasElement | null = null;
+	private _livePreviewCanvas: HTMLCanvasElement | null = null;
 	private _interactiveDrag = false;
 	private disposed = false;
 
@@ -50,6 +51,14 @@ export class EditorCore {
 
 	getPreviewCanvas(): HTMLCanvasElement | null {
 		return this._previewCanvas;
+	}
+
+	setLivePreviewCanvas(canvas: HTMLCanvasElement | null): void {
+		this._livePreviewCanvas = canvas;
+	}
+
+	getLivePreviewCanvas(): HTMLCanvasElement | null {
+		return this._livePreviewCanvas;
 	}
 
 	setInteractiveDrag(value: boolean): void {
@@ -80,6 +89,7 @@ export class EditorCore {
 
 		const previewCanvas = this._previewCanvas;
 		this._previewCanvas = null;
+		this._livePreviewCanvas = null;
 		if (previewCanvas) {
 			// Releasing the backing store drops retained preview GPU/bitmap memory.
 			previewCanvas.width = 0;
