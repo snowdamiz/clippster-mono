@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { TimelineTrack, VideoElement } from "../../types/timeline";
+import type { TimelineTrack, VideoElement, VideoTrack } from "../../types/timeline";
 import { canUseFastVideoExport } from "../../renderer/export-routing";
 
-function simpleTrack(): TimelineTrack {
+function simpleTrack(): VideoTrack {
 	const element = {
 		id: "video",
 		type: "video",
@@ -30,7 +30,7 @@ function simpleTrack(): TimelineTrack {
 		muted: false,
 		locked: false,
 		elements: [element],
-	} as TimelineTrack;
+	} as VideoTrack;
 }
 
 const black = { type: "color" as const, color: "#000000" };
@@ -43,6 +43,39 @@ describe("canUseFastVideoExport", () => {
 			canvasSourceFraming: null,
 			background: black,
 		})).toBe(true);
+	});
+
+	it("keeps gapless main-track cuts on the native fast path", () => {
+		const track = simpleTrack();
+		const second = {
+			...(track.elements[0] as VideoElement),
+			id: "video-2",
+			startTime: 5,
+			duration: 4,
+			trimStart: 10,
+		};
+		track.elements.push(second);
+		expect(canUseFastVideoExport({
+			tracks: [track],
+			sceneTransitions: [],
+			canvasSourceFraming: null,
+			background: black,
+		})).toBe(true);
+	});
+
+	it("uses scene frames when main-track clips contain a visual gap", () => {
+		const track = simpleTrack();
+		track.elements.push({
+			...(track.elements[0] as VideoElement),
+			id: "video-2",
+			startTime: 6,
+		});
+		expect(canUseFastVideoExport({
+			tracks: [track],
+			sceneTransitions: [],
+			canvasSourceFraming: null,
+			background: black,
+		})).toBe(false);
 	});
 
 	it("uses the shared scene renderer for transitions and visual edits", () => {

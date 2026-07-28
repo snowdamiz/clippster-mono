@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getSceneFrameTime } from "./scene-frame-export";
+import { getSceneFrameTime, packEncodedFrameBatch } from "./scene-frame-export";
 import { getSceneTracksForExport } from "./scene-export-tracks";
 import { getRenderFrame } from "./frame-policy";
 import type { TimelineTrack } from "../types/timeline";
@@ -42,5 +42,16 @@ describe("getSceneTracksForExport", () => {
 		});
 
 		expect(exportTime).toBe(previewFrame.time);
+	});
+
+	it("packs encoded frames without JSON byte expansion", () => {
+		const payload = packEncodedFrameBatch([
+			new Uint8Array([1, 2, 3]),
+			new Uint8Array([9, 8]),
+		]);
+		expect(Array.from(payload)).toEqual([
+			3, 0, 0, 0, 1, 2, 3,
+			2, 0, 0, 0, 9, 8,
+		]);
 	});
 });

@@ -89,11 +89,28 @@ export function canUseFastVideoExport({
 			.filter((element) => !("hidden" in element && element.hidden))
 			.map((element) => ({ track, element }));
 	});
-	if (visible.length !== 1) return false;
-	const only = visible[0];
-	return (
-		only.element.type === "video" &&
-		isMainTrack(only.track) &&
-		isUntouchedVideo(only.element)
-	);
+	if (visible.length === 0) return false;
+	if (!visible.every(
+		({ track, element }) =>
+			element.type === "video" &&
+			isMainTrack(track) &&
+			isUntouchedVideo(element),
+	)) {
+		return false;
+	}
+
+	// The native concat path preserves trims and embedded audio without scene-frame staging.
+	// Restrict it to a gapless main-track sequence so its timeline pixels are identical to preview.
+	const videos = visible
+		.map(({ element }) => element as VideoElement)
+		.sort((a, b) => a.startTime - b.startTime);
+	if (!approximately(videos[0]?.startTime, 0)) return false;
+	for (let i = 1; i < videos.length; i++) {
+		const previous = videos[i - 1];
+		const current = videos[i];
+		if (!approximately(current.startTime, previous.startTime + previous.duration)) {
+			return false;
+		}
+	}
+	return true;
 }

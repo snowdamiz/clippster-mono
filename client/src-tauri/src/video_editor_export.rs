@@ -4333,29 +4333,109 @@ fn sanitize_scene_frame_extension(extension: &str) -> &'static str {
     }
 }
 
-/// Write one encoded frame for WYSIWYG scene export (`frame_%05d.{jpg,png}` under a per-session temp dir).
-#[tauri::command]
-pub async fn write_scene_export_frame(
-    session_id: String,
-    frame_index_one_based: u32,
-    frame_bytes: Vec<u8>,
-    extension: Option<String>,
-) -> Result<(), String> {
-    let safe_id: String = session_id
+fn sanitize_scene_session_id(session_id: &str) -> String {
+    session_id
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
         .take(80)
-        .collect();
+        .collect()
+}
 
-    let dir = std::env::temp_dir()
+fn scene_export_session_dir(session_id: &str) -> std::path::PathBuf {
+    std::env::temp_dir()
         .join("clippster_scene_export")
-        .join(format!("session_{}", safe_id));
+        .join(format!("session_{}", sanitize_scene_session_id(session_id)))
+}
 
+fn decode_scene_frame_batch(payload: &[u8]) -> Result<Vec<&[u8]>, String> {
+    let mut frames = Vec::new();
+    let mut offset = 0usize;
+    while offset < payload.len() {
+        if payload.len() - offset < 4 {
+            return Err("scene frame batch has a truncated length prefix".to_string());
+        }
+        let frame_len = u32::from_le_bytes(
+            payload[offset..offset + 4]
+                .try_into()
+                .map_err(|_| "invalid scene frame length prefix")?,
+        ) as usize;
+        offset += 4;
+        if frame_len == 0 || frame_len > payload.len() - offset {
+            return Err("scene frame batch contains an invalid frame length".to_string());
+        }
+        frames.push(&payload[offset..offset + frame_len]);
+        offset += frame_len;
+    }
+    if frames.is_empty() {
+        return Err("scene frame batch is empty".to_string());
+    }
+    Ok(frames)
+}
+
+#[cfg(test)]
+mod scene_frame_batch_tests {
+    use super::decode_scene_frame_batch;
+
+    #[test]
+    fn decodes_length_prefixed_frames() {
+        let payload = [3, 0, 0, 0, 1, 2, 3, 2, 0, 0, 0, 9, 8];
+        let frames = decode_scene_frame_batch(&payload).unwrap();
+        assert_eq!(frames, vec![&[1, 2, 3][..], &[9, 8][..]]);
+    }
+
+    #[test]
+    fn rejects_truncated_frames() {
+        let payload = [4, 0, 0, 0, 1, 2];
+        assert!(decode_scene_frame_batch(&payload).is_err());
+    }
+}
+
+/// Writes several encoded WYSIWYG frames from one raw IPC body.
+///
+/// Payload format: repeated little-endian u32 byte length followed by that frame's encoded bytes.
+/// Metadata is passed through headers so the body remains binary instead of JSON-expanded.
+#[tauri::command]
+pub fn write_scene_export_frame_batch(
+    request: tauri::ipc::Request<'_>,
+) -> Result<(), String> {
+    const SESSION_HEADER: &str = "x-clippster-scene-session";
+    const FIRST_INDEX_HEADER: &str = "x-clippster-frame-first-index";
+    const EXTENSION_HEADER: &str = "x-clippster-frame-extension";
+
+    let header = |name: &str| -> Result<&str, String> {
+        request
+            .headers()
+            .get(name)
+            .ok_or_else(|| format!("missing {} header", name))?
+            .to_str()
+            .map_err(|_| format!("invalid {} header", name))
+    };
+    let session_id = header(SESSION_HEADER)?;
+    let first_frame_index = header(FIRST_INDEX_HEADER)?
+        .parse::<u32>()
+        .map_err(|_| "invalid first scene frame index".to_string())?;
+    if first_frame_index == 0 {
+        return Err("scene frame indices are one-based".to_string());
+    }
+    let ext = sanitize_scene_frame_extension(header(EXTENSION_HEADER)?);
+    let payload = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.as_slice(),
+        tauri::ipc::InvokeBody::Json(_) => {
+            return Err("scene frame batch requires a raw binary IPC body".to_string())
+        }
+    };
+    let frames = decode_scene_frame_batch(payload)?;
+    let dir = scene_export_session_dir(session_id);
     std::fs::create_dir_all(&dir).map_err(|e| format!("scene export mkdir: {}", e))?;
 
-    let ext = sanitize_scene_frame_extension(extension.as_deref().unwrap_or("jpg"));
-    let path = dir.join(format!("frame_{:05}.{}", frame_index_one_based, ext));
-    std::fs::write(&path, &frame_bytes).map_err(|e| format!("scene export write: {}", e))?;
+    for (offset, frame_bytes) in frames.into_iter().enumerate() {
+        let frame_index = first_frame_index
+            .checked_add(offset as u32)
+            .ok_or_else(|| "scene frame index overflow".to_string())?;
+        let path = dir.join(format!("frame_{:05}.{}", frame_index, ext));
+        std::fs::write(&path, frame_bytes)
+            .map_err(|e| format!("scene export write {}: {}", frame_index, e))?;
+    }
     Ok(())
 }
 
@@ -4365,15 +4445,7 @@ pub fn finalize_scene_export_frames(
     session_id: String,
     extension: Option<String>,
 ) -> Result<(String, u32), String> {
-    let safe_id: String = session_id
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
-        .take(80)
-        .collect();
-
-    let dir = std::env::temp_dir()
-        .join("clippster_scene_export")
-        .join(format!("session_{}", safe_id));
+    let dir = scene_export_session_dir(&session_id);
 
     if !dir.is_dir() {
         return Err("scene export session dir missing".to_string());

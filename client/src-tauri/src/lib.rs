@@ -1347,7 +1347,7 @@ video_editor_export::export_video_editor_project,
 video_editor_export::cancel_video_editor_export,
 video_editor_export::save_text_overlay_png,
 video_editor_export::save_overlay_frame_sequence,
-video_editor_export::write_scene_export_frame,
+video_editor_export::write_scene_export_frame_batch,
 video_editor_export::finalize_scene_export_frames,
 
 // Video Frame Decoder commands
