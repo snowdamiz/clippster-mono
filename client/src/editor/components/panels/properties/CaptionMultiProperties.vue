@@ -17,7 +17,7 @@ const props = defineProps<{
 	elements: Array<{ trackId: string; element: CaptionElement }>;
 }>();
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 const { allFonts } = useFontManager();
 
 const count = computed(() => props.elements.length);

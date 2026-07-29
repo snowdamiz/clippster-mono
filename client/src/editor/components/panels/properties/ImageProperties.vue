@@ -26,7 +26,7 @@ const props = defineProps<{
 	trackId: string;
 }>();
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 const { selectedElements } = useElementSelection();
 
 function isRangeInputTarget(target: EventTarget | null): boolean {

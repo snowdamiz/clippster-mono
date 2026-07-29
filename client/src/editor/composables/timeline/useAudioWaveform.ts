@@ -130,6 +130,12 @@ export function useAudioWaveform({
 	const waveform = useWaveform();
 	const isLoading = computed(() => waveform.isLoading.value);
 	const isLoaded = computed(() => waveform.isLoaded.value);
+	const playedRatio = computed(() => {
+		const el = element.value;
+		const duration = el.duration;
+		if (duration <= 0) return 0;
+		return Math.max(0, Math.min(1, (currentTime.value - el.startTime) / duration));
+	});
 
 	let resizeObserver: ResizeObserver | null = null;
 
@@ -243,36 +249,13 @@ export function useAudioWaveform({
 
 			normalizedPeaks = liftPeaksForThinLane(normalizedPeaks, rect.height);
 
-			// Calculate playhead ratio relative to this element
-			// currentTime is global timeline time; element occupies [startTime, startTime + duration]
-			const elStart = el.startTime;
-			const elEnd = elStart + duration;
-			const time = currentTime.value;
-
-			let playheadCurrentTime: number;
-			let playheadDuration: number;
-
-			if (time < elStart) {
-				// Playhead is before this element — nothing played
-				playheadCurrentTime = 0;
-				playheadDuration = duration;
-			} else if (time > elEnd) {
-				// Playhead is past this element — fully played
-				playheadCurrentTime = duration;
-				playheadDuration = duration;
-			} else {
-				// Playhead is within this element
-				playheadCurrentTime = time - elStart;
-				playheadDuration = duration;
-			}
-
 			renderWaveformWithPlayhead(
 				canvas,
 				normalizedPeaks,
 				rect.width,
 				rect.height,
-				playheadCurrentTime,
-				playheadDuration,
+				0,
+				duration,
 				{
 					style: "bars",
 					useGradientColors: true,
@@ -342,9 +325,9 @@ export function useAudioWaveform({
 		},
 	);
 
-	// Re-render when waveform data loads, zoom changes, playhead moves, element width changes, volume or fade changes
+	// Re-render only when static waveform inputs change. Playback progress is a cheap CSS overlay.
 	watch(
-		[isLoaded, zoomLevel, currentTime, elementWidth, () => {
+		[isLoaded, zoomLevel, elementWidth, () => {
 			const el = element.value;
 			const draftVolume = getClipVolumeDraft(el.id);
 			if (draftVolume != null) return draftVolume;
@@ -379,5 +362,6 @@ export function useAudioWaveform({
 	return {
 		isLoading,
 		isLoaded,
+		playedRatio,
 	};
 }

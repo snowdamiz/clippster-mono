@@ -37,8 +37,17 @@ const props = defineProps<{
 	activeTab: string;
 }>();
 
-const { editor, version } = useEditor();
-const { startDrag, wasDragCompleted } = usePointerDrag();
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		media: true,
+		playback: false,
+		timeline: false,
+		scenes: false,
+		selection: false,
+	},
+});
+const { startDrag } = usePointerDrag();
 const showMediaDialog = ref(false);
 const dialogTab = ref<"upload" | "built" | "projects" | "audio">("upload");
 const viewMode = ref<"grid" | "list">("grid");
@@ -120,8 +129,11 @@ function isItemProcessing(id: string): boolean {
 	return editor.media.isAssetProcessing(id);
 }
 
-function addToTimeline(asset: MediaAsset) {
+async function addToTimeline(asset: MediaAsset) {
 	if (isItemProcessing(asset.id)) return;
+	const hydrated = await editor.media.ensureAssetHydrated(asset.id);
+	if (!hydrated) return;
+	asset = hydrated;
 	const duration = asset.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
 	const startTime = editor.playback.getCurrentTime();
 	let element: CreateTimelineElement;
@@ -182,10 +194,17 @@ function getMediaIcon(type: string) {
 			<div class="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
 				<span class="text-zinc-400 text-sm">Media</span>
 				<div class="flex items-center gap-1">
-					<Button variant="ghost" size="icon" class="size-6" @click="showMediaDialog = true">
+					<Button variant="ghost" size="icon" class="size-6" aria-label="Import media" @click="showMediaDialog = true">
 						<Plus class="size-3" />
 					</Button>
-					<Button variant="ghost" size="icon" class="size-6" @click="viewMode = viewMode === 'grid' ? 'list' : 'grid'">
+					<Button
+						variant="ghost"
+						size="icon"
+						class="size-6"
+						:aria-label="viewMode === 'grid' ? 'Show media as a list' : 'Show media as a grid'"
+						:aria-pressed="viewMode === 'list'"
+						@click="viewMode = viewMode === 'grid' ? 'list' : 'grid'"
+					>
 						<component :is="viewMode === 'grid' ? List : Grid" class="size-3" />
 					</Button>
 				</div>
@@ -199,11 +218,19 @@ function getMediaIcon(type: string) {
 				@dragleave="handleDragLeave"
 				@drop="handleDrop"
 			>
+				<p v-if="filteredMedia.length > 0 && !isDragOver" class="mb-2 text-[10px] text-zinc-500">
+					Drag to the timeline · Double-click to add at the playhead
+				</p>
 				<!-- Empty / drag overlay -->
 				<div
 					v-if="isDragOver || filteredMedia.length === 0"
 					class="flex h-full flex-col items-center justify-center gap-2 rounded-lg p-8 text-center cursor-pointer"
+					role="button"
+					tabindex="0"
+					aria-label="Upload media files"
 					@click="openFilePicker"
+					@keydown.enter="openFilePicker"
+					@keydown.space.prevent="openFilePicker"
 				>
 					<Upload class="text-zinc-500 size-8" />
 					<p class="text-zinc-500 text-sm">
@@ -221,11 +248,16 @@ function getMediaIcon(type: string) {
 						v-for="item in filteredMedia"
 						:key="item.id"
 						:class="['group relative overflow-hidden rounded-lg border border-white/10', isItemProcessing(item.id) ? 'cursor-wait opacity-60' : 'cursor-pointer']"
+						:title="isItemProcessing(item.id) ? `${item.name} is processing` : `Drag ${item.name} to the timeline or double-click to add`"
+						role="button"
+						:tabindex="isItemProcessing(item.id) ? -1 : 0"
+						:aria-label="`${item.name}. Drag to the timeline or press Enter to add at the playhead.`"
 						@pointerdown="(e: PointerEvent) => {
 							if (isItemProcessing(item.id)) return;
 							startDrag(e, { id: item.id, type: 'media', mediaType: item.type, name: item.name });
 						}"
 						@dblclick="addToTimeline(item)"
+						@keydown.enter="addToTimeline(item)"
 						@dragstart.prevent
 					>
 						<!-- Processing overlay -->
@@ -265,6 +297,7 @@ function getMediaIcon(type: string) {
 						<button
 							type="button"
 							class="absolute top-1 right-1 hidden rounded bg-black/50 px-1 text-xs text-white group-hover:block"
+							:aria-label="`Remove ${item.name} from media`"
 							@click.stop="removeAsset(item.id)"
 						>
 							✕
@@ -278,11 +311,16 @@ function getMediaIcon(type: string) {
 						v-for="item in filteredMedia"
 						:key="item.id"
 						:class="['group flex items-center gap-2 rounded-md px-2 py-1', isItemProcessing(item.id) ? 'cursor-wait opacity-60' : 'cursor-pointer hover:bg-white/5']"
+						:title="isItemProcessing(item.id) ? `${item.name} is processing` : `Drag ${item.name} to the timeline or double-click to add`"
+						role="button"
+						:tabindex="isItemProcessing(item.id) ? -1 : 0"
+						:aria-label="`${item.name}. Drag to the timeline or press Enter to add at the playhead.`"
 						@pointerdown="(e: PointerEvent) => {
 							if (isItemProcessing(item.id)) return;
 							startDrag(e, { id: item.id, type: 'media', mediaType: item.type, name: item.name });
 						}"
 						@dblclick="addToTimeline(item)"
+						@keydown.enter="addToTimeline(item)"
 						@dragstart.prevent
 					>
 						<Loader2 v-if="isItemProcessing(item.id)" class="size-4 shrink-0 animate-spin text-blue-400" />
@@ -307,6 +345,7 @@ function getMediaIcon(type: string) {
 						<button
 							type="button"
 							class="hidden text-xs text-destructive group-hover:block"
+							:aria-label="`Remove ${item.name} from media`"
 							@click.stop="removeAsset(item.id)"
 						>
 							✕

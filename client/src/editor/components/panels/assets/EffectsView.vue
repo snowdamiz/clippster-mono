@@ -10,7 +10,16 @@ import { usePointerDrag } from "../../../composables/usePointerDrag";
 import type { EffectDragData } from "../../../types/drag";
 import PanelSearchBar from "./PanelSearchBar.vue";
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		timeline: true,
+		selection: true,
+		playback: false,
+		scenes: false,
+		project: false,
+		media: false,
+	},
+});
 const { selectedElements } = useElementSelection();
 const { startDrag, wasDragCompleted } = usePointerDrag();
 const searchQuery = ref("");

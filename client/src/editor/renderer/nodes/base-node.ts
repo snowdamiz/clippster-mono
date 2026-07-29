@@ -39,16 +39,31 @@ export class BaseNode<Params extends BaseNodeParams = BaseNodeParams> {
 		}
 	}
 
-	async render({
+	/** Decode a frame that must be ready before an upcoming transition begins. */
+	async prewarm({
 		renderer,
 		time,
 	}: {
 		renderer: CanvasRenderer;
 		time: number;
 	}): Promise<void> {
+		await this.prefetch({ renderer, time });
+	}
+
+	async render({
+		renderer,
+		time,
+		skipPrefetch = false,
+	}: {
+		renderer: CanvasRenderer;
+		time: number;
+		skipPrefetch?: boolean;
+	}): Promise<void> {
 		for (const child of this.children) {
-			await child.prefetch({ renderer, time });
-			await child.render({ renderer, time });
+			if (!skipPrefetch) {
+				await child.prefetch({ renderer, time });
+			}
+			await child.render({ renderer, time, skipPrefetch });
 		}
 	}
 }

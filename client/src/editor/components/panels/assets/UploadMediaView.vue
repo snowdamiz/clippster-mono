@@ -8,7 +8,16 @@ import { processMediaAssets } from "../../../lib/media/processing";
 import { fileNameFromPathOrName } from "@/utils/fsNames";
 import { Upload, Loader2, Check, AlertCircle, FolderOpen } from "lucide-vue-next";
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		playback: false,
+		timeline: false,
+		scenes: false,
+		media: false,
+		selection: false,
+	},
+});
 
 const isProcessing = ref(false);
 const progress = ref(0);

@@ -15,7 +15,7 @@ const props = defineProps<{
 	elementDuration: number;
 }>();
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 
 type AnimTab = "in" | "out" | "loop";
 const activeTab = ref<AnimTab>("in");

@@ -22,7 +22,16 @@ interface BuildEntry {
 	key: string; // Unique key for v-for
 }
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		media: true,
+		playback: false,
+		timeline: false,
+		scenes: false,
+		selection: false,
+	},
+});
 const { startDrag, wasDragCompleted } = usePointerDrag();
 const thumbnailStore = useClipThumbnailStore();
 

@@ -6,7 +6,7 @@ import { useEditor } from '../../../composables/useEditor';
 import { buildLibraryAudioElement } from '../../../lib/timeline/element-utils';
 import { FolderOpen, Music, ChevronLeft, Loader2 } from 'lucide-vue-next';
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 
 const folders = ref<AudioPlaylist[]>([]);
 const selectedFolder = ref<AudioPlaylist | null>(null);

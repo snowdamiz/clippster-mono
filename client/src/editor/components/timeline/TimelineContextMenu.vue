@@ -34,7 +34,7 @@ const emit = defineEmits<{
 	(e: "close"): void;
 }>();
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 const { openExportDialog } = useExportDialog();
 const { selectElement, isElementSelected, selectAllInTrack } = useElementSelection();
 

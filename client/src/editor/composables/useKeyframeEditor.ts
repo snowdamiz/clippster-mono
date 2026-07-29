@@ -37,7 +37,16 @@ export function useKeyframeEditor(opts?: {
 	trackRef?: Ref<TimelineTrack>;
 	elementRef?: Ref<TimelineElement>;
 }) {
-	const { editor, version } = useEditor();
+	const { editor, version } = useEditor({
+		subscribe: {
+			timeline: true,
+			scenes: true,
+			selection: true,
+			playback: false,
+			project: false,
+			media: false,
+		},
+	});
 	const { selectedElements } = useElementSelection();
 
 	const playbackTime = shallowRef(editor.playback.getCurrentTime());

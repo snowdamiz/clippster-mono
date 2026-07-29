@@ -24,7 +24,7 @@ import {
 	Loader2,
 } from "lucide-vue-next";
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 const {
 	creatorProfile,
 	isReadOnly,
