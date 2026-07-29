@@ -4,13 +4,23 @@ type SaveManagerOptions = {
 	debounceMs?: number;
 };
 
+export type SaveState = {
+	isDirty: boolean;
+	isSaving: boolean;
+	lastSavedAt: Date | null;
+	error: string | null;
+};
+
 export class SaveManager {
 	private debounceMs: number;
 	private isPaused = false;
 	private isSaving = false;
 	private hasPendingSave = false;
+	private lastSavedAt: Date | null = null;
+	private error: string | null = null;
 	private saveTimer: ReturnType<typeof setTimeout> | null = null;
 	private unsubscribeHandlers: Array<() => void> = [];
+	private listeners = new Set<() => void>();
 
 	constructor(
 		private editor: EditorCore,
@@ -54,6 +64,8 @@ export class SaveManager {
 	markDirty({ force = false }: { force?: boolean } = {}): void {
 		if (this.isPaused && !force) return;
 		this.hasPendingSave = true;
+		this.error = null;
+		this.notify();
 		this.queueSave();
 	}
 
@@ -64,6 +76,20 @@ export class SaveManager {
 
 	getIsDirty(): boolean {
 		return this.hasPendingSave || this.isSaving;
+	}
+
+	getState(): SaveState {
+		return {
+			isDirty: this.hasPendingSave,
+			isSaving: this.isSaving,
+			lastSavedAt: this.lastSavedAt,
+			error: this.error,
+		};
+	}
+
+	subscribe(listener: () => void): () => void {
+		this.listeners.add(listener);
+		return () => this.listeners.delete(listener);
 	}
 
 	private queueSave(): void {
@@ -91,12 +117,18 @@ export class SaveManager {
 
 		this.isSaving = true;
 		this.hasPendingSave = false;
+		this.error = null;
+		this.notify();
 		this.clearTimer();
 
 		try {
 			await this.editor.project.saveCurrentProject();
+			this.lastSavedAt = new Date();
+		} catch (error) {
+			this.error = error instanceof Error ? error.message : "Failed to save";
 		} finally {
 			this.isSaving = false;
+			this.notify();
 			if (this.hasPendingSave) {
 				this.queueSave();
 			}
@@ -107,5 +139,9 @@ export class SaveManager {
 		if (!this.saveTimer) return;
 		clearTimeout(this.saveTimer);
 		this.saveTimer = null;
+	}
+
+	private notify(): void {
+		for (const listener of this.listeners) listener();
 	}
 }

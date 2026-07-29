@@ -41,7 +41,7 @@ export function useElementTimingInspector(opts: {
 	element: Ref<TimelineElement>;
 	trackId: string;
 }) {
-	const { editor } = useEditor();
+	const { editor } = useEditor({ subscribe: false });
 
 	const startInput = ref(formatInspectorTime(opts.element.value.startTime));
 	const durationInput = ref(formatInspectorTime(opts.element.value.duration));

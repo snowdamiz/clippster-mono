@@ -7,7 +7,7 @@ import { useEditor } from '../../../composables/useEditor';
 import { buildLibraryAudioElement } from '../../../lib/timeline/element-utils';
 import { Music, Search, Play, Loader2 } from 'lucide-vue-next';
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 
 const audioFiles = ref<DownloadedAudio[]>([]);
 const searchQuery = ref('');

@@ -137,6 +137,7 @@
                     :show-subtitles-tab="subtitlePositioningEnabled"
                     :show-text-box-tab="Boolean(clipTextLocal?.enabled)"
                     :video-url="videoUrl"
+                    :timeline-preview-canvas="timelinePreviewCanvas"
                     :video-time="absoluteVideoTime"
                     :is-playing="isPlaying"
                     :volume="poiVolume"
@@ -170,6 +171,7 @@
                     :target-aspect-ratio="targetAspectRatio"
                     :source-aspect-ratio="sourceAspectRatio"
                     :video-url="videoUrl"
+                    :timeline-preview-canvas="timelinePreviewCanvas"
                     :video-time="absoluteVideoTime"
                     :clip-start-time="clipStartTime"
                     :is-playing="isPlaying"
@@ -257,10 +259,7 @@
 
                   <!-- Reset button -->
                   <button
-                    @click="
-                      currentTime = 0;
-                      isPlaying = false;
-                    "
+                    @click="resetPlayback"
                     class="poi-dialog__icon-btn"
                     title="Reset to start"
                   >
@@ -470,6 +469,7 @@
   } from '@/utils/clipTextBox';
   import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
   import { useAiBroll } from '@/composables/useAiBroll';
+  import { EditorCore } from '@/editor/core';
   import type { ManualBrollMediaType } from '@/composables/useAiBroll';
   import type { AiBrollPlannerOptions } from '@/types/ai-broll';
   import {
@@ -546,6 +546,9 @@
     sourceAspectRatio?: string;
     thumbnailUrl?: string | null;
     videoPath?: string | null;
+    /** Live composited editor canvas. When present, playback uses the editor timeline clock/audio. */
+    timelinePreviewCanvas?: HTMLCanvasElement | null;
+    useTimelinePlayback?: boolean;
     clipStartTime?: number;
     clipEndTime?: number;
     // Optional full video duration (for VOD pre-edit use case)
@@ -590,6 +593,8 @@
     clipId: null,
     projectId: null,
     clipTextOverlayJson: null,
+    timelinePreviewCanvas: null,
+    useTimelinePlayback: false,
   });
 
   const emit = defineEmits<{
@@ -763,6 +768,36 @@
   // Video playback state
   const isPlaying = ref(false);
   const currentTime = ref(0);
+  let unsubscribeTimelinePlayback: (() => void) | null = null;
+
+  function timelineEditor(): EditorCore | null {
+    return props.useTimelinePlayback ? EditorCore.getInstance() : null;
+  }
+
+  function syncTimelinePlaybackState() {
+    const editor = timelineEditor();
+    if (!editor) return;
+    currentTime.value = editor.playback.getCurrentTime();
+    isPlaying.value = editor.playback.getIsPlaying();
+    poiVolume.value = editor.playback.getVolume();
+    poiMuted.value = editor.playback.isMuted();
+  }
+
+  function seekPlayback(time: number) {
+    const clamped = Math.max(0, Math.min(clipDuration.value, time));
+    const editor = timelineEditor();
+    if (editor) {
+      editor.playback.seek({ time: clamped });
+    } else {
+      currentTime.value = clamped;
+    }
+  }
+
+  function resetPlayback() {
+    timelineEditor()?.playback.pause();
+    isPlaying.value = false;
+    seekPlayback(0);
+  }
 
   /** Regions shown in source/target panels — segment regions while playhead is in a segment, else base. */
   const displayRegions = computed(() => {
@@ -843,11 +878,23 @@
   });
 
   function togglePoiMute() {
+    const editor = timelineEditor();
+    if (editor) {
+      editor.playback.toggleMute();
+      syncTimelinePlaybackState();
+      return;
+    }
     poiMuted.value = !poiMuted.value;
   }
 
   function onPoiVolumeChange(e: Event) {
     const val = parseFloat((e.target as HTMLInputElement).value);
+    const editor = timelineEditor();
+    if (editor) {
+      editor.playback.setVolume({ volume: val });
+      syncTimelinePlaybackState();
+      return;
+    }
     poiVolume.value = val;
     if (val === 0) poiMuted.value = true;
     else if (poiMuted.value) poiMuted.value = false;
@@ -897,26 +944,26 @@
         e.preventDefault();
         if (e.shiftKey) {
           // Jump back 1 second
-          currentTime.value = Math.max(0, currentTime.value - jumpTime);
+          seekPlayback(currentTime.value - jumpTime);
         } else if (e.ctrlKey || e.metaKey) {
           // Ultra precise: 10ms steps
-          currentTime.value = Math.max(0, currentTime.value - microStep);
+          seekPlayback(currentTime.value - microStep);
         } else {
           // Fine: 100ms steps (0.1 second)
-          currentTime.value = Math.max(0, currentTime.value - fineStep);
+          seekPlayback(currentTime.value - fineStep);
         }
         break;
       case 'ArrowRight':
         e.preventDefault();
         if (e.shiftKey) {
           // Jump forward 1 second
-          currentTime.value = Math.min(clipDuration.value, currentTime.value + jumpTime);
+          seekPlayback(currentTime.value + jumpTime);
         } else if (e.ctrlKey || e.metaKey) {
           // Ultra precise: 10ms steps
-          currentTime.value = Math.min(clipDuration.value, currentTime.value + microStep);
+          seekPlayback(currentTime.value + microStep);
         } else {
           // Fine: 100ms steps (0.1 second)
-          currentTime.value = Math.min(clipDuration.value, currentTime.value + fineStep);
+          seekPlayback(currentTime.value + fineStep);
         }
         break;
       case ' ':
@@ -940,6 +987,11 @@
   onMounted(() => {
     document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('click', handleClickOutside);
+    const editor = timelineEditor();
+    if (editor) {
+      unsubscribeTimelinePlayback = editor.playback.subscribe(syncTimelinePlaybackState);
+      syncTimelinePlaybackState();
+    }
 
     // Debug: Log transcript props
     console.log('[ManualPOIEditor] Mounted with transcript data:', {
@@ -950,6 +1002,8 @@
   });
 
   onUnmounted(() => {
+    unsubscribeTimelinePlayback?.();
+    unsubscribeTimelinePlayback = null;
     cleanupHls();
     cleanupSeekListeners();
     document.removeEventListener('keydown', handleKeyDown);
@@ -966,6 +1020,10 @@
   // Load video URL using the app's video server
   async function loadVideoUrl() {
     cleanupHls();
+    if (props.timelinePreviewCanvas) {
+      videoUrl.value = null;
+      return;
+    }
     if (!props.videoPath) return;
 
     videoLoading.value = true;
@@ -988,6 +1046,11 @@
 
   // Play/Pause toggle
   function togglePlayback() {
+    const editor = timelineEditor();
+    if (editor) {
+      editor.playback.toggle();
+      return;
+    }
     isPlaying.value = !isPlaying.value;
   }
 
@@ -1098,7 +1161,9 @@
     cleanupSeekListeners();
     
     const wasPlaying = isPlaying.value;
-    isPlaying.value = false; // Pause during seek
+    const editor = timelineEditor();
+    if (editor) editor.playback.pause();
+    else isPlaying.value = false; // Pause during seek
     isSeeking.value = true;
     
     // Store initial mouse position and time for precision mode
@@ -1115,17 +1180,19 @@
         // Precision mode: quantize to 0.01 second increments
         const rawTime = percent * clipDuration.value;
         const quantized = Math.round(rawTime / 0.01) * 0.01;
-        currentTime.value = Math.max(0, Math.min(clipDuration.value, quantized));
+        seekPlayback(quantized);
       } else {
         // Normal mode: direct position mapping
-        currentTime.value = percent * clipDuration.value;
+        seekPlayback(percent * clipDuration.value);
       }
     };
 
     seekUpListener = () => {
       isSeeking.value = false;
       if (wasPlaying) {
-        isPlaying.value = true; // Resume if it was playing
+        const editor = timelineEditor();
+        if (editor) void editor.playback.play();
+        else isPlaying.value = true; // Resume if it was playing
       }
       cleanupSeekListeners();
     };
@@ -1182,8 +1249,7 @@
         }
 
         // Reset playback state
-        isPlaying.value = false;
-        currentTime.value = 0;
+        resetPlayback();
 
         // Auto-enable subtitle positioning if clip has subtitles
         if (props.subtitleSettings && props.subtitleSettings.enabled) {
@@ -1208,6 +1274,7 @@
         await loadVideoUrl();
       } else {
         // Cleanup when closing
+        timelineEditor()?.playback.pause();
         isPlaying.value = false;
         videoUrl.value = null;
         // Reset subtitle positioning state
@@ -1389,7 +1456,7 @@
       brollConfigs.value = result.brollConfigs;
       const appliedBroll = brollConfigs.value.find((broll) => broll.suggestionId === suggestion.id);
       if (appliedBroll) {
-        currentTime.value = appliedBroll.startTime;
+        seekPlayback(appliedBroll.startTime);
         selectedRegionId.value = appliedBroll.region.id;
       }
     } catch (e) {
@@ -1453,7 +1520,7 @@
       brollConfigs.value = result.brollConfigs;
       const appliedBroll = brollConfigs.value.find((broll) => broll.suggestionId === result.suggestion.id);
       if (appliedBroll) {
-        currentTime.value = appliedBroll.startTime;
+        seekPlayback(appliedBroll.startTime);
         selectedRegionId.value = appliedBroll.region.id;
       }
     } catch (e) {
@@ -1785,7 +1852,7 @@
     segmentConfigs.value.push(newSegment);
     segmentConfigs.value.sort((a, b) => a.startTime - b.startTime);
 
-    currentTime.value = startTime;
+    seekPlayback(startTime);
     selectedRegionId.value = null;
   }
 
@@ -1802,7 +1869,7 @@
   function selectSegment(segmentId: string) {
     const segment = segmentConfigs.value.find((s) => s.segmentId === segmentId);
     if (!segment) return;
-    currentTime.value = segment.startTime;
+    seekPlayback(segment.startTime);
     selectedRegionId.value = segment.regions[0]?.id ?? null;
   }
 
@@ -1822,7 +1889,7 @@
   function selectBroll(brollId: string) {
     const broll = brollConfigs.value.find((item) => item.brollId === brollId);
     if (!broll) return;
-    currentTime.value = broll.startTime;
+    seekPlayback(broll.startTime);
     selectedRegionId.value = broll.region.id;
   }
 
@@ -1848,7 +1915,7 @@
 
   // Handle seek time from timeline playhead drag
   function handleSeekTime(time: number) {
-    currentTime.value = time;
+    seekPlayback(time);
   }
 
   // Reset all regions and segments

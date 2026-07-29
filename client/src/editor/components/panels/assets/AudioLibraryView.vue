@@ -12,7 +12,16 @@ import { utf8ToBase64Url } from '@/utils/encoding';
 import { hydrateVideoFileFromLocalUrl } from '../../../lib/media/hydrate-video-file-from-url';
 import { Music, Search, Play, Loader2, ListMusic, ChevronLeft, Plus } from 'lucide-vue-next';
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		playback: false,
+		timeline: false,
+		scenes: false,
+		media: false,
+		selection: false,
+	},
+});
 
 const activeProject = computed(() => {
 	void version.value;

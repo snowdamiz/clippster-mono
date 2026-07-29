@@ -18,7 +18,7 @@ export function useKeyframedInspectorProperty({
 	elementRef: Ref<TimelineElement>;
 	property: KeyframableProperty;
 }) {
-	const { editor } = useEditor();
+	const { editor } = useEditor({ subscribe: false });
 	const kf = useKeyframes({ trackRef, elementRef });
 
 	const playbackTime = shallowRef(editor.playback.getCurrentTime());

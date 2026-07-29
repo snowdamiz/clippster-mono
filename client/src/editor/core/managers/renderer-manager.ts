@@ -33,7 +33,7 @@ import type { MediaAsset } from "../../types/assets";
 import type { VideoEffect } from "../../types/effects";
 import type { ElementAnimation } from "../../types/animations";
 import type { ElementKeyframes } from "../../types/keyframes";
-import type { AspectRatioId } from "../../types/project";
+import type { AspectRatioId, TBackground } from "../../types/project";
 import { TextNode } from "../../renderer/nodes/text-node";
 import type { TextNodeParams } from "../../renderer/nodes/text-node";
 import { StickerNode } from "../../renderer/nodes/sticker-node";
@@ -47,6 +47,7 @@ import { base64ToUtf8 } from "@/utils/encoding";
 import { resolveTransitionMediaPair } from "../../lib/timeline/transition-pairing";
 import { isMainTrack } from "../../lib/timeline/track-utils";
 import { getSceneTracksForExport, writeSceneFrameSequenceToDisk } from "../../renderer/scene-frame-export";
+import { canUseFastVideoExport } from "../../renderer/export-routing";
 
 /** True if any two [start,end) segments overlap (for FFmpeg layer compositing). */
 function videoSegmentsOverlap(segments: { start: number; end: number }[]): boolean {
@@ -60,151 +61,23 @@ function videoSegmentsOverlap(segments: { start: number; end: number }[]): boole
 	return false;
 }
 
-const EXPORT_EPSILON = 1e-6;
-
-function approximately(value: number | undefined, expected: number): boolean {
-	return Math.abs((value ?? expected) - expected) < EXPORT_EPSILON;
-}
-
-function hasAnyEntries<T>(items: T[] | null | undefined): boolean {
-	return Array.isArray(items) && items.length > 0;
-}
-
-function hasNonDefaultTransform(element: VideoElement | ImageElement): boolean {
-	const transform = element.transform;
-	return (
-		!approximately(transform?.scale, 1) ||
-		!approximately(transform?.position?.x, 0) ||
-		!approximately(transform?.position?.y, 0) ||
-		!approximately(transform?.rotate, 0)
-	);
-}
-
-function hasNonDefaultCrop(element: VideoElement | ImageElement): boolean {
-	const crop = element.crop;
-	return !!crop && (
-		!approximately(crop.top, 0) ||
-		!approximately(crop.right, 0) ||
-		!approximately(crop.bottom, 0) ||
-		!approximately(crop.left, 0)
-	);
-}
-
-function hasNonDefaultFlip(element: VideoElement | ImageElement): boolean {
-	const flip = element.flip;
-	return !!flip && (flip.horizontal || flip.vertical);
-}
-
-function hasNonDefaultColor(element: VideoElement | ImageElement): boolean {
-	const color = element.colorAdjustments;
-	return !!color && (
-		!approximately(color.brightness, 0) ||
-		!approximately(color.contrast, 0) ||
-		!approximately(color.saturation, 0) ||
-		!approximately(color.temperature, 0) ||
-		!approximately(color.highlights, 0) ||
-		!approximately(color.shadows, 0) ||
-		!approximately(color.exposure, 0) ||
-		!approximately(color.fade, 0) ||
-		!approximately(color.sharpness, 0) ||
-		(color.tint ?? "") !== ""
-	);
-}
-
-function hasNonDefaultColorWheels(element: VideoElement | ImageElement): boolean {
-	const wheels = element.colorWheels;
-	if (!wheels) return false;
-	return [wheels.shadows, wheels.midtones, wheels.highlights].some((wheel) =>
-		!!wheel && (
-			!approximately(wheel.hue, 0) ||
-			!approximately(wheel.saturation, 0) ||
-			!approximately(wheel.luminance, 0)
-		),
-	);
-}
-
-function hasActiveVisualEffects(element: VideoElement | ImageElement): boolean {
-	return hasAnyEntries(element.effects?.filter((effect) => effect.enabled !== false));
-}
-
-function hasElementKeyframes(keyframes?: ElementKeyframes): boolean {
-	if (!keyframes) return false;
-	return Object.values(keyframes.tracks).some((track) => !!track && track.keyframes.length > 0);
-}
-
-function countMainStorySegments(track: VideoTrack): number {
-	return track.elements.filter(
-		(element) =>
-			(element.type === "video" || element.type === "image") &&
-			!("hidden" in element && element.hidden),
-	).length;
-}
-
-function requiresSceneFrameExport({
+export function requiresSceneFrameExport({
 	tracks,
 	sceneTransitions,
 	canvasSourceFraming,
+	background,
 }: {
 	tracks: TimelineTrack[];
 	sceneTransitions: import("../../types/transitions").Transition[];
 	canvasSourceFraming: unknown;
+	background: TBackground;
 }): boolean {
-	if (canvasSourceFraming) return true;
-	if (sceneTransitions.length > 0) return true;
-
-	// Split / multi-segment main-track edits must use the same scene renderer as preview.
-	// The fast FFmpeg concat path can export black video when several trims reference one file.
-	for (const track of tracks) {
-		if (isMainTrack(track) && countMainStorySegments(track) > 1) {
-			return true;
-		}
-	}
-
-	for (const track of tracks) {
-		if (track.type === "audio") continue;
-
-		if (track.type !== "video") {
-			if (
-				track.elements.length > 0 &&
-				!track.hidden &&
-				track.type !== "text" &&
-				track.type !== "caption" &&
-				track.type !== "sticker" &&
-				track.type !== "effect"
-			) {
-				return true;
-			}
-			continue;
-		}
-
-		if (track.hidden) continue;
-
-		for (const element of track.elements) {
-			if (element.hidden) continue;
-			if (element.type !== "video") return true;
-			if (element.mediaFit && element.mediaFit !== "contain") return true;
-			if (!approximately(element.opacity, 1)) return true;
-			if (!approximately(element.fadeIn, 0) || !approximately(element.fadeOut, 0)) return true;
-			if (hasNonDefaultTransform(element)) return true;
-			if (hasNonDefaultCrop(element)) return true;
-			if (hasNonDefaultFlip(element)) return true;
-			if (hasNonDefaultColor(element)) return true;
-			if (hasAnyEntries(element.colorCurves?.master)) return true;
-			if (hasAnyEntries(element.colorCurves?.red)) return true;
-			if (hasAnyEntries(element.colorCurves?.green)) return true;
-			if (hasAnyEntries(element.colorCurves?.blue)) return true;
-			if (hasNonDefaultColorWheels(element)) return true;
-			if (element.lutPath) return true;
-			if (element.blendMode && element.blendMode !== "normal") return true;
-			if (hasActiveVisualEffects(element)) return true;
-			if (element.chromakey?.enabled) return true;
-			if (hasAnyEntries(element.masks)) return true;
-			if (element.animationIn || element.animationOut || element.animationLoop) return true;
-			if (hasElementKeyframes(element.keyframes)) return true;
-		}
-	}
-
-	return false;
+	return !canUseFastVideoExport({
+		tracks,
+		sceneTransitions,
+		canvasSourceFraming,
+		background,
+	});
 }
 
 interface TauriAnimationData {
@@ -517,17 +390,21 @@ export class RendererManager {
 		renderer,
 		time,
 		targetCanvas,
+		renderTree,
+		signal,
 	}: {
 		renderer: CanvasRenderer;
 		time: number;
 		targetCanvas: HTMLCanvasElement;
+		renderTree?: RootNode;
+		signal?: AbortSignal;
 	}): Promise<void> {
-		const tree = this.getRenderTree();
+		const tree = renderTree ?? this.getRenderTree();
 		if (!tree) return;
 		previewPerfBeginFrame();
 		const t0 = performance.now();
 		try {
-			await renderer.renderToCanvas({ node: tree, time, targetCanvas });
+			await renderer.renderToCanvas({ node: tree, time, targetCanvas, signal });
 			const ms = performance.now() - t0;
 			previewPerfMarkRenderToCanvas(ms);
 		} finally {
@@ -627,6 +504,7 @@ export class RendererManager {
 				tracks,
 				sceneTransitions,
 				canvasSourceFraming: activeProject.settings.canvasSourceFraming ?? null,
+				background,
 			});
 
 			if (useSceneFrames) {

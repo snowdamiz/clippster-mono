@@ -6,7 +6,7 @@ const DEFAULT_ASPECT_RATIO = 16 / 9;
 /** Max decoded samples per clip for timeline filmstrip (zoomed-in width / thumb width, capped). */
 const MAX_FILMSTRIP_FRAMES = 120;
 const MAX_CACHE_ENTRIES = LOW_END_DEVICE ? 300 : 600;
-const WORKER_COUNT = 2;
+const WORKER_COUNT = typeof navigator !== "undefined" && (navigator.hardwareConcurrency ?? 8) <= 2 ? 1 : 2;
 
 interface CachedThumbnail {
 	bitmap: ImageBitmap;

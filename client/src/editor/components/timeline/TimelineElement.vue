@@ -41,7 +41,9 @@ const props = defineProps<{
 	snappingEnabled: boolean;
 	rippleShifts?: Map<string, number>;
 	isEffectDropTarget?: boolean;
+	isTransitionDropTarget?: boolean;
 	isPlayheadScrubbing?: boolean;
+	isTimelineInteractive?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -216,12 +218,15 @@ const imageUrl = computed(() => {
 });
 
 const isVideoElement = computed(() => props.element.type === "video");
+const filmstripCanvas = ref<HTMLCanvasElement | null>(null);
 
 const { frames: filmstripFrames } = useFilmstrip({
 	element: toRef(props, "element"),
 	mediaAsset,
 	zoomLevel: toRef(props, "zoomLevel"),
 	elementWidth,
+	canvasRef: filmstripCanvas,
+	suspended: computed(() => props.isTimelineInteractive === true),
 });
 
 const hasFilmstrip = computed(() => isVideoElement.value && filmstripFrames.value.length > 0);
@@ -265,7 +270,7 @@ onUnmounted(() => {
 	window.removeEventListener("playback-seek", handlePlaybackEvent as EventListener);
 });
 
-const { isLoading: waveformLoading, isLoaded: waveformLoaded } = useAudioWaveform({
+const { isLoading: waveformLoading, isLoaded: waveformLoaded, playedRatio: waveformPlayedRatio } = useAudioWaveform({
 	element: toRef(props, "element"),
 	mediaAsset,
 	zoomLevel: toRef(props, "zoomLevel"),
@@ -434,6 +439,10 @@ const elementTooltip = computed(() => {
 						class="absolute inset-0 w-full h-full pointer-events-none"
 						style="mix-blend-mode: normal; z-index: 5; image-rendering: crisp-edges"
 					/>
+					<div
+						class="absolute inset-y-0 left-0 pointer-events-none bg-white/25"
+						:style="{ width: `${waveformPlayedRatio * 100}%`, zIndex: 6, mixBlendMode: 'screen' }"
+					/>
 					<!-- Volume keyframe strip (handles only — no curve on waveform) -->
 					<svg
 						v-if="volumeEnvelopeVisible"
@@ -482,23 +491,9 @@ const elementTooltip = computed(() => {
 							:style="{ top: '16px', bottom: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%` }"
 						>
 							<div
-								class="absolute inset-0 grid pointer-events-none h-full"
-								:style="{
-									gridTemplateColumns: filmstripFrames.length
-										? `repeat(${filmstripFrames.length}, minmax(0, 1fr))`
-										: undefined,
-								}"
+								class="absolute inset-0 pointer-events-none h-full"
 							>
-								<div
-									v-for="(frame, idx) in filmstripFrames"
-									:key="`${frame.timestamp}-${idx}`"
-									class="min-h-0 min-w-0 h-full"
-									:style="{
-										backgroundImage: `url(${frame.objectUrl})`,
-										backgroundSize: 'cover',
-										backgroundPosition: 'center',
-									}"
-								/>
+								<canvas ref="filmstripCanvas" class="size-full" />
 							</div>
 						</div>
 						<div
@@ -521,6 +516,16 @@ const elementTooltip = computed(() => {
 							zIndex: 25,
 							mixBlendMode: 'normal',
 							imageRendering: 'crisp-edges',
+						}"
+					/>
+					<div
+						v-if="!isMuted"
+						class="absolute left-0 bottom-0 pointer-events-none bg-white/25"
+						:style="{
+							width: `${waveformPlayedRatio * 100}%`,
+							height: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%`,
+							zIndex: 26,
+							mixBlendMode: 'screen',
 						}"
 					/>
 					<!-- Volume keyframe strip (video waveform — handles only) -->
@@ -597,6 +602,16 @@ const elementTooltip = computed(() => {
 							imageRendering: 'crisp-edges',
 						}"
 					/>
+					<div
+						v-if="isVideoElement && !isMuted"
+						class="absolute left-0 bottom-0 pointer-events-none bg-white/25"
+						:style="{
+							width: `${waveformPlayedRatio * 100}%`,
+							height: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%`,
+							zIndex: 26,
+							mixBlendMode: 'screen',
+						}"
+					/>
 					<!-- Volume keyframe strip (video fallback — handles only) -->
 					<svg
 						v-if="isVideoElement && !isMuted && volumeEnvelopeVisible"
@@ -647,6 +662,11 @@ const elementTooltip = computed(() => {
 				<div
 					v-if="isEffectDropTarget"
 					class="pointer-events-none absolute inset-0 z-40 rounded-[0.4rem] border-2 border-[#E040FB] bg-[#E040FB]/15"
+				/>
+				<!-- Both clips participating in a transition preview are highlighted. -->
+				<div
+					v-if="isTransitionDropTarget"
+					class="pointer-events-none absolute inset-0 z-40 rounded-[0.4rem] border-2 border-[#E040FB] bg-[#E040FB]/10 shadow-[inset_0_0_0_1px_rgba(224,64,251,0.35)]"
 				/>
 			</button>
 

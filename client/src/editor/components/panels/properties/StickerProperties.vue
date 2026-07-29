@@ -20,7 +20,7 @@ const topTabs: { id: TopTab; label: string; icon: typeof Sticker }[] = [
 	{ id: "keyframes", label: "Keyframes", icon: Diamond },
 ];
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 const { selectedElements } = useElementSelection();
 
 const opacityInput = ref(Math.round(props.element.opacity * 100).toString());

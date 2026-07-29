@@ -184,9 +184,15 @@
       <div ref="containerRef" class="relative bg-black rounded-lg overflow-hidden shadow-lg" :style="containerStyle">
         <!-- ===== CLIP VIEW ===== -->
         <template v-if="activeSourceView === 'clip'">
+          <!-- Live composited editor timeline (preferred in OpenCut export). -->
+          <canvas
+            v-if="timelinePreviewCanvas"
+            ref="timelineCanvasRef"
+            class="absolute inset-0 w-full h-full object-cover"
+          />
           <!-- Video element (when available) -->
           <video
-            v-if="videoUrl"
+            v-else-if="videoUrl"
             ref="videoRef"
             :src="videoUrl"
             :poster="thumbnailUrl || undefined"
@@ -410,6 +416,7 @@
     sourceAspectRatio?: string;
     maxRegions?: number;
     videoUrl?: string | null;
+    timelinePreviewCanvas?: HTMLCanvasElement | null;
     videoTime?: number;
     isPlaying?: boolean;
     volume?: number;
@@ -501,6 +508,34 @@
 
   const containerRef = ref<HTMLElement | null>(null);
   const videoRef = ref<HTMLVideoElement | null>(null);
+  const timelineCanvasRef = ref<HTMLCanvasElement | null>(null);
+  let timelineCanvasRafId: number | null = null;
+
+  function drawTimelineCanvas() {
+    const source = props.timelinePreviewCanvas;
+    const target = timelineCanvasRef.value;
+    if (!source || !target || source.width <= 0 || source.height <= 0) return;
+    if (target.width !== source.width || target.height !== source.height) {
+      target.width = source.width;
+      target.height = source.height;
+    }
+    target.getContext('2d')?.drawImage(source, 0, 0, target.width, target.height);
+  }
+
+  function startTimelineCanvasLoop() {
+    if (timelineCanvasRafId !== null) return;
+    const tick = () => {
+      drawTimelineCanvas();
+      timelineCanvasRafId = requestAnimationFrame(tick);
+    };
+    timelineCanvasRafId = requestAnimationFrame(tick);
+  }
+
+  function stopTimelineCanvasLoop() {
+    if (timelineCanvasRafId === null) return;
+    cancelAnimationFrame(timelineCanvasRafId);
+    timelineCanvasRafId = null;
+  }
   const containerWidth = ref(0);
   const containerHeight = ref(0);
 
@@ -954,11 +989,15 @@
     if (props.isPlaying) {
       startHighFrequencyTimeSync();
     }
+    if (props.timelinePreviewCanvas) {
+      startTimelineCanvasLoop();
+    }
   });
 
   onUnmounted(() => {
     cleanupHls();
     stopHighFrequencyTimeSync();
+    stopTimelineCanvasLoop();
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
@@ -968,6 +1007,18 @@
   watch(isExport916, (val) => {
     if (!val) showSocialPlatformMenu.value = false;
   });
+
+  watch(
+    () => props.timelinePreviewCanvas,
+    (canvas) => {
+      if (canvas) {
+        startTimelineCanvasLoop();
+        nextTick(drawTimelineCanvas);
+      } else {
+        stopTimelineCanvasLoop();
+      }
+    },
+  );
 
   // Watch for aspect ratio changes
   watch(
