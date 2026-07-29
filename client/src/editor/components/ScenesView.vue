@@ -4,7 +4,16 @@ import { useEditor } from "../composables/useEditor";
 import { Button } from "@/components/ui/button";
 import { Check, ListChecks, Trash2, X } from "lucide-vue-next";
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		scenes: true,
+		playback: false,
+		timeline: false,
+		project: false,
+		media: false,
+		selection: false,
+	},
+});
 
 const isOpen = ref(false);
 const isSelectMode = ref(false);

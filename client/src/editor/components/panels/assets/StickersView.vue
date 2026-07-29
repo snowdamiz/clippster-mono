@@ -17,7 +17,7 @@ import StickerItem from "./StickerItem.vue";
 import { ArrowLeft, Loader2, Smile } from "lucide-vue-next";
 import PanelSearchBar from "./PanelSearchBar.vue";
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 
 type ViewMode = "search" | "browse" | "collection";
 

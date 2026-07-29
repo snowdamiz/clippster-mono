@@ -32,7 +32,7 @@ const props = defineProps<{
 	trackId: string;
 }>();
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 const { allFonts, uploadCustomFont, ensureFontLoaded } = useFontManager();
 
 // ── Top-level tabs (CapCut style) ──

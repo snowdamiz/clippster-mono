@@ -7,7 +7,7 @@ import { useElementSelection } from "../../../composables/timeline/element/useEl
 import { Palette, Check } from "lucide-vue-next";
 import PanelSearchBar from "./PanelSearchBar.vue";
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 const { selectedElements } = useElementSelection();
 
 const searchQuery = ref("");

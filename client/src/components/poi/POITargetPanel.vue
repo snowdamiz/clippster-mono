@@ -120,7 +120,7 @@
 
         <!-- Single decoder for all source-video previews in this panel -->
         <video
-          v-if="videoUrl"
+          v-if="videoUrl && !timelinePreviewCanvas"
           ref="masterVideoRef"
           :src="videoUrl"
           class="absolute w-px h-px opacity-0 pointer-events-none"
@@ -166,7 +166,7 @@
           class="absolute inset-0 overflow-hidden z-[0]"
         >
           <canvas
-            v-if="videoUrl"
+            v-if="hasSourcePreview"
             ref="use16x9BgCanvasRef"
             class="absolute inset-0 w-full h-full pointer-events-none scale-[1.08]"
             :style="{ filter: `blur(${use16x9BgBlurPx}px)` }"
@@ -189,7 +189,7 @@
           @mousedown="startDragSourceFrame"
         >
           <canvas
-            v-if="videoUrl"
+            v-if="hasSourcePreview"
             ref="use16x9SharpCanvasRef"
             class="absolute inset-0 w-full h-full pointer-events-none"
           />
@@ -234,7 +234,7 @@
         >
           <!-- Source video/thumbnail preview -->
           <canvas
-            v-if="videoUrl"
+            v-if="hasSourcePreview"
             ref="sourceFrameCanvasRef"
             class="absolute inset-0 w-full h-full pointer-events-none opacity-50"
             :style="scaleSourceBlurStyle"
@@ -315,7 +315,7 @@
           />
           <!-- Video crop preview (canvas fed from shared master decoder) -->
           <canvas
-            v-else-if="videoUrl"
+            v-else-if="hasSourcePreview"
             :ref="(el) => setRegionCanvasRef(region.id, el as HTMLCanvasElement)"
             class="absolute inset-0 w-full h-full pointer-events-none"
           />
@@ -625,6 +625,7 @@
     targetAspectRatio: string;
     sourceAspectRatio?: string;
     videoUrl?: string | null;
+    timelinePreviewCanvas?: HTMLCanvasElement | null;
     videoTime?: number;
     clipStartTime?: number; // For converting absolute time to clip-relative for subtitle matching
     isPlaying?: boolean;
@@ -670,6 +671,10 @@
     clipTextBoxPositioningEnabled: false,
     socialOverlayPreset: null,
   });
+
+  const hasSourcePreview = computed(
+    () => Boolean(props.timelinePreviewCanvas || props.videoUrl),
+  );
 
   const emit = defineEmits<{
     updateRegion: [id: string, region: Partial<ManualRegion>];
@@ -1078,60 +1083,71 @@
     return { w, h };
   }
 
-  function drawVideoCover(
+  function drawSourceCover(
     ctx: CanvasRenderingContext2D,
-    video: HTMLVideoElement,
+    source: CanvasImageSource,
+    sourceWidth: number,
+    sourceHeight: number,
     cw: number,
     ch: number,
   ) {
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
+    const vw = sourceWidth;
+    const vh = sourceHeight;
     if (!vw || !vh) return;
     const scale = Math.max(cw / vw, ch / vh);
     const dw = vw * scale;
     const dh = vh * scale;
     const dx = (cw - dw) / 2;
     const dy = (ch - dh) / 2;
-    ctx.drawImage(video, dx, dy, dw, dh);
+    ctx.drawImage(source, dx, dy, dw, dh);
   }
 
-  function drawVideoContain(
+  function drawSourceContain(
     ctx: CanvasRenderingContext2D,
-    video: HTMLVideoElement,
+    source: CanvasImageSource,
+    sourceWidth: number,
+    sourceHeight: number,
     cw: number,
     ch: number,
   ) {
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
+    const vw = sourceWidth;
+    const vh = sourceHeight;
     if (!vw || !vh) return;
     const scale = Math.min(cw / vw, ch / vh);
     const dw = vw * scale;
     const dh = vh * scale;
     const dx = (cw - dw) / 2;
     const dy = (ch - dh) / 2;
-    ctx.drawImage(video, dx, dy, dw, dh);
+    ctx.drawImage(source, dx, dy, dw, dh);
   }
 
   function drawRegionCrop(
     ctx: CanvasRenderingContext2D,
-    video: HTMLVideoElement,
+    source: CanvasImageSource,
+    sourceWidth: number,
+    sourceHeight: number,
     region: ManualRegion,
     cw: number,
     ch: number,
   ) {
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
+    const vw = sourceWidth;
+    const vh = sourceHeight;
     if (!vw || !vh || !region.source.width || !region.source.height) return;
     const sx = region.source.x * vw;
     const sy = region.source.y * vh;
     const sw = region.source.width * vw;
     const sh = region.source.height * vh;
-    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, cw, ch);
+    ctx.drawImage(source, sx, sy, sw, sh, 0, 0, cw, ch);
   }
 
   function redrawSourcePreviews() {
+    const timelineCanvas = props.timelinePreviewCanvas;
     const video = masterVideoRef.value;
-    if (!video || video.readyState < 2) return;
+    const source: CanvasImageSource | null = timelineCanvas ?? video;
+    const sourceWidth = timelineCanvas?.width ?? video?.videoWidth ?? 0;
+    const sourceHeight = timelineCanvas?.height ?? video?.videoHeight ?? 0;
+    if (!source || !sourceWidth || !sourceHeight) return;
+    if (!timelineCanvas && video && video.readyState < 2) return;
 
     if (use16x9Mode.value && use16x9BgCanvasRef.value) {
       const canvas = use16x9BgCanvasRef.value;
@@ -1139,7 +1155,7 @@
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.clearRect(0, 0, w, h);
-        drawVideoCover(ctx, video, w, h);
+        drawSourceCover(ctx, source, sourceWidth, sourceHeight, w, h);
       }
     }
 
@@ -1149,7 +1165,7 @@
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.clearRect(0, 0, w, h);
-        drawVideoContain(ctx, video, w, h);
+        drawSourceContain(ctx, source, sourceWidth, sourceHeight, w, h);
       }
     }
 
@@ -1159,19 +1175,19 @@
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.clearRect(0, 0, w, h);
-        drawVideoCover(ctx, video, w, h);
+        drawSourceCover(ctx, source, sourceWidth, sourceHeight, w, h);
       }
     }
 
     for (const region of props.regions) {
       if (region.mediaAssetId) continue;
       const canvas = regionCanvasRefs.value.get(region.id);
-      if (!canvas || !props.videoUrl) continue;
+      if (!canvas || !hasSourcePreview.value) continue;
       const { w, h } = setupCanvasPixels(canvas);
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.clearRect(0, 0, w, h);
-        drawRegionCrop(ctx, video, region, w, h);
+        drawRegionCrop(ctx, source, sourceWidth, sourceHeight, region, w, h);
       }
     }
   }
@@ -1214,7 +1230,7 @@
     if (previewRafId !== null) return;
     const tick = () => {
       redrawSourcePreviews();
-      if (props.isPlaying) {
+      if (props.isPlaying || props.timelinePreviewCanvas) {
         previewRafId = requestAnimationFrame(tick);
       } else {
         previewRafId = null;
@@ -1279,9 +1295,20 @@
     });
   }
 
-  watch([showSourceFrame, use16x9Mode, () => props.videoUrl], () => {
+  watch([showSourceFrame, use16x9Mode, () => props.videoUrl, () => props.timelinePreviewCanvas], () => {
     scheduleRedrawSourcePreviews();
   });
+
+  watch(
+    () => props.timelinePreviewCanvas,
+    (canvas) => {
+      if (canvas) {
+        startPreviewLoop();
+      } else if (!props.isPlaying) {
+        stopPreviewLoop();
+      }
+    },
+  );
 
   // Compute source frame style (16:9 frame positioned in 9:16 container)
   const sourceFrameStyle = computed(() => {
@@ -1953,6 +1980,9 @@
 
     // Click outside handler for blur dropdown
     document.addEventListener('click', handleClickOutsideBlur);
+    if (props.timelinePreviewCanvas) {
+      startPreviewLoop();
+    }
   });
 
   onUnmounted(() => {

@@ -10,7 +10,7 @@ import { ColorNode } from "./nodes/color-node";
 import { EffectNode } from "./nodes/effect-node";
 import { CaptionNode } from "./nodes/caption-node";
 import { BlurBackgroundNode } from "./nodes/blur-background-node";
-import { TransitionNode } from "./nodes/transition-node";
+import { TransitionNode, getTransitionOutgoingExtraTail } from "./nodes/transition-node";
 import type { TBackground, TCanvasSize } from "../types/project";
 import type { ManualSourceFramingPayload } from "@/types";
 import { DEFAULT_BLUR_INTENSITY } from "../constants/project-constants";
@@ -67,9 +67,16 @@ function canShareContinuousVideoDecodeKey(previous: VideoElement, current: Video
 	return Math.abs(previousSourceOut - current.trimStart) <= SOURCE_CONTINUITY_EPSILON;
 }
 
-function buildContinuousVideoDecodeKeys(track: TimelineTrack): Map<string, string> {
+function buildContinuousVideoDecodeKeys(
+	track: TimelineTrack,
+	transitionIncomingIds: ReadonlySet<string>,
+): {
+	decodeKeys: Map<string, string>;
+	coldStartElementIds: Set<string>;
+} {
 	const decodeKeys = new Map<string, string>();
-	if (track.type !== "video") return decodeKeys;
+	const coldStartElementIds = new Set<string>();
+	if (track.type !== "video") return { decodeKeys, coldStartElementIds };
 
 	const videoElements = track.elements
 		.filter((element): element is VideoElement => element.type === "video")
@@ -80,14 +87,22 @@ function buildContinuousVideoDecodeKeys(track: TimelineTrack): Map<string, strin
 	let previous: VideoElement | null = null;
 	let groupKey = "";
 	for (const element of videoElements) {
-		if (!previous || !canShareContinuousVideoDecodeKey(previous, element)) {
+		// A transition samples both sides of the cut at different timestamps.
+		// Sharing one sequential CanvasSink would make outgoing and incoming
+		// repeatedly seek over each other, stalling the incoming clip.
+		if (
+			!previous ||
+			transitionIncomingIds.has(element.id) ||
+			!canShareContinuousVideoDecodeKey(previous, element)
+		) {
 			groupKey = `continuous-video:${track.id}:${element.mediaId}:${element.id}`;
+			coldStartElementIds.add(element.id);
 		}
 		decodeKeys.set(element.id, groupKey);
 		previous = element;
 	}
 
-	return decodeKeys;
+	return { decodeKeys, coldStartElementIds };
 }
 
 export function buildScene(params: BuildSceneParams) {
@@ -125,7 +140,15 @@ export function buildScene(params: BuildSceneParams) {
 	const contentNodes: BaseNode[] = [];
 
 	for (const track of orderedTracksBottomToTop) {
-		const continuousVideoDecodeKeys = buildContinuousVideoDecodeKeys(track);
+		const transitionIncomingIds = new Set<string>();
+		for (const transition of transitions ?? []) {
+			const pair = resolveTransitionMediaPair({ transition, track });
+			if (pair?.incoming.type === "video") transitionIncomingIds.add(pair.incoming.id);
+		}
+		const {
+			decodeKeys: continuousVideoDecodeKeys,
+			coldStartElementIds,
+		} = buildContinuousVideoDecodeKeys(track, transitionIncomingIds);
 		const elements = track.elements
 			.filter((element) => !("hidden" in element && element.hidden))
 			.slice()
@@ -169,6 +192,7 @@ export function buildScene(params: BuildSceneParams) {
 					mediaId: mediaAsset.id,
 					elementId: videoEl.id,
 					decodeKey: continuousVideoDecodeKeys.get(videoEl.id),
+					prewarmBeforeStart: coldStartElementIds.has(videoEl.id),
 					url: mediaAsset.url ?? "",
 					file: mediaAsset.file,
 					duration: videoEl.duration,
@@ -356,6 +380,13 @@ export function buildScene(params: BuildSceneParams) {
 			const sampleSpread = plan.sameVideo
 				? Math.min(3, Math.max(d * 2, d + 1.25))
 				: undefined;
+			// sampleSpread advances the outgoing decode clock past the junction.
+			// The outgoing extension must cover that tail or getSourceTime clamps
+			// mid-transition and the outgoing layer freezes for the rest of the blend.
+			const outgoingSampleTail = getTransitionOutgoingExtraTail({
+				duration: d,
+				sampleSpread,
+			});
 
 			const transitionNode = new TransitionNode({
 				type: plan.transition.type,
@@ -368,7 +399,11 @@ export function buildScene(params: BuildSceneParams) {
 
 			if (isTransitionExtendableNode(plan.outgoingNode)) {
 				plan.outgoingNode.setTransitionExtension({
-					after: halfDuration + plan.gapAfterOutgoing + TRANSITION_TIME_SLACK,
+					after:
+						halfDuration +
+						plan.gapAfterOutgoing +
+						TRANSITION_TIME_SLACK +
+						outgoingSampleTail,
 				});
 			}
 			if (isTransitionExtendableNode(plan.incomingNode)) {

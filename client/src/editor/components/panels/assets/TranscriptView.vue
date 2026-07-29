@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../../composables/useEditor";
+import { usePlaybackClock } from "../../../composables/usePlaybackClock";
 import type { VideoElement } from "../../../types/timeline";
 import { DeleteTranscriptWordsCommand, UpdateTranscriptWordCommand, ReorderTranscriptWordsCommand, SyncTimelineToTranscriptCommand } from "../../../lib/commands/transcript";
 import ConfirmDialog from "../../dialogs/ConfirmDialog.vue";
@@ -38,7 +39,16 @@ interface Paragraph {
 }
 
 // ── Editor integration ──
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		timeline: true,
+		media: true,
+		scenes: false,
+		playback: false,
+		selection: false,
+	},
+});
 
 // ── State ──
 const words = ref<TranscriptWord[]>([]);
@@ -53,10 +63,7 @@ let loadTranscriptRequestId = 0;
 let lastTimingGapLogKey: string | null = null;
 
 // Current playback time from editor
-const currentTime = computed(() => {
-	void version.value;
-	return editor.playback.getCurrentTime();
-});
+const currentTime = usePlaybackClock();
 
 // Word tracking
 const currentWordIndex = ref(-1);

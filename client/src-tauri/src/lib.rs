@@ -1282,6 +1282,7 @@ commands::file_utils::generate_video_thumbnail,
 
             // Clips commands
             clips::build_clip_from_segments,
+            clips::build_editor_export_variants,
             clips::cancel_clip_build,
             clips::is_clip_build_active,
             clips::save_subtitle_overlay_png,
@@ -1346,7 +1347,7 @@ video_editor_export::export_video_editor_project,
 video_editor_export::cancel_video_editor_export,
 video_editor_export::save_text_overlay_png,
 video_editor_export::save_overlay_frame_sequence,
-video_editor_export::write_scene_export_frame,
+video_editor_export::write_scene_export_frame_batch,
 video_editor_export::finalize_scene_export_frames,
 
 // Video Frame Decoder commands

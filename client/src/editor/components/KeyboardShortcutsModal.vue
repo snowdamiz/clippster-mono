@@ -16,10 +16,15 @@ const categories: { key: TActionCategory; label: string }[] = [
 	{ key: "controls", label: "Controls" },
 ];
 
+const supplementalShortcuts: Partial<Record<string, string[]>> = {
+	"toggle-elements-muted-selected": ["m"],
+	"toggle-bookmark": ["b"],
+};
+
 const groupedActions = computed(() => {
 	const groups: Record<string, Array<{ action: string; def: TActionDefinition }>> = {};
 	for (const [action, def] of Object.entries(ACTIONS) as [string, TActionDefinition][]) {
-		if (!def.defaultShortcuts || def.defaultShortcuts.length === 0) continue;
+		if ((!def.defaultShortcuts || def.defaultShortcuts.length === 0) && !supplementalShortcuts[action]) continue;
 		const cat = def.category;
 		if (!groups[cat]) groups[cat] = [];
 		groups[cat].push({ action, def });
@@ -28,18 +33,27 @@ const groupedActions = computed(() => {
 });
 
 function formatShortcut(s: string): string {
+	const labels: Record<string, string> = {
+		ctrl: "Ctrl",
+		shift: "Shift",
+		alt: "Alt",
+		space: "Space",
+		backspace: "Backspace",
+		delete: "Delete",
+		left: "←",
+		right: "→",
+		home: "Home",
+		end: "End",
+		enter: "Enter",
+	};
 	return s
-		.replace("ctrl+", "Ctrl + ")
-		.replace("shift+", "Shift + ")
-		.replace("alt+", "Alt + ")
-		.replace("space", "Space")
-		.replace("backspace", "Backspace")
-		.replace("delete", "Delete")
-		.replace("left", "←")
-		.replace("right", "→")
-		.replace("home", "Home")
-		.replace("end", "End")
-		.replace("enter", "Enter");
+		.split("+")
+		.map((part) => labels[part] ?? part.toUpperCase())
+		.join(" + ");
+}
+
+function shortcutsFor(action: string, def: TActionDefinition): string[] {
+	return [...(def.defaultShortcuts ?? []), ...(supplementalShortcuts[action] ?? [])];
 }
 </script>
 
@@ -48,18 +62,23 @@ function formatShortcut(s: string): string {
 		<div
 			v-if="open"
 			class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="keyboard-shortcuts-title"
 			@click.self="emit('close')"
+			@keydown.esc="emit('close')"
 		>
 			<div class="relative max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border border-white/10 bg-[#1c1c1e] p-6 shadow-2xl">
 				<button
 					type="button"
 					class="absolute top-3 right-3 rounded p-1 text-zinc-400 hover:bg-white/10 hover:text-white"
+					aria-label="Close keyboard shortcuts"
 					@click="emit('close')"
 				>
 					<X class="size-4" />
 				</button>
 
-				<h2 class="mb-4 text-lg font-semibold text-white">Keyboard Shortcuts</h2>
+				<h2 id="keyboard-shortcuts-title" class="mb-4 text-lg font-semibold text-white">Keyboard Shortcuts</h2>
 
 				<div v-for="cat in categories" :key="cat.key" class="mb-4">
 					<template v-if="groupedActions[cat.key]?.length">
@@ -73,7 +92,7 @@ function formatShortcut(s: string): string {
 								<span class="text-zinc-300">{{ item.def.description }}</span>
 								<div class="flex gap-1">
 									<kbd
-										v-for="(shortcut, idx) in item.def.defaultShortcuts"
+										v-for="(shortcut, idx) in shortcutsFor(item.action, item.def)"
 										:key="idx"
 										class="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-xs text-zinc-400"
 									>

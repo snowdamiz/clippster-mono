@@ -19,7 +19,7 @@ export interface ThumbnailOptions {
 }
 
 export function useThumbnailGenerator() {
-	const { editor, version } = useEditor();
+	const { editor } = useEditor({ subscribe: false });
 	const isGenerating = ref(false);
 
 	async function generateThumbnail(options: ThumbnailOptions): Promise<Blob | null> {

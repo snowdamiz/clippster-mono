@@ -23,6 +23,7 @@ import LutPanel from "./LutPanel.vue";
 import ElementTimingFields from "./ElementTimingFields.vue";
 import { Switch } from '@/components/ui/switch';
 import { useClipVolumeInspector } from "../../../composables/panels/useClipVolumeInspector";
+import { useRafBatchedUpdate } from "../../../composables/useRafBatchedUpdate";
 
 const props = defineProps<{
 	element: VideoElement;
@@ -48,7 +49,16 @@ function toggleVideoSection(section: string) {
 	openVideoSections.value = openVideoSections.value.has(section) ? new Set() : new Set([section]);
 }
 
-const { editor, version } = useEditor();
+const { editor } = useEditor({
+	subscribe: {
+		playback: false,
+		timeline: false,
+		scenes: false,
+		project: false,
+		media: false,
+		selection: false,
+	},
+});
 const { selectedElements } = useElementSelection();
 const { cropPanelRequested, clearCropPanelRequest } = useEditorUIState();
 
@@ -63,6 +73,7 @@ function handleRangePointerDown(event: PointerEvent) {
 }
 
 function stopRangeInteraction() {
+	flushUpdate();
 	editor.setInteractiveDrag(false);
 }
 
@@ -320,13 +331,15 @@ const nativePresetLabel = computed(() => {
 	return null;
 });
 
-function update(updates: Record<string, unknown>) {
+function commitUpdate(updates: Record<string, unknown>) {
 	editor.timeline.updateElement({
 		trackId: props.trackId,
 		elementId: props.element.id,
 		updates,
 	});
 }
+
+const { update, flush: flushUpdate } = useRafBatchedUpdate(commitUpdate);
 
 const clipVolume = useClipVolumeInspector({
 	elementId: props.element.id,

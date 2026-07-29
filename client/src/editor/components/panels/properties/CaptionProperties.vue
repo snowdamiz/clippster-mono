@@ -35,7 +35,16 @@ const props = defineProps<{
 	trackId: string;
 }>();
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		timeline: true,
+		playback: false,
+		scenes: false,
+		project: false,
+		media: false,
+		selection: false,
+	},
+});
 const { allFonts, ensureFontLoaded, uploadCustomFont } = useFontManager();
 
 // ── Top-level tabs (CapCut style) ──
