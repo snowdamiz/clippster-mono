@@ -365,9 +365,21 @@ export const usePlatformStore = defineStore('platform', {
               }
               try {
                 const d = await invoke<number>('probe_kick_vod_duration', { videoUrl: url });
-                if (typeof d === 'number' && d > 0 && !Number.isNaN(d)) {
-                  c.duration = d;
+                if (typeof d !== 'number' || d <= 0 || Number.isNaN(d)) {
+                  return;
                 }
+                const apiDuration = c.duration ?? 0;
+                // Ignore broken HLS window probes (a few seconds) when RapidAPI already
+                // reported a long VOD.
+                if (apiDuration > 120 && d < 60) {
+                  console.debug(
+                    '[Platform] Kick stream duration probe ignored (too short vs API):',
+                    c.clipId,
+                    { probed: d, apiDuration }
+                  );
+                  return;
+                }
+                c.duration = d;
               } catch (e) {
                 console.debug('[Platform] Kick stream duration probe skipped:', c.clipId, e);
               }
