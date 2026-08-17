@@ -199,7 +199,10 @@
                 </div>
 
                 <!-- VOD Preset Badge -->
-                <div v-if="hasVodPreset(project.id)" class="project-card__preset-badge">
+                <div
+                  v-if="hasVodPreset(project.id) && !isLiveClipsContainerProject(project)"
+                  class="project-card__preset-badge"
+                >
                   <LayoutDashboard class="project-card__badge-icon" />
                   <span>{{ vodPresetConfigs[project.id]?.targetAspectRatio }} Pre-Edit</span>
                 </div>
@@ -348,7 +351,10 @@
                   </button>
 
                   <button
-                    v-if="hasDirectVideos(project.id) || hasChildren(project.id)"
+                    v-if="
+                      (hasDirectVideos(project.id) || hasChildren(project.id)) &&
+                      !isLiveClipsContainerProject(project)
+                    "
                     class="project-card__action-btn"
                     :class="{ 'project-card__action-btn--preset-active': hasVodPreset(project.id) }"
                     title="Pre-Edit VOD"
@@ -1362,6 +1368,7 @@
     type WatermarkSettings,
     type VideoEditorProject,
     hasTranscriptForProject,
+    isLiveClipsContainerProject,
   } from '@/services/database';
   import {
     isShortVideoAutoClipEligible,
@@ -1500,6 +1507,8 @@
   }
 
   async function openVodPresetEditor(project: Project) {
+    if (isLiveClipsContainerProject(project)) return;
+
     console.log('[Projects] Opening VodPresetEditor for project:', project.id, 'parent_id:', project.parent_id);
     vodPresetProject.value = project;
     // Load existing config
