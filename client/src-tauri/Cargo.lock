@@ -761,7 +761,7 @@ dependencies = [
 
 [[package]]
 name = "clippster-ui"
-version = "0.1.248"
+version = "0.1.249"
 dependencies = [
  "aes",
  "async-stream",

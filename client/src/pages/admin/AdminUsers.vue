@@ -57,6 +57,14 @@
                 class="admin-users__search-input"
               />
             </div>
+            <button
+              class="admin-users__export-btn"
+              :disabled="!users.some((user) => Boolean(user.email))"
+              @click="exportUserEmailsCsv"
+            >
+              <Download class="admin-users__export-icon" />
+              Export Emails CSV
+            </button>
             <span class="admin-users__stats-count">{{ filteredAndSortedUsers.length }} user{{ filteredAndSortedUsers.length !== 1 ? 's' : '' }}</span>
           </div>
         </div>
@@ -787,6 +795,7 @@
   import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { useRouter } from 'vue-router';
   import { formatDate as formatDateOnly, formatDateTime } from '@/utils/dateTimeUtils';
+  import { downloadEmailsCsv } from '@/utils/downloadEmailsCsv';
   import {
     Users,
     RefreshCw,
@@ -804,6 +813,7 @@
     ChevronUp,
     Handshake,
     Trash2,
+    Download,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
@@ -1033,6 +1043,15 @@
     } catch (err) {
       console.error('Failed to copy to clipboard:', err);
     }
+  };
+
+  const exportUserEmailsCsv = () => {
+    const emails = users.value.map((user) => user.email).filter(Boolean);
+    if (!emails.length) {
+      error.value = 'No user emails to export';
+      return;
+    }
+    downloadEmailsCsv(emails, 'user-emails.csv');
   };
 
   const getSubscriptionStatusClass = (status: string | undefined) => {
@@ -1672,6 +1691,36 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
+  }
+
+  .admin-users__export-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.875rem;
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .admin-users__export-btn:hover:not(:disabled) {
+    background-color: rgba(63, 63, 70, 1);
+    color: white;
+  }
+
+  .admin-users__export-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .admin-users__export-icon {
+    width: 14px;
+    height: 14px;
   }
 
   .admin-users__search {
