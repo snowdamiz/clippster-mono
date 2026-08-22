@@ -11,7 +11,7 @@ defmodule ClippsterServer.AI.VideoComposer do
   @default_fps 30
   @default_duration 10
   @openrouter_url "https://openrouter.ai/api/v1/chat/completions"
-  @model "anthropic/claude-sonnet-4"
+  @default_model "anthropic/claude-sonnet-5"
 
   # ---------------------------------------------------------------------------
   # Public API
@@ -189,62 +189,72 @@ defmodule ClippsterServer.AI.VideoComposer do
     case plan_scenes(ctx, api_key) do
       {:ok, scenes} ->
         Logger.info("[VideoComposer] Scene plan: #{length(scenes)} scenes")
-        send_fn.(%{event: "plan", data: %{scenes: scenes, total: length(scenes)}})
 
-        # Build base media tracks deterministically (no AI needed)
-        base_media_tracks = build_base_media_tracks(ctx, scenes)
+        if send_fn.(%{event: "plan", data: %{scenes: scenes, total: length(scenes)}}) == :error do
+          {:error, "Generation cancelled"}
+        else
+          # Build base media tracks deterministically (no AI needed)
+          base_media_tracks = build_base_media_tracks(ctx, scenes)
 
-        # Build guaranteed ambient tracks (background particles, neon borders)
-        ambient_tracks = build_ambient_tracks(scenes)
+          # Build guaranteed ambient tracks (background particles, neon borders)
+          ambient_tracks = build_ambient_tracks(scenes)
 
-        # Phase 2: Generate OVERLAY tracks for each scene, streaming progress
-        # Track what was used in previous scenes to enforce diversity
-        result =
-          Enum.reduce_while(
-            Enum.with_index(scenes),
-            {:ok, [], %{templates: [], camera_types: [], transition_types: []}},
-            fn {scene, idx}, {:ok, acc, diversity_tracker} ->
-              case generate_scene_overlay_tracks(ctx, scene, scenes, api_key, diversity_tracker) do
-                {:ok, tracks} ->
-                  send_fn.(%{
-                    event: "scene",
-                    data: %{
-                      index: idx,
-                      total: length(scenes),
-                      tracks: tracks,
-                      description: Map.get(scene, "description", "Scene #{idx + 1}")
-                    }
-                  })
+          # Phase 2: Generate OVERLAY tracks for each scene, streaming progress
+          # Track what was used in previous scenes to enforce diversity
+          result =
+            Enum.reduce_while(
+              Enum.with_index(scenes),
+              {:ok, [], %{templates: [], camera_types: [], transition_types: []}},
+              fn {scene, idx}, {:ok, acc, diversity_tracker} ->
+                case generate_scene_overlay_tracks(ctx, scene, scenes, api_key, diversity_tracker) do
+                  {:ok, tracks} ->
+                    send_result =
+                      send_fn.(%{
+                        event: "scene",
+                        data: %{
+                          index: idx,
+                          total: length(scenes),
+                          tracks: tracks,
+                          description: Map.get(scene, "description", "Scene #{idx + 1}")
+                        }
+                      })
 
-                  # Update diversity tracker with what was used in this scene
-                  new_tracker = update_diversity_tracker(diversity_tracker, tracks)
-                  {:cont, {:ok, acc ++ tracks, new_tracker}}
+                    if send_result == :error do
+                      {:halt, {:error, "Generation cancelled"}}
+                    else
+                      new_tracker = update_diversity_tracker(diversity_tracker, tracks)
+                      {:cont, {:ok, acc ++ tracks, new_tracker}}
+                    end
 
-                {:error, reason} ->
-                  send_fn.(%{
-                    event: "error",
-                    data: %{message: "Scene #{idx + 1} failed: #{reason}"}
-                  })
+                  {:error, reason} ->
+                    send_fn.(%{
+                      event: "error",
+                      data: %{message: "Scene #{idx + 1} failed: #{reason}"}
+                    })
 
-                  {:halt, {:error, reason}}
+                    {:halt, {:error, reason}}
+                end
               end
+            )
+            |> case do
+              {:ok, tracks, _tracker} -> {:ok, tracks}
+              error -> error
             end
-          )
-          |> case do
-            {:ok, tracks, _tracker} -> {:ok, tracks}
-            error -> error
+
+          case result do
+            {:ok, overlay_tracks} ->
+              composition =
+                build_final_composition(
+                  ctx,
+                  base_media_tracks ++ ambient_tracks ++ overlay_tracks
+                )
+
+              send_fn.(%{event: "complete", data: %{composition: composition}})
+              {:ok, composition}
+
+            {:error, reason} ->
+              {:error, reason}
           end
-
-        case result do
-          {:ok, overlay_tracks} ->
-            composition =
-              build_final_composition(ctx, base_media_tracks ++ ambient_tracks ++ overlay_tracks)
-
-            send_fn.(%{event: "complete", data: %{composition: composition}})
-            {:ok, composition}
-
-          {:error, reason} ->
-            {:error, reason}
         end
 
       {:error, reason} ->
@@ -413,6 +423,7 @@ defmodule ClippsterServer.AI.VideoComposer do
     #{if ctx.style, do: "Style: #{ctx.style}", else: ""}
     #{ctx.intensity_context}
     #{ctx.caption_context}
+    #{ctx.style_recipe_context}
     #{ctx.reference_context}
     #{ctx.media_analysis_context}
     """
@@ -834,6 +845,7 @@ defmodule ClippsterServer.AI.VideoComposer do
 
     #{ctx.intensity_context}
     #{ctx.caption_context}
+    #{ctx.style_recipe_context}
     #{ctx.reference_context}
     #{ctx.media_analysis_context}
 
@@ -925,7 +937,8 @@ defmodule ClippsterServer.AI.VideoComposer do
       "duration" => effective_duration,
       "fps" => @default_fps,
       "backgroundColor" => "#000000",
-      "tracks" => all_tracks
+      "tracks" => all_tracks,
+      "styleMatch" => style_match(ctx)
     }
   end
 
@@ -963,12 +976,23 @@ defmodule ClippsterServer.AI.VideoComposer do
     #{if ctx.style, do: "Style: #{ctx.style}", else: ""}
     #{ctx.intensity_context}
     #{ctx.caption_context}
+    #{ctx.style_recipe_context}
+    #{ctx.reference_context}
+    #{ctx.media_analysis_context}
     #{existing_context}
     """
 
     case call_openrouter(system_prompt, user_prompt, api_key, max_tokens: 32768) do
       {:ok, content} ->
-        parse_composition_response_from_content(content, ctx.width, ctx.height, ctx.duration)
+        with {:ok, composition} <-
+               parse_composition_response_from_content(
+                 content,
+                 ctx.width,
+                 ctx.height,
+                 ctx.duration
+               ) do
+          {:ok, Map.put(composition, "styleMatch", style_match(ctx))}
+        end
 
       {:error, reason} ->
         {:error, reason}
@@ -989,7 +1013,7 @@ defmodule ClippsterServer.AI.VideoComposer do
     max_tokens = Keyword.get(opts, :max_tokens, 8192)
 
     payload = %{
-      "model" => @model,
+      "model" => System.get_env("OPENROUTER_VIDEO_MODEL") || @default_model,
       "messages" => [
         %{"role" => "system", "content" => system_prompt},
         %{"role" => "user", "content" => user_prompt}
@@ -1086,11 +1110,13 @@ defmodule ClippsterServer.AI.VideoComposer do
     intensity = Map.get(extra_options || %{}, "intensity")
     caption_style = Map.get(extra_options || %{}, "captionStyle")
     reference_analysis = Map.get(extra_options || %{}, "reference_analysis")
+    style_recipe = Map.get(extra_options || %{}, "style_recipe")
     media_analysis = Map.get(extra_options || %{}, "media_analysis")
 
     intensity_context = build_intensity_context(intensity)
     caption_context = build_caption_context(caption_style)
     reference_context = build_reference_context(reference_analysis)
+    style_recipe_context = build_style_recipe_context(style_recipe)
     media_analysis_context = build_media_analysis_context(media_analysis)
 
     %{
@@ -1106,6 +1132,9 @@ defmodule ClippsterServer.AI.VideoComposer do
       intensity_context: intensity_context,
       caption_context: caption_context,
       reference_context: reference_context,
+      style_recipe_context: style_recipe_context,
+      style_recipe: style_recipe,
+      reference_analysis: reference_analysis,
       media_analysis_context: media_analysis_context
     }
   end
@@ -1114,15 +1143,46 @@ defmodule ClippsterServer.AI.VideoComposer do
 
   defp build_reference_context(ref) when is_map(ref) do
     """
-    ## REFERENCE STYLE PROFILE
-    Match this reference style as closely as possible:
+    ## REFERENCE EDIT RECIPE
+    Apply this editing recipe only to the supplied source media:
     #{Jason.encode!(ref, pretty: true)}
 
-    Use the exact color palette, similar motion types, matching typography style, and equivalent pacing.
+    Match its pacing, grade, motion, typography, and layout patterns. The reference is not source
+    media: never reproduce or claim to use its footage, music, logos, watermarks, or exact text.
     """
   end
 
   defp build_reference_context(_), do: ""
+
+  defp build_style_recipe_context(nil), do: ""
+
+  defp build_style_recipe_context(recipe) when is_map(recipe) do
+    """
+    ## VERSIONED STYLE PACK RECIPE
+    Apply this recipe within renderer capabilities and use its declared fallbacks when needed:
+    #{Jason.encode!(recipe, pretty: true)}
+    """
+  end
+
+  defp build_style_recipe_context(_), do: ""
+
+  defp style_match(%{reference_analysis: recipe}) when is_map(recipe) do
+    %{
+      "source" => "reference",
+      "confidence" => get_in(recipe, ["confidence", "overall"]) || 0,
+      "summary" => recipe["summary"] || "Reference edit recipe applied"
+    }
+  end
+
+  defp style_match(%{style_recipe: recipe}) when is_map(recipe) do
+    %{
+      "source" => "style-pack",
+      "confidence" => 1,
+      "summary" => "#{recipe["name"] || "Selected"} style pack applied"
+    }
+  end
+
+  defp style_match(_), do: nil
 
   defp build_media_analysis_context(nil), do: ""
 

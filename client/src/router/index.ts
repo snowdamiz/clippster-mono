@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { featureFlags } from '@/composables/useFeatureFlags';
+import { canAccessAIVideo } from '@/utils/aiVideoAccess';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -86,7 +87,7 @@ const router = createRouter({
       path: '/ai-video',
       name: 'ai-video',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiresAIVideoAccess: true },
       children: [
         {
           path: '',
@@ -662,6 +663,11 @@ router.beforeEach(async (to, _from, next) => {
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     // Auth gate in App.vue will show modal, but we still prevent route navigation
     next(false);
+    return;
+  }
+
+  if (to.meta.requiresAIVideoAccess && !canAccessAIVideo(authStore.user)) {
+    next('/projects');
     return;
   }
 

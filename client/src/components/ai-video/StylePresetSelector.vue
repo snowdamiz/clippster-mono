@@ -2,43 +2,34 @@
   <div class="style-preset-selector">
     <div class="preset-grid">
       <button
-        v-for="preset in presets"
-        :key="preset.id"
+        v-for="pack in AI_VIDEO_STYLE_PACKS"
+        :key="pack.id"
+        type="button"
         class="preset-card"
-        :class="{ 'preset-card--active': modelValue === preset.id }"
-        @click="selectPreset(preset.id)"
+        :class="{ 'preset-card--active': modelValue === pack.id }"
+        @click="selectPreset(pack.id)"
       >
-        <div class="preset-icon">{{ preset.icon }}</div>
-        <div class="preset-label">{{ preset.name }}</div>
+        <div class="preset-label">{{ pack.name }}</div>
+        <div class="preset-description">{{ pack.description }}</div>
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { StylePreset } from '@/types/ai-video';
+import type { StylePackId } from '@/types/ai-video';
+import { AI_VIDEO_STYLE_PACKS } from '@/data/ai-video-style-packs';
 
 const props = defineProps<{
-  modelValue: StylePreset | null;
+  modelValue: StylePackId | null;
 }>();
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: StylePreset | null): void;
+  (e: 'update:modelValue', value: StylePackId): void;
 }>();
 
-const presets: Array<{ id: StylePreset; name: string; icon: string }> = [
-  { id: 'hype', name: 'Hype', icon: '🔥' },
-  { id: 'professional', name: 'Professional', icon: '✨' },
-  { id: 'gaming', name: 'Gaming', icon: '🎮' },
-  { id: 'cinematic', name: 'Cinematic', icon: '🎬' },
-  { id: 'tutorial', name: 'Tutorial', icon: '📚' },
-  { id: 'vlog', name: 'Vlog', icon: '📹' },
-  { id: 'music_video', name: 'Music', icon: '🎵' },
-  { id: 'product', name: 'Product', icon: '🛍️' },
-];
-
-function selectPreset(id: StylePreset) {
-  emit('update:modelValue', props.modelValue === id ? null : id);
+function selectPreset(id: StylePackId) {
+  emit('update:modelValue', id);
 }
 </script>
 
@@ -49,16 +40,16 @@ function selectPreset(id: StylePreset) {
 
 .preset-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 6px;
 }
 
 .preset-card {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
-  padding: 8px 4px;
+  padding: 10px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--card);
@@ -77,17 +68,19 @@ function selectPreset(id: StylePreset) {
   box-shadow: 0 0 0 1px var(--primary);
 }
 
-.preset-icon {
-  font-size: 20px;
-  line-height: 1;
+.preset-label {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--foreground);
+  text-align: left;
+  line-height: 1.2;
 }
 
-.preset-label {
-  font-size: 10px;
-  font-weight: 500;
+.preset-description {
+  font-size: 9px;
   color: var(--muted-foreground);
-  text-align: center;
-  line-height: 1.2;
+  text-align: left;
+  line-height: 1.35;
 }
 
 .preset-card--active .preset-label {
