@@ -89,6 +89,36 @@
         >
           <FastForward :size="14" />
         </button>
+        <div class="w-px h-4 bg-white/8 mx-0.5"></div>
+        <!-- Subtitles Button -->
+        <button
+          @click="$emit('toggleSubtitles')"
+          :disabled="clipCount === 0"
+          :class="[
+            'px-2 py-1.5 rounded-md transition-all duration-150 flex items-center gap-1.5',
+            clipCount > 0
+              ? 'text-cyan-300 hover:bg-gradient-to-b hover:from-cyan-500/20 hover:to-cyan-600/10 hover:shadow-[0_0_8px_rgba(34,211,153,0.15)]'
+              : 'text-white/15 cursor-not-allowed',
+          ]"
+          :title="clipCount > 0 ? 'Add or edit subtitles' : 'Add clips to enable subtitles'"
+        >
+          <Captions :size="14" />
+          <span class="text-[11px] font-medium">Subtitles</span>
+        </button>
+        <button
+          @click="$emit('toggleText')"
+          :disabled="clipCount === 0"
+          :class="[
+            'px-2 py-1.5 rounded-md transition-all duration-150 flex items-center gap-1.5',
+            clipCount > 0
+              ? 'text-amber-300 hover:bg-gradient-to-b hover:from-amber-500/20 hover:to-amber-600/10 hover:shadow-[0_0_8px_rgba(245,158,11,0.15)]'
+              : 'text-white/15 cursor-not-allowed',
+          ]"
+          :title="clipCount > 0 ? 'Add a text box to the current clip (click the box on the video to edit)' : 'Add clips to enable text'"
+        >
+          <Type :size="14" />
+          <span class="text-[11px] font-medium">Text</span>
+        </button>
       </div>
     </div>
 
@@ -128,7 +158,7 @@
 
 <script setup lang="ts">
   import { ref, watch } from 'vue';
-  import { Plus, Scissors, Merge, Rewind, FastForward, Minus, Plus as Plus2 } from 'lucide-vue-next';
+  import { Plus, Scissors, Merge, Rewind, FastForward, Minus, Plus as Plus2, Captions, Type } from 'lucide-vue-next';
 
   interface Props {
     isCutToolActive: boolean;
@@ -149,8 +179,10 @@
     toggleAddClipMode: [];
     startContinuousSeeking: [direction: 'forward' | 'reverse'];
     stopContinuousSeeking: [];
-    sliderChanged: [sliderPosition: number];
+    sliderChanged: [value: number];
     mergeSegments: [];
+    toggleSubtitles: [];
+    toggleText: [];
   }>();
 
   const localSliderPosition = ref(props.sliderPosition);

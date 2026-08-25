@@ -6,20 +6,25 @@ import TimelineElement from "./TimelineElement.vue";
 import type {
 	TimelineTrack,
 	TimelineElement as TimelineElementType,
-	ElementDragState,
 } from "../../types/timeline";
 import type { SnapPoint } from "../../composables/timeline/useTimelineSnapping";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
 import { snapTimeToFrame } from "../../lib/time";
+import { isElementInVisibleRange, type TimelineVisibleRange } from "../../composables/timeline/useTimelineViewport";
 
 const props = defineProps<{
 	track: TimelineTrack;
 	zoomLevel: number;
-	dragState: ElementDragState;
 	snappingEnabled: boolean;
 	isPlayheadScrubbing?: boolean;
 	razorMode?: boolean;
 	effectDropTargetId?: string | null;
+	transitionDropElementIds?: string[];
+	/** Live neighbor shifts while dragging (magnetic rearrange preview). */
+	dragRippleShifts?: Map<string, number>;
+	visibleRange: TimelineVisibleRange;
+	activeElementId?: string | null;
+	isTimelineInteractive?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -37,17 +42,48 @@ const emit = defineEmits<{
 defineExpose({});
 
 const editor = EditorCore.getInstance();
-const { isElementSelected, clearElementSelection } = useElementSelection();
+const { isElementSelected } = useElementSelection();
 
-const rippleShifts = ref<Map<string, number>>(new Map());
+const resizeRippleShifts = ref<Map<string, number>>(new Map());
 
 function onRippleShiftsChange(shifts: Map<string, number>) {
-	rippleShifts.value = shifts;
+	resizeRippleShifts.value = shifts;
 }
+
+const rippleShifts = computed(() => {
+	const merged = new Map<string, number>();
+	if (props.dragRippleShifts) {
+		for (const [id, start] of props.dragRippleShifts) merged.set(id, start);
+	}
+	for (const [id, start] of resizeRippleShifts.value) merged.set(id, start);
+	return merged;
+});
 
 const hasSelectedElements = computed(() =>
 	props.track.elements.some((element) =>
 		isElementSelected({ trackId: props.track.id, elementId: element.id }),
+	),
+);
+
+const retainedElementIds = computed(() => {
+	const retained = new Set<string>();
+	for (const element of props.track.elements) {
+		if (isElementSelected({ trackId: props.track.id, elementId: element.id })) {
+			retained.add(element.id);
+		}
+	}
+	if (props.activeElementId) retained.add(props.activeElementId);
+	return retained;
+});
+
+const visibleElements = computed(() =>
+	props.track.elements.filter((element) =>
+		isElementInVisibleRange(
+			element,
+			props.visibleRange,
+			retainedElementIds.value,
+			rippleShifts.value.get(element.id),
+		),
 	),
 );
 
@@ -68,7 +104,10 @@ function handleElementClick(ev: MouseEvent, el: TimelineElementType) {
 }
 
 function onTrackClick(event: MouseEvent) {
-	clearElementSelection();
+	// Selection clearing is centralized in `handleTracksClick` (useTimelineSeek)
+	// — it gates on `shouldProcessTimelineClick` so we don't clear at the end
+	// of a drag or a rubber-band selection. Clearing here too would cause a
+	// brief selection flicker before that gate runs.
 	emit("trackClick", event);
 }
 
@@ -79,9 +118,10 @@ function onTrackMouseDown(event: MouseEvent) {
 </script>
 
 <template>
-	<button
+	<!-- div (not button): TimelineElement uses an inner <button>; nested buttons are invalid HTML and break hit-testing/cursor in browsers -->
+	<div
 		:class="['size-full', hasSelectedElements && 'bg-white/5', razorMode && 'cursor-crosshair']"
-		type="button"
+		role="presentation"
 		@click="onTrackClick"
 		@mousedown="onTrackMouseDown"
 	>
@@ -91,17 +131,18 @@ function onTrackMouseDown(event: MouseEvent) {
 				class="flex size-full items-center justify-center rounded-sm border-2 border-dashed border-white/10 text-xs text-zinc-600"
 			/>
 			<TimelineElement
-				v-for="element in track.elements"
+				v-for="element in visibleElements"
 				:key="element.id"
 				:element="element"
 				:track="track"
 				:zoom-level="zoomLevel"
 				:is-selected="isElementSelected({ trackId: track.id, elementId: element.id })"
-				:drag-state="dragState"
 				:snapping-enabled="snappingEnabled"
 				:is-playhead-scrubbing="isPlayheadScrubbing"
 				:is-effect-drop-target="effectDropTargetId === element.id"
+				:is-transition-drop-target="transitionDropElementIds?.includes(element.id)"
 				:ripple-shifts="rippleShifts"
+				:is-timeline-interactive="isTimelineInteractive"
 				@snap-point-change="(sp) => emit('snapPointChange', sp)"
 				@resize-state-change="(p) => emit('resizeStateChange', p)"
 				@ripple-shifts-change="onRippleShiftsChange"
@@ -111,5 +152,5 @@ function onTrackMouseDown(event: MouseEvent) {
 				@keyframe-click="(payload) => emit('keyframeClick', payload)"
 			/>
 		</div>
-	</button>
+	</div>
 </template>

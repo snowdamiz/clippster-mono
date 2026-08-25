@@ -7,6 +7,17 @@
       :icon="Receipt"
     >
       <template #actions>
+        <!-- Logout Button (always visible when authenticated) -->
+        <button
+          v-if="authStore.isAuthenticated"
+          @click="handleLogout"
+          class="billing-logout-btn"
+          title="Log out"
+        >
+          <LogOut class="billing-logout-btn__icon" />
+          <span class="billing-logout-btn__text">Log Out</span>
+        </button>
+        
         <!-- Subscription Indicator -->
         <div v-if="authStore.isAuthenticated" class="billing-indicator">
           <template v-if="loadingBalance">
@@ -1026,6 +1037,7 @@
     Building,
     Sparkles,
     Star,
+    LogOut,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
@@ -1424,6 +1436,12 @@
     window.dispatchEvent(new CustomEvent('auth-state-changed', { detail: { userId: authStore.user?.id } }));
     const targetRoute = getDefaultRoute(authStore.user);
     router.push(targetRoute);
+  }
+
+  /** Handle logout - always accessible */
+  async function handleLogout() {
+    await authStore.logout();
+    router.push('/');
   }
 
   /** Get displayed price for a tier based on billing interval */
@@ -2264,6 +2282,37 @@
     .billing-plans__grid {
       grid-template-columns: repeat(5, 1fr);
     }
+  }
+
+  /* ===== Logout Button ===== */
+  .billing-logout-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.875rem;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 8px;
+    color: #ef4444;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+    margin-right: 0.75rem;
+  }
+
+  .billing-logout-btn:hover {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.5);
+  }
+
+  .billing-logout-btn__icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .billing-logout-btn__text {
+    white-space: nowrap;
   }
 
   /* ===== Billing Tier Card ===== */

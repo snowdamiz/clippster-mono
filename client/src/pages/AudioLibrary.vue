@@ -67,7 +67,8 @@
           <p class="projects__subtitle">Manage your downloaded audio and playlists</p>
         </div>
 
-        <!-- Tab Navigation -->
+        <!-- X Spaces tab temporarily disabled (Space Studio / Twitter audio needs more work) -->
+        <!--
         <div class="audio-tabs">
           <button
             :class="['audio-tab', { 'audio-tab--active': activeTab === 'all' }]"
@@ -82,6 +83,7 @@
             X Spaces
           </button>
         </div>
+        -->
 
         <!-- Active Downloads Section -->
         <div v-if="getActiveDownloads().length > 0" class="projects__section">
@@ -111,13 +113,33 @@
 
         <!-- Downloaded Audio Section -->
         <div v-if="filteredAudio.length > 0" class="projects__section">
-          <h3 class="projects__section-header">Downloaded Audio</h3>
+          <div class="projects__section-header-row">
+            <h3 class="projects__section-header">Downloaded Audio</h3>
+            <div class="projects__section-actions">
+              <button
+                @click="playAllAudio"
+                class="projects-section-btn"
+                title="Play all"
+              >
+                <Play :size="14" />
+                Play All
+              </button>
+              <button
+                @click="shuffleAllAudio"
+                class="projects-section-btn"
+                title="Shuffle all"
+              >
+                <Shuffle :size="14" />
+                Shuffle All
+              </button>
+            </div>
+          </div>
           <div class="projects__grid">
             <div
               v-for="audio in filteredAudio"
               :key="audio.id"
               class="project-card project-card--audio"
-              @click="playAudio(audio)"
+              @click="handleAudioCardClick(audio)"
             >
               <!-- Selection Checkbox -->
               <div
@@ -228,8 +250,8 @@
         </div>
       </div>
 
-        <!-- Playlists Section (hidden on X Spaces tab) -->
-        <div v-if="playlists.length > 0 && activeTab === 'all'" class="projects__section">
+        <!-- Playlists Section -->
+        <div v-if="playlists.length > 0" class="projects__section">
           <div class="projects__section-header-row">
             <h3 class="projects__section-header">Playlists</h3>
           </div>
@@ -286,7 +308,7 @@
           <Music class="projects-empty__icon" />
           <h3 class="projects-empty__title">No Audio Files</h3>
           <p class="projects-empty__text">
-            Download audio from YouTube or X Spaces, or upload your own audio files
+            Download audio from YouTube, or upload your own audio files
           </p>
           <div class="projects-empty__actions">
             <button @click="$router.push('/download-audio')" class="projects-empty__button">
@@ -301,6 +323,12 @@
         </div>
       </div>
     </PageLayout>
+
+    <SpaceStudioDialog
+      :open="showSpaceStudioDialog"
+      :audio="selectedSpaceAudio"
+      @close="closeSpaceStudio"
+    />
 
     <!-- Create Playlist Dialog -->
     <Teleport to="body">
@@ -538,6 +566,30 @@
         </div>
       </Transition>
     </Teleport>
+
+    <ConfirmationModal
+      :show="showDeleteAudioDialog"
+      :title="deleteAudioTitle"
+      :message="deleteAudioMessage"
+      :item-name="deleteAudioItemName"
+      :suffix="deleteAudioSuffix"
+      confirm-text="Delete"
+      variant="destructive"
+      @close="handleDeleteAudioDialogClose"
+      @confirm="deleteAudioConfirmed"
+    />
+
+    <ConfirmationModal
+      :show="showDeletePlaylistDialog"
+      title="Delete Playlist"
+      message="Are you sure you want to delete"
+      :item-name="playlistToDelete?.name"
+      suffix="?"
+      confirm-text="Delete"
+      variant="destructive"
+      @close="handleDeletePlaylistDialogClose"
+      @confirm="deletePlaylistConfirmed"
+    />
   </div>
 </template>
 
@@ -545,10 +597,11 @@
   import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { useRouter } from 'vue-router';
   import { open } from '@tauri-apps/plugin-dialog';
-  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import PageLayout from '@/components/PageLayout.vue';
   import DownloadCard from '@/components/DownloadCard.vue';
+  import SpaceStudioDialog from '@/components/SpaceStudioDialog.vue';
+  import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import { useAudioDownloads } from '@/composables/useAudioDownloads';
   import { useAudioPlayer } from '@/composables/useAudioPlayer';
   import { useToast } from '@/composables/useToast';
@@ -557,6 +610,7 @@
     getAllDownloadedAudio,
     createDownloadedAudio,
     deleteDownloadedAudio,
+    updateDownloadedAudio,
   } from '@/services/database/downloaded-audio';
   import {
     getAllAudioPlaylists,
@@ -585,22 +639,29 @@
     X,
     Check,
     GripVertical,
+    Shuffle,
   } from 'lucide-vue-next';
 
   const router = useRouter();
   const { success, error: showError } = useToast();
   const { getActiveDownloads, uploadAudioFile } = useAudioDownloads();
-  const { playTrack, playPlaylist: playPlaylistTracks } = useAudioPlayer();
+  const { playPlaylist: playPlaylistTracks } = useAudioPlayer();
 
   const audioFiles = ref<DownloadedAudio[]>([]);
   const playlists = ref<AudioPlaylist[]>([]);
   const searchQuery = ref('');
-  const activeTab = ref<'all' | 'spaces'>('all');
   const showCreatePlaylistDialog = ref(false);
   const showAddToPlaylistDialog = ref(false);
   const showPlaylistDetailDialog = ref(false);
   const showEditPlaylistDialog = ref(false);
+  const showSpaceStudioDialog = ref(false);
+  const showDeleteAudioDialog = ref(false);
+  const showDeletePlaylistDialog = ref(false);
+  const bulkDeleteAudioMode = ref(false);
+  const audioToDelete = ref<DownloadedAudio | null>(null);
+  const playlistToDelete = ref<AudioPlaylist | null>(null);
   const selectedAudioForPlaylist = ref<DownloadedAudio | null>(null);
+  const selectedSpaceAudio = ref<DownloadedAudio | null>(null);
   const selectedPlaylist = ref<AudioPlaylist | null>(null);
   const playlistTracks = ref<Array<DownloadedAudio & { playlist_item_id: string }>>([]);
   const newPlaylistName = ref('');
@@ -613,20 +674,10 @@
   const dragOverTrackIndex = ref<number | null>(null);
   const isDragging = ref(false);
   
-  let downloadCompleteUnlisten: UnlistenFn | null = null;
-
   const filteredAudio = computed(() => {
-    let filtered = audioFiles.value;
-    
-    // Filter by tab
-    if (activeTab.value === 'spaces') {
-      // X Spaces tab: only show Twitter Spaces
-      filtered = filtered.filter(audio => audio.platform === 'Twitter');
-    } else {
-      // All Audio tab: exclude Twitter Spaces
-      filtered = filtered.filter(audio => audio.platform !== 'Twitter');
-    }
-    
+    // X Spaces (Twitter) hidden while that flow is disabled — same as former "Audio" tab
+    let filtered = audioFiles.value.filter(audio => audio.platform !== 'Twitter');
+
     // Filter by search query
     if (searchQuery.value) {
       const query = searchQuery.value.toLowerCase();
@@ -644,9 +695,32 @@
       console.log('[AudioLibrary] All audio files loaded:', audioFiles.value.length);
       console.log('[AudioLibrary] Audio files with platforms:', audioFiles.value.map(a => ({ title: a.title, platform: a.platform })));
       console.log('[AudioLibrary] Files with platform=Twitter:', audioFiles.value.filter(a => a.platform === 'Twitter').length);
+      void repairMissingThumbnails();
     } catch (error) {
       console.error('Failed to load audio files:', error);
       showError('Load Failed', 'Failed to load audio files');
+    }
+  }
+
+  async function repairMissingThumbnails() {
+    const missing = audioFiles.value.filter((audio) => !audio.thumbnail_url && audio.source_url);
+    if (missing.length === 0) return;
+
+    for (const audio of missing) {
+      const thumbPath = audio.file_path.replace(/\.[^.]+$/, '.jpg');
+      try {
+        await invoke('generate_audio_thumbnail', {
+          sourceUrl: audio.source_url,
+          outputPath: thumbPath,
+        });
+        await updateDownloadedAudio(audio.id, { thumbnail_url: thumbPath });
+        const index = audioFiles.value.findIndex((item) => item.id === audio.id);
+        if (index >= 0) {
+          audioFiles.value[index] = { ...audioFiles.value[index], thumbnail_url: thumbPath };
+        }
+      } catch (error) {
+        console.warn('[AudioLibrary] Failed to generate thumbnail for', audio.title, error);
+      }
     }
   }
 
@@ -673,23 +747,83 @@
     });
   }
 
-  async function deleteSelectedAudio() {
+  const deleteAudioTitle = computed(() => {
+    if (bulkDeleteAudioMode.value && selectedAudioIds.value.size > 0) {
+      const count = selectedAudioIds.value.size;
+      return `Delete ${count} Audio File${count > 1 ? 's' : ''}`;
+    }
+    return 'Delete Audio';
+  });
+
+  const deleteAudioMessage = computed(() => {
+    if (bulkDeleteAudioMode.value && selectedAudioIds.value.size > 0) {
+      const count = selectedAudioIds.value.size;
+      return `Are you sure you want to delete ${count} audio file${count > 1 ? 's' : ''}?`;
+    }
+    return 'Are you sure you want to delete';
+  });
+
+  const deleteAudioItemName = computed(() => {
+    if (bulkDeleteAudioMode.value) return undefined;
+    return audioToDelete.value?.title;
+  });
+
+  const deleteAudioSuffix = computed(() => {
+    if (bulkDeleteAudioMode.value) return '';
+    return '?';
+  });
+
+  function deleteSelectedAudio() {
     if (selectedAudioIds.value.size === 0) return;
 
-    const count = selectedAudioIds.value.size;
-    const confirmed = confirm(`Delete ${count} audio file${count > 1 ? 's' : ''}?`);
-    if (!confirmed) return;
+    bulkDeleteAudioMode.value = true;
+    audioToDelete.value = null;
+    showDeleteAudioDialog.value = true;
+  }
 
+  function deleteAudio(audio: DownloadedAudio) {
+    bulkDeleteAudioMode.value = false;
+    audioToDelete.value = audio;
+    showDeleteAudioDialog.value = true;
+  }
+
+  function handleDeleteAudioDialogClose() {
+    showDeleteAudioDialog.value = false;
+    audioToDelete.value = null;
+    bulkDeleteAudioMode.value = false;
+  }
+
+  async function deleteAudioEntry(audio: DownloadedAudio) {
+    await invoke('delete_audio_file', { filePath: audio.file_path });
+    await deleteDownloadedAudio(audio.id);
+  }
+
+  async function deleteAudioConfirmed() {
     try {
-      for (const audioId of selectedAudioIds.value) {
-        await deleteDownloadedAudio(audioId);
+      if (bulkDeleteAudioMode.value && selectedAudioIds.value.size > 0) {
+        const count = selectedAudioIds.value.size;
+        const toDelete = audioFiles.value.filter(a => selectedAudioIds.value.has(a.id));
+
+        for (const audio of toDelete) {
+          await deleteAudioEntry(audio);
+        }
+
+        success('Deleted', `Deleted ${count} audio file${count > 1 ? 's' : ''}`);
+        clearSelection();
+        await loadAudioFiles();
+      } else if (audioToDelete.value) {
+        const audio = audioToDelete.value;
+
+        await deleteAudioEntry(audio);
+
+        success('Deleted', `Deleted: ${audio.title}`);
+        await loadAudioFiles();
       }
-      success('Deleted', `Deleted ${count} audio file${count > 1 ? 's' : ''}`);
-      clearSelection();
-      await loadAudioFiles();
     } catch (error) {
-      console.error('Failed to delete audio files:', error);
-      showError('Delete Failed', 'Failed to delete selected audio files');
+      console.error('Delete error:', error);
+      showError('Delete Failed', error instanceof Error ? error.message : 'Failed to delete audio');
+    } finally {
+      handleDeleteAudioDialogClose();
     }
   }
 
@@ -722,7 +856,7 @@
   async function handleUploadAudio() {
     try {
       const selected = await open({
-        multiple: false,
+        multiple: true,
         filters: [{
           name: 'Audio',
           extensions: ['mp3', 'm4a', 'wav', 'flac', 'ogg']
@@ -731,17 +865,49 @@
 
       if (!selected) return;
 
-      const filePath = Array.isArray(selected) ? selected[0] : selected;
-      const fileName = filePath.split(/[\\/]/).pop() || 'Uploaded Audio';
-      const title = fileName.replace(/\.[^/.]+$/, ''); // Remove extension
+      const paths = Array.isArray(selected) ? selected : [selected];
+      if (paths.length === 0) return;
 
-      const result = await uploadAudioFile(filePath, title);
+      let ok = 0;
+      const failures: string[] = [];
+      let singleSuccessTitle: string | null = null;
 
-      if (result.success) {
-        success('Upload Complete', `Uploaded: ${title}`);
-        await loadAudioFiles();
+      for (const filePath of paths) {
+        const fileName = filePath.split(/[\\/]/).pop() || 'Uploaded Audio';
+        const title = fileName.replace(/\.[^/.]+$/, '');
+
+        try {
+          const result = await uploadAudioFile(filePath, title);
+          if (result.success) {
+            ok += 1;
+            if (paths.length === 1) singleSuccessTitle = title;
+          } else {
+            failures.push(`${title}: ${result.error || 'Unknown error'}`);
+          }
+        } catch (err) {
+          failures.push(`${title}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      await loadAudioFiles();
+
+      if (ok > 0 && failures.length === 0) {
+        success(
+          'Upload Complete',
+          ok === 1 && singleSuccessTitle
+            ? `Uploaded: ${singleSuccessTitle}`
+            : `Uploaded ${ok} file${ok === 1 ? '' : 's'}`
+        );
+      } else if (ok > 0 && failures.length > 0) {
+        showError(
+          'Some uploads failed',
+          `${ok} succeeded, ${failures.length} failed.\n${failures.slice(0, 5).join('\n')}${failures.length > 5 ? `\n… and ${failures.length - 5} more` : ''}`
+        );
       } else {
-        showError('Upload Failed', result.error || 'Unknown error');
+        showError(
+          'Upload Failed',
+          failures.slice(0, 5).join('\n') || 'All uploads failed'
+        );
       }
     } catch (error) {
       console.error('Upload error:', error);
@@ -749,44 +915,59 @@
     }
   }
 
-  async function deleteAudio(audio: DownloadedAudio) {
-    if (!confirm(`Delete "${audio.title}"?`)) return;
-
-    try {
-      // Delete from filesystem
-      await invoke('delete_audio_file', { filePath: audio.file_path });
-      
-      // Delete from database
-      await deleteDownloadedAudio(audio.id);
-      
-      success('Deleted', `Deleted: ${audio.title}`);
-      await loadAudioFiles();
-    } catch (error) {
-      console.error('Delete error:', error);
-      showError('Delete Failed', error instanceof Error ? error.message : String(error));
-    }
-  }
-
   async function createPlaylist() {
     if (!newPlaylistName.value.trim()) return;
 
     try {
-      await createAudioPlaylist(newPlaylistName.value.trim(), newPlaylistDescription.value.trim() || undefined);
-      success('Created', `Created playlist: ${newPlaylistName.value}`);
+      const newPlaylistId = await createAudioPlaylist(newPlaylistName.value.trim(), newPlaylistDescription.value.trim() || undefined);
+      const playlistName = newPlaylistName.value;
       
       newPlaylistName.value = '';
       newPlaylistDescription.value = '';
       showCreatePlaylistDialog.value = false;
       
       await loadPlaylists();
+
+      // If there's a pending audio selection or bulk selection, automatically add to the new playlist
+      if (selectedAudioForPlaylist.value || selectedAudioIds.value.size > 0) {
+        try {
+          await addToPlaylist(newPlaylistId, true); // skipDialog = true to avoid duplicate success message
+          
+          // Show combined success message
+          if (selectedAudioIds.value.size > 0) {
+            success('Created & Added', `Created "${playlistName}" and added ${selectedAudioIds.value.size} tracks`);
+          } else {
+            success('Created & Added', `Created "${playlistName}" and added track`);
+          }
+        } catch (error) {
+          console.error('Failed to add audio to new playlist:', error);
+          success('Created', `Created playlist: ${playlistName}`);
+          showError('Add Failed', 'Playlist created but failed to add track(s)');
+        }
+      } else {
+        // No pending selection, just show create success
+        success('Created', `Created playlist: ${playlistName}`);
+      }
     } catch (error) {
       console.error('Create playlist error:', error);
       showError('Create Failed', error instanceof Error ? error.message : String(error));
     }
   }
 
-  async function deletePlaylist(playlist: AudioPlaylist) {
-    if (!confirm(`Delete playlist "${playlist.name}"?`)) return;
+  function deletePlaylist(playlist: AudioPlaylist) {
+    playlistToDelete.value = playlist;
+    showDeletePlaylistDialog.value = true;
+  }
+
+  function handleDeletePlaylistDialogClose() {
+    showDeletePlaylistDialog.value = false;
+    playlistToDelete.value = null;
+  }
+
+  async function deletePlaylistConfirmed() {
+    if (!playlistToDelete.value) return;
+
+    const playlist = playlistToDelete.value;
 
     try {
       await deleteAudioPlaylist(playlist.id);
@@ -795,17 +976,54 @@
     } catch (error) {
       console.error('Delete playlist error:', error);
       showError('Delete Failed', error instanceof Error ? error.message : String(error));
+    } finally {
+      handleDeletePlaylistDialogClose();
     }
   }
 
-  function playAudio(audio: DownloadedAudio) {
-    playTrack({
+  function toAudioTrack(audio: DownloadedAudio) {
+    return {
       id: audio.id.toString(),
       title: audio.title,
       filePath: audio.file_path,
       duration: audio.duration ?? undefined,
       platform: audio.platform ?? undefined,
-    });
+    };
+  }
+
+  function playAudio(audio: DownloadedAudio) {
+    if (showPlaylistDetailDialog.value && playlistTracks.value.length > 0) {
+      const tracks = playlistTracks.value.map(toAudioTrack);
+      const startIndex = tracks.findIndex(t => t.id === audio.id.toString());
+      playPlaylistTracks(tracks, startIndex >= 0 ? startIndex : 0);
+      return;
+    }
+
+    const tracks = filteredAudio.value.map(toAudioTrack);
+    const startIndex = tracks.findIndex(t => t.id === audio.id.toString());
+    playPlaylistTracks(tracks, startIndex >= 0 ? startIndex : 0);
+  }
+
+  async function playAllAudio() {
+    const tracks = filteredAudio.value.map(toAudioTrack);
+    if (tracks.length === 0) return;
+    await playPlaylistTracks(tracks, 0);
+  }
+
+  async function shuffleAllAudio() {
+    const tracks = filteredAudio.value.map(toAudioTrack);
+    if (tracks.length === 0) return;
+    await playPlaylistTracks(tracks, 0, { shuffle: true });
+  }
+
+  function handleAudioCardClick(audio: DownloadedAudio) {
+    // Space Studio (X Spaces) entry disabled with tab — was: open dialog on spaces tab
+    playAudio(audio);
+  }
+
+  function closeSpaceStudio() {
+    showSpaceStudioDialog.value = false;
+    selectedSpaceAudio.value = null;
   }
 
   async function playPlaylist(playlist: AudioPlaylist) {
@@ -912,7 +1130,7 @@
     showAddToPlaylistDialog.value = true;
   }
 
-  async function addToPlaylist(playlistId: string) {
+  async function addToPlaylist(playlistId: string, skipDialog = false) {
     try {
       // Check if we're doing bulk add
       if (selectedAudioIds.value.size > 0) {
@@ -920,12 +1138,16 @@
         for (const audioId of selectedAudioIds.value) {
           await addAudioToPlaylist(playlistId, audioId);
         }
-        success('Added', `Added ${selectedAudioIds.value.size} tracks to playlist`);
+        if (!skipDialog) {
+          success('Added', `Added ${selectedAudioIds.value.size} tracks to playlist`);
+        }
         clearSelection();
       } else if (selectedAudioForPlaylist.value) {
         // Single add
         await addAudioToPlaylist(playlistId, selectedAudioForPlaylist.value.id.toString());
-        success('Added', `Added to playlist`);
+        if (!skipDialog) {
+          success('Added', `Added to playlist`);
+        }
         selectedAudioForPlaylist.value = null;
       }
       
@@ -1030,23 +1252,19 @@
       loadPlaylists(),
     ]);
 
-    // Listen for download complete events to refresh the library
-    downloadCompleteUnlisten = await listen<AudioDownloadResult>('download-complete', async (event) => {
-      console.log('[AudioLibrary] Received download-complete event:', event.payload);
-      if (event.payload.success) {
-        console.log('[AudioLibrary] Download completed successfully, reloading audio files');
-        await loadAudioFiles();
-        console.log('[AudioLibrary] Audio files reloaded, count:', audioFiles.value.length);
-      } else {
-        console.log('[AudioLibrary] Download failed:', event.payload.error);
-      }
-    });
+    // Listen for audio library updates (after database save is complete)
+    window.addEventListener('audio-library-updated', handleAudioLibraryUpdate);
   });
 
+  function handleAudioLibraryUpdate(event: Event) {
+    const customEvent = event as CustomEvent;
+    console.log('[AudioLibrary] Audio library updated:', customEvent.detail);
+    // Reload audio files after database has been updated
+    loadAudioFiles();
+  }
+
   onUnmounted(() => {
-    if (downloadCompleteUnlisten) {
-      downloadCompleteUnlisten();
-    }
+    window.removeEventListener('audio-library-updated', handleAudioLibraryUpdate);
   });
 </script>
 
@@ -1193,6 +1411,33 @@
     color: var(--sidebar-text-muted);
     margin: 0;
     padding-bottom: 0.1rem;
+  }
+
+  .projects__section-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .projects-section-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    color: var(--sidebar-text);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .projects-section-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
   }
 
   /* ===== Content Container ===== */

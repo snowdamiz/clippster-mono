@@ -1,14 +1,27 @@
 export interface Organization {
   id: number
   name: string
+  slug?: string
   description?: string
+  bio?: string
   logo_url?: string
+  website_url?: string
+  public_contact_email?: string
+  public_discord?: string | null
+  public_telegram?: string | null
+  content_type_tags?: string[]
   settings?: {
     allow_ai?: boolean
   }
   restriction_defaults?: OrganizationRestrictionDefaults
   inserted_at?: string
   updated_at?: string
+  setup_completed?: boolean
+  admin_price_cents?: number
+  subscription_tier?: string
+  subscription_status?: string
+  monthly_credits?: number
+  max_seats?: number
 }
 
 export interface OrganizationMember {
@@ -209,6 +222,27 @@ export interface SharedClipRecipient {
   posted_at: string | null
 }
 
+export interface CampaignResource {
+  id?: number
+  campaign_id?: number
+  resource_type: 'video' | 'audio' | 'reference_link' | 'brief' | 'file'
+  source_platform?: 'x' | 'youtube' | 'rumble' | 'kick' | 'twitch' | 'other' | null
+  url?: string | null
+  title?: string | null
+  description?: string | null
+  sort_order?: number
+  metadata?: Record<string, unknown>
+  download_target?: string | null
+}
+
+export interface CampaignSubmissionAnalytics {
+  trends: Record<string, unknown>
+  warnings: string[]
+  feed_match_status?: string | null
+  metrics_last_synced_at?: string | null
+  snapshots: Array<Record<string, unknown>>
+}
+
 export interface Campaign {
   id: number
   organization_id: number
@@ -240,9 +274,13 @@ export interface Campaign {
   clips_per_profile: number
   branding_profile_id: number | null
   assigned_streamer_ids: number[]
+  content_vertical?: string | null
+  campaign_goal?: string | null
+  content_style_tags?: string[]
+  resources?: CampaignResource[]
   inserted_at: string
   updated_at: string
-  organization?: { id: number; name: string; logo_url: string | null }
+  organization?: { id: number; name: string; logo_url: string | null; slug?: string | null }
   creator_profile?: CampaignCreatorProfile | null
   creator_profiles?: CampaignCreatorProfile[]
   participants_count?: number

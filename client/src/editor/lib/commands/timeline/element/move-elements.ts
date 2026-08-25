@@ -10,6 +10,8 @@ import {
 	isMainTrack,
 	validateElementTrackCompatibility,
 } from "../../../../lib/timeline/track-utils";
+import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
+import { closeGapAfterRemove, rearrangeOnTrack, ripplePushOverlaps } from "../../../../lib/timeline/ripple";
 
 export class MoveElementCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;
@@ -66,36 +68,39 @@ export class MoveElementCommand extends Command {
 			return;
 		}
 
-		const movedElement: TimelineElement = {
-			...element,
-			startTime: this.newStartTime,
-		};
-
+		const oldStartTime = element.startTime;
+		const oldDuration = element.duration;
 		const isSameTrack = this.sourceTrackId === this.targetTrackId;
-		const movedEndTime = movedElement.startTime + movedElement.duration;
 
 		let updatedTracks = tracksToUpdate.map((track) => {
 			if (isSameTrack && track.id === this.sourceTrackId) {
-				// Same track: update the moved element, then ripple-push any
-				// elements that now overlap with the moved element's new position
-				let elements = track.elements.map((el) =>
-					el.id === this.elementId ? movedElement : el,
+				const elements = rearrangeOnTrack(
+					track.elements as TimelineElement[],
+					this.elementId,
+					oldStartTime,
+					oldDuration,
+					this.newStartTime,
 				);
-				elements = this.ripplePush(elements, this.elementId, movedEndTime);
 				return { ...track, elements };
 			}
 
 			if (track.id === this.sourceTrackId) {
-				return {
-					...track,
-					elements: track.elements.filter((el) => el.id !== this.elementId),
-				};
+				const without = (track.elements as TimelineElement[]).filter(
+					(el) => el.id !== this.elementId,
+				);
+				const closed = closeGapAfterRemove(without, oldStartTime, oldDuration);
+				return { ...track, elements: closed };
 			}
 
 			if (track.id === this.targetTrackId) {
-				// Different track: add element, then ripple-push overlapping elements
-				let elements = [...track.elements, movedElement];
-				elements = this.ripplePush(elements, this.elementId, movedEndTime);
+				const movedElement: TimelineElement = {
+					...element,
+					startTime: this.newStartTime,
+				};
+				const elements = ripplePushOverlaps(
+					[...(track.elements as TimelineElement[]), movedElement],
+					this.elementId,
+				);
 				return { ...track, elements };
 			}
 
@@ -117,38 +122,8 @@ export class MoveElementCommand extends Command {
 			}
 		}
 
-		editor.timeline.updateTracks(updatedTracks);
-	}
-
-	/**
-	 * Sort elements by startTime, then iterate: if any element overlaps
-	 * the previous one, push it forward so it starts at the previous end.
-	 */
-	private ripplePush(
-		elements: TimelineElement[],
-		movedId: string,
-		movedEndTime: number,
-	): TimelineElement[] {
-		const sorted = [...elements].sort((a, b) => a.startTime - b.startTime);
-		const result: TimelineElement[] = [];
-
-		for (const el of sorted) {
-			if (el.id === movedId) {
-				result.push(el);
-				continue;
-			}
-			if (result.length > 0) {
-				const prev = result[result.length - 1];
-				const prevEnd = prev.startTime + prev.duration;
-				if (el.startTime < prevEnd - 0.001) {
-					result.push({ ...el, startTime: prevEnd });
-					continue;
-				}
-			}
-			result.push(el);
-		}
-
-		return result;
+		const fps = editor.project.getActive()?.settings?.fps ?? 30;
+		editor.timeline.updateTracks(collapseMainVideoTracksIfPresent(updatedTracks, fps));
 	}
 
 	undo(): void {

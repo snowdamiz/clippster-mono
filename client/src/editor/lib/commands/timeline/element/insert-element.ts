@@ -11,6 +11,7 @@ import { generateUUID } from "../../../../utils/id";
 import {
 	requiresMediaId,
 	wouldElementOverlap,
+	normalizeAudioInsertStartTime,
 } from "../../../../lib/timeline/element-utils";
 import {
 	buildEmptyTrack,
@@ -18,6 +19,8 @@ import {
 	getDefaultInsertIndexForTrack,
 	validateElementTrackCompatibility,
 } from "../../../../lib/timeline/track-utils";
+import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
+import { ripplePushOverlaps } from "../../../../lib/timeline/ripple";
 import type { MediaAsset } from "../../../../types/assets";
 import { TIMELINE_CONSTANTS } from "../../../../constants/timeline-constants";
 
@@ -110,7 +113,9 @@ export class InsertElementCommand extends Command {
 			}
 		}
 
-		editor.timeline.updateTracks(updatedTracks);
+		const fps = editor.project.getActive()?.settings?.fps ?? 30;
+		const packedTracks = collapseMainVideoTracksIfPresent(updatedTracks, fps);
+		editor.timeline.updateTracks(packedTracks);
 	}
 
 	undo(): void {
@@ -204,9 +209,20 @@ export class InsertElementCommand extends Command {
 				return null;
 			}
 
+			const normalizedElement = this.withNormalizedStartTime({
+				element,
+				targetTrackElements: targetTrack.elements,
+			});
+
 			const updatedTracks = tracks.map((track) =>
 				track.id === targetTrack.id
-					? { ...track, elements: [...track.elements, element] }
+					? {
+							...track,
+							elements: ripplePushOverlaps(
+								[...track.elements, normalizedElement],
+								normalizedElement.id,
+							),
+						}
 					: track,
 			) as TimelineTrack[];
 
@@ -248,9 +264,20 @@ export class InsertElementCommand extends Command {
 		});
 
 		if (existingTrack) {
+			const normalizedElement = this.withNormalizedStartTime({
+				element,
+				targetTrackElements: existingTrack.elements,
+			});
+
 			const updatedTracks = tracks.map((track) =>
 				track.id === existingTrack.id
-					? { ...track, elements: [...track.elements, element] }
+					? {
+							...track,
+							elements: ripplePushOverlaps(
+								[...track.elements, normalizedElement],
+								normalizedElement.id,
+							),
+						}
 					: track,
 			) as TimelineTrack[];
 
@@ -262,9 +289,13 @@ export class InsertElementCommand extends Command {
 			id: newTrackId,
 			type: trackType,
 		});
+		const normalizedElement = this.withNormalizedStartTime({
+			element,
+			targetTrackElements: [],
+		});
 		const newTrackWithElement = {
 			...newTrack,
-			elements: [...newTrack.elements, element],
+			elements: [...newTrack.elements, normalizedElement],
 		} as TimelineTrack;
 
 		const updatedTracks = [...tracks];
@@ -307,5 +338,26 @@ export class InsertElementCommand extends Command {
 			return "video";
 		}
 		return element.type;
+	}
+
+	private withNormalizedStartTime({
+		element,
+		targetTrackElements,
+	}: {
+		element: TimelineElement;
+		targetTrackElements: TimelineElement[];
+	}): TimelineElement {
+		if (element.type !== "audio") return element;
+
+		const editor = EditorCore.getInstance();
+		const fps = editor.project.getActive()?.settings?.fps ?? 30;
+		const startTime = normalizeAudioInsertStartTime({
+			startTime: element.startTime,
+			duration: element.duration,
+			existingElements: targetTrackElements,
+			fps,
+		});
+		if (startTime === element.startTime) return element;
+		return { ...element, startTime };
 	}
 }

@@ -14,6 +14,8 @@ export interface PlatformDownload {
   downloadUrl: string
   fileName: string
   label: string
+  releaseVersion?: string
+  releaseTag?: string
 }
 
 // Backend API endpoint for release info (cached server-side)
@@ -188,6 +190,8 @@ function buildDownloads(release: ReleaseResponse): PlatformDownload[] {
       downloadUrl: d.download_url,
       fileName: d.filename,
       label: d.label,
+      releaseVersion: release.version,
+      releaseTag: release.tag,
     }
   })
 }

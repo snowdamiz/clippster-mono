@@ -1,4 +1,7 @@
 import type { Command } from "../../lib/commands";
+import { MacroCommand } from "../../lib/commands/macro-command";
+
+const MAX_HISTORY = 20;
 
 export class CommandManager {
 	private history: Command[] = [];
@@ -6,9 +9,26 @@ export class CommandManager {
 
 	execute({ command }: { command: Command }): Command {
 		command.execute();
-		this.history.push(command);
+		const previous = this.history[this.history.length - 1];
+		if (
+			previous?.canMergeWith?.(command) &&
+			previous.mergeWith
+		) {
+			previous.mergeWith(command);
+		} else {
+			this.history.push(command);
+		}
+		if (this.history.length > MAX_HISTORY) {
+			this.history.shift();
+		}
 		this.redoStack = [];
 		return command;
+	}
+
+	/** Single undo step for multiple commands (e.g. batched inspector updates). */
+	executeMacro({ commands }: { commands: Command[] }): Command {
+		const macro = new MacroCommand(commands);
+		return this.execute({ command: macro });
 	}
 
 	undo(): void {

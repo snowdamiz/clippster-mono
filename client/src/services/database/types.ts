@@ -122,6 +122,15 @@ export interface Clip {
   // Cover image (from image editor)
   cover_image_id: string | null;
   cover_image_path: string | null;
+  // Subtitle settings
+  subtitle_enabled?: number;
+  subtitle_preset_id?: string | null;
+  subtitle_position_x?: number | null;
+  subtitle_position_y?: number | null;
+  subtitle_position_width?: number | null;
+  subtitle_settings?: string | null; // JSON string of full subtitle settings
+  /** JSON string: ClipTextBoxState — pill text overlay for workspace + POI */
+  clip_text_overlay?: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -171,6 +180,14 @@ export interface MonitoredStreamerRecord {
   stream_thumbnail_url?: string | null;
   segment_duration_minutes: number;
   auto_dvr: number | boolean; // When enabled, temp recording starts automatically when streamer goes live
+  persistent_auto_detect?: number | boolean;
+  persistent_record?: number | boolean;
+  auto_detect_prompt_id?: string | null;
+  auto_detect_prompt_content?: string | null;
+  auto_detect_use_creator_layout?: number | boolean;
+  auto_detect_creator_profile_id?: string | null;
+  record_use_creator_layout?: number | boolean;
+  record_creator_profile_id?: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -319,6 +336,12 @@ export interface ClipWithVersion extends Clip {
   current_version_segments?: ClipSegment[];
   // Multiple builds support
   builds?: ClipBuild[];
+  // Subtitle settings
+  subtitle_enabled?: number;
+  subtitle_preset_id?: string;
+  subtitle_position_x?: number;
+  subtitle_position_y?: number;
+  subtitle_position_width?: number;
 }
 
 // Clip with version data plus segment (child project) info for folder-level view
@@ -570,7 +593,8 @@ export interface CreatorProfile {
   auto_dvr_enabled?: number | boolean; // Auto DVR toggle (default off)
   disabled?: number | boolean; // Whether the profile is disabled
   layout_overlays: string | null; // JSON string of LayoutOverlay[]
-  scope: 'streamer' | 'global'; // 'streamer' = tied to platform links, 'global' = universal branding
+  clip_build_defaults?: string | null; // JSON string of CreatorClipBuildDefaults — opt-in clip-build defaults applied via "Use creator layout" on download
+  scope: 'streamer' | 'global' | 'personal_studio'; // 'streamer' = tied to platform links, 'global' = universal branding, 'personal_studio' = Clippster Studio
   user_id: string | null;
   created_at: number;
   updated_at: number;
@@ -609,6 +633,80 @@ export interface DownloadedAudio {
   sample_rate: number | null;
   channels: number | null;
   thumbnail_url: string | null;
+  user_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SpaceParticipant {
+  id: string;
+  name: string;
+  avatar_url: string | null;
+  role: 'host' | 'cohost' | 'speaker' | 'admin' | 'listener' | 'guest' | 'unknown';
+  /** X handle (without @) when known — used for secondary avatar fetching. */
+  twitter_username?: string;
+  /** Periscope user id from AudioSpaceById; Chatman replay events use this as guestRemoteID. */
+  periscope_user_id?: string;
+  /** Numeric X/Twitter rest_id from user_results. */
+  x_rest_id?: string;
+  /** Display name from AudioSpaceById when distinct from handle. */
+  display_name?: string;
+}
+
+/** Origin of a speaker segment; synthetic_* must not drive active-speaker highlights. */
+export type SpaceSpeakerSegmentSource =
+  | 'chatman_replay'
+  | 'periscope'
+  | 'hls_id3'
+  | 'manual'
+  | 'stage_join'
+  | 'synthetic_equal'
+  | 'synthetic_seed'
+  | 'unknown';
+
+export interface SpaceSpeakerSegment {
+  id: string;
+  speaker_id: string;
+  start: number;
+  end: number;
+  /** When omitted, UI derives from segment id prefix for backward compatibility. */
+  source?: SpaceSpeakerSegmentSource;
+  periscope_user_id?: string;
+  x_rest_id?: string;
+  username?: string;
+  display_name?: string;
+  avatar_url?: string | null;
+  role?: SpaceParticipant['role'];
+}
+
+/** Replay timeline feed: stage roster changes and speaker highlights (from snapshots / API cues). */
+export type SpaceTimelineEventType = 'joined_stage' | 'left_stage' | 'speaker_changed';
+
+export interface SpaceTimelineEvent {
+  id: string;
+  t: number;
+  type: SpaceTimelineEventType;
+  user_ids: string[];
+  detail?: string;
+}
+
+/** On-stage roster at playlist time `t` (seconds), from HLS ID3 when available. */
+export interface SpaceStageSnapshot {
+  id: string;
+  t: number;
+  on_stage_user_ids: string[];
+}
+
+export interface DownloadedSpaceMetadata {
+  id: string;
+  audio_id: string;
+  source_url: string | null;
+  title: string | null;
+  participants_json: string | null;
+  speaker_segments_json: string | null;
+  stage_snapshots_json: string | null;
+  /** Join/leave stage cues and related replay events (JSON array). */
+  timeline_events_json: string | null;
   user_id: string | null;
   created_at: number;
   updated_at: number;

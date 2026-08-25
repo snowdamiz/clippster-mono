@@ -203,10 +203,24 @@ export interface EmbossEffect extends VideoEffectBase {
 	angle: number; // 0-360 light direction
 }
 
+/** Blend modes for solid-color overlay — must match FFmpeg `map_blend_mode_ffmpeg` / canvas composite. */
+export type ColorOverlayBlendMode =
+	| "multiply"
+	| "screen"
+	| "overlay"
+	| "soft-light"
+	| "hard-light"
+	| "darken"
+	| "lighten"
+	| "color-dodge"
+	| "color-burn"
+	| "difference"
+	| "exclusion";
+
 export interface ColorOverlayEffect extends VideoEffectBase {
 	type: "colorOverlay";
 	color: string; // overlay color
-	blendMode: "multiply" | "screen" | "overlay" | "color"; // blend mode
+	blendMode: ColorOverlayBlendMode;
 }
 
 export interface DuotoneEffect extends VideoEffectBase {
@@ -328,6 +342,10 @@ export interface VideoEffectPreset {
 	category: VideoEffectCategory;
 	icon: string; // SVG path or identifier
 	defaults: VideoEffectDefaults;
+	/** User-facing presets must have an FFmpeg export implementation. */
+	exportSupported: boolean;
+	/** Name of the FFmpeg filter family / chain used by export. */
+	ffmpegFilterKind: string;
 }
 
-export type VideoEffectCategory = "blur" | "color" | "distortion" | "stylize" | "retro" | "cinematic";
+export type VideoEffectCategory = "blur" | "color" | "distortion" | "stylize" | "retro";

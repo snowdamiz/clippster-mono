@@ -59,7 +59,7 @@
 
       <!-- Detect Button (when not detecting and has clips) - Only show if AI is allowed -->
       <button
-        v-else-if="clips.length > 0 && isAIAllowed"
+        v-else-if="clips.length > 0 && isAIAllowed && !clipDetectionDisabled"
         @click="handleDetectClips"
         class="clips-tab-header-btn group flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-lg transition-all"
         title="Run clip detection again"
@@ -155,6 +155,22 @@
         <!-- Clips Grid -->
         <div class="space-y-6 py-4">
           <template v-for="section in clipSections" :key="section.title">
+            <div
+              v-if="section.title === 'Completed' && completedDownloadAllFileCount > 0"
+              class="flex items-center justify-end px-1 mb-1"
+            >
+              <button
+                type="button"
+                class="clips-tab-download-btn group flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium rounded-md transition-all disabled:opacity-50 disabled:pointer-events-none"
+                :disabled="isDownloadingAll"
+                title="Copy all built clip files to a folder"
+                @click.stop="onDownloadAllBuiltClips"
+              >
+                <LoaderIcon v-if="isDownloadingAll" class="h-3.5 w-3.5 animate-spin" />
+                <DownloadIcon v-else class="h-3.5 w-3.5" />
+                <span>Download all ({{ completedDownloadAllFileCount }})</span>
+              </button>
+            </div>
             <div class="flex items-center justify-between px-1" v-if="section.clips.length > 0">
               <div class="flex items-center gap-2">
                 <div class="h-1.5 w-1.5 rounded-full" :class="section.accentClass"></div>
@@ -208,6 +224,8 @@
                 <div class="flex gap-3 p-3 pl-4">
                   <!-- Thumbnail -->
                   <div class="flex-shrink-0 w-24 h-16 rounded-md overflow-hidden bg-black/30 border border-border/30 relative">
+                    <!-- Persisted/generated FFmpeg thumbnails — always prefer these over per-row FramedThumbnail.
+                         Framed thumbnails used full-VOD seeks per clip row (slow/failed on long sources). -->
                     <img
                       v-if="getClipThumbnail(clip.id)"
                       :src="getClipThumbnail(clip.id)!"
@@ -215,7 +233,11 @@
                       class="w-full h-full object-cover"
                     />
                     <div v-else class="w-full h-full flex items-center justify-center">
-                      <Video class="w-6 h-6 text-muted-foreground/40" />
+                      <LoaderIcon
+                        v-if="thumbnailStore.isLoading(clip.id)"
+                        class="w-5 h-5 animate-spin text-muted-foreground/50"
+                      />
+                      <Video v-else class="w-6 h-6 text-muted-foreground/40" />
                     </div>
 
                     <!-- Building Overlay -->
@@ -400,9 +422,9 @@
                               <!-- Divider -->
                               <div class="clips-tab-dropdown-divider h-px my-1 mx-2"></div>
 
-                              <!-- Build Clip -->
+                              <!-- Build / rebuild clip (new build or different aspect ratio) -->
                               <button
-                                v-if="clip.build_status !== 'building' && !hasCompletedBuilds(clip)"
+                                v-if="clip.build_status !== 'building'"
                                 class="clips-tab-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
                                 @click.stop="
                                   onBuildClip(clip);
@@ -410,7 +432,7 @@
                                 "
                               >
                                 <Hammer class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
-                                <span>Build Clip</span>
+                                <span>{{ hasCompletedBuilds(clip) ? 'Rebuild Clip' : 'Build Clip' }}</span>
                               </button>
 
                               <!-- Publish Now (only for found clips NOT yet built) -->
@@ -595,7 +617,7 @@
             <h4 class="text-sm font-semibold mb-2" style="color: var(--sidebar-text)">No Clips Yet</h4>
 
             <!-- AI Allowed: Show Detect Clips -->
-            <template v-if="isAIAllowed">
+            <template v-if="isAIAllowed && !clipDetectionDisabled">
               <p class="text-xs leading-relaxed mb-6 max-w-[200px]" style="color: var(--sidebar-text-muted)">
                 Start detecting clips from your video using AI-powered analysis
               </p>
@@ -607,6 +629,12 @@
                 <Sparkles class="h-3.5 w-3.5" />
                 Detect Clips
               </button>
+            </template>
+
+            <template v-else-if="isAIAllowed && clipDetectionDisabled">
+              <p class="text-xs leading-relaxed mb-6 max-w-[220px]" style="color: var(--sidebar-text-muted)">
+                This video is already a single clip. Transcribe, edit, and build it from here.
+              </p>
             </template>
 
             <!-- AI Not Allowed: Show Add Clip -->
@@ -639,12 +667,17 @@
       :default-intro="creatorDefaultIntro"
       :default-outro="creatorDefaultOutro"
       :thumbnail-url="videoThumbnailUrl"
-      :subtitle-settings="subtitleSettings"
+      :subtitle-settings="buildDialogSubtitleSettings"
       :initial-aspect-ratios="savedAspectRatios"
       :initial-framing-mode="savedFramingMode"
       :initial-framing-configs="savedFramingConfigs"
       :vod-preset-config="vodPresetConfig"
+      :creator-profile="creatorProfile"
       :creator-profile-server-id="creatorProfileServerId"
+      :is-subtitle-transcribing="isTranscribing"
+      :subtitle-transcribe-progress="transcribeProgress"
+      :subtitle-transcribe-stage="transcribeStage"
+      :subtitle-transcribe-message="transcribeMessage"
       @confirm="onBuildConfirm"
     />
   </div>
@@ -653,6 +686,8 @@
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
   import { formatDateTime } from '@/utils/dateTimeUtils';
+  import { parseTranscriptToWords, type WordInfo } from '@/utils/timelineUtils';
+  import { maxWordsChunkForAspectRatioString } from '@/utils/subtitleVisibleWords';
   import type { ClipWithVersion, ClipBuild, Prompt } from '@/services/database';
   import {
     PlayIcon,
@@ -683,11 +718,20 @@
   } from 'lucide-vue-next';
   import { useAIPermission } from '@/composables/useAIPermission';
   import { useInEditorClips } from '@/stores/useInEditorClips';
+  import { useClipThumbnailStore } from '@/stores/clipThumbnails';
   import ClipBuildSettingsDialog, { type BuildSettings, type BuildTarget, type IntroOutroItem } from './ClipBuildSettingsDialog.vue';
   import type { SubtitleSettings, WatermarkSettings, IntroOutroRef } from '@/types';
+  import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import type { AnalyzeSpeakersResponse } from '@/services/speaker-detection-api';
   import type { FramingStrategy as DbFramingStrategy, ParsedStrategyData } from '@/services/database/speaker-detection';
+  import { normalizeLocalFilePathForFs } from '@/utils/normalizeLocalFilePath';
+  import {
+    getSelfContainedClipDuration as getSharedSelfContainedClipDuration,
+    isSelfContainedClip as checkSelfContainedClip,
+    isClipBuildOutputPath as isClipBuildOutputPathUtil,
+    normalizePathForCompare,
+  } from '@/utils/selfContainedClip';
 
   // Helper to ensure value is boolean (handles string "true"/"false" and numbers)
   function toBoolean(value: unknown): boolean {
@@ -695,6 +739,118 @@
     if (typeof value === 'string') return value.toLowerCase() === 'true';
     if (typeof value === 'number') return value !== 0;
     return Boolean(value);
+  }
+
+  function cloneSubtitleSettings(settings: SubtitleSettings): SubtitleSettings {
+    return JSON.parse(JSON.stringify(settings)) as SubtitleSettings;
+  }
+
+  function mergeVodSubtitleDefaultsWithSavedSettings(
+    savedSettings: SubtitleSettings,
+    vodDefaults?: SubtitleSettings | null
+  ): SubtitleSettings {
+    if (!vodDefaults || typeof vodDefaults !== 'object') {
+      return cloneSubtitleSettings(savedSettings);
+    }
+
+    const defaults = cloneSubtitleSettings(vodDefaults);
+    const saved = cloneSubtitleSettings(savedSettings);
+    return {
+      ...defaults,
+      ...saved,
+      perRatioConfigs: {
+        ...(defaults.perRatioConfigs ?? {}),
+        ...(saved.perRatioConfigs ?? {}),
+      },
+    };
+  }
+
+  function mergeDraggedSubtitlePositionForBuild(
+    subtitleSettings: SubtitleSettings,
+    clip: {
+      subtitle_position_x?: number | null;
+      subtitle_position_y?: number | null;
+      subtitle_position_width?: number | null;
+    },
+    aspectRatios: string[]
+  ): SubtitleSettings {
+    // Apply DB columns whenever both coordinates exist. Do not use clipSubtitlePositionLooksUserPlaced:
+    // classic bottom (50,85) is still a valid saved workspace position; skipping merge left stale
+    // positionPercentage in JSON (e.g. middle-of-frame defaults) so FFmpeg disagreed with preview.
+    if (clip.subtitle_position_x == null || clip.subtitle_position_y == null) {
+      return subtitleSettings;
+    }
+
+    const ratios =
+      aspectRatios.length > 0
+        ? aspectRatios
+        : Object.keys(subtitleSettings.perRatioConfigs ?? {});
+    const targetRatios = ratios.length > 0 ? ratios : ['16:9'];
+    const perRatioConfigs = { ...(subtitleSettings.perRatioConfigs ?? {}) };
+    const { perRatioConfigs: _perRatioConfigs, ...rootSettingsForPreview } = subtitleSettings;
+
+    for (const ratio of targetRatios) {
+      const existing = perRatioConfigs[ratio] ?? {};
+      // Per-ratio positions configured in the POI editor MUST win over the
+      // workspace `subtitle_position_x/y` columns. Those columns reflect the
+      // single workspace drag (typically 16:9 default) — applying them to
+      // every ratio's per-ratio config would clobber positions the user
+      // intentionally set for each aspect ratio in the POI editor.
+      const hasPerRatioPosition =
+        existing.position?.x != null && existing.position?.y != null;
+      const ratioPositionX = hasPerRatioPosition
+        ? existing.position!.x
+        : clip.subtitle_position_x;
+      const ratioPositionY = hasPerRatioPosition
+        ? existing.position!.y
+        : clip.subtitle_position_y;
+
+      perRatioConfigs[ratio] = {
+        // Root settings act as DEFAULTS — they fill in fields that aren't
+        // explicitly set per-ratio so old per-ratio rows with missing/stale
+        // font sizes don't fall through to backend defaults and produce
+        // mismatched preview/export output.
+        ...rootSettingsForPreview,
+        // Existing per-ratio values WIN over root for fields the user has
+        // explicitly customized in the build dialog / POI editor (e.g.
+        // animationStyle, multiColorEnabled, fontSize, colorPalette). The
+        // previous order (root after existing) silently clobbered every
+        // per-ratio override the user had just configured.
+        ...existing,
+        // Resolve final position/width: per-ratio overrides the user set in
+        // the POI editor take precedence; otherwise fall back to the
+        // workspace position columns so single-ratio workspace drags still
+        // propagate to ratios that haven't been customized.
+        position: { x: ratioPositionX, y: ratioPositionY },
+        positionPercentage: ratioPositionY,
+        maxWidth:
+          existing.maxWidth ??
+          clip.subtitle_position_width ??
+          subtitleSettings.maxWidth,
+      };
+    }
+
+    return {
+      ...subtitleSettings,
+      positionPercentage: clip.subtitle_position_y,
+      maxWidth: clip.subtitle_position_width ?? subtitleSettings.maxWidth,
+      perRatioConfigs,
+    };
+  }
+
+  /**
+   * Resolve max words per subtitle chunk for a target aspect ratio.
+   * Mirrors VideoPlayer.vue `maxWordsForAspectRatio` so the export's chunking matches the preview
+   * (otherwise wide builds can ship 3-word frames while the preview shows 6 words per page).
+   */
+  function getSubtitleMaxWordsForAspectRatio(
+    ratio: string,
+    fallback?: number,
+    animationStyle?: string
+  ): number {
+    const computed = maxWordsChunkForAspectRatioString(ratio, animationStyle);
+    if (Number.isFinite(computed) && computed > 0) return computed;
+    return fallback || 4;
   }
 
   // Helper function to convert server API response to Rust-expected format
@@ -833,6 +989,273 @@
     };
   }
 
+  function tokenizeTranscriptText(text: string): string[] {
+    return text.trim().split(/\s+/).filter(Boolean);
+  }
+
+  function getTranscriptText(value: unknown): string {
+    if (typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed?.text === 'string') return parsed.text.trim();
+        if (Array.isArray(parsed?.segments)) {
+          return parsed.segments.map((seg: any) => seg?.text).filter(Boolean).join(' ').trim();
+        }
+      } catch {
+        // Plain transcript text can legitimately look JSON-ish.
+      }
+    }
+    return trimmed;
+  }
+
+  function overlayTranscriptTextOnTimedWords(text: string, timedWords: WordInfo[]): WordInfo[] {
+    const tokens = tokenizeTranscriptText(text);
+    if (tokens.length === 0 || timedWords.length === 0) return timedWords;
+    const overlaid = timedWords.slice(0, tokens.length).map((word, index) => ({
+      ...word,
+      word: tokens[index],
+    }));
+
+    if (tokens.length > timedWords.length) {
+      const lastWord = timedWords[timedWords.length - 1];
+      const step = Math.max(0.05, lastWord.end - lastWord.start);
+      tokens.slice(timedWords.length).forEach((word, index) => {
+        const start = lastWord.end + step * index;
+        overlaid.push({ word, start, end: start + step });
+      });
+    }
+
+    return overlaid;
+  }
+
+  function normalizeWordsForSourceSegment(words: WordInfo[], startTime: number, endTime: number): WordInfo[] {
+    if (words.length === 0) return [];
+    const duration = Math.max(0.001, endTime - startTime);
+    const firstStart = words[0]?.start ?? 0;
+    const lastEnd = words[words.length - 1]?.end ?? 0;
+    const looksRelative = firstStart < duration + 1 && lastEnd <= duration + 1;
+    const sourceWords = looksRelative
+      ? words.map((word) => ({ ...word, start: word.start + startTime, end: word.end + startTime }))
+      : words;
+    return sourceWords.filter((word) => word.end > startTime && word.start < endTime);
+  }
+
+  function getSourceSegmentsForSelfContainedClip(clip: ClipWithVersion): any[] {
+    if (clip.current_version_segments && clip.current_version_segments.length > 0) {
+      return clip.current_version_segments;
+    }
+
+    const startTime = clip.current_version_start_time ?? clip.start_time ?? 0;
+    const endTime = clip.current_version_end_time ?? clip.end_time ?? 0;
+    if (endTime <= startTime) return [];
+
+    return [
+      {
+        id: `source-${clip.id}`,
+        clip_version_id: clip.current_version_id || '',
+        segment_index: 0,
+        start_time: startTime,
+        end_time: endTime,
+        duration: endTime - startTime,
+        transcript: null,
+        transcript_raw_json: null,
+        audio_peaks: null,
+        created_at: Date.now(),
+      },
+    ];
+  }
+
+  function rebaseWordsToClipStart(words: WordInfo[], clipStart: number, clipDuration: number): WordInfo[] {
+    return words
+      .map((word) => ({
+        ...word,
+        start: Math.max(0, word.start - clipStart),
+        end: Math.min(clipDuration, word.end - clipStart),
+      }))
+      .filter((word) => word.end > word.start);
+  }
+
+  function wordsOverlapSegments(words: WordInfo[] | undefined, segments: any[]): boolean {
+    if (!words || words.length === 0 || segments.length === 0) return false;
+    return segments.some((segment) => {
+      const startTime = Number(segment.start_time) || 0;
+      const endTime = Number(segment.end_time) || startTime;
+      return words.some((word) => word.end > startTime && word.start < endTime);
+    });
+  }
+
+  function normalizeTranscriptToken(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  function getClipAnchorTranscriptText(clip: ClipWithVersion): string {
+    const segments = clip.current_version_segments || [];
+    for (const segment of segments) {
+      const text = getTranscriptText(segment.transcript);
+      if (text) return text;
+    }
+    return getTranscriptText((clip as any).combined_transcript) || getTranscriptText(clip.current_version_description);
+  }
+
+  function findTranscriptAnchorOffset(clip: ClipWithVersion, words: WordInfo[]): number {
+    const anchorTokens = tokenizeTranscriptText(getClipAnchorTranscriptText(clip))
+      .map(normalizeTranscriptToken)
+      .filter(Boolean);
+    if (anchorTokens.length < 2 || words.length === 0) return 0;
+
+    const probe = anchorTokens.slice(0, Math.min(anchorTokens.length, 8));
+    const wordTokens = words.map((word) => normalizeTranscriptToken(word.word));
+    const minimumMatches = Math.min(probe.length, 4);
+
+    for (let start = 0; start < wordTokens.length; start++) {
+      let matched = 0;
+      for (let offset = 0; offset < probe.length && start + offset < wordTokens.length; offset++) {
+        if (wordTokens[start + offset] !== probe[offset]) break;
+        matched++;
+      }
+      if (matched >= minimumMatches) return words[start].start;
+    }
+
+    return 0;
+  }
+
+  function trimSelfContainedTranscriptToAnchor<T extends { words: WordInfo[]; whisperSegments: any[]; text: string }>(
+    clip: ClipWithVersion,
+    transcript: T
+  ): T {
+    const offset = findTranscriptAnchorOffset(clip, transcript.words);
+    if (offset <= 0.25) return transcript;
+
+    const words = transcript.words
+      .filter((word) => word.end > offset)
+      .map((word) => ({
+        ...word,
+        start: Math.max(0, word.start - offset),
+        end: Math.max(0, word.end - offset),
+      }))
+      .filter((word) => word.end > word.start);
+
+    const whisperSegments = transcript.whisperSegments
+      .filter((segment: any) => segment.end > offset)
+      .map((segment: any) => ({
+        ...segment,
+        start: Math.max(0, segment.start - offset),
+        end: Math.max(0, segment.end - offset),
+        words: Array.isArray(segment.words)
+          ? segment.words
+              .filter((word: WordInfo) => word.end > offset)
+              .map((word: WordInfo) => ({
+                ...word,
+                start: Math.max(0, word.start - offset),
+                end: Math.max(0, word.end - offset),
+              }))
+              .filter((word: WordInfo) => word.end > word.start)
+          : undefined,
+      }))
+      .filter((segment: any) => segment.end > segment.start);
+
+    console.log('[ClipsTab] Trimmed self-contained transcript to clip anchor:', {
+      clipId: clip.id,
+      offset,
+      firstWordBefore: transcript.words[0]?.word,
+      firstWordAfter: words[0]?.word,
+      wordsBefore: transcript.words.length,
+      wordsAfter: words.length,
+    });
+
+    return { ...transcript, words, whisperSegments };
+  }
+
+  function buildEditedSubtitleWordsForExport(segments: any[], transcriptWords: WordInfo[]): WordInfo[] {
+    const out: WordInfo[] = [];
+    for (const segment of segments) {
+      const startTime = Number(segment.start_time) || 0;
+      const endTime = Number(segment.end_time) || startTime;
+      const transcriptText = getTranscriptText(segment.transcript);
+
+      let timedWords: WordInfo[] = [];
+      if (typeof segment.transcript_raw_json === 'string' && segment.transcript_raw_json.trim()) {
+        timedWords = normalizeWordsForSourceSegment(
+          parseTranscriptToWords(segment.transcript_raw_json),
+          startTime,
+          endTime
+        );
+      }
+      if (timedWords.length === 0) {
+        timedWords = normalizeWordsForSourceSegment(transcriptWords, startTime, endTime);
+      }
+
+      out.push(...overlayTranscriptTextOnTimedWords(transcriptText, timedWords));
+    }
+
+    return out.sort((a, b) => a.start - b.start);
+  }
+
+  function isSelfContainedLiveClip(clip: ClipWithVersion): boolean {
+    return checkSelfContainedClip(clip);
+  }
+
+  function isClipBuildOutputPath(filePath: string | null | undefined): boolean {
+    return isClipBuildOutputPathUtil(filePath);
+  }
+
+  function getSelfContainedClipDuration(clip: ClipWithVersion): number {
+    return getSharedSelfContainedClipDuration(clip);
+  }
+
+  async function loadSelfContainedClipTranscript(
+    projectId: string,
+    clip: ClipWithVersion
+  ): Promise<{ words: WordInfo[]; whisperSegments: any[]; text: string } | null> {
+    if (!clip.file_path) return null;
+
+    const { getRawVideosByProjectId, getTranscriptByRawVideoId, getTranscriptSegments } = await import('@/services/database');
+    const rawVideos = await getRawVideosByProjectId(projectId);
+    const normalizedClipPath = normalizePathForCompare(clip.file_path);
+    const rawVideo = rawVideos.find((video) => normalizePathForCompare(video.file_path) === normalizedClipPath);
+    if (!rawVideo) return null;
+
+    const transcript = await getTranscriptByRawVideoId(rawVideo.id);
+    if (!transcript?.raw_json) return null;
+
+    const words = parseTranscriptToWords(transcript.raw_json);
+    const dbSegments = await getTranscriptSegments(transcript.id);
+    let text = transcript.text || '';
+    let whisperSegments: any[] = [];
+
+    try {
+      const parsed = JSON.parse(transcript.raw_json);
+      if (Array.isArray(parsed?.segments)) {
+        whisperSegments = parsed.segments.map((segment: any, index: number) => ({
+          id: segment.id ?? index,
+          start: Number(segment.start) || 0,
+          end: Number(segment.end) || 0,
+          text: segment.text || '',
+          words: Array.isArray(segment.words)
+            ? segment.words.map((word: any) => ({
+                word: String(word.word || '').trim(),
+                start: Number(word.start) || 0,
+                end: Number(word.end) || 0,
+                confidence: word.confidence,
+              }))
+            : undefined,
+        }));
+      }
+      if (!text && typeof parsed?.text === 'string') text = parsed.text;
+    } catch {
+      // Keep DB transcript text / parsed words fallback.
+    }
+
+    if (!text && dbSegments.length > 0) {
+      text = dbSegments.map((segment) => segment.text).filter(Boolean).join(' ');
+    }
+
+    return { words, whisperSegments, text };
+  }
+
   // Props
   interface ClipsTabProps {
     projectId: string | null;
@@ -849,6 +1272,7 @@
     prompts: Prompt[];
     transcriptData: any;
     subtitleSettings?: SubtitleSettings | null;
+    subtitleSettingsClipId?: string | null;
     maxWordsForAspectRatio?: number;
     watermarkSettings?: WatermarkSettings | null;
     // Creator profile default assets (auto-applied when building clips)
@@ -861,6 +1285,11 @@
     playOnCardClick?: boolean;
     showAdjustClipButton?: boolean;
     vodPresetConfig?: import('@/types').ActiveVodPresetConfig | null;
+    clipDetectionDisabled?: boolean;
+    isTranscribing?: boolean;
+    transcribeProgress?: number;
+    transcribeStage?: string;
+    transcribeMessage?: string;
   }
 
   const props = withDefaults(defineProps<ClipsTabProps>(), {
@@ -878,6 +1307,7 @@
     videoDuration: 0,
     prompts: () => [],
     subtitleSettings: null,
+    subtitleSettingsClipId: null,
     maxWordsForAspectRatio: 3,
     watermarkSettings: null,
     creatorDefaultIntro: null,
@@ -888,6 +1318,11 @@
     playOnCardClick: false,
     vodPresetConfig: null,
     showAdjustClipButton: false,
+    clipDetectionDisabled: false,
+    isTranscribing: false,
+    transcribeProgress: 0,
+    transcribeStage: '',
+    transcribeMessage: '',
   });
 
   // Emits
@@ -904,6 +1339,7 @@
     addClip: [];
     adjustClip: [clipId: string];
     publishNow: [clip: ClipWithVersion];
+    buildDialogOpen: [open: boolean];
   }>();
 
   // AI Permission check
@@ -913,12 +1349,150 @@
   const inEditorStore = useInEditorClips();
   inEditorStore.hydrate();
 
+  // Persistent thumbnail cache store
+  const thumbnailStore = useClipThumbnailStore();
+
   // State
   const hoveredClipId = ref<string | null>(null);
+  const isDownloadingAll = ref(false);
   const clipsScrollContainer = ref<HTMLElement | null>(null);
   const clipElements = ref<Map<string, HTMLElement>>(new Map());
   const showBuildSettingsDialog = ref(false);
   const clipToBuild = ref<ClipWithVersion | null>(null);
+
+  watch(showBuildSettingsDialog, (open) => {
+    if (!open) emit('buildDialogOpen', false);
+  });
+
+  // Keep the open build/POI clip in sync when subtitles are enabled from Edit Subtitles.
+  watch(
+    () => [props.subtitleSettings, props.subtitleSettingsClipId] as const,
+    ([settings, clipId]) => {
+      if (!showBuildSettingsDialog.value || !clipToBuild.value || !settings?.enabled) return;
+      if (clipToBuild.value.id !== clipId) return;
+      const clip = clipToBuild.value as any;
+      clip.subtitle_enabled = true;
+      clip.subtitle_preset_id = settings.selectedPresetId ?? clip.subtitle_preset_id;
+      clip.subtitle_settings = settings;
+    }
+  );
+
+  // Derive SubtitleSettings from the clip being built (reads preset from DB data on the clip)
+  const derivedSubtitleSettings = computed((): SubtitleSettings | null => {
+    const clip = clipToBuild.value as any;
+    console.log('[ClipsTab] derivedSubtitleSettings computed, clip:', {
+      clipId: clip?.id,
+      clipName: clip?.name,
+      subtitle_enabled: clip?.subtitle_enabled,
+      subtitle_preset_id: clip?.subtitle_preset_id,
+      has_subtitle_settings: !!clip?.subtitle_settings,
+      subtitle_settings_type: typeof clip?.subtitle_settings,
+      subtitle_settings_length: clip?.subtitle_settings?.length
+    });
+    
+    if (!clip?.subtitle_enabled || !clip?.subtitle_preset_id) {
+      console.log('[ClipsTab] No subtitles enabled or no preset ID, returning null');
+      return null;
+    }
+    
+    // First, try to load full settings from database if they exist
+    if (clip.subtitle_settings) {
+      try {
+        console.log('[ClipsTab] Raw subtitle_settings from clip:', {
+          type: typeof clip.subtitle_settings,
+          value: clip.subtitle_settings,
+          clipId: clip.id,
+          clipName: clip.name
+        });
+        const savedSettings = typeof clip.subtitle_settings === 'string' 
+          ? JSON.parse(clip.subtitle_settings) 
+          : clip.subtitle_settings;
+        console.log('[ClipsTab] Using saved subtitle settings from database for clip build:', {
+          animationStyle: savedSettings.animationStyle,
+          border1Width: savedSettings.border1Width,
+          border1Color: savedSettings.border1Color,
+          border2Width: savedSettings.border2Width,
+          border2Color: savedSettings.border2Color,
+          fontSize: savedSettings.fontSize,
+          fontFamily: savedSettings.fontFamily,
+          textColor: savedSettings.textColor,
+          highlightColor: savedSettings.highlightColor
+        });
+        return savedSettings;
+      } catch (error) {
+        console.error('[ClipsTab] Failed to parse subtitle_settings JSON:', error);
+        // Fall back to preset below
+      }
+    } else {
+      console.log('[ClipsTab] No subtitle_settings in clip, falling back to preset:', clip.subtitle_preset_id);
+    }
+    
+    // Fall back to preset if no full settings saved
+    const preset = CAPTION_PRESETS.find((p) => p.id === clip.subtitle_preset_id);
+    if (!preset) return null;
+    const fontWeightMap: Record<string, number> = {
+      normal: 400, bold: 700,
+      '100': 100, '200': 200, '300': 300, '400': 400,
+      '500': 500, '600': 600, '700': 700, '800': 800, '900': 900,
+    };
+    const animMap: Record<string, SubtitleSettings['animationStyle']> = {
+      none: 'none', karaoke: 'karaoke', 'karaoke-scale': 'karaoke',
+      zoom: 'zoom', pop: 'pop', glow: 'glow',
+      'box-highlight': 'box-highlight', typewriter: 'typewriter', wave: 'wave',
+    };
+    return {
+      enabled: true,
+      selectedPresetId: preset.id,
+      fontFamily: preset.fontFamily,
+      fontSize: preset.fontSize,
+      fontWeight: fontWeightMap[String(preset.fontWeight)] ?? 700,
+      textColor: preset.color,
+      backgroundColor: preset.backgroundColor,
+      backgroundEnabled: preset.backgroundColor !== 'transparent',
+      position: 'bottom' as const,
+      positionPercentage: clip.subtitle_position_y ?? 85,
+      maxWidth: clip.subtitle_position_width ?? 90,
+      animationStyle: animMap[preset.highlightStyle] ?? 'none',
+      highlightColor: preset.highlightColor,
+      border1Width: preset.stroke?.width ?? 0,
+      border1Color: preset.stroke?.color ?? '#000000',
+      border2Width: 0,
+      border2Color: '#000000',
+      shadowBlur: preset.shadow?.blur ?? 0,
+      shadowOffsetX: preset.shadow?.offsetX ?? 0,
+      shadowOffsetY: preset.shadow?.offsetY ?? 0,
+      shadowColor: preset.shadow?.color ?? '#000000',
+      lineHeight: preset.lineHeight,
+      letterSpacing: preset.letterSpacing,
+      textAlign: 'center' as const,
+      textOffsetX: 0,
+      textOffsetY: 0,
+      padding: 0,
+      borderRadius: 0,
+      wordSpacing: 0.35,
+      multiColorEnabled: false,
+      multiColorMode: 'default' as const,
+      colorPalette: [],
+    };
+  });
+
+  const buildDialogSubtitleSettings = computed((): SubtitleSettings | null => {
+    const vodDefaults = props.vodPresetConfig?.subtitleDefaults;
+    const shouldUseLivePreviewSettings =
+      !!props.subtitleSettings &&
+      !!clipToBuild.value &&
+      clipToBuild.value.id === props.subtitleSettingsClipId;
+    const clipSettings = shouldUseLivePreviewSettings
+      ? props.subtitleSettings
+      : (derivedSubtitleSettings.value ?? props.subtitleSettings ?? null);
+    if (clipSettings) {
+      return mergeVodSubtitleDefaultsWithSavedSettings(clipSettings, vodDefaults);
+    }
+    if (vodDefaults && typeof vodDefaults === 'object') {
+      return cloneSubtitleSettings(vodDefaults);
+    }
+    return null;
+  });
   const openDownloadDropdownId = ref<string | null>(null);
   const dropdownButtonRefs = ref<Map<string, HTMLElement>>(new Map());
 
@@ -931,8 +1505,8 @@
   const savedFramingMode = ref<'auto' | 'manual' | null>(null);
   const savedFramingConfigs = ref<import('@/types').ManualFramingConfigs | null>(null);
 
-  // Thumbnail cache for clip cards
-  const clipThumbnailCache = ref<Map<string, string>>(new Map());
+  // Use persistent thumbnail cache from store (no longer component-scoped)
+  // const clipThumbnailCache = ref<Map<string, string>>(new Map()); // REMOVED - now using store
 
   // Track if thumbnails are being loaded
   const isLoadingThumbnails = ref(false);
@@ -944,7 +1518,7 @@
   const allThumbnailsReady = computed(() => {
     if (props.clips.length === 0) return true;
     // All clips should either have a thumbnail in cache, or not need one (no built_thumbnail_path)
-    return props.clips.every((clip) => clipThumbnailCache.value.has(clip.id) || !clip.built_thumbnail_path);
+    return props.clips.every((clip) => thumbnailStore.hasThumbnail(clip.id) || !clip.built_thumbnail_path);
   });
 
   // Close dropdowns when clicking outside
@@ -979,10 +1553,10 @@
       // Only reload thumbnails if clips actually changed (new clips added or clips modified)
       const hasNewClips = !oldClips || newClips.length !== oldClips.length;
       const hasClipsWithNewThumbnails = newClips.some(
-        (clip) => clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
+        (clip) => clip.built_thumbnail_path && !thumbnailStore.hasThumbnail(clip.id)
       );
       const hasClipsNeedingThumbnails = newClips.some(
-        (clip) => !clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
+        (clip) => !clip.built_thumbnail_path && !thumbnailStore.hasThumbnail(clip.id)
       );
 
       if (hasNewClips || hasClipsWithNewThumbnails || hasClipsNeedingThumbnails) {
@@ -1005,47 +1579,14 @@
     { deep: true, immediate: true }
   );
 
-  // Load clip thumbnails into cache
+  // Load clip thumbnails into persistent cache
   async function loadClipThumbnails() {
-    const clipsWithThumbnails = props.clips.filter(
-      (clip) => clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
-    );
-
-    // Load existing thumbnails if there are any
-    if (clipsWithThumbnails.length > 0) {
-      const { invoke } = await import('@tauri-apps/api/core');
-
-      let hasNewThumbnails = false;
-
-      // Load thumbnails in parallel (max 5 at a time)
-      const batchSize = 5;
-      for (let i = 0; i < clipsWithThumbnails.length; i += batchSize) {
-        const batch = clipsWithThumbnails.slice(i, i + batchSize);
-        await Promise.all(
-          batch.map(async (clip) => {
-            try {
-              const dataUrl = await invoke<string>('read_file_as_data_url', {
-                filePath: clip.built_thumbnail_path,
-              });
-              clipThumbnailCache.value.set(clip.id, dataUrl);
-              hasNewThumbnails = true;
-            } catch (err) {
-              console.warn(`[ClipsTab] Failed to load thumbnail for clip ${clip.id}:`, err);
-            }
-          })
-        );
-      }
-
-      // Trigger Vue reactivity by replacing the Map reference
-      // This is necessary because Map.set() mutations don't trigger re-renders
-      if (hasNewThumbnails) {
-        clipThumbnailCache.value = new Map(clipThumbnailCache.value);
-      }
-    }
+    // Use store's batch loading method - it handles deduplication and caching
+    await thumbnailStore.loadThumbnails(props.clips);
 
     // Generate missing thumbnails sequentially (one at a time) for clips without built_thumbnail_path.
     // This covers cases where ProjectWorkspaceDialog is opened directly without going through Projects.vue.
-    generateMissingThumbnails();
+    await generateMissingThumbnails();
   }
 
   // Load which clips are already part of a video editor project
@@ -1103,7 +1644,7 @@
     if (thumbnailGenerationInProgress) return;
 
     const clipsWithoutThumbnails = props.clips.filter(
-      (clip) => !clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
+      (clip) => !clip.built_thumbnail_path && !thumbnailStore.hasThumbnail(clip.id)
     );
 
     if (clipsWithoutThumbnails.length === 0) return;
@@ -1150,7 +1691,7 @@
           continue;
         }
 
-        const videoPath = rawVideos[0].file_path;
+        const videoPath = normalizeLocalFilePathForFs(rawVideos[0].file_path);
 
         // Generate thumbnails ONE AT A TIME to prevent spawning too many FFmpeg processes
         for (const clip of projectClips) {
@@ -1168,18 +1709,17 @@
             const dataUrl = await invoke<string>('read_file_as_data_url', {
               filePath: thumbnailPath,
             });
-            clipThumbnailCache.value.set(clip.id, dataUrl);
+            thumbnailStore.setThumbnail(clip.id, dataUrl);
             hasNewThumbnails = true;
 
-            // Trigger Vue reactivity after each thumbnail so they appear incrementally
-            clipThumbnailCache.value = new Map(clipThumbnailCache.value);
-
             // Persist to database (non-blocking)
-            updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
-              builtThumbnailPath: thumbnailPath,
-            }).catch((err) => {
+            try {
+              await updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
+                builtThumbnailPath: thumbnailPath,
+              });
+            } catch (err) {
               console.warn(`[ClipsTab] Failed to persist thumbnail path for clip ${clip.id}:`, err);
-            });
+            }
           } catch (err) {
             console.warn(`[ClipsTab] Failed to generate thumbnail for clip ${clip.id}:`, err);
           }
@@ -1189,15 +1729,12 @@
       thumbnailGenerationInProgress = false;
     }
 
-    // Final reactivity trigger in case the incremental ones were batched
-    if (hasNewThumbnails) {
-      clipThumbnailCache.value = new Map(clipThumbnailCache.value);
-    }
+    // No need for final reactivity trigger - store handles it
   }
 
   // Get thumbnail URL for a clip
   function getClipThumbnail(clipId: string): string | null {
-    return clipThumbnailCache.value.get(clipId) || null;
+    return thumbnailStore.getThumbnail(clipId);
   }
 
   // Sorted clips: by virality descending across all runs
@@ -1509,6 +2046,24 @@
   function getDownloadableFilesCount(clip: ClipWithVersion): number {
     return getDownloadableFiles(clip).length;
   }
+
+  /** Source paths for all built outputs in the Completed section (same order as the list). */
+  const completedDownloadSourcePaths = computed(() => {
+    const sec = clipSections.value.find((s) => s.title === 'Completed');
+    if (!sec?.clips.length) return [];
+    const paths: string[] = [];
+    for (const clip of sec.clips) {
+      const downloadable = getDownloadableFiles(clip);
+      if (downloadable.length > 0) {
+        for (const f of downloadable) paths.push(f.filePath);
+      } else if (clip.built_file_path) {
+        paths.push(clip.built_file_path);
+      }
+    }
+    return paths;
+  });
+
+  const completedDownloadAllFileCount = computed(() => completedDownloadSourcePaths.value.length);
 
   function getLoadingMessage(): string {
     switch (props.generationStage) {
@@ -1936,9 +2491,33 @@
     savedFramingMode.value = null;
     savedFramingConfigs.value = null;
 
+    // CRITICAL: Fetch latest subtitle columns from DB so the build dialog matches what was saved
+    try {
+      const { getClip } = await import('@/services/database/clips');
+      const dbClip = await getClip(clip.id);
+      if (dbClip) {
+        const c = clip as any;
+        c.subtitle_settings = dbClip.subtitle_settings;
+        c.subtitle_preset_id = dbClip.subtitle_preset_id;
+        c.subtitle_enabled = dbClip.subtitle_enabled;
+        c.subtitle_position_x = dbClip.subtitle_position_x;
+        c.subtitle_position_y = dbClip.subtitle_position_y;
+        c.subtitle_position_width = dbClip.subtitle_position_width;
+        console.log('[ClipsTab] Merged subtitle fields from database:', {
+          clipId: clip.id,
+          hasSubtitleSettings: !!clip.subtitle_settings,
+          subtitleSettingsType: typeof clip.subtitle_settings,
+          presetId: c.subtitle_preset_id,
+        });
+      }
+    } catch (error) {
+      console.warn('[ClipsTab] Failed to load subtitle fields from database:', error);
+    }
+
     // Open dialog immediately (don't wait for async operations)
     clipToBuild.value = clip;
     showBuildSettingsDialog.value = true;
+    emit('buildDialogOpen', true);
 
     // Load saved aspect framing settings in background (dialog will use defaults until loaded)
     loadSavedAspectSettings(clip.id);
@@ -1986,7 +2565,36 @@
     }
     isBuildInProgress.value = true;
 
+    // Optimistically flip the clip into the "building" state so the loading
+    // overlay appears the instant the user clicks Build. Without this, the UI
+    // doesn't show the loader until `updateClipBuildStatus` (DB write) and the
+    // final `emit('refreshClips')` further below complete — which can take
+    // several seconds because of the dynamic imports, DB reads, and per-target
+    // setup that run between here and the actual build invoke. The DB write
+    // and refresh further down reconcile this mutation, so there's no drift.
+    const clipMut = clip as any;
+    clipMut.build_status = 'building';
+    clipMut.build_progress = 0;
+    clipMut.build_error = null;
+
     try {
+      // Refresh clip subtitle payload from DB so build uses latest saved editor state (not stale in-memory clip)
+      try {
+        const { getClip } = await import('@/services/database/clips');
+        const fresh = await getClip(clip.id);
+        if (fresh) {
+          const c = clip as any;
+          c.subtitle_settings = fresh.subtitle_settings;
+          c.subtitle_preset_id = fresh.subtitle_preset_id;
+          c.subtitle_enabled = fresh.subtitle_enabled;
+          c.subtitle_position_x = fresh.subtitle_position_x;
+          c.subtitle_position_y = fresh.subtitle_position_y;
+          c.subtitle_position_width = fresh.subtitle_position_width;
+        }
+      } catch (e) {
+        console.warn('[ClipsTab] Could not refresh clip before build invoke:', e);
+      }
+
       console.log('[ClipsTab] Starting clip build for:', clip.id, 'with settings:', settings);
       console.log('[ClipsTab] Aspect ratios received:', settings.aspectRatios);
 
@@ -1996,7 +2604,7 @@
       // → groups: [{target, ratios:['16:9','9:16']}, {target, ratios:['16:9']}]
       interface TargetGroup {
         key: string;
-        type: 'org' | 'campaign' | 'legacy';
+        type: 'org' | 'campaign' | 'personal' | 'legacy';
         target: BuildTarget | null;
         ratios: string[];
         campaignId: number | null;
@@ -2018,7 +2626,7 @@
               target: bt,
               ratios: [],
               campaignId: bt.type === 'campaign' ? bt.id : null,
-              brandingProfileId: bt.brandingProfileId,
+              brandingProfileId: bt.brandingProfileId ?? null,
               organizationId: bt.organizationId,
               selectedCampaign: bt.type === 'campaign' ? settings.selectedCampaign : null,
             });
@@ -2067,17 +2675,15 @@
       // clip.file_path may point to a previous build output (e.g., clip_at_112527_9-16_2.mp4)
       // which would cause FFmpeg to fail when building different aspect ratios
       let projectVideo: { file_path: string; duration?: number | null };
+      const isBuildOutput = isClipBuildOutputPath(clip.file_path);
+      const selfContainedClip = isSelfContainedLiveClip(clip) && !isBuildOutput;
 
-      // Check if file_path points to a build output directory (contains /run-\d+/ or /clips/)
-      const isBuildOutput = clip.file_path && (
-        clip.file_path.includes('\\run-') || 
-        clip.file_path.includes('/run-') ||
-        clip.file_path.match(/clip_at_\d+_\d+-\d+_\d+\.mp4$/)
-      );
-
-      if (clip.file_path && !isBuildOutput) {
-        // Manual clip with valid source file_path (not a build output)
-        console.log('[ClipsTab] Using manual clip file_path:', clip.file_path);
+      if ((selfContainedClip || clip.file_path) && clip.file_path && !isBuildOutput) {
+        // Manual/auto live clips are self-contained files. Build the whole file from 0s.
+        console.log('[ClipsTab] Using clip file_path as build source:', {
+          filePath: clip.file_path,
+          selfContainedClip,
+        });
         projectVideo = {
           file_path: clip.file_path,
           duration: clip.duration || undefined,
@@ -2103,8 +2709,40 @@
       // The clip object in props may have stale data if user edited segments on timeline
       const { getClipSegmentsByVersionId } = await import('@/services/database/clip-segments');
       let freshSegments = clip.current_version_segments || [];
+      const selfContainedTranscript = selfContainedClip
+        ? await loadSelfContainedClipTranscript(clip.project_id || props.projectId, clip)
+        : null;
+      const anchoredSelfContainedTranscript =
+        selfContainedClip && selfContainedTranscript
+          ? trimSelfContainedTranscriptToAnchor(clip, selfContainedTranscript)
+          : null;
 
-      if (clip.current_version_id) {
+      if (selfContainedClip) {
+        const duration = getSelfContainedClipDuration(clip);
+        if (duration <= 0) {
+          throw new Error('Invalid clip duration for auto-detected clip build');
+        }
+
+        freshSegments = [
+          {
+            id: `self-contained-${clip.id}`,
+            clip_version_id: clip.current_version_id || '',
+            segment_index: 0,
+            start_time: 0,
+            end_time: duration,
+            duration,
+            transcript: selfContainedTranscript?.text || null,
+            transcript_raw_json: null,
+            audio_peaks: null,
+            created_at: Date.now(),
+          },
+        ];
+        console.log('[ClipsTab] Building self-contained auto/live clip as 0-based full file:', {
+          clipId: clip.id,
+          duration,
+          hasOwnTranscript: !!selfContainedTranscript,
+        });
+      } else if (clip.current_version_id) {
         try {
           const dbSegments = await getClipSegmentsByVersionId(clip.current_version_id);
           if (dbSegments.length > 0) {
@@ -2162,120 +2800,172 @@
       const { invoke } = await import('@tauri-apps/api/core');
 
       // Get transcript data from props (already computed in parent)
-      const transcriptWords = props.transcriptData?.words || [];
-      const transcriptSegments = props.transcriptData?.whisperSegments || [];
+      const sourceSegmentsForSelfContained = selfContainedClip ? getSourceSegmentsForSelfContainedClip(clip) : [];
+      const useSourceTranscriptForSelfContained =
+        selfContainedClip && !anchoredSelfContainedTranscript && wordsOverlapSegments(props.transcriptData?.words, sourceSegmentsForSelfContained);
+      const sourceTranscriptWords = useSourceTranscriptForSelfContained
+        ? props.transcriptData?.words || []
+        : anchoredSelfContainedTranscript?.words || props.transcriptData?.words || [];
+      const shouldUseSourceWindowForSubtitles =
+        selfContainedClip && (useSourceTranscriptForSelfContained || !anchoredSelfContainedTranscript);
+      const sourceSegmentsForSubtitles =
+        shouldUseSourceWindowForSubtitles
+          ? sourceSegmentsForSelfContained
+          : freshSegments;
+      const sourceBasedTranscriptWords = buildEditedSubtitleWordsForExport(
+        sourceSegmentsForSubtitles,
+        sourceTranscriptWords
+      );
+      const transcriptWords =
+        shouldUseSourceWindowForSubtitles && sourceSegmentsForSubtitles.length > 0
+          ? rebaseWordsToClipStart(
+              sourceBasedTranscriptWords,
+              Number(sourceSegmentsForSubtitles[0].start_time) || 0,
+              getSelfContainedClipDuration(clip)
+            )
+          : sourceBasedTranscriptWords;
+      const transcriptSegments = useSourceTranscriptForSelfContained
+        ? props.transcriptData?.whisperSegments || []
+        : anchoredSelfContainedTranscript?.whisperSegments || props.transcriptData?.whisperSegments || [];
 
-      // Prepare watermark settings if enabled
+      // Prepare watermark settings if enabled (reused for personal workspace fallback per target)
       // Now supports per-aspect-ratio watermark files - each ratio can use a completely different watermark
       // Uses resolveWatermarkById to handle both local IDs and org-asset-{serverId} format
-      let watermarkSettings = null;
-      if (settings.watermark && settings.watermark.enabled && settings.watermark.watermarkId) {
-        const defaultWatermark = await resolveWatermarkById(settings.watermark.watermarkId);
-        if (defaultWatermark) {
-          // Build per-ratio settings with resolved file paths
-          // Each ratio can have its own watermark image AND position settings
-          const buildPerRatioSettings: Record<
-            string,
-            {
-              watermarkId: string | null;
-              filePath: string | null;
-              width: number | null;
-              height: number | null;
-              position: { x: number; y: number; opacity: number; scale: number } | null;
-            } | null
-          > = {};
+      type ResolvedWatermarkPayload = {
+        enabled: true;
+        watermarkId: string;
+        filePath: string;
+        width: number;
+        height: number;
+        positionX: number;
+        positionY: number;
+        opacity: number;
+        scale: number;
+        perRatioSettings: Record<
+          string,
+          {
+            watermarkId: string | null;
+            filePath: string | null;
+            width: number | null;
+            height: number | null;
+            position: { x: number; y: number; opacity: number; scale: number } | null;
+          } | null
+        >;
+      };
+      async function buildWatermarkInvokePayload(
+        wm: WatermarkSettings | null | undefined
+      ): Promise<ResolvedWatermarkPayload | null> {
+        if (!wm?.enabled || !wm.watermarkId) return null;
+        const defaultWatermark = await resolveWatermarkById(wm.watermarkId);
+        if (!defaultWatermark) return null;
+        const buildPerRatioSettings: Record<
+          string,
+          {
+            watermarkId: string | null;
+            filePath: string | null;
+            width: number | null;
+            height: number | null;
+            position: { x: number; y: number; opacity: number; scale: number } | null;
+          } | null
+        > = {};
 
-          // Process each aspect ratio that might be built
-          const allRatios = ['16:9', '9:16', '1:1', '4:5'];
-          for (const ratio of allRatios) {
-            const perRatioConfig =
-              settings.watermark.perRatioSettings?.[ratio as keyof typeof settings.watermark.perRatioSettings];
+        const allRatios = ['16:9', '9:16', '1:1', '4:5'];
+        for (const ratio of allRatios) {
+          const perRatioConfig = wm.perRatioSettings?.[ratio as keyof typeof wm.perRatioSettings];
 
-            if (perRatioConfig === null) {
-              // Watermark explicitly disabled for this ratio
-              buildPerRatioSettings[ratio] = null;
-              console.log(`[ClipsTab] Watermark disabled for ${ratio}`);
-            } else if (perRatioConfig) {
-              // Ratio has specific settings
-              const ratioWatermarkId = perRatioConfig.watermarkId;
-              let ratioFilePath = defaultWatermark.filePath;
-              let ratioWidth = defaultWatermark.width;
-              let ratioHeight = defaultWatermark.height;
+          if (perRatioConfig === null) {
+            buildPerRatioSettings[ratio] = null;
+            console.log(`[ClipsTab] Watermark disabled for ${ratio}`);
+          } else if (perRatioConfig) {
+            const ratioWatermarkId = perRatioConfig.watermarkId;
+            let ratioFilePath = defaultWatermark.filePath;
+            let ratioWidth = defaultWatermark.width;
+            let ratioHeight = defaultWatermark.height;
 
-              // If this ratio has a different watermark, fetch its file info
-              // resolveWatermarkById handles both local IDs and org-asset-{serverId} format
-              if (ratioWatermarkId && ratioWatermarkId !== settings.watermark.watermarkId) {
-                const ratioWatermark = await resolveWatermarkById(ratioWatermarkId);
-                if (ratioWatermark) {
-                  ratioFilePath = ratioWatermark.filePath;
-                  ratioWidth = ratioWatermark.width;
-                  ratioHeight = ratioWatermark.height;
-                  console.log(`[ClipsTab] Using different watermark for ${ratio}:`, ratioWatermarkId);
-                }
+            if (ratioWatermarkId && ratioWatermarkId !== wm.watermarkId) {
+              const ratioWatermark = await resolveWatermarkById(ratioWatermarkId);
+              if (ratioWatermark) {
+                ratioFilePath = ratioWatermark.filePath;
+                ratioWidth = ratioWatermark.width;
+                ratioHeight = ratioWatermark.height;
+                console.log(`[ClipsTab] Using different watermark for ${ratio}:`, ratioWatermarkId);
               }
-
-              // Use per-ratio position if available, otherwise fall back to default
-              const position = perRatioConfig.position || {
-                x: settings.watermark.positionX,
-                y: settings.watermark.positionY,
-                opacity: settings.watermark.opacity,
-                scale: settings.watermark.scale,
-              };
-
-              buildPerRatioSettings[ratio] = {
-                watermarkId: ratioWatermarkId || settings.watermark.watermarkId,
-                filePath: ratioFilePath,
-                width: ratioWidth,
-                height: ratioHeight,
-                position,
-              };
-            } else {
-              // No per-ratio config, use default watermark with default position
-              buildPerRatioSettings[ratio] = {
-                watermarkId: settings.watermark.watermarkId,
-                filePath: defaultWatermark.filePath,
-                width: defaultWatermark.width,
-                height: defaultWatermark.height,
-                position: {
-                  x: settings.watermark.positionX,
-                  y: settings.watermark.positionY,
-                  opacity: settings.watermark.opacity,
-                  scale: settings.watermark.scale,
-                },
-              };
             }
-          }
 
-          watermarkSettings = {
-            enabled: true,
-            watermarkId: settings.watermark.watermarkId,
-            filePath: defaultWatermark.filePath,
-            width: defaultWatermark.width,
-            height: defaultWatermark.height,
-            positionX: settings.watermark.positionX,
-            positionY: settings.watermark.positionY,
-            opacity: settings.watermark.opacity,
-            scale: settings.watermark.scale,
-            // Per-ratio settings with resolved file paths
-            perRatioSettings: buildPerRatioSettings,
-          };
-          const defaultWatermarkId = settings.watermark?.watermarkId;
-          console.log('[ClipsTab] Watermark settings for build:', {
-            defaultWatermarkId: defaultWatermarkId,
-            defaultFilePath: defaultWatermark.filePath,
-            selectedRatios: settings.aspectRatios,
-            perRatioSettings: Object.entries(buildPerRatioSettings).map(([ratio, config]) => ({
-              ratio,
-              enabled: config !== null,
-              watermarkId: config?.watermarkId,
-              hasCustomWatermark: config?.watermarkId !== defaultWatermarkId,
-            })),
-          });
+            const position = perRatioConfig.position || {
+              x: wm.positionX,
+              y: wm.positionY,
+              opacity: wm.opacity,
+              scale: wm.scale,
+            };
+
+            buildPerRatioSettings[ratio] = {
+              watermarkId: ratioWatermarkId || wm.watermarkId,
+              filePath: ratioFilePath,
+              width: ratioWidth,
+              height: ratioHeight,
+              position,
+            };
+          } else {
+            buildPerRatioSettings[ratio] = {
+              watermarkId: wm.watermarkId,
+              filePath: defaultWatermark.filePath,
+              width: defaultWatermark.width,
+              height: defaultWatermark.height,
+              position: {
+                x: wm.positionX,
+                y: wm.positionY,
+                opacity: wm.opacity,
+                scale: wm.scale,
+              },
+            };
+          }
         }
+
+        const payload: ResolvedWatermarkPayload = {
+          enabled: true,
+          watermarkId: wm.watermarkId,
+          filePath: defaultWatermark.filePath,
+          width: defaultWatermark.width ?? 0,
+          height: defaultWatermark.height ?? 0,
+          positionX: wm.positionX,
+          positionY: wm.positionY,
+          opacity: wm.opacity,
+          scale: wm.scale,
+          perRatioSettings: buildPerRatioSettings,
+        };
+        const defaultWatermarkId = wm.watermarkId;
+        console.log('[ClipsTab] Watermark settings for build:', {
+          defaultWatermarkId: defaultWatermarkId,
+          defaultFilePath: defaultWatermark.filePath,
+          selectedRatios: settings.aspectRatios,
+          perRatioSettings: Object.entries(buildPerRatioSettings).map(([ratio, config]) => ({
+            ratio,
+            enabled: config !== null,
+            watermarkId: config?.watermarkId,
+            hasCustomWatermark: config?.watermarkId !== defaultWatermarkId,
+          })),
+        });
+        return payload;
+      }
+
+      let watermarkSettings = await buildWatermarkInvokePayload(settings.watermark);
+
+      let cachedPersonalWatermarkFallback: ResolvedWatermarkPayload | null | undefined;
+      async function getPersonalWatermarkFallback(): Promise<ResolvedWatermarkPayload | null> {
+        if (cachedPersonalWatermarkFallback !== undefined) return cachedPersonalWatermarkFallback;
+        if (!props.watermarkSettings?.enabled || !props.watermarkSettings.watermarkId) {
+          cachedPersonalWatermarkFallback = null;
+          return null;
+        }
+        cachedPersonalWatermarkFallback = await buildWatermarkInvokePayload(props.watermarkSettings);
+        return cachedPersonalWatermarkFallback;
       }
 
       // Load audio settings for the project
       const { getProjectAudioSettings, getFullClipEdit } = await import('@/services/database');
+      const { getClip } = await import('@/services/database/clips');
+      const { parseClipTextOverlayJson, mergeClipTextBoxIntoExportOverlays } = await import('@/utils/clipTextBox');
       let audioSettings = null;
       let videoFilterSegments = null; // Time-based video filter segments from clip editor
       let textOverlaysForExport: Array<{
@@ -2603,27 +3293,196 @@
         }
       }
 
+      // Refresh clip data from database to get latest subtitle settings
+      // (user may have changed settings in POI editor during this session)
+      // getClip already imported above in this function (clip edit / text overlay load)
+      const freshClipData = await getClip(clip.id);
+      let effectiveSubtitleSettings: SubtitleSettings | null = null;
+
+      const vodSubtitleDefaults = props.vodPresetConfig?.subtitleDefaults;
+      const shouldUseLivePreviewSettingsForBuild =
+        !!props.subtitleSettings && clip.id === props.subtitleSettingsClipId;
+
+      if (shouldUseLivePreviewSettingsForBuild) {
+        effectiveSubtitleSettings = mergeVodSubtitleDefaultsWithSavedSettings(
+          props.subtitleSettings,
+          vodSubtitleDefaults
+        );
+        console.log('[ClipsTab] Using LIVE preview subtitle settings for current clip build');
+      } else if (freshClipData?.subtitle_settings) {
+        try {
+          const savedSettings = typeof freshClipData.subtitle_settings === 'string'
+            ? JSON.parse(freshClipData.subtitle_settings)
+            : freshClipData.subtitle_settings;
+          effectiveSubtitleSettings = mergeVodSubtitleDefaultsWithSavedSettings(savedSettings, vodSubtitleDefaults);
+          console.log('[ClipsTab] Loaded FRESH subtitle settings from database:', {
+            animationStyle: savedSettings.animationStyle,
+            hasPerRatioConfigs: !!savedSettings.perRatioConfigs,
+            perRatioKeys: savedSettings.perRatioConfigs ? Object.keys(savedSettings.perRatioConfigs) : [],
+          });
+        } catch (error) {
+          console.error('[ClipsTab] Failed to parse fresh subtitle_settings:', error);
+        }
+      } else if (vodSubtitleDefaults && typeof vodSubtitleDefaults === 'object') {
+        effectiveSubtitleSettings = cloneSubtitleSettings(vodSubtitleDefaults);
+        console.log('[ClipsTab] Using VOD pre-edit subtitle defaults for build');
+      }
+
+      // Fall back to derived settings or prop if fresh load failed
+      if (!effectiveSubtitleSettings) {
+        effectiveSubtitleSettings = buildDialogSubtitleSettings.value;
+        console.log('[ClipsTab] Using fallback subtitle settings for build');
+      }
+
+      if (effectiveSubtitleSettings && freshClipData) {
+        effectiveSubtitleSettings = mergeDraggedSubtitlePositionForBuild(
+          effectiveSubtitleSettings,
+          freshClipData,
+          settings.aspectRatios
+        );
+      }
+
+      // Merge clip text box from DB (outside audio/clip-edit try so POI saves are never skipped)
+      try {
+        const clipTextRaw = freshClipData?.clip_text_overlay ?? (await getClip(clip.id))?.clip_text_overlay;
+        const clipTextBoxState = parseClipTextOverlayJson(clipTextRaw);
+        console.log('[ClipsTab] Clip text box state from DB:', {
+          clipId: clip.id,
+          hasClipTextOverlay: !!clipTextRaw,
+          rawLength: clipTextRaw?.length ?? 0,
+          parsed: clipTextBoxState,
+          enabled: clipTextBoxState?.enabled,
+          perRatioKeys: clipTextBoxState?.perRatioConfigs
+            ? Object.keys(clipTextBoxState.perRatioConfigs)
+            : [],
+        });
+        textOverlaysForExport = mergeClipTextBoxIntoExportOverlays(
+          clip.id,
+          textOverlaysForExport,
+          clipTextRaw
+        );
+        if (clipTextBoxState?.enabled) {
+          const clipBoxPayload = textOverlaysForExport?.find((o) => o.id === `${clip.id}-clip-text-box`);
+          if (clipBoxPayload) {
+            console.log('[ClipsTab] Merged workspace/POI clip text box for export:', {
+              text: clipBoxPayload.text,
+              startTime: clipBoxPayload.startTime,
+              endTime: clipBoxPayload.endTime,
+              positionX: clipBoxPayload.positionX,
+              positionY: clipBoxPayload.positionY,
+              hasPerRatioConfigs: !!clipBoxPayload.perRatioConfigs,
+              perRatioKeys: clipBoxPayload.perRatioConfigs
+                ? Object.keys(clipBoxPayload.perRatioConfigs)
+                : [],
+            });
+          }
+        }
+      } catch (clipTextErr) {
+        console.warn('[ClipsTab] Could not load clip text box for export:', clipTextErr);
+      }
+
+      // Helper: build SubtitleSettings from a CAPTION_PRESETS id
+      function buildSettingsFromPresetId(presetId: string): Partial<SubtitleSettings> | null {
+        const preset = CAPTION_PRESETS.find((p) => p.id === presetId);
+        if (!preset) return null;
+        const fontWeightMap: Record<string, number> = {
+          normal: 400, bold: 700,
+          '100': 100, '200': 200, '300': 300, '400': 400,
+          '500': 500, '600': 600, '700': 700, '800': 800, '900': 900,
+        };
+        const animMap: Record<string, SubtitleSettings['animationStyle']> = {
+          none: 'none', karaoke: 'karaoke', 'karaoke-scale': 'karaoke',
+          zoom: 'zoom', pop: 'pop', glow: 'glow',
+          'box-highlight': 'box-highlight', typewriter: 'typewriter', wave: 'wave',
+        };
+        return {
+          selectedPresetId: preset.id,
+          fontFamily: preset.fontFamily,
+          fontSize: preset.fontSize,
+          fontWeight: fontWeightMap[String(preset.fontWeight)] ?? 700,
+          textColor: preset.color,
+          backgroundColor: preset.backgroundColor,
+          backgroundEnabled: preset.backgroundColor !== 'transparent',
+          animationStyle: animMap[preset.highlightStyle] ?? 'none',
+          highlightColor: preset.highlightColor,
+          border1Width: preset.stroke?.width ?? 0,
+          border1Color: preset.stroke?.color ?? '#000000',
+          shadowBlur: preset.shadow?.blur ?? 0,
+          shadowOffsetX: preset.shadow?.offsetX ?? 0,
+          shadowOffsetY: preset.shadow?.offsetY ?? 0,
+          shadowColor: preset.shadow?.color ?? '#000000',
+          lineHeight: preset.lineHeight,
+          letterSpacing: preset.letterSpacing,
+          wordSpacing: 0.35,
+        };
+      }
+
       // Pass all build settings to the backend (including build number for filename)
-      // Subtitle settings come directly from SubtitlesTab via props
       // Merge perRatioConfigs from clip editor with subtitleOverrides from build settings
       // perRatioConfigs from clip editor takes precedence (user configured in editor)
       let finalSubtitleOverrides = settings.subtitleOverrides || null;
-      if (props.subtitleSettings?.perRatioConfigs) {
-        const editorOverrides: Record<string, { fontSize: number; positionPercentage: number; maxWidth?: number }> = {};
-        for (const [ratio, config] of Object.entries(props.subtitleSettings.perRatioConfigs)) {
-          editorOverrides[ratio] = {
-            fontSize: config.fontSize,
-            positionPercentage: config.position?.y ?? config.positionPercentage, // Use Y position as the vertical position percentage
-            maxWidth: config.maxWidth,
-          };
+      if (effectiveSubtitleSettings?.perRatioConfigs) {
+        const editorOverrides: Record<string, any> = {};
+        for (const [ratio, config] of Object.entries(effectiveSubtitleSettings.perRatioConfigs)) {
+          // Include ALL properties from perRatioConfigs, not just position/size
+          // The Rust code can read any property from the per_ratio_override JSON
+          editorOverrides[ratio] = { ...config };
         }
-        // Merge: editor configs override build settings configs
         finalSubtitleOverrides = {
           ...(settings.subtitleOverrides || {}),
           ...editorOverrides,
         };
-        console.log('[ClipsTab] Merged subtitle overrides from clip editor:', finalSubtitleOverrides);
       }
+
+      // Apply per-ratio presetId overrides: if a ratio has a presetId, use preset as BASE
+      // and let user's custom settings override the preset defaults.
+      // IMPORTANT: User's settings (...ov) must come AFTER preset (...presetOverride)
+      // so that user's custom animationStyle, colors, etc. take precedence.
+      if (finalSubtitleOverrides) {
+        for (const [ratio, override] of Object.entries(finalSubtitleOverrides)) {
+          const ov = override as any;
+          if (ov?.presetId) {
+            const presetOverride = buildSettingsFromPresetId(ov.presetId);
+            if (presetOverride) {
+              // Preset is BASE, user's settings override
+              (finalSubtitleOverrides as any)[ratio] = { ...presetOverride, ...ov };
+            }
+          }
+        }
+      }
+
+      console.log('[ClipsTab] Subtitle payload before build invoke:', {
+        clipId: clip.id,
+        baseAnimationStyle: effectiveSubtitleSettings?.animationStyle,
+        baseFontFamily: effectiveSubtitleSettings?.fontFamily,
+        baseTextColor: effectiveSubtitleSettings?.textColor,
+        baseHighlightColor: effectiveSubtitleSettings?.highlightColor,
+        baseBorder1Width: effectiveSubtitleSettings?.border1Width,
+        baseFontSize: effectiveSubtitleSettings?.fontSize,
+        hasPerRatioConfigs: !!effectiveSubtitleSettings?.perRatioConfigs,
+        perRatioConfigKeys: effectiveSubtitleSettings?.perRatioConfigs
+          ? Object.keys(effectiveSubtitleSettings.perRatioConfigs)
+          : [],
+        overrideKeys: finalSubtitleOverrides ? Object.keys(finalSubtitleOverrides) : [],
+        overridePreview: finalSubtitleOverrides
+          ? Object.fromEntries(
+              Object.entries(finalSubtitleOverrides).map(([ratio, ov]) => {
+                const v = ov as any;
+                return [ratio, {
+                  animationStyle: v?.animationStyle,
+                  fontFamily: v?.fontFamily,
+                  textColor: v?.textColor,
+                  highlightColor: v?.highlightColor,
+                  fontSize: v?.fontSize,
+                  border1Width: v?.border1Width,
+                  positionPercentage: v?.positionPercentage,
+                  maxWidth: v?.maxWidth,
+                  hasPalette: Array.isArray(v?.colorPalette) && v.colorPalette.length > 0,
+                }];
+              })
+            )
+          : null,
+      });
 
       // ── Per-Target Build Loop ──────────────────────────────────────────────
       // Each target group gets its own branding resolution and Rust invoke.
@@ -2674,7 +3533,7 @@
           quality: settings.quality,
           frameRate: settings.frameRate,
           outputFormat: settings.format,
-          includeSubtitles: props.subtitleSettings?.enabled ?? false,
+          includeSubtitles: effectiveSubtitleSettings?.enabled ?? false,
           organizationId: tg.organizationId || null,
           organizationName: tg.target?.type === 'org' 
             ? (tg.target as any).name
@@ -2691,6 +3550,20 @@
 
       // Clone watermarkSettings for this target (so campaign overrides don't leak between groups)
       let targetWatermarkSettings = watermarkSettings ? { ...watermarkSettings } : null;
+
+      // Personal / legacy builds: use workspace watermark when the dialog emitted none (e.g. edge timing).
+      // Never use this for org/campaign targets — those resolve their own branding.
+      if (
+        (activeBrandingType === 'personal' || activeBrandingType === 'legacy') &&
+        !activeCampaignId &&
+        !targetWatermarkSettings
+      ) {
+        const fb = await getPersonalWatermarkFallback();
+        if (fb) {
+          targetWatermarkSettings = { ...fb };
+          console.log('[ClipsTab] Personal workspace watermark applied for personal/legacy target');
+        }
+      }
 
       // ── Campaign Branding Override ────────────────────────────────────────────
       let campaignOverrideIntro: IntroOutroRef | null = null;
@@ -2865,42 +3738,35 @@
 
       if (!activeCampaignId && activeBrandingType === 'org') {
         try {
-          // Use the streamer-matched creator profile from props (already resolved by
-          // ProjectWorkspaceDialog to the correct streamer profile, e.g. "Jerzy" not "Clippster").
-          // Fall back to API lookup by brandingProfileId only if props.creatorProfile is unavailable.
           let profile: any = null;
+          const clipProjectId =
+            clip.project_id ||
+            (clip as { segment_id?: string }).segment_id ||
+            props.projectId;
+          const orgId = activeTarget?.organizationId;
 
-          // Use resolveApplicableProfiles — the proven streamer matching function that
-          // matches via platform links (channel URL e.g. "jerzynft" on Kick).
-          // This is the same function that produces "Found org streamer match: Jerzy" in logs.
-          const { resolveApplicableProfiles } = await import('@/composables/useBrandingProfileSelection');
-          const clipProjectId = clip.project_id || props.projectId;
-          
-          if (clipProjectId) {
-            const candidates = await resolveApplicableProfiles(clipProjectId);
-            const orgId = activeTarget?.organizationId;
-            
-            // Find the org-streamer match within the target org
-            const streamerMatch = candidates.find((c) =>
-              c.source === 'org-streamer' &&
-              (!orgId || (c.profile as any).organization_id === orgId)
-            );
-            
-            // Fall back to org-global within the same org
-            const globalMatch = !streamerMatch
-              ? candidates.find((c) =>
-                  c.source === 'org-global' &&
-                  (!orgId || (c.profile as any).organization_id === orgId)
-                )
-              : null;
-            
-            const matched = streamerMatch || globalMatch;
-            if (matched) {
-              profile = matched.profile;
+          if (clipProjectId && orgId) {
+            const { resolveOrgBuildBranding } = await import('@/composables/useBrandingProfileSelection');
+            profile = await resolveOrgBuildBranding(Number(orgId), clipProjectId);
+
+            if (
+              profile &&
+              activeCampaignBrandingProfileId &&
+              String(profile.id) !== String(activeCampaignBrandingProfileId)
+            ) {
+              console.warn(
+                '[ClipsTab] Org branding profile mismatch: dialog selected',
+                activeCampaignBrandingProfileId,
+                'resolved',
+                profile.id
+              );
+            }
+
+            if (profile) {
               targetResolvedProfile = profile;
-              console.log('[ClipsTab] Org branding: resolved via platform links:', profile.name, '(source:', matched.source, ')');
+              console.log('[ClipsTab] Org branding resolved:', profile.name, 'for org', orgId);
             } else {
-              console.log('[ClipsTab] Org branding: no matching profile found via resolveApplicableProfiles');
+              console.log('[ClipsTab] Org branding: no profile resolved for org', orgId);
             }
           }
 
@@ -2943,16 +3809,31 @@
               console.log('[ClipsTab] Org profile outro resolved:', profile.outro_id);
             }
           }
+
         } catch (e) {
           console.warn('[ClipsTab] Failed to resolve org branding profile intro/outro:', e);
         }
       }
       // ── End Org Branding Resolution ─────────────────────────────────────────
 
-      // Determine effective intro/outro:
-      // Campaign branding > org branding > creator profile defaults > dialog selection
-      const effectiveIntro = campaignOverrideIntro ?? orgOverrideIntro ?? (activeCampaignId ? null : (props.creatorDefaultIntro || settings.intro));
-      const effectiveOutro = campaignOverrideOutro ?? orgOverrideOutro ?? (activeCampaignId ? null : (props.creatorDefaultOutro || settings.outro));
+      // Effective intro/outro: campaign > org > (personal/legacy: creator defaults + dialog) | (org/campaign targets: dialog only).
+      const isOrgOrCampaignTarget = activeBrandingType === 'org' || activeBrandingType === 'campaign';
+      const effectiveIntro =
+        campaignOverrideIntro ??
+        orgOverrideIntro ??
+        (activeCampaignId
+          ? null
+          : isOrgOrCampaignTarget
+            ? settings.intro
+            : props.creatorDefaultIntro || settings.intro);
+      const effectiveOutro =
+        campaignOverrideOutro ??
+        orgOverrideOutro ??
+        (activeCampaignId
+          ? null
+          : isOrgOrCampaignTarget
+            ? settings.outro
+            : props.creatorDefaultOutro || settings.outro);
       // If campaign selected, use campaign watermark; otherwise clear org watermark (don't leak org branding into campaign builds)
       if (activeCampaignId && campaignOverrideWatermark) {
         // Re-resolve watermark for Rust from campaign override
@@ -2976,8 +3857,8 @@
               enabled: true,
               watermarkId: campaignOverrideWatermark.watermarkId,
               filePath: campaignWm.filePath,
-              width: campaignWm.width,
-              height: campaignWm.height,
+              width: campaignWm.width ?? 0,
+              height: campaignWm.height ?? 0,
               positionX: campaignOverrideWatermark.positionX,
               positionY: campaignOverrideWatermark.positionY,
               opacity: campaignOverrideWatermark.opacity,
@@ -2990,6 +3871,44 @@
       } else if (activeCampaignId) {
         targetWatermarkSettings = null;
         console.log('[ClipsTab] Cleared org watermark for campaign build (no campaign watermark set)');
+      } else if (
+        !activeCampaignId &&
+        activeBrandingType === 'org' &&
+        targetResolvedProfile?.watermark_id
+      ) {
+        const { expandWatermarkForBuild } = await import('@/composables/useOrgCampaignBuildBranding');
+        const orgWm = await resolveWatermarkById(targetResolvedProfile.watermark_id);
+        if (orgWm) {
+          let wmSettings: Record<string, unknown> | null = null;
+          if (targetResolvedProfile.watermark_settings) {
+            try {
+              wmSettings =
+                typeof targetResolvedProfile.watermark_settings === 'string'
+                  ? JSON.parse(targetResolvedProfile.watermark_settings)
+                  : targetResolvedProfile.watermark_settings;
+            } catch {
+              wmSettings = null;
+            }
+          }
+          const defaultPos =
+            (wmSettings as Record<string, { position?: { x: number; y: number; opacity: number; scale: number } }>)?.[
+              '16:9'
+            ]?.position ?? { x: 12, y: 92, opacity: 80, scale: 20 };
+
+          const expanded = await expandWatermarkForBuild({
+            enabled: true,
+            watermarkId: targetResolvedProfile.watermark_id,
+            positionX: defaultPos.x,
+            positionY: defaultPos.y,
+            opacity: defaultPos.opacity,
+            scale: defaultPos.scale,
+            perRatioSettings: wmSettings as any,
+          });
+          if (expanded) {
+            targetWatermarkSettings = expanded as unknown as typeof targetWatermarkSettings;
+            console.log('[ClipsTab] Org watermark applied:', targetResolvedProfile.watermark_id);
+          }
+        }
       }
 
       console.log('[ClipsTab] Campaign branding resolution result:', {
@@ -3011,7 +3930,18 @@
       if (effectiveIntro) {
         introPath = effectiveIntro.file_path || null;
         introDuration = effectiveIntro.duration || null;
-        const introSource = props.creatorDefaultIntro ? '(creator profile)' : '(dialog selection)';
+        const introSource = campaignOverrideIntro
+          ? '(campaign)'
+          : orgOverrideIntro
+            ? '(org branding)'
+            : !activeCampaignId &&
+                !isOrgOrCampaignTarget &&
+                props.creatorDefaultIntro &&
+                effectiveIntro &&
+                (effectiveIntro.id === props.creatorDefaultIntro.id ||
+                  effectiveIntro.file_path === props.creatorDefaultIntro.file_path)
+              ? '(creator profile default)'
+              : '(dialog selection)';
         console.log('[ClipsTab] Using intro:', effectiveIntro.name, introSource);
 
         // Download org intro if needed (cast to any for org asset properties)
@@ -3044,7 +3974,18 @@
       if (effectiveOutro) {
         outroPath = effectiveOutro.file_path || null;
         outroDuration = effectiveOutro.duration || null;
-        const outroSource = props.creatorDefaultOutro ? '(creator profile)' : '(dialog selection)';
+        const outroSource = campaignOverrideOutro
+          ? '(campaign)'
+          : orgOverrideOutro
+            ? '(org branding)'
+            : !activeCampaignId &&
+                !isOrgOrCampaignTarget &&
+                props.creatorDefaultOutro &&
+                effectiveOutro &&
+                (effectiveOutro.id === props.creatorDefaultOutro.id ||
+                  effectiveOutro.file_path === props.creatorDefaultOutro.file_path)
+              ? '(creator profile default)'
+              : '(dialog selection)';
         console.log('[ClipsTab] Using outro:', effectiveOutro.name, outroSource);
 
         // Download org outro if needed (cast to any for org asset properties)
@@ -3073,12 +4014,20 @@
         }
       }
 
-      // Resolve per-ratio intro/outro from creator profile
+      // Per-ratio intro/outro from profile JSON — org/campaign targets only (not personal builds).
       const introOutroPerRatio: Record<string, { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number }> = {};
-      
-      if (props.creatorProfile?.intro_outro_settings) {
+
+      const perRatioIntroOutroRaw =
+        activeBrandingType === 'org' && targetResolvedProfile?.intro_outro_settings
+          ? targetResolvedProfile.intro_outro_settings
+          : null;
+
+      if (perRatioIntroOutroRaw) {
         try {
-          const introOutroSettings = JSON.parse(props.creatorProfile.intro_outro_settings);
+          const introOutroSettings =
+            typeof perRatioIntroOutroRaw === 'string'
+              ? JSON.parse(perRatioIntroOutroRaw)
+              : perRatioIntroOutroRaw;
           
           for (const ratio of settings.aspectRatios) {
             const ratioConfig = introOutroSettings[ratio];
@@ -3281,8 +4230,8 @@
               enabled: true,
               watermarkId: adminBranding.watermark_id,
               filePath: wmFilePath,
-              width: wmWidth,
-              height: wmHeight,
+              width: wmWidth ?? 0,
+              height: wmHeight ?? 0,
               positionX: defaultPos.x,
               positionY: defaultPos.y,
               opacity: defaultPos.opacity,
@@ -3313,17 +4262,191 @@
         hasIntroOutroPerRatio: Object.keys(introOutroPerRatio).length > 0,
       });
 
+      // Pre-render subtitles to PNG for pixel-perfect export (if subtitles enabled)
+      let subtitleOverlays: Record<string, Array<{ imagePath: string; startTime: number; endTime: number; positionX: number; positionY: number }>> | null = null;
+      
+      if (effectiveSubtitleSettings?.enabled && transcriptWords.length > 0) {
+        console.log('[ClipsTab] Pre-rendering subtitles for pixel-perfect export...');
+        console.log('[ClipsTab] transcriptWords count:', transcriptWords.length);
+        console.log('[ClipsTab] whisperSegments count:', transcriptSegments.length);
+        console.log('[ClipsTab] segments for subtitle render:', segments.map(s => ({ start: s.start_time, end: s.end_time })));
+        try {
+          const { preRenderSubtitleOverlays } = await import('@/services/subtitle-renderer');
+          subtitleOverlays = {};
+
+          // CRITICAL: The renderer must chunk on the SAME boundaries as VideoPlayer.vue's preview.
+          // VideoPlayer chunks within each whisper segment (one sentence) — so a 4-word sentence
+          // is its own 4-word frame, regardless of `maxWords`. If we feed the renderer a single
+          // synthetic clip segment instead, it groups every 6 words from word 0, producing
+          // entirely different chunks ("They're looking. They're looking. No. the" instead of
+          // "They're looking. They're looking.") and a wider box that wraps and drifts off-center.
+          const subtitleSegments = transcriptSegments.length > 0
+            ? transcriptSegments.map((seg: any) => ({
+                start: Number(seg.start) || 0,
+                end: Number(seg.end) || 0,
+                transcript: typeof (seg as any).text === 'string' ? (seg as any).text : '',
+              }))
+            : segments.map((s) => ({
+                start: s.start_time,
+                end: s.end_time,
+                transcript: s.transcript || '',
+              }));
+          
+          for (const ratio of targetRatios) {
+            // Calculate output dimensions based on aspect ratio
+            // IMPORTANT: Must match Rust backend calculation in video_processor.rs
+            // Rust uses width=1080 as base: output_w = 1080, output_h = 1080 * (h/w)
+            const [w, h] = ratio.split(':').map(Number);
+            const canvasWidth = 1080;
+            const canvasHeight = Math.round((canvasWidth * h) / w);
+            // Ensure even dimensions (required by H.264)
+            const evenCanvasHeight = canvasHeight % 2 === 0 ? canvasHeight : canvasHeight + 1;
+            
+            // Get the intro offset for this ratio (subtitles need to start after intro)
+            const ratioIntroConfig = introOutroPerRatio[ratio];
+            const introOffset = ratioIntroConfig?.introDuration ?? introDuration ?? 0;
+            
+            // Get per-ratio settings if available
+            const ratioOverride = finalSubtitleOverrides?.[ratio];
+            const mergedSettings = ratioOverride 
+              ? { ...effectiveSubtitleSettings, ...ratioOverride }
+              : effectiveSubtitleSettings;
+            
+            console.log('[ClipsTab] Calling preRenderSubtitleOverlays for', ratio, 'with', {
+              canvasWidth,
+              canvasHeight: evenCanvasHeight,
+              wordsCount: transcriptWords.length,
+              segmentsCount: subtitleSegments.length,
+              animationStyle: mergedSettings.animationStyle,
+              maxWords: getSubtitleMaxWordsForAspectRatio(
+                ratio,
+                props.maxWordsForAspectRatio,
+                mergedSettings.animationStyle
+              ),
+              hasRatioOverride: !!ratioOverride,
+              ratioOverrideAnimationStyle: ratioOverride?.animationStyle,
+              ratioOverrideMultiColorEnabled: ratioOverride?.multiColorEnabled,
+              position: mergedSettings.position,
+              positionPercentage: mergedSettings.positionPercentage,
+              fontSize: mergedSettings.fontSize,
+              highlightColor: mergedSettings.highlightColor,
+              border1Width: mergedSettings.border1Width,
+              multiColorEnabled: mergedSettings.multiColorEnabled,
+            });
+            
+            // Debug: log the sources of the merge with FULL values
+            const dialogOv = (settings.subtitleOverrides as any)?.[ratio];
+            const dbOv = (effectiveSubtitleSettings?.perRatioConfigs as any)?.[ratio];
+            console.log('[ClipsTab] DEBUG merge sources for', ratio, ':', {
+              fromDialogOverrides: dialogOv ? {
+                animationStyle: dialogOv.animationStyle,
+                multiColorEnabled: dialogOv.multiColorEnabled,
+                position: dialogOv.position,
+                fontSize: dialogOv.fontSize,
+                highlightColor: dialogOv.highlightColor,
+              } : 'NO DIALOG OVERRIDE',
+              fromDbPerRatioConfigs: dbOv ? {
+                animationStyle: dbOv.animationStyle,
+                multiColorEnabled: dbOv.multiColorEnabled,
+                position: dbOv.position,
+                fontSize: dbOv.fontSize,
+                highlightColor: dbOv.highlightColor,
+              } : 'NO DB OVERRIDE',
+              finalOverrideValues: ratioOverride ? {
+                animationStyle: (ratioOverride as any).animationStyle,
+                multiColorEnabled: (ratioOverride as any).multiColorEnabled,
+                position: (ratioOverride as any).position,
+                fontSize: (ratioOverride as any).fontSize,
+                highlightColor: (ratioOverride as any).highlightColor,
+              } : 'NO FINAL OVERRIDE',
+            });
+            
+            // Also log what's in finalSubtitleOverrides for this ratio
+            console.log('[ClipsTab] finalSubtitleOverrides[' + ratio + '] =', finalSubtitleOverrides?.[ratio]);
+            
+            // Log the position specifically
+            console.log('[ClipsTab] Position for', ratio, ':', {
+              mergedPosition: mergedSettings.position,
+              mergedPositionPercentage: mergedSettings.positionPercentage,
+              isPositionObject: typeof mergedSettings.position === 'object' && mergedSettings.position !== null,
+            });
+            
+            // CRITICAL — timing offset:
+            // Subtitle frame times are emitted in OUTPUT-VIDEO time (FFmpeg `t`, starting at 0).
+            // Words/segments arrive in source-time of the build's input file. For self-contained
+            // clips we always build the whole input from t=0, so source-time == clip-time and the
+            // offset is 0. For regular project clips the build extracts from segments[0].start_time
+            // (FFmpeg `-ss`), so that is the source-time corresponding to output-time 0.
+            // Using `min(segment.start)` here was the prior bug: when the clip had silence before
+            // the first whisper sentence, it shifted ALL subtitles earlier by the silence length.
+            const clipStartTimeForRenderer = selfContainedClip
+              ? 0
+              : Number(freshSegments[0]?.start_time) || 0;
+
+            const overlays = await preRenderSubtitleOverlays({
+              settings: mergedSettings,
+              words: transcriptWords,
+              segments: subtitleSegments,
+              maxWords: getSubtitleMaxWordsForAspectRatio(
+                ratio,
+                props.maxWordsForAspectRatio,
+                mergedSettings.animationStyle
+              ),
+              canvasWidth,
+              canvasHeight: evenCanvasHeight,
+              aspectRatio: ratio,
+              introOffset,
+              clipStartTime: clipStartTimeForRenderer,
+            });
+            
+            subtitleOverlays[ratio] = overlays;
+            console.log(`[ClipsTab] Pre-rendered ${overlays.length} subtitle frames for ${ratio}`);
+            if (overlays.length === 0) {
+              throw new Error(`No subtitle PNG overlays were generated for ${ratio}`);
+            }
+          }
+        } catch (err) {
+          console.error('[ClipsTab] Failed to pre-render subtitles for pixel-perfect export:', err);
+          throw new Error(
+            `Failed to render preview-matching subtitle overlays: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
+        }
+      }
+
+      console.log('[ClipsTab] Text overlays being sent to Rust:', {
+        count: textOverlaysForExport?.length ?? 0,
+        overlays: textOverlaysForExport?.map(o => ({
+          id: o.id,
+          text: o.text?.substring(0, 50),
+          startTime: o.startTime,
+          endTime: o.endTime,
+          positionX: o.positionX,
+          positionY: o.positionY,
+          hasPerRatioConfigs: !!o.perRatioConfigs,
+          perRatioKeys: o.perRatioConfigs ? Object.keys(o.perRatioConfigs) : [],
+        })),
+      });
+      
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,
         clipName: clip.current_version_name || clip.name || 'Untitled',
         videoPath: projectVideo.file_path,
         segments: segments,
-        subtitleSettings: props.subtitleSettings,
+        subtitleSettings: effectiveSubtitleSettings,
         subtitleOverrides: finalSubtitleOverrides,
+        subtitleOverlays: subtitleOverlays,
         transcriptWords: transcriptWords,
         transcriptSegments: transcriptSegments,
-        maxWords: props.maxWordsForAspectRatio,
+        maxWords: targetRatios.length === 1
+          ? getSubtitleMaxWordsForAspectRatio(
+              targetRatios[0],
+              props.maxWordsForAspectRatio,
+              effectiveSubtitleSettings?.animationStyle
+            )
+          : props.maxWordsForAspectRatio,
         aspectRatios: targetRatios,
         quality: settings.quality,
         frameRate: settings.frameRate,
@@ -3345,12 +4468,12 @@
         stickers: stickersForExport,
         clipWatermarks: clipWatermarksForExport,
         layoutOverlays: await resolveLayoutOverlaysForBuild(
-          settings.layoutOverlays
-            || (targetResolvedProfile?.layout_overlays
-              ? JSON.parse(targetResolvedProfile.layout_overlays)
-              : (props.creatorProfile?.layout_overlays
-                ? JSON.parse(props.creatorProfile.layout_overlays)
-                : null))
+          settings.layoutOverlays ||
+            (activeBrandingType === 'org' && targetResolvedProfile?.layout_overlays
+              ? typeof targetResolvedProfile.layout_overlays === 'string'
+                ? JSON.parse(targetResolvedProfile.layout_overlays)
+                : targetResolvedProfile.layout_overlays
+              : null)
         ),
         campaignId: activeCampaignId,
         campaignBrandingProfileId: activeCampaignBrandingProfileId,
@@ -3383,6 +4506,92 @@
     } finally {
       // Reset the build in progress flag
       isBuildInProgress.value = false;
+    }
+  }
+
+  function joinDirAndFile(dir: string, fileName: string): string {
+    const normalized = dir.replace(/[/\\]+$/, '');
+    const sep = normalized.includes('\\') ? '\\' : '/';
+    return `${normalized}${sep}${fileName}`;
+  }
+
+  function allocateUniqueDestBasename(originalBase: string, usedLower: Set<string>): string {
+    const dot = originalBase.lastIndexOf('.');
+    const stem = dot > 0 ? originalBase.slice(0, dot) : originalBase;
+    const ext = dot > 0 ? originalBase.slice(dot) : '';
+    let name = originalBase;
+    let n = 1;
+    while (usedLower.has(name.toLowerCase())) {
+      n++;
+      name = `${stem}_${n}${ext}`;
+    }
+    usedLower.add(name.toLowerCase());
+    return name;
+  }
+
+  async function onDownloadAllBuiltClips() {
+    const sources = completedDownloadSourcePaths.value;
+    if (sources.length === 0) {
+      try {
+        const toastComposable = await import('@/composables/useToast');
+        const { info } = toastComposable.useToast();
+        info('Nothing to download', 'No built clip files are available to export.');
+      } catch {
+        console.warn('[ClipsTab] Nothing to download');
+      }
+      return;
+    }
+
+    isDownloadingAll.value = true;
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Choose folder for clips',
+      });
+      if (selected === null || selected === undefined) return;
+      const dir = Array.isArray(selected) ? selected[0] : selected;
+      if (!dir || typeof dir !== 'string') return;
+
+      const { invoke } = await import('@tauri-apps/api/core');
+      const usedNames = new Set<string>();
+      let copied = 0;
+      const errors: string[] = [];
+
+      for (const sourcePath of sources) {
+        const originalBase = sourcePath.split(/[/\\]/).pop() || 'clip.mp4';
+        const destBase = allocateUniqueDestBasename(originalBase, usedNames);
+        const destinationPath = joinDirAndFile(dir, destBase);
+        try {
+          await invoke('copy_clip_to_destination', { sourcePath, destinationPath });
+          copied++;
+        } catch (e) {
+          errors.push(`${destBase}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
+      const toastComposable = await import('@/composables/useToast');
+      const { success: showSuccessToast, error: showErrorToast } = toastComposable.useToast();
+      if (errors.length > 0) {
+        showErrorToast(
+          copied > 0 ? 'Partial export' : 'Export failed',
+          copied > 0
+            ? `Saved ${copied} of ${sources.length} files. First error: ${errors[0]}`
+            : errors[0] ?? 'Unknown error',
+          10000
+        );
+      } else {
+        showSuccessToast(
+          'Clips exported',
+          `Saved ${copied} file${copied !== 1 ? 's' : ''} to ${dir}`
+        );
+      }
+    } catch (error) {
+      console.error('[ClipsTab] Download all failed:', error);
+      showError('Export failed', error instanceof Error ? error.message : String(error));
+    } finally {
+      isDownloadingAll.value = false;
     }
   }
 

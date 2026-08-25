@@ -11,6 +11,7 @@ import {
 	buildEmptyTrack,
 	getHighestInsertIndexForTrack,
 } from "../../../../lib/timeline/track-utils";
+import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
 
 export class PasteCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;
@@ -96,7 +97,8 @@ export class PasteCommand extends Command {
 			}
 		}
 
-		editor.timeline.updateTracks(updatedTracks);
+		const fps = editor.project.getActive()?.settings?.fps ?? 30;
+		editor.timeline.updateTracks(collapseMainVideoTracksIfPresent(updatedTracks, fps));
 
 		if (this.pastedElements.length > 0) {
 			editor.selection.setSelectedElements({ elements: this.pastedElements });

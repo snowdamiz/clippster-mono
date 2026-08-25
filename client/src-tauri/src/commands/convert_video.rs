@@ -2,6 +2,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::{AppHandle, Manager};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 #[tauri::command]
 pub async fn convert_video_to_mp4(app: AppHandle, input_path: String) -> Result<String, String> {
     let input = Path::new(&input_path);
@@ -45,8 +48,8 @@ pub async fn convert_video_to_mp4(app: AppHandle, input_path: String) -> Result<
     // -crf 23: Good quality
     // -c:a aac: AAC audio codec
     // -movflags +faststart: Optimize for web playback
-    let output = Command::new(&ffmpeg_path)
-        .args(&[
+    let mut cmd = Command::new(&ffmpeg_path);
+    cmd.args(&[
             "-i",
             input.to_str().unwrap(),
             "-c:v",
@@ -63,7 +66,14 @@ pub async fn convert_video_to_mp4(app: AppHandle, input_path: String) -> Result<
             "+faststart",
             "-y", // Overwrite output file
             output_path.to_str().unwrap(),
-        ])
+        ]);
+
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = cmd
         .output()
         .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
 

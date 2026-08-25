@@ -32,28 +32,25 @@
 
       <!-- Profile Content (when profile configured) -->
       <div v-else class="profile-page">
-        <!-- Enhanced Profile Header -->
-        <div class="profile-header-card">
-          <div class="profile-header-bg"></div>
-          <div class="profile-header-content">
-            <div class="profile-header-main">
-              <div class="profile-avatar-wrapper">
-                <div class="profile-avatar">
-                  <img
-                    v-if="clipperProfile?.avatar_url && !avatarLoadError"
-                    :src="clipperProfile.avatar_url"
-                    class="profile-avatar__img"
-                    @error="avatarLoadError = true"
-                  />
-                  <UserCircle v-else class="profile-avatar__fallback" />
-                  <div v-if="clipperProfile?.is_verified" class="profile-avatar__verified">
-                    <CheckCircle />
-                  </div>
+        <div class="org-profile org-profile--settings">
+          <div class="org-hero">
+            <div class="org-hero__banner"></div>
+            <div class="org-hero__content">
+              <div class="org-hero__avatar">
+                <img
+                  v-if="clipperProfile?.avatar_url && !avatarLoadError"
+                  :src="clipperProfile.avatar_url"
+                  class="org-hero__avatar-img"
+                  @error="avatarLoadError = true"
+                />
+                <UserCircle v-else class="org-hero__avatar-fallback" />
+                <div v-if="clipperProfile?.is_verified" class="profile-avatar__verified">
+                  <CheckCircle />
                 </div>
               </div>
-              <div class="profile-info">
+              <div class="org-hero__info">
                 <div class="profile-name-row">
-                  <h1 class="profile-name">{{ clipperProfile?.display_name || 'Set up your profile' }}</h1>
+                  <h1 class="org-hero__name">{{ clipperProfile?.display_name || 'Set up your profile' }}</h1>
                   <div class="profile-badges">
                     <span v-if="clipperProfile?.looking_for_work" class="status-badge status-badge--available">
                       <span class="status-badge__dot"></span>
@@ -83,43 +80,42 @@
                     {{ formatLastActive(clipperProfile.user.last_active_at) }}
                   </span>
                 </div>
-                <p class="profile-bio" :class="{ 'profile-bio--empty': !clipperProfile?.bio }">
+                <p class="org-hero__tagline" :class="{ 'profile-bio--empty': !clipperProfile?.bio }">
                   {{ clipperProfile?.bio || 'Add a bio to tell organizations about yourself' }}
                 </p>
-                <div v-if="clipperProfile?.specialty_tags?.length" class="profile-tags">
-                  <span v-for="tag in clipperProfile.specialty_tags.slice(0, 5)" :key="tag" class="profile-tag">
-                    {{ tag }}
-                  </span>
+                <div v-if="clipperProfile?.specialty_tags?.length" class="org-hero__tags">
+                  <span v-for="tag in clipperProfile.specialty_tags.slice(0, 5)" :key="tag" class="org-hero__tag">{{ tag }}</span>
                 </div>
               </div>
             </div>
-            <div class="profile-stats-grid">
-              <div class="profile-stat-card">
-                <div class="profile-stat-card__icon profile-stat-card__icon--purple">
-                  <Megaphone :size="18" />
-                </div>
-                <div class="profile-stat-card__content">
-                  <span class="profile-stat-card__value">{{ clipperProfile?.total_campaigns_completed || 0 }}</span>
-                  <span class="profile-stat-card__label">Campaigns</span>
-                </div>
+          </div>
+
+          <div class="org-stats-grid org-stats-grid--settings">
+            <div class="org-stat-card">
+              <div class="org-stat-card__icon org-stat-card__icon--violet">
+                <Megaphone :size="18" />
               </div>
-              <div class="profile-stat-card">
-                <div class="profile-stat-card__icon profile-stat-card__icon--cyan">
-                  <FileVideo :size="18" />
-                </div>
-                <div class="profile-stat-card__content">
-                  <span class="profile-stat-card__value">{{ clipperProfile?.total_clips_delivered || 0 }}</span>
-                  <span class="profile-stat-card__label">Clips Delivered</span>
-                </div>
+              <div class="org-stat-card__content">
+                <span class="org-stat-card__value">{{ clipperProfile?.total_campaigns_completed || 0 }}</span>
+                <span class="org-stat-card__label">Campaigns</span>
               </div>
-              <div class="profile-stat-card">
-                <div class="profile-stat-card__icon profile-stat-card__icon--green">
-                  <CheckCircle :size="18" />
-                </div>
-                <div class="profile-stat-card__content">
-                  <span class="profile-stat-card__value">{{ clipperProfile?.total_endorsements || 0 }}</span>
-                  <span class="profile-stat-card__label">Endorsements</span>
-                </div>
+            </div>
+            <div class="org-stat-card">
+              <div class="org-stat-card__icon org-stat-card__icon--cyan">
+                <FileVideo :size="18" />
+              </div>
+              <div class="org-stat-card__content">
+                <span class="org-stat-card__value">{{ clipperProfile?.total_clips_delivered || 0 }}</span>
+                <span class="org-stat-card__label">Clips Delivered</span>
+              </div>
+            </div>
+            <div class="org-stat-card">
+              <div class="org-stat-card__icon org-stat-card__icon--green">
+                <CheckCircle :size="18" />
+              </div>
+              <div class="org-stat-card__content">
+                <span class="org-stat-card__value">{{ clipperProfile?.total_endorsements || 0 }}</span>
+                <span class="org-stat-card__label">Endorsements</span>
               </div>
             </div>
           </div>
@@ -258,7 +254,7 @@
 
           <!-- Accounts -->
           <template v-if="activeTab === 'accounts'">
-            <section class="section">
+            <section ref="socialAccountsSectionRef" class="section">
               <div class="section__header">
                 <div class="section__header-icon">
                   <Share2 />
@@ -285,7 +281,7 @@
                   Connect Account
                 </button>
               </div>
-              <div v-else class="list">
+              <div v-else class="list list--social-accounts">
                 <div v-for="account in socialAccounts" :key="account.id" class="list-item">
                   <div class="list-item__icon" :class="getPlatformIconClass(account.platform)">
                     <component :is="getPlatformIcon(account.platform)" />
@@ -298,13 +294,25 @@
                       <template v-if="account.connected_at">
                         · Connected {{ formatDate(account.connected_at) }}
                       </template>
-                      <template v-if="isTokenExpiringSoon(account)">
+                      <template v-if="isTokenExpiringSoonForAccount(account)">
                         ·
                         <span class="token-expiring">Token expiring soon</span>
                       </template>
                     </span>
                   </div>
-                  <div class="list-item__actions">
+                  <div
+                    class="list-item__actions"
+                    :class="{ 'list-item__actions--visible': needsTokenAttention(account) }"
+                  >
+                    <button
+                      class="refresh"
+                      :disabled="reconnectingAccountId === account.id"
+                      title="Reconnect to refresh token"
+                      @click="reconnectSocialAccount(account)"
+                    >
+                      <Loader2 v-if="reconnectingAccountId === account.id" class="animate-spin" />
+                      <RefreshCw v-else />
+                    </button>
                     <button @click="viewAccountPosts(account)" title="View Posts"><Eye /></button>
                     <button class="danger" @click="confirmDeleteSocialAccount(account)" title="Disconnect">
                       <Trash2 />
@@ -454,7 +462,14 @@
                 <div v-for="campaign in myCampaigns" :key="campaign.id" class="campaign-row">
                   <div class="campaign-row__main">
                     <h3 class="campaign-row__title">{{ campaign.title }}</h3>
-                    <span class="campaign-row__org">{{ campaign.organization?.name || 'Unknown' }}</span>
+                    <router-link
+                      v-if="campaign.organization?.slug"
+                      :to="{ path: `/orgs/${campaign.organization.slug}`, query: { from: $route.fullPath } }"
+                      class="campaign-row__org campaign-row__org--link"
+                    >
+                      {{ campaign.organization.name }}
+                    </router-link>
+                    <span v-else class="campaign-row__org">{{ campaign.organization?.name || 'Unknown' }}</span>
                   </div>
                   <span class="cpm-badge">${{ formatCpm(campaign.cpm) }}/1K</span>
                   <span class="status-badge" :class="`status-badge--${campaign.status}`">{{ campaign.status }}</span>
@@ -584,9 +599,18 @@
                   </div>
                   <div class="post-card__content">
                     <div class="post-card__header">
-                      <span class="post-card__status" :class="`post-card__status--${post.status}`">
-                        {{ post.status }}
-                      </span>
+                      <div class="post-card__status-group">
+                        <span class="post-card__status" :class="`post-card__status--${post.status}`">
+                          {{ post.status }}
+                        </span>
+                        <span
+                          class="post-card__platform"
+                          :class="`post-card__platform--${normalizePostPlatform(post.platform)}`"
+                          :title="getPlatformDisplayName(post.platform)"
+                        >
+                          <component :is="getPostPlatformIcon(post.platform)" :size="12" />
+                        </span>
+                      </div>
                       <a v-if="post.post_url" :href="post.post_url" target="_blank" class="post-card__link">
                         View on {{ getPlatformDisplayName(post.platform) }}
                       </a>
@@ -663,10 +687,27 @@
                 <div class="hiring-tab__apps-list">
                   <div v-for="app in myHiringApplications" :key="app.id" class="hiring-tab__app-card">
                     <div class="hiring-tab__app-header">
-                      <img v-if="app.hiring_post?.organization?.logo_url" :src="app.hiring_post.organization.logo_url" class="hiring-tab__org-logo" />
-                      <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      <router-link
+                        v-if="app.hiring_post?.organization?.slug"
+                        :to="{ path: `/orgs/${app.hiring_post.organization.slug}`, query: { from: $route.fullPath } }"
+                        class="hiring-tab__org-block hiring-tab__org-block--link"
+                      >
+                        <img v-if="app.hiring_post.organization.logo_url" :src="app.hiring_post.organization.logo_url" class="hiring-tab__org-logo" />
+                        <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      </router-link>
+                      <template v-else>
+                        <img v-if="app.hiring_post?.organization?.logo_url" :src="app.hiring_post.organization.logo_url" class="hiring-tab__org-logo" />
+                        <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      </template>
                       <div class="hiring-tab__app-info">
-                        <div class="hiring-tab__app-org">{{ app.hiring_post?.organization?.name || 'Organization' }}</div>
+                        <router-link
+                          v-if="app.hiring_post?.organization?.slug"
+                          :to="{ path: `/orgs/${app.hiring_post.organization.slug}`, query: { from: $route.fullPath } }"
+                          class="hiring-tab__app-org hiring-tab__app-org--link"
+                        >
+                          {{ app.hiring_post.organization.name }}
+                        </router-link>
+                        <div v-else class="hiring-tab__app-org">{{ app.hiring_post?.organization?.name || 'Organization' }}</div>
                         <div class="hiring-tab__app-title">{{ app.hiring_post?.title }}</div>
                       </div>
                       <span
@@ -710,10 +751,27 @@
                 <div v-else class="hiring-tab__grid">
                   <div v-for="post in hiringPosts" :key="post.id" class="hiring-tab__card">
                     <div class="hiring-tab__card-header">
-                      <img v-if="post.organization?.logo_url" :src="post.organization.logo_url" class="hiring-tab__org-logo" />
-                      <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      <router-link
+                        v-if="post.organization?.slug"
+                        :to="{ path: `/orgs/${post.organization.slug}`, query: { from: $route.fullPath } }"
+                        class="hiring-tab__org-block hiring-tab__org-block--link"
+                      >
+                        <img v-if="post.organization.logo_url" :src="post.organization.logo_url" class="hiring-tab__org-logo" />
+                        <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      </router-link>
+                      <template v-else>
+                        <img v-if="post.organization?.logo_url" :src="post.organization.logo_url" class="hiring-tab__org-logo" />
+                        <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      </template>
                       <div class="hiring-tab__card-org">
-                        <div class="hiring-tab__card-org-name">{{ post.organization?.name }}</div>
+                        <router-link
+                          v-if="post.organization?.slug"
+                          :to="{ path: `/orgs/${post.organization.slug}`, query: { from: $route.fullPath } }"
+                          class="hiring-tab__card-org-name hiring-tab__card-org-name--link"
+                        >
+                          {{ post.organization.name }}
+                        </router-link>
+                        <div v-else class="hiring-tab__card-org-name">{{ post.organization?.name }}</div>
                         <div class="hiring-tab__card-title">{{ post.title }}</div>
                       </div>
                     </div>
@@ -810,16 +868,16 @@
                 </div>
               </div>
 
-              <!-- Referral Link -->
+              <!-- Referral Code -->
               <div class="aff-tab__link-card">
                 <div class="aff-tab__link-header">
-                  <Link2 class="aff-tab__link-icon" />
-                  <span class="aff-tab__link-label">Your Referral Link</span>
+                  <Hash class="aff-tab__link-icon" />
+                  <span class="aff-tab__link-label">Your Referral Code</span>
                   <span class="aff-tab__status" :class="`aff-tab__status--${affiliateInfo.status}`">{{ affiliateInfo.status }}</span>
                 </div>
                 <div class="aff-tab__link-row">
-                  <code class="aff-tab__link-url">{{ affiliateReferralUrl }}</code>
-                  <button class="aff-tab__copy-btn" @click="copyAffiliateLink">
+                  <code class="aff-tab__link-url">{{ affiliateInfo.referral_code }}</code>
+                  <button class="aff-tab__copy-btn" @click="copyAffiliateCode">
                     <Copy v-if="!affCopied" :size="14" />
                     <Check v-else :size="14" class="aff-tab__copy-ok" />
                     {{ affCopied ? 'Copied!' : 'Copy' }}
@@ -871,7 +929,7 @@
                 <div v-if="affiliateReferrals.length === 0" class="empty-state">
                   <Handshake class="empty-state__icon" />
                   <p class="empty-state__title">No referrals yet</p>
-                  <p class="empty-state__text">Share your link to start earning commissions</p>
+                  <p class="empty-state__text">Share your code to start earning commissions</p>
                 </div>
                 <div v-else class="aff-tab__table-wrapper">
                   <table class="aff-tab__table">
@@ -1215,7 +1273,8 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, onMounted, onUnmounted, markRaw, computed, watch, h } from 'vue';
+  import { ref, reactive, onMounted, onUnmounted, markRaw, computed, watch, nextTick } from 'vue';
+  import { useRoute } from 'vue-router';
   import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import {
     UserCircle,
@@ -1251,7 +1310,7 @@
     FileVideo,
     RefreshCw,
     Handshake,
-    Link2,
+    Hash,
     Copy,
     Check,
     Briefcase,
@@ -1266,6 +1325,7 @@
   import YoutubePublishDialog from '@/components/YoutubePublishDialog.vue';
   import ClipperProfileOnboardingWizard from '@/components/ClipperProfileOnboardingWizard.vue';
   import AddPostDialog from '@/components/AddPostDialog.vue';
+  import XLogo from '@/components/icons/XLogo.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
@@ -1297,7 +1357,6 @@
     listUserInstagramAccounts,
     disconnectUserInstagramAccount,
     startUserInstagramOAuth,
-    isTokenExpiringSoon,
     getUserAnalyticsSummary,
     listUserPosts,
     syncUserAnalytics,
@@ -1307,24 +1366,26 @@
     type UserAnalyticsSummary,
   } from '@/services/userInstagramApi';
   import {
+    isTokenExpiredForAccount,
+    isTokenExpiringSoonForAccount,
+  } from '@/utils/socialTokenExpiry';
+  import { reconnectPersonalSocialPlatform } from '@/utils/socialOAuthReconnect';
+  import {
     startUserTwitterOAuth,
     listUserTwitterAccounts,
     disconnectUserTwitterAccount,
-    isTwitterTokenExpiringSoon,
     type UserTwitterAccount,
   } from '@/services/userTwitterApi';
   import {
     startUserTiktokOAuth,
     listUserTiktokAccounts,
     disconnectUserTiktokAccount,
-    isTiktokTokenExpiringSoon,
     type UserTiktokAccount,
   } from '@/services/userTiktokApi';
   import {
     startUserYoutubeOAuth,
     listUserYoutubeAccounts,
     disconnectUserYoutubeAccount,
-    isYoutubeTokenExpiringSoon,
     type UserYoutubeAccount,
   } from '@/services/userYoutubeApi';
   import { getMyClipperProfile, getExperienceLevelLabel, getSpecialtyTagLabel, type ClipperProfile } from '@/services/clipperProfilesApi';
@@ -1342,6 +1403,7 @@
     type EarningsSummary,
   } from '@/services/campaignApi';
   import { useToast } from '@/composables/useToast';
+  import { useSocialTokenMonitor } from '@/composables/useSocialTokenMonitor';
   import { formatLastActive } from '@/utils/timeUtils';
   import { 
     initThumbnailCache, 
@@ -1363,6 +1425,8 @@
   const { toast } = useToast();
   const authStore = useAuthStore();
   const permissionsStore = usePermissionsStore();
+  const route = useRoute();
+  const socialTokenMonitor = useSocialTokenMonitor();
 
   const tabs = computed(() => {
     const base = [
@@ -1382,6 +1446,7 @@
   });
 
   const activeTab = ref('leaderboard');
+  const socialAccountsSectionRef = ref<HTMLElement | null>(null);
   const clipperProfile = ref<ClipperProfile | null>(null);
   const loadingSocialAccounts = ref(true);
   const loadingPaymentMethods = ref(true);
@@ -1421,11 +1486,6 @@
     { value: 'crypto', label: 'Crypto (Solana USDC)' },
     { value: 'paypal', label: 'PayPal' },
   ];
-
-  const affiliateReferralUrl = computed(() => {
-    if (!affiliateInfo.value) return '';
-    return `https://clippster.app/?ref=${affiliateInfo.value.referral_code}`;
-  });
 
   // Hiring Tab State
   const loadingHiringPosts = ref(false);
@@ -1573,9 +1633,35 @@
       'twitter': 'X',
       'youtube': 'YouTube',
       'tiktok': 'TikTok',
+      'tiktok_business': 'TikTok',
       'facebook': 'Facebook'
     };
     return platformNames[platform?.toLowerCase()] || platform || 'Platform';
+  };
+
+  const TiktokIcon = {
+    template:
+      '<svg viewBox="0 0 24 24" fill="currentColor" width="1em" height="1em"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V9.01a8.16 8.16 0 004.76 1.52v-3.4a4.85 4.85 0 01-1-.44z"/></svg>',
+  };
+
+  const normalizePostPlatform = (platform: string): string => {
+    const normalized = platform?.toLowerCase();
+    return normalized === 'twitter' ? 'x' : normalized || 'unknown';
+  };
+
+  const getPostPlatformIcon = (platform: string) => {
+    switch (normalizePostPlatform(platform)) {
+      case 'x':
+        return XLogo;
+      case 'tiktok':
+      case 'tiktok_business':
+        return TiktokIcon;
+      case 'youtube':
+        return Youtube;
+      case 'instagram':
+      default:
+        return Instagram;
+    }
   };
 
   const switchLeaderboardPeriod = (period: 'weekly' | 'monthly') => {
@@ -1595,6 +1681,10 @@
   const loadLeaderboard = async () => {
     loadingLeaderboard.value = true;
     try {
+      if (leaderboardType.value === 'posts') {
+        await syncUserAnalytics();
+      }
+
       const response = await import('@/services/clipperProfilesApi').then((m) =>
         m.getLeaderboard(leaderboardPeriod.value, leaderboardType.value)
       );
@@ -1642,9 +1732,10 @@
     }
   };
 
-  const copyAffiliateLink = async () => {
+  const copyAffiliateCode = async () => {
+    if (!affiliateInfo.value) return;
     try {
-      await navigator.clipboard.writeText(affiliateReferralUrl.value);
+      await navigator.clipboard.writeText(affiliateInfo.value.referral_code);
       affCopied.value = true;
       setTimeout(() => { affCopied.value = false; }, 2000);
     } catch {
@@ -1783,18 +1874,13 @@
   const deleteType = ref<'social account' | 'payment method'>('social account');
   const deleteTarget = ref<UserInstagramAccount | UserTwitterAccount | UserTiktokAccount | UserYoutubeAccount | ClipperPaymentMethod | null>(null);
 
+  const reconnectingAccountId = ref<number | null>(null);
+
   let cleanupInstagramAuth: (() => void) | null = null;
   let cleanupTwitterAuth: (() => void) | null = null;
   let cleanupTiktokAuth: (() => void) | null = null;
   let cleanupYoutubeAuth: (() => void) | null = null;
-
-  const XLogo = markRaw({
-    render() {
-      return h('svg', { viewBox: '0 0 24 24', fill: 'currentColor', width: '1em', height: '1em' }, [
-        h('path', { d: 'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z' }),
-      ]);
-    },
-  });
+  let cleanupReconnectAuth: (() => void) | null = null;
 
   const availablePlatforms = [
     {
@@ -1936,6 +2022,7 @@
           if (result.success && result.account) {
             toast({ title: 'Success', description: `Instagram account @${result.account.username} connected` });
             loadSocialAccounts();
+            void socialTokenMonitor.checkNow();
             showPlatformSelectionDialog.value = false;
           } else if (result.error) {
             toast({ title: 'Error', description: result.error });
@@ -1956,6 +2043,7 @@
           if (result.success && result.account) {
             toast({ title: 'Success', description: `X account @${result.account.username} connected` });
             loadSocialAccounts();
+            void socialTokenMonitor.checkNow();
             showPlatformSelectionDialog.value = false;
           } else if (result.error) {
             toast({ title: 'Error', description: result.error });
@@ -1976,6 +2064,7 @@
           if (result.success && result.account) {
             toast({ title: 'Success', description: `TikTok account @${result.account.username} connected` });
             loadSocialAccounts();
+            void socialTokenMonitor.checkNow();
             showPlatformSelectionDialog.value = false;
           } else if (result.error) {
             toast({ title: 'Error', description: result.error });
@@ -1996,6 +2085,7 @@
           if (result.success && result.account) {
             toast({ title: 'Success', description: `YouTube account @${result.account.username} connected` });
             loadSocialAccounts();
+            void socialTokenMonitor.checkNow();
             showPlatformSelectionDialog.value = false;
           } else if (result.error) {
             toast({ title: 'Error', description: result.error });
@@ -2045,6 +2135,53 @@
       toast({ title: 'Error', description: 'Failed to load payment methods' });
     } finally {
       loadingPaymentMethods.value = false;
+    }
+  };
+
+  const needsTokenAttention = (account: UserInstagramAccount | UserTwitterAccount | any) =>
+    isTokenExpiredForAccount(account);
+
+  const reconnectSocialAccount = async (
+    account: UserInstagramAccount | UserTwitterAccount | UserTiktokAccount | UserYoutubeAccount
+  ) => {
+    if (reconnectingAccountId.value) return;
+
+    try {
+      if (cleanupReconnectAuth) {
+        cleanupReconnectAuth();
+        cleanupReconnectAuth = null;
+      }
+
+      reconnectingAccountId.value = account.id;
+      cleanupReconnectAuth = await reconnectPersonalSocialPlatform(
+        account.platform,
+        (result) => {
+          reconnectingAccountId.value = null;
+          if (result.success) {
+            toast({
+              title: 'Success',
+              description: `${getPlatformName(account.platform)} reconnected`,
+            });
+            void loadSocialAccounts();
+            void socialTokenMonitor.checkNow();
+            if (activeTab.value === 'posts') {
+              void loadPostsAnalytics();
+            }
+          } else if (result.error) {
+            toast({ title: 'Error', description: result.error });
+          }
+        },
+        {
+          socialAccountId: account.id,
+          providerAccountId: account.provider_account_id ?? undefined,
+        }
+      );
+    } catch (error) {
+      reconnectingAccountId.value = null;
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to reconnect account',
+      });
     }
   };
 
@@ -2144,6 +2281,9 @@
         toast({ title: 'Deleted', description: `${deleteType.value} disconnected` });
         showDeleteDialog.value = false;
         deleteType.value === 'social account' ? await loadSocialAccounts() : await loadPaymentMethods();
+        if (deleteType.value === 'social account') {
+          void socialTokenMonitor.checkNow();
+        }
       } else {
         toast({ title: 'Error', description: response.error || 'Failed to delete' });
       }
@@ -2203,6 +2343,14 @@
     return !!clipperProfile.value;
   });
 
+  const focusSocialAccountsSection = async () => {
+    if (route.query.section !== 'social-accounts') return;
+
+    activeTab.value = 'accounts';
+    await nextTick();
+    socialAccountsSectionRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   // Handle onboarding completion
   const onOnboardingComplete = () => {
     showOnboardingWizard.value = false;
@@ -2218,13 +2366,22 @@
     loadMyCampaigns();
     loadMySubmissions();
     loadEarnings();
+    await focusSocialAccountsSection();
   });
+
+  watch(
+    () => route.query.section,
+    () => {
+      void focusSocialAccountsSection();
+    }
+  );
 
   onUnmounted(() => {
     if (cleanupInstagramAuth) cleanupInstagramAuth();
     if (cleanupTwitterAuth) cleanupTwitterAuth();
     if (cleanupTiktokAuth) cleanupTiktokAuth();
     if (cleanupYoutubeAuth) cleanupYoutubeAuth();
+    if (cleanupReconnectAuth) cleanupReconnectAuth();
   });
 </script>
 
@@ -2240,10 +2397,206 @@
     flex-direction: column;
     gap: 1.5rem;
     padding: 1rem 1.5rem 0 1.5rem;
-    max-width: 1400px;
+    max-width: 1100px;
     margin: 0 auto;
     width: 100%;
     flex: 1;
+  }
+
+  .org-profile--settings {
+    max-width: none;
+    margin: 0;
+    padding: 0 0 0.25rem 0;
+  }
+
+  .org-hero {
+    position: relative;
+    margin-bottom: 0;
+    padding-bottom: 1.75rem;
+  }
+
+  .org-hero__banner {
+    height: 120px;
+    background: linear-gradient(135deg, #0891b2 0%, #06b6d4 25%, #22d3ee 50%, #0891b2 75%, #164e63 100%);
+    background-size: 200% 200%;
+    border-radius: 14px 14px 0 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .org-hero__banner::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 100%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+      radial-gradient(ellipse 60% 40% at 80% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 40%);
+  }
+
+  .org-hero__banner::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 52px;
+    background: linear-gradient(to top, var(--sidebar-surface) 0%, transparent 100%);
+  }
+
+  .org-hero__content {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+    padding: 0 1.5rem;
+    margin-top: -48px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .org-hero__avatar {
+    position: relative;
+    width: 96px;
+    height: 96px;
+    border-radius: 14px;
+    background: var(--sidebar-surface);
+    border: 4px solid var(--sidebar-surface);
+    overflow: hidden;
+    flex-shrink: 0;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+
+  .org-hero__avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .org-hero__avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+    padding: 24px;
+  }
+
+  .org-hero__info {
+    flex: 1;
+    min-width: 0;
+    padding-top: 0.375rem;
+    padding-bottom: 0.25rem;
+  }
+
+  .org-hero__name {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  .org-hero__tagline {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 0.625rem;
+    line-height: 1.5;
+  }
+
+  .org-hero__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .org-hero__tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.625rem;
+    background: rgba(34, 211, 238, 0.1);
+    border: 1px solid rgba(34, 211, 238, 0.2);
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: #22d3ee;
+    letter-spacing: 0.01em;
+  }
+
+  .org-stats-grid {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .org-stats-grid--settings {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .org-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: var(--sidebar-surface);
+    border: 1px solid rgba(34, 211, 238, 0.15);
+    border-radius: 12px;
+    transition: all 200ms ease;
+  }
+
+  .org-stat-card:hover {
+    border-color: rgba(34, 211, 238, 0.4);
+    box-shadow: 0 0 20px rgba(34, 211, 238, 0.1);
+  }
+
+  .org-stat-card__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+
+  .org-stat-card__icon--cyan {
+    background: rgba(34, 211, 238, 0.15);
+    color: #22d3ee;
+  }
+
+  .org-stat-card__icon--green {
+    background: rgba(52, 211, 153, 0.15);
+    color: #34d399;
+  }
+
+  .org-stat-card__icon--violet {
+    background: rgba(167, 139, 250, 0.15);
+    color: #a78bfa;
+  }
+
+  .org-stat-card__content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .org-stat-card__value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .org-stat-card__label {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-weight: 500;
+    white-space: nowrap;
   }
 
   .profile-page--empty {
@@ -2277,75 +2630,6 @@
     height: 14px;
   }
 
-  /* ===== Enhanced Profile Header Card ===== */
-  .profile-header-card {
-    position: relative;
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 16px;
-    overflow: hidden;
-    margin-bottom: 1.5rem;
-  }
-
-  .profile-header-bg {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 120px;
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
-    opacity: 0.5;
-  }
-
-  .profile-header-content {
-    position: relative;
-    padding: 2rem 2rem 1.5rem;
-  }
-
-  .profile-header-main {
-    display: flex;
-    align-items: flex-start;
-    gap: 1.5rem;
-    margin-bottom: 2rem;
-  }
-
-  @media (max-width: 640px) {
-    .profile-header-main {
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-    }
-  }
-
-  .profile-avatar-wrapper {
-    position: relative;
-    flex-shrink: 0;
-  }
-
-  .profile-avatar {
-    position: relative;
-    width: 96px;
-    height: 96px;
-    border-radius: 20px;
-    background: var(--sidebar-hover);
-    overflow: hidden;
-    border: 3px solid var(--sidebar-surface);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  }
-
-  .profile-avatar__img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .profile-avatar__fallback {
-    width: 100%;
-    height: 100%;
-    padding: 20px;
-    color: var(--sidebar-text-muted);
-  }
-
   .profile-avatar__verified {
     position: absolute;
     bottom: -3px;
@@ -2367,11 +2651,6 @@
     color: white;
   }
 
-  .profile-info {
-    flex: 1;
-    min-width: 0;
-  }
-
   .profile-name-row {
     display: flex;
     align-items: center;
@@ -2384,15 +2663,6 @@
     .profile-name-row {
       justify-content: center;
     }
-  }
-
-  .profile-name {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.03em;
-    line-height: 1.2;
   }
 
   .profile-badges {
@@ -2495,130 +2765,69 @@
     opacity: 0.8;
   }
 
-  .profile-bio {
-    font-size: 0.9375rem;
-    color: var(--sidebar-text-muted);
-    margin: 0 0 0.875rem;
-    line-height: 1.6;
-    max-width: 600px;
-  }
-
-  @media (max-width: 640px) {
-    .profile-bio {
-      max-width: 100%;
-    }
-  }
-
-  .profile-bio--empty {
+  .org-hero__tagline.profile-bio--empty {
     font-style: italic;
     opacity: 0.6;
   }
 
-  .profile-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .profile-tag {
-    padding: 0.375rem 0.625rem;
-    background: rgba(6, 182, 212, 0.12);
-    border-radius: 6px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--sidebar-accent);
-    transition: all 150ms ease;
-  }
-
-  .profile-tag:hover {
-    background: rgba(6, 182, 212, 0.18);
-  }
-
-  /* Profile Stats Grid */
-  .profile-stats-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1rem;
-  }
-
-  @media (max-width: 640px) {
-    .profile-stats-grid {
-      grid-template-columns: 1fr;
+  @media (max-width: 900px) {
+    .org-stats-grid--settings {
+      grid-template-columns: repeat(2, 1fr);
     }
   }
 
-  .profile-stat-card {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1.25rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    transition: all 200ms ease;
-  }
+  @media (max-width: 640px) {
+    .org-hero {
+      padding-bottom: 1.5rem;
+    }
 
-  .profile-stat-card:hover {
-    border-color: rgba(255, 255, 255, 0.12);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  }
+    .org-hero__banner {
+      height: 100px;
+    }
 
-  .profile-stat-card__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    flex-shrink: 0;
-  }
+    .org-hero__content {
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin-top: -40px;
+      padding: 0 1rem;
+    }
 
-  .profile-stat-card__icon--purple {
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%);
-    color: #a78bfa;
-  }
+    .org-hero__avatar {
+      width: 88px;
+      height: 88px;
+    }
 
-  .profile-stat-card__icon--cyan {
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(8, 145, 178, 0.2) 100%);
-    color: #06b6d4;
-  }
+    .org-hero__info {
+      padding-top: 0.5rem;
+      padding-bottom: 0;
+    }
 
-  .profile-stat-card__icon--green {
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%);
-    color: #10b981;
-  }
+    .org-hero__name {
+      font-size: 1.25rem;
+    }
 
-  .profile-stat-card__content {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
+    .org-hero__tags {
+      justify-content: center;
+    }
 
-  .profile-stat-card__value {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    letter-spacing: -0.02em;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .profile-stat-card__label {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    .org-stats-grid--settings {
+      grid-template-columns: 1fr;
+    }
   }
 
   /* ===== Enhanced Tab Navigation ===== */
   .tabs-nav {
     background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
+    border: 1px solid rgba(34, 211, 238, 0.15);
+    border-radius: 14px;
     padding: 0.5rem;
     margin-bottom: 1.5rem;
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  .tabs-nav:hover {
+    border-color: rgba(34, 211, 238, 0.25);
   }
 
   .tabs-container {
@@ -3300,6 +3509,42 @@
     letter-spacing: 0.04em;
   }
 
+  .post-card__status-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .post-card__platform {
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(39, 39, 42, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #a1a1aa;
+    font-size: 0.75rem;
+  }
+
+  .post-card__platform--instagram {
+    color: #f472b6;
+  }
+
+  .post-card__platform--x {
+    color: #f4f4f5;
+  }
+
+  .post-card__platform--tiktok,
+  .post-card__platform--tiktok_business {
+    color: #22d3ee;
+  }
+
+  .post-card__platform--youtube {
+    color: #ef4444;
+  }
+
   .post-card__status--published {
     background: rgba(16, 185, 129, 0.15);
     color: #10b981;
@@ -3638,7 +3883,12 @@
     transition: opacity 150ms ease;
   }
 
-  .list-item:hover .list-item__actions {
+  .list-item:hover .list-item__actions,
+  .list-item__actions--visible {
+    opacity: 1;
+  }
+
+  .list--social-accounts .list-item__actions {
     opacity: 1;
   }
 
@@ -3671,6 +3921,19 @@
 
   .list-item__actions button.danger svg {
     color: #f87171;
+  }
+
+  .list-item__actions button.refresh svg {
+    color: #fbbf24;
+  }
+
+  .list-item__actions button.refresh:hover {
+    background: rgba(245, 158, 11, 0.12);
+  }
+
+  .list-item__actions button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .text-btn {
@@ -4142,6 +4405,15 @@
   .campaign-row__org {
     font-size: 0.6875rem;
     color: var(--sidebar-text-muted);
+  }
+
+  .campaign-row__org--link {
+    color: var(--sidebar-accent);
+    text-decoration: none;
+  }
+
+  .campaign-row__org--link:hover {
+    text-decoration: underline;
   }
 
   .campaign-row__date {
@@ -4858,10 +5130,38 @@
     border: 1px solid var(--sidebar-border); background: var(--sidebar-hover);
   }
   .hiring-tab__app-header { display: flex; align-items: center; gap: 0.75rem; }
+  .hiring-tab__org-block {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    border-radius: 6px;
+  }
+
+  .hiring-tab__org-block--link {
+    text-decoration: none;
+    color: inherit;
+    transition: opacity 0.15s;
+  }
+
+  .hiring-tab__org-block--link:hover {
+    opacity: 0.85;
+  }
+
   .hiring-tab__org-logo { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
   .hiring-tab__org-logo-placeholder { width: 32px; height: 32px; color: var(--sidebar-text-muted); flex-shrink: 0; }
   .hiring-tab__app-info { flex: 1; min-width: 0; }
   .hiring-tab__app-org { font-size: 0.75rem; color: var(--sidebar-text-muted); }
+
+  .hiring-tab__app-org--link {
+    display: inline-block;
+    color: var(--sidebar-accent);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .hiring-tab__app-org--link:hover {
+    text-decoration: underline;
+  }
   .hiring-tab__app-title { font-size: 0.875rem; font-weight: 600; color: var(--sidebar-text); }
   .hiring-tab__status {
     padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.625rem;
@@ -4893,6 +5193,17 @@
   .hiring-tab__card-header { display: flex; align-items: center; gap: 0.75rem; }
   .hiring-tab__card-org { flex: 1; min-width: 0; }
   .hiring-tab__card-org-name { font-size: 0.75rem; color: var(--sidebar-text-muted); }
+
+  .hiring-tab__card-org-name--link {
+    display: inline-block;
+    color: var(--sidebar-accent);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .hiring-tab__card-org-name--link:hover {
+    text-decoration: underline;
+  }
   .hiring-tab__card-title { font-size: 0.9375rem; font-weight: 600; color: var(--sidebar-text); }
   .hiring-tab__card-desc {
     font-size: 0.8125rem; color: var(--sidebar-text-muted); line-height: 1.5;

@@ -43,7 +43,7 @@
         </div>
         <!-- Detect Button (when not detecting and has clips) - Only show if AI is allowed -->
         <button
-          v-else-if="clips.length > 0 && isAIAllowed"
+          v-else-if="clips.length > 0 && isAIAllowed && !props.clipDetectionDisabled"
           @click="handleDetectClips"
           class="group flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground/80 hover:text-foreground bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.06] hover:border-white/[0.1]"
           title="Run clip detection again"
@@ -133,6 +133,8 @@
       :transcript-data="transcriptData"
       :watermark-settings="watermarkSettings"
       :subtitle-settings="props.subtitleSettings"
+      :subtitle-settings-clip-id="props.subtitleSettingsClipId"
+      :max-words-for-aspect-ratio="props.maxWordsForAspectRatio"
       :creator-default-intro="props.creatorDefaultIntro"
       :creator-default-outro="props.creatorDefaultOutro"
       :creator-profile="props.creatorProfile"
@@ -140,6 +142,11 @@
       :hide-header="true"
       :play-on-card-click="true"
       :vod-preset-config="props.vodPresetConfig"
+      :clip-detection-disabled="props.clipDetectionDisabled"
+      :is-transcribing="props.isTranscribing"
+      :transcribe-progress="props.transcribeProgress"
+      :transcribe-stage="props.transcribeStage"
+      :transcribe-message="props.transcribeMessage"
       @detect-clips="handleDetectClips"
       @cancel-detection="handleCancelDetection"
       @delete-clip="onDeleteClip"
@@ -152,12 +159,13 @@
       @adjust-clip="onAdjustClip"
       @add-clip="handleAddClip"
       @publish-now="onPublishNow"
+      @build-dialog-open="(open) => emit('buildDialogOpen', open)"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
+  import { ref, onMounted, computed, watch, onUnmounted, nextTick } from 'vue';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import {
     getClipDetectionSessionsByProjectId,
@@ -192,7 +200,9 @@
     videoDuration: null,
     currentTime: null,
     aspectRatio: () => ({ width: 16, height: 9 }),
+    maxWordsForAspectRatio: 3,
     subtitleSettings: null,
+    subtitleSettingsClipId: null,
     creatorDefaultIntro: null,
     creatorDefaultOutro: null,
     creatorProfile: null,
@@ -201,6 +211,7 @@
     transcribeStage: '',
     transcribeMessage: '',
     vodPresetConfig: null,
+    clipDetectionDisabled: false,
   });
 
   const emit = defineEmits<MediaPanelEmits>();
@@ -416,7 +427,7 @@
     emit('playClip', clip);
   }
 
-  function onClipHover(clipId: string) {
+  function onClipHover(clipId: string | null) {
     emit('clipHover', clipId);
   }
 
@@ -687,10 +698,15 @@
     }
   }
 
+  async function refreshThumbnails() {
+    await nextTick();
+    await clipsTabRef.value?.refreshThumbnails?.();
+  }
+
   // Expose methods for external access
   defineExpose({
     refreshClips,
-    refreshThumbnails: () => clipsTabRef.value?.refreshThumbnails?.(),
+    refreshThumbnails,
     scrollClipIntoView: (clipId: string) => {
       clipsTabRef.value?.scrollClipIntoView(clipId);
     },

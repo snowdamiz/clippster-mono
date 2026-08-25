@@ -22,6 +22,8 @@
         @stopContinuousSeeking="stopContinuousSeeking"
         @sliderChanged="onSliderChange"
         @mergeSegments="mergeSelectedSegments"
+        @toggleSubtitles="$emit('toggleSubtitles')"
+        @toggleText="$emit('toggleText')"
         ref="timelineHeaderRef"
       />
       <!-- Timeline Tracks Container -->

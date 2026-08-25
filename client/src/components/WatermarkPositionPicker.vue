@@ -430,8 +430,8 @@
     name: string;
     url: string;
     asset_type: string;
-    width?: number;
-    height?: number;
+    width?: number | null;
+    height?: number | null;
   }
 
   interface Props {

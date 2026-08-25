@@ -2,22 +2,22 @@
   <div class="clipper-public-profile-page">
     <PageLayout
       :title="profile?.display_name || 'Clipper Profile'"
-      :description="profile?.bio || ''"
+      description=""
       :show-header="true"
       :icon="UserCircle"
       :breadcrumbs="breadcrumbs"
     >
       <template #actions>
         <div v-if="profile" class="profile-header-actions">
-          <button @click="openMessageDialog" class="profile-action-btn profile-action-btn--primary">
-            <MessageCircle class="profile-action-btn__icon" />
-            Message
-          </button>
-          <button @click="openEndorsementDialog" class="profile-action-btn profile-action-btn--outline">
+          <button v-if="authStore.isAuthenticated" @click="openEndorsementDialog" class="profile-action-btn profile-action-btn--outline">
             <Star class="profile-action-btn__icon" />
             Endorse
           </button>
-          <button @click="copyProfileLink" class="profile-action-btn profile-action-btn--outline">
+          <button
+            v-if="profile.slug"
+            @click="copyProfileLink"
+            class="profile-action-btn profile-action-btn--outline"
+          >
             <Share2 class="profile-action-btn__icon" />
             Share
           </button>
@@ -42,143 +42,103 @@
       </div>
 
       <!-- Profile Content -->
-      <div v-else class="profile-content">
-        <!-- Enhanced Profile Header Card -->
-        <div class="profile-header-card">
-          <div class="profile-header-bg"></div>
-          <div class="profile-header-content">
-            <div class="profile-header-main">
-              <div class="profile-avatar-wrapper">
-                <div class="profile-avatar">
-                  <img
-                    v-if="profile.avatar_url"
-                    :src="profile.avatar_url"
-                    class="profile-avatar__img"
-                  />
-                  <UserCircle v-else class="profile-avatar__fallback" />
-                  <div v-if="profile.is_verified" class="profile-avatar__verified">
-                    <CheckCircle />
-                  </div>
-                </div>
-              </div>
-
-              <div class="profile-info">
-                <div class="profile-name-row">
-                  <h1 class="profile-name">{{ profile.display_name || 'Unnamed Clipper' }}</h1>
-                  <div class="profile-badges">
-                    <span v-if="profile.looking_for_work" class="status-badge status-badge--available">
-                      <span class="status-badge__dot"></span>
-                      Looking for Work
-                    </span>
-                    <span v-if="profile.is_affiliate" class="status-badge status-badge--affiliate">
-                      <Handshake :size="12" />
-                      Affiliate
-                    </span>
-                    <span v-if="isOnline(profile.user?.last_active_at)" class="status-badge status-badge--online">
-                      <span class="status-badge__dot"></span>
-                      Online
-                    </span>
-                    <span v-else-if="profile.user?.last_active_at" class="status-badge status-badge--offline">
-                      {{ formatLastActive(profile.user.last_active_at) }}
-                    </span>
-                    <div v-for="badge in profile.badges" :key="badge.id" class="profile-badge">
-                      <Badge :class="getBadgeColor(badge.badge_type)">
-                        {{ getBadgeLabel(badge.badge_type) }}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-
-                <p v-if="profile.bio" class="profile-bio">{{ profile.bio }}</p>
-
-                <div v-if="profile.specialty_tags?.length" class="profile-tags">
-                  <span v-for="tag in profile.specialty_tags.slice(0, 6)" :key="tag" class="profile-tag">
-                    {{ getSpecialtyTagLabel(tag) }}
-                  </span>
-                </div>
+      <div v-else class="org-profile">
+        <div class="org-hero">
+          <div class="org-hero__banner"></div>
+          <div class="org-hero__content">
+            <div class="org-hero__avatar">
+              <img v-if="profile.avatar_url" :src="profile.avatar_url" class="org-hero__avatar-img" />
+              <UserCircle v-else class="org-hero__avatar-fallback" />
+              <div v-if="profile.is_verified" class="profile-avatar__verified">
+                <CheckCircle />
               </div>
             </div>
-
-            <!-- Enhanced Stats Grid -->
-            <div class="profile-stats-grid">
-              <div class="profile-stat-card">
-                <div class="profile-stat-card__icon profile-stat-card__icon--cyan">
-                  <Megaphone :size="18" />
-                </div>
-                <div class="profile-stat-card__content">
-                  <span class="profile-stat-card__value">{{ profile.total_campaigns_completed }}</span>
-                  <span class="profile-stat-card__label">Campaigns</span>
-                </div>
-              </div>
-              <div class="profile-stat-card">
-                <div class="profile-stat-card__icon profile-stat-card__icon--cyan">
-                  <Video :size="18" />
-                </div>
-                <div class="profile-stat-card__content">
-                  <span class="profile-stat-card__value">{{ profile.total_clips_delivered }}</span>
-                  <span class="profile-stat-card__label">Clips Delivered</span>
-                </div>
-              </div>
-              <div class="profile-stat-card">
-                <div class="profile-stat-card__icon profile-stat-card__icon--amber">
-                  <Award :size="18" />
-                </div>
-                <div class="profile-stat-card__content">
-                  <span class="profile-stat-card__value">{{ profile.total_endorsements }}</span>
-                  <span class="profile-stat-card__label">Endorsements</span>
+            <div class="org-hero__info">
+              <div class="profile-name-row">
+                <h1 class="org-hero__name">{{ profile.display_name || 'Unnamed Clipper' }}</h1>
+                <div class="profile-badges">
+                  <span v-if="profile.looking_for_work" class="status-badge status-badge--available">
+                    <span class="status-badge__dot"></span>
+                    Looking for Work
+                  </span>
+                  <span v-if="profile.is_affiliate" class="status-badge status-badge--affiliate">
+                    <Handshake :size="12" />
+                    Affiliate
+                  </span>
+                  <span v-if="isOnline(profile.user?.last_active_at)" class="status-badge status-badge--online">
+                    <span class="status-badge__dot"></span>
+                    Online
+                  </span>
+                  <span v-else-if="profile.user?.last_active_at" class="status-badge status-badge--offline">
+                    {{ formatLastActive(profile.user.last_active_at) }}
+                  </span>
+                  <div v-for="badge in profile.badges" :key="badge.id" class="profile-badge">
+                    <Badge :class="getBadgeColor(badge.badge_type)">
+                      {{ getBadgeLabel(badge.badge_type) }}
+                    </Badge>
+                  </div>
                 </div>
               </div>
-              <div v-if="profile.total_views" class="profile-stat-card">
-                <div class="profile-stat-card__icon profile-stat-card__icon--green">
-                  <Eye :size="18" />
-                </div>
-                <div class="profile-stat-card__content">
-                  <span class="profile-stat-card__value">{{ formatViews(profile.total_views) }}</span>
-                  <span class="profile-stat-card__label">Total Views</span>
-                </div>
+              <div v-if="profile.specialty_tags?.length" class="org-hero__tags">
+                <span v-for="tag in profile.specialty_tags.slice(0, 6)" :key="tag" class="org-hero__tag">
+                  {{ getSpecialtyTagLabel(tag) }}
+                </span>
               </div>
             </div>
           </div>
         </div>
 
+        <div class="org-stats-grid" :class="{ 'org-stats-grid--four': profile.total_views }">
+          <div class="org-stat-card">
+            <div class="org-stat-card__icon org-stat-card__icon--violet">
+              <Megaphone :size="18" />
+            </div>
+            <div class="org-stat-card__content">
+              <span class="org-stat-card__value">{{ profile.total_campaigns_completed }}</span>
+              <span class="org-stat-card__label">Campaigns</span>
+            </div>
+          </div>
+          <div class="org-stat-card">
+            <div class="org-stat-card__icon org-stat-card__icon--cyan">
+              <Video :size="18" />
+            </div>
+            <div class="org-stat-card__content">
+              <span class="org-stat-card__value">{{ profile.total_clips_delivered }}</span>
+              <span class="org-stat-card__label">Clips Delivered</span>
+            </div>
+          </div>
+          <div class="org-stat-card">
+            <div class="org-stat-card__icon org-stat-card__icon--amber">
+              <Award :size="18" />
+            </div>
+            <div class="org-stat-card__content">
+              <span class="org-stat-card__value">{{ profile.total_endorsements }}</span>
+              <span class="org-stat-card__label">Endorsements</span>
+            </div>
+          </div>
+          <div v-if="profile.total_views" class="org-stat-card">
+            <div class="org-stat-card__icon org-stat-card__icon--green">
+              <Eye :size="18" />
+            </div>
+            <div class="org-stat-card__content">
+              <span class="org-stat-card__value">{{ formatViews(profile.total_views) }}</span>
+              <span class="org-stat-card__label">Total Views</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Two Column Layout -->
-        <div class="main-layout">
+        <div class="org-grid">
           <!-- Left Column -->
           <div class="main-column">
-            <!-- About Section -->
-            <section v-if="profile.experience_level || profile.timezone || profile.response_time_hours" class="section">
+            <!-- About (bio only — matches org public profile) -->
+            <section v-if="profile.bio?.trim()" class="section section--about">
               <div class="section__header">
-                <div class="section__header-icon">
-                  <Info />
-                </div>
                 <div class="section__header-text">
                   <h2 class="section__title">About</h2>
-                  <p class="section__subtitle">Professional details</p>
                 </div>
               </div>
-              <div class="about-grid">
-                <div v-if="profile.experience_level" class="about-item">
-                  <Star class="about-item__icon" />
-                  <div class="about-item__content">
-                    <div class="about-item__label">Experience</div>
-                    <div class="about-item__value">{{ getExperienceLevelLabel(profile.experience_level) }}</div>
-                  </div>
-                </div>
-                <div v-if="profile.timezone" class="about-item">
-                  <Clock class="about-item__icon" />
-                  <div class="about-item__content">
-                    <div class="about-item__label">Timezone</div>
-                    <div class="about-item__value">{{ profile.timezone }}</div>
-                  </div>
-                </div>
-                <div v-if="profile.response_time_hours" class="about-item">
-                  <MessageCircle class="about-item__icon" />
-                  <div class="about-item__content">
-                    <div class="about-item__label">Response Time</div>
-                    <div class="about-item__value">~{{ profile.response_time_hours }} hours</div>
-                  </div>
-                </div>
-              </div>
+              <p class="section__bio">{{ profile.bio }}</p>
             </section>
 
             <!-- Portfolio Section -->
@@ -331,21 +291,6 @@
               </div>
             </div>
 
-            <!-- Languages -->
-            <div v-if="profile.languages?.length" class="sidebar-card">
-              <div class="sidebar-card__header">
-                <Globe class="sidebar-card__icon" />
-                <h3 class="sidebar-card__title">Languages</h3>
-              </div>
-              <div class="sidebar-card__content">
-                <div class="language-list">
-                  <div v-for="lang in profile.languages" :key="lang" class="language-item">
-                    {{ getLanguageName(lang) }}
-                  </div>
-                </div>
-              </div>
-            </div>
-
             <!-- Channel Links -->
             <div v-if="profile.channel_links?.length" class="sidebar-card">
               <div class="sidebar-card__header">
@@ -365,6 +310,50 @@
                     <span class="channel-item__username">{{ link.username || getPlatformLabel(link.platform) }}</span>
                     <ExternalLink class="channel-item__external" />
                   </a>
+                </div>
+              </div>
+            </div>
+
+            <div
+              v-if="
+                profile.experience_level ||
+                profile.timezone ||
+                profile.response_time_hours != null ||
+                (profile.languages?.length ?? 0) > 0
+              "
+              class="sidebar-card"
+            >
+              <div class="sidebar-card__header">
+                <Briefcase class="sidebar-card__icon" />
+                <h3 class="sidebar-card__title">Professional</h3>
+              </div>
+              <div class="sidebar-card__content">
+                <div class="clipper-profile-locale">
+                  <div v-if="profile.experience_level" class="clipper-profile-locale__row">
+                    <span class="clipper-profile-locale__label">Experience</span>
+                    <span class="clipper-profile-locale__value">{{ getExperienceLevelLabel(profile.experience_level) }}</span>
+                  </div>
+                  <div v-if="profile.timezone" class="clipper-profile-locale__row">
+                    <span class="clipper-profile-locale__label">Timezone</span>
+                    <span class="clipper-profile-locale__value">{{ formatTimezoneForDisplay(profile.timezone) }}</span>
+                  </div>
+                  <div v-if="profile.response_time_hours != null" class="clipper-profile-locale__row">
+                    <span class="clipper-profile-locale__label">Response time</span>
+                    <span class="clipper-profile-locale__value">~{{ profile.response_time_hours }} hours</span>
+                  </div>
+                  <div
+                    v-for="(lang, i) in profile.languages || []"
+                    :key="lang"
+                    class="clipper-profile-locale__row"
+                  >
+                    <span
+                      class="clipper-profile-locale__label"
+                      :class="{ 'clipper-profile-locale__label--continued': i > 0 }"
+                    >
+                      {{ i === 0 ? 'Languages' : '\u00a0' }}
+                    </span>
+                    <span class="clipper-profile-locale__value">{{ getLanguageName(lang) }}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -503,14 +492,11 @@
 <script setup lang="ts">
   import { ref, computed, onMounted } from 'vue';
   import { useAuthStore } from '@/stores/auth';
-  import { useRoute, useRouter } from 'vue-router';
+  import { useRoute } from 'vue-router';
   import {
     UserCircle,
     CheckCircle,
     Star,
-    Clock,
-    MessageCircle,
-    Briefcase,
     ExternalLink,
     Video,
     Play,
@@ -521,15 +507,14 @@
     Youtube,
     Twitch,
     Link2,
-    Info,
     Award,
     Building2,
     Sparkles,
     Monitor,
-    Globe,
+    Briefcase,
     Link,
-    Share2,
     Handshake,
+    Share2,
     X,
     Eye,
     Users,
@@ -554,9 +539,9 @@
   } from '@/services/clipperProfilesApi';
   import { useToast } from '@/composables/useToast';
   import { formatLastActive, isOnline } from '@/utils/timeUtils';
+  import { formatTimezoneForDisplay } from '@/utils/timezones';
 
   const route = useRoute();
-  const router = useRouter();
   const { toast } = useToast();
   const authStore = useAuthStore();
 
@@ -648,9 +633,15 @@
   const submittingEndorsement = ref(false);
   const endorsementError = ref('');
 
-  const openMessageDialog = () => {
-    if (!profile.value) return;
-    router.push(`/messages?to=${profile.value.user_id}`);
+  const copyProfileLink = () => {
+    const landingUrl = import.meta.env.VITE_LANDING_URL || 'https://clippster.app';
+    const url = `${landingUrl}/clippers/${profile.value?.slug}`;
+    navigator.clipboard.writeText(url).then(() => {
+      toast({
+        title: 'Link Copied',
+        description: 'Profile link copied to clipboard',
+      });
+    });
   };
 
   const openEndorsementDialog = () => {
@@ -658,16 +649,6 @@
     endorsementRating.value = 0;
     endorsementError.value = '';
     showEndorsementDialog.value = true;
-  };
-
-  const copyProfileLink = () => {
-    const url = window.location.href;
-    navigator.clipboard.writeText(url).then(() => {
-      toast({
-        title: 'Link Copied',
-        description: 'Profile link copied to clipboard',
-      });
-    });
   };
 
   const submitEndorsement = async () => {
@@ -794,6 +775,17 @@
   .clipper-public-profile-page {
     width: 100%;
     min-height: 100%;
+    /* Match landing clipper public profile (ClipperPublicProfilePage.css) */
+    --sidebar-bg: #0a0a0b;
+    --sidebar-surface: #141416;
+    --sidebar-border: #27272a;
+    --sidebar-hover: #1f1f23;
+    --sidebar-active: #3f3f46;
+    --sidebar-text: #fafafa;
+    --sidebar-text-muted: #a1a1aa;
+    --org-profile-accent: #14b8db;
+    --org-profile-accent-rgb: 20, 184, 219;
+    --sidebar-accent: #14b8db;
     background: var(--sidebar-bg);
   }
 
@@ -801,9 +793,11 @@
     display: flex;
     flex-direction: column;
     gap: 0;
-    max-width: 1400px;
+    max-width: 1100px;
     margin: 0 auto;
     width: 100%;
+    padding: 0 1.5rem 2rem;
+    box-sizing: border-box;
   }
 
   .profile-content--loading,
@@ -873,73 +867,264 @@
     line-height: 1.5;
   }
 
-  /* ===== Enhanced Profile Header Card ===== */
-  .profile-header-card {
-    position: relative;
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 16px;
-    overflow: hidden;
-    margin-bottom: 1.5rem;
+  /* ===== Organization-style profile shell (matches OrgPublicProfilePage) ===== */
+  .org-profile {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    max-width: 1100px;
+    margin: 0 auto;
+    width: 100%;
+    padding: 0 1.5rem 2rem;
+    box-sizing: border-box;
   }
 
-  .profile-header-bg {
+  .org-hero {
+    position: relative;
+    margin-bottom: 0;
+    padding-bottom: 1.75rem;
+  }
+
+  .org-hero__banner {
+    height: 120px;
+    /* Same gradient as OrgPublicProfilePage / landing clipper */
+    background: linear-gradient(135deg, #0e7490 0%, #0ea0c0 25%, #14b8db 50%, #0b9fbf 75%, #164e63 100%);
+    background-size: 200% 200%;
+    border-radius: 14px 14px 0 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .org-hero__banner::before {
+    content: '';
     position: absolute;
-    top: 0;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 100%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+      radial-gradient(ellipse 60% 40% at 80% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 40%);
+  }
+
+  .org-hero__banner::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
     left: 0;
     right: 0;
-    height: 120px;
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.15) 100%);
-    opacity: 0.5;
+    height: 52px;
+    background: linear-gradient(to top, var(--sidebar-surface) 0%, transparent 100%);
   }
 
-  .profile-header-content {
-    position: relative;
-    padding: 2rem;
-  }
-
-  .profile-header-main {
+  .org-hero__content {
     display: flex;
     align-items: flex-start;
-    gap: 1.5rem;
-    margin-bottom: 2rem;
-  }
-
-  @media (max-width: 640px) {
-    .profile-header-main {
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-    }
-  }
-
-  .profile-avatar-wrapper {
+    gap: 1.25rem;
+    padding: 0 1.5rem;
+    margin-top: -48px;
     position: relative;
-    flex-shrink: 0;
+    z-index: 1;
   }
 
-  .profile-avatar {
+  .org-hero__avatar {
     position: relative;
     width: 96px;
     height: 96px;
-    border-radius: 20px;
-    background: var(--sidebar-hover);
+    border-radius: 14px;
+    background: var(--sidebar-surface);
+    border: 4px solid var(--sidebar-surface);
     overflow: hidden;
-    border: 3px solid var(--sidebar-surface);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    flex-shrink: 0;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   }
 
-  .profile-avatar__img {
+  .org-hero__avatar-img {
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
 
-  .profile-avatar__fallback {
+  .org-hero__avatar-fallback {
     width: 100%;
     height: 100%;
-    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--sidebar-hover);
     color: var(--sidebar-text-muted);
+    padding: 24px;
+  }
+
+  .org-hero__info {
+    flex: 1;
+    min-width: 0;
+    padding-top: 0.375rem;
+    padding-bottom: 0.25rem;
+  }
+
+  .org-hero__name {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  .org-hero__tagline {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 0.625rem;
+    line-height: 1.5;
+  }
+
+  .org-hero__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .org-hero__tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.625rem;
+    background: rgba(20, 184, 219, 0.1);
+    border: 1px solid rgba(20, 184, 219, 0.2);
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: #14b8db;
+    letter-spacing: 0.01em;
+  }
+
+  .org-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .org-stats-grid--four {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  @media (max-width: 900px) {
+    .org-stats-grid--four {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .org-stats-grid:not(.org-stats-grid--four) {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (max-width: 640px) {
+    .org-hero {
+      padding-bottom: 1.5rem;
+    }
+
+    .org-hero__banner {
+      height: 100px;
+    }
+
+    .org-hero__content {
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin-top: -40px;
+      padding: 0 1rem;
+    }
+
+    .org-hero__avatar {
+      width: 88px;
+      height: 88px;
+    }
+
+    .org-hero__info {
+      padding-top: 0.5rem;
+      padding-bottom: 0;
+    }
+
+    .org-hero__name {
+      font-size: 1.25rem;
+    }
+
+    .org-hero__tags {
+      justify-content: center;
+    }
+
+    .org-stats-grid,
+    .org-stats-grid--four {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .org-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: var(--sidebar-surface);
+    border: 1px solid rgba(20, 184, 219, 0.15);
+    border-radius: 12px;
+    transition: all 200ms ease;
+  }
+
+  .org-stat-card:hover {
+    border-color: rgba(20, 184, 219, 0.4);
+    box-shadow: 0 0 20px rgba(20, 184, 219, 0.1);
+  }
+
+  .org-stat-card__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+
+  .org-stat-card__icon--cyan {
+    background: rgba(20, 184, 219, 0.15);
+    color: #14b8db;
+  }
+
+  .org-stat-card__icon--green {
+    background: rgba(52, 211, 153, 0.15);
+    color: #34d399;
+  }
+
+  .org-stat-card__icon--violet {
+    background: rgba(167, 139, 250, 0.15);
+    color: #a78bfa;
+  }
+
+  .org-stat-card__icon--amber {
+    background: rgba(251, 191, 36, 0.15);
+    color: #fbbf24;
+  }
+
+  .org-stat-card__content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .org-stat-card__value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .org-stat-card__label {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-weight: 500;
+    white-space: nowrap;
   }
 
   .profile-avatar__verified {
@@ -948,7 +1133,7 @@
     right: -3px;
     width: 28px;
     height: 28px;
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    background: linear-gradient(135deg, #14b8db 0%, #0e7490 100%);
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -963,11 +1148,6 @@
     color: white;
   }
 
-  .profile-info {
-    flex: 1;
-    min-width: 0;
-  }
-
   .profile-name-row {
     display: flex;
     align-items: center;
@@ -980,15 +1160,6 @@
     .profile-name-row {
       justify-content: center;
     }
-  }
-
-  .profile-name {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.03em;
-    line-height: 1.2;
   }
 
   .profile-badges {
@@ -1047,123 +1218,6 @@
     display: inline-block;
   }
 
-  .profile-bio {
-    font-size: 0.9375rem;
-    color: var(--sidebar-text-muted);
-    margin: 0 0 0.875rem;
-    line-height: 1.6;
-    max-width: 600px;
-  }
-
-  @media (max-width: 640px) {
-    .profile-bio {
-      max-width: 100%;
-    }
-  }
-
-  .profile-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .profile-tag {
-    padding: 0.375rem 0.625rem;
-    background: rgba(59, 130, 246, 0.12);
-    border-radius: 6px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: #3b82f6;
-    transition: all 150ms ease;
-  }
-
-  .profile-tag:hover {
-    background: rgba(59, 130, 246, 0.18);
-  }
-
-  /* Profile Stats Grid */
-  .profile-stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 1rem;
-  }
-
-  @media (max-width: 640px) {
-    .profile-stats-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .profile-stat-card {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1.25rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    transition: all 200ms ease;
-  }
-
-  .profile-stat-card:hover {
-    border-color: rgba(255, 255, 255, 0.12);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  }
-
-  .profile-stat-card__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    flex-shrink: 0;
-  }
-
-  .profile-stat-card__icon--purple {
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.2) 100%);
-    color: #3b82f6;
-  }
-
-  .profile-stat-card__icon--cyan {
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.2) 100%);
-    color: #3b82f6;
-  }
-
-  .profile-stat-card__icon--amber {
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(251, 191, 36, 0.2) 100%);
-    color: #fbbf24;
-  }
-
-  .profile-stat-card__icon--green {
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%);
-    color: #10b981;
-  }
-
-  .profile-stat-card__content {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .profile-stat-card__value {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    letter-spacing: -0.02em;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .profile-stat-card__label {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
   /* Header Action Buttons */
   .profile-header-actions {
     display: flex;
@@ -1216,20 +1270,20 @@
   }
 
   /* ===== Main Layout ===== */
-  .main-layout {
+  .org-grid {
     display: grid;
-    grid-template-columns: 1fr 360px;
-    gap: 2rem;
+    grid-template-columns: 1fr 300px;
+    gap: 1.5rem;
     align-items: start;
-    padding: 2rem;
-    max-width: 1400px;
-    margin: 0 auto;
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
   }
 
   @media (max-width: 1024px) {
-    .main-layout {
+    .org-grid {
       grid-template-columns: 1fr;
-      padding: 1.5rem;
     }
   }
 
@@ -1243,10 +1297,16 @@
   /* ===== Section ===== */
   .section {
     background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
+    border: 1px solid rgba(20, 184, 219, 0.15);
+    border-radius: 14px;
     padding: 0;
     overflow: hidden;
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  .section:hover {
+    border-color: rgba(20, 184, 219, 0.3);
+    box-shadow: 0 0 24px rgba(20, 184, 219, 0.08);
   }
 
   .section__header {
@@ -1254,8 +1314,12 @@
     align-items: center;
     gap: 1rem;
     padding: 1.5rem;
-    border-bottom: 1px solid var(--sidebar-border);
-    background: linear-gradient(to bottom, rgba(6, 182, 212, 0.03), transparent);
+    border-bottom: 1px solid rgba(20, 184, 219, 0.1);
+    background: linear-gradient(90deg, rgba(20, 184, 219, 0.04) 0%, transparent 50%);
+  }
+
+  .section--about .section__header {
+    padding: 1rem 1.25rem;
   }
 
   .section__header-icon {
@@ -1265,7 +1329,7 @@
     width: 48px;
     height: 48px;
     border-radius: 12px;
-    background-color: rgba(6, 182, 212, 0.15);
+    background-color: rgba(20, 184, 219, 0.15);
     color: var(--sidebar-accent);
     flex-shrink: 0;
   }
@@ -1276,8 +1340,8 @@
   }
 
   .section__header-icon--cyan {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: #06b6d4;
+    background-color: rgba(20, 184, 219, 0.15);
+    color: #14b8db;
   }
 
   .section__header-text {
@@ -1297,6 +1361,52 @@
     font-size: 0.8125rem;
     color: var(--sidebar-text-muted);
     margin: 0.25rem 0 0;
+  }
+
+  .section__bio {
+    margin: 0;
+    padding: 0 1.5rem 1.5rem;
+    font-size: 0.9375rem;
+    line-height: 1.65;
+    color: var(--sidebar-text-muted);
+    white-space: pre-wrap;
+  }
+
+  .section--about .section__bio {
+    padding: 1.25rem;
+  }
+
+  .clipper-profile-locale {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .clipper-profile-locale__row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.625rem 0.75rem;
+    background: var(--sidebar-hover);
+    border-radius: 8px;
+    border: 1px solid rgba(20, 184, 219, 0.12);
+  }
+
+  .clipper-profile-locale__label {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .clipper-profile-locale__label--continued {
+    visibility: hidden;
+  }
+
+  .clipper-profile-locale__value {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
   }
 
   /* About Section */
@@ -1320,7 +1430,7 @@
 
   .about-item:hover {
     background: var(--sidebar-active);
-    border-color: rgba(6, 182, 212, 0.3);
+    border-color: rgba(20, 184, 219, 0.3);
   }
 
   .about-item__icon {
@@ -1370,7 +1480,7 @@
   .portfolio-item:hover {
     border-color: var(--sidebar-accent);
     transform: translateY(-4px);
-    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(6, 182, 212, 0.2);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(20, 184, 219, 0.2);
   }
 
   .portfolio-item__thumbnail {
@@ -1586,7 +1696,7 @@
 
   .endorsement-card:hover {
     background: var(--sidebar-hover);
-    border-color: rgba(6, 182, 212, 0.3);
+    border-color: rgba(20, 184, 219, 0.3);
   }
 
   .endorsement-card__header {
@@ -1674,9 +1784,15 @@
   /* Sidebar Card */
   .sidebar-card {
     background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
+    border: 1px solid rgba(20, 184, 219, 0.15);
+    border-radius: 14px;
     overflow: hidden;
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  .sidebar-card:hover {
+    border-color: rgba(20, 184, 219, 0.3);
+    box-shadow: 0 0 24px rgba(20, 184, 219, 0.08);
   }
 
   .sidebar-card__header {
@@ -1684,8 +1800,8 @@
     align-items: center;
     gap: 0.75rem;
     padding: 1.25rem;
-    border-bottom: 1px solid var(--sidebar-border);
-    background: linear-gradient(to bottom, rgba(6, 182, 212, 0.03), transparent);
+    border-bottom: 1px solid rgba(20, 184, 219, 0.1);
+    background: linear-gradient(to bottom, rgba(20, 184, 219, 0.03), transparent);
   }
 
   .sidebar-card__icon {
@@ -1737,7 +1853,7 @@
   }
 
   .tag--specialty {
-    background: rgba(6, 182, 212, 0.12);
+    background: rgba(20, 184, 219, 0.12);
     color: var(--sidebar-accent);
   }
 
@@ -1937,67 +2053,244 @@
 
   /* ===== Responsive ===== */
   @media (max-width: 768px) {
-    .profile-header {
-      padding: 1rem;
+    .org-profile {
+      padding: 0 1rem 1.5rem;
     }
 
-    .profile-header__container {
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      gap: 1rem;
-    }
-
-    .profile-avatar {
-      width: 64px;
-      height: 64px;
-    }
-
-    .profile-top-row {
-      flex-direction: column;
-      align-items: center;
-      gap: 1rem;
-    }
-
-    .profile-stats {
-      gap: 1.5rem;
-    }
-
-    .profile-name {
-      font-size: 1.25rem;
-    }
-
-    .profile-badges {
-      justify-content: center;
-    }
-
-
-    .profile-main {
+    .profile-header-actions {
+      flex-wrap: wrap;
       width: 100%;
     }
 
-    .main-layout {
-      gap: 1.5rem;
-      padding: 1rem;
+    .profile-action-btn {
+      flex: 1;
+      min-width: fit-content;
+      justify-content: center;
+      font-size: 0.75rem;
+      height: 36px;
+      padding: 0 0.75rem;
+    }
+
+    .profile-action-btn__icon {
+      width: 14px;
+      height: 14px;
     }
 
     .portfolio-grid {
-      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-      gap: 1rem;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.875rem;
       padding: 1rem;
     }
 
     .about-grid {
       grid-template-columns: 1fr;
+      gap: 0.75rem;
+      padding: 1rem;
+    }
+
+    .about-item {
       padding: 1rem;
     }
 
     .endorsements-list {
       padding: 1rem;
+      gap: 0.875rem;
+    }
+
+    .endorsement-card {
+      padding: 1rem;
     }
 
     .section__header {
       padding: 1rem;
+      gap: 0.75rem;
+    }
+
+    .section--about .section__header {
+      padding: 0.875rem 1rem;
+    }
+
+    .section--about .section__bio {
+      padding: 1rem;
+    }
+
+    .section__header-icon {
+      width: 40px;
+      height: 40px;
+    }
+
+    .section__header-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .section__title {
+      font-size: 1rem;
+    }
+
+    .section__subtitle {
+      font-size: 0.75rem;
+    }
+
+    .sidebar-card__content {
+      padding: 1rem;
+    }
+
+    .sidebar-card__header {
+      padding: 1rem;
+    }
+
+    .video-modal__overlay {
+      padding: 1rem;
+    }
+
+    .org-grid {
+      gap: 1rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .org-profile {
+      padding: 0 0.75rem 1rem;
+    }
+
+    .profile-header-actions {
+      gap: 0.375rem;
+    }
+
+    .profile-action-btn {
+      font-size: 0.6875rem;
+      height: 32px;
+      padding: 0 0.625rem;
+    }
+
+    .profile-action-btn__icon {
+      width: 12px;
+      height: 12px;
+    }
+
+    .portfolio-grid {
+      grid-template-columns: 1fr;
+      gap: 0.75rem;
+      padding: 0.875rem;
+    }
+
+    .portfolio-item__play {
+      width: 56px;
+      height: 56px;
+    }
+
+    .portfolio-item__play-icon {
+      width: 18px;
+      height: 18px;
+    }
+
+    .about-grid {
+      padding: 0.875rem;
+      gap: 0.625rem;
+    }
+
+    .about-item {
+      padding: 0.875rem;
+      gap: 0.75rem;
+    }
+
+    .endorsements-list {
+      padding: 0.875rem;
+      gap: 0.75rem;
+    }
+
+    .endorsement-card {
+      padding: 0.875rem;
+    }
+
+    .endorsement-card__header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.625rem;
+    }
+
+    .section__header {
+      padding: 0.875rem;
+      gap: 0.625rem;
+    }
+
+    .section--about .section__header {
+      padding: 0.75rem 0.875rem;
+    }
+
+    .section--about .section__bio {
+      padding: 0.875rem;
+    }
+
+    .section__header-icon {
+      width: 36px;
+      height: 36px;
+    }
+
+    .section__header-icon svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .section__title {
+      font-size: 0.9375rem;
+    }
+
+    .sidebar-card__content {
+      padding: 0.875rem;
+    }
+
+    .sidebar-card__header {
+      padding: 0.875rem;
+    }
+
+    .connected-account {
+      padding: 0.5rem;
+      gap: 0.5rem;
+    }
+
+    .tag-list {
+      gap: 0.375rem;
+    }
+
+    .tag {
+      font-size: 0.6875rem;
+      padding: 0.3125rem 0.5rem;
+    }
+
+    .video-modal__overlay {
+      padding: 0.5rem;
+    }
+
+    .video-modal {
+      border-radius: 8px;
+    }
+
+    .org-grid {
+      gap: 0.875rem;
+    }
+
+    .endorse-dialog {
+      margin: 0.5rem;
+      max-height: 90vh;
+    }
+
+    .endorse-dialog__header {
+      padding: 1rem 1rem 0.75rem;
+    }
+
+    .endorse-dialog__content {
+      padding: 0.5rem 1rem 1rem;
+    }
+
+    .endorse-dialog__footer {
+      padding: 1rem;
+      flex-direction: column;
+    }
+
+    .endorse-dialog__btn {
+      width: 100%;
     }
   }
 
@@ -2028,7 +2321,7 @@
 
   .endorse-dialog__accent {
     height: 3px;
-    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(20, 184, 219, 0.5));
     flex-shrink: 0;
   }
 
@@ -2075,7 +2368,7 @@
     width: 52px;
     height: 52px;
     border-radius: 12px;
-    background-color: rgba(6, 182, 212, 0.15);
+    background-color: rgba(20, 184, 219, 0.15);
     color: var(--sidebar-accent);
     margin-bottom: 0.875rem;
   }
@@ -2180,7 +2473,7 @@
   .endorse-dialog__textarea:focus {
     outline: none;
     border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+    box-shadow: 0 0 0 2px rgba(20, 184, 219, 0.15);
   }
 
   .endorse-dialog__char-count {
@@ -2250,7 +2543,7 @@
   }
 
   .endorse-dialog__btn--primary {
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0e7490 100%);
     color: #000;
   }
 

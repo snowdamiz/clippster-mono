@@ -8,6 +8,8 @@ import {
   setProjectBrandingProfile,
   getProjectStreamerInfo,
 } from '@/services/database/creator-profiles';
+import { getProject } from '@/services/database/projects';
+import { useAuthStore } from '@/stores/auth';
 import { getProjectCampaignId } from '@/services/database/clips';
 import {
   getMyAssignedCreatorProfiles,
@@ -188,7 +190,7 @@ const PLATFORM_MAP: Record<string, string> = {
 /**
  * Check if a set of platform links matches the project's streamer.
  */
-function linksMatchStreamer(
+export function linksMatchStreamer(
   links: Array<{ platform: string; platform_id: string }>,
   platform: string | null,
   platformId: string | null
@@ -201,6 +203,183 @@ function linksMatchStreamer(
   );
 }
 
+/** Team seat account created by an org admin (not invited onto existing personal account). */
+export function isOrgSuppliedAccount(): boolean {
+  const authStore = useAuthStore();
+  return authStore.user?.created_by_organization_id != null;
+}
+
+export function isSlugMatchedSource(source: ProfileSource): boolean {
+  return source === 'streamer' || source === 'org-streamer' || source === 'campaign';
+}
+
+function isPersonalLocalProfile(profile: CreatorProfileWithLinks): boolean {
+  return profile.context_type !== 'organization' && profile.context_type !== 'campaign';
+}
+
+/**
+ * Personal / invited-member auto branding: local creator profile only when slug matches.
+ */
+export async function resolvePersonalStreamerMatchedProfile(
+  projectId: string
+): Promise<CreatorProfileWithLinks | null> {
+  try {
+    const project = await getProject(projectId);
+    if (project?.creator_profile_id) {
+      const direct = await getCreatorProfile(project.creator_profile_id);
+      if (direct && isPersonalLocalProfile(direct)) {
+        return direct;
+      }
+    }
+  } catch (e) {
+    console.warn('[BrandingProfile] Failed to resolve direct creator_profile_id:', e);
+  }
+
+  try {
+    const streamerProfile = await getCreatorProfileByProjectId(projectId);
+    if (streamerProfile && isPersonalLocalProfile(streamerProfile)) {
+      return streamerProfile;
+    }
+  } catch (e) {
+    console.warn('[BrandingProfile] Failed to resolve personal streamer profile:', e);
+  }
+
+  return null;
+}
+
+/**
+ * Org build branding: creator profile when slug matches, else org global branding.
+ */
+export async function resolveOrgBuildBranding(
+  organizationId: number,
+  projectId: string,
+  streamerOverride?: { platform: string; platformId: string }
+): Promise<CreatorProfileWithLinks | null> {
+  let projectPlatform: string | null = null;
+  let projectPlatformId: string | null = null;
+
+  if (streamerOverride) {
+    projectPlatform = streamerOverride.platform;
+    projectPlatformId = streamerOverride.platformId;
+  } else {
+    try {
+      const info = await getProjectStreamerInfo(projectId);
+      projectPlatform = info.platform;
+      projectPlatformId = info.platformId;
+    } catch (e) {
+      console.warn('[BrandingProfile] resolveOrgBuildBranding: failed to get streamer info:', e);
+    }
+  }
+
+  try {
+    const response = await getMyAssignedCreatorProfiles();
+    if (!response.success || response.profiles.length === 0) {
+      return null;
+    }
+
+    const orgProfiles = response.profiles.filter(
+      (sp) => Number(sp.organization_id) === Number(organizationId)
+    );
+    if (orgProfiles.length === 0) {
+      return null;
+    }
+
+    for (const sp of orgProfiles) {
+      const scope = sp.scope || 'streamer';
+      if (
+        scope === 'streamer' &&
+        linksMatchStreamer(sp.platform_links || [], projectPlatform, projectPlatformId)
+      ) {
+        console.log('[BrandingProfile] resolveOrgBuildBranding: creator match', sp.name);
+        return serverProfileToLocal(sp);
+      }
+    }
+
+    const globalProfile = orgProfiles.find((sp) => (sp.scope || 'streamer') === 'global');
+    if (globalProfile) {
+      console.log('[BrandingProfile] resolveOrgBuildBranding: global fallback', globalProfile.name);
+      return serverProfileToLocal(globalProfile);
+    }
+  } catch (e) {
+    console.warn('[BrandingProfile] resolveOrgBuildBranding failed:', e);
+  }
+
+  return null;
+}
+
+export interface EligibleOrgForBuild {
+  organizationId: number;
+  organizationName: string;
+  resolvedProfile: CreatorProfileWithLinks;
+  serverProfile: ServerOrganizationCreatorProfile;
+}
+
+/** Orgs the user can build for on this project (slug-matched creator or global branding). */
+export async function getEligibleOrgsForBuild(projectId: string): Promise<EligibleOrgForBuild[]> {
+  const eligible: EligibleOrgForBuild[] = [];
+
+  try {
+    const response = await getMyAssignedCreatorProfiles();
+    if (!response.success || response.profiles.length === 0) {
+      return eligible;
+    }
+
+    const orgIds = [
+      ...new Set(response.profiles.map((sp) => Number(sp.organization_id)).filter(Boolean)),
+    ];
+
+    for (const orgId of orgIds) {
+      const resolved = await resolveOrgBuildBranding(orgId, projectId);
+      if (resolved) {
+        const serverProfile = response.profiles.find((sp) => String(sp.id) === resolved.id);
+        if (serverProfile) {
+          eligible.push({
+            organizationId: orgId,
+            organizationName: resolved.organization_name || resolved.name,
+            resolvedProfile: resolved,
+            serverProfile,
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[BrandingProfile] getEligibleOrgsForBuild failed:', e);
+  }
+
+  return eligible;
+}
+
+/** Build creatorWatermarkSettings payload from a resolved profile. */
+export function profileToDownloadWatermarkSettings(
+  profile: CreatorProfileWithLinks
+): { watermarkId: string; watermarkSettings: string } | undefined {
+  if (!profile.watermark_id || !profile.watermark_settings) {
+    return undefined;
+  }
+  return {
+    watermarkId: profile.watermark_id,
+    watermarkSettings: profile.watermark_settings,
+  };
+}
+
+/**
+ * Read-only auto branding for preview/workspace/download.
+ * Org-supplied accounts: org creator then global. Personal: local slug match only.
+ */
+export async function resolveAutoBrandingProfile(
+  projectId: string
+): Promise<CreatorProfileWithLinks | null> {
+  if (isOrgSuppliedAccount()) {
+    const authStore = useAuthStore();
+    const orgId = authStore.user?.created_by_organization_id;
+    if (orgId != null) {
+      return resolveOrgBuildBranding(Number(orgId), projectId);
+    }
+    return null;
+  }
+  return resolvePersonalStreamerMatchedProfile(projectId);
+}
+
 /**
  * Gather all applicable branding profiles for a project.
  *
@@ -210,8 +389,9 @@ function linksMatchStreamer(
  *   - Org streamer match (no campaign) → org streamer auto-wins, excludes personal-global
  *   - No streamer match → fall through to org-global, then personal-global
  *
- * When any streamer-specific match exists, org-global profiles are excluded.
- * When an org streamer match exists, personal-global profiles are excluded.
+ * When any streamer/campaign match exists, personal-global fallbacks are excluded.
+ * org-global remains in this list for org-target clip builds; workspace auto-select filters
+ * it in filterCandidatesForWorkspaceAutoSelect() so the local streamer profile wins in the editor.
  */
 export async function resolveApplicableProfiles(
   projectId: string,
@@ -327,16 +507,11 @@ export async function resolveApplicableProfiles(
 
   const hasAnyStreamerMatch = hasOrgStreamerMatch || hasLocalStreamerMatch || hasCampaignMatch;
 
-  // Apply priority filtering:
-  // IMPORTANT: 
-  // - org-global profiles come from getMyAssignedCreatorProfiles() which only returns
-  //   profiles explicitly assigned to the user by an org admin. These should ALWAYS be available.
-  // - org-streamer and campaign profiles should coexist with personal streamer profiles.
-  //   Users should be able to choose between using org branding vs their personal profile.
-  // - Only filter out personal-global profiles when there's a streamer-specific match.
+  // Exclude personal-global fallbacks when a streamer/campaign match exists (see docblock).
+  // NOTE: Do NOT exclude org-global here — Clip builds that target an org need org-global in the
+  // list so ClipsTab can resolve watermark/outro when streamer-specific org branding is absent.
+  // Workspace auto-select avoids org-global via filterCandidatesForWorkspaceAutoSelect().
   if (hasAnyStreamerMatch) {
-    // Filter out personal-global profiles (user's own global profiles)
-    // but keep all streamer-specific profiles (personal, org, campaign) for user selection
     return profiles.filter((p) => p.source !== 'personal-global');
   }
 
@@ -348,78 +523,35 @@ export async function resolveApplicableProfiles(
  * Server-sourced profiles (org/campaign) can't be persisted to selected_branding_profile_id
  * because it has a FK constraint referencing the local creator_profiles table.
  */
-function isLocalSource(source: ProfileSource): boolean {
-  return source === 'streamer' || source === 'personal-global';
-}
 
 /**
- * Persist the branding selection only if the profile exists locally.
- */
-async function trySaveSelection(projectId: string, candidate: ApplicableProfile): Promise<void> {
-  if (isLocalSource(candidate.source)) {
-    await setProjectBrandingProfile(projectId, candidate.profile.id);
-  } else {
-    // Clear any stale local selection — server-sourced profiles are resolved dynamically
-    await setProjectBrandingProfile(projectId, null);
-  }
-}
-
-/**
- * Main entry point: resolve the effective branding profile for a project.
- * - If already selected and valid → returns it immediately.
- * - If 0 candidates → returns null.
- * - If 1 candidate → auto-selects and saves.
- * - If 2+ candidates → opens selector dialog, returns user's choice.
+ * Main entry point: resolve the effective branding profile for a project (may persist local selection).
+ * Auto-apply uses slug-matched personal profile or org-supplied account rules only.
  */
 export async function resolveBrandingProfile(
   projectId: string,
-  orgContext?: OrgBrandingContext
+  _orgContext?: OrgBrandingContext
 ): Promise<CreatorProfileWithLinks | null> {
-  // Always run priority resolution first to get the current valid candidates
-  const candidates = await resolveApplicableProfiles(projectId, orgContext);
+  const profile = await resolveAutoBrandingProfile(projectId);
 
-  if (candidates.length === 0) {
-    // No candidates — clear any stale selection
+  if (!profile) {
     await setProjectBrandingProfile(projectId, null);
     return null;
   }
 
-  // Check if project already has a selection AND it's still a valid candidate
   const existingId = await getProjectBrandingProfileId(projectId);
-  if (existingId) {
-    const stillValid = candidates.find((c) => c.profile.id === existingId);
-    if (stillValid) {
-      console.log('[BrandingProfile] Previously selected profile still valid:', stillValid.profile.name, `(${stillValid.source})`);
-      return stillValid.profile;
-    }
-    // Previously selected profile is no longer a valid candidate — clear it
-    console.log('[BrandingProfile] Previously selected profile', existingId, 'is no longer a valid candidate, re-resolving');
+  if (existingId && existingId === profile.id) {
+    return profile;
+  }
+
+  if (isPersonalLocalProfile(profile)) {
+    await setProjectBrandingProfile(projectId, profile.id);
+  } else {
     await setProjectBrandingProfile(projectId, null);
   }
 
-  if (candidates.length === 1) {
-    // Auto-select the only option
-    const candidate = candidates[0];
-    await trySaveSelection(projectId, candidate);
-    console.log('[BrandingProfile] Auto-selected only available profile:', candidate.profile.name, `(${candidate.source})`);
-    return candidate.profile;
-  }
-
-  // Multiple candidates — open selector dialog
-  return new Promise<CreatorProfileWithLinks | null>((resolve) => {
-    applicableProfiles.value = candidates;
-    pendingResolve.value = async (selected) => {
-      if (selected) {
-        const selectedCandidate = candidates.find((c) => c.profile.id === selected.id);
-        if (selectedCandidate) {
-          await trySaveSelection(projectId, selectedCandidate);
-        }
-        console.log('[BrandingProfile] User selected profile:', selected.name);
-      }
-      resolve(selected);
-    };
-    showSelector.value = true;
-  });
+  console.log('[BrandingProfile] Auto-selected profile:', profile.name);
+  return profile;
 }
 
 /**

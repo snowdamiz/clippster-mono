@@ -95,6 +95,51 @@ export const DEFAULT_COLOR_ADJUSTMENTS: ColorAdjustments = {
 	sharpness: 0,
 };
 
+/** A control point on an RGB curve (both axes 0–1) */
+export interface ColorCurvePoint {
+	x: number;
+	y: number;
+}
+
+/** Per-channel RGB curves for color grading */
+export interface ColorCurves {
+	master?: ColorCurvePoint[];
+	red?: ColorCurvePoint[];
+	green?: ColorCurvePoint[];
+	blue?: ColorCurvePoint[];
+}
+
+/** Hue/Saturation/Luminance offset for one tonal range */
+export interface ColorWheelValues {
+	/** Hue rotation in degrees (-180 to 180) */
+	hue: number;
+	/** Saturation boost (-1 to 1) */
+	saturation: number;
+	/** Luminance offset (-1 to 1) */
+	luminance: number;
+}
+
+/** Three-way (shadows / midtones / highlights) color correction */
+export interface ColorWheels {
+	shadows?: ColorWheelValues;
+	midtones?: ColorWheelValues;
+	highlights?: ColorWheelValues;
+}
+
+export type BlendMode =
+	| "normal"
+	| "multiply"
+	| "screen"
+	| "overlay"
+	| "soft-light"
+	| "hard-light"
+	| "darken"
+	| "lighten"
+	| "color-dodge"
+	| "color-burn"
+	| "difference"
+	| "exclusion";
+
 export interface FlipState {
 	horizontal: boolean;
 	vertical: boolean;
@@ -117,6 +162,7 @@ interface BaseAudioElement extends BaseTimelineElement {
 	fadeIn?: number; // seconds
 	fadeOut?: number; // seconds
 	audioEffects?: import("./audio-effects").AudioEffect[];
+	pan?: number; // stereo pan: -1 (left) to +1 (right), 0 = center
 }
 
 export interface UploadAudioElement extends BaseAudioElement {
@@ -148,11 +194,42 @@ interface BaseTimelineElement {
 	orderIndex?: number; // Layer order within track (higher = renders on top), CapCut-style
 }
 
+// ── Shape masks ───────────────────────────────────────────────────────────
+
+export type MaskShapeType = "rectangle" | "ellipse" | "polygon";
+
+export interface MaskShape {
+	id: string;
+	type: MaskShapeType;
+	/** Normalised X of mask center, 0–1 relative to canvas width. */
+	x: number;
+	/** Normalised Y of mask center, 0–1 relative to canvas height. */
+	y: number;
+	/** Normalised width, 0–1 relative to canvas width. */
+	width: number;
+	/** Normalised height, 0–1 relative to canvas height. */
+	height: number;
+	/** Feather radius in canvas pixels (0 = hard edge). */
+	feather: number;
+	/** If true, the mask punches a hole instead of revealing. */
+	invert: boolean;
+	/** Rotation in degrees. */
+	rotation: number;
+	/** Corner radius as fraction of half the shorter side (0 = sharp, 1 = fully rounded). Rectangle only. */
+	cornerRadius?: number;
+	/** Polygon points in normalized coords. Used when type === "polygon". */
+	points?: { x: number; y: number }[];
+}
+
+export type MediaFitMode = "contain" | "cover";
+
 export interface VideoElement extends BaseTimelineElement {
 	type: "video";
 	mediaId: string;
 	muted?: boolean;
 	hidden?: boolean;
+	/** How source media is fitted to the canvas. Overlay B-roll uses `cover`. */
+	mediaFit?: MediaFitMode;
 	transform: Transform;
 	opacity: number;
 	volume?: number; // 0-2, default 1
@@ -161,23 +238,36 @@ export interface VideoElement extends BaseTimelineElement {
 	flip?: FlipState;
 	crop?: CropRect;
 	colorAdjustments?: ColorAdjustments;
+	colorCurves?: ColorCurves;
+	colorWheels?: ColorWheels;
+	lutPath?: string; // absolute path to a .cube LUT file
+	blendMode?: BlendMode;
 	effects?: VideoEffect[];
 	filterPreset?: string; // active filter preset id, for UI display
 	chromakey?: import("./chromakey").ChromakeySettings;
+	pan?: number; // stereo pan: -1 (left) to +1 (right), 0 = center
+	masks?: MaskShape[];
 }
 
 export interface ImageElement extends BaseTimelineElement {
 	type: "image";
 	mediaId: string;
 	hidden?: boolean;
+	mediaFit?: MediaFitMode;
 	transform: Transform;
 	opacity: number;
 	flip?: FlipState;
 	crop?: CropRect;
 	colorAdjustments?: ColorAdjustments;
+	colorCurves?: ColorCurves;
+	colorWheels?: ColorWheels;
+	lutPath?: string;
+	blendMode?: BlendMode;
 	effects?: VideoEffect[];
 	filterPreset?: string; // active filter preset id, for UI display
 	chromakey?: import("./chromakey").ChromakeySettings;
+	pan?: number;
+	masks?: MaskShape[];
 }
 
 export interface TextStroke {
@@ -237,9 +327,12 @@ export interface TextElement extends BaseTimelineElement {
 	bubbleStyle: TextBubbleStyle;
 	bubbleColor?: string;
 	bubblePadding?: number;
+	bubbleOpacity?: number; // 0-1, background opacity independent of text opacity; default 0.7
+	textOpacity?: number; // 0-1, glyph opacity independent of element opacity; default 1
 	hidden?: boolean;
 	transform: Transform;
 	opacity: number;
+	blendMode?: BlendMode;
 }
 
 export interface StickerElement extends BaseTimelineElement {
@@ -249,6 +342,7 @@ export interface StickerElement extends BaseTimelineElement {
 	transform: Transform;
 	opacity: number;
 	color?: string;
+	blendMode?: BlendMode;
 }
 
 export interface EffectElement extends BaseTimelineElement {
@@ -360,6 +454,9 @@ export interface CaptionElement extends BaseTimelineElement {
 	shadow?: TextShadow;
 	glow?: TextGlow;
 	gradient?: TextGradient;
+	animationIn?: import("./animations").ElementAnimation;
+	animationOut?: import("./animations").ElementAnimation;
+	animationLoop?: import("./animations").ElementAnimation;
 	hidden?: boolean;
 	transform: Transform;
 	opacity: number;

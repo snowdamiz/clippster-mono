@@ -8,7 +8,10 @@ import {
 } from './transcripts';
 import { getRawVideosByProjectId } from './raw-videos';
 import { getProject } from './projects';
+import { getProjectVodPresetConfig } from './vod-presets';
+import { updateClipFullSubtitleSettings, updateClipSubtitleSettings } from './clips';
 import type { ClipWithVersion, ClipSegment, ClipWithVersionAndSegment } from './types';
+import type { SubtitleSettings } from '@/types';
 import { invoke } from '@tauri-apps/api/core';
 
 // Manual migration fallback function - kept here as it's specifically for clip versioning
@@ -234,6 +237,50 @@ export async function createVersionedClip(
   );
 
   return clipId;
+}
+
+/**
+ * After detection, persist subtitle choice onto the clip row. When the project has VOD preset
+ * `subtitleDefaults` (e.g. from creator layout), merge the full SubtitlePropertiesPanel snapshot
+ * with the preset style selected in the detection dialog.
+ */
+async function getProjectOrParentVodPresetConfig(projectId: string) {
+  const vodPreset = await getProjectVodPresetConfig(projectId);
+  if (vodPreset) return vodPreset;
+
+  const project = await getProject(projectId);
+  if (!project?.parent_id) return null;
+  return getProjectVodPresetConfig(project.parent_id);
+}
+
+async function applyDetectionSubtitleChoiceToClip(
+  clipId: string,
+  projectId: string,
+  detectionSubtitle: { enabled: boolean; presetId: string } | null | undefined
+): Promise<void> {
+  if (!detectionSubtitle?.enabled || !detectionSubtitle.presetId) return;
+
+  try {
+    const vodPreset = await getProjectOrParentVodPresetConfig(projectId);
+    const seeded = vodPreset?.subtitleDefaults as SubtitleSettings | null | undefined;
+
+    if (seeded && typeof seeded === 'object') {
+      const merged: SubtitleSettings = {
+        ...JSON.parse(JSON.stringify(seeded)),
+        enabled: true,
+        selectedPresetId: detectionSubtitle.presetId || seeded.selectedPresetId || null,
+      };
+
+      await updateClipFullSubtitleSettings(clipId, merged);
+      // Do not mirror Y/X/width into subtitle_position_* columns here. Those columns mean "user
+      // dragged in workspace" for layout merge; copying detection defaults blocked creator layout.
+      // Position lives on subtitle_settings JSON (merged above).
+    } else {
+      await updateClipSubtitleSettings(clipId, true, detectionSubtitle.presetId);
+    }
+  } catch (e) {
+    console.warn('[clip-detection] applyDetectionSubtitleChoiceToClip failed:', e);
+  }
 }
 
 export async function getClipsWithVersionsByProjectId(
@@ -493,41 +540,62 @@ export async function persistClipDetectionResults(
   projectId: string,
   prompt: string,
   detectionResults: {
-    clips: any[];
+    clips?: any[];
+    jobId?: string;
     transcript?: any;
     validation?: any;
   },
-  options?: {
-    detectionModel?: string;
-    serverResponseId?: string;
+  metadata?: {
     processingTimeMs?: number;
+    detectionModel?: string;
+    serverResponseId?: string | null;
+    enhanced?: boolean;
     videoFilePath?: string;
     rawVideoId?: string;
-  }
+  },
+  subtitleSettings?: { enabled: boolean; presetId: string } | null
 ): Promise<string> {
   const startTime = Date.now();
+  
+  console.log('[Database] persistClipDetectionResults called with:', {
+    projectId,
+    detectionResultsKeys: Object.keys(detectionResults),
+    clipsType: typeof detectionResults.clips,
+    clipsIsArray: Array.isArray(detectionResults.clips),
+    clipsLength: Array.isArray(detectionResults.clips) ? detectionResults.clips.length : 'N/A',
+  });
+  
   // Check for nested structure in clips property
   if (
     detectionResults.clips &&
     typeof detectionResults.clips === 'object' &&
     (detectionResults.clips as any).clips
   ) {
+    console.log('[Database] Found nested clips structure, unwrapping...');
     (detectionResults as any).clips = (detectionResults.clips as any).clips;
   }
 
   // Double-check if clips might be in a different property
   if (!detectionResults.clips || (detectionResults.clips as any[]).length === 0) {
+    console.log('[Database] No clips found in clips property, searching other properties...');
     for (const key of Object.keys(detectionResults)) {
       const value = detectionResults[key as keyof typeof detectionResults];
       if (Array.isArray(value) && value.length > 0) {
         // Check if this looks like clips data
         if ((value[0] as any)?.id || (value[0] as any)?.title || (value[0] as any)?.segments) {
+          console.log(`[Database] Found clips in property: ${key}`);
           (detectionResults as any).clips = value;
           break;
         }
       }
     }
   }
+  
+  console.log('[Database] After extraction - clips:', {
+    hasClips: !!detectionResults.clips,
+    isArray: Array.isArray(detectionResults.clips),
+    length: Array.isArray(detectionResults.clips) ? detectionResults.clips.length : 'N/A',
+  });
 
   // Ensure clip versioning tables exist before proceeding
   await ensureClipVersioningTables();
@@ -542,6 +610,7 @@ export async function persistClipDetectionResults(
         console.warn('[Database] No raw video found for project, cannot store transcript');
       } else {
         const rawVideo = rawVideos[0]; // Use the first raw video found
+        let shouldStoreTranscriptSegments = false;
 
         // Check if transcript already exists for this raw video
         const existingTranscript = await getTranscriptByRawVideoId(rawVideo.id);
@@ -570,22 +639,41 @@ export async function persistClipDetectionResults(
               ) ||
               null;
 
-            const db = await getDatabase();
-            await db.execute(
-              'UPDATE transcripts SET raw_json = ?, text = ?, language = ?, duration = ? WHERE id = ?',
-              [
-                JSON.stringify(detectionResults.transcript),
-                transcriptText,
-                language,
-                duration,
-                transcriptId,
-              ]
-            );
+            const existingDuration = Number(existingTranscript.duration) || 0;
+            const incomingDuration = Number(duration) || 0;
+            const existingTextLength = existingTranscript.text?.length || 0;
+            const incomingTextLength = transcriptText.length;
+            const incomingLooksPartial =
+              (existingDuration > 0 && incomingDuration > 0 && incomingDuration < existingDuration * 0.8) ||
+              (existingTextLength > 0 && incomingTextLength > 0 && incomingTextLength < existingTextLength * 0.8);
 
-            // Delete existing segments to refresh them
-            await db.execute('DELETE FROM transcript_segments WHERE transcript_id = ?', [
-              transcriptId,
-            ]);
+            if (incomingLooksPartial) {
+              console.warn('[Database] Skipping transcript overwrite because incoming transcript is shorter than the existing VOD transcript', {
+                transcriptId,
+                existingDuration,
+                incomingDuration,
+                existingTextLength,
+                incomingTextLength,
+              });
+            } else {
+              const db = await getDatabase();
+              await db.execute(
+                'UPDATE transcripts SET raw_json = ?, text = ?, language = ?, duration = ? WHERE id = ?',
+                [
+                  JSON.stringify(detectionResults.transcript),
+                  transcriptText,
+                  language,
+                  duration,
+                  transcriptId,
+                ]
+              );
+
+              // Delete existing segments to refresh them
+              await db.execute('DELETE FROM transcript_segments WHERE transcript_id = ?', [
+                transcriptId,
+              ]);
+              shouldStoreTranscriptSegments = true;
+            }
           } else {
             console.log('[Database] Used cached transcript, no database update needed');
           }
@@ -613,13 +701,12 @@ export async function persistClipDetectionResults(
             language,
             duration
           );
+          shouldStoreTranscriptSegments = true;
         }
 
         // Store transcript segments if available (only for fresh transcriptions)
-        const usedCachedTranscript = (detectionResults as any).processing_info
-          ?.used_cached_transcript;
         if (
-          !usedCachedTranscript &&
+          shouldStoreTranscriptSegments &&
           detectionResults.transcript.segments &&
           Array.isArray(detectionResults.transcript.segments)
         ) {
@@ -633,7 +720,7 @@ export async function persistClipDetectionResults(
               i
             );
           }
-        } else if (usedCachedTranscript) {
+        } else if ((detectionResults as any).processing_info?.used_cached_transcript) {
           console.log('[Database] Using cached transcript segments, no segment storage needed');
         }
 
@@ -655,11 +742,11 @@ export async function persistClipDetectionResults(
 
   // Create detection session
   const sessionId = await createClipDetectionSession(projectId, prompt, {
-    detectionModel: options?.detectionModel || 'claude-3.5-sonnet',
-    serverResponseId: options?.serverResponseId,
+    detectionModel: metadata?.detectionModel || 'claude-3.5-sonnet',
+    serverResponseId: metadata?.serverResponseId ?? undefined,
     qualityScore: detectionResults.validation?.qualityScore,
     totalClipsDetected: detectionResults.clips?.length || 0,
-    processingTimeMs: options?.processingTimeMs || Date.now() - startTime,
+    processingTimeMs: metadata?.processingTimeMs || Date.now() - startTime,
     validationData: detectionResults.validation,
   });
 
@@ -710,12 +797,12 @@ export async function persistClipDetectionResults(
 
     // Generate thumbnail at the midpoint of the clip
     let thumbnailPath: string | undefined;
-    if (options?.videoFilePath && startTime !== undefined && endTime !== undefined) {
+    if (metadata?.videoFilePath && startTime !== undefined && endTime !== undefined) {
       try {
         const midpoint = startTime + (endTime - startTime) / 2;
         const clipId = generateId(); // Pre-generate ID for thumbnail filename
         thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
-          videoPath: options.videoFilePath,
+          videoPath: metadata.videoFilePath,
           timestampSeconds: midpoint,
           outputFilename: `clip_${clipId}`,
         });
@@ -729,13 +816,14 @@ export async function persistClipDetectionResults(
     }
 
     try {
-      await createVersionedClip(
+      const clipId = await createVersionedClip(
         projectId,
         sessionId,
         clipInfo,
-        options?.videoFilePath,
+        metadata?.videoFilePath,
         thumbnailPath
       );
+      await applyDetectionSubtitleChoiceToClip(clipId, projectId, subtitleSettings);
     } catch (e) {
       console.error(`[Database] Failed to create clip ${i + 1}:`, e);
     }

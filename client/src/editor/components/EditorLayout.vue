@@ -3,8 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useEditorActions } from "../composables/actions/useEditorActions";
 import { useKeybindingsListener } from "../composables/useKeybindings";
 import { useImageMode } from "../composables/useImageMode";
-import { useAutoSave } from "../composables/useAutoSave";
-import { useElementSelection } from "../composables/timeline/element/useElementSelection";
+import { useSaveStatus } from "../composables/useSaveStatus";
 import { providePointerDrag } from "../composables/usePointerDrag";
 import KeyboardShortcutsModal from "./KeyboardShortcutsModal.vue";
 import EditorHeader from "./EditorHeader.vue";
@@ -23,20 +22,20 @@ import {
 	Captions,
 	FileText,
 	Palette,
-	SlidersHorizontal,
 	Stamp,
+	Sparkles,
 	Settings,
 	LayoutTemplate,
-	Sparkles,
+	PanelRightClose,
+	PanelRightOpen,
+
 } from "lucide-vue-next";
 
 // Register global editor actions and keybindings
 useEditorActions();
 useKeybindingsListener();
-useAutoSave();
+const { isSaving, lastSavedAt } = useSaveStatus();
 providePointerDrag();
-
-const { selectedElements } = useElementSelection();
 
 const previewPanelRef = ref<InstanceType<typeof PreviewPanel> | null>(null);
 
@@ -54,8 +53,8 @@ const TAB_KEYS = [
 	"transitions",
 	"captions",
 	"transcript",
+	"broll",
 	"filters",
-	"adjustment",
 	"branding",
 	"settings",
 ] as const;
@@ -86,13 +85,14 @@ const tabConfig: Record<Tab, { icon: any; label: string }> = {
 	transitions: { icon: ArrowRightLeft, label: "Transitions" },
 	captions: { icon: Captions, label: "Captions" },
 	transcript: { icon: FileText, label: "Transcript" },
+	broll: { icon: Sparkles, label: "B-roll" },
 	filters: { icon: Palette, label: "Filters" },
-	adjustment: { icon: SlidersHorizontal, label: "Adjustment" },
 	branding: { icon: Stamp, label: "Branding" },
 	settings: { icon: Settings, label: "Settings" },
 };
 
 const activeTab = ref<Tab | null>("media");
+const propertiesCollapsed = ref(false);
 const shortcutsOpen = ref(false);
 
 function toggleShortcutsModal() {
@@ -144,7 +144,11 @@ onUnmounted(() => {
 <template>
 	<div class="flex h-full w-full flex-col overflow-hidden bg-[#0e0e10] text-white">
 		<!-- Header -->
-		<EditorHeader :preview-container="previewPanelRef?.containerRef ?? null" />
+		<EditorHeader
+			:preview-container="previewPanelRef?.containerRef ?? null"
+			:is-saving="isSaving"
+			:last-saved-at="lastSavedAt"
+		/>
 
 		<!-- ============ IMAGE MODE LAYOUT (Photoshop-like) ============ -->
 		<div v-if="isImageMode" class="flex flex-1 min-h-0 overflow-hidden">
@@ -155,6 +159,8 @@ onUnmounted(() => {
 					:key="tabKey"
 					type="button"
 					:title="tabConfig[tabKey].label"
+					:aria-label="`${tabConfig[tabKey].label} panel`"
+					:aria-pressed="activeTab === tabKey"
 					:class="[
 						'group relative flex flex-col items-center justify-center w-[44px] rounded-md py-1.5 transition-all',
 						activeTab === tabKey
@@ -170,7 +176,6 @@ onUnmounted(() => {
 							activeTab === tabKey ? 'text-blue-400' : 'text-zinc-600 group-hover:text-zinc-400',
 						]"
 					>{{ tabConfig[tabKey].label }}</span>
-					<!-- Active indicator -->
 					<div
 						v-if="activeTab === tabKey"
 						class="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-4 rounded-r bg-blue-500"
@@ -190,11 +195,9 @@ onUnmounted(() => {
 
 			<!-- Right panel: Layers + Properties stacked -->
 			<div class="w-[280px] shrink-0 border-l border-white/[0.06] bg-[#141416] overflow-hidden flex flex-col">
-				<!-- Layers panel (top half) -->
 				<div class="h-[45%] shrink-0 border-b border-white/[0.06] overflow-hidden">
 					<LayersPanel />
 				</div>
-				<!-- Properties panel (bottom half) -->
 				<div class="flex-1 min-h-0 overflow-hidden">
 					<PropertiesPanel />
 				</div>
@@ -233,9 +236,30 @@ onUnmounted(() => {
 					<PreviewPanel />
 				</div>
 
-				<!-- Right panel: Properties -->
-				<div class="w-72 shrink-0 border-l border-white/10 bg-[#18181b] overflow-hidden">
-					<PropertiesPanel />
+				<!-- Right panel: pinned so selection changes never resize the preview -->
+				<div
+					:class="[
+						'flex shrink-0 flex-col border-l border-white/10 bg-[#18181b] overflow-hidden transition-[width] duration-150',
+						propertiesCollapsed ? 'w-10' : 'w-80',
+					]"
+				>
+					<div class="flex h-9 items-center border-b border-white/10 px-2">
+						<span v-if="!propertiesCollapsed" class="flex-1 text-xs font-medium text-zinc-400">Properties</span>
+						<button
+							type="button"
+							class="ml-auto flex size-6 items-center justify-center rounded text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-200"
+							:aria-label="propertiesCollapsed ? 'Expand properties panel' : 'Collapse properties panel'"
+							:aria-pressed="propertiesCollapsed"
+							:title="propertiesCollapsed ? 'Expand properties panel' : 'Collapse properties panel'"
+							@click="propertiesCollapsed = !propertiesCollapsed"
+						>
+							<PanelRightOpen v-if="propertiesCollapsed" class="size-3.5" />
+							<PanelRightClose v-else class="size-3.5" />
+						</button>
+					</div>
+					<div v-if="!propertiesCollapsed" class="min-h-0 flex-1">
+						<PropertiesPanel />
+					</div>
 				</div>
 			</div>
 

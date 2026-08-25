@@ -100,13 +100,38 @@ export function useClipBuildPipeline() {
         try {
           const dbSegments = await getClipSegmentsByVersionId(clip.current_version_id);
           if (dbSegments.length > 0) {
-            segments = dbSegments.map((s: any) => ({
-              id: s.id,
-              start_time: s.start_time,
-              end_time: s.end_time,
-              duration: s.duration,
-              transcript: s.transcript,
-            }));
+            // For self-contained extracted clips (anything with `file_path`), segments must
+            // address the clip's own MP4 file (0-based). Legacy paths sometimes wrote
+            // livestream-absolute timestamps into clip_segments; if any segment lies past
+            // the clip's actual duration, the row is stale — fall through to the synthetic
+            // [0, clip.duration] segment below so the build doesn't try to seek to a
+            // timestamp that doesn't exist in the file.
+            const isSelfContained =
+              typeof clip.file_path === 'string' && clip.file_path.trim() !== '';
+            const clipDur =
+              typeof clip.duration === 'number' && clip.duration > 0 ? clip.duration : 0;
+            const segmentsLookStale =
+              isSelfContained &&
+              clipDur > 0 &&
+              dbSegments.some(
+                (s: any) =>
+                  typeof s.end_time === 'number' && s.end_time > clipDur + 0.5
+              );
+
+            if (!segmentsLookStale) {
+              segments = dbSegments.map((s: any) => ({
+                id: s.id,
+                start_time: s.start_time,
+                end_time: s.end_time,
+                duration: s.duration,
+                transcript: s.transcript,
+              }));
+            } else {
+              console.warn(
+                '[BuildPipeline] Ignoring stale livestream-absolute clip_segments rows; falling back to full clip range:',
+                { clipId: clip.id, clipDuration: clipDur }
+              );
+            }
           }
         } catch (err) {
           console.warn('[BuildPipeline] Could not load segments from DB:', err);
@@ -307,6 +332,53 @@ export function useClipBuildPipeline() {
               resolvedIntroOutroPerRatio = null;
             }
           }
+
+          if (profile?.watermark_id) {
+            const { expandWatermarkForBuild } = await import('@/composables/useOrgCampaignBuildBranding');
+            const { resolveWatermarkById } = await import('@/services/database/watermarks');
+            const orgWm = await resolveWatermarkById(`org-asset-${profile.watermark_id}`);
+            if (orgWm) {
+              let wmSettings: Record<string, unknown> | null = null;
+              if (profile.watermark_settings) {
+                try {
+                  wmSettings =
+                    typeof profile.watermark_settings === 'string'
+                      ? JSON.parse(profile.watermark_settings)
+                      : profile.watermark_settings;
+                } catch {
+                  wmSettings = null;
+                }
+              }
+              const defaultPos =
+                (wmSettings as Record<string, { position?: { x: number; y: number; opacity: number; scale: number } }>)?.[
+                  settings.aspectRatios[0] || '16:9'
+                ]?.position ??
+                (wmSettings as Record<string, { position?: { x: number; y: number; opacity: number; scale: number } }>)?.[
+                  '16:9'
+                ]?.position ?? { x: 12, y: 92, opacity: 80, scale: 20 };
+
+              const expanded = await expandWatermarkForBuild({
+                enabled: true,
+                watermarkId: `org-asset-${profile.watermark_id}`,
+                positionX: defaultPos.x,
+                positionY: defaultPos.y,
+                opacity: defaultPos.opacity,
+                scale: defaultPos.scale,
+                perRatioSettings: wmSettings as any,
+              }, settings.aspectRatios);
+              if (expanded) {
+                resolvedWatermarkSettings = expanded as typeof resolvedWatermarkSettings;
+              }
+            }
+          } else if (profile?.watermark?.url) {
+            const { resolveOrgBuildBranding } = await import('@/composables/useOrgCampaignBuildBranding');
+            const branding = await resolveOrgBuildBranding(profile);
+            if (branding.watermark) {
+              const { expandWatermarkForBuild } = await import('@/composables/useOrgCampaignBuildBranding');
+              const expanded = await expandWatermarkForBuild(branding.watermark, settings.aspectRatios);
+              if (expanded) resolvedWatermarkSettings = expanded as typeof resolvedWatermarkSettings;
+            }
+          }
         } catch (error) {
           console.warn('[BuildPipeline] Failed to resolve org branding:', error);
         }
@@ -385,18 +457,20 @@ export function useClipBuildPipeline() {
               if (ratioConfig?.position) defaultPos = ratioConfig.position;
             }
 
-            resolvedWatermarkSettings = {
-              enabled: true,
-              watermarkId: `org-asset-${watermarkProfile.watermark.id}`,
-              filePath,
-              width: null,
-              height: null,
-              positionX: defaultPos.x,
-              positionY: defaultPos.y,
-              opacity: defaultPos.opacity,
-              scale: defaultPos.scale,
-              perRatioSettings: (watermarkProfile.watermark_settings as any) ?? null,
-            } as any;
+            const { expandWatermarkForBuild } = await import('@/composables/useOrgCampaignBuildBranding');
+            const expanded = await expandWatermarkForBuild(
+              {
+                enabled: true,
+                watermarkId: `org-asset-${watermarkProfile.watermark.id}`,
+                positionX: defaultPos.x,
+                positionY: defaultPos.y,
+                opacity: defaultPos.opacity,
+                scale: defaultPos.scale,
+                perRatioSettings: (watermarkProfile.watermark_settings as any) ?? null,
+              },
+              settings.aspectRatios
+            );
+            resolvedWatermarkSettings = expanded as typeof resolvedWatermarkSettings;
           } else {
             resolvedWatermarkSettings = null;
           }
@@ -430,6 +504,14 @@ export function useClipBuildPipeline() {
       if (completeUnlisten) {
         completeUnlisten();
       }
+
+      const { getClipTextBoxOverlaysForExport } = await import('@/utils/clipTextBox');
+      const textOverlaysFromClipBox = await getClipTextBoxOverlaysForExport(clipId);
+      console.log('[BuildPipeline] Text overlays from clip box:', {
+        clipId,
+        count: textOverlaysFromClipBox?.length ?? 0,
+        overlays: textOverlaysFromClipBox,
+      });
 
       const buildCompletePromise = new Promise<void>((resolve, reject) => {
         listen<{
@@ -489,11 +571,11 @@ export function useClipBuildPipeline() {
         clipName: clip.current_version_name || clip.name || 'Livestream Clip',
         videoPath,
         segments,
-        subtitleSettings: null,
+        subtitleSettings: settings.subtitleSettings ?? null,
         subtitleOverrides: settings.subtitleOverrides || null,
-        transcriptWords: [],
-        transcriptSegments: [],
-        maxWords: 3,
+        transcriptWords: settings.transcriptWords ?? [],
+        transcriptSegments: settings.transcriptSegments ?? [],
+        maxWords: settings.maxWords ?? 3,
         aspectRatios: settings.aspectRatios,
         quality: settings.quality,
         frameRate: settings.frameRate,
@@ -512,7 +594,7 @@ export function useClipBuildPipeline() {
         manualFramingConfigs: settings.manualFramingConfigs || null,
         segmentFramingConfigs: null,
         videoFilterSegments: null,
-        textOverlays: null,
+        textOverlays: textOverlaysFromClipBox,
         stickers: null,
         clipWatermarks: null,
         clipEffects: null,

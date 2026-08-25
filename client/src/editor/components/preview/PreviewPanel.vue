@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch, shallowRef, onUnmounted } from "vue";
+import { ref, computed, watch, shallowRef, onUnmounted, onMounted } from "vue";
+import { ChevronDown } from "lucide-vue-next";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../composables/useEditor";
 import { useRafLoop } from "../../composables/useRafLoop";
@@ -8,117 +9,85 @@ import { useElementSelection } from "../../composables/timeline/element/useEleme
 import { useBrandingConfig } from "../../composables/useBrandingConfig";
 import { useImageMode } from "../../composables/useImageMode";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
-import { buildScene } from "../../renderer/scene-builder";
-import { getLastFrameTime } from "../../lib/time";
-import type { TimelineTrack } from "../../types/timeline";
-import type { AspectRatioId } from "../../types/project";
+import type { RootNode } from "../../renderer/nodes/root-node";
+import { getRenderFrame } from "../../renderer/frame-policy";
+import { PreviewFrameScheduler } from "../../renderer/preview-frame-scheduler";
+import type { TimelineElement, TimelineTrack } from "../../types/timeline";
 import type { SocialOverlayPreset } from "../../types/social-overlays";
-import { ChevronDown, Smartphone, Maximize, Minimize, Link2 } from "lucide-vue-next";
+import {
+	exposePreviewPerfGlobal,
+	previewPerfMarkCoalesced,
+	previewPerfMarkDropped,
+} from "../../lib/preview-performance";
+import { prepareSceneForRealtimePlayback } from "../../renderer/prepare-realtime-playback";
 import { SOCIAL_OVERLAY_PRESETS } from "../../constants/social-overlay-constants";
 import PreviewOverlay from "./PreviewOverlay.vue";
 import SocialOverlay from "./SocialOverlay.vue";
+import GuideOverlay from "./GuideOverlay.vue";
+import {
+	AdaptivePreviewQualityController,
+	configurePreviewDecode,
+} from "../../lib/preview-decode-settings";
+import { videoCache } from "../../video-cache/service";
 
 const { editor, version } = useEditor({
 	subscribe: {
 		playback: false,
 		selection: false,
+		timeline: true,
+		media: true,
+		scenes: true,
+		project: true,
 	},
 });
-const { isCropMode, activeSocialOverlay } = useEditorUIState();
-const { selectedElements } = useElementSelection();
+const { isCropMode, activeSocialOverlay, viewportZoom, previewQuality, fitMode } = useEditorUIState();
+const { selectedElements, clearElementSelection } = useElementSelection();
 const { isImageMode } = useImageMode();
-
-const aspectPresets = [
-	{ width: 1920, height: 1080, label: "16:9" },
-	{ width: 1080, height: 1920, label: "9:16" },
-	{ width: 1080, height: 1080, label: "1:1" },
-	{ width: 1080, height: 1350, label: "4:5" },
-];
-
-const showAspectMenu = ref(false);
-const showSocialMenu = ref(false);
-const showSpeedMenu = ref(false);
-const isFullscreen = ref(false);
-const containerRef = ref<HTMLDivElement | null>(null);
-
-// Custom aspect ratio state
-const showCustomSize = ref(false);
-const customWidth = ref(1920);
-const customHeight = ref(1080);
-const linkDimensions = ref(true);
-
-const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4];
-
-const currentSpeed = computed(() => {
-	void version.value;
-	return editor.playback.getPlaybackRate();
-});
-
-function setSpeed(rate: number) {
-	editor.playback.setPlaybackRate({ rate });
-	showSpeedMenu.value = false;
-}
-
-function toggleSocialOverlay(preset: SocialOverlayPreset) {
-	if (activeSocialOverlay.value?.platform === preset.platform) {
-		activeSocialOverlay.value = null;
-	} else {
-		activeSocialOverlay.value = preset;
-	}
-	showSocialMenu.value = false;
-}
-
-const currentAspectLabel = computed(() => {
-	const w = canvasWidth.value;
-	const h = canvasHeight.value;
-	const match = aspectPresets.find((p) => p.width === w && p.height === h);
-	if (match) return match.label;
-	return `${w}×${h}`;
-});
-
-function setAspectRatio(preset: { width: number; height: number }) {
-	editor.project.updateSettings({ settings: { canvasSize: preset } });
-	showAspectMenu.value = false;
-}
-
-// Custom aspect ratio functions
-function onCustomWidthChange(value: number) {
-	customWidth.value = value;
-	if (linkDimensions.value) {
-		// Maintain aspect ratio when linked
-		const aspect = customHeight.value / 1920; // Base aspect from original height
-		customHeight.value = Math.round(value * aspect);
-	}
-}
-
-function onCustomHeightChange(value: number) {
-	customHeight.value = value;
-	if (linkDimensions.value) {
-		// Maintain aspect ratio when linked
-		const aspect = customWidth.value / 1920; // Base aspect from original width
-		customWidth.value = Math.round(value * aspect);
-	}
-}
-
-function applyCustomSize() {
-	editor.project.updateSettings({ 
-		settings: { canvasSize: { width: customWidth.value, height: customHeight.value } } 
-	});
-	showAspectMenu.value = false;
-	showCustomSize.value = false;
-}
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 let lastFrame = -1;
 let lastScene: any = null;
-let rendering = false;
+let lastRenderedTime = Number.NEGATIVE_INFINITY;
+let sceneRebuildIdleId: number | null = null;
+let requestPreviewFrame = () => {};
+let freezeCaptureCanvas: HTMLCanvasElement | null = null;
+let frameScheduler: PreviewFrameScheduler | null = null;
 
-// Register canvas on editor core so freeze-frame can capture it
-watch(canvasRef, (canvas) => {
-	editor.setPreviewCanvas(canvas);
-});
+/**
+ * Freeze capture remains project-sized without painting a full-resolution canvas
+ * every preview frame. Its pixels are populated from the latest display frame only
+ * when the existing freeze action calls toBlob().
+ */
+function syncFreezeCaptureCanvas() {
+	const displayCanvas = canvasRef.value;
+	if (!displayCanvas) {
+		freezeCaptureCanvas = null;
+		editor.setPreviewCanvas(null);
+		return;
+	}
+
+	const capture = freezeCaptureCanvas ?? document.createElement("canvas");
+	freezeCaptureCanvas = capture;
+	capture.width = Math.max(1, Math.round(projectWidth.value));
+	capture.height = Math.max(1, Math.round(projectHeight.value));
+	capture.toBlob = (callback, type, quality) => {
+		const context = capture.getContext("2d");
+		const currentDisplay = canvasRef.value;
+		if (!context || !currentDisplay) {
+			callback(null);
+			return;
+		}
+		context.setTransform(1, 0, 0, 1, 0, 0);
+		context.clearRect(0, 0, capture.width, capture.height);
+		context.drawImage(currentDisplay, 0, 0, capture.width, capture.height);
+		HTMLCanvasElement.prototype.toBlob.call(capture, callback, type, quality);
+	};
+	editor.setPreviewCanvas(capture);
+}
+
 onUnmounted(() => {
 	editor.setPreviewCanvas(null);
+	freezeCaptureCanvas = null;
 });
 
 const activeProject = computed(() => {
@@ -126,8 +95,69 @@ const activeProject = computed(() => {
 	return editor.project.getActiveOrNull();
 });
 
-const canvasWidth = computed(() => activeProject.value?.settings?.canvasSize?.width ?? 1920);
-const canvasHeight = computed(() => activeProject.value?.settings?.canvasSize?.height ?? 1080);
+const canvasSourceFraming = computed(() => activeProject.value?.settings.canvasSourceFraming ?? null);
+
+const projectWidth = computed(() => activeProject.value?.settings?.canvasSize?.width ?? 1920);
+const projectHeight = computed(() => activeProject.value?.settings?.canvasSize?.height ?? 1080);
+
+/**
+ * Layout: buildScene + CanvasRenderer always use full project canvas size so text/overlays stay aligned.
+ * Quality: softer decode — video CanvasSink + image bitmaps use a smaller pixel box (see preview-decode-settings).
+ */
+const layoutWidth = computed(() => Math.max(1, Math.round(projectWidth.value)));
+const layoutHeight = computed(() => Math.max(1, Math.round(projectHeight.value)));
+const adaptiveQuality = new AdaptivePreviewQualityController();
+const autoPreviewHeight = ref(adaptiveQuality.height);
+const effectivePreviewHeight = computed(() =>
+	previewQuality.value === "auto" ? autoPreviewHeight.value : previewQuality.value,
+);
+const previewBackingSize = computed(() => {
+	const width = Math.max(1, Math.round(projectWidth.value));
+	const height = Math.max(1, Math.round(projectHeight.value));
+	const targetHeight = Math.min(height, effectivePreviewHeight.value);
+	const scale = Math.min(1, targetHeight / height);
+	return {
+		width: Math.max(1, Math.round(width * scale)),
+		height: Math.max(1, Math.round(height * scale)),
+	};
+});
+
+let pendingDecodeCacheReset = false;
+
+watch(
+	[projectWidth, projectHeight, previewQuality, autoPreviewHeight],
+	([width, height, quality], previous) => {
+		configurePreviewDecode({
+			projectWidth: projectWidth.value,
+			projectHeight: projectHeight.value,
+			previewQuality: previewQuality.value,
+			autoQualityHeight: autoPreviewHeight.value,
+		});
+		// Auto-quality steps during playback must not destroy live decoders:
+		// clearAll() cold-restarts every video sink (a visible multi-frame stall
+		// while audio keeps running). Existing sinks keep their old decode size
+		// until playback stops; new sinks pick up the new size immediately.
+		const onlyAutoHeightChanged =
+			previous !== undefined &&
+			width === previous[0] &&
+			height === previous[1] &&
+			quality === previous[2];
+		if (onlyAutoHeightChanged && editor.playback.getIsPlaying()) {
+			pendingDecodeCacheReset = true;
+			return;
+		}
+		pendingDecodeCacheReset = false;
+		videoCache.clearAll();
+	},
+	{ immediate: true },
+);
+
+watch([canvasRef, projectWidth, projectHeight], syncFreezeCaptureCanvas, { flush: "post" });
+watch(
+	canvasRef,
+	(canvas) => editor.setLivePreviewCanvas(canvas),
+	{ immediate: true, flush: "post" },
+);
 
 const is916 = computed(() => {
 	return canvasWidth.value === 1080 && canvasHeight.value === 1920;
@@ -144,16 +174,56 @@ const background = computed(() => activeProject.value?.settings?.background ?? {
 
 const renderer = shallowRef<CanvasRenderer | null>(null);
 
-watch([canvasWidth, canvasHeight, fps], ([w, h, f]) => {
-	renderer.value = new CanvasRenderer({ width: w, height: h, fps: f });
+watch([layoutWidth, layoutHeight, fps, previewBackingSize], ([w, h, f, backing]) => {
+	// Use a DOM canvas-backed renderer for preview. Several transition effects rely on
+	// alpha/clip compositing that is unreliable when the destination context is OffscreenCanvas
+	// in Chromium/Electron, which makes wipes/crossfades appear as no-ops in preview.
+	renderer.value = new CanvasRenderer({
+		width: w,
+		height: h,
+		fps: f,
+		framePolicy: "realtime",
+		prewarmUpcoming: true,
+		preferOffscreen: false,
+		previewEffectProcessing: true,
+		backingWidth: backing.width,
+		backingHeight: backing.height,
+	});
 	lastFrame = -1;
 	lastScene = null;
+	lastRenderedTime = Number.NEGATIVE_INFINITY;
+	frameScheduler?.invalidate();
+	requestPreviewFrame();
 }, { immediate: true });
 
 // Rebuild render tree when tracks/media/settings change
 const tracks = computed(() => {
 	void version.value;
 	return editor.timeline.getTracks();
+});
+
+/** Invalidate decode cache when element timing changes so EOF frames don't stick after trims. */
+const videoTimingSignature = computed(() => {
+	void version.value;
+	const parts: string[] = [];
+	for (const track of editor.timeline.getTracks()) {
+		for (const el of track.elements) {
+			if (el.type === "video") {
+				parts.push(
+					`${el.id}:${el.trimStart}:${el.trimEnd}:${el.duration}:${el.speed ?? 1}`,
+				);
+			}
+		}
+	}
+	return parts.join("|");
+});
+
+let lastVideoTimingSignature = "";
+watch(videoTimingSignature, (signature) => {
+	if (lastVideoTimingSignature && signature !== lastVideoTimingSignature) {
+		videoCache.clearAll();
+	}
+	lastVideoTimingSignature = signature;
 });
 
 const mediaAssets = computed(() => {
@@ -171,63 +241,151 @@ const sceneTransitions = computed(() => {
 	}
 });
 
+function isVisualPreviewElement(element: TimelineElement): boolean {
+	return (
+		element.type === "video" ||
+		element.type === "image" ||
+		element.type === "text" ||
+		element.type === "sticker" ||
+		element.type === "effect" ||
+		element.type === "caption"
+	);
+}
+
 // When in crop mode, strip crop from the selected element so canvas shows full frame
 const sceneTracks = computed((): TimelineTrack[] => {
 	const raw = tracks.value;
-	if (!isCropMode.value || selectedElements.value.length === 0) return raw;
-	const sel = selectedElements.value[0];
-	return raw.map((t) => {
-		if (t.id !== sel.trackId) return t;
-		return {
-			...t,
-			elements: t.elements.map((el) =>
-				el.id === sel.elementId ? { ...el, crop: undefined } : el,
-			),
-		} as typeof t;
-	});
+	const selectedElement = selectedElements.value[0];
+
+	return raw
+		.map((t) => {
+			const nextElements = t.elements.filter(isVisualPreviewElement).map((el) => {
+				let next = el;
+
+				if (
+					isCropMode.value &&
+					selectedElement &&
+					t.id === selectedElement.trackId &&
+					el.id === selectedElement.elementId
+				) {
+					next = { ...next, crop: undefined } as typeof el;
+				}
+
+				return next;
+			});
+
+			return { ...t, elements: nextElements } as typeof t;
+		})
+		.filter((t) => t.elements.length > 0 || t.type !== "audio");
 });
+
+function schedulePreviewSceneRebuild() {
+	if (!activeProject.value) return;
+	const duration = editor.timeline.getTotalDuration();
+	const inputs = {
+		tracks: sceneTracks.value,
+		mediaAssets: mediaAssets.value,
+		duration,
+		canvasSize: { width: layoutWidth.value, height: layoutHeight.value },
+		background: background.value,
+		transitions: sceneTransitions.value,
+		canvasSourceFraming: canvasSourceFraming.value,
+	};
+
+	const run = () => {
+		sceneRebuildIdleId = null;
+		editor.renderer.syncPreviewRenderTreeFromInputs(inputs);
+	};
+
+	if (sceneRebuildIdleId !== null && typeof cancelIdleCallback !== "undefined") {
+		cancelIdleCallback(sceneRebuildIdleId);
+		sceneRebuildIdleId = null;
+	}
+
+	// During playback, rebuild immediately so edits while playing stay in sync.
+	if (editor.playback.getIsPlaying()) {
+		run();
+		return;
+	}
+
+	if (typeof requestIdleCallback !== "undefined") {
+		sceneRebuildIdleId = requestIdleCallback(run, { timeout: 100 });
+	} else {
+		queueMicrotask(run);
+	}
+}
 
 watch(
-	[sceneTracks, mediaAssets, background, canvasWidth, canvasHeight, sceneTransitions],
-	() => {
-		if (!activeProject.value) return;
-		const duration = editor.timeline.getTotalDuration();
-		const renderTree = buildScene({
-			tracks: sceneTracks.value,
-			mediaAssets: mediaAssets.value,
-			duration,
-			canvasSize: { width: canvasWidth.value, height: canvasHeight.value },
-			background: background.value,
-			transitions: sceneTransitions.value,
-		});
-		editor.renderer.setRenderTree({ renderTree });
-	},
-	{ immediate: true },
+	[sceneTracks, mediaAssets, background, layoutWidth, layoutHeight, sceneTransitions, canvasSourceFraming],
+	schedulePreviewSceneRebuild,
+	{ immediate: true, flush: "post" },
 );
 
-useRafLoop(() => {
-	const canvas = canvasRef.value;
+frameScheduler = new PreviewFrameScheduler({
+	render: async (request, signal) => {
+		const canvas = canvasRef.value;
+		const r = renderer.value;
+		if (!canvas || !r) return;
+		r.framePolicy = request.mode === "playback" ? "realtime" : "exact-preview";
+		await editor.renderer.renderPreviewToTarget({
+			renderer: r,
+			time: request.time,
+			targetCanvas: canvas,
+			renderTree: request.tree,
+			signal,
+		});
+	},
+	onPresented: (request, costMs) => {
+		const r = renderer.value;
+		if (!r) return;
+		lastFrame = request.frameIndex;
+		lastScene = request.tree;
+		lastRenderedTime = request.time;
+		if (previewQuality.value === "auto") {
+			const nextHeight = adaptiveQuality.recordFrame(
+				costMs,
+				1000 / Math.max(1, r.fps),
+			);
+			if (nextHeight !== null) autoPreviewHeight.value = nextHeight;
+		}
+	},
+	onDropped: previewPerfMarkDropped,
+	onCoalesced: previewPerfMarkCoalesced,
+	onError: (error) => {
+		console.warn("[Preview] Frame render failed:", error);
+	},
+});
+
+const previewLoop = useRafLoop(() => {
 	const r = renderer.value;
 	const renderTree = editor.renderer.getRenderTree();
-	if (!canvas || !r || !renderTree) return;
-	if (rendering) return;
+	if (!canvasRef.value || !r || !renderTree) return;
 
 	const time = editor.playback.getCurrentTime();
-	const lastFrameTime = getLastFrameTime({ duration: renderTree.duration, fps: r.fps });
-	const renderTime = Math.min(time, lastFrameTime);
-	const frame = Math.floor(renderTime * r.fps);
+	const renderFrame = getRenderFrame({
+		time,
+		fps: r.fps,
+		duration: renderTree.duration,
+	});
+	const isPlaying = editor.playback.getIsPlaying();
+	const needsRender =
+		renderFrame.frameIndex !== lastFrame ||
+		renderTree !== lastScene ||
+		renderFrame.time !== lastRenderedTime;
 
-	if (frame !== lastFrame || renderTree !== lastScene) {
-		rendering = true;
-		lastScene = renderTree;
-		lastFrame = frame;
-		r.renderToCanvas({ node: renderTree, time: renderTime, targetCanvas: canvas })
-			.then(() => {
-				rendering = false;
-			})
-			.catch(() => { rendering = false; });
-	}
+	if (!needsRender) return;
+	frameScheduler?.request({
+		frameIndex: renderFrame.frameIndex,
+		time: renderFrame.time,
+		tree: renderTree,
+		mode: isPlaying ? "playback" : "exact",
+	});
+}, {
+	autoStart: false,
+	fps: () => Math.max(1, fps.value),
+	pauseWhenHidden: true,
 });
+requestPreviewFrame = previewLoop.requestFrame;
 
 const canvasBackground = computed(() => {
 	const bg = background.value;
@@ -239,7 +397,9 @@ const canvasBackground = computed(() => {
 const { getWatermarkForCanvasSize, getOverlaysForCanvasSize } = useBrandingConfig();
 
 const brandingWatermark = computed(() => {
-	return getWatermarkForCanvasSize(canvasWidth.value, canvasHeight.value);
+	// Branding selection must follow project canvas size, not preview quality scaling.
+	// Changing preview quality should never add/remove watermark/overlay content.
+	return getWatermarkForCanvasSize(projectWidth.value, projectHeight.value);
 });
 
 const brandingWatermarkDataUrl = ref<string | null>(null);
@@ -302,7 +462,8 @@ const brandingWatermarkStyle = computed(() => {
 
 // Branding layout overlays preview
 const brandingOverlays = computed(() => {
-	return getOverlaysForCanvasSize(canvasWidth.value, canvasHeight.value) ?? [];
+	// Keep branding overlays stable across preview quality changes.
+	return getOverlaysForCanvasSize(projectWidth.value, projectHeight.value) ?? [];
 });
 
 const brandingOverlayDataUrls = ref<Record<string, string>>({});
@@ -342,6 +503,177 @@ watch(
 	},
 	{ immediate: true },
 );
+
+// Zoom helpers
+const ZOOM_STEP = 0.25;
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 4;
+
+function stepZoom(delta: number) {
+	fitMode.value = "manual";
+	viewportZoom.value = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round((viewportZoom.value + delta) * 100) / 100));
+}
+
+function fitZoom() {
+	fitMode.value = "fit";
+	viewportZoom.value = 1;
+}
+
+function onPreviewAreaMouseDown(event: MouseEvent) {
+	if (event.button !== 0) return;
+	const target = event.target as HTMLElement | null;
+	if (target?.closest(".preview-canvas-wrapper")) return;
+	clearElementSelection();
+}
+
+function onKeyZoom(e: KeyboardEvent) {
+	if (!e.ctrlKey && !e.metaKey) return;
+	if (e.key === "0") {
+		e.preventDefault();
+		fitZoom();
+		return;
+	}
+	if (e.key === "+" || e.key === "=") {
+		e.preventDefault();
+		stepZoom(ZOOM_STEP);
+		return;
+	}
+	if (e.key === "-") {
+		e.preventDefault();
+		stepZoom(-ZOOM_STEP);
+	}
+}
+
+function onWheelZoom(e: WheelEvent) {
+	if (!e.ctrlKey && !e.metaKey) return;
+	e.preventDefault();
+	const delta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
+	stepZoom(delta);
+}
+
+const zoomPercent = computed(() => `${Math.round(viewportZoom.value * 100)}%`);
+
+const qualityOptions = [
+	{ label: 'Auto', value: 'auto' as const },
+	{ label: '1080p', value: 1080 as const },
+	{ label: '720p', value: 720 as const },
+	{ label: '540p', value: 540 as const },
+	{ label: '360p', value: 360 as const },
+];
+
+const qualityLabel = computed(() => {
+	const q = previewQuality.value;
+	return q === 'auto' ? 'Auto' : `${q}p`;
+});
+
+const showQualityDropdown = ref(false);
+
+function setQuality(value: "auto" | 360 | 540 | 720 | 1080) {
+	previewQuality.value = value;
+	showQualityDropdown.value = false;
+}
+
+/** Force a preview repaint after timeline scrub/seek so video does not stick on a stale frame. */
+function handlePlaybackSeek() {
+	videoCache.cancelPreviewRequests();
+	frameScheduler?.invalidate();
+	lastRenderedTime = Number.NEGATIVE_INFINITY;
+	lastFrame = -1;
+	requestPreviewFrame();
+}
+
+let unsubscribePlayback: (() => void) | null = null;
+let unsubscribeRenderer: (() => void) | null = null;
+let unsubscribeBeforePlay: (() => void) | null = null;
+
+async function preparePlaybackStart() {
+	const canvas = canvasRef.value;
+	const r = renderer.value;
+	const tree = editor.renderer.getRenderTree();
+	if (!canvas || !r || !tree) return;
+
+	frameScheduler?.invalidate();
+	const frame = getRenderFrame({
+		time: editor.playback.getCurrentTime(),
+		fps: r.fps,
+		duration: tree.duration,
+	});
+	// Fill the stable realtime frame cache for every on-screen and soon-to-start
+	// video BEFORE the clock starts. Realtime composition never awaits decode,
+	// so these frames must already be ready when play begins.
+	await prepareSceneForRealtimePlayback({
+		root: tree,
+		renderer: r,
+		time: frame.time,
+	});
+	if (editor.renderer.getRenderTree() !== tree) return;
+
+	r.framePolicy = "exact-preview";
+	await editor.renderer.renderPreviewToTarget({
+		renderer: r,
+		time: frame.time,
+		targetCanvas: canvas,
+		renderTree: tree,
+	});
+	if (editor.renderer.getRenderTree() !== tree) return;
+	lastFrame = frame.frameIndex;
+	lastScene = tree;
+	lastRenderedTime = frame.time;
+}
+
+function syncPreviewLoopToPlayback() {
+	if (editor.playback.getIsPlaying()) {
+		previewLoop.start();
+	} else {
+		previewLoop.stop();
+		if (pendingDecodeCacheReset) {
+			pendingDecodeCacheReset = false;
+			videoCache.clearAll();
+		}
+		requestPreviewFrame();
+	}
+}
+
+onMounted(() => {
+	exposePreviewPerfGlobal();
+	if (import.meta.env.DEV) {
+		void import("../../lib/stress-timeline-dev").then(({ exposeStressTimelineGlobal }) => {
+			exposeStressTimelineGlobal(editor);
+		});
+		void import("../../renderer/preview-worker-client").then(({ pingPreviewWorker }) =>
+			pingPreviewWorker().then((t) => {
+				if (t != null) console.debug("[Preview] compositor worker ping ok", t);
+			}),
+		);
+	}
+	containerRef.value?.addEventListener('wheel', onWheelZoom, { passive: false });
+	window.addEventListener("keydown", onKeyZoom);
+	window.addEventListener("playback-seek", handlePlaybackSeek);
+	unsubscribePlayback = editor.playback.subscribe(syncPreviewLoopToPlayback);
+	unsubscribeBeforePlay = editor.playback.onBeforePlay(preparePlaybackStart);
+	unsubscribeRenderer = editor.renderer.subscribe(requestPreviewFrame);
+	syncPreviewLoopToPlayback();
+	requestPreviewFrame();
+});
+
+onUnmounted(() => {
+	editor.setLivePreviewCanvas(null);
+	frameScheduler?.dispose();
+	frameScheduler = null;
+	if (sceneRebuildIdleId !== null && typeof cancelIdleCallback !== "undefined") {
+		cancelIdleCallback(sceneRebuildIdleId);
+		sceneRebuildIdleId = null;
+	}
+	containerRef.value?.removeEventListener('wheel', onWheelZoom);
+	window.removeEventListener("keydown", onKeyZoom);
+	window.removeEventListener("playback-seek", handlePlaybackSeek);
+	unsubscribePlayback?.();
+	unsubscribeBeforePlay?.();
+	unsubscribeRenderer?.();
+	unsubscribePlayback = null;
+	unsubscribeBeforePlay = null;
+	unsubscribeRenderer = null;
+});
 
 defineExpose({ containerRef });
 
@@ -562,27 +894,40 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 		</div>
 
 		<!-- Canvas + Interactive Overlay -->
-		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden p-4">
-			<div class="preview-canvas-wrapper relative rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
-				:style="{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }"
+		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto p-4" @mousedown="onPreviewAreaMouseDown">
+			<div
+				class="preview-canvas-wrapper relative rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
+				:style="{
+					aspectRatio: `${projectWidth} / ${projectHeight}`,
+					transform: viewportZoom !== 1 ? `scale(${viewportZoom})` : undefined,
+					transformOrigin: 'center center',
+				}"
 			>
 				<canvas
 					ref="canvasRef"
-					:width="canvasWidth"
-					:height="canvasHeight"
+					:width="previewBackingSize.width"
+					:height="previewBackingSize.height"
 					class="block h-full w-full rounded-sm"
-					:style="{ background: canvasBackground }"
+					:style="{
+						background: canvasBackground,
+						imageRendering: 'auto',
+					}"
 				/>
 				<PreviewOverlay
 					:canvas-ref="canvasRef"
-					:canvas-width="canvasWidth"
-					:canvas-height="canvasHeight"
+					:canvas-width="projectWidth"
+					:canvas-height="projectHeight"
+				/>
+				<GuideOverlay
+					:canvas-ref="canvasRef"
+					:canvas-width="projectWidth"
+					:canvas-height="projectHeight"
 				/>
 				<SocialOverlay
 					v-if="activeSocialOverlay"
 					:preset="activeSocialOverlay"
-					:canvas-width="canvasWidth"
-					:canvas-height="canvasHeight"
+					:canvas-width="projectWidth"
+					:canvas-height="projectHeight"
 				/>
 				<!-- Branding watermark overlay -->
 				<img
@@ -604,12 +949,102 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 				/>
 			</div>
 		</div>
+
+		<!-- Preview controls bar: zoom + quality -->
+		<div class="flex h-8 shrink-0 items-center justify-end gap-1 border-t border-white/10 bg-[#18181b] px-2">
+			<!-- Quality: lower = softer video/image decode (faster); layout stays full canvas size -->
+			<div class="relative">
+				<button
+					class="preview-quality__input preview-quality__select h-6 px-2 text-[11px]"
+					title="Lowers decoded video and image resolution in the preview (blockier, faster). Timeline layout and overlay positions stay fixed."
+					@click.stop="showQualityDropdown = !showQualityDropdown"
+				>
+					<span class="truncate">Quality: {{ qualityLabel }}</span>
+					<ChevronDown class="h-3.5 w-3.5 transition-transform" :class="{ 'rotate-180': showQualityDropdown }" />
+				</button>
+				<div v-if="showQualityDropdown" class="preview-quality__dropdown">
+					<button
+						v-for="opt in qualityOptions"
+						:key="opt.label"
+						class="preview-quality__dropdown-item"
+						:class="{ 'preview-quality__dropdown-item--selected': previewQuality === opt.value }"
+						@click.stop="setQuality(opt.value)"
+					>
+						{{ opt.label }}
+					</button>
+				</div>
+			</div>
+			<div class="h-4 w-px bg-white/10" />
+			<!-- Zoom controls -->
+			<button class="flex h-6 w-6 items-center justify-center rounded text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200" title="Zoom out (Ctrl+-)" @click="stepZoom(-ZOOM_STEP)">−</button>
+			<button class="h-6 min-w-[42px] rounded bg-white/5 px-1 text-[11px] text-zinc-300 hover:bg-white/10" title="Current zoom">{{ zoomPercent }}</button>
+			<button class="flex h-6 w-6 items-center justify-center rounded text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200" title="Zoom in (Ctrl++)" @click="stepZoom(ZOOM_STEP)">+</button>
+			<button class="h-6 rounded bg-white/5 px-2 text-[11px] text-zinc-300 hover:bg-white/10" title="Fit zoom (Ctrl+0)" @click="fitZoom">Fit</button>
+		</div>
 	</div>
 </template>
 
 <style scoped>
 .preview-canvas-wrapper {
 	max-width: 100%;
-	max-height: 100%;
+	max-height: calc(100% - 2rem);
+	flex-shrink: 0;
+}
+
+.preview-quality__input {
+	width: 100%;
+	background-color: rgb(255 255 255 / 0.05);
+	border: 1px solid rgb(255 255 255 / 0.1);
+	border-radius: 0.375rem;
+	color: rgb(212 212 216);
+	transition: all 150ms ease;
+}
+
+.preview-quality__select {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.375rem;
+	cursor: pointer;
+}
+
+.preview-quality__input:hover {
+	background-color: rgb(255 255 255 / 0.1);
+	border-color: rgb(255 255 255 / 0.16);
+}
+
+.preview-quality__dropdown {
+	position: absolute;
+	bottom: calc(100% + 0.35rem);
+	right: 0;
+	min-width: 110px;
+	background-color: rgb(24 24 27);
+	border: 1px solid rgb(255 255 255 / 0.1);
+	border-radius: 0.45rem;
+	overflow: hidden;
+	z-index: 100;
+	box-shadow: 0 8px 24px rgb(0 0 0 / 0.45);
+}
+
+.preview-quality__dropdown-item {
+	display: block;
+	width: 100%;
+	text-align: left;
+	padding: 0.42rem 0.6rem;
+	font-size: 11px;
+	color: rgb(228 228 231);
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	transition: background-color 150ms ease;
+}
+
+.preview-quality__dropdown-item:hover {
+	background-color: rgb(255 255 255 / 0.08);
+}
+
+.preview-quality__dropdown-item--selected {
+	background-color: rgb(6 182 212 / 0.15);
+	color: rgb(103 232 249);
 }
 </style>

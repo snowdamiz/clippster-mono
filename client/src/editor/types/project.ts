@@ -1,3 +1,4 @@
+import type { ManualSourceFramingPayload } from "@/types";
 import type { TScene } from "./timeline";
 
 export type AspectRatioId = "16:9" | "9:16" | "1:1" | "4:5";
@@ -75,6 +76,8 @@ export interface TProjectSettings {
 	sourceClipId?: string | null;
 	sourceClipStartTime?: number | null;
 	sourceClipEndTime?: number | null;
+	/** When canvas is not 16:9, how the first main-track full-frame layer is framed (matches Manual POI). */
+	canvasSourceFraming?: ManualSourceFramingPayload | null;
 }
 
 export interface TTimelineViewState {

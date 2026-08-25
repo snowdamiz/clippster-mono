@@ -10,6 +10,18 @@
       <OrganizationBreadcrumb />
     </template>
     <template #actions>
+      <router-link
+        v-if="organization?.slug"
+        :to="`/orgs/${organization.slug}`"
+        class="org-settings__action-btn"
+        style="background: transparent; color: var(--sidebar-text); border: 1px solid var(--sidebar-border); margin-right: .5rem;"
+      >
+        Preview Public Profile
+      </router-link>
+      <button type="button" class="edit-btn" @click="showEditProfileDialog = true">
+        <Pencil class="edit-btn__icon" />
+        Edit Profile
+      </button>
       <button
         v-if="hasChanges"
         type="button"
@@ -23,113 +35,100 @@
       </button>
     </template>
 
-    <div class="org-settings">
-      <!-- Page Heading -->
-      <div class="org-settings__heading">
-        <h1 class="org-settings__title">Configure Organization</h1>
-        <p class="org-settings__subtitle">Update your organization's profile information and manage feature settings</p>
-      </div>
-
-      <!-- Organization Profile Section -->
-      <section class="org-settings__section">
-        <div class="org-settings__section-header">
-          <div class="org-settings__section-header-icon org-settings__section-header-icon--profile">
-            <Building2 />
-          </div>
-          <div class="org-settings__section-header-text">
-            <h2 class="org-settings__section-title">Organization Profile</h2>
-            <p class="org-settings__section-subtitle">Basic information about your organization</p>
-          </div>
-        </div>
-
-        <form @submit.prevent="handleUpdateOrganization" class="org-settings__form">
-          <div class="org-settings__form-card">
-            <div class="org-settings__form-row">
-              <div class="org-settings__form-group">
-                <label class="org-settings__form-label">
-                  <Building2 class="org-settings__label-icon" />
-                  Organization Logo
-                </label>
-                <div class="org-settings__logo-row">
-                  <div class="org-settings__logo-preview">
-                    <img
-                      v-if="organization?.logo_url && !logoLoadError"
-                      :src="organization.logo_url"
-                      class="org-settings__logo-img"
-                      @error="logoLoadError = true"
-                    />
-                    <Building2 v-else class="org-settings__logo-placeholder" />
-                    <div v-if="uploadingLogo" class="org-settings__logo-loading">
-                      <Loader2 class="org-settings__logo-spinner" />
-                    </div>
-                  </div>
-                  <div class="org-settings__logo-actions">
-                    <input
-                      ref="logoInputRef"
-                      type="file"
-                      accept="image/jpeg,image/png,image/gif,image/webp"
-                      class="org-settings__file-input"
-                      @change="handleLogoUpload"
-                    />
-                    <button
-                      type="button"
-                      @click="($refs.logoInputRef as HTMLInputElement)?.click()"
-                      :disabled="uploadingLogo"
-                      class="org-settings__upload-btn"
-                    >
-                      <Upload class="org-settings__upload-icon" />
-                      {{ organization?.logo_url ? 'Change Logo' : 'Upload Logo' }}
-                    </button>
-                    <p class="org-settings__logo-hint">JPEG, PNG, GIF, or WebP. Max 5MB.</p>
-                  </div>
+    <div class="clipper-profile">
+      <div class="profile-page">
+        <div class="org-profile org-profile--settings">
+          <div class="org-hero">
+            <div class="org-hero__banner"></div>
+            <div class="org-hero__content">
+              <div class="org-hero__avatar">
+                <img
+                  v-if="organization?.logo_url && !logoLoadError"
+                  :src="organization.logo_url"
+                  class="org-hero__avatar-img"
+                  @error="logoLoadError = true"
+                />
+                <Building2 v-else class="org-hero__avatar-fallback" />
+              </div>
+              <div class="org-hero__info">
+                <h1 class="org-hero__name">{{ organization?.name || 'Organization' }}</h1>
+                <p class="org-hero__tagline">{{ editData.description || 'Add a short description of your organization.' }}</p>
+                <div v-if="editData.content_type_tags?.length" class="org-hero__tags">
+                  <span v-for="tag in editData.content_type_tags.slice(0, 8)" :key="tag" class="org-hero__tag">{{
+                    SPECIALTY_TAGS.find((t) => t.value === tag)?.label || tag
+                  }}</span>
                 </div>
               </div>
             </div>
+          </div>
 
-            <div class="org-settings__form-row">
-              <div class="org-settings__form-group">
-                <label class="org-settings__form-label">
-                  <Type class="org-settings__label-icon" />
-                  Organization Name
-                </label>
-                <input
-                  v-model="editData.name"
-                  type="text"
-                  class="org-settings__form-input"
-                  placeholder="Enter organization name"
-                />
+          <div class="org-stats-grid org-stats-grid--settings">
+            <div class="org-stat-card">
+              <div class="org-stat-card__icon org-stat-card__icon--violet">
+                <Megaphone :size="18" />
+              </div>
+              <div class="org-stat-card__content">
+                <span class="org-stat-card__value">0</span>
+                <span class="org-stat-card__label">Campaigns</span>
               </div>
             </div>
-
-            <div class="org-settings__form-row">
-              <div class="org-settings__form-group">
-                <label class="org-settings__form-label">
-                  <FileText class="org-settings__label-icon" />
-                  Description
-                </label>
-                <textarea
-                  v-model="editData.description"
-                  rows="3"
-                  class="org-settings__form-textarea"
-                  placeholder="A brief description of your organization..."
-                ></textarea>
+            <div class="org-stat-card">
+              <div class="org-stat-card__icon org-stat-card__icon--cyan">
+                <Users :size="18" />
+              </div>
+              <div class="org-stat-card__content">
+                <span class="org-stat-card__value">0</span>
+                <span class="org-stat-card__label">Members</span>
+              </div>
+            </div>
+            <div class="org-stat-card">
+              <div class="org-stat-card__icon org-stat-card__icon--green">
+                <CheckCircle :size="18" />
+              </div>
+              <div class="org-stat-card__content">
+                <span class="org-stat-card__value">{{ editData.content_type_tags.length }}</span>
+                <span class="org-stat-card__label">Content Types</span>
               </div>
             </div>
           </div>
-        </form>
+        </div>
+
+        <nav class="tabs-nav">
+          <div class="tabs-container">
+            <button class="tab-button" :class="{ 'tab-button--active': activeTab === 'basic' }" @click="activeTab = 'basic'"><div class="tab-button__icon"><Type /></div><span class="tab-button__label">Basic</span></button>
+            <button class="tab-button" :class="{ 'tab-button--active': activeTab === 'ai' }" @click="activeTab = 'ai'"><div class="tab-button__icon"><Sparkles /></div><span class="tab-button__label">AI</span></button>
+            <button class="tab-button" :class="{ 'tab-button--active': activeTab === 'restrictions' }" @click="activeTab = 'restrictions'"><div class="tab-button__icon"><Shield /></div><span class="tab-button__label">Restrictions</span></button>
+            <button v-if="isOwner" class="tab-button" :class="{ 'tab-button--active': activeTab === 'danger' }" @click="activeTab = 'danger'"><div class="tab-button__icon"><AlertTriangle /></div><span class="tab-button__label">Danger</span></button>
+          </div>
+        </nav>
+        <main class="content">
+
+      <!-- Organization Profile Section -->
+      <section v-show="activeTab === 'basic'" class="org-settings__section">
+        <h3 class="org-settings__clipper-title">Basic Information</h3>
+        <div class="org-settings__form-card">
+          <div class="org-settings__form-row">
+            <div class="org-basic-preview">
+              <div class="org-basic-preview__avatar">
+                <img v-if="organization?.logo_url && !logoLoadError" :src="organization.logo_url" class="org-basic-preview__avatar-img" @error="logoLoadError = true" />
+                <Building2 v-else class="org-basic-preview__avatar-fallback" />
+              </div>
+              <div class="org-basic-preview__info">
+                <div class="org-basic-preview__name">{{ editData.name || 'Organization' }}</div>
+                <div class="org-basic-preview__desc">{{ editData.description || 'No description yet' }}</div>
+              </div>
+              <button type="button" class="profile-action-btn profile-action-btn--primary" @click="showEditProfileDialog = true">
+                <Pencil :size="14" />
+                Edit Profile
+              </button>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- AI Features Section -->
-      <section class="org-settings__section">
-        <div class="org-settings__section-header">
-          <div class="org-settings__section-header-icon org-settings__section-header-icon--ai">
-            <Sparkles />
-          </div>
-          <div class="org-settings__section-header-text">
-            <h2 class="org-settings__section-title">AI Features</h2>
-            <p class="org-settings__section-subtitle">Control AI-powered functionality for all members</p>
-          </div>
-        </div>
+      <section v-show="activeTab === 'ai'" class="org-settings__section">
+        <h3 class="org-settings__clipper-title">AI Features</h3>
 
         <div class="org-settings__feature-card" @click="editData.settings.allow_ai = !editData.settings.allow_ai">
           <div class="org-settings__feature-inner">
@@ -163,16 +162,8 @@
       </section>
 
       <!-- Restricted Member Settings Section -->
-      <section class="org-settings__section">
-        <div class="org-settings__section-header">
-          <div class="org-settings__section-header-icon org-settings__section-header-icon--restrictions">
-            <Shield />
-          </div>
-          <div class="org-settings__section-header-text">
-            <h2 class="org-settings__section-title">Restricted Member Settings</h2>
-            <p class="org-settings__section-subtitle">Default permissions for accounts created by your organization</p>
-          </div>
-        </div>
+      <section v-show="activeTab === 'restrictions'" class="org-settings__section">
+        <h3 class="org-settings__clipper-title">Restricted Member Settings</h3>
 
         <div class="org-settings__restrictions-grid">
           <div class="org-settings__restrictions-card">
@@ -340,16 +331,8 @@
       </Transition>
 
       <!-- Danger Zone (Owner Only) -->
-      <section v-if="isOwner" class="org-settings__section org-settings__section--danger">
-        <div class="org-settings__section-header">
-          <div class="org-settings__section-header-icon org-settings__section-header-icon--danger">
-            <AlertTriangle />
-          </div>
-          <div class="org-settings__section-header-text">
-            <h2 class="org-settings__section-title org-settings__section-title--danger">Danger Zone</h2>
-            <p class="org-settings__section-subtitle">Irreversible and destructive actions</p>
-          </div>
-        </div>
+      <section v-if="isOwner" v-show="activeTab === 'danger'" class="org-settings__section org-settings__section--danger">
+        <h3 class="org-settings__clipper-title org-settings__clipper-title--danger">Danger Zone</h3>
 
         <div class="org-settings__danger-card">
           <div class="org-settings__danger-inner">
@@ -371,14 +354,173 @@
           </div>
         </div>
       </section>
+        </main>
+      </div>
     </div>
 
-    <!-- Delete Confirmation Modal -->
+    <!-- Edit organization profile (matches BugReportDialog layout) -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showEditProfileDialog" class="org-dialog__overlay" @click.self="showEditProfileDialog = false">
+          <Transition name="dialog" appear>
+            <div
+              v-if="showEditProfileDialog"
+              class="org-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="org-edit-profile-title"
+            >
+              <div class="org-dialog__accent org-dialog__accent--default"></div>
+              <div class="org-dialog__header">
+                <button class="org-dialog__close" @click="showEditProfileDialog = false" :disabled="saving" title="Close">
+                  <X :size="18" />
+                </button>
+                <div class="org-dialog__icon org-dialog__icon--accent">
+                  <Building2 :size="24" />
+                </div>
+                <h2 id="org-edit-profile-title" class="org-dialog__title">Edit Organization Profile</h2>
+                <p class="org-dialog__subtitle">Update your public organization information</p>
+              </div>
+              <div class="org-dialog__content org-dialog__content--scroll">
+                <form class="org-dialog__form" @submit.prevent="saveAndCloseProfileDialog">
+                  <!-- Basic Information -->
+                  <div class="org-dialog__section">
+                    <h3 class="org-dialog__section-title">Basic Information</h3>
+
+                    <div class="org-dialog__field">
+                      <span class="org-dialog__label">Organization Logo</span>
+                      <div class="org-settings__logo-row">
+                        <div class="org-settings__logo-preview">
+                          <img v-if="organization?.logo_url && !logoLoadError" :src="organization.logo_url" class="org-settings__logo-img" @error="logoLoadError = true" />
+                          <Building2 v-else class="org-settings__logo-placeholder" />
+                          <div v-if="uploadingLogo" class="org-settings__logo-loading"><Loader2 class="org-settings__logo-spinner" /></div>
+                        </div>
+                        <div class="org-settings__logo-actions">
+                          <input ref="logoInputRef" type="file" accept="image/jpeg,image/png,image/gif,image/webp" class="org-settings__file-input" @change="handleLogoUpload" />
+                          <button type="button" @click="($refs.logoInputRef as HTMLInputElement)?.click()" :disabled="uploadingLogo" class="org-settings__upload-btn">
+                            <Upload class="org-settings__upload-icon" />
+                            {{ organization?.logo_url ? 'Change Logo' : 'Upload Logo' }}
+                          </button>
+                          <p class="org-settings__logo-hint">JPEG, PNG, GIF, or WebP. Max 5MB.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="org-dialog__field">
+                      <label for="org-edit-name" class="org-dialog__label">Organization Name</label>
+                      <input id="org-edit-name" v-model="editData.name" type="text" class="org-dialog__input" placeholder="Enter organization name" />
+                    </div>
+
+                    <div class="org-dialog__field">
+                      <label for="org-edit-description" class="org-dialog__label">Short Description</label>
+                      <textarea
+                        id="org-edit-description"
+                        v-model="editData.description"
+                        rows="3"
+                        class="org-dialog__input org-dialog__textarea org-dialog__textarea--sm"
+                        :maxlength="200"
+                        placeholder="A short tagline for your organization..."
+                      />
+                      <p class="org-dialog__hint">{{ (editData.description || '').length }}/200 characters</p>
+                    </div>
+                  </div>
+
+                  <!-- Contact & Details -->
+                  <div class="org-dialog__section">
+                    <h3 class="org-dialog__section-title">Contact & Details</h3>
+
+                    <div class="org-dialog__field">
+                      <label for="org-edit-website" class="org-dialog__label">Website URL</label>
+                      <input id="org-edit-website" v-model="editData.website_url" type="text" class="org-dialog__input" placeholder="https://yourwebsite.com" />
+                    </div>
+
+                    <div class="org-dialog__field">
+                      <label for="org-edit-email" class="org-dialog__label">Public Contact Email</label>
+                      <input id="org-edit-email" v-model="editData.public_contact_email" type="email" class="org-dialog__input" placeholder="contact@yourorg.com" />
+                    </div>
+
+                    <div class="org-dialog__field">
+                      <label for="org-edit-discord" class="org-dialog__label">Discord</label>
+                      <input
+                        id="org-edit-discord"
+                        v-model="editData.public_discord"
+                        type="text"
+                        class="org-dialog__input"
+                        placeholder="Invite link (discord.gg/…), server URL, or invite code"
+                        maxlength="500"
+                      />
+                    </div>
+
+                    <div class="org-dialog__field">
+                      <label for="org-edit-telegram" class="org-dialog__label">Telegram</label>
+                      <input
+                        id="org-edit-telegram"
+                        v-model="editData.public_telegram"
+                        type="text"
+                        class="org-dialog__input"
+                        placeholder="@username or https://t.me/username"
+                        maxlength="500"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- About -->
+                  <div class="org-dialog__section">
+                    <h3 class="org-dialog__section-title">About</h3>
+
+                    <div class="org-dialog__field">
+                      <label for="org-edit-bio" class="org-dialog__label">Bio</label>
+                      <textarea
+                        id="org-edit-bio"
+                        v-model="editData.bio"
+                        rows="6"
+                        class="org-dialog__input org-dialog__textarea"
+                        placeholder="Tell clippers more about your organization, your mission, what kind of content you create..."
+                      />
+                      <p class="org-dialog__hint">{{ (editData.bio || '').length }}/1200 characters · Displayed as a section on your public profile</p>
+                    </div>
+                  </div>
+
+                  <!-- Content specialties -->
+                  <div class="org-dialog__section">
+                    <h3 class="org-dialog__section-title">Content Specialties</h3>
+
+                    <div class="org-dialog__field">
+                      <span class="org-dialog__label">Content Types</span>
+                      <div class="hw__tags">
+                        <button
+                          v-for="tag in SPECIALTY_TAGS"
+                          :key="tag.value"
+                          type="button"
+                          class="hw__tag"
+                          :class="{ 'hw__tag--selected': editData.content_type_tags.includes(tag.value) }"
+                          @click="toggleArrayTag(tag.value)"
+                        >
+                          {{ tag.label }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              </div>
+              <div class="org-dialog__footer">
+                <button type="button" class="org-dialog__btn org-dialog__btn--secondary" @click="showEditProfileDialog = false" :disabled="saving">Cancel</button>
+                <button type="button" class="org-dialog__btn org-dialog__btn--primary" :disabled="saving" @click="saveAndCloseProfileDialog">
+                  <Loader2 v-if="saving" :size="16" class="org-dialog__btn-spinner" />
+                  {{ saving ? 'Saving...' : 'Save Profile' }}
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
     <Teleport to="body">
       <Transition name="modal">
         <div v-if="showDeleteConfirm" class="org-dialog__overlay" @click.self="showDeleteConfirm = false">
           <Transition name="dialog" appear>
-            <div class="org-dialog org-dialog--red">
+            <div v-if="showDeleteConfirm" class="org-dialog org-dialog--red" role="dialog" aria-modal="true">
               <div class="org-dialog__accent org-dialog__accent--red"></div>
               <div class="org-dialog__header">
                 <button class="org-dialog__close" @click="showDeleteConfirm = false" title="Close" :disabled="deleting">
@@ -453,6 +595,7 @@
     Loader2,
     Settings,
     Save,
+    Pencil,
     Type,
     FileText,
     Zap,
@@ -462,10 +605,13 @@
     Archive,
     UserCircle,
     Upload,
+    Megaphone,
+    Users,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import { useOrganization } from '@/composables/useOrganization';
+  import { SPECIALTY_TAGS } from '@/services/clipperProfilesApi';
 
   const { organization, isOwner, updateOrganization, deleteOrganization, uploadLogo } = useOrganization();
 
@@ -476,6 +622,12 @@
   const editData = ref({
     name: '',
     description: '',
+    bio: '',
+    website_url: '',
+    public_contact_email: '',
+    public_discord: '',
+    public_telegram: '',
+    content_type_tags: [] as string[],
     settings: {
       allow_ai: true,
     },
@@ -495,8 +647,10 @@
   const saving = ref(false);
   const saveSuccess = ref(false);
   const showDeleteConfirm = ref(false);
+  const showEditProfileDialog = ref(false);
   const deleteConfirmInput = ref('');
   const deleting = ref(false);
+  const activeTab = ref<'basic' | 'ai' | 'restrictions' | 'danger'>('basic');
 
   // Populate edit form when organization data loads
   watch(
@@ -508,6 +662,12 @@
         editData.value = {
           name: org.name,
           description: org.description || '',
+          bio: org.bio || '',
+          website_url: org.website_url || '',
+          public_contact_email: org.public_contact_email || '',
+          public_discord: org.public_discord || '',
+          public_telegram: org.public_telegram || '',
+          content_type_tags: org.content_type_tags || [],
           settings: {
             allow_ai: orgSettings.allow_ai !== false,
           },
@@ -551,10 +711,23 @@
     return (
       editData.value.name !== organization.value.name ||
       editData.value.description !== (organization.value.description || '') ||
+      editData.value.bio !== (organization.value.bio || '') ||
+      editData.value.website_url !== (organization.value.website_url || '') ||
+      editData.value.public_contact_email !== (organization.value.public_contact_email || '') ||
+      editData.value.public_discord !== (organization.value.public_discord || '') ||
+      editData.value.public_telegram !== (organization.value.public_telegram || '') ||
+      JSON.stringify(editData.value.content_type_tags) !== JSON.stringify(organization.value.content_type_tags || []) ||
       editData.value.settings.allow_ai !== currentAllowAi ||
       restrictionsChanged
     );
   });
+
+  function toggleArrayTag(value: string) {
+    const tags = editData.value.content_type_tags;
+    const idx = tags.indexOf(value);
+    if (idx >= 0) tags.splice(idx, 1);
+    else tags.push(value);
+  }
 
   async function handleUpdateOrganization() {
     if (!hasChanges.value) return;
@@ -571,6 +744,11 @@
         saveSuccess.value = false;
       }, 3000);
     }
+  }
+
+  async function saveAndCloseProfileDialog() {
+    await handleUpdateOrganization();
+    if (!saving.value) showEditProfileDialog.value = false;
   }
 
   function confirmDeleteOrganization() {
@@ -623,15 +801,341 @@
 </script>
 
 <style scoped>
-  /* ===== Container ===== */
-  .org-settings {
+  .clipper-profile {
     width: 100%;
-    max-width: 900px;
-    margin: 0 auto;
-    padding: 1.5rem;
+    min-height: 100%;
+    background: var(--sidebar-bg);
+  }
+
+  .profile-page {
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 0;
+    max-width: 1100px;
+    margin: 0 auto;
+    width: 100%;
+    padding: 1.5rem;
+  }
+
+  /* Match public org profile hero + stats (OrgPublicProfilePage) */
+  .org-profile--settings {
+    max-width: none;
+    margin: 0;
+    padding: 0 0 0.25rem 0;
+  }
+
+  .org-hero {
+    position: relative;
+    margin-bottom: 0;
+    padding-bottom: 1.75rem;
+  }
+
+  .org-hero__banner {
+    height: 120px;
+    background: linear-gradient(135deg, #0891b2 0%, #06b6d4 25%, #22d3ee 50%, #0891b2 75%, #164e63 100%);
+    background-size: 200% 200%;
+    border-radius: 14px 14px 0 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .org-hero__banner::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 100%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+      radial-gradient(ellipse 60% 40% at 80% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 40%);
+  }
+
+  .org-hero__banner::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 52px;
+    background: linear-gradient(to top, var(--sidebar-surface) 0%, transparent 100%);
+  }
+
+  .org-hero__content {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+    padding: 0 1.5rem;
+    margin-top: -48px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .org-hero__avatar {
+    width: 96px;
+    height: 96px;
+    border-radius: 14px;
+    background: var(--sidebar-surface);
+    border: 4px solid var(--sidebar-surface);
+    overflow: hidden;
+    flex-shrink: 0;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+
+  .org-hero__avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .org-hero__avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+    padding: 24px;
+  }
+
+  .org-hero__info {
+    flex: 1;
+    min-width: 0;
+    padding-top: 0.375rem;
+    padding-bottom: 0.25rem;
+  }
+
+  .org-hero__name {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.25rem;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  .org-hero__tagline {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 0.625rem;
+    line-height: 1.5;
+  }
+
+  .org-hero__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .org-hero__tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.625rem;
+    background: rgba(34, 211, 238, 0.1);
+    border: 1px solid rgba(34, 211, 238, 0.2);
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: #22d3ee;
+    letter-spacing: 0.01em;
+  }
+
+  .org-stats-grid {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .org-stats-grid--settings {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .org-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: var(--sidebar-surface);
+    border: 1px solid rgba(34, 211, 238, 0.15);
+    border-radius: 12px;
+    transition: all 200ms ease;
+  }
+
+  .org-stat-card:hover {
+    border-color: rgba(34, 211, 238, 0.4);
+    box-shadow: 0 0 20px rgba(34, 211, 238, 0.1);
+  }
+
+  .org-stat-card__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+
+  .org-stat-card__icon--cyan {
+    background: rgba(34, 211, 238, 0.15);
+    color: #22d3ee;
+  }
+
+  .org-stat-card__icon--green {
+    background: rgba(52, 211, 153, 0.15);
+    color: #34d399;
+  }
+
+  .org-stat-card__icon--violet {
+    background: rgba(167, 139, 250, 0.15);
+    color: #a78bfa;
+  }
+
+  .org-stat-card__content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .org-stat-card__value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .org-stat-card__label {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .profile-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+  .profile-action-btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+  .profile-action-btn--primary:hover { opacity: 0.9; transform: translateY(-1px); }
+  .edit-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 32px;
+    padding: 0 0.875rem;
+    border-radius: 6px;
+    border: none;
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 150ms ease;
+  }
+  .edit-btn:hover { opacity: 0.9; }
+  .edit-btn__icon { width: 14px; height: 14px; }
+  .org-basic-preview { display: flex; align-items: center; gap: .875rem; }
+  .org-basic-preview__avatar { width: 44px; height: 44px; border-radius: 10px; overflow: hidden; background: var(--sidebar-hover); border: 1px solid var(--sidebar-border); flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .org-basic-preview__avatar-img { width: 100%; height: 100%; object-fit: cover; }
+  .org-basic-preview__avatar-fallback { width: 20px; height: 20px; color: var(--sidebar-text-muted); }
+  .org-basic-preview__info { flex: 1; min-width: 0; }
+  .org-basic-preview__name { font-size: .9375rem; color: var(--sidebar-text); font-weight: 600; }
+  .org-basic-preview__desc { font-size: .75rem; color: var(--sidebar-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .tabs-nav {
+    background: var(--sidebar-surface);
+    border: 1px solid rgba(34, 211, 238, 0.15);
+    border-radius: 14px;
+    padding: 0.5rem;
+    margin-bottom: 1.5rem;
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  .tabs-nav:hover {
+    border-color: rgba(34, 211, 238, 0.25);
+  }
+  .tabs-container { display: flex; gap: .375rem; overflow-x: auto; scrollbar-width: none; }
+  .tabs-container::-webkit-scrollbar { display: none; }
+  .tab-button {
+    display: flex; align-items: center; gap: .5rem; padding: .75rem 1.125rem; background: transparent;
+    border: none; border-radius: 8px; font-size: .8125rem; font-weight: 600; color: var(--sidebar-text-muted);
+    cursor: pointer; transition: all 180ms ease; white-space: nowrap;
+  }
+  .tab-button:hover:not(.tab-button--active) { background: var(--sidebar-hover); color: var(--sidebar-text); }
+  .tab-button--active {
+    background: linear-gradient(135deg, rgba(6,182,212,.15) 0%, rgba(139,92,246,.15) 100%);
+    color: var(--sidebar-accent);
+    box-shadow: 0 2px 8px rgba(6,182,212,.2);
+  }
+  .tab-button__icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; }
+  .tab-button__icon svg { width: 100%; height: 100%; }
+
+  .content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    padding-bottom: 4rem;
+  }
+
+  @media (max-width: 900px) {
+    .org-stats-grid--settings {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (max-width: 640px) {
+    .org-hero {
+      padding-bottom: 1.5rem;
+    }
+
+    .org-hero__banner {
+      height: 100px;
+    }
+
+    .org-hero__content {
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin-top: -40px;
+      padding: 0 1rem;
+    }
+
+    .org-hero__avatar {
+      width: 88px;
+      height: 88px;
+    }
+
+    .org-hero__info {
+      padding-top: 0.5rem;
+      padding-bottom: 0;
+    }
+
+    .org-hero__name {
+      font-size: 1.25rem;
+    }
+
+    .org-hero__tags {
+      justify-content: center;
+    }
+
+    .org-stats-grid--settings {
+      grid-template-columns: 1fr;
+    }
+
+    .tab-button__label { display: none; }
+    .tab-button { padding: .75rem; }
   }
 
   /* ===== Action Button ===== */
@@ -669,31 +1173,23 @@
     animation: spin 0.8s linear infinite;
   }
 
-  /* ===== Page Heading ===== */
-  .org-settings__heading {
-    margin-bottom: 0.5rem;
-  }
-
-  .org-settings__title {
-    font-size: 1.5rem;
-    font-weight: 700;
+  .org-settings__clipper-title {
+    font-size: 1.125rem;
+    font-weight: 600;
     color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
-    letter-spacing: -0.025em;
+    margin: 0;
+    letter-spacing: -0.01em;
   }
 
-  .org-settings__subtitle {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    line-height: 1.5;
+  .org-settings__clipper-title--danger {
+    color: #f87171;
   }
 
   /* ===== Section ===== */
   .org-settings__section {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.875rem;
   }
 
   .org-settings__section-header {
@@ -759,9 +1255,15 @@
   /* ===== Form Card ===== */
   .org-settings__form-card {
     background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
+    border: 1px solid rgba(34, 211, 238, 0.15);
+    border-radius: 14px;
     overflow: hidden;
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  .org-settings__form-card:hover {
+    border-color: rgba(34, 211, 238, 0.3);
+    box-shadow: 0 0 24px rgba(34, 211, 238, 0.08);
   }
 
   .org-settings__form-row {
@@ -925,15 +1427,15 @@
   /* ===== Feature Card ===== */
   .org-settings__feature-card {
     background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
+    border: 1px solid rgba(34, 211, 238, 0.15);
+    border-radius: 14px;
     cursor: pointer;
     transition: all 200ms ease;
   }
 
   .org-settings__feature-card:hover {
-    border-color: rgba(168, 85, 247, 0.3);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    border-color: rgba(34, 211, 238, 0.35);
+    box-shadow: 0 0 24px rgba(34, 211, 238, 0.1);
   }
 
   .org-settings__feature-inner {
@@ -1155,7 +1657,7 @@
     animation: spin 0.8s linear infinite;
   }
 
-  /* ===== Dialog Overlay ===== */
+  /* ===== Dialog Overlay (aligned with BugReportDialog) ===== */
   .org-dialog__overlay {
     position: fixed;
     inset: 0;
@@ -1164,7 +1666,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 60;
+    z-index: 9999;
   }
 
   /* ===== Dialog Container ===== */
@@ -1173,7 +1675,7 @@
     border: 1px solid var(--sidebar-border);
     border-radius: 12px;
     width: 100%;
-    max-width: 440px;
+    max-width: 480px;
     margin: 1rem;
     max-height: 85vh;
     display: flex;
@@ -1186,6 +1688,10 @@
   .org-dialog__accent {
     height: 3px;
     flex-shrink: 0;
+  }
+
+  .org-dialog__accent--default {
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
   }
 
   .org-dialog__accent--red {
@@ -1239,6 +1745,11 @@
     margin-bottom: 0.875rem;
   }
 
+  .org-dialog__icon--accent {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
   .org-dialog__icon--red {
     background-color: rgba(239, 68, 68, 0.15);
     color: #f87171;
@@ -1263,6 +1774,109 @@
     flex: 1;
     overflow-y: auto;
     padding: 0 1.5rem;
+  }
+
+  .org-dialog__content--scroll {
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+
+  .org-dialog__content--scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .org-dialog__content--scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .org-dialog__content--scroll::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .org-dialog__form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .org-dialog__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .org-dialog__label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .org-dialog__hint {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .org-dialog__input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .org-dialog__input::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .org-dialog__input:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .org-dialog--red .org-dialog__input:focus {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15);
+  }
+
+  .org-dialog__textarea {
+    resize: none;
+    min-height: 80px;
+    line-height: 1.5;
+  }
+
+  .org-dialog__textarea--sm {
+    min-height: 60px;
+  }
+
+  .org-dialog__section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin: 0;
+  }
+
+  .org-dialog__section-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .org-settings__form-hint {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.375rem 0 0;
   }
 
   .org-dialog__preview-card {
@@ -1323,35 +1937,13 @@
     color: var(--sidebar-text);
   }
 
-  .org-dialog__input {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .org-dialog__input::placeholder {
-    color: var(--sidebar-text-muted);
-    opacity: 0.5;
-  }
-
-  .org-dialog__input:focus {
-    outline: none;
-    border-color: #ef4444;
-    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15);
-  }
-
   /* ===== Dialog Footer ===== */
   .org-dialog__footer {
     display: flex;
     gap: 0.625rem;
     padding: 1.25rem 1.5rem;
     border-top: 1px solid var(--sidebar-border);
-    margin-top: 1rem;
+    flex-shrink: 0;
   }
 
   .org-dialog__btn {
@@ -1383,6 +1975,15 @@
   .org-dialog__btn--secondary:hover:not(:disabled) {
     background-color: var(--sidebar-active);
     border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .org-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .org-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
   }
 
   .org-dialog__btn--danger {
@@ -1461,12 +2062,18 @@
 
   .org-settings__restrictions-card {
     background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
+    border: 1px solid rgba(34, 211, 238, 0.15);
+    border-radius: 14px;
     padding: 1.25rem;
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  .org-settings__restrictions-card:hover {
+    border-color: rgba(34, 211, 238, 0.3);
+    box-shadow: 0 0 20px rgba(34, 211, 238, 0.06);
   }
 
   .org-settings__restrictions-header {
@@ -1474,7 +2081,7 @@
     align-items: center;
     gap: 0.625rem;
     padding-bottom: 0.75rem;
-    border-bottom: 1px solid var(--sidebar-border);
+    border-bottom: 1px solid rgba(34, 211, 238, 0.1);
   }
 
   .org-settings__restrictions-icon {
@@ -1512,6 +2119,35 @@
     font-size: 0.6875rem;
     color: var(--sidebar-text-muted);
     line-height: 1.4;
+  }
+
+  .hw__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .hw__tag {
+    border: 1px solid var(--sidebar-border);
+    background: color-mix(in srgb, var(--sidebar-hover) 70%, transparent);
+    color: var(--sidebar-text-muted);
+    border-radius: 999px;
+    font-size: 0.75rem;
+    line-height: 1;
+    padding: 0.45rem 0.7rem;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .hw__tag:hover {
+    background: var(--sidebar-hover);
+    border-color: color-mix(in srgb, var(--sidebar-text-muted) 45%, var(--sidebar-border));
+  }
+
+  .hw__tag--selected {
+    background: rgba(6, 182, 212, 0.16);
+    border-color: rgba(6, 182, 212, 0.45);
+    color: var(--sidebar-accent);
   }
 
   @keyframes spin {

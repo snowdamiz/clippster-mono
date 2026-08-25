@@ -175,3 +175,191 @@ export async function deleteClip(id: string): Promise<void> {
   const db = await getDatabase();
   await db.execute('DELETE FROM clips WHERE id = ?', [id]);
 }
+
+/**
+ * Update subtitle settings for a clip
+ */
+export async function updateClipSubtitleSettings(
+  clipId: string,
+  enabled: boolean,
+  presetId: string | null
+): Promise<void> {
+  const db = await getDatabase();
+  const now = timestamp();
+
+  // Ensure subtitle columns exist
+  try {
+    const columnResult = await db.select<{ name: string }[]>('PRAGMA table_info(clips)');
+    const columns = columnResult.map((col) => col.name);
+
+    if (!columns.includes('subtitle_enabled')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_enabled INTEGER DEFAULT 0');
+    }
+
+    if (!columns.includes('subtitle_preset_id')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_preset_id TEXT');
+    }
+  } catch (e) {
+    console.warn('[Clips] Failed to check/add subtitle columns:', e);
+  }
+
+  await db.execute(
+    'UPDATE clips SET subtitle_enabled = ?, subtitle_preset_id = ?, updated_at = ? WHERE id = ?',
+    [enabled ? 1 : 0, presetId, now, clipId]
+  );
+}
+
+/**
+ * Update subtitle settings for multiple clips
+ */
+export async function updateMultipleClipsSubtitleSettings(
+  clipIds: string[],
+  enabled: boolean,
+  presetId: string | null
+): Promise<void> {
+  const db = await getDatabase();
+  const now = timestamp();
+
+  // Ensure subtitle columns exist
+  try {
+    const columnResult = await db.select<{ name: string }[]>('PRAGMA table_info(clips)');
+    const columns = columnResult.map((col) => col.name);
+
+    if (!columns.includes('subtitle_enabled')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_enabled INTEGER DEFAULT 0');
+    }
+
+    if (!columns.includes('subtitle_preset_id')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_preset_id TEXT');
+    }
+
+    if (!columns.includes('subtitle_position_x')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_position_x REAL');
+    }
+
+    if (!columns.includes('subtitle_position_y')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_position_y REAL');
+    }
+  } catch (e) {
+    console.warn('[Clips] Failed to check/add subtitle columns:', e);
+  }
+
+  // Ensure subtitle_position_width column exists
+  try {
+    const columnResult2 = await db.select<{ name: string }[]>('PRAGMA table_info(clips)');
+    const columns2 = columnResult2.map((col) => col.name);
+    if (!columns2.includes('subtitle_position_width')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_position_width REAL');
+    }
+  } catch (e) {
+    console.warn('[Clips] Failed to check/add subtitle_position_width column:', e);
+  }
+
+  // Update all clips in a transaction
+  for (const clipId of clipIds) {
+    await db.execute(
+      'UPDATE clips SET subtitle_enabled = ?, subtitle_preset_id = ?, updated_at = ? WHERE id = ?',
+      [enabled ? 1 : 0, presetId, now, clipId]
+    );
+  }
+}
+
+export async function updateClipSubtitlePosition(
+  clipId: string,
+  positionX: number,
+  positionY: number,
+  width?: number
+): Promise<void> {
+  const db = await getDatabase();
+  const now = timestamp();
+
+  // Ensure columns exist
+  try {
+    const cols = await db.select<{ name: string }[]>('PRAGMA table_info(clips)');
+    const colNames = cols.map((c) => c.name);
+    if (!colNames.includes('subtitle_position_x'))
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_position_x REAL');
+    if (!colNames.includes('subtitle_position_y'))
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_position_y REAL');
+    if (!colNames.includes('subtitle_position_width'))
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_position_width REAL');
+  } catch (e) {
+    console.warn('[Clips] Failed to check/add subtitle position columns:', e);
+  }
+
+  await db.execute(
+    'UPDATE clips SET subtitle_position_x = ?, subtitle_position_y = ?, subtitle_position_width = ?, updated_at = ? WHERE id = ?',
+    [positionX, positionY, width ?? null, now, clipId]
+  );
+}
+
+/**
+ * Update full subtitle settings for a clip (stores complete settings as JSON)
+ * This preserves all customizations made to subtitle styling, animation, colors, etc.
+ */
+export async function updateClipFullSubtitleSettings(
+  clipId: string,
+  settings: any // SubtitleSettings type from @/types
+): Promise<void> {
+  const db = await getDatabase();
+  const now = timestamp();
+
+  // Ensure subtitle_settings column exists
+  try {
+    const cols = await db.select<{ name: string }[]>('PRAGMA table_info(clips)');
+    const colNames = cols.map((c) => c.name);
+    if (!colNames.includes('subtitle_settings')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN subtitle_settings TEXT');
+      console.log('[Clips] Added subtitle_settings column to clips table');
+    }
+  } catch (e) {
+    console.warn('[Clips] Failed to check/add subtitle_settings column:', e);
+  }
+
+  // Store the full settings as JSON
+  const settingsJson = JSON.stringify(settings);
+  await db.execute(
+    'UPDATE clips SET subtitle_enabled = ?, subtitle_preset_id = ?, subtitle_settings = ?, updated_at = ? WHERE id = ?',
+    [settings.enabled ? 1 : 0, settings.selectedPresetId ?? null, settingsJson, now, clipId]
+  );
+  
+  console.log(`[Clips] Saved full subtitle settings for clip ${clipId}:`, settings);
+  
+  // VERIFY: Read back what was actually saved to the database
+  const verifyResult = await db.select<any[]>('SELECT subtitle_settings FROM clips WHERE id = ?', [clipId]);
+  if (verifyResult && verifyResult[0]) {
+    console.log('[Clips] VERIFY - Data actually in database:', {
+      hasSubtitleSettings: !!verifyResult[0].subtitle_settings,
+      length: verifyResult[0].subtitle_settings?.length,
+      preview: verifyResult[0].subtitle_settings?.substring(0, 100)
+    });
+  } else {
+    console.error('[Clips] VERIFY - Could not read back clip data!');
+  }
+}
+
+// Backward-compatible alias used by ClipBuildSettingsDialog dynamic import
+export { updateClipFullSubtitleSettings as saveSubtitleSettings };
+
+async function ensureClipTextOverlayColumn(): Promise<void> {
+  const db = await getDatabase();
+  try {
+    const cols = await db.select<{ name: string }[]>('PRAGMA table_info(clips)');
+    const colNames = cols.map((c) => c.name);
+    if (!colNames.includes('clip_text_overlay')) {
+      await db.execute('ALTER TABLE clips ADD COLUMN clip_text_overlay TEXT');
+      console.log('[Clips] Added clip_text_overlay column');
+    }
+  } catch (e) {
+    console.warn('[Clips] Failed to ensure clip_text_overlay column:', e);
+  }
+}
+
+export async function updateClipTextOverlay(clipId: string, state: import('@/utils/clipTextBox').ClipTextBoxState | null): Promise<void> {
+  await ensureClipTextOverlayColumn();
+  const db = await getDatabase();
+  const now = timestamp();
+  const json = state == null ? null : JSON.stringify(state);
+  await db.execute('UPDATE clips SET clip_text_overlay = ?, updated_at = ? WHERE id = ?', [json, now, clipId]);
+}
+

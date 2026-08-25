@@ -176,8 +176,12 @@ defmodule ClippsterServer.ClipperProfiles.LeaderboardWorker do
     scored_profiles =
       profiles
       |> Enum.map(fn profile ->
-        total_views = ClipperProfiles.count_post_views_in_period(profile.user_id, period_start, period_end)
-        posts_count = ClipperProfiles.count_posts_in_period(profile.user_id, period_start, period_end)
+        total_views =
+          ClipperProfiles.count_post_views_in_period(profile.user_id, period_start, period_end)
+
+        posts_count =
+          ClipperProfiles.count_posts_in_period(profile.user_id, period_start, period_end)
+
         {profile, total_views, posts_count}
       end)
       |> Enum.filter(fn {_, total_views, _} -> total_views > 0 end)

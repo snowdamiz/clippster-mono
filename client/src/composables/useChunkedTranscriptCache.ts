@@ -6,9 +6,11 @@ import {
   getTranscriptChunks,
   updateChunkedTranscriptCompleteness,
   getChunkMetadataForProcessing,
+  deleteChunkedTranscript,
 } from '@/services/database';
 import { useAudioChunking, type AudioChunk } from './useAudioChunking';
 import { useToast } from '@/composables/useToast';
+import { normalizeLocalFilePathForFs } from '@/utils/normalizeLocalFilePath';
 
 export interface ChunkTranscriptionResult {
   chunkId: string;
@@ -34,11 +36,21 @@ export interface ChunkedTranscriptSession {
   error: string | null;
 }
 
-export function useChunkedTranscriptCache() {
+interface UseChunkedTranscriptCacheOptions {
+  showCompletionToast?: boolean;
+  showCacheReuseToast?: boolean;
+  showErrorToast?: boolean;
+  showAudioChunkingToast?: boolean;
+}
+
+export function useChunkedTranscriptCache(options: UseChunkedTranscriptCacheOptions = {}) {
   const currentSession = ref<ChunkedTranscriptSession | null>(null);
   const isProcessing = ref(false);
   const error = ref<string | null>(null);
   const { success: showSuccess, error: showError } = useToast();
+  const shouldShowCompletionToast = options.showCompletionToast ?? true;
+  const shouldShowCacheReuseToast = options.showCacheReuseToast ?? true;
+  const shouldShowErrorToast = options.showErrorToast ?? true;
 
   // Computed properties
   const sessionProgress = computed(() => currentSession.value?.progress || 0);
@@ -63,12 +75,24 @@ export function useChunkedTranscriptCache() {
         // For now, let's assume if it exists we want to check for chunks.
         const existingChunks = await getTranscriptChunks(existingChunked.id);
 
-        // If we have some chunks but not all, we might need to re-process or resume.
-        // But for initialization, if we have a record, let's return it.
-        // If it's complete, return success.
-        if (existingChunked.is_complete) {
-          showSuccess('Transcript cached', 'Using existing chunked transcript for this video');
+        // Only reuse a complete cache when it actually has chunks. Older failed
+        // attempts could leave a "complete" zero-chunk record, which blocks
+        // re-transcription and surfaces as "No audio chunks were extracted".
+        if (existingChunked.is_complete && existingChunks.length > 0) {
+          if (shouldShowCacheReuseToast) {
+            showSuccess('Transcript cached', 'Using existing chunked transcript for this video');
+          }
           return { success: true, sessionId: existingChunked.id };
+        }
+
+        if (existingChunks.length === 0) {
+          console.warn('[ChunkedTranscriptCache] Removing empty chunked transcript cache:', {
+            chunkedTranscriptId: existingChunked.id,
+            rawVideoId,
+            totalChunks: existingChunked.total_chunks,
+            isComplete: existingChunked.is_complete,
+          });
+          await deleteChunkedTranscript(existingChunked.id);
         }
 
         // If not complete, we might want to resume or overwrite.
@@ -94,8 +118,12 @@ export function useChunkedTranscriptCache() {
       }
 
       // Use audio chunking to get chunk information
-      const { extractAndChunkVideo } = useAudioChunking();
-      const chunkingResult = await extractAndChunkVideo(rawVideo.file_path, rawVideoId, {
+      const { extractAndChunkVideo } = useAudioChunking({
+        showSuccessToast: options.showAudioChunkingToast ?? options.showCompletionToast,
+        showErrorToast: options.showErrorToast,
+      });
+      const videoPathForChunking = normalizeLocalFilePathForFs(rawVideo.file_path);
+      const chunkingResult = await extractAndChunkVideo(videoPathForChunking, rawVideoId, {
         chunkDurationMinutes,
         overlapSeconds,
         startTime,
@@ -107,6 +135,10 @@ export function useChunkedTranscriptCache() {
       }
 
       const chunks = chunkingResult.chunks;
+      if (chunks.length === 0) {
+        throw new Error('No audio chunks were extracted from the video');
+      }
+
       const totalDuration = chunks.reduce((sum, chunk) => sum + chunk.duration, 0);
 
       // Create chunked transcript record
@@ -136,7 +168,9 @@ export function useChunkedTranscriptCache() {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       error.value = errorMessage;
-      showError('Initialization failed', errorMessage);
+      if (shouldShowErrorToast) {
+        showError('Initialization failed', errorMessage);
+      }
       return { success: false, error: errorMessage };
     } finally {
       isProcessing.value = false;
@@ -198,10 +232,12 @@ export function useChunkedTranscriptCache() {
       // Update session status if complete
       if (currentSession.value.completedChunks >= currentSession.value.totalChunks) {
         currentSession.value.status = 'completed';
-        showSuccess(
-          'Transcription complete',
-          `All ${currentSession.value.totalChunks} chunks transcribed and cached`
-        );
+        if (shouldShowCompletionToast) {
+          showSuccess(
+            'Transcription complete',
+            `All ${currentSession.value.totalChunks} chunks transcribed and cached`
+          );
+        }
       }
 
       return { success: true };

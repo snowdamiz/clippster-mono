@@ -31,6 +31,7 @@ export interface SocialAccount {
   id: number;
   platform: 'instagram' | 'tiktok' | 'twitter' | 'x' | 'youtube' | 'YouTube';
   platform_user_id: string;
+  provider_account_id?: string | null;
   username: string;
   display_name: string | null;
   profile_image_url: string | null;
@@ -303,27 +304,6 @@ export async function deleteSocialAccount(
     return {
       success: false,
       error: error.response?.data?.error || error.message || 'Failed to delete account',
-    };
-  }
-}
-
-/**
- * Trigger token refresh for an account.
- */
-export async function refreshAccountToken(
-  organizationId: string | number,
-  accountId: number
-): Promise<{ success: boolean; message?: string; error?: string }> {
-  try {
-    const response = await api.post<{ success: boolean; message?: string }>(
-      `/organizations/${organizationId}/social-accounts/${accountId}/refresh`
-    );
-    return response.data;
-  } catch (error: any) {
-    console.error('[SocialAccountsApi] Failed to refresh token:', error);
-    return {
-      success: false,
-      error: error.response?.data?.error || error.message || 'Failed to refresh token',
     };
   }
 }
@@ -699,6 +679,7 @@ export async function uploadMediaForPost(
 // ============================================
 
 import { isTauri } from '@/lib/instagram-auth';
+import { buildOrgConnectUrlBody, type OrgSocialConnectOptions } from './userSocialConnect';
 
 interface PostForMeConnectUrlResponse {
   success: boolean;
@@ -750,14 +731,15 @@ function getAuthToken(): string {
 async function startPostForMeOrganizationOAuth(
   organizationId: string | number,
   platform: string,
-  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void,
+  options?: OrgSocialConnectOptions
 ): Promise<() => void> {
   const { invoke } = await import('@tauri-apps/api/core');
 
-  const connectResponse = await api.post<PostForMeConnectUrlResponse>('/social/connect-url', {
-    organization_id: organizationId,
-    platform,
-  });
+  const connectResponse = await api.post<PostForMeConnectUrlResponse>(
+    '/social/connect-url',
+    buildOrgConnectUrlBody(organizationId, platform, options)
+  );
 
   if (!connectResponse.data.success || !connectResponse.data.auth_url) {
     throw new Error(connectResponse.data.error || 'Failed to create Post For Me auth URL');
@@ -873,7 +855,8 @@ async function pollOrganizationConnectStatus(
  */
 export async function startInstagramOAuthPopup(
   organizationId: string | number,
-  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void,
+  options?: OrgSocialConnectOptions
 ): Promise<() => void> {
   if (!isTauri()) {
     throw new Error('Instagram OAuth is only supported in the Tauri desktop app');
@@ -885,7 +868,7 @@ export async function startInstagramOAuthPopup(
     throw new Error('You must be logged in to connect Instagram');
   }
 
-  return startPostForMeOrganizationOAuth(organizationId, 'instagram', onResult);
+  return startPostForMeOrganizationOAuth(organizationId, 'instagram', onResult, options);
 }
 
 /**
@@ -894,7 +877,8 @@ export async function startInstagramOAuthPopup(
  */
 export async function startTwitterOAuthPopup(
   organizationId: string | number,
-  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void,
+  options?: OrgSocialConnectOptions
 ): Promise<() => void> {
   if (!isTauri()) {
     throw new Error('X OAuth is only supported in the Tauri desktop app');
@@ -906,7 +890,7 @@ export async function startTwitterOAuthPopup(
     throw new Error('You must be logged in to connect X');
   }
 
-  return startPostForMeOrganizationOAuth(organizationId, 'x', onResult);
+  return startPostForMeOrganizationOAuth(organizationId, 'x', onResult, options);
 }
 
 /**
@@ -915,7 +899,8 @@ export async function startTwitterOAuthPopup(
  */
 export async function startTiktokOAuthPopup(
   organizationId: string | number,
-  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void,
+  options?: OrgSocialConnectOptions
 ): Promise<() => void> {
   if (!isTauri()) {
     throw new Error('TikTok OAuth is only supported in the Tauri desktop app');
@@ -927,7 +912,7 @@ export async function startTiktokOAuthPopup(
     throw new Error('You must be logged in to connect TikTok');
   }
 
-  return startPostForMeOrganizationOAuth(organizationId, 'tiktok', onResult);
+  return startPostForMeOrganizationOAuth(organizationId, 'tiktok', onResult, options);
 }
 
 /**
@@ -936,7 +921,8 @@ export async function startTiktokOAuthPopup(
  */
 export async function startYoutubeOAuthPopup(
   organizationId: string | number,
-  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void,
+  options?: OrgSocialConnectOptions
 ): Promise<() => void> {
   if (!isTauri()) {
     throw new Error('YouTube OAuth is only supported in the Tauri desktop app');
@@ -948,6 +934,6 @@ export async function startYoutubeOAuthPopup(
     throw new Error('You must be logged in to connect YouTube');
   }
 
-  return startPostForMeOrganizationOAuth(organizationId, 'youtube', onResult);
+  return startPostForMeOrganizationOAuth(organizationId, 'youtube', onResult, options);
 }
 

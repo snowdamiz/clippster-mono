@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Copy, Loader2, RefreshCw, UserPlus, Users, ChevronDown, ChevronRight } from 'lucide-react'
+import { AlertTriangle, Copy, Download, Loader2, RefreshCw, UserPlus, Users, ChevronDown, ChevronRight } from 'lucide-react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { listWaitlist, inviteWaitlist, inviteWaitlistEntry, addWaitlistEntry, type WaitlistEntry, type WaitlistStats, type InviteConfig } from '@/services/adminApi'
+import { downloadEmailsCsv } from '@/utils/downloadEmailsCsv'
 import { formatDateTime } from './adminFormat'
 
 export function AdminWaitlistPage() {
@@ -57,6 +58,15 @@ export function AdminWaitlistPage() {
     } catch {
       setError('Failed to copy all emails')
     }
+  }
+
+  function exportEmailsCsv() {
+    const emails = rows.map((row) => row.email).filter(Boolean)
+    if (!emails.length) {
+      setError('No waitlist emails to export')
+      return
+    }
+    downloadEmailsCsv(emails, 'waitlist-emails.csv')
   }
 
   async function handleInviteEntry(id: number) {
@@ -193,7 +203,7 @@ export function AdminWaitlistPage() {
           </div>
         )}
 
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 flex items-center gap-3">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 text-zinc-300 text-sm">
             <Users className="w-4 h-4" />
             {rows.length} email{rows.length === 1 ? '' : 's'}
@@ -216,13 +226,22 @@ export function AdminWaitlistPage() {
             </button>
           )}
           {rows.length > 0 && (
-            <button
-              onClick={copyAllEmails}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-zinc-100 border border-zinc-700 hover:bg-zinc-800"
-            >
-              <Copy className="w-3.5 h-3.5" />
-              Copy All Emails
-            </button>
+            <>
+              <button
+                onClick={copyAllEmails}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-zinc-100 border border-zinc-700 hover:bg-zinc-800"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                Copy All Emails
+              </button>
+              <button
+                onClick={exportEmailsCsv}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-zinc-100 border border-zinc-700 hover:bg-zinc-800"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export Emails CSV
+              </button>
+            </>
           )}
         </div>
 

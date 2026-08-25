@@ -34,9 +34,10 @@
           <div class="user-header__main">
             <div class="user-avatar">
               <img
-                v-if="user.avatar_url"
-                :src="user.avatar_url"
+                v-if="avatarUrl"
+                :src="avatarUrl"
                 class="user-avatar__img"
+                @error="handleAvatarError"
               />
               <User v-else class="user-avatar__fallback" />
             </div>
@@ -293,11 +294,11 @@
                 <div class="info-list">
                   <div class="info-list-item">
                     <div class="info-list-item__label">Remaining</div>
-                    <div class="info-list-item__value">{{ user.credits?.hours_remaining?.toFixed(2) || '0.00' }} hours</div>
+                    <div class="info-list-item__value">{{ formatCredits(user.credits?.hours_remaining) }} credits</div>
                   </div>
                   <div class="info-list-item">
                     <div class="info-list-item__label">Used</div>
-                    <div class="info-list-item__value">{{ user.credits?.hours_used?.toFixed(2) || '0.00' }} hours</div>
+                    <div class="info-list-item__value">{{ formatCredits(user.credits?.hours_used) }} credits</div>
                   </div>
                 </div>
               </div>
@@ -579,6 +580,7 @@ const { success: toast, error: toastError } = useToast();
 const loading = ref(false);
 const error = ref<string | null>(null);
 const user = ref<any>(null);
+const avatarLoadError = ref(false);
 
 // Dialog states
 const showPromoteModeratorDialog = ref(false);
@@ -603,6 +605,15 @@ const userName = computed(() => {
   if (!user.value) return '';
   return user.value.name || user.value.email || user.value.wallet_address || 'Unknown User';
 });
+
+const avatarUrl = computed(() => {
+  if (avatarLoadError.value) return null;
+  return user.value?.avatar_url || null;
+});
+
+const handleAvatarError = () => {
+  avatarLoadError.value = true;
+};
 
 const accountAge = computed(() => {
   if (!user.value?.created_at) return 'Unknown';
@@ -655,9 +666,16 @@ const formatProvider = (provider: string | undefined) => {
   return provider.charAt(0).toUpperCase() + provider.slice(1);
 };
 
+const formatCredits = (value: number | string | null | undefined) => {
+  const credits = Number(value || 0);
+  if (!Number.isFinite(credits)) return '0.00';
+  return credits.toFixed(2);
+};
+
 const loadUserProfile = async () => {
   loading.value = true;
   error.value = null;
+  avatarLoadError.value = false;
   
   try {
     const response = await api.get(`/admin/users/${userId.value}/profile`);

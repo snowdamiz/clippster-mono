@@ -1,6 +1,5 @@
 import { Command } from "../../../../lib/commands/base-command";
 import type {
-	TimelineTrack,
 	TimelineElement,
 	VideoElement,
 	ImageElement,
@@ -16,19 +15,19 @@ import type {
 import { EditorCore } from "../../../../core";
 
 export type UpdatableVideoProps = Partial<
-	Pick<VideoElement, "mediaId" | "opacity" | "transform" | "muted" | "hidden" | "volume" | "speed" | "reversed" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut">
+	Pick<VideoElement, "mediaId" | "opacity" | "transform" | "muted" | "hidden" | "volume" | "speed" | "reversed" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut" | "masks" | "keyframes">
 >;
 
 export type UpdatableImageProps = Partial<
-	Pick<ImageElement, "mediaId" | "opacity" | "transform" | "hidden" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut">
+	Pick<ImageElement, "mediaId" | "opacity" | "transform" | "hidden" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut" | "masks" | "keyframes">
 >;
 
 export type UpdatableAudioProps = Partial<
-	Pick<AudioElement, "volume" | "muted" | "speed" | "reversed" | "fadeIn" | "fadeOut" | "audioEffects">
+	Pick<AudioElement, "volume" | "muted" | "speed" | "reversed" | "fadeIn" | "fadeOut" | "audioEffects" | "keyframes">
 >;
 
 export type UpdatableStickerProps = Partial<
-	Pick<StickerElement, "opacity" | "transform" | "color" | "hidden" | "fadeIn" | "fadeOut">
+	Pick<StickerElement, "opacity" | "transform" | "color" | "hidden" | "fadeIn" | "fadeOut" | "keyframes">
 >;
 
 export type UpdatableEffectProps = Partial<
@@ -48,7 +47,9 @@ export type UpdatableElementProps =
 	| UpdatableCaptionProps;
 
 export class UpdateElementCommand extends Command {
-	private savedState: TimelineTrack[] | null = null;
+	/** Deep snapshot of the target element only (avoids cloning full timeline for undo). */
+	private savedElement: TimelineElement | null = null;
+	private updatedAt = performance.now();
 
 	constructor(
 		private trackId: string,
@@ -60,9 +61,12 @@ export class UpdateElementCommand extends Command {
 
 	execute(): void {
 		const editor = EditorCore.getInstance();
-		this.savedState = editor.timeline.getTracks();
+		const tracks = editor.timeline.getTracks();
+		const track = tracks.find((t) => t.id === this.trackId);
+		const prev = track?.elements.find((el) => el.id === this.elementId);
+		this.savedElement = prev ? structuredClone(prev) : null;
 
-		const updatedTracks = this.savedState.map((t) => {
+		const updatedTracks = tracks.map((t) => {
 			if (t.id !== this.trackId) return t;
 			const newElements = t.elements.map((el) =>
 				el.id === this.elementId
@@ -75,10 +79,32 @@ export class UpdateElementCommand extends Command {
 		editor.timeline.updateTracks(updatedTracks);
 	}
 
+	canMergeWith(next: Command): boolean {
+		if (!(next instanceof UpdateElementCommand)) return false;
+		if (next.trackId !== this.trackId || next.elementId !== this.elementId) return false;
+		if (next.updatedAt - this.updatedAt > 500) return false;
+		const currentKeys = Object.keys(this.updates).sort().join("|");
+		const nextKeys = Object.keys(next.updates).sort().join("|");
+		return currentKeys === nextKeys;
+	}
+
+	mergeWith(next: Command): void {
+		if (!(next instanceof UpdateElementCommand)) return;
+		this.updates = { ...this.updates, ...next.updates };
+		this.updatedAt = next.updatedAt;
+	}
+
 	undo(): void {
-		if (this.savedState) {
-			const editor = EditorCore.getInstance();
-			editor.timeline.updateTracks(this.savedState);
-		}
+		if (!this.savedElement) return;
+		const editor = EditorCore.getInstance();
+		const tracks = editor.timeline.getTracks();
+		const restored = tracks.map((t) => {
+			if (t.id !== this.trackId) return t;
+			const newElements = t.elements.map((el) =>
+				el.id === this.elementId ? structuredClone(this.savedElement!) : el,
+			);
+			return { ...t, elements: newElements } as typeof t;
+		});
+		editor.timeline.updateTracks(restored);
 	}
 }

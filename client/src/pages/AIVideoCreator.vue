@@ -136,7 +136,9 @@
                       :completed-scenes="chatSession.completedScenes.value"
                       :reference-analysis="chatSession.referenceAnalysis.value"
                       :is-analyzing-reference="isAnalyzingReference"
+                      :reference-progress="referenceProgress"
                       :reference-error="referenceError"
+                      :style-pack-id="selectedStylePackId"
                       :draft-message="chatDraftMessage"
                       :media-items="mediaItems"
                       :transcript-generation-status="transcriptGenerationStatus"
@@ -144,7 +146,11 @@
                       @update:draft-message="handleDraftMessageUpdate"
                       @clear-error="chatSession.clearError"
                       @analyze-reference="handleAnalyzeReference"
+                      @upload-reference="handleUploadReference"
                       @remove-reference="handleRemoveReference"
+                      @cancel-reference="cancelReferenceAnalysis"
+                      @retry-reference="retryReferenceAnalysis"
+                      @select-style-pack="handleSelectStylePack"
                       @upload-media="handleUpload"
                       @open-clip-picker="openClipPicker"
                       @open-asset-picker="openAssetPicker"
@@ -197,6 +203,9 @@
                           <span>Scene {{ scene.index + 1 }}</span>
                         </div>
                       </div>
+                      <button class="preview-generating__cancel" type="button" @click="chatSession.cancelGeneration">
+                        Cancel generation
+                      </button>
                     </div>
                   </div>
                   <div v-else class="preview-placeholder">
@@ -223,6 +232,12 @@
                       </div>
                     </div>
                   </div>
+                </div>
+
+                <div v-if="composition?.styleMatch" class="aiv-style-match">
+                  <Sparkles :size="13" />
+                  <span>{{ composition.styleMatch.summary }}</span>
+                  <strong>{{ Math.round(composition.styleMatch.confidence * 100) }}% match</strong>
                 </div>
 
                 <!-- Playback Controls -->
@@ -379,7 +394,13 @@
   import ExportDialog from '@/components/ai-video/ExportDialog.vue';
   import AIChatPanel from '@/components/ai-video/AIChatPanel.vue';
   import { useAIChatSession } from '@/composables/useAIChatSession';
-  import type { AIVideoMediaItem } from '@/types/ai-video';
+  import type {
+    AIVideoMediaItem,
+    ReferenceAnalysisProgress,
+    StylePackId,
+  } from '@/types/ai-video';
+  import { getAIStylePack } from '@/data/ai-video-style-packs';
+  import { analyzeReferenceVideo, type ReferenceInput } from '@/services/referenceVideo';
   import api from '@/services/api';
 
   const router = useRouter();
@@ -425,7 +446,7 @@
   const chatSession = useAIChatSession();
 
   // Project picker state
-  const savedSessions = ref<Array<{ id: number; name: string | null; status: string; updated_at: string; inserted_at: string }>>([]);
+  const savedSessions = ref<Array<{ id: number; name: string | null; status: string; updated_at: string; inserted_at: string; thumbnail_url?: string | null }>>([]);
   const isLoadingSessions = ref(false);
   const showProjectPicker = computed(() => !chatSession.session.value);
 
@@ -596,51 +617,67 @@
   // Reference analysis state
   const isAnalyzingReference = ref(false);
   const referenceError = ref<string | null>(null);
+  const referenceProgress = ref<ReferenceAnalysisProgress | null>(null);
+  const referenceController = ref<AbortController | null>(null);
+  const lastReferenceInput = ref<ReferenceInput | null>(null);
+  const selectedStylePackId = computed<StylePackId | null>(() => {
+    const id = chatSession.session.value?.style_context?.stylePack?.id;
+    return getAIStylePack(id as StylePackId)?.id ?? null;
+  });
 
   async function handleAnalyzeReference(url: string) {
+    await startReferenceAnalysis({ kind: 'url', value: url });
+  }
+
+  async function handleUploadReference() {
+    const path = await open({
+      multiple: false,
+      filters: [{ name: 'Reference Video', extensions: ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v'] }],
+    });
+    if (typeof path === 'string') await startReferenceAnalysis({ kind: 'upload', value: path });
+  }
+
+  async function startReferenceAnalysis(input: ReferenceInput) {
     if (!chatSession.session.value) return;
+    referenceController.value?.abort();
+    referenceController.value = new AbortController();
+    lastReferenceInput.value = input;
     isAnalyzingReference.value = true;
     referenceError.value = null;
+    referenceProgress.value = { stage: 'validating', progress: 0, message: 'Starting reference analysis' };
     try {
-      // Fetch the image, convert to base64, send to backend for analysis
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
-      const blob = await response.blob();
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => {
-          const result = reader.result as string;
-          const base64Data = result.split(',')[1];
-          resolve(base64Data);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-
-      // Send to backend reference analysis endpoint
-      const res = await api.post('/ai/reference/analyze', {
-        image_base64: base64,
-        mime_type: blob.type || 'image/jpeg',
-      });
-
-      if (res.data?.style_profile) {
-        await chatSession.uploadReference(res.data.style_profile, url);
-      }
+      const recipe = await analyzeReferenceVideo(input, (progress) => {
+        referenceProgress.value = progress;
+      }, referenceController.value.signal);
+      await chatSession.uploadReference(recipe, recipe.metadata.sourceUrl ?? null);
     } catch (e: any) {
-      referenceError.value = e.message || 'Failed to analyze reference';
-      console.error('[AIVideoCreator] Reference analysis failed:', e);
+      if (e?.name !== 'AbortError' && !String(e).toLowerCase().includes('cancel')) {
+        referenceError.value = e?.response?.data?.error || e.message || String(e) || 'Failed to analyze reference';
+        console.error('[AIVideoCreator] Reference analysis failed:', e);
+      }
     } finally {
       isAnalyzingReference.value = false;
+      referenceController.value = null;
     }
   }
 
-  function handleRemoveReference() {
-    // Clear reference from session by uploading null
-    if (chatSession.session.value) {
-      chatSession.session.value.reference_analysis = null;
-      chatSession.session.value.reference_url = null;
-    }
+  function cancelReferenceAnalysis() {
+    referenceController.value?.abort();
+  }
+
+  async function retryReferenceAnalysis() {
+    if (lastReferenceInput.value) await startReferenceAnalysis(lastReferenceInput.value);
+  }
+
+  async function handleRemoveReference() {
+    await chatSession.uploadReference(null, null);
     referenceError.value = null;
+    referenceProgress.value = null;
+  }
+
+  async function handleSelectStylePack(id: StylePackId) {
+    const pack = getAIStylePack(id);
+    if (pack) await chatSession.updateStylePack(pack);
   }
 
   function normalizeMediaPartLabel(value: string): string {
@@ -1934,6 +1971,22 @@
     min-height: 0;
   }
 
+  .aiv-style-match {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-top: 1px solid rgba(99, 102, 241, 0.18);
+    background: rgba(99, 102, 241, 0.08);
+    color: #c7d2fe;
+    font-size: 11px;
+  }
+
+  .aiv-style-match strong {
+    margin-left: auto;
+    color: #a5b4fc;
+  }
+
   .preview-placeholder {
     position: absolute;
     inset: 0;
@@ -3015,6 +3068,16 @@
     height: 6px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.2);
+  }
+
+  .preview-generating__cancel {
+    padding: 6px 11px;
+    border: 1px solid rgba(248, 113, 113, 0.28);
+    border-radius: 7px;
+    background: rgba(248, 113, 113, 0.08);
+    color: #fca5a5;
+    cursor: pointer;
+    font-size: 11px;
   }
 
   /* ═══ Animations ═══ */

@@ -168,7 +168,7 @@ export const CAPTION_PRESETS: CaptionPreset[] = [
 		category: "classic",
 		description: "Word-by-word color highlight",
 		highlightStyle: "karaoke",
-		highlightColor: "#FACC15",
+		highlightColor: "#0ea5e9",
 		color: "#FFFFFF",
 		backgroundColor: "transparent",
 		fontSize: 48,
@@ -822,7 +822,7 @@ export const CAPTION_PRESETS: CaptionPreset[] = [
 export const DEFAULT_CAPTION_ELEMENT: Omit<CaptionElement, "id" | "lines" | "startTime" | "duration" | "trimStart" | "trimEnd" | "name" | "type"> = {
 	presetId: "karaoke",
 	highlightStyle: "karaoke",
-	highlightColor: "#FACC15",
+	highlightColor: "#0ea5e9",
 	fontSize: 48,
 	fontFamily: "Montserrat",
 	color: "#FFFFFF",

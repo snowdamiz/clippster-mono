@@ -82,7 +82,7 @@
                     <CropIcon class="vod-preset-dialog__section-icon" />
                     <h3 class="vod-preset-dialog__section-title">Framing</h3>
                     <span class="vod-preset-dialog__section-badge">
-                      {{ framingRegions.length }} region{{ framingRegions.length !== 1 ? 's' : '' }}
+                      {{ framingConfig?.regions?.length || 0 }} region{{ (framingConfig?.regions?.length || 0) !== 1 ? 's' : '' }}
                     </span>
                   </div>
                   <button
@@ -90,14 +90,14 @@
                     class="vod-preset-dialog__action-btn"
                   >
                     <LayoutDashboardIcon class="vod-preset-dialog__action-btn-icon" />
-                    {{ framingRegions.length > 0 ? 'Edit Framing' : 'Configure Framing' }}
+                    {{ (framingConfig?.regions?.length || 0) > 0 ? 'Edit Framing' : 'Configure Framing' }}
                   </button>
                 </div>
 
                 <!-- Framing Preview -->
-                <div v-if="framingRegions.length > 0" class="flex gap-3">
+                <div v-if="framingConfig?.regions && framingConfig.regions.length > 0" class="flex gap-3">
                   <div
-                    v-for="(region, idx) in framingRegions"
+                    v-for="(region, idx) in framingConfig.regions"
                     :key="region.id"
                     class="vod-preset-dialog__region-chip"
                   >
@@ -326,8 +326,8 @@
             <div class="vod-preset-dialog__footer">
               <div class="vod-preset-dialog__footer-info">
                 Target: <span class="font-medium" style="color: var(--sidebar-text)">{{ selectedAspectRatio }}</span>
-                <span v-if="framingRegions.length > 0" class="ml-2">
-                  · {{ framingRegions.length }} region{{ framingRegions.length !== 1 ? 's' : '' }}
+                <span v-if="framingConfig?.regions && framingConfig.regions.length > 0" class="ml-2">
+                  · {{ framingConfig.regions.length }} region{{ framingConfig.regions.length !== 1 ? 's' : '' }}
                 </span>
                 <span v-if="layoutOverlays.length > 0" class="ml-2">
                   · {{ layoutOverlays.length }} overlay{{ layoutOverlays.length !== 1 ? 's' : '' }}
@@ -472,6 +472,7 @@
     VodPreset,
     WatermarkSettings,
     PerRatioOverlaySettings,
+    SubtitleSettings,
   } from '@/types';
   import {
     getAllVodPresets,
@@ -481,7 +482,8 @@
     updateVodPreset as updateVodPresetDb,
     deleteVodPreset,
   } from '@/services/database/vod-presets';
-  import { resolveApplicableProfiles } from '@/composables/useBrandingProfileSelection';
+  import { resolveAutoBrandingProfile } from '@/composables/useBrandingProfileSelection';
+  import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
 
   interface Props {
     modelValue: boolean;
@@ -520,10 +522,11 @@
 
   // State
   const selectedAspectRatio = ref('9:16');
-  const framingRegions = ref<ManualRegion[]>([]);
+  const framingConfig = ref<ManualFramingConfig | null>(null);
   const layoutOverlays = ref<LayoutOverlay[]>([]);
   const watermarkMode = ref<'creator' | 'custom' | 'none'>('none');
   const customWatermarkSettings = ref<WatermarkSettings | null>(null);
+  const subtitleDefaults = ref<SubtitleSettings | null>(null);
   const overlayPreviews = reactive<Record<string, string>>({});
   // Ref-based copy to trigger prop reactivity in child components (ManualPOIEditor)
   // reactive() mutations don't propagate as prop changes; ref does
@@ -620,13 +623,7 @@
   }
 
   const currentFramingConfig = computed((): ManualFramingConfig | null => {
-    if (framingRegions.value.length === 0) return null;
-    return {
-      mode: 'manual',
-      regions: framingRegions.value,
-      targetAspectRatio: selectedAspectRatio.value,
-      sourceAspectRatio: props.sourceAspectRatio,
-    };
+    return framingConfig.value;
   });
 
   // Load templates
@@ -651,9 +648,9 @@
     if (!template) return;
 
     selectedAspectRatio.value = template.targetAspectRatio;
-    framingRegions.value = template.framingConfig?.regions
-      ? JSON.parse(JSON.stringify(template.framingConfig.regions))
-      : [];
+    framingConfig.value = template.framingConfig
+      ? JSON.parse(JSON.stringify(template.framingConfig))
+      : null;
     layoutOverlays.value = template.layoutOverlays
       ? JSON.parse(JSON.stringify(template.layoutOverlays))
       : [];
@@ -673,7 +670,7 @@
 
   // Handle framing confirmed from ManualPOIEditor
   function onFramingConfirmed(config: ManualFramingConfig) {
-    framingRegions.value = JSON.parse(JSON.stringify(config.regions));
+    framingConfig.value = JSON.parse(JSON.stringify(config));
   }
 
   // Layout overlay management
@@ -969,6 +966,9 @@
       customWatermarkSettings: customWatermarkSettings.value
         ? JSON.parse(JSON.stringify(customWatermarkSettings.value))
         : null,
+      subtitleDefaults: subtitleDefaults.value
+        ? JSON.parse(JSON.stringify(subtitleDefaults.value))
+        : null,
     };
 
     emit('confirm', config);
@@ -989,15 +989,18 @@
         // Load from initial config or defaults
         if (props.initialConfig) {
           selectedAspectRatio.value = props.initialConfig.targetAspectRatio;
-          framingRegions.value = props.initialConfig.framingConfig?.regions
-            ? JSON.parse(JSON.stringify(props.initialConfig.framingConfig.regions))
-            : [];
+          framingConfig.value = props.initialConfig.framingConfig
+            ? JSON.parse(JSON.stringify(props.initialConfig.framingConfig))
+            : null;
           layoutOverlays.value = props.initialConfig.layoutOverlays
             ? JSON.parse(JSON.stringify(props.initialConfig.layoutOverlays))
             : [];
           watermarkMode.value = props.initialConfig.watermarkMode;
           customWatermarkSettings.value = props.initialConfig.customWatermarkSettings
             ? JSON.parse(JSON.stringify(props.initialConfig.customWatermarkSettings))
+            : null;
+          subtitleDefaults.value = props.initialConfig.subtitleDefaults
+            ? JSON.parse(JSON.stringify(props.initialConfig.subtitleDefaults))
             : null;
           selectedTemplateId.value = props.initialConfig.presetId || '';
 
@@ -1022,10 +1025,11 @@
           }
         } else {
           selectedAspectRatio.value = '9:16';
-          framingRegions.value = [];
+          framingConfig.value = null;
           layoutOverlays.value = [];
           watermarkMode.value = hasCreatorProfile.value ? 'creator' : 'none';
           customWatermarkSettings.value = null;
+          subtitleDefaults.value = null;
           selectedTemplateId.value = '';
           selectedCustomWatermarkId.value = null;
           customWatermarkPositionSettings.value = null;
@@ -1033,12 +1037,11 @@
           // Auto-pull creator profile settings (handles local + org-assigned + campaign profiles)
           if (props.projectId) {
             try {
-              const candidates = await resolveApplicableProfiles(props.projectId);
-              const profile = candidates.length > 0 ? candidates[0].profile : null;
+              const profile = await resolveAutoBrandingProfile(props.projectId);
 
               if (profile) {
                 hasResolvedProfile.value = true;
-                console.log('[VodPresetEditor] Auto-pulling settings from profile:', profile.name, `(${candidates[0].source})`);
+                console.log('[VodPresetEditor] Auto-pulling settings from profile:', profile.name);
 
                 // Pull layout overlays
                 if (profile.layout_overlays) {
@@ -1077,6 +1080,11 @@
                   } catch (parseErr) {
                     console.warn('[VodPresetEditor] Failed to parse creator profile watermark settings:', parseErr);
                   }
+                }
+
+                const profileClipDefaults = parseCreatorClipBuildDefaults(profile.clip_build_defaults ?? null);
+                if (profileClipDefaults?.subtitleDefaults) {
+                  subtitleDefaults.value = JSON.parse(JSON.stringify(profileClipDefaults.subtitleDefaults));
                 }
               } else {
                 hasResolvedProfile.value = false;

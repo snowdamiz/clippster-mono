@@ -147,6 +147,8 @@ defmodule ClippsterServerWeb.Router do
     get("/stripe-success", StripeRedirectController, :success)
     get("/stripe-cancel", StripeRedirectController, :cancel)
     get("/invite/:token", InviteController, :show)
+    get("/email/unsubscribe/:token", AdminMessagingController, :unsubscribe)
+    post("/email/unsubscribe/:token", AdminMessagingController, :unsubscribe)
   end
 
   scope "/api", ClippsterServerWeb do
@@ -155,6 +157,7 @@ defmodule ClippsterServerWeb.Router do
     # Health check endpoints for Fly.io and load balancers
     get("/health", HealthController, :check)
     get("/health/deep", HealthController, :deep_check)
+    post("/email/unsubscribe/:token", AdminMessagingController, :unsubscribe)
 
     # Handle OPTIONS requests for CORS preflight
     options("/*path", AuthController, :options)
@@ -167,14 +170,6 @@ defmodule ClippsterServerWeb.Router do
     get("/auth/google", AuthController, :google_request)
     get("/auth/google/callback", AuthController, :google_callback)
     get("/auth/postforme/callback", PostForMeAuthController, :callback)
-
-    # X (Twitter) OAuth routes (for Tauri desktop app)
-    get("/auth/twitter/start", TwitterAuthController, :start_oauth)
-    get("/auth/twitter/callback", TwitterAuthController, :oauth_callback)
-
-    # User X (Twitter) OAuth routes (for individual users/clippers)
-    get("/auth/user-twitter/start", UserTwitterAuthController, :start_oauth)
-    get("/auth/user-twitter/callback", UserTwitterAuthController, :oauth_callback)
 
     # Email authentication routes
     post("/auth/email/register", EmailAuthController, :register)
@@ -225,8 +220,35 @@ defmodule ClippsterServerWeb.Router do
     # App release info (for download buttons on landing page)
     get("/releases/latest", ReleaseController, :latest)
 
+    # Public landing analytics (anonymous, allowlisted events only)
+    post("/analytics/public/track", AnalyticsController, :track_public)
+
     # Waitlist signup (public)
     post("/waitlist", WaitlistController, :create)
+
+    # Clipper leaderboard - MUST come before /clippers/:slug to avoid route collision
+    # Placed in public scope for route ordering, but controller will enforce auth
+    get("/clippers/leaderboard", ClipperProfilesController, :leaderboard)
+
+    # Public org name availability check (for signup/admin forms)
+    # MUST be defined before /orgs/:slug to avoid the slug param matching "check-name"
+    get("/orgs/check-name", OrganizationPublicProfilesController, :check_name)
+
+    # Public clipper profile (shareable links)
+    get("/clippers/:slug", ClipperProfilesController, :show)
+    get("/orgs/:slug", OrganizationPublicProfilesController, :show)
+
+    get(
+      "/clippers/:slug/portfolio-clips/:clip_id/presigned-url",
+      ClipperProfilesController,
+      :public_portfolio_clip_presigned_url
+    )
+
+    get(
+      "/clippers/:slug/portfolio-clips/:clip_id/thumbnail-presigned-url",
+      ClipperProfilesController,
+      :public_portfolio_clip_thumbnail_presigned_url
+    )
   end
 
   # Protected routes (require authentication)
@@ -269,20 +291,16 @@ defmodule ClippsterServerWeb.Router do
     post("/clips/detect-chunked", ClipsController, :detect_chunked)
     post("/clips/detect-realtime", ClipsController, :detect_realtime)
     post("/clips/transcribe", ClipsController, :transcribe)
-    
+
     # Real-time detection credit deduction
     post("/credits/deduct", ClipsController, :deduct_realtime_credits)
 
-    # AI video generation routes
-    post("/ai/generate-video", AIController, :generate_video)
-    post("/ai/generate-video-streamed", AIController, :generate_video_streamed)
-    post("/ai/compositions", AIController, :save_composition)
-    get("/ai/compositions", AIController, :list_compositions)
-    get("/ai/compositions/:id", AIController, :get_composition)
-    delete("/ai/compositions/:id", AIController, :delete_composition)
-
     # AI reference analysis
     post("/ai/reference/analyze", AIChatController, :analyze_reference)
+
+    # AI B-roll planning and stock search
+    post("/ai/broll/suggest", BrollController, :suggest)
+    get("/ai/broll/search", BrollController, :search)
 
     # News feed for AI context enrichment
     get("/news", NewsController, :index)
@@ -301,6 +319,7 @@ defmodule ClippsterServerWeb.Router do
     post("/ai/chat/sessions/:id/generate", AIChatController, :trigger_generation)
     post("/ai/chat/sessions/:id/refine", AIChatController, :send_refinement)
     post("/ai/chat/sessions/:id/reference", AIChatController, :upload_reference)
+    put("/ai/chat/sessions/:id/style", AIChatController, :update_style_pack)
     post("/ai/chat/sessions/:id/media-analysis", AIChatController, :upload_media_analysis)
     put("/ai/chat/sessions/:id/media", AIChatController, :update_media)
 
@@ -339,11 +358,15 @@ defmodule ClippsterServerWeb.Router do
     delete("/organization-applications/:id", OrganizationApplicationController, :delete_own)
     post("/organization-applications/:id/logo", OrganizationApplicationController, :upload_logo)
 
-    # OAuth account linking routes
+    # OAuth account linking / Gmail switch routes
     post("/auth/link/google", AuthController, :link_google_account)
+    post("/auth/switch/google", AuthController, :switch_google_account)
+    get("/auth/google/switch", AuthController, :google_switch_url)
 
     # Account management routes (email/password changes)
     post("/account/change-email", AccountController, :change_email)
+    post("/account/verify-email-change-otp", AccountController, :verify_email_change_otp)
+    post("/account/resend-email-change", AccountController, :resend_email_change)
     post("/account/change-password", AccountController, :change_password)
 
     # Account type selection (for new users)
@@ -354,6 +377,7 @@ defmodule ClippsterServerWeb.Router do
       only: [:index, :create, :show, :update, :delete]
     )
 
+    get("/organizations/check-name", OrganizationController, :check_name)
     post("/organizations/:id/logo", OrganizationController, :upload_logo)
 
     # Organization members
@@ -400,6 +424,12 @@ defmodule ClippsterServerWeb.Router do
 
     post("/invitations/:token/accept", OrganizationController, :accept_invitation)
 
+    # Accept invitation by ID (for in-app acceptance)
+    post("/invitations/:id/accept-by-id", OrganizationController, :accept_invitation_by_id)
+
+    # Decline invitation (user declining their own invitation)
+    delete("/invitations/:id", OrganizationController, :decline_invitation)
+
     # Invite user by user_id (for Clipper Directory)
     post(
       "/organizations/:organization_id/invite-user",
@@ -434,6 +464,12 @@ defmodule ClippsterServerWeb.Router do
 
     get("/organizations/:organization_id/transactions", OrganizationController, :get_transactions)
 
+    get(
+      "/organizations/:organization_id/subscription/invoices",
+      OrganizationController,
+      :get_subscription_invoices
+    )
+
     # Organization restriction settings
     get(
       "/organizations/:id/restriction-settings",
@@ -461,6 +497,18 @@ defmodule ClippsterServerWeb.Router do
     )
 
     # Organization payments (Stripe)
+    post(
+      "/organizations/:organization_id/payments/stripe/setup",
+      StripeController,
+      :create_org_setup_checkout
+    )
+
+    post(
+      "/organizations/:organization_id/payments/stripe/confirm-setup",
+      StripeController,
+      :confirm_org_setup
+    )
+
     post(
       "/organizations/:organization_id/payments/stripe/create-session",
       StripeController,
@@ -548,6 +596,18 @@ defmodule ClippsterServerWeb.Router do
     post("/shared-clips/:id/mark-viewed", SharedClipController, :mark_viewed)
     post("/shared-clips/:id/mark-downloaded", SharedClipController, :mark_downloaded)
     post("/shared-clips/:id/post", SharedClipController, :mark_posted)
+
+    # Organization shared audio (admin endpoints)
+    get("/organizations/:organization_id/shared-audio", SharedAudioController, :index)
+    get("/organizations/:organization_id/shared-audio/:id", SharedAudioController, :show)
+    post("/organizations/:organization_id/shared-audio", SharedAudioController, :create)
+    delete("/organizations/:organization_id/shared-audio/:id", SharedAudioController, :delete)
+    get("/organizations/:organization_id/shared-audio/:id/stats", SharedAudioController, :stats)
+
+    # User's shared audio (member endpoints)
+    get("/user/shared-audio", SharedAudioController, :user_audio)
+    post("/shared-audio/:id/mark-viewed", SharedAudioController, :mark_viewed)
+    post("/shared-audio/:id/mark-downloaded", SharedAudioController, :mark_downloaded)
 
     # Organization creator profiles
     get(
@@ -651,12 +711,6 @@ defmodule ClippsterServerWeb.Router do
       "/organizations/:organization_id/social-accounts/:id",
       SocialAccountController,
       :delete
-    )
-
-    post(
-      "/organizations/:organization_id/social-accounts/:id/refresh",
-      SocialAccountController,
-      :refresh_token
     )
 
     # Social account assignments
@@ -955,23 +1009,10 @@ defmodule ClippsterServerWeb.Router do
     )
 
     # ============================================================================
-    # Clipper Directory - Public Profiles
+    # Clipper Directory - Authenticated Only
     # ============================================================================
     get("/clippers", ClipperProfilesController, :index)
-    get("/clippers/leaderboard", ClipperProfilesController, :leaderboard)
-    get("/clippers/:slug", ClipperProfilesController, :show)
-
-    get(
-      "/clippers/:slug/portfolio-clips/:clip_id/presigned-url",
-      ClipperProfilesController,
-      :public_portfolio_clip_presigned_url
-    )
-
-    get(
-      "/clippers/:slug/portfolio-clips/:clip_id/thumbnail-presigned-url",
-      ClipperProfilesController,
-      :public_portfolio_clip_thumbnail_presigned_url
-    )
+    # Note: /clippers/leaderboard is in public scope above for route ordering
 
     post("/clippers/:slug/endorsements", ClipperProfilesController, :create_endorsement)
 
@@ -1053,6 +1094,19 @@ defmodule ClippsterServerWeb.Router do
       :remove_creator_profile
     )
 
+    # Campaign source materials/resources
+    get(
+      "/organizations/:organization_id/campaigns/:id/resources",
+      CampaignController,
+      :list_resources
+    )
+
+    put(
+      "/organizations/:organization_id/campaigns/:id/resources",
+      CampaignController,
+      :set_resources
+    )
+
     # Campaign participants
     get(
       "/organizations/:organization_id/campaigns/:id/participants",
@@ -1107,6 +1161,18 @@ defmodule ClippsterServerWeb.Router do
       "/organizations/:organization_id/submissions/:submission_id/views",
       CampaignController,
       :update_views
+    )
+
+    post(
+      "/organizations/:organization_id/submissions/:submission_id/sync-metrics",
+      CampaignController,
+      :sync_submission_metrics
+    )
+
+    get(
+      "/organizations/:organization_id/submissions/:submission_id/analytics",
+      CampaignController,
+      :submission_analytics
     )
 
     # Campaign payments
@@ -1248,6 +1314,9 @@ defmodule ClippsterServerWeb.Router do
     post("/admin/users/:user_id/subscription/cancel", AdminController, :cancel_user_subscription)
     get("/admin/users/:user_id/subscription/history", AdminController, :get_subscription_history)
 
+    # Admin user search (for org assignment)
+    get("/admin/users/search", AdminController, :search_users_by_email)
+
     # Admin organization management
     get("/admin/organizations", AdminController, :list_organizations)
     get("/admin/organizations/:id/details", AdminController, :get_org_details)
@@ -1276,12 +1345,27 @@ defmodule ClippsterServerWeb.Router do
       :cancel_org_subscription
     )
 
+    post(
+      "/admin/organizations/:organization_id/sync-stripe-subscription",
+      AdminController,
+      :sync_org_stripe_subscription
+    )
+
     put("/admin/organizations/:organization_id/seats", AdminController, :set_org_seats)
     delete("/admin/organizations/:id", AdminController, :delete_organization)
 
     # Admin org feature flags
-    post("/admin/organizations/:organization_id/campaigns", AdminController, :enable_org_campaigns)
-    delete("/admin/organizations/:organization_id/campaigns", AdminController, :disable_org_campaigns)
+    post(
+      "/admin/organizations/:organization_id/campaigns",
+      AdminController,
+      :enable_org_campaigns
+    )
+
+    delete(
+      "/admin/organizations/:organization_id/campaigns",
+      AdminController,
+      :disable_org_campaigns
+    )
 
     # Admin bug report management (delete route only - index/update in mod scope)
     delete("/admin/bug-reports/:id", BugReportsController, :delete)
@@ -1339,7 +1423,16 @@ defmodule ClippsterServerWeb.Router do
     delete("/admin/announcements/:id", AnnouncementsController, :delete)
 
     # Admin messaging (bulk email campaigns)
+    post("/admin/messaging/preview", AdminMessagingController, :preview_campaign)
+    post("/admin/messaging/test", AdminMessagingController, :send_test_campaign)
     post("/admin/messaging/send", AdminMessagingController, :send_campaign)
+
+    post(
+      "/admin/messaging/campaigns/:id/retry-failed",
+      AdminMessagingController,
+      :retry_failed_campaign
+    )
+
     get("/admin/messaging/campaigns", AdminMessagingController, :list_campaigns)
 
     # Platform campaigns management
@@ -1349,12 +1442,27 @@ defmodule ClippsterServerWeb.Router do
     post("/admin/platform-campaigns", PlatformCampaignController, :create_campaign)
     put("/admin/platform-campaigns/:id", PlatformCampaignController, :update_campaign)
     delete("/admin/platform-campaigns/:id", PlatformCampaignController, :delete_campaign)
-    get("/admin/platform-campaigns/:campaign_id/rewards", PlatformCampaignController, :get_campaign_rewards)
+
+    get(
+      "/admin/platform-campaigns/:campaign_id/rewards",
+      PlatformCampaignController,
+      :get_campaign_rewards
+    )
 
     # Revenue allocation settings
     get("/admin/revenue-allocation/settings", PlatformCampaignController, :get_revenue_settings)
-    put("/admin/revenue-allocation/settings", PlatformCampaignController, :update_revenue_settings)
-    get("/admin/revenue-allocation/transactions", PlatformCampaignController, :get_revenue_transactions)
+
+    put(
+      "/admin/revenue-allocation/settings",
+      PlatformCampaignController,
+      :update_revenue_settings
+    )
+
+    get(
+      "/admin/revenue-allocation/transactions",
+      PlatformCampaignController,
+      :get_revenue_transactions
+    )
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

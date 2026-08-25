@@ -120,6 +120,31 @@ export function wouldElementOverlap({
 	});
 }
 
+/** Snap audio inserts near t=0 to the exact timeline origin when nothing blocks it. */
+export function normalizeAudioInsertStartTime({
+	startTime,
+	duration,
+	existingElements,
+	fps = 30,
+}: {
+	startTime: number;
+	duration: number;
+	existingElements: TimelineElement[];
+	fps?: number;
+}): number {
+	const frameDuration = 1 / fps;
+	if (startTime > frameDuration) return startTime;
+
+	const fitsAtOrigin = !wouldElementOverlap({
+		elements: existingElements,
+		startTime: 0,
+		endTime: duration,
+	});
+	if (!fitsAtOrigin) return startTime;
+
+	return 0;
+}
+
 export function buildTextElement({
 	raw,
 	startTime,
@@ -159,6 +184,16 @@ export function buildTextElement({
 		bubbleStyle: t.bubbleStyle ?? DEFAULT_TEXT_ELEMENT.bubbleStyle,
 		bubbleColor: t.bubbleColor,
 		bubblePadding: t.bubblePadding,
+		bubbleOpacity: t.bubbleOpacity ?? (
+			(t.bubbleStyle && t.bubbleStyle !== "none") ||
+			(t.backgroundColor && t.backgroundColor !== "transparent")
+				? 1
+				: undefined
+		),
+		textOpacity: t.textOpacity,
+		blendMode: t.blendMode,
+		fadeIn: t.fadeIn,
+		fadeOut: t.fadeOut,
 		transform: t.transform ?? DEFAULT_TEXT_ELEMENT.transform,
 		opacity: t.opacity ?? DEFAULT_TEXT_ELEMENT.opacity,
 	};
@@ -205,6 +240,65 @@ export function buildVideoElement({
 		trimEnd: 0,
 		muted: false,
 		hidden: false,
+		transform: { scale: 1, position: { x: 0, y: 0 }, rotate: 0 },
+		opacity: 1,
+		orderIndex: 0,
+	};
+}
+
+/** Full-canvas overlay B-roll clip (muted, cover-fit). */
+export function buildBrollVideoElement({
+	mediaId,
+	name,
+	duration,
+	startTime,
+	trimStart = 0,
+}: {
+	mediaId: string;
+	name: string;
+	duration: number;
+	startTime: number;
+	trimStart?: number;
+}): CreateVideoElement {
+	return {
+		type: "video",
+		mediaId,
+		name,
+		duration,
+		startTime,
+		trimStart,
+		trimEnd: 0,
+		muted: true,
+		hidden: false,
+		mediaFit: "cover",
+		transform: { scale: 1, position: { x: 0, y: 0 }, rotate: 0 },
+		opacity: 1,
+		orderIndex: 0,
+	};
+}
+
+/** Full-canvas overlay B-roll still (cover-fit). */
+export function buildBrollImageElement({
+	mediaId,
+	name,
+	duration,
+	startTime,
+}: {
+	mediaId: string;
+	name: string;
+	duration: number;
+	startTime: number;
+}): CreateImageElement {
+	return {
+		type: "image",
+		mediaId,
+		name,
+		duration,
+		startTime,
+		trimStart: 0,
+		trimEnd: 0,
+		hidden: false,
+		mediaFit: "cover",
 		transform: { scale: 1, position: { x: 0, y: 0 }, rotate: 0 },
 		opacity: 1,
 		orderIndex: 0,
@@ -394,4 +488,28 @@ export function getElementsAtTime({
 	}
 
 	return result;
+}
+
+export function getExportRangeFromSelectedElements({
+	elements,
+	getElement,
+}: {
+	elements: { trackId: string; elementId: string }[];
+	getElement: (ref: { trackId: string; elementId: string }) => TimelineElement | null;
+}): { timeRange: { startTime: number; endTime: number }; segmentName: string } | null {
+	if (elements.length === 0) return null;
+
+	const resolved = elements
+		.map((ref) => getElement(ref))
+		.filter((el): el is TimelineElement => el !== null);
+	if (resolved.length === 0) return null;
+
+	const startTime = Math.min(...resolved.map((el) => el.startTime));
+	const endTime = Math.max(...resolved.map((el) => el.startTime + el.duration));
+	const segmentName =
+		resolved.length === 1
+			? resolved[0].name?.trim() || "Selected segment"
+			: `${resolved.length} selected segments`;
+
+	return { timeRange: { startTime, endTime }, segmentName };
 }

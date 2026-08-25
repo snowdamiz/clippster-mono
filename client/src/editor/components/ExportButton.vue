@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { useEditor } from "../composables/useEditor";
+import { useExportDialog } from "../composables/useExportDialog";
+import type { ExportTranscriptSummary } from "../lib/export-summary-toast";
+import {
+	getConfiguredFramingConfigs,
+	isManualFramingConfigConfigured,
+	pairExportVariants,
+} from "../lib/export-framing";
 import {
 	Download,
 	X,
@@ -16,12 +23,24 @@ import {
 	Share2,
 } from "lucide-vue-next";
 import ManualPOIEditor from "../../components/poi/ManualPOIEditor.vue";
+import SimplifiedPublishDialog from "../../components/SimplifiedPublishDialog.vue";
 import type { ManualFramingConfig, ManualFramingConfigs } from "@/types";
 import type { Campaign } from "@/services/campaignApi";
+import type { Clip, ClipBuild } from "@/services/database";
 
-const { editor, version } = useEditor();
+type ClipWithBuilds = Clip & { builds: ClipBuild[] };
 
-const isOpen = ref(false);
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		timeline: true,
+		media: true,
+		playback: false,
+		scenes: false,
+		selection: false,
+	},
+});
+const { isOpen, exportTimeRange, exportSegmentName, openExportDialog, closeExportDialog } = useExportDialog();
 const format = ref<"mp4" | "webm">("mp4");
 const quality = ref<"low" | "medium" | "high" | "very_high">("high");
 const frameRate = ref<30 | 60>(30);
@@ -30,8 +49,14 @@ const progress = ref(0);
 const exportError = ref<string | null>(null);
 const copied = ref(false);
 const cancelRequested = ref(false);
+const currentExportId = ref<string | null>(null);
 const exportedPath = ref<string | null>(null);
+const exportedVariants = ref<Array<{ ratio: string; path: string }>>([]);
 const showSuccess = ref(false);
+const showPublishDialog = ref(false);
+const publishClip = ref<ClipWithBuilds | null>(null);
+const publishBuild = ref<ClipBuild | null>(null);
+const publishThumbnailUrl = ref<string | null>(null);
 
 const hasProject = computed(() => {
 	void version.value;
@@ -47,12 +72,36 @@ const projectName = computed(() => activeProject.value?.metadata.name || "Untitl
 
 const projectDuration = computed(() => {
 	void version.value;
+	if (exportTimeRange.value) {
+		return exportTimeRange.value.endTime - exportTimeRange.value.startTime;
+	}
 	try {
 		return editor.timeline.getTotalDuration();
 	} catch {
 		return 0;
 	}
 });
+
+const exportDialogSubtitle = computed(() => {
+	const duration = formatDuration(projectDuration.value);
+	if (exportTimeRange.value) {
+		const label = exportSegmentName.value?.trim() || "Selected segment";
+		return `${label} \u2022 ${duration}`;
+	}
+	return `${projectName.value} \u2022 ${duration}`;
+});
+
+const exportDialogTitle = computed(() =>
+	exportTimeRange.value ? "Export Segment" : "Export Configuration",
+);
+
+function handleOpenExportDialog() {
+	// Always export the full timeline from the header Export button.
+	// Per-segment export is available from the timeline context menu.
+	openExportDialog();
+}
+
+const exportOutputFileName = computed(() => exportSegmentName.value?.trim() || null);
 
 function formatDuration(seconds: number): string {
 	if (!seconds) return "0:00";
@@ -187,7 +236,7 @@ function toggleRatio(ratio: string) {
 // Manual framing helpers
 function isRatioConfigured(ratio: string): boolean {
 	const config = manualFramingConfigs.value[ratio as keyof ManualFramingConfigs];
-	return config !== undefined && config.regions.length > 0;
+	return isManualFramingConfigConfigured(config);
 }
 
 function getConfigForRatio(ratio: string): ManualFramingConfig | null {
@@ -284,12 +333,15 @@ async function loadAvailableCampaigns() {
 		const clip = await getClip(clipSource.source_id);
 		
 		if (clip?.project_id) {
-			// Resolve creator profile for this clip's project
-			const { resolveBrandingProfile } = await import("@/composables/useBrandingProfileSelection");
-			const profile = await resolveBrandingProfile(clip.project_id);
-			
-			if (profile && profile.context_type === "organization" && profile.id && !profile.id.startsWith("campaign-")) {
-				const serverId = parseInt(profile.id, 10);
+			// Read-only: org-streamer match for campaign API (do not use resolveBrandingProfile — it persists auto-selection).
+			const { resolveApplicableProfiles } = await import("@/composables/useBrandingProfileSelection");
+			const candidates = await resolveApplicableProfiles(clip.project_id);
+			const orgStreamer = candidates.find((c) => c.source === "org-streamer");
+			if (
+				orgStreamer?.profile?.id &&
+				!orgStreamer.profile.id.startsWith("campaign-")
+			) {
+				const serverId = parseInt(orgStreamer.profile.id, 10);
 				if (!isNaN(serverId)) {
 					creatorProfileServerId.value = serverId;
 				}
@@ -337,6 +389,7 @@ watch(isOpen, async (open) => {
 		cancelRequested.value = false;
 		showSuccess.value = false;
 		exportedPath.value = null;
+		exportedVariants.value = [];
 		selectedRatios.value = ["16:9"];
 		framingMode.value = "manual";
 		manualFramingConfigs.value = {};
@@ -365,6 +418,12 @@ watch(hasPortraitRatio, (show) => {
 async function handleExport() {
 	const project = activeProject.value;
 	if (!project) return;
+	const portraitRatios = selectedPortraitRatios.value;
+	const missingFramingRatio = portraitRatios.find((ratio) => !isRatioConfigured(ratio));
+	if (missingFramingRatio) {
+		exportError.value = `Configure manual framing for ${missingFramingRatio} before exporting.`;
+		return;
+	}
 
 	// Free tier: 1 export/day limit
 	const { useAuthStore } = await import("@/stores/auth");
@@ -387,6 +446,8 @@ async function handleExport() {
 	}
 
 	cancelRequested.value = false;
+	const exportId = `editor-export-${Date.now()}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+	currentExportId.value = exportId;
 	isExporting.value = true;
 	progress.value = 0;
 	exportError.value = null;
@@ -523,102 +584,161 @@ async function handleExport() {
 				fps: frameRate.value,
 				includeAudio: true,
 				canvasSize: exportCanvasSize.value,
-				onProgress: (p: { progress: number }) => { progress.value = p.progress; },
+				timeRange: exportTimeRange.value ?? undefined,
+				outputFileName: exportOutputFileName.value ?? undefined,
+				onProgress: (p: { progress: number }) => {
+					progress.value = portraitRatios.length > 0 ? p.progress * 0.75 : p.progress;
+				},
 				onCancel: () => cancelRequested.value,
+				exportId,
 			},
 		});
 
-		isExporting.value = false;
+		currentExportId.value = null;
 
 		if (result.cancelled) {
+			isExporting.value = false;
 			progress.value = 0;
 			return;
 		}
 
 		if (result.success) {
 			exportedPath.value = result.outputPath || null;
+			exportedVariants.value = [];
+
+			if (result.outputPath && portraitRatios.length > 0) {
+				progress.value = 0.78;
+				const { invoke } = await import("@tauri-apps/api/core");
+				const configs = getConfiguredFramingConfigs(
+					portraitRatios,
+					manualFramingConfigs.value,
+				);
+				const variantPaths = await invoke<string[]>("build_editor_export_variants", {
+					videoPath: result.outputPath,
+					duration: projectDuration.value,
+					aspectRatios: portraitRatios,
+					manualFramingConfigs: configs,
+					quality: quality.value,
+					frameRate: frameRate.value,
+				});
+				exportedVariants.value = pairExportVariants(portraitRatios, variantPaths);
+				progress.value = 0.98;
+			}
+
+			isExporting.value = false;
 			showSuccess.value = true;
 			progress.value = 0;
 
-			// Register the exported file as a built clip so it appears in Built Clips
 			if (result.outputPath) {
+				const { registerEditorExportBuild } = await import("../services/registerEditorExportBuild");
+				const { showExportSummaryToast } = await import("../lib/export-summary-toast");
+
+				let built: "registered" | "failed" | "skipped" = "skipped";
+				let transcript: ExportTranscriptSummary = "skipped";
+
 				try {
-					const { getVideoEditorSourcesByProjectId } = await import("@/services/database/video-editor-projects");
-					const { updateClipBuildStatus } = await import("@/services/database/clip-build");
-					const { updateClip } = await import("@/services/database/clips");
-					const sources = await getVideoEditorSourcesByProjectId(project.metadata.id);
-					const clipSource = sources.find((s) => s.source_type === "clip" && s.source_id);
-					if (clipSource?.source_id) {
-						await updateClipBuildStatus(clipSource.source_id, "completed", {
-							builtFilePath: result.outputPath,
-						});
+					const reg = await registerEditorExportBuild({
+						outputPath: result.outputPath,
+						exportedDuration: projectDuration.value,
+						projectId: project.metadata.id,
+						projectName: exportOutputFileName.value ?? project.metadata.name,
+						buildOptions: {
+							aspectLabel: projectAspectLabel.value,
+							quality: quality.value,
+							frameRate: frameRate.value,
+							format: format.value,
+							isForCampaign: isForCampaign.value,
+							campaign: selectedCampaign.value
+								? {
+										id: String(selectedCampaign.value.id),
+										title: selectedCampaign.value.title,
+										organization: selectedCampaign.value.organization
+											? {
+													id: String(selectedCampaign.value.organization.id),
+													name: selectedCampaign.value.organization.name,
+												}
+											: undefined,
+									}
+								: null,
+						},
+					});
 
-						// Save campaign_id to clip record for payment tracking
-						if (isForCampaign.value && selectedCampaign.value) {
-							try {
-								await updateClip(clipSource.source_id, { campaign_id: selectedCampaign.value.id });
-								console.log("[ExportButton] Saved campaign_id to clip:", selectedCampaign.value.id);
-							} catch (err) {
-								console.warn("[ExportButton] Failed to save campaign_id:", err);
-							}
-						}
-
-						// Trigger automatic background transcription for the exported video
-						// This ensures the exported composition (including imported videos and other clips) is fully searchable
-						transcribeExportedVideo(clipSource.source_id, result.outputPath).catch((err) => {
-							console.warn("[ExportButton] Background transcription failed:", err);
+					if (reg?.mode === "clip_build" || reg?.mode === "standalone_clip") {
+						built = "registered";
+					}
+					if (reg?.mode === "clip_build") {
+						transcript = await transcribeExportedVideo(reg.clipId, result.outputPath, {
+							suppressToasts: true,
 						});
+						await loadPublishData(reg.clipId, result.outputPath);
 					}
 				} catch (e) {
-					console.warn("[ExportButton] Failed to register export as built clip:", e);
+					console.warn("[ExportButton] Built Clips registration failed:", e);
+					built = "failed";
 				}
+
+				showExportSummaryToast({
+					exportOk: true,
+					builtClips: built,
+					transcript,
+				});
 			}
 		} else {
+			isExporting.value = false;
 			exportError.value = result.error || "Unknown error occurred";
 		}
 	} catch (err) {
 		isExporting.value = false;
+		currentExportId.value = null;
 		exportError.value = err instanceof Error ? err.message : "Export failed";
 	}
 }
 
 function handleCancel() {
 	cancelRequested.value = true;
+	const exportId = currentExportId.value;
+	if (!exportId) return;
+
+	import("@tauri-apps/api/core")
+		.then(({ invoke }) => invoke("cancel_video_editor_export", { exportId }))
+		.catch((err) => console.warn("[ExportButton] Failed to cancel export:", err));
 }
 
 function handleClose() {
 	if (!isExporting.value) {
-		isOpen.value = false;
+		closeExportDialog();
 		exportError.value = null;
 		progress.value = 0;
 		showSuccess.value = false;
 		exportedPath.value = null;
+		exportedVariants.value = [];
 	}
 }
 
-async function handleDownload() {
-	if (!exportedPath.value) return;
+async function handleDownload(sourcePath = exportedPath.value) {
+	if (!sourcePath) return;
 
 	try {
 		const { save } = await import("@tauri-apps/plugin-dialog");
 		const { invoke } = await import("@tauri-apps/api/core");
 
-		// Extract filename from path
-		const filename = exportedPath.value.split(/[\\/]/).pop() || "export.mp4";
+		// Prefer segment title for save-as default; otherwise use the exported file name.
+		const extension = sourcePath.split(".").pop()?.toLowerCase() || format.value;
+		const filename = sourcePath.split(/[\\/]/).pop() || `export.${extension}`;
 
 		// Show save dialog
 		const savePath = await save({
 			defaultPath: filename,
 			filters: [{
 				name: "Video",
-				extensions: [format.value],
+				extensions: [extension],
 			}],
 		});
 
 		if (savePath) {
 			// Copy file to selected location using the same command as clip building
 			await invoke("copy_clip_to_destination", {
-				sourcePath: exportedPath.value,
+				sourcePath,
 				destinationPath: savePath,
 			});
 			
@@ -640,44 +760,187 @@ async function handleDownload() {
 	}
 }
 
-async function transcribeExportedVideo(clipId: string, videoPath: string) {
+async function transcribeExportedVideo(
+	clipId: string,
+	videoPath: string,
+	opts?: { suppressToasts?: boolean },
+): Promise<ExportTranscriptSummary> {
+	const silent = opts?.suppressToasts ?? false;
+	let tempProjectId: string | null = null;
+	let tempRawVideoId: string | null = null;
 	try {
-		console.log("[ExportButton] Starting background transcription for exported video:", clipId);
+		console.log("[ExportButton] Starting background transcription for exported video:", clipId, videoPath);
 
-		// Import transcription utilities
 		const { useTranscriptionOnly } = await import("@/composables/useTranscriptionOnly");
-		const { createRawVideo, getRawVideosByProjectId } = await import("@/services/database");
+		const { createProject, createRawVideo } = await import("@/services/database");
 		const { getClipWithBuildStatus } = await import("@/services/database/clip-build");
+		const { useToast } = await import("@/composables/useToast");
+		const { invoke } = await import("@tauri-apps/api/core");
+		const { showToast } = useToast();
 
-		// Get the clip to find its project
 		const clip = await getClipWithBuildStatus(clipId);
-		if (!clip || !clip.project_id) {
-			console.warn("[ExportButton] Could not find clip or project for transcription");
-			return;
+		if (!clip) {
+			console.warn("[ExportButton] Could not find clip for transcription");
+			return "skipped";
 		}
 
-		// Create a temporary raw_video entry for the exported file so transcription can process it
-		// This allows the transcription system to work with the exported video file
-		const rawVideoId = await createRawVideo(videoPath, {
-			projectId: clip.project_id,
+		const transcriptTargetProjectId = activeProject.value?.metadata.id ?? clip.project_id ?? null;
+
+		try {
+			const fileExists = await invoke<boolean>("file_exists", { path: videoPath });
+			if (!fileExists) {
+				throw new Error("Exported video file not found at: " + videoPath);
+			}
+			console.log("[ExportButton] Verified exported file exists:", videoPath);
+		} catch (err) {
+			console.error("[ExportButton] Failed to verify exported file:", err);
+			throw new Error("Cannot access exported video file");
+		}
+
+		tempProjectId = await createProject(
+			`Export Transcript - ${clip.name || "Untitled"}`,
+			`Temporary project for transcribing exported video`,
+		);
+
+		console.log("[ExportButton] Created temp project:", tempProjectId);
+
+		let videoDuration = clip.built_duration || clip.duration || 0;
+		try {
+			const metadata = await invoke<{ duration: number }>("get_video_metadata", {
+				path: videoPath,
+			});
+			videoDuration = metadata.duration;
+			console.log("[ExportButton] Got video duration:", videoDuration);
+		} catch (err) {
+			console.warn("[ExportButton] Failed to get video duration, using clip duration:", err);
+		}
+
+		tempRawVideoId = await createRawVideo(videoPath, {
+			projectId: tempProjectId,
 			originalFilename: videoPath.split(/[\\/]/).pop() || "export.mp4",
-			duration: clip.built_duration || clip.duration || 0,
+			duration: videoDuration,
 		});
 
-		// Start transcription in the background (non-blocking)
-		const { transcribeProject } = useTranscriptionOnly();
-		const result = await transcribeProject(clip.project_id, {
-			organizationId: null, // Use user's own transcription
+		console.log("[ExportButton] Created raw_video entry:", tempRawVideoId);
+
+		if (!silent) {
+			showToast("Generating transcript for exported video...", "info", "clips");
+		}
+
+		const { transcribeProject } = useTranscriptionOnly({
+			showSuccessToast: false,
+			showErrorToast: false,
+			showChunkCompletionToast: false,
+			showCacheReuseToast: false,
+		});
+		const result = await transcribeProject(tempProjectId, {
+			organizationId: null,
 		});
 
 		if (result.success && !result.alreadyTranscribed) {
 			console.log("[ExportButton] Background transcription completed for clip:", clipId);
-		} else if (result.alreadyTranscribed) {
-			console.log("[ExportButton] Transcript already exists for clip:", clipId);
+			await copyTranscriptToClip(clipId, tempProjectId, transcriptTargetProjectId);
+			if (!silent) {
+				showToast("Transcript generated successfully", "success", "clips");
+			}
+			return "success";
 		}
+		if (result.alreadyTranscribed) {
+			console.log("[ExportButton] Transcript already exists");
+			if (!silent) {
+				showToast("Transcript already exists", "info", "clips");
+			}
+			return "already";
+		}
+		const errorMsg = result.error || "";
+		if (errorMsg.includes("No audio chunks") || errorMsg.includes("no audio")) {
+			console.log("[ExportButton] Video has no audio track - skipping transcription");
+			if (!silent) {
+				showToast("Export complete - video has no audio to transcribe", "info", "clips");
+			}
+			return "no_audio";
+		}
+		throw new Error(result.error || "Transcription failed");
 	} catch (error) {
-		// Don't throw - this is a background operation
 		console.error("[ExportButton] Background transcription error:", error);
+		if (!silent) {
+			const { useToast } = await import("@/composables/useToast");
+			const { showToast } = useToast();
+			showToast(
+				"Transcription failed: " + (error instanceof Error ? error.message : String(error)),
+				"error",
+				"clips",
+			);
+		}
+		return "failed";
+	} finally {
+		if (tempRawVideoId || tempProjectId) {
+			try {
+				const { deleteRawVideo, deleteProject } = await import("@/services/database");
+				if (tempRawVideoId) {
+					await deleteRawVideo(tempRawVideoId);
+				}
+				if (tempProjectId) {
+					await deleteProject(tempProjectId);
+				}
+			} catch (cleanupError) {
+				console.warn("[ExportButton] Failed to clean up temp transcription project:", cleanupError);
+			}
+		}
+	}
+}
+
+async function copyTranscriptToClip(clipId: string, tempProjectId: string, targetProjectId: string | null) {
+	try {
+		const { getTranscriptByProjectId, createTranscript, createTranscriptSegment, getRawVideosByProjectId } = await import("@/services/database");
+		
+		// Get transcript from temp project
+		const tempTranscript = await getTranscriptByProjectId(tempProjectId);
+		if (!tempTranscript) {
+			console.warn("[ExportButton] No transcript found in temp project");
+			return;
+		}
+
+		// Get the target project's raw video (or use the clip's project if it exists)
+		if (!targetProjectId) {
+			console.warn("[ExportButton] No target project for transcript");
+			return;
+		}
+
+		const targetRawVideos = await getRawVideosByProjectId(targetProjectId);
+		if (targetRawVideos.length === 0) {
+			console.warn("[ExportButton] No raw videos in target project");
+			return;
+		}
+
+		// Create transcript in target project
+		const newTranscriptId = await createTranscript(
+			targetRawVideos[0].id,
+			tempTranscript.raw_json,
+			tempTranscript.text,
+			tempTranscript.language || 'en',
+			tempTranscript.duration || undefined
+		);
+
+		// Copy all transcript segments
+		const { getTranscriptSegments } = await import("@/services/database");
+		const segments = await getTranscriptSegments(tempTranscript.id);
+		
+		for (let i = 0; i < segments.length; i++) {
+			const segment = segments[i];
+			await createTranscriptSegment(
+				newTranscriptId,
+				segment.start_time,
+				segment.end_time,
+				segment.text,
+				i,
+				undefined
+			);
+		}
+
+		console.log("[ExportButton] Copied transcript to target project:", targetProjectId);
+	} catch (error) {
+		console.error("[ExportButton] Failed to copy transcript:", error);
 	}
 }
 
@@ -687,7 +950,7 @@ async function handleCleanupProject() {
 
 	// Show confirmation dialog
 	const confirmed = await confirm(
-		"Remove Editor Project?\n\nThis will delete the editor project and source files. The exported video will remain in Built Clips."
+		"Close and Remove Editor Project?\n\nThis will close this project in the video editor and permanently remove its editable project files. After this, it can no longer be modified in the video editor. The exported video will remain in Built Clips."
 	);
 
 	if (!confirmed) return;
@@ -715,10 +978,10 @@ async function handleCleanupProject() {
 		// Show success toast
 		const { useToast } = await import("@/composables/useToast");
 		const { showToast } = useToast();
-		showToast("Project files cleaned up", "success", "projects");
+		showToast("Editor project removed", "success", "projects");
 
 		// Close dialog and navigate to video editor projects page
-		isOpen.value = false;
+		closeExportDialog();
 		const { useRouter } = await import("vue-router");
 		const router = useRouter();
 		router.push("/video-editor");
@@ -726,7 +989,7 @@ async function handleCleanupProject() {
 		console.error("[ExportButton] Failed to clean up project:", err);
 		const { useToast } = await import("@/composables/useToast");
 		const { showToast } = useToast();
-		showToast(err instanceof Error ? err.message : "Failed to clean up project", "error", "projects");
+		showToast(err instanceof Error ? err.message : "Failed to remove editor project", "error", "projects");
 	}
 }
 
@@ -738,11 +1001,63 @@ async function handleCopyError() {
 	}
 }
 
+async function loadPublishData(clipId: string, exportPath: string) {
+	try {
+		const { getClipWithBuildStatus, getClipBuilds } = await import("@/services/database/clip-build");
+		const { invoke } = await import("@tauri-apps/api/core");
+		
+		// Load clip data
+		const clip = await getClipWithBuildStatus(clipId);
+		if (!clip) {
+			console.warn("[ExportButton] Could not load clip for publish:", clipId);
+			return;
+		}
+		
+		// Load builds for this clip
+		const builds = await getClipBuilds(clipId);
+		const latestBuild = builds.find(b => b.file_path === exportPath) || builds[0];
+		
+		if (!latestBuild) {
+			console.warn("[ExportButton] Could not find build for exported file:", exportPath);
+			return;
+		}
+		
+		// Generate thumbnail for the exported video
+		try {
+			const thumbnailPath = await invoke<string>("generate_thumbnail_at_timestamp", {
+				videoPath: exportPath,
+				timestampSeconds: 1,
+				outputFilename: `export_publish_thumb_${Date.now()}`,
+			});
+			const dataUrl = await invoke<string>("read_file_as_data_url", {
+				filePath: thumbnailPath,
+			});
+			publishThumbnailUrl.value = dataUrl;
+		} catch (err) {
+			console.warn("[ExportButton] Failed to generate thumbnail:", err);
+			publishThumbnailUrl.value = null;
+		}
+		
+		// Create ClipWithBuilds object
+		publishClip.value = {
+			...clip,
+			builds: builds,
+		};
+		publishBuild.value = latestBuild;
+		
+		console.log("[ExportButton] Loaded publish data:", { clip, build: latestBuild });
+	} catch (err) {
+		console.error("[ExportButton] Failed to load publish data:", err);
+	}
+}
+
 function handlePublishNow() {
-	// TODO: Open ClipBuildSettingsDialog in publish mode with exported clip
-	console.log('[ExportButton] Publish Now clicked for exported clip:', exportedPath.value);
-	// For now, show a toast notification
-	alert('Publish workflow will open ClipBuildSettingsDialog in publish mode - coming soon!');
+	if (!publishClip.value || !publishBuild.value || !exportedPath.value) {
+		console.warn("[ExportButton] Missing publish data");
+		return;
+	}
+	
+	showPublishDialog.value = true;
 }
 </script>
 
@@ -756,7 +1071,7 @@ function handlePublishNow() {
 				hasProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
 			]"
 			:disabled="!hasProject"
-			@click="hasProject && (isOpen = true)"
+			@click="hasProject && handleOpenExportDialog()"
 		>
 			<Download class="export-trigger__icon" />
 			Export
@@ -779,9 +1094,9 @@ function handlePublishNow() {
 								<div class="export-dialog__icon">
 									<Download :size="24" />
 								</div>
-								<h2 class="export-dialog__title">Export Configuration</h2>
+								<h2 class="export-dialog__title">{{ exportDialogTitle }}</h2>
 								<p class="export-dialog__subtitle">
-									{{ projectName }} &bull; {{ formatDuration(projectDuration) }}
+									{{ exportDialogSubtitle }}
 								</p>
 							</div>
 
@@ -795,7 +1110,9 @@ function handlePublishNow() {
 												<Check :size="32" />
 											</div>
 											<h3 class="export-dialog__success-title">Export Complete!</h3>
-											<p class="export-dialog__success-subtitle">Your video has been saved to Built Clips</p>
+											<p class="export-dialog__success-subtitle">
+												{{ 1 + exportedVariants.length }} video{{ exportedVariants.length > 0 ? 's have' : ' has' }} been saved to Built Clips
+											</p>
 										</div>
 
 										<div class="export-dialog__success-actions">
@@ -803,13 +1120,22 @@ function handlePublishNow() {
 												<Share2 :size="16" />
 												Publish Now
 											</button>
-											<button class="export-dialog__success-btn" @click="handleDownload">
+											<button class="export-dialog__success-btn" @click="handleDownload()">
 												<Download :size="16" />
-												Download to Local File
+												Download {{ projectAspectLabel }}
+											</button>
+											<button
+												v-for="variant in exportedVariants"
+												:key="variant.ratio"
+												class="export-dialog__success-btn"
+												@click="handleDownload(variant.path)"
+											>
+												<Download :size="16" />
+												Download {{ variant.ratio }}
 											</button>
 											<button class="export-dialog__success-btn export-dialog__success-btn--warning" @click="handleCleanupProject">
 												<Trash2 :size="16" />
-												Clean Up Project Files
+												Close and Permanently Remove Editor Project
 											</button>
 											<button class="export-dialog__success-btn" @click="handleClose">
 												Close
@@ -1059,55 +1385,41 @@ function handlePublishNow() {
 											@click="toggleIsForCampaign"
 											class="export-dialog__campaign-toggle"
 										>
-											<div class="export-dialog__campaign-toggle-left">
-												<div class="export-dialog__campaign-checkbox" :class="{ 'export-dialog__campaign-checkbox--checked': isForCampaign }">
-													<Check v-if="isForCampaign" class="export-dialog__campaign-checkbox-icon" />
-												</div>
-												<span class="export-dialog__campaign-toggle-text">This clip is for a campaign/organization</span>
+											<div class="export-dialog__campaign-checkbox" :class="{ 'export-dialog__campaign-checkbox--checked': isForCampaign }">
+												<Check v-if="isForCampaign" class="export-dialog__campaign-checkbox-icon" />
 											</div>
-											<div class="export-dialog__campaign-toggle-right">
-												<Megaphone class="export-dialog__campaign-toggle-icon" />
-											</div>
+											<span class="export-dialog__campaign-toggle-text">This clip is for a campaign/organization</span>
+											<Megaphone class="export-dialog__campaign-toggle-icon" />
 										</button>
 
-										<!-- Campaign Dropdown (shown when checkbox is checked) -->
+										<!-- Campaign List (shown when checkbox is checked) -->
 										<Transition name="slide-fade">
 											<div v-if="isForCampaign" class="export-dialog__campaign-picker">
-												<label class="export-dialog__campaign-label">Select Campaign</label>
+												<label class="export-dialog__campaign-label">SELECT CAMPAIGN</label>
 												<div class="export-dialog__campaign-list">
 													<button
 														v-for="campaign in availableCampaigns"
 														:key="campaign.id"
 														@click="selectCampaign(campaign)"
+														type="button"
 														class="export-dialog__campaign-item"
-														:class="{ 'export-dialog__campaign-item--selected': selectedCampaign?.id === campaign.id }"
 													>
-														<div class="export-dialog__campaign-item-left">
-															<div
-																class="export-dialog__campaign-radio"
-																:class="{ 'export-dialog__campaign-radio--selected': selectedCampaign?.id === campaign.id }"
-															>
-																<div v-if="selectedCampaign?.id === campaign.id" class="export-dialog__campaign-radio-dot" />
-															</div>
-															<div class="export-dialog__campaign-item-info">
-																<div class="export-dialog__campaign-item-header">
-																	<span class="export-dialog__campaign-item-title">{{ campaign.title }}</span>
-																	<span
-																		v-if="campaign.creator_profile_id === null"
-																		class="export-dialog__campaign-badge export-dialog__campaign-badge--global"
-																	>
-																		Global Branding
-																	</span>
-																	<span
-																		v-else
-																		class="export-dialog__campaign-badge export-dialog__campaign-badge--creator"
-																	>
-																		{{ campaign.creator_profile?.name }}
-																	</span>
-																</div>
-																<p class="export-dialog__campaign-item-org">{{ campaign.organization?.name }}</p>
-															</div>
+														<div
+															class="export-dialog__campaign-radio"
+															:class="{ 'export-dialog__campaign-radio--selected': selectedCampaign?.id === campaign.id }"
+														>
+															<div v-if="selectedCampaign?.id === campaign.id" class="export-dialog__campaign-radio-dot" />
 														</div>
+														<div class="export-dialog__campaign-info">
+															<span class="export-dialog__campaign-title">{{ campaign.title }}</span>
+															<span class="export-dialog__campaign-org">{{ campaign.organization?.name }}</span>
+														</div>
+														<span
+															v-if="campaign.creator_profile_id === null"
+															class="export-dialog__campaign-badge export-dialog__campaign-badge--global"
+														>
+															GLOBAL BRANDING
+														</span>
 													</button>
 												</div>
 												<p v-if="loadingCampaigns" class="export-dialog__campaign-loading">Loading campaigns...</p>
@@ -1173,7 +1485,7 @@ function handlePublishNow() {
 							<div class="export-dialog__footer">
 								<div class="export-dialog__footer-left">
 									<button
-										v-if="isExporting"
+										v-if="isExporting && currentExportId"
 										@click="handleCancel"
 										class="export-dialog__btn export-dialog__btn--back"
 									>
@@ -1219,6 +1531,17 @@ function handlePublishNow() {
 			</Transition>
 		</Teleport>
 
+		<!-- Publish Dialog -->
+		<SimplifiedPublishDialog
+			v-if="publishClip && publishBuild && exportedPath"
+			v-model="showPublishDialog"
+			:clip="publishClip"
+			:build="publishBuild"
+			:file-path="exportedPath"
+			:thumbnail-url="publishThumbnailUrl"
+			@close="showPublishDialog = false"
+		/>
+
 		<!-- Manual POI Editor Dialog -->
 		<ManualPOIEditor
 			v-model="showManualPOIEditor"
@@ -1227,6 +1550,8 @@ function handlePublishNow() {
 			:source-aspect-ratio="'16:9'"
 			:thumbnail-url="videoFrameUrl"
 			:video-path="firstVideoPath"
+			:timeline-preview-canvas="editor.getLivePreviewCanvas()"
+			:use-timeline-playback="true"
 			:clip-start-time="0"
 			:clip-end-time="projectDuration"
 			@confirm="onManualConfigConfirm"
@@ -1254,7 +1579,7 @@ function handlePublishNow() {
 	border: 1px solid var(--sidebar-border);
 	border-radius: 12px;
 	width: 100%;
-	max-width: 520px;
+	max-width: 600px;
 	margin: 1rem;
 	max-height: 90vh;
 	display: flex;
@@ -2108,36 +2433,29 @@ function handlePublishNow() {
 	border-color: rgba(239, 68, 68, 0.5);
 	transform: translateY(-1px);
 }
-
-/* ===== Campaign Selection ===== */
 .export-dialog__campaign-section {
 	display: flex;
 	flex-direction: column;
-	gap: 0.75rem;
+	gap: 1rem;
 }
 
 .export-dialog__campaign-toggle {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	padding: 0.875rem 1rem;
-	border-radius: 10px;
+	gap: 0.75rem;
+	padding: 1rem;
+	border-radius: 8px;
 	border: 1px solid var(--sidebar-border);
-	background-color: rgba(255, 255, 255, 0.03);
+	background-color: rgba(255, 255, 255, 0.02);
 	cursor: pointer;
 	transition: all 150ms ease;
 	width: 100%;
+	text-align: left;
 }
 
 .export-dialog__campaign-toggle:hover {
-	background-color: rgba(255, 255, 255, 0.06);
-	border-color: rgba(255, 255, 255, 0.15);
-}
-
-.export-dialog__campaign-toggle-left {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
+	background-color: rgba(255, 255, 255, 0.05);
+	border-color: rgba(6, 182, 212, 0.4);
 }
 
 .export-dialog__campaign-checkbox {
@@ -2148,55 +2466,47 @@ function handlePublishNow() {
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	flex-shrink: 0;
 	transition: all 150ms ease;
 }
 
 .export-dialog__campaign-checkbox--checked {
 	background-color: var(--sidebar-accent);
-	border-color: var(--sidebar-accent);
-}
-
-.export-dialog__campaign-checkbox-icon {
-	width: 12px;
-	height: 12px;
-	color: white;
 }
 
 .export-dialog__campaign-toggle-text {
 	font-size: 0.875rem;
 	font-weight: 500;
 	color: var(--sidebar-text);
-}
-
-.export-dialog__campaign-toggle-right {
-	display: flex;
-	align-items: center;
+	flex: 1;
 }
 
 .export-dialog__campaign-toggle-icon {
 	width: 18px;
 	height: 18px;
 	color: var(--sidebar-text-muted);
+	flex-shrink: 0;
 }
 
 .export-dialog__campaign-picker {
 	display: flex;
 	flex-direction: column;
-	gap: 0.5rem;
+	gap: 0.75rem;
 }
 
 .export-dialog__campaign-label {
-	font-size: 0.75rem;
+	font-size: 0.6875rem;
 	font-weight: 600;
 	color: var(--sidebar-text-muted);
 	text-transform: uppercase;
 	letter-spacing: 0.05em;
+	margin: 0;
 }
 
 .export-dialog__campaign-list {
 	display: flex;
 	flex-direction: column;
-	gap: 0.375rem;
+	gap: 0.5rem;
 	max-height: 240px;
 	overflow-y: auto;
 }
@@ -2204,30 +2514,20 @@ function handlePublishNow() {
 .export-dialog__campaign-item {
 	display: flex;
 	align-items: center;
+	gap: 0.75rem;
 	padding: 0.75rem;
 	border-radius: 8px;
 	border: 1px solid var(--sidebar-border);
-	background-color: rgba(255, 255, 255, 0.03);
+	background-color: rgba(255, 255, 255, 0.02);
 	cursor: pointer;
 	transition: all 150ms ease;
 	width: 100%;
+	text-align: left;
 }
 
 .export-dialog__campaign-item:hover {
-	background-color: rgba(255, 255, 255, 0.06);
-	border-color: rgba(255, 255, 255, 0.15);
-}
-
-.export-dialog__campaign-item--selected {
-	border-color: var(--sidebar-accent);
-	background-color: rgba(6, 182, 212, 0.08);
-}
-
-.export-dialog__campaign-item-left {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-	flex: 1;
+	background-color: rgba(255, 255, 255, 0.05);
+	border-color: rgba(6, 182, 212, 0.4);
 }
 
 .export-dialog__campaign-radio {
@@ -2253,37 +2553,39 @@ function handlePublishNow() {
 	background-color: var(--sidebar-accent);
 }
 
-.export-dialog__campaign-item-info {
+.export-dialog__campaign-info {
 	display: flex;
 	flex-direction: column;
-	gap: 0.25rem;
+	gap: 0.125rem;
 	flex: 1;
 	min-width: 0;
 }
 
-.export-dialog__campaign-item-header {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	flex-wrap: wrap;
+.export-dialog__campaign-title {
+	font-size: 0.875rem;
+	font-weight: 500;
+	color: var(--sidebar-text);
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
 }
 
-.export-dialog__campaign-item-title {
-	font-size: 0.875rem;
-	font-weight: 600;
-	color: var(--sidebar-text);
-	white-space: nowrap;
+.export-dialog__campaign-org {
+	font-size: 0.75rem;
+	color: var(--sidebar-text-muted);
 	overflow: hidden;
+	white-space: nowrap;
 	text-overflow: ellipsis;
 }
 
 .export-dialog__campaign-badge {
 	padding: 0.125rem 0.5rem;
 	border-radius: 4px;
-	font-size: 0.6875rem;
+	font-size: 0.625rem;
 	font-weight: 600;
 	text-transform: uppercase;
-	letter-spacing: 0.03em;
+	letter-spacing: 0.05em;
+	flex-shrink: 0;
 }
 
 .export-dialog__campaign-badge--global {
@@ -2298,15 +2600,6 @@ function handlePublishNow() {
 	border: 1px solid rgba(6, 182, 212, 0.3);
 }
 
-.export-dialog__campaign-item-org {
-	font-size: 0.75rem;
-	color: var(--sidebar-text-muted);
-	margin: 0;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
 .export-dialog__campaign-loading,
 .export-dialog__campaign-empty {
 	font-size: 0.75rem;
@@ -2314,11 +2607,6 @@ function handlePublishNow() {
 	text-align: center;
 	padding: 1rem;
 	margin: 0;
-}
-
-/* ===== Slide-Fade Transition ===== */
-.slide-fade-enter-active {
-	transition: all 200ms ease;
 }
 
 .slide-fade-leave-active {

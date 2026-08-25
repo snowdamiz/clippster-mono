@@ -2,6 +2,7 @@ const toast = {
 	error: (msg: string) => console.error(`[MediaProcessing] ${msg}`),
 };
 import type { MediaAsset } from "../../types/assets";
+import { fileNameFromPathOrName } from "@/utils/fsNames";
 import { getMediaTypeFromFile } from "../../lib/media/media-utils";
 import { getVideoInfo } from "./mediabunny";
 import { Input, ALL_FORMATS, BlobSource, VideoSampleSink } from "mediabunny";
@@ -204,7 +205,7 @@ export async function processMediaAssets({
 			}
 
 			processedAssets.push({
-				name: file.name,
+				name: fileNameFromPathOrName(file.name),
 				type: fileType,
 				file,
 				url,

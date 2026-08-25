@@ -6,7 +6,7 @@ defmodule ClippsterServer.AI.SystemPrompt do
   """
 
   @system_prompt """
-  **AI-POWERED CLIP DETECTION WITH BROAD COVERAGE:**
+  **AI-POWERED CLIP DETECTION WITH HOOK-FIRST RANKING:**
 
   You now have access to sophisticated timing analysis and content metrics to create perfectly paced, engaging clips.
   **GOAL:** Detect high-quality viral clips. Be SELECTIVE. Only create clips with genuine viral potential - moments that make viewers stop scrolling, react emotionally, and want to share.
@@ -42,11 +42,14 @@ defmodule ClippsterServer.AI.SystemPrompt do
   - **Spliced Clips**: Remove *distracting* dead space, but keep "thinking" pauses.
   - **Multi-Speaker Dynamics**: ALWAYS include reactions and banter.
 
-  **5. Quality Metrics (RELAXED):**
+  **5. Quality Metrics (STRICT SHORT-FORM POLICY):**
   - **Engagement Density**: Aim for clips with >0.6 content density scores, but accept lower for funny/visual moments.
   - **Pacing Optimization**: Only eliminate gaps that truly break momentum (>2.0s).
-  - **Duration Intelligence**: Range: 10s-180s. Short punchy clips are good. **Long storytelling clips (90-180s) are PREFERRED when the content warrants it.**
-  - **Context Completeness**: A clip MUST make sense standalone. If a viewer would ask "wait, what happened before?" or "what happens next?", the clip is incomplete.
+  - **Duration Intelligence**: Primary target is **30-45 seconds**. This is the default winning shape for TikTok, Reels, YouTube Shorts, and X.
+  - **Short exception**: 10-29s only for extreme standalone reactions, memes, soundbites, or quotable moments.
+  - **Long exception**: 46-90s only when the complete setup and payoff are truly required to make the clip valuable.
+  - **Rare cap**: Above 90s requires an explicit, concrete `exception_reason` explaining why full context is mandatory. Never drift long for comfort.
+  - **Context Completeness**: Include only the smallest necessary setup. If the hook gets weaker, you added too much context.
 
   **6. HOOK SCIENCE — THE MOST IMPORTANT SECTION:**
   The first 0.5–1.5 seconds determine if someone watches or scrolls. A clip lives or dies by its hook.
@@ -187,7 +190,7 @@ defmodule ClippsterServer.AI.SystemPrompt do
   - **Story arcs must be complete:** Setup → Conflict → Resolution. If any part is missing, the clip fails.
   - **Never end on a cliffhanger:** The viewer must feel satisfied, not confused.
   - **Never start mid-thought:** Include the full sentence/idea that begins the moment.
-  - **When in doubt, GO WIDER.** A 2-minute clip with full context beats a 45-second clip that leaves viewers confused.
+  - **When in doubt, keep it tight.** A 35-second clip with a killer hook beats a 2-minute clip with complete but slow context.
   - **Include breathing room:** Don't cut immediately after the punchline - let it land.
   - **Reactions need triggers:** If someone reacts, include what they're reacting to.
   - **Arguments need both sides:** Don't clip just one person's point - include the exchange.
@@ -200,7 +203,7 @@ defmodule ClippsterServer.AI.SystemPrompt do
   - All timestamps in seconds (decimal precision) within segment boundaries.
   - Duration = end_time - start_time; total_duration = sum(segment durations).
   - combined_transcript = segments concatenated with proper spacing.
-  - **MINIMUM VIRALITY SCORE: 50**. Clips below this threshold should not be created. Focus on moments with genuine shareability, but don't be overly restrictive.
+  - **MINIMUM VIRALITY SCORE: 60**. Clips below this threshold should not be created. For 10-29s exceptions, score should be 85+ unless the category prompt explicitly asks for short meme clips.
   - virality_score: 0–100 composite. Score each dimension, then weight:
     * **Hook Power (25%)**: Does the first 1-2 seconds STOP THE SCROLL? Shock, bold claim, emotional spike, curiosity gap. No hook = cap score at 40 regardless of content quality. A clip with a killer hook and mediocre content outperforms a clip with great content and a weak hook.
     * **Emotional Arousal (20%)**: HIGH-arousal emotions only. Anger, awe, excitement, humor, outrage, surprise, cringe, infectious energy, charisma, banter chemistry = high score. Calm explanation, mild amusement, sadness = low score. Yelling > talking. Passion > logic.
@@ -210,6 +213,7 @@ defmodule ClippsterServer.AI.SystemPrompt do
     * **Creator Factor (5%)**: For known viral creators, their personality IS the content. A "normal" moment from a viral creator has more clip value than the same moment from an unknown streamer.
   - filename: descriptive, lowercase, underscores, ends with .mp4.
   - socialMediaPost: engaging caption with hashtags (2-4) and emojis.
+  - Add these scoring fields to every clip: `hook_score`, `retention_score`, `shareability_score`, `trend_score`, `platform_fit_score`, `creator_factor_score`, `duration_policy`, `exception_reason`.
   - No additional text — ONLY the JSON response.
 
   **RED FLAGS - DO NOT CREATE CLIPS WITH THESE:**
@@ -256,12 +260,12 @@ defmodule ClippsterServer.AI.SystemPrompt do
 
   @doc """
   Returns the system prompt enriched with current breaking news context.
-  
+
   This adds recent news articles to help the AI identify trending topics and timely content.
   """
   def get_with_news_context do
     news_context = ClippsterServer.News.get_ai_context(10)
-    
+
     """
     #{@system_prompt}
 
@@ -285,13 +289,13 @@ defmodule ClippsterServer.AI.SystemPrompt do
 
   @doc """
   Returns the system prompt with news context for AI enrichment.
-  
+
   This function fetches breaking news, formats it for AI context,
   and injects it into the system prompt with explicit virality boost instructions.
   """
   def get_with_full_context do
     news_context = ClippsterServer.News.get_ai_context(10)
-    
+
     """
     #{@system_prompt}
 
@@ -313,6 +317,53 @@ defmodule ClippsterServer.AI.SystemPrompt do
 
     When you detect clips that reference or relate to any of these news topics,
     mention it in the "reason" field and apply the appropriate virality boost based on connection strength.
+    """
+  end
+
+  @enhanced_video_addon """
+  **ENHANCED MODEL — VIDEO + AUDIO + TRANSCRIPT:**
+
+  You are also receiving a video segment of this VOD (with embedded audio).
+  Use ALL three signals together:
+  - **Transcript** for precise word-level timestamps and speaking patterns
+  - **Video** for facial reactions, gameplay, on-screen chat/donations, body language, visual punchlines
+  - **Audio** (from the video) for tone, laughter, screaming, silence, and energy
+
+  Cross-reference visual moments with transcript timestamps. A funny face without words can still be clip-worthy.
+  Clip start/end times MUST remain anchored to absolute seconds in the full VOD (transcript timebase).
+  """
+
+  @doc """
+  Returns the system prompt with conditional detection context for the single-model path.
+  """
+  def get_with_detection_context(user_prompt, transcript \\ nil, streamer_metadata \\ nil) do
+    context =
+      ClippsterServer.AI.DetectionContext.build(user_prompt, transcript, streamer_metadata)
+
+    """
+    #{@system_prompt}
+
+    #{context}
+    """
+  end
+
+  @doc """
+  Returns the system prompt for Enhanced VOD detection (video + transcript).
+  """
+  def get_with_enhanced_detection_context(
+        user_prompt,
+        transcript \\ nil,
+        streamer_metadata \\ nil
+      ) do
+    context =
+      ClippsterServer.AI.DetectionContext.build(user_prompt, transcript, streamer_metadata)
+
+    """
+    #{@system_prompt}
+
+    #{@enhanced_video_addon}
+
+    #{context}
     """
   end
 end

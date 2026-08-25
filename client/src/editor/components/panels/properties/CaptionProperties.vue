@@ -1,17 +1,17 @@
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
+import { ref, watchEffect, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useFontManager } from "../../../composables/useFontManager";
 import type {
 	CaptionElement,
 	CaptionPresetId,
-	CaptionHighlightStyle,
 	CaptionLine,
 	CaptionTrack,
 } from "../../../types/timeline";
 import { CAPTION_PRESETS, getPresetById } from "../../../constants/caption-constants";
 import type { CaptionPresetCategory } from "../../../constants/caption-constants";
-import { ANIMATION_PRESETS, getPresetsForDirection } from "../../../constants/animation-constants";
+import { ANIMATION_PRESETS, getExportableAnimationPresetsForDirection } from "../../../constants/animation-constants";
+import ColorPicker from "@/components/ColorPicker.vue";
 import type { AnimationType } from "../../../types/animations";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -35,7 +35,16 @@ const props = defineProps<{
 	trackId: string;
 }>();
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		timeline: true,
+		playback: false,
+		scenes: false,
+		project: false,
+		media: false,
+		selection: false,
+	},
+});
 const { allFonts, ensureFontLoaded, uploadCustomFont } = useFontManager();
 
 // ── Top-level tabs (CapCut style) ──
@@ -48,11 +57,12 @@ const topTabs: { id: TopTab; label: string; icon: any }[] = [
 ];
 
 // ── Text sub-tabs ──
-type TextSubTab = "basic" | "templates" | "effects";
-const activeTextSubTab = ref<TextSubTab>("basic");
+type TextSubTab = "style" | "effects";
+const activeTextSubTab = ref<TextSubTab>("style");
+const showCustomize = ref(false);
 
 // ── Animation sub-tabs ──
-type AnimSubTab = "in" | "out" | "loop" | "captions";
+type AnimSubTab = "in" | "out" | "loop";
 const activeAnimSubTab = ref<AnimSubTab>("in");
 
 // ── Apply to all toggle ──
@@ -70,17 +80,20 @@ const showStroke = ref(!!props.element.stroke);
 const showShadow = ref(!!props.element.shadow);
 const showGlow = ref(!!props.element.glow);
 
-// ── Watchers ──
-watch(() => props.element.fontSize, (v) => { fontSizeInput.value = v.toString(); });
-watch(() => props.element.opacity, (v) => { opacityInput.value = Math.round(v * 100).toString(); });
-watch(() => props.element.maxWordsPerLine, (v) => { maxWordsInput.value = v.toString(); });
-watch(() => props.element.transform.scale, (v) => { scaleInput.value = Math.round(v * 100).toString(); });
-watch(() => props.element.transform.position.x, (v) => { posXInput.value = Math.round(v).toString(); });
-watch(() => props.element.transform.position.y, (v) => { posYInput.value = Math.round(v).toString(); });
-watch(() => props.element.transform.rotate, (v) => { rotationInput.value = v.toFixed(2); });
-watch(() => props.element.stroke, (v) => { showStroke.value = !!v; });
-watch(() => props.element.shadow, (v) => { showShadow.value = !!v; });
-watch(() => props.element.glow, (v) => { showGlow.value = !!v; });
+// ── Watchers — single watchEffect so all refs update atomically on element switch ──
+watchEffect(() => {
+	void props.element.id;
+	fontSizeInput.value = props.element.fontSize.toString();
+	opacityInput.value = Math.round(props.element.opacity * 100).toString();
+	maxWordsInput.value = props.element.maxWordsPerLine.toString();
+	scaleInput.value = Math.round(props.element.transform.scale * 100).toString();
+	posXInput.value = Math.round(props.element.transform.position.x).toString();
+	posYInput.value = Math.round(props.element.transform.position.y).toString();
+	rotationInput.value = props.element.transform.rotate.toFixed(2);
+	showStroke.value = !!props.element.stroke;
+	showShadow.value = !!props.element.shadow;
+	showGlow.value = !!props.element.glow;
+});
 
 // ── All caption elements for "apply to all" ──
 const allCaptionElements = computed(() => {
@@ -322,7 +335,7 @@ function applyPreset(presetId: CaptionPresetId) {
 }
 
 // ── Highlight styles ──
-const highlightStyles: { value: CaptionHighlightStyle; label: string }[] = [
+const highlightStyles: { value: CaptionElement["highlightStyle"]; label: string }[] = [
 	{ value: "none", label: "None" },
 	{ value: "karaoke", label: "Karaoke" },
 	{ value: "karaoke-scale", label: "Karaoke Pop" },
@@ -420,10 +433,10 @@ const groupedPresets = computed(() => {
 	})).filter(g => g.presets.length > 0);
 });
 
-// ── Animation presets ──
-const animInPresets = computed(() => getPresetsForDirection("in"));
-const animOutPresets = computed(() => getPresetsForDirection("out"));
-const animLoopPresets = computed(() => getPresetsForDirection("loop"));
+// ── Animation presets (export parity: fade + raster sequence in renderer-manager) ──
+const captionAnimInPresets = computed(() => getExportableAnimationPresetsForDirection("in"));
+const captionAnimOutPresets = computed(() => getExportableAnimationPresetsForDirection("out"));
+const captionAnimLoopPresets = computed(() => getExportableAnimationPresetsForDirection("loop"));
 
 function setAnimation(direction: "in" | "out" | "loop", type: AnimationType | null) {
 	const preset = type ? ANIMATION_PRESETS.find(p => p.type === type) : null;
@@ -521,13 +534,13 @@ async function handleUploadFont() {
 		</div>
 
 		<!-- ═══════════════════════════════════════════ -->
-		<!-- TAB: Text — Basic / Templates / Effects    -->
+		<!-- TAB: Text — Style / Effects               -->
 		<!-- ═══════════════════════════════════════════ -->
 		<div v-else-if="activeTopTab === 'text'" class="flex flex-col overflow-y-auto" style="max-height: calc(100vh - 200px)">
 			<!-- Sub-tab bar -->
 			<div class="flex gap-1 border-b border-white/5 px-3 py-1.5">
 				<button
-					v-for="sub in (['basic', 'templates', 'effects'] as TextSubTab[])"
+					v-for="sub in (['style', 'effects'] as TextSubTab[])"
 					:key="sub"
 					class="rounded-md px-3 py-1 text-xs font-medium capitalize transition-colors"
 					:class="activeTextSubTab === sub ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'"
@@ -549,12 +562,71 @@ async function handleUploadFont() {
 				<span class="text-zinc-400 text-[11px]">Apply to all main captions</span>
 			</div>
 
-			<!-- ── Basic sub-tab ── -->
-			<div v-if="activeTextSubTab === 'basic'" class="flex flex-col gap-3 p-3">
-				<!-- Caption text preview -->
-				<div class="rounded-md border border-white/5 bg-white/[0.02] p-2">
-					<pre class="max-h-20 overflow-y-auto whitespace-pre-wrap text-[11px] leading-relaxed text-zinc-300">{{ captionText }}</pre>
+			<!-- ── Style sub-tab (presets + customize) ── -->
+			<div v-if="activeTextSubTab === 'style'" class="flex flex-col gap-3 p-3">
+
+				<!-- Preset grid (collapsed into 3-col) -->
+				<div class="flex flex-col gap-1.5">
+					<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Style Preset</span>
+					<!-- Category filter pills -->
+					<div class="flex flex-wrap gap-1">
+						<button
+							class="rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors"
+							:class="activeTemplateCategory === 'all' ? 'border-primary/40 bg-primary/20 text-primary' : 'border-white/10 bg-white/5 text-zinc-400 hover:text-zinc-200'"
+							@click="activeTemplateCategory = 'all'"
+						>All</button>
+						<button
+							v-for="cat in CATEGORY_ORDER"
+							:key="cat"
+							class="rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors"
+							:class="activeTemplateCategory === cat ? 'border-primary/40 bg-primary/20 text-primary' : 'border-white/10 bg-white/5 text-zinc-400 hover:text-zinc-200'"
+							@click="activeTemplateCategory = cat"
+						>{{ CATEGORY_LABELS[cat] }}</button>
+					</div>
+					<!-- Grouped preset sections -->
+					<div v-for="group in groupedPresets" :key="group.category" class="flex flex-col gap-1.5">
+						<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">{{ group.label }}</span>
+						<div class="grid grid-cols-3 gap-1.5">
+							<button
+								v-for="preset in group.presets"
+								:key="preset.id"
+								class="group relative flex flex-col items-center gap-1 rounded-lg border p-2 text-center transition-all hover:border-white/20 hover:bg-white/5"
+								:class="element.presetId === preset.id ? 'border-primary/50 bg-primary/10' : 'border-white/10 bg-white/[0.02]'"
+								@click="applyPreset(preset.id)"
+							>
+								<div
+									class="flex h-8 w-full items-center justify-center rounded font-bold"
+									:class="preset.maxWordsPerLine === 1 ? 'text-sm' : 'text-[11px]'"
+									:style="{
+										color: preset.color === 'transparent' ? (preset.stroke?.color || '#FFFFFF') : preset.color,
+										fontFamily: preset.fontFamily,
+										fontWeight: preset.fontWeight,
+										fontStyle: preset.fontStyle,
+										letterSpacing: preset.letterSpacing + 'px',
+										backgroundColor: preset.backgroundColor && preset.backgroundColor !== 'transparent' ? preset.backgroundColor : undefined,
+										padding: preset.backgroundColor && preset.backgroundColor !== 'transparent' ? '2px 5px' : undefined,
+										borderRadius: preset.backgroundColor && preset.backgroundColor !== 'transparent' ? '3px' : undefined,
+									}"
+								>Aa</div>
+								<span class="truncate text-[9px] text-zinc-400 group-hover:text-zinc-200">{{ preset.name }}</span>
+							</button>
+						</div>
+					</div>
 				</div>
+
+				<!-- Customize disclosure -->
+				<div class="border-t border-white/10 pt-2">
+					<button
+						class="flex w-full items-center justify-between py-1 text-[11px] font-medium text-zinc-400 hover:text-zinc-200"
+						@click="showCustomize = !showCustomize"
+					>
+						<span>Customize</span>
+						<ChevronDown v-if="!showCustomize" class="size-3.5" />
+						<ChevronUp v-else class="size-3.5" />
+					</button>
+				</div>
+
+				<div v-if="showCustomize" class="flex flex-col gap-3">
 
 				<!-- ── Transform section ── -->
 				<div class="space-y-2">
@@ -595,6 +667,14 @@ async function handleUploadFont() {
 						<div class="flex-1 space-y-1">
 							<label class="text-zinc-500">X</label>
 							<input
+								type="range"
+								min="-1000"
+								max="1000"
+								:value="Math.round(element.transform.position.x)"
+								class="w-full"
+								@input="handlePosXChange(($event.target as HTMLInputElement).value)"
+							/>
+							<input
 								type="text"
 								:value="posXInput"
 								class="h-6 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200"
@@ -603,6 +683,14 @@ async function handleUploadFont() {
 						</div>
 						<div class="flex-1 space-y-1">
 							<label class="text-zinc-500">Y</label>
+							<input
+								type="range"
+								min="-1000"
+								max="1000"
+								:value="Math.round(element.transform.position.y)"
+								class="w-full"
+								@input="handlePosYChange(($event.target as HTMLInputElement).value)"
+							/>
 							<input
 								type="text"
 								:value="posYInput"
@@ -615,6 +703,15 @@ async function handleUploadFont() {
 					<!-- Rotation -->
 					<div class="space-y-1">
 						<label class="text-zinc-500">Rotation</label>
+						<input
+							type="range"
+							min="-180"
+							max="180"
+							step="0.1"
+							:value="element.transform.rotate"
+							class="w-full"
+							@input="handleRotationChange(($event.target as HTMLInputElement).value)"
+						/>
 						<input
 							type="text"
 							:value="rotationInput"
@@ -649,6 +746,11 @@ async function handleUploadFont() {
 							</SelectItem>
 						</SelectContent>
 					</Select>
+
+					<div class="space-y-1">
+						<label class="text-zinc-500">Fill color</label>
+						<ColorPicker :model-value="element.color" @update:model-value="(v) => update({ color: v })" />
+					</div>
 
 					<!-- Font size + weight -->
 					<div class="flex gap-2">
@@ -734,10 +836,14 @@ async function handleUploadFont() {
 						</div>
 					</div>
 				</div>
+			</div>
+			</div>
 
-				<!-- ── Highlight section ── -->
-				<div class="space-y-2 border-t border-white/10 pt-4">
-					<span class="text-zinc-300 font-medium">Highlight</span>
+			<!-- ── Effects sub-tab ── -->
+			<div v-if="activeTextSubTab === 'effects'" class="flex flex-col gap-2 p-3">
+				<!-- Highlight (karaoke) — lives with effects to avoid duplicating style preset colors -->
+				<div class="space-y-2 border-b border-white/10 pb-3">
+					<span class="text-zinc-300 font-medium text-xs">Highlight</span>
 					<Select :model-value="element.highlightStyle" @update:model-value="(v) => update({ highlightStyle: String(v) })">
 						<SelectTrigger class="h-7 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200">
 							<SelectValue />
@@ -748,96 +854,13 @@ async function handleUploadFont() {
 							</SelectItem>
 						</SelectContent>
 					</Select>
-
-					<!-- Colors -->
 					<div class="flex gap-3">
 						<div class="flex-1 space-y-1">
-							<label class="text-zinc-500">Text</label>
-							<div class="flex items-center gap-1.5">
-								<input
-									type="color"
-									:value="element.color"
-									class="h-6 w-6 cursor-pointer rounded border border-white/10 bg-transparent"
-									@input="update({ color: ($event.target as HTMLInputElement).value })"
-								/>
-								<span class="text-zinc-400 text-[10px]">{{ element.color }}</span>
-							</div>
-						</div>
-						<div class="flex-1 space-y-1">
-							<label class="text-zinc-500">Active</label>
-							<div class="flex items-center gap-1.5">
-								<input
-									type="color"
-									:value="element.highlightColor"
-									class="h-6 w-6 cursor-pointer rounded border border-white/10 bg-transparent"
-									@input="update({ highlightColor: ($event.target as HTMLInputElement).value })"
-								/>
-								<span class="text-zinc-400 text-[10px]">{{ element.highlightColor }}</span>
-							</div>
+							<label class="text-zinc-500 text-[10px]">Active word</label>
+							<ColorPicker :model-value="element.highlightColor" @update:model-value="(v) => update({ highlightColor: v })" />
 						</div>
 					</div>
 				</div>
-			</div>
-
-			<!-- ── Templates sub-tab ── -->
-			<div v-else-if="activeTextSubTab === 'templates'" class="flex flex-col gap-2 p-3">
-				<!-- Category filter pills -->
-				<div class="flex flex-wrap gap-1">
-					<button
-						class="rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors"
-						:class="activeTemplateCategory === 'all' ? 'bg-primary/20 text-primary border border-primary/40' : 'bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200'"
-						@click="activeTemplateCategory = 'all'"
-					>All</button>
-					<button
-						v-for="cat in CATEGORY_ORDER"
-						:key="cat"
-						class="rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors"
-						:class="activeTemplateCategory === cat ? 'bg-primary/20 text-primary border border-primary/40' : 'bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200'"
-						@click="activeTemplateCategory = cat"
-					>{{ CATEGORY_LABELS[cat] }}</button>
-				</div>
-
-				<!-- Grouped preset sections -->
-				<div v-for="group in groupedPresets" :key="group.category" class="flex flex-col gap-1.5">
-					<span class="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">{{ group.label }}</span>
-					<div class="grid grid-cols-3 gap-1.5">
-						<button
-							v-for="preset in group.presets"
-							:key="preset.id"
-							class="group relative flex flex-col items-center gap-1 rounded-lg border p-2 text-center transition-all hover:border-white/20 hover:bg-white/5"
-							:class="element.presetId === preset.id ? 'border-primary/50 bg-primary/10' : 'border-white/10 bg-white/[0.02]'"
-							@click="applyPreset(preset.id)"
-						>
-							<div
-								class="flex h-8 w-full items-center justify-center rounded font-bold"
-								:class="preset.maxWordsPerLine === 1 ? 'text-sm' : 'text-[11px]'"
-								:style="{
-									color: preset.color === 'transparent' ? (preset.stroke?.color || '#FFFFFF') : preset.color,
-									fontFamily: preset.fontFamily,
-									fontWeight: preset.fontWeight,
-									fontStyle: preset.fontStyle,
-									letterSpacing: preset.letterSpacing + 'px',
-									textShadow: preset.stroke
-										? `0 0 0 transparent, -1px -1px 0 ${preset.stroke.color}, 1px -1px 0 ${preset.stroke.color}, -1px 1px 0 ${preset.stroke.color}, 1px 1px 0 ${preset.stroke.color}`
-										: preset.shadow
-											? `${preset.shadow.offsetX}px ${preset.shadow.offsetY}px ${preset.shadow.blur}px ${preset.shadow.color}`
-											: preset.glow
-												? `0 0 ${preset.glow.intensity}px ${preset.glow.color}`
-												: 'none',
-									backgroundColor: preset.backgroundColor !== 'transparent' ? preset.backgroundColor : undefined,
-								}"
-							>
-								<span :style="{ color: preset.highlightStyle !== 'none' ? preset.highlightColor : (preset.color === 'transparent' ? (preset.stroke?.color || '#FFFFFF') : preset.color) }">{{ preset.maxWordsPerLine === 1 ? 'Word' : 'Ab' }}</span>
-								<span v-if="preset.maxWordsPerLine > 1" class="ml-0.5">Cd</span>
-							</div>
-							<span class="text-[9px] text-zinc-500 group-hover:text-zinc-400 truncate w-full">{{ preset.name }}</span>
-						</button>
-					</div>
-				</div>
-			</div>
-
-			<!-- ── Effects sub-tab ── -->
-			<div v-else-if="activeTextSubTab === 'effects'" class="flex flex-col gap-2 p-3">
 				<!-- Stroke toggle -->
 				<div class="flex items-center justify-between">
 					<label class="text-zinc-400">Stroke</label>
@@ -849,9 +872,12 @@ async function handleUploadFont() {
 						<div class="h-4 w-4 rounded-full bg-white shadow transition-transform" :class="showStroke ? 'translate-x-4' : 'translate-x-0.5'" />
 					</button>
 				</div>
-				<div v-if="showStroke && element.stroke" class="flex gap-2 pl-2">
-					<input type="color" :value="element.stroke.color" class="h-6 w-6 cursor-pointer rounded border border-white/10 bg-transparent" @input="update({ stroke: { ...element.stroke!, color: ($event.target as HTMLInputElement).value } })" />
-					<input type="range" min="1" max="10" :value="element.stroke.width" class="flex-1" @input="update({ stroke: { ...element.stroke!, width: parseInt(($event.target as HTMLInputElement).value) } })" />
+				<div v-if="showStroke && element.stroke" class="flex flex-wrap items-center gap-2 pl-2">
+					<ColorPicker
+						:model-value="element.stroke.color.startsWith('#') ? element.stroke.color : '#000000'"
+						@update:model-value="(v) => update({ stroke: { ...element.stroke!, color: v } })"
+					/>
+					<input type="range" min="1" max="10" :value="element.stroke.width" class="min-w-[100px] flex-1" @input="update({ stroke: { ...element.stroke!, width: parseInt(($event.target as HTMLInputElement).value) } })" />
 					<span class="w-6 text-right text-zinc-500">{{ element.stroke.width }}</span>
 				</div>
 
@@ -867,10 +893,13 @@ async function handleUploadFont() {
 					</button>
 				</div>
 				<div v-if="showShadow && element.shadow" class="space-y-1.5 pl-2">
-					<div class="flex items-center gap-2">
-						<input type="color" :value="element.shadow.color" class="h-6 w-6 cursor-pointer rounded border border-white/10 bg-transparent" @input="update({ shadow: { ...element.shadow!, color: ($event.target as HTMLInputElement).value } })" />
+					<div class="flex flex-wrap items-center gap-2">
+						<ColorPicker
+							:model-value="element.shadow.color.startsWith('#') ? element.shadow.color : '#000000'"
+							@update:model-value="(v) => update({ shadow: { ...element.shadow!, color: v } })"
+						/>
 						<label class="text-zinc-500">Blur</label>
-						<input type="range" min="0" max="20" :value="element.shadow.blur" class="flex-1" @input="update({ shadow: { ...element.shadow!, blur: parseInt(($event.target as HTMLInputElement).value) } })" />
+						<input type="range" min="0" max="20" :value="element.shadow.blur" class="min-w-[80px] flex-1" @input="update({ shadow: { ...element.shadow!, blur: parseInt(($event.target as HTMLInputElement).value) } })" />
 						<span class="w-6 text-right text-zinc-500">{{ element.shadow.blur }}</span>
 					</div>
 				</div>
@@ -886,27 +915,34 @@ async function handleUploadFont() {
 						<div class="h-4 w-4 rounded-full bg-white shadow transition-transform" :class="showGlow ? 'translate-x-4' : 'translate-x-0.5'" />
 					</button>
 				</div>
-				<div v-if="showGlow && element.glow" class="flex gap-2 pl-2">
-					<input type="color" :value="element.glow.color" class="h-6 w-6 cursor-pointer rounded border border-white/10 bg-transparent" @input="update({ glow: { ...element.glow!, color: ($event.target as HTMLInputElement).value } })" />
-					<input type="range" min="1" max="30" :value="element.glow.intensity" class="flex-1" @input="update({ glow: { ...element.glow!, intensity: parseInt(($event.target as HTMLInputElement).value) } })" />
+				<div v-if="showGlow && element.glow" class="flex flex-wrap items-center gap-2 pl-2">
+					<ColorPicker :model-value="element.glow.color" @update:model-value="(v) => update({ glow: { ...element.glow!, color: v } })" />
+					<input type="range" min="1" max="30" :value="element.glow.intensity" class="min-w-[100px] flex-1" @input="update({ glow: { ...element.glow!, intensity: parseInt(($event.target as HTMLInputElement).value) } })" />
 					<span class="w-6 text-right text-zinc-500">{{ element.glow.intensity }}</span>
 				</div>
 
 				<!-- Background color -->
 				<div class="space-y-1">
 					<label class="text-zinc-500">Background</label>
-					<div class="flex items-center gap-2">
-						<input
-							type="color"
-							:value="element.backgroundColor === 'transparent' ? '#000000' : element.backgroundColor"
-							class="h-6 w-6 cursor-pointer rounded border border-white/10 bg-transparent"
-							@input="update({ backgroundColor: ($event.target as HTMLInputElement).value })"
+					<div class="flex flex-wrap items-center gap-2">
+						<ColorPicker
+							v-if="element.backgroundColor !== 'transparent'"
+							:model-value="element.backgroundColor"
+							@update:model-value="(v) => update({ backgroundColor: v })"
 						/>
+						<span v-else class="text-[10px] text-zinc-500">None</span>
 						<button
 							class="rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-zinc-400 hover:bg-white/5"
 							@click="update({ backgroundColor: 'transparent' })"
 						>
 							Clear
+						</button>
+						<button
+							v-if="element.backgroundColor === 'transparent'"
+							class="rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-zinc-400 hover:bg-white/5"
+							@click="update({ backgroundColor: '#1a1a1a' })"
+						>
+							Set color
 						</button>
 					</div>
 				</div>
@@ -920,13 +956,13 @@ async function handleUploadFont() {
 			<!-- Sub-tab bar -->
 			<div class="flex gap-1 border-b border-white/5 px-3 py-1.5">
 				<button
-					v-for="sub in (['in', 'out', 'loop', 'captions'] as AnimSubTab[])"
+					v-for="sub in (['in', 'out', 'loop'] as AnimSubTab[])"
 					:key="sub"
 					class="rounded-md px-3 py-1 text-xs font-medium capitalize transition-colors"
 					:class="activeAnimSubTab === sub ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'"
 					@click="activeAnimSubTab = sub"
 				>
-					{{ sub === 'captions' ? 'Captions' : sub === 'in' ? 'In' : sub === 'out' ? 'Out' : 'Loop' }}
+					{{ sub === 'in' ? 'In' : sub === 'out' ? 'Out' : 'Loop' }}
 				</button>
 			</div>
 
@@ -960,7 +996,7 @@ async function handleUploadFont() {
 					<span class="text-[9px] text-zinc-500">None</span>
 				</button>
 				<button
-					v-for="preset in animInPresets"
+					v-for="preset in captionAnimInPresets"
 					:key="preset.type"
 					class="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all"
 					:class="currentAnimIn === preset.type ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
@@ -970,6 +1006,7 @@ async function handleUploadFont() {
 						<span class="text-[10px] font-bold text-zinc-300">Aa</span>
 					</div>
 					<span class="text-[9px] text-zinc-500 truncate w-full text-center">{{ preset.label.replace(' In', '') }}</span>
+					<span class="text-[8px] text-emerald-400">Preview / Export</span>
 				</button>
 			</div>
 
@@ -990,7 +1027,7 @@ async function handleUploadFont() {
 					<span class="text-[9px] text-zinc-500">None</span>
 				</button>
 				<button
-					v-for="preset in animOutPresets"
+					v-for="preset in captionAnimOutPresets"
 					:key="preset.type"
 					class="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all"
 					:class="currentAnimOut === preset.type ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
@@ -1000,6 +1037,7 @@ async function handleUploadFont() {
 						<span class="text-[10px] font-bold text-zinc-300">Aa</span>
 					</div>
 					<span class="text-[9px] text-zinc-500 truncate w-full text-center">{{ preset.label.replace(' Out', '') }}</span>
+					<span class="text-[8px] text-emerald-400">Preview / Export</span>
 				</button>
 			</div>
 
@@ -1020,7 +1058,7 @@ async function handleUploadFont() {
 					<span class="text-[9px] text-zinc-500">None</span>
 				</button>
 				<button
-					v-for="preset in animLoopPresets"
+					v-for="preset in captionAnimLoopPresets"
 					:key="preset.type"
 					class="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all"
 					:class="currentAnimLoop === preset.type ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
@@ -1030,24 +1068,10 @@ async function handleUploadFont() {
 						<span class="text-[10px] font-bold text-zinc-300">Aa</span>
 					</div>
 					<span class="text-[9px] text-zinc-500 truncate w-full text-center">{{ preset.label }}</span>
+					<span class="text-[8px] text-emerald-400">Preview / Export</span>
 				</button>
 			</div>
 
-			<!-- ── Captions animation sub-tab (highlight style selector) ── -->
-			<div v-else-if="activeAnimSubTab === 'captions'" class="flex flex-col gap-3 p-3">
-				<span class="text-zinc-400 text-[11px]">Word highlight animation style</span>
-				<div class="grid grid-cols-2 gap-1.5">
-					<button
-						v-for="hs in highlightStyles"
-						:key="hs.value"
-						class="rounded-md border px-3 py-2 text-[11px] transition-all"
-						:class="element.highlightStyle === hs.value ? 'border-primary/50 bg-primary/10 text-primary' : 'border-white/10 text-zinc-400 hover:border-white/20 hover:text-zinc-300'"
-						@click="update({ highlightStyle: hs.value })"
-					>
-						{{ hs.label }}
-					</button>
-				</div>
-			</div>
 		</div>
 		</div>
 

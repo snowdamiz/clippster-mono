@@ -44,7 +44,26 @@ function detectAspectRatio(width: number, height: number): AspectRatioId | null 
 const creatorProfile = ref<CreatorProfileWithLinks | null>(null);
 const config = ref<BrandingConfig>(emptyBrandingConfig());
 
-const isReadOnly: ComputedRef<boolean> = computed(() => creatorProfile.value !== null);
+const isReadOnly: ComputedRef<boolean> = computed(() => false);
+
+function normalizeAssetId(assetId: unknown): string | null {
+	if (assetId == null) return null;
+	const value = String(assetId).trim();
+	return value.length > 0 ? value : null;
+}
+
+function applyAssetToAllRatios(
+	target: Record<string, BrandingIntroOutroConfig | null>,
+	assetId: unknown,
+): void {
+	const normalized = normalizeAssetId(assetId);
+	if (!normalized) return;
+	for (const ratio of ASPECT_RATIOS) {
+		if (!target[ratio]) {
+			target[ratio] = { assetId: normalized };
+		}
+	}
+}
 
 function setWatermarkForRatio(ratio: AspectRatioId, watermark: BrandingWatermarkConfig | null): void {
 	if (isReadOnly.value) return;
@@ -185,6 +204,35 @@ function initFromCreatorProfile(profile: CreatorProfileWithLinks): void {
 		}
 	}
 
+	// Fallback: old intro_outro_settings format
+	if (profile.intro_outro_settings) {
+		try {
+			const legacySettings = typeof profile.intro_outro_settings === "string"
+				? JSON.parse(profile.intro_outro_settings)
+				: profile.intro_outro_settings;
+
+			for (const ratio of ASPECT_RATIOS) {
+				const ratioConfig = legacySettings?.[ratio];
+				if (!newConfig.intros[ratio] && ratioConfig?.introId) {
+					newConfig.intros[ratio] = {
+						assetId: String(ratioConfig.introId),
+					};
+				}
+				if (!newConfig.outros[ratio] && ratioConfig?.outroId) {
+					newConfig.outros[ratio] = {
+						assetId: String(ratioConfig.outroId),
+					};
+				}
+			}
+		} catch (e) {
+			console.warn("[useBrandingConfig] Failed to parse intro_outro_settings:", e);
+		}
+	}
+
+	// Final fallback: direct intro/outro ids on the profile
+	applyAssetToAllRatios(newConfig.intros, profile.intro_id);
+	applyAssetToAllRatios(newConfig.outros, profile.outro_id);
+
 	// Parse layout overlays
 	if (profile.layout_overlays) {
 		try {
@@ -251,6 +299,14 @@ function initFromSavedConfig(saved: BrandingConfig): void {
 	};
 }
 
+function detachCreatorProfile(): void {
+	creatorProfile.value = null;
+	config.value = {
+		...config.value,
+		creatorProfileId: null,
+	};
+}
+
 /**
  * Reset to empty state.
  */
@@ -266,6 +322,7 @@ export function useBrandingConfig(): {
 	setWatermarkForRatio: (ratio: AspectRatioId, watermark: BrandingWatermarkConfig | null) => void;
 	setIntroForRatio: (ratio: AspectRatioId, intro: BrandingIntroOutroConfig | null) => void;
 	setOutroForRatio: (ratio: AspectRatioId, outro: BrandingIntroOutroConfig | null) => void;
+	detachCreatorProfile: () => void;
 	getActiveWatermark: (ratio: AspectRatioId) => BrandingWatermarkConfig | null;
 	getActiveIntro: (ratio: AspectRatioId) => BrandingIntroOutroConfig | null;
 	getActiveOutro: (ratio: AspectRatioId) => BrandingIntroOutroConfig | null;
@@ -284,6 +341,7 @@ export function useBrandingConfig(): {
 		setWatermarkForRatio,
 		setIntroForRatio,
 		setOutroForRatio,
+		detachCreatorProfile,
 		getActiveWatermark,
 		getActiveIntro,
 		getActiveOutro,

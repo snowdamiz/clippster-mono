@@ -4,7 +4,25 @@ import type {
   LivestreamSegmentRecord,
   LivestreamSessionRecord,
   MonitoredStreamerRecord,
+  Project,
 } from './types';
+
+export const AUTO_CLIP_PROJECT_NAME_PREFIX = 'Auto Clip - ';
+export const MANUAL_CLIP_PROJECT_NAME_PREFIX = 'Manual Clips - ';
+
+const AUTO_CLIP_PROJECT_DESCRIPTION_PREFIX = 'Auto-detected clips from ';
+const MANUAL_CLIP_PROJECT_DESCRIPTION_PREFIX = 'Manual clips from ';
+
+export function isLiveClipsContainerProject(
+  project: Pick<Project, 'name' | 'description'>
+): boolean {
+  return (
+    project.name.startsWith(AUTO_CLIP_PROJECT_NAME_PREFIX) ||
+    project.name.startsWith(MANUAL_CLIP_PROJECT_NAME_PREFIX) ||
+    project.description?.startsWith(AUTO_CLIP_PROJECT_DESCRIPTION_PREFIX) === true ||
+    project.description?.startsWith(MANUAL_CLIP_PROJECT_DESCRIPTION_PREFIX) === true
+  );
+}
 
 function toSqlBool(value: number | boolean): number {
   if (typeof value === 'boolean') {
@@ -41,6 +59,29 @@ export async function getAutoDvrStreamers(): Promise<MonitoredStreamerRecord[]> 
 
   return await db.select<MonitoredStreamerRecord[]>(
     'SELECT * FROM monitored_streamers WHERE (user_id = ? OR user_id IS NULL) AND auto_dvr = 1 ORDER BY created_at DESC',
+    [userId]
+  );
+}
+
+/** Streamers with My Creators persistent auto-detect or record enabled. */
+export async function getPersistentLiveMonitoringStreamers(): Promise<MonitoredStreamerRecord[]> {
+  const db = await getDatabase();
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<MonitoredStreamerRecord[]>(
+      `SELECT * FROM monitored_streamers
+       WHERE user_id IS NULL
+         AND (persistent_auto_detect = 1 OR persistent_record = 1)
+       ORDER BY created_at DESC`
+    );
+  }
+
+  return await db.select<MonitoredStreamerRecord[]>(
+    `SELECT * FROM monitored_streamers
+     WHERE (user_id = ? OR user_id IS NULL)
+       AND (persistent_auto_detect = 1 OR persistent_record = 1)
+     ORDER BY created_at DESC`,
     [userId]
   );
 }
@@ -126,6 +167,14 @@ export async function updateMonitoredStreamer(
     stream_thumbnail_url: string | null;
     segment_duration_minutes: number;
     auto_dvr: number | boolean;
+    persistent_auto_detect: number | boolean;
+    persistent_record: number | boolean;
+    auto_detect_prompt_id: string | null;
+    auto_detect_prompt_content: string | null;
+    auto_detect_use_creator_layout: number | boolean;
+    auto_detect_creator_profile_id: string | null;
+    record_use_creator_layout: number | boolean;
+    record_creator_profile_id: string | null;
   }>
 ): Promise<void> {
   const db = await getDatabase();
@@ -170,6 +219,46 @@ export async function updateMonitoredStreamer(
   if (updates.auto_dvr !== undefined) {
     fields.push('auto_dvr = ?');
     values.push(toSqlBool(updates.auto_dvr));
+  }
+
+  if (updates.persistent_auto_detect !== undefined) {
+    fields.push('persistent_auto_detect = ?');
+    values.push(toSqlBool(updates.persistent_auto_detect));
+  }
+
+  if (updates.persistent_record !== undefined) {
+    fields.push('persistent_record = ?');
+    values.push(toSqlBool(updates.persistent_record));
+  }
+
+  if (updates.auto_detect_prompt_id !== undefined) {
+    fields.push('auto_detect_prompt_id = ?');
+    values.push(updates.auto_detect_prompt_id);
+  }
+
+  if (updates.auto_detect_prompt_content !== undefined) {
+    fields.push('auto_detect_prompt_content = ?');
+    values.push(updates.auto_detect_prompt_content);
+  }
+
+  if (updates.auto_detect_use_creator_layout !== undefined) {
+    fields.push('auto_detect_use_creator_layout = ?');
+    values.push(toSqlBool(updates.auto_detect_use_creator_layout));
+  }
+
+  if (updates.auto_detect_creator_profile_id !== undefined) {
+    fields.push('auto_detect_creator_profile_id = ?');
+    values.push(updates.auto_detect_creator_profile_id);
+  }
+
+  if (updates.record_use_creator_layout !== undefined) {
+    fields.push('record_use_creator_layout = ?');
+    values.push(toSqlBool(updates.record_use_creator_layout));
+  }
+
+  if (updates.record_creator_profile_id !== undefined) {
+    fields.push('record_creator_profile_id = ?');
+    values.push(updates.record_creator_profile_id);
   }
 
   if (fields.length === 0) {
@@ -499,7 +588,7 @@ export async function createLivestreamClipProject(
 
   // Step 1: Check for existing manual clip project from today with matching name pattern
   // Manual clip project names start with "Manual Clips - {displayName} Live "
-  const namePrefix = `Manual Clips - ${displayName} Live `;
+  const namePrefix = `${MANUAL_CLIP_PROJECT_NAME_PREFIX}${displayName} Live `;
   const existingManualProject = await db.select<{ id: string, name: string, created_at: number }[]>(
     userId === null
       ? `SELECT id, name, created_at FROM projects 
@@ -519,7 +608,7 @@ export async function createLivestreamClipProject(
   }
 
   // Step 2: Create a new manual clip project with "Manual Clips" prefix
-  const projectName = `Manual Clips - ${displayName} Live ${new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: true })}`;
+  const projectName = `${namePrefix}${new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: true })}`;
   const projectDescription = `Manual clips from ${platformName} livestream ${displayName} (${mintId})`;
   const projectId = await createProject(projectName, projectDescription, undefined, platformName);
   

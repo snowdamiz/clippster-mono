@@ -136,6 +136,10 @@
             <Copy class="admin-waitlist__copy-all-icon" />
             Copy All Emails
           </button>
+          <button v-if="waitlistEntries.length > 0" class="admin-waitlist__copy-all-btn" @click="exportWaitlistEmailsCsv">
+            <Download class="admin-waitlist__copy-all-icon" />
+            Export Emails CSV
+          </button>
           <span class="admin-waitlist__count">
             {{ waitlistEntries.length }} email{{ waitlistEntries.length !== 1 ? 's' : '' }}
           </span>
@@ -286,7 +290,8 @@
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
   import { formatDateTime } from '@/utils/dateTimeUtils';
-  import { UserPlus, Users, Activity, RefreshCw, Loader2, Copy, AlertTriangle, RefreshCcw } from 'lucide-vue-next';
+  import { downloadEmailsCsv } from '@/utils/downloadEmailsCsv';
+  import { UserPlus, Users, Activity, RefreshCw, Loader2, Copy, Download, AlertTriangle, RefreshCcw } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import api from '@/services/api';
 
@@ -362,6 +367,15 @@
     } catch (err) {
       console.error('Failed to copy to clipboard:', err);
     }
+  };
+
+  const exportWaitlistEmailsCsv = () => {
+    const emails = waitlistEntries.value.map((entry) => entry.email).filter(Boolean);
+    if (!emails.length) {
+      error.value = 'No emails to export';
+      return;
+    }
+    downloadEmailsCsv(emails, 'waitlist-emails.csv');
   };
 
   const inviteEntry = async (entryId: number) => {
@@ -654,6 +668,7 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
+    flex-wrap: wrap;
   }
 
   .admin-waitlist__copy-all-btn {

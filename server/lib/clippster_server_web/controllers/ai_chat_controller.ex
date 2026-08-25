@@ -6,22 +6,46 @@ defmodule ClippsterServerWeb.AIChatController do
 
   require Logger
 
+  plug :require_ai_editor_access
+
   @generation_credit_cost 10
   @refinement_credit_cost 5
+  @reference_credit_cost 2
+  @style_pack_ids ~w(sports-highlights wedding-film cinematic gaming-stream news-breakdown viral-social)
 
   # ---------------------------------------------------------------------------
-  # Analyze reference image
+  # Analyze reference video
   # ---------------------------------------------------------------------------
 
-  def analyze_reference(conn, %{"image_base64" => image_base64} = params) do
-    mime_type = Map.get(params, "mime_type", "image/jpeg")
+  def analyze_reference(conn, params) do
+    user = conn.assigns.current_user
 
-    case ReferenceAnalyzer.analyze_reference(image_base64, mime_type) do
-      {:ok, style_profile} ->
-        json(conn, %{style_profile: style_profile})
+    with {:ok, payload} <- ReferenceAnalyzer.validate_payload(params),
+         :ok <- check_credits(user.id, @reference_credit_cost),
+         {:ok, _} <- Credits.deduct_credits(user.id, @reference_credit_cost) do
+      case ReferenceAnalyzer.analyze_reference(payload) do
+        {:ok, edit_recipe} ->
+          json(conn, %{edit_recipe: edit_recipe})
+
+        {:error, reason} ->
+          Credits.add_credits(user.id, @reference_credit_cost)
+          conn |> put_status(:unprocessable_entity) |> json(%{error: reason})
+      end
+    else
+      {:error, :insufficient_credits, remaining} ->
+        conn
+        |> put_status(:payment_required)
+        |> json(%{
+          error: "Insufficient credits",
+          required: @reference_credit_cost,
+          remaining: remaining
+        })
+
+      {:error, reason} when is_binary(reason) ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: reason})
 
       {:error, reason} ->
-        conn |> put_status(:unprocessable_entity) |> json(%{error: reason})
+        conn |> put_status(:internal_server_error) |> json(%{error: inspect(reason)})
     end
   end
 
@@ -203,25 +227,7 @@ defmodule ClippsterServerWeb.AIChatController do
       # Get media from session
       media = session.media_items || []
 
-      extra_options = %{}
-
-      extra_options =
-        if intensity, do: Map.put(extra_options, "intensity", intensity), else: extra_options
-
-      extra_options =
-        if caption_style,
-          do: Map.put(extra_options, "captionStyle", caption_style),
-          else: extra_options
-
-      extra_options =
-        if session.reference_analysis,
-          do: Map.put(extra_options, "reference_analysis", session.reference_analysis),
-          else: extra_options
-
-      extra_options =
-        if session.media_analysis,
-          do: Map.put(extra_options, "media_analysis", session.media_analysis),
-          else: extra_options
+      extra_options = generation_options(session, intensity, caption_style)
 
       # Use SSE streaming
       conn =
@@ -347,7 +353,7 @@ defmodule ClippsterServerWeb.AIChatController do
                        aspect_ratio,
                        user,
                        session.composition,
-                       %{}
+                       generation_options(session)
                      ) do
                   {:ok, new_composition} ->
                     {:ok, session} = ChatSessions.save_composition(session, new_composition)
@@ -418,22 +424,51 @@ defmodule ClippsterServerWeb.AIChatController do
     with session when not is_nil(session) <- ChatSessions.get_user_session(id, user.id),
          {:ok, session} <-
            ChatSessions.save_reference_analysis(session, reference_analysis, reference_url) do
-      # Add a system message about the reference
-      summary = get_in(reference_analysis, ["summary"]) || "Reference analyzed"
+      if reference_analysis do
+        summary = get_in(reference_analysis, ["summary"]) || "Reference analyzed"
 
-      {:ok, _msg} =
-        ChatSessions.create_message(
-          session.id,
-          "system",
-          "Reference analyzed: #{summary}",
-          %{"type" => "reference_analysis", "reference_url" => reference_url}
-        )
+        {:ok, _msg} =
+          ChatSessions.create_message(
+            session.id,
+            "system",
+            "Reference analyzed: #{summary}",
+            %{"type" => "reference_analysis", "reference_url" => reference_url}
+          )
+      end
 
       session = ChatSessions.get_session_with_messages(session.id)
       json(conn, serialize_session(session))
     else
       nil ->
         conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+
+      {:error, reason} ->
+        conn |> put_status(:internal_server_error) |> json(%{error: inspect(reason)})
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Update style pack
+  # ---------------------------------------------------------------------------
+
+  def update_style_pack(conn, %{"id" => id, "style_pack" => style_pack}) do
+    user = conn.assigns.current_user
+
+    with session when not is_nil(session) <- ChatSessions.get_user_session(id, user.id),
+         :ok <- validate_style_pack(style_pack),
+         style_context <-
+           (session.style_context || %{})
+           |> Map.put("style", style_pack["id"])
+           |> Map.put("stylePack", style_pack),
+         {:ok, session} <- ChatSessions.update_session(session, %{style_context: style_context}) do
+      session = ChatSessions.get_session_with_messages(session.id)
+      json(conn, serialize_session(session))
+    else
+      nil ->
+        conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+
+      {:error, :invalid_style_pack} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "Invalid style pack"})
 
       {:error, reason} ->
         conn |> put_status(:internal_server_error) |> json(%{error: inspect(reason)})
@@ -482,6 +517,45 @@ defmodule ClippsterServerWeb.AIChatController do
   # ---------------------------------------------------------------------------
   # Private helpers
   # ---------------------------------------------------------------------------
+
+  defp require_ai_editor_access(conn, _opts) do
+    user = conn.assigns.current_user
+
+    if can_access_ai_editor?(user) do
+      conn
+    else
+      conn
+      |> put_status(:forbidden)
+      |> json(%{error: "AI Video Creator requires access on a Creator or Pro plan."})
+      |> halt()
+    end
+  end
+
+  @doc false
+  def can_access_ai_editor?(nil), do: false
+
+  def can_access_ai_editor?(user) do
+    user.is_admin || (user.ai_editor_enabled && user.subscription_tier in ["creator", "pro"])
+  end
+
+  defp validate_style_pack(%{"schemaVersion" => 1, "id" => id}) when id in @style_pack_ids,
+    do: :ok
+
+  defp validate_style_pack(_), do: {:error, :invalid_style_pack}
+
+  defp generation_options(session, intensity \\ nil, caption_style \\ nil) do
+    style_context = session.style_context || %{}
+
+    %{
+      "intensity" => intensity,
+      "captionStyle" => caption_style,
+      "style_recipe" => style_context["stylePack"],
+      "reference_analysis" => session.reference_analysis,
+      "media_analysis" => session.media_analysis
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
 
   defp validate_discovery_status(%{status: "discovery"}), do: :ok
   defp validate_discovery_status(_), do: {:error, :invalid_status}

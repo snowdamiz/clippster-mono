@@ -5,8 +5,9 @@
  * Uses pointer-event-based drag (via usePointerDrag) for intra-webview drags.
  * HTML5 DnD is kept only for OS file drops (from Finder/Explorer).
  */
-import { ref, computed, onMounted, onUnmounted, type Ref } from "vue";
-import { useEditor } from "../useEditor";
+import { ref, onMounted, onUnmounted, type Ref } from "vue";
+import { EditorCore } from "../../core";
+import { useTimelineTracks } from "./useTimelineTracks";
 import { usePointerDrag } from "../usePointerDrag";
 import { processMediaAssets } from "../../lib/media/processing";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
@@ -19,13 +20,14 @@ import {
 	buildImageElement,
 	buildEffectElement,
 } from "../../lib/timeline/element-utils";
-import { computeDropTarget } from "../../lib/timeline/drop-utils";
+import { computeDropTarget, findCompatibleTrack } from "../../lib/timeline/drop-utils";
 import { isMainTrack } from "../../lib/timeline/track-utils";
 import { getMainTrackMagnet } from "./useTimelineTools";
 import type { TrackType, DropTarget, ElementType } from "../../types/timeline";
 import type { TimelineDragData, MediaDragData, TextDragData, StickerDragData, EffectDragData, TransitionDragData } from "../../types/drag";
 import { generateUUID } from "../../utils/id";
 import { SetTransitionCommand } from "../../lib/commands/scene";
+import { isAdjacentMediaCuts } from "../../lib/timeline/transition-pairing";
 
 interface UseTimelineDragDropProps {
 	containerRef: Ref<HTMLDivElement | null>;
@@ -40,33 +42,33 @@ export function useTimelineDragDrop({
 	scrollRef,
 	zoomLevel,
 }: UseTimelineDragDropProps) {
-	const { editor, version } = useEditor();
+	const editor = EditorCore.getInstance();
 	const isDragOver = ref(false);
 	const dropTarget = ref<DropTarget | null>(null);
 	const dragElementType = ref<ElementType | null>(null);
+	const transitionDropPreview = ref<{
+		trackId: string;
+		leftElementId: string;
+		rightElementId: string;
+		junctionTime: number;
+		duration: number;
+		label: string;
+	} | null>(null);
 
 	// Pointer drag system
 	const { registerDropZone, unregisterDropZone } = usePointerDrag();
 
-	const tracks = computed(() => {
-		void version.value;
-		return editor.timeline.getTracks();
-	});
-	const currentTime = computed(() => {
-		void version.value;
-		return editor.playback.getCurrentTime();
-	});
-	const mediaAssets = computed(() => {
-		void version.value;
-		return editor.media.getAssets();
-	});
-	const activeProject = computed(() => {
-		void version.value;
-		return editor.project.getActiveOrNull();
-	});
+	// `tracks` is read frequently inside drag callbacks, so we keep it reactive
+	// (via the shared timeline subscription). Playback time, media assets and
+	// the active project are only consulted on-demand inside event handlers,
+	// so they are plain getters — no need to spend a subscription on them.
+	const { tracks } = useTimelineTracks();
+	const getCurrentTime = () => editor.playback.getCurrentTime();
+	const getMediaAssets = () => editor.media.getAssets();
+	const getActiveProject = () => editor.project.getActiveOrNull();
 
 	function getSnappedTime(time: number): number {
-		const projectFps = activeProject.value?.settings?.fps ?? 30;
+		const projectFps = getActiveProject()?.settings?.fps ?? 30;
 		return snapTimeToFrame({ time, fps: projectFps });
 	}
 
@@ -84,7 +86,7 @@ export function useTimelineDragDrop({
 			return TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
 		}
 		if (mediaId) {
-			const media = mediaAssets.value.find((m) => m.id === mediaId);
+			const media = getMediaAssets().find((m) => m.id === mediaId);
 			return media?.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
 		}
 		return TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
@@ -104,12 +106,21 @@ export function useTimelineDragDrop({
 
 		// Transitions don't use normal drop targets — just track cursor position
 		if (elType === "transition") {
+			if (data.type !== "transition") return;
 			dragElementType.value = null;
 			const sl = scrollRef?.value?.scrollLeft ?? 0;
 			const mouseX = cursor.x - rect.left + sl;
 			const timeAtCursor = Math.max(0, mouseX / (TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value));
 			const junction = findNearestJunction(timeAtCursor);
 			if (junction) {
+				transitionDropPreview.value = {
+					trackId: junction.trackId,
+					leftElementId: junction.leftElementId,
+					rightElementId: junction.rightElementId,
+					junctionTime: junction.junctionTime,
+					duration: data.duration,
+					label: data.name,
+				};
 				dropTarget.value = {
 					trackIndex: tracks.value.indexOf(tracks.value.find((t) => t.id === junction.trackId)!),
 					isNewTrack: false,
@@ -120,10 +131,12 @@ export function useTimelineDragDrop({
 				};
 			} else {
 				dropTarget.value = null;
+				transitionDropPreview.value = null;
 			}
 			return;
 		}
 
+		transitionDropPreview.value = null;
 		dragElementType.value = elType as ElementType;
 
 		const duration = getElementDuration(
@@ -140,7 +153,7 @@ export function useTimelineDragDrop({
 			mouseX,
 			mouseY,
 			tracks: tracks.value,
-			playheadTime: currentTime.value,
+			playheadTime: getCurrentTime(),
 			isExternalDrop: false,
 			elementDuration: duration,
 			pixelsPerSecond: TIMELINE_CONSTANTS.PIXELS_PER_SECOND,
@@ -155,6 +168,7 @@ export function useTimelineDragDrop({
 		isDragOver.value = false;
 		dropTarget.value = null;
 		dragElementType.value = null;
+		transitionDropPreview.value = null;
 	}
 
 	function onDrop(cursor: { x: number; y: number }, data: TimelineDragData) {
@@ -162,6 +176,7 @@ export function useTimelineDragDrop({
 		isDragOver.value = false;
 		dropTarget.value = null;
 		dragElementType.value = null;
+		transitionDropPreview.value = null;
 
 		try {
 			if (data.type === "transition") {
@@ -206,7 +221,17 @@ export function useTimelineDragDrop({
 	function executeTextDrop(target: DropTarget, dragData: TextDragData) {
 		let trackId: string;
 		if (target.isNewTrack) {
-			trackId = editor.timeline.addTrack({ type: "text", index: target.trackIndex });
+			const compatIdx = findCompatibleTrack({
+				tracks: tracks.value,
+				elementType: "text",
+				startTime: target.xPosition,
+				duration: TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,
+			});
+			if (compatIdx >= 0) {
+				trackId = tracks.value[compatIdx].id;
+			} else {
+				trackId = editor.timeline.addTrack({ type: "text", index: target.trackIndex });
+			}
 		} else {
 			const track = tracks.value[target.trackIndex];
 			if (!track) return;
@@ -227,7 +252,17 @@ export function useTimelineDragDrop({
 	function executeStickerDrop(target: DropTarget, dragData: StickerDragData) {
 		let trackId: string;
 		if (target.isNewTrack) {
-			trackId = editor.timeline.addTrack({ type: "sticker", index: target.trackIndex });
+			const compatIdx = findCompatibleTrack({
+				tracks: tracks.value,
+				elementType: "sticker",
+				startTime: target.xPosition,
+				duration: TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,
+			});
+			if (compatIdx >= 0) {
+				trackId = tracks.value[compatIdx].id;
+			} else {
+				trackId = editor.timeline.addTrack({ type: "sticker", index: target.trackIndex });
+			}
 		} else {
 			const track = tracks.value[target.trackIndex];
 			if (!track) return;
@@ -265,7 +300,17 @@ export function useTimelineDragDrop({
 
 		let trackId: string;
 		if (target.isNewTrack) {
-			trackId = editor.timeline.addTrack({ type: "effect", index: target.trackIndex });
+			const compatIdx = findCompatibleTrack({
+				tracks: tracks.value,
+				elementType: "effect",
+				startTime: target.xPosition,
+				duration: TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,
+			});
+			if (compatIdx >= 0) {
+				trackId = tracks.value[compatIdx].id;
+			} else {
+				trackId = editor.timeline.addTrack({ type: "effect", index: target.trackIndex });
+			}
 		} else {
 			const track = tracks.value[target.trackIndex];
 			if (!track) return;
@@ -319,9 +364,19 @@ export function useTimelineDragDrop({
 			for (let i = 0; i < sorted.length - 1; i++) {
 				const left = sorted[i];
 				const right = sorted[i + 1];
-				const junctionTime = left.startTime + left.duration;
-				// Only consider junctions where elements are adjacent (gap < 0.1s)
-				if (Math.abs(right.startTime - junctionTime) > 0.1) continue;
+				const outgoingEnd = left.startTime + left.duration;
+				// Transition semantics are anchored to the incoming clip start.
+				// Keeping the preview and persisted badge on the same coordinate
+				// prevents a small imported gap from making the drop jump sideways.
+				const junctionTime = right.startTime;
+				if (
+					!isAdjacentMediaCuts({
+						outgoingEnd,
+						incomingStart: right.startTime,
+					})
+				) {
+					continue;
+				}
 				const dist = Math.abs(timeAtCursor - junctionTime);
 				if (dist < bestDist && dist < SNAP_THRESHOLD) {
 					bestDist = dist;
@@ -356,22 +411,31 @@ export function useTimelineDragDrop({
 	}
 
 	function executeMediaDrop(target: DropTarget, dragData: MediaDragData) {
-		const mediaAsset = mediaAssets.value.find((m) => m.id === dragData.id);
+		const mediaAsset = getMediaAssets().find((m) => m.id === dragData.id);
 		if (!mediaAsset) return;
 
 		const trackType: TrackType = dragData.mediaType === "audio" ? "audio" : "video";
 		const trackName = dragData.mediaType === "image" ? "Image track" : undefined;
+		const duration = mediaAsset.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
 		let trackId: string;
 
 		if (target.isNewTrack) {
-			trackId = editor.timeline.addTrack({ type: trackType, index: target.trackIndex, name: trackName });
+			const compatIdx = findCompatibleTrack({
+				tracks: tracks.value,
+				elementType: dragData.mediaType,
+				startTime: target.xPosition,
+				duration,
+			});
+			if (compatIdx >= 0) {
+				trackId = tracks.value[compatIdx].id;
+			} else {
+				trackId = editor.timeline.addTrack({ type: trackType, index: target.trackIndex, name: trackName });
+			}
 		} else {
 			const track = tracks.value[target.trackIndex];
 			if (!track) return;
 			trackId = track.id;
 		}
-
-		const duration = mediaAsset.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
 
 		// Auto-ripple: push subsequent elements right on main track before inserting
 		rippleInsertOnMainTrack(trackId, target.xPosition, duration);
@@ -412,13 +476,14 @@ export function useTimelineDragDrop({
 	// ── OS file drop (HTML5 DnD — kept for external file drops from Finder) ──
 
 	async function executeFileDrop(files: File[], mouseX: number, mouseY: number) {
-		if (!activeProject.value) return;
+		const activeProject = getActiveProject();
+		if (!activeProject) return;
 
 		const processedAssets = await processMediaAssets({ files });
 
 		for (const asset of processedAssets) {
 			await editor.media.addMediaAsset({
-				projectId: activeProject.value.metadata.id,
+				projectId: activeProject.metadata.id,
 				asset,
 			});
 
@@ -434,7 +499,7 @@ export function useTimelineDragDrop({
 					mouseX,
 					mouseY,
 					tracks: currentTracks,
-					playheadTime: currentTime.value,
+					playheadTime: getCurrentTime(),
 					isExternalDrop: true,
 					elementDuration: duration,
 					pixelsPerSecond: TIMELINE_CONSTANTS.PIXELS_PER_SECOND,
@@ -509,6 +574,7 @@ export function useTimelineDragDrop({
 		isDragOver,
 		dropTarget,
 		dragElementType,
+		transitionDropPreview,
 		handleFileDrop,
 	};
 }

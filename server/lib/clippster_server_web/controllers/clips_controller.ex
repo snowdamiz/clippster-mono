@@ -3,8 +3,9 @@ defmodule ClippsterServerWeb.ClipsController do
   alias ClippsterServer.AI
   alias ClippsterServer.AI.WhisperAPI
   alias ClippsterServer.AI.OpenRouterAPI
+  alias ClippsterServer.AI.StreamerReach
   alias ClippsterServer.AI.SystemPrompt
-  alias ClippsterServer.AI.MultimodalClipDetection
+  alias ClippsterServer.AI.EnhancedClipDetection
   alias ClippsterServer.AI.PromptRulesParser
   alias ClippsterServer.Analytics
   alias ClippsterServer.ClipValidation
@@ -14,18 +15,29 @@ defmodule ClippsterServerWeb.ClipsController do
   require Logger
 
   @max_parallel_chunks 10
-  # 3 minutes per chunk for normal mode
-  @chunk_timeout_normal 180_000
-  # 5 minutes per chunk for multimodal mode
-  @chunk_timeout_multimodal 300_000
+  # 10 minutes per chunk for fallback time-split detection
+  @chunk_timeout_normal 600_000
+  # 15 minutes per chunk for enhanced video mode
+  @chunk_timeout_enhanced 900_000
+  # Enhanced VOD video chunks align with client audio chunk duration (15 min)
+  @enhanced_vod_chunk_duration_seconds 900
+  # Standard VOD transcript-only: above this duration, run parallel 15m AI passes (single full-VOD calls miss most clips)
+  @vod_force_chunking_above_minutes 15
+  # Gemini 3.1 Flash Lite supports 1M tokens — also split when heuristic approaches that limit
+  @vod_model_context_tokens 1_000_000
+  @vod_context_safety_margin_tokens 100_000
+  @vod_tokens_per_minute_estimate 700
 
   # Helper to parse numeric strings that may be integers or floats
   defp parse_numeric_string(nil), do: nil
   defp parse_numeric_string(""), do: nil
+
   defp parse_numeric_string(val) when is_binary(val) do
     # Try to parse as integer first, then as float
     case Integer.parse(val) do
-      {int_val, ""} -> int_val * 1.0
+      {int_val, ""} ->
+        int_val * 1.0
+
       _ ->
         case Float.parse(val) do
           {float_val, _} -> float_val
@@ -33,7 +45,72 @@ defmodule ClippsterServerWeb.ClipsController do
         end
     end
   end
+
   defp parse_numeric_string(val) when is_number(val), do: val * 1.0
+
+  defp parse_enhanced_param(params) do
+    case Map.get(params, "enhanced", "false") do
+      true -> true
+      "true" -> true
+      _ -> false
+    end
+  end
+
+  # Free single-clip transcription (POI generate-subtitles). Caps abuse at 30 minutes.
+  @free_single_clip_max_seconds 30 * 60
+
+  defp parse_free_single_clip_param(params) do
+    case Map.get(params, "free_single_clip", "false") do
+      true -> true
+      "true" -> true
+      "1" -> true
+      1 -> true
+      _ -> false
+    end
+  end
+
+  defp audio_duration_seconds_from_params(params) when is_map(params) do
+    case Map.get(params, "duration") do
+      nil -> nil
+      val ->
+        case Float.parse(to_string(val)) do
+          {seconds, _} -> seconds
+          :error -> nil
+        end
+    end
+  end
+
+  defp free_single_clip_total_duration_seconds(params) when is_map(params) do
+    case Map.get(params, "free_single_clip_total_duration") do
+      nil -> nil
+      val ->
+        case Float.parse(to_string(val)) do
+          {seconds, _} -> seconds
+          :error -> nil
+        end
+    end
+  end
+
+  defp parse_video_chunk_uploads(params) do
+    params
+    |> Enum.reduce(%{}, fn
+      {"video_chunk_" <> index_str, %Plug.Upload{} = upload}, acc ->
+        case Integer.parse(index_str) do
+          {index, ""} -> Map.put(acc, index, upload)
+          _ -> acc
+        end
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp read_upload_base64(%Plug.Upload{path: path}) do
+    case File.read(path) do
+      {:ok, bytes} -> {:ok, Base.encode64(bytes)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   def detect_chunked(
         conn,
@@ -73,11 +150,14 @@ defmodule ClippsterServerWeb.ClipsController do
                   throw({:error, "chunks must be valid JSON"})
               end
 
-            # Check for multimodal mode
-            multimodal_raw = Map.get(params, "multimodal")
-            IO.puts("[ClipsController] Raw multimodal param: #{inspect(multimodal_raw)}")
-            multimodal = multimodal_raw == "true"
-            IO.puts("[ClipsController] Multimodal mode enabled: #{multimodal}")
+            enhanced = parse_enhanced_param(params)
+            video_chunk_uploads = if enhanced, do: parse_video_chunk_uploads(params), else: %{}
+
+            IO.puts("[ClipsController] Enhanced model: #{enhanced}")
+
+            if enhanced and map_size(video_chunk_uploads) == 0 do
+              throw({:error, "Enhanced detection requires video chunks (video_chunk_N uploads)"})
+            end
 
             # Extract optional time range parameters
             start_time = parse_numeric_string(Map.get(params, "start_time")) || 0.0
@@ -172,11 +252,11 @@ defmodule ClippsterServerWeb.ClipsController do
                 {:ok, %{credits: 0.0, job_id: nil, credit_source: :unlimited}}
               else
                 # Deduct credits and create job record for regular users
-                # Apply 2x multiplier for multimodal mode
+                # Apply 2x multiplier for enhanced mode
                 case deduct_credits_and_create_job(user_id, duration_hours, is_first_run,
                        project_id: project_id,
                        organization_id: organization_id,
-                       multimodal: multimodal
+                       enhanced: enhanced
                      ) do
                   {:ok, result} ->
                     {:ok, result}
@@ -267,7 +347,9 @@ defmodule ClippsterServerWeb.ClipsController do
                   credits,
                   is_admin,
                   job_id,
-                  multimodal
+                  enhanced,
+                  video_chunk_uploads,
+                  parse_streamer_metadata(params)
                 )
             end
         end
@@ -296,7 +378,9 @@ defmodule ClippsterServerWeb.ClipsController do
          credits_deducted,
          is_admin,
          job_id,
-         multimodal
+         enhanced,
+         video_chunk_uploads,
+         streamer_metadata
        ) do
     operation = fn ->
       execute_chunked_clip_detection(
@@ -305,7 +389,9 @@ defmodule ClippsterServerWeb.ClipsController do
         chunks_metadata,
         processing_mode,
         user_id,
-        multimodal
+        enhanced,
+        video_chunk_uploads,
+        streamer_metadata
       )
     end
 
@@ -378,10 +464,12 @@ defmodule ClippsterServerWeb.ClipsController do
          chunks_metadata,
          processing_mode,
          user_id,
-         multimodal
+         enhanced,
+         video_chunk_uploads,
+         streamer_metadata
        ) do
     # Broadcast initial progress
-    mode_label = if multimodal, do: "multimodal", else: "chunked"
+    mode_label = if enhanced, do: "enhanced", else: "chunked"
 
     ProgressChannel.broadcast_progress(
       project_id,
@@ -429,75 +517,115 @@ defmodule ClippsterServerWeb.ClipsController do
 
     reconstructed_transcript = reconstruct_timeline_from_chunks(sorted_chunks)
 
-    # Process chunks with AI - either parallel normal mode or parallel multimodal mode
-    # Use news + trends enriched system prompt for better context awareness
-    system_prompt = SystemPrompt.get_with_full_context()
-    total_chunks = length(sorted_chunks)
+    full_enhanced_transcript = process_whisper_response_enhanced(reconstructed_transcript)
+    ai_transcript = process_whisper_response_for_ai(full_enhanced_transcript)
+
+    system_prompt =
+      if enhanced do
+        SystemPrompt.get_with_enhanced_detection_context(
+          user_prompt,
+          ai_transcript,
+          streamer_metadata
+        )
+      else
+        SystemPrompt.get_with_detection_context(
+          user_prompt,
+          ai_transcript,
+          streamer_metadata
+        )
+      end
+
+    IO.puts(
+      "[ClipsController] Reconstructed #{length(sorted_chunks)} transcription chunks into a single #{Float.round((ai_transcript["duration"] || 0) / 60, 1)} min timeline for AI detection"
+    )
+
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "analyzing",
+      35,
+      if(enhanced,
+        do: "AI watching video and analyzing transcript...",
+        else: "Analyzing full transcript for clip-worthy moments..."
+      )
+    )
 
     {all_clips, total_usage_tokens} =
-      if multimodal do
-        # Multimodal mode: Each chunk processed by 3 models + decider, all chunks in parallel
-        IO.puts("[ClipsController] Starting MULTIMODAL detection with #{total_chunks} chunks...")
+      if enhanced do
+        total_chunks = length(sorted_chunks)
+
+        IO.puts("[ClipsController] Starting ENHANCED detection with #{total_chunks} chunks...")
 
         ProgressChannel.broadcast_progress(
           project_id,
           "analyzing",
           35,
-          "Starting multimodal detection (3 AI models per chunk)..."
+          "Starting enhanced detection (video + transcript)..."
         )
 
-        process_chunks_parallel_multimodal(
+        process_chunks_parallel_enhanced(
           sorted_chunks,
+          video_chunk_uploads,
           system_prompt,
           user_prompt,
           project_id,
           user_id
         )
       else
-        # Normal mode: All chunks processed in parallel by single model
-        IO.puts("[ClipsController] Starting PARALLEL detection with #{total_chunks} chunks...")
-
-        ProgressChannel.broadcast_progress(
-          project_id,
-          "analyzing",
-          35,
-          "Processing #{total_chunks} chunks in parallel..."
-        )
-
-        process_chunks_parallel_normal(
-          sorted_chunks,
-          system_prompt,
-          user_prompt,
-          project_id,
-          user_id
-        )
+        run_vod_clip_detection(ai_transcript, system_prompt, user_prompt, project_id, user_id)
       end
 
     IO.puts("[ClipsController] All chunks processed. Total clips found: #{length(all_clips)}")
     IO.puts("[ClipsController] Total AI tokens used: #{total_usage_tokens}")
 
-    # Merge overlapping clips from adjacent chunks (due to chunk overlap)
-    IO.puts("[ClipsController] Merging overlapping clips from chunk boundaries...")
-    ProgressChannel.broadcast_progress(project_id, "merging", 92, "Merging overlapping clips...")
-    merged_clips = merge_overlapping_clips(all_clips)
+    merged_clips =
+      if enhanced or used_time_split_detection?(ai_transcript) do
+        IO.puts("[ClipsController] Merging overlapping clips from chunk boundaries...")
 
-    IO.puts(
-      "[ClipsController] After merge: #{length(merged_clips)} clips (was #{length(all_clips)})"
-    )
+        ProgressChannel.broadcast_progress(
+          project_id,
+          "merging",
+          92,
+          "Merging overlapping clips..."
+        )
+
+        merge_overlapping_clips(all_clips)
+      else
+        all_clips
+      end
+
+    if merged_clips != all_clips do
+      IO.puts(
+        "[ClipsController] After merge: #{length(merged_clips)} clips (was #{length(all_clips)})"
+      )
+    end
 
     # Advanced deduplication - catches 2-3 second variations and content duplicates
     IO.puts("[ClipsController] Running advanced duplicate detection...")
-    ProgressChannel.broadcast_progress(project_id, "deduplicating", 93, "Removing duplicate clips...")
+
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "deduplicating",
+      93,
+      "Removing duplicate clips..."
+    )
+
     deduplicated_clips = deduplicate_clips_advanced(merged_clips)
 
     # Quality filtering - remove clips below minimum virality threshold
     IO.puts("[ClipsController] Filtering clips by quality threshold...")
-    ProgressChannel.broadcast_progress(project_id, "filtering", 94, "Filtering low-quality clips...")
+
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "filtering",
+      94,
+      "Filtering low-quality clips..."
+    )
+
     quality_filtered_clips = filter_by_minimum_virality(deduplicated_clips)
 
     IO.puts(
       "[ClipsController] After deduplication and quality filtering: #{length(quality_filtered_clips)} clips " <>
-      "(removed #{length(merged_clips) - length(quality_filtered_clips)} clips)"
+        "(removed #{length(merged_clips) - length(quality_filtered_clips)} clips)"
     )
 
     # Validation step - using the filtered clips and the reconstructed full transcript
@@ -511,36 +639,17 @@ defmodule ClippsterServerWeb.ClipsController do
     )
 
     # Validate all clips against the reconstructed transcript
-    case ClipValidation.validate_and_correct_clips(quality_filtered_clips, reconstructed_transcript, true) do
+    case ClipValidation.validate_and_correct_clips(
+           quality_filtered_clips,
+           reconstructed_transcript,
+           true
+         ) do
       {:ok, validation_result} ->
         IO.puts("[ClipsController] Enhanced validation completed")
         IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
 
-        # Apply minimum duration filtering if specified in user prompt
         final_clips =
-          case PromptRulesParser.parse_minimum_duration(user_prompt) do
-            nil ->
-              # No minimum duration rule found, use all validated clips
-              validation_result.validatedClips
-
-            min_duration ->
-              # Filter clips by minimum duration
-              IO.puts("[ClipsController] Applying minimum duration filter: #{min_duration}s")
-
-              filtered =
-                ClipValidation.filter_by_minimum_duration(
-                  validation_result.validatedClips,
-                  min_duration
-                )
-
-              removed_count = length(validation_result.validatedClips) - length(filtered)
-
-              if removed_count > 0 do
-                IO.puts("[ClipsController] Removed #{removed_count} clips below minimum duration")
-              end
-
-              filtered
-          end
+          apply_duration_and_shape_policy(validation_result.validatedClips, user_prompt)
 
         # Prepare final response
         total_processed = length(successful_chunks) + length(failed_chunks)
@@ -555,7 +664,7 @@ defmodule ClippsterServerWeb.ClipsController do
         {:ok,
          %{
            success: true,
-           clips: %{"clips" => final_clips},
+           clips: final_clips,
            transcript: reconstructed_transcript,
            processing_info: %{
              used_chunked_processing: true,
@@ -587,7 +696,7 @@ defmodule ClippsterServerWeb.ClipsController do
         {:ok,
          %{
            success: true,
-           clips: %{"clips" => all_clips},
+           clips: all_clips,
            transcript: reconstructed_transcript,
            processing_info: %{
              used_chunked_processing: true,
@@ -603,6 +712,162 @@ defmodule ClippsterServerWeb.ClipsController do
            }
          }}
     end
+  end
+
+  defp run_vod_clip_detection(ai_transcript, system_prompt, user_prompt, project_id, user_id) do
+    if vod_uses_parallel_transcript_chunks?(ai_transcript) do
+      run_vod_clip_detection_chunked(
+        ai_transcript,
+        system_prompt,
+        user_prompt,
+        project_id,
+        user_id
+      )
+    else
+      run_vod_clip_detection_single(
+        ai_transcript,
+        system_prompt,
+        user_prompt,
+        project_id,
+        user_id
+      )
+    end
+  end
+
+  defp vod_uses_parallel_transcript_chunks?(ai_transcript) do
+    transcript_exceeds_context_limit?(ai_transcript) or
+      vod_duration_minutes(ai_transcript) > @vod_force_chunking_above_minutes
+  end
+
+  defp vod_duration_minutes(ai_transcript) do
+    (ai_transcript["duration"] || 0) / 60.0
+  end
+
+  defp run_vod_clip_detection_result(
+         ai_transcript,
+         system_prompt,
+         user_prompt,
+         project_id,
+         user_id
+       ) do
+    chunked? = vod_uses_parallel_transcript_chunks?(ai_transcript)
+
+    {clips, total_tokens} =
+      run_vod_clip_detection(ai_transcript, system_prompt, user_prompt, project_id, user_id)
+
+    clips =
+      if chunked? do
+        clips
+        |> merge_overlapping_clips()
+        |> deduplicate_clips_advanced()
+      else
+        clips
+      end
+
+    {:ok, %{"clips" => clips}, %{"total_tokens" => total_tokens}}
+  end
+
+  defp run_vod_clip_detection_single(
+         ai_transcript,
+         system_prompt,
+         user_prompt,
+         project_id,
+         user_id
+       ) do
+    duration_minutes = Float.round((ai_transcript["duration"] || 0) / 60, 1)
+
+    IO.puts(
+      "[ClipsController] Running single-pass detection on full #{duration_minutes} min transcript"
+    )
+
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "analyzing",
+      50,
+      "Analyzing full #{duration_minutes} min transcript..."
+    )
+
+    case OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt, project_id) do
+      {:ok, ai_response, usage} ->
+        clips = ai_response["clips"] || []
+        log_openrouter_clip_usage(user_id, project_id, usage, "clip_generation")
+        {clips, Map.get(usage, "total_tokens", 0)}
+
+      {:error, reason} ->
+        raise "AI clip detection failed: #{inspect(reason)}"
+    end
+  end
+
+  defp run_vod_clip_detection_chunked(
+         ai_transcript,
+         system_prompt,
+         user_prompt,
+         project_id,
+         user_id
+       ) do
+    chunk_secs = @enhanced_vod_chunk_duration_seconds
+
+    transcript_chunks =
+      split_transcript_into_chunks(ai_transcript, chunk_secs)
+
+    total_chunks = length(transcript_chunks)
+
+    IO.puts(
+      "[ClipsController] Parallel transcript clip detection: #{total_chunks} chunk(s) of ~#{Float.round(chunk_secs / 60, 0)} min (duration #{Float.round(vod_duration_minutes(ai_transcript), 1)} min, or context limit)"
+    )
+
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "analyzing",
+      50,
+      "Analyzing #{total_chunks} transcript sections (~#{trunc(chunk_secs / 60)} min each)..."
+    )
+
+    whisper_style_chunks =
+      Enum.map(transcript_chunks, fn chunk ->
+        %{adjusted_whisper_response: chunk, start_time: chunk["chunk_start_time"] || 0}
+      end)
+
+    process_chunks_parallel_normal(
+      whisper_style_chunks,
+      system_prompt,
+      user_prompt,
+      project_id,
+      user_id
+    )
+  end
+
+  defp transcript_exceeds_context_limit?(ai_transcript) do
+    estimate_transcript_tokens(ai_transcript) >
+      @vod_model_context_tokens - @vod_context_safety_margin_tokens
+  end
+
+  defp used_time_split_detection?(ai_transcript) do
+    vod_uses_parallel_transcript_chunks?(ai_transcript)
+  end
+
+  defp estimate_transcript_tokens(ai_transcript) do
+    duration_minutes = (ai_transcript["duration"] || 0) / 60
+    segment_count = ai_transcript["segments"] |> List.wrap() |> length()
+
+    base_tokens = trunc(duration_minutes * @vod_tokens_per_minute_estimate)
+    segment_overhead = segment_count * 50
+    prompt_overhead = 10_000
+
+    base_tokens + segment_overhead + prompt_overhead
+  end
+
+  defp log_openrouter_clip_usage(user_id, project_id, usage, operation_type) do
+    AI.log_usage(%{
+      user_id: user_id,
+      project_id: project_id,
+      provider: "openrouter",
+      model: Map.get(usage, "model") || OpenRouterAPI.clip_detection_model(),
+      input_tokens: Map.get(usage, "prompt_tokens"),
+      output_tokens: Map.get(usage, "completion_tokens"),
+      total_tokens: Map.get(usage, "total_tokens"),
+      operation_type: operation_type
+    })
   end
 
   # Process all chunks in parallel using a single model (normal mode)
@@ -626,8 +891,11 @@ defmodule ClippsterServerWeb.ClipsController do
             "[ClipsController] Processing chunk #{index + 1}/#{total_chunks} in parallel..."
           )
 
-          # Prepare optimized transcript for this chunk
-          ai_transcript = process_whisper_response_for_ai(chunk.adjusted_whisper_response)
+          # Prepare optimized transcript for this chunk (same enhancement as full-VOD /detect path)
+          full_enhanced =
+            process_whisper_response_enhanced(chunk.adjusted_whisper_response)
+
+          ai_transcript = process_whisper_response_for_ai(full_enhanced)
 
           # Call AI for this chunk
           case OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt, project_id) do
@@ -635,18 +903,7 @@ defmodule ClippsterServerWeb.ClipsController do
               clips = ai_response["clips"] || []
               Logger.info("[ClipsController] Chunk #{index + 1}: Found #{length(clips)} clips")
 
-              # Log usage for this chunk
-              AI.log_usage(%{
-                user_id: user_id,
-                project_id: project_id,
-                provider: "openrouter",
-                model:
-                  Map.get(usage, "model") || System.get_env("OPENROUTER_MODEL", "z-ai/glm-4.7"),
-                input_tokens: Map.get(usage, "prompt_tokens"),
-                output_tokens: Map.get(usage, "completion_tokens"),
-                total_tokens: Map.get(usage, "total_tokens"),
-                operation_type: "clip_generation_chunk"
-              })
+              log_openrouter_clip_usage(user_id, project_id, usage, "clip_generation_chunk")
 
               {:ok, clips, Map.get(usage, "total_tokens", 0)}
 
@@ -691,9 +948,10 @@ defmodule ClippsterServerWeb.ClipsController do
     results
   end
 
-  # Process all chunks in parallel using multimodal detection (3 models + decider per chunk)
-  defp process_chunks_parallel_multimodal(
+  # Process all chunks in parallel using enhanced video + transcript detection
+  defp process_chunks_parallel_enhanced(
          sorted_chunks,
+         video_chunk_uploads,
          system_prompt,
          user_prompt,
          project_id,
@@ -702,11 +960,7 @@ defmodule ClippsterServerWeb.ClipsController do
     total_chunks = length(sorted_chunks)
 
     Logger.info(
-      "[ClipsController] Starting parallel MULTIMODAL processing of #{total_chunks} chunks"
-    )
-
-    Logger.info(
-      "[ClipsController] Each chunk will be processed by #{length(MultimodalClipDetection.get_detection_models())} models + decider"
+      "[ClipsController] Starting parallel ENHANCED processing of #{total_chunks} chunks"
     )
 
     results =
@@ -715,70 +969,75 @@ defmodule ClippsterServerWeb.ClipsController do
       |> Task.async_stream(
         fn {chunk, index} ->
           Logger.info(
-            "[ClipsController] Multimodal processing chunk #{index + 1}/#{total_chunks}..."
+            "[ClipsController] Enhanced processing chunk #{index + 1}/#{total_chunks}..."
           )
 
-          # Prepare optimized transcript for this chunk
-          ai_transcript = process_whisper_response_for_ai(chunk.adjusted_whisper_response)
+          chunk_start = Map.get(chunk, :start_time, 0)
+          chunk_end = Map.get(chunk, :end_time, chunk_start)
 
-          # Use multimodal detection for this chunk
-          case MultimodalClipDetection.process_chunk_multimodal(
-                 ai_transcript,
-                 system_prompt,
-                 user_prompt,
-                 project_id,
-                 index,
-                 total_chunks
-               ) do
-            {:ok, clips, usage_info} ->
-              Logger.info(
-                "[ClipsController] Multimodal chunk #{index + 1}: Found #{length(clips)} clips"
-              )
+          full_enhanced =
+            process_whisper_response_enhanced(chunk.adjusted_whisper_response)
 
-              # Log usage for each individual model used in multimodal detection
-              per_model_usage = Map.get(usage_info, "per_model_usage", [])
+          ai_transcript = process_whisper_response_for_ai(full_enhanced)
 
-              Enum.each(per_model_usage, fn model_usage ->
-                AI.log_usage(%{
-                  user_id: user_id,
-                  project_id: project_id,
-                  provider: "openrouter",
-                  model: Map.get(model_usage, "model", "unknown"),
-                  input_tokens: Map.get(model_usage, "input_tokens", 0),
-                  output_tokens: Map.get(model_usage, "output_tokens", 0),
-                  total_tokens: Map.get(model_usage, "total_tokens", 0),
-                  operation_type: "clip_generation_multimodal_detector"
-                })
-              end)
-
-              # Log usage for the decider model
-              decider_model = Map.get(usage_info, "decider_model")
-
-              if decider_model do
-                AI.log_usage(%{
-                  user_id: user_id,
-                  project_id: project_id,
-                  provider: "openrouter",
-                  model: decider_model,
-                  input_tokens: Map.get(usage_info, "decider_input_tokens", 0),
-                  output_tokens: Map.get(usage_info, "decider_output_tokens", 0),
-                  total_tokens: Map.get(usage_info, "decider_tokens", 0),
-                  operation_type: "clip_generation_multimodal_decider"
-                })
-              end
-
-              {:ok, clips, Map.get(usage_info, "total_tokens", 0)}
-
-            {:error, reason} ->
+          case Map.get(video_chunk_uploads, index) do
+            nil ->
               Logger.warning(
-                "[ClipsController] Multimodal error on chunk #{index + 1}: #{inspect(reason)}"
+                "[ClipsController] Missing video upload for enhanced chunk #{index + 1}"
               )
 
-              {:error, reason}
+              {:error, "missing video chunk #{index}"}
+
+            upload ->
+              case read_upload_base64(upload) do
+                {:ok, video_base64} ->
+                  case EnhancedClipDetection.process_chunk_enhanced(
+                         ai_transcript,
+                         video_base64,
+                         system_prompt,
+                         user_prompt,
+                         project_id,
+                         index,
+                         total_chunks,
+                         chunk_start,
+                         chunk_end
+                       ) do
+                    {:ok, ai_response, usage} ->
+                      clips_list =
+                        case ai_response do
+                          %{"clips" => clips} when is_list(clips) -> clips
+                          clips when is_list(clips) -> clips
+                          _ -> []
+                        end
+
+                      Logger.info(
+                        "[ClipsController] Enhanced chunk #{index + 1}: Found #{length(clips_list)} clips"
+                      )
+
+                      log_openrouter_clip_usage(
+                        user_id,
+                        project_id,
+                        usage,
+                        "clip_generation_enhanced"
+                      )
+
+                      {:ok, clips_list, Map.get(usage, "total_tokens", 0)}
+
+                    {:error, reason} ->
+                      Logger.warning(
+                        "[ClipsController] Enhanced error on chunk #{index + 1}: #{inspect(reason)}"
+                      )
+
+                      {:error, reason}
+                  end
+
+                {:error, reason} ->
+                  {:error, "failed to read video chunk: #{inspect(reason)}"}
+              end
           end
         end,
-        max_concurrency: @max_parallel_chunks,
-        timeout: @chunk_timeout_multimodal,
+        max_concurrency: min(4, @max_parallel_chunks),
+        timeout: @chunk_timeout_enhanced,
         on_timeout: :kill_task
       )
       |> Enum.reduce({[], 0}, fn result, {acc_clips, acc_tokens} ->
@@ -790,24 +1049,23 @@ defmodule ClippsterServerWeb.ClipsController do
             {acc_clips, acc_tokens}
 
           {:exit, :timeout} ->
-            Logger.warning("[ClipsController] Multimodal chunk processing timed out")
+            Logger.warning("[ClipsController] Enhanced chunk processing timed out")
             {acc_clips, acc_tokens}
 
           {:exit, reason} ->
             Logger.warning(
-              "[ClipsController] Multimodal chunk processing exited: #{inspect(reason)}"
+              "[ClipsController] Enhanced chunk processing exited: #{inspect(reason)}"
             )
 
             {acc_clips, acc_tokens}
         end
       end)
 
-    # Update progress after parallel processing completes
     ProgressChannel.broadcast_progress(
       project_id,
       "analyzing",
       90,
-      "Multimodal processing complete. Aggregating results..."
+      "Enhanced processing complete. Aggregating results..."
     )
 
     results
@@ -912,9 +1170,9 @@ defmodule ClippsterServerWeb.ClipsController do
     end
   end
 
-  # Process transcript chunks in parallel with multimodal detection
-  defp process_transcript_chunks_multimodal(
+  defp process_transcript_chunks_enhanced(
          transcript_chunks,
+         video_chunk_uploads,
          system_prompt,
          user_prompt,
          project_id,
@@ -923,74 +1181,61 @@ defmodule ClippsterServerWeb.ClipsController do
     total_chunks = length(transcript_chunks)
 
     Logger.info(
-      "[ClipsController] Starting parallel MULTIMODAL processing of #{total_chunks} transcript chunks"
+      "[ClipsController] Starting parallel ENHANCED processing of #{total_chunks} transcript chunks"
     )
 
     transcript_chunks
     |> Enum.with_index()
     |> Task.async_stream(
       fn {chunk_transcript, index} ->
-        Logger.info(
-          "[ClipsController] Multimodal processing transcript chunk #{index + 1}/#{total_chunks}..."
-        )
+        chunk_start = Map.get(chunk_transcript, "chunk_start_time", 0)
+        chunk_end = Map.get(chunk_transcript, "chunk_end_time", chunk_start)
 
-        case MultimodalClipDetection.process_chunk_multimodal(
-               chunk_transcript,
-               system_prompt,
-               user_prompt,
-               project_id,
-               index,
-               total_chunks
-             ) do
-          {:ok, clips, usage_info} ->
-            Logger.info(
-              "[ClipsController] Multimodal chunk #{index + 1}: Found #{length(clips)} clips"
-            )
+        case Map.get(video_chunk_uploads, index) do
+          nil ->
+            {:error, "missing video chunk #{index}"}
 
-            # Log usage for each individual model used in multimodal detection
-            per_model_usage = Map.get(usage_info, "per_model_usage", [])
+          upload ->
+            case read_upload_base64(upload) do
+              {:ok, video_base64} ->
+                case EnhancedClipDetection.process_chunk_enhanced(
+                       chunk_transcript,
+                       video_base64,
+                       system_prompt,
+                       user_prompt,
+                       project_id,
+                       index,
+                       total_chunks,
+                       chunk_start,
+                       chunk_end
+                     ) do
+                  {:ok, ai_response, usage} ->
+                    clips_list =
+                      case ai_response do
+                        %{"clips" => clips} when is_list(clips) -> clips
+                        _ -> []
+                      end
 
-            Enum.each(per_model_usage, fn model_usage ->
-              AI.log_usage(%{
-                user_id: user_id,
-                project_id: project_id,
-                provider: "openrouter",
-                model: Map.get(model_usage, "model", "unknown"),
-                input_tokens: Map.get(model_usage, "input_tokens", 0),
-                output_tokens: Map.get(model_usage, "output_tokens", 0),
-                total_tokens: Map.get(model_usage, "total_tokens", 0),
-                operation_type: "clip_generation_multimodal_detector"
-              })
-            end)
+                    log_openrouter_clip_usage(
+                      user_id,
+                      project_id,
+                      usage,
+                      "clip_generation_enhanced"
+                    )
 
-            # Log usage for the decider model
-            decider_model = Map.get(usage_info, "decider_model")
+                    {:ok, clips_list, Map.get(usage, "total_tokens", 0)}
 
-            if decider_model do
-              AI.log_usage(%{
-                user_id: user_id,
-                project_id: project_id,
-                provider: "openrouter",
-                model: decider_model,
-                input_tokens: Map.get(usage_info, "decider_input_tokens", 0),
-                output_tokens: Map.get(usage_info, "decider_output_tokens", 0),
-                total_tokens: Map.get(usage_info, "decider_tokens", 0),
-                operation_type: "clip_generation_multimodal_decider"
-              })
+                  {:error, reason} ->
+                    {:error, reason}
+                end
+
+              {:error, reason} ->
+                {:error, reason}
             end
-
-            {:ok, clips, Map.get(usage_info, "total_tokens", 0)}
-
-          {:error, reason} ->
-            Logger.warning(
-              "[ClipsController] Multimodal error on transcript chunk #{index + 1}: #{inspect(reason)}"
-            )
-
-            {:error, reason}
         end
       end,
-      max_concurrency: @max_parallel_chunks,
-      timeout: @chunk_timeout_multimodal,
+      max_concurrency: min(4, @max_parallel_chunks),
+      timeout: @chunk_timeout_enhanced,
       on_timeout: :kill_task
     )
     |> Enum.reduce({[], 0}, fn result, {acc_clips, acc_tokens} ->
@@ -1002,14 +1247,9 @@ defmodule ClippsterServerWeb.ClipsController do
           {acc_clips, acc_tokens}
 
         {:exit, :timeout} ->
-          Logger.warning("[ClipsController] Transcript chunk processing timed out")
           {acc_clips, acc_tokens}
 
-        {:exit, reason} ->
-          Logger.warning(
-            "[ClipsController] Transcript chunk processing exited: #{inspect(reason)}"
-          )
-
+        {:exit, _reason} ->
           {acc_clips, acc_tokens}
       end
     end)
@@ -1024,47 +1264,102 @@ defmodule ClippsterServerWeb.ClipsController do
           audio_upload = params["audio"]
 
           duration_hours = calculate_audio_duration_hours(params)
+          duration_seconds = audio_duration_seconds_from_params(params)
+          total_clip_seconds = free_single_clip_total_duration_seconds(params)
+          organization_id = Map.get(params, "organization_id") |> parse_org_id()
+          enhanced = parse_enhanced_param(params)
+          free_single_clip = parse_free_single_clip_param(params)
+
+          # Require the full clip duration (not just this chunk) to be within the free cap.
+          free_single_clip_eligible =
+            free_single_clip and
+              is_number(duration_seconds) and
+              duration_seconds > 0 and
+              duration_seconds <= @free_single_clip_max_seconds and
+              is_number(total_clip_seconds) and
+              total_clip_seconds > 0 and
+              total_clip_seconds <= @free_single_clip_max_seconds
 
           # Deduct credits and create job for tracking/refunds
           credit_result =
-            if is_admin do
-              {:ok, %{credits: 0.0, job_id: nil}}
-            else
-              case deduct_credits_for_transcription(user_id, duration_hours) do
-                {:ok, credits} ->
-                  # Create job record for refund tracking
-                  case Credits.create_processing_job(user_id, credits, duration_hours,
-                         project_id: project_id,
-                         job_type: "transcription"
-                       ) do
-                    {:ok, job} ->
-                      IO.puts(
-                        "[ClipsController] Created transcription job #{job.id} for tracking (#{Float.round(credits, 3)} credits)"
-                      )
+            cond do
+              is_admin ->
+                {:ok, %{credits: 0.0, job_id: nil, credit_source: :unlimited}}
 
-                      {:ok, %{credits: credits, job_id: job.id}}
+              free_single_clip and not free_single_clip_eligible ->
+                {:halt,
+                 conn
+                 |> put_status(400)
+                 |> json(%{
+                   success: false,
+                   error: "Free single-clip transcription is limited to 30 minutes",
+                   details:
+                     "This clip is too long for free transcription. Use project transcription instead."
+                 })}
 
-                    {:error, _} ->
-                      {:ok, %{credits: credits, job_id: nil}}
-                  end
+              free_single_clip_eligible ->
+                IO.puts(
+                  "[ClipsController] Free single-clip transcription (#{Float.round(duration_seconds, 1)}s) — skipping credit deduction"
+                )
 
-                {:error, :insufficient_credits, remaining, needed} ->
-                  {:halt,
-                   conn
-                   |> put_status(402)
-                   |> json(%{
-                     success: false,
-                     error: "Insufficient credits",
-                     details:
-                       "Need #{Float.round(needed, 3)} credits, have #{Float.round(remaining, 3)}"
-                   })}
+                {:ok, %{credits: 0.0, job_id: nil, credit_source: :free_single_clip}}
 
-                {:error, _reason, _} ->
-                  {:halt,
-                   conn
-                   |> put_status(500)
-                   |> json(%{success: false, error: "Credit deduction failed"})}
-              end
+              true ->
+                case deduct_credits_for_transcription(
+                       user_id,
+                       duration_hours,
+                       organization_id,
+                       enhanced
+                     ) do
+                  {:ok, credits, credit_source} ->
+                    # Create job record for refund tracking
+                    job_opts = [
+                      project_id: project_id,
+                      job_type: "transcription"
+                    ]
+
+                    job_opts =
+                      if credit_source == :organization and organization_id,
+                        do: [{:organization_id, organization_id} | job_opts],
+                        else: job_opts
+
+                    case Credits.create_processing_job(user_id, credits, duration_hours, job_opts) do
+                      {:ok, job} ->
+                        IO.puts(
+                          "[ClipsController] Created transcription job #{job.id} for tracking (#{Float.round(credits, 3)} credits from #{credit_source})"
+                        )
+
+                        {:ok, %{credits: credits, job_id: job.id, credit_source: credit_source}}
+
+                      {:error, _} ->
+                        {:ok, %{credits: credits, job_id: nil, credit_source: credit_source}}
+                    end
+
+                  {:error, :insufficient_credits, remaining, needed} ->
+                    {:halt,
+                     conn
+                     |> put_status(402)
+                     |> json(%{
+                       success: false,
+                       error: "Insufficient credits",
+                       details:
+                         "Need #{Float.round(needed, 3)} credits, have #{Float.round(remaining, 3)}",
+                       credits_required: needed,
+                       credits_remaining: remaining
+                     })}
+
+                  {:error, :not_a_member, details} ->
+                    {:halt,
+                     conn
+                     |> put_status(403)
+                     |> json(%{success: false, error: "Not authorized", details: details})}
+
+                  {:error, _reason, _} ->
+                    {:halt,
+                     conn
+                     |> put_status(500)
+                     |> json(%{success: false, error: "Credit deduction failed"})}
+                end
             end
 
           case credit_result do
@@ -1148,18 +1443,16 @@ defmodule ClippsterServerWeb.ClipsController do
 
             is_first_run = not using_cached_transcript and Map.has_key?(params, "audio")
 
-            # Check for multimodal mode
-            multimodal_raw = Map.get(params, "multimodal")
-
-            IO.puts(
-              "[ClipsController] Raw multimodal param in detect: #{inspect(multimodal_raw)}"
-            )
-
-            multimodal = multimodal_raw == "true"
+            enhanced = parse_enhanced_param(params)
+            video_chunk_uploads = if enhanced, do: parse_video_chunk_uploads(params), else: %{}
 
             IO.puts("[ClipsController] Using cached transcript: #{using_cached_transcript}")
             IO.puts("[ClipsController] First run: #{is_first_run}")
-            IO.puts("[ClipsController] Multimodal mode enabled: #{multimodal}")
+            IO.puts("[ClipsController] Enhanced model: #{enhanced}")
+
+            if enhanced and map_size(video_chunk_uploads) == 0 do
+              throw({:error, "Enhanced detection requires video chunks (video_chunk_N uploads)"})
+            end
 
             # Calculate audio duration
             duration_hours = calculate_audio_duration_hours(params)
@@ -1175,11 +1468,11 @@ defmodule ClippsterServerWeb.ClipsController do
                 {:ok, %{credits: 0.0, job_id: nil, credit_source: :unlimited}}
               else
                 # Deduct credits and create job record for regular users
-                # Apply 2x multiplier for multimodal mode
+                # Apply 2x multiplier for enhanced mode
                 case deduct_credits_and_create_job(user_id, duration_hours, is_first_run,
                        project_id: project_id,
                        organization_id: organization_id,
-                       multimodal: multimodal
+                       enhanced: enhanced
                      ) do
                   {:ok, result} ->
                     {:ok, result}
@@ -1246,7 +1539,8 @@ defmodule ClippsterServerWeb.ClipsController do
                   credits,
                   is_admin,
                   job_id,
-                  multimodal
+                  enhanced,
+                  video_chunk_uploads
                 )
             end
         end
@@ -1272,12 +1566,13 @@ defmodule ClippsterServerWeb.ClipsController do
          credits_deducted,
          is_admin,
          job_id,
-         multimodal
+         enhanced,
+         video_chunk_uploads
        ) do
     %{"project_id" => project_id} = params
 
     operation = fn ->
-      execute_clip_detection(params, user_id, is_admin, multimodal)
+      execute_clip_detection(params, user_id, is_admin, enhanced, video_chunk_uploads)
     end
 
     case retry_with_backoff(operation, 3, project_id) do
@@ -1351,12 +1646,12 @@ defmodule ClippsterServerWeb.ClipsController do
     end
   end
 
-  defp execute_clip_detection(params, user_id, _is_admin, multimodal) do
+  defp execute_clip_detection(params, user_id, _is_admin, enhanced, video_chunk_uploads) do
     %{"project_id" => project_id, "prompt" => user_prompt} = params
     using_cached_transcript = Map.get(params, "using_cached_transcript", "false") == "true"
 
     # Broadcast initial progress
-    mode_label = if multimodal, do: "multimodal", else: "standard"
+    mode_label = if enhanced, do: "enhanced", else: "standard"
 
     ProgressChannel.broadcast_progress(
       project_id,
@@ -1509,98 +1804,66 @@ defmodule ClippsterServerWeb.ClipsController do
           )
         end
 
-        # Step 3: Send to OpenRouter API with system prompt using optimized transcript
-        # Use news + trends enriched system prompt for better context awareness
-        system_prompt = SystemPrompt.get_with_full_context()
+        # Step 3: Send to OpenRouter API with conditional news/streamer context.
+        streamer_metadata = parse_streamer_metadata(params)
+
+        system_prompt =
+          if enhanced do
+            SystemPrompt.get_with_enhanced_detection_context(
+              user_prompt,
+              ai_transcript,
+              streamer_metadata
+            )
+          else
+            SystemPrompt.get_with_detection_context(user_prompt, ai_transcript, streamer_metadata)
+          end
 
         ai_result =
-          if multimodal do
-            # Multimodal mode: Use 3 models + decider for enhanced detection
-            # Split large transcripts into chunks to avoid context length limits
-            segments = ai_transcript["segments"] || []
-            segment_count = length(segments)
-
-            # Estimate tokens: ~4 chars per token, each segment has ~100 chars average
-            # Split into chunks of ~15 minutes (900 seconds) to stay under context limits
-            chunk_duration_seconds = 900
+          if enhanced do
             total_duration = ai_transcript["duration"] || 0
 
-            if total_duration > chunk_duration_seconds and segment_count > 100 do
-              # Split transcript into time-based chunks
-              IO.puts(
-                "[ClipsController] Large transcript detected (#{segment_count} segments, #{Float.round(total_duration / 60, 1)} min)"
-              )
-
-              IO.puts(
-                "[ClipsController] Splitting into #{Float.round(total_duration / chunk_duration_seconds, 0) |> trunc()} chunks for multimodal processing..."
-              )
-
-              transcript_chunks =
-                split_transcript_into_chunks(ai_transcript, chunk_duration_seconds)
-
-              total_chunks = length(transcript_chunks)
-
-              IO.puts(
-                "[ClipsController] Created #{total_chunks} transcript chunks for multimodal detection"
-              )
-
-              ProgressChannel.broadcast_progress(
-                project_id,
-                "analyzing",
-                50,
-                "Running multimodal detection on #{total_chunks} chunks..."
-              )
-
-              # Process chunks in parallel with multimodal detection
-              {all_clips, total_tokens} =
-                process_transcript_chunks_multimodal(
-                  transcript_chunks,
-                  system_prompt,
-                  user_prompt,
-                  project_id,
-                  user_id
-                )
-
-              {:ok, %{"clips" => all_clips}, %{"total_tokens" => total_tokens}}
-            else
-              # Small transcript - process as single chunk
-              IO.puts("[ClipsController] Using MULTIMODAL detection (3 models + decider)...")
-
-              ProgressChannel.broadcast_progress(
-                project_id,
-                "analyzing",
-                50,
-                "Running multimodal detection with 3 AI models..."
-              )
-
-              case MultimodalClipDetection.process_chunk_multimodal(
-                     ai_transcript,
-                     system_prompt,
-                     user_prompt,
-                     project_id,
-                     0,
-                     1
-                   ) do
-                {:ok, clips, usage_info} ->
-                  {:ok, %{"clips" => clips},
-                   %{"total_tokens" => Map.get(usage_info, "total_tokens", 0)}}
-
-                {:error, reason} ->
-                  {:error, reason}
+            chunk_duration_seconds =
+              if total_duration > @enhanced_vod_chunk_duration_seconds do
+                @enhanced_vod_chunk_duration_seconds
+              else
+                max(trunc(total_duration), 1)
               end
-            end
-          else
-            # Normal mode: Single model detection
-            IO.puts("[ClipsController] Sending optimized transcript to OpenRouter API...")
+
+            transcript_chunks =
+              split_transcript_into_chunks(ai_transcript, chunk_duration_seconds)
+
+            total_chunks = length(transcript_chunks)
+
+            IO.puts(
+              "[ClipsController] Enhanced detection: #{total_chunks} video+transcript chunk(s)"
+            )
 
             ProgressChannel.broadcast_progress(
               project_id,
               "analyzing",
               50,
-              "Analyzing transcript for clip-worthy moments..."
+              "Running enhanced detection on #{total_chunks} chunk(s)..."
             )
 
-            OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt, project_id)
+            {all_clips, total_tokens} =
+              process_transcript_chunks_enhanced(
+                transcript_chunks,
+                video_chunk_uploads,
+                system_prompt,
+                user_prompt,
+                project_id,
+                user_id
+              )
+
+            {:ok, %{"clips" => all_clips}, %{"total_tokens" => total_tokens}}
+          else
+            run_vod_clip_detection_result(
+              ai_transcript,
+              system_prompt,
+              user_prompt,
+              project_id,
+              user_id
+            )
           end
 
         IO.puts("[ClipsController] AI detection completed")
@@ -1611,18 +1874,9 @@ defmodule ClippsterServerWeb.ClipsController do
             IO.puts("[ClipsController] AI response received from OpenRouter")
             IO.puts("[ClipsController] AI response structure: #{inspect(Map.keys(ai_response))}")
 
-            # Log AI usage
-            AI.log_usage(%{
-              user_id: user_id,
-              project_id: project_id,
-              provider: "openrouter",
-              model:
-                Map.get(usage, "model") || System.get_env("OPENROUTER_MODEL", "z-ai/glm-4.7"),
-              input_tokens: Map.get(usage, "prompt_tokens"),
-              output_tokens: Map.get(usage, "completion_tokens"),
-              total_tokens: Map.get(usage, "total_tokens"),
-              operation_type: "clip_generation"
-            })
+            if enhanced do
+              log_openrouter_clip_usage(user_id, project_id, usage, "clip_generation_enhanced")
+            end
 
             # Step 4: Validate AI response structure
             case validate_ai_response(ai_response) do
@@ -1685,36 +1939,11 @@ defmodule ClippsterServerWeb.ClipsController do
                         "[ClipsController] Quality score: #{validation_result.qualityScore}"
                       )
 
-                      # Apply minimum duration filtering if specified in user prompt
                       final_clips =
-                        case PromptRulesParser.parse_minimum_duration(user_prompt) do
-                          nil ->
-                            # No minimum duration rule found, use all validated clips
-                            validation_result.validatedClips
-
-                          min_duration ->
-                            # Filter clips by minimum duration
-                            IO.puts(
-                              "[ClipsController] Applying minimum duration filter: #{min_duration}s"
-                            )
-
-                            filtered =
-                              ClipValidation.filter_by_minimum_duration(
-                                validation_result.validatedClips,
-                                min_duration
-                              )
-
-                            removed_count =
-                              length(validation_result.validatedClips) - length(filtered)
-
-                            if removed_count > 0 do
-                              IO.puts(
-                                "[ClipsController] Removed #{removed_count} clips below minimum duration"
-                              )
-                            end
-
-                            filtered
-                        end
+                        apply_duration_and_shape_policy(
+                          validation_result.validatedClips,
+                          user_prompt
+                        )
 
                       # Replace clips with validated and corrected versions
                       enhanced_response =
@@ -1796,10 +2025,6 @@ defmodule ClippsterServerWeb.ClipsController do
                 IO.puts("[ClipsController] AI response validation failed: #{reason}")
                 raise "Invalid AI response structure: #{reason}"
             end
-
-          {:error, reason} ->
-            IO.puts("[ClipsController] OpenRouter API failed: #{inspect(reason)}")
-            raise "AI clip generation failed: #{inspect(reason)}"
         end
 
       {:error, reason} ->
@@ -2026,102 +2251,16 @@ defmodule ClippsterServerWeb.ClipsController do
 
     words =
       case whisper_response do
-        %{"words" => words} when is_list(words) ->
+        %{"words" => words} when is_list(words) and length(words) > 0 ->
           IO.puts("[ClipsController] Found top-level words: #{length(words)}")
-          words
+          Enum.filter(words, &valid_word?/1)
 
-        %{"verbose_json" => %{"words" => words}} when is_list(words) ->
+        %{"verbose_json" => %{"words" => words}} when is_list(words) and length(words) > 0 ->
           IO.puts("[ClipsController] Found verbose_json words: #{length(words)}")
-          words
-
-        %{"segments" => segments} when is_list(segments) and length(segments) > 0 ->
-          IO.puts("[ClipsController] Checking #{length(segments)} segments for word data")
-
-          # Check first segment structure safely
-          first_segment = hd(segments)
-          IO.puts("[ClipsController] First segment keys: #{inspect(Map.keys(first_segment))}")
-
-          # Check what type the 'words' field actually is
-          case Map.get(first_segment, "words") do
-            words when is_list(words) ->
-              IO.puts(
-                "[ClipsController] First segment words is a list with #{length(words)} items"
-              )
-
-            words when is_map(words) ->
-              IO.puts("[ClipsController] First segment words is a map: #{inspect(words)}")
-
-            words when is_nil(words) ->
-              IO.puts("[ClipsController] First segment words is nil")
-
-            words ->
-              IO.puts(
-                "[ClipsController] First segment words is unexpected type: #{inspect(words)}"
-              )
-          end
-
-          # Extract words from segments if available, with defensive programming
-          extracted_words =
-            segments
-            |> Enum.reduce([], fn segment, acc ->
-              case segment do
-                %{"words" => words} when is_list(words) ->
-                  IO.puts("[ClipsController] Found segment with #{length(words)} words")
-
-                  # Debug: Show first few word entries
-                  sample_words = Enum.take(words, 3)
-                  IO.puts("[ClipsController] Sample words: #{inspect(sample_words)}")
-
-                  # Filter out nil values and ensure word has required structure
-                  valid_words =
-                    Enum.filter(words, fn word ->
-                      cond do
-                        word == nil ->
-                          false
-
-                        not is_map(word) ->
-                          IO.puts("[ClipsController] Word is not a map: #{inspect(word)}")
-                          false
-
-                        not Map.has_key?(word, "start") ->
-                          IO.puts("[ClipsController] Word missing 'start': #{inspect(word)}")
-                          false
-
-                        not Map.has_key?(word, "end") ->
-                          IO.puts("[ClipsController] Word missing 'end': #{inspect(word)}")
-                          false
-
-                        not Map.has_key?(word, "word") ->
-                          IO.puts("[ClipsController] Word missing 'word': #{inspect(word)}")
-                          false
-
-                        true ->
-                          true
-                      end
-                    end)
-
-                  IO.puts("[ClipsController] Valid words in this segment: #{length(valid_words)}")
-                  acc ++ valid_words
-
-                %{"words" => words} ->
-                  IO.puts(
-                    "[ClipsController] Found segment with words that is not a list: #{inspect(words)}"
-                  )
-
-                  acc
-
-                _ ->
-                  IO.puts("[ClipsController] Segment has no words or wrong structure")
-                  acc
-              end
-            end)
-
-          IO.puts("[ClipsController] Extracted #{length(extracted_words)} words from segments")
-          extracted_words
+          Enum.filter(words, &valid_word?/1)
 
         %{"segments" => segments} when is_list(segments) ->
-          IO.puts("[ClipsController] Found empty segments list")
-          []
+          extract_words_from_segments(segments)
 
         _ ->
           IO.puts("[ClipsController] No word data found in response")
@@ -2131,6 +2270,35 @@ defmodule ClippsterServerWeb.ClipsController do
     IO.puts("[ClipsController] extract_words_from_response returning #{length(words)} words")
     words
   end
+
+  defp extract_words_from_segments(segments) when is_list(segments) do
+    if length(segments) > 0 do
+      IO.puts("[ClipsController] Checking #{length(segments)} segments for word data")
+      first_segment = hd(segments)
+      IO.puts("[ClipsController] First segment keys: #{inspect(Map.keys(first_segment))}")
+    end
+
+    extracted_words =
+      segments
+      |> Enum.flat_map(fn segment ->
+        case Map.get(segment, "words") do
+          words when is_list(words) -> Enum.filter(words, &valid_word?/1)
+          _ -> []
+        end
+      end)
+
+    IO.puts("[ClipsController] Extracted #{length(extracted_words)} words from segments")
+    extracted_words
+  end
+
+  defp extract_words_from_segments(_), do: []
+
+  defp valid_word?(word) when is_map(word) do
+    is_number(Map.get(word, "start")) and is_number(Map.get(word, "end")) and
+      is_binary(Map.get(word, "word"))
+  end
+
+  defp valid_word?(_), do: false
 
   # Validate AI response structure matches system prompt specifications
   defp validate_ai_response(response) do
@@ -2279,7 +2447,10 @@ defmodule ClippsterServerWeb.ClipsController do
 
   # Enhance a single segment with timing analysis
   defp enhance_single_segment(segment, index) do
-    words = Map.get(segment, "words", [])
+    words =
+      segment
+      |> Map.get("words", [])
+      |> Enum.filter(&valid_word?/1)
 
     if length(words) > 0 do
       # Calculate word gaps and timing analysis
@@ -2326,14 +2497,16 @@ defmodule ClippsterServerWeb.ClipsController do
       gap_after =
         if index < length(words) - 1 do
           next_word = Enum.at(words, index + 1)
-          next_word["start"] - word["end"]
+          Kernel.max(0.0, Map.get(next_word, "start", 0.0) - Map.get(word, "end", 0.0))
         else
           0.0
         end
 
+      word_duration = Kernel.max(0.0, Map.get(word, "end", 0.0) - Map.get(word, "start", 0.0))
+
       word
       |> Map.put("gap_after", Float.round(gap_after, 3))
-      |> Map.put("word_duration", Float.round(word["end"] - word["start"], 3))
+      |> Map.put("word_duration", Float.round(word_duration, 3))
     end)
   end
 
@@ -2634,9 +2807,20 @@ defmodule ClippsterServerWeb.ClipsController do
         segments when is_list(segments) ->
           segments
           |> Enum.map(fn segment ->
+            adjusted_words =
+              segment
+              |> Map.get("words", [])
+              |> Enum.filter(&valid_word?/1)
+              |> Enum.map(fn word ->
+                word
+                |> Map.put("start", Map.get(word, "start", 0) + chunk_start_time)
+                |> Map.put("end", Map.get(word, "end", 0) + chunk_start_time)
+              end)
+
             segment
             |> Map.put("start", Map.get(segment, "start", 0) + chunk_start_time)
             |> Map.put("end", Map.get(segment, "end", 0) + chunk_start_time)
+            |> Map.put("words", adjusted_words)
           end)
 
         _ ->
@@ -2646,8 +2830,9 @@ defmodule ClippsterServerWeb.ClipsController do
     # Adjust words if available
     adjusted_words =
       case Map.get(whisper_response, "words") do
-        words when is_list(words) ->
+        words when is_list(words) and length(words) > 0 ->
           words
+          |> Enum.filter(&valid_word?/1)
           |> Enum.map(fn word ->
             word
             |> Map.put("start", Map.get(word, "start", 0) + chunk_start_time)
@@ -2655,7 +2840,7 @@ defmodule ClippsterServerWeb.ClipsController do
           end)
 
         _ ->
-          []
+          extract_words_from_segments(adjusted_segments)
       end
 
     # Update duration to reflect the full timeline position
@@ -2683,12 +2868,13 @@ defmodule ClippsterServerWeb.ClipsController do
         case Float.parse(to_string(source["duration"])) do
           {duration_seconds, _} ->
             duration_minutes = duration_seconds / 60.0
+            duration_hours = duration_seconds / 3600.0
 
             IO.puts(
-              "[ClipsController] Duration from params: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s)"
+              "[ClipsController] Duration from params: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s) => #{Float.round(duration_hours, 4)} h for billing"
             )
 
-            duration_minutes
+            duration_hours
 
           :error ->
             IO.puts("[ClipsController] Warning: Could not parse duration param")
@@ -2735,12 +2921,13 @@ defmodule ClippsterServerWeb.ClipsController do
         # Basic estimation: assume 1MB = 1 minute of audio (rough approximation)
         file_size_mb = get_file_size_mb(path)
         estimated_minutes = file_size_mb * 1.0
+        estimated_hours = estimated_minutes / 60.0
 
         IO.puts(
-          "[ClipsController] Estimated duration from file size: #{Float.round(estimated_minutes, 3)} minutes"
+          "[ClipsController] Estimated duration from file size: #{Float.round(estimated_minutes, 3)} minutes (#{Float.round(estimated_hours, 4)} h)"
         )
 
-        estimated_minutes
+        estimated_hours
 
       _ ->
         IO.puts("[ClipsController] Warning: Could not estimate duration from audio upload")
@@ -2756,12 +2943,13 @@ defmodule ClippsterServerWeb.ClipsController do
           {:ok, raw_response} ->
             duration_seconds = Map.get(raw_response, "duration", 0.0)
             duration_minutes = duration_seconds / 60.0
+            duration_hours = duration_seconds / 3600.0
 
             IO.puts(
-              "[ClipsController] Duration from transcript: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s)"
+              "[ClipsController] Duration from transcript: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s) => #{Float.round(duration_hours, 4)} h for billing"
             )
 
-            duration_minutes
+            duration_hours
 
           _ ->
             IO.puts("[ClipsController] Warning: Could not parse raw_response from transcript")
@@ -2770,12 +2958,13 @@ defmodule ClippsterServerWeb.ClipsController do
 
       %{"duration" => duration_seconds} when is_number(duration_seconds) ->
         duration_minutes = duration_seconds / 60.0
+        duration_hours = duration_seconds / 3600.0
 
         IO.puts(
-          "[ClipsController] Duration from transcript: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s)"
+          "[ClipsController] Duration from transcript: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s) => #{Float.round(duration_hours, 4)} h for billing"
         )
 
-        duration_minutes
+        duration_hours
 
       _ ->
         IO.puts("[ClipsController] Warning: No duration found in transcript data")
@@ -2795,12 +2984,13 @@ defmodule ClippsterServerWeb.ClipsController do
           |> Kernel.||(0.0)
 
         duration_minutes = max_end_time / 60.0
+        duration_hours = max_end_time / 3600.0
 
         IO.puts(
-          "[ClipsController] Duration from chunks: #{Float.round(duration_minutes, 3)} minutes (#{max_end_time}s)"
+          "[ClipsController] Duration from chunks: #{Float.round(duration_minutes, 3)} minutes (#{max_end_time}s) => #{Float.round(duration_hours, 4)} h for billing"
         )
 
-        duration_minutes
+        duration_hours
 
       _ ->
         IO.puts("[ClipsController] Warning: Could not parse chunks for duration calculation")
@@ -2826,12 +3016,13 @@ defmodule ClippsterServerWeb.ClipsController do
       end)
 
     duration_minutes = total_seconds / 60.0
+    duration_hours = total_seconds / 3600.0
 
     IO.puts(
-      "[ClipsController] Duration from filtered chunks: #{Float.round(duration_minutes, 3)} minutes (#{Float.round(total_seconds, 1)}s)"
+      "[ClipsController] Duration from filtered chunks: #{Float.round(duration_minutes, 3)} minutes (#{Float.round(total_seconds, 1)}s) => #{Float.round(duration_hours, 4)} h for billing"
     )
 
-    duration_minutes
+    duration_hours
   end
 
   defp calculate_duration_from_filtered_chunks(_), do: 0.0
@@ -2851,46 +3042,43 @@ defmodule ClippsterServerWeb.ClipsController do
     end
   end
 
-  # Deduct credits for transcription only (0.3 rate)
+  # Deduct credits for transcription only (0.3 rate, 0.6 when enhanced)
   # Credits are rounded up to whole minutes
-  defp deduct_credits_for_transcription(user_id, duration_minutes) do
-    credit_rate = 0.3
+  defp deduct_credits_for_transcription(user_id, duration_minutes, organization_id, enhanced) do
+    credit_rate = if enhanced, do: 0.6, else: 0.3
     credits_to_deduct = Float.ceil(duration_minutes * credit_rate)
 
-    case Credits.get_user_balance(user_id) do
-      {:ok, %{hours_remaining: remaining}} when remaining != :unlimited ->
-        remaining_credits = Decimal.to_float(remaining)
+    case Credits.deduct_credits_with_org_context(user_id, credits_to_deduct, organization_id) do
+      {:ok, %{source: source}} ->
+        {:ok, credits_to_deduct, source}
 
-        if remaining_credits < credits_to_deduct do
-          {:error, :insufficient_credits, remaining_credits, credits_to_deduct}
-        else
-          case Credits.deduct_credits(user_id, credits_to_deduct) do
-            {:ok, _} -> {:ok, credits_to_deduct}
-            {:error, reason} -> {:error, :deduction_failed, reason}
-          end
-        end
+      {:error, :insufficient_credits, remaining, needed} ->
+        {:error, :insufficient_credits, remaining, needed}
 
-      {:ok, %{hours_remaining: :unlimited}} ->
-        {:ok, 0.0}
+      {:error, :not_a_member} ->
+        {:error, :not_a_member, "User is not a member of the specified organization"}
+
+      {:error, reason} ->
+        {:error, :deduction_failed, reason}
     end
   end
 
   # Deduct credits based on processing type and duration
   # Now supports optional organization_id for org credit deduction
   # Credits are rounded up to whole minutes
-  # Multimodal mode applies a 2x multiplier
+  # Enhanced mode applies a 2x multiplier
   defp deduct_credits_for_processing(
          user_id,
          duration_minutes,
          is_first_run,
          organization_id,
-         multimodal
+         enhanced
        ) do
     # Determine base credit rate based on processing type
     base_rate = if is_first_run, do: 1.0, else: 0.7
 
-    # Apply 2x multiplier for multimodal mode
-    credit_rate = if multimodal, do: base_rate * 2.0, else: base_rate
+    # Apply 2x multiplier for enhanced mode
+    credit_rate = if enhanced, do: base_rate * 2.0, else: base_rate
 
     credits_to_deduct = Float.ceil(duration_minutes * credit_rate)
 
@@ -2901,10 +3089,10 @@ defmodule ClippsterServerWeb.ClipsController do
       "[ClipsController]   Processing type: #{if is_first_run, do: "First run", else: "Followup run"}"
     )
 
-    IO.puts("[ClipsController]   Multimodal mode: #{multimodal}")
+    IO.puts("[ClipsController]   Enhanced mode: #{enhanced}")
 
     IO.puts(
-      "[ClipsController]   Credit rate: #{credit_rate}x#{if multimodal, do: " (2x multimodal multiplier)", else: ""}"
+      "[ClipsController]   Credit rate: #{credit_rate}x#{if enhanced, do: " (2x enhanced multiplier)", else: ""}"
     )
 
     IO.puts("[ClipsController]   Credits to deduct: #{Float.round(credits_to_deduct, 3)}")
@@ -2968,21 +3156,21 @@ defmodule ClippsterServerWeb.ClipsController do
   # Returns {:ok, %{credits: amount, job_id: id, credit_source: source}} on success.
   # The job_id can be used by the client to cancel and get a refund.
   # Supports optional organization_id for org credit deduction.
-  # Supports multimodal mode with 2x credit multiplier.
+  # Supports enhanced mode with 2x credit multiplier.
   defp deduct_credits_and_create_job(user_id, duration_hours, is_first_run, opts) do
     project_id = Keyword.get(opts, :project_id)
     video_url = Keyword.get(opts, :video_url)
     job_type = Keyword.get(opts, :job_type, "clip_detection")
     organization_id = Keyword.get(opts, :organization_id)
-    multimodal = Keyword.get(opts, :multimodal, false)
+    enhanced = Keyword.get(opts, :enhanced, false)
 
-    # First deduct credits (with optional org context and multimodal multiplier)
+    # First deduct credits (with optional org context and enhanced multiplier)
     case deduct_credits_for_processing(
            user_id,
            duration_hours,
            is_first_run,
            organization_id,
-           multimodal
+           enhanced
          ) do
       {:ok, credits_deducted, credit_source}
       when is_number(credits_deducted) and credits_deducted > 0 ->
@@ -3155,49 +3343,75 @@ defmodule ClippsterServerWeb.ClipsController do
     end)
   end
 
-  # Merge two overlapping clips, taking the union of their time ranges
-  # Keeps the clip with higher virality score as the base, but expands boundaries
+  # Merge two overlapping clips by keeping the tighter, higher-value candidate.
+  # Only widen when a candidate explicitly says it needs complete context.
   defp merge_two_clips(clip1, clip2) do
     clip1_start = get_clip_start_time(clip1)
     clip1_end = get_clip_end_time(clip1)
     clip2_start = get_clip_start_time(clip2)
     clip2_end = get_clip_end_time(clip2)
 
-    # Take the UNION of timestamps (wider boundaries = more context)
-    merged_start = min(clip1_start, clip2_start)
-    merged_end = max(clip1_end, clip2_end)
-    merged_duration = merged_end - merged_start
-
-    # Use the clip with higher virality score as base
     clip1_score = Map.get(clip1, "virality_score", 0) || 0
     clip2_score = Map.get(clip2, "virality_score", 0) || 0
+    clip1_duration = clip1_end - clip1_start
+    clip2_duration = clip2_end - clip2_start
 
-    base_clip = if clip1_score >= clip2_score, do: clip1, else: clip2
+    base_clip =
+      cond do
+        clip1_score > clip2_score -> clip1
+        clip2_score > clip1_score -> clip2
+        clip1_duration <= clip2_duration -> clip1
+        true -> clip2
+      end
 
-    # Update the segments with merged boundaries
-    # For simplicity, create a single continuous segment with merged boundaries
-    merged_segments = [
-      %{
-        "start_time" => merged_start,
-        "end_time" => merged_end,
-        "duration" => merged_duration,
-        "transcript" => get_merged_transcript(clip1, clip2)
-      }
-    ]
+    should_widen = needs_merged_context?(clip1) or needs_merged_context?(clip2)
 
-    # Combine transcripts
-    combined_transcript = get_merged_transcript(clip1, clip2)
+    {final_clip, final_start, final_end} =
+      if should_widen do
+        merged_start = min(clip1_start, clip2_start)
+        merged_end = max(clip1_end, clip2_end)
+        merged_duration = merged_end - merged_start
+        combined_transcript = get_merged_transcript(clip1, clip2)
+
+        merged_segments = [
+          %{
+            "start_time" => merged_start,
+            "end_time" => merged_end,
+            "duration" => merged_duration,
+            "transcript" => combined_transcript
+          }
+        ]
+
+        {
+          base_clip
+          |> Map.put("segments", merged_segments)
+          |> Map.put("total_duration", merged_duration)
+          |> Map.put("combined_transcript", combined_transcript)
+          |> Map.put("type", "continuous")
+          |> Map.put("merged_from_chunks", true)
+          |> Map.put("merge_policy", "widened_for_context"),
+          merged_start,
+          merged_end
+        }
+      else
+        {Map.put(base_clip, "merge_policy", "kept_tighter_candidate"),
+         get_clip_start_time(base_clip), get_clip_end_time(base_clip)}
+      end
 
     Logger.info(
-      "[ClipsController] Merged clips: #{clip1_start}-#{clip1_end} + #{clip2_start}-#{clip2_end} -> #{merged_start}-#{merged_end}"
+      "[ClipsController] Resolved overlapping clips: #{clip1_start}-#{clip1_end} + #{clip2_start}-#{clip2_end} -> #{final_start}-#{final_end}"
     )
 
-    base_clip
-    |> Map.put("segments", merged_segments)
-    |> Map.put("total_duration", merged_duration)
-    |> Map.put("combined_transcript", combined_transcript)
-    |> Map.put("type", "continuous")
-    |> Map.put("merged_from_chunks", true)
+    final_clip
+  end
+
+  defp needs_merged_context?(clip) do
+    text =
+      "#{Map.get(clip, "duration_policy", "")} #{Map.get(clip, "exception_reason", "")} #{Map.get(clip, "reason", "")}"
+      |> String.downcase()
+
+    String.contains?(text, "context") or String.contains?(text, "complete") or
+      String.contains?(text, "full arc")
   end
 
   # Get merged transcript from two clips, preferring the longer one
@@ -3212,49 +3426,50 @@ defmodule ClippsterServerWeb.ClipsController do
   # Catches duplicates that time-overlap logic misses (2-3 second variations, shifted boundaries)
   defp deduplicate_clips_advanced(clips) do
     Logger.info("[ClipsController] Running advanced deduplication on #{length(clips)} clips")
-    
+
     _tier1_removed = 0
     _tier2_removed = 0
     _tier3_removed = 0
-    
+
     # Process clips in order, removing duplicates as we find them
-    {deduplicated, stats} = Enum.reduce(clips, {[], %{tier1: 0, tier2: 0, tier3: 0}}, fn clip, {acc, stats} ->
-      # Check if this clip is a duplicate of any clip already in the accumulator
-      case find_duplicate_clip(clip, acc) do
-        nil ->
-          # No duplicate found, add to accumulator
-          {[clip | acc], stats}
-        
-        {duplicate_of, tier} ->
-          # Found duplicate, log it and skip this clip
-          clip_start = get_clip_start_time(clip)
-          clip_end = get_clip_end_time(clip)
-          dup_start = get_clip_start_time(duplicate_of)
-          dup_end = get_clip_end_time(duplicate_of)
-          clip_score = Map.get(clip, "virality_score", 0) || 0
-          dup_score = Map.get(duplicate_of, "virality_score", 0) || 0
-          
-          Logger.info(
-            "[ClipsController] Tier #{tier} duplicate detected: " <>
-            "Clip #{clip_start}-#{clip_end} (score: #{clip_score}) is duplicate of " <>
-            "#{dup_start}-#{dup_end} (score: #{dup_score}). Keeping higher score."
-          )
-          
-          # Update stats
-          new_stats = Map.update!(stats, String.to_atom("tier#{tier}"), &(&1 + 1))
-          {acc, new_stats}
-      end
-    end)
-    
+    {deduplicated, stats} =
+      Enum.reduce(clips, {[], %{tier1: 0, tier2: 0, tier3: 0}}, fn clip, {acc, stats} ->
+        # Check if this clip is a duplicate of any clip already in the accumulator
+        case find_duplicate_clip(clip, acc) do
+          nil ->
+            # No duplicate found, add to accumulator
+            {[clip | acc], stats}
+
+          {duplicate_of, tier} ->
+            # Found duplicate, log it and skip this clip
+            clip_start = get_clip_start_time(clip)
+            clip_end = get_clip_end_time(clip)
+            dup_start = get_clip_start_time(duplicate_of)
+            dup_end = get_clip_end_time(duplicate_of)
+            clip_score = Map.get(clip, "virality_score", 0) || 0
+            dup_score = Map.get(duplicate_of, "virality_score", 0) || 0
+
+            Logger.info(
+              "[ClipsController] Tier #{tier} duplicate detected: " <>
+                "Clip #{clip_start}-#{clip_end} (score: #{clip_score}) is duplicate of " <>
+                "#{dup_start}-#{dup_end} (score: #{dup_score}). Keeping higher score."
+            )
+
+            # Update stats
+            new_stats = Map.update!(stats, String.to_atom("tier#{tier}"), &(&1 + 1))
+            {acc, new_stats}
+        end
+      end)
+
     total_removed = stats.tier1 + stats.tier2 + stats.tier3
-    
+
     Logger.info(
       "[ClipsController] Advanced deduplication complete: " <>
-      "Removed #{total_removed} duplicates " <>
-      "(Tier 1: #{stats.tier1}, Tier 2: #{stats.tier2}, Tier 3: #{stats.tier3}). " <>
-      "#{length(deduplicated)} clips remaining."
+        "Removed #{total_removed} duplicates " <>
+        "(Tier 1: #{stats.tier1}, Tier 2: #{stats.tier2}, Tier 3: #{stats.tier3}). " <>
+        "#{length(deduplicated)} clips remaining."
     )
-    
+
     Enum.reverse(deduplicated)
   end
 
@@ -3267,7 +3482,7 @@ defmodule ClippsterServerWeb.ClipsController do
     clip_transcript = Map.get(clip, "combined_transcript", "")
     clip_title = get_clip_title(clip)
     clip_score = Map.get(clip, "virality_score", 0) || 0
-    
+
     Enum.reduce_while(acc, nil, fn existing_clip, _result ->
       existing_start = get_clip_start_time(existing_clip)
       existing_end = get_clip_end_time(existing_clip)
@@ -3275,12 +3490,12 @@ defmodule ClippsterServerWeb.ClipsController do
       existing_transcript = Map.get(existing_clip, "combined_transcript", "")
       existing_title = get_clip_title(existing_clip)
       existing_score = Map.get(existing_clip, "virality_score", 0) || 0
-      
+
       # Tier 1: Exact duplicate detection (±3s start/end, >90% transcript similarity)
       start_diff = abs(clip_start - existing_start)
       end_diff = abs(clip_end - existing_end)
       transcript_sim = calculate_transcript_similarity(clip_transcript, existing_transcript)
-      
+
       if start_diff <= 3.0 and end_diff <= 3.0 and transcript_sim > 0.90 do
         # Keep the clip with higher virality score
         if clip_score > existing_score do
@@ -3298,8 +3513,10 @@ defmodule ClippsterServerWeb.ClipsController do
         overlap_duration = max(0, overlap_end - overlap_start)
         shorter_duration = min(clip_duration, existing_duration)
         overlap_ratio = if shorter_duration > 0, do: overlap_duration / shorter_duration, else: 0
-        duration_diff_ratio = abs(clip_duration - existing_duration) / max(clip_duration, existing_duration)
-        
+
+        duration_diff_ratio =
+          abs(clip_duration - existing_duration) / max(clip_duration, existing_duration)
+
         if overlap_ratio > 0.30 and transcript_sim > 0.75 and duration_diff_ratio < 0.30 do
           # Keep the clip with higher virality score
           if clip_score > existing_score do
@@ -3310,7 +3527,7 @@ defmodule ClippsterServerWeb.ClipsController do
         else
           # Tier 3: Content-based duplicate detection (>85% transcript similarity, >70% title similarity)
           title_sim = calculate_transcript_similarity(clip_title, existing_title)
-          
+
           if transcript_sim > 0.85 and title_sim > 0.70 do
             # Keep the clip with higher virality score
             if clip_score > existing_score do
@@ -3333,7 +3550,7 @@ defmodule ClippsterServerWeb.ClipsController do
     # Normalize texts for comparison
     norm1 = normalize_text_for_comparison(text1)
     norm2 = normalize_text_for_comparison(text2)
-    
+
     # Handle empty strings
     if norm1 == "" or norm2 == "" do
       0.0
@@ -3351,6 +3568,7 @@ defmodule ClippsterServerWeb.ClipsController do
     |> String.replace(~r/\s+/, " ")
     |> String.trim()
   end
+
   defp normalize_text_for_comparison(_), do: ""
 
   # Get clip title from clip map
@@ -3362,22 +3580,24 @@ defmodule ClippsterServerWeb.ClipsController do
   # Removes clips below the quality threshold
   defp filter_by_minimum_virality(clips) do
     minimum_score = 50
-    
-    filtered = Enum.filter(clips, fn clip ->
-      virality_score = Map.get(clip, "virality_score", 0) || 0
-      virality_score >= minimum_score
-    end)
-    
+
+    filtered =
+      Enum.filter(clips, fn clip ->
+        virality_score = Map.get(clip, "virality_score", 0) || 0
+        virality_score >= minimum_score
+      end)
+
     removed_count = length(clips) - length(filtered)
-    
+
     if removed_count > 0 do
       Logger.info(
         "[ClipsController] Quality filter: Removed #{removed_count} clips below minimum virality score (#{minimum_score}). " <>
-        "#{length(filtered)} clips remaining."
+          "#{length(filtered)} clips remaining."
       )
-      
+
       # Log examples of removed clips for debugging
       removed_clips = clips -- filtered
+
       Enum.take(removed_clips, 3)
       |> Enum.each(fn clip ->
         score = Map.get(clip, "virality_score", 0) || 0
@@ -3385,9 +3605,46 @@ defmodule ClippsterServerWeb.ClipsController do
         Logger.info("[ClipsController] Removed low-quality clip: \"#{title}\" (score: #{score})")
       end)
     end
-    
+
     filtered
   end
+
+  defp apply_duration_and_shape_policy(clips, user_prompt) do
+    rules = PromptRulesParser.parse_duration_rules(user_prompt)
+
+    filtered = ClipValidation.apply_clip_shape_policy(clips, rules)
+    removed_count = length(clips) - length(filtered)
+
+    IO.puts(
+      "[ClipsController] Clip shape policy applied: #{length(filtered)} kept, #{removed_count} removed, ideal #{rules.ideal_min}-#{rules.ideal_max}s"
+    )
+
+    filtered
+  end
+
+  defp parse_streamer_metadata(params) when is_map(params) do
+    case Map.get(params, "streamer_metadata") do
+      nil ->
+        nil
+
+      "" ->
+        nil
+
+      metadata when is_map(metadata) ->
+        metadata
+
+      metadata when is_binary(metadata) ->
+        case Jason.decode(metadata) do
+          {:ok, decoded} when is_map(decoded) -> decoded
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp parse_streamer_metadata(_), do: nil
 
   # Reconstruct timeline from multiple chunk transcripts
   defp reconstruct_timeline_from_chunks(chunk_transcripts) do
@@ -3409,7 +3666,15 @@ defmodule ClippsterServerWeb.ClipsController do
     all_words =
       sorted_chunks
       |> Enum.flat_map(fn chunk ->
-        Map.get(chunk.adjusted_whisper_response, "words", [])
+        case Map.get(chunk.adjusted_whisper_response, "words", []) do
+          words when is_list(words) and length(words) > 0 ->
+            Enum.filter(words, &valid_word?/1)
+
+          _ ->
+            chunk.adjusted_whisper_response
+            |> Map.get("segments", [])
+            |> extract_words_from_segments()
+        end
       end)
 
     # Calculate total duration
@@ -3535,7 +3800,7 @@ defmodule ClippsterServerWeb.ClipsController do
 
             {:error, :insufficient_credits} ->
               Logger.warning("[ClipsController] Insufficient credits for user #{user_id}")
-              
+
               conn
               |> put_status(402)
               |> json(%{
@@ -3546,7 +3811,7 @@ defmodule ClippsterServerWeb.ClipsController do
 
             {:error, reason} ->
               Logger.error("[ClipsController] Credit deduction failed: #{inspect(reason)}")
-              
+
               conn
               |> put_status(500)
               |> json(%{
@@ -3559,7 +3824,7 @@ defmodule ClippsterServerWeb.ClipsController do
 
       {:error, reason} ->
         Logger.warning("[ClipsController] Authentication failed: #{reason}")
-        
+
         conn
         |> put_status(401)
         |> json(%{success: false, error: "Unauthorized"})
@@ -3574,11 +3839,33 @@ defmodule ClippsterServerWeb.ClipsController do
       "transcript_start" => transcript_start,
       "transcript_end" => transcript_end,
       "prompt" => user_prompt,
-      "virality_threshold" => virality_threshold
+      "virality_threshold" => requested_virality_threshold
     } = params
-    
+
     audio_context = Map.get(params, "audio_context", "")
     pending_clip = Map.get(params, "pending_clip", nil)
+    pending_clip_transcript = Map.get(params, "pending_clip_transcript", "")
+    transcript_segments = Map.get(params, "transcript_segments", [])
+    transcript_stats = Map.get(params, "transcript_stats", %{})
+    streamer_metadata = parse_streamer_metadata(params)
+
+    # Resolve the streamer reach tier and derive softer thresholds for famous /
+    # top-tier creators. The user's curated list (StreamerReach @curated_tiers)
+    # is the source of truth — streamers on it are known to produce viral
+    # content, so we lower the bar on virality, duration, density, and word
+    # count. We do NOT lower the catastrophic scorecard floors (hook/payoff/
+    # shareability ≥ 35) — fame must not rescue truly bad clips.
+    reach_settings =
+      StreamerReach.realtime_settings(streamer_metadata, requested_virality_threshold)
+
+    virality_threshold = reach_settings.virality_threshold
+
+    if reach_settings.tier in [:famous, :top_tier, :established] do
+      Logger.info(
+        "[ClipsController] Realtime detection — streamer tier=#{reach_settings.tier} (#{reach_settings.tier_label}, matched=#{inspect(reach_settings.matched_name)}), threshold #{requested_virality_threshold} -> #{virality_threshold}, min_duration=#{reach_settings.min_duration}s"
+      )
+    end
+
     case get_user_id_from_token(conn) do
       {:ok, user_id, is_admin} ->
         Logger.info("[ClipsController] Real-time detection for user: #{user_id}")
@@ -3608,257 +3895,459 @@ defmodule ClippsterServerWeb.ClipsController do
             system_prompt = SystemPrompt.get_with_full_context()
 
             # Format pending clip context for AI
-            pending_clip_context = if pending_clip do
-              """
-              
-              PENDING CLIP (ongoing scene being tracked):
-              Title: "#{pending_clip["title"]}"
-              Time Range: #{pending_clip["start_time"]}s - #{pending_clip["end_time"]}s
-              Description: #{pending_clip["description"]}
-              Context: #{pending_clip["context_summary"]}
-              
-              CONTEXT CHANGE DETECTION:
-              Analyze if the current transcript is:
-              1. SAME CONTEXT (continuation of pending clip):
-                 - Same topic/scene/situation as pending clip
-                 - Example: Airport lady still freaking out → SAME CONTEXT
-                 - Example: Gambling session continues → SAME CONTEXT
-                 - Action: Set context_change=false, update pending_clip end_time to #{transcript_end}
-              
-              2. NEW CONTEXT (different scene):
-                 - Different topic/scene/situation from pending clip
-                 - Example: Airport scene ends, now talking about gambling → NEW CONTEXT
-                 - Example: Freakout ends, now calm conversation → NEW CONTEXT
-                 - Action: Set context_change=true, create new pending_clip for the new scene
-              
-              If SAME CONTEXT: Return {"context_change": false, "pending_clip": {updated clip with new end_time}}
-              If NEW CONTEXT: Return {"context_change": true, "pending_clip": {new clip data for the new scene}}
-              """
-            else
-              """
-              
-              NO PENDING CLIP:
-              This is the first detection or previous clip was saved.
-              If you detect a clip-worthy moment, create a new pending_clip.
-              Set context_change=false (no previous context to change from).
-              """
-            end
-            
+            pending_clip_context =
+              if pending_clip do
+                pending_transcript_block =
+                  case pending_clip_transcript do
+                    text when is_binary(text) and byte_size(text) > 0 ->
+                      "\nPENDING CLIP TRANSCRIPT SO FAR:\n#{text}\n"
+
+                    _ ->
+                      ""
+                  end
+
+                """
+
+                PENDING CLIP (a moment is currently being tracked across windows):
+                Title: "#{pending_clip["title"]}"
+                Time Range: #{pending_clip["start_time"]}s - #{pending_clip["end_time"]}s
+                Description: #{pending_clip["description"]}
+                Context: #{pending_clip["context_summary"]}
+                #{pending_transcript_block}
+                """
+              else
+                """
+
+                NO PENDING CLIP. This window is evaluated standalone — if you detect a clip-worthy moment, return a new pending_clip with context_change=false.
+                """
+              end
+
             # Format transcript for AI analysis
             audio_info = if audio_context != "", do: "\n\n#{audio_context}\n", else: ""
-            
+            timing_info = format_realtime_timing_summary(transcript_stats, transcript_segments)
+            segment_timeline = format_realtime_segment_timeline(transcript_segments)
+            reach_context = format_realtime_reach_context(reach_settings)
+
             formatted_transcript = """
-            TRANSCRIPT (#{transcript_start}s - #{transcript_end}s):
-            #{transcript}#{audio_info}#{pending_clip_context}
-            You are a clip detector analyzing livestream content. Find moments that are entertaining, shareable, and worth clipping.
+            TASK
+            ====
+            Inside this 30-second window of livestream transcript, find the EXACT start and end of the clip-worthy moment — or return null if no such moment exists in this window. The clip-worthy moment is a SUBSET of the window. It can start anywhere (beginning, middle, or near the end) and end anywhere (mid-window, or still going at the window edge). Pick start_time and end_time from the PER-SEGMENT TIMELINE timestamps, NEVER from the window edges.
 
-            AUDIO ANALYSIS GUIDANCE:
-            - Volume spikes indicate screaming/yelling/excitement - STRONG clip signal
-            - Multiple volume spikes in short time = very likely clip-worthy moment
-            - Volume spikes + intense/emotional words = high-value clip
-            - Use audio context to identify moments the transcript alone might miss
-            
-            WHAT QUALIFIES AS 85+ SCORE (CLIP-WORTHY):
-            
-            GAMING STREAMS:
-            - Impressive clutch plays or skill moments (1v3+, comeback wins, tournament plays)
-            - Rage/tilt moments with strong reactions (screaming, breaking things, tilting hard)
-            - Hilarious fails or unexpected glitches that cause big reactions
-            - Hype moments (big wins, insane RNG, perfect timing)
-            - Drama with teammates or opponents (arguments, trash talk, beef)
-            - Funny banter or roasts that land perfectly
-            
-            IRL STREAMS:
-            - Confrontations or arguments (getting kicked out, disputes, drama)
-            - Unexpected encounters (celebrities, crazy people, weird situations)
-            - Funny or awkward social moments that are highly relatable
-            - Wholesome moments with strong emotional payoff
-            - Surprising reveals or announcements
-            - Chaotic or unpredictable events
-            
-            ALL STREAMS:
-            - Strong emotional reactions (genuine crying, explosive laughter, shock)
-            - Drama or controversy (call-outs, hot takes, relationship stuff)
-            - Genuinely funny comedy moments (not just chuckles, but actual hilarious content)
-            - Meme-worthy or highly quotable moments
-            - Moments fans would clip and share in Discord/Twitter
-            - Content that makes you go "oh shit" or laugh out loud
+            REQUIRED RESPONSE FORMAT
+            ========================
+            Return ONLY this JSON. The response is INVALID and will be rejected if any field below is missing.
 
-            SCORING EXAMPLES (85+ THRESHOLD):
-            - Score 95: "Streamer accidentally leaks they're dating another streamer"
-            - Score 93: "Insane 1v5 ace clutch in ranked with crowd going wild"
-            - Score 90: "Streamer breaks keyboard in rage after losing tournament"
-            - Score 88: "IRL streamer gets confronted by security, kicked out"
-            - Score 87: "Hilarious fail where streamer falls off chair screaming"
-            - Score 86: "Streamer roasts toxic viewer so hard chat explodes"
-            - Score 85: "Emotional moment where streamer cries after big donation"
-            - Score 85: "Streamer has heated argument with teammate, drama unfolds"
+            {
+              "context_change": true | false,
+              "clip_state": "open" | "closed" | null,
+              "pending_clip": null  OR  {
+                "title": "<short title>",
+                "description": "<one-sentence description>",
+                "start_time": <number, absolute stream seconds, anchored on first impactful word from PER-SEGMENT TIMELINE>,
+                "end_time": <number, absolute stream seconds, anchored on last impactful word from PER-SEGMENT TIMELINE>,
+                "virality_score": <integer 0-100; must be >= #{virality_threshold} to auto-save>,
+                "detection_reason": "<why this is clip-worthy>",
+                "context_summary": "<brief scene context>",
+                "hook_score": <integer 0-100>,
+                "payoff_score": <integer 0-100>,
+                "emotion_score": <integer 0-100>,
+                "shareability_score": <integer 0-100>,
+                "density_score": <integer 0-100>,
+                "signal_score": <integer 0-100>,
+                "boundary_score": <integer 0-100>
+              }
+            }
 
-            NOT CLIP-WORTHY (Below 85):
-            - Normal conversation with chat (even if interesting)
+            clip_state is MANDATORY:
+            - "open" when pending_clip is non-null AND the clip-worthy moment is still actively continuing at/near the end of this 30s window.
+            - "closed" when pending_clip is non-null AND the clip-worthy moment has ended inside this 30s window. This tells the client to create the clip immediately.
+            - null when pending_clip is null.
+
+            ALL 7 SCORECARD FIELDS (hook_score, payoff_score, emotion_score, shareability_score, density_score, signal_score, boundary_score) ARE MANDATORY whenever pending_clip is non-null. If you cannot supply all 7, return pending_clip: null and clip_state: null. Responses that omit any scorecard field are auto-rejected by the server.
+
+            Scorecard meanings (0-100 each):
+            - hook_score: stop-scroll strength of the first 1-3 seconds
+            - payoff_score: clear resolution, punchline, reveal, escalation, or result
+            - emotion_score: high-arousal emotion (shock, awe, anger, humor, hype, cringe)
+            - shareability_score: would someone send/post this because it is funny, shocking, debatable, or meme-worthy?
+            - density_score: useful/funny/action content vs silence, filler, or waiting
+            - signal_score: live evidence strength from trigger phrase, audio spike, dense speech, etc.
+            - boundary_score: clean start/end with no dead-air intro or trailing silence
+
+            HOW TO PICK start_time / end_time
+            =================================
+            Look at the PER-SEGMENT TIMELINE in the WINDOW DATA below. Each numbered line shows absolute first_word and last_word timestamps for that Whisper segment.
+
+            - start_time = absolute timestamp of the FIRST impactful word of the moment (from the timeline). Up to 0.6s of lead-in is allowed; more is forbidden.
+            - end_time = absolute timestamp of the LAST impactful word of the moment (from the timeline). Up to 1.5s of tail is allowed; more is forbidden.
+            - The window edges (#{transcript_start}s and #{transcript_end}s) are buffer boundaries, NOT clip boundaries. NEVER use them as start_time / end_time unless they happen to coincide with the first or last impactful word of the moment.
+            - If the window is mostly silence/filler with no clear hook word, return pending_clip: null. Do NOT pad with silence to manufacture a clip.
+
+            CONTINUATION RULES (apply only when a PENDING CLIP exists below)
+            ================================================================
+            1. SAME scene continues into this window:
+               - context_change = false
+               - clip_state = "open" only if the same scene is still active at/near the window edge; otherwise clip_state = "closed"
+               - KEEP pending_clip.start_time exactly as it was (do NOT change it)
+               - Set end_time = absolute timestamp of the LAST impactful word in this window's timeline (+ ≤1.5s tail)
+               - DO NOT push end_time to #{transcript_end} unless the last impactful word IS at the window edge. If the last 5+ seconds of the window are silence/filler, end_time MUST stop at the last impactful word.
+
+            2. Topic CHANGED mid-window (old scene ended, NEW scene started in the same window):
+               - context_change = true
+               - Emit a NEW pending_clip for the NEW scene with timeline-anchored start_time AND end_time
+               - clip_state describes the NEW scene: "open" if it continues at/near the window edge, "closed" if it also ended inside this window.
+
+            3. Pending moment ENDED mid-window and nothing new is clip-worthy:
+               - context_change = false
+               - Set pending_clip.end_time to the LAST impactful word of the OLD scene
+               - Set clip_state = "closed" so the client creates the clip immediately. Do NOT wait for another window.
+
+            CLIP LENGTH GUIDANCE
+            ====================
+            - Most viral clips are 30-60 seconds: punchy, immediate payoff. Do NOT pad clips to fill the window.
+            - Extend beyond 90s only when the content REQUIRES the full arc (complete story, sustained rant, dramatic reveal needing buildup).
+            - A tight 13-second clip is correct if the moment is only 13 seconds long. Trust the timeline.
+            - Prefer SHORTER over longer when uncertain.
+
+            WHAT QUALIFIES AS 85+ (CLIP-WORTHY)
+            ====================================
+            - Strong emotional reactions (genuine laughter, shock, anger, crying, hype)
+            - Drama / confrontation / call-outs / hot takes / relationship stuff
+            - Impressive plays (clutch wins, comebacks, skill moments) AND rage / fail moments
+            - Surprising reveals, leaks, weird IRL encounters, unexpected confrontations
+            - Meme-worthy / quotable / "send this in Discord" moments
+
+            NOT CLIP-WORTHY (return null)
+            =============================
+            - Normal conversation with chat (even if topically interesting)
             - Regular gameplay without standout moments
-            - Mild reactions or generic excitement
-            - Mundane IRL activities (walking, eating, shopping)
-            - Standard wins/losses without special context
+            - Mild reactions, generic excitement, mundane IRL activities
             - Filler content between highlights
 
-            IMPORTANT: Score honestly. If it's not genuinely entertaining/shareable, don't force it to 85+.
-            The threshold is #{virality_threshold}. Only return clips that meet or exceed this score.
+            QUALITY GATES (auto-rejected if violated — re-anchor or return null)
+            ====================================================================
+            - Leading silence (start_time → first impactful word) MUST be ≤ 1s
+            - Trailing silence (last impactful word → end_time) MUST be ≤ 2s
+            - CATASTROPHIC FLOORS: if hook_score < 35, OR payoff_score < 35, OR shareability_score < 35 → pending_clip MUST be null
+            - virality_score MUST be ≥ #{virality_threshold} to auto-save. Score honestly; do not inflate weak moments.
 
-            CRITICAL - NEW RESPONSE FORMAT (DO NOT USE OLD FORMAT):
-            You MUST return JSON in this EXACT format:
-            {
-              "context_change": true/false,
-              "pending_clip": {...} or null
-            }
-            
-            DO NOT return {"clips": [...]} - that format is DEPRECATED.
-            DO NOT return {"clips": [], "extensions": []} - that format is DEPRECATED.
-            
-            EXAMPLES:
-            
-            Example 1 - No clip detected:
-            {"context_change": false, "pending_clip": null}
-            
-            Example 2 - First clip detected (no previous context):
+            WINDOW DATA
+            ===========
+            #{reach_context}
+            LATEST 30s WINDOW (#{transcript_start}s - #{transcript_end}s):
+            #{transcript}#{audio_info}
+            #{timing_info}
+
+            #{segment_timeline}
+            #{pending_clip_context}
+
+            EXAMPLES (study the timestamps — none of them are window edges)
+            ==============================================================
+
+            Example A — No clip detected (window is filler / no hook):
+            {"context_change": false, "clip_state": null, "pending_clip": null}
+
+            Example B — Moment starts MID-window, still going at window edge:
+            (window 900s-930s; PER-SEGMENT TIMELINE shows first impactful word at 917.4s, last at 929.6s, energy still high)
             {
               "context_change": false,
+              "clip_state": "open",
               "pending_clip": {
                 "title": "Airport Lady Freakout Begins",
                 "description": "Woman starts yelling at airport staff",
-                "start_time": #{transcript_start},
-                "end_time": #{transcript_end},
+                "start_time": 916.8,
+                "end_time": 930.0,
                 "virality_score": 88,
-                "detection_reason": "Dramatic confrontation with volume spikes",
-                "context_summary": "Airport freakout scene"
+                "detection_reason": "Confrontation with volume spikes",
+                "context_summary": "Airport freakout",
+                "hook_score": 88,
+                "payoff_score": 78,
+                "emotion_score": 90,
+                "shareability_score": 86,
+                "density_score": 82,
+                "signal_score": 84,
+                "boundary_score": 88
               }
             }
-            
-            Example 3 - Continuing same scene (extend end_time):
+            // start_time = 916.8 (first_word 917.4 − 0.6s lead-in). end_time = 930.0 because the moment is still going at the window edge. 13.2-second clip — NOT 30 seconds.
+
+            Example C — Continuation; SAME scene continues but ENDS mid-window:
+            (pending clip currently 800s-930s. New window 930s-960s. PER-SEGMENT TIMELINE: same scene continues until 942.5s, then 17s of silence/dead air through window end.)
             {
               "context_change": false,
+              "clip_state": "closed",
               "pending_clip": {
-                "title": "Airport Lady Freakout Escalates",
-                "description": "Woman continues yelling, security called",
+                "title": "Airport Lady Freakout Begins",
+                "description": "Woman yells at airport staff, security arrives",
                 "start_time": 800,
-                "end_time": #{transcript_end},
-                "virality_score": 92,
-                "detection_reason": "Escalating confrontation",
-                "context_summary": "Airport freakout scene"
+                "end_time": 944.0,
+                "virality_score": 90,
+                "detection_reason": "Escalation with security arrival",
+                "context_summary": "Airport freakout",
+                "hook_score": 88,
+                "payoff_score": 86,
+                "emotion_score": 92,
+                "shareability_score": 88,
+                "density_score": 80,
+                "signal_score": 84,
+                "boundary_score": 88
               }
             }
-            
-            Example 4 - NEW scene detected (context changed):
+            // KEPT start_time = 800 (original pending). end_time = 944.0 (last impactful word 942.5 + 1.5s tail). NOT 960 — the trailing 17s of silence is excluded. clip_state="closed" means save immediately.
+
+            Example D — Continuation; topic CHANGED mid-window (save old, start new):
+            (pending clip currently 800s-930s. New window 930s-960s. PER-SEGMENT TIMELINE: old scene's last impactful word at 933.2s, then 4s pause, then NEW scene first impactful word at 937.8s, last at 957.1s.)
             {
               "context_change": true,
+              "clip_state": "closed",
               "pending_clip": {
                 "title": "Gambling Hot Streak",
-                "description": "Streamer hits big win",
-                "start_time": #{transcript_start},
-                "end_time": #{transcript_end},
-                "virality_score": 85,
-                "detection_reason": "Exciting gambling moment",
-                "context_summary": "Gambling session"
+                "description": "Streamer hits a huge multiplier",
+                "start_time": 937.2,
+                "end_time": 958.4,
+                "virality_score": 86,
+                "detection_reason": "Big win reaction",
+                "context_summary": "Gambling session",
+                "hook_score": 86,
+                "payoff_score": 84,
+                "emotion_score": 88,
+                "shareability_score": 85,
+                "density_score": 82,
+                "signal_score": 80,
+                "boundary_score": 88
               }
             }
-            
-            RULES:
-            - start_time and end_time are ABSOLUTE timestamps (seconds from stream start)
-            - When extending a scene, keep the original start_time, update end_time to #{transcript_end}
-            - Set context_change=true ONLY when the topic/scene completely changes
-            - Set context_change=false when continuing the same scene OR when no clip detected
+            // context_change=true triggers the client to save the OLD pending clip. NEW pending starts at 937.2 (first_word 937.8 − 0.6s) and ends at 958.4 (last_word 957.1 + 1.3s tail). clip_state="closed" means the NEW clip should also save immediately.
+
+            Example E — Last 13 seconds of window are clip-worthy, rest is filler:
+            (window 1200s-1230s; first 17s mundane chat, then PER-SEGMENT TIMELINE shows hook word at 1217.0s, last word at 1229.5s, still going)
+            {
+              "context_change": false,
+              "clip_state": "open",
+              "pending_clip": {
+                "title": "Streamer Spills Tea",
+                "description": "Reveals dating drama",
+                "start_time": 1216.4,
+                "end_time": 1230.0,
+                "virality_score": 87,
+                "detection_reason": "Surprise reveal",
+                "context_summary": "Personal drama",
+                "hook_score": 90,
+                "payoff_score": 80,
+                "emotion_score": 84,
+                "shareability_score": 88,
+                "density_score": 82,
+                "signal_score": 76,
+                "boundary_score": 86
+              }
+            }
+            // 13.6-second clip. start_time = 1216.4 (NOT 1200) skips the 17s of pre-hook filler. end_time = 1230.0 because the moment is still going at the window edge (the next window will extend it).
+
+            HARD RULES (output is rejected if violated)
+            ============================================
+            1. start_time and end_time MUST come from the PER-SEGMENT TIMELINE timestamps. NEVER copy #{transcript_start} or #{transcript_end} unless they happen to coincide with the first/last impactful word of the moment.
+            2. ALL 7 scorecard fields are MANDATORY whenever pending_clip is non-null. If you cannot supply all 7, return pending_clip: null.
+            3. Leading silence ≤ 1s, trailing silence ≤ 2s.
+            4. Continuation: KEEP existing start_time, push end_time only to the LAST impactful word (+ ≤1.5s tail). NEVER set end_time = #{transcript_end} unless that IS the last impactful word.
+            5. If hook_score < 35 OR payoff_score < 35 OR shareability_score < 35: pending_clip MUST be null.
+            6. virality_score must be ≥ #{virality_threshold} for auto-save. Score honestly.
+            7. Old response formats {"clips": [...]} and {"clips": [], "extensions": []} are DEPRECATED and forbidden.
+            8. clip_state MUST be "closed" whenever pending_clip.end_time is more than 3 seconds before #{transcript_end}. clip_state MUST be "open" only when the clip-worthy moment reaches the window edge.
             """
 
-            # Call OpenRouter API using existing generate_clips function
+            # Livestream realtime: same pinned OpenRouter model as VOD (`clip_detection_model/0`).
             case OpenRouterAPI.generate_clips(formatted_transcript, system_prompt, user_prompt) do
               {:ok, ai_response, _usage} ->
                 # Log the full AI response for debugging
                 Logger.info("[ClipsController] Full AI response: #{inspect(ai_response)}")
-                
-                # Parse AI response - extract the new pending clip data (ignore AI's context_change)
-                ai_pending_clip = case ai_response do
-                  # New format
-                  %{"context_change" => _change, "pending_clip" => clip} ->
-                    clip
-                  
-                  # Old format fallback - convert to new format
-                  %{"clips" => clips} when is_list(clips) and length(clips) > 0 ->
-                    first_clip = List.first(clips)
-                    %{
-                      "title" => Map.get(first_clip, "title", "Untitled"),
-                      "description" => Map.get(first_clip, "description", ""),
-                      "start_time" => get_clip_start_time(first_clip, transcript_start),
-                      "end_time" => get_clip_end_time(first_clip, transcript_start, transcript_end),
-                      "virality_score" => Map.get(first_clip, "virality_score", 85),
-                      "detection_reason" => Map.get(first_clip, "reason", "") || Map.get(first_clip, "detection_reason", ""),
-                      "context_summary" => String.slice(Map.get(first_clip, "title", ""), 0, 50)
-                    }
-                  
-                  # No clips detected
-                  _ ->
-                    nil
-                end
 
-                # Server-side context change detection (don't trust AI's flag)
-                # Compare existing pending clip with new detection using time overlap + semantic similarity
+                # Parse AI response - extract the new pending clip data and transition signal.
+                # The server still validates/merges below, but an explicit AI context change
+                # should be honored so unrelated live topics do not get stitched together.
+                {ai_context_change, ai_clip_state, ai_pending_clip} =
+                  case ai_response do
+                    # New format
+                    %{"context_change" => change, "pending_clip" => clip} ->
+                      {change == true,
+                       normalize_realtime_clip_state(Map.get(ai_response, "clip_state")), clip}
+
+                    # Old format fallback - convert to new format
+                    %{"clips" => clips} when is_list(clips) and length(clips) > 0 ->
+                      first_clip = List.first(clips)
+
+                      {false, "open",
+                       %{
+                         "title" => Map.get(first_clip, "title", "Untitled"),
+                         "description" => Map.get(first_clip, "description", ""),
+                         "start_time" => get_clip_start_time(first_clip, transcript_start),
+                         "end_time" =>
+                           get_clip_end_time(first_clip, transcript_start, transcript_end),
+                         "virality_score" => Map.get(first_clip, "virality_score", 85),
+                         "detection_reason" =>
+                           Map.get(first_clip, "reason", "") ||
+                             Map.get(first_clip, "detection_reason", ""),
+                         "context_summary" =>
+                           String.slice(Map.get(first_clip, "title", ""), 0, 50)
+                       }}
+
+                    # No clips detected
+                    _ ->
+                      {false, nil, nil}
+                  end
+
+                ai_pending_clip = normalize_realtime_scorecard(ai_pending_clip)
+
+                # Server-side context change detection.
+                # Honor explicit AI transitions first, then fall back to similarity/overlap merging.
                 # Max clip duration: 180 seconds (3 minutes) - force save if exceeded
                 max_clip_duration = 180
-                
-                {context_change, final_pending_clip} = cond do
-                  # No new clip detected by AI
-                  is_nil(ai_pending_clip) ->
-                    # If we have an existing pending clip and AI found nothing new,
-                    # this might mean the context ended - but we need consecutive "nothing" detections
-                    # For now, keep the existing pending clip (context continues until something new appears)
-                    {false, pending_clip}
-                  
-                  # No existing pending clip - this is a new detection
-                  is_nil(pending_clip) ->
-                    Logger.info("[ClipsController] First clip detected: #{ai_pending_clip["title"]}")
-                    {false, ai_pending_clip}
-                  
-                  # Both exist - compare them
-                  true ->
-                    # Check if pending clip has exceeded max duration
-                    pending_duration = Map.get(pending_clip, "end_time", 0) - Map.get(pending_clip, "start_time", 0)
-                    
-                    if pending_duration >= max_clip_duration do
-                      # Clip is too long - force save it and start new one
-                      Logger.info("[ClipsController] Pending clip exceeded max duration (#{pending_duration}s >= #{max_clip_duration}s), forcing save")
+
+                # If the AI returns no new pending clip while the client already has
+                # one, that is an "idle/no continuation" tick, not a quality rejection.
+                # Return pending_clip: nil so the client can count consecutive nulls
+                # and finalize the existing pending clip.
+                no_new_pending_detection = is_nil(ai_pending_clip) and not is_nil(pending_clip)
+
+                {context_change, final_pending_clip} =
+                  cond do
+                    # No new clip detected by AI
+                    is_nil(ai_pending_clip) ->
+                      {false, nil}
+
+                    # No existing pending clip - this is a new detection
+                    is_nil(pending_clip) ->
+                      Logger.info(
+                        "[ClipsController] First clip detected: #{ai_pending_clip["title"]}"
+                      )
+
+                      {false, ai_pending_clip}
+
+                    # AI explicitly identified a new topic/scene. Honor it before applying
+                    # overlap-based merge heuristics, because rolling transcript windows often
+                    # contain both the old and new topics and otherwise bias toward merging.
+                    ai_context_change ->
+                      Logger.info(
+                        "[ClipsController] AI context change! Saving: '#{pending_clip["title"]}' -> Starting: '#{ai_pending_clip["title"]}'"
+                      )
+
                       {true, ai_pending_clip}
-                    else
+
+                    # Both exist - compare them
+                    true ->
+                      # FIRST check if clips should merge (check duration AFTER merge, not before)
                       case should_merge_clips?(pending_clip, ai_pending_clip) do
                         {:merge, reason} ->
                           # Similar enough - merge/extend the pending clip
                           merged = merge_pending_clips(pending_clip, ai_pending_clip)
-                          Logger.info("[ClipsController] Merging clips (#{reason}): #{merged["start_time"]}s - #{merged["end_time"]}s")
-                          {false, merged}
-                        
+
+                          merged_duration =
+                            Map.get(merged, "end_time", 0) - Map.get(merged, "start_time", 0)
+
+                          # THEN check duration AFTER merge - cap at max_clip_duration
+                          if merged_duration >= max_clip_duration do
+                            # Cap the clip at max duration and force save
+                            Logger.info(
+                              "[ClipsController] Merged clip exceeded max duration (#{merged_duration}s >= #{max_clip_duration}s), capping at #{max_clip_duration}s"
+                            )
+
+                            capped_clip =
+                              Map.put(
+                                merged,
+                                "end_time",
+                                Map.get(merged, "start_time", 0) + max_clip_duration
+                              )
+
+                            {true, capped_clip}
+                          else
+                            Logger.info(
+                              "[ClipsController] Merging clips (#{reason}): #{merged["start_time"]}s - #{merged["end_time"]}s"
+                            )
+
+                            {false, merged}
+                          end
+
                         {:different, reason} ->
                           # Truly different context - save existing, start new
-                          Logger.info("[ClipsController] Context change (#{reason})! Saving: '#{pending_clip["title"]}' -> Starting: '#{ai_pending_clip["title"]}'")
+                          Logger.info(
+                            "[ClipsController] Context change (#{reason})! Saving: '#{pending_clip["title"]}' -> Starting: '#{ai_pending_clip["title"]}'"
+                          )
+
                           {true, ai_pending_clip}
                       end
-                    end
-                end
+                  end
 
-                Logger.info("[ClipsController] Context change: #{context_change}, Pending clip: #{if final_pending_clip, do: "#{final_pending_clip["title"]} (#{final_pending_clip["start_time"]}s - #{final_pending_clip["end_time"]}s)", else: "none"}")
+                candidate_before_quality_gate = final_pending_clip
+
+                {final_pending_clip, pending_clip_rejection_reason} =
+                  apply_realtime_quality_gate(
+                    final_pending_clip,
+                    transcript,
+                    virality_threshold,
+                    transcript_segments,
+                    reach_settings
+                  )
+
+                clip_state =
+                  infer_realtime_clip_state(ai_clip_state, final_pending_clip, transcript_end)
+
+                Logger.info(
+                  "[ClipsController] Context change: #{context_change}, Clip state: #{inspect(clip_state)}, Pending clip: #{if final_pending_clip, do: "#{final_pending_clip["title"]} (#{final_pending_clip["start_time"]}s - #{final_pending_clip["end_time"]}s)", else: "none"}"
+                )
 
                 json(conn, %{
                   success: true,
                   context_change: context_change,
-                  pending_clip: final_pending_clip
+                  clip_state: clip_state,
+                  pending_clip: final_pending_clip,
+                  no_new_pending_detection: no_new_pending_detection,
+                  pending_clip_rejected:
+                    is_nil(final_pending_clip) and not is_nil(pending_clip) and not context_change and
+                      not no_new_pending_detection,
+                  candidate_rejected:
+                    is_nil(final_pending_clip) and not is_nil(candidate_before_quality_gate),
+                  pending_clip_rejection_reason: pending_clip_rejection_reason,
+                  reach_settings: %{
+                    tier: reach_settings.tier,
+                    tier_label: reach_settings.tier_label,
+                    matched_name: reach_settings.matched_name,
+                    virality_threshold: reach_settings.virality_threshold,
+                    min_duration: reach_settings.min_duration,
+                    min_words_short: reach_settings.min_words_short,
+                    min_words_medium: reach_settings.min_words_medium,
+                    min_words_long: reach_settings.min_words_long,
+                    min_density_short: reach_settings.min_density_short,
+                    min_density_long: reach_settings.min_density_long
+                  }
                 })
 
               {:error, reason} ->
                 Logger.error("[ClipsController] AI detection failed: #{inspect(reason)}")
 
-                conn
-                |> put_status(500)
-                |> json(%{
-                  success: false,
-                  error: "Detection failed",
-                  details: inspect(reason)
+                # Realtime detection is a long-running live loop. A single
+                # transient model/provider failure should not make the client
+                # treat detection as broken or clear a pending clip. Return a
+                # successful no-op tick and let the next interval continue.
+                json(conn, %{
+                  success: true,
+                  context_change: false,
+                  clip_state: "open",
+                  pending_clip: pending_clip,
+                  pending_clip_rejected: false,
+                  candidate_rejected: false,
+                  pending_clip_rejection_reason: nil,
+                  ai_error: inspect(reason),
+                  reach_settings: %{
+                    tier: reach_settings.tier,
+                    tier_label: reach_settings.tier_label,
+                    matched_name: reach_settings.matched_name,
+                    virality_threshold: reach_settings.virality_threshold,
+                    min_duration: reach_settings.min_duration,
+                    min_words_short: reach_settings.min_words_short,
+                    min_words_medium: reach_settings.min_words_medium,
+                    min_words_long: reach_settings.min_words_long,
+                    min_density_short: reach_settings.min_density_short,
+                    min_density_long: reach_settings.min_density_long
+                  }
                 })
             end
         end
@@ -3871,6 +4360,594 @@ defmodule ClippsterServerWeb.ClipsController do
         |> json(%{success: false, error: "Unauthorized"})
     end
   end
+
+  defp normalize_realtime_clip_state("open"), do: "open"
+  defp normalize_realtime_clip_state("closed"), do: "closed"
+  defp normalize_realtime_clip_state(:open), do: "open"
+  defp normalize_realtime_clip_state(:closed), do: "closed"
+  defp normalize_realtime_clip_state(_), do: nil
+
+  defp infer_realtime_clip_state(_requested_state, nil, _transcript_end), do: nil
+
+  defp infer_realtime_clip_state(requested_state, clip, transcript_end) do
+    requested_state =
+      requested_state
+      |> normalize_realtime_clip_state()
+
+    cond do
+      requested_state in ["open", "closed"] ->
+        requested_state
+
+      number_or_default(Map.get(clip, "end_time"), 0) <=
+          number_or_default(transcript_end, 0) - 3 ->
+        "closed"
+
+      true ->
+        "open"
+    end
+  end
+
+  defp apply_realtime_quality_gate(
+         nil,
+         _transcript,
+         _virality_threshold,
+         _segments,
+         _reach_settings
+       ),
+       do: {nil, nil}
+
+  defp apply_realtime_quality_gate(
+         clip,
+         transcript,
+         virality_threshold,
+         segments,
+         reach_settings
+       ) do
+    start_time = number_or_default(Map.get(clip, "start_time"), 0)
+    end_time = number_or_default(Map.get(clip, "end_time"), start_time)
+
+    if is_list(segments) and segments != [] and
+         not realtime_segments_cover_range?(segments, start_time, end_time) do
+      Logger.info(
+        "[ClipsController] Skipping realtime quality gate for #{inspect(Map.get(clip, "title"))}: clip range #{Float.round(start_time, 1)}s-#{Float.round(end_time, 1)}s is not covered by current #{length(segments)} segment window"
+      )
+
+      {clip, nil}
+    else
+      apply_realtime_quality_gate_for_covered_range(
+        clip,
+        transcript,
+        virality_threshold,
+        segments,
+        reach_settings,
+        start_time,
+        end_time
+      )
+    end
+  end
+
+  defp apply_realtime_quality_gate_for_covered_range(
+         clip,
+         transcript,
+         virality_threshold,
+         segments,
+         reach_settings,
+         start_time,
+         end_time
+       ) do
+    initial_stats = realtime_range_stats(segments, transcript, start_time, end_time)
+
+    {clip, trim_reasons} = trim_realtime_clip_boundaries(clip, initial_stats)
+    clip = apply_realtime_scorecard_policy(clip)
+
+    start_time = number_or_default(Map.get(clip, "start_time"), 0)
+    end_time = number_or_default(Map.get(clip, "end_time"), start_time)
+    stats = realtime_range_stats(segments, transcript, start_time, end_time)
+    duration = stats.duration
+
+    # Tier-aware floors. For unknown streamers these match the original values
+    # (4s, 4/8/12 words, 0.35/0.45 density). For famous/top-tier creators we
+    # soften the bar — they reliably produce viral content even at lower
+    # density, so a 13s tight clip with 5 words on Kai Cenat is still a save.
+    min_duration =
+      if reach_settings, do: reach_settings.min_duration, else: 4.0
+
+    min_words =
+      cond do
+        duration <= 12 ->
+          if reach_settings, do: reach_settings.min_words_short, else: 4
+
+        duration <= 20 ->
+          if reach_settings, do: reach_settings.min_words_medium, else: 8
+
+        true ->
+          if reach_settings, do: reach_settings.min_words_long, else: 12
+      end
+
+    min_density =
+      cond do
+        duration <= 12 ->
+          if reach_settings, do: reach_settings.min_density_short, else: 0.35
+
+        true ->
+          if reach_settings, do: reach_settings.min_density_long, else: 0.45
+      end
+
+    rejection_reasons =
+      []
+      |> maybe_add_reason(duration < min_duration, "too_short")
+      |> maybe_add_reason(stats.word_count < min_words, "too_few_words")
+      |> maybe_add_reason(stats.speech_density < min_density, "low_speech_density")
+      |> maybe_add_reason(stats.longest_gap > 14 and duration > 25, "internal_dead_air")
+      |> maybe_add_reason(stats.leading_silence > 3, "leading_dead_air")
+      |> maybe_add_reason(stats.trailing_silence > 5, "trailing_dead_air")
+
+    cond do
+      Map.get(clip, "_realtime_scorecard_rejected") == true ->
+        reason =
+          "scorecard:#{Map.get(clip, "_realtime_scorecard_rejection_reason")}"
+
+        Logger.info(
+          "[ClipsController] Realtime scorecard rejected #{inspect(Map.get(clip, "title"))}: #{reason}"
+        )
+
+        {nil, reason}
+
+      rejection_reasons != [] ->
+        reason = "quality:#{Enum.join(rejection_reasons, ",")}"
+
+        Logger.info(
+          "[ClipsController] Realtime quality gate rejected #{inspect(Map.get(clip, "title"))}: #{Enum.join(rejection_reasons, ", ")} (duration=#{Float.round(duration, 1)}s, words=#{stats.word_count}, density=#{Float.round(stats.speech_density, 2)}wps)"
+        )
+
+        {nil, reason}
+
+      number_or_default(Map.get(clip, "virality_score"), 0) <
+          number_or_default(virality_threshold, 85) ->
+        {nil, "below_virality_threshold"}
+
+      true ->
+        gated_clip =
+          clip
+          |> maybe_append_realtime_scorecard_reason()
+          |> maybe_append_realtime_gate_reason(trim_reasons)
+
+        {gated_clip, nil}
+    end
+  end
+
+  defp normalize_realtime_scorecard(nil), do: nil
+
+  defp normalize_realtime_scorecard(clip) when is_map(clip) do
+    default_score = realtime_scorecard_default(clip)
+
+    Enum.reduce(realtime_scorecard_fields(), clip, fn {field, camel_field}, acc ->
+      value = Map.get(acc, field) || Map.get(acc, camel_field) || default_score
+      Map.put(acc, field, clamp_score(value))
+    end)
+  end
+
+  defp normalize_realtime_scorecard(clip), do: clip
+
+  defp realtime_scorecard_default(clip) do
+    Map.get(clip, "virality_score") ||
+      Map.get(clip, "viralityScore") ||
+      Map.get(clip, "score") ||
+      75
+  end
+
+  # Realtime scorecard policy: only catastrophic floors reject; the multi-component
+  # hard score caps were removed because they consistently capped clips below the
+  # 85 virality threshold and starved auto-detection of any saves.
+  defp apply_realtime_scorecard_policy(clip) do
+    scorecard = realtime_scorecard(clip)
+
+    cond do
+      not realtime_scorecard_complete?(scorecard) ->
+        reject_realtime_scorecard(clip, "missing_scorecard_fields")
+
+      scorecard[:hook_score] < 35 ->
+        reject_realtime_scorecard(clip, "catastrophic_hook_score")
+
+      scorecard[:payoff_score] < 35 ->
+        reject_realtime_scorecard(clip, "catastrophic_payoff_score")
+
+      scorecard[:shareability_score] < 35 ->
+        reject_realtime_scorecard(clip, "catastrophic_shareability_score")
+
+      true ->
+        clip
+    end
+  end
+
+  defp reject_realtime_scorecard(clip, reason) do
+    clip
+    |> Map.put("_realtime_scorecard_rejected", true)
+    |> Map.put("_realtime_scorecard_rejection_reason", reason)
+  end
+
+  defp realtime_scorecard(clip) do
+    Enum.reduce(realtime_scorecard_fields(), %{}, fn {field, _camel_field}, acc ->
+      case Map.get(clip, field) do
+        value when is_number(value) -> Map.put(acc, String.to_atom(field), value)
+        _ -> acc
+      end
+    end)
+  end
+
+  defp realtime_scorecard_complete?(scorecard) do
+    Enum.all?(realtime_scorecard_fields(), fn {field, _camel_field} ->
+      Map.has_key?(scorecard, String.to_atom(field))
+    end)
+  end
+
+  defp realtime_scorecard_fields do
+    [
+      {"hook_score", "hookScore"},
+      {"payoff_score", "payoffScore"},
+      {"emotion_score", "emotionScore"},
+      {"shareability_score", "shareabilityScore"},
+      {"density_score", "densityScore"},
+      {"signal_score", "signalScore"},
+      {"boundary_score", "boundaryScore"}
+    ]
+  end
+
+  defp clamp_score(value) do
+    value
+    |> number_or_default(0)
+    |> max(0)
+    |> min(100)
+  end
+
+  defp format_realtime_timing_summary(stats, segments) do
+    word_count = number_or_default(Map.get(stats, "wordCount") || Map.get(stats, "word_count"), 0)
+
+    density =
+      number_or_default(Map.get(stats, "speechDensity") || Map.get(stats, "speech_density"), 0)
+
+    first_speech =
+      case Map.get(stats, "firstSpeechTime") || Map.get(stats, "first_speech_time") do
+        nil -> "n/a"
+        value -> "#{Float.round(number_or_default(value, 0), 2)}s"
+      end
+
+    last_speech =
+      case Map.get(stats, "lastSpeechTime") || Map.get(stats, "last_speech_time") do
+        nil -> "n/a"
+        value -> "#{Float.round(number_or_default(value, 0), 2)}s"
+      end
+
+    """
+    REALTIME TIMING SUMMARY:
+    - Timed transcript segments available: #{if is_list(segments), do: length(segments), else: 0}
+    - First spoken word at: #{first_speech}  (use as start_time floor)
+    - Last spoken word at: #{last_speech}    (use as end_time ceiling)
+    - Rolling word count: #{round(word_count)}
+    - Rolling speech density: #{Float.round(density, 2)} words/sec
+    - Leading silence: #{Float.round(number_or_default(Map.get(stats, "leadingSilence") || Map.get(stats, "leading_silence"), 0), 1)}s
+    - Trailing silence: #{Float.round(number_or_default(Map.get(stats, "trailingSilence") || Map.get(stats, "trailing_silence"), 0), 1)}s
+    - Longest internal gap: #{Float.round(number_or_default(Map.get(stats, "longestGap") || Map.get(stats, "longest_gap"), 0), 1)}s
+    """
+    |> String.trim()
+  end
+
+  # Format the per-segment Whisper transcription as a numbered list with absolute
+  # timestamps so the LLM can anchor start_time / end_time on actual word boundaries
+  # instead of copying the rolling-window edges.
+  defp format_realtime_segment_timeline(segments) when is_list(segments) and segments != [] do
+    lines =
+      segments
+      |> Enum.with_index(1)
+      |> Enum.map(fn {segment, idx} ->
+        seg_start = number_or_default(Map.get(segment, "start"), 0)
+        seg_end = number_or_default(Map.get(segment, "end"), seg_start)
+        text = Map.get(segment, "text", "") |> to_string() |> String.trim()
+        words = Map.get(segment, "words", [])
+
+        first_word_ts =
+          case words do
+            [first | _] when is_map(first) ->
+              first_start = number_or_default(Map.get(first, "start"), seg_start)
+              "first_word=#{Float.round(first_start, 2)}s"
+
+            _ ->
+              "first_word=#{Float.round(seg_start, 2)}s"
+          end
+
+        last_word_ts =
+          case Enum.reverse(words) do
+            [last | _] when is_map(last) ->
+              last_end = number_or_default(Map.get(last, "end"), seg_end)
+              "last_word=#{Float.round(last_end, 2)}s"
+
+            _ ->
+              "last_word=#{Float.round(seg_end, 2)}s"
+          end
+
+        "##{idx} [#{Float.round(seg_start, 2)}s - #{Float.round(seg_end, 2)}s | #{first_word_ts}, #{last_word_ts}] #{text}"
+      end)
+
+    """
+    PER-SEGMENT TIMELINE (absolute stream seconds — use these to set start_time / end_time):
+    #{Enum.join(lines, "\n")}
+    """
+    |> String.trim()
+  end
+
+  defp format_realtime_segment_timeline(_segments),
+    do:
+      "PER-SEGMENT TIMELINE: (no timed segments available — DO NOT guess timestamps; if no usable timing, return pending_clip: null)"
+
+  defp trim_realtime_clip_boundaries(clip, stats) do
+    clip = Map.put(clip, "start_time", number_or_default(Map.get(clip, "start_time"), 0))
+    clip = Map.put(clip, "end_time", number_or_default(Map.get(clip, "end_time"), 0))
+    reasons = []
+
+    {clip, reasons} =
+      if stats.first_speech_time != nil and stats.leading_silence > 3 do
+        {
+          Map.put(
+            clip,
+            "start_time",
+            max(Map.get(clip, "start_time"), stats.first_speech_time - 0.75)
+          ),
+          ["trimmed_leading_silence" | reasons]
+        }
+      else
+        {clip, reasons}
+      end
+
+    if stats.last_speech_time != nil and stats.trailing_silence > 5 do
+      {
+        Map.put(clip, "end_time", min(Map.get(clip, "end_time"), stats.last_speech_time + 2.0)),
+        ["trimmed_trailing_silence" | reasons]
+      }
+    else
+      {clip, reasons}
+    end
+  end
+
+  defp maybe_append_realtime_gate_reason(clip, []), do: clip
+
+  defp maybe_append_realtime_gate_reason(clip, reasons) do
+    existing_reason =
+      Map.get(clip, "detection_reason") || Map.get(clip, "reason") || ""
+
+    Map.put(
+      clip,
+      "detection_reason",
+      String.trim("#{existing_reason} | Quality gates: #{Enum.join(Enum.reverse(reasons), ", ")}")
+    )
+  end
+
+  defp maybe_append_realtime_scorecard_reason(clip) do
+    scorecard = realtime_scorecard(clip)
+
+    if realtime_scorecard_complete?(scorecard) do
+      existing_reason =
+        Map.get(clip, "detection_reason") || Map.get(clip, "reason") || ""
+
+      scorecard_summary =
+        "Scorecard: hook=#{round(scorecard[:hook_score])}, payoff=#{round(scorecard[:payoff_score])}, emotion=#{round(scorecard[:emotion_score])}, share=#{round(scorecard[:shareability_score])}, density=#{round(scorecard[:density_score])}, signal=#{round(scorecard[:signal_score])}, boundary=#{round(scorecard[:boundary_score])}"
+
+      clip
+      |> Map.put("detection_reason", String.trim("#{existing_reason} | #{scorecard_summary}"))
+      |> strip_realtime_private_fields()
+    else
+      strip_realtime_private_fields(clip)
+    end
+  end
+
+  defp strip_realtime_private_fields(clip) do
+    clip
+    |> Map.delete("_realtime_scorecard_rejected")
+    |> Map.delete("_realtime_scorecard_rejection_reason")
+  end
+
+  defp realtime_range_stats(segments, fallback_text, range_start, range_end)
+       when is_list(segments) do
+    duration = max(range_end - range_start, 0.0)
+
+    events =
+      segments
+      |> Enum.flat_map(&realtime_speech_events(&1, range_start, range_end))
+      |> Enum.sort_by(& &1.start)
+
+    if events == [] do
+      fallback_word_count = if segments == [], do: realtime_word_count(fallback_text), else: 0
+
+      %{
+        duration: duration,
+        word_count: fallback_word_count,
+        spoken_duration: duration,
+        speech_density: if(duration > 0, do: fallback_word_count / duration, else: 0.0),
+        first_speech_time: nil,
+        last_speech_time: nil,
+        leading_silence: 0.0,
+        trailing_silence: 0.0,
+        longest_gap: 0.0
+      }
+    else
+      word_count = Enum.reduce(events, 0, &(&1.words + &2))
+      first_speech_time = List.first(events).start
+      last_speech_time = List.last(events).end
+      spoken_duration = Enum.reduce(events, 0.0, &(max(&1.end - &1.start, 0.0) + &2))
+      longest_gap = realtime_longest_gap(events)
+
+      %{
+        duration: duration,
+        word_count: word_count,
+        spoken_duration: spoken_duration,
+        speech_density: if(duration > 0, do: word_count / duration, else: 0.0),
+        first_speech_time: first_speech_time,
+        last_speech_time: last_speech_time,
+        leading_silence: max(first_speech_time - range_start, 0.0),
+        trailing_silence: max(range_end - last_speech_time, 0.0),
+        longest_gap: longest_gap
+      }
+    end
+  end
+
+  defp realtime_range_stats(_segments, fallback_text, range_start, range_end) do
+    duration = max(range_end - range_start, 0.0)
+    word_count = realtime_word_count(fallback_text)
+
+    %{
+      duration: duration,
+      word_count: word_count,
+      spoken_duration: duration,
+      speech_density: if(duration > 0, do: word_count / duration, else: 0.0),
+      first_speech_time: nil,
+      last_speech_time: nil,
+      leading_silence: 0.0,
+      trailing_silence: 0.0,
+      longest_gap: 0.0
+    }
+  end
+
+  defp realtime_segments_cover_range?(segments, range_start, range_end)
+       when is_list(segments) and segments != [] do
+    segment_bounds =
+      segments
+      |> Enum.filter(&is_map/1)
+      |> Enum.map(fn segment ->
+        start_time = number_or_default(Map.get(segment, "start"), 0)
+        end_time = number_or_default(Map.get(segment, "end"), start_time)
+        {start_time, end_time}
+      end)
+
+    case segment_bounds do
+      [] ->
+        false
+
+      bounds ->
+        earliest_start =
+          bounds
+          |> Enum.map(fn {start_time, _end_time} -> start_time end)
+          |> Enum.min()
+
+        latest_end =
+          bounds
+          |> Enum.map(fn {_start_time, end_time} -> end_time end)
+          |> Enum.max()
+
+        # The client sends only the active 30s window. A pending clip can span
+        # previous windows, so server-side quality checks are only meaningful
+        # when this request's timed segments cover the entire clip range.
+        range_start >= earliest_start - 0.75 and range_end <= latest_end + 0.75
+    end
+  end
+
+  defp realtime_segments_cover_range?(_segments, _range_start, _range_end), do: false
+
+  defp realtime_speech_events(segment, range_start, range_end) when is_map(segment) do
+    start_time = number_or_default(Map.get(segment, "start"), 0)
+    end_time = number_or_default(Map.get(segment, "end"), start_time)
+    words = Map.get(segment, "words", [])
+
+    cond do
+      end_time < range_start or start_time > range_end ->
+        []
+
+      is_list(words) and words != [] ->
+        words
+        |> Enum.filter(&valid_realtime_word?(&1, range_start, range_end))
+        |> Enum.map(fn word ->
+          %{
+            start: max(number_or_default(Map.get(word, "start"), range_start), range_start),
+            end: min(number_or_default(Map.get(word, "end"), range_end), range_end),
+            words: 1
+          }
+        end)
+
+      true ->
+        overlap_start = max(start_time, range_start)
+        overlap_end = min(end_time, range_end)
+        word_count = realtime_word_count(Map.get(segment, "text", ""))
+
+        if overlap_end > overlap_start and word_count > 0 do
+          [%{start: overlap_start, end: overlap_end, words: word_count}]
+        else
+          []
+        end
+    end
+  end
+
+  defp realtime_speech_events(_segment, _range_start, _range_end), do: []
+
+  defp valid_realtime_word?(word, range_start, range_end) when is_map(word) do
+    word_start = number_or_default(Map.get(word, "start"), -1)
+    word_end = number_or_default(Map.get(word, "end"), -1)
+
+    is_binary(Map.get(word, "word")) and String.trim(Map.get(word, "word")) != "" and
+      word_end >= range_start and word_start <= range_end
+  end
+
+  defp valid_realtime_word?(_word, _range_start, _range_end), do: false
+
+  defp realtime_longest_gap([_event]), do: 0.0
+
+  defp realtime_longest_gap(events) do
+    events
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.reduce(0.0, fn [previous, current], longest ->
+      max(longest, current.start - previous.end)
+    end)
+  end
+
+  defp realtime_word_count(text) when is_binary(text) do
+    text
+    |> String.replace(~r/[^[:alnum:]\s']/u, " ")
+    |> String.split(~r/\s+/, trim: true)
+    |> Enum.count(&(String.length(&1) > 1))
+  end
+
+  defp realtime_word_count(_), do: 0
+
+  defp format_realtime_reach_context(reach_settings) do
+    note =
+      case reach_settings.tier do
+        :top_tier ->
+          "This is a TOP-TIER VIRAL CREATOR. Their average moments outperform peak moments from unknown streamers — be more willing to flag mid-strength hooks as clip-worthy."
+
+        :famous ->
+          "This is a FAMOUS CREATOR known for viral content. Loyal fanbase amplifies even average moments. Lower the bar slightly for hook strength."
+
+        :established ->
+          "This is an ESTABLISHED CREATOR with a meaningful audience. Solid moments are worth saving."
+
+        :niche ->
+          "Niche creator. Use standard thresholds."
+
+        _ ->
+          "Unknown creator. Use standard thresholds — only save genuinely viral moments."
+      end
+
+    """
+    STREAMER REACH
+    --------------
+    Tier: #{reach_settings.tier_label}#{if reach_settings.matched_name, do: " (matched: #{reach_settings.matched_name})", else: ""}
+    Auto-save virality threshold for this streamer: #{reach_settings.virality_threshold}
+    Note: #{note}
+    """
+    |> String.trim()
+  end
+
+  defp maybe_add_reason(reasons, true, reason), do: [reason | reasons]
+  defp maybe_add_reason(reasons, false, _reason), do: reasons
+
+  defp number_or_default(value, _default) when is_integer(value), do: value * 1.0
+  defp number_or_default(value, _default) when is_float(value), do: value
+
+  defp number_or_default(value, default) when is_binary(value) do
+    case Float.parse(value) do
+      {number, _} -> number
+      :error -> default
+    end
+  end
+
+  defp number_or_default(_value, default), do: default
 
   # Helper functions for converting old clip format to new pending_clip format
   defp get_clip_start_time(clip, transcript_start) do
@@ -3887,6 +4964,7 @@ defmodule ClippsterServerWeb.ClipsController do
       segments when is_list(segments) and length(segments) > 0 ->
         last_segment = List.last(segments)
         Map.get(last_segment, "end_time", transcript_end)
+
       _ ->
         start_time = get_clip_start_time(clip, transcript_start)
         duration = Map.get(clip, "total_duration") || Map.get(clip, "duration", 30)
@@ -3930,26 +5008,30 @@ defmodule ClippsterServerWeb.ClipsController do
       intersection / union
     end
   end
+
   defp calculate_word_similarity(_, _), do: 0.0
 
   # Determine if two clips should be MERGED (extended) vs saved separately
   # Returns {:merge, reason} if clips should be merged, {:different, reason} if truly different
-  defp should_merge_clips?(existing_clip, new_clip) when is_map(existing_clip) and is_map(new_clip) do
+  defp should_merge_clips?(existing_clip, new_clip)
+       when is_map(existing_clip) and is_map(new_clip) do
     # Check title similarity
     existing_title = Map.get(existing_clip, "title", "") || ""
     new_title = Map.get(new_clip, "title", "") || ""
     title_similarity = calculate_word_similarity(existing_title, new_title)
-    
+
     # Check context summary similarity
     existing_summary = Map.get(existing_clip, "context_summary", "") || ""
     new_summary = Map.get(new_clip, "context_summary", "") || ""
     context_similarity = calculate_word_similarity(existing_summary, new_summary)
-    
+
     # Calculate time overlap
     time_overlap = calculate_time_overlap(existing_clip, new_clip)
-    
-    Logger.info("[ClipsController] Merge check: time_overlap=#{Float.round(time_overlap, 2)}, context_sim=#{Float.round(context_similarity, 2)}, title_sim=#{Float.round(title_similarity, 2)}")
-    
+
+    Logger.info(
+      "[ClipsController] Merge check: time_overlap=#{Float.round(time_overlap, 2)}, context_sim=#{Float.round(context_similarity, 2)}, title_sim=#{Float.round(title_similarity, 2)}"
+    )
+
     # MERGE if:
     # 1. Very high title similarity (>70%) - clearly same moment
     # 2. OR moderate title similarity (>30%) WITH significant time overlap (>40%) - related content, extend it
@@ -3958,20 +5040,24 @@ defmodule ClippsterServerWeb.ClipsController do
     cond do
       title_similarity > 0.7 ->
         {:merge, "high title similarity (#{Float.round(title_similarity, 2)})"}
-      
+
       title_similarity > 0.3 and time_overlap > 0.4 ->
-        {:merge, "moderate title similarity (#{Float.round(title_similarity, 2)}) with significant overlap (#{Float.round(time_overlap, 2)})"}
-      
+        {:merge,
+         "moderate title similarity (#{Float.round(title_similarity, 2)}) with significant overlap (#{Float.round(time_overlap, 2)})"}
+
       title_similarity > 0.2 and time_overlap > 0.5 ->
-        {:merge, "some title similarity (#{Float.round(title_similarity, 2)}) with very high overlap (#{Float.round(time_overlap, 2)})"}
-      
+        {:merge,
+         "some title similarity (#{Float.round(title_similarity, 2)}) with very high overlap (#{Float.round(time_overlap, 2)})"}
+
       context_similarity > 0.5 and time_overlap > 0.1 ->
         {:merge, "context similarity (#{Float.round(context_similarity, 2)}) with overlap"}
-      
+
       true ->
-        {:different, "low similarity (title=#{Float.round(title_similarity, 2)}, context=#{Float.round(context_similarity, 2)}, overlap=#{Float.round(time_overlap, 2)})"}
+        {:different,
+         "low similarity (title=#{Float.round(title_similarity, 2)}, context=#{Float.round(context_similarity, 2)}, overlap=#{Float.round(time_overlap, 2)})"}
     end
   end
+
   defp should_merge_clips?(_, _), do: {:different, "invalid clips"}
 
   # Merge two clips that represent the same context
@@ -3981,13 +5067,13 @@ defmodule ClippsterServerWeb.ClipsController do
     existing_end = Map.get(existing_clip, "end_time", 0)
     new_start = Map.get(new_clip, "start_time", 0)
     new_end = Map.get(new_clip, "end_time", 0)
-    
+
     existing_score = Map.get(existing_clip, "virality_score", 0)
     new_score = Map.get(new_clip, "virality_score", 0)
-    
+
     # Use metadata from whichever has higher virality score
     base_clip = if new_score > existing_score, do: new_clip, else: existing_clip
-    
+
     %{
       "title" => Map.get(base_clip, "title"),
       "description" => Map.get(base_clip, "description"),

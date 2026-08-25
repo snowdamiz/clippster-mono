@@ -21,11 +21,16 @@ defmodule ClippsterServer.Organizations do
     OrganizationProfileAssignment,
     OrganizationSharedClip,
     SharedClipRecipient,
+    OrganizationSharedAudio,
+    SharedAudioRecipient,
     OrganizationApplication
   }
 
   alias ClippsterServer.{Emails, Mailer}
   alias ClippsterServer.Storage
+  alias ClippsterServer.Campaigns.{Campaign, CampaignSubmission}
+  alias ClippsterServer.Organizations.HiringPost
+  alias ClippsterServer.Social.{ExternalPostSubmission, PostSubmission, SocialAccount}
 
   # ============================================================================
   # Organization CRUD
@@ -108,6 +113,149 @@ defmodule ClippsterServer.Organizations do
   """
   def get_organization_by_slug(slug) do
     Repo.get_by(Organization, slug: slug)
+  end
+
+  @doc """
+  Checks if an organization name is available (case-insensitive).
+  Returns {:ok, true} if available, {:ok, false} if taken.
+  Optionally excludes an org_id from the check (for updates).
+  """
+  def is_org_name_available?(name, exclude_org_id \\ nil) do
+    normalized = name |> String.trim() |> String.downcase()
+
+    query =
+      from(o in Organization,
+        where: fragment("lower(?)", o.name) == ^normalized
+      )
+
+    query =
+      if exclude_org_id do
+        from(o in query, where: o.id != ^exclude_org_id)
+      else
+        query
+      end
+
+    {:ok, !Repo.exists?(query)}
+  end
+
+  @doc """
+  Gets a public organization profile payload by slug.
+  """
+  def get_public_profile_by_slug(slug) when is_binary(slug) do
+    case Repo.get_by(Organization, slug: slug) do
+      nil ->
+        nil
+
+      organization ->
+        # Total campaigns excludes draft (not public) and includes active, paused, and completed
+        campaign_total =
+          from(c in Campaign,
+            where:
+              c.organization_id == ^organization.id and
+                c.status in ["active", "paused", "completed"],
+            select: count(c.id)
+          )
+          |> Repo.one()
+
+        campaign_running =
+          from(c in Campaign,
+            where: c.organization_id == ^organization.id and c.status == "active",
+            select: count(c.id)
+          )
+          |> Repo.one()
+
+        campaign_completed =
+          from(c in Campaign,
+            where: c.organization_id == ^organization.id and c.status == "completed",
+            select: count(c.id)
+          )
+          |> Repo.one()
+
+        # Clippers count includes all members (member, admin, owner)
+        clippers_count =
+          from(m in OrganizationMember,
+            where: m.organization_id == ^organization.id,
+            select: count(m.id)
+          )
+          |> Repo.one()
+
+        streamers =
+          from(p in OrganizationCreatorProfile,
+            where:
+              p.organization_id == ^organization.id and p.scope == "streamer" and
+                p.disabled == false,
+            preload: [:platform_links],
+            order_by: [desc: p.inserted_at]
+          )
+          |> Repo.all()
+
+        social_accounts =
+          from(a in SocialAccount,
+            where: a.organization_id == ^organization.id and a.is_active == true,
+            order_by: [desc: a.connected_at]
+          )
+          |> Repo.all()
+
+        hiring_post =
+          from(h in HiringPost,
+            where:
+              h.organization_id == ^organization.id and h.status == "active" and
+                h.is_public == true,
+            limit: 1
+          )
+          |> Repo.one()
+
+        # Match client PostSubmissionsList.vue loadSummary():
+        # - published scheduled posts (PostSubmission), same window as get_analytics_summary/2 (default 30 days)
+        # - all external link submissions for the org (view_count sum)
+        # - all campaign submissions for the org's campaigns (view_count sum)
+        since_30d = DateTime.utc_now() |> DateTime.add(-30, :day)
+
+        scheduled_post_views =
+          from(p in PostSubmission,
+            where: p.organization_id == ^organization.id,
+            where: p.status == "published",
+            where: p.posted_at >= ^since_30d,
+            select: sum(p.view_count)
+          )
+          |> Repo.one()
+
+        org_external_post_views =
+          from(e in ExternalPostSubmission,
+            where: e.organization_id == ^organization.id,
+            select: sum(e.view_count)
+          )
+          |> Repo.one()
+
+        campaign_submission_views =
+          from(s in CampaignSubmission,
+            join: c in Campaign,
+            on: s.campaign_id == c.id,
+            where: c.organization_id == ^organization.id,
+            select: sum(s.view_count)
+          )
+          |> Repo.one()
+
+        total_views =
+          (scheduled_post_views || 0) +
+            (org_external_post_views || 0) +
+            (campaign_submission_views || 0)
+
+        %{
+          organization: organization,
+          stats: %{
+            campaigns_total: campaign_total || 0,
+            campaigns_running: campaign_running || 0,
+            campaigns_completed: campaign_completed || 0,
+            clippers_count: clippers_count || 0,
+            streamers_count: length(streamers),
+            total_views: total_views
+          },
+          streamers: streamers,
+          social_accounts: social_accounts,
+          hiring_post: hiring_post
+        }
+    end
   end
 
   @doc """
@@ -653,6 +801,109 @@ defmodule ClippsterServer.Organizations do
   end
 
   @doc """
+  Declines a pending invitation (user declining their own invitation).
+  Returns the invitation with organization and inviter preloaded for notification purposes.
+  """
+  def decline_invitation(invitation_id, %User{} = user) do
+    invitation =
+      OrganizationInvitation
+      |> where([i], i.id == ^invitation_id)
+      |> preload([:organization, :invited_by_user])
+      |> Repo.one()
+
+    cond do
+      is_nil(invitation) ->
+        {:error, :not_found}
+
+      invitation.status != "pending" ->
+        {:error, :already_processed}
+
+      invitation.email != user.email ->
+        {:error, :unauthorized}
+
+      true ->
+        case invitation
+             |> OrganizationInvitation.cancel_changeset()
+             |> Repo.update() do
+          {:ok, updated_invitation} ->
+            # Return invitation with preloads for the controller to create in-app notification
+            {:ok, Repo.preload(updated_invitation, [:organization, :invited_by_user])}
+
+          error ->
+            error
+        end
+    end
+  end
+
+  @doc """
+  Accepts an invitation by ID (for in-app acceptance by authenticated users).
+  This is used when the user accepts via the app's notification dialog.
+  """
+  def accept_invitation_by_id(invitation_id, %User{} = user) do
+    invitation =
+      OrganizationInvitation
+      |> where([i], i.id == ^invitation_id)
+      |> where([i], i.status == "pending")
+      |> preload([:organization, :invited_by_user])
+      |> Repo.one()
+
+    cond do
+      is_nil(invitation) ->
+        {:error, :not_found}
+
+      OrganizationInvitation.expired?(invitation) ->
+        {:error, :invitation_expired}
+
+      invitation.email != user.email ->
+        {:error, :unauthorized}
+
+      user.subscription_tier == "basic" ->
+        {:error, :basic_tier_cannot_join}
+
+      is_member?(invitation.organization_id, user.id) ->
+        # Already a member, just mark invitation as accepted
+        case invitation
+             |> OrganizationInvitation.accept_changeset()
+             |> Repo.update() do
+          {:ok, updated_invitation} ->
+            {:ok, Repo.preload(updated_invitation, [:organization, :invited_by_user])}
+
+          error ->
+            error
+        end
+
+      true ->
+        case Repo.transaction(fn ->
+               # Add as member
+               {:ok, _member} = add_member(invitation.organization_id, user.id, invitation.role)
+
+               # Initialize credit allocation
+               {:ok, _allocation} =
+                 %MemberCreditAllocation{}
+                 |> MemberCreditAllocation.changeset(%{
+                   organization_id: invitation.organization_id,
+                   user_id: user.id
+                 })
+                 |> Repo.insert()
+
+               # Mark invitation as accepted
+               {:ok, updated_invitation} =
+                 invitation
+                 |> OrganizationInvitation.accept_changeset()
+                 |> Repo.update()
+
+               updated_invitation
+             end) do
+          {:ok, updated_invitation} ->
+            {:ok, Repo.preload(updated_invitation, [:organization, :invited_by_user])}
+
+          error ->
+            error
+        end
+    end
+  end
+
+  @doc """
   Resends an invitation email.
   Generates a new token and updates the expiry date.
   """
@@ -1068,7 +1319,11 @@ defmodule ClippsterServer.Organizations do
     Repo.get_by(MemberCreditAllocation, organization_id: organization_id, user_id: user_id)
   end
 
-  defp get_or_create_member_allocation(organization_id, user_id) do
+  @doc """
+  Gets or creates a member credit allocation.
+  Returns the existing allocation if found, otherwise creates a new one with default values.
+  """
+  def get_or_create_member_allocation(organization_id, user_id) do
     case get_member_allocation(organization_id, user_id) do
       nil ->
         {:ok, allocation} =
@@ -2144,6 +2399,214 @@ defmodule ClippsterServer.Organizations do
       true ->
         # Check if recipient
         recipient = Repo.get_by(SharedClipRecipient, shared_clip_id: clip_id, user_id: user_id)
+        recipient != nil
+    end
+  end
+
+  # ============================================================================
+  # Shared Audio
+  # ============================================================================
+
+  @doc """
+  Creates a new shared audio file for an organization.
+  Uploads the file to R2 storage and creates recipient records.
+  """
+  def create_shared_audio(organization_id, user_id, attrs, file_binary, filename, opts \\ []) do
+    content_type = Keyword.get(opts, :content_type, "audio/mpeg")
+    recipient_user_ids = Keyword.get(opts, :recipient_user_ids, [])
+
+    key = Storage.generate_key(organization_id, "shared-audio", filename)
+
+    with {:ok, url} <- Storage.upload_file(file_binary, key, content_type: content_type) do
+      Repo.transaction(fn ->
+        audio_attrs =
+          attrs
+          |> Map.put(:organization_id, organization_id)
+          |> Map.put(:uploaded_by_user_id, user_id)
+          |> Map.put(:url, url)
+          |> Map.put(:mime_type, content_type)
+          |> Map.put(:file_size, byte_size(file_binary))
+
+        {:ok, audio} =
+          %OrganizationSharedAudio{}
+          |> OrganizationSharedAudio.create_changeset(audio_attrs)
+          |> Repo.insert()
+
+        share_with_all = Map.get(attrs, :share_with_all, true)
+
+        if share_with_all do
+          create_audio_recipients_for_all_members(audio.id, organization_id)
+        else
+          create_audio_recipients_for_users(audio.id, recipient_user_ids)
+        end
+
+        audio
+      end)
+    end
+  end
+
+  defp create_audio_recipients_for_all_members(audio_id, organization_id) do
+    members = list_members(organization_id)
+
+    Enum.each(members, fn member ->
+      %SharedAudioRecipient{}
+      |> SharedAudioRecipient.create_changeset(%{
+        shared_audio_id: audio_id,
+        user_id: member.user_id
+      })
+      |> Repo.insert()
+    end)
+  end
+
+  defp create_audio_recipients_for_users(audio_id, user_ids) do
+    Enum.each(user_ids, fn user_id ->
+      %SharedAudioRecipient{}
+      |> SharedAudioRecipient.create_changeset(%{
+        shared_audio_id: audio_id,
+        user_id: user_id
+      })
+      |> Repo.insert()
+    end)
+  end
+
+  def get_shared_audio(audio_id) do
+    Repo.get(OrganizationSharedAudio, audio_id)
+  end
+
+  def get_shared_audio_for_org(organization_id, audio_id) do
+    OrganizationSharedAudio
+    |> where([a], a.id == ^audio_id and a.organization_id == ^organization_id)
+    |> preload(recipients: :user, uploaded_by: [])
+    |> Repo.one()
+  end
+
+  def list_shared_audio(organization_id) do
+    now = DateTime.utc_now()
+
+    OrganizationSharedAudio
+    |> where([a], a.organization_id == ^organization_id and a.expires_at > ^now)
+    |> order_by([a], desc: a.inserted_at)
+    |> preload([:uploaded_by, :recipients])
+    |> Repo.all()
+  end
+
+  def list_shared_audio_for_user(user_id) do
+    now = DateTime.utc_now()
+
+    OrganizationSharedAudio
+    |> join(:inner, [a], r in SharedAudioRecipient, on: r.shared_audio_id == a.id)
+    |> where([a, r], r.user_id == ^user_id and a.expires_at > ^now)
+    |> order_by([a], desc: a.inserted_at)
+    |> preload([:organization, :uploaded_by])
+    |> select([a, r], %{audio: a, recipient: r})
+    |> Repo.all()
+  end
+
+  def delete_shared_audio(audio_id, %User{} = user) do
+    with audio when not is_nil(audio) <- get_shared_audio(audio_id),
+         true <- is_admin?(audio.organization_id, user.id) do
+      if audio.url, do: Storage.delete_file_by_url(audio.url)
+      Repo.delete(audio)
+    else
+      nil -> {:error, :not_found}
+      false -> {:error, :unauthorized}
+    end
+  end
+
+  def mark_shared_audio_viewed(audio_id, user_id) do
+    case get_or_create_audio_recipient(audio_id, user_id) do
+      {:ok, recipient} ->
+        recipient
+        |> SharedAudioRecipient.mark_viewed_changeset()
+        |> Repo.update()
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  def mark_shared_audio_downloaded(audio_id, user_id) do
+    case get_or_create_audio_recipient(audio_id, user_id) do
+      {:ok, recipient} ->
+        recipient
+        |> SharedAudioRecipient.mark_downloaded_changeset()
+        |> Repo.update()
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp get_or_create_audio_recipient(audio_id, user_id) do
+    case Repo.get_by(SharedAudioRecipient, shared_audio_id: audio_id, user_id: user_id) do
+      nil ->
+        audio = get_shared_audio(audio_id)
+
+        cond do
+          is_nil(audio) ->
+            {:error, :audio_not_found}
+
+          OrganizationSharedAudio.expired?(audio) ->
+            {:error, :audio_expired}
+
+          not is_member?(audio.organization_id, user_id) ->
+            {:error, :not_a_member}
+
+          true ->
+            %SharedAudioRecipient{}
+            |> SharedAudioRecipient.create_changeset(%{shared_audio_id: audio_id, user_id: user_id})
+            |> Repo.insert()
+        end
+
+      recipient ->
+        {:ok, recipient}
+    end
+  end
+
+  def get_shared_audio_stats(audio_id) do
+    query =
+      from r in SharedAudioRecipient,
+        where: r.shared_audio_id == ^audio_id,
+        select: %{
+          total: count(r.id),
+          viewed: count(r.viewed_at),
+          downloaded: count(r.downloaded_at)
+        }
+
+    Repo.one(query) || %{total: 0, viewed: 0, downloaded: 0}
+  end
+
+  def cleanup_expired_shared_audio do
+    now = DateTime.utc_now()
+
+    expired_audio =
+      OrganizationSharedAudio
+      |> where([a], a.expires_at < ^now)
+      |> Repo.all()
+
+    Enum.each(expired_audio, fn audio ->
+      if audio.url, do: Storage.delete_file_by_url(audio.url)
+      Repo.delete(audio)
+    end)
+
+    {:ok, length(expired_audio)}
+  end
+
+  def has_shared_audio_access?(audio_id, user_id) do
+    audio = get_shared_audio(audio_id)
+
+    cond do
+      is_nil(audio) ->
+        false
+
+      OrganizationSharedAudio.expired?(audio) ->
+        false
+
+      is_admin?(audio.organization_id, user_id) ->
+        true
+
+      true ->
+        recipient = Repo.get_by(SharedAudioRecipient, shared_audio_id: audio_id, user_id: user_id)
         recipient != nil
     end
   end

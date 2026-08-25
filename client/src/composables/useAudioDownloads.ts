@@ -2,6 +2,36 @@ import { ref, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { createDownloadedAudio } from '@/services/database/downloaded-audio';
+import {
+  extractSpaceSpeakerTimelineFromHls,
+  getTwitterBroadcastInfo,
+} from '@/services/twitter';
+import {
+  upsertDownloadedSpaceMetadata,
+  type SpaceMetadataPayload,
+} from '@/services/database/downloaded-space-metadata';
+import type { SpaceParticipant, SpaceSpeakerSegment, SpaceStageSnapshot } from '@/services/database/types';
+import {
+  buildSpaceTimelineEventsPayload,
+  deriveSegmentSourceFromId,
+  mapSpeakerTimelineToStoredSegments,
+  normalizeSpeakerSegments,
+  sourceAllowsActiveHighlight,
+  type StageJoinHintRow,
+} from '@/services/spaces/space-replay-helpers';
+import { useToast } from '@/composables/useToast';
+
+function normalizeRole(role: string | undefined): SpaceParticipant['role'] {
+  return role === 'host' ||
+    role === 'cohost' ||
+    role === 'speaker' ||
+    role === 'admin' ||
+    role === 'listener' ||
+    role === 'guest' ||
+    role === 'unknown'
+    ? role
+    : 'unknown';
+}
 
 export interface AudioDownloadProgress {
   download_id: string;
@@ -158,10 +188,20 @@ export function useAudioDownloads() {
   async function handleComplete(event: AudioDownloadResult) {
     console.log('[useAudioDownloads] Download complete event received:', event);
     console.log('[useAudioDownloads] Platform value:', event.platform);
-    if (event.success && event.file_path && event.title && event.platform) {
+    
+    // Remove from active downloads first
+    activeDownloads.value.delete(event.download_id);
+
+    if (!event.success) {
+      const { error: showError } = useToast();
+      showError('Download Failed', event.error || 'Audio download failed');
+      return;
+    }
+    
+    if (event.file_path && event.title && event.platform) {
       // Save to database
       try {
-        await createDownloadedAudio(
+        const createdAudioId = await createDownloadedAudio(
           event.title,
           event.platform === 'YouTube' ? 'youtube' : 'twitter',
           event.file_path,
@@ -173,15 +213,172 @@ export function useAudioDownloads() {
           event.channels,
           event.thumbnail_url
         );
+
+        if (event.platform === 'Twitter') {
+          const spaceMetadata = await buildSpaceMetadata(event, createdAudioId);
+          if (spaceMetadata) {
+            await upsertDownloadedSpaceMetadata(spaceMetadata);
+          }
+        }
         console.log('[useAudioDownloads] Saved downloaded audio to database:', event.title);
         console.log('[useAudioDownloads] Saved with platform:', event.platform);
+        
+        // Emit a custom event that the UI can listen to AFTER database save is complete
+        window.dispatchEvent(new CustomEvent('audio-library-updated', { 
+          detail: { audioId: event.download_id, title: event.title } 
+        }));
       } catch (error) {
         console.error('[useAudioDownloads] Failed to save downloaded audio to database:', error);
       }
     }
+  }
 
-    // Remove from active downloads
-    activeDownloads.value.delete(event.download_id);
+  async function buildSpaceMetadata(
+    event: AudioDownloadResult,
+    audioId: string
+  ): Promise<SpaceMetadataPayload | null> {
+    const sourceUrl = event.source_url;
+    if (!sourceUrl) return null;
+
+    try {
+      const info = await getTwitterBroadcastInfo(sourceUrl);
+      const uploaderName = info.uploader || info.username?.replace('@', '') || 'Host';
+      const hostId = `host-${uploaderName.toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'speaker'}`;
+      let participants: SpaceParticipant[] = (info.participants && info.participants.length > 0
+        ? info.participants.map((participant) => ({
+            id: participant.id,
+            name: participant.name,
+            avatar_url: participant.avatarUrl || null,
+            role: normalizeRole(participant.role),
+            twitter_username: participant.twitterUsername,
+            periscope_user_id: participant.periscopeUserId,
+            x_rest_id: participant.xRestId,
+            display_name: participant.displayName,
+          }))
+        : [{
+            id: hostId,
+            name: uploaderName,
+            avatar_url: info.avatarUrl || null,
+            role: 'host' as const,
+            twitter_username: info.username?.replace(/^@/, '') || undefined,
+          }]);
+
+      const duration = event.duration || info.duration || 0;
+      let speakerSegments: SpaceSpeakerSegment[] = [];
+
+      let hlsStageSnapshots: SpaceStageSnapshot[] | undefined;
+
+      const apiSpeakerSegments =
+        info.speakerTimeline && info.speakerTimeline.length > 0
+          ? mapSpeakerTimelineToStoredSegments(info.speakerTimeline)
+          : [];
+      const hasReliableApiTimeline = apiSpeakerSegments.some((segment) =>
+        sourceAllowsActiveHighlight(segment.source ?? deriveSegmentSourceFromId(segment.id))
+      );
+
+      // ── Priority 1: real X replay speaker events (Periscope) ──
+      if (hasReliableApiTimeline) {
+        console.log(
+          `[useAudioDownloads] Using X API speaker timeline (${apiSpeakerSegments.length} segments)`
+        );
+        speakerSegments = apiSpeakerSegments;
+        // Ensure any IDs that appear only in the timeline are present in participants
+        participants = mergeParticipantsWithTimeline(participants, speakerSegments);
+      } else if (info.manifestUrl) {
+        // ── Priority 2: HLS ID3 metadata (fallback) ──
+        try {
+          const hls = await extractSpaceSpeakerTimelineFromHls(info.manifestUrl, duration || undefined);
+          hlsStageSnapshots = (hls.stageSnapshots ?? []).map((s) => ({
+            id: s.id,
+            t: s.t,
+            on_stage_user_ids: s.onStageUserIds ?? [],
+          }));
+
+          if (hls.speakerSegments.length > 0) {
+            speakerSegments = mapSpeakerTimelineToStoredSegments(hls.speakerSegments);
+            participants = mergeParticipantsWithTimeline(participants, speakerSegments);
+          }
+
+          if (hlsStageSnapshots.length > 0) {
+            participants = mergeParticipantsWithTimeline(
+              participants,
+              hlsStageSnapshots.flatMap((snap) =>
+                snap.on_stage_user_ids.map((id) => ({ speaker_id: id }))
+              )
+            );
+          }
+        } catch (timelineErr) {
+          hlsStageSnapshots = undefined;
+          console.warn(
+            '[useAudioDownloads] HLS speaker timeline extraction failed (using seed timeline):',
+            timelineErr
+          );
+        }
+      }
+
+      const dur =
+        duration ||
+        Math.max(
+          0,
+          ...speakerSegments.map((segment) => segment.end),
+          ...(hlsStageSnapshots ?? []).map((snapshot) => snapshot.t)
+        );
+      speakerSegments = normalizeSpeakerSegments(speakerSegments, dur);
+      const joinHintRows: StageJoinHintRow[] =
+        info.spaceReplayHints?.stageJoinTimes?.map((r) => ({
+          userId: r.userId,
+          offsetSecs: typeof r.offsetSecs === 'number' ? r.offsetSecs : 0,
+        })) ?? [];
+      const timelineEvents = buildSpaceTimelineEventsPayload(
+        participants,
+        hlsStageSnapshots ?? [],
+        speakerSegments,
+        joinHintRows,
+        dur
+      );
+
+      const payload: SpaceMetadataPayload = {
+        audioId,
+        sourceUrl,
+        title: info.title || event.title || undefined,
+        participants,
+        speakerSegments,
+        timelineEvents,
+      };
+      if (hlsStageSnapshots !== undefined) {
+        payload.stageSnapshots = hlsStageSnapshots;
+      }
+      return payload;
+    } catch (error) {
+      console.warn('[useAudioDownloads] Failed to enrich space metadata:', error);
+      return {
+        audioId,
+        sourceUrl,
+        title: event.title || undefined,
+        participants: [],
+        speakerSegments: [],
+      };
+    }
+  }
+
+  function mergeParticipantsWithTimeline(
+    participants: SpaceParticipant[],
+    segments: Array<{ speaker_id: string }>
+  ) {
+    const seen = new Set(participants.flatMap((p) => [p.id, p.periscope_user_id].filter(Boolean)));
+    const out = [...participants];
+    for (const seg of segments) {
+      if (seen.has(seg.speaker_id)) continue;
+      seen.add(seg.speaker_id);
+      out.push({
+        id: seg.speaker_id,
+        name: `Speaker ${seg.speaker_id}`,
+        avatar_url: null,
+        role: 'unknown' as const,
+        periscope_user_id: seg.speaker_id,
+      });
+    }
+    return out;
   }
 
   // Initialize event listeners only once (singleton pattern)

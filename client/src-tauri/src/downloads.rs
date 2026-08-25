@@ -48,6 +48,18 @@ pub struct DownloadMetadata {
 
 use tauri_plugin_shell::process::CommandChild;
 
+/// Full VOD remux/encode strategy for `run_full_download_with_encoder`.
+#[derive(Debug, Clone, Copy)]
+enum FullDownloadCodecMode {
+    /// `-c copy` for both (fastest; breaks on some HLS timestamp edge cases).
+    #[allow(dead_code)] // Kept for optional fast path if we re-test full copy on a source
+    StreamCopy,
+    /// Re-encode video and AAC audio (slow; most compatible).
+    ReencodeVideo,
+    /// Copy video, re-encode audio to AAC (near copy speed; fixes many Kick HLS audio DTS/corrupt issues).
+    CopyVideoAacAudio,
+}
+
 pub static ACTIVE_DOWNLOADS: Lazy<Arc<Mutex<HashMap<String, bool>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 pub static ACTIVE_FFMPEG_PROCESSES: Lazy<Arc<Mutex<HashMap<String, CommandChild>>>> =
@@ -159,6 +171,8 @@ async fn run_segment_download_with_encoder(
     let mut lines_processed = 0;
     let mut success = false;
     let mut last_error: Option<String> = None;
+    let mut last_hls_out_time: Option<f64> = None;
+    let mut hls_cumulative: f64 = 0.0;
 
     loop {
         tokio::select! {
@@ -196,14 +210,26 @@ async fn run_segment_download_with_encoder(
                                     }
                                     continue;
                                 }
-                                let progress = ((current_time / total_duration) * 100.0).clamp(0.0, 95.0);
+                                const HLS_DISCONTINUITY_SEC: f64 = 2.0;
+                                let monotonic = if is_hls {
+                                    if let Some(prev) = last_hls_out_time {
+                                        if current_time + HLS_DISCONTINUITY_SEC < prev {
+                                            hls_cumulative += prev;
+                                        }
+                                    }
+                                    last_hls_out_time = Some(current_time);
+                                    hls_cumulative + current_time
+                                } else {
+                                    current_time
+                                };
+                                let progress = ((monotonic / total_duration) * 100.0).clamp(0.0, 95.0);
 
                                 if last_progress_time.elapsed().as_secs() >= 1 {
-                                    println!("[Rust] Emitting progress: {}% (time: {}/{})", progress, current_time, total_duration);
+                                    println!("[Rust] Emitting progress: {}% (time: {}/{})", progress, monotonic, total_duration);
                                     let _ = app_clone.emit("download-progress", DownloadProgress {
                                         download_id: download_id_owned.clone(),
                                         progress,
-                                        current_time: Some(current_time),
+                                        current_time: Some(monotonic),
                                         total_time: Some(total_duration),
                                         status: "Downloading segment...".to_string(),
                                     });
@@ -283,14 +309,14 @@ async fn run_full_download_with_encoder(
     output_path: &str,
     estimated_duration: Option<f64>,
     encoder: &str,
-    use_copy_codec: bool,
+    codec_mode: FullDownloadCodecMode,
     cancel_rx: &mut oneshot::Receiver<()>,
 ) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
 
     println!(
-        "[Rust] Running full download with encoder: {} (copy: {})",
-        encoder, use_copy_codec
+        "[Rust] Running full download: mode={:?} video_encoder={}",
+        codec_mode, encoder
     );
 
     let shell = app.shell();
@@ -298,7 +324,8 @@ async fn run_full_download_with_encoder(
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
 
-    let preset = if encoder == "libx264" {
+    let preset = if matches!(codec_mode, FullDownloadCodecMode::ReencodeVideo) && encoder == "libx264"
+    {
         "ultrafast"
     } else {
         "fast"
@@ -339,7 +366,8 @@ async fn run_full_download_with_encoder(
             user_agent,
         ]);
     }
-    if use_copy_codec {
+    match codec_mode {
+        FullDownloadCodecMode::StreamCopy => {
         args.extend_from_slice(&[
             "-i",
             video_url,
@@ -366,7 +394,36 @@ async fn run_full_download_with_encoder(
             "aac_adtstoasc",  // Convert ADTS to ASC for MP4 container
             output_path,
         ]);
-    } else {
+        }
+        FullDownloadCodecMode::CopyVideoAacAudio => {
+        args.extend_from_slice(&[
+            "-i",
+            video_url,
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            "-map",
+            "0:v:0?",
+            "-map",
+            "0:a:0?",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-max_muxing_queue_size",
+            "1024",
+            "-movflags",
+            "+faststart",
+            "-progress",
+            "pipe:2",
+            "-v",
+            "warning",
+            "-y",
+            output_path,
+        ]);
+        }
+        FullDownloadCodecMode::ReencodeVideo => {
         args.extend_from_slice(&[
             "-i",
             video_url,
@@ -393,6 +450,7 @@ async fn run_full_download_with_encoder(
             "-y",
             output_path,
         ]);
+        }
     }
 
     let (mut rx, child) = cmd
@@ -409,6 +467,9 @@ async fn run_full_download_with_encoder(
     let mut lines_processed = 0;
     let mut success = false;
     let mut last_error: Option<String> = None;
+    // HLS: `out_time` can jump backward after `-reconnect`; keep a cumulative offset for stable progress.
+    let mut last_hls_out_time: Option<f64> = None;
+    let mut hls_cumulative: f64 = 0.0;
 
     loop {
         tokio::select! {
@@ -445,19 +506,36 @@ async fn run_full_download_with_encoder(
                                     }
                                     continue;
                                 }
+                                const HLS_DISCONTINUITY_SEC: f64 = 2.0;
+                                let monotonic = if is_hls {
+                                    if let Some(prev) = last_hls_out_time {
+                                        if current_time + HLS_DISCONTINUITY_SEC < prev {
+                                            hls_cumulative += prev;
+                                            println!(
+                                                "[Rust] HLS out_time jumped back ({:.1}s -> {:.1}s); \
+                                                 offset {:.1}s (reconnect/playlist refresh?)",
+                                                prev, current_time, hls_cumulative
+                                            );
+                                        }
+                                    }
+                                    last_hls_out_time = Some(current_time);
+                                    hls_cumulative + current_time
+                                } else {
+                                    current_time
+                                };
                                 // Update duration estimate if needed
-                                if current_time > total_duration {
-                                    total_duration = current_time * 1.1;
+                                if monotonic > total_duration {
+                                    total_duration = monotonic * 1.1;
                                 }
 
-                                let progress = ((current_time / total_duration) * 100.0).clamp(0.0, 95.0);
+                                let progress = ((monotonic / total_duration) * 100.0).clamp(0.0, 95.0);
 
                                 if last_progress_time.elapsed().as_secs() >= 1 {
-                                    println!("[Rust] Emitting progress: {}% (time: {}/{})", progress, current_time, total_duration);
+                                    println!("[Rust] Emitting progress: {}% (time: {}/{})", progress, monotonic, total_duration);
                                     let _ = app_clone.emit("download-progress", DownloadProgress {
                                         download_id: download_id_owned.clone(),
                                         progress,
-                                        current_time: Some(current_time),
+                                        current_time: Some(monotonic),
                                         total_time: Some(total_duration),
                                         status: "Downloading video...".to_string(),
                                     });
@@ -1111,7 +1189,7 @@ pub async fn download_pumpfun_vod(
             &video_path_str,
             duration,
             &encoder,
-            false,
+            FullDownloadCodecMode::ReencodeVideo,
             &mut cancel_rx,
         ).await;
 
@@ -1126,7 +1204,7 @@ pub async fn download_pumpfun_vod(
                     &video_path_str,
                     duration,
                     "libx264",
-                    false,
+                    FullDownloadCodecMode::ReencodeVideo,
                     &mut cancel_rx,
                 ).await
             }
@@ -1772,6 +1850,41 @@ pub async fn download_kick_vod_segment(
     }
 }
 
+/// Returns stream duration in seconds via yt-dlp, matching what `download_kick_vod` uses for
+/// progress. The VOD list from Kick/RapidAPI often uses a separate metadata field and can
+/// differ by several minutes from the actual IVS/HLS length.
+#[tauri::command]
+pub async fn probe_kick_vod_duration(video_url: String) -> Result<f64, String> {
+    let ytdlp_path = resolve_kick_ytdlp_binary()?;
+    let duration_output = no_window(
+        tokio::process::Command::new(&ytdlp_path)
+            .arg("--print")
+            .arg("duration")
+            .arg("--no-warnings")
+            .arg("--impersonate")
+            .arg("chrome")
+            .arg(&video_url),
+    )
+    .output()
+    .await
+    .map_err(|e| format!("Failed to probe Kick VOD duration: {}", e))?;
+
+    if !duration_output.status.success() {
+        let stderr = String::from_utf8_lossy(&duration_output.stderr);
+        return Err(format!(
+            "yt-dlp duration failed: {}",
+            stderr.chars().take(400).collect::<String>()
+        ));
+    }
+
+    let duration_str = String::from_utf8_lossy(&duration_output.stdout)
+        .trim()
+        .to_string();
+    duration_str
+        .parse::<f64>()
+        .map_err(|_| format!("Invalid duration from yt-dlp: {duration_str:?}"))
+}
+
 #[tauri::command]
 pub async fn download_kick_vod(
     app: tauri::AppHandle,
@@ -1933,23 +2046,26 @@ pub async fn download_kick_vod(
             return Err(format!("Failed to get stream URL: {}", stderr.chars().take(300).collect::<String>()));
         }
 
-        let hls_url = String::from_utf8_lossy(&url_output.stdout).trim().to_string();
-        if hls_url.is_empty() {
-            return Err("yt-dlp returned empty URL".to_string());
-        }
+        // yt-dlp may print multiple lines (e.g. separate A/V). FFmpeg needs a single -i argument.
+        let hls_url = String::from_utf8_lossy(&url_output.stdout)
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .ok_or_else(|| "yt-dlp returned empty URL".to_string())?
+            .to_string();
 
-        println!("[Kick] Got HLS URL, starting FFmpeg stream copy (fast mode)...");
+        // Copy video, re-encode audio to AAC: most Kick issues are in the audio (TS) track; full
+        // `libx264` is much slower. If this still truncates, we can add a `ReencodeVideo` fallback.
+        println!("[Kick] Got HLS URL, remuxing (copy video, encode audio) — much faster than full re-encode...");
 
-        // Use FFmpeg with stream copy (10-100x faster than re-encoding)
-        // This just copies the video/audio packets without re-encoding
         let download_result = run_full_download_with_encoder(
             &app_clone,
             &download_id_clone,
             &hls_url,
             &video_path_str,
             total_duration,
-            "copy",  // Encoder doesn't matter when use_copy_codec is true
-            true,    // use_copy_codec = true for maximum speed
+            "copy", // not used in CopyVideoAacAudio
+            FullDownloadCodecMode::CopyVideoAacAudio,
             &mut cancel_rx,
         ).await;
 

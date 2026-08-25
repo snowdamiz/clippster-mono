@@ -1,45 +1,109 @@
-import {
-	Input,
-	ALL_FORMATS,
-	BlobSource,
-	CanvasSink,
-} from "mediabunny";
+import { filmstripCacheGet, filmstripCachePut } from "./filmstrip-cache";
 
-const THUMBNAIL_HEIGHT = 54;
+const LOW_END_DEVICE = typeof navigator !== "undefined" && (navigator.hardwareConcurrency ?? 8) <= 4;
+const THUMBNAIL_HEIGHT = LOW_END_DEVICE ? 36 : 54;
 const DEFAULT_ASPECT_RATIO = 16 / 9;
-const MAX_CACHE_ENTRIES = 600;
-const MAX_CONCURRENT_EXTRACTIONS = 3;
+/** Max decoded samples per clip for timeline filmstrip (zoomed-in width / thumb width, capped). */
+const MAX_FILMSTRIP_FRAMES = 120;
+const MAX_CACHE_ENTRIES = LOW_END_DEVICE ? 300 : 600;
+const WORKER_COUNT = typeof navigator !== "undefined" && (navigator.hardwareConcurrency ?? 8) <= 2 ? 1 : 2;
 
 interface CachedThumbnail {
 	bitmap: ImageBitmap;
 	lastAccessed: number;
 }
 
-interface SinkEntry {
-	sink: CanvasSink;
-	aspectRatio: number;
+// ── Worker pool ───────────────────────────────────────────────────────────────
+
+interface WorkerJob {
+	jobId: string;
+	taskKey: string;
+	mediaId: string;
+	onFrame: (timestamp: number, bitmap: ImageBitmap) => void;
+	onDone: () => void;
+	signal: AbortSignal;
 }
 
-interface ExtractionTask {
-	controller: AbortController;
-	promise: Promise<void>;
+class FilmstripWorkerPool {
+	private workers: Worker[] = [];
+	/** Map jobId → which worker index handles it */
+	private jobWorker = new Map<string, number>();
+	/** Pending callbacks keyed by jobId */
+	private pending = new Map<string, WorkerJob>();
+	private nextWorker = 0;
+
+	constructor() {
+		for (let i = 0; i < WORKER_COUNT; i++) {
+			const w = new Worker(new URL("./filmstrip-worker.ts", import.meta.url), { type: "module" });
+			w.onmessage = this.handleMessage.bind(this, i);
+			this.workers.push(w);
+		}
+	}
+
+	private handleMessage(_workerIdx: number, event: MessageEvent) {
+		const msg = event.data;
+		const job = this.pending.get(msg.jobId);
+		if (!job) return;
+
+		if (msg.type === "frame") {
+			if (!job.signal.aborted) {
+				job.onFrame(msg.timestamp, msg.bitmap as ImageBitmap);
+			} else {
+				// Discard — close bitmap to free GPU memory
+				(msg.bitmap as ImageBitmap).close();
+			}
+		} else if (msg.type === "done" || msg.type === "error") {
+			this.pending.delete(msg.jobId);
+			this.jobWorker.delete(msg.jobId);
+			if (!job.signal.aborted) {
+				job.onDone();
+			}
+		}
+	}
+
+	dispatch(job: WorkerJob, file: File, timestamps: number[], thumbHeight: number, aspectRatio: number) {
+		const workerIdx = this.nextWorker % this.workers.length;
+		this.nextWorker++;
+		this.pending.set(job.jobId, job);
+		this.jobWorker.set(job.jobId, workerIdx);
+
+		this.workers[workerIdx].postMessage({
+			type: "extract",
+			jobId: job.jobId,
+			mediaId: job.mediaId,
+			file,
+			timestamps,
+			thumbHeight,
+			aspectRatio,
+		});
+	}
+
+	cancel(jobId: string) {
+		const workerIdx = this.jobWorker.get(jobId);
+		if (workerIdx !== undefined) {
+			this.workers[workerIdx].postMessage({ type: "cancel", jobId });
+		}
+		this.pending.delete(jobId);
+		this.jobWorker.delete(jobId);
+	}
+
+	cancelByTaskKey(taskKey: string) {
+		for (const [jobId, job] of this.pending) {
+			if (job.taskKey === taskKey) {
+				this.cancel(jobId);
+			}
+		}
+	}
 }
+
+// ── FilmstripService ──────────────────────────────────────────────────────────
 
 export class FilmstripService {
-	private sinks = new Map<string, SinkEntry>();
-	private sinkInitPromises = new Map<string, Promise<SinkEntry | null>>();
+	private workerPool = new FilmstripWorkerPool();
+	/** In-memory bitmap cache (fast path; also serves zoom de-dup) */
 	private cache = new Map<string, CachedThumbnail>();
-	private activeTasks = new Map<string, ExtractionTask>();
-	private extractionQueue: Array<{
-		taskKey: string;
-		mediaId: string;
-		file: File;
-		timestamps: number[];
-		onFrame: (timestamp: number, bitmap: ImageBitmap) => void;
-		onDone: () => void;
-		signal: AbortSignal;
-	}> = [];
-	private activeCount = 0;
+	/** Aspect ratios by mediaId, learned from worker responses */
+	private aspectRatios = new Map<string, number>();
 
 	private getCacheKey({
 		mediaId,
@@ -48,7 +112,6 @@ export class FilmstripService {
 		mediaId: string;
 		timestamp: number;
 	}): string {
-		// Round timestamp to nearest 10ms to allow cache hits for close timestamps
 		const roundedTs = Math.round(timestamp * 100) / 100;
 		return `${mediaId}:${roundedTs}`;
 	}
@@ -86,7 +149,6 @@ export class FilmstripService {
 	private evictIfNeeded(): void {
 		if (this.cache.size <= MAX_CACHE_ENTRIES) return;
 
-		// Evict oldest 20% of entries
 		const entries = Array.from(this.cache.entries());
 		entries.sort((a, b) => a[1].lastAccessed - b[1].lastAccessed);
 		const toEvict = Math.floor(entries.length * 0.2);
@@ -97,87 +159,14 @@ export class FilmstripService {
 		}
 	}
 
-	private async ensureSink({
-		mediaId,
-		file,
-	}: {
-		mediaId: string;
-		file: File;
-	}): Promise<SinkEntry | null> {
-		const existing = this.sinks.get(mediaId);
-		if (existing) return existing;
-
-		// Deduplicate concurrent init calls
-		const pending = this.sinkInitPromises.get(mediaId);
-		if (pending) return pending;
-
-		const initPromise = this.initSink({ mediaId, file });
-		this.sinkInitPromises.set(mediaId, initPromise);
-
-		try {
-			const result = await initPromise;
-			return result;
-		} finally {
-			this.sinkInitPromises.delete(mediaId);
-		}
-	}
-
-	private async initSink({
-		mediaId,
-		file,
-	}: {
-		mediaId: string;
-		file: File;
-	}): Promise<SinkEntry | null> {
-		try {
-			const input = new Input({
-				source: new BlobSource(file),
-				formats: ALL_FORMATS,
-			});
-
-			const videoTrack = await input.getPrimaryVideoTrack();
-			if (!videoTrack) return null;
-
-			const canDecode = await videoTrack.canDecode();
-			if (!canDecode) return null;
-
-			const aspectRatio =
-				videoTrack.displayWidth / videoTrack.displayHeight || DEFAULT_ASPECT_RATIO;
-			const thumbWidth = Math.round(THUMBNAIL_HEIGHT * aspectRatio);
-
-			const sink = new CanvasSink(videoTrack, {
-				width: thumbWidth,
-				height: THUMBNAIL_HEIGHT,
-				fit: "cover",
-			});
-
-			const entry: SinkEntry = { sink, aspectRatio };
-			this.sinks.set(mediaId, entry);
-			return entry;
-		} catch (error) {
-			console.warn(`[FilmstripService] Failed to init sink for ${mediaId}:`, error);
-			return null;
-		}
-	}
-
-	/**
-	 * Cancel any in-flight extraction for a given task key.
-	 */
 	cancelExtraction({ taskKey }: { taskKey: string }): void {
-		const task = this.activeTasks.get(taskKey);
-		if (task) {
-			task.controller.abort();
-			this.activeTasks.delete(taskKey);
-		}
-		// Also remove from queue if pending
-		this.extractionQueue = this.extractionQueue.filter(
-			(q) => q.taskKey !== taskKey,
-		);
+		this.workerPool.cancelByTaskKey(taskKey);
 	}
 
 	/**
-	 * Request filmstrip frames for an element. Returns immediately;
-	 * frames are delivered via the onFrame callback as they decode.
+	 * Request filmstrip frames. Checks in-memory cache, then IndexedDB, then
+	 * dispatches to the worker pool for any truly uncached timestamps.
+	 * Returns an AbortController to cancel the request.
 	 */
 	requestFilmstrip({
 		taskKey,
@@ -194,13 +183,14 @@ export class FilmstripService {
 		onFrame: (timestamp: number, bitmap: ImageBitmap) => void;
 		onDone: () => void;
 	}): AbortController {
-		// Cancel any existing extraction for this task
 		this.cancelExtraction({ taskKey });
 
 		const controller = new AbortController();
+		const jobId = `${taskKey}:${Date.now()}`;
 
-		// Check cache first — deliver cached frames immediately
 		const uncachedTimestamps: number[] = [];
+
+		// ── 1. In-memory fast path ────────────────────────────────────────────
 		for (const ts of timestamps) {
 			const cached = this.getCachedBitmap({ mediaId, timestamp: ts });
 			if (cached) {
@@ -215,113 +205,115 @@ export class FilmstripService {
 			return controller;
 		}
 
-		// Queue the extraction
-		this.extractionQueue.push({
-			taskKey,
-			mediaId,
-			file,
-			timestamps: uncachedTimestamps,
-			onFrame,
-			onDone,
-			signal: controller.signal,
-		});
+		// ── 2. IndexedDB cache check + worker dispatch ────────────────────────
+		const ar = this.aspectRatios.get(mediaId) ?? DEFAULT_ASPECT_RATIO;
+		let pending = uncachedTimestamps.length;
+		let workerNeeded = false;
+		const workerTimestamps: number[] = [];
 
-		const task: ExtractionTask = {
-			controller,
-			promise: Promise.resolve(),
+		// Track how many IDB lookups are in-flight; dispatch worker when done
+		let idbResolved = 0;
+
+		const checkIdbDone = () => {
+			idbResolved++;
+			if (idbResolved < uncachedTimestamps.length) return;
+
+			if (controller.signal.aborted) {
+				if (pending === 0) onDone();
+				return;
+			}
+
+			if (workerTimestamps.length === 0) {
+				// All served from IDB — we're done
+				onDone();
+				return;
+			}
+
+			// Dispatch remaining timestamps to worker
+			workerNeeded = true;
+			this.workerPool.dispatch(
+				{
+					jobId,
+					taskKey,
+					mediaId,
+					signal: controller.signal,
+					onFrame: (timestamp, bitmap) => {
+						// Store in in-memory cache
+						this.setCachedBitmap({ mediaId, timestamp, bitmap });
+						// Store aspect ratio learned from worker
+						if (!this.aspectRatios.has(mediaId)) {
+							this.aspectRatios.set(mediaId, ar);
+						}
+						onFrame(timestamp, bitmap);
+
+						// Write to IndexedDB in background (non-blocking)
+						const key = this.getCacheKey({ mediaId, timestamp });
+						this.bitmapToBlob(bitmap).then((blob) => {
+							if (blob) filmstripCachePut(key, blob);
+						});
+					},
+					onDone: () => {
+						onDone();
+					},
+				},
+				file,
+				workerTimestamps,
+				THUMBNAIL_HEIGHT,
+				ar,
+			);
 		};
-		this.activeTasks.set(taskKey, task);
 
-		this.processQueue();
+		// Fire IDB lookups in parallel
+		for (const ts of uncachedTimestamps) {
+			const key = this.getCacheKey({ mediaId, timestamp: ts });
+			filmstripCacheGet(key).then((blob) => {
+				if (controller.signal.aborted) {
+					checkIdbDone();
+					return;
+				}
+				if (blob) {
+					// Convert Blob → ImageBitmap and serve
+					createImageBitmap(blob).then((bitmap) => {
+						this.setCachedBitmap({ mediaId, timestamp: ts, bitmap });
+						onFrame(ts, bitmap);
+						checkIdbDone();
+					}).catch(() => {
+						workerTimestamps.push(ts);
+						checkIdbDone();
+					});
+				} else {
+					workerTimestamps.push(ts);
+					checkIdbDone();
+				}
+			}).catch(() => {
+				workerTimestamps.push(ts);
+				checkIdbDone();
+			});
+		}
+
+		void workerNeeded; // referenced in dispatch branch
+		void pending;
 
 		return controller;
 	}
 
-	private processQueue(): void {
-		while (
-			this.activeCount < MAX_CONCURRENT_EXTRACTIONS &&
-			this.extractionQueue.length > 0
-		) {
-			const job = this.extractionQueue.shift()!;
-			if (job.signal.aborted) {
-				this.activeTasks.delete(job.taskKey);
-				continue;
-			}
-
-			this.activeCount++;
-			const promise = this.executeExtraction(job).finally(() => {
-				this.activeCount--;
-				this.activeTasks.delete(job.taskKey);
-				this.processQueue();
-			});
-
-			const existingTask = this.activeTasks.get(job.taskKey);
-			if (existingTask) {
-				existingTask.promise = promise;
-			}
-		}
+	/** Convert an ImageBitmap to a JPEG Blob for IndexedDB storage. */
+	private bitmapToBlob(bitmap: ImageBitmap): Promise<Blob | null> {
+		return new Promise((resolve) => {
+			const canvas = document.createElement("canvas");
+			canvas.width = bitmap.width;
+			canvas.height = bitmap.height;
+			const ctx = canvas.getContext("2d");
+			if (!ctx) { resolve(null); return; }
+			ctx.drawImage(bitmap, 0, 0);
+			canvas.toBlob((b) => resolve(b), "image/jpeg", 0.7);
+		});
 	}
 
-	private async executeExtraction(job: {
-		taskKey: string;
-		mediaId: string;
-		file: File;
-		timestamps: number[];
-		onFrame: (timestamp: number, bitmap: ImageBitmap) => void;
-		onDone: () => void;
-		signal: AbortSignal;
-	}): Promise<void> {
-		try {
-			const sinkEntry = await this.ensureSink({
-				mediaId: job.mediaId,
-				file: job.file,
-			});
-			if (!sinkEntry || job.signal.aborted) {
-				job.onDone();
-				return;
-			}
-
-			const { sink } = sinkEntry;
-
-			for await (const result of sink.canvasesAtTimestamps(job.timestamps)) {
-				if (job.signal.aborted) break;
-				if (!result) continue;
-
-				try {
-					// Convert canvas to ImageBitmap for efficient GPU-backed storage
-					const bitmap = await createImageBitmap(result.canvas as HTMLCanvasElement);
-					this.setCachedBitmap({
-						mediaId: job.mediaId,
-						timestamp: result.timestamp,
-						bitmap,
-					});
-					job.onFrame(result.timestamp, bitmap);
-				} catch (e) {
-					// Frame decode failed, skip
-					console.warn(`[FilmstripService] Frame decode failed at ${result.timestamp}:`, e);
-				}
-			}
-		} catch (error) {
-			if (!job.signal.aborted) {
-				console.warn(`[FilmstripService] Extraction failed for ${job.mediaId}:`, error);
-			}
-		} finally {
-			job.onDone();
-		}
-	}
-
-	/**
-	 * Get the aspect ratio for a media asset (from its CanvasSink).
-	 * Returns default 16:9 if not yet initialized.
-	 */
 	getAspectRatio({ mediaId }: { mediaId: string }): number {
-		const entry = this.sinks.get(mediaId);
-		return entry?.aspectRatio ?? DEFAULT_ASPECT_RATIO;
+		return this.aspectRatios.get(mediaId) ?? DEFAULT_ASPECT_RATIO;
 	}
 
-	/**
-	 * Compute the timestamps needed for a filmstrip at the current zoom level.
-	 */
 	computeTimestamps({
 		trimStart,
 		duration,
@@ -338,13 +330,11 @@ export class FilmstripService {
 		const ar = aspectRatio ?? DEFAULT_ASPECT_RATIO;
 		const thumbWidth = THUMBNAIL_HEIGHT * ar;
 		const numFrames = Math.max(1, Math.ceil(elementWidthPx / thumbWidth));
-		// Cap at a reasonable max to avoid decoding hundreds of frames
-		const cappedFrames = Math.min(numFrames, 60);
+		const cappedFrames = Math.min(numFrames, MAX_FILMSTRIP_FRAMES);
 		const sourceDuration = duration * speed;
 		const timestamps: number[] = [];
 
 		for (let i = 0; i < cappedFrames; i++) {
-			// Sample from center of each tile slot
 			const t = trimStart + ((i + 0.5) / cappedFrames) * sourceDuration;
 			timestamps.push(Math.max(0, t));
 		}
@@ -352,19 +342,9 @@ export class FilmstripService {
 		return timestamps;
 	}
 
-	/**
-	 * Clear all cached data for a specific media asset.
-	 */
 	clearMedia({ mediaId }: { mediaId: string }): void {
-		// Cancel active tasks for this media
-		for (const [taskKey, task] of this.activeTasks) {
-			if (taskKey.startsWith(mediaId)) {
-				task.controller.abort();
-				this.activeTasks.delete(taskKey);
-			}
-		}
+		this.workerPool.cancelByTaskKey(mediaId);
 
-		// Clear cache entries
 		for (const [key, entry] of this.cache) {
 			if (key.startsWith(mediaId + ":")) {
 				entry.bitmap.close();
@@ -372,39 +352,24 @@ export class FilmstripService {
 			}
 		}
 
-		// Remove sink
-		this.sinks.delete(mediaId);
+		this.aspectRatios.delete(mediaId);
 	}
 
-	/**
-	 * Clear everything.
-	 */
 	clearAll(): void {
-		for (const [, task] of this.activeTasks) {
-			task.controller.abort();
-		}
-		this.activeTasks.clear();
-		this.extractionQueue = [];
-
 		for (const [, entry] of this.cache) {
 			entry.bitmap.close();
 		}
 		this.cache.clear();
-		this.sinks.clear();
-		this.sinkInitPromises.clear();
+		this.aspectRatios.clear();
 	}
 
 	getStats(): {
 		cachedThumbnails: number;
-		activeSinks: number;
-		activeExtractions: number;
-		queuedExtractions: number;
+		knownMediaIds: number;
 	} {
 		return {
 			cachedThumbnails: this.cache.size,
-			activeSinks: this.sinks.size,
-			activeExtractions: this.activeCount,
-			queuedExtractions: this.extractionQueue.length,
+			knownMediaIds: this.aspectRatios.size,
 		};
 	}
 }

@@ -206,7 +206,10 @@
 
                     <div v-if="validatedPromo" class="subscribe-dialog__promo-success">
                       <Percent :size="12" />
-                      <span>{{ validatedPromo.percent_off }}% discount applied!</span>
+                      <span v-if="validatedPromo.promo_type === 'bundle'">
+                        Bundle: {{ validatedPromo.access_months }} mo + {{ validatedPromo.total_credits?.toLocaleString() }} credits
+                      </span>
+                      <span v-else>{{ validatedPromo.percent_off }}% discount applied!</span>
                       <button type="button" @click="clearPromoCode" class="subscribe-dialog__promo-clear">
                         <X :size="12" />
                       </button>
@@ -397,6 +400,9 @@ const effectivePrice = computed(() => {
 const discountedPrice = computed(() => {
   const basePrice = effectivePrice.value;
   if (validatedPromo.value) {
+    if (validatedPromo.value.promo_type === 'bundle') {
+      return (validatedPromo.value.fixed_price_usd ?? validatedPromo.value.fixed_price_cents! / 100).toFixed(2);
+    }
     const discount = validatedPromo.value.percent_off / 100;
     return (basePrice * (1 - discount)).toFixed(2);
   }
@@ -426,7 +432,14 @@ async function validatePromoCode() {
 
     if (response.success && response.promo) {
       validatedPromo.value = response.promo;
-      showSuccess('Promo code applied!', `${response.promo.percent_off}% discount`);
+      if (response.promo.promo_type === 'bundle') {
+        showSuccess(
+          'Bundle code applied!',
+          `$${response.promo.fixed_price_usd?.toFixed(2)} for ${response.promo.access_months} months + ${response.promo.total_credits?.toLocaleString()} credits`
+        );
+      } else {
+        showSuccess('Promo code applied!', `${response.promo.percent_off}% discount`);
+      }
     } else {
       validatedPromo.value = null;
       promoError.value = response.error || 'Invalid promo code';

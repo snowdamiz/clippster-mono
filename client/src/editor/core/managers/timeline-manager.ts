@@ -5,6 +5,7 @@ import type {
 	TextElement,
 	TimelineElement,
 	ClipboardItem,
+	Transform,
 } from "../../types/timeline";
 import { calculateTotalDuration } from "../../lib/timeline";
 import { getMainTrackMagnet } from "../../composables/timeline/useTimelineTools";
@@ -28,6 +29,7 @@ import {
 	UpdateElementStartTimeCommand,
 	MoveElementCommand,
 	MoveElementsBatchCommand,
+	UpdateElementsTransformsBatchCommand,
 	ChangeSpeedCommand,
 	UpdateElementKeyframesCommand,
 	ExtractAudioCommand,
@@ -35,11 +37,12 @@ import {
 	FreezeFrameCommand,
 	RippleDeleteTimeRangeCommand,
 	ReorderTrackCommand,
-	ReorderElementCommand,
+	UpdateMaskCommand,
 } from "../../lib/commands/timeline";
 import type { UpdatableElementProps } from "../../lib/commands/timeline";
 import type { InsertElementParams } from "../../lib/commands/timeline/element/insert-element";
 import type { ElementKeyframes } from "../../types/keyframes";
+import type { MaskShape } from "../../types/timeline";
 
 export class TimelineManager {
 	private listeners = new Set<() => void>();
@@ -62,9 +65,10 @@ export class TimelineManager {
 		this.editor.command.execute({ command });
 	}
 
-	insertElement({ element, placement }: InsertElementParams): void {
+	insertElement({ element, placement }: InsertElementParams): string {
 		const command = new InsertElementCommand({ element, placement });
 		this.editor.command.execute({ command });
+		return command.getElementId();
 	}
 
 	updateElementTrim({
@@ -288,6 +292,20 @@ export class TimelineManager {
 		this.editor.command.execute({ command });
 	}
 
+	/** One undo step for multi-element transform edits (e.g. multi-caption canvas drag). */
+	updateElementsTransformsBatch({
+		trackId,
+		updates,
+		previousTransforms,
+	}: {
+		trackId: string;
+		updates: { elementId: string; transform: Transform }[];
+		previousTransforms?: { elementId: string; transform: Transform }[];
+	}): void {
+		const command = new UpdateElementsTransformsBatchCommand(trackId, updates, previousTransforms);
+		this.editor.command.execute({ command });
+	}
+
 	changeElementSpeed({
 		trackId,
 		elementId,
@@ -324,6 +342,21 @@ export class TimelineManager {
 		updates: import("../../lib/commands/timeline/element/update-caption-element").CaptionElementUpdatable;
 	}): void {
 		const command = new UpdateCaptionElementCommand(trackId, elementId, updates);
+		this.editor.command.execute({ command });
+	}
+
+	updateElementMasks({
+		trackId,
+		elementId,
+		previousMasks,
+		nextMasks,
+	}: {
+		trackId: string;
+		elementId: string;
+		previousMasks: MaskShape[];
+		nextMasks: MaskShape[];
+	}): void {
+		const command = new UpdateMaskCommand(trackId, elementId, previousMasks, nextMasks);
 		this.editor.command.execute({ command });
 	}
 
@@ -370,19 +403,6 @@ export class TimelineManager {
 		this.editor.command.execute({ command });
 	}
 
-	reorderElement({
-		trackId,
-		elementId,
-		direction,
-	}: {
-		trackId: string;
-		elementId: string;
-		direction: "front" | "back" | "forward" | "backward";
-	}): void {
-		const command = new ReorderElementCommand(trackId, elementId, direction);
-		this.editor.command.execute({ command });
-	}
-
 	getTracks(): TimelineTrack[] {
 		return this.editor.scenes.getActiveSceneOrNull()?.tracks ?? [];
 	}
@@ -408,7 +428,8 @@ export class TimelineManager {
 	}
 
 	updateTracks(newTracks: TimelineTrack[]): void {
+		// ScenesManager.updateSceneTracks already notifies subscribers; avoid double Vue
+		// invalidation (timeline + scenes) for the same mutation.
 		this.editor.scenes.updateSceneTracks({ tracks: newTracks });
-		this.notify();
 	}
 }

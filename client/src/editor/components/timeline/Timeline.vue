@@ -1,6 +1,7 @@
 <script setup lang="ts">
-  import { ref, computed, onMounted, onUnmounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
   import { useEditor } from '../../composables/useEditor';
+  import { useTimelineTracks } from '../../composables/timeline/useTimelineTracks';
   import { useTimelineZoom } from '../../composables/timeline/useTimelineZoom';
   import { useElementInteraction } from '../../composables/timeline/element/useElementInteraction';
   import { useElementSelection } from '../../composables/timeline/element/useElementSelection';
@@ -10,6 +11,7 @@
   import { useSelectionBox } from '../../composables/timeline/useSelectionBox';
   import { useScrollSync } from '../../composables/timeline/useScrollSync';
   import { useTimelineTools } from '../../composables/timeline/useTimelineTools';
+  import { useTimelineViewport } from '../../composables/timeline/useTimelineViewport';
   import { UpdateCoverTimestampCommand } from '../../lib/commands/project/update-cover-timestamp';
   import { TIMELINE_CONSTANTS } from '../../constants/timeline-constants';
   import {
@@ -34,7 +36,6 @@
   import TimelineScrollbar from './TimelineScrollbar.vue';
   import TimelineContextMenu from './TimelineContextMenu.vue';
   import KeyframePopup from './KeyframePopup.vue';
-  import { ScrollArea } from '@/components/ui/scroll-area';
   import {
     Lock,
     Unlock,
@@ -54,15 +55,24 @@
     MessageSquare,
   } from 'lucide-vue-next';
   import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+  import { useToast } from '@/composables/useToast';
 
   const tracksContainerHeight = { min: 0 };
+
+  const { success: toastSuccess } = useToast();
 
   const { editor, version } = useEditor({
     subscribe: {
       playback: false,
+      timeline: false,
+      scenes: true,
+      project: false,
+      media: false,
+      selection: false,
     },
   });
-  const { clearElementSelection, setElementSelection, selectedElements, selectAllInTrack } = useElementSelection();
+  const { tracks, totalDuration: timelineDuration } = useTimelineTracks();
+  const { clearElementSelection, setElementSelection, selectedElements, selectedTransitionId, selectAllInTrack, selectTransition } = useElementSelection();
 
   // Context menu state
   const contextMenuPos = ref<{ x: number; y: number } | null>(null);
@@ -131,17 +141,12 @@
     const currentTime = editor.playback.getCurrentTime();
     const command = new UpdateCoverTimestampCommand(currentTime);
     editor.command.execute({ command });
+    const seconds = currentTime.toFixed(2);
+    toastSuccess(
+      'Cover image set',
+      `Export will use the frame at ${seconds}s (current playhead).`,
+    );
   }
-
-  const tracks = computed(() => {
-    void version.value;
-    return editor.timeline.getTracks();
-  });
-
-  const timelineDuration = computed(() => {
-    void version.value;
-    return editor.timeline.getTotalDuration() || 0;
-  });
 
   // Refs
   const timelineRef = ref<HTMLDivElement | null>(null);
@@ -152,6 +157,17 @@
   const trackLabelsRef = ref<HTMLDivElement | null>(null);
   const playheadRef = ref<HTMLDivElement | null>(null);
   const trackLabelsScrollRef = ref<HTMLDivElement | null>(null);
+
+  /** Observed height of the tracks scroll viewport — drives vertical centering offset. */
+  const tracksContainerClientHeight = ref(0);
+  const tracksViewportWidth = ref(1000);
+  const totalTracksHeight = computed(() => getTotalTracksHeight({ tracks: tracks.value }));
+  const tracksVerticalOffset = computed(() => {
+    const containerH = tracksContainerClientHeight.value;
+    const contentH = totalTracksHeight.value;
+    if (containerH <= 0 || contentH >= containerH) return 0;
+    return Math.min(16, Math.floor(containerH - contentH));
+  });
 
   // State
   const isResizing = ref(false);
@@ -208,13 +224,14 @@
     rulerScrollRef: tracksScrollRef,
   });
 
-  const { dragState, dragDropTarget, handleElementMouseDown, handleElementClick, getLastMouseX } =
+  const { dragState, dragDropTarget, dragRippleShifts, handleElementMouseDown, handleElementClick, getLastMouseX } =
     useElementInteraction({
       zoomLevel,
       timelineRef,
       tracksContainerRef,
       tracksScrollRef,
       headerRef: timelineHeaderRef,
+      tracksVerticalOffset,
       snappingEnabled: autoSnapping,
       onSnapPointChange: handleSnapPointChange,
     });
@@ -224,6 +241,7 @@
     isPlaying: isTimelinePlaying,
     playheadPosition,
     handlePlayheadMouseDown: handlePlayheadRulerMouseDown,
+    handleRulerMouseDown: handleRulerScrubMouseDown,
     isScrubbing: isPlayheadScrubbing,
   } = useTimelinePlayhead({
     zoomLevel,
@@ -234,19 +252,18 @@
     autoFollow,
   });
 
-  const playheadTotalHeight = computed(() => {
-    const tracksH = tracksScrollRef.value?.clientHeight;
-    const timelineH = timelineRef.value?.clientHeight;
-    return Math.max(0, (tracksH ?? timelineH ?? 400) - 4);
+  const scrollLeft = ref(0);
+  const { visibleRange } = useTimelineViewport({
+    scrollLeft,
+    viewportWidth: tracksViewportWidth,
+    zoomLevel,
   });
-
-  const scrollLeft = computed(() => tracksScrollRef.value?.scrollLeft ?? 0);
   const trackLabelsWidth = computed(() =>
     tracks.value.length > 0 && trackLabelsRef.value ? trackLabelsRef.value.offsetWidth : 0
   );
   const timelineHeight = computed(() => timelineRef.value?.offsetHeight ?? 400);
 
-  const { isDragOver, dropTarget, dragElementType, handleFileDrop } =
+  const { isDragOver, dropTarget, dragElementType, transitionDropPreview, handleFileDrop } =
     useTimelineDragDrop({
       containerRef: tracksContainerRef,
       headerRef: timelineHeaderRef,
@@ -334,45 +351,76 @@
 
   /**
    * Existing transitions rendered as badges on the timeline between segments.
-   * Each entry: { trackId, xPx, label, transitionId, targetElementId }
+   * Includes a duration span centered at the clip junction.
    */
-  const existingTransitionBadges = computed(() => {
+  const transitionBadgesByTrack = computed(() => {
     void version.value;
     let scene;
     try {
       scene = editor.scenes.getActiveSceneOrNull();
     } catch {
-      return [];
+      return new Map();
     }
-    if (!scene?.transitions?.length) return [];
+    if (!scene?.transitions?.length) return new Map();
 
-    const result: { trackId: string; xPx: number; label: string; targetElementId: string }[] = [];
+    type TransitionBadge = {
+      trackId: string;
+      transitionId: string;
+      xPx: number;
+      startPx: number;
+      widthPx: number;
+      label: string;
+      targetElementId: string;
+    };
+    const result = new Map<string, TransitionBadge[]>();
     const pps = TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value;
+    const targets = new Map<string, { trackId: string; startTime: number }>();
+    for (const track of tracks.value) {
+      for (const element of track.elements) {
+        targets.set(element.id, { trackId: track.id, startTime: element.startTime });
+      }
+    }
 
     for (const transition of scene.transitions) {
-      const track = tracks.value.find((t) => t.id === transition.trackId);
-      if (!track) continue;
-      const targetEl = track.elements.find((e) => e.id === transition.targetElementId);
-      if (!targetEl) continue;
-      // Badge sits at the junction (start of the right element)
-      result.push({
-        trackId: transition.trackId,
-        xPx: targetEl.startTime * pps,
+      const target = targets.get(transition.targetElementId);
+      if (!target) continue;
+
+      const xPx = target.startTime * pps;
+      // Keep the complete transition span selectable even when zoomed out.
+      const widthPx = Math.max(32, transition.duration * pps);
+      const startPx = xPx - widthPx / 2;
+      const endPx = startPx + widthPx;
+      const visibleStartPx = visibleRange.value.startTime * pps;
+      const visibleEndPx = visibleRange.value.endTime * pps;
+      if (endPx < visibleStartPx || startPx > visibleEndPx) continue;
+
+      const badge: TransitionBadge = {
+        trackId: target.trackId,
+        transitionId: transition.id,
+        xPx,
+        startPx,
+        widthPx,
         label: transition.type,
         targetElementId: transition.targetElementId,
-      });
+      };
+      const trackBadges = result.get(target.trackId);
+      if (trackBadges) trackBadges.push(badge);
+      else result.set(target.trackId, [badge]);
     }
     return result;
   });
 
-  /** Pixel position of a transition junction drop indicator */
-  const transitionJunctionPx = computed(() => {
-    if (!isDragOver.value || !dropTarget.value?.targetElementId || !dropTarget.value?.targetTrackId) return null;
-    // Only show for transition drags (when dragElementType is null — transitions set it to null)
-    if (dragElementType.value !== null) return null;
+  /** Centered CapCut-style preview spanning both clips at the target junction. */
+  const transitionDropVisual = computed(() => {
+    const preview = transitionDropPreview.value;
+    if (!isDragOver.value || !preview) return null;
+    const pps = TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value;
+    const width = Math.max(48, preview.duration * pps);
     return {
-      x: dropTarget.value.xPosition * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value,
-      trackId: dropTarget.value.targetTrackId,
+      ...preview,
+      x: preview.junctionTime * pps,
+      left: preview.junctionTime * pps - width / 2,
+      width,
     };
   });
 
@@ -395,22 +443,23 @@
       (dragState.value.isDragging || isResizing.value)
   );
 
-  const duration = computed(() => {
-    void version.value;
-    return editor.timeline.getTotalDuration();
-  });
-
   const { handleTracksMouseDown, handleTracksClick, handleRulerMouseDown, handleRulerClick } = useTimelineSeek({
     playheadRef,
     trackLabelsRef,
     rulerScrollRef: tracksScrollRef,
     tracksScrollRef,
     zoomLevel,
-    duration,
+    duration: timelineDuration,
     isSelecting,
     clearSelectedElements: clearElementSelection,
     seek: (time: number) => editor.playback.seek({ time }),
   });
+
+  /** Ruler inner surface: record click-to-seek tracking, then scrub (playhead composable skips the handle). */
+  function onRulerSurfaceMouseDown(event: MouseEvent) {
+    handleRulerMouseDown(event);
+    handleRulerScrubMouseDown(event);
+  }
 
   useScrollSync({
     tracksScrollRef,
@@ -419,22 +468,26 @@
 
   const timelineHeaderHeight = computed(() => timelineHeaderRef.value?.getBoundingClientRect().height ?? 0);
 
-  const totalTracksHeight = computed(() => getTotalTracksHeight({ tracks: tracks.value }));
-
   const tracksAreaHeight = computed(() => {
     const base = Math.max(tracksContainerHeight.min, totalTracksHeight.value);
     if (activeNewTrackDrop.value) return base + INSERT_GAP_SIZE;
     return base;
   });
 
-  // Vertical centering: offset tracks when content is shorter than container
-  const tracksContainerClientHeight = ref(0);
+  const playheadTotalHeight = computed(() => {
+    // Full scrollable track stack (not viewport) so the line reaches every track.
+    return Math.max(0, tracksAreaHeight.value + tracksVerticalOffset.value + 24);
+  });
+
+  const scrollTop = computed(() => tracksScrollRef.value?.scrollTop ?? 0);
+
   let tracksResizeObserver: ResizeObserver | null = null;
 
   onMounted(() => {
     tracksResizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         tracksContainerClientHeight.value = entry.contentRect.height;
+        tracksViewportWidth.value = entry.contentRect.width;
       }
     });
     if (tracksScrollRef.value) {
@@ -444,14 +497,18 @@
 
   onUnmounted(() => {
     tracksResizeObserver?.disconnect();
+    if (isTimelineInteractive.value) editor.setInteractiveDrag(false);
   });
 
-  const tracksVerticalOffset = computed(() => {
-    const containerH = tracksContainerClientHeight.value;
-    const contentH = totalTracksHeight.value;
-    if (containerH <= 0 || contentH >= containerH) return 0;
-    return Math.min(16, Math.floor(containerH - contentH));
+  const isTimelineInteractive = computed(() => dragState.value.isDragging || isResizing.value);
+  watch(isTimelineInteractive, (interactive) => {
+    editor.setInteractiveDrag(interactive);
   });
+
+  function onTracksScroll() {
+    scrollLeft.value = tracksScrollRef.value?.scrollLeft ?? 0;
+    saveScrollPosition();
+  }
 
   function onTrackLabelsWheel(event: WheelEvent) {
     const tracksEl = tracksScrollRef.value;
@@ -519,14 +576,10 @@
   }
 
   function zoomToFit() {
-    const scrollEl = tracksScrollRef.value;
-    if (!scrollEl) return;
-    const totalDur = editor.timeline.getTotalDuration();
-    if (totalDur <= 0) return;
-    const viewportWidth = scrollEl.clientWidth;
-    const fitZoom = viewportWidth / (totalDur * TIMELINE_CONSTANTS.PIXELS_PER_SECOND);
-    setZoomLevel(Math.max(minZoomLevel.value, Math.min(fitZoom, TIMELINE_CONSTANTS.ZOOM_MAX)));
-    scrollEl.scrollLeft = 0;
+    setZoomLevel(minZoomLevel.value);
+    if (tracksScrollRef.value) {
+      tracksScrollRef.value.scrollLeft = 0;
+    }
   }
 
   // Track reorder via pointer events
@@ -744,10 +797,11 @@
                     <!-- Cover (main video track only) -->
                     <button
                       v-if="'isMain' in track && track.isMain"
+                      type="button"
                       class="rounded p-1 text-zinc-600 transition-colors hover:bg-white/10 hover:text-[#0ea5e9] disabled:pointer-events-none disabled:opacity-40"
                       :disabled="!track.elements.length"
-                      @click="openCoverEditor"
-                      title="Edit cover image"
+                      @click.stop="openCoverEditor"
+                      title="Set export cover image to the frame at the current playhead"
                     >
                       <ImageIcon class="size-3.5" />
                     </button>
@@ -820,6 +874,9 @@
             :drag-element-type="dragElementType"
             :zoom-level="zoomLevel"
             :scroll-left="scrollLeft"
+            :scroll-top="scrollTop"
+            :insert-gap-index="activeNewTrackDrop?.index ?? null"
+            :insert-gap-size="INSERT_GAP_SIZE"
           />
           <DragLine
             :drop-target="dragDropTarget"
@@ -829,6 +886,9 @@
             :drag-element-type="dragElementTypeForReorder"
             :zoom-level="zoomLevel"
             :scroll-left="scrollLeft"
+            :scroll-top="scrollTop"
+            :insert-gap-index="activeNewTrackDrop?.index ?? null"
+            :insert-gap-size="INSERT_GAP_SIZE"
           />
 
           <div
@@ -837,7 +897,7 @@
             @mousedown="onScrollAreaMouseDown"
             @click="onScrollAreaClick"
             @wheel="onScrollAreaWheel"
-            @scroll="saveScrollPosition"
+            @scroll="onTracksScroll"
             @contextmenu.prevent="handleEmptyContextMenu"
           >
             <div class="relative" :style="{ width: `${dynamicTimelineWidth}px` }">
@@ -846,10 +906,11 @@
                 <TimelineRuler
                   :zoom-level="zoomLevel"
                   :dynamic-timeline-width="dynamicTimelineWidth"
+                  :visible-range="visibleRange"
                   @wheel="onScrollAreaWheel"
                   @ruler-click="handleRulerClick"
                   @ruler-tracking-mouse-down="handleRulerMouseDown"
-                  @ruler-mouse-down="handlePlayheadRulerMouseDown"
+                  @ruler-mouse-down="onRulerSurfaceMouseDown"
                 />
               </div>
 
@@ -889,7 +950,7 @@
                 <div
                   v-for="(track, index) in tracks"
                   :key="track.id"
-                  class="absolute right-0 left-0"
+                  class="timeline-track-row absolute right-0 left-0 overflow-hidden"
                   :style="{
                     top: `${getTrackTopWithInsertGap(index)}px`,
                     height: `${getTrackHeight({ type: track.type })}px`,
@@ -898,11 +959,19 @@
                   <TimelineTrackContent
                     :track="track"
                     :zoom-level="zoomLevel"
-                    :drag-state="dragState"
                     :snapping-enabled="autoSnapping"
                     :is-playhead-scrubbing="isPlayheadScrubbing"
                     :razor-mode="razorMode"
                     :effect-drop-target-id="effectDropTargetTrackId === track.id ? effectDropTargetId : null"
+                    :transition-drop-element-ids="
+                      transitionDropVisual?.trackId === track.id
+                        ? [transitionDropVisual.leftElementId, transitionDropVisual.rightElementId]
+                        : []
+                    "
+                    :drag-ripple-shifts="dragRippleShifts"
+                    :visible-range="visibleRange"
+                    :active-element-id="dragState.trackId === track.id ? dragState.elementId : null"
+                    :is-timeline-interactive="isTimelineInteractive"
                     @snap-point-change="handleSnapPointChange"
                     @resize-state-change="handleResizeStateChange"
                     @element-mouse-down="handleElementMouseDown"
@@ -919,49 +988,55 @@
                     @keyframe-click="handleKeyframeClick"
                   />
                   <!-- Existing transition badges -->
-                  <template v-for="badge in existingTransitionBadges" :key="badge.targetElementId">
-                    <div
-                      v-if="badge.trackId === track.id"
-                      class="pointer-events-none absolute top-0 z-40"
-                      :style="{
-                        left: `${badge.xPx - 1}px`,
-                        width: '2px',
-                        height: '100%',
-                      }"
-                    >
-                      <div class="h-full w-[2px] bg-[#E040FB]/70" />
-                    </div>
+                  <template v-for="badge in transitionBadgesByTrack.get(track.id) ?? []" :key="badge.transitionId">
                     <button
-                      v-if="badge.trackId === track.id"
-                      class="absolute z-50 flex items-center gap-0.5 rounded-full border border-[#E040FB]/50 bg-[#1a0a1e] px-1.5 py-0.5 text-[9px] font-medium text-[#E040FB] shadow-md hover:bg-[#E040FB]/20 transition-colors"
-                      :style="{
-                        left: `${badge.xPx}px`,
-                        top: '50%',
-                        transform: 'translate(-50%, -50%)',
-                        pointerEvents: 'auto',
-                      }"
-                      :title="`Transition: ${badge.label} — click to edit`"
-                      @click.stop="
-                        handleElementClick({ event: $event, element: { id: badge.targetElementId } as any, track })
+                      type="button"
+                      class="absolute z-40 flex items-center justify-center rounded-md border transition-all"
+                      :class="
+                        selectedTransitionId === badge.transitionId
+                          ? 'border-[#E040FB] bg-[#E040FB]/25 ring-2 ring-[#E040FB]/50'
+                          : 'border-[#E040FB]/40 bg-[#E040FB]/10 hover:border-[#E040FB] hover:bg-[#E040FB]/20'
                       "
+                      :style="{
+                        left: `${badge.startPx}px`,
+                        width: `${badge.widthPx}px`,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        height: '24px',
+                      }"
+                      :aria-label="`Select ${badge.label} transition`"
+                      :aria-pressed="selectedTransitionId === badge.transitionId"
+                      :title="`Transition: ${badge.label} — click to select, Delete to remove`"
+                      @pointerdown.stop
+                      @mousedown.stop
+                      @click.stop="selectTransition({ transitionId: badge.transitionId })"
                     >
-                      <ArrowRightLeft class="size-2.5" />
-                      <span class="max-w-[40px] truncate capitalize">{{ badge.label }}</span>
+                      <span class="pointer-events-none absolute inset-y-0 left-1/2 w-px bg-[#E040FB]/80" />
+                      <span class="pointer-events-none flex items-center gap-0.5 rounded-full bg-[#1a0a1e]/90 px-1.5 py-0.5 text-[9px] font-medium text-[#E040FB] shadow-md">
+                        <ArrowRightLeft class="size-2.5" />
+                        <span class="max-w-[52px] truncate capitalize">{{ badge.label }}</span>
+                      </span>
                     </button>
                   </template>
 
-                  <!-- Transition junction drop indicator -->
+                  <!-- Transition drop preview: centered across outgoing + incoming clips -->
                   <div
-                    v-if="transitionJunctionPx && transitionJunctionPx.trackId === track.id"
-                    class="pointer-events-none absolute top-0 z-50"
+                    v-if="transitionDropVisual && transitionDropVisual.trackId === track.id"
+                    class="pointer-events-none absolute z-50 flex items-center justify-center overflow-hidden rounded-md border-2 border-[#E040FB] bg-[#E040FB]/20 shadow-[0_0_10px_rgba(224,64,251,0.45)]"
                     :style="{
-                      left: `${transitionJunctionPx.x - 8}px`,
-                      width: '16px',
-                      height: '100%',
+                      left: `${transitionDropVisual.left}px`,
+                      width: `${transitionDropVisual.width}px`,
+                      top: '50%',
+                      height: '30px',
+                      transform: 'translateY(-50%)',
                     }"
                   >
-                    <div class="flex h-full items-center justify-center">
-                      <div class="h-full w-[2px] rounded-full bg-[#E040FB] shadow-[0_0_6px_#E040FB]" />
+                    <div class="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-[#E040FB]/5 to-[#E040FB]/30" />
+                    <div class="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-[#E040FB]/5 to-[#E040FB]/30" />
+                    <div class="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-[#E040FB]" />
+                    <div class="relative flex max-w-full items-center gap-1 rounded-full bg-[#1a0a1e]/90 px-2 py-1 text-[9px] font-semibold text-white">
+                      <ArrowRightLeft class="size-3 shrink-0 text-[#E040FB]" />
+                      <span class="truncate">{{ transitionDropVisual.label }}</span>
                     </div>
                   </div>
                 </div>
@@ -995,5 +1070,32 @@
   }
   .hide-native-scrollbar::-webkit-scrollbar {
     display: none !important;
+  }
+
+  /* GPU-composited drag visual.
+   *
+   * The drag controller in `useElementInteraction.ts` writes `--drag-x`
+   * and `--drag-y` directly on the matching `[data-element-id]` nodes
+   * each animation frame, then sets `data-drag-active="1"`. The browser
+   * promotes the element to its own compositor layer and translates it
+   * via the GPU, so dragging hundreds of clips at once is buttery smooth.
+   *
+   * We do NOT include `left` here — the element keeps its committed
+   * `left:` value during the drag. Only the transform overlays the visual
+   * delta, and on drop the controller clears the data attribute and the
+   * committed `startTime` is updated by the timeline manager. */
+  .timeline-element[data-drag-active="1"] {
+    transform: translate3d(var(--drag-x, 0), var(--drag-y, 0), 0);
+    z-index: 30;
+    will-change: transform;
+    pointer-events: none;
+  }
+
+  /* Smooth animated insert gap when a drag hovers over a between-track
+   * insertion point. The track row itself still receives an instant top
+   * change from Vue, but the visual transition gives it a CapCut-style
+   * springy feel rather than a hard jump. */
+  .timeline-track-row {
+    transition: top 120ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 </style>

@@ -249,13 +249,27 @@ export async function getProjectVodPresetConfig(
     [projectId]
   );
 
+  console.log('[getProjectVodPresetConfig] Query result for project:', projectId, {
+    rowsFound: rows.length,
+    hasConfig: rows.length > 0 && !!rows[0].active_vod_preset_config,
+    configLength: rows.length > 0 && rows[0].active_vod_preset_config ? rows[0].active_vod_preset_config.length : 0,
+  });
+
   if (rows.length === 0 || !rows[0].active_vod_preset_config) {
+    console.log('[getProjectVodPresetConfig] No VOD preset config found in database');
     return null;
   }
 
   try {
-    return JSON.parse(rows[0].active_vod_preset_config) as ActiveVodPresetConfig;
-  } catch {
+    const config = JSON.parse(rows[0].active_vod_preset_config) as ActiveVodPresetConfig;
+    console.log('[getProjectVodPresetConfig] Parsed config:', {
+      targetAspectRatio: config.targetAspectRatio,
+      hasFramingConfig: !!config.framingConfig,
+      regionsCount: config.framingConfig?.regions?.length || 0,
+    });
+    return config;
+  } catch (e) {
+    console.error('[getProjectVodPresetConfig] Failed to parse config JSON:', e);
     return null;
   }
 }

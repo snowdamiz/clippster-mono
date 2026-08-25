@@ -1,6 +1,6 @@
 defmodule ClippsterServer.News.NewsPoller do
   @moduledoc """
-  GenServer that polls TheNewsAPI every 20 minutes to fetch breaking news.
+  GenServer that polls TheNewsAPI every 25 minutes to fetch breaking news.
   Also performs cleanup of old articles every hour.
   """
   use GenServer
@@ -8,7 +8,7 @@ defmodule ClippsterServer.News.NewsPoller do
 
   alias ClippsterServer.News
 
-  @poll_interval :timer.minutes(20)
+  @poll_interval :timer.minutes(25)
   @cleanup_interval :timer.hours(1)
   @article_retention_hours 24
 
@@ -20,7 +20,7 @@ defmodule ClippsterServer.News.NewsPoller do
   def init(_opts) do
     # Schedule initial fetch after 10 seconds to allow app to fully start
     Process.send_after(self(), :fetch_news, :timer.seconds(10))
-    
+
     # Schedule cleanup
     Process.send_after(self(), :cleanup_old_articles, @cleanup_interval)
 
@@ -35,18 +35,21 @@ defmodule ClippsterServer.News.NewsPoller do
       {:ok, count} ->
         Logger.info("NewsPoller: Successfully stored #{count} articles")
         new_state = %{state | last_fetch: DateTime.utc_now(), fetch_count: state.fetch_count + 1}
-        
-        # Schedule next fetch in 15 minutes
+
+        # Schedule next fetch in 25 minutes
         Process.send_after(self(), :fetch_news, @poll_interval)
         {:noreply, new_state}
 
       {:error, :api_key_not_configured} ->
-        Logger.warning("NewsPoller: API key not configured, will retry in 15 minutes")
+        Logger.warning("NewsPoller: API key not configured, will retry in 25 minutes")
         Process.send_after(self(), :fetch_news, @poll_interval)
         {:noreply, state}
 
       {:error, reason} ->
-        Logger.error("NewsPoller: Failed to fetch news: #{inspect(reason)}, will retry in 15 minutes")
+        Logger.error(
+          "NewsPoller: Failed to fetch news: #{inspect(reason)}, will retry in 25 minutes"
+        )
+
         Process.send_after(self(), :fetch_news, @poll_interval)
         {:noreply, state}
     end

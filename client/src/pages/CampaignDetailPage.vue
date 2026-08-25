@@ -26,24 +26,21 @@
 
       <!-- Campaign Content -->
       <div v-else-if="campaign" class="profile-page">
-        <!-- Enhanced Campaign Header -->
-        <div class="profile-header-card">
-          <div class="profile-header-bg"></div>
-          <div class="profile-header-content">
-            <div class="profile-header-main">
-              <div class="profile-avatar-wrapper">
-                <div class="profile-avatar">
-                  <img
-                    v-if="campaign.cover_image_url"
-                    :src="campaign.cover_image_url"
-                    class="profile-avatar__img"
-                  />
-                  <Megaphone v-else class="profile-avatar__fallback" />
-                </div>
+        <div class="org-profile org-profile--settings">
+          <div class="org-hero">
+            <div class="org-hero__banner"></div>
+            <div class="org-hero__content">
+              <div class="org-hero__avatar">
+                <img
+                  v-if="campaign.cover_image_url"
+                  :src="campaign.cover_image_url"
+                  class="org-hero__avatar-img"
+                />
+                <Megaphone v-else class="org-hero__avatar-fallback" />
               </div>
-              <div class="profile-info">
+              <div class="org-hero__info">
                 <div class="profile-name-row">
-                  <h1 class="profile-name">{{ campaign.title }}</h1>
+                  <h1 class="org-hero__name">{{ campaign.title }}</h1>
                   <div class="profile-badges">
                     <span class="status-badge" :class="`status-badge--${campaign.status}`">
                       {{ campaign.status.toUpperCase() }}
@@ -59,52 +56,57 @@
                   </div>
                 </div>
                 <div class="profile-meta-row">
-                  <span v-if="campaign.organization" class="profile-visibility">
+                  <router-link
+                    v-if="campaign.organization"
+                    :to="campaign.organization.slug ? `/orgs/${campaign.organization.slug}` : '#'"
+                    class="profile-visibility"
+                  >
                     <Building2 :size="14" />
                     {{ campaign.organization.name }}
-                  </span>
+                  </router-link>
                   <span v-if="campaign.starts_at" class="profile-last-active">
                     <Calendar :size="14" />
                     {{ formatDate(campaign.starts_at) }} - {{ campaign.ends_at ? formatDate(campaign.ends_at) : 'Ongoing' }}
                   </span>
                 </div>
-                <p class="profile-bio">
+                <p class="org-hero__tagline" :class="{ 'profile-bio--empty': !campaign.description }">
                   {{ campaign.description || 'No description provided' }}
                 </p>
-                <div v-if="campaign.allowed_platforms?.length" class="profile-tags">
-                  <span v-for="platform in campaign.allowed_platforms" :key="platform" class="profile-tag">
+                <div v-if="campaign.allowed_platforms?.length" class="org-hero__tags">
+                  <span v-for="platform in campaign.allowed_platforms" :key="platform" class="org-hero__tag">
                     {{ getPlatformDisplayName(platform) }}
                   </span>
                 </div>
               </div>
             </div>
-            <div class="profile-stats-grid">
-              <div class="profile-stat-card">
-                <div class="profile-stat-card__icon profile-stat-card__icon--purple">
-                  <Users :size="18" />
-                </div>
-                <div class="profile-stat-card__content">
-                  <span class="profile-stat-card__value">{{ stats.participants_count || 0 }}</span>
-                  <span class="profile-stat-card__label">Participants</span>
-                </div>
+          </div>
+
+          <div class="org-stats-grid org-stats-grid--settings">
+            <div class="org-stat-card">
+              <div class="org-stat-card__icon org-stat-card__icon--violet">
+                <Users :size="18" />
               </div>
-              <div class="profile-stat-card">
-                <div class="profile-stat-card__icon profile-stat-card__icon--cyan">
-                  <FileVideo :size="18" />
-                </div>
-                <div class="profile-stat-card__content">
-                  <span class="profile-stat-card__value">{{ stats.submissions_count || 0 }}</span>
-                  <span class="profile-stat-card__label">Submissions</span>
-                </div>
+              <div class="org-stat-card__content">
+                <span class="org-stat-card__value">{{ stats.participants_count || 0 }}</span>
+                <span class="org-stat-card__label">Participants</span>
               </div>
-              <div class="profile-stat-card">
-                <div class="profile-stat-card__icon profile-stat-card__icon--green">
-                  <CheckCircle :size="18" />
-                </div>
-                <div class="profile-stat-card__content">
-                  <span class="profile-stat-card__value">{{ stats.verified_count || 0 }}</span>
-                  <span class="profile-stat-card__label">Verified</span>
-                </div>
+            </div>
+            <div class="org-stat-card">
+              <div class="org-stat-card__icon org-stat-card__icon--cyan">
+                <FileVideo :size="18" />
+              </div>
+              <div class="org-stat-card__content">
+                <span class="org-stat-card__value">{{ stats.submissions_count || 0 }}</span>
+                <span class="org-stat-card__label">Submissions</span>
+              </div>
+            </div>
+            <div class="org-stat-card">
+              <div class="org-stat-card__icon org-stat-card__icon--green">
+                <CheckCircle :size="18" />
+              </div>
+              <div class="org-stat-card__content">
+                <span class="org-stat-card__value">{{ stats.verified_count || 0 }}</span>
+                <span class="org-stat-card__label">Verified</span>
               </div>
             </div>
           </div>
@@ -166,8 +168,16 @@
         <main class="content">
           <!-- Overview Tab -->
           <template v-if="activeTab === 'overview'">
-            <div class="overview-section">
-              <h2 class="section-title">Campaign Details</h2>
+            <section class="section">
+              <div class="section__header">
+                <div class="section__header-icon section__header-icon--purple">
+                  <DollarSign />
+                </div>
+                <div class="section__header-text">
+                  <h2 class="section-title">Campaign Details</h2>
+                  <p class="section-subtitle">Payment terms and eligibility requirements</p>
+                </div>
+              </div>
               <div class="details-grid">
                 <div class="detail-item">
                   <span class="detail-label">Payment Model</span>
@@ -190,10 +200,18 @@
                   <span class="detail-value">{{ campaign.join_type === 'open' ? 'Open to All' : 'Application Required' }}</span>
                 </div>
               </div>
-            </div>
+            </section>
 
-            <div class="overview-section">
-              <h2 class="section-title">Streamers to Clip</h2>
+            <section class="section">
+              <div class="section__header">
+                <div class="section__header-icon section__header-icon--cyan">
+                  <Globe />
+                </div>
+                <div class="section__header-text">
+                  <h2 class="section-title">Streamers to Clip</h2>
+                  <p class="section-subtitle">Which streamers qualify for this campaign</p>
+                </div>
+              </div>
               <div v-if="!campaign.creator_profile_id && (!campaign.assigned_streamer_ids || campaign.assigned_streamer_ids.length === 0)" class="global-branding-notice">
                 <div class="global-branding-notice__icon">
                   <Globe :size="24" />
@@ -206,17 +224,19 @@
                 </div>
               </div>
               <div v-else-if="campaign.creator_profile_id" class="creator-profile-info">
-                <p class="text-sm text-gray-400 mb-4">This campaign is assigned to a specific creator profile:</p>
-                <div v-if="campaign.creator_profile" class="p-4 bg-gray-800 border border-gray-700 rounded-lg">
-                  <div class="flex items-center gap-3">
-                    <img v-if="campaign.creator_profile.profile_image_url" :src="campaign.creator_profile.profile_image_url" class="w-12 h-12 rounded-full" />
-                    <div>
-                      <div class="font-semibold">{{ campaign.creator_profile.name }}</div>
-                      <div class="text-sm text-gray-400">Creator Profile</div>
-                    </div>
+                <p class="creator-profile-info__lead">This campaign is assigned to a specific creator profile:</p>
+                <div v-if="campaign.creator_profile" class="creator-profile-card">
+                  <img
+                    v-if="campaign.creator_profile.profile_image_url"
+                    :src="campaign.creator_profile.profile_image_url"
+                    class="creator-profile-card__avatar"
+                  />
+                  <div>
+                    <div class="creator-profile-card__name">{{ campaign.creator_profile.name }}</div>
+                    <div class="creator-profile-card__meta">Creator Profile</div>
                   </div>
                 </div>
-                <div v-else class="p-4 bg-gray-800 border border-gray-700 rounded-lg text-center text-gray-400 text-sm">
+                <div v-else class="creator-profile-card creator-profile-card--empty">
                   Creator profile assigned
                 </div>
               </div>
@@ -226,7 +246,7 @@
                   {{ campaign.assigned_streamer_ids.length }} streamer(s) assigned
                 </div>
               </div>
-            </div>
+            </section>
           </template>
 
           <!-- Submissions Tab -->
@@ -766,7 +786,7 @@
 </script>
 
 <style scoped>
-/* Base Layout */
+/* ===== Page Container ===== */
 .campaign-detail {
   width: 100%;
   min-height: 100%;
@@ -777,74 +797,211 @@
   flex-direction: column;
   gap: 1.5rem;
   padding: 1rem 1.5rem 0 1.5rem;
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+  flex: 1;
 }
 
-/* Profile Header Card */
-.profile-header-card {
+.org-profile--settings {
+  max-width: none;
+  margin: 0;
+  padding: 0 0 0.25rem 0;
+}
+
+.org-hero {
   position: relative;
-  background: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 16px;
+  margin-bottom: 0;
+  padding-bottom: 1.75rem;
+}
+
+.org-hero__banner {
+  height: 120px;
+  background: linear-gradient(135deg, #0891b2 0%, #06b6d4 25%, #22d3ee 50%, #0891b2 75%, #164e63 100%);
+  background-size: 200% 200%;
+  border-radius: 14px 14px 0 0;
+  position: relative;
   overflow: hidden;
 }
 
-.profile-header-bg {
+.org-hero__banner::before {
+  content: '';
   position: absolute;
-  top: 0;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 100%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 40% at 80% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 40%);
+}
+
+.org-hero__banner::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
   left: 0;
   right: 0;
-  height: 120px;
-  background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
-  opacity: 0.5;
+  height: 52px;
+  background: linear-gradient(to top, var(--sidebar-surface) 0%, transparent 100%);
 }
 
-.profile-header-content {
-  position: relative;
-  padding: 2rem 2rem 1.5rem;
-}
-
-.profile-header-main {
+.org-hero__content {
   display: flex;
   align-items: flex-start;
-  gap: 1.5rem;
-  margin-bottom: 2rem;
-}
-
-.profile-avatar-wrapper {
+  gap: 1.25rem;
+  padding: 0 1.5rem;
+  margin-top: -48px;
   position: relative;
-  flex-shrink: 0;
+  z-index: 1;
 }
 
-.profile-avatar {
+.org-hero__avatar {
   position: relative;
   width: 96px;
   height: 96px;
-  border-radius: 20px;
-  background: var(--sidebar-hover);
+  border-radius: 14px;
+  background: var(--sidebar-surface);
+  border: 4px solid var(--sidebar-surface);
   overflow: hidden;
-  border: 3px solid var(--sidebar-surface);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
-.profile-avatar__img {
+.org-hero__avatar-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.profile-avatar__fallback {
+.org-hero__avatar-fallback {
   width: 100%;
   height: 100%;
-  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sidebar-hover);
   color: var(--sidebar-text-muted);
+  padding: 24px;
 }
 
-.profile-info {
+.org-hero__info {
   flex: 1;
   min-width: 0;
+  padding-top: 0.375rem;
+  padding-bottom: 0.25rem;
+}
+
+.org-hero__name {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--sidebar-text);
+  margin: 0;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.org-hero__tagline {
+  font-size: 0.875rem;
+  color: var(--sidebar-text-muted);
+  margin: 0 0 0.625rem;
+  line-height: 1.5;
+}
+
+.org-hero__tagline.profile-bio--empty {
+  font-style: italic;
+  opacity: 0.6;
+}
+
+.org-hero__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.org-hero__tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  background: rgba(34, 211, 238, 0.1);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  border-radius: 6px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: #22d3ee;
+  letter-spacing: 0.01em;
+}
+
+.org-stats-grid {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.org-stats-grid--settings {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.org-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--sidebar-surface);
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  border-radius: 12px;
+  transition: all 200ms ease;
+}
+
+.org-stat-card:hover {
+  border-color: rgba(34, 211, 238, 0.4);
+  box-shadow: 0 0 20px rgba(34, 211, 238, 0.1);
+}
+
+.org-stat-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.org-stat-card__icon--cyan {
+  background: rgba(34, 211, 238, 0.15);
+  color: #22d3ee;
+}
+
+.org-stat-card__icon--green {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+}
+
+.org-stat-card__icon--violet {
+  background: rgba(167, 139, 250, 0.15);
+  color: #a78bfa;
+}
+
+.org-stat-card__content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.org-stat-card__value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--sidebar-text);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.org-stat-card__label {
+  font-size: 0.6875rem;
+  color: var(--sidebar-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .profile-name-row {
@@ -853,15 +1010,6 @@
   gap: 0.75rem;
   flex-wrap: wrap;
   margin-bottom: 0.75rem;
-}
-
-.profile-name {
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: var(--sidebar-text);
-  margin: 0;
-  letter-spacing: -0.03em;
-  line-height: 1.2;
 }
 
 .profile-badges {
@@ -894,8 +1042,8 @@
 }
 
 .status-badge--completed {
-  background: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
+  background: rgba(6, 182, 212, 0.15);
+  color: var(--sidebar-accent);
 }
 
 .status-badge--per-clip {
@@ -926,6 +1074,12 @@
   font-size: 0.6875rem;
   font-weight: 500;
   color: var(--sidebar-text-muted);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+.profile-visibility:hover {
+  color: var(--sidebar-accent);
 }
 
 .profile-last-active {
@@ -937,111 +1091,11 @@
   opacity: 0.8;
 }
 
-.profile-bio {
-  font-size: 0.9375rem;
-  color: var(--sidebar-text-muted);
-  margin: 0 0 0.875rem;
-  line-height: 1.6;
-  max-width: 600px;
-}
-
-.profile-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.profile-tag {
-  padding: 0.375rem 0.625rem;
-  background: rgba(6, 182, 212, 0.12);
-  border-radius: 6px;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: var(--sidebar-accent);
-  transition: all 150ms ease;
-}
-
-.profile-tag:hover {
-  background: rgba(6, 182, 212, 0.18);
-}
-
-/* Profile Stats Grid */
-.profile-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
-}
-
-.profile-stat-card {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1.25rem;
-  background: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 12px;
-  transition: all 200ms ease;
-}
-
-.profile-stat-card:hover {
-  border-color: rgba(255, 255, 255, 0.12);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-}
-
-.profile-stat-card__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  flex-shrink: 0;
-}
-
-.profile-stat-card__icon--purple {
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%);
-  color: #a78bfa;
-}
-
-.profile-stat-card__icon--cyan {
-  background: linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(8, 145, 178, 0.2) 100%);
-  color: #06b6d4;
-}
-
-.profile-stat-card__icon--green {
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%);
-  color: #10b981;
-}
-
-.profile-stat-card__content {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.profile-stat-card__value {
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: var(--sidebar-text);
-  letter-spacing: -0.02em;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.profile-stat-card__label {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-/* Ranking Card */
+/* ===== Ranking / Budget Card ===== */
 .ranking-card {
   background-color: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  border-radius: 14px;
   padding: 1rem 1.125rem;
 }
 
@@ -1049,7 +1103,6 @@
   display: flex;
   align-items: center;
   gap: 0.875rem;
-  margin-bottom: 1rem;
 }
 
 .ranking-row__header-icon {
@@ -1121,7 +1174,6 @@
   margin-top: 0.25rem;
 }
 
-/* Budget Progress */
 .budget-progress {
   height: 8px;
   background: var(--sidebar-hover);
@@ -1147,12 +1199,18 @@
   background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
 }
 
-/* Tabs Navigation */
+/* ===== Tab Navigation ===== */
 .tabs-nav {
   background: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 12px;
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  border-radius: 14px;
   padding: 0.5rem;
+  margin-bottom: 1.5rem;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.tabs-nav:hover {
+  border-color: rgba(34, 211, 238, 0.25);
 }
 
 .tabs-container {
@@ -1211,7 +1269,7 @@
   font-size: inherit;
 }
 
-/* Content */
+/* ===== Content ===== */
 .content {
   display: flex;
   flex-direction: column;
@@ -1219,18 +1277,69 @@
   padding-bottom: 4rem;
 }
 
-.section-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  margin: 0 0 1rem;
-}
-
-.overview-section {
-  background: var(--sidebar-surface);
+.section {
+  background-color: var(--sidebar-surface);
   border: 1px solid var(--sidebar-border);
   border-radius: 10px;
-  padding: 1.5rem;
+  padding: 1rem 1.125rem;
+}
+
+.section__header {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.section__header-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background-color: rgba(6, 182, 212, 0.15);
+  color: var(--sidebar-accent);
+  flex-shrink: 0;
+}
+
+.section__header-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.section__header-icon--green {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.section__header-icon--purple {
+  background-color: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
+.section__header-icon--cyan {
+  background-color: rgba(6, 182, 212, 0.15);
+  color: #06b6d4;
+}
+
+.section__header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.section-title {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--sidebar-text);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.section-subtitle {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+  margin: 0.125rem 0 0;
 }
 
 .details-grid {
@@ -1259,41 +1368,7 @@
   color: var(--sidebar-text);
 }
 
-/* Loading & Empty States */
-.loading-state,
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem 2rem;
-  gap: 1rem;
-  color: var(--sidebar-text-muted);
-  background: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
-}
-
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid var(--sidebar-border);
-  border-top-color: #3b82f6;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.empty-state__hint {
-  font-size: 0.875rem;
-  color: var(--sidebar-text-muted);
-  opacity: 0.7;
-}
-
-/* Edit Button */
+/* ===== Edit Button ===== */
 .edit-btn {
   display: flex;
   align-items: center;
@@ -1319,45 +1394,205 @@
   height: 14px;
 }
 
-/* Global Branding Notice */
+/* ===== Global Branding Notice ===== */
 .global-branding-notice {
   display: flex;
   align-items: flex-start;
   gap: 1rem;
-  padding: 1.5rem;
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  border-radius: 12px;
+  padding: 1rem;
+  background: rgba(34, 211, 238, 0.06);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  border-radius: 10px;
 }
 
 .global-branding-notice__icon {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
-  background: rgba(59, 130, 246, 0.15);
+  background: rgba(34, 211, 238, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #3b82f6;
+  color: #22d3ee;
   flex-shrink: 0;
 }
 
-.global-branding-notice__content {
-  flex: 1;
-}
-
 .global-branding-notice__title {
-  font-size: 1rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   color: var(--sidebar-text);
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.375rem;
 }
 
 .global-branding-notice__description {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--sidebar-text-muted);
   margin: 0;
   line-height: 1.5;
+}
+
+.creator-profile-info__lead {
+  font-size: 0.8125rem;
+  color: var(--sidebar-text-muted);
+  margin: 0 0 0.75rem;
+}
+
+.creator-profile-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  background: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+}
+
+.creator-profile-card--empty {
+  justify-content: center;
+  color: var(--sidebar-text-muted);
+  font-size: 0.8125rem;
+}
+
+.creator-profile-card__avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.creator-profile-card__name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--sidebar-text);
+}
+
+.creator-profile-card__meta {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+}
+
+.streamers-list__description {
+  font-size: 0.8125rem;
+  color: var(--sidebar-text-muted);
+  margin: 0 0 0.75rem;
+}
+
+.streamers-list__placeholder {
+  padding: 0.875rem 1rem;
+  background: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+  font-size: 0.8125rem;
+  color: var(--sidebar-text-muted);
+  text-align: center;
+}
+
+/* ===== Loading & Empty States ===== */
+.loading-state,
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1rem;
+  gap: 0.875rem;
+  text-align: center;
+  color: var(--sidebar-text-muted);
+  background: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--sidebar-border);
+  border-top-color: var(--sidebar-accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.empty-state__hint {
+  font-size: 0.8125rem;
+  color: var(--sidebar-text-muted);
+  opacity: 0.7;
+  max-width: 320px;
+  line-height: 1.5;
+}
+
+.campaign-detail__loading {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.skeleton-header,
+.skeleton-tabs,
+.skeleton-content {
+  background: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.skeleton-header {
+  height: 220px;
+}
+
+.skeleton-tabs {
+  height: 52px;
+}
+
+.skeleton-content {
+  height: 280px;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.campaign-detail__error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  gap: 1rem;
+  text-align: center;
+  color: var(--sidebar-text-muted);
+}
+
+.campaign-detail__error h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--sidebar-text);
+  margin: 0;
+}
+
+.back-btn {
+  height: 32px;
+  padding: 0 0.875rem;
+  background: transparent;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sidebar-text);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.back-btn:hover {
+  border-color: var(--sidebar-accent);
+  color: var(--sidebar-accent);
 }
 
 /* Submissions List */
@@ -1887,6 +2122,80 @@
 .payment-card__tx-link svg {
   width: 12px;
   height: 12px;
+}
+
+@media (max-width: 900px) {
+  .org-stats-grid--settings {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .tab-button__label {
+    display: none;
+  }
+
+  .tab-button {
+    padding: 0.75rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .profile-name-row {
+    justify-content: center;
+  }
+
+  .profile-meta-row {
+    justify-content: center;
+  }
+
+  .org-hero {
+    padding-bottom: 1.5rem;
+  }
+
+  .org-hero__banner {
+    height: 100px;
+  }
+
+  .org-hero__content {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    margin-top: -40px;
+    padding: 0 1rem;
+  }
+
+  .org-hero__avatar {
+    width: 88px;
+    height: 88px;
+  }
+
+  .org-hero__info {
+    padding-top: 0.5rem;
+    padding-bottom: 0;
+  }
+
+  .org-hero__name {
+    font-size: 1.25rem;
+  }
+
+  .org-hero__tags {
+    justify-content: center;
+  }
+
+  .org-stats-grid--settings {
+    grid-template-columns: 1fr;
+  }
+
+  .ranking-row {
+    flex-wrap: wrap;
+  }
+
+  .ranking-row__stats {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 0.75rem;
+  }
 }
 </style>
 

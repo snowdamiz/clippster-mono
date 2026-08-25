@@ -23,6 +23,14 @@ pub struct SubtitleSettings {
     pub position_percentage: f32,
     pub max_width: f32,
     pub animation_style: String,
+    #[serde(default = "default_highlight_color")]
+    pub highlight_color: String,
+    #[serde(default)]
+    pub multi_color_enabled: bool,
+    #[serde(default = "default_multi_color_mode")]
+    pub multi_color_mode: String,
+    #[serde(default)]
+    pub color_palette: Vec<String>,
     pub line_height: f32,
     pub letter_spacing: f32,
     pub text_align: String,
@@ -33,6 +41,14 @@ pub struct SubtitleSettings {
     pub word_spacing: f32,
 }
 
+fn default_highlight_color() -> String {
+    "#0ea5e9".to_string()
+}
+
+fn default_multi_color_mode() -> String {
+    "default".to_string()
+}
+
 // Per-aspect-ratio subtitle override (size, position, and width)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +56,54 @@ pub struct SubtitleOverride {
     pub font_size: f32,
     pub position_percentage: f32,
     #[serde(default)]
+    pub position: Option<SubtitleOverridePosition>,
+    #[serde(default)]
     pub max_width: Option<f32>,
+    #[serde(default)]
+    pub preset_id: Option<String>,
+    #[serde(default)]
+    pub animation_style: Option<String>,
+    #[serde(default)]
+    pub text_color: Option<String>,
+    #[serde(default)]
+    pub font_family: Option<String>,
+    #[serde(default)]
+    pub font_weight: Option<u32>,
+    #[serde(default)]
+    pub border1_width: Option<f32>,
+    #[serde(default)]
+    pub border1_color: Option<String>,
+    #[serde(default)]
+    pub border2_width: Option<f32>,
+    #[serde(default)]
+    pub border2_color: Option<String>,
+    #[serde(default)]
+    pub highlight_color: Option<String>,
+    #[serde(default)]
+    pub multi_color_enabled: Option<bool>,
+    #[serde(default)]
+    pub color_palette: Option<Vec<String>>,
+    #[serde(default)]
+    pub multi_color_mode: Option<String>,
+    #[serde(default)]
+    pub shadow_offset_x: Option<f32>,
+    #[serde(default)]
+    pub shadow_offset_y: Option<f32>,
+    #[serde(default)]
+    pub shadow_blur: Option<f32>,
+    #[serde(default)]
+    pub shadow_color: Option<String>,
+    #[serde(default)]
+    pub background_color: Option<String>,
+    #[serde(default)]
+    pub background_enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubtitleOverridePosition {
+    pub x: f32,
+    pub y: f32,
 }
 
 // Map of aspect ratio string to subtitle override
@@ -692,6 +755,64 @@ pub struct ManualRegion {
     pub source: NormalizedBBox,
     /// Output position (normalized 0-1 coordinates on target canvas)
     pub output: NormalizedBBox,
+    /// Whether to clip this region to rounded corners
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub corner_radius_enabled: Option<bool>,
+    /// Corner radius slider value (design-space px, scaled by output region width)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub corner_radius_px: Option<f64>,
+    /// Media asset reference (file path or asset ID)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_asset_id: Option<String>,
+    /// Type of media content in this region
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>, // "video-crop" | "image" | "video"
+    /// Seconds into external video to start (B-roll trim offset)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_source_offset: Option<f64>,
+}
+
+/// Source frame transform for scaling/positioning entire source
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceTransform {
+    /// Scale factor (0.5 to 3.0)
+    pub scale: f64,
+    /// X offset (normalized relative to container width, can be negative)
+    pub x: f64,
+    /// Y offset (normalized relative to container height, can be negative)
+    pub y: f64,
+}
+
+/// Time-based segment configuration for POI regions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SegmentRegionConfig {
+    /// Unique segment identifier
+    pub segment_id: String,
+    /// Start time relative to clip start (seconds)
+    pub start_time: f64,
+    /// End time relative to clip start (seconds)
+    pub end_time: f64,
+    /// Region configuration for this time segment
+    pub regions: Vec<ManualRegion>,
+}
+
+/// Time-based B-roll overlay, independent from framing segments.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrollRegionConfig {
+    /// Unique B-roll identifier
+    pub broll_id: String,
+    /// Start time relative to clip start (seconds)
+    pub start_time: f64,
+    /// End time relative to clip start (seconds)
+    pub end_time: f64,
+    /// Full-canvas or user-positioned media region
+    pub region: ManualRegion,
+    /// Optional source suggestion identifier
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggestion_id: Option<String>,
 }
 
 /// Manual framing configuration with multiple regions
@@ -706,9 +827,25 @@ pub struct ManualFramingConfig {
     pub target_aspect_ratio: String,
     /// Source aspect ratio (e.g., "16:9")
     pub source_aspect_ratio: Option<String>,
+    /// Global source frame transform
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_transform: Option<SourceTransform>,
+    /// "none" | "scale" | "use16x9" — blur letterbox vs scaled source
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_frame_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blur_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blur_amount: Option<f64>,
+    /// Segment-based region configurations
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub segment_configs: Option<Vec<SegmentRegionConfig>>,
+    /// Timed B-roll overlays, composited independently from segments
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub broll_configs: Option<Vec<BrollRegionConfig>>,
 }
 
-/// Segment-specific framing configuration
+/// Segment-specific framing configuration (legacy)
 /// Associates a framing config with specific segment IDs
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1140,6 +1277,23 @@ pub struct StickerSettings {
     /// Per-aspect-ratio configurations (key is ratio like "16:9", "9:16")
     #[serde(default)]
     pub per_ratio_configs: Option<std::collections::HashMap<String, StickerRatioConfig>>,
+}
+
+/// Pre-rendered subtitle overlay settings for pixel-perfect export.
+/// Each overlay represents a single subtitle frame (rendered from frontend Canvas).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubtitleOverlaySettings {
+    /// Path to the pre-rendered PNG file
+    pub image_path: String,
+    /// Start time in seconds (relative to video timeline)
+    pub start_time: f64,
+    /// End time in seconds (relative to video timeline)
+    pub end_time: f64,
+    /// X position (center of text) as percentage of video width (0-100)
+    pub position_x: f64,
+    /// Y position (center of text) as percentage of video height (0-100)
+    pub position_y: f64,
 }
 
 /// Per-aspect-ratio position config for a layout overlay

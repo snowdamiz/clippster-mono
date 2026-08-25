@@ -6,6 +6,23 @@ use tauri::Emitter;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
+use crate::thumbnail_utils::generate_thumbnail_hybrid;
+
+#[cfg(target_os = "windows")]
+#[allow(unused_imports)]
+use std::os::windows::process::CommandExt;
+
+/// On Windows, set CREATE_NO_WINDOW flag to prevent a visible console window.
+#[cfg(target_os = "windows")]
+fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command {
+    cmd.creation_flags(0x08000000) // CREATE_NO_WINDOW
+}
+
+#[cfg(not(target_os = "windows"))]
+fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command {
+    cmd
+}
+
 static ACTIVE_AUDIO_DOWNLOADS: Lazy<Mutex<std::collections::HashMap<String, bool>>> = 
     Lazy::new(|| Mutex::new(std::collections::HashMap::new()));
 static ACTIVE_AUDIO_DOWNLOAD_CANCELLERS: Lazy<Mutex<std::collections::HashMap<String, oneshot::Sender<()>>>> = 
@@ -84,13 +101,17 @@ pub async fn download_youtube_audio(
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
         .collect::<String>();
+    let safe_channel = channel_name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect::<String>();
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| format!("Failed to get timestamp: {}", e))?
         .as_secs();
 
-    let filename = format!("youtube_{}_{}_{}.mp3", channel_name, safe_title, timestamp);
+    let filename = format!("youtube_{}_{}_{}.mp3", safe_channel, safe_title, timestamp);
     let output_file = audio_dir.join(&filename);
     
     // Clean up when done
@@ -115,6 +136,8 @@ pub async fn download_youtube_audio(
     let title_clone = title.clone();
     let vod_url_clone = vod_url.clone();
     let channel_name_clone = channel_name.clone();
+    let ytdlp_path_clone = ytdlp_path.clone();
+    let ffmpeg_path_clone = ffmpeg_path.clone();
 
     // Send initial progress
     let _ = app.emit("download-progress", DownloadProgress {
@@ -127,34 +150,36 @@ pub async fn download_youtube_audio(
     
     tokio::spawn(async move {
         let mut cmd = tokio::process::Command::new(&ytdlp_path);
-        
-        #[cfg(target_os = "windows")]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
-        }
+        no_window(&mut cmd);
         
         let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
             .parent()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| ffmpeg_path.clone());
 
-        cmd.arg(&vod_url)
+        let media_url = if channel_name_clone == "twitter_space" {
+            vod_url.clone()
+        } else {
+            crate::youtube::normalize_youtube_media_url(&vod_url)
+        };
+        let media_url_for_thumb = media_url.clone();
+        cmd.arg(&media_url)
             .arg("-o").arg(&output_file_str)
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
-            .arg("--impersonate").arg("chrome")
             .arg("-x") // Extract audio
             .arg("--audio-format").arg("mp3")
             .arg("--audio-quality").arg("0") // Best quality
-            .arg("--write-thumbnail") // Download thumbnail
-            .arg("--convert-thumbnails").arg("jpg") // Convert to jpg
             .arg("--concurrent-fragments").arg("4")
             .arg("--no-part")
             .arg("--newline")
             .arg("--progress")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        if channel_name_clone != "twitter_space" {
+            crate::youtube::apply_youtube_media_download_args(&mut cmd);
+        } else {
+            cmd.arg("--impersonate").arg("chrome");
+        }
         
         let mut child = match cmd.spawn() {
             Ok(c) => c,
@@ -186,11 +211,77 @@ pub async fn download_youtube_audio(
         let stderr_lines_writer = stderr_lines.clone();
         let app_progress = app_clone.clone();
         let download_id_progress = download_id_clone.clone();
+        let app_progress_stderr = app_progress.clone();
+        let download_id_progress_stderr = download_id_progress.clone();
 
         let stderr_task = tokio::spawn(async move {
+            let mut total_duration_seconds: Option<f64> = None;
             let mut reader = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = reader.next_line().await {
                 println!("[AudioDownload] yt-dlp stderr: {}", line);
+                
+                // Parse ffmpeg duration line:
+                // "Duration: 01:10:39.68, ..."
+                if total_duration_seconds.is_none() && line.contains("Duration:") {
+                    if let Some(duration_part) = line.split("Duration:").nth(1) {
+                        let raw = duration_part.split(',').next().unwrap_or("").trim();
+                        let parts: Vec<&str> = raw.split(':').collect();
+                        if parts.len() == 3 {
+                            let hours = parts[0].parse::<f64>().ok().unwrap_or(0.0);
+                            let minutes = parts[1].parse::<f64>().ok().unwrap_or(0.0);
+                            let seconds = parts[2].parse::<f64>().ok().unwrap_or(0.0);
+                            let total = (hours * 3600.0) + (minutes * 60.0) + seconds;
+                            if total > 0.0 {
+                                total_duration_seconds = Some(total);
+                            }
+                        }
+                    }
+                }
+
+                // Parse ffmpeg processing time updates:
+                // "... time=00:00:12.34 ..."
+                if line.contains("time=") {
+                    if let Some(time_part) = line.split("time=").nth(1) {
+                        let token = time_part.split_whitespace().next().unwrap_or("").trim();
+                        let parts: Vec<&str> = token.split(':').collect();
+                        if parts.len() == 3 {
+                            let hours = parts[0].parse::<f64>().ok().unwrap_or(0.0);
+                            let minutes = parts[1].parse::<f64>().ok().unwrap_or(0.0);
+                            let seconds = parts[2].parse::<f64>().ok().unwrap_or(0.0);
+                            let current = (hours * 3600.0) + (minutes * 60.0) + seconds;
+
+                            let progress = if let Some(total) = total_duration_seconds {
+                                if total > 0.0 {
+                                    ((current / total) * 100.0).clamp(0.0, 99.9)
+                                } else {
+                                    0.0
+                                }
+                            } else {
+                                0.0
+                            };
+
+                            let _ = app_progress_stderr.emit("download-progress", DownloadProgress {
+                                download_id: download_id_progress_stderr.clone(),
+                                progress,
+                                current_time: Some(current),
+                                total_time: total_duration_seconds,
+                                status: "Downloading audio stream...".to_string(),
+                            });
+                        }
+                    }
+                }
+
+                // Surface meaningful status even when no percent is available.
+                if line.contains("[download] Destination:") {
+                    let _ = app_progress_stderr.emit("download-progress", DownloadProgress {
+                        download_id: download_id_progress_stderr.clone(),
+                        progress: 1.0,
+                        current_time: None,
+                        total_time: total_duration_seconds,
+                        status: "Download started...".to_string(),
+                    });
+                }
+
                 stderr_lines_writer.lock().await.push(line);
             }
         });
@@ -234,13 +325,27 @@ pub async fn download_youtube_audio(
                             .ok()
                             .map(|m| m.len());
                         
-                        // Find thumbnail file (yt-dlp saves it as .jpg next to the audio file)
+                        // Generate thumbnail using the same hybrid approach as video downloads
                         let thumbnail_path = std::path::Path::new(&output_file_str)
                             .with_extension("jpg");
-                        let thumbnail_url = if thumbnail_path.exists() {
-                            Some(thumbnail_path.to_string_lossy().to_string())
-                        } else {
-                            None
+                        let thumbnail_url = match generate_thumbnail_hybrid(
+                            &ytdlp_path_clone,
+                            &ffmpeg_path_clone,
+                            &media_url_for_thumb,
+                            &thumbnail_path,
+                            "00:00:05",
+                        ).await {
+                            Ok(()) => {
+                                println!(
+                                    "[AudioDownload] Thumbnail generated: {}",
+                                    thumbnail_path.display()
+                                );
+                                Some(thumbnail_path.to_string_lossy().to_string())
+                            }
+                            Err(e) => {
+                                println!("[AudioDownload] Thumbnail generation failed: {}", e);
+                                None
+                            }
                         };
                         
                         // Determine platform based on channel_name
@@ -279,12 +384,17 @@ pub async fn download_youtube_audio(
                         } else {
                             error_msg
                         };
+                        let failure_platform = if channel_name_clone == "twitter_space" {
+                            "Twitter".to_string()
+                        } else {
+                            "YouTube".to_string()
+                        };
                         let _ = app_clone.emit("download-complete", DownloadResult {
                             download_id: download_id_clone,
                             success: false,
                             file_path: None,
                             title: Some(title_clone.clone()),
-                            platform: Some("YouTube".to_string()),
+                            platform: Some(failure_platform),
                             source_url: Some(vod_url_clone.clone()),
                             duration: None,
                             file_size: None,
@@ -301,12 +411,17 @@ pub async fn download_youtube_audio(
                 let _ = stdout_task.abort();
                 let _ = stderr_task.abort();
                 cleanup_download();
+                let cancel_platform = if channel_name_clone == "twitter_space" {
+                    "Twitter".to_string()
+                } else {
+                    "YouTube".to_string()
+                };
                 let _ = app_clone.emit("download-complete", DownloadResult {
                     download_id: download_id_clone,
                     success: false,
                     file_path: None,
                     title: Some(title_clone),
-                    platform: Some("YouTube".to_string()),
+                    platform: Some(cancel_platform),
                     source_url: Some(vod_url_clone),
                     duration: None,
                     file_size: None,
@@ -349,7 +464,10 @@ async fn extract_audio_metadata(file_path: &str) -> Option<AudioMetadata> {
         Err(_) => return None,
     };
 
-    let output = tokio::process::Command::new(&ffprobe_path)
+    let mut cmd = tokio::process::Command::new(&ffprobe_path);
+    no_window(&mut cmd);
+
+    let output = cmd
         .args(&[
             "-v", "quiet",
             "-print_format", "json",
@@ -462,6 +580,28 @@ pub async fn upload_audio_file(
         thumbnail_url: None,
         error: None,
     })
+}
+
+/// Generate a thumbnail for an existing audio file from its source URL
+#[tauri::command]
+pub async fn generate_audio_thumbnail(
+    source_url: String,
+    output_path: String,
+) -> Result<String, String> {
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    let ffmpeg_path = resolve_ffmpeg_binary()?;
+    let thumbnail_path = std::path::Path::new(&output_path);
+
+    generate_thumbnail_hybrid(
+        &ytdlp_path,
+        &ffmpeg_path,
+        &source_url,
+        thumbnail_path,
+        "00:00:05",
+    )
+    .await?;
+
+    Ok(output_path)
 }
 
 /// Cancel an audio download

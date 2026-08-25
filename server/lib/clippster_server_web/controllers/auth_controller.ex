@@ -325,69 +325,114 @@ defmodule ClippsterServerWeb.AuthController do
   Initiates Google OAuth flow by redirecting to Google's authorization URL.
   """
   def google_request(conn, params) do
-    # Get Google OAuth configuration - try config first, then env vars directly
-    config = Application.get_env(:ueberauth, Ueberauth.Strategy.Google.OAuth, [])
-    client_id = Keyword.get(config, :client_id) || System.get_env("GOOGLE_CLIENT_ID")
+    case build_google_auth_url(conn, params, nil) do
+      {:ok, google_auth_url} ->
+        IO.puts("\n=== Redirecting to Google OAuth ===")
+        IO.puts("Google Auth URL: #{google_auth_url}")
+        redirect(conn, external: google_auth_url)
 
-    if is_nil(client_id) or client_id == "" do
-      conn
-      |> put_status(500)
-      |> json(%{
-        success: false,
-        error:
-          "Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables."
+      {:error, :not_configured} ->
+        conn
+        |> put_status(500)
+        |> json(%{
+          success: false,
+          error:
+            "Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables."
+        })
+    end
+  end
+
+  @doc """
+  Returns a Google OAuth URL that will switch the authenticated user's Gmail identity.
+  The existing Clippster user id (and all owned data) is preserved.
+  """
+  def google_switch_url(%{assigns: %{current_user_id: user_id}} = conn, params) do
+    case build_google_auth_url(conn, params, user_id) do
+      {:ok, google_auth_url} ->
+        json(conn, %{success: true, url: google_auth_url})
+
+      {:error, :not_configured} ->
+        conn
+        |> put_status(500)
+        |> json(%{
+          success: false,
+          error:
+            "Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables."
+        })
+    end
+  end
+
+  @doc """
+  Switches the authenticated user's linked Gmail/Google account.
+
+  Accepts either:
+  - `access_token` — verified against Google userinfo (production)
+  - `google_info` — pre-verified map, only when `:allow_test_google_info` is enabled
+  """
+  def switch_google_account(%{assigns: %{current_user_id: user_id}} = conn, params) do
+    with {:ok, google_info} <- resolve_google_info_for_switch(params),
+         oauth_info <- %{
+           provider_id: google_info["id"],
+           email: google_info["email"],
+           name: google_info["name"],
+           avatar_url: google_info["picture"]
+         },
+         {:ok, user} <- Accounts.switch_google_account(user_id, oauth_info),
+         {:ok, token} <- generate_google_user_token(user) do
+      json(conn, %{
+        success: true,
+        message: "Google account switched successfully",
+        token: token,
+        user: %{
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          avatar_url: user.avatar_url,
+          provider: user.provider,
+          provider_id: user.provider_id
+        }
       })
     else
-      # Build the callback URL
-      callback_url = "#{ClippsterServerWeb.Endpoint.url()}/api/auth/google/callback"
+      {:error, :not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "User not found"})
 
-      # Build Google OAuth authorization URL
-      scope = "email profile"
+      {:error, :google_account_already_linked} ->
+        conn
+        |> put_status(409)
+        |> json(%{
+          success: false,
+          error: "That Google account is already linked to another Clippster user"
+        })
 
-      # Encode web=true, invite mode, and referral_code into state if present
-      web_mode = params["web"] == "true"
-      invite_mode = params["redirect_mode"] == "invite"
-      web_origin = params["origin"]
-      referral_code = sanitize_referral_code(params["referral_code"])
-      invite_token = params["invite_token"]
+      {:error, :email_already_in_use} ->
+        conn
+        |> put_status(409)
+        |> json(%{
+          success: false,
+          error: "That email address is already in use by another Clippster user"
+        })
 
-      target_origin =
-        if web_mode do
-          case OAuthCallbackTarget.normalize_web_origin(web_origin || "") do
-            {:ok, origin} -> origin
-            {:error, _reason} -> OAuthCallbackTarget.default_web_origin()
-          end
-        else
-          nil
-        end
+      {:error, :missing_provider_id} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Google account id is required"})
 
-      state_payload =
-        %{"web" => web_mode}
-        |> maybe_put_state_value("origin", target_origin)
-        |> maybe_put_state_value("referral_code", referral_code)
-        |> maybe_put_state_value("invite", if(invite_mode, do: true, else: nil))
-        |> maybe_put_state_value("invite_token", invite_token)
+      {:error, :invalid_google_token} ->
+        conn
+        |> put_status(401)
+        |> json(%{success: false, error: "Invalid Google access token"})
 
-      state_data = Phoenix.Token.sign(conn, @google_state_salt, state_payload)
+      {:error, :test_google_info_disabled} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "access_token is required"})
 
-      google_auth_url =
-        "https://accounts.google.com/o/oauth2/v2/auth?" <>
-          URI.encode_query(%{
-            "client_id" => client_id,
-            "redirect_uri" => callback_url,
-            "response_type" => "code",
-            "scope" => scope,
-            "state" => state_data,
-            "access_type" => "offline",
-            "prompt" => "consent"
-          })
-
-      IO.puts("\n=== Redirecting to Google OAuth ===")
-      IO.puts("Callback URL: #{callback_url}")
-      IO.puts("Google Auth URL: #{google_auth_url}")
-      IO.puts("Web mode: #{web_mode}")
-
-      redirect(conn, external: google_auth_url)
+      {:error, _reason} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Failed to switch Google account"})
     end
   end
 
@@ -426,12 +471,27 @@ defmodule ClippsterServerWeb.AuthController do
                   # Extract referral code from OAuth state
                   oauth_referral_code = web_opts[:referral_code]
 
-                  case Accounts.get_or_create_oauth_user(
-                         "google",
-                         google_user["id"],
-                         oauth_info,
-                         oauth_referral_code
-                       ) do
+                  auth_result =
+                    case web_opts[:switch_user_id] do
+                      switch_user_id when is_integer(switch_user_id) ->
+                        switch_info =
+                          Map.put(oauth_info, :provider_id, google_user["id"])
+
+                        case Accounts.switch_google_account(switch_user_id, switch_info) do
+                          {:ok, user} -> {:ok, user, false}
+                          {:error, reason} -> {:error, reason}
+                        end
+
+                      _ ->
+                        Accounts.get_or_create_oauth_user(
+                          "google",
+                          google_user["id"],
+                          oauth_info,
+                          oauth_referral_code
+                        )
+                    end
+
+                  case auth_result do
                     {:ok, user, is_new_user} ->
                       IO.puts("User created/retrieved: #{user.id}, is_new: #{is_new_user}")
 
@@ -439,21 +499,7 @@ defmodule ClippsterServerWeb.AuthController do
                         Appsignal.increment_counter("users.registered", 1, %{method: "google"})
                       end
 
-                      # Generate JWT token
-                      token_claims = %{
-                        "sub" => "google:#{google_user["id"]}",
-                        "iat" => DateTime.utc_now() |> DateTime.to_unix(),
-                        "exp" =>
-                          DateTime.utc_now() |> DateTime.add(7, :day) |> DateTime.to_unix(),
-                        "provider" => "google",
-                        "provider_id" => google_user["id"],
-                        "user_id" => user.id,
-                        "is_admin" => user.is_admin,
-                        "is_moderator" => user.is_moderator,
-                        "email" => user.email
-                      }
-
-                      case TokenGenerator.generate_token(token_claims) do
+                      case generate_google_user_token(user) do
                         {:ok, token} ->
                           send_auth_success_html(conn, token, user, web_opts, is_new_user)
 
@@ -461,9 +507,28 @@ defmodule ClippsterServerWeb.AuthController do
                           send_auth_error_html(conn, "Token generation failed", web_opts)
                       end
 
+                    {:error, :google_account_already_linked} ->
+                      send_auth_error_html(
+                        conn,
+                        "That Google account is already linked to another Clippster user",
+                        web_opts
+                      )
+
+                    {:error, :email_already_in_use} ->
+                      send_auth_error_html(
+                        conn,
+                        "That email address is already in use by another Clippster user",
+                        web_opts
+                      )
+
                     {:error, reason} ->
-                      IO.puts("Failed to create user: #{inspect(reason)}")
-                      send_auth_error_html(conn, "Failed to create user account", web_opts)
+                      IO.puts("Failed to create/switch user: #{inspect(reason)}")
+
+                      send_auth_error_html(
+                        conn,
+                        "Failed to create or switch user account",
+                        web_opts
+                      )
                   end
 
                 {:error, reason} ->
@@ -572,13 +637,29 @@ defmodule ClippsterServerWeb.AuthController do
             nil
           end
 
+        switch_user_id =
+          case Map.get(payload, "switch_user_id") do
+            id when is_integer(id) ->
+              id
+
+            id when is_binary(id) ->
+              case Integer.parse(id) do
+                {parsed, ""} -> parsed
+                _ -> nil
+              end
+
+            _ ->
+              nil
+          end
+
         {:ok,
          %{
            web: web_mode,
            invite: invite_mode,
            origin: origin,
            referral_code: sanitize_referral_code(Map.get(payload, "referral_code")),
-           invite_token: Map.get(payload, "invite_token")
+           invite_token: Map.get(payload, "invite_token"),
+           switch_user_id: switch_user_id
          }}
 
       {:ok, _other} ->
@@ -733,48 +814,11 @@ defmodule ClippsterServerWeb.AuthController do
   defp sanitize_referral_code(_), do: nil
 
   @doc """
-  Links a Google account to an existing authenticated user.
+  Links / switches a Google account on an existing authenticated user.
+  Preserves the Clippster user id and all owned data.
   """
-  def link_google_account(%{assigns: %{current_user_id: user_id}} = conn, %{
-        "access_token" => access_token
-      }) do
-    case verify_google_access_token(access_token) do
-      {:ok, google_info} ->
-        oauth_info = %{
-          email: google_info["email"],
-          name: google_info["name"],
-          avatar_url: google_info["picture"]
-        }
-
-        case Accounts.link_oauth_to_user(user_id, oauth_info) do
-          {:ok, user} ->
-            json(conn, %{
-              success: true,
-              message: "Google account linked successfully",
-              user: %{
-                id: user.id,
-                email: user.email,
-                name: user.name,
-                avatar_url: user.avatar_url
-              }
-            })
-
-          {:error, :not_found} ->
-            conn
-            |> put_status(404)
-            |> json(%{success: false, error: "User not found"})
-
-          {:error, _reason} ->
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: "Failed to link account"})
-        end
-
-      {:error, _reason} ->
-        conn
-        |> put_status(401)
-        |> json(%{success: false, error: "Invalid Google access token"})
-    end
+  def link_google_account(conn, params) do
+    switch_google_account(conn, params)
   end
 
   @doc """
@@ -802,6 +846,7 @@ defmodule ClippsterServerWeb.AuthController do
         avatar_url: user.avatar_url,
         wallet_address: user.wallet_address,
         is_admin: user.is_admin,
+        is_moderator: user.is_moderator,
         ai_editor_enabled: user.ai_editor_enabled,
         campaigns_enabled: user.campaigns_enabled,
         account_type: user.account_type,
@@ -869,6 +914,105 @@ defmodule ClippsterServerWeb.AuthController do
 
       _ ->
         {:error, :token_verification_failed}
+    end
+  end
+
+  defp resolve_google_info_for_switch(%{"access_token" => access_token})
+       when is_binary(access_token) and access_token != "" do
+    case verify_google_access_token(access_token) do
+      {:ok, info} -> {:ok, info}
+      {:error, _} -> {:error, :invalid_google_token}
+    end
+  end
+
+  defp resolve_google_info_for_switch(%{"google_info" => google_info}) when is_map(google_info) do
+    if Application.get_env(:clippster_server, :allow_test_google_info, false) do
+      id = google_info["id"] || google_info[:id]
+
+      if is_binary(id) or is_integer(id) do
+        {:ok,
+         %{
+           "id" => to_string(id),
+           "email" => google_info["email"] || google_info[:email],
+           "name" => google_info["name"] || google_info[:name],
+           "picture" => google_info["picture"] || google_info[:picture]
+         }}
+      else
+        {:error, :missing_provider_id}
+      end
+    else
+      {:error, :test_google_info_disabled}
+    end
+  end
+
+  defp resolve_google_info_for_switch(_), do: {:error, :test_google_info_disabled}
+
+  defp generate_google_user_token(user) do
+    token_claims = %{
+      "sub" => "google:#{user.provider_id}",
+      "iat" => DateTime.utc_now() |> DateTime.to_unix(),
+      "exp" => DateTime.utc_now() |> DateTime.add(7, :day) |> DateTime.to_unix(),
+      "provider" => "google",
+      "provider_id" => user.provider_id,
+      "user_id" => user.id,
+      "is_admin" => user.is_admin,
+      "is_moderator" => user.is_moderator,
+      "email" => user.email
+    }
+
+    TokenGenerator.generate_token(token_claims)
+  end
+
+  defp build_google_auth_url(conn, params, switch_user_id) do
+    config = Application.get_env(:ueberauth, Ueberauth.Strategy.Google.OAuth, [])
+    client_id = Keyword.get(config, :client_id) || System.get_env("GOOGLE_CLIENT_ID")
+
+    if is_nil(client_id) or client_id == "" do
+      {:error, :not_configured}
+    else
+      callback_url = "#{ClippsterServerWeb.Endpoint.url()}/api/auth/google/callback"
+      web_mode = params["web"] == "true"
+      invite_mode = params["redirect_mode"] == "invite"
+      web_origin = params["origin"]
+      referral_code = sanitize_referral_code(params["referral_code"])
+      invite_token = params["invite_token"]
+
+      target_origin =
+        if web_mode do
+          case OAuthCallbackTarget.normalize_web_origin(web_origin || "") do
+            {:ok, origin} -> origin
+            {:error, _reason} -> OAuthCallbackTarget.default_web_origin()
+          end
+        else
+          nil
+        end
+
+      state_payload =
+        %{"web" => web_mode}
+        |> maybe_put_state_value("origin", target_origin)
+        |> maybe_put_state_value("referral_code", referral_code)
+        |> maybe_put_state_value("invite", if(invite_mode, do: true, else: nil))
+        |> maybe_put_state_value("invite_token", invite_token)
+        |> maybe_put_state_value("switch_user_id", switch_user_id)
+
+      state_data = Phoenix.Token.sign(conn, @google_state_salt, state_payload)
+
+      # Force account picker when switching so the user can choose another Gmail
+      prompt = if switch_user_id, do: "select_account consent", else: "consent"
+
+      google_auth_url =
+        "https://accounts.google.com/o/oauth2/v2/auth?" <>
+          URI.encode_query(%{
+            "client_id" => client_id,
+            "redirect_uri" => callback_url,
+            "response_type" => "code",
+            "scope" => "email profile",
+            "state" => state_data,
+            "access_type" => "offline",
+            "prompt" => prompt
+          })
+
+      {:ok, google_auth_url}
     end
   end
 end

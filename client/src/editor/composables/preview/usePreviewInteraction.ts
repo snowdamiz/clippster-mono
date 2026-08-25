@@ -11,6 +11,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, type Ref }
 import { useEditor } from "../useEditor";
 import { useElementSelection } from "../timeline/element/useElementSelection";
 import { usePreviewFocus } from "./usePreviewFocus";
+import { useGuideLines } from "./useGuideLines";
+import { useDragRaf } from "../timeline/useDragRaf";
 import type {
 	TimelineTrack,
 	TimelineElement,
@@ -19,10 +21,14 @@ import type {
 	Transform,
 } from "../../types/timeline";
 import { isMainTrack } from "../../lib/timeline";
+import { buildActiveElementIndex } from "../../lib/timeline-active-elements";
 
 // Singleton offscreen canvas for text measurement
 let measureCanvas: HTMLCanvasElement | null = null;
 let measureCtx: CanvasRenderingContext2D | null = null;
+const TEXT_CANVAS_EDGE_PADDING = 32;
+const TEXT_AUTO_FIT_MIN_SCALE = 0.65;
+const TEXT_AUTO_FIT_MAX_LINES = 3;
 
 function getMeasureCtx(): CanvasRenderingContext2D {
 	if (!measureCanvas) {
@@ -30,6 +36,128 @@ function getMeasureCtx(): CanvasRenderingContext2D {
 		measureCtx = measureCanvas.getContext("2d")!;
 	}
 	return measureCtx!;
+}
+
+function measureTextLine(ctx: CanvasRenderingContext2D, text: string, letterSpacing: number): number {
+	if (letterSpacing === 0) return ctx.measureText(text).width;
+	let width = 0;
+	for (let i = 0; i < text.length; i++) {
+		width += ctx.measureText(text[i]).width;
+		if (i < text.length - 1) width += letterSpacing;
+	}
+	return width;
+}
+
+function getMaxLocalTextLineWidth({
+	canvasWidth,
+	anchorX,
+	scale,
+	textAlign,
+	fontSize,
+}: {
+	canvasWidth: number;
+	anchorX: number;
+	scale: number;
+	textAlign: TextElement["textAlign"];
+	fontSize: number;
+}): number {
+	const safeScale = Math.max(0.01, scale || 1);
+	const minWidth = fontSize * 2;
+	let available: number;
+
+	if (textAlign === "left") {
+		available = canvasWidth - anchorX - TEXT_CANVAS_EDGE_PADDING;
+	} else if (textAlign === "right") {
+		available = anchorX - TEXT_CANVAS_EDGE_PADDING;
+	} else {
+		const left = anchorX - TEXT_CANVAS_EDGE_PADDING;
+		const right = canvasWidth - anchorX - TEXT_CANVAS_EDGE_PADDING;
+		available = Math.min(left, right) * 2;
+	}
+
+	return Math.max(minWidth, available / safeScale);
+}
+
+function wrapMeasuredText({
+	ctx,
+	text,
+	maxLineWidth,
+	letterSpacing,
+}: {
+	ctx: CanvasRenderingContext2D;
+	text: string;
+	maxLineWidth: number;
+	letterSpacing: number;
+}): string[] {
+	const wrapped: string[] = [];
+	for (const hardLine of text.split("\n")) {
+		if (!hardLine) {
+			wrapped.push("");
+			continue;
+		}
+
+		const parts = hardLine.split(/(\s+)/).filter((part) => part.length > 0);
+		let current = "";
+		for (const part of parts) {
+			const candidate = current ? current + part : part.trimStart();
+			if (candidate && measureTextLine(ctx, candidate, letterSpacing) <= maxLineWidth) {
+				current = candidate;
+				continue;
+			}
+
+			if (current.trim().length > 0) {
+				wrapped.push(current.trimEnd());
+				current = part.trimStart();
+			}
+
+			while (current && measureTextLine(ctx, current, letterSpacing) > maxLineWidth) {
+				let splitAt = 1;
+				for (let i = 1; i <= current.length; i++) {
+					if (measureTextLine(ctx, current.slice(0, i), letterSpacing) > maxLineWidth) break;
+					splitAt = i;
+				}
+				wrapped.push(current.slice(0, splitAt));
+				current = current.slice(splitAt);
+			}
+		}
+		wrapped.push(current.trimEnd());
+	}
+	return wrapped.length ? wrapped : [""];
+}
+
+function getAutoFitTextLayout({
+	ctx,
+	text,
+	maxLineWidth,
+	letterSpacing,
+	baseFontSize,
+	fontStyle,
+	fontWeight,
+	fontFamily,
+}: {
+	ctx: CanvasRenderingContext2D;
+	text: string;
+	maxLineWidth: number;
+	letterSpacing: number;
+	baseFontSize: number;
+	fontStyle: string;
+	fontWeight: string;
+	fontFamily: string;
+}): { lines: string[]; fontSize: number; maxLineWidth: number } {
+	const minFontSize = Math.max(8, baseFontSize * TEXT_AUTO_FIT_MIN_SCALE);
+	let fallback: { lines: string[]; fontSize: number; maxLineWidth: number } | null = null;
+
+	for (let fontSize = baseFontSize; fontSize >= minFontSize; fontSize -= 1) {
+		ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px "${fontFamily}", sans-serif`;
+		const lines = wrapMeasuredText({ ctx, text, maxLineWidth, letterSpacing });
+		let widest = 0;
+		for (const line of lines) widest = Math.max(widest, measureTextLine(ctx, line, letterSpacing));
+		const layout = { lines, fontSize, maxLineWidth: widest };
+		fallback = layout;
+		if (lines.length <= TEXT_AUTO_FIT_MAX_LINES) return layout;
+	}
+
+	return fallback ?? { lines: [text], fontSize: baseFontSize, maxLineWidth: 0 };
 }
 
 export type HandlePosition =
@@ -57,6 +185,8 @@ export interface ElementBounds {
 	scale: number;
 	/** Original transform reference */
 	transform: Transform;
+	/** Extra clickable padding in canvas coords; does not affect the visible outline. */
+	hitPadding?: number;
 }
 
 interface DragState {
@@ -72,6 +202,10 @@ interface DragState {
 	handle?: HandlePosition;
 	/** Original element bounds at drag start */
 	originalBounds: ElementBounds;
+	/** Original transforms for all selected elements on the same track */
+	selectedOriginalTransforms?: Record<string, Transform>;
+	/** Last transform values computed from pointer movement during this drag. */
+	latestTransforms?: Record<string, Transform>;
 }
 
 export function usePreviewInteraction({
@@ -86,11 +220,19 @@ export function usePreviewInteraction({
 	const { editor, version } = useEditor({
 		subscribe: {
 			playback: false,
-			scenes: false,
-			project: false,
 			selection: false,
+			timeline: true,
+			media: true,
+			// Live preview transforms update tracks through ScenesManager, so the
+			// selection chrome must listen to scenes to stay aligned while dragging.
+			scenes: true,
+			project: false,
 		},
 	});
+	const pointerRaf = useDragRaf();
+	type ClientPoint = Pick<MouseEvent, "clientX" | "clientY">;
+	let pendingPointerEvent: ClientPoint | null = null;
+	let playbackRafId: number | null = null;
 	const { selectedElements, selectElement, clearElementSelection, isElementSelected } = useElementSelection();
 	const { previewFocused, setPreviewFocused } = usePreviewFocus();
 
@@ -103,29 +245,56 @@ export function usePreviewInteraction({
 	const showCenterGuideX = ref(false); // vertical line (element centered horizontally)
 	const showCenterGuideY = ref(false); // horizontal line (element centered vertically)
 	const CENTER_SNAP_THRESHOLD = 6; // pixels in canvas coords
+	const { snapToGuide } = useGuideLines();
 
 	const tracks = computed(() => {
 		void version.value;
 		return editor.timeline.getTracks();
 	});
 
+	/** Per-track elements sorted by startTime for consistent hit-testing. */
+	const sortedElementsByTrackId = computed(() => buildActiveElementIndex(tracks.value));
+
 	const currentTime = computed(() => {
 		return playbackTime.value;
 	});
 
 	onMounted(() => {
+		// Coalesce playback ticks to one `playbackTime` write per animation frame so
+		// `visibleElements` (text measurement, etc.) is not recomputed at audio-rate.
 		unsubscribePlayback = editor.playback.subscribe(() => {
-			const nextTime = editor.playback.getCurrentTime();
-			if (nextTime !== playbackTime.value) {
-				playbackTime.value = nextTime;
-			}
+			if (playbackRafId !== null) return;
+			playbackRafId = requestAnimationFrame(() => {
+				playbackRafId = null;
+				const nextTime = editor.playback.getCurrentTime();
+				if (nextTime !== playbackTime.value) {
+					playbackTime.value = nextTime;
+				}
+			});
 		});
 	});
+
+	const dragEndListenerOptions: AddEventListenerOptions = { capture: true };
 
 	onUnmounted(() => {
 		unsubscribePlayback?.();
 		unsubscribePlayback = null;
+		if (playbackRafId !== null) {
+			cancelAnimationFrame(playbackRafId);
+			playbackRafId = null;
+		}
+		pointerRaf.flush();
+		window.removeEventListener("mousemove", handleMouseMove);
+		window.removeEventListener("mouseup", handleMouseUp, dragEndListenerOptions);
+		window.removeEventListener("pointerup", handlePointerDragEnd, dragEndListenerOptions);
+		window.removeEventListener("pointercancel", handlePointerDragEnd, dragEndListenerOptions);
+		window.removeEventListener("blur", handleMouseUp);
+		dragState.value = null;
+		showCenterGuideX.value = false;
+		showCenterGuideY.value = false;
 	});
+
+	const selectedElementIdSet = computed(() => new Set(selectedElements.value.map((s) => s.elementId)));
 
 	/**
 	 * Get all visual elements visible at the current time, with their bounding boxes.
@@ -138,21 +307,28 @@ export function usePreviewInteraction({
 		const ch = canvasHeight.value;
 		const result: ElementBounds[] = [];
 
-		// Mirror scene-builder's orderedTracksBottomToTop:
-		//   orderedTracksTopToBottom = [non-main..., main]
-		//   orderedTracksBottomToTop = [main, ...non-main reversed]
-		// Main is rendered first (bottom), non-main tracks rendered on top in reverse order.
-		// hitTest iterates result in reverse, so the last entry (topmost rendered) is checked first.
+		// Mirror scene-builder's orderedTracksBottomToTop so hit-testing matches
+		// what the user sees on the preview.
+		const isOverlayTrack = (track: TimelineTrack) =>
+			track.type === "text" || track.type === "caption" || track.type === "sticker";
 		const allTracks = tracks.value;
 		const visibleTracks = allTracks.filter((t) => !("hidden" in t && t.hidden));
-		const nonMainTracks = visibleTracks.filter((t) => !isMainTrack(t));
 		const orderedTracks = [
 			...visibleTracks.filter((t) => isMainTrack(t)),
-			...nonMainTracks.slice().reverse(),
+			...visibleTracks.filter((t) => !isMainTrack(t) && !isOverlayTrack(t)),
+			...visibleTracks.filter((t) => isOverlayTrack(t)),
 		];
 
 		for (const track of orderedTracks) {
-			for (const element of track.elements) {
+			const elements = [...(sortedElementsByTrackId.value.get(track.id) ?? track.elements)]
+				.sort((a, b) => {
+					const aOrder = a.orderIndex ?? 0;
+					const bOrder = b.orderIndex ?? 0;
+					if (aOrder !== bOrder) return aOrder - bOrder;
+					if (a.startTime !== b.startTime) return a.startTime - b.startTime;
+					return a.id.localeCompare(b.id);
+				});
+			for (const element of elements) {
 				if ("hidden" in element && element.hidden) continue;
 				const start = element.startTime;
 				const end = start + element.duration;
@@ -179,16 +355,25 @@ export function usePreviewInteraction({
 	});
 
 	/**
-	 * The currently selected element's bounds (if visible).
+	 * All selected elements that are visible at the current time (in selection order).
+	 * Used for multi-select outlines on the canvas.
+	 */
+	const selectedVisibleBoundsList = computed((): ElementBounds[] => {
+		const vis = visibleElements.value;
+		const out: ElementBounds[] = [];
+		for (const sel of selectedElements.value) {
+			const b = vis.find((x) => x.trackId === sel.trackId && x.elementId === sel.elementId);
+			if (b) out.push(b);
+		}
+		return out;
+	});
+
+	/**
+	 * Primary selected element bounds (first visible in selection order).
+	 * Resize/rotate handles and mask editing use this element.
 	 */
 	const selectedBounds = computed((): ElementBounds | null => {
-		if (selectedElements.value.length === 0) return null;
-		const sel = selectedElements.value[0];
-		return (
-			visibleElements.value.find(
-				(b) => b.trackId === sel.trackId && b.elementId === sel.elementId,
-			) ?? null
-		);
+		return selectedVisibleBoundsList.value[0] ?? null;
 	});
 
 	function computeElementBounds({
@@ -240,20 +425,28 @@ export function usePreviewInteraction({
 			const fontFamily = textEl.fontFamily ?? "sans-serif";
 			const letterSpacing = textEl.letterSpacing ?? 0;
 			const lineHeight = textEl.lineHeight ?? 1.2;
+			const textAlign = textEl.textAlign ?? "center";
 
 			const ctx = getMeasureCtx();
-			ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px "${fontFamily}", sans-serif`;
-
-			// Measure multiline text
-			const lines = (content || " ").split("\n");
-			let maxLineW = 0;
-			for (const line of lines) {
-				let lineW = ctx.measureText(line).width;
-				if (letterSpacing > 0) lineW += letterSpacing * Math.max(0, line.length - 1);
-				if (lineW > maxLineW) maxLineW = lineW;
-			}
-			const textW = maxLineW;
-			const textH = fontSize * lineHeight * lines.length;
+			const maxLineWidth = getMaxLocalTextLineWidth({
+				canvasWidth: cw,
+				anchorX: cx,
+				scale: transform.scale,
+				textAlign,
+				fontSize,
+			});
+			const textLayout = getAutoFitTextLayout({
+				ctx,
+				text: content || " ",
+				maxLineWidth,
+				letterSpacing,
+				baseFontSize: fontSize,
+				fontStyle,
+				fontWeight,
+				fontFamily,
+			});
+			const textW = textLayout.maxLineWidth;
+			const textH = textLayout.fontSize * lineHeight * textLayout.lines.length;
 
 			// Padding: bubble padding or default
 			const bubbleStyle = textEl.bubbleStyle ?? "none";
@@ -328,6 +521,7 @@ export function usePreviewInteraction({
 			rotation: transform.rotate,
 			scale: transform.scale,
 			transform,
+			hitPadding: element.type === "text" || element.type === "caption" ? 48 : 0,
 		};
 	}
 
@@ -387,8 +581,9 @@ export function usePreviewInteraction({
 		const dy = py - bounds.cy;
 		const localX = dx * cos - dy * sin;
 		const localY = dx * sin + dy * cos;
-		const halfW = bounds.width / 2;
-		const halfH = bounds.height / 2;
+		const hitPadding = bounds.hitPadding ?? 0;
+		const halfW = bounds.width / 2 + hitPadding;
+		const halfH = bounds.height / 2 + hitPadding;
 		return Math.abs(localX) <= halfW && Math.abs(localY) <= halfH;
 	}
 
@@ -399,15 +594,26 @@ export function usePreviewInteraction({
 	}
 
 	async function handleCanvasMouseDown(event: MouseEvent) {
+		if (event.button !== 0) return;
+
 		const pos = screenToCanvas(event.clientX, event.clientY);
 		if (!pos) return;
 
 		const hit = hitTest(pos.x, pos.y);
 		if (hit) {
+			let releasedBeforeDrag = false;
 			// If the clicked element is already part of a multi-selection (e.g. caption track),
 			// preserve the selection so the entire group moves together.
 			const alreadySelected = isElementSelected({ trackId: hit.trackId, elementId: hit.elementId });
 			if (!alreadySelected) {
+				const markOpts: AddEventListenerOptions = { capture: true };
+				const markReleased = (upEvent: MouseEvent | PointerEvent) => {
+					if (upEvent.button === event.button) {
+						releasedBeforeDrag = true;
+					}
+				};
+				window.addEventListener("mouseup", markReleased, markOpts);
+				window.addEventListener("pointerup", markReleased, markOpts);
 				selectElement({ trackId: hit.trackId, elementId: hit.elementId });
 				// Wait for Vue to flush DOM updates before recording the drag start position.
 				// Selecting a new element may cause the PropertiesPanel to appear on the right,
@@ -415,17 +621,24 @@ export function usePreviewInteraction({
 				// before the layout settles, getBoundingClientRect() returns the pre-shift rect
 				// and any subsequent mousemove produces a phantom delta, making the element jump.
 				await nextTick();
+				window.removeEventListener("mouseup", markReleased, markOpts);
+				window.removeEventListener("pointerup", markReleased, markOpts);
 			}
 			setPreviewFocused(true);
+			if (releasedBeforeDrag) return;
 			// Prevent drag on locked tracks (still allow selection)
 			if (isTrackLocked(hit.trackId)) return;
 			startDrag(event, hit, "move");
 		} else {
 			clearElementSelection();
+			// If pointer-up was missed (WebView / pen / capture quirks), a prior drag can
+			// stay active forever; empty-canvas click must reset it.
+			if (dragState.value) handleMouseUp();
 		}
 	}
 
 	function handleHandleMouseDown(event: MouseEvent, handle: HandlePosition, bounds: ElementBounds) {
+		event.preventDefault();
 		event.stopPropagation();
 		// Prevent resize/rotate on locked tracks
 		if (isTrackLocked(bounds.trackId)) return;
@@ -440,6 +653,24 @@ export function usePreviewInteraction({
 		const pos = screenToCanvas(event.clientX, event.clientY);
 		if (!pos) return;
 
+		const selectedOnTrack = selectedElements.value
+			.filter((s) => s.trackId === bounds.trackId)
+			.map((s) => s.elementId);
+		if (!selectedOnTrack.includes(bounds.elementId)) selectedOnTrack.push(bounds.elementId);
+		const track = editor.timeline.getTrackById({ trackId: bounds.trackId });
+		const selectedOriginalTransforms: Record<string, Transform> = {};
+		for (const elementId of selectedOnTrack) {
+			const element = track?.elements.find((e) => e.id === elementId);
+			if (element && "transform" in element) {
+				const t = (element as any).transform as Transform;
+				selectedOriginalTransforms[elementId] = {
+					scale: t.scale,
+					rotate: t.rotate,
+					position: { x: t.position.x, y: t.position.y },
+				};
+			}
+		}
+
 		dragState.value = {
 			type,
 			trackId: bounds.trackId,
@@ -449,13 +680,22 @@ export function usePreviewInteraction({
 			originalTransform: { ...bounds.transform, position: { ...bounds.transform.position } },
 			handle,
 			originalBounds: { ...bounds },
+			selectedOriginalTransforms,
 		};
 
-		document.addEventListener("mousemove", handleMouseMove);
-		document.addEventListener("mouseup", handleMouseUp);
+		window.addEventListener("mousemove", handleMouseMove);
+		window.addEventListener("mouseup", handleMouseUp, dragEndListenerOptions);
+		window.addEventListener("pointerup", handlePointerDragEnd, dragEndListenerOptions);
+		window.addEventListener("pointercancel", handlePointerDragEnd, dragEndListenerOptions);
+		window.addEventListener("blur", handleMouseUp);
 	}
 
-	function handleMouseMove(event: MouseEvent) {
+	function handlePointerDragEnd(event: PointerEvent) {
+		if (event.type === "pointerup" && event.pointerType === "mouse" && event.button !== 0) return;
+		handleMouseUp(event);
+	}
+
+	function runPointerDragFromEvent(event: ClientPoint) {
 		const ds = dragState.value;
 		if (!ds) return;
 
@@ -477,16 +717,47 @@ export function usePreviewInteraction({
 			showCenterGuideX.value = snappedX;
 			showCenterGuideY.value = snappedY;
 
-			const newTransform: Transform = {
-				...ds.originalTransform,
-				position: { x: newX, y: newY },
-			};
-			applyTransform(ds.trackId, ds.elementId, newTransform);
+			// Snap to custom/thirds/safe guide lines when not already snapped to center
+			if (!snappedX) {
+				const cw = canvasWidth.value;
+				const normalizedX = (newX + cw / 2) / cw;
+				const guideSnapX = snapToGuide("x", normalizedX);
+				if (guideSnapX !== null) newX = guideSnapX * cw - cw / 2;
+			}
+			if (!snappedY) {
+				const ch = canvasHeight.value;
+				const normalizedY = (newY + ch / 2) / ch;
+				const guideSnapY = snapToGuide("y", normalizedY);
+				if (guideSnapY !== null) newY = guideSnapY * ch - ch / 2;
+			}
+
+			applyMoveDelta(ds.trackId, ds, deltaX, deltaY, newX, newY);
 		} else if (ds.type === "resize") {
 			handleResize(ds, pos.x, pos.y);
 		} else if (ds.type === "rotate") {
 			handleRotate(ds, pos.x, pos.y);
 		}
+	}
+
+	function flushPointerDrag() {
+		const event = pendingPointerEvent;
+		pendingPointerEvent = null;
+		if (!event || !dragState.value) return;
+		runPointerDragFromEvent(event);
+	}
+
+	function isPrimaryButtonDown(event: MouseEvent): boolean {
+		return (event.buttons & 1) === 1;
+	}
+
+	function handleMouseMove(event: MouseEvent) {
+		if (!dragState.value) return;
+		if (!isPrimaryButtonDown(event)) {
+			handleMouseUp(undefined, false);
+			return;
+		}
+		pendingPointerEvent = event;
+		pointerRaf.schedule(flushPointerDrag);
 	}
 
 	function handleResize(ds: DragState, canvasX: number, canvasY: number) {
@@ -516,11 +787,7 @@ export function usePreviewInteraction({
 		const scaleRatio = currentDist / startDist;
 		const newScale = Math.max(0.05, ds.originalTransform.scale * scaleRatio);
 
-		const newTransform: Transform = {
-			...ds.originalTransform,
-			scale: newScale,
-		};
-		applyTransform(ds.trackId, ds.elementId, newTransform);
+		applyScaleDelta(ds.trackId, ds, newScale / ds.originalTransform.scale, newScale);
 	}
 
 	function handleRotate(ds: DragState, canvasX: number, canvasY: number) {
@@ -539,14 +806,21 @@ export function usePreviewInteraction({
 			}
 		}
 
-		const newTransform: Transform = {
-			...ds.originalTransform,
-			rotate: newRotation,
-		};
-		applyTransform(ds.trackId, ds.elementId, newTransform);
+		applyRotateDelta(ds.trackId, ds, deltaAngle, newRotation);
 	}
 
-	function handleMouseUp() {
+	function handleMouseUp(event?: Event, applyFinalPointer = true) {
+		if (dragState.value && applyFinalPointer) {
+			pointerRaf.flush();
+			const e =
+				event instanceof MouseEvent || event instanceof PointerEvent ? event : pendingPointerEvent;
+			pendingPointerEvent = null;
+			if (e) runPointerDragFromEvent(e);
+		} else {
+			pendingPointerEvent = null;
+			pointerRaf.flush();
+		}
+
 		const ds = dragState.value;
 		if (ds) {
 			// Collect all selected element IDs on this track (for batch commit, e.g. caption track)
@@ -557,47 +831,53 @@ export function usePreviewInteraction({
 			);
 			selectedOnTrack.add(ds.elementId);
 
-			// Commit the final transform via command for undo/redo
+			// Commit the final transform via command for undo/redo. Use the values
+			// computed by the drag itself; reading back from live scene state is fragile
+			// because the live preview path mutates scenes outside TimelineManager.
 			const track = editor.timeline.getTrackById({ trackId: ds.trackId });
 			if (track) {
-				// Read final transform from the primary dragged element
-				const primaryElement = track.elements.find((e) => e.id === ds.elementId);
-				if (primaryElement && "transform" in primaryElement) {
-					const liveTransform = (primaryElement as any).transform as Transform;
-					const finalTransform: Transform = {
-						scale: liveTransform.scale,
-						rotate: liveTransform.rotate,
-						position: { x: liveTransform.position.x, y: liveTransform.position.y },
-					};
-					const orig = ds.originalTransform;
-					// Only commit if transform actually changed
+				const selectedOriginal = ds.selectedOriginalTransforms ?? {};
+				const finalTransforms = new Map<string, Transform>();
+
+				for (const elId of selectedOnTrack) {
+					const t = ds.latestTransforms?.[elId];
+					if (!t) continue;
+					finalTransforms.set(elId, {
+						scale: t.scale,
+						rotate: t.rotate,
+						position: { x: t.position.x, y: t.position.y },
+					});
+				}
+
+				let changed = false;
+				for (const [elId, finalTransform] of finalTransforms.entries()) {
+					const orig = selectedOriginal[elId];
+					if (!orig) continue;
 					if (
 						finalTransform.position.x !== orig.position.x ||
 						finalTransform.position.y !== orig.position.y ||
 						finalTransform.scale !== orig.scale ||
 						finalTransform.rotate !== orig.rotate
 					) {
-						// Batch-revert all selected elements to original in one updateTracks call
-						const currentTracks = editor.timeline.getTracks();
-						const revertedTracks = currentTracks.map((t) => {
-							if (t.id !== ds.trackId) return t;
-							return {
-								...t,
-								elements: t.elements.map((el) =>
-									selectedOnTrack.has(el.id) ? { ...el, transform: orig } : el,
-								),
-							} as typeof t;
-						});
-						editor.timeline.updateTracks(revertedTracks);
+						changed = true;
+						break;
+					}
+				}
 
-						// Commit final transform for each element via command (supports undo/redo)
-						for (const elId of selectedOnTrack) {
-							editor.timeline.updateElement({
-								trackId: ds.trackId,
-								elementId: elId,
-								updates: { transform: finalTransform },
-							});
-						}
+				if (changed) {
+					const batchUpdates = [...finalTransforms.entries()]
+						.filter(([elId]) => selectedOriginal[elId])
+						.map(([elementId, transform]) => ({ elementId, transform }));
+
+					if (batchUpdates.length > 0) {
+						editor.timeline.updateElementsTransformsBatch({
+							trackId: ds.trackId,
+							updates: batchUpdates,
+							previousTransforms: batchUpdates.map(({ elementId }) => ({
+								elementId,
+								transform: selectedOriginal[elementId],
+							})),
+						});
 					}
 				}
 			}
@@ -605,8 +885,11 @@ export function usePreviewInteraction({
 		dragState.value = null;
 		showCenterGuideX.value = false;
 		showCenterGuideY.value = false;
-		document.removeEventListener("mousemove", handleMouseMove);
-		document.removeEventListener("mouseup", handleMouseUp);
+		window.removeEventListener("mousemove", handleMouseMove);
+		window.removeEventListener("mouseup", handleMouseUp, dragEndListenerOptions);
+		window.removeEventListener("pointerup", handlePointerDragEnd, dragEndListenerOptions);
+		window.removeEventListener("pointercancel", handlePointerDragEnd, dragEndListenerOptions);
+		window.removeEventListener("blur", handleMouseUp);
 	}
 
 	/**
@@ -614,6 +897,103 @@ export function usePreviewInteraction({
 	 */
 	function applyTransform(trackId: string, elementId: string, transform: Transform) {
 		applyTransformDirect(trackId, elementId, transform);
+	}
+
+	function applyMoveDelta(
+		trackId: string,
+		ds: DragState,
+		deltaX: number,
+		deltaY: number,
+		primaryX: number,
+		primaryY: number,
+	) {
+		const selectedOriginal = ds.selectedOriginalTransforms ?? {};
+		const latestTransforms: Record<string, Transform> = {};
+		const currentTracks = editor.timeline.getTracks();
+		const updatedTracks = currentTracks.map((t) => {
+			if (t.id !== trackId) return t;
+			return {
+				...t,
+				elements: t.elements.map((el) => {
+					const orig = selectedOriginal[el.id];
+					if (!orig) return el;
+					if (el.id === ds.elementId) {
+						const transform = { ...orig, position: { x: primaryX, y: primaryY } };
+						latestTransforms[el.id] = transform;
+						return {
+							...el,
+							transform,
+						};
+					}
+					const transform = {
+						...orig,
+						position: {
+							x: orig.position.x + deltaX,
+							y: orig.position.y + deltaY,
+						},
+					};
+					latestTransforms[el.id] = transform;
+					return {
+						...el,
+						transform,
+					};
+				}),
+			} as typeof t;
+		});
+		ds.latestTransforms = latestTransforms;
+		editor.timeline.updateTracks(updatedTracks);
+	}
+
+	function applyScaleDelta(trackId: string, ds: DragState, ratio: number, primaryScale: number) {
+		const selectedOriginal = ds.selectedOriginalTransforms ?? {};
+		const latestTransforms: Record<string, Transform> = {};
+		const currentTracks = editor.timeline.getTracks();
+		const updatedTracks = currentTracks.map((t) => {
+			if (t.id !== trackId) return t;
+			return {
+				...t,
+				elements: t.elements.map((el) => {
+					const orig = selectedOriginal[el.id];
+					if (!orig) return el;
+					if (el.id === ds.elementId) {
+						const transform = { ...orig, scale: primaryScale };
+						latestTransforms[el.id] = transform;
+						return { ...el, transform };
+					}
+					const transform = { ...orig, scale: Math.max(0.05, orig.scale * ratio) };
+					latestTransforms[el.id] = transform;
+					return { ...el, transform };
+				}),
+			} as typeof t;
+		});
+		ds.latestTransforms = latestTransforms;
+		editor.timeline.updateTracks(updatedTracks);
+	}
+
+	function applyRotateDelta(trackId: string, ds: DragState, deltaAngle: number, primaryRotation: number) {
+		const selectedOriginal = ds.selectedOriginalTransforms ?? {};
+		const latestTransforms: Record<string, Transform> = {};
+		const currentTracks = editor.timeline.getTracks();
+		const updatedTracks = currentTracks.map((t) => {
+			if (t.id !== trackId) return t;
+			return {
+				...t,
+				elements: t.elements.map((el) => {
+					const orig = selectedOriginal[el.id];
+					if (!orig) return el;
+					if (el.id === ds.elementId) {
+						const transform = { ...orig, rotate: primaryRotation };
+						latestTransforms[el.id] = transform;
+						return { ...el, transform };
+					}
+					const transform = { ...orig, rotate: orig.rotate + deltaAngle };
+					latestTransforms[el.id] = transform;
+					return { ...el, transform };
+				}),
+			} as typeof t;
+		});
+		ds.latestTransforms = latestTransforms;
+		editor.timeline.updateTracks(updatedTracks);
 	}
 
 	function applyTransformDirect(trackId: string, elementId: string, transform: Transform) {
@@ -652,6 +1032,8 @@ export function usePreviewInteraction({
 
 	return {
 		visibleElements,
+		selectedElementIdSet,
+		selectedVisibleBoundsList,
 		selectedBounds,
 		dragState,
 		hoveredElementId,

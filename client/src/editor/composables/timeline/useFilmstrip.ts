@@ -1,7 +1,8 @@
-import { ref, watch, onUnmounted, type Ref, computed } from "vue";
+import { ref, watch, computed, onMounted, onUnmounted, type Ref } from "vue";
 import { filmstripService } from "../../services/filmstrip-service";
 import type { TimelineElement as TimelineElementType } from "../../types/timeline";
 import type { MediaAsset } from "../../types/assets";
+import { EditorCore } from "../../core";
 
 const DEBOUNCE_MS = 200;
 const THUMBNAIL_HEIGHT = 54;
@@ -10,21 +11,11 @@ const DEFAULT_ASPECT_RATIO = 16 / 9;
 interface FilmstripFrame {
 	timestamp: number;
 	bitmap: ImageBitmap;
-	objectUrl: string;
 }
 
-// Shared reusable canvas for bitmap→blob conversion.
-// Avoids creating a new GPU-backed canvas per frame, which crashes WKWebView on macOS.
-let sharedConversionCanvas: HTMLCanvasElement | null = null;
-function getConversionCanvas(width: number, height: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
-	if (!sharedConversionCanvas) {
-		sharedConversionCanvas = document.createElement("canvas");
-	}
-	sharedConversionCanvas.width = width;
-	sharedConversionCanvas.height = height;
-	const ctx = sharedConversionCanvas.getContext("2d");
-	if (!ctx) return null;
-	return { canvas: sharedConversionCanvas, ctx };
+/** Round timestamp to the same precision used by the service cache key. */
+function roundTs(ts: number): number {
+	return Math.round(ts * 100) / 100;
 }
 
 export function useFilmstrip({
@@ -32,29 +23,41 @@ export function useFilmstrip({
 	mediaAsset,
 	zoomLevel,
 	elementWidth,
+	canvasRef,
+	suspended,
 }: {
 	element: Ref<TimelineElementType>;
 	mediaAsset: Ref<MediaAsset | null>;
 	zoomLevel: Ref<number>;
 	elementWidth: Ref<number>;
+	canvasRef: Ref<HTMLCanvasElement | null>;
+	suspended: Ref<boolean>;
 }): {
 	frames: Ref<FilmstripFrame[]>;
 	thumbnailWidth: Ref<number>;
 	isLoading: Ref<boolean>;
 } {
-	const frames = ref<FilmstripFrame[]>([]);
+	/**
+	 * Map<roundedTsKey, FilmstripFrame> as the primary reactive store.
+	 * Vue 3 tracks Map mutations (set/delete) via its Proxy-based reactivity.
+	 * This avoids the per-frame O(n log n) array rebuild that the old ref<[]> caused.
+	 */
+	const frameMap = ref(new Map<string, FilmstripFrame>());
+
+	/**
+	 * Sorted array computed once from the Map. Only re-runs when the Map changes,
+	 * not on every frame's individual sort call.
+	 */
+	const frames = computed<FilmstripFrame[]>(() =>
+		[...frameMap.value.values()].sort((a, b) => a.timestamp - b.timestamp),
+	);
+
 	const isLoading = ref(false);
-	const objectUrls = new Set<string>();
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let currentController: AbortController | null = null;
-	// Monotonically-increasing counter. Incremented before each requestFilmstrip call.
-	// Each onFrame closure captures its own generation so that:
-	//   - Synchronously-delivered cached frames (delivered before requestFilmstrip returns
-	//     and before currentController is updated) are NOT falsely treated as stale.
-	//   - Callbacks from a superseded extraction are correctly discarded.
 	let extractionGeneration = 0;
-
-	const taskKey = computed(() => element.value.id);
+	let resizeObserver: ResizeObserver | null = null;
+	let drawFrame: number | null = null;
 
 	const thumbnailWidth = computed(() => {
 		const asset = mediaAsset.value;
@@ -67,23 +70,64 @@ export function useFilmstrip({
 
 		const ar = asset.width && asset.height
 			? asset.width / asset.height
-			: filmstripService.getAspectRatio({ mediaId: el.mediaId });
+			: filmstripService.getAspectRatio({ mediaId: (el as any).mediaId });
 		return THUMBNAIL_HEIGHT * ar;
 	});
 
-	function revokeAllUrls() {
-		for (const url of objectUrls) {
-			URL.revokeObjectURL(url);
+	function clearFrames() {
+		frameMap.value.clear();
+	}
+
+	function drawFrames() {
+		drawFrame = null;
+		const canvas = canvasRef.value;
+		if (!canvas) return;
+		const rect = canvas.getBoundingClientRect();
+		const width = Math.max(1, Math.round(rect.width));
+		const height = Math.max(1, Math.round(rect.height));
+		if (canvas.width !== width) canvas.width = width;
+		if (canvas.height !== height) canvas.height = height;
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return;
+		ctx.clearRect(0, 0, width, height);
+		const currentFrames = frames.value;
+		if (currentFrames.length === 0) return;
+		const cellWidth = width / currentFrames.length;
+		for (let index = 0; index < currentFrames.length; index++) {
+			const bitmap = currentFrames[index].bitmap;
+			const sourceRatio = bitmap.width / bitmap.height;
+			const cellRatio = cellWidth / height;
+			let sx = 0;
+			let sy = 0;
+			let sw = bitmap.width;
+			let sh = bitmap.height;
+			if (sourceRatio > cellRatio) {
+				sw = bitmap.height * cellRatio;
+				sx = (bitmap.width - sw) / 2;
+			} else {
+				sh = bitmap.width / cellRatio;
+				sy = (bitmap.height - sh) / 2;
+			}
+			ctx.drawImage(bitmap, sx, sy, sw, sh, index * cellWidth, 0, cellWidth + 0.5, height);
 		}
-		objectUrls.clear();
+	}
+
+	function scheduleDraw() {
+		if (drawFrame !== null) return;
+		drawFrame = requestAnimationFrame(drawFrames);
 	}
 
 	function requestExtraction() {
+		if (suspended.value || EditorCore.getInstance().getInteractiveDrag()) {
+			isLoading.value = false;
+			return;
+		}
+
 		const el = element.value;
 		const asset = mediaAsset.value;
 
 		if (!asset || !asset.file || (el.type !== "video" && el.type !== "image")) {
-			frames.value = [];
+			clearFrames();
 			return;
 		}
 
@@ -94,20 +138,20 @@ export function useFilmstrip({
 
 		const widthPx = elementWidth.value;
 		if (widthPx <= 0) {
-			frames.value = [];
+			clearFrames();
 			return;
 		}
 
-		const mediaId = el.mediaId;
-		const trimStart = el.trimStart ?? 0;
+		const mediaId = (el as any).mediaId as string;
+		const trimStart = (el as any).trimStart ?? 0;
 		const duration = el.duration;
-		const speed = el.speed ?? 1;
+		const speed = (el as any).speed ?? 1;
 
 		const ar = asset.width && asset.height
 			? asset.width / asset.height
 			: DEFAULT_ASPECT_RATIO;
 
-		const timestamps = filmstripService.computeTimestamps({
+		const allTimestamps = filmstripService.computeTimestamps({
 			trimStart,
 			duration,
 			speed,
@@ -115,8 +159,31 @@ export function useFilmstrip({
 			aspectRatio: ar,
 		});
 
-		if (timestamps.length === 0) {
-			frames.value = [];
+		if (allTimestamps.length === 0) {
+			clearFrames();
+			return;
+		}
+
+		const desiredKeys = new Set(allTimestamps.map((ts) => String(roundTs(ts))));
+		for (const key of [...frameMap.value.keys()]) {
+			if (!desiredKeys.has(key)) {
+				frameMap.value.delete(key);
+			}
+		}
+		scheduleDraw();
+
+		/**
+		 * Zoom de-duplication: only request timestamps that aren't already in
+		 * the frame map. When the user zooms slightly, tiles already decoded at
+		 * those exact timestamps are reused instantly without re-decoding.
+		 */
+		const missingTimestamps = allTimestamps.filter(
+			(ts) => !frameMap.value.has(String(roundTs(ts))),
+		);
+
+		// If all timestamps are already decoded, just mark loading done.
+		if (missingTimestamps.length === 0) {
+			isLoading.value = false;
 			return;
 		}
 
@@ -125,65 +192,20 @@ export function useFilmstrip({
 			currentController.abort();
 		}
 
-		// Revoke old object URLs to free memory before starting new extraction
-		revokeAllUrls();
-
 		isLoading.value = true;
 
-		// Collect new frames progressively
-		const newFrames: FilmstripFrame[] = [];
-
-		// Serialize canvas write + toBlob operations so the shared canvas is never
-		// overwritten before the previous toBlob callback fires.
-		let conversionQueue: Promise<void> = Promise.resolve();
-
-		// Increment generation BEFORE calling requestFilmstrip. The service may
-		// deliver cached frames synchronously (inside requestFilmstrip, before it
-		// returns). If we used currentController for the abort check, those frames
-		// would see the OLD (already-aborted) controller and be silently dropped —
-		// causing blank thumbnails on zoom-out when timestamps are cache-hits.
-		// The generation counter is captured in the closure before the call, so
-		// synchronous and asynchronous frames are treated identically.
 		const myGeneration = ++extractionGeneration;
 
 		currentController = filmstripService.requestFilmstrip({
-			taskKey: taskKey.value,
+			taskKey: el.id,
 			mediaId,
 			file: asset.file,
-			timestamps,
+			timestamps: missingTimestamps,
 			onFrame: (timestamp: number, bitmap: ImageBitmap) => {
 				if (extractionGeneration !== myGeneration) return;
-
-				// Chain onto the queue so only one drawImage+toBlob runs at a time.
-				conversionQueue = conversionQueue.then(
-					() =>
-						new Promise<void>((resolve) => {
-							if (extractionGeneration !== myGeneration) {
-								resolve();
-								return;
-							}
-
-							// Reuse a single shared canvas to avoid creating GPU-backed canvases per frame
-							// (WKWebView on macOS has a hard limit on canvas contexts and will crash)
-							const conversion = getConversionCanvas(bitmap.width, bitmap.height);
-							if (!conversion) {
-								resolve();
-								return;
-							}
-
-							conversion.ctx.drawImage(bitmap, 0, 0);
-							conversion.canvas.toBlob((blob) => {
-								resolve(); // always advance the queue
-								if (!blob || extractionGeneration !== myGeneration) return;
-								const objectUrl = URL.createObjectURL(blob);
-								objectUrls.add(objectUrl);
-								newFrames.push({ timestamp, bitmap, objectUrl });
-								// Sort by timestamp and update reactively
-								newFrames.sort((a, b) => a.timestamp - b.timestamp);
-								frames.value = [...newFrames];
-							}, "image/jpeg", 0.7);
-						}),
-				);
+				const key = String(roundTs(timestamp));
+				frameMap.value.set(key, { timestamp, bitmap });
+				scheduleDraw();
 			},
 			onDone: () => {
 				isLoading.value = false;
@@ -200,7 +222,9 @@ export function useFilmstrip({
 		}, DEBOUNCE_MS);
 	}
 
-	// Watch for changes that require re-extraction
+	// Watch for changes that require re-extraction.
+	// When element identity/trim/speed/media changes, we do a full reset.
+	// When only zoom/width changes, requestExtraction() filters already-cached timestamps.
 	watch(
 		[
 			() => element.value.id,
@@ -208,14 +232,49 @@ export function useFilmstrip({
 			() => (element.value as any).trimStart,
 			() => (element.value as any).speed,
 			() => mediaAsset.value?.id,
-			zoomLevel,
-			elementWidth,
 		],
 		() => {
+			// Force full reset on identity change
+			extractionGeneration++;
+			if (currentController) currentController.abort();
+			clearFrames();
 			debouncedRequest();
 		},
-		{ immediate: true },
 	);
+
+	// Zoom/width changes only trigger incremental fill-in (not a full reset)
+	watch([zoomLevel, elementWidth], () => {
+		debouncedRequest();
+	}, { immediate: true });
+
+	watch(suspended, (isSuspended) => {
+		if (isSuspended) {
+			extractionGeneration++;
+			currentController?.abort();
+			filmstripService.cancelExtraction({ taskKey: element.value.id });
+			isLoading.value = false;
+		} else {
+			debouncedRequest();
+		}
+	});
+
+	watch(canvasRef, (canvas) => {
+		resizeObserver?.disconnect();
+		resizeObserver = null;
+		if (canvas) {
+			resizeObserver = new ResizeObserver(scheduleDraw);
+			resizeObserver.observe(canvas);
+			scheduleDraw();
+		}
+	});
+
+	onMounted(() => {
+		if (canvasRef.value) {
+			resizeObserver = new ResizeObserver(scheduleDraw);
+			resizeObserver.observe(canvasRef.value);
+			scheduleDraw();
+		}
+	});
 
 	onUnmounted(() => {
 		if (debounceTimer) {
@@ -224,12 +283,14 @@ export function useFilmstrip({
 		if (currentController) {
 			currentController.abort();
 		}
-		filmstripService.cancelExtraction({ taskKey: taskKey.value });
-		revokeAllUrls();
+		resizeObserver?.disconnect();
+		if (drawFrame !== null) cancelAnimationFrame(drawFrame);
+		filmstripService.cancelExtraction({ taskKey: element.value.id });
+		clearFrames();
 	});
 
 	return {
-		frames,
+		frames: frames as unknown as Ref<FilmstripFrame[]>,
 		thumbnailWidth,
 		isLoading,
 	};

@@ -13,23 +13,23 @@ use super::text_renderer::{partition_overlays, render_text_overlay_to_png};
 use super::types::{
     AudioSettings, ClipBuildProgress, ClipBuildResult, ClipWatermarkSettings, FramingStrategy,
     IntroOutroPerRatioConfig, LayoutOverlaySettings, ManualFramingConfig, SegmentFramingConfigs,
-    StickerSettings, SubtitleOverrides, SubtitleSettings, TextOverlaySettings, VideoFilterSegment,
-    WatermarkSettings, WhisperSegment, WordInfo,
+    StickerSettings, SubtitleOverlaySettings, SubtitleOverrides, SubtitleSettings,
+    TextOverlaySettings, VideoFilterSegment, WatermarkSettings, WhisperSegment, WordInfo,
 };
 use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
 use super::video_processor::{
     apply_clip_watermarks_to_video, apply_layout_overlays_to_video,
     apply_rendered_text_overlays_to_video, apply_stickers_to_video,
-    build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy,
-    build_multi_segment_clip_with_settings, build_single_segment_clip_with_settings,
-    prepare_intro_outro_for_concat,
+    apply_subtitle_overlays_to_video, build_clip_with_framing_strategy,
+    build_multi_segment_clip_with_framing_strategy, build_multi_segment_clip_with_settings,
+    build_single_segment_clip_with_settings, prepare_intro_outro_for_concat,
 };
 use super::{is_build_cancelled, CancellationToken};
 
 // Helper function to sanitize a clip name for use as a folder name
 fn sanitize_clip_name(name: &str) -> String {
     // Replace invalid filesystem characters with underscores
-    let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+    let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '\''];
     let mut sanitized = name.to_string();
 
     for ch in invalid_chars {
@@ -298,6 +298,7 @@ pub async fn build_clip_internal_simple(
     segments: &[serde_json::Value],
     subtitle_settings: Option<SubtitleSettings>,
     subtitle_overrides: Option<SubtitleOverrides>,
+    subtitle_overlays: Option<std::collections::HashMap<String, Vec<SubtitleOverlaySettings>>>,
     transcript_words: Option<Vec<WordInfo>>,
     _transcript_segments: Option<Vec<WhisperSegment>>,
     max_words: Option<usize>,
@@ -472,6 +473,7 @@ pub async fn build_clip_internal_simple(
         let segments = segments.to_vec();
         let subtitle_settings = subtitle_settings.clone();
         let subtitle_overrides = subtitle_overrides.clone();
+        let subtitle_overlays = subtitle_overlays.clone();
         let transcript_words = transcript_words.clone();
         let quality = quality.to_string();
         let output_format = output_format.to_string();
@@ -701,74 +703,115 @@ pub async fn build_clip_internal_simple(
             let output_filename = format!("{}_{}_{}.{}", snake_case_name, ratio_suffix, build_num, output_format);
             let output_path = clip_base_dir.join(&output_filename);
 
-            // Generate subtitle file if needed for this aspect ratio
-            let subtitle_file = if let (Some(settings), Some(words)) = (&subtitle_settings, &transcript_words) {
-                if settings.enabled {
-                    // Get fonts directory
-                    let fonts_dir = get_fonts_dir(&app).ok();
-                    
-                    // Apply per-aspect-ratio overrides if they exist
-                    let effective_settings = if let Some(ref overrides) = subtitle_overrides {
-                        if let Some(override_for_ratio) = overrides.get(&aspect_ratio_str) {
-                            println!("[Rust] Applying subtitle overrides for {}: fontSize={}, positionPercentage={}, maxWidth={:?}", 
-                                     aspect_ratio_str, override_for_ratio.font_size, override_for_ratio.position_percentage, override_for_ratio.max_width);
-                            let mut overridden = settings.clone();
-                            overridden.font_size = override_for_ratio.font_size;
-                            overridden.position_percentage = override_for_ratio.position_percentage;
-                            // Apply max_width override if specified
-                            if let Some(max_width) = override_for_ratio.max_width {
-                                overridden.max_width = max_width;
-                            }
-                            overridden
+            // Check if we have pre-rendered subtitle overlays for this aspect ratio
+            // If yes, use PNG-based pixel-perfect rendering; otherwise fall back to ASS
+            let has_prerendered_subtitles = subtitle_overlays
+                .as_ref()
+                .map(|overlays| overlays.get(&aspect_ratio_str).map(|v| !v.is_empty()).unwrap_or(false))
+                .unwrap_or(false);
+            
+            let prerendered_subtitle_frames: Vec<SubtitleOverlaySettings> = if has_prerendered_subtitles {
+                subtitle_overlays
+                    .as_ref()
+                    .and_then(|overlays| overlays.get(&aspect_ratio_str).cloned())
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            
+            if has_prerendered_subtitles {
+                println!("[Rust] Using {} pre-rendered subtitle overlays for {} (pixel-perfect mode)", 
+                    prerendered_subtitle_frames.len(), aspect_ratio_str);
+            }
+
+            // Generate subtitle file if needed for this aspect ratio (fallback when no pre-rendered overlays)
+            let subtitle_file = if !has_prerendered_subtitles {
+                if let (Some(settings), Some(words)) = (&subtitle_settings, &transcript_words) {
+                    if settings.enabled {
+                        // Get fonts directory
+                        let fonts_dir = get_fonts_dir(&app).ok();
+                        
+                        let sub_path = clip_base_dir.join(format!("subtitles_{}.ass", ratio_suffix));
+                        // Pass intro_duration as time offset for subtitle timings
+                        let subtitle_offset = intro_duration.unwrap_or(0.0);
+                        // Convert subtitle override to JSON Value if available
+                        let per_ratio_override_json = subtitle_overrides
+                            .and_then(|overrides| overrides.get(&aspect_ratio_str).cloned())
+                            .map(|o| serde_json::to_value(o).unwrap());
+                        if let Some(ref override_json) = per_ratio_override_json {
+                            println!(
+                                "[Rust] Using per-ratio subtitle override for {}: {}",
+                                aspect_ratio_str,
+                                override_json
+                            );
                         } else {
-                            settings.clone()
+                            println!(
+                                "[Rust] No per-ratio subtitle override found for {}, using base settings (ASS fallback)",
+                                aspect_ratio_str
+                            );
                         }
+                        
+                        generate_ass_file(
+                            settings, 
+                            words, 
+                            &segments, 
+                            &sub_path, 
+                            max_words.unwrap_or(4), 
+                            Some(&aspect_ratio),
+                            video_info.width,
+                            video_info.height,
+                            fonts_dir.as_deref(),
+                            subtitle_offset,
+                            per_ratio_override_json.as_ref()
+                        ).map_err(|e| format!("Failed to generate subtitle file: {}", e))?;
+                        
+                        Some(sub_path)
                     } else {
-                        settings.clone()
-                    };
-                    
-                    let sub_path = clip_base_dir.join(format!("subtitles_{}.ass", ratio_suffix));
-                    // Pass intro_duration as time offset for subtitle timings
-                    let subtitle_offset = intro_duration.unwrap_or(0.0);
-                    generate_ass_file(
-                        &effective_settings, 
-                        words, 
-                        &segments, 
-                        &sub_path, 
-                        max_words.unwrap_or(4), 
-                        Some(&aspect_ratio),
-                        video_info.width,
-                        video_info.height,
-                        fonts_dir.as_deref(),
-                        subtitle_offset
-                    ).map_err(|e| format!("Failed to generate subtitle file: {}", e))?;
-                    
-                    Some(sub_path)
+                        None
+                    }
                 } else {
                     None
                 }
             } else {
-                None
+                None // Using pre-rendered overlays, no ASS file needed
             };
 
-            // Handle text overlays - partition into simple (ASS) and advanced (image-based)
+            // Handle text overlays - partition into simple (ASS) and advanced (image-based).
+            // per_ratio_configs are geometry/style overrides only (missing keys → root fallback).
             let mut rendered_text_images: Vec<(String, TextOverlaySettings)> = Vec::new();
             let final_subtitle_file = if let Some(overlays) = &text_overlays {
+                // Output canvas size (matches multi-region / framing builds: 1080 base width)
+                let output_w: u32 = 1080;
+                let output_h: u32 = {
+                    let h = ((output_w as f32) * aspect_ratio.height / aspect_ratio.width).round() as u32;
+                    if h % 2 == 0 { h } else { h + 1 }
+                };
+                println!(
+                    "[Rust] TEXT OVERLAY DEBUG: Received {} text overlays for {} (canvas {}x{})",
+                    overlays.len(),
+                    aspect_ratio_str,
+                    output_w,
+                    output_h
+                );
+                for (i, ovl) in overlays.iter().enumerate() {
+                    println!("[Rust] TEXT OVERLAY [{}]: id={}, text='{}', start={}, end={}, pos=({}, {}), bg_enabled={}", 
+                        i, ovl.id, ovl.text, ovl.start_time, ovl.end_time, ovl.position_x, ovl.position_y, ovl.style.background_enabled);
+                }
                 if !overlays.is_empty() {
                     let subtitle_offset = intro_duration.unwrap_or(0.0);
                     
                     // Partition overlays: simple ones use ASS, advanced ones get rendered to PNG
-                    let (simple_overlays, advanced_overlays) = partition_overlays(overlays, &aspect_ratio_str);
+                    let (mut simple_overlays, advanced_overlays) = partition_overlays(overlays, &aspect_ratio_str);
                     
                     println!("[Rust] Text overlays for {}: {} simple (ASS), {} advanced (PNG)", 
                         aspect_ratio_str, simple_overlays.len(), advanced_overlays.len());
                     
-                    // Render advanced overlays to PNG images
+                    // Render advanced overlays to PNG images at OUTPUT dimensions
                     for overlay in &advanced_overlays {
                         match render_text_overlay_to_png(
                             overlay,
-                            video_info.width,
-                            video_info.height,
+                            output_w,
+                            output_h,
                             &aspect_ratio_str,
                             &clip_base_dir,
                         ) {
@@ -777,13 +820,13 @@ pub async fn build_clip_internal_simple(
                                 rendered_text_images.push((image_path, overlay.clone()));
                             }
                             Err(e) => {
-                                println!("[Rust] Warning: Failed to render advanced text overlay {}: {}", overlay.id, e);
-                                // Fall back to ASS for this overlay (add to simple list)
+                                println!("[Rust] Warning: Failed to render advanced text overlay {}: {} — falling back to ASS", overlay.id, e);
+                                simple_overlays.push(overlay.clone());
                             }
                         }
                     }
                     
-                    // Process simple overlays with ASS
+                    // Process simple overlays with ASS (PlayRes matches output canvas)
                     if !simple_overlays.is_empty() {
                         if let Some(ref sub_path) = subtitle_file {
                             // Merge simple text overlays into existing subtitle ASS file
@@ -791,8 +834,8 @@ pub async fn build_clip_internal_simple(
                             merge_text_overlays_into_ass(
                                 sub_path,
                                 &simple_overlays,
-                                video_info.width,
-                                video_info.height,
+                                output_w,
+                                output_h,
                                 subtitle_offset,
                                 &aspect_ratio_str
                             ).map_err(|e| format!("Failed to merge text overlays: {}", e))?;
@@ -805,8 +848,8 @@ pub async fn build_clip_internal_simple(
                             generate_text_overlay_ass_file(
                                 &simple_overlays,
                                 &text_overlay_path,
-                                video_info.width,
-                                video_info.height,
+                                output_w,
+                                output_h,
                                 subtitle_offset,
                                 text_overlay_fonts_dir.as_deref(),
                                 &aspect_ratio_str
@@ -1144,12 +1187,25 @@ pub async fn build_clip_internal_simple(
 
             // Apply rendered text overlays (advanced styling: chat bubbles, gradients, glows)
             if !rendered_text_images.is_empty() {
-                println!("[Rust] Applying {} rendered text overlays to {} clip", rendered_text_images.len(), aspect_ratio_str);
+                let text_overlay_offset = intro_duration.unwrap_or(0.0);
+                println!("[Rust] Applying {} rendered text overlays to {} clip (time offset: {})", rendered_text_images.len(), aspect_ratio_str, text_overlay_offset);
                 apply_rendered_text_overlays_to_video(
                     &app,
                     &output_path,
                     &rendered_text_images,
                     &aspect_ratio_str,
+                    &quality,
+                    text_overlay_offset
+                ).await?;
+            }
+
+            // Apply pre-rendered subtitle overlays (pixel-perfect mode)
+            if !prerendered_subtitle_frames.is_empty() {
+                println!("[Rust] Applying {} pre-rendered subtitle overlays to {} clip", prerendered_subtitle_frames.len(), aspect_ratio_str);
+                apply_subtitle_overlays_to_video(
+                    &app,
+                    &output_path,
+                    &prerendered_subtitle_frames,
                     &quality
                 ).await?;
             }

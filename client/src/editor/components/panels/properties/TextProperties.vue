@@ -5,6 +5,7 @@ import { useFontManager } from "../../../composables/useFontManager";
 import type { TextElement, TextBubbleStyle, TextCase } from "../../../types/timeline";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import ColorPicker from "@/components/ColorPicker.vue";
 import {
 	Plus,
 	AlignLeft,
@@ -20,25 +21,29 @@ import {
 	Sparkles,
 	MessageSquare,
 	Zap,
+	Diamond,
 } from "lucide-vue-next";
 import AnimationProperties from "./AnimationProperties.vue";
+import KeyframeEditorPanel from "../KeyframeEditorPanel.vue";
+import ElementTimingFields from "./ElementTimingFields.vue";
 
 const props = defineProps<{
 	element: TextElement;
 	trackId: string;
 }>();
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 const { allFonts, uploadCustomFont, ensureFontLoaded } = useFontManager();
 
 // ── Top-level tabs (CapCut style) ──
-type TopTab = "style" | "effects" | "bubble" | "animate";
+type TopTab = "style" | "effects" | "bubble" | "animate" | "keyframes";
 const activeTopTab = ref<TopTab>("style");
 const topTabs: { id: TopTab; label: string; icon: any }[] = [
 	{ id: 'style', label: 'Style', icon: Baseline },
 	{ id: 'effects', label: 'Effects', icon: Sparkles },
 	{ id: 'bubble', label: 'Bubble', icon: MessageSquare },
 	{ id: 'animate', label: 'Animate', icon: Zap },
+	{ id: 'keyframes', label: 'Keyframes', icon: Diamond },
 ];
 
 // ── Input refs ──
@@ -55,6 +60,8 @@ const showGlow = ref(!!props.element.glow);
 const showGradient = ref(!!props.element.gradient?.enabled);
 const fadeInInput = ref((props.element.fadeIn ?? 0).toFixed(1));
 const fadeOutInput = ref((props.element.fadeOut ?? 0).toFixed(1));
+const textOpacityInput = ref(Math.round((props.element.textOpacity ?? 1) * 100).toString());
+const bubbleOpacityInput = ref(Math.round((props.element.bubbleOpacity ?? 1) * 100).toString());
 
 // ── Watchers ──
 watch(() => props.element.fontSize, (v) => { fontSizeInput.value = v.toString(); });
@@ -70,6 +77,8 @@ watch(() => props.element.glow, (v) => { showGlow.value = !!v; });
 watch(() => props.element.gradient, (v) => { showGradient.value = !!v?.enabled; });
 watch(() => props.element.fadeIn, (v) => { fadeInInput.value = (v ?? 0).toFixed(1); });
 watch(() => props.element.fadeOut, (v) => { fadeOutInput.value = (v ?? 0).toFixed(1); });
+watch(() => props.element.textOpacity, (v) => { textOpacityInput.value = Math.round((v ?? 1) * 100).toString(); });
+watch(() => props.element.bubbleOpacity, (v) => { bubbleOpacityInput.value = Math.round((v ?? 1) * 100).toString(); });
 
 function update(updates: Record<string, unknown>) {
 	editor.timeline.updateTextElement({
@@ -81,6 +90,49 @@ function update(updates: Record<string, unknown>) {
 
 function clamp(value: number, min: number, max: number) {
 	return Math.min(max, Math.max(min, value));
+}
+
+function isHexColor(value: string | undefined): value is string {
+	return !!value && /^#[0-9A-Fa-f]{6}$/.test(value);
+}
+
+function getBackgroundColorValue() {
+	if (props.element.bubbleStyle !== "none") {
+		if (isHexColor(props.element.backgroundColor)) return props.element.backgroundColor;
+		return isHexColor(props.element.bubbleColor) ? props.element.bubbleColor : "#3B82F6";
+	}
+	return isHexColor(props.element.backgroundColor) ? props.element.backgroundColor : "#000000";
+}
+
+function hasVisibleBackground() {
+	return props.element.bubbleStyle !== "none" || props.element.backgroundColor !== "transparent";
+}
+
+function updateBackgroundColor(color: string) {
+	if (props.element.bubbleStyle !== "none") {
+		update({ backgroundColor: color, bubbleColor: color, bubbleOpacity: props.element.bubbleOpacity ?? 1 });
+		return;
+	}
+	update({ backgroundColor: color, bubbleOpacity: props.element.bubbleOpacity ?? 1 });
+}
+
+function toggleBackground() {
+	if (props.element.bubbleStyle !== "none") {
+		update({ bubbleStyle: "none", backgroundColor: "transparent", bubbleColor: undefined });
+		return;
+	}
+	update({
+		backgroundColor: props.element.backgroundColor === "transparent" ? "#000000" : "transparent",
+		bubbleOpacity: props.element.bubbleOpacity ?? 1,
+	});
+}
+
+function handleBackgroundOpacityChange(value: string) {
+	const parsed = parseInt(value, 10);
+	if (Number.isNaN(parsed)) return;
+	const pct = clamp(parsed, 0, 100);
+	bubbleOpacityInput.value = pct.toString();
+	update({ bubbleOpacity: pct / 100 });
 }
 
 // ── Font size ──
@@ -239,15 +291,6 @@ function handleDelete() {
 	editor.timeline.deleteElements({
 		elements: [{ trackId: props.trackId, elementId: props.element.id }],
 	});
-}
-
-// ── Time formatting ──
-function formatTime(seconds: number): string {
-	const m = Math.floor(seconds / 60);
-	const s = seconds % 60;
-	const whole = Math.floor(s);
-	const ms = Math.round((s - whole) * 100);
-	return `${m}:${whole.toString().padStart(2, "0")}.${ms.toString().padStart(2, "0")}`;
 }
 
 // ── Fade In/Out ──
@@ -441,15 +484,46 @@ const quickStyles = [
 					</div>
 				</div>
 
-				<!-- Color -->
+				<!-- Text color -->
 				<div class="flex items-center gap-2">
-					<label class="text-zinc-500">Color</label>
-					<div class="relative">
-						<input type="color" :value="element.color" class="absolute inset-0 h-6 w-6 cursor-pointer opacity-0"
-							@input="(e) => update({ color: (e.target as HTMLInputElement).value })" />
-						<div class="size-6 rounded border border-white/10" :style="{ backgroundColor: element.color }" />
-					</div>
+					<label class="w-24 text-zinc-500">Font Color</label>
+					<ColorPicker :model-value="element.color" @update:model-value="(v) => update({ color: v })" />
 					<span class="font-mono text-[10px] uppercase text-zinc-400">{{ element.color }}</span>
+				</div>
+
+				<!-- Background color + opacity -->
+				<div class="space-y-2 rounded-md border border-white/5 bg-white/[0.02] p-2">
+					<div class="flex items-center gap-2">
+						<label class="w-24 text-zinc-500">Background</label>
+						<ColorPicker
+							v-if="hasVisibleBackground()"
+							:model-value="getBackgroundColorValue()"
+							@update:model-value="updateBackgroundColor"
+						/>
+						<span v-else class="text-[10px] text-zinc-500">None</span>
+						<span v-if="hasVisibleBackground()" class="font-mono text-[10px] uppercase text-zinc-400">
+							{{ getBackgroundColorValue() }}
+						</span>
+						<button
+							class="ml-auto rounded border border-white/10 px-2 py-1 text-[10px] text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+							@click="toggleBackground"
+						>
+							{{ hasVisibleBackground() ? 'Clear' : 'Add' }}
+						</button>
+					</div>
+					<div v-if="hasVisibleBackground()" class="flex items-center gap-2">
+						<label class="w-24 text-zinc-500">Bg Opacity</label>
+						<input
+							type="range"
+							:value="(element.bubbleOpacity ?? 1) * 100"
+							min="0"
+							max="100"
+							step="1"
+							class="flex-1"
+							@input="(e) => handleBackgroundOpacityChange((e.target as HTMLInputElement).value)"
+						/>
+						<span class="w-10 text-right font-mono text-[10px] text-zinc-400">{{ bubbleOpacityInput }}%</span>
+					</div>
 				</div>
 			</div>
 
@@ -560,24 +634,61 @@ const quickStyles = [
 					</div>
 				</div>
 
-				<!-- Background Color (non-bubble) -->
-				<div v-if="element.bubbleStyle === 'none'" class="space-y-1">
+			<!-- Blend Mode -->
+			<div class="space-y-1">
+				<label class="text-zinc-500">Blend Mode</label>
+				<select
+					:value="element.blendMode ?? 'normal'"
+					class="w-full rounded border border-white/10 bg-[#1a1a1e] px-2 py-1 text-xs text-zinc-200 outline-none"
+					@change="(e) => update({ blendMode: (e.target as HTMLSelectElement).value === 'normal' ? undefined : (e.target as HTMLSelectElement).value })"
+				>
+					<option value="normal">Normal</option>
+					<option value="multiply">Multiply</option>
+					<option value="screen">Screen</option>
+					<option value="overlay">Overlay</option>
+					<option value="soft-light">Soft Light</option>
+					<option value="hard-light">Hard Light</option>
+					<option value="darken">Darken</option>
+					<option value="lighten">Lighten</option>
+					<option value="color-dodge">Color Dodge</option>
+					<option value="color-burn">Color Burn</option>
+					<option value="difference">Difference</option>
+					<option value="exclusion">Exclusion</option>
+				</select>
+			</div>
+
+			<!-- Background Color (non-bubble) -->
+			<div v-if="element.bubbleStyle === 'none'" class="space-y-1">
 					<label class="text-zinc-500">Background</label>
 					<div class="flex items-center gap-2">
-						<div class="relative">
-							<input type="color"
-								:value="element.backgroundColor === 'transparent' ? '#000000' : element.backgroundColor"
-								class="absolute inset-0 h-6 w-6 cursor-pointer opacity-0"
-								@input="(e) => update({ backgroundColor: (e.target as HTMLInputElement).value })" />
-							<div class="size-6 rounded border border-white/10"
-								:style="{ backgroundColor: element.backgroundColor === 'transparent' ? 'transparent' : element.backgroundColor }"
-								:class="element.backgroundColor === 'transparent' && 'bg-[repeating-conic-gradient(#333_0%_25%,#222_0%_50%)] bg-[length:8px_8px]'" />
-						</div>
+						<ColorPicker
+							v-if="element.backgroundColor !== 'transparent'"
+							:model-value="element.backgroundColor"
+							@update:model-value="(v) => update({ backgroundColor: v })"
+						/>
+						<span v-else class="text-[10px] text-zinc-500">None</span>
 						<button class="text-[10px] text-zinc-500 hover:text-zinc-300"
 							@click="update({ backgroundColor: element.backgroundColor === 'transparent' ? '#000000' : 'transparent' })">
 							{{ element.backgroundColor === 'transparent' ? 'Add' : 'Clear' }}
 						</button>
 					</div>
+				</div>
+			</div>
+
+			<!-- Text opacity (independent from element opacity) -->
+			<div class="space-y-1 border-t border-white/10 pt-3">
+				<label class="text-zinc-500">Text Opacity</label>
+				<div class="flex items-center gap-2">
+					<input
+						type="range"
+						:value="(element.textOpacity ?? 1) * 100"
+						min="0"
+						max="100"
+						step="1"
+						class="flex-1"
+						@input="(e) => { const val = Number((e.target as HTMLInputElement).value); textOpacityInput = String(val); update({ textOpacity: val / 100 }); }"
+					/>
+					<span class="w-10 text-right font-mono text-[10px] text-zinc-400">{{ textOpacityInput }}%</span>
 				</div>
 			</div>
 
@@ -595,13 +706,9 @@ const quickStyles = [
 					</button>
 				</div>
 			</div>
-			<!-- ── Timing info ── -->
-			<div class="flex items-center gap-3 border-t border-white/10 pt-3">
-				<span class="text-[10px] text-zinc-500">Start: {{ formatTime(element.startTime) }}</span>
-				<span class="text-[10px] text-zinc-500">|</span>
-				<span class="text-[10px] text-zinc-500">End: {{ formatTime(element.startTime + element.duration) }}</span>
-				<span class="text-[10px] text-zinc-500">|</span>
-				<span class="text-[10px] text-zinc-500">Duration: {{ element.duration.toFixed(2) }}s</span>
+			<!-- ── Timing ── -->
+			<div class="border-t border-white/10 pt-3">
+				<ElementTimingFields :element="element" :track-id="trackId" />
 			</div>
 
 			<!-- ── Fade In/Out ── -->
@@ -649,11 +756,7 @@ const quickStyles = [
 					</div>
 				</button>
 				<div v-if="showStroke && element.stroke" class="flex items-center gap-2 border-t border-white/5 px-2.5 py-2">
-					<div class="relative">
-						<input type="color" :value="element.stroke.color" class="absolute inset-0 h-5 w-5 cursor-pointer opacity-0"
-							@input="(e) => update({ stroke: { ...element.stroke!, color: (e.target as HTMLInputElement).value } })" />
-						<div class="size-5 rounded border border-white/10" :style="{ backgroundColor: element.stroke.color }" />
-					</div>
+					<ColorPicker :model-value="element.stroke.color" @update:model-value="(v) => update({ stroke: { ...element.stroke!, color: v } })" />
 					<input type="range" :value="element.stroke.width" min="1" max="20" step="0.5" class="flex-1"
 						@input="(e) => update({ stroke: { ...element.stroke!, width: Number((e.target as HTMLInputElement).value) } })" />
 					<span class="w-6 text-right text-zinc-500">{{ element.stroke.width }}</span>
@@ -670,12 +773,10 @@ const quickStyles = [
 				</button>
 				<div v-if="showShadow && element.shadow" class="space-y-1.5 border-t border-white/5 px-2.5 py-2">
 					<div class="flex items-center gap-2">
-						<div class="relative">
-							<input type="color" :value="element.shadow.color.startsWith('rgba') ? '#000000' : element.shadow.color"
-								class="absolute inset-0 h-5 w-5 cursor-pointer opacity-0"
-								@input="(e) => update({ shadow: { ...element.shadow!, color: (e.target as HTMLInputElement).value } })" />
-							<div class="size-5 rounded border border-white/10" :style="{ backgroundColor: element.shadow.color.startsWith('rgba') ? '#000' : element.shadow.color }" />
-						</div>
+						<ColorPicker
+							:model-value="element.shadow.color.startsWith('#') ? element.shadow.color : '#000000'"
+							@update:model-value="(v) => update({ shadow: { ...element.shadow!, color: v } })"
+						/>
 						<span class="text-[10px] text-zinc-500">Color</span>
 					</div>
 					<div class="flex items-center gap-2">
@@ -704,11 +805,7 @@ const quickStyles = [
 					</div>
 				</button>
 				<div v-if="showGlow && element.glow" class="flex items-center gap-2 border-t border-white/5 px-2.5 py-2">
-					<div class="relative">
-						<input type="color" :value="element.glow.color" class="absolute inset-0 h-5 w-5 cursor-pointer opacity-0"
-							@input="(e) => update({ glow: { ...element.glow!, color: (e.target as HTMLInputElement).value } })" />
-						<div class="size-5 rounded border border-white/10" :style="{ backgroundColor: element.glow.color }" />
-					</div>
+					<ColorPicker :model-value="element.glow.color" @update:model-value="(v) => update({ glow: { ...element.glow!, color: v } })" />
 					<input type="range" :value="element.glow.intensity" min="1" max="30" step="1" class="flex-1"
 						@input="(e) => update({ glow: { ...element.glow!, intensity: Number((e.target as HTMLInputElement).value) } })" />
 					<span class="w-6 text-right text-zinc-500">{{ element.glow.intensity }}</span>
@@ -725,17 +822,9 @@ const quickStyles = [
 				</button>
 				<div v-if="showGradient && element.gradient" class="space-y-1.5 border-t border-white/5 px-2.5 py-2">
 					<div class="flex items-center gap-2">
-						<div class="relative">
-							<input type="color" :value="element.gradient.colors[0]" class="absolute inset-0 h-5 w-5 cursor-pointer opacity-0"
-								@input="(e) => update({ gradient: { ...element.gradient!, colors: [(e.target as HTMLInputElement).value, element.gradient!.colors[1]] } })" />
-							<div class="size-5 rounded border border-white/10" :style="{ backgroundColor: element.gradient.colors[0] }" />
-						</div>
+						<ColorPicker :model-value="element.gradient.colors[0]" @update:model-value="(v) => update({ gradient: { ...element.gradient!, colors: [v, element.gradient!.colors[1]] } })" />
 						<div class="h-4 flex-1 rounded" :style="{ background: `linear-gradient(${element.gradient.angle}deg, ${element.gradient.colors[0]}, ${element.gradient.colors[1]})` }" />
-						<div class="relative">
-							<input type="color" :value="element.gradient.colors[1]" class="absolute inset-0 h-5 w-5 cursor-pointer opacity-0"
-								@input="(e) => update({ gradient: { ...element.gradient!, colors: [element.gradient!.colors[0], (e.target as HTMLInputElement).value] } })" />
-							<div class="size-5 rounded border border-white/10" :style="{ backgroundColor: element.gradient.colors[1] }" />
-						</div>
+						<ColorPicker :model-value="element.gradient.colors[1]" @update:model-value="(v) => update({ gradient: { ...element.gradient!, colors: [element.gradient!.colors[0], v] } })" />
 					</div>
 					<div class="flex items-center gap-2">
 						<span class="text-[10px] text-zinc-500">Angle</span>
@@ -803,11 +892,7 @@ const quickStyles = [
 				<div class="space-y-1">
 					<label class="text-zinc-500">Color</label>
 					<div class="flex items-center gap-2">
-						<div class="relative">
-							<input type="color" :value="element.bubbleColor || '#3b82f6'" class="absolute inset-0 h-6 w-6 cursor-pointer opacity-0"
-								@input="(e) => update({ bubbleColor: (e.target as HTMLInputElement).value })" />
-							<div class="size-6 rounded border border-white/10" :style="{ backgroundColor: element.bubbleColor || '#3b82f6' }" />
-						</div>
+						<ColorPicker :model-value="element.bubbleColor || '#3b82f6'" @update:model-value="(v) => update({ bubbleColor: v })" />
 						<span class="font-mono text-[10px] uppercase text-zinc-400">{{ element.bubbleColor || '#3b82f6' }}</span>
 					</div>
 				</div>
@@ -817,6 +902,21 @@ const quickStyles = [
 						<input type="range" :value="element.bubblePadding ?? 16" min="4" max="40" step="2" class="flex-1"
 							@input="(e) => update({ bubblePadding: Number((e.target as HTMLInputElement).value) })" />
 						<span class="w-10 text-right font-mono text-[10px] text-zinc-400">{{ element.bubblePadding ?? 16 }}px</span>
+					</div>
+				</div>
+				<div class="space-y-1">
+					<label class="text-zinc-500">Background Opacity</label>
+					<div class="flex items-center gap-2">
+						<input
+							type="range"
+							:value="(element.bubbleOpacity ?? 1) * 100"
+							min="0"
+							max="100"
+							step="1"
+							class="flex-1"
+							@input="(e) => { const val = Number((e.target as HTMLInputElement).value); bubbleOpacityInput = String(val); update({ bubbleOpacity: val / 100 }); }"
+						/>
+						<span class="w-10 text-right font-mono text-[10px] text-zinc-400">{{ bubbleOpacityInput }}%</span>
 					</div>
 				</div>
 			</div>
@@ -834,6 +934,10 @@ const quickStyles = [
 				:animation-loop="element.animationLoop"
 				:element-duration="element.duration"
 			/>
+		</div>
+
+		<div v-else-if="activeTopTab === 'keyframes'" class="flex-1 overflow-y-auto">
+			<KeyframeEditorPanel :track-id="trackId" :element="element" />
 		</div>
 		</div>
 

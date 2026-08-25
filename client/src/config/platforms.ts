@@ -22,12 +22,13 @@ export const platformConfigs: Record<PlatformId, PlatformConfig> = {
   twitter: {
     id: 'twitter',
     name: 'X (Twitter)',
-    description: 'Download videos from X/Twitter broadcasts and spaces',
+    description: 'Download videos from X/Twitter posts, broadcasts, and spaces',
     icon: '/x.svg',
-    searchPlaceholder: 'Exact broadcast or space URL',
-    searchLabel: 'Broadcast/Space URL',
-    emptyStateTitle: 'Enter Broadcast URL',
-    emptyStateDescription: 'Paste the exact URL of an X/Twitter broadcast or space to download.',
+    searchPlaceholder: 'Paste X post, broadcast, or space URL',
+    searchLabel: 'Video URL',
+    emptyStateTitle: 'Enter X Video URL',
+    emptyStateDescription:
+      'Paste a timeline video post URL, broadcast replay, or Space URL to download.',
     isComingSoon: false,
     provider: 'twitter',
     localStorageKey: 'twitter_recent_searches',

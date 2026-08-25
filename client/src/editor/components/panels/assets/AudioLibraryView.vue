@@ -1,14 +1,32 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { getAllDownloadedAudio } from '@/services/database/downloaded-audio';
 import { getAllAudioPlaylists, getPlaylistItemsWithAudio, createAudioPlaylist } from '@/services/database/audio-playlists';
 import type { DownloadedAudio, AudioPlaylist } from '@/services/database/types';
 import { useEditor } from '../../../composables/useEditor';
-import { buildLibraryAudioElement } from '../../../lib/timeline/element-utils';
+import type { MediaAsset } from '../../../types/assets';
+import { generateUUID } from '../../../utils/id';
+import { editorMediaDestinationFilename, playbackFileLabel } from '@/utils/fsNames';
+import { utf8ToBase64Url } from '@/utils/encoding';
+import { hydrateVideoFileFromLocalUrl } from '../../../lib/media/hydrate-video-file-from-url';
 import { Music, Search, Play, Loader2, ListMusic, ChevronLeft, Plus } from 'lucide-vue-next';
 
-const { editor } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		playback: false,
+		timeline: false,
+		scenes: false,
+		media: false,
+		selection: false,
+	},
+});
+
+const activeProject = computed(() => {
+	void version.value;
+	return editor.project.getActiveOrNull();
+});
 
 const audioFiles = ref<DownloadedAudio[]>([]);
 const playlists = ref<AudioPlaylist[]>([]);
@@ -19,13 +37,15 @@ const isLoading = ref(true);
 const showCreatePlaylistDialog = ref(false);
 const newPlaylistName = ref('');
 const newPlaylistDescription = ref('');
+/** Prevents double-submit while copying/hydrating a track into project media */
+const addingAudioIds = ref<Set<string>>(new Set());
 
 const filteredAudio = computed(() => {
-	if (!searchQuery.value) return audioFiles.value;
+	// Match standalone Audio Library: X Spaces (Twitter) live only under X Spaces, not Audio
+	let filtered = audioFiles.value.filter(audio => audio.platform !== 'Twitter');
+	if (!searchQuery.value) return filtered;
 	const query = searchQuery.value.toLowerCase();
-	return audioFiles.value.filter(audio =>
-		audio.title.toLowerCase().includes(query)
-	);
+	return filtered.filter(audio => audio.title.toLowerCase().includes(query));
 });
 
 async function loadAudioFiles() {
@@ -44,23 +64,25 @@ async function openPlaylist(playlist: AudioPlaylist) {
 	selectedPlaylist.value = playlist;
 	try {
 		const items = await getPlaylistItemsWithAudio(playlist.id);
-		playlistTracks.value = items.map((item: any) => ({
-			id: item.audio_id,
-			title: item.audio_title,
-			source: item.audio_source,
-			platform: item.audio_platform,
-			source_url: item.audio_source_url,
-			file_path: item.audio_file_path,
-			duration: item.audio_duration,
-			file_size: item.audio_file_size,
-			sample_rate: item.audio_sample_rate,
-			channels: item.audio_channels,
-			thumbnail_url: item.audio_thumbnail_url,
-			user_id: item.audio_user_id,
-			created_at: item.audio_created_at,
-			updated_at: item.audio_updated_at,
-			playlist_item_id: item.id,
-		}));
+		playlistTracks.value = items
+			.map((item: any) => ({
+				id: item.audio_id,
+				title: item.audio_title,
+				source: item.audio_source,
+				platform: item.audio_platform,
+				source_url: item.audio_source_url,
+				file_path: item.audio_file_path,
+				duration: item.audio_duration,
+				file_size: item.audio_file_size,
+				sample_rate: item.audio_sample_rate,
+				channels: item.audio_channels,
+				thumbnail_url: item.audio_thumbnail_url,
+				user_id: item.audio_user_id,
+				created_at: item.audio_created_at,
+				updated_at: item.audio_updated_at,
+				playlist_item_id: item.id,
+			}))
+			.filter((track: DownloadedAudio) => track.platform !== 'Twitter');
 	} catch (error) {
 		console.error('Failed to load playlist tracks:', error);
 	}
@@ -91,19 +113,85 @@ async function createPlaylist() {
 	}
 }
 
-function addAudioToTimeline(audio: DownloadedAudio) {
-	const duration = audio.duration ?? 30;
-	const startTime = editor.playback.getCurrentTime();
-	
-	// Create library audio element with file path as sourceUrl
-	const element = buildLibraryAudioElement({
-		sourceUrl: audio.file_path,
-		name: audio.title,
-		duration,
-		startTime,
-	});
-	
-	editor.timeline.insertElement({ element, placement: { mode: 'auto' } });
+function getAudioMimeFromPath(filePath: string): string {
+	const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+	const map: Record<string, string> = {
+		mp3: 'audio/mpeg',
+		wav: 'audio/wav',
+		ogg: 'audio/ogg',
+		aac: 'audio/aac',
+		m4a: 'audio/mp4',
+		flac: 'audio/flac',
+	};
+	return map[ext] || 'audio/mpeg';
+}
+
+async function addLibraryAudioToProjectMedia(audio: DownloadedAudio) {
+	if (!activeProject.value) return;
+	const sourcePath = audio.file_path?.trim();
+	if (!sourcePath) return;
+	if (addingAudioIds.value.has(audio.id)) return;
+
+	addingAudioIds.value = new Set([...addingAudioIds.value, audio.id]);
+	try {
+		const projectId = activeProject.value.metadata.id;
+		const displayName = audio.title;
+		const mediaAssetId = generateUUID();
+		const fileName = editorMediaDestinationFilename({
+			id: mediaAssetId,
+			displayName,
+			sourcePathHint: sourcePath,
+			kind: 'audio',
+		});
+
+		const destPath = await invoke<string>('copy_file_to_project_media', {
+			sourcePath: sourcePath,
+			projectId,
+			fileName,
+		});
+
+		let videoServerPort = 8642;
+		try {
+			videoServerPort = await invoke<number>('get_video_server_port');
+		} catch {
+			// dev fallback
+		}
+		const url = `http://localhost:${videoServerPort}/video/${utf8ToBase64Url(destPath)}`;
+		const mime = getAudioMimeFromPath(destPath);
+		const playbackName = playbackFileLabel(destPath, displayName, 'audio');
+		// Under editor-media, plugin-fs can read bytes; AudioManager uses `mediaAsset.file` for decode.
+		const file = await hydrateVideoFileFromLocalUrl({
+			url,
+			name: playbackName,
+			fallbackType: mime,
+			diskPath: destPath,
+		});
+
+		const asset: Omit<MediaAsset, 'id'> = {
+			name: displayName,
+			type: 'audio',
+			file,
+			url,
+			duration: audio.duration ?? undefined,
+			ephemeral: false,
+			alreadyResolvedFilePath: destPath,
+		};
+		if (audio.thumbnail_url) {
+			asset.thumbnailUrl = audio.thumbnail_url;
+		}
+
+		await editor.media.addMediaAsset({
+			projectId,
+			asset,
+			mediaAssetId,
+		});
+	} catch (error) {
+		console.error('Failed to add audio to project media:', error);
+	} finally {
+		const next = new Set(addingAudioIds.value);
+		next.delete(audio.id);
+		addingAudioIds.value = next;
+	}
 }
 
 function formatDuration(seconds: number): string {
@@ -193,7 +281,7 @@ onMounted(() => {
 					:key="track.playlist_item_id"
 					:title="track.title"
 					class="group relative overflow-hidden rounded-lg border border-white/10 cursor-pointer hover:border-blue-500/50 transition-colors"
-					@click="addAudioToTimeline(track)"
+					@click="addLibraryAudioToProjectMedia(track)"
 				>
 					<div class="relative aspect-video bg-zinc-800 flex items-center justify-center">
 						<Music class="size-8 text-zinc-600" />
@@ -259,7 +347,7 @@ onMounted(() => {
 					:key="audio.id"
 					:title="audio.title"
 					class="group relative overflow-hidden rounded-lg border border-white/10 cursor-pointer hover:border-blue-500/50 transition-colors"
-					@click="addAudioToTimeline(audio)"
+					@click="addLibraryAudioToProjectMedia(audio)"
 				>
 					<!-- Thumbnail or Fallback -->
 					<div

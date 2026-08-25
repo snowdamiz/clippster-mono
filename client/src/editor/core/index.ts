@@ -28,6 +28,9 @@ export class EditorCore {
 
 	private _previewCanvas: HTMLCanvasElement | null = null;
 	private _imageMode: boolean;
+	private _livePreviewCanvas: HTMLCanvasElement | null = null;
+	private _interactiveDrag = false;
+	private disposed = false;
 
 	private constructor() {
 		this._imageMode = EditorCore._nextImageMode;
@@ -58,6 +61,22 @@ export class EditorCore {
 		return this._previewCanvas;
 	}
 
+	setLivePreviewCanvas(canvas: HTMLCanvasElement | null): void {
+		this._livePreviewCanvas = canvas;
+	}
+
+	getLivePreviewCanvas(): HTMLCanvasElement | null {
+		return this._livePreviewCanvas;
+	}
+
+	setInteractiveDrag(value: boolean): void {
+		this._interactiveDrag = value;
+	}
+
+	getInteractiveDrag(): boolean {
+		return this._interactiveDrag;
+	}
+
 	static getInstance(): EditorCore {
 		if (!EditorCore.instance) {
 			EditorCore.instance = new EditorCore();
@@ -70,9 +89,32 @@ export class EditorCore {
 		EditorCore._nextImageMode = enabled;
 	}
 
-	static reset(): void {
-		EditorCore.instance?.save.stop();
-		EditorCore.instance?.playback.pause();
+	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
+
+		this.save.stop();
+		this.playback.pause();
+		this.audio.dispose();
+		this.renderer.setRenderTree({ renderTree: null });
+		this.renderer.invalidatePreviewSceneCache();
+		this.media.clearAllAssets();
+
+		const previewCanvas = this._previewCanvas;
+		this._previewCanvas = null;
+		this._livePreviewCanvas = null;
+		if (previewCanvas) {
+			// Releasing the backing store drops retained preview GPU/bitmap memory.
+			previewCanvas.width = 0;
+			previewCanvas.height = 0;
+		}
+		this._interactiveDrag = false;
+	}
+
+	static reset(expectedInstance?: EditorCore): void {
+		const instance = EditorCore.instance;
+		if (!instance || (expectedInstance && instance !== expectedInstance)) return;
+		instance.dispose();
 		EditorCore.instance = null;
 	}
 }

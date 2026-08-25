@@ -9,6 +9,7 @@ import {
   ChevronUp,
   Copy,
   CreditCard,
+  Download,
   Handshake,
   Layers,
   Loader2,
@@ -34,6 +35,7 @@ import {
 } from '@/services/adminApi'
 import { formatWalletAddress } from './adminFormat'
 import { formatDateTime } from '@/utils/dateTimeUtils'
+import { downloadEmailsCsv } from '@/utils/downloadEmailsCsv'
 import './AdminUsersPage.css'
 
 type Tier = 'starter' | 'creator' | 'pro'
@@ -354,6 +356,15 @@ export function AdminUsersPage() {
     } catch {
       setError('Failed to copy to clipboard')
     }
+  }
+
+  function exportEmailsCsv() {
+    const emails = users.map((user) => user.email).filter(Boolean)
+    if (!emails.length) {
+      setError('No user emails to export')
+      return
+    }
+    downloadEmailsCsv(emails, 'user-emails.csv')
   }
 
   function navigateToUserProfile(userId: number) {
@@ -709,9 +720,20 @@ export function AdminUsersPage() {
                     <p className="admin-users__stats-desc">Manage user accounts, credits, and subscriptions</p>
                   </div>
                 </div>
-                <span className="admin-users__stats-count">
-                  {rows.length} user{rows.length !== 1 ? 's' : ''}
-                </span>
+                <div className="admin-users__stats-actions">
+                  <button
+                    type="button"
+                    className="admin-users__export-btn"
+                    disabled={!users.some((user) => Boolean(user.email))}
+                    onClick={exportEmailsCsv}
+                  >
+                    <Download className="admin-users__export-icon" />
+                    Export Emails CSV
+                  </button>
+                  <span className="admin-users__stats-count">
+                    {rows.length} user{rows.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
               </div>
 
               <div className="admin-users__table-wrapper">
@@ -1225,9 +1247,14 @@ export function AdminUsersPage() {
                     </div>
                   ) : null}
 
-                  {!userToEditSubscription?.subscription?.tier_name ? (
+                  {!userToEditSubscription?.subscription?.tier_name ||
+                  userToEditSubscription?.subscription?.status === 'expired' ? (
                     <div className="admin-users__subscription-section">
-                      <h3 className="admin-users__subscription-section-title">Grant Subscription</h3>
+                      <h3 className="admin-users__subscription-section-title">
+                        {userToEditSubscription?.subscription?.status === 'expired'
+                          ? 'Grant New Subscription'
+                          : 'Grant Subscription'}
+                      </h3>
                       <div className="admin-users__subscription-form-grid">
                         <div>
                           <label className="admin-users__subscription-form-label">Tier</label>
@@ -1369,7 +1396,8 @@ export function AdminUsersPage() {
                     </div>
                   ) : null}
 
-                  {userToEditSubscription?.subscription?.tier_name ? (
+                  {userToEditSubscription?.subscription?.tier_name &&
+                  userToEditSubscription?.subscription?.status !== 'expired' ? (
                     <div className="admin-users__subscription-section admin-users__subscription-section--danger">
                       <h3 className="admin-users__subscription-section-title admin-users__subscription-section-title--danger">
                         Cancel Subscription

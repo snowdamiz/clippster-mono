@@ -13,16 +13,17 @@ function getTrackAtY({
 	verticalDragDirection?: "up" | "down" | null;
 }): { trackIndex: number; relativeY: number } | null {
 	let cumulativeHeight = 0;
+	const EDGE_TOLERANCE = 6;
 
 	for (let i = 0; i < tracks.length; i++) {
 		const trackHeight = TRACK_HEIGHTS[tracks[i].type];
 		const trackTop = cumulativeHeight;
 		const trackBottom = trackTop + trackHeight;
 
-		if (mouseY >= trackTop && mouseY < trackBottom) {
+		if (mouseY >= trackTop - EDGE_TOLERANCE && mouseY < trackBottom + EDGE_TOLERANCE) {
 			return {
 				trackIndex: i,
-				relativeY: mouseY - trackTop,
+				relativeY: Math.max(0, Math.min(trackHeight, mouseY - trackTop)),
 			};
 		}
 
@@ -52,6 +53,7 @@ function isCompatible({
 	trackType: TimelineTrack["type"];
 }): boolean {
 	if (elementType === "text") return trackType === "text";
+	if (elementType === "caption") return trackType === "caption";
 	if (elementType === "audio") return trackType === "audio";
 	if (elementType === "sticker") return trackType === "sticker";
 	if (elementType === "effect") return trackType === "effect";
@@ -63,6 +65,36 @@ function isCompatible({
 
 function getMainTrackIndex({ tracks }: { tracks: TimelineTrack[] }): number {
 	return tracks.findIndex((track) => isMainTrack(track));
+}
+
+/**
+ * Find the first existing compatible non-main track that has no element
+ * overlapping [startTime, startTime + duration).
+ * Returns the track's array index, or -1 if none found.
+ */
+export function findCompatibleTrack({
+	tracks,
+	elementType,
+	startTime,
+	duration,
+}: {
+	tracks: TimelineTrack[];
+	elementType: ElementType;
+	startTime: number;
+	duration: number;
+}): number {
+	const end = startTime + duration;
+	for (let i = 0; i < tracks.length; i++) {
+		const track = tracks[i];
+		if (!isCompatible({ elementType, trackType: track.type })) continue;
+		if (isMainTrack(track)) continue;
+		// Check for overlap
+		const hasOverlap = track.elements.some(
+			(el) => el.startTime < end && el.startTime + el.duration > startTime,
+		);
+		if (!hasOverlap) return i;
+	}
+	return -1;
 }
 
 function findInsertIndex({
@@ -114,12 +146,16 @@ export function computeDropTarget({
 	startTimeOverride,
 	excludeElementId,
 }: ComputeDropTargetParams): DropTarget {
-	const xPosition =
+	const xPositionRaw =
 		typeof startTimeOverride === "number"
 			? startTimeOverride
 			: isExternalDrop
 				? playheadTime
 				: Math.max(0, mouseX / (pixelsPerSecond * zoomLevel));
+
+	// Snap drops near the timeline origin so clips land flush at 00:00.
+	const originSnapThresholdSec = 15 / (pixelsPerSecond * zoomLevel);
+	const xPosition = xPositionRaw <= originSnapThresholdSec ? 0 : xPositionRaw;
 
 	const mainTrackIndex = getMainTrackIndex({ tracks });
 
@@ -136,6 +172,43 @@ export function computeDropTarget({
 	}
 
 	const trackAtMouse = getTrackAtY({ mouseY, tracks, verticalDragDirection });
+	const singleInstanceTypes: ElementType[] = ["caption", "sticker", "text", "effect"];
+	const totalTrackStackHeight = tracks.reduce(
+		(sum, t, i) => sum + TRACK_HEIGHTS[t.type] + (i < tracks.length - 1 ? TRACK_GAP : 0),
+		0,
+	);
+
+	function findNearestCompatibleTrackIndex(): number | null {
+		if (!singleInstanceTypes.includes(elementType)) return null;
+		const compatibleIndices = tracks
+			.map((t, i) => ({ track: t, index: i }))
+			.filter(({ track }) => isCompatible({ elementType, trackType: track.type }))
+			.map(({ index }) => index);
+		if (compatibleIndices.length === 0) return null;
+		if (compatibleIndices.length === 1) return compatibleIndices[0];
+
+		const sourceTrackIdx = tracks.findIndex((t) =>
+			t.elements.some((el) => el.id === excludeElementId),
+		);
+		if (
+			sourceTrackIdx >= 0 &&
+			compatibleIndices.includes(sourceTrackIdx)
+		) {
+			return sourceTrackIdx;
+		}
+
+		let best: { idx: number; dist: number } | null = null;
+		let cumulative = 0;
+		for (let i = 0; i < tracks.length; i++) {
+			const h = TRACK_HEIGHTS[tracks[i].type];
+			const centerY = cumulative + h / 2;
+			cumulative += h + TRACK_GAP;
+			if (!compatibleIndices.includes(i)) continue;
+			const dist = Math.abs(mouseY - centerY);
+			if (!best || dist < best.dist) best = { idx: i, dist };
+		}
+		return best?.idx ?? compatibleIndices[0];
+	}
 
 	if (!trackAtMouse) {
 		const isAboveAllTracks = mouseY < 0;
@@ -154,6 +227,17 @@ export function computeDropTarget({
 				trackIndex: 0,
 				isNewTrack: true,
 				insertPosition: "above",
+				xPosition,
+			};
+		}
+
+		const nearTrackStack = mouseY >= -16 && mouseY <= totalTrackStackHeight + 16;
+		const nearestCompatible = nearTrackStack ? findNearestCompatibleTrackIndex() : null;
+		if (nearestCompatible !== null) {
+			return {
+				trackIndex: nearestCompatible,
+				isNewTrack: false,
+				insertPosition: null,
 				xPosition,
 			};
 		}
@@ -268,9 +352,14 @@ export function getDropLineY({
 export function getDropIndicatorGeometry({
 	dropTarget,
 	tracks,
+	insertGapIndex = null,
+	insertGapSize = 0,
 }: {
 	dropTarget: DropTarget;
 	tracks: TimelineTrack[];
+	/** Track index at which an insert gap is open (tracks at/after this are shifted down). */
+	insertGapIndex?: number | null;
+	insertGapSize?: number;
 }): { y: number; height: number; isNewTrack: boolean } {
 	const safeTrackIndex = Math.min(
 		Math.max(dropTarget.trackIndex, 0),
@@ -282,11 +371,17 @@ export function getDropIndicatorGeometry({
 		y += TRACK_HEIGHTS[tracks[i].type] + TRACK_GAP;
 	}
 
+	if (
+		insertGapIndex != null &&
+		insertGapSize > 0 &&
+		safeTrackIndex >= insertGapIndex
+	) {
+		y += insertGapSize;
+	}
+
 	if (dropTarget.isNewTrack) {
-		// Center in the gap between tracks (y is at the top of trackIndex,
-		// i.e. the bottom edge of the gap — shift up by half the gap)
-		const gapCenterY = safeTrackIndex > 0 ? y - TRACK_GAP / 2 : 0;
-		return { y: gapCenterY, height: TRACK_GAP, isNewTrack: true };
+		const gapCenterY = safeTrackIndex > 0 ? y - TRACK_GAP / 2 - (insertGapSize > 0 ? insertGapSize / 2 : 0) : 0;
+		return { y: gapCenterY, height: TRACK_GAP + insertGapSize, isNewTrack: true };
 	}
 
 	const trackHeight =

@@ -18,6 +18,28 @@ interface TextLayout {
 	lineHeight: number;
 }
 
+const TEXT_CANVAS_EDGE_PADDING = 32;
+const TEXT_AUTO_FIT_MIN_SCALE = 0.65;
+const TEXT_AUTO_FIT_MAX_LINES = 3;
+
+function isHexColor(value: string | undefined): value is string {
+	return !!value && /^#[0-9A-Fa-f]{6}$/.test(value);
+}
+
+function stripEmbeddedAlpha(color: string): string {
+	const rgba = color.match(/^rgba\(\s*([^)]+)\)$/i);
+	if (rgba) {
+		const [r, g, b] = rgba[1].split(",").map((part) => part.trim());
+		if (r && g && b) return `rgb(${r}, ${g}, ${b})`;
+	}
+
+	if (/^#[0-9A-Fa-f]{8}$/.test(color)) {
+		return color.slice(0, 7);
+	}
+
+	return color;
+}
+
 export class TextNode extends BaseNode<TextNodeParams> {
 	isInRange({ time }: { time: number }) {
 		return (
@@ -31,27 +53,85 @@ export class TextNode extends BaseNode<TextNodeParams> {
 	 * Used by the export pipeline to composite text as image overlays in FFmpeg.
 	 * Returns { blob, width, height } or null if content is empty.
 	 */
-	async renderToImage({ canvasWidth, canvasHeight }: { canvasWidth: number; canvasHeight: number }): Promise<{ blob: Blob; width: number; height: number } | null> {
+	async renderToImage({
+		canvasWidth,
+		canvasHeight,
+		sampleTime,
+	}: {
+		canvasWidth: number;
+		canvasHeight: number;
+		/** Timeline seconds used to sample keyframes / fades (default: element midpoint). */
+		sampleTime?: number;
+	}): Promise<{ blob: Blob; width: number; height: number } | null> {
 		if (!this.params.content.trim()) return null;
 
 		const oc = new OffscreenCanvas(canvasWidth, canvasHeight);
 		const ctx = oc.getContext("2d");
 		if (!ctx) return null;
 
+		const t = sampleTime ?? this.params.startTime + this.params.duration / 2;
+		const elapsed = t - this.params.startTime;
+		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
+		const kf = this.params.keyframes;
+
+		const resolvedScale = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "scale",
+			normalizedTime,
+			defaultValue: this.params.transform.scale ?? 1,
+		});
+		const resolvedPosX = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "positionX",
+			normalizedTime,
+			defaultValue: this.params.transform.position.x,
+		});
+		const resolvedPosY = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "positionY",
+			normalizedTime,
+			defaultValue: this.params.transform.position.y,
+		});
+		const resolvedRotation = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "rotation",
+			normalizedTime,
+			defaultValue: this.params.transform.rotate,
+		});
+
 		// Translate to element position (canvas center + offset)
-		const x = this.params.canvasCenter.x + (this.params.transform.position?.x ?? 0);
-		const y = this.params.canvasCenter.y + (this.params.transform.position?.y ?? 0);
+		const x = this.params.canvasCenter.x + resolvedPosX;
+		const y = this.params.canvasCenter.y + resolvedPosY;
 		ctx.translate(x, y);
 
-		const scale = this.params.transform.scale ?? 1;
-		if (scale !== 1) ctx.scale(scale, scale);
-		if (this.params.transform.rotate) {
-			ctx.rotate((this.params.transform.rotate * Math.PI) / 180);
+		if (resolvedScale !== 1) ctx.scale(resolvedScale, resolvedScale);
+		if (resolvedRotation) {
+			ctx.rotate((resolvedRotation * Math.PI) / 180);
 		}
 
-		ctx.globalAlpha = this.params.opacity ?? 1;
+		let resolvedOpacity = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "opacity",
+			normalizedTime,
+			defaultValue: this.params.opacity,
+		});
+		const fadeIn = this.params.fadeIn ?? 0;
+		const fadeOut = this.params.fadeOut ?? 0;
+		if (fadeIn > 0 && elapsed < fadeIn) {
+			resolvedOpacity *= elapsed / fadeIn;
+		}
+		if (fadeOut > 0 && elapsed > this.params.duration - fadeOut) {
+			resolvedOpacity *= (this.params.duration - elapsed) / fadeOut;
+		}
+		ctx.globalAlpha = resolvedOpacity;
 
-		this.paintText(ctx);
+		this.paintText(ctx, {
+			maxLineWidth: this.getMaxLocalLineWidth({
+				canvasWidth,
+				anchorX: x,
+				scale: resolvedScale,
+			}),
+		});
 
 		const blob = await oc.convertToBlob({ type: "image/png" });
 		return { blob, width: canvasWidth, height: canvasHeight };
@@ -63,21 +143,31 @@ export class TextNode extends BaseNode<TextNodeParams> {
 		const ctx = renderer.context;
 		ctx.save();
 
-		const x = this.params.transform.position.x + this.params.canvasCenter.x;
-		const y = this.params.transform.position.y + this.params.canvasCenter.y;
-		ctx.translate(x, y);
-
-		const scale = this.params.transform.scale ?? 1;
-		if (scale !== 1) ctx.scale(scale, scale);
-
-		if (this.params.transform.rotate) {
-			ctx.rotate((this.params.transform.rotate * Math.PI) / 180);
+		if (this.params.blendMode && this.params.blendMode !== "normal") {
+			ctx.globalCompositeOperation = this.params.blendMode as GlobalCompositeOperation;
 		}
 
 		const elapsed = time - this.params.startTime;
 		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
+		const kf = this.params.keyframes;
+
+		const resolvedScale = getKeyframedValue({ elementKeyframes: kf, property: "scale", normalizedTime, defaultValue: this.params.transform.scale ?? 1 });
+		const resolvedPosX = getKeyframedValue({ elementKeyframes: kf, property: "positionX", normalizedTime, defaultValue: this.params.transform.position.x });
+		const resolvedPosY = getKeyframedValue({ elementKeyframes: kf, property: "positionY", normalizedTime, defaultValue: this.params.transform.position.y });
+		const resolvedRotation = getKeyframedValue({ elementKeyframes: kf, property: "rotation", normalizedTime, defaultValue: this.params.transform.rotate });
+
+		const x = resolvedPosX + this.params.canvasCenter.x;
+		const y = resolvedPosY + this.params.canvasCenter.y;
+		ctx.translate(x, y);
+
+		if (resolvedScale !== 1) ctx.scale(resolvedScale, resolvedScale);
+
+		if (resolvedRotation) {
+			ctx.rotate((resolvedRotation * Math.PI) / 180);
+		}
+
 		let resolvedOpacity = getKeyframedValue({
-			elementKeyframes: this.params.keyframes,
+			elementKeyframes: kf,
 			property: "opacity",
 			normalizedTime,
 			defaultValue: this.params.opacity,
@@ -105,7 +195,13 @@ export class TextNode extends BaseNode<TextNodeParams> {
 		);
 		applyAnimationToContext(ctx, animResult, 0, 0);
 
-		this.paintText(ctx);
+		this.paintText(ctx, {
+			maxLineWidth: this.getMaxLocalLineWidth({
+				canvasWidth: renderer.width,
+				anchorX: x,
+				scale: resolvedScale,
+			}),
+		});
 
 		ctx.globalAlpha = prevAlpha;
 		ctx.restore();
@@ -113,37 +209,55 @@ export class TextNode extends BaseNode<TextNodeParams> {
 
 	// ── Core paint routine (shared by render + renderToImage) ──
 
-	private paintText(ctx: Ctx) {
-		ctx.font = this.buildFont();
+	private paintText(ctx: Ctx, options?: { maxLineWidth?: number }) {
 		ctx.textAlign = this.params.textAlign;
 		ctx.textBaseline = "top";
 
 		const displayText = this.applyTextCase(this.params.content);
-		const layout = this.layoutText(ctx, displayText);
+		const layout = this.fitTextLayout(ctx, displayText, options?.maxLineWidth);
+		ctx.font = this.buildFont(layout.fontSize);
 
 		// Block origin centered on anchor
+		// Use "top" baseline; compensate for descender space so text is visually centered.
+		const descenderOffset = layout.lineHeight * 0.1;
 		let blockX = -layout.maxLineWidth / 2;
 		if (this.params.textAlign === "left") blockX = 0;
 		if (this.params.textAlign === "right") blockX = -layout.maxLineWidth;
-		const blockY = -layout.totalHeight / 2;
+		const blockY = -(layout.totalHeight - descenderOffset) / 2;
 
 		// ── Bubble / background ──
 		const pad = this.params.bubblePadding ?? 16;
 		const bubble = this.params.bubbleStyle || "none";
-		const bubbleColor = this.params.bubbleColor || "rgba(0,0,0,0.7)";
+		const explicitBackground = this.params.backgroundColor && this.params.backgroundColor !== "transparent"
+			? this.params.backgroundColor
+			: null;
+		const bubbleColor = stripEmbeddedAlpha(
+			bubble !== "none"
+				? (this.params.bubbleColor || (isHexColor(explicitBackground ?? undefined) ? explicitBackground : null) || "#000000")
+				: (explicitBackground || "#000000"),
+		);
+		const bubbleOpacity = this.params.bubbleOpacity ?? 1;
 
 		if (bubble !== "none") {
+			ctx.save();
+			ctx.globalCompositeOperation = "source-over";
+			ctx.globalAlpha = bubbleOpacity;
 			this.drawBubble(ctx, bubble,
 				blockX - pad, blockY - pad,
 				layout.maxLineWidth + pad * 2, layout.totalHeight + pad * 2,
 				bubbleColor);
-		} else if (this.params.backgroundColor && this.params.backgroundColor !== "transparent") {
+			ctx.restore();
+		} else if (explicitBackground) {
 			const px = 8, py = 4;
-			ctx.fillStyle = this.params.backgroundColor;
+			ctx.save();
+			ctx.globalCompositeOperation = "source-over";
+			ctx.globalAlpha = bubbleOpacity;
+			ctx.fillStyle = bubbleColor;
 			this.roundRect(ctx, blockX - px, blockY - py,
 				layout.maxLineWidth + px * 2, layout.totalHeight + py * 2,
 				6);
 			ctx.fill();
+			ctx.restore();
 		}
 
 		// ── Shadow / glow (set before drawing text) ──
@@ -151,6 +265,13 @@ export class TextNode extends BaseNode<TextNodeParams> {
 
 		// ── Gradient ──
 		const gradFill = this.createGradient(ctx, layout.maxLineWidth, layout.totalHeight);
+
+		// Apply text-only opacity (independent of element opacity and bubble opacity)
+		const textOpacity = this.params.textOpacity ?? 1;
+		if (textOpacity !== 1) {
+			ctx.save();
+			ctx.globalAlpha = ctx.globalAlpha * textOpacity;
+		}
 
 		// ── Draw lines ──
 		const letterSpacing = this.params.letterSpacing || 0;
@@ -181,6 +302,10 @@ export class TextNode extends BaseNode<TextNodeParams> {
 			// Decorations
 			this.drawDecoration(ctx, layout.lines[i], lineX, lineY, letterSpacing, gradFill);
 		}
+
+		if (textOpacity !== 1) {
+			ctx.restore();
+		}
 	}
 
 	// ── Text layout ──
@@ -194,22 +319,113 @@ export class TextNode extends BaseNode<TextNodeParams> {
 		}
 	}
 
-	private buildFont(): string {
+	private buildFont(fontSize = this.params.fontSize): string {
 		const style = this.params.fontStyle === "italic" ? "italic" : "normal";
 		const weight = this.params.fontWeight || "normal";
-		return `${style} ${weight} ${this.params.fontSize}px "${this.params.fontFamily}", sans-serif`;
+		return `${style} ${weight} ${fontSize}px "${this.params.fontFamily}", sans-serif`;
 	}
 
-	private layoutText(ctx: Ctx, text: string): TextLayout {
-		const lineHeight = this.params.fontSize * (this.params.lineHeight || 1.2);
-		const lines = text.split("\n");
+	private getMaxLocalLineWidth({
+		canvasWidth,
+		anchorX,
+		scale,
+	}: {
+		canvasWidth: number;
+		anchorX: number;
+		scale: number;
+	}): number {
+		const safeScale = Math.max(0.01, scale || 1);
+		const minWidth = this.params.fontSize * 2;
+		let available: number;
+
+		if (this.params.textAlign === "left") {
+			available = canvasWidth - anchorX - TEXT_CANVAS_EDGE_PADDING;
+		} else if (this.params.textAlign === "right") {
+			available = anchorX - TEXT_CANVAS_EDGE_PADDING;
+		} else {
+			const left = anchorX - TEXT_CANVAS_EDGE_PADDING;
+			const right = canvasWidth - anchorX - TEXT_CANVAS_EDGE_PADDING;
+			available = Math.min(left, right) * 2;
+		}
+
+		return Math.max(minWidth, available / safeScale);
+	}
+
+	private fitTextLayout(ctx: Ctx, text: string, maxLineWidth?: number): TextLayout & { fontSize: number } {
+		const baseFontSize = this.params.fontSize;
+		const minFontSize = Math.max(8, baseFontSize * TEXT_AUTO_FIT_MIN_SCALE);
+		let fallback: TextLayout & { fontSize: number } | null = null;
+
+		for (let fontSize = baseFontSize; fontSize >= minFontSize; fontSize -= 1) {
+			ctx.font = this.buildFont(fontSize);
+			const layout = this.layoutText(ctx, text, maxLineWidth, fontSize);
+			const fitted = { ...layout, fontSize };
+			fallback = fitted;
+			if (layout.lines.length <= TEXT_AUTO_FIT_MAX_LINES) return fitted;
+		}
+
+		return fallback ?? { ...this.layoutText(ctx, text, maxLineWidth, baseFontSize), fontSize: baseFontSize };
+	}
+
+	private layoutText(ctx: Ctx, text: string, maxLineWidth: number | undefined, fontSize: number): TextLayout {
+		const lineHeight = fontSize * (this.params.lineHeight || 1.2);
+		const lines = this.wrapText(ctx, text, maxLineWidth);
 		let maxW = 0;
 		const spacing = this.params.letterSpacing || 0;
 		for (const line of lines) {
-			const w = spacing !== 0 ? this.measureSpaced(ctx, line, spacing) : ctx.measureText(line).width;
+			const w = this.measureLine(ctx, line, spacing);
 			if (w > maxW) maxW = w;
 		}
 		return { lines, maxLineWidth: maxW, totalHeight: lineHeight * lines.length, lineHeight };
+	}
+
+	private wrapText(ctx: Ctx, text: string, maxLineWidth?: number): string[] {
+		const hardLines = text.split("\n");
+		if (!maxLineWidth || maxLineWidth <= 0) return hardLines;
+
+		const wrapped: string[] = [];
+		const spacing = this.params.letterSpacing || 0;
+
+		for (const hardLine of hardLines) {
+			if (!hardLine) {
+				wrapped.push("");
+				continue;
+			}
+
+			const words = hardLine.split(/(\s+)/).filter((part) => part.length > 0);
+			let current = "";
+
+			for (const part of words) {
+				const candidate = current ? current + part : part.trimStart();
+				if (candidate && this.measureLine(ctx, candidate, spacing) <= maxLineWidth) {
+					current = candidate;
+					continue;
+				}
+
+				if (current.trim().length > 0) {
+					wrapped.push(current.trimEnd());
+					current = part.trimStart();
+				}
+
+				while (current && this.measureLine(ctx, current, spacing) > maxLineWidth) {
+					let splitAt = 1;
+					for (let i = 1; i <= current.length; i++) {
+						if (this.measureLine(ctx, current.slice(0, i), spacing) > maxLineWidth) break;
+						splitAt = i;
+					}
+					wrapped.push(current.slice(0, splitAt));
+					current = current.slice(splitAt);
+				}
+			}
+
+			wrapped.push(current.trimEnd());
+		}
+
+		return wrapped.length ? wrapped : [""];
+	}
+
+	private measureLine(ctx: Ctx, text: string, spacing: number): number {
+		return spacing !== 0 ? this.measureSpaced(ctx, text, spacing) : ctx.measureText(text).width;
 	}
 
 	// ── Bubble shapes ──
@@ -219,14 +435,14 @@ export class TextNode extends BaseNode<TextNodeParams> {
 
 		switch (style) {
 			case "rounded": {
-				const r = Math.min(bh * 0.3, bw * 0.15, 20);
+				const r = Math.min(bh * 0.22, bw * 0.12, 16);
 				this.roundRect(ctx, bx, by, bw, bh, r);
 				ctx.fillStyle = color;
 				ctx.fill();
 				break;
 			}
 			case "pill": {
-				const r = bh / 2;
+				const r = Math.min(bh / 2, 18);
 				this.roundRect(ctx, bx, by, bw, bh, r);
 				ctx.fillStyle = color;
 				ctx.fill();

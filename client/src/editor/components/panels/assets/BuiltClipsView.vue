@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../../composables/useEditor";
-import { getAllClips } from "@/services/database/clips";
-import { getClipBuilds } from "@/services/database/clip-build";
+import { getCompletedBuildEntries } from "@/services/database/clip-build";
+import { searchTranscriptSegmentsByClipIds } from "@/services/database";
 import type { Clip, ClipBuild } from "@/services/database/types";
 import type { MediaAsset } from "../../../types/assets";
 import { Film, Plus, Loader2, Check, Search, Briefcase, Building2 } from "lucide-vue-next";
 import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
 import { buildVideoElement } from "../../../lib/timeline/element-utils";
+import { hydrateVideoFileFromLocalUrl } from "../../../lib/media/hydrate-video-file-from-url";
 import { usePointerDrag } from "../../../composables/usePointerDrag";
 import type { CreateTimelineElement } from "../../../types/timeline";
+import { useClipThumbnailStore } from "@/stores/clipThumbnails";
+import { utf8ToBase64Url } from "@/utils/encoding";
 
 // Build entry combines clip info with specific build info
 interface BuildEntry {
@@ -19,16 +22,26 @@ interface BuildEntry {
 	key: string; // Unique key for v-for
 }
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		media: true,
+		playback: false,
+		timeline: false,
+		scenes: false,
+		selection: false,
+	},
+});
 const { startDrag, wasDragCompleted } = usePointerDrag();
+const thumbnailStore = useClipThumbnailStore();
 
-const clips = ref<Clip[]>([]);
 const allBuilds = ref<BuildEntry[]>([]); // Flattened list of all builds
 const loading = ref(false);
 const addingIds = ref<Set<string>>(new Set());
 const addedIds = ref<Set<string>>(new Set());
 const searchQuery = ref("");
-const thumbnailCache = ref<Map<string, string>>(new Map());
+const clipIdsWithTranscriptMatch = ref<Set<string>>(new Set());
+const transcriptSearchTimeoutId = ref<ReturnType<typeof setTimeout> | null>(null);
 const addedMediaIds = ref<Map<string, string>>(new Map()); // buildId → mediaAssetId
 
 const activeProject = computed(() => {
@@ -49,15 +62,52 @@ const filteredBuilds = computed(() => {
 		const clipName = entry.clip.name || entry.clip.project_name || "";
 		const orgName = entry.build.organization_name || "";
 		const campaignName = entry.build.campaign_name || "";
-		return clipName.toLowerCase().includes(q) || 
-			orgName.toLowerCase().includes(q) || 
-			campaignName.toLowerCase().includes(q);
+		return (
+			clipName.toLowerCase().includes(q) ||
+			orgName.toLowerCase().includes(q) ||
+			campaignName.toLowerCase().includes(q) ||
+			clipIdsWithTranscriptMatch.value.has(entry.clip.id)
+		);
 	});
 });
 
+async function performTranscriptSearch(query: string) {
+	if (!query.trim()) {
+		clipIdsWithTranscriptMatch.value = new Set();
+		return;
+	}
+
+	const clipIds = [...new Set(allBuilds.value.map((entry) => entry.clip.id))];
+	if (clipIds.length === 0) {
+		clipIdsWithTranscriptMatch.value = new Set();
+		return;
+	}
+
+	try {
+		const matchedClipIds = await searchTranscriptSegmentsByClipIds(query, clipIds);
+		clipIdsWithTranscriptMatch.value = new Set(matchedClipIds);
+	} catch (error) {
+		console.error("[BuiltClipsView] Failed to search transcripts:", error);
+		clipIdsWithTranscriptMatch.value = new Set();
+	}
+}
+
+function debouncedTranscriptSearch(query: string) {
+	if (transcriptSearchTimeoutId.value !== null) {
+		clearTimeout(transcriptSearchTimeoutId.value);
+	}
+	transcriptSearchTimeoutId.value = setTimeout(() => {
+		void performTranscriptSearch(query);
+	}, 300);
+}
+
+watch(searchQuery, (query) => {
+	debouncedTranscriptSearch(query);
+});
+
 function getCachedThumbnail(buildId: string, clipId: string): string | undefined {
-	// Try build-specific thumbnail first, then fall back to clip thumbnail
-	return thumbnailCache.value.get(buildId) || thumbnailCache.value.get(clipId);
+	// Try build-specific thumbnail first, then fall back to clip thumbnail from store
+	return thumbnailStore.getBuildThumbnail(buildId) || thumbnailStore.getThumbnail(clipId) || undefined;
 }
 
 function getClipName(clip: Clip): string {
@@ -148,9 +198,17 @@ function handlePointerDown(e: PointerEvent, entry: BuildEntry) {
 async function loadClips() {
 	loading.value = true;
 	try {
-		clips.value = await getAllClips();
-		await loadBuilds();
-		await loadThumbnails();
+		const entries = await getCompletedBuildEntries();
+		allBuilds.value = entries.map(({ clip, build }) => ({
+			clip,
+			build,
+			key: build.id,
+		}));
+		// Show the list immediately; load thumbnails in the background.
+		void loadThumbnails();
+		if (searchQuery.value.trim()) {
+			void performTranscriptSearch(searchQuery.value);
+		}
 	} catch (error) {
 		console.error("[BuiltClipsView] Failed to load clips:", error);
 	} finally {
@@ -158,55 +216,24 @@ async function loadClips() {
 	}
 }
 
-async function loadBuilds() {
-	const entries: BuildEntry[] = [];
-	for (const clip of clips.value) {
-		try {
-			const builds = await getClipBuilds(clip.id);
-			for (const build of builds) {
-				if (build.status === 'completed' && build.file_path) {
-					entries.push({
-						clip,
-						build,
-						key: build.id,
-					});
-				}
-			}
-		} catch (error) {
-			console.warn(`[BuiltClipsView] Failed to load builds for clip ${clip.id}:`, error);
+async function loadThumbnails() {
+	const clipsToThumb = [...new Map(allBuilds.value.map((e) => [e.clip.id, e.clip])).values()];
+	await thumbnailStore.loadThumbnails(clipsToThumb);
+
+	// Then collect and batch load build-specific thumbnails (for builds with custom thumbnails)
+	const buildsToLoad: Array<{ key: string; thumbnailPath: string }> = [];
+	
+	for (const entry of allBuilds.value) {
+		if (entry.build.thumbnail_path && !thumbnailStore.hasBuildThumbnail(entry.build.id)) {
+			buildsToLoad.push({
+				key: entry.build.id,
+				thumbnailPath: entry.build.thumbnail_path,
+			});
 		}
 	}
-	// Sort by created_at descending (newest first)
-	entries.sort((a, b) => (b.build.created_at || 0) - (a.build.created_at || 0));
-	allBuilds.value = entries;
-}
 
-async function loadThumbnails() {
-	const buildsNeedingThumbs = allBuilds.value.filter(
-		(entry) => entry.build.thumbnail_path && !thumbnailCache.value.has(entry.build.id),
-	);
-	if (buildsNeedingThumbs.length === 0) return;
-
-	let hasNew = false;
-	const batchSize = 5;
-	for (let i = 0; i < buildsNeedingThumbs.length; i += batchSize) {
-		const batch = buildsNeedingThumbs.slice(i, i + batchSize);
-		await Promise.all(
-			batch.map(async (entry) => {
-				try {
-					const dataUrl = await invoke<string>("read_file_as_data_url", {
-						filePath: entry.build.thumbnail_path,
-					});
-					thumbnailCache.value.set(entry.build.id, dataUrl);
-					hasNew = true;
-				} catch (err) {
-					console.warn(`[BuiltClipsView] Failed to load thumbnail for build ${entry.build.id}:`, err);
-				}
-			}),
-		);
-	}
-	if (hasNew) {
-		thumbnailCache.value = new Map(thumbnailCache.value);
+	if (buildsToLoad.length > 0) {
+		await thumbnailStore.loadBuildThumbnails(buildsToLoad);
 	}
 }
 
@@ -224,14 +251,16 @@ async function addBuildToEditor(entry: BuildEntry) {
 			videoServerPort = 8642;
 		}
 
-		const encodedPath = btoa(entry.build.file_path);
+		const encodedPath = utf8ToBase64Url(entry.build.file_path);
 		const url = `http://localhost:${videoServerPort}/video/${encodedPath}`;
 
 		const displayName = getBuildDisplayName(entry);
-		const mimeType = "video/mp4";
-		const file = new File([], displayName, { type: mimeType });
-		// Attach the path so the storage adapter can resolve it
-		(file as File & { path?: string }).path = entry.build.file_path;
+		const file = await hydrateVideoFileFromLocalUrl({
+			url,
+			name: displayName,
+			fallbackType: "video/mp4",
+			diskPath: entry.build.file_path,
+		});
 
 		const asset: Omit<MediaAsset, "id"> = {
 			name: displayName,
@@ -241,6 +270,7 @@ async function addBuildToEditor(entry: BuildEntry) {
 			duration: entry.build.duration ?? entry.clip.duration ?? undefined,
 			thumbnailUrl: undefined,
 			ephemeral: false,
+			diskImportPath: entry.build.file_path,
 		};
 
 		// Use cached data URL thumbnail if available
@@ -271,6 +301,12 @@ async function addBuildToEditor(entry: BuildEntry) {
 }
 
 onMounted(loadClips);
+
+onUnmounted(() => {
+	if (transcriptSearchTimeoutId.value !== null) {
+		clearTimeout(transcriptSearchTimeoutId.value);
+	}
+});
 </script>
 
 <template>
@@ -282,7 +318,7 @@ onMounted(loadClips);
 				<input
 					v-model="searchQuery"
 					type="text"
-					placeholder="Search built clips..."
+					placeholder="Search by name or transcript..."
 					class="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-7 pr-3 text-xs text-zinc-200 placeholder-zinc-500 outline-none focus:border-blue-500/50"
 				/>
 			</div>

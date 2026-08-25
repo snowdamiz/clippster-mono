@@ -1,4 +1,5 @@
 export type SupportedLivestreamPlatform = 'PumpFun' | 'YouTube' | 'Twitch' | 'Kick' | 'Rumble' | 'Twitter';
+export type LivestreamMonitoringMode = 'record' | 'realtime-detect';
 
 export interface MonitoredStreamer {
   id: string;
@@ -29,6 +30,14 @@ export interface LiveStatus {
   raw?: Record<string, any>;
 }
 
+export interface LiveSessionSegment {
+  segmentNumber: number;
+  filePath: string;
+  startTime: number;
+  duration: number;
+  endTime: number;
+}
+
 export interface LiveSession {
   sessionId: string;
   streamerId: string;
@@ -43,11 +52,13 @@ export interface LiveSession {
   displayName: string;
   platform: SupportedLivestreamPlatform;
   profileImageUrl?: string;
-  detectClips?: boolean;
+  mode: LivestreamMonitoringMode;
   isStopping?: boolean;
   segmentDurationMinutes?: number;
   promptId?: string;
   promptContent?: string;
+  // Real-time detection segments
+  segments?: LiveSessionSegment[];
 }
 
 export interface SegmentEventPayload {
@@ -68,9 +79,7 @@ export interface SegmentJob {
   mintId: string;
   filePath: string;
   projectId: string;
-  detectClips?: boolean;
   duration?: number;
-  promptContent?: string;
 }
 
 export interface ActivityLog {

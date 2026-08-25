@@ -57,6 +57,14 @@
                 class="admin-users__search-input"
               />
             </div>
+            <button
+              class="admin-users__export-btn"
+              :disabled="!users.some((user) => Boolean(user.email))"
+              @click="exportUserEmailsCsv"
+            >
+              <Download class="admin-users__export-icon" />
+              Export Emails CSV
+            </button>
             <span class="admin-users__stats-count">{{ filteredAndSortedUsers.length }} user{{ filteredAndSortedUsers.length !== 1 ? 's' : '' }}</span>
           </div>
         </div>
@@ -190,6 +198,9 @@
                         </span>
                         <span v-if="user.subscription?.days_remaining > 0" class="admin-users__sub-days">
                           ({{ user.subscription.days_remaining }}d)
+                        </span>
+                        <span v-else-if="isExpiredSubscription(user.subscription) && user.subscription.end_date" class="admin-users__sub-days">
+                          ({{ formatExpiredDate(user.subscription.end_date) }})
                         </span>
                       </div>
                     </button>
@@ -568,9 +579,14 @@
                   </div>
                 </div>
 
-                <!-- Grant Subscription Section -->
-                <div v-if="!userToEditSubscription?.subscription?.tier_name" class="admin-users__subscription-section">
-                  <h3 class="admin-users__subscription-section-title">Grant Subscription</h3>
+                <!-- Grant Subscription Section (also for expired — lets admin start a fresh period) -->
+                <div
+                  v-if="!userToEditSubscription?.subscription?.tier_name || userToEditSubscription?.subscription?.status === 'expired'"
+                  class="admin-users__subscription-section"
+                >
+                  <h3 class="admin-users__subscription-section-title">
+                    {{ userToEditSubscription?.subscription?.status === 'expired' ? 'Grant New Subscription' : 'Grant Subscription' }}
+                  </h3>
                   <div class="admin-users__subscription-form-grid">
                     <div>
                       <label class="admin-users__subscription-form-label">Tier</label>
@@ -683,7 +699,7 @@
 
                 <!-- Cancel Subscription Section -->
                 <div
-                  v-if="userToEditSubscription?.subscription?.tier_name"
+                  v-if="userToEditSubscription?.subscription?.tier_name && userToEditSubscription?.subscription?.status !== 'expired'"
                   class="admin-users__subscription-section admin-users__subscription-section--danger"
                 >
                   <h3 class="admin-users__subscription-section-title admin-users__subscription-section-title--danger">
@@ -778,7 +794,8 @@
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { useRouter } from 'vue-router';
-  import { formatDateTime } from '@/utils/dateTimeUtils';
+  import { formatDate as formatDateOnly, formatDateTime } from '@/utils/dateTimeUtils';
+  import { downloadEmailsCsv } from '@/utils/downloadEmailsCsv';
   import {
     Users,
     RefreshCw,
@@ -796,6 +813,7 @@
     ChevronUp,
     Handshake,
     Trash2,
+    Download,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
@@ -829,6 +847,8 @@
       organization_id?: number | null;
     };
   }
+
+  type UserSubscription = UserType['subscription'];
 
   const authStore = useAuthStore();
 
@@ -998,6 +1018,19 @@
     }
   };
 
+  const formatExpiredDate = (dateString: string | null | undefined) => {
+    if (!dateString) return 'N/A';
+    try {
+      return formatDateOnly(dateString) || 'N/A';
+    } catch {
+      return 'Invalid date';
+    }
+  };
+
+  const isExpiredSubscription = (subscription: UserSubscription | null | undefined) => {
+    return subscription?.status === 'expired';
+  };
+
   const formatCredits = (credits: number | 'unlimited') => {
     if (credits === 'unlimited') return '∞';
     if (!credits || credits === 0) return '0';
@@ -1010,6 +1043,15 @@
     } catch (err) {
       console.error('Failed to copy to clipboard:', err);
     }
+  };
+
+  const exportUserEmailsCsv = () => {
+    const emails = users.value.map((user) => user.email).filter(Boolean);
+    if (!emails.length) {
+      error.value = 'No user emails to export';
+      return;
+    }
+    downloadEmailsCsv(emails, 'user-emails.csv');
   };
 
   const getSubscriptionStatusClass = (status: string | undefined) => {
@@ -1291,12 +1333,16 @@
         if (userIndex !== -1) {
           users.value[userIndex] = { ...users.value[userIndex], subscription: response.data.subscription };
         }
+        if (userToEditSubscription.value) {
+          userToEditSubscription.value = { ...userToEditSubscription.value, subscription: response.data.subscription };
+        }
         await fetchSubscriptionHistory(userToEditSubscription.value.id);
+        await fetchUsers();
       } else {
         throw new Error(response.data.error || 'Failed to extend subscription');
       }
-    } catch (err) {
-      subscriptionError.value = err instanceof Error ? err.message : 'Failed to extend subscription';
+    } catch (err: any) {
+      subscriptionError.value = err?.response?.data?.error || err?.message || 'Failed to extend subscription';
     } finally {
       updatingSubscriptionUserId.value = null;
     }
@@ -1316,12 +1362,16 @@
         if (userIndex !== -1) {
           users.value[userIndex] = { ...users.value[userIndex], subscription: response.data.subscription };
         }
+        if (userToEditSubscription.value) {
+          userToEditSubscription.value = { ...userToEditSubscription.value, subscription: response.data.subscription };
+        }
         await fetchSubscriptionHistory(userToEditSubscription.value.id);
+        await fetchUsers();
       } else {
         throw new Error(response.data.error || 'Failed to change tier');
       }
-    } catch (err) {
-      subscriptionError.value = err instanceof Error ? err.message : 'Failed to change tier';
+    } catch (err: any) {
+      subscriptionError.value = err?.response?.data?.error || err?.message || 'Failed to change tier';
     } finally {
       updatingSubscriptionUserId.value = null;
     }
@@ -1641,6 +1691,36 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
+  }
+
+  .admin-users__export-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.875rem;
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .admin-users__export-btn:hover:not(:disabled) {
+    background-color: rgba(63, 63, 70, 1);
+    color: white;
+  }
+
+  .admin-users__export-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .admin-users__export-icon {
+    width: 14px;
+    height: 14px;
   }
 
   .admin-users__search {

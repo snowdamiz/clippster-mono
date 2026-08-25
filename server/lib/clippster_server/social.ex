@@ -14,6 +14,8 @@ defmodule ClippsterServer.Social do
     PostSubmission
   }
 
+  alias ClippsterServer.Social.Providers.PostForMe
+
   # ============================================================================
   # Social Account CRUD
   # ============================================================================
@@ -156,11 +158,25 @@ defmodule ClippsterServer.Social do
   """
   def delete_social_account(%SocialAccount{} = account, %User{} = user) do
     if Organizations.is_admin?(account.organization_id, user.id) do
+      disconnect_provider_account(account)
       Repo.delete(account)
     else
       {:error, :unauthorized}
     end
   end
+
+  defp disconnect_provider_account(%SocialAccount{
+         provider: "post_for_me",
+         provider_account_id: provider_account_id
+       })
+       when is_binary(provider_account_id) and provider_account_id != "" do
+    case PostForMe.disconnect_social_account(provider_account_id) do
+      {:ok, _} -> :ok
+      {:error, _} -> :ok
+    end
+  end
+
+  defp disconnect_provider_account(_), do: :ok
 
   @doc """
   Gets all social accounts that need token refresh.
@@ -601,7 +617,8 @@ defmodule ClippsterServer.Social do
   Resets them to 'scheduled' so the worker can retry.
   """
   def recover_stale_publishing_posts do
-    stale_threshold = DateTime.utc_now() |> DateTime.add(-300, :second) |> DateTime.truncate(:second)
+    stale_threshold =
+      DateTime.utc_now() |> DateTime.add(-300, :second) |> DateTime.truncate(:second)
 
     {count, _} =
       from(p in PostSubmission,
@@ -612,7 +629,8 @@ defmodule ClippsterServer.Social do
       |> Repo.update_all(
         set: [
           status: "failed",
-          error_message: "Worker crashed during publishing - post may have been published externally",
+          error_message:
+            "Worker crashed during publishing - post may have been published externally",
           locked_at: nil,
           updated_at: DateTime.utc_now() |> DateTime.truncate(:second)
         ]

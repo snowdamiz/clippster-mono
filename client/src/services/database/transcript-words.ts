@@ -1,5 +1,11 @@
 import { getDatabase, timestamp } from './core';
-import { getTranscriptByProjectId } from './transcripts';
+import { getTranscriptById, getTranscriptByProjectId } from './transcripts';
+
+interface TranscriptWordRangeUpdateOptions {
+  transcriptId?: string | null;
+  sourceStart?: number | null;
+  sourceEnd?: number | null;
+}
 
 // Update a word in the transcript and all related segments
 export async function updateTranscriptWord(
@@ -186,5 +192,245 @@ async function updateClipSegmentsWithWordChange(
     }
   } catch (error) {
     console.error('[Database] Failed to update clip segments:', error);
+  }
+}
+
+/**
+ * Update one Whisper segment cell by index into `raw_json.segments` (matches parsed `whisperSegments` order).
+ * Word rows: `wordIndex` into `segment.words`; empty `newText` removes that word.
+ * Whole-segment rows (no word timings): pass `wordIndex: null` to replace `segment.text`.
+ */
+export async function updateTranscriptWhisperCell(
+  projectId: string,
+  whisperSegmentIndex: number,
+  wordIndex: number | null,
+  newText: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const db = await getDatabase();
+    const transcript = await getTranscriptByProjectId(projectId);
+    if (!transcript?.raw_json) {
+      return { success: false, error: 'No transcript found for this project' };
+    }
+
+    let transcriptData: any;
+    try {
+      transcriptData = JSON.parse(transcript.raw_json);
+    } catch {
+      return { success: false, error: 'Failed to parse transcript data' };
+    }
+
+    if (!transcriptData.segments || !Array.isArray(transcriptData.segments)) {
+      return { success: false, error: 'Transcript has no segments array' };
+    }
+
+    const segment = transcriptData.segments[whisperSegmentIndex];
+    if (!segment) {
+      return { success: false, error: 'Invalid segment index' };
+    }
+
+    if (wordIndex !== null) {
+      if (!segment.words || !Array.isArray(segment.words)) {
+        return { success: false, error: 'Segment has no word-level timings' };
+      }
+      if (wordIndex < 0 || wordIndex >= segment.words.length) {
+        return { success: false, error: 'Invalid word index' };
+      }
+      if (newText.trim() === '') {
+        segment.words.splice(wordIndex, 1);
+      } else {
+        segment.words[wordIndex].word = newText.trim();
+      }
+      if (segment.words.length > 0) {
+        segment.text = segment.words
+          .map((w: any) => String(w.word ?? '').trim())
+          .filter(Boolean)
+          .join(' ');
+      } else {
+        segment.text = '';
+      }
+    } else {
+      segment.text = newText;
+    }
+
+    const hasSegmentWords =
+      Array.isArray(transcriptData.segments) &&
+      transcriptData.segments.some((s: any) => s.words && Array.isArray(s.words) && s.words.length > 0);
+    if (hasSegmentWords && transcriptData.words) {
+      delete transcriptData.words;
+    }
+
+    let fullText = '';
+    if (transcriptData.words && Array.isArray(transcriptData.words) && transcriptData.words.length > 0) {
+      fullText = transcriptData.words.map((w: any) => String(w.word ?? '').trim()).filter(Boolean).join(' ');
+    } else if (transcriptData.segments && Array.isArray(transcriptData.segments)) {
+      fullText = transcriptData.segments
+        .map((s: any) => (s.text || '').trim())
+        .filter(Boolean)
+        .join(' ');
+    }
+
+    await db.execute('UPDATE transcripts SET raw_json = ?, text = ?, updated_at = ? WHERE id = ?', [
+      JSON.stringify(transcriptData),
+      fullText,
+      timestamp(),
+      transcript.id,
+    ]);
+
+    return { success: true };
+  } catch (error) {
+    console.error('[Database] Failed to update transcript whisper cell:', error);
+    return { success: false, error: 'Database update failed' };
+  }
+}
+
+/**
+ * Update a displayed subtitle chunk backed by a contiguous range of Whisper words.
+ * Keeps existing word timings when the edited text has the same word count; otherwise
+ * redistributes timings across the original chunk duration.
+ */
+export async function updateTranscriptWhisperCellRange(
+  projectId: string,
+  whisperSegmentIndex: number,
+  wordStartIndex: number | null,
+  wordEndIndex: number | null,
+  newText: string,
+  options: TranscriptWordRangeUpdateOptions = {}
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (wordStartIndex === null || wordEndIndex === null) {
+      return updateTranscriptWhisperCell(projectId, whisperSegmentIndex, null, newText);
+    }
+
+    const db = await getDatabase();
+    const transcript = options.transcriptId
+      ? await getTranscriptById(options.transcriptId)
+      : await getTranscriptByProjectId(projectId);
+    if (!transcript?.raw_json) {
+      return { success: false, error: 'No transcript found for this project' };
+    }
+
+    let transcriptData: any;
+    try {
+      transcriptData = JSON.parse(transcript.raw_json);
+    } catch {
+      return { success: false, error: 'Failed to parse transcript data' };
+    }
+
+    if (!transcriptData.segments || !Array.isArray(transcriptData.segments)) {
+      return { success: false, error: 'Transcript has no segments array' };
+    }
+
+    let resolvedSegmentIndex = whisperSegmentIndex;
+    let segment = transcriptData.segments[resolvedSegmentIndex];
+    if (!segment) {
+      return { success: false, error: 'Invalid segment index' };
+    }
+    if (!segment.words || !Array.isArray(segment.words)) {
+      return { success: false, error: 'Segment has no word-level timings' };
+    }
+
+    const resolveRangeByTiming = () => {
+      if (options.sourceStart == null || options.sourceEnd == null) return null;
+      const sourceStart = Number(options.sourceStart);
+      const sourceEnd = Number(options.sourceEnd);
+      if (!Number.isFinite(sourceStart) || !Number.isFinite(sourceEnd)) return null;
+
+      const tolerance = 0.12;
+      for (let segmentIndex = 0; segmentIndex < transcriptData.segments.length; segmentIndex++) {
+        const candidateSegment = transcriptData.segments[segmentIndex];
+        const words = candidateSegment?.words;
+        if (!Array.isArray(words) || words.length === 0) continue;
+
+        const startIndex = words.findIndex((word: any) => Math.abs(Number(word.start) - sourceStart) <= tolerance);
+        const endIndex = words.findIndex((word: any) => Math.abs(Number(word.end) - sourceEnd) <= tolerance);
+        if (startIndex >= 0 && endIndex >= startIndex) {
+          return { segmentIndex, startIndex, endIndex };
+        }
+      }
+
+      return null;
+    };
+
+    if (
+      wordStartIndex < 0 ||
+      wordEndIndex < wordStartIndex ||
+      wordEndIndex >= segment.words.length
+    ) {
+      const resolved = resolveRangeByTiming();
+      if (!resolved) {
+        return { success: false, error: 'Invalid word range' };
+      }
+
+      resolvedSegmentIndex = resolved.segmentIndex;
+      segment = transcriptData.segments[resolvedSegmentIndex];
+      wordStartIndex = resolved.startIndex;
+      wordEndIndex = resolved.endIndex;
+    } else if (options.sourceStart != null && options.sourceEnd != null) {
+      const startMatches =
+        Math.abs(Number(segment.words[wordStartIndex]?.start) - Number(options.sourceStart)) <= 0.12;
+      const endMatches = Math.abs(Number(segment.words[wordEndIndex]?.end) - Number(options.sourceEnd)) <= 0.12;
+      if (!startMatches || !endMatches) {
+        const resolved = resolveRangeByTiming();
+        if (resolved) {
+          resolvedSegmentIndex = resolved.segmentIndex;
+          segment = transcriptData.segments[resolvedSegmentIndex];
+          wordStartIndex = resolved.startIndex;
+          wordEndIndex = resolved.endIndex;
+        }
+      }
+    }
+
+    const oldWords = segment.words.slice(wordStartIndex, wordEndIndex + 1);
+    const replacementTexts = newText.trim().split(/\s+/).filter(Boolean);
+    const replacementWords = replacementTexts.map((word: string, index: number) => {
+      const existing = oldWords[index];
+      if (existing && replacementTexts.length === oldWords.length) {
+        return { ...existing, word };
+      }
+
+      const sourceStart = Number(oldWords[0]?.start ?? segment.start ?? 0);
+      const sourceEnd = Number(oldWords[oldWords.length - 1]?.end ?? segment.end ?? sourceStart);
+      const duration = Math.max(0, sourceEnd - sourceStart);
+      const sliceStart = sourceStart + (duration * index) / Math.max(1, replacementTexts.length);
+      const sliceEnd = sourceStart + (duration * (index + 1)) / Math.max(1, replacementTexts.length);
+
+      return {
+        word,
+        start: sliceStart,
+        end: sliceEnd,
+        confidence: existing?.confidence,
+      };
+    });
+
+    segment.words.splice(wordStartIndex, oldWords.length, ...replacementWords);
+    segment.text = segment.words
+      .map((w: any) => String(w.word ?? '').trim())
+      .filter(Boolean)
+      .join(' ');
+
+    const hasSegmentWords =
+      Array.isArray(transcriptData.segments) &&
+      transcriptData.segments.some((s: any) => s.words && Array.isArray(s.words) && s.words.length > 0);
+    if (hasSegmentWords && transcriptData.words) {
+      delete transcriptData.words;
+    }
+
+    const fullText = transcriptData.segments
+      .map((s: any) => (s.text || '').trim())
+      .filter(Boolean)
+      .join(' ');
+
+    await db.execute('UPDATE transcripts SET raw_json = ?, text = ?, updated_at = ? WHERE id = ?', [
+      JSON.stringify(transcriptData),
+      fullText,
+      timestamp(),
+      transcript.id,
+    ]);
+
+    return { success: true };
+  } catch (error) {
+    console.error('[Database] Failed to update transcript whisper cell range:', error);
+    return { success: false, error: 'Database update failed' };
   }
 }

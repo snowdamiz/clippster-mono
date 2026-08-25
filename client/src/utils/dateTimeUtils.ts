@@ -163,14 +163,17 @@ export function formatUnixDateTime(timestamp: number | null | undefined): string
   return formatDateTime(new Date(timestamp * 1000));
 }
 
+/** Unix seconds threshold: values below this are treated as seconds; above as milliseconds. */
+export const UNIX_SECONDS_THRESHOLD = 4102444800;
+
 /**
  * Convert various input types to a Date object.
  */
-function toDate(input: string | number | Date): Date {
+export function toDate(input: string | number | Date): Date {
   if (input instanceof Date) return input;
   if (typeof input === 'number') {
     // If it looks like seconds (before year 2100 in ms), convert to ms
-    if (input < 4102444800) return new Date(input * 1000);
+    if (input < UNIX_SECONDS_THRESHOLD) return new Date(input * 1000);
     return new Date(input);
   }
   if (typeof input === 'string') {

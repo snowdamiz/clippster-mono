@@ -1,11 +1,10 @@
 import { ChevronRight, Apple, Monitor, Loader2, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
-import { useDownloadContext } from '../context/DownloadContext'
+import { trackDownloadClick, trackLandingEvent } from '@/services/landingAnalytics'
 
 export function Hero() {
   const { primaryDownload, otherDownloads, isLoading } = useDownloads()
-  const { downloadsEnabled, openBetaCodeModal } = useDownloadContext()
   const secondaryDownload = otherDownloads[0]
 
   return (
@@ -29,14 +28,15 @@ export function Hero() {
       <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
         {/* Announcement badge - cyan themed */}
         <Link
-          to="/pricing"
+          to="/signup"
           className="group inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#1f1f23] bg-[#141416] backdrop-blur-sm hover:border-[rgba(255,255,255,0.1)] transition-all duration-300 mb-8"
+          onClick={() => trackLandingEvent('landing_signup_click', { source: 'hero_beta_badge', button_label: 'Open Beta' })}
         >
           <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/15 text-xs font-medium text-cyan-400">
             <Sparkles className="w-3 h-3" />
-            New
+            Open Beta
           </span>
-          <span className="text-sm text-zinc-400 group-hover:text-zinc-300 transition-colors">Flexible subscriptions + credit packs</span>
+          <span className="text-sm text-zinc-400 group-hover:text-zinc-300 transition-colors">Clippster is open to everyone</span>
           <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-cyan-400 group-hover:translate-x-0.5 transition-all" />
         </Link>
 
@@ -64,24 +64,12 @@ export function Hero() {
               <Loader2 className="w-5 h-5 animate-spin text-cyan-500" />
               Loading...
             </div>
-          ) : !downloadsEnabled ? (
-            <button
-              onClick={openBetaCodeModal}
-              className="group relative px-8 py-4 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 text-white font-semibold text-base hover:from-cyan-400 hover:to-cyan-500 transition-all duration-200 flex items-center gap-3 shadow-xl shadow-cyan-500/20 hover:shadow-cyan-500/30 hover:scale-[1.02]"
-            >
-              <div className="absolute inset-0 rounded-lg bg-cyan-500/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-              <span className="relative flex items-center gap-3">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                </svg>
-                Enter Beta Code
-              </span>
-            </button>
           ) : primaryDownload ? (
             <>
               <a
                 href={primaryDownload.downloadUrl}
                 className="group relative px-8 py-4 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 text-white font-semibold text-base hover:from-cyan-400 hover:to-cyan-500 transition-all duration-200 flex items-center gap-3 shadow-xl shadow-cyan-500/20 hover:shadow-cyan-500/30 hover:scale-[1.02]"
+                onClick={() => trackDownloadClick(primaryDownload, 'hero_primary', `Download for ${primaryDownload.label}`)}
               >
                 {/* Subtle glow behind button */}
                 <div className="absolute inset-0 rounded-lg bg-cyan-500/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
@@ -98,6 +86,7 @@ export function Hero() {
                 <a
                   href={secondaryDownload.downloadUrl}
                   className="group px-6 py-4 text-zinc-400 hover:text-cyan-400 transition-colors font-medium flex items-center gap-2"
+                  onClick={() => trackDownloadClick(secondaryDownload, 'hero_secondary', secondaryDownload.label)}
                 >
                   {secondaryDownload.platform.os === 'mac' ? (
                     <Apple className="w-4 h-4" />

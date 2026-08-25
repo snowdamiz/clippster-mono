@@ -155,6 +155,7 @@ export async function getRawVideoByPath(filePath: string): Promise<RawVideo | nu
 
   // If no exact match, try normalized paths for different formats
   const normalizedInput = filePath.replace(/\\/g, '/').replace(/^file:\/\//, '');
+  const lowerNormalizedInput = normalizedInput.toLowerCase();
 
   // Try finding with different path formats
   const queries = [
@@ -162,11 +163,12 @@ export async function getRawVideoByPath(filePath: string): Promise<RawVideo | nu
     'SELECT * FROM raw_videos WHERE REPLACE(file_path, "\\", "/") = ?',
     'SELECT * FROM raw_videos WHERE REPLACE(REPLACE(file_path, "\\", "/"), "file://", "") = ?',
     'SELECT * FROM raw_videos WHERE REPLACE(file_path, "/", "\\") = ?',
+    'SELECT * FROM raw_videos WHERE LOWER(REPLACE(REPLACE(file_path, "\\", "/"), "file://", "")) = ?',
   ];
 
-  for (const query of queries) {
+  for (const [index, query] of queries.entries()) {
     try {
-      result = await db.select<RawVideo[]>(query, [normalizedInput]);
+      result = await db.select<RawVideo[]>(query, [index === queries.length - 1 ? lowerNormalizedInput : normalizedInput]);
       if (result.length > 0) {
         console.log(`[getRawVideoByPath] Found match using query: ${query}`);
         return result[0];
@@ -180,8 +182,12 @@ export async function getRawVideoByPath(filePath: string): Promise<RawVideo | nu
   const inputBasename = filePath.split(/[\/\\]/).pop();
   if (inputBasename) {
     result = await db.select<RawVideo[]>(
-      'SELECT * FROM raw_videos WHERE original_filename = ? OR file_path LIKE ?',
-      [inputBasename, `%/${inputBasename}`]
+      `SELECT * FROM raw_videos
+       WHERE original_filename = ?
+          OR file_path LIKE ?
+          OR file_path LIKE ?
+          OR LOWER(REPLACE(file_path, "\\", "/")) LIKE ?`,
+      [inputBasename, `%/${inputBasename}`, `%\\${inputBasename}`, `%/${inputBasename.toLowerCase()}`]
     );
     if (result.length > 0) {
       console.log(`[getRawVideoByPath] Found match using basename: ${inputBasename}`);

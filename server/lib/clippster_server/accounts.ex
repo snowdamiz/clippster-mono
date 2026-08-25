@@ -107,7 +107,9 @@ defmodule ClippsterServer.Accounts do
 
       # Set free tier credit grant timestamp so worker grants credits after 30 days
       now = DateTime.utc_now() |> DateTime.truncate(:second)
-      {:ok, user} = user |> User.free_tier_changeset(%{free_tier_last_credit_grant: now}) |> Repo.update()
+
+      {:ok, user} =
+        user |> User.free_tier_changeset(%{free_tier_last_credit_grant: now}) |> Repo.update()
 
       user
     end)
@@ -167,7 +169,8 @@ defmodule ClippsterServer.Accounts do
 
     Repo.transaction(fn ->
       # Download and store avatar in R2 if it's an external URL
-      avatar_url = download_and_store_avatar(Map.get(oauth_info, :avatar_url), provider, provider_id)
+      avatar_url =
+        download_and_store_avatar(Map.get(oauth_info, :avatar_url), provider, provider_id)
 
       user_attrs = %{
         provider: provider,
@@ -188,7 +191,9 @@ defmodule ClippsterServer.Accounts do
 
       # Set free tier credit grant timestamp so worker grants credits after 30 days
       now = DateTime.utc_now() |> DateTime.truncate(:second)
-      {:ok, user} = user |> User.free_tier_changeset(%{free_tier_last_credit_grant: now}) |> Repo.update()
+
+      {:ok, user} =
+        user |> User.free_tier_changeset(%{free_tier_last_credit_grant: now}) |> Repo.update()
 
       user
     end)
@@ -211,9 +216,11 @@ defmodule ClippsterServer.Accounts do
   defp update_oauth_info(user, oauth_info) do
     # Only download new avatar if the external URL has changed
     new_avatar_url = Map.get(oauth_info, :avatar_url)
-    avatar_url = 
+
+    avatar_url =
       if new_avatar_url && new_avatar_url != user.avatar_url && is_external_url?(new_avatar_url) do
-        download_and_store_avatar(new_avatar_url, user.provider, user.provider_id) || user.avatar_url
+        download_and_store_avatar(new_avatar_url, user.provider, user.provider_id) ||
+          user.avatar_url
       else
         user.avatar_url
       end
@@ -232,7 +239,9 @@ defmodule ClippsterServer.Accounts do
   # Links a new OAuth provider to an existing user (e.g., user created with email/password, now logging in with Google)
   defp link_oauth_provider(user, provider, provider_id, oauth_info) do
     # Download and store avatar in R2 if it's an external URL
-    avatar_url = download_and_store_avatar(Map.get(oauth_info, :avatar_url), provider, provider_id) || user.avatar_url
+    avatar_url =
+      download_and_store_avatar(Map.get(oauth_info, :avatar_url), provider, provider_id) ||
+        user.avatar_url
 
     oauth_attrs = %{
       provider: provider,
@@ -250,26 +259,118 @@ defmodule ClippsterServer.Accounts do
 
   @doc """
   Links an OAuth account (e.g., Google) to an existing user.
+
+  Delegates to `switch_google_account/2` so provider_id is updated correctly
+  and the user's existing data remains attached to the same user id.
   """
   def link_oauth_to_user(user_id, oauth_info) do
+    switch_google_account(user_id, oauth_info)
+  end
+
+  @doc """
+  Switches the Gmail/Google identity on an existing user without creating a new user.
+
+  All data keyed by `user.id` (credits, subscriptions, org membership, etc.) is preserved.
+  Never deletes users or owned records.
+
+  ## oauth_info keys
+  - `:provider_id` (required) — Google subject id
+  - `:email` (required for a real switch)
+  - `:name`, `:avatar_url` (optional)
+
+  ## Errors
+  - `:not_found`
+  - `:missing_provider_id`
+  - `:google_account_already_linked` — another Clippster user already owns this Google id
+  - `:email_already_in_use` — another Clippster user already owns this email
+  - changeset errors from uniqueness constraints
+  """
+  def switch_google_account(user_id, oauth_info) when is_map(oauth_info) do
+    provider_id = oauth_info_get(oauth_info, :provider_id) || oauth_info_get(oauth_info, :id)
+
+    cond do
+      is_nil(provider_id) or provider_id == "" ->
+        {:error, :missing_provider_id}
+
+      true ->
+        do_switch_google_account(user_id, provider_id, oauth_info)
+    end
+  end
+
+  defp do_switch_google_account(user_id, provider_id, oauth_info) do
     case get_user(user_id) do
       nil ->
         {:error, :not_found}
 
       user ->
-        # Download and store avatar in R2 if it's an external URL
-        avatar_url = download_and_store_avatar(Map.get(oauth_info, :avatar_url), "google", user_id) || user.avatar_url
+        email = oauth_info_get(oauth_info, :email)
 
-        user_attrs = %{
-          email: Map.get(oauth_info, :email),
-          name: Map.get(oauth_info, :name) || user.name,
-          avatar_url: avatar_url
-        }
+        with :ok <- ensure_google_id_available(user, provider_id),
+             :ok <- ensure_email_available(user, email) do
+          avatar_url =
+            download_and_store_avatar(
+              oauth_info_get(oauth_info, :avatar_url),
+              "google",
+              provider_id
+            ) || user.avatar_url
 
-        user
-        |> User.link_oauth_changeset(user_attrs)
-        |> Repo.update()
+          user_attrs = %{
+            provider: "google",
+            provider_id: to_string(provider_id),
+            email: email || user.email,
+            name: oauth_info_get(oauth_info, :name) || user.name,
+            avatar_url: avatar_url
+          }
+
+          case user |> User.switch_google_changeset(user_attrs) |> Repo.update() do
+            {:ok, updated} ->
+              Analytics.track_event("google_account_switched", updated.id, %{
+                previous_provider_id: user.provider_id,
+                previous_email: user.email,
+                new_provider_id: updated.provider_id,
+                new_email: updated.email
+              })
+
+              {:ok, updated}
+
+            {:error, %Ecto.Changeset{} = changeset} ->
+              cond do
+                Keyword.has_key?(changeset.errors, :email) ->
+                  {:error, :email_already_in_use}
+
+                Keyword.has_key?(changeset.errors, :provider_id) or
+                    Keyword.has_key?(changeset.errors, :provider) ->
+                  {:error, :google_account_already_linked}
+
+                true ->
+                  {:error, changeset}
+              end
+          end
+        end
     end
+  end
+
+  defp ensure_google_id_available(user, provider_id) do
+    case get_user_by_provider("google", to_string(provider_id)) do
+      nil -> :ok
+      %{id: id} when id == user.id -> :ok
+      _other -> {:error, :google_account_already_linked}
+    end
+  end
+
+  defp ensure_email_available(_user, nil), do: :ok
+  defp ensure_email_available(_user, ""), do: :ok
+
+  defp ensure_email_available(user, email) when is_binary(email) do
+    case get_user_by_email(email) do
+      nil -> :ok
+      %{id: id} when id == user.id -> :ok
+      _other -> {:error, :email_already_in_use}
+    end
+  end
+
+  defp oauth_info_get(map, key) when is_atom(key) do
+    Map.get(map, key) || Map.get(map, Atom.to_string(key))
   end
 
   @doc """
@@ -701,63 +802,162 @@ defmodule ClippsterServer.Accounts do
   end
 
   @doc """
-  Changes a user's email address.
-  Requires current password verification.
-  Sends verification email to new address.
+  Requests an email change. Sends OTP + magic link to the new address.
+
+  ## Auth
+
+  - Email users: pass current `password` (binary)
+  - OAuth users converting to email/password: pass `%{new_password: "..."}`
+
+  The user's email (and provider) are only updated after OTP/token verification,
+  so existing data keyed by user id is never lost.
   """
-  def change_email(user_id, new_email, password) do
+  def change_email(user_id, new_email, password) when is_binary(password) do
+    change_email(user_id, new_email, %{password: password})
+  end
+
+  def change_email(user_id, new_email, opts) when is_map(opts) do
     user = get_user(user_id)
+    new_email = new_email |> to_string() |> String.trim() |> String.downcase()
 
     cond do
       is_nil(user) ->
         {:error, :not_found}
 
-      user.provider != "email" ->
-        {:error, :not_email_user}
+      new_email == "" ->
+        {:error, :invalid_email}
+
+      true ->
+        with {:ok, pending_password_hash} <- authorize_email_change(user, opts),
+             :ok <- ensure_email_available_for_change(user, new_email) do
+          do_change_email(user, new_email, pending_password_hash)
+        end
+    end
+  end
+
+  defp authorize_email_change(%User{provider: "email"} = user, opts) do
+    password = Map.get(opts, :password) || Map.get(opts, "password")
+
+    cond do
+      not is_binary(password) or password == "" ->
+        {:error, :invalid_password}
 
       not User.valid_password?(user, password) ->
         {:error, :invalid_password}
 
       true ->
-        # Check if new email is already in use
-        case get_user_by_email(new_email) do
-          nil ->
-            do_change_email(user, new_email)
+        {:ok, nil}
+    end
+  end
 
-          existing_user when existing_user.id != user.id ->
-            {:error, :email_already_in_use}
+  defp authorize_email_change(%User{provider: provider} = _user, opts)
+       when provider in ["google"] do
+    new_password = Map.get(opts, :new_password) || Map.get(opts, "new_password")
 
-          _ ->
-            # Same user, same email - no change needed
-            {:ok, user}
+    cond do
+      not is_binary(new_password) or new_password == "" ->
+        {:error, :new_password_required}
+
+      true ->
+        changeset = User.validate_new_password_changeset(new_password)
+
+        if changeset.valid? do
+          {:ok, Pbkdf2.hash_pwd_salt(new_password)}
+        else
+          {:error, changeset}
         end
     end
   end
 
-  defp do_change_email(user, new_email) do
-    # Generate verification token
+  defp authorize_email_change(_user, _opts), do: {:error, :not_email_user}
+
+  defp ensure_email_available_for_change(user, new_email) do
+    case get_user_by_email(new_email) do
+      nil -> :ok
+      %{id: id} when id == user.id -> :ok
+      _ -> {:error, :email_already_in_use}
+    end
+  end
+
+  defp do_change_email(user, new_email, pending_password_hash) do
+    otp_code = generate_otp()
     verification_token = generate_token()
-    hashed_token = hash_token(verification_token)
 
     {:ok, user} =
       user
       |> User.email_change_request_changeset(%{
-        email_change_token: hashed_token,
+        email_change_token: hash_token(verification_token),
+        email_change_otp: hash_token(otp_code),
         email_change_new_email: new_email,
-        email_change_sent_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        email_change_sent_at: DateTime.utc_now() |> DateTime.truncate(:second),
+        email_change_attempts: 0,
+        email_change_password_hash: pending_password_hash
       })
       |> Repo.update()
 
-    # Send verification email to new address
     new_email
-    |> Emails.email_change_verification_email(verification_token)
+    |> Emails.email_change_verification_email(otp_code, verification_token)
     |> Mailer.deliver()
 
     {:ok, user}
   end
 
   @doc """
-  Verifies email change using the verification token.
+  Verifies a pending email change using the 6-digit OTP sent to the new address.
+  """
+  def verify_email_change_otp(user_id, otp_code) when is_binary(otp_code) do
+    case get_user(user_id) do
+      nil ->
+        {:error, :not_found}
+
+      user ->
+        cond do
+          is_nil(user.email_change_new_email) or is_nil(user.email_change_otp) ->
+            {:error, :no_change_pending}
+
+          (user.email_change_attempts || 0) >= @max_otp_attempts ->
+            {:error, :too_many_attempts}
+
+          is_nil(user.email_change_sent_at) ->
+            {:error, :no_change_pending}
+
+          otp_expired?(user.email_change_sent_at) ->
+            {:error, :otp_expired}
+
+          verify_token(otp_code, user.email_change_otp) ->
+            apply_email_change(user)
+
+          true ->
+            {:ok, _} =
+              user
+              |> User.increment_email_change_attempts_changeset()
+              |> Repo.update()
+
+            {:error, :invalid_otp}
+        end
+    end
+  end
+
+  def verify_email_change_otp(_, _), do: {:error, :invalid_otp}
+
+  @doc """
+  Resends OTP + magic link for a pending email change.
+  """
+  def resend_email_change_verification(user_id) do
+    case get_user(user_id) do
+      nil ->
+        {:error, :not_found}
+
+      %{email_change_new_email: nil} ->
+        {:error, :no_change_pending}
+
+      user ->
+        do_change_email(user, user.email_change_new_email, user.email_change_password_hash)
+    end
+  end
+
+  @doc """
+  Verifies email change using the magic-link token (fallback for OTP).
   """
   def verify_email_change(token) do
     hashed_token = hash_token(token)
@@ -778,29 +978,65 @@ defmodule ClippsterServer.Accounts do
             {:error, :no_change_pending}
 
           true ->
-            # Check if new email is now taken by someone else
-            case get_user_by_email(user.email_change_new_email) do
-              nil ->
-                user
-                |> User.email_change_confirm_changeset(%{
-                  email: user.email_change_new_email
-                })
-                |> Repo.update()
-
-              existing_user when existing_user.id != user.id ->
-                {:error, :email_already_in_use}
-
-              _ ->
-                # Same user, proceed
-                user
-                |> User.email_change_confirm_changeset(%{
-                  email: user.email_change_new_email
-                })
-                |> Repo.update()
-            end
+            apply_email_change(user)
         end
     end
   end
+
+  defp apply_email_change(user) do
+    new_email = user.email_change_new_email
+
+    case ensure_email_available_for_change(user, new_email) do
+      :ok ->
+        confirm_attrs =
+          %{
+            email: new_email,
+            email_verified: true
+          }
+          |> maybe_put_oauth_conversion(user)
+
+        case user |> User.email_change_confirm_changeset(confirm_attrs) |> Repo.update() do
+          {:ok, updated} ->
+            Analytics.track_event("email_changed", updated.id, %{
+              previous_email: user.email,
+              new_email: updated.email,
+              previous_provider: user.provider,
+              new_provider: updated.provider
+            })
+
+            {:ok, updated}
+
+          {:error, changeset} ->
+            if Keyword.has_key?(changeset.errors, :email) do
+              {:error, :email_already_in_use}
+            else
+              {:error, changeset}
+            end
+        end
+
+      error ->
+        error
+    end
+  end
+
+  defp maybe_put_oauth_conversion(attrs, %User{provider: "google"} = user) do
+    attrs
+    |> Map.put(:provider, "email")
+    |> Map.put(:provider_id, user.email_change_new_email)
+    |> then(fn attrs ->
+      if is_binary(user.email_change_password_hash) do
+        Map.put(attrs, :password_hash, user.email_change_password_hash)
+      else
+        attrs
+      end
+    end)
+  end
+
+  defp maybe_put_oauth_conversion(attrs, %User{provider: "email"}) do
+    Map.put(attrs, :provider, "email")
+  end
+
+  defp maybe_put_oauth_conversion(attrs, _user), do: attrs
 
   @doc """
   Changes a user's password.

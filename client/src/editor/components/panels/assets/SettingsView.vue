@@ -5,7 +5,16 @@ import { useImageMode } from "../../../composables/useImageMode";
 import { Button } from "@/components/ui/button";
 import { ChevronDown } from "lucide-vue-next";
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		playback: false,
+		timeline: false,
+		scenes: false,
+		media: false,
+		selection: false,
+	},
+});
 const { isImageMode } = useImageMode();
 
 const activeProject = computed(() => {

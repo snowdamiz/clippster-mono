@@ -19,9 +19,21 @@ export interface ChunkedDetectionOptions {
   overlapSeconds?: number;
   forceReprocess?: boolean;
   organizationId?: number | null; // For org credit deduction
-  multimodal?: boolean; // Enable multimodal detection (3 models + decider, 2x credits)
   startTime?: number; // Start time in seconds for detection range
   endTime?: number; // End time in seconds for detection range
+  subtitleSettings?: { enabled: boolean; presetId: string } | null;
+  /** Enhanced VOD detection: transcript + video + audio (2× detection credits). */
+  enhanced?: boolean;
+  /** Optional streamer / project context for AI detection (platform, display name, reach tier). */
+  streamerMetadata?: Record<string, unknown> | null;
+}
+
+/** Matches server @enhanced_vod_chunk_duration_seconds (15 min). */
+const ENHANCED_CHUNK_DURATION_SECONDS = 900;
+
+interface VideoChunkRange {
+  startTime: number;
+  endTime: number;
 }
 
 export interface DetectionProgress {
@@ -29,6 +41,7 @@ export interface DetectionProgress {
     | 'initializing'
     | 'checking_cache'
     | 'extracting_chunks'
+    | 'extracting_video'
     | 'transcribing_chunks'
     | 'detecting_clips'
     | 'completed'
@@ -63,8 +76,52 @@ export function useChunkedClipDetection() {
   // Track organization ID for credit deduction
   let currentOrganizationId: number | null = null;
 
-  // Track multimodal mode for enhanced detection
-  let currentMultimodal: boolean = false;
+  // Track subtitle settings for clip persistence
+  let currentSubtitleSettings: { enabled: boolean; presetId: string } | null = null;
+
+  // Optional creator reach context for AI detection.
+  let currentStreamerMetadata: Record<string, unknown> | null = null;
+
+  // Enhanced VOD detection (transcript + video + audio)
+  let currentEnhanced = false;
+
+  function getApiErrorResponse(error: unknown): { status?: number; data?: any } | null {
+    const response = (error as { response?: { status?: number; data?: any } } | null)?.response;
+    return response ?? null;
+  }
+
+  function formatCreditAmount(value: unknown): string {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return String(value ?? 0);
+    return numeric.toFixed(3).replace(/\.?0+$/, '');
+  }
+
+  function getErrorMessage(error: unknown): string {
+    const response = getApiErrorResponse(error);
+    const data = response?.data;
+
+    if (response?.status === 402) {
+      const details = typeof data?.details === 'string' ? data.details : '';
+      const required = data?.credits_required;
+      const remaining = data?.credits_remaining;
+      const refunded = Number(data?.credits_refunded ?? 0);
+
+      if (details) return `Insufficient credits. ${details}`;
+
+      if (required !== undefined && remaining !== undefined) {
+        const base = `Insufficient credits. You have ${formatCreditAmount(remaining)} credits, but ${formatCreditAmount(required)} are required.`;
+        return refunded > 0
+          ? `${base} ${formatCreditAmount(refunded)} transcription credits were refunded.`
+          : base;
+      }
+
+      return 'Insufficient credits for this operation.';
+    }
+
+    if (typeof data?.details === 'string') return data.details;
+    if (typeof data?.error === 'string') return data.error;
+    return error instanceof Error ? error.message : String(error);
+  }
 
   // Cancel the current detection process and request server-side refund
   async function cancelDetection() {
@@ -154,11 +211,9 @@ export function useChunkedClipDetection() {
       // Store organization ID for credit deduction
       currentOrganizationId = options.organizationId ?? null;
 
-      // Store multimodal mode
       console.log('[ChunkedClipDetection] Options received:', JSON.stringify(options));
-      console.log('[ChunkedClipDetection] options.multimodal value:', options.multimodal);
-      currentMultimodal = options.multimodal ?? false;
-      console.log('[ChunkedClipDetection] Multimodal mode set to:', currentMultimodal);
+      currentSubtitleSettings = options.subtitleSettings ?? null;
+      currentStreamerMetadata = options.streamerMetadata ?? null;
 
       isProcessing.value = true;
       progress.value = {
@@ -167,7 +222,13 @@ export function useChunkedClipDetection() {
         message: 'Initializing clip detection...',
       };
 
-      const { chunkDurationMinutes = 25, overlapSeconds = 30, forceReprocess = false, startTime, endTime } = options;
+      const {
+        chunkDurationMinutes = 15,
+        overlapSeconds = 30,
+        forceReprocess = false,
+        startTime = 0,
+        endTime = 0,
+      } = options;
 
       // Get project video
       const rawVideos = await getRawVideosByProjectId(projectId);
@@ -187,7 +248,7 @@ export function useChunkedClipDetection() {
       const existingTranscript = await getTranscriptByRawVideoId(projectVideo.id);
 
       if (existingTranscript && !forceReprocess) {
-        return await processWithTraditionalTranscript(projectId, prompt, existingTranscript);
+        return await processWithTraditionalTranscript(projectId, prompt, existingTranscript, projectVideo);
       }
 
       // Initialize chunked transcript cache
@@ -209,7 +270,14 @@ export function useChunkedClipDetection() {
           cachedMetadata.chunks &&
           cachedMetadata.chunks.length > 0
         ) {
-          return await processWithCachedChunks(projectId, prompt, cachedMetadata, projectVideo, startTime, endTime);
+          return await processWithCachedChunks(
+            projectId,
+            prompt,
+            cachedMetadata,
+            projectVideo,
+            startTime,
+            endTime
+          );
         } else if (
           cachedMetadata &&
           cachedMetadata.hasCachedTranscript &&
@@ -218,7 +286,14 @@ export function useChunkedClipDetection() {
           // Fall back to traditional processing if chunks are empty
           const existingTranscript = await getTranscriptByRawVideoId(projectVideo.id);
           if (existingTranscript) {
-            return await processWithTraditionalTranscript(projectId, prompt, existingTranscript);
+            return await processWithTraditionalTranscript(
+              projectId,
+              prompt,
+              existingTranscript,
+              projectVideo,
+              startTime,
+              endTime
+            );
           }
           // If no traditional transcript either, continue with fresh audio processing
         }
@@ -273,9 +348,9 @@ export function useChunkedClipDetection() {
         message: 'Processing audio for clip detection...',
       };
 
-      return await processWithFreshAudio(projectId, prompt, projectVideo);
+      return await processWithFreshAudio(projectId, prompt, projectVideo, startTime, endTime);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = getErrorMessage(error);
 
       // Check if this was a cancellation
       if (
@@ -311,6 +386,102 @@ export function useChunkedClipDetection() {
       isProcessing.value = false;
       abortController = null;
       currentProjectId = null;
+      currentStreamerMetadata = null;
+      currentEnhanced = false;
+    }
+  }
+
+  function filterChunksByTimeRange<T extends { start_time: number; end_time: number }>(
+    chunks: T[],
+    startTime: number,
+    endTime: number
+  ): T[] {
+    const sorted = [...chunks].sort((a, b) => a.start_time - b.start_time);
+    if (startTime <= 0 && endTime <= 0) {
+      return sorted;
+    }
+    return sorted.filter((chunk) => {
+      return chunk.end_time > startTime && (endTime <= 0 || chunk.start_time < endTime);
+    });
+  }
+
+  function computeFixedVideoChunkRanges(
+    totalDuration: number,
+    rangeStart: number,
+    rangeEnd: number
+  ): VideoChunkRange[] {
+    const effectiveStart = Math.max(0, rangeStart);
+    const effectiveEnd = rangeEnd > 0 ? Math.min(rangeEnd, totalDuration) : totalDuration;
+    if (effectiveEnd <= effectiveStart) {
+      return [];
+    }
+
+    const ranges: VideoChunkRange[] = [];
+    let cursor = effectiveStart;
+    while (cursor < effectiveEnd) {
+      const chunkEnd = Math.min(cursor + ENHANCED_CHUNK_DURATION_SECONDS, effectiveEnd);
+      ranges.push({ startTime: cursor, endTime: chunkEnd });
+      cursor = chunkEnd;
+    }
+    return ranges;
+  }
+
+  async function appendEnhancedVideoChunks(
+    formData: FormData,
+    videoPath: string,
+    ranges: VideoChunkRange[]
+  ): Promise<void> {
+    if (ranges.length === 0) {
+      throw new Error('Enhanced detection requires at least one video chunk');
+    }
+
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { readFile, remove } = await import('@tauri-apps/plugin-fs');
+
+    for (let i = 0; i < ranges.length; i++) {
+      checkCancelled();
+      const { startTime, endTime } = ranges[i];
+
+      progress.value = {
+        stage: 'extracting_video',
+        progress: 50 + (i / ranges.length) * 10,
+        message: `Extracting video chunk ${i + 1}/${ranges.length} for enhanced analysis...`,
+      };
+
+      const tempPath = await invoke<string>('extract_video_chunk_for_analysis', {
+        videoPath,
+        startTimeSecs: startTime,
+        endTimeSecs: endTime,
+      });
+
+      try {
+        const bytes = await readFile(tempPath);
+        const blob = new Blob([bytes], { type: 'video/mp4' });
+        const file = new File([blob], `video_chunk_${i}.mp4`, { type: 'video/mp4' });
+        formData.append(`video_chunk_${i}`, file);
+      } finally {
+        await remove(tempPath).catch(() => {});
+      }
+    }
+  }
+
+  async function appendDetectionFormFields(
+    formData: FormData,
+    projectVideo: RawVideo,
+    startTime: number,
+    endTime: number,
+    videoChunkRanges?: VideoChunkRange[]
+  ): Promise<void> {
+    if (currentEnhanced) {
+      formData.append('enhanced', 'true');
+      const ranges =
+        videoChunkRanges ??
+        computeFixedVideoChunkRanges(
+          projectVideo.duration ?? 0,
+          startTime,
+          endTime > 0 ? endTime : (projectVideo.duration ?? 0)
+        );
+      await appendEnhancedVideoChunks(formData, projectVideo.file_path, ranges);
     }
   }
 
@@ -368,6 +539,10 @@ export function useChunkedClipDetection() {
         if (currentOrganizationId) {
           formData.append('organization_id', currentOrganizationId.toString());
         }
+        if (currentEnhanced) {
+          formData.append('enhanced', 'true');
+        }
+        appendStreamerMetadata(formData);
 
         const maxRetries = 3;
         let lastError: Error | null = null;
@@ -457,10 +632,16 @@ export function useChunkedClipDetection() {
         throw new Error('Failed to retrieve cached metadata after transcription');
       }
 
-      return await processWithCachedChunks(projectId, prompt, cachedMetadata, projectVideo, startTime, endTime);
+      return await processWithCachedChunks(
+        projectId,
+        prompt,
+        cachedMetadata,
+        projectVideo,
+        startTime,
+        endTime
+      );
     } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : String(e);
-      throw new Error(errorMessage);
+      throw e;
     }
   }
 
@@ -487,10 +668,7 @@ export function useChunkedClipDetection() {
       if (currentOrganizationId) {
         formData.append('organization_id', currentOrganizationId.toString());
       }
-      if (currentMultimodal) {
-        formData.append('multimodal', 'true');
-        console.log('[ChunkedClipDetection] Appending multimodal=true to formData');
-      }
+      appendStreamerMetadata(formData);
 
       // Send chunk metadata instead of full transcript
       formData.append('chunks', JSON.stringify(cachedMetadata.chunks));
@@ -503,10 +681,27 @@ export function useChunkedClipDetection() {
         formData.append('end_time', endTime.toString());
       }
 
+      if (currentEnhanced) {
+        const filteredChunks = filterChunksByTimeRange(cachedMetadata.chunks, startTime, endTime);
+        const videoRanges = filteredChunks.map((chunk) => ({
+          startTime: chunk.start_time,
+          endTime: chunk.end_time,
+        }));
+        await appendDetectionFormFields(
+          formData,
+          projectVideo,
+          startTime,
+          endTime,
+          videoRanges
+        );
+      }
+
       progress.value = {
         stage: 'detecting_clips',
         progress: 60,
-        message: 'Analyzing cached transcript for clips...',
+        message: currentEnhanced
+          ? 'Running enhanced detection (video + transcript)...'
+          : 'Analyzing cached transcript for clips...',
       };
 
       // Check for cancellation before API call
@@ -521,18 +716,18 @@ export function useChunkedClipDetection() {
             'Content-Type': undefined,
           },
           signal: abortController?.signal,
-          timeout: 1200000, // 20 minutes - chunked AI detection is very long-running
+          timeout: currentEnhanced ? 3600000 : 1200000, // Enhanced: up to 60 min
         });
       } catch (err: any) {
         if (err?.response?.status === 402) {
-          const data = err.response.data;
-          const refunded = data?.credits_refunded ?? 0;
-          const remaining = data?.credits_remaining ?? 0;
-          const needed = data?.credits_required ?? 0;
-          const msg = refunded > 0
-            ? `Insufficient credits for detection. ${refunded} transcription credit${refunded !== 1 ? 's' : ''} have been refunded. You now have ${Math.round(remaining)} credits but ${Math.ceil(needed)} are required.`
-            : `Insufficient credits. You have ${Math.round(remaining)} credits but ${Math.ceil(needed)} are required for detection.`;
+          const msg = getErrorMessage(err);
           showError('Insufficient Credits', msg, undefined, 'clips');
+          progress.value = {
+            stage: 'error',
+            progress: 0,
+            message: 'Detection failed',
+            error: msg,
+          };
           return { success: false, error: msg };
         }
         throw err;
@@ -551,27 +746,33 @@ export function useChunkedClipDetection() {
       };
 
       // Store results in database
-      const sessionId = await persistClipDetectionResults(projectId, prompt, result, {
-        processingTimeMs: 0, // Cached processing is fast
-        detectionModel: 'claude-3.5-sonnet-chunked',
-        serverResponseId: result.jobId || null,
-      });
+      const sessionId = await persistClipDetectionResults(
+        projectId,
+        prompt,
+        result,
+        {
+          processingTimeMs: 0, // Cached processing is fast
+          detectionModel: 'claude-3.5-sonnet-chunked',
+          serverResponseId: result.jobId || null,
+          videoFilePath: projectVideo.file_path,
+          rawVideoId: projectVideo.id,
+        },
+        currentSubtitleSettings
+      );
 
       // IMPORTANT: When using cached chunks, the full transcript isn't part of the response.
       // We need to stitch the chunked transcripts together and save it as the project transcript
       // so the TranscriptPanel can display it.
 
-      const { createTranscript, createTranscriptSegment, getTranscriptByProjectId } = await import(
-        '@/services/database'
-      );
+      const { createTranscript, createTranscriptSegment, getTranscriptByProjectId } =
+        await import('@/services/database');
       const existingTranscript = await getTranscriptByProjectId(projectId);
 
       if (!existingTranscript) {
         try {
           // Fetch all chunks from the database
-          const { getTranscriptChunks, getChunkedTranscriptByRawVideoId } = await import(
-            '@/services/database'
-          );
+          const { getTranscriptChunks, getChunkedTranscriptByRawVideoId } =
+            await import('@/services/database');
           const rawVideos = await getRawVideosByProjectId(projectId);
 
           if (rawVideos.length > 0) {
@@ -671,6 +872,11 @@ export function useChunkedClipDetection() {
 
       return { success: true, sessionId };
     } catch (error) {
+      console.error('[ChunkedClipDetection] processWithCachedChunks FAILED:', error);
+      console.error(
+        '[ChunkedClipDetection] Error stack:',
+        error instanceof Error ? error.stack : 'no stack'
+      );
       const errorMessage = error instanceof Error ? error.message : String(error);
       return { success: false, error: errorMessage };
     }
@@ -679,7 +885,10 @@ export function useChunkedClipDetection() {
   async function processWithTraditionalTranscript(
     projectId: string,
     prompt: string,
-    existingTranscript: any
+    existingTranscript: any,
+    projectVideo: RawVideo,
+    startTime: number = 0,
+    endTime: number = 0
   ): Promise<{ success: boolean; sessionId?: string; error?: string; cancelled?: boolean }> {
     try {
       progress.value = {
@@ -696,9 +905,7 @@ export function useChunkedClipDetection() {
       if (currentOrganizationId) {
         formData.append('organization_id', currentOrganizationId.toString());
       }
-      if (currentMultimodal) {
-        formData.append('multimodal', 'true');
-      }
+      appendStreamerMetadata(formData);
 
       // Send cached transcript
       formData.append(
@@ -712,10 +919,29 @@ export function useChunkedClipDetection() {
         })
       );
 
+      if (startTime > 0 || endTime > 0) {
+        formData.append('start_time', startTime.toString());
+        if (endTime > 0) {
+          formData.append('end_time', endTime.toString());
+        }
+      }
+
+      const transcriptDuration =
+        existingTranscript.duration ?? projectVideo.duration ?? 0;
+      const effectiveEnd = endTime > 0 ? endTime : transcriptDuration;
+      await appendDetectionFormFields(
+        formData,
+        { ...projectVideo, duration: transcriptDuration },
+        startTime,
+        effectiveEnd
+      );
+
       progress.value = {
         stage: 'detecting_clips',
         progress: 80,
-        message: 'Analyzing transcript for clips...',
+        message: currentEnhanced
+          ? 'Running enhanced detection (video + transcript)...'
+          : 'Analyzing transcript for clips...',
       };
 
       // Check for cancellation before API call
@@ -726,7 +952,7 @@ export function useChunkedClipDetection() {
           'Content-Type': undefined,
         },
         signal: abortController?.signal,
-        timeout: 900000, // 15 minutes for AI detection
+        timeout: currentEnhanced ? 3600000 : 900000,
       });
 
       const result = response.data;
@@ -742,11 +968,19 @@ export function useChunkedClipDetection() {
       };
 
       // Store results in database
-      const sessionId = await persistClipDetectionResults(projectId, prompt, result, {
-        processingTimeMs: 0,
-        detectionModel: 'claude-3.5-sonnet-traditional',
-        serverResponseId: result.jobId || null,
-      });
+      const sessionId = await persistClipDetectionResults(
+        projectId,
+        prompt,
+        result,
+        {
+          processingTimeMs: 0,
+          detectionModel: 'claude-3.5-sonnet-traditional',
+          serverResponseId: result.jobId || null,
+          videoFilePath: projectVideo.file_path,
+          rawVideoId: projectVideo.id,
+        },
+        currentSubtitleSettings
+      );
 
       showSuccess('Clips detected', `Found ${result.clips?.length || 0} clips`, undefined, 'clips');
 
@@ -768,7 +1002,9 @@ export function useChunkedClipDetection() {
   async function processWithFreshAudio(
     projectId: string,
     prompt: string,
-    projectVideo: RawVideo
+    projectVideo: RawVideo,
+    startTime: number = 0,
+    endTime: number = 0
   ): Promise<{ success: boolean; sessionId?: string; error?: string; cancelled?: boolean }> {
     try {
       // Trigger focal point detection in background (non-blocking)
@@ -801,12 +1037,6 @@ export function useChunkedClipDetection() {
       const blob = new Blob([bytes], { type: 'audio/ogg' });
       const audioFile = new File([blob], filename, { type: 'audio/ogg' });
 
-      progress.value = {
-        stage: 'detecting_clips',
-        progress: 70,
-        message: 'Detecting clips...',
-      };
-
       // Check for cancellation before API call
       checkCancelled();
 
@@ -822,16 +1052,32 @@ export function useChunkedClipDetection() {
       if (currentOrganizationId) {
         formData.append('organization_id', currentOrganizationId.toString());
       }
-      if (currentMultimodal) {
-        formData.append('multimodal', 'true');
+      appendStreamerMetadata(formData);
+
+      if (startTime > 0 || endTime > 0) {
+        formData.append('start_time', startTime.toString());
+        if (endTime > 0) {
+          formData.append('end_time', endTime.toString());
+        }
       }
+
+      const effectiveEnd = endTime > 0 ? endTime : (projectVideo.duration ?? 0);
+      await appendDetectionFormFields(formData, projectVideo, startTime, effectiveEnd);
+
+      progress.value = {
+        stage: 'detecting_clips',
+        progress: 75,
+        message: currentEnhanced
+          ? 'Running enhanced detection (video + transcript)...'
+          : 'Detecting clips...',
+      };
 
       const response = await api.post('/clips/detect', formData, {
         headers: {
           'Content-Type': undefined,
         },
         signal: abortController?.signal,
-        timeout: 900000, // 15 minutes for AI detection
+        timeout: currentEnhanced ? 3600000 : 900000,
       });
 
       const result = response.data;
@@ -847,11 +1093,20 @@ export function useChunkedClipDetection() {
       };
 
       // Store results in database
-      const sessionId = await persistClipDetectionResults(projectId, prompt, result, {
-        processingTimeMs: 0,
-        detectionModel: 'claude-3.5-sonnet-fresh',
-        serverResponseId: result.jobId || null,
-      });
+      const sessionId = await persistClipDetectionResults(
+        projectId,
+        prompt,
+        result,
+        {
+          processingTimeMs: 0,
+          detectionModel: currentEnhanced ? 'gemini-enhanced-vod' : 'claude-3.5-sonnet-fresh',
+          enhanced: currentEnhanced,
+          serverResponseId: result.jobId || null,
+          videoFilePath: projectVideo.file_path,
+          rawVideoId: projectVideo.id,
+        },
+        currentSubtitleSettings
+      );
 
       showSuccess('Clips detected', `Found ${result.clips?.length || 0} clips`, undefined, 'clips');
 
@@ -915,14 +1170,17 @@ export function useChunkedClipDetection() {
       if (currentOrganizationId) {
         formData.append('organization_id', currentOrganizationId.toString());
       }
-      if (currentMultimodal) {
-        formData.append('multimodal', 'true');
-      }
+      appendStreamerMetadata(formData);
+
+      const effectiveEnd = projectVideo.duration ?? 0;
+      await appendDetectionFormFields(formData, projectVideo, 0, effectiveEnd);
 
       progress.value = {
         stage: 'detecting_clips',
         progress: 70,
-        message: 'Analyzing transcript for clips...',
+        message: currentEnhanced
+          ? 'Running enhanced detection (video + transcript)...'
+          : 'Analyzing transcript for clips...',
       };
 
       // Check for cancellation before API call
@@ -933,7 +1191,7 @@ export function useChunkedClipDetection() {
           'Content-Type': undefined,
         },
         signal: abortController?.signal,
-        timeout: 900000, // 15 minutes for AI detection
+        timeout: currentEnhanced ? 3600000 : 900000,
       });
 
       const result = response.data;
@@ -949,13 +1207,20 @@ export function useChunkedClipDetection() {
       };
 
       // Store results in database
-      const sessionId = await persistClipDetectionResults(projectId, prompt, result, {
-        processingTimeMs: 0,
-        detectionModel: currentMultimodal
-          ? 'multimodal-ensemble-fallback'
-          : 'claude-3.5-sonnet-fallback',
-        serverResponseId: result.jobId || null,
-      });
+      const sessionId = await persistClipDetectionResults(
+        projectId,
+        prompt,
+        result,
+        {
+          processingTimeMs: 0,
+          detectionModel: currentEnhanced ? 'gemini-enhanced-vod' : 'claude-3.5-sonnet-fallback',
+          enhanced: currentEnhanced,
+          serverResponseId: result.jobId || null,
+          videoFilePath: projectVideo.file_path,
+          rawVideoId: projectVideo.id,
+        },
+        currentSubtitleSettings
+      );
 
       showSuccess('Clips detected', `Found ${result.clips?.length || 0} clips`, undefined, 'clips');
 
@@ -980,7 +1245,15 @@ export function useChunkedClipDetection() {
     abortController = null;
     currentProjectId = null;
     currentOrganizationId = null;
+    currentStreamerMetadata = null;
+    currentEnhanced = false;
     progress.value = { stage: 'initializing', progress: 0, message: '' };
+  }
+
+  function appendStreamerMetadata(formData: FormData) {
+    if (currentStreamerMetadata) {
+      formData.append('streamer_metadata', JSON.stringify(currentStreamerMetadata));
+    }
   }
 
   return {

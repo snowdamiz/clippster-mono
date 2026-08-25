@@ -1,5 +1,46 @@
 use serde::{Deserialize, Serialize};
 
+/// Resolve a playback URL or DB path to a local filesystem path for FFmpeg/ffprobe.
+pub fn resolve_local_media_path(video_url: &str) -> Result<String, String> {
+    if video_url.starts_with("http://localhost:48276/video/") {
+        let encoded_path = video_url
+            .strip_prefix("http://localhost:48276/video/")
+            .ok_or("Invalid video URL format")?;
+
+        use base64::{engine::general_purpose, Engine as _};
+        let decoded_bytes = general_purpose::URL_SAFE_NO_PAD
+            .decode(encoded_path)
+            .or_else(|_| general_purpose::URL_SAFE.decode(encoded_path))
+            .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(encoded_path))
+            .or_else(|_| general_purpose::STANDARD.decode(encoded_path))
+            .map_err(|e| format!("Failed to decode base64 video path: {}", e))?;
+
+        String::from_utf8(decoded_bytes)
+            .map_err(|e| format!("Failed to convert decoded path to string: {}", e))
+    } else if video_url.starts_with("file://") {
+        let mut rest = video_url
+            .strip_prefix("file://")
+            .ok_or("Invalid file URL")?
+            .to_string();
+        if let Some(stripped) = rest.strip_prefix("localhost") {
+            rest = stripped.to_string();
+        }
+        if rest.starts_with('/') {
+            let bytes = rest.as_bytes();
+            if bytes.len() >= 3 && bytes[2] == b':' {
+                rest = rest[1..].to_string();
+            }
+        }
+        urlencoding::decode(&rest)
+            .map(|cow| cow.into_owned())
+            .map_err(|e| format!("Failed to decode file URL: {}", e))
+    } else if video_url.starts_with("http://") {
+        Err("Cannot get file metadata for remote URLs".to_string())
+    } else {
+        Ok(video_url.to_string())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct VideoInfo {
     pub width: u32,
@@ -142,63 +183,162 @@ pub fn parse_video_info_from_ffmpeg_output(output: &str) -> Result<VideoInfo, St
 pub fn parse_duration_from_ffmpeg_output(stderr: &str) -> Result<f64, String> {
     use regex::Regex;
 
-    // Look for duration line in FFmpeg output: "Duration: 00:12:34.56"
-    let re = Regex::new(r"Duration: (\d{2}):(\d{2}):([\d.]+)")
+    // Prefer the line-scoped parser (handles "Duration: 00:00:20.04" and single-digit hours).
+    if let Some(duration) = extract_duration_from_ffmpeg_output(stderr) {
+        if duration > 0.0 {
+            return Ok(duration);
+        }
+    }
+
+    // Fallback: scan full stderr (some FFmpeg builds split metadata across lines).
+    let re = Regex::new(r"Duration:\s*(\d+):(\d{1,2}):([\d.]+)")
         .map_err(|e| format!("Failed to create regex: {}", e))?;
 
-    if let Some(captures) = re.captures(stderr) {
-        let hours: f64 = captures
-            .get(1)
-            .unwrap()
-            .as_str()
-            .parse()
-            .map_err(|e| format!("Failed to parse hours: {}", e))?;
-        let minutes: f64 = captures
-            .get(2)
-            .unwrap()
-            .as_str()
-            .parse()
-            .map_err(|e| format!("Failed to parse minutes: {}", e))?;
-        let seconds: f64 = captures
-            .get(3)
-            .unwrap()
-            .as_str()
-            .parse()
-            .map_err(|e| format!("Failed to parse seconds: {}", e))?;
+    for line in stderr.lines() {
+        if !line.contains("Duration:") {
+            continue;
+        }
+        if line.contains("Duration: N/A") {
+            continue;
+        }
+        if let Some(captures) = re.captures(line) {
+            let hours: f64 = captures
+                .get(1)
+                .unwrap()
+                .as_str()
+                .parse()
+                .map_err(|e| format!("Failed to parse hours: {}", e))?;
+            let minutes: f64 = captures
+                .get(2)
+                .unwrap()
+                .as_str()
+                .parse()
+                .map_err(|e| format!("Failed to parse minutes: {}", e))?;
+            let seconds: f64 = captures
+                .get(3)
+                .unwrap()
+                .as_str()
+                .parse()
+                .map_err(|e| format!("Failed to parse seconds: {}", e))?;
 
-        let total_seconds = hours * 3600.0 + minutes * 60.0 + seconds;
-        println!(
-            "[Rust] Parsed duration: {}h {}m {:.2}s = {:.2} seconds",
-            hours, minutes, seconds, total_seconds
-        );
+            let total_seconds = hours * 3600.0 + minutes * 60.0 + seconds;
+            if total_seconds > 0.0 {
+                println!(
+                    "[Rust] Parsed duration: {}h {}m {:.2}s = {:.2} seconds",
+                    hours, minutes, seconds, total_seconds
+                );
+                return Ok(total_seconds);
+            }
+        }
+    }
 
-        Ok(total_seconds)
-    } else {
-        Err("Duration not found in FFmpeg output".to_string())
+    Err("Duration not found in FFmpeg output".to_string())
+}
+
+/// Probe media duration via FFmpeg stderr, falling back to ffprobe format duration.
+pub async fn probe_media_duration(
+    app: &tauri::AppHandle,
+    local_path: &str,
+) -> Result<f64, String> {
+    use std::path::Path;
+    use tauri_plugin_shell::ShellExt;
+
+    let path = Path::new(local_path);
+    if !path.exists() {
+        return Err(format!("Video file does not exist: {}", local_path));
+    }
+
+    let shell = app.shell();
+
+    println!("[Rust] Probing duration for: {}", local_path);
+
+    let ffmpeg_output = shell
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(["-nostdin", "-i", local_path])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg for duration: {}", e))?;
+
+    let stderr = String::from_utf8_lossy(&ffmpeg_output.stderr);
+    if let Ok(duration) = parse_duration_from_ffmpeg_output(&stderr) {
+        println!("[Rust] Duration from ffmpeg: {:.2}s", duration);
+        return Ok(duration);
+    }
+
+    println!("[Rust] ffmpeg duration parse failed, trying ffprobe...");
+
+    let ffprobe_output = shell
+        .sidecar("ffprobe")
+        .map_err(|e| format!("Failed to get ffprobe sidecar: {}", e))?
+        .args([
+            "-v",
+            "quiet",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
+            local_path,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffprobe for duration: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&ffprobe_output.stdout);
+    let trimmed = stdout.trim();
+    if let Ok(duration) = trimmed.parse::<f64>() {
+        if duration > 0.0 {
+            println!("[Rust] Duration from ffprobe: {:.2}s", duration);
+            return Ok(duration);
+        }
+    }
+
+    let ffprobe_stderr = String::from_utf8_lossy(&ffprobe_output.stderr);
+    let mut message = format!(
+        "Failed to parse video duration (ffmpeg and ffprobe). ffmpeg stderr excerpt: {}",
+        stderr
+            .lines()
+            .take(6)
+            .collect::<Vec<_>>()
+            .join(" | "),
+    );
+    if !ffprobe_stderr.trim().is_empty() {
+        message = format!("{} ffprobe stderr: {}", message, ffprobe_stderr.trim());
+    }
+    Err(message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_duration_from_short_clip_stderr() {
+        let stderr = "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'clip.mp4':\n  Duration: 00:00:20.04, start: 0.000000, bitrate: 1200 kb/s\n";
+        let duration = parse_duration_from_ffmpeg_output(stderr).expect("duration");
+        assert!((duration - 20.04).abs() < 0.01);
+    }
+
+    #[test]
+    fn parse_duration_skips_na() {
+        let stderr = "Duration: N/A, start: 0.000000, bitrate: N/A\n";
+        assert!(parse_duration_from_ffmpeg_output(stderr).is_err());
+    }
+
+    #[test]
+    fn resolve_file_url_windows_path() {
+        let path = resolve_local_media_path("file:///C:/Videos/test.mp4").expect("path");
+        assert_eq!(path, "C:/Videos/test.mp4");
     }
 }
 
-/// Get video duration using FFmpeg
+/// Get video duration using FFmpeg with ffprobe fallback.
 pub async fn get_video_duration_sync(
     app: &tauri::AppHandle,
     video_path: &str,
 ) -> Result<f64, String> {
-    use tauri_plugin_shell::ShellExt;
-
-    let shell = app.shell();
-    let output = shell
-        .sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(["-i", video_path])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    match extract_duration_from_ffmpeg_output(&stderr) {
-        Some(duration) => Ok(duration),
-        None => Err("Failed to parse duration".to_string()),
-    }
+    let local_path = resolve_local_media_path(video_path)?;
+    probe_media_duration(app, &local_path).await
 }
 
 /// Get video information using FFmpeg

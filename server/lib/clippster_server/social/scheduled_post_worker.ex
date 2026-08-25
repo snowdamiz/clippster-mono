@@ -14,7 +14,7 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   require Logger
 
   alias ClippsterServer.Social
-  alias ClippsterServer.Social.{PostSubmission, SocialAccount, Platform}
+  alias ClippsterServer.Social.{PostSubmission, SocialAccount}
   alias ClippsterServer.Social.Providers.PostForMe
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Campaigns.ClipperSocialAccount
@@ -186,11 +186,17 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
           :skipped
 
         {:error, reason} ->
-          Logger.warning("[ScheduledPostWorker] Failed to lock post #{post.id}: #{inspect(reason)}")
+          Logger.warning(
+            "[ScheduledPostWorker] Failed to lock post #{post.id}: #{inspect(reason)}"
+          )
+
           :failed
       end
     else
-      Logger.debug("[ScheduledPostWorker] Post #{post.id} media not yet uploaded (#{post.media_url}), skipping until upload completes")
+      Logger.debug(
+        "[ScheduledPostWorker] Post #{post.id} media not yet uploaded (#{post.media_url}), skipping until upload completes"
+      )
+
       :skipped
     end
   end
@@ -221,10 +227,7 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
 
       account ->
         if account.is_active do
-          # Check if token needs refresh and refresh if needed
-          account = maybe_refresh_org_token(account)
-          access_token = SocialAccount.get_access_token(account)
-          {:ok, account, access_token}
+          {:ok, account, nil}
         else
           {:error, :account_inactive}
         end
@@ -241,10 +244,7 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
 
       account ->
         if account.is_active do
-          # Check if token needs refresh and refresh if needed
-          account = maybe_refresh_user_token(account)
-          access_token = ClipperSocialAccount.get_access_token(account)
-          {:ok, account, access_token}
+          {:ok, account, nil}
         else
           {:error, :account_inactive}
         end
@@ -253,123 +253,14 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
 
   defp get_user_account(_), do: {:error, :no_account_specified}
 
-  # Refresh org social account token if needed
-  defp maybe_refresh_org_token(%SocialAccount{} = account) do
-    if SocialAccount.token_needs_refresh?(account) do
-      Logger.info("[ScheduledPostWorker] Token needs refresh for org account #{account.id}")
-
-      refresh_token = SocialAccount.get_refresh_token(account)
-
-      case Platform.call(account.platform, :refresh_tokens, [refresh_token]) do
-        {:ok, new_tokens} ->
-          expires_at =
-            if new_tokens[:expires_in] do
-              DateTime.utc_now()
-              |> DateTime.add(new_tokens[:expires_in], :second)
-              |> DateTime.truncate(:second)
-            else
-              nil
-            end
-
-          attrs = %{
-            access_token: new_tokens[:access_token],
-            token_expires_at: expires_at
-          }
-
-          attrs =
-            if new_tokens[:refresh_token] do
-              Map.put(attrs, :refresh_token, new_tokens[:refresh_token])
-            else
-              attrs
-            end
-
-          case Social.refresh_social_account_tokens(account, attrs) do
-            {:ok, updated_account} ->
-              Logger.info(
-                "[ScheduledPostWorker] Successfully refreshed token for org account #{account.id}"
-              )
-
-              updated_account
-
-            {:error, reason} ->
-              Logger.warning(
-                "[ScheduledPostWorker] Failed to save refreshed token: #{inspect(reason)}"
-              )
-
-              account
-          end
-
-        {:error, reason} ->
-          Logger.warning("[ScheduledPostWorker] Failed to refresh org token: #{inspect(reason)}")
-          account
-      end
-    else
-      account
-    end
-  end
-
-  # Refresh user/clipper social account token if needed
-  defp maybe_refresh_user_token(%ClipperSocialAccount{} = account) do
-    if ClipperSocialAccount.token_needs_refresh?(account) do
-      Logger.info("[ScheduledPostWorker] Token needs refresh for user account #{account.id}")
-
-      refresh_token = ClipperSocialAccount.get_refresh_token(account)
-
-      case Platform.call(account.platform, :refresh_tokens, [refresh_token]) do
-        {:ok, new_tokens} ->
-          expires_at =
-            if new_tokens[:expires_in] do
-              DateTime.utc_now()
-              |> DateTime.add(new_tokens[:expires_in], :second)
-              |> DateTime.truncate(:second)
-            else
-              nil
-            end
-
-          attrs = %{
-            access_token: new_tokens[:access_token],
-            token_expires_at: expires_at
-          }
-
-          attrs =
-            if new_tokens[:refresh_token] do
-              Map.put(attrs, :refresh_token, new_tokens[:refresh_token])
-            else
-              attrs
-            end
-
-          case Campaigns.update_social_account_tokens(account, attrs) do
-            {:ok, updated_account} ->
-              Logger.info(
-                "[ScheduledPostWorker] Successfully refreshed token for user account #{account.id}"
-              )
-
-              updated_account
-
-            {:error, reason} ->
-              Logger.warning(
-                "[ScheduledPostWorker] Failed to save refreshed token: #{inspect(reason)}"
-              )
-
-              account
-          end
-
-        {:error, reason} ->
-          Logger.warning("[ScheduledPostWorker] Failed to refresh user token: #{inspect(reason)}")
-          account
-      end
-    else
-      account
-    end
-  end
-
   # All platforms publish via PostForMe API
   defp do_publish(%PostSubmission{} = post, account, _access_token) do
-    Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to #{post.platform} via PostForMe")
+    Logger.info(
+      "[ScheduledPostWorker] Publishing post #{post.id} to #{post.platform} via PostForMe"
+    )
 
     with {:ok, provider_account_id} <- get_provider_account_id(account),
          {:ok, media_url} <- ensure_accessible_media_url(post.media_url) do
-      
       post_params = %{
         caption: post.caption || "",
         social_accounts: [provider_account_id],
@@ -380,13 +271,15 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
       case PostForMe.create_social_post(post_params) do
         {:ok, pfm_post} ->
           # Try to fetch post_url and provider_post_id from feed
-          {post_url, provider_post_id} = fetch_post_data_from_feed(provider_account_id, pfm_post.id)
-          
+          {post_url, provider_post_id} =
+            fetch_post_data_from_feed(provider_account_id, pfm_post.id)
+
           result = %{
             post_id: pfm_post.id || "pfm_#{post.id}",
             post_url: post_url,
             provider_post_id: provider_post_id
           }
+
           handle_publish_success(post, result)
 
         {:error, reason} ->
@@ -396,15 +289,19 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     else
       {:error, :missing_provider_account_id} ->
         handle_publish_failure(post, "Account missing PostForMe provider_account_id", :permanent)
-      
+
       {:error, reason} ->
         error_type = classify_error(reason)
         handle_publish_failure(post, inspect(reason), error_type)
     end
   end
 
-  defp get_provider_account_id(%SocialAccount{provider_account_id: id}) when is_binary(id) and id != "", do: {:ok, id}
-  defp get_provider_account_id(%ClipperSocialAccount{provider_account_id: id}) when is_binary(id) and id != "", do: {:ok, id}
+  defp get_provider_account_id(%SocialAccount{provider_account_id: id})
+       when is_binary(id) and id != "", do: {:ok, id}
+
+  defp get_provider_account_id(%ClipperSocialAccount{provider_account_id: id})
+       when is_binary(id) and id != "", do: {:ok, id}
+
   defp get_provider_account_id(_), do: {:error, :missing_provider_account_id}
 
   defp ensure_accessible_media_url(media_url) do
@@ -412,7 +309,8 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     if String.contains?(media_url, ".r2.cloudflarestorage.com") do
       case ClippsterServer.Storage.presigned_url(media_url, expires_in: 7_200) do
         {:ok, url} -> {:ok, url}
-        {:error, _} -> {:ok, media_url}  # Fallback to original
+        # Fallback to original
+        {:error, _} -> {:ok, media_url}
       end
     else
       {:ok, media_url}
@@ -431,11 +329,12 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     }
 
     # Add provider_post_id if available
-    attrs = if Map.has_key?(result, :provider_post_id) && result.provider_post_id do
-      Map.put(attrs, :provider_post_id, result.provider_post_id)
-    else
-      attrs
-    end
+    attrs =
+      if Map.has_key?(result, :provider_post_id) && result.provider_post_id do
+        Map.put(attrs, :provider_post_id, result.provider_post_id)
+      else
+        attrs
+      end
 
     attrs = if content_hash, do: Map.put(attrs, :content_hash, content_hash), else: attrs
 
@@ -513,7 +412,10 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
           provider_post_id = platform_data["platform_post_id"] || platform_data["id"]
 
           if post_url || provider_post_id do
-            Logger.info("[ScheduledPostWorker] Found post data from results: url=#{post_url}, provider_id=#{provider_post_id}")
+            Logger.info(
+              "[ScheduledPostWorker] Found post data from results: url=#{post_url}, provider_id=#{provider_post_id}"
+            )
+
             {post_url, provider_post_id}
           else
             fetch_from_feed_fallback(provider_account_id, pfm_post_id)
@@ -524,7 +426,10 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
       end
     rescue
       e ->
-        Logger.warning("[ScheduledPostWorker] Error fetching post data (non-fatal): #{inspect(e)}")
+        Logger.warning(
+          "[ScheduledPostWorker] Error fetching post data (non-fatal): #{inspect(e)}"
+        )
+
         {nil, nil}
     end
   end
@@ -543,7 +448,11 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
           item when is_map(item) ->
             post_url = item["platform_url"]
             provider_post_id = item["platform_post_id"]
-            Logger.info("[ScheduledPostWorker] Using most recent feed item: url=#{post_url}, provider_id=#{provider_post_id}")
+
+            Logger.info(
+              "[ScheduledPostWorker] Using most recent feed item: url=#{post_url}, provider_id=#{provider_post_id}"
+            )
+
             {post_url, provider_post_id}
 
           _ ->

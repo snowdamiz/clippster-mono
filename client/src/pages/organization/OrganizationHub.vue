@@ -112,7 +112,7 @@
         <section class="org-hub__section">
           <h2 class="org-hub__section-title">Content</h2>
           <div class="org-hub__grid">
-            <template v-for="tool in contentTools" :key="tool.id">
+            <template v-for="tool in visibleContentTools" :key="tool.id">
               <!-- Coming Soon card (non-clickable) -->
               <div v-if="tool.comingSoon" class="org-hub__card org-hub__card--coming-soon">
                 <div class="org-hub__card-content">
@@ -207,6 +207,7 @@
   import InviteMemberDialog from '@/components/InviteMemberDialog.vue';
   import OrganizationSelector from '@/components/OrganizationSelector.vue';
   import { useOrganizationSelector } from '@/composables/useOrganizationSelector';
+  import api from '@/services/api';
 
   const router = useRouter();
   const showInviteDialog = ref(false);
@@ -230,7 +231,6 @@
     assetsLoaded,
     loadOrgAssets,
   } = useOrganization();
-
   // Load profile and asset counts for display
   const profilesCount = computed(() => creatorProfiles.value.length);
   const assetsCount = computed(() => orgAssets.value.length);
@@ -246,6 +246,7 @@
     stat?: number | string;
     statLabel?: string;
     comingSoon?: boolean;
+    navHidden?: boolean;
   }
 
   // Tool definitions with dynamic stats
@@ -296,6 +297,7 @@
       icon: Target,
       route: `/organization/${organizationId.value}/campaigns`,
       color: 'violet',
+      navHidden: true,
     },
     {
       id: 'clippers',
@@ -307,8 +309,8 @@
     },
     {
       id: 'shared',
-      title: 'Shared Clips',
-      description: 'Distribute clips to team members',
+      title: 'Shared Content',
+      description: 'Distribute clips and audio to team members',
       icon: Share2,
       route: `/organization/${organizationId.value}/shared`,
       color: 'pink',
@@ -330,6 +332,8 @@
       color: 'blue',
     },
   ]);
+
+  const visibleContentTools = computed(() => contentTools.value.filter((tool) => !tool.navHidden));
 
   const managementTools = computed<Tool[]>(() => [
     {

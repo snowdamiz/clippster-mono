@@ -5,6 +5,7 @@
  */
 
 import api from './api';
+import { buildUserConnectUrlBody, type UserSocialConnectOptions } from './userSocialConnect';
 
 // ============================================
 // Types
@@ -14,6 +15,7 @@ export interface UserTiktokAccount {
   id: number;
   platform: 'tiktok';
   platform_user_id: string;
+  provider_account_id?: string | null;
   username: string;
   display_name: string | null;
   profile_image_url: string | null;
@@ -73,7 +75,8 @@ function getAuthToken(): string {
  * Opens OAuth in system browser and polls for result.
  */
 export async function startUserTiktokOAuth(
-  onResult?: (result: TiktokAuthResult) => void
+  onResult?: (result: TiktokAuthResult) => void,
+  options?: UserSocialConnectOptions
 ): Promise<() => void> {
   const authToken = getAuthToken();
 
@@ -85,7 +88,7 @@ export async function startUserTiktokOAuth(
 
   const connectResponse = await api.post<PostForMeConnectUrlResponse>(
     '/user/social/connect-url',
-    { platform: 'tiktok' }
+    buildUserConnectUrlBody('tiktok', options)
   );
 
   if (!connectResponse.data.success || !connectResponse.data.auth_url) {
@@ -261,14 +264,3 @@ export async function publishToUserTiktok(
   }
 }
 
-/**
- * Check if account token is expiring soon
- */
-export function isTiktokTokenExpiringSoon(account: UserTiktokAccount): boolean {
-  if (!account.token_expires_at) return false;
-
-  const expiresAt = new Date(account.token_expires_at);
-  const daysUntilExpiry = (expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-
-  return daysUntilExpiry < 7;
-}

@@ -33,6 +33,64 @@ pub type CancellationToken = watch::Receiver<bool>;
 static ACTIVE_CLIP_BUILDS: Lazy<Arc<Mutex<HashMap<String, watch::Sender<bool>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
+/// Derive manually framed aspect-ratio variants from an already composited editor export.
+/// The source export contains the complete timeline mix, so POI never falls back to raw assets.
+#[tauri::command]
+pub async fn build_editor_export_variants(
+    app: tauri::AppHandle,
+    video_path: String,
+    duration: f64,
+    aspect_ratios: Vec<String>,
+    manual_framing_configs: HashMap<String, ManualFramingConfig>,
+    quality: String,
+    frame_rate: u32,
+) -> Result<Vec<String>, String> {
+    if duration <= 0.001 {
+        return Err("Editor export duration must be greater than zero".to_string());
+    }
+
+    let source_path = std::path::Path::new(&video_path);
+    let parent = source_path
+        .parent()
+        .ok_or_else(|| "Editor export has no parent directory".to_string())?;
+    let stem = source_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Editor export has an invalid file name".to_string())?;
+    let segment = serde_json::json!({
+        "start_time": 0.0,
+        "end_time": duration,
+    });
+    let mut output_paths = Vec::with_capacity(aspect_ratios.len());
+
+    for ratio in aspect_ratios {
+        let config = manual_framing_configs
+            .get(&ratio)
+            .ok_or_else(|| format!("Missing manual framing configuration for {}", ratio))?;
+        let ratio_suffix = ratio.replace(':', "x");
+        let output_path = parent.join(format!("{}_{}.mp4", stem, ratio_suffix));
+
+        video_processor::build_multi_region_clip(
+            &app,
+            &video_path,
+            &output_path,
+            &segment,
+            config,
+            &ratio,
+            &quality,
+            frame_rate,
+            None,
+            None,
+            None,
+        )
+        .await?;
+
+        output_paths.push(output_path.to_string_lossy().to_string());
+    }
+
+    Ok(output_paths)
+}
+
 // Build clip from segments using FFmpeg
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
@@ -45,6 +103,7 @@ pub async fn build_clip_from_segments(
     segments: Vec<serde_json::Value>,
     subtitle_settings: Option<SubtitleSettings>,
     subtitle_overrides: Option<SubtitleOverrides>,
+    subtitle_overlays: Option<std::collections::HashMap<String, Vec<SubtitleOverlaySettings>>>,
     transcript_words: Option<Vec<WordInfo>>,
     transcript_segments: Option<Vec<WhisperSegment>>,
     max_words: Option<usize>,
@@ -94,6 +153,11 @@ pub async fn build_clip_from_segments(
         subtitle_overrides
             .as_ref()
             .map(|o| o.keys().collect::<Vec<_>>())
+    );
+    println!(
+        "[Rust]   subtitle_overlays: {} aspect ratios with {} total frames",
+        subtitle_overlays.as_ref().map(|o| o.len()).unwrap_or(0),
+        subtitle_overlays.as_ref().map(|o| o.values().map(|v| v.len()).sum::<usize>()).unwrap_or(0)
     );
     println!("[Rust]   max words: {}", max_words.unwrap_or(0));
     println!("[Rust]   aspect_ratios: {:?}", aspect_ratios);
@@ -160,6 +224,20 @@ pub async fn build_clip_from_segments(
             .as_ref()
             .map(|c| c.keys().collect::<Vec<_>>())
     );
+    // Debug: Show manual framing config details
+    if let Some(ref configs) = manual_framing_configs {
+        for (ratio, cfg) in configs {
+            println!(
+                "[Rust]   manual_framing_config[{}]: source_frame_mode={:?}, blur_enabled={:?}, blur_amount={:?}, regions={}, source_transform={:?}",
+                ratio,
+                cfg.source_frame_mode,
+                cfg.blur_enabled,
+                cfg.blur_amount,
+                cfg.regions.len(),
+                cfg.source_transform
+            );
+        }
+    }
     println!(
         "[Rust]   layout_overlays count: {}",
         layout_overlays.as_ref().map(|v| v.len()).unwrap_or(0)
@@ -191,6 +269,7 @@ pub async fn build_clip_from_segments(
     let segments_clone = segments.clone();
     let subtitle_settings_clone = subtitle_settings.clone();
     let subtitle_overrides_clone = subtitle_overrides.clone();
+    let subtitle_overlays_clone = subtitle_overlays.clone();
     let transcript_words_clone = transcript_words.clone();
     let transcript_segments_clone = transcript_segments.clone();
     let aspect_ratios_clone = aspect_ratios.clone();
@@ -245,6 +324,7 @@ pub async fn build_clip_from_segments(
             &segments_clone,
             subtitle_settings_clone,
             subtitle_overrides_clone,
+            subtitle_overlays_clone,
             transcript_words_clone,
             transcript_segments_clone,
             max_words,
@@ -390,4 +470,32 @@ pub async fn is_clip_build_active(clip_id: String) -> Result<bool, String> {
 // Helper function to check if a build has been cancelled
 pub fn is_build_cancelled(cancel_rx: &CancellationToken) -> bool {
     *cancel_rx.borrow()
+}
+
+/// Save a pre-rendered subtitle overlay PNG to a temp file for FFmpeg compositing.
+/// The frontend renders subtitles with all effects (borders, shadows, highlights)
+/// to a transparent PNG on canvas, then passes the bytes here to save to disk.
+/// Returns the absolute path to the saved PNG file.
+#[tauri::command]
+pub async fn save_subtitle_overlay_png(
+    png_bytes: Vec<u8>,
+    aspect_ratio: String,
+    frame_index: usize,
+) -> Result<String, String> {
+    let temp_dir = std::env::temp_dir().join("clippster_subtitle_overlays");
+    std::fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;
+
+    let file_name = format!("subtitle_{}_{}.png", aspect_ratio, frame_index);
+    let file_path = temp_dir.join(&file_name);
+
+    std::fs::write(&file_path, &png_bytes)
+        .map_err(|e| format!("Failed to write subtitle overlay PNG: {}", e))?;
+
+    println!(
+        "[Rust] Saved subtitle overlay PNG: {} ({} bytes)",
+        file_path.display(),
+        png_bytes.len()
+    );
+
+    Ok(file_path.to_string_lossy().to_string())
 }

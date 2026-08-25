@@ -2,7 +2,7 @@
   <div class="streamvods">
     <PageLayout
       title="Download Audio"
-      description="Download audio from YouTube and X Spaces"
+      description="Download audio from YouTube"
       :show-header="true"
       :icon="Headphones"
     >
@@ -73,6 +73,7 @@
               >
                 <img src="/youtube.svg" class="streamvods-search__platform-icon" />
               </div>
+              <!-- X Spaces download temporarily disabled
               <div
                 v-else-if="detectedPlatform === 'twitter'"
                 class="streamvods-search__platform streamvods-search__platform--twitter"
@@ -80,12 +81,13 @@
               >
                 <img src="/x.svg" class="streamvods-search__platform-icon" />
               </div>
+              -->
               <Search v-else class="streamvods-search__icon" key="search" />
             </transition>
             <input
               v-model="searchInput"
               class="streamvods-search__input"
-              placeholder="Paste YouTube or X Spaces URL..."
+              placeholder="Paste a YouTube URL..."
               :disabled="isSearching"
               @input="detectPlatform"
               @keyup.enter="handleSearch"
@@ -109,7 +111,7 @@
         <!-- Page Heading -->
         <div v-if="clips.length > 0 || isSearching" class="streamvods__heading">
           <h1 class="streamvods__title">Download Audio</h1>
-          <p class="streamvods__subtitle">Download MP3 audio from YouTube and X Spaces</p>
+          <p class="streamvods__subtitle">Download MP3 audio from YouTube</p>
         </div>
 
         <!-- Loading State -->
@@ -237,7 +239,7 @@
             <Headphones class="streamvods__empty-icon" />
           </div>
           <h3 class="streamvods__empty-title">Download Audio</h3>
-          <p class="streamvods__empty-description">Paste a YouTube or X Spaces URL above to download audio</p>
+          <p class="streamvods__empty-description">Paste a YouTube URL above to download audio</p>
         </div>
       </div>
     </PageLayout>
@@ -305,7 +307,7 @@
 
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted } from 'vue';
-  import { useRouter } from 'vue-router';
+  import { useRoute, useRouter } from 'vue-router';
   import { formatDate } from '@/utils/dateTimeUtils';
   import PageLayout from '@/components/PageLayout.vue';
   import { usePlatformStore, type PlatformClip } from '@/stores/platform';
@@ -314,9 +316,10 @@
   import { Clock, ChevronDown, X, AlertTriangle, Download, Headphones, Search, Loader2, Check } from 'lucide-vue-next';
   import { type PlatformId } from '@/config/platforms';
 
+  const route = useRoute();
   const router = useRouter();
   const { success, error: showError } = useToast();
-  const { startYouTubeAudioDownload, startTwitterSpaceAudioDownload } = useAudioDownloads();
+  const { startYouTubeAudioDownload } = useAudioDownloads();
   const platformStore = usePlatformStore();
 
   // State
@@ -329,26 +332,29 @@
   const showDownloadDialog = ref(false);
   const clipToDownload = ref<PlatformClip | null>(null);
   const downloadStarting = ref(false);
-  const detectedPlatform = ref<'YouTube' | 'twitter' | null>(null);
+  const detectedPlatform = ref<'YouTube' | null>(null);
 
   function detectPlatform() {
     const val = searchInput.value?.trim().toLowerCase();
     if (!val) { detectedPlatform.value = null; return; }
     if (val.includes('youtube.com') || val.includes('youtu.be')) {
       detectedPlatform.value = 'YouTube';
-    } else if (val.includes('twitter.com') || val.includes('x.com')) {
-      detectedPlatform.value = 'twitter';
-    } else {
-      detectedPlatform.value = null;
+      return;
     }
+    // X Spaces (twitter/x.com) temporarily disabled — re-enable detection when shipping again
+    detectedPlatform.value = null;
   }
 
   async function handleSearch() {
     const val = searchInput.value.trim();
-    if (!val) { showError('Invalid Input', 'Please enter a YouTube or X Spaces URL'); return; }
+    if (!val) { showError('Invalid Input', 'Please enter a YouTube URL'); return; }
     detectPlatform();
     if (!detectedPlatform.value) {
-      showError('Unknown Platform', 'Please enter a valid YouTube or X Spaces URL');
+      const hint =
+        /twitter\.com|x\.com/i.test(val)
+          ? 'X Spaces downloads are temporarily unavailable. Use a YouTube URL.'
+          : 'Please enter a valid YouTube URL';
+      showError('Unknown Platform', hint);
       return;
     }
     isSearching.value = true;
@@ -357,7 +363,7 @@
     try {
       // Use platformStore to search via yt-dlp
       platformStore.setActivePlatform(detectedPlatform.value as PlatformId);
-      const result = await platformStore.searchClips(val, 20);
+      const result = await platformStore.searchClips(val, 20, undefined, true);
       if (result.success && platformStore.clips.length > 0) {
         clips.value = [...platformStore.clips];
         success('Found', `Found ${platformStore.clips.length} item${platformStore.clips.length !== 1 ? 's' : ''}`);
@@ -382,7 +388,7 @@
 
   function handleRecentSearchClick(search: { id: string; displayText: string; platform: PlatformId }) {
     searchInput.value = search.displayText;
-    detectedPlatform.value = (search.platform === 'YouTube' || search.platform === 'twitter') ? search.platform : null;
+    detectedPlatform.value = search.platform === 'YouTube' ? search.platform : null;
     handleSearch();
   }
 
@@ -400,11 +406,11 @@
     try {
       const downloadId = `audio-${Date.now()}`;
       const videoUrl = clip.mp4Url || clip.playlistUrl || clip.clipId;
-      if (detectedPlatform.value === 'YouTube') {
-        await startYouTubeAudioDownload(downloadId, clip.title, videoUrl, platformStore.currentSearchId || 'unknown');
-      } else {
-        await startTwitterSpaceAudioDownload(downloadId, clip.title, videoUrl);
+      if (detectedPlatform.value !== 'YouTube') {
+        showError('Not Available', 'X Spaces downloads are temporarily unavailable.');
+        return;
       }
+      await startYouTubeAudioDownload(downloadId, clip.title, videoUrl, platformStore.currentSearchId || 'unknown');
       success('Download Started', `Downloading audio: "${clip.title}"`);
       showDownloadDialog.value = false;
       setTimeout(() => router.push('/audio-library'), 500);
@@ -473,6 +479,16 @@
   onMounted(async () => {
     document.addEventListener('click', handleClickOutside);
     await platformStore.refreshRecentSearchMetadata();
+
+    const rawUrl = route.query.url ?? route.query.search;
+    const queryUrl = (Array.isArray(rawUrl) ? rawUrl[0] : rawUrl) as string | undefined;
+
+    if (queryUrl) {
+      searchInput.value = queryUrl;
+      detectPlatform();
+      await handleSearch();
+      router.replace({ path: route.path, query: {} });
+    }
   });
 
   onUnmounted(() => {

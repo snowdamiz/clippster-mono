@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
+import { computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
 import type { EffectElement } from "../../../types/timeline";
 import { getEffectPreset } from "../../../constants/effect-constants";
+import { COLOR_OVERLAY_BLEND_OPTIONS } from "../../../constants/color-overlay-constants";
 import { Wand2, Trash2, Eye, EyeOff } from "lucide-vue-next";
 
 const props = defineProps<{
@@ -11,10 +12,14 @@ const props = defineProps<{
 	trackId: string;
 }>();
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 const { selectedElements } = useElementSelection();
 
 const preset = computed(() => getEffectPreset(props.element.effectType));
+
+const isColorOverlay = computed(() => props.element.effectType === "colorOverlay");
+const overlayColor = computed(() => (props.element.params.color as string) ?? "#ff4500");
+const overlayBlendMode = computed(() => (props.element.params.blendMode as string) ?? "color-burn");
 
 function update(updates: Record<string, unknown>) {
 	editor.timeline.updateElement({
@@ -121,6 +126,31 @@ const paramEntries = computed(() => {
 					@input="(e: Event) => update({ intensity: Number((e.target as HTMLInputElement).value) })"
 				/>
 			</div>
+
+			<!-- Solid Color / colorOverlay -->
+			<template v-if="isColorOverlay">
+				<div class="flex items-center justify-between gap-2">
+					<label class="text-[11px] text-zinc-500">Color</label>
+					<input
+						type="color"
+						:value="overlayColor"
+						class="h-7 w-10 cursor-pointer rounded border border-white/10 bg-transparent"
+						@input="(e: Event) => updateParam('color', (e.target as HTMLInputElement).value)"
+					/>
+				</div>
+				<div class="space-y-1">
+					<label class="text-[11px] text-zinc-500">Blend Mode</label>
+					<select
+						:value="overlayBlendMode"
+						class="w-full rounded-sm border border-white/10 bg-[#1a1a1e] px-2 py-1.5 text-xs text-zinc-200 outline-none"
+						@change="(e: Event) => updateParam('blendMode', (e.target as HTMLSelectElement).value)"
+					>
+						<option v-for="opt in COLOR_OVERLAY_BLEND_OPTIONS" :key="opt.value" :value="opt.value">
+							{{ opt.label }}
+						</option>
+					</select>
+				</div>
+			</template>
 
 			<!-- Effect-specific params -->
 			<div v-for="param in paramEntries" :key="param.key" class="space-y-1">

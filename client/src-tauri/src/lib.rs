@@ -13,23 +13,28 @@ mod clips;
 mod commands;
 mod downloads;
 mod dvr;
+mod ffmpeg_sidecar;
 mod ffmpeg_utils;
 mod focal_detection;
 mod font_commands;
+mod path_utils;
 mod hls;
 mod hls_proxy;
 mod kick;
 mod pumpfun;
 mod rumble;
 mod sidecar;
+mod space_hls_speaker_timeline;
 mod storage;
 mod stripe_callback;
+mod studio;
 mod thumbnail_utils;
 mod twitch;
 mod twitter;
 mod ui_utils;
 mod utils;
 mod video;
+mod video_chunk_extraction;
 mod video_editor_export;
 mod video_server;
 mod waveform;
@@ -74,6 +79,34 @@ async fn read_video_file(file_path: String) -> Result<Vec<u8>, String> {
 
     println!("[Rust] Video file read successfully: {} bytes", bytes.len());
     Ok(bytes)
+}
+
+/// Save uploaded POI region media to a temp file (real path for FFmpeg export).
+#[tauri::command]
+async fn save_temp_media_file(file_name: String, data: Vec<u8>) -> Result<String, String> {
+    use std::fs;
+
+    let temp_dir = std::env::temp_dir().join("clippster_media");
+    fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+
+    let safe_name = std::path::Path::new(&file_name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("upload.bin");
+
+    let unique_name = format!("{}_{}", timestamp, safe_name);
+    let file_path = temp_dir.join(&unique_name);
+
+    fs::write(&file_path, &data).map_err(|e| format!("Failed to write temp media: {}", e))?;
+
+    let path_str = file_path.to_string_lossy().to_string();
+    println!("[Rust] Saved temp media file: {}", path_str);
+    Ok(path_str)
 }
 
 /// Create an always-on-top PIP window with video and controls
@@ -850,6 +883,18 @@ pub fn run() {
                             sql: include_str!("../migrations/094_remove_users_fk_from_project_media.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 95,
+                            description: "add_clip_text_overlay_to_clips",
+                            sql: include_str!("../migrations/099_add_clip_text_overlay_to_clips.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 100,
+                            description: "add_persistent_live_monitoring",
+                            sql: include_str!("../migrations/100_add_persistent_live_monitoring.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -864,6 +909,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         // Localhost plugin - serves frontend from http://localhost in production to bypass LNA
         .manage(video::VideoFrameState::new()) // Re-enabled VideoFrameState manage initialization
+        .manage(std::sync::Mutex::new(studio::recorder::StudioRecorderState::default()))
         .setup(|app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
@@ -1046,6 +1092,8 @@ generate_proxy_file,
 commands::file_utils::get_file_info,
 commands::file_utils::get_media_metadata,
 commands::file_utils::generate_video_thumbnail,
+commands::reference_video::prepare_reference_video,
+commands::reference_video::cancel_reference_analysis,
 
 // Auth commands
             auth::open_wallet_auth_window,
@@ -1055,6 +1103,7 @@ commands::file_utils::generate_video_thumbnail,
             auth::poll_payment_result,
             auth::clear_payment_result,
             auth::open_google_auth_window,
+            auth::open_google_auth_url,
             auth::poll_google_auth_result,
             auth::clear_google_auth_result,
             auth::start_email_verification_listener,
@@ -1135,6 +1184,7 @@ commands::file_utils::generate_video_thumbnail,
             twitter::validate_twitter_url,
             twitter::get_twitter_broadcast_info,
             twitter::get_twitter_broadcast_duration,
+            twitter::resolve_twitter_user_by_rest_id,
             twitter::download_twitter_thumbnail,
             twitter::download_twitter_vod,
             twitter::download_twitter_vod_segment,
@@ -1151,23 +1201,30 @@ commands::file_utils::generate_video_thumbnail,
             downloads::download_pumpfun_vod_segment,
             downloads::download_kick_vod,
             downloads::download_kick_vod_segment,
+            downloads::probe_kick_vod_duration,
             twitch::download_twitch_vod,
             twitch::download_twitch_vod_segment,
 
             // Audio commands
             audio::extract_audio_from_video,
+            audio::extract_audio_from_segments,
+            video_chunk_extraction::extract_video_chunk_for_analysis,
             audio::extract_and_chunk_audio,
             audio::cancel_audio_extraction,
             audio::extract_audio_to_file,
             audio::extract_audio_to_file_wav,
             audio::get_audio_duration,
             download_library_audio,
+            download_broll_media,
+            resolve_broll_media_path,
             
             // Audio download commands
             audio_download::download_youtube_audio,
             audio_download::download_twitter_space_audio,
             audio_download::upload_audio_file,
+            audio_download::generate_audio_thumbnail,
             audio_download::cancel_audio_download,
+            space_hls_speaker_timeline::extract_space_speaker_timeline_from_hls_manifest,
 
             // Waveform commands
             waveform::extract_audio_waveform,
@@ -1192,6 +1249,7 @@ commands::file_utils::generate_video_thumbnail,
             storage::generate_thumbnail_at_timestamp,
             storage::save_temp_file,
             storage::save_editor_media_file,
+            storage::get_editor_clip_extract_path,
             storage::copy_file_to_project_media,
             storage::read_file_as_data_url,
             storage::delete_video_file,
@@ -1203,6 +1261,7 @@ commands::file_utils::generate_video_thumbnail,
             storage::get_audio_metadata,
             storage::get_image_metadata,
             storage::copy_watermark_to_storage,
+            storage::copy_creator_reference_frame_to_storage,
             storage::delete_watermark_file,
             storage::copy_font_to_storage,
             storage::delete_font_file,
@@ -1225,9 +1284,12 @@ commands::file_utils::generate_video_thumbnail,
 
             // Clips commands
             clips::build_clip_from_segments,
+            clips::build_editor_export_variants,
             clips::cancel_clip_build,
             clips::is_clip_build_active,
+            clips::save_subtitle_overlay_png,
             clips::livestream_clip::extract_livestream_clip,
+            clips::livestream_clip::cancel_livestream_clip_extraction,
             clips::video_processor::generate_segment_preview,
             clips::video_processor::delete_segment_preview,
             clips::video_processor::generate_preview_chunk,
@@ -1252,6 +1314,7 @@ commands::file_utils::generate_video_thumbnail,
             // File operations
             copy_file,
             read_video_file,
+            save_temp_media_file,
 
     // PIP control window commands
     create_pip_control_window,
@@ -1283,7 +1346,11 @@ commands::file_utils::generate_video_thumbnail,
 // Video Editor Export commands
 video_editor_export::export_video_editor_project_simple,
 video_editor_export::export_video_editor_project,
+video_editor_export::cancel_video_editor_export,
 video_editor_export::save_text_overlay_png,
+video_editor_export::save_overlay_frame_sequence,
+video_editor_export::write_scene_export_frame_batch,
+video_editor_export::finalize_scene_export_frames,
 
 // Video Frame Decoder commands
 video::get_video_frame,
@@ -1322,8 +1389,17 @@ commands::remotion_export::start_remotion_export,
 commands::remotion_export::cancel_remotion_export,
 commands::remotion_export::stop_remotion_sidecar,
 
+// Studio recording commands
+studio::studio_list_devices,
+studio::studio_start_recording,
+studio::studio_stop_recording,
+studio::studio_get_recording_status,
+studio::studio_finalize_recording,
+studio::studio_save_recording,
+
 ])
 .manage(commands::remotion_export::SidecarState::new())
+.manage(commands::reference_video::ReferenceAnalysisState::default())
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
 }

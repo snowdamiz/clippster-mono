@@ -2,12 +2,14 @@
 import { ref, computed, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { formatUnixDate } from "@/utils/dateTimeUtils";
-import { appDataDir } from "@tauri-apps/api/path";
 import { useEditor } from "../../../composables/useEditor";
 import { getAllProjects, getChildProjects } from "@/services/database/projects";
-import { getClipsByProjectId } from "@/services/database/clips";
-import { getRawVideosByProjectId } from "@/services/database/raw-videos";
-import type { Project, Clip } from "@/services/database/types";
+import { getClipsWithVersionsByProjectId } from "@/services/database/clip-detection";
+import type { Project, Clip, ClipWithVersion } from "@/services/database/types";
+import {
+	extractUnbuiltClipSegmentToPath,
+	resolveClipTimeRangeForExtraction,
+} from "@/services/clip-vod-extract";
 import type { MediaAsset } from "../../../types/assets";
 import {
 	FolderOpen,
@@ -18,18 +20,35 @@ import {
 	Search,
 	ChevronRight,
 	Plus,
+	Clapperboard,
 } from "lucide-vue-next";
+import {
+	pickPrimaryRawVideo,
+	resolveRawVideosForProject,
+} from "@/services/project-raw-video-resolve";
+import type { RawVideo } from "@/services/database/types";
+import { utf8ToBase64Url } from "@/utils/encoding";
 import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
 import { buildVideoElement } from "../../../lib/timeline/element-utils";
+import { hydrateVideoFileFromLocalUrl } from "../../../lib/media/hydrate-video-file-from-url";
 import { usePointerDrag } from "../../../composables/usePointerDrag";
 import type { CreateTimelineElement } from "../../../types/timeline";
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		media: true,
+		playback: false,
+		timeline: false,
+		scenes: false,
+		selection: false,
+	},
+});
 const { startDrag, wasDragCompleted } = usePointerDrag();
 
 const projects = ref<Project[]>([]);
 const selectedProject = ref<Project | null>(null);
-const projectClips = ref<Clip[]>([]);
+const projectClips = ref<ClipWithVersion[]>([]);
 const loading = ref(false);
 const loadingClips = ref(false);
 const addingIds = ref<Set<string>>(new Set());
@@ -39,6 +58,10 @@ const searchQuery = ref("");
 const thumbnailCache = ref<Map<string, string>>(new Map());
 const projectThumbnailCache = ref<Map<string, string>>(new Map());
 const addedMediaIds = ref<Map<string, string>>(new Map()); // clipId → mediaAssetId
+const primaryRawVideo = ref<RawVideo | null>(null);
+const isAddingFullProject = ref(false);
+const fullProjectAdded = ref(false);
+const fullProjectMediaId = ref<string | null>(null);
 
 const activeProject = computed(() => {
 	void version.value;
@@ -144,16 +167,38 @@ async function loadProjects() {
 	}
 }
 
+async function loadPrimaryRawVideo(project: Project) {
+	try {
+		const rawVideos = await resolveRawVideosForProject(project.id, project.parent_id);
+		primaryRawVideo.value = pickPrimaryRawVideo(rawVideos);
+		fullProjectAdded.value = false;
+		fullProjectMediaId.value = null;
+
+		if (primaryRawVideo.value) {
+			const assetName = `${project.name} (Full Video)`;
+			const existing = editor.media.getAssets().find((a) => a.name === assetName);
+			if (existing) {
+				fullProjectAdded.value = true;
+				fullProjectMediaId.value = existing.id;
+			}
+		}
+	} catch (error) {
+		console.warn("[ProjectClipsView] Failed to resolve raw video for project:", error);
+		primaryRawVideo.value = null;
+	}
+}
+
 async function selectProject(project: Project) {
 	selectedProject.value = project;
 	searchQuery.value = "";
 	loadingClips.value = true;
 	try {
+		await loadPrimaryRawVideo(project);
 		// Fetch clips from the parent project and all child segment projects
-		const parentClips = await getClipsByProjectId(project.id);
+		const parentClips = await getClipsWithVersionsByProjectId(project.id);
 		const children = await getChildProjects(project.id);
 		const childClipArrays = await Promise.all(
-			children.map((child) => getClipsByProjectId(child.id)),
+			children.map((child) => getClipsWithVersionsByProjectId(child.id)),
 		);
 		projectClips.value = [...parentClips, ...childClipArrays.flat()];
 		await loadThumbnails();
@@ -198,6 +243,106 @@ function goBack() {
 	selectedProject.value = null;
 	projectClips.value = [];
 	searchQuery.value = "";
+	primaryRawVideo.value = null;
+	fullProjectAdded.value = false;
+	fullProjectMediaId.value = null;
+}
+
+function getFullProjectAssetName(): string {
+	return `${selectedProject.value?.name ?? "Project"} (Full Video)`;
+}
+
+async function addFullProjectToEditor() {
+	if (!activeProject.value || !selectedProject.value || !primaryRawVideo.value) return;
+	if (isAddingFullProject.value) return;
+
+	const assetName = getFullProjectAssetName();
+	if (fullProjectAdded.value && fullProjectMediaId.value) {
+		addFullProjectToTimeline();
+		return;
+	}
+
+	isAddingFullProject.value = true;
+
+	try {
+		let videoServerPort: number;
+		try {
+			videoServerPort = await invoke<number>("get_video_server_port");
+		} catch {
+			videoServerPort = 8642;
+		}
+
+		const filePath = primaryRawVideo.value.file_path;
+		const encodedPath = utf8ToBase64Url(filePath);
+		const url = `http://localhost:${videoServerPort}/video/${encodedPath}`;
+		const duration = primaryRawVideo.value.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
+
+		const file = await hydrateVideoFileFromLocalUrl({
+			url,
+			name: assetName,
+			fallbackType: "video/mp4",
+			diskPath: filePath,
+		});
+
+		const asset: Omit<MediaAsset, "id"> = {
+			name: assetName,
+			type: "video",
+			file,
+			url,
+			duration,
+			thumbnailUrl: projectThumbnailCache.value.get(selectedProject.value.id),
+			ephemeral: false,
+			diskImportPath: filePath,
+		};
+
+		await editor.media.addMediaAsset({
+			projectId: activeProject.value.metadata.id,
+			asset,
+		});
+
+		const addedAsset = editor.media.getAssets().find((a) => a.name === assetName);
+		if (addedAsset) {
+			fullProjectMediaId.value = addedAsset.id;
+		}
+		fullProjectAdded.value = true;
+	} catch (error) {
+		console.error("[ProjectClipsView] Failed to add full project:", error);
+	} finally {
+		isAddingFullProject.value = false;
+	}
+}
+
+function addFullProjectToTimeline() {
+	if (!fullProjectMediaId.value) return;
+	const asset = editor.media.getAssets().find((a) => a.id === fullProjectMediaId.value);
+	if (!asset) return;
+	const duration = asset.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
+	const startTime = editor.playback.getCurrentTime();
+	const element: CreateTimelineElement = buildVideoElement({
+		mediaId: asset.id,
+		name: asset.name,
+		duration,
+		startTime,
+	});
+	editor.timeline.insertElement({ element, placement: { mode: "auto" } });
+}
+
+function handleFullProjectClick() {
+	if (fullProjectAdded.value) {
+		addFullProjectToTimeline();
+	} else {
+		void addFullProjectToEditor();
+	}
+}
+
+function handleFullProjectPointerDown(e: PointerEvent) {
+	if (!fullProjectAdded.value || !fullProjectMediaId.value) return;
+	startDrag(e, {
+		id: fullProjectMediaId.value,
+		type: "media",
+		mediaType: "video",
+		name: getFullProjectAssetName(),
+	});
 }
 
 function getMediaAssetId(clip: Clip): string | undefined {
@@ -219,7 +364,7 @@ function addToTimeline(clip: Clip) {
 	editor.timeline.insertElement({ element, placement: { mode: "auto" } });
 }
 
-function handleClipClick(clip: Clip) {
+function handleClipClick(clip: ClipWithVersion) {
 	if (wasDragCompleted.value) return;
 	if (isAlreadyAdded(clip)) {
 		addToTimeline(clip);
@@ -228,7 +373,7 @@ function handleClipClick(clip: Clip) {
 	}
 }
 
-function handlePointerDown(e: PointerEvent, clip: Clip) {
+function handlePointerDown(e: PointerEvent, clip: ClipWithVersion) {
 	if (!isAlreadyAdded(clip)) return;
 	const mediaId = getMediaAssetId(clip);
 	if (!mediaId) return;
@@ -241,7 +386,7 @@ function handlePointerDown(e: PointerEvent, clip: Clip) {
  * in ProjectWorkspaceDialog) so the editor works with a short extracted file
  * rather than seeking through the entire VOD.
  */
-async function addClipToEditor(clip: Clip) {
+async function addClipToEditor(clip: ClipWithVersion) {
 	if (!activeProject.value) return;
 	if (addingIds.value.has(clip.id) || isAlreadyAdded(clip)) return;
 
@@ -256,73 +401,47 @@ async function addClipToEditor(clip: Clip) {
 			videoServerPort = 8642;
 		}
 
-		// Determine clip time range
-		const clipStartTime = clip.start_time ?? 0;
-		const clipEndTime = clip.end_time ?? (clipStartTime + (clip.duration ?? 0));
+		const { startTime: clipStartTime, endTime: clipEndTime } = resolveClipTimeRangeForExtraction(clip);
 		const clipDuration = clipEndTime - clipStartTime;
 
 		if (clipDuration <= 0) {
-			throw new Error("Clip has no valid time range");
+			throw new Error("Clip has no valid time range (check clip version / segment bounds)");
 		}
 
-		// Find the VOD file path from the clip's project
-		let vodPath = "";
-		const projectId = clip.project_id || selectedProject.value?.id;
-		if (projectId) {
-			const rawVideos = await getRawVideosByProjectId(projectId);
-			if (rawVideos.length > 0) {
-				vodPath = rawVideos[0].file_path;
-			}
-		}
-
-		// Fallback: use the clip's own file_path (it references the source video)
-		if (!vodPath && clip.file_path) {
-			vodPath = clip.file_path;
-		}
-
-		if (!vodPath) {
-			throw new Error("Cannot find source video file for clip extraction");
-		}
-
-		// Extract the clip segment from the VOD via FFmpeg
+		// Same VOD resolution + FFmpeg extract as ProjectWorkspaceDialog → createVideoEditorProjectFromClip
 		extractionStatus.value.set(clip.id, "Extracting video...");
-		const baseDir = await appDataDir();
 		const editorProjectId = activeProject.value.metadata.id;
-		const outputDir = `${baseDir}editor-media/${editorProjectId}`;
-		const outputPath = `${outputDir}/clip_${clip.id}.mp4`;
-
-		console.log("[ProjectClipsView] Extracting clip segment:", {
-			vodPath: vodPath.split(/[\\/]/).pop(),
-			startTime: clipStartTime,
-			endTime: clipEndTime,
-			duration: clipDuration,
-			outputPath,
+		const outputPath = await invoke<string>("get_editor_clip_extract_path", {
+			projectId: editorProjectId,
+			clipId: clip.id,
 		});
 
-		await invoke("extract_clip", {
-			sourcePath: vodPath,
+		await extractUnbuiltClipSegmentToPath({
+			clipId: clip.id,
+			clipStartTime,
+			clipEndTime,
 			outputPath,
-			startTime: clipStartTime,
-			endTime: clipEndTime,
+			videoSrc: null,
+			// Prefer DB parent when a child/segment project is selected (same as ProjectWorkspaceDialog parent_id).
+			rawVideoParentProjectId:
+				selectedProject.value?.parent_id ?? selectedProject.value?.id ?? null,
 		});
 
 		console.log("[ProjectClipsView] Clip extracted successfully:", outputPath);
 
 		// Build the media asset from the extracted file
 		extractionStatus.value.set(clip.id, "Adding to editor...");
-		const encodedPath = btoa(outputPath);
+		const encodedPath = utf8ToBase64Url(outputPath);
 		const url = `http://localhost:${videoServerPort}/video/${encodedPath}`;
 
-		const response = await fetch(url);
-		if (!response.ok) {
-			throw new Error(`Failed to load extracted clip (${response.status})`);
-		}
-		const blob = await response.blob();
-		const file = new File([blob], getClipName(clip), {
-			type: blob.type || "video/mp4",
-			lastModified: Date.now(),
+		// Real bytes: scene-builder skips file.size===0 (no VideoNode → black preview); mediabunny /
+		// AudioManager BlobSource and decodeAudioData cannot read Tauri-only `.path` on an empty File.
+		const file = await hydrateVideoFileFromLocalUrl({
+			url,
+			name: getClipName(clip),
+			fallbackType: "video/mp4",
+			diskPath: outputPath,
 		});
-		(file as File & { path?: string }).path = outputPath;
 
 		const asset: Omit<MediaAsset, "id"> = {
 			name: getClipName(clip),
@@ -332,6 +451,7 @@ async function addClipToEditor(clip: Clip) {
 			duration: clipDuration,
 			thumbnailUrl: undefined,
 			ephemeral: false,
+			diskImportPath: outputPath,
 		};
 
 		// Use cached data URL thumbnail if available
@@ -461,8 +581,75 @@ onMounted(loadProjects);
 
 			<!-- Clip List View (within selected project) -->
 			<template v-else>
+				<div v-if="primaryRawVideo" class="border-b border-white/10 p-3">
+					<p class="mb-2 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+						Full Project
+					</p>
+					<div
+						class="group relative cursor-pointer overflow-hidden rounded-lg border border-cyan-500/30 transition-colors hover:border-cyan-400/50"
+						:class="{
+							'ring-1 ring-green-500/30': fullProjectAdded,
+							'pointer-events-none': isAddingFullProject,
+						}"
+						@click="handleFullProjectClick"
+						@dblclick="addFullProjectToTimeline"
+						@pointerdown="handleFullProjectPointerDown"
+						@dragstart.prevent
+					>
+						<div class="relative aspect-video bg-zinc-800">
+							<img
+								v-if="selectedProject && projectThumbnailCache.get(selectedProject.id)"
+								:src="projectThumbnailCache.get(selectedProject.id)"
+								:alt="getFullProjectAssetName()"
+								class="size-full object-cover"
+								draggable="false"
+							/>
+							<div v-else class="flex size-full items-center justify-center">
+								<Clapperboard class="size-6 text-cyan-400/70" />
+							</div>
+							<div
+								v-if="primaryRawVideo.duration"
+								class="absolute right-1 bottom-1 rounded bg-black/70 px-1 text-xs text-white"
+							>
+								{{ formatDuration(primaryRawVideo.duration) }}
+							</div>
+							<div
+								v-if="isAddingFullProject"
+								class="absolute inset-0 flex items-center justify-center bg-black/60"
+							>
+								<Loader2 class="size-4 animate-spin text-white" />
+							</div>
+							<div
+								v-else-if="fullProjectAdded"
+								class="absolute inset-0 flex items-center justify-center bg-black/50"
+							>
+								<Check class="size-4 text-green-400" />
+							</div>
+							<div
+								v-else
+								class="absolute inset-0 hidden items-center justify-center bg-black/40 group-hover:flex"
+							>
+								<Plus class="size-5 text-white" />
+							</div>
+						</div>
+						<div class="truncate px-2 py-1 text-xs font-medium text-cyan-200">
+							Entire Project
+						</div>
+						<div class="truncate px-2 pb-1 text-[10px] text-zinc-500">
+							Full downloaded video
+						</div>
+					</div>
+				</div>
+
+				<p
+					v-if="primaryRawVideo && filteredClips.length > 0"
+					class="px-3 pt-2 text-[10px] font-medium uppercase tracking-wide text-zinc-500"
+				>
+					Clips
+				</p>
+
 				<div
-					v-if="filteredClips.length === 0"
+					v-if="filteredClips.length === 0 && !primaryRawVideo"
 					class="flex h-full flex-col items-center justify-center gap-2 p-4 text-center"
 				>
 					<Film class="size-8 text-zinc-600" />
@@ -475,7 +662,7 @@ onMounted(loadProjects);
 				</div>
 
 				<div
-					v-else
+					v-else-if="filteredClips.length > 0"
 					class="grid gap-2 p-3"
 					style="grid-template-columns: repeat(3, 1fr)"
 				>

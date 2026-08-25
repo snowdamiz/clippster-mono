@@ -1,5 +1,10 @@
 <template>
-  <PageLayout title="VOD Library" description="Manage and organize your video projects" :show-header="true" :icon="Folder">
+  <PageLayout
+    title="Video Library"
+    description="Manage and organize your video projects"
+    :show-header="true"
+    :icon="Folder"
+  >
     <template #actions>
       <div class="projects-header-actions">
         <!-- Search -->
@@ -77,8 +82,8 @@
         v-if="projects.length > 0 || loading || getActiveDownloads().length > 0 || getQueuedDownloads().length > 0"
         class="projects__heading"
       >
-        <h1 class="projects__title">VOD Library</h1>
-        <p class="projects__subtitle">Manage and organize your downloaded vods and detect clips</p>
+        <h1 class="projects__title">Video Library</h1>
+        <p class="projects__subtitle">Manage and organize your downloaded videos and detect clips</p>
       </div>
 
       <!-- Loading State -->
@@ -134,11 +139,7 @@
         <div v-if="getActiveDownloads().length > 0 || getQueuedDownloads().length > 0" class="projects__section">
           <div class="projects__section-header-row">
             <h3 class="projects__section-header">Active Downloads</h3>
-            <button
-              class="projects__cancel-all-btn"
-              @click="handleCancelAllDownloads"
-              title="Cancel all downloads"
-            >
+            <button class="projects__cancel-all-btn" @click="handleCancelAllDownloads" title="Cancel all downloads">
               <XCircle :size="16" />
               Cancel All
             </button>
@@ -163,9 +164,9 @@
                 v-for="project in group.projects"
                 :key="project.id"
                 class="project-card"
-                :class="{ 
+                :class="{
                   'project-card--selected': isProjectSelected(project.id),
-                  'project-card--list': viewMode === 'list'
+                  'project-card--list': viewMode === 'list',
                 }"
                 @click="handleProjectClick(project)"
               >
@@ -199,7 +200,7 @@
 
                 <!-- VOD Preset Badge -->
                 <div
-                  v-if="hasVodPreset(project.id)"
+                  v-if="hasVodPreset(project.id) && !isLiveClipsContainerProject(project)"
                   class="project-card__preset-badge"
                 >
                   <LayoutDashboard class="project-card__badge-icon" />
@@ -350,7 +351,10 @@
                   </button>
 
                   <button
-                    v-if="hasDirectVideos(project.id) || hasChildren(project.id)"
+                    v-if="
+                      (hasDirectVideos(project.id) || hasChildren(project.id)) &&
+                      !isLiveClipsContainerProject(project)
+                    "
                     class="project-card__action-btn"
                     :class="{ 'project-card__action-btn--preset-active': hasVodPreset(project.id) }"
                     title="Pre-Edit VOD"
@@ -447,6 +451,7 @@
       :watermark-settings="folderCreatorWatermarkSettings"
       :default-intro="folderCreatorDefaultIntro"
       :default-outro="folderCreatorDefaultOutro"
+      :creator-profile="folderCreatorProfile"
       :creator-profile-server-id="folderCreatorProfileServerId"
       @confirm="onFolderBuildConfirm"
     />
@@ -534,6 +539,37 @@
                 </button>
               </div>
 
+              <!-- Tab-specific guidance -->
+              <div
+                class="folder-dialog__guidance"
+                :class="`folder-dialog__guidance--${folderActiveTab}`"
+              >
+                <div v-if="folderActiveTab === 'segments'" class="folder-dialog__guidance-inner">
+                  <div class="folder-dialog__guidance-icon folder-dialog__guidance-icon--edit">
+                    <Edit :size="16" />
+                  </div>
+                  <div class="folder-dialog__guidance-text">
+                    <p class="folder-dialog__guidance-title">Edit segments</p>
+                    <p class="folder-dialog__guidance-body">
+                      Open a segment to edit subtitles, adjust subtitle positioning, change framing, fine-tune
+                      timing, and modify clip details.
+                    </p>
+                  </div>
+                </div>
+                <div v-else class="folder-dialog__guidance-inner">
+                  <div class="folder-dialog__guidance-icon folder-dialog__guidance-icon--publish">
+                    <Hammer :size="16" />
+                  </div>
+                  <div class="folder-dialog__guidance-text">
+                    <p class="folder-dialog__guidance-title">Quick build &amp; publish</p>
+                    <p class="folder-dialog__guidance-body">
+                      Preview detected clips, build exports, and publish from here. This tab is not for editing
+                      subtitles or positioning — use Segments for that.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <!-- Content -->
               <div
                 class="folder-dialog__content"
@@ -591,12 +627,20 @@
                         <span>Detecting...</span>
                       </div>
                       <!-- Transcription Progress Indicator -->
-                      <div v-else-if="activeTranscriptions.has(project.id)" class="folder-dialog__segment-detecting" style="background: rgba(34, 197, 94, 0.85)">
+                      <div
+                        v-else-if="activeTranscriptions.has(project.id)"
+                        class="folder-dialog__segment-detecting"
+                        style="background: rgba(34, 197, 94, 0.85)"
+                      >
                         <Loader2 :size="12" class="folder-dialog__spin" />
                         <span>Transcribing...</span>
                       </div>
                       <!-- Transcribed Badge -->
-                      <div v-else-if="projectTranscriptStatus[project.id]" class="folder-dialog__segment-duration" style="background: rgba(34, 197, 94, 0.85)">
+                      <div
+                        v-else-if="projectTranscriptStatus[project.id]"
+                        class="folder-dialog__segment-duration"
+                        style="background: rgba(34, 197, 94, 0.85)"
+                      >
                         <FileText :size="12" />
                         Transcribed
                       </div>
@@ -618,10 +662,10 @@
                       <div class="folder-dialog__segment-hover">
                         <button
                           class="folder-dialog__segment-action"
-                          title="Open Workspace"
+                          title="Edit segment — subtitles, positioning, framing, and clip details"
                           @click.stop="openWorkspace(project)"
                         >
-                          <Play :size="20" />
+                          <Edit :size="20" />
                         </button>
                         <button
                           v-if="
@@ -678,7 +722,8 @@
                       </div>
                       <h3 class="folder-dialog__clips-empty-title">No Clips Detected</h3>
                       <p class="folder-dialog__clips-empty-text">
-                        Run clip detection on individual segments to find viral moments.
+                        Run clip detection on a segment first. Detected clips will appear here for preview, quick
+                        builds, and publishing.
                       </p>
                     </div>
 
@@ -721,7 +766,10 @@
                         <PlayIcon :size="40" />
                       </div>
                       <h3 class="folder-dialog__player-empty-title">Select a Clip to Preview</h3>
-                      <p class="folder-dialog__player-empty-text">Click on any clip from the list to preview it here</p>
+                      <p class="folder-dialog__player-empty-text">
+                        Click a clip to preview, build, or publish. To edit subtitles or positioning, open the segment
+                        from the Segments tab.
+                      </p>
                     </div>
 
                     <!-- Video Player -->
@@ -902,11 +950,7 @@
     <!-- Delete Project Dialog -->
     <Teleport to="body">
       <Transition name="modal">
-        <div
-          v-if="showDeleteDialog"
-          class="delete-dialog__overlay"
-          @click.self="handleDeleteDialogClose"
-        >
+        <div v-if="showDeleteDialog" class="delete-dialog__overlay" @click.self="handleDeleteDialogClose">
           <Transition name="dialog" appear>
             <div class="delete-dialog">
               <!-- Accent Bar -->
@@ -927,7 +971,11 @@
                 </div>
                 <h2 class="delete-dialog__title">Delete Project</h2>
                 <p class="delete-dialog__subtitle">
-                  {{ projectHasVideos || projectHasClips ? 'This project contains content' : 'This action cannot be undone' }}
+                  {{
+                    projectHasVideos || projectHasClips
+                      ? 'This project contains content'
+                      : 'This action cannot be undone'
+                  }}
                 </p>
               </div>
 
@@ -935,8 +983,9 @@
               <div class="delete-dialog__content">
                 <div class="delete-dialog__message">
                   <p class="delete-dialog__text">
-                    Are you sure you want to delete
-                    "<span class="delete-dialog__text--highlight">{{ projectToDelete?.name }}</span>"?
+                    Are you sure you want to delete "
+                    <span class="delete-dialog__text--highlight">{{ projectToDelete?.name }}</span>
+                    "?
                   </p>
                   <p class="delete-dialog__warning">This action cannot be undone.</p>
                 </div>
@@ -949,10 +998,22 @@
                   <div class="delete-dialog__info-content">
                     <p class="delete-dialog__info-title">What will be deleted:</p>
                     <ul class="delete-dialog__info-list">
-                      <li v-if="projectHasVideos"><strong>Delete:</strong> Raw video files from disk</li>
-                      <li v-if="projectHasClips"><strong>Delete:</strong> Unbuilt clips not being edited</li>
-                      <li v-if="projectHasClips"><strong>Keep:</strong> Built clips (available in My Clips)</li>
-                      <li v-if="projectHasClips"><strong>Keep:</strong> Clips currently in the editor</li>
+                      <li v-if="projectHasVideos">
+                        <strong>Delete:</strong>
+                        Raw video files from disk
+                      </li>
+                      <li v-if="projectHasClips">
+                        <strong>Delete:</strong>
+                        Unbuilt clips not being edited
+                      </li>
+                      <li v-if="projectHasClips">
+                        <strong>Keep:</strong>
+                        Built clips (available in My Clips)
+                      </li>
+                      <li v-if="projectHasClips">
+                        <strong>Keep:</strong>
+                        Clips currently in the editor
+                      </li>
                     </ul>
                   </div>
                 </div>
@@ -964,20 +1025,17 @@
                 >
                   <p class="delete-dialog__segments-title">
                     This project contains
-                    <span class="delete-dialog__text--highlight">{{ getChildCount(projectToDelete?.id || '') }} segments</span>.
-                    What would you like to do with them?
+                    <span class="delete-dialog__text--highlight">
+                      {{ getChildCount(projectToDelete?.id || '') }} segments
+                    </span>
+                    . What would you like to do with them?
                   </p>
                   <div class="delete-dialog__segments-options">
                     <label
                       class="delete-dialog__segment-option"
                       :class="{ 'delete-dialog__segment-option--selected': !deleteSegmentsToo }"
                     >
-                      <input
-                        type="radio"
-                        :value="false"
-                        v-model="deleteSegmentsToo"
-                        class="delete-dialog__radio"
-                      />
+                      <input type="radio" :value="false" v-model="deleteSegmentsToo" class="delete-dialog__radio" />
                       <div class="delete-dialog__segment-option-content">
                         <span class="delete-dialog__segment-option-title">Keep segments</span>
                         <p class="delete-dialog__segment-option-desc">
@@ -989,12 +1047,7 @@
                       class="delete-dialog__segment-option"
                       :class="{ 'delete-dialog__segment-option--selected': deleteSegmentsToo }"
                     >
-                      <input
-                        type="radio"
-                        :value="true"
-                        v-model="deleteSegmentsToo"
-                        class="delete-dialog__radio"
-                      />
+                      <input type="radio" :value="true" v-model="deleteSegmentsToo" class="delete-dialog__radio" />
                       <div class="delete-dialog__segment-option-content">
                         <span class="delete-dialog__segment-option-title">Delete all segments</span>
                         <p class="delete-dialog__segment-option-desc">
@@ -1015,7 +1068,8 @@
                   </div>
                   <div class="delete-dialog__info-content">
                     <p class="delete-dialog__info-text">
-                      This project contains <span class="delete-dialog__text--highlight">1 segment</span>
+                      This project contains
+                      <span class="delete-dialog__text--highlight">1 segment</span>
                       which will also be deleted along with its video files.
                     </p>
                   </div>
@@ -1209,7 +1263,6 @@
       </template>
     </SearchPalette>
 
-
     <!-- Existing Project Dialog -->
     <ExistingProjectDialog
       :show="showExistingProjectDialog"
@@ -1238,8 +1291,8 @@
       :initial-config="vodPresetInitialConfig"
       :creator-profile-id="vodPresetProject?.creator_profile_id"
       :thumbnail-url="vodPresetProject ? thumbnailCache.get(vodPresetProject.id) : null"
-      :video-path="vodPresetProject && projectVideos[vodPresetProject.id]?.[0]?.file_path || null"
-      :video-duration="vodPresetProject && projectVideos[vodPresetProject.id]?.[0]?.duration || 0"
+      :video-path="(vodPresetProject && projectVideos[vodPresetProject.id]?.[0]?.file_path) || null"
+      :video-duration="(vodPresetProject && projectVideos[vodPresetProject.id]?.[0]?.duration) || 0"
       @confirm="onVodPresetConfirmed"
       @clear="onVodPresetCleared"
     />
@@ -1249,7 +1302,7 @@
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, watch, nextTick, Transition } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
-  import { formatDateTime, formatDate } from '@/utils/dateTimeUtils';
+  import { formatDateTime, formatDate, toDate } from '@/utils/dateTimeUtils';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import Hls from 'hls.js';
   import {
@@ -1315,8 +1368,15 @@
     type WatermarkSettings,
     type VideoEditorProject,
     hasTranscriptForProject,
+    isLiveClipsContainerProject,
   } from '@/services/database';
+  import {
+    isShortVideoAutoClipEligible,
+    SHORT_VIDEO_CLIP_THRESHOLD_SECONDS,
+  } from '@/services/database/auto-clips';
   import { useInEditorClips } from '@/stores/useInEditorClips';
+  import { useClipThumbnailStore } from '@/stores/clipThumbnails';
+  import { persistentCache } from '@/utils/persistentCache';
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { extractMintId } from '@/services/pumpfun';
   import { useFormatters } from '@/composables/useFormatters';
@@ -1324,7 +1384,7 @@
   import { useLivestreamMonitoring } from '@/composables/useLivestreamMonitoring';
   import { useVideoOperations } from '@/composables/useVideoOperations';
   import { useDownloads } from '@/composables/useDownloads';
-  import { resolveBrandingProfile } from '@/composables/useBrandingProfileSelection';
+  import { resolveAutoBrandingProfile } from '@/composables/useBrandingProfileSelection';
   import PageLayout from '@/components/PageLayout.vue';
   import SkeletonGrid from '@/components/SkeletonGrid.vue';
   import ProjectDialog, { type ProjectFormData } from '@/components/ProjectDialog.vue';
@@ -1362,7 +1422,7 @@
   const { isAIAllowed } = useAIPermission();
   const { gates } = useSubscriptionGate();
   const { fetchSubscriptionStatus } = useSubscription();
-  import { utf8ToBase64 } from '@/utils/encoding';
+  import { utf8ToBase64Url } from '@/utils/encoding';
   import { save } from '@tauri-apps/plugin-dialog';
   import VodPresetEditor from '@/components/VodPresetEditor.vue';
   import {
@@ -1388,7 +1448,8 @@
   const projectVideos = ref<Record<string, RawVideo[]>>({});
   const videoEditorProjects = ref<Record<string, VideoEditorProject>>({});
   const thumbnailCache = ref<Map<string, string>>(new Map());
-  const clipThumbnailCache = ref<Map<string, string>>(new Map());
+  // Use persistent clip thumbnail store instead of component-level cache
+  const clipThumbnailStore = useClipThumbnailStore();
   const { getRelativeTime, formatDuration } = useFormatters();
   const { success, error } = useToast();
   const { activeSessions } = useLivestreamMonitoring();
@@ -1446,10 +1507,17 @@
   }
 
   async function openVodPresetEditor(project: Project) {
+    if (isLiveClipsContainerProject(project)) return;
+
+    console.log('[Projects] Opening VodPresetEditor for project:', project.id, 'parent_id:', project.parent_id);
     vodPresetProject.value = project;
     // Load existing config
     try {
       const config = await getProjectVodPresetConfig(project.id);
+      console.log(
+        '[Projects] VodPresetEditor loaded existing config:',
+        config ? `found (${config.targetAspectRatio})` : 'not found'
+      );
       vodPresetInitialConfig.value = config;
     } catch (e) {
       console.warn('[Projects] Failed to load VOD preset config:', e);
@@ -1461,9 +1529,11 @@
   async function onVodPresetConfirmed(config: ActiveVodPresetConfig) {
     if (!vodPresetProject.value) return;
     const projectId = vodPresetProject.value.id;
+    console.log('[Projects] Saving VOD preset to project:', projectId, 'aspect ratio:', config.targetAspectRatio);
     try {
       await setProjectVodPreset(projectId, config.presetId, config);
       vodPresetConfigs.value[projectId] = config;
+      console.log('[Projects] VOD preset saved successfully to project:', projectId);
       success('VOD pre-edit settings applied');
     } catch (e) {
       console.error('[Projects] Failed to save VOD preset:', e);
@@ -1635,136 +1705,45 @@
       }
       console.log('[Projects] Loaded video editor projects:', allVideoEditorProjects.length);
 
-      // Load clip counts and video thumbnails for each project
-      for (const project of projects.value) {
+      // Parallelize clip counts and video loading for all projects
+      const clipCountPromises = projects.value.map(async (project) => {
         const clips = await getClipsWithVersionsByProjectId(project.id);
-        clipCounts.value[project.id] = clips.length;
+        return { projectId: project.id, count: clips.length };
+      });
 
-        // Load videos for this project
+      const videoPromises = projects.value.map(async (project) => {
         const videos = await getRawVideosByProjectId(project.id);
-        projectVideos.value[project.id] = videos;
+        return { projectId: project.id, videos };
+      });
 
-        // Load project thumbnail or use first video's thumbnail
-        // If we're doing a background refresh, we might want to re-verify thumbnails for modified projects
-        // But checking !has() is usually enough if we clear the cache for modified projects before calling this
-        if (!thumbnailCache.value.has(project.id)) {
-          if (project.thumbnail_path) {
-            // Use project's stored thumbnail if available
-            try {
-              const dataUrl = await invoke<string>('read_file_as_data_url', {
-                filePath: project.thumbnail_path,
-              });
-              thumbnailCache.value.set(project.id, dataUrl);
-            } catch (error) {
-              console.warn('Failed to load project thumbnail:', project.id, error);
-            }
-          } else if (videos.length > 0 && videos[0].thumbnail_path) {
-            // Fall back to first video's thumbnail
-            try {
-              // Update the project object in memory
-              project.thumbnail_path = videos[0].thumbnail_path;
+      // Load clips and videos in parallel
+      const [clipResults, videoResults] = await Promise.all([
+        Promise.all(clipCountPromises),
+        Promise.all(videoPromises),
+      ]);
 
-              const dataUrl = await invoke<string>('read_file_as_data_url', {
-                filePath: videos[0].thumbnail_path,
-              });
-              thumbnailCache.value.set(project.id, dataUrl);
+      // Populate clip counts and project videos
+      for (const result of clipResults) {
+        clipCounts.value[result.projectId] = result.count;
+      }
 
-              // Save this thumbnail to the project for future use
-              await updateProject(project.id, undefined, undefined, videos[0].thumbnail_path);
-            } catch (error) {
-              console.warn('Failed to load video thumbnail for project:', project.id, error);
-            }
-          } else {
-            // Try to get thumbnail from first clip (for auto-detected clip projects)
-            try {
-              const { getClipsWithBuildStatus } = await import('@/services/database/clip-build');
-              const clips = await getClipsWithBuildStatus(project.id);
-              
-              if (clips.length > 0) {
-                let clipThumb = clips[0].built_thumbnail_path;
-                
-                // If no built_thumbnail_path, try to generate from the clip's video file
-                if (!clipThumb && clips[0].file_path) {
-                  try {
-                    // Generate thumbnail from the clip's video file
-                    const thumbnailPath = await invoke<string>('generate_video_thumbnail', {
-                      videoPath: clips[0].file_path,
-                      outputDir: null, // Use default temp directory
-                    });
-                    clipThumb = thumbnailPath;
-                  } catch (thumbError) {
-                    console.warn('Failed to generate thumbnail from clip video:', thumbError);
-                  }
-                }
-                
-                if (clipThumb) {
-                  project.thumbnail_path = clipThumb;
+      for (const result of videoResults) {
+        projectVideos.value[result.projectId] = result.videos;
+      }
 
-                  const dataUrl = await invoke<string>('read_file_as_data_url', {
-                    filePath: clipThumb,
-                  });
-                  thumbnailCache.value.set(project.id, dataUrl);
+      // Load thumbnails for first 20 projects immediately, rest in background
+      const projectsNeedingThumbs = projects.value.filter((p) => !thumbnailCache.value.has(p.id));
+      const visibleProjects = projectsNeedingThumbs.slice(0, 20);
+      const remainingProjects = projectsNeedingThumbs.slice(20);
 
-                  // Save this thumbnail to the project for future use
-                  await updateProject(project.id, undefined, undefined, clipThumb);
-                }
-              }
-              
-              if (!project.thumbnail_path) {
-                // Check if it's a parent project and try to get thumbnail from children
-                // This handles auto-segmented projects that have child projects but no direct videos yet
-                const children = projects.value.filter((p) => p.parent_id === project.id);
-                if (children.length > 0) {
-                  // Found children, try to get a thumbnail from one of them
-                  for (const child of children) {
-                    // Try to find thumbnail from child project directly
-                    let childThumb = child.thumbnail_path;
+      // Load visible project thumbnails immediately
+      await loadProjectThumbnailsBatch(visibleProjects);
 
-                    // If not on project, check if we have videos for this child already loaded
-                    if (!childThumb && projectVideos.value[child.id]?.length > 0) {
-                      childThumb = projectVideos.value[child.id][0].thumbnail_path;
-                    }
-
-                    if (childThumb) {
-                      // Set thumbnail on the parent project object in memory
-                      project.thumbnail_path = childThumb;
-
-                      const dataUrl = await invoke<string>('read_file_as_data_url', {
-                        filePath: childThumb,
-                      });
-                      thumbnailCache.value.set(project.id, dataUrl);
-
-                      // Save to parent in DB if not already set
-                      await updateProject(project.id, undefined, undefined, childThumb);
-                      break;
-                    } else {
-                      // Force fetch child videos if not yet loaded (rare race condition fallback)
-                      try {
-                        const childVideos = await getRawVideosByProjectId(child.id);
-                        projectVideos.value[child.id] = childVideos;
-
-                        if (childVideos.length > 0 && childVideos[0].thumbnail_path) {
-                          childThumb = childVideos[0].thumbnail_path;
-                          project.thumbnail_path = childThumb;
-                          const dataUrl = await invoke<string>('read_file_as_data_url', {
-                            filePath: childThumb,
-                          });
-                          thumbnailCache.value.set(project.id, dataUrl);
-                          await updateProject(project.id, undefined, undefined, childThumb);
-                          break;
-                        }
-                      } catch (e) {
-                        console.warn('Failed to fetch child videos for thumbnail propagation', e);
-                      }
-                    }
-                  }
-                }
-              }
-            } catch (error) {
-              console.warn('Failed to load thumbnail from clips or children for project:', project.id, error);
-            }
-          }
-        }
+      // Defer remaining thumbnails to after initial render
+      if (remainingProjects.length > 0) {
+        setTimeout(() => {
+          loadProjectThumbnailsBatch(remainingProjects);
+        }, 100);
       }
       // Load transcript statuses for all projects (non-blocking)
       const allProjectIds = projects.value.map((p) => p.id);
@@ -1779,9 +1758,96 @@
     }
   }
 
+  // Helper function to load thumbnails for a batch of projects
+  async function loadProjectThumbnailsBatch(projectList: Project[]) {
+    const batchSize = 5;
+    for (let i = 0; i < projectList.length; i += batchSize) {
+      const batch = projectList.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map(async (project) => {
+          // Check persistent cache first
+          try {
+            const cached = await persistentCache.get<string>('thumbnails', `project-${project.id}`);
+            if (cached) {
+              thumbnailCache.value.set(project.id, cached);
+              return;
+            }
+          } catch (error) {
+            console.warn('[Projects] Failed to read thumbnail from cache:', error);
+          }
+
+          const videos = projectVideos.value[project.id] || [];
+
+          if (project.thumbnail_path) {
+            try {
+              const dataUrl = await invoke<string>('read_file_as_data_url', {
+                filePath: project.thumbnail_path,
+              });
+              thumbnailCache.value.set(project.id, dataUrl);
+              // Save to persistent cache (24 hours TTL)
+              persistentCache.set('thumbnails', `project-${project.id}`, dataUrl, 86400000).catch(() => {});
+            } catch (error) {
+              console.warn('[Projects] Failed to load project thumbnail:', project.id, error);
+            }
+          } else if (videos.length > 0 && videos[0].thumbnail_path) {
+            try {
+              project.thumbnail_path = videos[0].thumbnail_path;
+              const dataUrl = await invoke<string>('read_file_as_data_url', {
+                filePath: videos[0].thumbnail_path,
+              });
+              thumbnailCache.value.set(project.id, dataUrl);
+              persistentCache.set('thumbnails', `project-${project.id}`, dataUrl, 86400000).catch(() => {});
+              await updateProject(project.id, undefined, undefined, videos[0].thumbnail_path);
+            } catch (error) {
+              console.warn('[Projects] Failed to load video thumbnail:', project.id, error);
+            }
+          } else {
+            // Try to get thumbnail from first clip or children (deferred complex logic)
+            await loadThumbnailFromClipsOrChildren(project);
+          }
+        })
+      );
+    }
+  }
+
+  // Helper function for complex thumbnail fallback logic
+  async function loadThumbnailFromClipsOrChildren(project: Project) {
+    try {
+      const { getClipsWithBuildStatus } = await import('@/services/database/clip-build');
+      const clips = await getClipsWithBuildStatus(project.id);
+
+      if (clips.length > 0 && clips[0].built_thumbnail_path) {
+        project.thumbnail_path = clips[0].built_thumbnail_path;
+        const dataUrl = await invoke<string>('read_file_as_data_url', {
+          filePath: clips[0].built_thumbnail_path,
+        });
+        thumbnailCache.value.set(project.id, dataUrl);
+        persistentCache.set('thumbnails', `project-${project.id}`, dataUrl, 86400000).catch(() => {});
+        await updateProject(project.id, undefined, undefined, clips[0].built_thumbnail_path);
+        return;
+      }
+
+      // Try children as last resort
+      const children = projects.value.filter((p) => p.parent_id === project.id);
+      for (const child of children) {
+        const childThumb = child.thumbnail_path || projectVideos.value[child.id]?.[0]?.thumbnail_path;
+        if (childThumb) {
+          project.thumbnail_path = childThumb;
+          const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: childThumb });
+          thumbnailCache.value.set(project.id, dataUrl);
+          persistentCache.set('thumbnails', `project-${project.id}`, dataUrl, 86400000).catch(() => {});
+          await updateProject(project.id, undefined, undefined, childThumb);
+          break;
+        }
+      }
+    } catch (error) {
+      console.warn('[Projects] Failed to load thumbnail from clips/children:', project.id, error);
+    }
+  }
+
   function getProjectDuration(projectId: string): string | null {
     // First check if this is a video editor project (by name)
-    const project = projects.value.find(p => p.id === projectId);
+    const project = projects.value.find((p) => p.id === projectId);
     if (project && videoEditorProjects.value[project.name]) {
       const vep = videoEditorProjects.value[project.name];
       if (vep.total_duration > 0) {
@@ -1832,7 +1898,7 @@
         }
 
         // Check if file exists - skip orphaned videos silently
-        const fileExists = await invoke('check_file_exists', { path: video.file_path }) as boolean;
+        const fileExists = (await invoke('check_file_exists', { path: video.file_path })) as boolean;
         if (!fileExists) {
           console.log(`[Projects] Skipping orphaned video (file doesn't exist): ${video.original_filename}`);
           continue;
@@ -1857,15 +1923,14 @@
         console.log(`[Projects] Video path: ${video.file_path}`);
 
         try {
-
           const updates: any = {};
 
           // Extract metadata if missing duration
           if (!video.duration || video.duration === 0) {
             console.log(`[Projects] Calling get_video_metadata for: ${video.file_path}`);
-            const metadata = await invoke('get_video_metadata', {
-              videoPath: video.file_path
-            }) as any;
+            const metadata = (await invoke('get_video_metadata', {
+              videoPath: video.file_path,
+            })) as any;
 
             console.log(`[Projects] Received metadata:`, metadata);
 
@@ -1884,10 +1949,10 @@
           if (!video.thumbnail_path) {
             console.log(`[Projects] Generating thumbnail for: ${video.file_path}`);
             try {
-              const thumbnailPath = await invoke('generate_video_thumbnail', {
+              const thumbnailPath = (await invoke('generate_video_thumbnail', {
                 videoPath: video.file_path,
-                timestamp: 5.0
-              }) as string;
+                timestamp: 5.0,
+              })) as string;
 
               if (thumbnailPath) {
                 updates.thumbnail_path = thumbnailPath;
@@ -1912,7 +1977,9 @@
         }
       }
 
-      console.log(`[Projects] Metadata backfill complete. Fixed: ${fixed}, Thumbnails: ${thumbnailsGenerated}, Failed: ${failed}`);
+      console.log(
+        `[Projects] Metadata backfill complete. Fixed: ${fixed}, Thumbnails: ${thumbnailsGenerated}, Failed: ${failed}`
+      );
 
       // Reload projects to show updated durations and thumbnails
       await loadProjects();
@@ -1921,7 +1988,9 @@
     }
   }
 
-  function getProjectPlatform(project: Project): 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual' | null {
+  function getProjectPlatform(
+    project: Project
+  ): 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual' | null {
     // 0. Check explicit platform field
     if (project.platform) {
       return project.platform;
@@ -1982,8 +2051,8 @@
 
   // Get thumbnail URL for a clip - uses cached data URLs
   function getClipThumbnailUrl(clip: ClipWithVersionAndSegment): string | null {
-    // Check clip thumbnail cache first
-    const cachedThumbnail = clipThumbnailCache.value.get(clip.id);
+    // Check persistent clip thumbnail cache first
+    const cachedThumbnail = clipThumbnailStore.getThumbnail(clip.id);
     if (cachedThumbnail) {
       return cachedThumbnail;
     }
@@ -2129,16 +2198,55 @@
   const folderDropdownButtonRefs = ref<Map<string, HTMLElement>>(new Map());
   const clipToPreview = ref<ClipWithVersionAndSegment | null>(null);
 
-  // Computed property to get video file path for clip preview
-  const clipPreviewVideoPath = computed(() => {
-    if (!clipToPreview.value) return null;
-    const segmentId = clipToPreview.value.segment_id || clipToPreview.value.project_id;
+  function isAutoOrManualLiveClip(clip: ClipWithVersionAndSegment): boolean {
+    const prompt = String(clip.session_prompt || '').toLowerCase();
+    return prompt === 'manual clip creation' || prompt.includes('auto');
+  }
+
+  function isClipPreviewBuiltExport(clip: ClipWithVersionAndSegment): boolean {
+    return !!(clip.built_file_path && clip.built_file_path.trim() !== '');
+  }
+
+  function isClipPreviewSelfContained(clip: ClipWithVersionAndSegment): boolean {
+    if (isClipPreviewBuiltExport(clip)) return true;
+    const clipOwnFile = clip.file_path?.trim();
+    return isAutoOrManualLiveClip(clip) && !!clipOwnFile;
+  }
+
+  function resolveClipPreviewVideoPath(clip: ClipWithVersionAndSegment): string | null {
+    const builtFilePath = clip.built_file_path?.trim();
+    if (builtFilePath) return builtFilePath;
+
+    const clipOwnFile = clip.file_path?.trim();
+    if (isAutoOrManualLiveClip(clip) && clipOwnFile) return clipOwnFile;
+
+    const segmentId = clip.segment_id || clip.project_id;
     if (!segmentId) return null;
     const videos = projectVideos.value[segmentId];
     if (videos && videos.length > 0) {
       return videos[0].file_path;
     }
     return null;
+  }
+
+  function getSelfContainedClipDuration(clip: ClipWithVersionAndSegment): number {
+    if (clip.current_version_segments && clip.current_version_segments.length > 0) {
+      return clip.current_version_segments.reduce((total, segment) => {
+        const duration = Number(segment.duration) || Number(segment.end_time) - Number(segment.start_time);
+        return total + Math.max(0, duration);
+      }, 0);
+    }
+
+    const startTime = clip.current_version_start_time ?? clip.start_time ?? 0;
+    const endTime = clip.current_version_end_time ?? clip.end_time ?? 0;
+    if (endTime > startTime) return endTime - startTime;
+    return clip.built_duration ?? clip.duration ?? 0;
+  }
+
+  // Computed property to get video file path for clip preview
+  const clipPreviewVideoPath = computed(() => {
+    if (!clipToPreview.value) return null;
+    return resolveClipPreviewVideoPath(clipToPreview.value);
   });
 
   // Computed style for watermark position
@@ -2300,30 +2408,13 @@
 
   // Load existing clip thumbnails in parallel (fast - just reading files)
   async function loadClipThumbnailsInParallel() {
-    const clipsWithThumbnails = folderClips.value.filter(
-      (clip) => clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
-    );
-
-    if (clipsWithThumbnails.length === 0) return;
-
-    // Load all thumbnails in parallel
-    await Promise.all(
-      clipsWithThumbnails.map(async (clip) => {
-        try {
-          const dataUrl = await invoke<string>('read_file_as_data_url', {
-            filePath: clip.built_thumbnail_path,
-          });
-          clipThumbnailCache.value.set(clip.id, dataUrl);
-        } catch (err) {
-          console.warn('Failed to load clip thumbnail:', clip.id, err);
-        }
-      })
-    );
+    // Use persistent store's batch loading method - it handles deduplication and caching
+    await clipThumbnailStore.loadThumbnails(folderClips.value);
   }
 
   // Track which projects have had thumbnails generated to avoid re-generation
   const thumbnailsGeneratedForProjects = ref(new Set<string>());
-  
+
   // Cancellation flag for thumbnail generation - set to true when navigating away
   let thumbnailGenerationCancelled = false;
   // Flag to prevent concurrent thumbnail generation
@@ -2336,7 +2427,7 @@
       console.log('[Projects] Thumbnail generation already in progress, skipping');
       return;
     }
-    
+
     const clipsWithoutThumbnails = folderClips.value.filter((clip) => !clip.built_thumbnail_path);
 
     if (clipsWithoutThumbnails.length === 0) return;
@@ -2348,14 +2439,20 @@
       return;
     }
 
-    console.log(`[Projects] Generating thumbnails for ${clipsWithoutThumbnails.length} clips in background (one at a time)...`);
-    
+    console.log(
+      `[Projects] Generating thumbnails for ${clipsWithoutThumbnails.length} clips in background (one at a time)...`
+    );
+
     // Reset cancellation flag and mark as in progress
     thumbnailGenerationCancelled = false;
     thumbnailGenerationInProgress = true;
 
     // Process ONE at a time to prevent spawning 50+ FFmpeg processes
-    const dbUpdates: Array<{ clipId: string; thumbnailPath: string; buildStatus: 'pending' | 'building' | 'completed' | 'failed' }> = [];
+    const dbUpdates: Array<{
+      clipId: string;
+      thumbnailPath: string;
+      buildStatus: 'pending' | 'building' | 'completed' | 'failed';
+    }> = [];
 
     try {
       // Process clips ONE AT A TIME sequentially (not in parallel)
@@ -2365,9 +2462,9 @@
           console.log('[Projects] Thumbnail generation cancelled');
           break;
         }
-        
+
         const clip = clipsWithoutThumbnails[i];
-        
+
         try {
           const segmentId = clip.segment_id || clip.project_id;
           if (!segmentId) continue;
@@ -2406,7 +2503,7 @@
             const dataUrl = await invoke<string>('read_file_as_data_url', {
               filePath: thumbnailPath,
             });
-            clipThumbnailCache.value.set(clip.id, dataUrl);
+            clipThumbnailStore.setThumbnail(clip.id, dataUrl);
 
             // Update the clip's thumbnail path
             clip.built_thumbnail_path = thumbnailPath;
@@ -2417,7 +2514,7 @@
               thumbnailPath: thumbnailPath,
               buildStatus: (clip.build_status || 'pending') as 'pending' | 'building' | 'completed' | 'failed',
             });
-            
+
             console.log(`[Projects] Generated thumbnail ${i + 1}/${clipsWithoutThumbnails.length}`);
           }
         } catch (err) {
@@ -2437,7 +2534,7 @@
     if (dbUpdates.length > 0 && !thumbnailGenerationCancelled) {
       console.log(`[Projects] Writing ${dbUpdates.length} thumbnail updates to database...`);
       const { updateClipBuildStatus } = await import('@/services/database');
-      
+
       // Write sequentially to avoid overwhelming the database
       for (const update of dbUpdates) {
         await updateClipBuildStatus(update.clipId, update.buildStatus, {
@@ -2453,7 +2550,7 @@
 
     console.log(`[Projects] Background thumbnail generation complete (${dbUpdates.length} generated)`);
   }
-  
+
   // Cancel any running thumbnail generation
   function cancelThumbnailGeneration() {
     if (thumbnailGenerationInProgress) {
@@ -2506,7 +2603,7 @@
       return;
     }
 
-    console.log(`[Projects] Clip build complete: ${clip_id}`, { buildSuccess, output_path });
+    console.log(`[Projects] Clip build complete: ${clip_id}`, { buildSuccess, output_path, buildError });
 
     const isCancelled = buildError && (buildError.includes('cancelled') || buildError.includes('Cancelled'));
 
@@ -2524,7 +2621,7 @@
         clip.builds[existingBuildIdx].output_paths = JSON.stringify(all_output_paths || [output_path]);
       }
       console.log(`[Projects] Local state updated for completed clip: ${clip_id}`);
-      
+
       // Show success toast with Publish Now option
       success('Build Complete', 'Your clip has been built successfully. Ready to publish!');
     } else if (isCancelled) {
@@ -2692,7 +2789,7 @@
 
   // Helper function to construct video URL with proper endpoint for file type
   function constructInlineVideoUrl(filePath: string, port: number): string {
-    const encodedPath = utf8ToBase64(filePath);
+    const encodedPath = utf8ToBase64Url(filePath);
 
     // Check if this is a .ts file - browsers can't play MPEG-TS natively
     const isTsFile = filePath.toLowerCase().endsWith('.ts');
@@ -2741,6 +2838,8 @@
     if (newClip) {
       await prepareInlineVideo();
       await loadPreviewWatermark(newClip);
+      await nextTick();
+      applyClipSegmentsToInlinePlayer();
     } else {
       cleanupInlineHls();
       inlineVideoSrc.value = null;
@@ -2786,14 +2885,29 @@
       let watermarkId: string | null = null;
       let watermarkSettingsRaw: string | null = null;
 
+      // Validate stored project watermark against current auto-branding rules
+      async function isStoredWatermarkValid(
+        projectId: string,
+        storedWatermarkId: string
+      ): Promise<boolean> {
+        const autoProfile = await resolveAutoBrandingProfile(projectId);
+        if (!autoProfile?.watermark_id) return false;
+        return String(autoProfile.watermark_id) === String(storedWatermarkId);
+      }
+
       const segmentProject = projects.value.find((p) => p.id === segmentProjectId);
       if (segmentProject?.default_watermark_settings) {
         try {
           const storedSettings = JSON.parse(segmentProject.default_watermark_settings);
-          if (storedSettings.watermarkId) {
+          if (
+            storedSettings.watermarkId &&
+            (await isStoredWatermarkValid(segmentProjectId, storedSettings.watermarkId))
+          ) {
             watermarkId = storedSettings.watermarkId;
             watermarkSettingsRaw = storedSettings.watermarkSettings;
             console.log('[Projects] loadPreviewWatermark: Found project-level watermark:', watermarkId);
+          } else if (storedSettings.watermarkId) {
+            console.log('[Projects] loadPreviewWatermark: Ignoring stale project-level watermark');
           }
         } catch (e) {
           console.warn('[Projects] loadPreviewWatermark: Failed to parse project watermark settings:', e);
@@ -2806,10 +2920,15 @@
         if (parentProject?.default_watermark_settings) {
           try {
             const storedSettings = JSON.parse(parentProject.default_watermark_settings);
-            if (storedSettings.watermarkId) {
+            if (
+              storedSettings.watermarkId &&
+              (await isStoredWatermarkValid(segmentProject.parent_id, storedSettings.watermarkId))
+            ) {
               watermarkId = storedSettings.watermarkId;
               watermarkSettingsRaw = storedSettings.watermarkSettings;
               console.log('[Projects] loadPreviewWatermark: Found parent project-level watermark:', watermarkId);
+            } else if (storedSettings.watermarkId) {
+              console.log('[Projects] loadPreviewWatermark: Ignoring stale parent project-level watermark');
             }
           } catch (e) {
             console.warn('[Projects] loadPreviewWatermark: Failed to parse parent project watermark settings:', e);
@@ -2817,23 +2936,24 @@
         }
       }
 
-      // If no project-level settings, try branding profile resolution (includes org/campaign/local profiles)
+      // If no valid stored settings, resolve auto branding (read-only, no persistence)
       if (!watermarkId) {
-        let creatorProfile = await resolveBrandingProfile(segmentProjectId);
+        let creatorProfile = await resolveAutoBrandingProfile(segmentProjectId);
         console.log(
-          '[Projects] loadPreviewWatermark: Branding profile for segment',
+          '[Projects] loadPreviewWatermark: Auto branding for segment',
           segmentProjectId,
           ':',
           creatorProfile?.name || null
         );
 
-        // If no branding profile on segment, try the parent folder as fallback
-        if (!creatorProfile) {
-          const project = projects.value.find((p) => p.id === segmentProjectId);
-          if (project?.parent_id) {
-            creatorProfile = await resolveBrandingProfile(project.parent_id);
-            console.log('[Projects] loadPreviewWatermark: Fallback to parent', project.parent_id, ':', creatorProfile?.name || null);
-          }
+        if (!creatorProfile && segmentProject?.parent_id) {
+          creatorProfile = await resolveAutoBrandingProfile(segmentProject.parent_id);
+          console.log(
+            '[Projects] loadPreviewWatermark: Fallback to parent',
+            segmentProject.parent_id,
+            ':',
+            creatorProfile?.name || null
+          );
         }
 
         if (creatorProfile?.watermark_id) {
@@ -2847,10 +2967,10 @@
         const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
         const { getBrandingIfFreeTier } = useFreeTierBranding();
         const adminBranding = await getBrandingIfFreeTier();
-        
+
         if (adminBranding?.watermark_id) {
           console.log('[Projects] loadPreviewWatermark: Using admin free tier watermark:', adminBranding.watermark_id);
-          
+
           // Server provides a presigned URL — download directly via Tauri (bypasses CORS)
           if (adminBranding.watermark_url) {
             console.log('[Projects] loadPreviewWatermark: Downloading free tier watermark via presigned URL');
@@ -2878,9 +2998,13 @@
           } else {
             watermarkId = adminBranding.watermark_id;
           }
-          watermarkSettingsRaw = adminBranding.watermark_settings ? JSON.stringify(adminBranding.watermark_settings) : null;
+          watermarkSettingsRaw = adminBranding.watermark_settings
+            ? JSON.stringify(adminBranding.watermark_settings)
+            : null;
         } else {
-          console.log('[Projects] loadPreviewWatermark: No watermark_id found (checked creator profiles + admin branding)');
+          console.log(
+            '[Projects] loadPreviewWatermark: No watermark_id found (checked creator profiles + admin branding)'
+          );
           return;
         }
       }
@@ -2889,131 +3013,131 @@
       if (!previewWatermarkData.value && watermarkId) {
         console.log('[Projects] loadPreviewWatermark: Loading watermark image for ID:', watermarkId);
 
-      // Check if this is an organization asset (ID format: org-asset-{serverId})
-      if (watermarkId.startsWith('org-asset-')) {
-        const serverId = parseInt(watermarkId.replace('org-asset-', ''), 10);
-        console.log('[Projects] loadPreviewWatermark: Loading org watermark with serverId:', serverId);
-        if (!isNaN(serverId)) {
-          // First try to load from local cache
-          const localWatermark = await getWatermarkByServerId(serverId);
-          if (localWatermark) {
-            console.log('[Projects] loadPreviewWatermark: Found cached org watermark:', localWatermark.name);
-            const dataUrl = await invoke<string>('read_file_as_data_url', {
-              filePath: localWatermark.file_path,
-            });
-            const measured =
-              !localWatermark.width || !localWatermark.height
-                ? await new Promise<{ width: number; height: number } | null>((resolve) => {
-                    const img = new Image();
-                    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-                    img.onerror = () => resolve(null);
-                    img.src = dataUrl;
-                  })
-                : { width: localWatermark.width, height: localWatermark.height };
-            previewWatermarkData.value = {
-              dataUrl,
-              width: measured?.width || localWatermark.width || undefined,
-              height: measured?.height || localWatermark.height || undefined,
-            };
-            console.log('[Projects] loadPreviewWatermark: Org watermark loaded from cache');
-          } else {
-            // Not cached locally - download through Tauri (bypasses CORS)
-            console.log('[Projects] loadPreviewWatermark: Org watermark not cached, downloading from server...');
-            try {
-              const serverResponse = await getUserOrganizationAssets();
-              if (serverResponse.success && serverResponse.assets) {
-                const serverAsset = serverResponse.assets.find(
-                  (a) => a.id === serverId && a.asset_type === 'watermark'
-                );
-                if (serverAsset && serverAsset.url) {
-                  console.log('[Projects] loadPreviewWatermark: Downloading org watermark:', serverAsset.name);
-                  // Download and cache the asset locally (bypasses CORS)
-                  const downloadResult = await ensureAssetDownloaded(serverAsset);
-                  if (downloadResult.success && downloadResult.filePath) {
-                    console.log(
-                      '[Projects] loadPreviewWatermark: Org watermark downloaded to:',
-                      downloadResult.filePath
-                    );
-                    const dataUrl = await invoke<string>('read_file_as_data_url', {
-                      filePath: downloadResult.filePath,
-                    });
-                    // Measure dimensions from the loaded data URL
-                    const dimensions = await new Promise<{ width: number; height: number } | null>((resolve) => {
+        // Check if this is an organization asset (ID format: org-asset-{serverId})
+        if (watermarkId.startsWith('org-asset-')) {
+          const serverId = parseInt(watermarkId.replace('org-asset-', ''), 10);
+          console.log('[Projects] loadPreviewWatermark: Loading org watermark with serverId:', serverId);
+          if (!isNaN(serverId)) {
+            // First try to load from local cache
+            const localWatermark = await getWatermarkByServerId(serverId);
+            if (localWatermark) {
+              console.log('[Projects] loadPreviewWatermark: Found cached org watermark:', localWatermark.name);
+              const dataUrl = await invoke<string>('read_file_as_data_url', {
+                filePath: localWatermark.file_path,
+              });
+              const measured =
+                !localWatermark.width || !localWatermark.height
+                  ? await new Promise<{ width: number; height: number } | null>((resolve) => {
                       const img = new Image();
                       img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
                       img.onerror = () => resolve(null);
                       img.src = dataUrl;
-                    });
-                    previewWatermarkData.value = {
-                      dataUrl,
-                      width: dimensions?.width || serverAsset.width || undefined,
-                      height: dimensions?.height || serverAsset.height || undefined,
-                    };
-                    console.log('[Projects] loadPreviewWatermark: Org watermark loaded from download:', {
-                      width: dimensions?.width,
-                      height: dimensions?.height,
-                    });
+                    })
+                  : { width: localWatermark.width, height: localWatermark.height };
+              previewWatermarkData.value = {
+                dataUrl,
+                width: measured?.width || localWatermark.width || undefined,
+                height: measured?.height || localWatermark.height || undefined,
+              };
+              console.log('[Projects] loadPreviewWatermark: Org watermark loaded from cache');
+            } else {
+              // Not cached locally - download through Tauri (bypasses CORS)
+              console.log('[Projects] loadPreviewWatermark: Org watermark not cached, downloading from server...');
+              try {
+                const serverResponse = await getUserOrganizationAssets();
+                if (serverResponse.success && serverResponse.assets) {
+                  const serverAsset = serverResponse.assets.find(
+                    (a) => a.id === serverId && a.asset_type === 'watermark'
+                  );
+                  if (serverAsset && serverAsset.url) {
+                    console.log('[Projects] loadPreviewWatermark: Downloading org watermark:', serverAsset.name);
+                    // Download and cache the asset locally (bypasses CORS)
+                    const downloadResult = await ensureAssetDownloaded(serverAsset);
+                    if (downloadResult.success && downloadResult.filePath) {
+                      console.log(
+                        '[Projects] loadPreviewWatermark: Org watermark downloaded to:',
+                        downloadResult.filePath
+                      );
+                      const dataUrl = await invoke<string>('read_file_as_data_url', {
+                        filePath: downloadResult.filePath,
+                      });
+                      // Measure dimensions from the loaded data URL
+                      const dimensions = await new Promise<{ width: number; height: number } | null>((resolve) => {
+                        const img = new Image();
+                        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                        img.onerror = () => resolve(null);
+                        img.src = dataUrl;
+                      });
+                      previewWatermarkData.value = {
+                        dataUrl,
+                        width: dimensions?.width || serverAsset.width || undefined,
+                        height: dimensions?.height || serverAsset.height || undefined,
+                      };
+                      console.log('[Projects] loadPreviewWatermark: Org watermark loaded from download:', {
+                        width: dimensions?.width,
+                        height: dimensions?.height,
+                      });
+                    } else {
+                      console.error(
+                        '[Projects] loadPreviewWatermark: Failed to download org watermark:',
+                        downloadResult.error
+                      );
+                      return;
+                    }
                   } else {
-                    console.error(
-                      '[Projects] loadPreviewWatermark: Failed to download org watermark:',
-                      downloadResult.error
-                    );
+                    console.log('[Projects] loadPreviewWatermark: Server asset not found for serverId:', serverId);
                     return;
                   }
-                } else {
-                  console.log('[Projects] loadPreviewWatermark: Server asset not found for serverId:', serverId);
-                  return;
                 }
+              } catch (fetchError) {
+                console.error('[Projects] loadPreviewWatermark: Failed to fetch org assets:', fetchError);
+                return;
               }
-            } catch (fetchError) {
-              console.error('[Projects] loadPreviewWatermark: Failed to fetch org assets:', fetchError);
-              return;
             }
           }
-        }
-      } else {
-        // Regular watermark lookup by ID
-        const watermark = await getWatermarkImage(watermarkId);
-        if (!watermark) {
-          console.log('[Projects] loadPreviewWatermark: No watermark found in database for ID:', watermarkId);
-          return;
-        }
-        console.log('[Projects] loadPreviewWatermark: Watermark found:', watermark.name);
-
-        // Load watermark data URL
-        const dataUrl = await invoke<string>('read_file_as_data_url', {
-          filePath: watermark.file_path,
-        });
-
-        // Get dimensions from database or measure the image
-        let wmWidth = watermark.width || undefined;
-        let wmHeight = watermark.height || undefined;
-
-        // If dimensions not in database, measure the image
-        if (!wmWidth || !wmHeight) {
-          try {
-            const measured = await new Promise<{ width: number; height: number } | null>((resolve) => {
-              const img = new Image();
-              img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-              img.onerror = () => resolve(null);
-              img.src = dataUrl;
-            });
-            if (measured) {
-              wmWidth = measured.width;
-              wmHeight = measured.height;
-            }
-          } catch {
-            // Ignore measurement errors
+        } else {
+          // Regular watermark lookup by ID
+          const watermark = await getWatermarkImage(watermarkId);
+          if (!watermark) {
+            console.log('[Projects] loadPreviewWatermark: No watermark found in database for ID:', watermarkId);
+            return;
           }
-        }
+          console.log('[Projects] loadPreviewWatermark: Watermark found:', watermark.name);
 
-        previewWatermarkData.value = {
-          dataUrl,
-          width: wmWidth,
-          height: wmHeight,
-        };
-        console.log('[Projects] loadPreviewWatermark: Watermark data loaded:', { width: wmWidth, height: wmHeight });
-      }
+          // Load watermark data URL
+          const dataUrl = await invoke<string>('read_file_as_data_url', {
+            filePath: watermark.file_path,
+          });
+
+          // Get dimensions from database or measure the image
+          let wmWidth = watermark.width || undefined;
+          let wmHeight = watermark.height || undefined;
+
+          // If dimensions not in database, measure the image
+          if (!wmWidth || !wmHeight) {
+            try {
+              const measured = await new Promise<{ width: number; height: number } | null>((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                img.onerror = () => resolve(null);
+                img.src = dataUrl;
+              });
+              if (measured) {
+                wmWidth = measured.width;
+                wmHeight = measured.height;
+              }
+            } catch {
+              // Ignore measurement errors
+            }
+          }
+
+          previewWatermarkData.value = {
+            dataUrl,
+            width: wmWidth,
+            height: wmHeight,
+          };
+          console.log('[Projects] loadPreviewWatermark: Watermark data loaded:', { width: wmWidth, height: wmHeight });
+        }
       } // end if (!previewWatermarkData.value && watermarkId)
 
       // Parse watermark settings (from project or creator profile)
@@ -3047,7 +3171,7 @@
             watermarkSettings = {
               ...watermarkSettings,
               enabled: true,
-              watermarkId: (!isOrgAsset && ratioConfig.watermarkId) ? ratioConfig.watermarkId : watermarkId,
+              watermarkId: !isOrgAsset && ratioConfig.watermarkId ? ratioConfig.watermarkId : watermarkId,
               positionX: position.x ?? 12,
               positionY: position.y ?? 92,
               opacity: position.opacity ?? 80,
@@ -3095,20 +3219,100 @@
   // Get clip segments for stitched clips, or single segment for continuous clips
   function getClipSegments(): Array<{ start_time: number; end_time: number; duration: number }> {
     if (!clipToPreview.value) return [];
-    
-    // Check if clip has multiple segments (stitched clip)
-    if (clipToPreview.value.current_version_segments && clipToPreview.value.current_version_segments.length > 0) {
-      return clipToPreview.value.current_version_segments.map(seg => ({
+    const clip = clipToPreview.value;
+
+    if (isClipPreviewBuiltExport(clip)) {
+      const duration =
+        clip.built_duration ??
+        (getSelfContainedClipDuration(clip) ||
+          (inlineVideoRef.value?.duration && Number.isFinite(inlineVideoRef.value.duration)
+            ? inlineVideoRef.value.duration
+            : 0));
+      if (duration > 0) {
+        return [{ start_time: 0, end_time: duration, duration }];
+      }
+      return [{ start_time: 0, end_time: 0, duration: 0 }];
+    }
+
+    if (clip.current_version_segments && clip.current_version_segments.length > 0) {
+      if (isClipPreviewSelfContained(clip)) {
+        const clipStartOffset = clip.current_version_start_time ?? clip.start_time ?? 0;
+        const clipDuration = getSelfContainedClipDuration(clip);
+
+        const adjustedSegments = clip.current_version_segments
+          .map((seg) => {
+            const segEnd = typeof seg.end_time === 'number' ? seg.end_time : 0;
+            const segStart = typeof seg.start_time === 'number' ? seg.start_time : 0;
+            const looksZeroBased = clipDuration > 0 && segEnd <= clipDuration + 0.5 && segStart >= 0;
+            const start_time = looksZeroBased
+              ? Math.max(0, segStart)
+              : Math.max(0, segStart - clipStartOffset);
+            const end_time = looksZeroBased
+              ? Math.min(clipDuration || segEnd, segEnd)
+              : Math.min(clipDuration, segEnd - clipStartOffset);
+            return {
+              start_time,
+              end_time,
+              duration: end_time - start_time,
+            };
+          })
+          .filter((seg) => seg.end_time > seg.start_time);
+
+        if (adjustedSegments.length > 0) {
+          return adjustedSegments;
+        }
+
+        if (clipDuration > 0) {
+          return [{ start_time: 0, end_time: clipDuration, duration: clipDuration }];
+        }
+      }
+
+      return clip.current_version_segments.map((seg) => ({
         start_time: seg.start_time,
         end_time: seg.end_time,
-        duration: seg.duration || (seg.end_time - seg.start_time)
+        duration: seg.duration || seg.end_time - seg.start_time,
       }));
     }
-    
-    // Fallback: single continuous segment
-    const startTime = clipToPreview.value?.current_version?.start_time ?? clipToPreview.value?.start_time ?? 0;
-    const endTime = clipToPreview.value?.current_version?.end_time ?? clipToPreview.value?.end_time ?? 0;
+
+    if (isClipPreviewSelfContained(clip)) {
+      const clipDuration = getSelfContainedClipDuration(clip);
+      if (clipDuration > 0) {
+        return [{ start_time: 0, end_time: clipDuration, duration: clipDuration }];
+      }
+    }
+
+    // Fallback: single continuous segment on the source video timeline
+    const startTime = clip.current_version?.start_time ?? clip.start_time ?? 0;
+    const endTime = clip.current_version?.end_time ?? clip.end_time ?? 0;
     return [{ start_time: startTime, end_time: endTime, duration: endTime - startTime }];
+  }
+
+  function applyClipSegmentsToInlinePlayer() {
+    if (!inlineVideoRef.value || !clipToPreview.value) return;
+
+    inlineVideoSegments.value = getClipSegments();
+    inlineCurrentSegmentIndex.value = 0;
+
+    if (
+      isClipPreviewBuiltExport(clipToPreview.value) &&
+      inlineVideoSegments.value.length === 1 &&
+      inlineVideoSegments.value[0].duration === 0 &&
+      inlineVideoRef.value.duration &&
+      Number.isFinite(inlineVideoRef.value.duration)
+    ) {
+      const duration = inlineVideoRef.value.duration;
+      inlineVideoSegments.value = [{ start_time: 0, end_time: duration, duration }];
+    }
+
+    inlineVideoClipDuration.value = inlineVideoSegments.value.reduce((total, seg) => total + seg.duration, 0);
+
+    if (inlineVideoSegments.value.length > 0) {
+      inlineVideoRef.value.currentTime = inlineVideoSegments.value[0].start_time;
+    }
+
+    inlineVideoCurrentTime.value = 0;
+    inlineVideoProgress.value = 0;
+    inlineVideoPlaying.value = false;
   }
 
   // Get clip start and end times (for backward compatibility)
@@ -3125,38 +3329,28 @@
   // Handle inline video loaded - seek to clip start time
   function onInlineVideoLoaded() {
     if (inlineVideoRef.value && clipToPreview.value) {
-      // Load segments for this clip
-      inlineVideoSegments.value = getClipSegments();
-      inlineCurrentSegmentIndex.value = 0;
-      
-      // Calculate total duration (sum of all segments)
-      inlineVideoClipDuration.value = inlineVideoSegments.value.reduce((total, seg) => total + seg.duration, 0);
-      
-      // Seek to first segment start
-      if (inlineVideoSegments.value.length > 0) {
-        inlineVideoRef.value.currentTime = inlineVideoSegments.value[0].start_time;
-      }
-      
-      inlineVideoCurrentTime.value = 0;
-      inlineVideoProgress.value = 0;
-      // Don't auto-play - let user start playback manually
-      inlineVideoPlaying.value = false;
+      applyClipSegmentsToInlinePlayer();
     }
   }
 
   // Handle inline video time update - handle segmented playback
   function onInlineVideoTimeUpdate() {
-    if (inlineVideoRef.value && clipToPreview.value && !inlineSeekDragging.value && inlineVideoSegments.value.length > 0) {
+    if (
+      inlineVideoRef.value &&
+      clipToPreview.value &&
+      !inlineSeekDragging.value &&
+      inlineVideoSegments.value.length > 0
+    ) {
       const currentSegment = inlineVideoSegments.value[inlineCurrentSegmentIndex.value];
       if (!currentSegment) return;
-      
+
       const currentTime = inlineVideoRef.value.currentTime;
-      
+
       // Check if we've reached the end of current segment
       if (currentTime >= currentSegment.end_time - 0.1) {
         // Move to next segment
         inlineCurrentSegmentIndex.value++;
-        
+
         if (inlineCurrentSegmentIndex.value >= inlineVideoSegments.value.length) {
           // All segments played, loop back to first segment
           inlineCurrentSegmentIndex.value = 0;
@@ -3170,7 +3364,7 @@
           inlineVideoRef.value.currentTime = nextSegment.start_time;
         }
       }
-      
+
       // Calculate elapsed time across all played segments
       let elapsedTime = 0;
       for (let i = 0; i < inlineCurrentSegmentIndex.value; i++) {
@@ -3178,7 +3372,7 @@
       }
       // Add time within current segment
       elapsedTime += Math.max(0, currentTime - currentSegment.start_time);
-      
+
       inlineVideoCurrentTime.value = elapsedTime;
       inlineVideoProgress.value =
         inlineVideoClipDuration.value > 0 ? (elapsedTime / inlineVideoClipDuration.value) * 100 : 0;
@@ -3236,10 +3430,10 @@
   // Seek to specific time in clip (handles segmented clips)
   function seekInlineVideo(percent: number) {
     if (!inlineVideoRef.value || !clipToPreview.value || inlineVideoSegments.value.length === 0) return;
-    
+
     // Calculate target elapsed time
     const targetElapsedTime = (percent / 100) * inlineVideoClipDuration.value;
-    
+
     // Find which segment this time falls into
     let accumulatedTime = 0;
     for (let i = 0; i < inlineVideoSegments.value.length; i++) {
@@ -3255,7 +3449,7 @@
       }
       accumulatedTime += segment.duration;
     }
-    
+
     // Fallback: seek to last segment
     const lastSegment = inlineVideoSegments.value[inlineVideoSegments.value.length - 1];
     inlineCurrentSegmentIndex.value = inlineVideoSegments.value.length - 1;
@@ -3527,7 +3721,7 @@
     try {
       // Use the parent project ID (folder) or the segment's project ID
       const projectId = clip.project_id || clip.segment_id;
-      const profile = await resolveBrandingProfile(projectId);
+      const profile = projectId ? await resolveAutoBrandingProfile(projectId) : null;
 
       if (profile) {
         console.log('[Projects] Found creator profile for folder build:', profile.name);
@@ -3609,8 +3803,13 @@
     // Check free tier daily limit
     await fetchSubscriptionStatus();
     const user = authStore.user;
-    const isFree = user && !user.is_admin && !user.created_by_organization_id &&
-      (!(user as any).subscription_status || (user as any).subscription_status === 'none' || (user as any).subscription_status === 'expired');
+    const isFree =
+      user &&
+      !user.is_admin &&
+      !user.created_by_organization_id &&
+      (!(user as any).subscription_status ||
+        (user as any).subscription_status === 'none' ||
+        (user as any).subscription_status === 'expired');
     if (isFree) {
       const { getUsageCount, recordUsage } = await import('@/services/database/free-tier-usage');
       const FREE_LIMIT = 5;
@@ -3635,7 +3834,7 @@
     try {
       console.log('[Projects] Starting folder build with aspectRatios:', settings.aspectRatios);
       console.log('[Projects] buildTargets:', settings.buildTargets);
-      
+
       // Get the video file for this clip's segment
       const videos = projectVideos.value[clip.segment_id];
       if (!videos || videos.length === 0) {
@@ -3643,7 +3842,7 @@
         return;
       }
       const videoPath = videos[0].file_path;
-      
+
       // Check if we have multi-build targets (orgs/campaigns selected)
       if (settings.buildTargets && settings.buildTargets.length > 0) {
         console.log('[Projects] Multi-build mode: processing', settings.buildTargets.length, 'targets');
@@ -3758,23 +3957,24 @@
           };
         }
       }
-      
+
       // If no watermark from dialog, check for free tier admin branding
       if (!watermarkSettings) {
         const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
         const { getBrandingIfFreeTier } = useFreeTierBranding();
         const adminBranding = await getBrandingIfFreeTier();
-        
+
         if (adminBranding?.watermark_id) {
           console.log('[Projects] Applying admin free tier watermark to build:', adminBranding.watermark_id);
-          
+
           // Parse per-ratio settings to get default position
           let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
           if (adminBranding.watermark_settings) {
             try {
-              const perRatioSettings = typeof adminBranding.watermark_settings === 'string' 
-                ? JSON.parse(adminBranding.watermark_settings)
-                : adminBranding.watermark_settings;
+              const perRatioSettings =
+                typeof adminBranding.watermark_settings === 'string'
+                  ? JSON.parse(adminBranding.watermark_settings)
+                  : adminBranding.watermark_settings;
               const ratioConfig = perRatioSettings['16:9'];
               if (ratioConfig?.position) {
                 defaultPos = ratioConfig.position;
@@ -3783,12 +3983,12 @@
               console.warn('[Projects] Failed to parse admin watermark settings:', e);
             }
           }
-          
+
           // Download watermark via presigned URL to local file for FFmpeg
           let filePath: string | null = null;
           let wmWidth: number | null = null;
           let wmHeight: number | null = null;
-          
+
           if (adminBranding.watermark_url) {
             try {
               const filename = `free-tier-watermark-${adminBranding.watermark_id.replace(/[^a-zA-Z0-9-]/g, '_')}.png`;
@@ -3822,7 +4022,7 @@
               wmHeight = watermarkImage.height ?? null;
             }
           }
-          
+
           if (filePath) {
             watermarkSettings = {
               enabled: true,
@@ -3936,9 +4136,10 @@
             let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
             if (campaignCreatorProfile.watermark_settings) {
               try {
-                const wmSettings = typeof campaignCreatorProfile.watermark_settings === 'string'
-                  ? JSON.parse(campaignCreatorProfile.watermark_settings as unknown as string)
-                  : campaignCreatorProfile.watermark_settings;
+                const wmSettings =
+                  typeof campaignCreatorProfile.watermark_settings === 'string'
+                    ? JSON.parse(campaignCreatorProfile.watermark_settings as unknown as string)
+                    : campaignCreatorProfile.watermark_settings;
                 const ratioConfig = wmSettings['16:9'];
                 if (ratioConfig?.position) defaultPos = ratioConfig.position;
               } catch (e) {
@@ -4056,12 +4257,15 @@
       }
 
       // Resolve per-ratio intro/outro from creator profile
-      const introOutroPerRatio: Record<string, { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number }> = {};
-      
+      const introOutroPerRatio: Record<
+        string,
+        { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number }
+      > = {};
+
       // New approach: Use separate intro_ratio_settings and outro_ratio_settings
       // Fall back to intro_outro_settings for backward compatibility
       const profile = folderCreatorProfile.value;
-      
+
       if (profile) {
         try {
           // Parse intro ratio settings
@@ -4073,7 +4277,7 @@
               console.warn('[Projects] Failed to parse intro_ratio_settings:', e);
             }
           }
-          
+
           // Parse outro ratio settings
           let outroRatioSettings: Record<string, { assetId: number }> = {};
           if (profile.outro_ratio_settings) {
@@ -4083,21 +4287,26 @@
               console.warn('[Projects] Failed to parse outro_ratio_settings:', e);
             }
           }
-          
+
           // Fallback: Try old intro_outro_settings format
           let legacyIntroOutroSettings: Record<string, { introId?: number; outroId?: number }> = {};
-          if (profile.intro_outro_settings && (!profile.intro_ratio_settings && !profile.outro_ratio_settings)) {
+          if (profile.intro_outro_settings && !profile.intro_ratio_settings && !profile.outro_ratio_settings) {
             try {
               legacyIntroOutroSettings = JSON.parse(profile.intro_outro_settings);
             } catch (e) {
               console.warn('[Projects] Failed to parse intro_outro_settings:', e);
             }
           }
-          
+
           // Resolve assets for each aspect ratio
           for (const ratio of settings.aspectRatios) {
-            const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
-            
+            const ratioData: {
+              introPath?: string;
+              introDuration?: number;
+              outroPath?: string;
+              outroDuration?: number;
+            } = {};
+
             // Resolve intro for this ratio
             const introConfig = introRatioSettings[ratio] || legacyIntroOutroSettings[ratio];
             const introAssetId = introConfig?.assetId || (introConfig as any)?.introId;
@@ -4109,7 +4318,7 @@
                 console.log(`[Projects] Resolved intro for ${ratio}:`, introAsset.name);
               }
             }
-            
+
             // Resolve outro for this ratio
             const outroConfig = outroRatioSettings[ratio] || legacyIntroOutroSettings[ratio];
             const outroAssetId = outroConfig?.assetId || (outroConfig as any)?.outroId;
@@ -4121,7 +4330,7 @@
                 console.log(`[Projects] Resolved outro for ${ratio}:`, outroAsset.name);
               }
             }
-            
+
             // Only add to map if we found at least one asset
             if (ratioData.introPath || ratioData.outroPath) {
               introOutroPerRatio[ratio] = ratioData;
@@ -4150,13 +4359,15 @@
           const introRatioSettings = adminBranding.intro_settings ?? {};
           const outroRatioSettings = adminBranding.outro_settings ?? {};
 
-          const allRatios = new Set([
-            ...Object.keys(introRatioSettings),
-            ...Object.keys(outroRatioSettings),
-          ]);
+          const allRatios = new Set([...Object.keys(introRatioSettings), ...Object.keys(outroRatioSettings)]);
 
           for (const ratio of allRatios) {
-            const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
+            const ratioData: {
+              introPath?: string;
+              introDuration?: number;
+              outroPath?: string;
+              outroDuration?: number;
+            } = {};
 
             const introConfig = introRatioSettings[ratio];
             if (introConfig?.assetId) {
@@ -4221,6 +4432,9 @@
         }
       }
 
+      const { getClipTextBoxOverlaysForExport } = await import('@/utils/clipTextBox');
+      const textOverlaysFromClipBox = await getClipTextBoxOverlaysForExport(clip.id);
+
       // Start the build using the correct command
       await invoke('build_clip_from_segments', {
         projectId: clip.segment_id,
@@ -4248,7 +4462,7 @@
         audioSettings: null,
         framingStrategy: null,
         videoFilterSegments: null, // No filter segments from folder view
-        textOverlays: null, // No text overlays from folder view
+        textOverlays: textOverlaysFromClipBox,
         stickers: null, // No stickers from folder view
         clipWatermarks: null, // No clip watermarks from folder view
         layoutOverlays: folderCreatorProfile.value?.layout_overlays
@@ -4283,18 +4497,14 @@
   }
 
   // Execute multiple build targets sequentially (for org/campaign multi-builds)
-  async function executeMultiBuildTargets(
-    clip: ClipWithVersionAndSegment,
-    videoPath: string,
-    settings: BuildSettings
-  ) {
+  async function executeMultiBuildTargets(clip: ClipWithVersionAndSegment, videoPath: string, settings: BuildSettings) {
     const buildTargets = settings.buildTargets!;
     console.log(`[Projects] Starting ${buildTargets.length} sequential builds`);
-    
+
     const { createClipBuild, getClipBuilds, updateClipBuild } = await import('@/services/database/clip-build');
     const { getClipSegmentsByVersionId } = await import('@/services/database/clip-segments');
     const { updateClipBuildStatus } = await import('@/services/database');
-    
+
     // Load segments once (shared across all builds)
     let segments: any[] = [];
     const versionId = clip.current_version_id || clip.current_version?.id;
@@ -4314,25 +4524,32 @@
         console.warn('[Projects] Could not load segments:', err);
       }
     }
-    
+
     // Fallback to synthetic segment
     if (segments.length === 0) {
       const startTime = clip.current_version?.start_time ?? clip.start_time ?? 0;
       const endTime = clip.current_version?.end_time ?? clip.end_time ?? 0;
-      segments = [{
-        id: `fallback-${clip.id}`,
-        start_time: startTime,
-        end_time: endTime,
-        duration: endTime - startTime,
-        transcript: null,
-      }];
+      segments = [
+        {
+          id: `fallback-${clip.id}`,
+          start_time: startTime,
+          end_time: endTime,
+          duration: endTime - startTime,
+          transcript: null,
+        },
+      ];
     }
-    
+
+    const { getClipTextBoxOverlaysForExport } = await import('@/utils/clipTextBox');
+    const textOverlaysFromClipBoxMulti = await getClipTextBoxOverlaysForExport(clip.id);
+
     // Process each build target sequentially
     for (let i = 0; i < buildTargets.length; i++) {
       const target = buildTargets[i];
-      console.log(`[Projects] Building ${i + 1}/${buildTargets.length}: ${target.type} - ${target.name} (${target.aspectRatios.join(', ')})`);
-      
+      console.log(
+        `[Projects] Building ${i + 1}/${buildTargets.length}: ${target.type} - ${target.name} (${target.aspectRatios.join(', ')})`
+      );
+
       // Get build number
       let buildNumber = 1;
       try {
@@ -4341,7 +4558,7 @@
       } catch {
         buildNumber = 1;
       }
-      
+
       // Create build record for this target
       const buildId = await createClipBuild(clip.id, {
         aspectRatios: target.aspectRatios,
@@ -4355,7 +4572,7 @@
         brandingProfileId: target.brandingProfileId ? String(target.brandingProfileId) : null,
         brandingType: target.type,
       });
-      
+
       // Fetch branding assets for this target (watermark, intro, outro)
       let watermarkSettings = null;
       let introPath: string | null = null;
@@ -4363,18 +4580,18 @@
       let outroPath: string | null = null;
       let outroDuration: number | null = null;
       const introOutroPerRatio: Record<string, any> = {};
-      
+
       // Fetch org/campaign branding profile assets
       if (target.brandingProfileId && target.organizationId) {
         try {
           const { getUserAssignedCreatorProfiles } = await import('@/services/organizationProfilesApi');
           const { ensureAssetDownloaded } = await import('@/services/orgAssetSync');
-          
+
           // Get the creator profile to access its assets
           const profilesRes = await getUserAssignedCreatorProfiles();
           if (profilesRes.success && profilesRes.profiles) {
-            const profile = profilesRes.profiles.find(p => p.id === Number(target.brandingProfileId));
-            
+            const profile = profilesRes.profiles.find((p) => p.id === Number(target.brandingProfileId));
+
             if (profile) {
               // Download and apply watermark
               if (profile.watermark) {
@@ -4397,11 +4614,15 @@
                 } as any);
                 if (wmResult.success && wmResult.filePath) {
                   // Parse watermark settings for position
-                  let posX = 88, posY = 81, opacity = 80, scale = 20;
+                  let posX = 88,
+                    posY = 81,
+                    opacity = 80,
+                    scale = 20;
                   if (profile.watermark_settings) {
-                    const wmSettings = typeof profile.watermark_settings === 'string' 
-                      ? JSON.parse(profile.watermark_settings) 
-                      : profile.watermark_settings;
+                    const wmSettings =
+                      typeof profile.watermark_settings === 'string'
+                        ? JSON.parse(profile.watermark_settings)
+                        : profile.watermark_settings;
                     const defaultRatio = wmSettings['16:9'] || wmSettings['9:16'] || Object.values(wmSettings)[0];
                     if (defaultRatio?.position) {
                       posX = defaultRatio.position.x ?? posX;
@@ -4425,7 +4646,7 @@
                   console.log(`[Projects] Applied ${target.type} watermark:`, profile.watermark.name);
                 }
               }
-              
+
               // Download and apply intro
               if (profile.intro) {
                 const introResult = await ensureAssetDownloaded({
@@ -4451,7 +4672,7 @@
                   console.log(`[Projects] Applied ${target.type} intro:`, profile.intro.name);
                 }
               }
-              
+
               // Download and apply outro
               if (profile.outro) {
                 const outroResult = await ensureAssetDownloaded({
@@ -4483,15 +4704,15 @@
           console.warn(`[Projects] Failed to fetch branding for ${target.type} ${target.name}:`, err);
         }
       }
-      
+
       // Create promise for build completion
       const buildCompletePromise = new Promise<void>((resolve, reject) => {
         const handleComplete = async (event: any) => {
           const payload = event.payload;
           if (payload.clip_id !== clip.id) return;
-          
+
           window.removeEventListener('clip-build-complete' as any, handleComplete);
-          
+
           if (payload.success && payload.output_path) {
             await updateClipBuild(buildId, {
               status: 'completed',
@@ -4509,13 +4730,13 @@
             reject(new Error(payload.error || 'Build failed'));
           }
         };
-        
+
         // Listen for Tauri event
         import('@tauri-apps/api/event').then(({ listen }) => {
           listen('clip-build-complete', handleComplete);
         });
       });
-      
+
       // Start the build
       await invoke('build_clip_from_segments', {
         projectId: clip.segment_id,
@@ -4546,7 +4767,7 @@
         manualFramingConfigs: settings.manualFramingConfigs || null,
         segmentFramingConfigs: null,
         videoFilterSegments: null,
-        textOverlays: null,
+        textOverlays: textOverlaysFromClipBoxMulti,
         stickers: null,
         clipWatermarks: null,
         clipEffects: null,
@@ -4556,17 +4777,17 @@
         campaignBrandingProfileId: target.brandingProfileId,
         brandingType: target.type,
       });
-      
+
       // Wait for this build to complete before starting next
       await buildCompletePromise;
       console.log(`[Projects] Completed build ${i + 1}/${buildTargets.length}`);
     }
-    
+
     success('Builds completed', `Successfully built ${buildTargets.length} clips.`);
     showFolderBuildDialog.value = false;
     folderClipToBuild.value = null;
     isFolderBuildInProgress.value = false;
-    
+
     // Refresh clips list
     if (clip.segment_id) {
       await loadFolderClips(clip.segment_id);
@@ -4804,11 +5025,11 @@
     result = result.filter((p) => {
       const videos = projectVideos.value[p.id] || [];
       const clipCount = getClipCount(p.id);
-      
+
       // For parent projects (folders), check if any child has videos or clips
       if (hasChildren(p.id)) {
-        const childProjects = projects.value.filter(child => child.parent_id === p.id);
-        return childProjects.some(child => {
+        const childProjects = projects.value.filter((child) => child.parent_id === p.id);
+        return childProjects.some((child) => {
           const childVideos = projectVideos.value[child.id] || [];
           const childClipCount = getClipCount(child.id);
           return childVideos.length > 0 || childClipCount > 0;
@@ -4935,15 +5156,8 @@
   });
 
   function getDateLabel(timestamp: number): string {
-    // Wait, services/database/core.ts usually uses Date.now() which is ms.
-    // But let's verify. The migration says INTEGER.
-    // In useFormatters: const now = Math.floor(Date.now() / 1000) -> input timestamp is in seconds.
-    // Let's check if updated_at in DB is seconds or ms.
-    // In database/projects.ts: const now = timestamp();
-    // In database/core.ts: export const timestamp = () => Math.floor(Date.now() / 1000);
-    // So it is SECONDS.
-
-    const d = new Date(timestamp * 1000);
+    const d = toDate(timestamp);
+    if (isNaN(d.getTime())) return 'Unknown';
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const yesterday = new Date(today);
@@ -5012,6 +5226,7 @@
   }
 
   function openWorkspace(project: Project, initialClipId?: string | null) {
+    console.log('[Projects] Opening workspace for project:', project.id, 'parent_id:', project.parent_id);
     workspaceProject.value = project;
     workspaceInitialClipId.value = initialClipId || null;
     showWorkspaceDialog.value = true;
@@ -5208,7 +5423,7 @@
         // Livestream recordings are stored in: livestream_recordings/{session_id}/segment_*.ts
         if (video.file_path.includes('livestream_recordings')) {
           const pathParts = video.file_path.split(/[/\\]/);
-          const recordingsIndex = pathParts.findIndex(part => part === 'livestream_recordings');
+          const recordingsIndex = pathParts.findIndex((part) => part === 'livestream_recordings');
           if (recordingsIndex !== -1 && recordingsIndex + 1 < pathParts.length) {
             const sessionId = pathParts[recordingsIndex + 1];
             sessionIdsToDelete.add(sessionId);
@@ -5234,7 +5449,9 @@
             filePath: video.file_path,
             thumbnailPath: video.thumbnail_path || null,
           });
-          console.log(`[Projects] Deleted video/thumbnail only (preserving caches for ${retainedClipIds.length} retained clips): ${video.file_path}`);
+          console.log(
+            `[Projects] Deleted video/thumbnail only (preserving caches for ${retainedClipIds.length} retained clips): ${video.file_path}`
+          );
         } else {
           // No retained clips, safe to delete everything
           await invoke('delete_raw_video_files', {
@@ -5302,7 +5519,10 @@
       }
     } catch (err) {
       console.error('[Projects] Failed to delete project:', err);
-      error('Failed to delete project', `An error occurred while deleting the project: ${err instanceof Error ? err.message : String(err)}`);
+      error(
+        'Failed to delete project',
+        `An error occurred while deleting the project: ${err instanceof Error ? err.message : String(err)}`
+      );
     } finally {
       deletingProject.value = false;
       projectHasVideos.value = false;
@@ -5380,7 +5600,10 @@
       await loadProjects();
     } catch (err) {
       console.error('[Projects] Failed to delete projects:', err);
-      error('Failed to delete projects', `An error occurred while deleting the projects: ${err instanceof Error ? err.message : String(err)}`);
+      error(
+        'Failed to delete projects',
+        `An error occurred while deleting the projects: ${err instanceof Error ? err.message : String(err)}`
+      );
     } finally {
       showBulkDeleteDialog.value = false;
       bulkDeleting.value = false;
@@ -5440,7 +5663,10 @@
       }
     } catch (err) {
       console.error('[Projects] Failed to delete segments:', err);
-      error('Failed to delete segments', `An error occurred while deleting the segments: ${err instanceof Error ? err.message : String(err)}`);
+      error(
+        'Failed to delete segments',
+        `An error occurred while deleting the segments: ${err instanceof Error ? err.message : String(err)}`
+      );
     } finally {
       showBulkDeleteFolderChildrenDialog.value = false;
     }
@@ -5486,14 +5712,44 @@
     return false;
   }
 
+  function getProjectVideoDurationSeconds(projectId: string): number {
+    const videos = projectVideos.value[projectId];
+    if (!videos?.length) {
+      return 0;
+    }
+    return videos.reduce((sum, v) => sum + (v.duration || 0), 0);
+  }
+
+  function isProjectShortVideoOnly(projectId: string): boolean {
+    const children = getFolderChildren(projectId);
+    if (children.length > 0) {
+      const segmentsWithVideo = children.filter((child) => {
+        const vids = projectVideos.value[child.id];
+        return vids && vids.length > 0;
+      });
+      if (segmentsWithVideo.length === 0) {
+        const dur = getProjectVideoDurationSeconds(projectId);
+        return dur > 0 && isShortVideoAutoClipEligible(dur);
+      }
+      return segmentsWithVideo.every((child) =>
+        isShortVideoAutoClipEligible(getProjectVideoDurationSeconds(child.id))
+      );
+    }
+
+    const duration = getProjectVideoDurationSeconds(projectId);
+    return duration > 0 && isShortVideoAutoClipEligible(duration);
+  }
+
   function canDetectClips(projectId: string): boolean {
-    // Check if project has videos directly
+    if (isProjectShortVideoOnly(projectId)) {
+      return false;
+    }
+
     const videos = projectVideos.value[projectId];
     if (videos && videos.length > 0) {
       return true;
     }
 
-    // Check if any children have videos
     const children = getFolderChildren(projectId);
     for (const child of children) {
       const childVideos = projectVideos.value[child.id];
@@ -5506,9 +5762,16 @@
   }
 
   async function startProjectDetection(project: Project) {
-    // Check if user is authenticated
     if (!authStore.isAuthenticated) {
       window.dispatchEvent(new CustomEvent('show-auth-modal'));
+      return;
+    }
+
+    if (isProjectShortVideoOnly(project.id)) {
+      error(
+        'Clip detection unavailable',
+        `Videos under ${SHORT_VIDEO_CLIP_THRESHOLD_SECONDS} seconds are already imported as a full clip. Transcribe and build from the clip instead.`
+      );
       return;
     }
 
@@ -5554,9 +5817,10 @@
     _promptId: string,
     promptContent: string,
     organizationId: number | null = null,
-    multimodal: boolean = false,
     startTime: number = 0,
-    endTime: number = 0
+    endTime: number = 0,
+    subtitleSettings: { enabled: boolean; presetId: string } | null = null,
+    enhanced: boolean = false
   ) {
     if (!projectToDetect.value || segmentsToDetect.value.length === 0) {
       return;
@@ -5604,9 +5868,15 @@
               overlapSeconds: 30,
               forceReprocess: false,
               organizationId: organizationId,
-              multimodal: multimodal,
               startTime: startTime,
               endTime: endTime,
+              subtitleSettings: subtitleSettings,
+              enhanced,
+              streamerMetadata: {
+                display_name: segment.name,
+                platform: segment.platform,
+                creator_profile_id: segment.creator_profile_id,
+              },
             });
 
             if (result.success) {
@@ -5634,7 +5904,7 @@
       if (successCount === totalSegments) {
         success(
           'Detection Complete',
-          `Successfully processed ${successCount} segment${successCount !== 1 ? 's' : ''}. Found ${totalClipsFound} clips total.`
+          `Processed ${successCount} of ${totalSegments} folder video(s). Found ${totalClipsFound} clips total.`
         );
       } else {
         error(
@@ -5755,11 +6025,7 @@
       for (let i = 0; i < segments.length; i++) {
         const segment = segments[i];
 
-        success(
-          'Transcribing...',
-          `Processing segment ${i + 1} of ${totalSegments}: ${segment.name}`,
-          3000
-        );
+        success('Transcribing...', `Processing segment ${i + 1} of ${totalSegments}: ${segment.name}`, 3000);
 
         activeTranscriptions.value.add(segment.id);
         // Trigger reactivity
@@ -5863,7 +6129,7 @@
 
     await loadProjects();
     await loadFolderPrompts();
-    
+
     // Silently backfill metadata for any videos imported without duration/thumbnail
     backgroundFixMissingMetadata();
 
@@ -6477,7 +6743,6 @@
     gap: 0.375rem;
     align-items: center;
   }
-
 
   .project-card--list .project-card__badge {
     left: 0.5rem;
@@ -7291,6 +7556,67 @@
   .folder-dialog__tab--active .folder-dialog__tab-count {
     background-color: rgba(6, 182, 212, 0.15);
     color: var(--sidebar-accent);
+  }
+
+  /* ===== Tab guidance ===== */
+  .folder-dialog__guidance {
+    flex-shrink: 0;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--sidebar-border);
+    background-color: rgba(0, 0, 0, 0.15);
+  }
+
+  .folder-dialog__guidance--segments {
+    border-left: 3px solid var(--sidebar-accent);
+  }
+
+  .folder-dialog__guidance--clips {
+    border-left: 3px solid rgba(34, 197, 94, 0.85);
+  }
+
+  .folder-dialog__guidance-inner {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .folder-dialog__guidance-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 8px;
+  }
+
+  .folder-dialog__guidance-icon--edit {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .folder-dialog__guidance-icon--publish {
+    background-color: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+  }
+
+  .folder-dialog__guidance-text {
+    min-width: 0;
+  }
+
+  .folder-dialog__guidance-title {
+    margin: 0 0 0.25rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    line-height: 1.3;
+  }
+
+  .folder-dialog__guidance-body {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--sidebar-text-muted);
   }
 
   /* ===== Content ===== */

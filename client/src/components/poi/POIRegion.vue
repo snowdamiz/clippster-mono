@@ -2,20 +2,27 @@
   <div
     ref="regionRef"
     class="poi-region absolute cursor-move select-none group"
+    :class="{ 'is-selected': isSelected }"
     :style="regionStyle"
     @mousedown.stop="onDragStart"
   >
-    <!-- Region border with dashed style -->
+    <!-- Region border with dashed style — only visible when selected or hovered -->
     <div
-      class="absolute inset-0 border border-dashed rounded transition-colors"
-      :style="{ borderColor: color }"
-      :class="{ 'ring-1 ring-white/30': isSelected }"
+      class="absolute inset-0 border border-dashed transition-all"
+      :style="{ borderColor: color, borderRadius: cornerRadiusPx ? `${cornerRadiusPx}px` : undefined }"
+      :class="{
+        'ring-1 ring-white/30': isSelected,
+        'rounded': !cornerRadiusPx,
+        'opacity-0 group-hover:opacity-100': !isSelected,
+        'opacity-100': isSelected,
+      }"
     />
 
-    <!-- Label badge -->
+    <!-- Label badge — visible on hover or when selected -->
     <div
       v-if="label"
-      class="absolute -top-5 left-1 px-1.5 py-0.5 text-[10px] font-medium rounded whitespace-nowrap"
+      class="absolute -top-5 left-1 px-1.5 py-0.5 text-[10px] font-medium rounded whitespace-nowrap transition-opacity"
+      :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
       :style="{ backgroundColor: color, color: getContrastColor(color) }"
     >
       {{ label }}
@@ -32,48 +39,56 @@
       <XIcon class="w-3.5 h-3.5" />
     </button>
 
-    <!-- Resize handles -->
+    <!-- Resize handles — only visible on hover or when selected -->
     <template v-if="resizable && showResizeHandles">
       <!-- Corner handles -->
       <div
-        class="resize-handle absolute -top-1 -left-1 w-2.5 h-2.5 rounded-full cursor-nw-resize"
+        class="resize-handle absolute -top-1 -left-1 w-2.5 h-2.5 rounded-full cursor-nw-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'nw')"
       />
       <div
-        class="resize-handle absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full cursor-ne-resize"
+        class="resize-handle absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full cursor-ne-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'ne')"
       />
       <div
-        class="resize-handle absolute -bottom-1 -left-1 w-2.5 h-2.5 rounded-full cursor-sw-resize"
+        class="resize-handle absolute -bottom-1 -left-1 w-2.5 h-2.5 rounded-full cursor-sw-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'sw')"
       />
       <div
-        class="resize-handle absolute -bottom-1 -right-1 w-2.5 h-2.5 rounded-full cursor-se-resize"
+        class="resize-handle absolute -bottom-1 -right-1 w-2.5 h-2.5 rounded-full cursor-se-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'se')"
       />
 
       <!-- Edge handles -->
       <div
-        class="resize-handle absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-1.5 rounded-full cursor-n-resize"
+        class="resize-handle absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-1.5 rounded-full cursor-n-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'n')"
       />
       <div
-        class="resize-handle absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-4 h-1.5 rounded-full cursor-s-resize"
+        class="resize-handle absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-4 h-1.5 rounded-full cursor-s-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 's')"
       />
       <div
-        class="resize-handle absolute top-1/2 -left-0.5 -translate-y-1/2 w-1.5 h-4 rounded-full cursor-w-resize"
+        class="resize-handle absolute top-1/2 -left-0.5 -translate-y-1/2 w-1.5 h-4 rounded-full cursor-w-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'w')"
       />
       <div
-        class="resize-handle absolute top-1/2 -right-0.5 -translate-y-1/2 w-1.5 h-4 rounded-full cursor-e-resize"
+        class="resize-handle absolute top-1/2 -right-0.5 -translate-y-1/2 w-1.5 h-4 rounded-full cursor-e-resize transition-opacity"
+        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'e')"
       />
@@ -99,6 +114,10 @@
     minHeight?: number; // Minimum height as percentage (0-1)
     containerWidth: number; // Container width in pixels
     containerHeight: number; // Container height in pixels
+    aspectRatioLocked?: boolean; // Lock aspect ratio during resize (default true)
+    snapToCenter?: boolean; // Enable snap-to-center behavior
+    snapThreshold?: number; // Snap threshold in pixels
+    cornerRadiusPx?: number; // Rounded corners preview (in px, scaled to container)
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -109,6 +128,10 @@
     showResizeHandles: true,
     minWidth: 0.05,
     minHeight: 0.05,
+    aspectRatioLocked: true,
+    snapToCenter: true,
+    snapThreshold: 8,
+    cornerRadiusPx: 0,
   });
 
   const emit = defineEmits<{
@@ -117,6 +140,7 @@
     select: [];
     dragStart: [];
     dragEnd: [];
+    centerGuide: [{ vertical: boolean; horizontal: boolean }];
   }>();
 
   const regionRef = ref<HTMLElement | null>(null);
@@ -168,7 +192,7 @@
     document.addEventListener('mouseup', onDragEnd);
   }
 
-  // Handle dragging
+  // Handle dragging with snap-to-center
   function onDrag(event: MouseEvent) {
     if (!isDragging.value) return;
 
@@ -176,8 +200,27 @@
     const deltaY = (event.clientY - startMouseY.value) / props.containerHeight;
 
     // Calculate new position, clamped to container bounds
-    const newX = clamp(startRect.value.x + deltaX, 0, 1 - props.rect.width);
-    const newY = clamp(startRect.value.y + deltaY, 0, 1 - props.rect.height);
+    let newX = clamp(startRect.value.x + deltaX, 0, 1 - props.rect.width);
+    let newY = clamp(startRect.value.y + deltaY, 0, 1 - props.rect.height);
+
+    // Center values (where element would be perfectly centered)
+    const centerX = (1 - props.rect.width) / 2;
+    const centerY = (1 - props.rect.height) / 2;
+    
+    // Convert snap threshold from pixels to percentage
+    const snapThresholdX = props.snapThreshold / props.containerWidth;
+    const snapThresholdY = props.snapThreshold / props.containerHeight;
+    
+    // Check proximity to center
+    const nearVerticalCenter = props.snapToCenter && Math.abs(newX - centerX) < snapThresholdX;
+    const nearHorizontalCenter = props.snapToCenter && Math.abs(newY - centerY) < snapThresholdY;
+    
+    // Snap to center if close
+    if (nearVerticalCenter) newX = centerX;
+    if (nearHorizontalCenter) newY = centerY;
+    
+    // Emit center guide visibility
+    emit('centerGuide', { vertical: nearVerticalCenter, horizontal: nearHorizontalCenter });
 
     emit('update', {
       ...props.rect,
@@ -190,6 +233,7 @@
   function onDragEnd() {
     isDragging.value = false;
     emit('dragEnd');
+    emit('centerGuide', { vertical: false, horizontal: false });
     document.removeEventListener('mousemove', onDrag);
     document.removeEventListener('mouseup', onDragEnd);
   }
@@ -221,28 +265,83 @@
     let newRect = { ...startRect.value };
     const dir = resizeDirection.value;
 
-    // Handle horizontal resize
-    if (dir.includes('w')) {
-      const maxDeltaX = startRect.value.width - props.minWidth;
-      const clampedDeltaX = clamp(deltaX, -startRect.value.x, maxDeltaX);
-      newRect.x = startRect.value.x + clampedDeltaX;
-      newRect.width = startRect.value.width - clampedDeltaX;
-    }
-    if (dir.includes('e')) {
-      const maxWidth = 1 - startRect.value.x;
-      newRect.width = clamp(startRect.value.width + deltaX, props.minWidth, maxWidth);
-    }
+    if (props.aspectRatioLocked) {
+      // Aspect ratio locked - maintain proportions
+      const aspectRatio = startRect.value.width / startRect.value.height;
 
-    // Handle vertical resize
-    if (dir.includes('n')) {
-      const maxDeltaY = startRect.value.height - props.minHeight;
-      const clampedDeltaY = clamp(deltaY, -startRect.value.y, maxDeltaY);
-      newRect.y = startRect.value.y + clampedDeltaY;
-      newRect.height = startRect.value.height - clampedDeltaY;
-    }
-    if (dir.includes('s')) {
-      const maxHeight = 1 - startRect.value.y;
-      newRect.height = clamp(startRect.value.height + deltaY, props.minHeight, maxHeight);
+      // For corner handles, use the dominant direction (larger delta)
+      if (dir.includes('e') || dir.includes('w')) {
+        // Horizontal resize - adjust height to maintain aspect ratio
+        if (dir.includes('w')) {
+          const maxDeltaX = startRect.value.width - props.minWidth;
+          const clampedDeltaX = clamp(deltaX, -startRect.value.x, maxDeltaX);
+          newRect.x = startRect.value.x + clampedDeltaX;
+          newRect.width = startRect.value.width - clampedDeltaX;
+        } else {
+          const maxWidth = 1 - startRect.value.x;
+          newRect.width = clamp(startRect.value.width + deltaX, props.minWidth, maxWidth);
+        }
+        
+        // Adjust height to maintain aspect ratio
+        const newHeight = newRect.width / aspectRatio;
+        
+        // For north corners, adjust y position
+        if (dir.includes('n')) {
+          const heightDelta = newHeight - startRect.value.height;
+          newRect.y = clamp(startRect.value.y - heightDelta, 0, 1 - newHeight);
+        }
+        
+        newRect.height = clamp(newHeight, props.minHeight, 1 - newRect.y);
+      } else {
+        // Vertical resize - adjust width to maintain aspect ratio
+        if (dir.includes('n')) {
+          const maxDeltaY = startRect.value.height - props.minHeight;
+          const clampedDeltaY = clamp(deltaY, -startRect.value.y, maxDeltaY);
+          newRect.y = startRect.value.y + clampedDeltaY;
+          newRect.height = startRect.value.height - clampedDeltaY;
+        } else {
+          const maxHeight = 1 - startRect.value.y;
+          newRect.height = clamp(startRect.value.height + deltaY, props.minHeight, maxHeight);
+        }
+        
+        // Adjust width to maintain aspect ratio
+        const newWidth = newRect.height * aspectRatio;
+        
+        // For west handles, adjust x position
+        if (dir.includes('w')) {
+          const widthDelta = newWidth - startRect.value.width;
+          newRect.x = clamp(startRect.value.x - widthDelta, 0, 1 - newWidth);
+        }
+        
+        newRect.width = clamp(newWidth, props.minWidth, 1 - newRect.x);
+      }
+    } else {
+      // Aspect ratio unlocked - free resize
+      // Handle horizontal resize (west/left side)
+      if (dir.includes('w')) {
+        const maxDeltaX = startRect.value.width - props.minWidth;
+        const clampedDeltaX = clamp(deltaX, -startRect.value.x, maxDeltaX);
+        newRect.x = startRect.value.x + clampedDeltaX;
+        newRect.width = startRect.value.width - clampedDeltaX;
+      }
+      // Handle horizontal resize (east/right side)
+      if (dir.includes('e')) {
+        const maxWidth = 1 - startRect.value.x;
+        newRect.width = clamp(startRect.value.width + deltaX, props.minWidth, maxWidth);
+      }
+
+      // Handle vertical resize (north/top side)
+      if (dir.includes('n')) {
+        const maxDeltaY = startRect.value.height - props.minHeight;
+        const clampedDeltaY = clamp(deltaY, -startRect.value.y, maxDeltaY);
+        newRect.y = startRect.value.y + clampedDeltaY;
+        newRect.height = startRect.value.height - clampedDeltaY;
+      }
+      // Handle vertical resize (south/bottom side)
+      if (dir.includes('s')) {
+        const maxHeight = 1 - startRect.value.y;
+        newRect.height = clamp(startRect.value.height + deltaY, props.minHeight, maxHeight);
+      }
     }
 
     emit('update', newRect);
@@ -271,8 +370,17 @@
     z-index: 10;
   }
 
-  .poi-region:hover {
+  /* Tab-selected region must win hit-testing over overlapping siblings */
+  .poi-region.is-selected {
+    z-index: 25;
+  }
+
+  .poi-region:not(.is-selected):hover {
     z-index: 20;
+  }
+
+  .poi-region.is-selected:hover {
+    z-index: 30;
   }
 
   .resize-handle {

@@ -19,7 +19,7 @@ export interface ThumbnailOptions {
 }
 
 export function useThumbnailGenerator() {
-	const { editor, version } = useEditor();
+	const { editor } = useEditor({ subscribe: false });
 	const isGenerating = ref(false);
 
 	async function generateThumbnail(options: ThumbnailOptions): Promise<Blob | null> {
@@ -46,6 +46,8 @@ export function useThumbnailGenerator() {
 				duration,
 				canvasSize: { width: canvasWidth, height: canvasHeight },
 				background,
+				transitions: [],
+				canvasSourceFraming: project.settings?.canvasSourceFraming ?? null,
 			});
 
 			const renderer = new CanvasRenderer({ width: canvasWidth, height: canvasHeight, fps });

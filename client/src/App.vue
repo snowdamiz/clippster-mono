@@ -11,11 +11,12 @@
   import SubscriptionGate from '@/components/SubscriptionGate.vue';
   import BrandingProfileSelector from '@/components/BrandingProfileSelector.vue';
   import AnnouncementDialog from '@/components/AnnouncementDialog.vue';
+  import SocialTokenExpiredDialog from '@/components/SocialTokenExpiredDialog.vue';
   import OrganizationInviteDialog from '@/components/OrganizationInviteDialog.vue';
   import FloatingChat from '@/components/chat/FloatingChat.vue';
   import AudioPlayer from '@/components/AudioPlayer.vue';
   import { useAnnouncements } from '@/composables/useAnnouncements';
-  import { listMyInvitations, acceptInvitation, type OrganizationInvitation } from '@/services/organizationsApi';
+  import { listMyInvitations, acceptInvitationById, declineInvitation, type OrganizationInvitation } from '@/services/organizationsApi';
   import {
     initDatabase,
     seedDefaultPrompt,
@@ -33,9 +34,14 @@
   import { useAppUpdater } from '@/composables/useAppUpdater';
   import { useToast } from '@/composables/useToast';
   import { useActivityTracker } from '@/composables/useActivityTracker';
+  import { useSocialTokenMonitor } from '@/composables/useSocialTokenMonitor';
   import { useMessagingStore } from '@/stores/messaging';
   import { useUserPreferencesStore } from '@/stores/userPreferences';
-  import { initGlobalLiveStatusPolling, stopGlobalLiveStatusPolling } from '@/composables/useLivestreamMonitoring';
+  import {
+    initGlobalLiveStatusPolling,
+    stopGlobalLiveStatusPolling,
+    initPersistentLiveMonitoringPolling,
+  } from '@/composables/useLivestreamMonitoring';
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
 
@@ -50,6 +56,7 @@
   const { state: updateState, checkForUpdates } = useAppUpdater();
   const messagingStore = useMessagingStore();
   const { success } = useToast();
+  const socialTokenMonitor = useSocialTokenMonitor();
 
   // Track user activity to update last_active_at
   // Will be initialized after authentication check completes
@@ -61,6 +68,7 @@
   const pendingInvitations = ref<OrganizationInvitation[]>([]);
   const currentInvitation = ref<OrganizationInvitation | null>(null);
   const showInviteDialog = ref(false);
+  let invitationPollInterval: number | null = null;
 
   // Fetch pending organization invitations
   const fetchPendingInvitations = async () => {
@@ -68,18 +76,47 @@
     
     const response = await listMyInvitations();
     if (response.success && response.invitations.length > 0) {
+      // Check if there are new invitations
+      const newInvitations = response.invitations.filter(
+        invite => !pendingInvitations.value.some(existing => existing.id === invite.id)
+      );
+      
       pendingInvitations.value = response.invitations;
-      // Show the first invitation
+      
+      // Show the first invitation if dialog is not already showing
       if (!showInviteDialog.value && pendingInvitations.value.length > 0) {
         currentInvitation.value = pendingInvitations.value[0];
         showInviteDialog.value = true;
       }
+    } else {
+      pendingInvitations.value = [];
+    }
+  };
+
+  // Start polling for new invitations (every 30 seconds)
+  const startInvitationPolling = () => {
+    if (invitationPollInterval) return; // Already polling
+    
+    // Fetch immediately
+    fetchPendingInvitations();
+    
+    // Then poll every 30 seconds
+    invitationPollInterval = window.setInterval(() => {
+      fetchPendingInvitations();
+    }, 30000); // 30 seconds
+  };
+
+  // Stop polling for invitations
+  const stopInvitationPolling = () => {
+    if (invitationPollInterval) {
+      clearInterval(invitationPollInterval);
+      invitationPollInterval = null;
     }
   };
 
   // Handle invitation acceptance
   const handleAcceptInvitation = async (invitation: OrganizationInvitation) => {
-    const result = await acceptInvitation(invitation.id.toString());
+    const result = await acceptInvitationById(invitation.id);
     
     if (result.success) {
       success(`You've joined ${invitation.organization_name}!`);
@@ -103,7 +140,13 @@
   };
 
   // Handle invitation decline
-  const handleDeclineInvitation = (invitation: OrganizationInvitation) => {
+  const handleDeclineInvitation = async (invitation: OrganizationInvitation) => {
+    const result = await declineInvitation(invitation.id);
+    
+    if (result.success) {
+      success('Invitation declined');
+    }
+    
     // Remove from pending list
     pendingInvitations.value = pendingInvitations.value.filter(inv => inv.id !== invitation.id);
     showInviteDialog.value = false;
@@ -132,6 +175,7 @@
   // Check if this is the full-screen editor page (no scroll, minimal chrome)
   const currentRoute = useRoute();
   const isEditorPage = computed(() => currentRoute.path === '/editor');
+  const isStudioSessionPage = computed(() => currentRoute.path === '/studio/record/session');
 
   // Authentication Gate: Block all app interaction until user authenticates
   const requiresAuthGate = computed(() => {
@@ -173,12 +217,9 @@
       return true;
     }
 
-    // If plan was selected but subscription is now expired, show gate again
-    if (subscriptionStatus === 'expired') {
-      console.log('[App] Subscription expired, showing subscription gate');
-      return true;
-    }
-
+    // If plan was selected (including free tier), allow access even if subscription expired
+    // User has explicitly chosen to continue with free tier
+    console.log('[App] Plan selected (including free tier), bypassing gate');
     return false;
   });
 
@@ -265,15 +306,18 @@
       // Fetch and show any unseen announcements for the newly logged-in user
       await fetchAndEnqueue();
       subscribeToChannel(authStore.user?.account_type ?? 'personal');
+      socialTokenMonitor.start();
       
-      // Fetch pending organization invitations
-      await fetchPendingInvitations();
+      // Start polling for organization invitations
+      startInvitationPolling();
     } else if (!event.detail?.userId) {
       // User logged out — clear announcement queue and leave channel
       unsubscribe();
+      socialTokenMonitor.stop({ clearPersistedDismissals: true });
       // Clear plan selection flag
       localStorage.removeItem('has_selected_plan');
-      // Clear pending invitations
+      // Stop polling and clear pending invitations
+      stopInvitationPolling();
       pendingInvitations.value = [];
       currentInvitation.value = null;
       showInviteDialog.value = false;
@@ -433,8 +477,11 @@
           // Announcements don't need to block startup - fire and forget
           fetchAndEnqueue().catch((e) => console.error('[App] Failed to fetch announcements:', e));
           subscribeToChannel(authStore.user?.account_type ?? 'personal');
+          socialTokenMonitor.start();
           // Initialize global messaging socket for floating chat
           messagingStore.initializeGlobal().catch((e) => console.error('[App] Failed to init global messaging:', e));
+          // Start polling for organization invitations
+          startInvitationPolling();
         }
       })().catch((error) => {
         console.error('[App] Failed to check authentication:', error);
@@ -502,6 +549,10 @@
     initGlobalLiveStatusPolling().catch((error) => {
       console.error('[App] Failed to initialize global live status polling:', error);
     });
+
+    initPersistentLiveMonitoringPolling().catch((error) => {
+      console.error('[App] Failed to initialize persistent live monitoring polling:', error);
+    });
   }
 
   // Cleanup auth event listener on unmount
@@ -523,6 +574,10 @@
 
     // Cleanup global clip build event handler
     cleanupClipBuildEventHandler();
+    
+    // Stop invitation polling
+    stopInvitationPolling();
+    socialTokenMonitor.stop();
   });
 </script>
 
@@ -552,7 +607,10 @@
     <!-- Main content area with scrolling -->
     <div
       class="main-content dashboard-container"
-      :class="{ 'pip-content': isPipWindow, 'editor-content': isEditorPage }"
+      :class="{
+        'pip-content': isPipWindow,
+        'editor-content': isEditorPage || isStudioSessionPage,
+      }"
     >
       <!-- Toast notifications provider -->
       <Toast />
@@ -571,6 +629,9 @@
 
       <!-- Global Announcement Dialog -->
       <AnnouncementDialog />
+
+      <!-- Global expired social token dialog -->
+      <SocialTokenExpiredDialog />
 
       <!-- Organization Invite Dialog -->
       <OrganizationInviteDialog

@@ -16,8 +16,12 @@ export interface ExportOptions {
 	fps?: number;
 	includeAudio?: boolean;
 	canvasSize?: { width: number; height: number };
+	timeRange?: { startTime: number; endTime: number };
+	/** When set (e.g. segment export), used as the base output file name instead of the project name. */
+	outputFileName?: string;
 	onProgress?: ({ progress }: { progress: number }) => void;
 	onCancel?: () => boolean;
+	exportId?: string;
 }
 
 export interface ExportResult {

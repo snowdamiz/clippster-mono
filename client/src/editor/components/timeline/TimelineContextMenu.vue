@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onUnmounted } from "vue";
 import { useEditor } from "../../composables/useEditor";
+import { useExportDialog } from "../../composables/useExportDialog";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { invokeAction } from "../../lib/actions";
+import type { TimelineElement } from "../../types/timeline";
 import {
 	Scissors,
 	Copy,
+	Download,
 	Trash2,
 	ClipboardPaste,
 	VolumeX,
@@ -20,10 +23,6 @@ import {
 	Snowflake,
 	ArrowLeftRight,
 	RefreshCw,
-	ArrowUp,
-	ArrowDown,
-	ChevronsUp,
-	ChevronsDown,
 } from "lucide-vue-next";
 
 const props = defineProps<{
@@ -35,7 +34,8 @@ const emit = defineEmits<{
 	(e: "close"): void;
 }>();
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
+const { openExportDialog } = useExportDialog();
 const { selectElement, isElementSelected, selectAllInTrack } = useElementSelection();
 
 const hasElement = computed(() => !!props.elementRef);
@@ -50,6 +50,13 @@ const elementType = computed(() => {
 	if (!track) return null;
 	const element = track.elements.find((el: { id: string }) => el.id === props.elementRef!.elementId);
 	return element?.type ?? null;
+});
+
+const targetElement = computed<TimelineElement | null>(() => {
+	if (!props.elementRef) return null;
+	const track = editor.timeline.getTrackById({ trackId: props.elementRef.trackId });
+	if (!track) return null;
+	return (track.elements.find((el: { id: string }) => el.id === props.elementRef!.elementId) as TimelineElement | undefined) ?? null;
 });
 
 const isVideoElement = computed(() => elementType.value === "video");
@@ -208,16 +215,6 @@ function handleToggleReverse() {
 	emit("close");
 }
 
-function handleReorderElement(direction: "front" | "back" | "forward" | "backward") {
-	if (!props.elementRef) return;
-	editor.timeline.reorderElement({
-		trackId: props.elementRef.trackId,
-		elementId: props.elementRef.elementId,
-		direction,
-	});
-	emit("close");
-}
-
 const canReplaceMedia = computed(() => isVideoElement.value || elementType.value === "image");
 
 async function handleReplaceMedia() {
@@ -257,6 +254,20 @@ async function handleReplaceMedia() {
 		});
 	};
 	input.click();
+}
+
+function handleExportSegment() {
+	const element = targetElement.value;
+	if (!element) return;
+
+	emit("close");
+	openExportDialog({
+		timeRange: {
+			startTime: element.startTime,
+			endTime: element.startTime + element.duration,
+		},
+		segmentName: element.name || "Segment",
+	});
 }
 </script>
 
@@ -376,46 +387,6 @@ async function handleReplaceMedia() {
 					<span class="ml-auto text-zinc-500">Ctrl+A</span>
 				</button>
 
-				<!-- Layer ordering -->
-				<div class="mx-2 my-1 h-px bg-white/10" />
-
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="handleReorderElement('front')"
-					title="Move to top layer"
-				>
-					<ChevronsUp class="size-3.5" />
-					Bring to Front
-					<span class="ml-auto text-zinc-500">Ctrl+Shift+]</span>
-				</button>
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="handleReorderElement('forward')"
-					title="Move up one layer"
-				>
-					<ArrowUp class="size-3.5" />
-					Bring Forward
-					<span class="ml-auto text-zinc-500">Ctrl+]</span>
-				</button>
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="handleReorderElement('backward')"
-					title="Move down one layer"
-				>
-					<ArrowDown class="size-3.5" />
-					Send Backward
-					<span class="ml-auto text-zinc-500">Ctrl+[</span>
-				</button>
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="handleReorderElement('back')"
-					title="Move to bottom layer"
-				>
-					<ChevronsDown class="size-3.5" />
-					Send to Back
-					<span class="ml-auto text-zinc-500">Ctrl+Shift+[</span>
-				</button>
-
 				<div class="mx-2 my-1 h-px bg-white/10" />
 
 				<!-- Toggle mute (only for elements that can have audio) -->
@@ -511,6 +482,14 @@ async function handleReplaceMedia() {
 						Replace media
 					</button>
 				</template>
+
+				<button
+					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
+					@click="handleExportSegment"
+				>
+					<Download class="size-3.5" />
+					Export segment
+				</button>
 
 				<!-- ── Delete ── -->
 				<div class="mx-2 my-1 h-px bg-white/10" />

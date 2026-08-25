@@ -256,7 +256,11 @@ pub async fn get_single_youtube_video(video_url: String) -> Result<String, Strin
 
 /// Get list of live stream VODs from a YouTube channel using yt-dlp
 #[tauri::command]
-pub async fn get_youtube_vods(channel: String, limit: Option<u32>) -> Result<String, String> {
+pub async fn get_youtube_vods(
+    channel: String,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<String, String> {
     // Check if input is a direct video URL
     if let Some(video_id) = extract_video_id(&channel) {
         println!("[YouTube VODs] Detected video URL, fetching single video: {}", video_id);
@@ -266,14 +270,18 @@ pub async fn get_youtube_vods(channel: String, limit: Option<u32>) -> Result<Str
     let channel_id = normalize_channel_input(&channel);
     let ytdlp_path = resolve_ytdlp_binary()?;
     
-    let limit_str = limit.unwrap_or(10).to_string();
-    let channel_url = if channel_id.starts_with('@') {
-        format!("https://www.youtube.com/{}/streams", channel_id)
-    } else {
-        format!("https://www.youtube.com/channel/{}/streams", channel_id)
-    };
+    let limit_value = limit.unwrap_or(10);
+    let offset_value = offset.unwrap_or(0);
+    let playlist_start = offset_value + 1;
+    let playlist_end = offset_value + limit_value;
+    let playlist_start_str = playlist_start.to_string();
+    let playlist_end_str = playlist_end.to_string();
+    let channel_url = build_youtube_channel_tab_url(&channel_id, "streams");
     
-    println!("[YouTube VODs] Fetching from: {}", channel_url);
+    println!(
+        "[YouTube VODs] Fetching from: {} (items {}-{})",
+        channel_url, playlist_start, playlist_end
+    );
 
     let mut cmd = tokio::process::Command::new(&ytdlp_path);
     no_window(&mut cmd);
@@ -288,7 +296,8 @@ pub async fn get_youtube_vods(channel: String, limit: Option<u32>) -> Result<Str
         .arg("--ignore-errors")
         .arg("--impersonate").arg("chrome")
         .arg("--extractor-args").arg("youtubetab:skip=webpage;youtube:player_skip=webpage,configs")
-        .arg("--playlist-end").arg(&limit_str)
+        .arg("--playlist-start").arg(&playlist_start_str)
+        .arg("--playlist-end").arg(&playlist_end_str)
         .arg(&channel_url);
 
     let output = cmd.output().await
@@ -361,7 +370,11 @@ pub async fn get_youtube_vods(channel: String, limit: Option<u32>) -> Result<Str
 
 /// Get list of regular videos (not live streams) from a YouTube channel using yt-dlp
 #[tauri::command]
-pub async fn get_youtube_videos(channel: String, limit: Option<u32>) -> Result<String, String> {
+pub async fn get_youtube_videos(
+    channel: String,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<String, String> {
     // Check if input is a direct video URL
     if let Some(video_id) = extract_video_id(&channel) {
         println!("[YouTube Videos] Detected video URL, fetching single video: {}", video_id);
@@ -371,14 +384,18 @@ pub async fn get_youtube_videos(channel: String, limit: Option<u32>) -> Result<S
     let channel_id = normalize_channel_input(&channel);
     let ytdlp_path = resolve_ytdlp_binary()?;
     
-    let limit_str = limit.unwrap_or(10).to_string();
-    let channel_url = if channel_id.starts_with('@') {
-        format!("https://www.youtube.com/{}/videos", channel_id)
-    } else {
-        format!("https://www.youtube.com/channel/{}/videos", channel_id)
-    };
+    let limit_value = limit.unwrap_or(10);
+    let offset_value = offset.unwrap_or(0);
+    let playlist_start = offset_value + 1;
+    let playlist_end = offset_value + limit_value;
+    let playlist_start_str = playlist_start.to_string();
+    let playlist_end_str = playlist_end.to_string();
+    let channel_url = build_youtube_channel_tab_url(&channel_id, "videos");
     
-    println!("[YouTube Videos] Fetching from: {}", channel_url);
+    println!(
+        "[YouTube Videos] Fetching from: {} (items {}-{})",
+        channel_url, playlist_start, playlist_end
+    );
 
     let mut cmd = tokio::process::Command::new(&ytdlp_path);
     no_window(&mut cmd);
@@ -389,7 +406,8 @@ pub async fn get_youtube_videos(channel: String, limit: Option<u32>) -> Result<S
         .arg("--ignore-errors")
         .arg("--impersonate").arg("chrome")
         .arg("--extractor-args").arg("youtubetab:skip=webpage;youtube:player_skip=webpage,configs")
-        .arg("--playlist-end").arg(&limit_str)
+        .arg("--playlist-start").arg(&playlist_start_str)
+        .arg("--playlist-end").arg(&playlist_end_str)
         .arg(&channel_url);
 
     let output = cmd.output().await
@@ -559,9 +577,9 @@ pub async fn download_youtube_vod(
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| ffmpeg_path.clone());
         
-        cmd.arg(&vod_url)
+        let media_url = normalize_youtube_media_url(&vod_url);
+        cmd.arg(&media_url)
             .arg("-o").arg(&output_file_str)
-            .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
             .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
@@ -570,6 +588,7 @@ pub async fn download_youtube_vod(
             .arg("--progress")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
+        apply_youtube_media_download_args(&mut cmd);
         
         let mut child = match cmd.spawn() {
             Ok(c) => c,
@@ -1333,6 +1352,23 @@ fn extract_video_id(input: &str) -> Option<String> {
             }
         }
     }
+
+    // youtube.com/shorts/VIDEO_ID
+    if let Some(shorts_part) = trimmed.split("/shorts/").nth(1) {
+        let video_id = shorts_part
+            .split('?')
+            .next()
+            .unwrap_or(shorts_part)
+            .split('/')
+            .next()
+            .unwrap_or("")
+            .split('#')
+            .next()
+            .unwrap_or("");
+        if !video_id.is_empty() && video_id.len() == 11 {
+            return Some(video_id.to_string());
+        }
+    }
     
     // youtube.com/embed/VIDEO_ID
     if let Some(embed_part) = trimmed.split("/embed/").nth(1) {
@@ -1371,15 +1407,47 @@ fn normalize_channel_input(input: &str) -> String {
         } else if let Some(user_part) = trimmed.split("/user/").nth(1) {
             return user_part.split('/').next().unwrap_or(trimmed).to_string();
         }
+
+        if let Some(path_part) = trimmed.split("youtube.com/").nth(1) {
+            let first_path_part = path_part
+                .split('?')
+                .next()
+                .unwrap_or(path_part)
+                .split('#')
+                .next()
+                .unwrap_or(path_part)
+                .split('/')
+                .next()
+                .unwrap_or("");
+
+            if !first_path_part.is_empty()
+                && !matches!(
+                    first_path_part,
+                    "watch" | "shorts" | "embed" | "live" | "playlist" | "feed" | "results" | "redirect"
+                )
+            {
+                return first_path_part.to_string();
+            }
+        }
     }
     
     trimmed.to_string()
 }
 
+fn build_youtube_channel_tab_url(channel_id: &str, tab: &str) -> String {
+    if channel_id.starts_with('@') {
+        format!("https://www.youtube.com/{}/{}", channel_id, tab)
+    } else if channel_id.starts_with("UC") {
+        format!("https://www.youtube.com/channel/{}/{}", channel_id, tab)
+    } else {
+        format!("https://www.youtube.com/{}/{}", channel_id, tab)
+    }
+}
+
 /// Resolve a sidecar binary path using Tauri's naming convention.
 /// Tauri places sidecars next to the executable with -{target_triple} suffix.
 /// In dev mode, they're in src-tauri/binaries/ with the same naming.
-fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
+pub(crate) fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
     let exe_path =
         std::env::current_exe().map_err(|e| format!("Failed to get executable path: {}", e))?;
 
@@ -1478,6 +1546,48 @@ pub fn resolve_ytdlp_binary() -> Result<String, String> {
 
 pub fn resolve_ffmpeg_binary() -> Result<String, String> {
     resolve_sidecar_binary("ffmpeg")
+}
+
+/// Shared YouTube yt-dlp args for media downloads.
+/// Avoids Mix/playlist expansion and skips android_vr formats that currently 403.
+pub fn apply_youtube_media_download_args(cmd: &mut tokio::process::Command) {
+    cmd.arg("--no-playlist")
+        .arg("--impersonate")
+        .arg("chrome")
+        .arg("--extractor-args")
+        .arg("youtube:player_client=mweb,android");
+
+    if let Ok(node_path) = crate::sidecar::resolve_node_binary() {
+        cmd.arg("--js-runtimes").arg(format!("node:{}", node_path));
+    }
+}
+
+/// Prefer a clean watch URL so Mix/radio `list=` params cannot expand into playlists.
+pub fn normalize_youtube_media_url(url: &str) -> String {
+    extract_video_id(url)
+        .map(|id| format!("https://www.youtube.com/watch?v={}", id))
+        .unwrap_or_else(|| url.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_video_id;
+
+    #[test]
+    fn extracts_video_id_from_shorts_url() {
+        assert_eq!(
+            extract_video_id("https://www.youtube.com/shorts/5byNoWveF7c"),
+            Some("5byNoWveF7c".to_string())
+        );
+    }
+
+    #[test]
+    fn extracts_video_id_from_shorts_url_with_query() {
+        assert_eq!(
+            extract_video_id("https://www.youtube.com/shorts/5byNoWveF7c?si=abc123"),
+            Some("5byNoWveF7c".to_string())
+        );
+    }
 }
 
 fn format_time_for_filename(seconds: f64) -> String {
@@ -1643,9 +1753,9 @@ pub async fn download_youtube_vod_segment(
             .parent()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| ffmpeg_path.clone());
-        cmd.arg(&vod_url)
+        let media_url = normalize_youtube_media_url(&vod_url);
+        cmd.arg(&media_url)
             .arg("-o").arg(&video_path_str)
-            .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
             .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
@@ -1657,6 +1767,7 @@ pub async fn download_youtube_vod_segment(
             .arg("--progress")  // Show progress
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
+        apply_youtube_media_download_args(&mut cmd);
 
         println!("[YouTube] Running yt-dlp command with section: {}", section_arg);
 

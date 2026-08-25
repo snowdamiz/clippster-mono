@@ -256,24 +256,24 @@
           </div>
           <div class="org-billing__section-actions">
             <button
-              v-if="!transactionsLoaded"
-              @click="loadTransactions(1)"
+              v-if="!transactionsLoaded && !invoicesLoaded"
+              @click="loadTransactions(1); loadInvoices()"
               class="org-billing__load-btn"
-              :disabled="transactionsLoading"
+              :disabled="transactionsLoading || invoicesLoading"
             >
-              <Loader2 v-if="transactionsLoading" class="org-billing__load-btn-spinner" />
+              <Loader2 v-if="transactionsLoading || invoicesLoading" class="org-billing__load-btn-spinner" />
               <Download v-else class="org-billing__load-btn-icon" />
-              <span>{{ transactionsLoading ? 'Loading...' : 'Load History' }}</span>
+              <span>{{ (transactionsLoading || invoicesLoading) ? 'Loading...' : 'Load History' }}</span>
             </button>
             <button
-              v-else-if="transactions.length > 0"
-              @click="loadTransactions(transactionsPage)"
+              v-else
+              @click="loadTransactions(transactionsPage); loadInvoices()"
               class="org-billing__load-btn"
-              :disabled="transactionsLoading"
+              :disabled="transactionsLoading || invoicesLoading"
             >
               <RefreshCw
                 class="org-billing__load-btn-icon"
-                :class="{ 'org-billing__load-btn-icon--spin': transactionsLoading }"
+                :class="{ 'org-billing__load-btn-icon--spin': transactionsLoading || invoicesLoading }"
               />
               <span>Refresh</span>
             </button>
@@ -281,7 +281,7 @@
         </div>
 
         <!-- Not Loaded Yet -->
-        <div v-if="!transactionsLoaded && !transactionsLoading" class="org-billing__empty-state">
+        <div v-if="!transactionsLoaded && !invoicesLoaded && !transactionsLoading && !invoicesLoading" class="org-billing__empty-state">
           <div class="org-billing__empty-icon">
             <Receipt />
           </div>
@@ -290,7 +290,7 @@
         </div>
 
         <!-- Loading Skeleton -->
-        <div v-else-if="transactionsLoading && transactions.length === 0" class="org-billing__skeleton-list">
+        <div v-else-if="(transactionsLoading || invoicesLoading) && invoices.length === 0 && transactions.length === 0" class="org-billing__skeleton-list">
           <div v-for="i in 3" :key="i" class="org-billing__skeleton-item">
             <div class="org-billing__skeleton-icon"></div>
             <div class="org-billing__skeleton-lines">
@@ -301,75 +301,125 @@
           </div>
         </div>
 
-        <!-- Empty State -->
-        <div v-else-if="transactionsLoaded && transactions.length === 0" class="org-billing__empty-state">
-          <div class="org-billing__empty-icon">
-            <Receipt />
-          </div>
-          <h3 class="org-billing__empty-title">No payment history</h3>
-          <p class="org-billing__empty-desc">Transactions will appear here after purchasing credits</p>
-        </div>
-
-        <!-- Transaction List -->
-        <div v-else class="org-billing__history-card">
-          <div class="org-billing__history-list">
-            <div v-for="tx in transactions" :key="tx.id" class="org-billing__history-item">
-              <div
-                class="org-billing__history-icon"
-                :class="
-                  tx.payment_method === 'stripe'
-                    ? 'org-billing__history-icon--stripe'
-                    : 'org-billing__history-icon--crypto'
-                "
-              >
-                <CreditCard v-if="tx.payment_method === 'stripe'" />
-                <Wallet v-else />
-              </div>
-              <div class="org-billing__history-info">
-                <div class="org-billing__history-row">
-                  <span class="org-billing__history-pack">{{ getPackLabel(tx.pack_type) }}</span>
-                  <span class="org-billing__history-status">{{ tx.status }}</span>
+        <template v-else-if="invoicesLoaded || transactionsLoaded">
+          <!-- Subscription Invoices -->
+          <div v-if="invoices.length > 0" class="org-billing__history-card" style="margin-bottom: 16px">
+            <div class="org-billing__history-subsection-label">Subscription Payments</div>
+            <div class="org-billing__history-list">
+              <div v-for="inv in invoices" :key="inv.id" class="org-billing__history-item">
+                <div class="org-billing__history-icon org-billing__history-icon--stripe">
+                  <CreditCard />
                 </div>
-                <div class="org-billing__history-meta">
-                  <span>{{ formatTransactionDate(tx.purchased_at) }}</span>
-                  <span class="org-billing__history-dot">•</span>
-                  <span>{{ getPaymentMethodLabel(tx.payment_method) }}</span>
-                  <template v-if="tx.purchased_by">
+                <div class="org-billing__history-info">
+                  <div class="org-billing__history-row">
+                    <span class="org-billing__history-pack">
+                      {{ inv.number || 'Subscription Invoice' }}
+                    </span>
+                    <span
+                      class="org-billing__history-status"
+                      :class="`org-billing__history-status--${inv.status}`"
+                    >{{ inv.status }}</span>
+                  </div>
+                  <div class="org-billing__history-meta">
+                    <span>{{ inv.created ? formatTransactionDate(new Date(inv.created * 1000).toISOString()) : '—' }}</span>
                     <span class="org-billing__history-dot">•</span>
-                    <span>{{ tx.purchased_by.name || tx.purchased_by.email }}</span>
-                  </template>
+                    <span>Stripe</span>
+                    <template v-if="inv.period_start && inv.period_end">
+                      <span class="org-billing__history-dot">•</span>
+                      <span>
+                        {{ new Date(inv.period_start * 1000).toLocaleDateString() }} –
+                        {{ new Date(inv.period_end * 1000).toLocaleDateString() }}
+                      </span>
+                    </template>
+                  </div>
                 </div>
-              </div>
-              <div class="org-billing__history-amount">
-                <span class="org-billing__history-usd">${{ parseFloat(tx.amount_usd).toFixed(2) }}</span>
-                <span class="org-billing__history-mins">+{{ parseFloat(tx.hours_purchased).toFixed(0) }} min</span>
+                <div class="org-billing__history-amount">
+                  <span class="org-billing__history-usd">
+                    ${{ inv.amount_paid != null ? (inv.amount_paid / 100).toFixed(2) : '—' }}
+                  </span>
+                  <a
+                    v-if="inv.hosted_invoice_url"
+                    :href="inv.hosted_invoice_url"
+                    target="_blank"
+                    rel="noopener"
+                    class="org-billing__invoice-link"
+                  >View</a>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- Pagination -->
-          <div v-if="totalTransactionPages > 1" class="org-billing__pagination">
-            <span class="org-billing__pagination-info">Page {{ transactionsPage }} of {{ totalTransactionPages }}</span>
-            <div class="org-billing__pagination-btns">
-              <button
-                @click="loadTransactions(transactionsPage - 1)"
-                :disabled="transactionsPage <= 1 || transactionsLoading"
-                class="org-billing__pagination-btn"
-              >
-                <ChevronLeft class="h-3.5 w-3.5" />
-                Previous
-              </button>
-              <button
-                @click="loadTransactions(transactionsPage + 1)"
-                :disabled="transactionsPage >= totalTransactionPages || transactionsLoading"
-                class="org-billing__pagination-btn"
-              >
-                Next
-                <ChevronRight class="h-3.5 w-3.5" />
-              </button>
+          <!-- Credit Pack Transactions -->
+          <div v-if="transactions.length > 0" class="org-billing__history-card">
+            <div v-if="invoices.length > 0" class="org-billing__history-subsection-label">Credit Purchases</div>
+            <div class="org-billing__history-list">
+              <div v-for="tx in transactions" :key="tx.id" class="org-billing__history-item">
+                <div
+                  class="org-billing__history-icon"
+                  :class="
+                    tx.payment_method === 'stripe'
+                      ? 'org-billing__history-icon--stripe'
+                      : 'org-billing__history-icon--crypto'
+                  "
+                >
+                  <CreditCard v-if="tx.payment_method === 'stripe'" />
+                  <Wallet v-else />
+                </div>
+                <div class="org-billing__history-info">
+                  <div class="org-billing__history-row">
+                    <span class="org-billing__history-pack">{{ getPackLabel(tx.pack_type) }}</span>
+                    <span class="org-billing__history-status">{{ tx.status }}</span>
+                  </div>
+                  <div class="org-billing__history-meta">
+                    <span>{{ formatTransactionDate(tx.purchased_at) }}</span>
+                    <span class="org-billing__history-dot">•</span>
+                    <span>{{ getPaymentMethodLabel(tx.payment_method) }}</span>
+                    <template v-if="tx.purchased_by">
+                      <span class="org-billing__history-dot">•</span>
+                      <span>{{ tx.purchased_by.name || tx.purchased_by.email }}</span>
+                    </template>
+                  </div>
+                </div>
+                <div class="org-billing__history-amount">
+                  <span class="org-billing__history-usd">${{ parseFloat(tx.amount_usd).toFixed(2) }}</span>
+                  <span class="org-billing__history-mins">+{{ parseFloat(tx.hours_purchased).toFixed(0) }} min</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Pagination -->
+            <div v-if="totalTransactionPages > 1" class="org-billing__pagination">
+              <span class="org-billing__pagination-info">Page {{ transactionsPage }} of {{ totalTransactionPages }}</span>
+              <div class="org-billing__pagination-btns">
+                <button
+                  @click="loadTransactions(transactionsPage - 1)"
+                  :disabled="transactionsPage <= 1 || transactionsLoading"
+                  class="org-billing__pagination-btn"
+                >
+                  <ChevronLeft class="h-3.5 w-3.5" />
+                  Previous
+                </button>
+                <button
+                  @click="loadTransactions(transactionsPage + 1)"
+                  :disabled="transactionsPage >= totalTransactionPages || transactionsLoading"
+                  class="org-billing__pagination-btn"
+                >
+                  Next
+                  <ChevronRight class="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+
+          <!-- Empty State: both loaded but nothing found -->
+          <div v-if="invoices.length === 0 && transactions.length === 0" class="org-billing__empty-state">
+            <div class="org-billing__empty-icon">
+              <Receipt />
+            </div>
+            <h3 class="org-billing__empty-title">No payment history</h3>
+            <p class="org-billing__empty-desc">Payments will appear here once they are processed</p>
+          </div>
+        </template>
       </section>
 
       <!-- Subscriptions Section (Admin Only) -->
@@ -953,9 +1003,13 @@
     transactionsPage,
     transactionsLoaded,
     totalTransactionPages,
+    invoices,
+    invoicesLoading,
+    invoicesLoaded,
     loadOrganization,
     loadSubscription,
     loadTransactions,
+    loadInvoices,
     allocateCredits,
     togglePoolFallback,
     formatAllocation,
@@ -1967,6 +2021,41 @@
     border-radius: 4px;
     background-color: rgba(16, 185, 129, 0.12);
     color: #34d399;
+  }
+
+  .org-billing__history-status--paid {
+    background-color: rgba(16, 185, 129, 0.12);
+    color: #34d399;
+  }
+
+  .org-billing__history-status--open,
+  .org-billing__history-status--draft {
+    background-color: rgba(251, 191, 36, 0.12);
+    color: #fbbf24;
+  }
+
+  .org-billing__history-status--void,
+  .org-billing__history-status--uncollectible {
+    background-color: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+  }
+
+  .org-billing__history-subsection-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--sidebar-text-muted);
+    padding: 0.75rem 1rem 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .org-billing__invoice-link {
+    font-size: 0.6875rem;
+    color: var(--accent-color, #3b82f6);
+    text-decoration: none;
+    margin-top: 0.25rem;
+    &:hover { text-decoration: underline; }
   }
 
   .org-billing__history-meta {

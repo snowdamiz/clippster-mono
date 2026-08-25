@@ -6,7 +6,15 @@ defmodule ClippsterServerWeb.AdminController do
   alias ClippsterServer.AI
   alias ClippsterServer.AppSettings
   alias ClippsterServer.BetaCodes
-  alias ClippsterServer.{Accounts, Credits, Subscriptions, Organizations, OrganizationSubscriptions}
+
+  alias ClippsterServer.{
+    Accounts,
+    Credits,
+    Subscriptions,
+    Organizations,
+    OrganizationSubscriptions
+  }
+
   alias ClippsterServer.Storage
   alias ClippsterServer.PromoCodes
   alias ClippsterServer.ClipperProfiles.LeaderboardWorker
@@ -756,19 +764,69 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   @doc """
+  Extend a user's subscription by a specified number of days.
+  Requires admin authentication.
+  """
+  def extend_subscription(conn, %{"user_id" => user_id_string} = params) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        days = Map.get(params, "days", 30)
+        grant_credits = Map.get(params, "grant_credits", false)
+
+        days_int = parse_days(days)
+        grant_credits_bool = parse_boolean(grant_credits)
+
+        case Subscriptions.admin_extend_subscription(user_id, days_int, grant_credits_bool) do
+          {:ok, _result} ->
+            subscription_info = Subscriptions.get_subscription_status(user_id)
+
+            json(conn, %{
+              success: true,
+              message: "Successfully extended subscription by #{days_int} days",
+              subscription: subscription_info
+            })
+
+          {:error, :no_tier} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "User does not have a subscription tier"})
+
+          {:error, :invalid_tier} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "User has an invalid subscription tier"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{
+              success: false,
+              error: "Failed to extend subscription: #{inspect(reason)}"
+            })
+        end
+
+      {:error, _} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
   Cancel a user's subscription.
   Requires admin authentication.
   """
   def cancel_user_subscription(conn, %{"user_id" => user_id_string}) do
     case parse_integer(user_id_string) do
       {:ok, user_id} ->
-        case Subscriptions.cancel_subscription(user_id) do
+        case Subscriptions.admin_cancel_subscription(user_id) do
           {:ok, _user} ->
             subscription_info = Subscriptions.get_subscription_status(user_id)
 
             json(conn, %{
               success: true,
-              message: "Successfully cancelled subscription for user",
+              message:
+                "Successfully cancelled subscription for user (immediate - no future charges)",
               subscription: subscription_info
             })
 
@@ -776,6 +834,11 @@ defmodule ClippsterServerWeb.AdminController do
             conn
             |> put_status(400)
             |> json(%{success: false, error: "User does not have an active subscription"})
+
+          {:error, {:stripe_error, message}} ->
+            conn
+            |> put_status(502)
+            |> json(%{success: false, error: "Failed to cancel in Stripe: #{inspect(message)}"})
 
           {:error, reason} ->
             conn
@@ -852,10 +915,16 @@ defmodule ClippsterServerWeb.AdminController do
           id: promo.id,
           code: promo.code,
           name: promo.name,
+          promo_type: promo.promo_type || "percent",
           percent_off: promo.percent_off,
+          fixed_price_cents: promo.fixed_price_cents,
+          access_months: promo.access_months,
+          total_credits: promo.total_credits,
           duration_kind: promo.duration_kind,
           duration_months: promo.duration_months,
           allowed_tiers: promo.allowed_tiers,
+          allowed_org_tiers: promo.allowed_org_tiers,
+          allowed_credit_packs: promo.allowed_credit_packs,
           max_redemptions: promo.max_redemptions,
           redeem_by: promo.redeem_by,
           is_active: promo.is_active,
@@ -914,10 +983,16 @@ defmodule ClippsterServerWeb.AdminController do
             id: promo.id,
             code: promo.code,
             name: promo.name,
+            promo_type: promo.promo_type || "percent",
             percent_off: promo.percent_off,
+            fixed_price_cents: promo.fixed_price_cents,
+            access_months: promo.access_months,
+            total_credits: promo.total_credits,
             duration_kind: promo.duration_kind,
             duration_months: promo.duration_months,
             allowed_tiers: promo.allowed_tiers,
+            allowed_org_tiers: promo.allowed_org_tiers,
+            allowed_credit_packs: promo.allowed_credit_packs,
             max_redemptions: promo.max_redemptions,
             redeem_by: promo.redeem_by,
             is_active: promo.is_active,
@@ -952,10 +1027,16 @@ defmodule ClippsterServerWeb.AdminController do
             id: promo.id,
             code: promo.code,
             name: promo.name,
+            promo_type: promo.promo_type || "percent",
             percent_off: promo.percent_off,
+            fixed_price_cents: promo.fixed_price_cents,
+            access_months: promo.access_months,
+            total_credits: promo.total_credits,
             duration_kind: promo.duration_kind,
             duration_months: promo.duration_months,
             allowed_tiers: promo.allowed_tiers,
+            allowed_org_tiers: promo.allowed_org_tiers,
+            allowed_credit_packs: promo.allowed_credit_packs,
             max_redemptions: promo.max_redemptions,
             redeem_by: promo.redeem_by,
             is_active: promo.is_active,
@@ -1202,6 +1283,71 @@ defmodule ClippsterServerWeb.AdminController do
   # ============================================================================
 
   @doc """
+  Sync an organization's subscription state (status, dates) from Stripe.
+
+  Useful for recovering from missed/dropped webhooks. Optional query param
+  `grant_period_credits=true` will additionally credit the org pool with
+  `org.monthly_credits` for the current Stripe period (idempotent — guarded
+  against double-grants by the existing OrganizationSubscription history).
+  """
+  def sync_org_stripe_subscription(conn, %{"organization_id" => org_id_string} = params) do
+    case parse_integer(org_id_string) do
+      {:ok, org_id} ->
+        grant_period_credits = parse_boolean(Map.get(params, "grant_period_credits", "false"))
+
+        case OrganizationSubscriptions.sync_from_stripe(org_id,
+               grant_period_credits: grant_period_credits
+             ) do
+          {:ok, %{organization: _org, granted_credits: granted, period: {start_dt, end_dt}}} ->
+            status = OrganizationSubscriptions.get_subscription_status(org_id)
+
+            json(conn, %{
+              success: true,
+              message: "Organization subscription synced from Stripe",
+              granted_credits: granted,
+              period: %{
+                start: DateTime.to_iso8601(start_dt),
+                end: DateTime.to_iso8601(end_dt)
+              },
+              subscription: status
+            })
+
+          {:error, :organization_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "Organization not found"})
+
+          {:error, :no_stripe_subscription} ->
+            conn
+            |> put_status(400)
+            |> json(%{
+              success: false,
+              error: "Organization has no stripe_subscription_id; cannot sync"
+            })
+
+          {:error, :no_period_on_subscription} ->
+            conn
+            |> put_status(502)
+            |> json(%{
+              success: false,
+              error: "Stripe subscription returned no current_period_start/end; cannot sync"
+            })
+
+          {:error, {:stripe_error, msg}} ->
+            conn
+            |> put_status(502)
+            |> json(%{success: false, error: "Stripe error: #{msg}"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid organization ID"})
+    end
+  end
+
+  @doc """
   Grant a subscription to an organization.
   """
   def grant_org_subscription(conn, %{"organization_id" => org_id_string} = params) do
@@ -1243,8 +1389,94 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   @doc """
-  Admin creates a new org account with email/password, custom seats/credits/price.
+  Admin creates a new org account.
+  Supports two modes:
+  - New user: requires email + password
+  - Existing user: requires existing_user_id (email/password not needed)
   """
+  def create_org_account(conn, %{"existing_user_id" => existing_user_id_raw} = params) do
+    admin_id = conn.assigns[:current_user_id]
+
+    case require_param(params, "org_name") do
+      {:ok, org_name} ->
+        max_seats = parse_int_param(params, "max_seats", 0)
+        monthly_credits = parse_int_param(params, "monthly_credits", 0)
+        price_cents = parse_int_param(params, "price_cents", 0)
+        tier = Map.get(params, "tier", "enterprise_base")
+        days = parse_int_param(params, "days", 30)
+
+        user_id =
+          case existing_user_id_raw do
+            id when is_integer(id) -> id
+            id when is_binary(id) -> String.to_integer(id)
+          end
+
+        attrs = %{
+          org_name: org_name,
+          user_id: user_id,
+          max_seats: max_seats,
+          monthly_credits: monthly_credits,
+          price_cents: price_cents,
+          admin_id: admin_id,
+          tier: tier,
+          days: days,
+          description: Map.get(params, "description", "")
+        }
+
+        case OrganizationSubscriptions.admin_create_org_account_for_existing_user(attrs) do
+          {:ok, %{organization: org, user: user}} ->
+            json(conn, %{
+              success: true,
+              message: "Organization account created",
+              organization: %{
+                id: org.id,
+                name: org.name,
+                subscription_status: org.subscription_status,
+                subscription_tier: org.subscription_tier,
+                max_seats: org.max_seats,
+                monthly_credits: org.monthly_credits,
+                admin_price_cents: org.admin_price_cents
+              },
+              user: %{
+                id: user.id,
+                email: user.email
+              }
+            })
+
+          {:error, :user_not_found} ->
+            conn
+            |> put_status(404)
+            |> json(%{success: false, error: "User not found"})
+
+          {:error, :user_already_owns_org} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "This user already owns an organization"})
+
+          {:error, :org_create_error} ->
+            conn
+            |> put_status(400)
+            |> json(%{
+              success: false,
+              error: "Failed to create organization. Please check organization name."
+            })
+
+          {:error, :member_error} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed to add owner as organization member"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed to create org account: #{inspect(reason)}"})
+        end
+
+      {:error, reason} ->
+        conn |> put_status(400) |> json(%{success: false, error: reason})
+    end
+  end
+
   def create_org_account(conn, params) do
     admin_id = conn.assigns[:current_user_id]
 
@@ -1326,6 +1558,36 @@ defmodule ClippsterServerWeb.AdminController do
       {:error, reason} ->
         conn |> put_status(400) |> json(%{success: false, error: reason})
     end
+  end
+
+  @doc """
+  Search users by email prefix for admin org assignment.
+  Returns up to 10 matching users.
+  """
+  def search_users_by_email(conn, %{"email" => email_query}) when byte_size(email_query) >= 3 do
+    alias ClippsterServer.Accounts.User, as: UserSchema
+    import Ecto.Query, warn: false
+
+    pattern = "%#{String.downcase(email_query)}%"
+
+    users =
+      UserSchema
+      |> where([u], ilike(u.email, ^pattern))
+      |> limit(10)
+      |> select([u], %{
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        avatar_url: u.avatar_url,
+        owned_organization_id: u.owned_organization_id
+      })
+      |> ClippsterServer.Repo.all()
+
+    json(conn, %{success: true, users: users})
+  end
+
+  def search_users_by_email(conn, _params) do
+    json(conn, %{success: true, users: []})
   end
 
   @doc """
@@ -1425,10 +1687,20 @@ defmodule ClippsterServerWeb.AdminController do
         case OrganizationSubscriptions.admin_cancel_subscription(org_id) do
           {:ok, _org} ->
             status = OrganizationSubscriptions.get_subscription_status(org_id)
-            json(conn, %{success: true, message: "Subscription cancelled", subscription: status})
+
+            json(conn, %{
+              success: true,
+              message: "Subscription cancelled (immediate - no future charges)",
+              subscription: status
+            })
 
           {:error, :not_active} ->
             conn |> put_status(400) |> json(%{success: false, error: "No active subscription"})
+
+          {:error, {:stripe_error, message}} ->
+            conn
+            |> put_status(502)
+            |> json(%{success: false, error: "Failed to cancel in Stripe: #{inspect(message)}"})
 
           {:error, reason} ->
             conn
@@ -1442,12 +1714,13 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   defp validate_org_tier(tier)
-       when tier in ["solo", "enterprise_base", "enterprise_ai", "enterprise_unlimited"], do: :ok
+       when tier in ["solo", "enterprise_base", "enterprise_ai", "enterprise_unlimited", "custom"],
+       do: :ok
 
   defp validate_org_tier(_),
     do:
       {:error,
-       "Invalid tier - must be one of: solo, enterprise_base, enterprise_ai, enterprise_unlimited"}
+       "Invalid tier - must be one of: solo, enterprise_base, enterprise_ai, enterprise_unlimited, custom"}
 
   defp require_param(params, key) do
     case Map.get(params, key) do

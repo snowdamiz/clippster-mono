@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="show" class="build-dialog__overlay">
+      <div v-if="show && !showManualPOIEditor" class="build-dialog__overlay">
         <Transition name="dialog" appear>
           <div v-if="show" class="build-dialog" role="dialog" aria-modal="true">
             <!-- Decorative top accent -->
@@ -482,7 +482,7 @@
                       <!-- Disabled when orgs/campaigns are selected (branding comes from their profiles) -->
                       <div v-if="!isFreeTier" class="build-dialog__intro-outro-section" :class="{ 'build-dialog__intro-outro-section--disabled': hasOrgOrCampaignSelected }">
                         <div v-if="hasOrgOrCampaignSelected" class="build-dialog__disabled-notice">
-                          <span>Intro/Outro controlled by organization or campaign branding</span>
+                          <span>Branding from organization or campaign (applied per build target)</span>
                         </div>
                         <!-- Intro Compact Selector -->
                         <div class="build-dialog__field">
@@ -659,7 +659,109 @@
                   </div>
                 </Transition>
 
-                <!-- Step 5: Publish -->
+                <!-- Step 1: Subtitles (choosing / transcribing / editing sub-states) -->
+                <Transition name="step-slide" mode="out-in">
+                  <div v-if="currentStep === 'subtitles'" key="subtitles" class="build-dialog__step-content">
+
+                    <!-- SUB-STATE: choosing -->
+                    <template v-if="subtitleSubState === 'choosing'">
+                      <div class="build-dialog__step-header">
+                        <h3 class="build-dialog__step-title">Would you like to add subtitles?</h3>
+                        <p class="build-dialog__step-subtitle">Auto-generate and burn subtitles into your clip</p>
+                      </div>
+
+                      <!-- Error banner (if transcription failed previously) -->
+                      <div v-if="subtitleTranscribeError" class="build-dialog__alert build-dialog__alert--error" style="margin-bottom:1rem;">
+                        <AlertCircle :size="15" />
+                        <span>Transcription failed: {{ subtitleTranscribeError }}</span>
+                      </div>
+
+                      <div class="build-dialog__subtitle-choice">
+                        <button
+                          type="button"
+                          class="build-dialog__subtitle-choice-btn build-dialog__subtitle-choice-btn--yes"
+                          @click="chooseSubtitlesYes"
+                        >
+                          <CaptionsIcon :size="28" />
+                          <span class="build-dialog__subtitle-choice-label">Yes, add subtitles</span>
+                          <span class="build-dialog__subtitle-choice-hint">Transcribe the clip and customise subtitle style</span>
+                        </button>
+                        <button
+                          type="button"
+                          class="build-dialog__subtitle-choice-btn build-dialog__subtitle-choice-btn--no"
+                          @click="chooseSubtitlesNo"
+                        >
+                          <X :size="28" />
+                          <span class="build-dialog__subtitle-choice-label">No, skip subtitles</span>
+                          <span class="build-dialog__subtitle-choice-hint">Continue without subtitles</span>
+                        </button>
+                      </div>
+                    </template>
+
+                    <!-- SUB-STATE: transcribing -->
+                    <template v-else-if="subtitleSubState === 'transcribing'">
+                      <div class="build-dialog__step-header">
+                        <h3 class="build-dialog__step-title">Transcribing your clip…</h3>
+                        <p class="build-dialog__step-subtitle">{{ wizardTranscription.progress.value.message || 'Analysing audio…' }}</p>
+                      </div>
+                      <div class="build-dialog__transcribing-body">
+                        <Loader2 :size="48" class="build-dialog__spinner build-dialog__spinner--large" />
+                        <div class="build-dialog__progress-track">
+                          <div
+                            class="build-dialog__progress-fill"
+                            :style="{ width: `${wizardTranscription.progress.value.progress}%` }"
+                          />
+                        </div>
+                        <span class="build-dialog__transcribing-pct">{{ Math.round(wizardTranscription.progress.value.progress) }}%</span>
+                      </div>
+                    </template>
+
+                    <!-- SUB-STATE: editing -->
+                    <template v-else-if="subtitleSubState === 'editing' && wizardSubtitleSettings">
+                      <div class="build-dialog__subtitle-editing-note">
+                        Position the subtitles on the 16:9 preview, then adjust text, font, outline, color, and animation below.
+                      </div>
+                      <div class="build-dialog__subtitle-editor">
+
+                        <!-- 16:9 canvas with thumbnail + draggable subtitle -->
+                        <div class="build-dialog__subtitle-canvas-col">
+                          <SubtitlePreviewCanvas
+                            :thumbnail-url="subtitleFirstFrameUrl"
+                            :aspect-ratio="{ width: 16, height: 9 }"
+                            :subtitle-settings="wizardSubtitleSettings"
+                            :subtitle-position="wizardSubtitlePosition"
+                            :transcript-words="wizardTranscriptWords"
+                            :transcript-segments="wizardTranscriptSegments"
+                            :static-preview="true"
+                            @subtitle-position-change="onWizardSubtitlePositionChange"
+                            @subtitle-settings-change="onWizardSubtitleSettingsChange"
+                          />
+                          <p class="build-dialog__subtitle-canvas-label">Drag to reposition · corners to resize</p>
+                        </div>
+
+                        <!-- Subtitle style/transcript editor -->
+                        <div class="build-dialog__subtitle-panel">
+                          <div class="poi-dialog__sub-header">
+                            <span class="poi-dialog__sub-title">Subtitles</span>
+                            <span class="text-[10px] shrink-0 font-mono poi-dialog__faint">16:9</span>
+                          </div>
+                          <SubtitlePropertiesPanel
+                            class="build-dialog__subtitle-panel-content"
+                            variant="embedded"
+                            :settings="wizardSubtitleSettings"
+                            :segments="wizardTranscriptSegments"
+                            :current-time="0"
+                            @update-settings="(s: any) => onWizardSubtitleSettingsUpdate(s)"
+                            @delete="removeWizardSubtitles"
+                          />
+                        </div>
+                      </div>
+                    </template>
+
+                  </div>
+                </Transition>
+
+                <!-- Step 6: Publish -->
                 <Transition name="step-slide" mode="out-in">
                   <div v-if="currentStep === 'publish'" key="publish" class="build-dialog__step-content">
                       <form class="build-dialog__form" @submit.prevent="handlePublish">
@@ -966,7 +1068,7 @@
             <div class="build-dialog__footer">
               <!-- Back button or spacer -->
               <div class="build-dialog__footer-left">
-                <button v-if="!isFirstStep" @click="previousStep" :disabled="isBuilding" class="build-dialog__btn build-dialog__btn--back">
+                <button v-if="!isFirstStep || (currentStep === 'subtitles' && subtitleSubState === 'editing')" @click="previousStep" :disabled="isBuilding" class="build-dialog__btn build-dialog__btn--back">
                   <ArrowLeftIcon class="build-dialog__btn-icon" />
                   Back
                 </button>
@@ -978,7 +1080,7 @@
               <!-- Next/Publish button -->
               <div class="build-dialog__footer-right">
                 <button
-                  v-if="!isLastStep"
+                  v-if="!isLastStep && !(currentStep === 'subtitles' && subtitleSubState === 'choosing')"
                   @click="nextStep"
                   :disabled="!canProceed"
                   class="build-dialog__btn build-dialog__btn--next"
@@ -1014,21 +1116,31 @@
         </Transition>
       </div>
     </Transition>
-
-    <!-- Manual POI Editor Dialog -->
-    <ManualPOIEditor
-      v-model="showManualPOIEditor"
-      :initial-config="getConfigForRatio(editingAspectRatio)"
-      :target-aspect-ratio="editingAspectRatio"
-      :source-aspect-ratio="'16:9'"
-      :thumbnail-url="videoFrameUrl || thumbnailUrl"
-      :video-path="videoPath"
-      :clip-start-time="clipStartTime"
-      :clip-end-time="clipEndTime"
-      :watermark-settings="watermarkSettings"
-      @confirm="onManualConfigConfirm"
-    />
   </Teleport>
+
+  <!-- Manual POI Editor — outside wizard teleport so poi-dialog styling is not affected by build-dialog -->
+  <ManualPOIEditor
+    v-model="showManualPOIEditor"
+    :initial-config="getConfigForRatio(editingAspectRatio)"
+    :target-aspect-ratio="editingAspectRatio"
+    :source-aspect-ratio="'16:9'"
+    :thumbnail-url="thumbnailUrl"
+    :video-path="effectiveClipPath"
+    :clip-start-time="clipStartTime"
+    :clip-end-time="clipEndTime"
+    :watermark-settings="watermarkSettings"
+    :subtitle-settings="subtitlesEnabled ? wizardSubtitleSettings : null"
+    :subtitle-position-override="wizardSubtitlePosition"
+    :transcript-words="subtitlesEnabled ? wizardTranscriptWords : []"
+    :transcript-segments="subtitlesEnabled ? wizardTranscriptSegments : []"
+    :clip-id="clip?.id ?? null"
+    :project-id="projectId"
+    :clip-text-overlay-json="clipTextOverlayRaw"
+    @confirm="onManualConfigConfirm"
+    @subtitlePositionChange="onManualPoiSubtitlePositionChange"
+    @subtitleSettingsChange="onManualPoiSubtitleSettingsChange"
+    @clip-text-overlay-change="onClipTextOverlayChange"
+  />
 </template>
 
 <script setup lang="ts">
@@ -1054,10 +1166,14 @@ import {
   FileVideo,
   Building2,
   Globe,
+  CaptionsIcon,
 } from 'lucide-vue-next';
 import XLogo from '@/components/icons/XLogo.vue';
 import TiktokLogo from '@/components/icons/TiktokLogo.vue';
 import ManualPOIEditor from './poi/ManualPOIEditor.vue';
+import SubtitlePropertiesPanel from './SubtitlePropertiesPanel.vue';
+import SubtitlePreviewCanvas from './SubtitlePreviewCanvas.vue';
+import { useTranscriptionOnly } from '@/composables/useTranscriptionOnly';
 import type { ClipWithVersion, WatermarkSettings } from '@/services/database';
 import type { ManualFramingConfig, ManualFramingConfigs } from '@/types';
 import { getAllIntroOutros, type IntroOutro } from '@/services/database';
@@ -1068,6 +1184,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { useAuthStore } from '@/stores/auth';
 import { useFreeTierLimits } from '@/composables/useFreeTierLimits';
 import { useClipBuildPipeline } from '@/composables/useClipBuildPipeline';
+import {
+  resolveOrgBuildBranding,
+  resolveCampaignBuildBranding,
+  resolveSelectionBrandingPreview,
+  type OrgCampaignBuildBranding,
+} from '@/composables/useOrgCampaignBuildBranding';
 import { useBackgroundPublish, type PublishTarget } from '@/composables/useBackgroundPublish';
 import { getMyGlobalBrandingCampaigns, getCampaignsByCreatorProfile, type Campaign } from '@/services/campaignApi';
 import { getUserAssignedCreatorProfiles, type ServerOrganizationCreatorProfile } from '@/services/organizationProfilesApi';
@@ -1078,6 +1200,19 @@ import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services
 import { listUserYoutubeAccounts, type UserYoutubeAccount } from '@/services/userYoutubeApi';
 import { createProject } from '@/services/database/projects';
 import { updateClip } from '@/services/database/clips';
+import type {
+  SubtitleSettings,
+  SubtitleOverride,
+  SubtitleOverrides,
+  WordInfo,
+  WhisperSegment,
+} from '@/types';
+import { maxWordsChunkForAspectRatioString } from '@/utils/subtitleVisibleWords';
+import {
+  getSelfContainedClipDuration,
+  isSelfContainedClip as checkSelfContainedClip,
+  resolveClipPublishPath,
+} from '@/utils/selfContainedClip';
 
 interface IntroOutroItem extends Omit<IntroOutro, 'id'> {
   id: string;
@@ -1115,7 +1250,7 @@ export interface BuildTarget {
   selectedPlatforms: Map<string, string>; // Map of platform ID to account ID (e.g., 'instagram' -> 'org:123')
 }
 
-type StepId = 'platforms' | 'framing' | 'export' | 'addons' | 'publish';
+type StepId = 'platforms' | 'framing' | 'export' | 'addons' | 'subtitles' | 'publish';
 
 interface Step {
   id: StepId;
@@ -1124,6 +1259,7 @@ interface Step {
 }
 
 const allSteps: Step[] = [
+  { id: 'subtitles', label: 'Subtitles', icon: CaptionsIcon },
   { id: 'platforms', label: 'Platforms', icon: LayoutGridIcon },
   { id: 'framing', label: 'Framing', icon: CropIcon },
   { id: 'export', label: 'Export', icon: SettingsIcon },
@@ -1167,7 +1303,7 @@ const buildPipeline = useClipBuildPipeline();
 const backgroundPublish = useBackgroundPublish();
 
 // Step state
-const currentStep = ref<StepId>('platforms');
+const currentStep = ref<StepId>('subtitles');
 
 // Build settings (Step 1-4)
 const selectedRatios = ref<string[]>(['16:9']);
@@ -1177,9 +1313,30 @@ const outputFormat = ref<'mp4' | 'mov'>('mp4');
 const manualFramingConfigs = ref<ManualFramingConfigs>({});
 const showManualPOIEditor = ref(false);
 const editingAspectRatio = ref<string>('9:16');
-const videoFrameUrl = ref<string | null>(null);
-const videoPath = ref<string | null>(null);
-const loadingVideoFrame = ref(false);
+const clipTextOverlayRaw = ref<string | null>(null);
+
+// Subtitles step
+const subtitlesEnabled = ref(false);
+const selectedSubtitlePreset = ref<string | null>('neon-glow');
+
+// Subtitle wizard sub-state: 'choosing' | 'transcribing' | 'editing'
+const subtitleSubState = ref<'choosing' | 'transcribing' | 'editing'>('choosing');
+const wizardSubtitleSettings = ref<SubtitleSettings | null>(null);
+const wizardSubtitlePosition = ref<{ x: number; y: number; width?: number }>({ x: 50, y: 85, width: 80 });
+const wizardTranscriptSegments = ref<WhisperSegment[]>([]);
+const wizardTranscriptWords = ref<WordInfo[]>([]);
+const subtitleFirstFrameUrl = ref<string | null>(null);
+const subtitleTranscribeError = ref<string | null>(null);
+
+const wizardTranscription = useTranscriptionOnly({ showSuccessToast: false, showErrorToast: false, showChunkCompletionToast: false, showCacheReuseToast: false });
+
+function onWizardSubtitlePositionChange(position: { x: number; y: number; width?: number }) {
+  wizardSubtitlePosition.value = { ...position };
+}
+
+function onWizardSubtitleSettingsChange(settings: SubtitleSettings) {
+  wizardSubtitleSettings.value = { ...settings };
+}
 
 // Add-ons (Step 4)
 const intros = ref<IntroOutroItem[]>([]);
@@ -1256,14 +1413,20 @@ const buildState = computed(() => buildPipeline.state.value);
 const isBuilding = computed(() => buildState.value.status === 'building');
 
 const clipDuration = computed(() => {
+  if (props.clip && checkSelfContainedClip(props.clip)) {
+    return getSelfContainedClipDuration(props.clip);
+  }
   if (!props.clip?.current_version_end_time || !props.clip?.current_version_start_time) {
     return props.clip?.duration || 0;
   }
   return props.clip.current_version_end_time - props.clip.current_version_start_time;
 });
 
+const effectiveClipPath = computed(() =>
+  resolveClipPublishPath(props.clip, props.clipPath)
+);
+
 // For livestream clips, the extracted clip starts at 0 and ends at the clip duration
-// The clip file itself is the source, not a segment of a larger video
 const clipStartTime = computed(() => 0);
 const clipEndTime = computed(() => clipDuration.value);
 
@@ -1297,6 +1460,11 @@ const selectedPublishPlatforms = computed(() => Object.keys(platformConfigs.valu
 
 const canProceed = computed(() => {
   switch (currentStep.value) {
+    case 'subtitles':
+      // In choosing sub-state, the Yes/No buttons handle navigation directly
+      // In editing sub-state, always allow Next
+      if (subtitleSubState.value === 'transcribing') return false;
+      return true;
     case 'platforms':
       return selectedRatios.value.length > 0;
     case 'framing':
@@ -1457,8 +1625,11 @@ const creatorProfileOutro = computed<IntroOutroItem | null>(() => {
   return null;
 });
 
-// Priority order: Campaign > Creator Profile > Manual Selection
+// Priority order: Org/Campaign build targets > Campaign > Creator Profile > Manual Selection
 const selectedIntro = computed(() => {
+  if (hasOrgOrCampaignSelected.value && orgCampaignBuildPreview.value.intro) {
+    return orgCampaignBuildPreview.value.intro;
+  }
   console.log('[QuickPublishWizard] selectedIntro computed - isForCampaign:', isForCampaign.value, 'campaignIntro:', campaignIntro.value?.name, 'creatorProfileIntro:', creatorProfileIntro.value?.name, 'selectedIntroId:', selectedIntroId.value);
   // Campaign takes highest priority
   if (isForCampaign.value && campaignIntro.value) return campaignIntro.value;
@@ -1469,6 +1640,9 @@ const selectedIntro = computed(() => {
 });
 
 const selectedOutro = computed(() => {
+  if (hasOrgOrCampaignSelected.value && orgCampaignBuildPreview.value.outro) {
+    return orgCampaignBuildPreview.value.outro;
+  }
   console.log('[QuickPublishWizard] selectedOutro computed - isForCampaign:', isForCampaign.value, 'campaignOutro:', campaignOutro.value?.name, 'creatorProfileOutro:', creatorProfileOutro.value?.name, 'selectedOutroId:', selectedOutroId.value);
   // Campaign takes highest priority
   if (isForCampaign.value && campaignOutro.value) return campaignOutro.value;
@@ -1530,23 +1704,294 @@ function goToStep(stepId: StepId) {
   }
 }
 
-function nextStep() {
+async function nextStep() {
+  // Subtitle step internal sub-state transitions
+  if (currentStep.value === 'subtitles') {
+    if (subtitleSubState.value === 'editing') {
+      // Save full subtitle settings to DB then advance to platforms
+      await saveWizardSubtitleSettings();
+      advanceToNextWizardStep();
+      return;
+    }
+    // 'choosing' sub-state — handled by chooseSubtitlesYes/No buttons directly
+    return;
+  }
+
   if (!isLastStep.value && canProceed.value) {
     const nextIndex = currentStepIndex.value + 1;
     if (nextIndex < visibleSteps.value.length) {
       const nextStepId = visibleSteps.value[nextIndex].id;
       currentStep.value = nextStepId;
-      
-      // Start build when moving to publish step
       if (nextStepId === 'publish') {
-        startBuildProcess();
+        await saveSubtitleChoiceAndBuild();
       }
     }
   }
 }
 
+function advanceToNextWizardStep() {
+  if (!isLastStep.value) {
+    const nextIndex = currentStepIndex.value + 1;
+    if (nextIndex < visibleSteps.value.length) {
+      const nextStepId = visibleSteps.value[nextIndex].id;
+      currentStep.value = nextStepId;
+      if (nextStepId === 'publish') {
+        void saveSubtitleChoiceAndBuild();
+      }
+    }
+  }
+}
+
+async function chooseSubtitlesNo() {
+  subtitlesEnabled.value = false;
+  wizardSubtitleSettings.value = null;
+  advanceToNextWizardStep();
+}
+
+async function chooseSubtitlesYes() {
+  subtitlesEnabled.value = true;
+  subtitleSubState.value = 'transcribing';
+  subtitleTranscribeError.value = null;
+
+  // Capture first frame thumbnail (needs convertFileSrc for Tauri file:// paths)
+  if (props.thumbnailUrl) {
+    try {
+      const { convertFileSrc } = await import('@tauri-apps/api/core');
+      subtitleFirstFrameUrl.value = convertFileSrc(props.thumbnailUrl);
+    } catch {
+      subtitleFirstFrameUrl.value = props.thumbnailUrl;
+    }
+  }
+
+  // Ensure a raw_video record exists for the clip file so transcribeProject can find it
+  try {
+    const { getRawVideoByPath, createRawVideo } = await import('@/services/database');
+    const existing = await getRawVideoByPath(effectiveClipPath.value);
+    if (!existing) {
+      await createRawVideo(effectiveClipPath.value, { projectId: props.projectId });
+    }
+  } catch (e) {
+    console.warn('[QuickPublishWizard] Failed to ensure raw_video for clip:', e);
+  }
+
+  // Run transcription
+  const result = await wizardTranscription.transcribeProject(props.projectId, {
+    organizationId: null,
+  });
+
+  if (!result.success && result.error !== 'Cancelled') {
+    subtitleTranscribeError.value = result.error ?? 'Transcription failed';
+    subtitleSubState.value = 'choosing';
+    return;
+  }
+
+  // Load the transcript data from DB to populate the panel
+  try {
+    const { getTranscriptByProjectId, getTranscriptSegments } = await import('@/services/database');
+    const transcript = await getTranscriptByProjectId(props.projectId);
+    if (transcript) {
+      if (transcript.raw_json) {
+        const { parseTranscriptToWords } = await import('@/utils/timelineUtils');
+        wizardTranscriptWords.value = parseTranscriptToWords(transcript.raw_json);
+        wizardTranscriptSegments.value = parseWhisperSegmentsFromRawJson(transcript.raw_json);
+      }
+      const segs = await getTranscriptSegments(transcript.id);
+      if (wizardTranscriptSegments.value.length === 0) {
+        wizardTranscriptSegments.value = segs.map((s: any, index: number) => ({
+          id: s.id ?? index,
+          start: s.start_time,
+          end: s.end_time,
+          text: s.text,
+        }));
+      }
+    }
+  } catch (e) {
+    console.warn('[QuickPublishWizard] Failed to load transcript segments after transcription', e);
+  }
+
+  // Initialize subtitle settings from the selected preset
+  wizardSubtitleSettings.value = buildSubtitleSettingsFromPreset(selectedSubtitlePreset.value ?? 'neon-glow');
+  subtitleSubState.value = 'editing';
+}
+
+function buildSubtitleSettingsFromPreset(presetId: string): SubtitleSettings {
+  const base: SubtitleSettings = {
+    enabled: true,
+    fontFamily: 'Montserrat',
+    fontSize: 48,
+    fontWeight: 900,
+    textColor: '#FFFFFF',
+    backgroundColor: 'rgba(0,0,0,0)',
+    backgroundEnabled: false,
+    border1Width: 0,
+    border1Color: '#000000',
+    border2Width: 3,
+    border2Color: '#000000',
+    shadowBlur: 0,
+    shadowColor: '#000000',
+    shadowOffsetX: 2,
+    shadowOffsetY: 2,
+    highlightColor: '#FACC15',
+    animationStyle: 'karaoke',
+    position: 'bottom',
+    positionPercentage: 80,
+    maxWidth: 85,
+    multiColorEnabled: false,
+    multiColorMode: 'default',
+    colorPalette: [],
+    lineHeight: 1.2,
+    letterSpacing: 0,
+    textAlign: 'center',
+    textOffsetX: 0,
+    textOffsetY: 0,
+    padding: 0,
+    borderRadius: 0,
+    // 0.35em is the ProjectWorkspaceDialog/VideoPlayer default — without this
+    // the flex `gap` between word spans collapses to 0 and words run together
+    // ("ThereasonwhyI'msurprisedis") in both the preview and the burned export.
+    wordSpacing: 0.35,
+  };
+  switch (presetId) {
+    case 'mr-beast':
+      return { ...base, textColor: '#FACC15', fontFamily: 'Bebas Neue', border2Width: 4, highlightColor: '#FFFFFF', animationStyle: 'zoom' };
+    case 'tiktok-bold':
+      return { ...base, textColor: '#FFFFFF', backgroundEnabled: true, backgroundColor: 'rgba(0,0,0,0.8)', border2Width: 0, animationStyle: 'karaoke' };
+    case 'subtitle-tutorial':
+      return { ...base, textColor: '#FFFFFF', fontFamily: 'Roboto', fontWeight: 400, fontSize: 40, backgroundEnabled: true, backgroundColor: 'rgba(0,0,0,0.6)', border2Width: 0, animationStyle: 'none' };
+    case 'neon-glow':
+      return { ...base, textColor: '#FFFFFF', shadowBlur: 15, shadowColor: '#22D3EE', shadowOffsetX: 0, shadowOffsetY: 0, highlightColor: '#22D3EE', animationStyle: 'glow' };
+    case 'karaoke':
+      return { ...base, textColor: '#FFFFFF', highlightColor: '#FACC15', animationStyle: 'karaoke' };
+    default:
+      return base;
+  }
+}
+
+function parseWhisperSegmentsFromRawJson(rawJson: string): WhisperSegment[] {
+  try {
+    const parsed = JSON.parse(rawJson);
+    if (!Array.isArray(parsed?.segments)) return [];
+
+    return parsed.segments.map((segment: any, index: number) => ({
+      id: segment.id ?? index,
+      start: Number(segment.start) || 0,
+      end: Number(segment.end) || 0,
+      text: segment.text || '',
+      words: Array.isArray(segment.words)
+        ? segment.words.map((word: any) => ({
+            word: String(word.word || '').trim(),
+            start: Number(word.start) || 0,
+            end: Number(word.end) || 0,
+            confidence: word.confidence,
+          }))
+        : undefined,
+    }));
+  } catch (error) {
+    console.warn('[QuickPublishWizard] Failed to parse whisper segments:', error);
+    return [];
+  }
+}
+
+async function saveWizardSubtitleSettings() {
+  if (!props.clip?.id || !wizardSubtitleSettings.value) return;
+  const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } = await import('@/services/database/clips');
+  await updateClipFullSubtitleSettings(props.clip.id, wizardSubtitleSettings.value);
+  const pos = wizardSubtitlePosition.value;
+  await updateClipSubtitlePosition(props.clip.id, pos.x, pos.y, pos.width ?? undefined);
+}
+
+/**
+ * Build a subtitle payload (settings + transcript + max words) for a build target.
+ * Returns `null` when subtitles are disabled or transcript is missing — caller
+ * passes through as-null so the Rust pipeline skips subtitle rendering cleanly.
+ *
+ * The wizard captures position/width from the 16:9 preview (and for portrait
+ * ratios, from the POI editor) into `wizardSubtitlePosition`. We bake that into
+ * `perRatioConfigs[ratio].position` here so each build's burned-in subtitles
+ * land exactly where the user placed them.
+ */
+function buildSubtitlePayloadForTarget(aspectRatio: string): {
+  settings: SubtitleSettings;
+  subtitleOverrides: SubtitleOverrides;
+  transcriptWords: WordInfo[];
+  transcriptSegments: WhisperSegment[];
+  maxWords: number;
+} | null {
+  if (!subtitlesEnabled.value || !wizardSubtitleSettings.value) return null;
+  if (wizardTranscriptWords.value.length === 0) return null;
+
+  const base = wizardSubtitleSettings.value;
+  const pos = wizardSubtitlePosition.value;
+  const existingPerRatio = base.perRatioConfigs?.[aspectRatio] ?? ({} as SubtitleOverride);
+  const { perRatioConfigs: _ignored, ...rootSettings } = base;
+
+  // Per-ratio override carries the dragged position + width AND the rest of the
+  // styling so the Rust ASS generator picks up the user's exact x/y/width
+  // (orchestrator reads `subtitle_overrides[ratio].position.{x,y}` + `maxWidth`).
+  const ratioOverride: SubtitleOverride = {
+    ...rootSettings,
+    ...existingPerRatio,
+    fontSize: existingPerRatio.fontSize ?? base.fontSize,
+    position: { x: pos.x, y: pos.y },
+    positionPercentage: pos.y,
+    maxWidth: pos.width ?? existingPerRatio.maxWidth ?? base.maxWidth,
+  };
+
+  const settings: SubtitleSettings = {
+    ...base,
+    enabled: true,
+    positionPercentage: pos.y,
+    maxWidth: pos.width ?? base.maxWidth,
+    perRatioConfigs: {
+      ...(base.perRatioConfigs ?? {}),
+      [aspectRatio]: ratioOverride,
+    },
+  };
+
+  return {
+    settings,
+    subtitleOverrides: { [aspectRatio]: ratioOverride } as SubtitleOverrides,
+    transcriptWords: wizardTranscriptWords.value,
+    transcriptSegments: wizardTranscriptSegments.value,
+    maxWords: maxWordsChunkForAspectRatioString(aspectRatio, base.animationStyle),
+  };
+}
+
+function onWizardSubtitleSettingsUpdate(patch: Record<string, unknown>) {
+  if (!wizardSubtitleSettings.value) return;
+  wizardSubtitleSettings.value = { ...wizardSubtitleSettings.value, ...(patch as Partial<SubtitleSettings>) };
+}
+
+function removeWizardSubtitles() {
+  subtitlesEnabled.value = false;
+  wizardSubtitleSettings.value = null;
+  wizardTranscriptSegments.value = [];
+  wizardTranscriptWords.value = [];
+  subtitleSubState.value = 'choosing';
+}
+
+
+async function saveSubtitleChoiceAndBuild() {
+  if (!props.clip?.id) return;
+  const { updateClipSubtitleSettings } = await import('@/services/database/clips');
+  await updateClipSubtitleSettings(
+    props.clip.id,
+    subtitlesEnabled.value,
+    subtitlesEnabled.value ? (selectedSubtitlePreset.value ?? null) : null,
+  );
+  startBuildProcess();
+}
+
 function previousStep() {
-  if (!isFirstStep.value && !isBuilding.value) {
+  if (isBuilding.value) return;
+  // If on the subtitle editing screen, go back to choosing rather than leaving the step
+  if (currentStep.value === 'subtitles' && subtitleSubState.value === 'editing') {
+    subtitleSubState.value = 'choosing';
+    subtitlesEnabled.value = false;
+    wizardSubtitleSettings.value = null;
+    return;
+  }
+  if (!isFirstStep.value) {
     const prevIndex = currentStepIndex.value - 1;
     if (prevIndex >= 0) {
       currentStep.value = visibleSteps.value[prevIndex].id;
@@ -1585,6 +2030,47 @@ function onManualConfigConfirm(config: ManualFramingConfig) {
     ...manualFramingConfigs.value,
     [ratio]: config,
   };
+}
+
+async function onManualPoiSubtitlePositionChange(position: { x: number; y: number; width?: number }) {
+  wizardSubtitlePosition.value = { ...position };
+  if (!props.clip?.id || !subtitlesEnabled.value) return;
+
+  try {
+    const { updateClipSubtitlePosition } = await import('@/services/database/clips');
+    await updateClipSubtitlePosition(props.clip.id, position.x, position.y, position.width);
+  } catch (error) {
+    console.warn('[QuickPublishWizard] Failed to save subtitle position from POI editor:', error);
+  }
+}
+
+async function onManualPoiSubtitleSettingsChange(settings: SubtitleSettings) {
+  wizardSubtitleSettings.value = { ...settings };
+  if (!props.clip?.id || !subtitlesEnabled.value) return;
+
+  try {
+    const { updateClipFullSubtitleSettings } = await import('@/services/database/clips');
+    await updateClipFullSubtitleSettings(props.clip.id, settings);
+  } catch (error) {
+    console.warn('[QuickPublishWizard] Failed to save subtitle settings from POI editor:', error);
+  }
+}
+
+function onClipTextOverlayChange(json: string | null) {
+  clipTextOverlayRaw.value = json;
+}
+
+async function loadClipTextOverlay() {
+  clipTextOverlayRaw.value = null;
+  if (!props.clip?.id) return;
+
+  try {
+    const { getClip } = await import('@/services/database/clips');
+    const row = await getClip(props.clip.id);
+    clipTextOverlayRaw.value = row?.clip_text_overlay ?? null;
+  } catch (error) {
+    console.warn('[QuickPublishWizard] Failed to load clip text overlay:', error);
+  }
 }
 
 // Intro/Outro dropdown functions
@@ -1961,303 +2447,42 @@ function getSelectedAccountLabel(platformId: string): string | null {
   return null;
 }
 
+const orgCampaignBuildPreview = ref<OrgCampaignBuildBranding>({
+  intro: null,
+  outro: null,
+  watermark: null,
+});
+
+async function syncBrandingPreviewFromSelection() {
+  if (!hasOrgOrCampaignSelected.value) {
+    orgCampaignBuildPreview.value = { intro: null, outro: null, watermark: null };
+    return;
+  }
+
+  const selectedCampaign =
+    availableCampaignSelections.value.find((c) => c.selected)?.campaign ?? null;
+  const selectedOrg = selectedCampaign
+    ? null
+    : availableOrgs.value.find((o) => o.selected)?.profile ?? null;
+
+  try {
+    orgCampaignBuildPreview.value = await resolveSelectionBrandingPreview(
+      selectedOrg,
+      selectedCampaign
+    );
+  } catch (e) {
+    console.warn('[QuickPublishWizard] Failed to sync branding preview:', e);
+  }
+}
+
 // Helper: Load branding assets for an organization target
 async function loadOrgBranding(orgProfile: ServerOrganizationCreatorProfile) {
-  let intro: IntroOutroItem | null = null;
-  let outro: IntroOutroItem | null = null;
-  let watermark: any = null;
-  
-  // Load intro
-  if (orgProfile.intro?.url) {
-    try {
-      const introResult = await ensureAssetDownloaded({
-        id: orgProfile.intro.id,
-        name: orgProfile.intro.name,
-        asset_type: 'intro',
-        url: orgProfile.intro.url,
-        organization_id: orgProfile.organization_id,
-        organization_name: orgProfile.organization_name || undefined,
-        duration: orgProfile.intro.duration || undefined,
-        thumbnail_url: orgProfile.intro.thumbnail_url || undefined,
-        inserted_at: Date.now().toString(),
-        updated_at: Date.now().toString(),
-      } as unknown as ServerOrganizationAsset);
-      
-      if (introResult.success && introResult.filePath) {
-        intro = {
-          id: `org-intro-${orgProfile.intro.id}`,
-          name: orgProfile.intro.name,
-          file_path: introResult.filePath,
-          type: 'intro' as const,
-          duration: orgProfile.intro.duration ? parseFloat(String(orgProfile.intro.duration)) : null,
-          thumbnail_path: orgProfile.intro.thumbnail_url || null,
-          thumbnail_generation_status: null,
-          created_at: Date.now(),
-          updated_at: Date.now(),
-        };
-      }
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load org intro:', e);
-    }
-  }
-  
-  // Load outro
-  if (orgProfile.outro?.url) {
-    try {
-      const outroResult = await ensureAssetDownloaded({
-        id: orgProfile.outro.id,
-        name: orgProfile.outro.name,
-        asset_type: 'outro',
-        url: orgProfile.outro.url,
-        organization_id: orgProfile.organization_id,
-        organization_name: orgProfile.organization_name || undefined,
-        duration: orgProfile.outro.duration || undefined,
-        thumbnail_url: orgProfile.outro.thumbnail_url || undefined,
-        inserted_at: Date.now().toString(),
-        updated_at: Date.now().toString(),
-      } as unknown as ServerOrganizationAsset);
-      
-      if (outroResult.success && outroResult.filePath) {
-        outro = {
-          id: `org-outro-${orgProfile.outro.id}`,
-          name: orgProfile.outro.name,
-          file_path: outroResult.filePath,
-          type: 'outro' as const,
-          duration: orgProfile.outro.duration ? parseFloat(String(orgProfile.outro.duration)) : null,
-          thumbnail_path: orgProfile.outro.thumbnail_url || null,
-          thumbnail_generation_status: null,
-          created_at: Date.now(),
-          updated_at: Date.now(),
-        };
-      }
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load org outro:', e);
-    }
-  }
-  
-  // Load watermark
-  if (orgProfile.watermark?.url) {
-    try {
-      const filename = `org-watermark-${orgProfile.watermark.id}.png`;
-      const filePath = await invoke<string>('download_org_asset_from_url', {
-        url: orgProfile.watermark.url,
-        filename,
-        assetType: 'watermarks',
-        organizationId: String(orgProfile.organization_id),
-      });
-      
-      let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
-      if (orgProfile.watermark_settings) {
-        try {
-          const wmSettings = typeof orgProfile.watermark_settings === 'string'
-            ? JSON.parse(orgProfile.watermark_settings as unknown as string)
-            : orgProfile.watermark_settings;
-          const ratioConfig = wmSettings['16:9'];
-          if (ratioConfig?.position) defaultPos = ratioConfig.position;
-        } catch (e) {
-          console.warn('[QuickPublishWizard] Failed to parse org watermark settings:', e);
-        }
-      }
-      
-      watermark = {
-        enabled: true,
-        watermarkId: `org-asset-${orgProfile.watermark.id}`,
-        positionX: defaultPos.x,
-        positionY: defaultPos.y,
-        opacity: defaultPos.opacity,
-        scale: defaultPos.scale,
-        perRatioSettings: (orgProfile.watermark_settings as any) ?? null,
-      };
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load org watermark:', e);
-    }
-  }
-  
-  return { intro, outro, watermark };
+  return resolveOrgBuildBranding(orgProfile);
 }
 
 // Helper: Load branding assets for a campaign target
 async function loadCampaignBranding(campaign: Campaign) {
-  let intro: IntroOutroItem | null = null;
-  let outro: IntroOutroItem | null = null;
-  let watermark: any = null;
-  
-  // Campaign intro (global_intro takes priority, then branding_profile.intro)
-  if (campaign.global_intro) {
-    try {
-      const introResult = await ensureAssetDownloaded({
-        id: campaign.global_intro.id,
-        name: campaign.global_intro.name,
-        asset_type: 'intro',
-        url: campaign.global_intro.url,
-        organization_id: campaign.organization_id,
-        organization_name: campaign.organization?.name || undefined,
-        duration: campaign.global_intro.duration || undefined,
-        thumbnail_url: campaign.global_intro.thumbnail_url || undefined,
-        inserted_at: Date.now().toString(),
-        updated_at: Date.now().toString(),
-      } as unknown as ServerOrganizationAsset);
-      
-      if (introResult.success && introResult.filePath) {
-        intro = {
-          id: `campaign-intro-${campaign.global_intro.id}`,
-          name: campaign.global_intro.name,
-          file_path: introResult.filePath,
-          type: 'intro' as const,
-          duration: campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : null,
-          thumbnail_path: campaign.global_intro.thumbnail_url || null,
-          thumbnail_generation_status: null,
-          created_at: Date.now(),
-          updated_at: Date.now(),
-        };
-      }
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load campaign global_intro:', e);
-    }
-  }
-  
-  // Campaign outro (global_outro takes priority, then branding_profile.outro)
-  if (campaign.global_outro) {
-    try {
-      const outroResult = await ensureAssetDownloaded({
-        id: campaign.global_outro.id,
-        name: campaign.global_outro.name,
-        asset_type: 'outro',
-        url: campaign.global_outro.url,
-        organization_id: campaign.organization_id,
-        organization_name: campaign.organization?.name || undefined,
-        duration: campaign.global_outro.duration || undefined,
-        thumbnail_url: campaign.global_outro.thumbnail_url || undefined,
-        inserted_at: Date.now().toString(),
-        updated_at: Date.now().toString(),
-      } as unknown as ServerOrganizationAsset);
-      
-      if (outroResult.success && outroResult.filePath) {
-        outro = {
-          id: `campaign-outro-${campaign.global_outro.id}`,
-          name: campaign.global_outro.name,
-          file_path: outroResult.filePath,
-          type: 'outro' as const,
-          duration: campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : null,
-          thumbnail_path: campaign.global_outro.thumbnail_url || null,
-          thumbnail_generation_status: null,
-          created_at: Date.now(),
-          updated_at: Date.now(),
-        };
-      }
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load campaign global_outro:', e);
-    }
-  }
-  
-  // Fallback to branding_profile intro/outro if global_intro/outro not set
-  const campaignCreatorProfile = campaign.branding_profile || campaign.creator_profiles?.[0] || campaign.creator_profile;
-  
-  if (!intro && campaignCreatorProfile?.intro?.url) {
-    try {
-      const introResult = await ensureAssetDownloaded({
-        id: campaignCreatorProfile.intro.id,
-        name: campaignCreatorProfile.intro.name,
-        asset_type: 'intro',
-        url: campaignCreatorProfile.intro.url,
-        organization_id: campaign.organization_id,
-        organization_name: campaign.organization?.name || undefined,
-        duration: campaignCreatorProfile.intro.duration || undefined,
-        thumbnail_url: campaignCreatorProfile.intro.thumbnail_url || undefined,
-        inserted_at: Date.now().toString(),
-        updated_at: Date.now().toString(),
-      } as unknown as ServerOrganizationAsset);
-      
-      if (introResult.success && introResult.filePath) {
-        intro = {
-          id: `campaign-intro-${campaignCreatorProfile.intro.id}`,
-          name: campaignCreatorProfile.intro.name,
-          file_path: introResult.filePath,
-          type: 'intro' as const,
-          duration: campaignCreatorProfile.intro.duration ? parseFloat(campaignCreatorProfile.intro.duration) : null,
-          thumbnail_path: campaignCreatorProfile.intro.thumbnail_url || null,
-          thumbnail_generation_status: null,
-          created_at: Date.now(),
-          updated_at: Date.now(),
-        };
-      }
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load campaign branding_profile intro:', e);
-    }
-  }
-  
-  if (!outro && campaignCreatorProfile?.outro?.url) {
-    try {
-      const outroResult = await ensureAssetDownloaded({
-        id: campaignCreatorProfile.outro.id,
-        name: campaignCreatorProfile.outro.name,
-        asset_type: 'outro',
-        url: campaignCreatorProfile.outro.url,
-        organization_id: campaign.organization_id,
-        organization_name: campaign.organization?.name || undefined,
-        duration: campaignCreatorProfile.outro.duration || undefined,
-        thumbnail_url: campaignCreatorProfile.outro.thumbnail_url || undefined,
-        inserted_at: Date.now().toString(),
-        updated_at: Date.now().toString(),
-      } as unknown as ServerOrganizationAsset);
-      
-      if (outroResult.success && outroResult.filePath) {
-        outro = {
-          id: `campaign-outro-${campaignCreatorProfile.outro.id}`,
-          name: campaignCreatorProfile.outro.name,
-          file_path: outroResult.filePath,
-          type: 'outro' as const,
-          duration: campaignCreatorProfile.outro.duration ? parseFloat(campaignCreatorProfile.outro.duration) : null,
-          thumbnail_path: campaignCreatorProfile.outro.thumbnail_url || null,
-          thumbnail_generation_status: null,
-          created_at: Date.now(),
-          updated_at: Date.now(),
-        };
-      }
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load campaign branding_profile outro:', e);
-    }
-  }
-  
-  // Campaign watermark
-  if (campaignCreatorProfile?.watermark?.url) {
-    try {
-      const filename = `campaign-watermark-${campaignCreatorProfile.watermark.id}.png`;
-      const filePath = await invoke<string>('download_org_asset_from_url', {
-        url: campaignCreatorProfile.watermark.url,
-        filename,
-        assetType: 'watermarks',
-        organizationId: String(campaign.organization_id),
-      });
-      
-      let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
-      if (campaignCreatorProfile.watermark_settings) {
-        try {
-          const wmSettings = typeof campaignCreatorProfile.watermark_settings === 'string'
-            ? JSON.parse(campaignCreatorProfile.watermark_settings as unknown as string)
-            : campaignCreatorProfile.watermark_settings;
-          const ratioConfig = wmSettings['16:9'];
-          if (ratioConfig?.position) defaultPos = ratioConfig.position;
-        } catch (e) {
-          console.warn('[QuickPublishWizard] Failed to parse campaign watermark settings:', e);
-        }
-      }
-      
-      watermark = {
-        enabled: true,
-        watermarkId: `org-asset-${campaignCreatorProfile.watermark.id}`,
-        positionX: defaultPos.x,
-        positionY: defaultPos.y,
-        opacity: defaultPos.opacity,
-        scale: defaultPos.scale,
-        perRatioSettings: (campaignCreatorProfile.watermark_settings as any) ?? null,
-      };
-    } catch (e) {
-      console.warn('[QuickPublishWizard] Failed to load campaign watermark:', e);
-    }
-  }
-  
-  return { intro, outro, watermark };
+  return resolveCampaignBuildBranding(campaign);
 }
 
 // Generate BuildTarget array from org/campaign selections
@@ -2397,7 +2622,15 @@ async function startBuildProcess() {
           console.warn('[QuickPublishWizard] Failed to save campaign_id:', e);
         }
       }
-    } else {
+    }
+
+    if (watermark?.enabled && watermark?.watermarkId) {
+      const { expandWatermarkForBuild } = await import('@/composables/useOrgCampaignBuildBranding');
+      const expanded = await expandWatermarkForBuild(watermark, [target.aspectRatio]);
+      if (expanded) watermark = expanded;
+    }
+
+    if (target.type === 'personal') {
       // Personal build - use selected intro/outro from dialog
       intro = selectedIntro.value;
       outro = selectedOutro.value;
@@ -2482,6 +2715,12 @@ async function startBuildProcess() {
       buildId,
     });
     
+    // Subtitle payload — pulls position into per-ratio config so the export uses
+    // the same x/y/width the user dragged on the preview. Without this, the build
+    // falls back to default bottom-center placement and the resize/reposition is
+    // silently lost.
+    const subtitlePayload = buildSubtitlePayloadForTarget(target.aspectRatio);
+
     // Build settings for this target
     const settings = {
       aspectRatios: [target.aspectRatio],
@@ -2496,6 +2735,11 @@ async function startBuildProcess() {
       campaignId: target.campaignId || null,
       buildNumber,
       buildId,
+      subtitleSettings: subtitlePayload?.settings ?? null,
+      subtitleOverrides: subtitlePayload?.subtitleOverrides,
+      transcriptWords: subtitlePayload?.transcriptWords ?? [],
+      transcriptSegments: subtitlePayload?.transcriptSegments ?? [],
+      maxWords: subtitlePayload?.maxWords,
     };
     
     console.log('[QuickPublishWizard] Starting build for target:', target.name, target.aspectRatio);
@@ -2506,7 +2750,7 @@ async function startBuildProcess() {
       clip: props.clip!,
       projectId: props.projectId!,
       settings,
-      videoPath: props.clipPath!,
+      videoPath: effectiveClipPath.value,
     }).catch((err) => {
       console.error('[QuickPublishWizard] Build failed for target:', target.name, err);
     });
@@ -2909,15 +3153,27 @@ async function loadOrgsAndCampaigns() {
       }
     }
     
+    // Filter out ended campaigns (only show active ones)
+    const now = new Date();
+    const activeCampaigns = campaignResults.filter(campaign => {
+      if (!campaign.ends_at) return true; // No end date = always active
+      const endsAt = new Date(campaign.ends_at);
+      return endsAt > now; // Only include if end date is in the future
+    });
+    
     // Convert to CampaignSelection format
-    availableCampaignSelections.value = campaignResults.map(campaign => ({
+    availableCampaignSelections.value = activeCampaigns.map(campaign => ({
       campaign,
       selected: false,
       aspectRatios: [],
     }));
     
     // Also set legacy availableCampaigns for backward compatibility
-    availableCampaigns.value = campaignResults;
+    availableCampaigns.value = activeCampaigns;
+    
+    if (campaignResults.length > activeCampaigns.length) {
+      console.log('[QuickPublishWizard] Filtered out', campaignResults.length - activeCampaigns.length, 'ended campaigns');
+    }
     
     console.log('[QuickPublishWizard] Found', campaignResults.length, 'campaigns');
   } catch (e) {
@@ -2937,6 +3193,7 @@ function toggleOrgSelection(index: number) {
   if (!org.selected) {
     org.aspectRatios = [];
   }
+  void syncBrandingPreviewFromSelection();
 }
 
 // Toggle aspect ratio for org
@@ -2957,6 +3214,7 @@ function toggleCampaignSelectionMulti(index: number) {
   if (!campaign.selected) {
     campaign.aspectRatios = [];
   }
+  void syncBrandingPreviewFromSelection();
 }
 
 // Toggle aspect ratio for campaign
@@ -3063,42 +3321,6 @@ async function loadAccounts() {
   }
 }
 
-// Load a frame from the video for the POI editor preview
-async function loadVideoFrame() {
-  if (!props.clipPath || loadingVideoFrame.value) return;
-
-  loadingVideoFrame.value = true;
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-
-    // For livestream clips, the clipPath IS the extracted clip file - use it directly
-    // The clip is already extracted from HLS segments, so it's the source video
-    videoPath.value = props.clipPath;
-    console.log('[QuickPublishWizard] Using clip path as source video:', props.clipPath.split(/[\\/]/).pop());
-
-    // Generate a frame at 1 second into the clip for preview
-    const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
-      videoPath: props.clipPath,
-      timestampSeconds: 1,
-      outputFilename: `poi_preview_${props.clip?.id || Date.now()}`,
-    });
-
-    // Convert to data URL for display
-    const dataUrl = await invoke<string>('read_file_as_data_url', {
-      filePath: thumbnailPath,
-    });
-
-    videoFrameUrl.value = dataUrl;
-  } catch (error) {
-    console.warn('[QuickPublishWizard] Failed to load video frame:', error);
-    // Use thumbnail URL prop as fallback
-    videoFrameUrl.value = props.thumbnailUrl || null;
-    // Still set the video path so POI editor can play the video
-    videoPath.value = props.clipPath;
-  } finally {
-    loadingVideoFrame.value = false;
-  }
-}
 
 // Helpers
 function formatDuration(seconds: number): string {
@@ -3116,7 +3338,7 @@ watch(
     if (isOpen) {
       console.warn('[QuickPublishWizard] Dialog opened, loading data...');
       hasQueuedBackgroundPublish.value = false;
-      currentStep.value = 'platforms';
+      currentStep.value = 'subtitles';
       selectedRatios.value = ['16:9'];
       quality.value = 'high';
       frameRate.value = 30;
@@ -3124,6 +3346,17 @@ watch(
       manualFramingConfigs.value = {};
       selectedIntroId.value = null;
       selectedOutroId.value = null;
+      subtitlesEnabled.value = false;
+      selectedSubtitlePreset.value = 'neon-glow';
+      subtitleSubState.value = 'choosing';
+      wizardSubtitleSettings.value = null;
+      wizardSubtitlePosition.value = { x: 50, y: 85, width: 80 };
+      wizardTranscriptSegments.value = [];
+      wizardTranscriptWords.value = [];
+      clipTextOverlayRaw.value = null;
+      subtitleFirstFrameUrl.value = null;
+      subtitleTranscribeError.value = null;
+      wizardTranscription.reset();
       isForCampaign.value = false;
       selectedCampaignId.value = null;
       platformConfigs.value = {};
@@ -3144,7 +3377,7 @@ watch(
         loadCreatorProfileData(),
         loadAvailableCampaigns(),
         loadAccounts(),
-        loadVideoFrame(),
+        loadClipTextOverlay(),
       ]);
       console.warn('[QuickPublishWizard] All data loaded. intros:', intros.value.length, 'outros:', outros.value.length, 'campaigns:', availableCampaigns.value.length);
     }
@@ -5102,5 +5335,259 @@ onUnmounted(() => {
 .build-dialog__badge-icon {
   width: 10px;
   height: 10px;
+}
+
+/* ===== Subtitles step: toggle ===== */
+.build-dialog__toggle-box {
+  background: var(--sidebar-bg, #1e1e22);
+  border: 1px solid var(--sidebar-border, #2d2d33);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.build-dialog__toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  border: none;
+  background: var(--sidebar-border, #3a3a42);
+  cursor: pointer;
+  transition: background 200ms ease;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.build-dialog__toggle--active {
+  background: #8b5cf6;
+}
+
+.build-dialog__toggle-thumb {
+  display: block;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 200ms ease;
+}
+
+.build-dialog__toggle-thumb--active {
+  transform: translateX(16px);
+}
+
+/* ===== Subtitles step: Yes/No choice ===== */
+.build-dialog__subtitle-choice {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.build-dialog__subtitle-choice-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.75rem 1rem;
+  border-radius: 12px;
+  border: 2px solid var(--sidebar-border, #2d2d33);
+  background: var(--sidebar-bg, #1e1e22);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, transform 100ms ease;
+  text-align: center;
+  color: var(--sidebar-text, #e4e4e7);
+}
+
+.build-dialog__subtitle-choice-btn:hover {
+  transform: translateY(-2px);
+}
+
+.build-dialog__subtitle-choice-btn--yes {
+  border-color: var(--sidebar-accent);
+}
+.build-dialog__subtitle-choice-btn--yes:hover {
+  border-color: var(--sidebar-accent);
+  background: rgba(6, 182, 212, 0.1);
+}
+
+.build-dialog__subtitle-choice-btn--no {
+  border-color: var(--sidebar-border, #2d2d33);
+}
+.build-dialog__subtitle-choice-btn--no:hover {
+  border-color: #52525b;
+  background: rgba(82, 82, 91, 0.15);
+}
+
+.build-dialog__subtitle-choice-label {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--sidebar-text, #e4e4e7);
+}
+
+.build-dialog__subtitle-choice-hint {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted, #71717a);
+  line-height: 1.3;
+}
+
+/* ===== Subtitles step: transcribing spinner ===== */
+.build-dialog__transcribing-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem 0;
+}
+
+.build-dialog__spinner--large {
+  animation: spin 1s linear infinite;
+  color: var(--sidebar-accent);
+}
+
+.build-dialog__progress-track {
+  width: 100%;
+  max-width: 320px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--sidebar-border, #2d2d33);
+  overflow: hidden;
+}
+
+.build-dialog__progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--sidebar-accent), #0891b2);
+  transition: width 300ms ease;
+}
+
+.build-dialog__transcribing-pct {
+  font-size: 0.8125rem;
+  color: var(--sidebar-text-muted, #71717a);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== Subtitles step: editing layout ===== */
+.build-dialog__subtitle-editing-note {
+  margin: -0.5rem 0 0;
+  color: var(--sidebar-text-muted, #71717a);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.build-dialog__subtitle-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.build-dialog__subtitle-canvas-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.build-dialog__subtitle-canvas-label {
+  font-size: 0.625rem;
+  color: var(--sidebar-text-muted, #71717a);
+  margin: 0;
+  text-align: center;
+}
+
+.build-dialog__subtitle-panel {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--sidebar-border, #2d2d33);
+  background: var(--sidebar-surface, #18181b);
+  display: flex;
+  flex-direction: column;
+  height: clamp(260px, 36vh, 360px);
+  min-height: 260px;
+  overflow: hidden;
+}
+
+.build-dialog__subtitle-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid var(--sidebar-border, #2d2d33);
+  color: var(--sidebar-text, #e4e4e7);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  flex-shrink: 0;
+}
+
+.build-dialog__subtitle-panel-header span:last-child {
+  color: var(--sidebar-text-muted, #71717a);
+  font-size: 0.6875rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 500;
+}
+
+.build-dialog__subtitle-panel-content {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* ===== Subtitles step: preset cards ===== */
+.detect-clips-dialog__preset-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--sidebar-border, #2d2d33);
+  background: var(--sidebar-bg, #1e1e22);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.detect-clips-dialog__preset-card:hover {
+  border-color: #6d28d9;
+  background: rgba(109, 40, 217, 0.08);
+}
+
+.detect-clips-dialog__preset-card--selected {
+  border-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.12);
+}
+
+.detect-clips-dialog__preset-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.375rem;
+  color: var(--sidebar-text, #e4e4e7);
+}
+
+.detect-clips-dialog__preset-check {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #8b5cf6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.detect-clips-dialog__preset-sample {
+  border-radius: 4px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin-bottom: 0.25rem;
 }
 </style>

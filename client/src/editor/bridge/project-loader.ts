@@ -37,8 +37,10 @@ import type {
 import { getClip } from "@/services/database/clips";
 import { getRawVideosByProjectId } from "@/services/database/raw-videos";
 import { getCreatorProfileByProjectId } from "@/services/database/creator-profiles";
-import { resolveBrandingProfile } from "@/composables/useBrandingProfileSelection";
 import { useBrandingConfig } from "../composables/useBrandingConfig";
+import { TIMELINE_CONSTANTS } from "../constants/timeline-constants";
+import { normalizeTrimEndToTail } from "../lib/timeline/trim-source-utils";
+import { healOrphanVideoMediaReferences } from "../lib/timeline/heal-orphan-video-media";
 
 const DEFAULT_TRANSFORM: Transform = {
 	scale: 1,
@@ -56,19 +58,46 @@ const DEFAULT_PROJECT_SETTINGS: TProjectSettings = {
  * Load a Clippster project into the OpenCut editor.
  * Returns the initialized EditorCore instance.
  */
-export async function loadClippsterProject(projectId: string): Promise<EditorCore> {
+export async function loadClippsterProject(
+	projectId: string,
+	{ signal }: { signal?: AbortSignal } = {},
+): Promise<EditorCore> {
+	signal?.throwIfAborted();
 	const editor = EditorCore.getInstance();
+	try {
+		return await loadClippsterProjectIntoEditor({ editor, projectId, signal });
+	} catch (error) {
+		if (signal?.aborted) {
+			// Project/media hydration cannot currently be interrupted inside every
+			// storage call, so release anything that completed after cancellation.
+			editor.dispose();
+		}
+		throw error;
+	}
+}
 
+async function loadClippsterProjectIntoEditor({
+	editor,
+	projectId,
+	signal,
+}: {
+	editor: EditorCore;
+	projectId: string;
+	signal?: AbortSignal;
+}): Promise<EditorCore> {
 	// 1. Load the Clippster project from SQLite
 	const clippsterProject = await getVideoEditorProject(projectId);
+	signal?.throwIfAborted();
 	if (!clippsterProject) {
 		throw new Error(`Project not found: ${projectId}`);
 	}
 
 	// 2. Check if we already have an OpenCut project saved for this ID
 	const existingProject = await storageService.loadProject({ id: projectId });
+	signal?.throwIfAborted();
 	if (existingProject) {
 		await editor.project.loadProject({ id: projectId });
+		signal?.throwIfAborted();
 
 		// Initialize branding config from saved project settings or creator profile
 		const loadedProject = editor.project.getActive();
@@ -76,12 +105,16 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 		if (loadedProject?.settings?.brandingConfig) {
 			branding.initFromSavedConfig(loadedProject.settings.brandingConfig);
 		} else {
-			const sources = await getVideoEditorSourcesByProjectId(projectId);
-			await resolveAndInitBranding(sources);
+			branding.reset();
 		}
 
+		// The project shell and media metadata are now usable. Reconciliation,
+		// transcript hydration, dimension repair, and orphan healing are
+		// non-critical startup work and must not block first editor paint.
+		void (async () => {
 		try {
 			const sources = await getVideoEditorSourcesByProjectId(projectId);
+			signal?.throwIfAborted();
 			const tracks = editor.timeline.getTracks();
 			const assets = editor.media.getAssets();
 			const resolvedFromTimeline = await resolveSourceProjectFromTimeline({
@@ -101,6 +134,7 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 				assets,
 				preferredClipId: resolved?.sourceClipId ?? null,
 			});
+			signal?.throwIfAborted();
 			if (refreshedAssets) {
 				editor.media.setAssets({ assets: refreshedAssets });
 			}
@@ -151,7 +185,8 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 				sourceClipId: finalProject.settings.sourceClipId ?? null,
 				sourceClipStartTime: finalProject.settings.sourceClipStartTime ?? null,
 				sourceClipEndTime: finalProject.settings.sourceClipEndTime ?? null,
-			});
+			}, signal);
+			signal?.throwIfAborted();
 		}
 
 		// Backfill missing media asset dimensions (for projects saved before dimension probing was added)
@@ -161,6 +196,7 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 			if (needsBackfill.length > 0) {
 				const updatedAssets = [...assets];
 				for (const asset of needsBackfill) {
+					signal?.throwIfAborted();
 					const dims = await probeMediaDimensions(asset.url!, asset.type as "video" | "image");
 					if (dims) {
 						const updated: MediaAsset = { ...asset, width: dims.width, height: dims.height };
@@ -175,17 +211,33 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 			// Non-fatal — dimensions will fall back to canvas size
 		}
 
+		// Re-run after bridge asset refresh: loadProject may have healed, but setAssets / dimensions
+		// can leave timeline pointing at unusable video rows; persist so a second /editor load
+		// does not resurrect stale mediaIds from SQLite.
+		if (healOrphanVideoMediaReferences({ editor, projectId })) {
+			await editor.project.saveCurrentProject();
+		}
+		})().catch((error) => {
+			if (!signal?.aborted) {
+				console.warn("[bridge] Deferred project repair failed:", error);
+			}
+		});
+
+		signal?.throwIfAborted();
 		return editor;
 	}
 
 	// 3. No existing OpenCut project — convert from Clippster format
 	const sources = await getVideoEditorSourcesByProjectId(projectId);
+	signal?.throwIfAborted();
 
 	// Build media assets from sources
 	const mediaAssets = await buildMediaAssetsFromSources(sources);
+	signal?.throwIfAborted();
 
 	// Build timeline tracks
 	const tracks = await buildTimelineTracks(projectId, sources, mediaAssets);
+	signal?.throwIfAborted();
 
 	// Resolve the original Clippster project ID and clip timing (for transcript lookup)
 	let sourceProjectId: string | null = null;
@@ -194,6 +246,7 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 	let sourceClipEndTime: number | null = null;
 	try {
 		const resolved = await resolveSourceProject(sources);
+		signal?.throwIfAborted();
 		if (resolved) {
 			sourceProjectId = resolved.sourceProjectId;
 			sourceClipId = resolved.sourceClipId;
@@ -231,7 +284,7 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 		settings: { ...DEFAULT_PROJECT_SETTINGS, sourceProjectId, sourceClipId, sourceClipStartTime, sourceClipEndTime },
 		version: 1,
 		timelineViewState: {
-			zoomLevel: 1,
+			zoomLevel: TIMELINE_CONSTANTS.ZOOM_MIN,
 			scrollLeft: 0,
 			playheadTime: 0,
 		},
@@ -239,19 +292,28 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 
 	// Save to OpenCut storage and load into editor
 	await storageService.saveProject({ project });
+	signal?.throwIfAborted();
 
 	for (const asset of mediaAssets) {
 		await storageService.saveMediaAsset({ projectId, mediaAsset: asset });
+		signal?.throwIfAborted();
 	}
 
 	await editor.project.loadProject({ id: projectId });
-
-	// Resolve creator profile for branding config
-	await resolveAndInitBranding(sources);
+	signal?.throwIfAborted();
+	useBrandingConfig().reset();
 
 	// Load transcript data from source project if available
 	if (sourceProjectId) {
-		await loadTranscriptData(sourceProjectId, { sourceClipId, sourceClipStartTime, sourceClipEndTime });
+		void loadTranscriptData(sourceProjectId, {
+			sourceClipId,
+			sourceClipStartTime,
+			sourceClipEndTime,
+		}, signal).catch((error) => {
+			if (!signal?.aborted) {
+				console.warn("[bridge] Deferred transcript load failed:", error);
+			}
+		});
 	}
 
 	return editor;
@@ -353,14 +415,22 @@ async function buildTimelineTracks(
 		const duration = source.end_time - source.start_time;
 		if (duration <= 0) continue;
 
+		const trimStart = source.trim_start || 0;
+		const trimEnd = normalizeTrimEndToTail({
+			trimStart,
+			duration,
+			trimEnd: source.trim_end,
+			speed: source.speed,
+		});
+
 		videoElements.push({
 			id: generateUUID(),
 			type: "video",
 			name: source.source_name || "Video",
 			startTime: currentTime,
 			duration,
-			trimStart: source.trim_start || 0,
-			trimEnd: source.trim_end ?? 0,
+			trimStart,
+			trimEnd,
 			mediaId: source.id,
 			muted: false,
 			hidden: false,
@@ -472,80 +542,6 @@ function inferMediaType(filePath: string): "video" | "audio" | "image" {
 	if (["mp3", "wav", "ogg", "aac", "m4a", "flac"].includes(ext)) return "audio";
 	if (["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].includes(ext)) return "image";
 	return "video";
-}
-
-/**
- * Resolve the creator profile from video editor sources and initialize branding config.
- * Chain: source (source_type='clip') → clip → clip.project_id → getCreatorProfileByProjectId()
- * Falls back to admin free tier branding if no creator profile is found.
- */
-async function resolveAndInitBranding(sources: VideoEditorSource[]): Promise<void> {
-	const branding = useBrandingConfig();
-
-	try {
-		// Find the first clip source to trace back to the original project
-		const clipSource = sources.find((s) => s.source_type === "clip" && s.source_id);
-		if (!clipSource?.source_id) {
-			console.log("[bridge] No clip source found, checking for admin branding");
-			await loadAdminBrandingIfFreeTier(branding);
-			return;
-		}
-
-		const clip = await getClip(clipSource.source_id);
-		if (!clip?.project_id) {
-			console.log("[bridge] Clip has no project_id, checking for admin branding");
-			await loadAdminBrandingIfFreeTier(branding);
-			return;
-		}
-
-		const profile = await resolveBrandingProfile(clip.project_id);
-		if (!profile) {
-			console.log("[bridge] No branding profile found for project:", clip.project_id);
-			await loadAdminBrandingIfFreeTier(branding);
-			return;
-		}
-
-		console.log("[bridge] Found creator profile for branding:", profile.name);
-		branding.initFromCreatorProfile(profile);
-	} catch (error) {
-		console.warn("[bridge] Failed to resolve creator profile for branding:", error);
-		await loadAdminBrandingIfFreeTier(branding);
-	}
-}
-
-/**
- * Load admin free tier branding if the user is on the free tier.
- * Applies admin-configured watermark, intro, and outro settings.
- */
-async function loadAdminBrandingIfFreeTier(branding: ReturnType<typeof useBrandingConfig>): Promise<void> {
-	try {
-		const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
-		const { getBrandingIfFreeTier } = useFreeTierBranding();
-		const adminBranding = await getBrandingIfFreeTier();
-		
-		if (!adminBranding) {
-			console.log("[bridge] No admin branding configured for free tier");
-			return;
-		}
-		
-		console.log("[bridge] Loading admin free tier branding");
-		
-		// Create a synthetic creator profile from admin branding
-		const syntheticProfile: any = {
-			id: 'admin-free-tier',
-			name: 'Free Tier Branding',
-			watermark_id: adminBranding.watermark_id,
-			watermark_settings: adminBranding.watermark_settings,
-			intro_ratio_settings: adminBranding.intro_ratio_settings,
-			outro_ratio_settings: adminBranding.outro_ratio_settings,
-			layout_overlays: adminBranding.layout_overlays,
-		};
-		
-		branding.initFromCreatorProfile(syntheticProfile);
-		console.log("[bridge] Admin free tier branding loaded successfully");
-	} catch (error) {
-		console.warn("[bridge] Failed to load admin free tier branding:", error);
-	}
 }
 
 /**
@@ -934,9 +930,11 @@ async function loadTranscriptData(
 		sourceClipStartTime?: number | null;
 		sourceClipEndTime?: number | null;
 	},
+	signal?: AbortSignal,
 ): Promise<void> {
 	try {
 		const { parseTranscriptToWords } = await import("@/utils/timelineUtils");
+		signal?.throwIfAborted();
 		const editor = EditorCore.getInstance();
 		console.log("[bridge] loadTranscriptData request", {
 			sourceProjectId,
@@ -968,6 +966,7 @@ async function loadTranscriptData(
 
 				if (segmentWords.length > 0) {
 					segmentWords.sort((a, b) => a.start - b.start);
+					signal?.throwIfAborted();
 					editor.transcript.setWords(segmentWords);
 					console.log("[bridge] Loaded transcript with", segmentWords.length, "words from clip segments", {
 						firstWord: segmentWords[0]?.word,
@@ -1011,6 +1010,7 @@ async function loadTranscriptData(
 				transcriptWords = filterAndRebaseWords(transcriptWords, clipTiming?.sourceClipStartTime, clipTiming?.sourceClipEndTime, clipSegments);
 
 				if (transcriptWords.length > 0) {
+					signal?.throwIfAborted();
 					editor.transcript.setWords(transcriptWords);
 					console.log("[bridge] Loaded transcript with", transcriptWords.length, "words from stitched VOD transcript", {
 						firstWord: transcriptWords[0]?.word,
@@ -1105,6 +1105,7 @@ async function loadTranscriptData(
 				const finalWords = filterAndRebaseWords(unique, clipTiming?.sourceClipStartTime, clipTiming?.sourceClipEndTime);
 
 				if (finalWords.length > 0) {
+					signal?.throwIfAborted();
 					editor.transcript.setWords(finalWords);
 					console.log("[bridge] Loaded transcript with", finalWords.length, "words from chunked transcript chunks", {
 						firstWord: finalWords[0]?.word,

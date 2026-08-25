@@ -3,7 +3,7 @@
     <!-- Page Heading -->
     <div class="campaigns__heading">
       <h1 class="campaigns__title">Clipping Campaigns</h1>
-      <p class="campaigns__subtitle">Create and manage campaigns for clippers to promote your content</p>
+      <p class="campaigns__subtitle">Launch campaigns for streamers, musicians, podcasts, brands, and creators</p>
     </div>
 
     <!-- Loading State -->
@@ -32,9 +32,267 @@
       <p class="campaigns__empty-text">Create your first campaign to start working with clippers</p>
     </div>
 
-    <!-- Campaigns Grid -->
-    <div v-else class="campaigns__grid">
-      <div v-for="campaign in campaigns" :key="campaign.id" class="campaigns__card">
+    <!-- Main Content - Sections -->
+    <div v-else class="campaigns__sections">
+      <!-- Active & Draft Campaigns Section -->
+      <div v-if="activeCampaigns.length > 0" class="campaigns__section">
+        <div class="campaigns__section-header">
+          <div class="campaigns__section-title-wrapper">
+            <Play class="campaigns__section-icon" />
+            <h2 class="campaigns__section-title">Active & Draft Campaigns</h2>
+          </div>
+          <div class="campaigns__item-count">
+            {{ activeCampaigns.length }} {{ activeCampaigns.length === 1 ? 'campaign' : 'campaigns' }}
+          </div>
+        </div>
+
+        <div class="campaigns__grid">
+          <div v-for="campaign in activeCampaigns" :key="campaign.id" class="campaigns__card">
+        <!-- Cover Image -->
+        <div class="campaigns__cover">
+          <img v-if="campaign.cover_image_url" :src="campaign.cover_image_url" class="campaigns__cover-img" />
+          <div v-else class="campaigns__cover-fallback">
+            <Megaphone class="campaigns__cover-icon" />
+          </div>
+          <!-- Badges on Cover -->
+          <div class="campaigns__cover-badges">
+            <!-- Status Badge -->
+            <div
+              class="campaigns__status"
+              :class="{
+                'campaigns__status--active': campaign.status === 'active',
+                'campaigns__status--paused': campaign.status === 'paused',
+                'campaigns__status--completed': campaign.status === 'completed',
+                'campaigns__status--draft': campaign.status === 'draft',
+              }"
+            >
+              {{ campaign.status }}
+            </div>
+            <!-- Join Type Badge -->
+            <span
+              class="campaigns__join-type"
+              :class="{
+                'campaigns__join-type--open': campaign.join_type === 'open',
+                'campaigns__join-type--application': campaign.join_type === 'application_required',
+              }"
+            >
+              <UserCheck v-if="campaign.join_type === 'open'" class="campaigns__join-type-icon" />
+              <ShieldCheck v-else class="campaigns__join-type-icon" />
+              {{ campaign.join_type === 'open' ? 'Open' : 'Apply' }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Card Content -->
+        <div class="campaigns__card-content">
+          <!-- Campaign Info -->
+          <div class="campaigns__info">
+            <h3 class="campaigns__name">{{ campaign.title }}</h3>
+            <p v-if="campaign.description" class="campaigns__desc">{{ campaign.description }}</p>
+
+            <!-- Meta Row -->
+            <div v-if="campaign.starts_at || campaign.ends_at || (campaign.status === 'active' && getDaysRemaining(campaign) !== null)" class="campaigns__meta">
+              <span v-if="campaign.starts_at || campaign.ends_at" class="campaigns__meta-item">
+                <Calendar class="campaigns__meta-icon" />
+                <template v-if="campaign.starts_at">{{ formatDate(campaign.starts_at) }}</template>
+                <template v-if="campaign.starts_at && campaign.ends_at">–</template>
+                <template v-if="campaign.ends_at">{{ formatDate(campaign.ends_at) }}</template>
+              </span>
+              <!-- Days Remaining -->
+              <span
+                v-if="campaign.status === 'active' && getDaysRemaining(campaign) !== null"
+                class="campaigns__meta-item campaigns__meta-item--highlight"
+              >
+                <Clock class="campaigns__meta-icon" />
+                <template v-if="getDaysRemaining(campaign)! > 0">
+                  {{ getDaysRemaining(campaign) }}d left
+                </template>
+                <template v-else>Ending today</template>
+              </span>
+            </div>
+
+            <!-- Platform Icons & Creator Avatars Row -->
+            <div class="campaigns__platforms-creators">
+              <!-- Platform Icons -->
+              <div v-if="campaign.allowed_platforms?.length" class="campaigns__platforms">
+                <span
+                  v-for="platform in campaign.allowed_platforms"
+                  :key="platform"
+                  class="campaigns__platform-badge"
+                  :class="getPlatformClass(platform)"
+                  :title="getPlatformDisplayName(platform)"
+                >
+                  <Instagram v-if="platform === 'instagram'" class="campaigns__platform-icon" />
+                  <Youtube v-else-if="platform === 'youtube'" class="campaigns__platform-icon" />
+                  <svg
+                    v-else-if="platform === 'tiktok'"
+                    viewBox="0 0 24 24"
+                    class="campaigns__platform-icon campaigns__platform-icon--tiktok"
+                  >
+                    <path
+                      fill="currentColor"
+                      d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"
+                    />
+                  </svg>
+                  <svg
+                    v-else-if="isXPlatform(platform)"
+                    viewBox="0 0 24 24"
+                    class="campaigns__platform-icon campaigns__platform-icon--x"
+                  >
+                    <path
+                      fill="currentColor"
+                      d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+                    />
+                  </svg>
+                  <component v-else :is="getPlatformIcon(platform)" class="campaigns__platform-icon" />
+                </span>
+              </div>
+
+              <!-- Creator Profiles Avatars -->
+              <div v-if="campaign.creator_profiles?.length" class="campaigns__creators">
+                <div
+                  v-for="profile in campaign.creator_profiles.slice(0, 3)"
+                  :key="profile.id"
+                  class="campaigns__creator-avatar"
+                  :title="profile.name"
+                >
+                  <img
+                    v-if="profile.profile_image_url"
+                    :src="profile.profile_image_url"
+                    class="campaigns__creator-img"
+                    @error="handleImageError"
+                  />
+                  <div v-else class="campaigns__creator-fallback">
+                    {{ profile.name?.charAt(0) }}
+                  </div>
+                </div>
+                <span v-if="campaign.creator_profiles.length > 3" class="campaigns__creator-more">
+                  +{{ campaign.creator_profiles.length - 3 }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Stats Row -->
+          <div class="campaigns__stats">
+            <div class="campaigns__stat">
+              <DollarSign class="campaigns__stat-icon" />
+              <div class="campaigns__stat-data">
+                <span class="campaigns__stat-value">${{ formatCpm(campaign.cpm) }}</span>
+                <span class="campaigns__stat-label">per {{ formatViews(campaign.cpm_views || 1000) }}</span>
+              </div>
+            </div>
+            <div class="campaigns__stat">
+              <Wallet class="campaigns__stat-icon" />
+              <div class="campaigns__stat-data">
+                <span class="campaigns__stat-value">${{ formatBudget(campaign.budget) }}</span>
+                <span class="campaigns__stat-label">budget</span>
+              </div>
+            </div>
+            <div class="campaigns__stat">
+              <Users class="campaigns__stat-icon" />
+              <div class="campaigns__stat-data">
+                <span class="campaigns__stat-value">{{ campaign.participants_count || 0 }}</span>
+                <span class="campaigns__stat-label">clippers</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Budget Progress -->
+          <div class="campaigns__budget-progress">
+            <div class="campaigns__budget-bar">
+              <div
+                class="campaigns__budget-fill"
+                :style="{ width: getBudgetPercentage(campaign) + '%' }"
+                :class="{
+                  'campaigns__budget-fill--low': getBudgetPercentage(campaign) < 50,
+                  'campaigns__budget-fill--medium': getBudgetPercentage(campaign) >= 50 && getBudgetPercentage(campaign) < 80,
+                  'campaigns__budget-fill--high': getBudgetPercentage(campaign) >= 80,
+                }"
+              ></div>
+            </div>
+            <span class="campaigns__budget-text">
+              ${{ formatBudget(campaign.spent_budget || 0) }} spent / ${{ formatBudget(campaign.budget) }} total
+            </span>
+          </div>
+
+          <!-- Actions -->
+          <div class="campaigns__actions">
+            <button title="View" class="campaigns__action-btn" @click.stop="viewCampaign(campaign)">
+              <Eye class="campaigns__action-icon" />
+            </button>
+            <button title="Edit" v-if="isAdmin" class="campaigns__action-btn" @click.stop="editCampaign(campaign)">
+              <Pencil class="campaigns__action-icon" />
+            </button>
+            <DropdownMenu v-if="isAdmin">
+              <DropdownMenuTrigger as-child>
+                <button title="Menu" class="campaigns__action-btn" @click.stop>
+                  <MoreVertical class="campaigns__action-icon" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="campaigns__dropdown">
+                <DropdownMenuItem
+                  v-if="campaign.status === 'draft'"
+                  @click="activateCampaignAction(campaign)"
+                  class="campaigns__dropdown-item"
+                >
+                  <Play class="campaigns__dropdown-icon" />
+                  Activate
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  v-if="campaign.status === 'active'"
+                  @click="pauseCampaignAction(campaign)"
+                  class="campaigns__dropdown-item"
+                >
+                  <Pause class="campaigns__dropdown-icon" />
+                  Pause
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  v-if="campaign.status === 'paused'"
+                  @click="activateCampaignAction(campaign)"
+                  class="campaigns__dropdown-item"
+                >
+                  <Play class="campaigns__dropdown-icon" />
+                  Resume
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  v-if="campaign.status !== 'completed'"
+                  @click="completeCampaignAction(campaign)"
+                  class="campaigns__dropdown-item"
+                >
+                  <CheckCircle class="campaigns__dropdown-icon" />
+                  Complete
+                </DropdownMenuItem>
+                <DropdownMenuSeparator class="campaigns__dropdown-sep" />
+                <DropdownMenuItem
+                  @click="confirmDeleteCampaign(campaign)"
+                  class="campaigns__dropdown-item campaigns__dropdown-item--danger"
+                >
+                  <Trash2 class="campaigns__dropdown-icon" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Completed Campaigns Section -->
+      <div v-if="completedCampaigns.length > 0" class="campaigns__section">
+        <div class="campaigns__section-header">
+          <div class="campaigns__section-title-wrapper">
+            <CheckCircle class="campaigns__section-icon" />
+            <h2 class="campaigns__section-title">Completed Campaigns</h2>
+          </div>
+          <div class="campaigns__item-count">
+            {{ completedCampaigns.length }} {{ completedCampaigns.length === 1 ? 'campaign' : 'campaigns' }}
+          </div>
+        </div>
+
+        <div class="campaigns__grid">
+          <div v-for="campaign in completedCampaigns" :key="campaign.id" class="campaigns__card">
         <!-- Cover Image -->
         <div class="campaigns__cover">
           <img v-if="campaign.cover_image_url" :src="campaign.cover_image_url" class="campaigns__cover-img" />
@@ -263,6 +521,8 @@
           </div>
         </div>
       </div>
+        </div>
+      </div>
     </div>
 
     <!-- Create/Edit Campaign Wizard -->
@@ -334,6 +594,33 @@
                         placeholder="Describe your campaign..."
                       ></textarea>
                       <p class="campaign-wizard__hint">{{ (campaignForm.description || '').length }}/500 characters</p>
+                    </div>
+
+                    <div class="campaign-wizard__field">
+                      <label class="campaign-wizard__label">Campaign Type</label>
+                      <CustomDropdown
+                        v-model="campaignForm.content_vertical"
+                        :options="contentVerticalOptions"
+                        placeholder="Select campaign type"
+                        class="campaign-wizard__dropdown"
+                        trigger-class="campaign-wizard__dropdown-trigger"
+                      />
+                      <p class="campaign-wizard__hint">
+                        Helps clippers understand the campaign. Works for streamers, musicians, podcasts, brands, and more.
+                      </p>
+                    </div>
+
+                    <div class="campaign-wizard__field">
+                      <label class="campaign-wizard__label">
+                        Campaign Goal
+                        <span class="campaign-wizard__optional">(optional)</span>
+                      </label>
+                      <input
+                        v-model="campaignForm.campaign_goal"
+                        type="text"
+                        class="campaign-wizard__input"
+                        placeholder="Promote new song, grow podcast audience, launch product..."
+                      />
                     </div>
                   </div>
                 </div>
@@ -710,8 +997,23 @@
                   </div>
                 </div>
 
-                <!-- Step 7: Review & Create -->
+                <!-- Step 7: Source Content -->
                 <div v-if="currentStep === 7" class="campaign-wizard__step">
+                  <div class="campaign-wizard__header">
+                    <div class="campaign-wizard__icon">
+                      <Link2 :size="28" />
+                    </div>
+                    <h2 class="campaign-wizard__title">Add source content</h2>
+                    <p class="campaign-wizard__subtitle">
+                      Share video, audio, or reference links clippers can open directly in Clippster
+                    </p>
+                  </div>
+
+                  <CampaignResourcesEditor v-model="campaignResources" />
+                </div>
+
+                <!-- Step 8: Review & Create -->
+                <div v-if="currentStep === 8" class="campaign-wizard__step">
                   <div class="campaign-wizard__header">
                     <div class="campaign-wizard__icon campaign-wizard__icon--success">
                       <Check :size="28" />
@@ -834,7 +1136,7 @@
 
                 <!-- Skip Link for Optional Steps -->
                 <button
-                  v-if="currentStep >= 2 && currentStep <= 6"
+                  v-if="currentStep >= 2 && currentStep <= 7"
                   @click="nextStep"
                   class="campaign-wizard__skip"
                 >
@@ -1468,6 +1770,12 @@
                             (synced {{ formatRelativeTime(submission.views_last_updated_at) }})
                           </span>
                         </div>
+                        <SubmissionVerificationPanel
+                          :submission="submission"
+                          :analytics="submissionAnalytics[submission.id]"
+                          :syncing="syncingSubmissionId === submission.id"
+                          @sync="syncSubmissionMetricsAction(submission)"
+                        />
                       </div>
                       <div class="campaigns-detail__submission-actions">
                         <span
@@ -1936,6 +2244,7 @@
     ShieldCheck,
     Calculator,
     Image,
+    Link2,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import { Badge } from '@/components/ui/badge';
@@ -1977,6 +2286,10 @@
     updateSubmissionViews,
     uploadCampaignCoverImage,
     setCampaignCreatorProfiles,
+    setCampaignResources,
+    syncSubmissionMetrics,
+    getSubmissionAnalytics,
+    CAMPAIGN_CONTENT_VERTICALS,
     calculateCampaignPayments,
     listCampaignPayments,
     verifyPayment,
@@ -1985,8 +2298,13 @@
     type CampaignSubmission,
     type CampaignPayment,
     type CampaignCreatorProfile,
+    type CampaignResource,
+    type CampaignSubmissionAnalytics,
+    type CampaignContentVertical,
     getPlatformDisplayName,
   } from '@/services/campaignApi';
+  import CampaignResourcesEditor from '@/components/campaigns/CampaignResourcesEditor.vue';
+  import SubmissionVerificationPanel from '@/components/campaigns/SubmissionVerificationPanel.vue';
   import {
     listOrganizationCreatorProfiles,
     type ServerOrganizationCreatorProfile,
@@ -2023,6 +2341,9 @@
   const detailTab = ref('overview');
   const participants = ref<CampaignParticipant[]>([]);
   const submissions = ref<CampaignSubmission[]>([]);
+  const submissionAnalytics = ref<Record<number, CampaignSubmissionAnalytics>>({});
+  const syncingSubmissionId = ref<number | null>(null);
+  const campaignResources = ref<CampaignResource[]>([]);
   const loadingParticipants = ref(false);
   const loadingSubmissions = ref(false);
 
@@ -2131,6 +2452,15 @@
     return globalProfiles.map((p) => ({ label: p.name, value: p.id }));
   });
 
+  // Filtered campaigns based on status
+  const activeCampaigns = computed(() => {
+    return campaigns.value.filter(c => c.status !== 'completed');
+  });
+
+  const completedCampaigns = computed(() => {
+    return campaigns.value.filter(c => c.status === 'completed');
+  });
+
   const campaignForm = reactive({
     title: '',
     description: '',
@@ -2152,11 +2482,19 @@
     // Creator and branding
     creator_profile_id: null as number | null,
     branding_profile_id: null as number | null,
+    content_vertical: null as CampaignContentVertical | null,
+    campaign_goal: '',
+    content_style_tags: [] as string[],
   });
+
+  const contentVerticalOptions = CAMPAIGN_CONTENT_VERTICALS.map((item) => ({
+    value: item.value,
+    label: item.label,
+  }));
 
   // Wizard state
   const currentStep = ref(1);
-  const totalSteps = 7;
+  const totalSteps = 8;
 
   // Validation for each wizard step
   const canProceed = computed(() => {
@@ -2180,6 +2518,9 @@
         // Campaign Assets - all optional
         return true;
       case 7:
+        // Source materials - optional
+        return true;
+      case 8:
         // Review - always allow proceed to create
         return true;
       default:
@@ -2302,7 +2643,8 @@
     const endDate = new Date(campaign.ends_at);
     const diffMs = endDate.getTime() - now.getTime();
     const diffDays = Math.ceil(diffMs / 86400000);
-    return diffDays;
+    // Return null for campaigns that have already ended
+    return diffDays >= 0 ? diffDays : null;
   };
 
   const getPlatformClass = (platform: string) => {
@@ -2522,6 +2864,7 @@
     coverImagePreview.value = '';
     selectedCreatorProfileIds.value = [];
     isGlobalBrandingSelected.value = false;
+    campaignResources.value = [];
     currentStep.value = 1;
     error.value = null;
     Object.assign(campaignForm, {
@@ -2542,6 +2885,9 @@
       clips_per_profile: 5,
       creator_profile_id: null,
       branding_profile_id: null,
+      content_vertical: null,
+      campaign_goal: '',
+      content_style_tags: [],
     });
     showCampaignDialog.value = true;
     await loadCreatorProfilesAndAssets();
@@ -2572,7 +2918,11 @@
       clips_per_profile: campaign.clips_per_profile || 5,
       creator_profile_id: campaign.creator_profile_id || null,
       branding_profile_id: campaign.branding_profile_id || null,
+      content_vertical: campaign.content_vertical || null,
+      campaign_goal: campaign.campaign_goal || '',
+      content_style_tags: campaign.content_style_tags || [],
     });
+    campaignResources.value = (campaign.resources || []).map(({ id, campaign_id, inserted_at, updated_at, download_target, ...rest }) => rest);
     showCampaignDialog.value = true;
     await loadCreatorProfilesAndAssets();
   };
@@ -2607,6 +2957,10 @@
         // For global branding, explicitly send null for creator_profile_id
         creator_profile_id: isGlobalBrandingSelected.value ? null : (campaignForm.creator_profile_id || undefined),
         branding_profile_id: campaignForm.branding_profile_id || undefined,
+        content_vertical: campaignForm.content_vertical || undefined,
+        campaign_goal: campaignForm.campaign_goal || undefined,
+        content_style_tags: campaignForm.content_style_tags,
+        resources: campaignResources.value,
       };
 
       console.log('[Campaign Save] About to save with:', {
@@ -2701,11 +3055,62 @@
       const response = await listCampaignSubmissions(Number(props.organizationId), selectedCampaign.value.id);
       if (response.success) {
         submissions.value = response.submissions;
+        await loadSubmissionAnalytics();
       }
     } catch (error) {
       console.error('Failed to load submissions:', error);
     } finally {
       loadingSubmissions.value = false;
+    }
+  };
+
+  const loadSubmissionAnalytics = async () => {
+    if (!props.organizationId) return;
+
+    const entries = await Promise.all(
+      submissions.value.map(async (submission) => {
+        try {
+          const response = await getSubmissionAnalytics(Number(props.organizationId), submission.id);
+          return [submission.id, response.analytics || null] as const;
+        } catch {
+          return [submission.id, null] as const;
+        }
+      })
+    );
+
+    submissionAnalytics.value = entries.reduce<Record<number, CampaignSubmissionAnalytics>>((acc, [submissionId, analytics]) => {
+      if (analytics) {
+        acc[submissionId] = analytics;
+      }
+      return acc;
+    }, {});
+  };
+
+  const syncSubmissionMetricsAction = async (submission: CampaignSubmission) => {
+    syncingSubmissionId.value = submission.id;
+    try {
+      const response = await syncSubmissionMetrics(Number(props.organizationId), submission.id);
+      if (response.success) {
+        if (response.submission) {
+          submissions.value = submissions.value.map((item) =>
+            item.id === submission.id ? response.submission! : item
+          );
+        }
+        if (response.analytics) {
+          submissionAnalytics.value = {
+            ...submissionAnalytics.value,
+            [submission.id]: response.analytics,
+          };
+        }
+        toast({ title: 'Metrics synced', description: 'Submission metrics updated from PostForMe.' });
+      } else {
+        toast({ title: 'Sync failed', description: response.error || 'Could not sync submission metrics' });
+      }
+    } catch (error) {
+      console.error('Failed to sync submission metrics:', error);
+      toast({ title: 'Sync failed', description: 'Could not sync submission metrics' });
+    } finally {
+      syncingSubmissionId.value = null;
     }
   };
 
@@ -3036,6 +3441,56 @@
     color: var(--sidebar-text-muted);
     margin: 0;
     line-height: 1.5;
+  }
+
+  /* ===== Sections ===== */
+  .campaigns__sections {
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+  }
+
+  .campaigns__section {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .campaigns__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .campaigns__section-title-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .campaigns__section-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--sidebar-accent);
+  }
+
+  .campaigns__section-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.025em;
+  }
+
+  .campaigns__item-count {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background-color: var(--sidebar-hover);
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.5rem;
   }
 
   /* ===== Campaigns Grid ===== */

@@ -1,0 +1,14 @@
+{"id":"f652db9a-76d7-4827-80a3-5f92956f2ae3","ts":"2026-04-15T19:27:26.815Z","severity":"info","message":"Analyzing codebase...","source":"notify","read":false}
+{"id":"24e2306c-3f88-43d8-ac98-896e706dbaba","ts":"2026-04-15T19:27:26.965Z","severity":"success","message":"✓ Analyzed codebase","source":"notify","read":false}
+{"id":"5ffe8ab4-d5ae-4177-bb43-39fdb2640e06","ts":"2026-04-15T19:27:26.966Z","severity":"info","message":"Reviewing prior context...","source":"notify","read":false}
+{"id":"1ccb7649-2e85-452b-9216-3457c87f3190","ts":"2026-04-15T19:27:26.988Z","severity":"success","message":"✓ Reviewed prior context","source":"notify","read":false}
+{"id":"48b99562-60f2-40ce-b451-7b0a6535101a","ts":"2026-04-15T19:28:05.638Z","severity":"warning","message":"Web search: Set BRAVE_API_KEY or use an Anthropic model for built-in search","source":"notify","read":false}
+{"id":"58165ceb-997a-4963-b31b-ee9c1ff57654","ts":"2026-04-15T19:28:28.703Z","severity":"info","message":"Analyzing codebase...","source":"notify","read":false}
+{"id":"c2025b97-49a5-4ef7-a2b4-87a3e7c155ba","ts":"2026-04-15T19:28:28.840Z","severity":"success","message":"✓ Analyzed codebase","source":"notify","read":false}
+{"id":"ed447af9-fb4c-44f4-87f1-5039b0687105","ts":"2026-04-15T19:28:28.840Z","severity":"info","message":"Reviewing prior context...","source":"notify","read":false}
+{"id":"f4d44f6d-b73e-463f-8ae1-2a50bf30a156","ts":"2026-04-15T19:28:28.862Z","severity":"success","message":"✓ Reviewed prior context","source":"notify","read":false}
+{"id":"633c69b9-5064-47a2-a3b4-5092265d0dff","ts":"2026-04-15T21:32:24.802Z","severity":"warning","message":"All milestones are complete and the discussion didn't produce a new one. Run /gsd to start a new milestone manually.","source":"notify","read":false}
+{"id":"6a68b7f5-2567-4064-8776-daf72bb143da","ts":"2026-04-15T21:35:20.821Z","severity":"info","message":"Analyzing codebase...","source":"notify","read":false}
+{"id":"2e50c8ec-402d-494b-acb1-52f10e2c7d60","ts":"2026-04-15T21:35:20.932Z","severity":"success","message":"✓ Analyzed codebase","source":"notify","read":false}
+{"id":"01371c45-67d4-4107-a90d-5f1b47866c23","ts":"2026-04-15T21:35:20.932Z","severity":"info","message":"Reviewing prior context...","source":"notify","read":false}
+{"id":"01ce71fd-5be1-413d-a08d-a4fd797ea651","ts":"2026-04-15T21:35:20.958Z","severity":"success","message":"✓ Reviewed prior context","source":"notify","read":false}

@@ -105,23 +105,35 @@ defmodule ClippsterServer.PromoCodes do
         Repo.rollback(changeset)
       end
 
-      # Create Stripe coupon
-      with {:ok, promo} <- Repo.insert(changeset),
-           {:ok, stripe_coupon_id} <- create_stripe_coupon(promo),
-           {:ok, stripe_promo_code_id} <- create_stripe_promotion_code(promo, stripe_coupon_id) do
-        # Update promo code with Stripe IDs
-        {:ok, updated_promo} =
-          promo
-          |> PromoCode.create_changeset(%{
-            stripe_coupon_id: stripe_coupon_id,
-            stripe_promo_code_id: stripe_promo_code_id
-          })
-          |> Repo.update()
+      promo_type = Ecto.Changeset.get_field(changeset, :promo_type, "percent")
 
-        updated_promo
-      else
-        {:error, reason} -> Repo.rollback(reason)
-        error -> Repo.rollback(error)
+      case promo_type do
+        "bundle" ->
+          case Repo.insert(changeset) do
+            {:ok, promo} -> promo
+            {:error, reason} -> Repo.rollback(reason)
+          end
+
+        _ ->
+          # Create Stripe coupon for percentage discounts
+          with {:ok, promo} <- Repo.insert(changeset),
+               {:ok, stripe_coupon_id} <- create_stripe_coupon(promo),
+               {:ok, stripe_promo_code_id} <-
+                 create_stripe_promotion_code(promo, stripe_coupon_id) do
+            # Update promo code with Stripe IDs
+            {:ok, updated_promo} =
+              promo
+              |> PromoCode.create_changeset(%{
+                stripe_coupon_id: stripe_coupon_id,
+                stripe_promo_code_id: stripe_promo_code_id
+              })
+              |> Repo.update()
+
+            updated_promo
+          else
+            {:error, reason} -> Repo.rollback(reason)
+            error -> Repo.rollback(error)
+          end
       end
     end)
   end
@@ -150,18 +162,21 @@ defmodule ClippsterServer.PromoCodes do
         |> PromoCode.update_changeset(%{is_active: active?})
         |> Repo.update()
 
-      # Update Stripe promotion code
-      if active? do
-        # Reactivate in Stripe
-        case activate_stripe_promotion_code(promo.stripe_promo_code_id) do
-          {:ok, _} -> updated_promo
-          {:error, reason} -> Repo.rollback(reason)
-        end
+      # Bundle promos are tracked locally only (no Stripe promotion code)
+      if is_nil(promo.stripe_promo_code_id) do
+        updated_promo
       else
-        # Deactivate in Stripe
-        case deactivate_stripe_promotion_code(promo.stripe_promo_code_id) do
-          {:ok, _} -> updated_promo
-          {:error, reason} -> Repo.rollback(reason)
+        # Update Stripe promotion code
+        if active? do
+          case activate_stripe_promotion_code(promo.stripe_promo_code_id) do
+            {:ok, _} -> updated_promo
+            {:error, reason} -> Repo.rollback(reason)
+          end
+        else
+          case deactivate_stripe_promotion_code(promo.stripe_promo_code_id) do
+            {:ok, _} -> updated_promo
+            {:error, reason} -> Repo.rollback(reason)
+          end
         end
       end
     end)
@@ -297,6 +312,79 @@ defmodule ClippsterServer.PromoCodes do
   """
   def get_redemption_by_subscription(stripe_subscription_id) do
     Repo.get_by(PromoRedemption, stripe_subscription_id: stripe_subscription_id)
+  end
+
+  @doc """
+  Returns true if the promo is a fixed-price bundle deal.
+  """
+  def bundle_promo?(%PromoCode{promo_type: "bundle"}), do: true
+  def bundle_promo?(_), do: false
+
+  @doc """
+  Returns the checkout price in USD for a promo code.
+  For bundle promos this is the fixed price; for percent promos it applies the discount.
+  """
+  def checkout_price_usd(%PromoCode{promo_type: "bundle", fixed_price_cents: cents}, _base_usd)
+      when is_integer(cents) do
+    cents / 100
+  end
+
+  def checkout_price_usd(%PromoCode{percent_off: percent_off}, base_usd)
+      when is_number(base_usd) do
+    discount = percent_off / 100
+    base_usd * (1 - discount)
+  end
+
+  @doc """
+  Serializes promo code fields for API responses.
+  """
+  def promo_to_map(%PromoCode{} = promo) do
+    %{
+      id: promo.id,
+      code: promo.code,
+      name: promo.name,
+      promo_type: promo.promo_type || "percent",
+      percent_off: promo.percent_off,
+      fixed_price_cents: promo.fixed_price_cents,
+      access_months: promo.access_months,
+      total_credits: promo.total_credits,
+      duration_kind: promo.duration_kind,
+      duration_months: promo.duration_months,
+      allowed_tiers: promo.allowed_tiers,
+      allowed_org_tiers: promo.allowed_org_tiers,
+      allowed_credit_packs: promo.allowed_credit_packs,
+      max_redemptions: promo.max_redemptions,
+      redeem_by: promo.redeem_by,
+      is_active: promo.is_active,
+      stripe_coupon_id: promo.stripe_coupon_id,
+      stripe_promo_code_id: promo.stripe_promo_code_id,
+      notes: promo.notes
+    }
+  end
+
+  @doc """
+  Serializes validated promo details for checkout validation responses.
+  """
+  def validated_promo_to_map(%PromoCode{} = promo) do
+    base = %{
+      code: promo.code,
+      promo_type: promo.promo_type || "percent"
+    }
+
+    if bundle_promo?(promo) do
+      Map.merge(base, %{
+        fixed_price_cents: promo.fixed_price_cents,
+        fixed_price_usd: promo.fixed_price_cents / 100,
+        access_months: promo.access_months,
+        total_credits: promo.total_credits
+      })
+    else
+      Map.merge(base, %{
+        percent_off: promo.percent_off,
+        duration_kind: promo.duration_kind,
+        duration_months: promo.duration_months
+      })
+    end
   end
 
   # ============================================================================
@@ -549,7 +637,8 @@ defmodule ClippsterServer.PromoCodes do
             {:error, :expired_code}
 
           # Check max redemptions
-          stripe_promo.max_redemptions && stripe_promo.times_redeemed >= stripe_promo.max_redemptions ->
+          stripe_promo.max_redemptions &&
+              stripe_promo.times_redeemed >= stripe_promo.max_redemptions ->
             {:error, :max_redemptions_reached}
 
           # Check if user already redeemed (query Stripe subscriptions)
@@ -615,7 +704,8 @@ defmodule ClippsterServer.PromoCodes do
       allowed_credit_packs: [],
       is_active: stripe_promo.active,
       max_redemptions: stripe_promo.max_redemptions,
-      redeem_by: if(stripe_promo.expires_at, do: DateTime.from_unix!(stripe_promo.expires_at), else: nil),
+      redeem_by:
+        if(stripe_promo.expires_at, do: DateTime.from_unix!(stripe_promo.expires_at), else: nil),
       stripe_coupon_id: coupon.id,
       stripe_promo_code_id: stripe_promo.id,
       # Virtual fields for compatibility

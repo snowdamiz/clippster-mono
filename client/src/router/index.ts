@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { featureFlags } from '@/composables/useFeatureFlags';
+import { canAccessAIVideo } from '@/utils/aiVideoAccess';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -86,7 +87,7 @@ const router = createRouter({
       path: '/ai-video',
       name: 'ai-video',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiresAIVideoAccess: true },
       children: [
         {
           path: '',
@@ -110,6 +111,24 @@ const router = createRouter({
           path: '',
           name: 'my-images-home',
           component: () => import('@/pages/ImageGallery.vue'),
+        },
+      ],
+    },
+    {
+      path: '/studio/record/session',
+      name: 'studio-record-session',
+      component: () => import('@/pages/StudioRecordingSession.vue'),
+      meta: { noLayout: true },
+    },
+    {
+      path: '/studio/record',
+      name: 'studio-record',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'studio-record-home',
+          component: () => import('@/pages/StudioRecord.vue'),
         },
       ],
     },
@@ -247,6 +266,18 @@ const router = createRouter({
           path: ':slug',
           name: 'clipper-public-profile',
           component: () => import('@/pages/ClipperPublicProfilePage.vue'),
+        },
+      ],
+    },
+    {
+      path: '/orgs',
+      name: 'orgs',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: ':slug',
+          name: 'org-public-profile',
+          component: () => import('@/pages/OrgPublicProfilePage.vue'),
         },
       ],
     },
@@ -507,7 +538,7 @@ const router = createRouter({
     {
       path: '/organization/:id',
       name: 'organization-detail',
-      component: () => import('@/layouts/DashboardLayout.vue'),
+      component: () => import('@/layouts/OrganizationLayout.vue'),
       meta: { requiresAuth: true, requiresOrgSubscription: true },
       children: [
         {
@@ -653,6 +684,11 @@ router.beforeEach(async (to, _from, next) => {
     return;
   }
 
+  if (to.meta.requiresAIVideoAccess && !canAccessAIVideo(authStore.user)) {
+    next('/projects');
+    return;
+  }
+
   // Check if route requires admin or moderator
   if (
     to.meta.requiresAdmin &&
@@ -666,8 +702,12 @@ router.beforeEach(async (to, _from, next) => {
   if (to.meta.requiredTier && authStore.isAuthenticated) {
     const tierHierarchy: Record<string, number> = { free: 0, starter: 1, creator: 2, pro: 3 };
     const user = authStore.user;
-    // Admins and org-created users bypass tier checks
-    if (!user?.is_admin && !user?.created_by_organization_id) {
+    // Admins, org-created users, and org owners bypass personal tier checks
+    if (
+      !user?.is_admin &&
+      !user?.created_by_organization_id &&
+      !user?.owned_organization_id
+    ) {
       const userTier = user?.subscription?.tier || 'free';
       const userLevel = tierHierarchy[userTier] ?? 0;
       const requiredLevel = tierHierarchy[to.meta.requiredTier as string] ?? 0;

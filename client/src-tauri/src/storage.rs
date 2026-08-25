@@ -309,6 +309,15 @@ pub fn get_library_audio_dir() -> Result<PathBuf, String> {
     Ok(library_audio_dir)
 }
 
+/// Durable B-roll media storage per project (stock downloads, AI assets).
+pub fn get_broll_media_dir(project_id: &str) -> Result<PathBuf, String> {
+    let app_dir = get_app_storage_dir()?;
+    let dir = app_dir.join("broll-media").join(project_id);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create broll-media directory: {}", e))?;
+    Ok(dir)
+}
+
 /// Get the livestream recordings directory
 pub fn get_livestream_recordings_dir() -> Result<PathBuf, String> {
     let base_dir = get_storage_base_dir()?;
@@ -484,8 +493,8 @@ pub async fn generate_thumbnail(
     video_path: String,
 ) -> Result<String, String> {
     use std::path::Path;
-    use tauri_plugin_shell::ShellExt;
 
+    let video_path = crate::path_utils::normalize_local_fs_path(video_path);
     let video = Path::new(&video_path);
 
     // Validate video file exists
@@ -512,12 +521,11 @@ pub async fn generate_thumbnail(
     let thumbnail_filename = format!("{}_{}_thumb.jpg", parent_dir, video_stem);
     let thumbnail_path = paths.thumbnails.join(&thumbnail_filename);
 
-    // Use ffmpeg sidecar to generate thumbnail at 1 second mark
-    let command = app
-        .shell()
-        .sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
+    // Use ffmpeg with hidden console window on Windows
+    let thumbnail_path_str = thumbnail_path.to_str().ok_or("Invalid thumbnail path")?;
+    let output = crate::ffmpeg_sidecar::run_ffmpeg(
+        &app,
+        &[
             "-nostdin",
             "-hwaccel",
             "auto",
@@ -530,13 +538,10 @@ pub async fn generate_thumbnail(
             "-vf",
             "scale=320:-1",
             "-y",
-            thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
-        ]);
-
-    let output = command
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+            thumbnail_path_str,
+        ],
+    )
+    .await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -556,8 +561,8 @@ pub async fn generate_thumbnail_at_timestamp(
     output_filename: Option<String>,
 ) -> Result<String, String> {
     use std::path::Path;
-    use tauri_plugin_shell::ShellExt;
 
+    let video_path = crate::path_utils::normalize_local_fs_path(video_path);
     let video = Path::new(&video_path);
 
     // Validate video file exists
@@ -598,12 +603,11 @@ pub async fn generate_thumbnail_at_timestamp(
     let seconds = timestamp_seconds % 60.0;
     let timestamp_str = format!("{:02}:{:02}:{:06.3}", hours, minutes, seconds);
 
-    // Use ffmpeg sidecar to generate thumbnail at specified timestamp
-    let command = app
-        .shell()
-        .sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
+    // Use ffmpeg with hidden console window on Windows
+    let thumbnail_path_str = thumbnail_path.to_str().ok_or("Invalid thumbnail path")?;
+    let output = crate::ffmpeg_sidecar::run_ffmpeg(
+        &app,
+        &[
             "-nostdin",
             "-hwaccel",
             "auto",
@@ -616,13 +620,10 @@ pub async fn generate_thumbnail_at_timestamp(
             "-vf",
             "scale=320:-1",
             "-y",
-            thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
-        ]);
-
-    let output = command
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+            thumbnail_path_str,
+        ],
+    )
+    .await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -638,6 +639,7 @@ pub fn read_file_as_data_url(file_path: String) -> Result<String, String> {
     use std::fs;
     use std::path::Path;
 
+    let file_path = crate::path_utils::normalize_local_fs_path(file_path);
     let path = Path::new(&file_path);
 
     if !path.exists() {
@@ -889,6 +891,20 @@ pub fn save_temp_file(file_name: String, bytes: Vec<u8>) -> Result<String, Strin
     fs::write(&temp_path, bytes).map_err(|e| format!("Failed to write temp file: {}", e))?;
 
     Ok(temp_path.to_string_lossy().to_string())
+}
+
+/// Absolute path for a temporary clip extract under `%LOCALAPPDATA%/Clippster/editor-media/{project_id}/`.
+/// Matches the tree used by `copy_file_to_project_media` so FFmpeg output lands next to managed media.
+#[tauri::command]
+pub fn get_editor_clip_extract_path(project_id: String, clip_id: String) -> Result<String, String> {
+    use std::fs;
+
+    let app_dir = get_app_storage_dir()?;
+    let dir = app_dir.join("editor-media").join(&project_id);
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create editor-media directory: {}", e))?;
+
+    let path = dir.join(format!("clip_{}.mp4", clip_id));
+    Ok(path.to_string_lossy().to_string())
 }
 
 /// Save an uploaded media file to the editor-media directory for a given project.
@@ -1412,6 +1428,64 @@ pub async fn copy_watermark_to_storage(
         width,
         height,
         file_size,
+    })
+}
+
+/// Same storage layout as watermarks — uses `%LOCALAPPDATA%\\Clippster\\` (not the Tauri bundle id path).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CopyCreatorReferenceFrameResponse {
+    pub destination_path: String,
+}
+
+/// Copy a picked image into `creator_reference_frames/` under the app storage root (matches watermark upload).
+#[tauri::command]
+pub async fn copy_creator_reference_frame_to_storage(
+    source_path: String,
+) -> Result<CopyCreatorReferenceFrameResponse, String> {
+    use std::fs;
+    use std::path::Path;
+
+    let source = Path::new(&source_path);
+
+    if !source.exists() {
+        return Err("Source file does not exist".to_string());
+    }
+
+    let extension = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .ok_or("File has no extension")?
+        .to_lowercase();
+
+    let valid_extensions = ["png", "jpg", "jpeg", "webp"];
+    if !valid_extensions.contains(&extension.as_str()) {
+        return Err(format!(
+            "Invalid image format. Supported: {}",
+            valid_extensions.join(", ")
+        ));
+    }
+
+    let paths = init_storage_dirs()?;
+    let dir = paths.base.join("creator_reference_frames");
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create directory: {}", e))?;
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_millis();
+
+    let filename = format!("ref_{}.{}", timestamp, extension);
+    let destination = dir.join(&filename);
+
+    fs::copy(source, &destination).map_err(|e| format!("Failed to copy file: {}", e))?;
+
+    println!(
+        "[Rust] Creator reference frame copied to {}",
+        destination.display()
+    );
+
+    Ok(CopyCreatorReferenceFrameResponse {
+        destination_path: destination.to_string_lossy().to_string(),
     })
 }
 

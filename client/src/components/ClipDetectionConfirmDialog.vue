@@ -85,35 +85,190 @@
                 </div>
               </div>
 
-              <!-- Enhanced Multimodal Detection Toggle - TEMPORARILY HIDDEN -->
-              <!-- TODO: Re-enable multimodal detection option in future release -->
-              <!--
-              <div class="detect-clips-dialog__field detect-clips-dialog__toggle-box">
-                <div class="flex items-center justify-between">
-                  <div class="flex-1 min-w-0 pr-3">
-                    <div class="flex items-center gap-2">
-                      <span class="text-sm font-medium">Enhanced Detection</span>
-                      <span class="detect-clips-dialog__badge">2x Credits</span>
+              <!-- Enhanced Detection -->
+              <div class="detect-clips-dialog__field">
+                <div class="detect-clips-dialog__toggle-box">
+                  <div class="flex items-center justify-between">
+                    <div class="flex-1 min-w-0 pr-3">
+                      <div class="flex items-center gap-2">
+                        <span class="text-sm font-medium">Enhanced Detection</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-400 font-medium">2× credits</span>
+                      </div>
+                      <p class="text-xs mt-1 opacity-70">
+                        Analyzes transcript, video, and audio together for higher-quality clip detection
+                      </p>
                     </div>
-                    <p class="text-xs mt-1 opacity-70">
-                      Uses 3 AI models in parallel for higher quality clip detection
-                    </p>
+                    <button
+                      @click="enhancedDetection = !enhancedDetection"
+                      class="detect-clips-dialog__toggle"
+                      :class="{ 'detect-clips-dialog__toggle--active': enhancedDetection }"
+                      role="switch"
+                      :aria-checked="enhancedDetection"
+                    >
+                      <span
+                        class="detect-clips-dialog__toggle-thumb"
+                        :class="{ 'detect-clips-dialog__toggle-thumb--active': enhancedDetection }"
+                      />
+                    </button>
                   </div>
-                  <button
-                    @click="multimodalEnabled = !multimodalEnabled"
-                    class="detect-clips-dialog__toggle"
-                    :class="{ 'detect-clips-dialog__toggle--active': multimodalEnabled }"
-                    role="switch"
-                    :aria-checked="multimodalEnabled"
-                  >
-                    <span
-                      class="detect-clips-dialog__toggle-thumb"
-                      :class="{ 'detect-clips-dialog__toggle-thumb--active': multimodalEnabled }"
-                    />
-                  </button>
                 </div>
               </div>
-              -->
+
+              <!-- Subtitle Selection -->
+              <div class="detect-clips-dialog__field">
+                <div class="detect-clips-dialog__toggle-box">
+                  <div class="flex items-center justify-between">
+                    <div class="flex-1 min-w-0 pr-3">
+                      <div class="flex items-center gap-2">
+                        <span class="text-sm font-medium">Include Subtitles</span>
+                      </div>
+                      <p class="text-xs mt-1 opacity-70">
+                        Automatically add subtitles to all detected clips
+                      </p>
+                    </div>
+                    <button
+                      @click="subtitlesEnabled = !subtitlesEnabled"
+                      class="detect-clips-dialog__toggle"
+                      :class="{ 'detect-clips-dialog__toggle--active': subtitlesEnabled }"
+                      role="switch"
+                      :aria-checked="subtitlesEnabled"
+                    >
+                      <span
+                        class="detect-clips-dialog__toggle-thumb"
+                        :class="{ 'detect-clips-dialog__toggle-thumb--active': subtitlesEnabled }"
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Subtitle Preset Selection (shown when subtitles enabled) -->
+                <div v-if="subtitlesEnabled" class="mt-3">
+                  <label class="detect-clips-dialog__label mb-2">Select Subtitle Style</label>
+                  <div class="grid grid-cols-3 gap-2">
+                    <!-- Mr Beast Preset -->
+                    <button
+                      @click="selectedSubtitlePreset = 'mr-beast'"
+                      class="detect-clips-dialog__preset-card"
+                      :class="{ 'detect-clips-dialog__preset-card--selected': selectedSubtitlePreset === 'mr-beast' }"
+                    >
+                      <div class="detect-clips-dialog__preset-header">
+                        <span class="font-semibold text-xs">MrBeast</span>
+                        <div
+                          v-if="selectedSubtitlePreset === 'mr-beast'"
+                          class="detect-clips-dialog__preset-check"
+                        >
+                          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                      </div>
+                      <div class="detect-clips-dialog__preset-sample" style="background: linear-gradient(135deg, #1a1a1c 0%, #2a2a2c 100%);">
+                        <span style="color: #FACC15; font-family: 'Bebas Neue', sans-serif; font-size: 18px; font-weight: normal; letter-spacing: 1.5px; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 8px rgba(239, 68, 68, 0.5);">SAMPLE TEXT</span>
+                      </div>
+                      <p class="text-[10px] text-muted-foreground mt-1">Bold yellow, YouTube style</p>
+                    </button>
+
+                    <!-- TikTok Bold Preset -->
+                    <button
+                      @click="selectedSubtitlePreset = 'tiktok-bold'"
+                      class="detect-clips-dialog__preset-card"
+                      :class="{ 'detect-clips-dialog__preset-card--selected': selectedSubtitlePreset === 'tiktok-bold' }"
+                    >
+                      <div class="detect-clips-dialog__preset-header">
+                        <span class="font-semibold text-xs">TikTok Bold</span>
+                        <div
+                          v-if="selectedSubtitlePreset === 'tiktok-bold'"
+                          class="detect-clips-dialog__preset-check"
+                        >
+                          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                      </div>
+                      <div class="detect-clips-dialog__preset-sample" style="background: linear-gradient(135deg, #1a1a1c 0%, #2a2a2c 100%);">
+                        <span style="color: #FFFFFF; font-family: 'Montserrat', sans-serif; font-size: 16px; font-weight: 900; background: rgba(0,0,0,0.8); padding: 4px 8px; border-radius: 4px;">SAMPLE TEXT</span>
+                      </div>
+                      <p class="text-[10px] text-muted-foreground mt-1">White text, thick outline</p>
+                    </button>
+
+                    <!-- Clean Subtitle Preset -->
+                    <button
+                      @click="selectedSubtitlePreset = 'subtitle-tutorial'"
+                      class="detect-clips-dialog__preset-card"
+                      :class="{ 'detect-clips-dialog__preset-card--selected': selectedSubtitlePreset === 'subtitle-tutorial' }"
+                    >
+                      <div class="detect-clips-dialog__preset-header">
+                        <span class="font-semibold text-xs">Clean Subtitle</span>
+                        <div
+                          v-if="selectedSubtitlePreset === 'subtitle-tutorial'"
+                          class="detect-clips-dialog__preset-check"
+                        >
+                          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                      </div>
+                      <div class="detect-clips-dialog__preset-sample" style="background: linear-gradient(135deg, #1a1a1c 0%, #2a2a2c 100%);">
+                        <span style="color: #FFFFFF; font-family: 'Roboto', sans-serif; font-size: 14px; font-weight: normal; background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 4px;">Sample Text</span>
+                      </div>
+                      <p class="text-[10px] text-muted-foreground mt-1">Professional, readable</p>
+                    </button>
+
+                    <!-- Neon Glow Preset -->
+                    <button
+                      @click="selectedSubtitlePreset = 'neon-glow'"
+                      class="detect-clips-dialog__preset-card"
+                      :class="{ 'detect-clips-dialog__preset-card--selected': selectedSubtitlePreset === 'neon-glow' }"
+                    >
+                      <div class="detect-clips-dialog__preset-header">
+                        <span class="font-semibold text-xs">Neon Glow</span>
+                        <div
+                          v-if="selectedSubtitlePreset === 'neon-glow'"
+                          class="detect-clips-dialog__preset-check"
+                        >
+                          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                      </div>
+                      <div class="detect-clips-dialog__preset-sample" style="background: linear-gradient(135deg, #1a1a1c 0%, #2a2a2c 100%);">
+                        <span style="color: #FFFFFF; font-family: 'Montserrat', sans-serif; font-size: 16px; font-weight: bold; text-shadow: 0 0 10px #22D3EE, 0 0 20px #22D3EE, 0 0 30px #22D3EE;">SAMPLE TEXT</span>
+                      </div>
+                      <p class="text-[10px] text-muted-foreground mt-1">Cyan glow, modern</p>
+                    </button>
+
+                    <!-- Karaoke Preset -->
+                    <button
+                      @click="selectedSubtitlePreset = 'karaoke'"
+                      class="detect-clips-dialog__preset-card"
+                      :class="{ 'detect-clips-dialog__preset-card--selected': selectedSubtitlePreset === 'karaoke' }"
+                    >
+                      <div class="detect-clips-dialog__preset-header">
+                        <span class="font-semibold text-xs">Karaoke</span>
+                        <div
+                          v-if="selectedSubtitlePreset === 'karaoke'"
+                          class="detect-clips-dialog__preset-check"
+                        >
+                          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                      </div>
+                      <div class="detect-clips-dialog__preset-sample" style="background: linear-gradient(135deg, #1a1a1c 0%, #2a2a2c 100%);">
+                        <span style="color: #FFFFFF; font-family: 'Montserrat', sans-serif; font-size: 14px; font-weight: bold;">
+                          <span style="color: #0ea5e9;">WORD</span> BY <span style="color: #0ea5e9;">WORD</span>
+                        </span>
+                      </div>
+                      <p class="text-[10px] text-muted-foreground mt-1">Word-by-word highlight</p>
+                    </button>
+                  </div>
+
+                  <!-- Validation message -->
+                  <div v-if="subtitlesEnabled && !selectedSubtitlePreset" class="detect-clips-dialog__alert detect-clips-dialog__alert--error mt-2">
+                    <p class="text-xs">Please select a subtitle style to continue</p>
+                  </div>
+                </div>
+              </div>
 
               <!-- Credit Source Selector (shown when user has org credits) -->
               <div v-if="showCreditSourceSelector" class="detect-clips-dialog__field">
@@ -228,6 +383,8 @@
     // Multi-segment mode props (for project-level detection)
     segmentCount?: number;
     totalDuration?: number;
+    /** From VOD preset / creator clip defaults — pre-select subtitle options when opening */
+    initialSubtitleDetectionDefaults?: { enabled: boolean; presetId: string } | null;
   }>();
 
   // Use totalDuration if provided (multi-segment mode), otherwise use videoDuration
@@ -239,9 +396,10 @@
       promptId: string,
       promptContent: string,
       organizationId: number | null,
-      multimodal: boolean,
       startTime: number,
-      endTime: number
+      endTime: number,
+      subtitleSettings?: { enabled: boolean; presetId: string } | null,
+      enhanced?: boolean
     ];
   }>();
 
@@ -253,8 +411,22 @@
   const error = ref<string>('');
   const prompts = ref<Prompt[]>([]);
 
-  // Multimodal detection toggle
-  const multimodalEnabled = ref(false);
+  // Enhanced detection (transcript + video + audio)
+  const enhancedDetection = ref(false);
+
+  // Subtitle selection
+  const subtitlesEnabled = ref(false);
+  const selectedSubtitlePreset = ref<string>('');
+
+  watch(
+    () => props.modelValue,
+    (open) => {
+      if (open && props.initialSubtitleDetectionDefaults) {
+        subtitlesEnabled.value = props.initialSubtitleDetectionDefaults.enabled;
+        selectedSubtitlePreset.value = props.initialSubtitleDetectionDefaults.presetId;
+      }
+    }
+  );
 
   // Time range selection (for single video detection)
   const timeRange = ref({ startTime: 0, endTime: 0 });
@@ -286,26 +458,18 @@
   // Check if user is admin (has unlimited credits)
   const isAdmin = computed(() => selectedSourceHoursRemaining.value === Infinity);
 
-  // Calculate credits based on duration, transcription status, and multimodal mode
-  // Must match server's per-step ceil math:
-  //   - Not transcribed: ceil(minutes * 0.3) [transcribe] + ceil(minutes * 0.7) [detect]
-  //   - Already transcribed: ceil(minutes * 0.7) [detect only]
-  // Multimodal applies 2x to the detection step only (transcription unchanged)
+  // Calculate credits based on duration and transcription status.
+  // Standard rates (matches server): 0.3/min transcribe + 0.7/min detect, or 0.7/min detect-only.
+  // Enhanced is always exactly 2× the standard total (e.g. 60 min → 60 credits → 120 enhanced).
   const calculatedCredits = computed(() => {
-    // For multi-segment mode, use total duration; for single video, use selected range
     const durationToCharge = props.segmentCount ? effectiveDuration.value : selectedDuration.value;
-    const minutesToCharge = durationToCharge / 60; // Convert seconds to minutes
-    const multiMod = multimodalEnabled.value ? 2.0 : 1.0;
+    const minutesToCharge = durationToCharge / 60;
 
-    if (props.isTranscribed) {
-      // Detection only: ceil(minutes * 0.7 * multiMod)
-      return Math.ceil(minutesToCharge * 0.7 * multiMod);
-    } else {
-      // Transcription + detection, each ceiled separately (matches server)
-      const transcriptionCredits = Math.ceil(minutesToCharge * 0.3);
-      const detectionCredits = Math.ceil(minutesToCharge * 0.7 * multiMod);
-      return transcriptionCredits + detectionCredits;
-    }
+    const standardCredits = props.isTranscribed
+      ? Math.ceil(minutesToCharge * 0.7)
+      : Math.ceil(minutesToCharge * 0.3) + Math.ceil(minutesToCharge * 0.7);
+
+    return enhancedDetection.value ? standardCredits * 2 : standardCredits;
   });
 
   // Computed credit information based on selected source
@@ -326,20 +490,18 @@
     const roundedCredits = Math.ceil(creditsToCharge);
     const roundedRemaining = Math.round(remaining);
 
-    const multimodalNote = multimodalEnabled.value ? ' (2x for Enhanced Detection)' : '';
-
     if (remaining === 0) {
-      return `No credits remaining in ${sourceName}. This operation requires ${roundedCredits} credits${multimodalNote}.`;
+      return `No credits remaining in ${sourceName}. This operation requires ${roundedCredits} credits.`;
     }
 
     if (remaining < creditsToCharge) {
       const adjustRangeHint = !props.segmentCount && props.videoDuration > 0 
         ? ' Adjust the time range above to reduce the cost.' 
         : '';
-      return `Insufficient credits in ${sourceName}. You have ${roundedRemaining} credits, but this operation requires ${roundedCredits} credits${multimodalNote}.${adjustRangeHint}`;
+      return `Insufficient credits in ${sourceName}. You have ${roundedRemaining} credits, but this operation requires ${roundedCredits} credits.${adjustRangeHint}`;
     }
 
-    return `This operation will charge ${roundedCredits} credits${multimodalNote} from ${sourceName}. You have ${roundedRemaining} credits remaining.`;
+    return `This operation will charge ${roundedCredits} credits from ${sourceName}. You have ${roundedRemaining} credits remaining.`;
   });
 
   // Close dropdown when clicking outside
@@ -384,6 +546,12 @@
       return;
     }
 
+    // Validate subtitle selection if enabled
+    if (subtitlesEnabled.value && !selectedSubtitlePreset.value) {
+      error.value = 'Please select a subtitle style';
+      return;
+    }
+
     // Check authentication
     if (!authStore.isAuthenticated) {
       close();
@@ -405,16 +573,29 @@
     error.value = '';
 
     try {
-      // Include organizationId, multimodal flag, and time range
-      console.log('[ClipDetectionConfirmDialog] Emitting confirm with multimodal:', multimodalEnabled.value, 'time range:', timeRange.value.startTime, '-', timeRange.value.endTime);
+      // Include organizationId and time range
+      // Prepare subtitle settings
+      const subtitleSettings = subtitlesEnabled.value && selectedSubtitlePreset.value
+        ? { enabled: true, presetId: selectedSubtitlePreset.value }
+        : null;
+
+      console.log(
+        '[ClipDetectionConfirmDialog] Emitting confirm subtitles:',
+        subtitleSettings,
+        'time range:',
+        timeRange.value.startTime,
+        '-',
+        timeRange.value.endTime
+      );
       emit(
         'confirm',
         selectedPromptId.value,
         selectedPromptContent.value,
         organizationIdForApi.value,
-        multimodalEnabled.value,
         timeRange.value.startTime,
-        timeRange.value.endTime
+        timeRange.value.endTime,
+        subtitleSettings,
+        enhancedDetection.value
       );
       emit('update:modelValue', false);
     } catch (err) {
@@ -462,8 +643,12 @@
         selectedPromptContent.value = '';
         showPromptDropdown.value = false;
 
-        // Reset multimodal toggle (default off)
-        multimodalEnabled.value = false;
+        // Reset subtitle selection (default off; initialSubtitleDetectionDefaults watcher may apply preset)
+        subtitlesEnabled.value = false;
+        selectedSubtitlePreset.value = '';
+
+        // Enhanced is opt-in per run — never persist from last detection
+        enhancedDetection.value = false;
 
         // Reset time range to full video duration
         timeRange.value = { startTime: 0, endTime: props.videoDuration };
@@ -917,5 +1102,58 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  /* ===== Subtitle Preset Cards ===== */
+  .detect-clips-dialog__preset-card {
+    display: flex;
+    flex-direction: column;
+    padding: 0.75rem;
+    border-radius: 8px;
+    border: 1px solid var(--sidebar-border);
+    background-color: var(--sidebar-hover);
+    cursor: pointer;
+    transition: all 150ms ease;
+    text-align: left;
+  }
+
+  .detect-clips-dialog__preset-card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    background-color: var(--sidebar-active);
+  }
+
+  .detect-clips-dialog__preset-card--selected {
+    border-color: rgba(6, 182, 212, 0.4);
+    background-color: rgba(6, 182, 212, 0.1);
+  }
+
+  .detect-clips-dialog__preset-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+    color: var(--sidebar-text);
+  }
+
+  .detect-clips-dialog__preset-check {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background-color: var(--sidebar-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: white;
+  }
+
+  .detect-clips-dialog__preset-sample {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem 0.5rem;
+    border-radius: 6px;
+    min-height: 60px;
+    overflow: hidden;
   }
 </style>

@@ -4,20 +4,23 @@ defmodule ClippsterServer.Emails do
   """
   import Swoosh.Email
 
+  @default_transactional_from "noreply@clippster.app"
+  @default_marketing_from "updates@clippster.app"
+  @default_support_email "support@clippster.app"
+  @default_unsubscribe_email "unsubscribe@clippster.app"
+  @default_url_base "http://localhost:4000"
+
   @doc """
   Creates a verification email with both OTP code and magic link.
   """
   def verification_email(email, otp_code, magic_link_token) do
-    config = Application.get_env(:clippster_server, :email_auth, [])
-    from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
-    app_name = Keyword.get(config, :app_name, "Clippster")
-    base_url = Keyword.get(config, :verification_url_base, "http://localhost:4000")
+    app_name = app_name()
+    base_url = email_url_base()
 
     magic_link_url = "#{base_url}/api/auth/email/verify/#{magic_link_token}"
 
-    new()
-    |> to(email)
-    |> from({app_name, from_email})
+    email
+    |> transactional_email()
     |> subject("Verify your #{app_name} account")
     |> html_body(verification_html(otp_code, magic_link_url, app_name))
     |> text_body(verification_text(otp_code, magic_link_url, app_name))
@@ -27,38 +30,86 @@ defmodule ClippsterServer.Emails do
   Creates a password reset email.
   """
   def password_reset_email(email, reset_token) do
-    config = Application.get_env(:clippster_server, :email_auth, [])
-    from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
-    app_name = Keyword.get(config, :app_name, "Clippster")
-    base_url = Keyword.get(config, :verification_url_base, "http://localhost:4000")
+    app_name = app_name()
+    base_url = email_url_base()
 
     reset_url = "#{base_url}/api/auth/email/reset-password/#{reset_token}"
 
-    new()
-    |> to(email)
-    |> from({app_name, from_email})
+    email
+    |> transactional_email()
     |> subject("Reset your #{app_name} password")
     |> html_body(password_reset_html(reset_url, app_name))
     |> text_body(password_reset_text(reset_url, app_name))
   end
 
   @doc """
-  Creates an email change verification email.
+  Creates an email change verification email with OTP + magic link.
   """
-  def email_change_verification_email(email, verification_token) do
-    config = Application.get_env(:clippster_server, :email_auth, [])
-    from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
-    app_name = Keyword.get(config, :app_name, "Clippster")
-    base_url = Keyword.get(config, :verification_url_base, "http://localhost:4000")
+  def email_change_verification_email(email, otp_code, verification_token) do
+    app_name = app_name()
+    base_url = email_url_base()
 
     verification_url = "#{base_url}/verify-email-change/#{verification_token}"
 
-    new()
-    |> to(email)
-    |> from({app_name, from_email})
+    email
+    |> transactional_email()
     |> subject("Verify your new #{app_name} email address")
-    |> html_body(email_change_html(verification_url, app_name))
-    |> text_body(email_change_text(verification_url, app_name))
+    |> html_body(email_change_html(otp_code, verification_url, app_name))
+    |> text_body(email_change_text(otp_code, verification_url, app_name))
+  end
+
+  defp email_config do
+    Application.get_env(:clippster_server, :email_auth, [])
+  end
+
+  defp app_name do
+    Keyword.get(email_config(), :app_name, "Clippster")
+  end
+
+  defp email_url_base do
+    Keyword.get(email_config(), :verification_url_base, @default_url_base)
+  end
+
+  defp transactional_from_email do
+    config = email_config()
+
+    Keyword.get(
+      config,
+      :transactional_from_email,
+      Keyword.get(config, :from_email, @default_transactional_from)
+    )
+  end
+
+  defp marketing_from_email do
+    Keyword.get(email_config(), :marketing_from_email, @default_marketing_from)
+  end
+
+  defp support_email do
+    Keyword.get(email_config(), :support_email, @default_support_email)
+  end
+
+  defp unsubscribe_email do
+    Keyword.get(email_config(), :unsubscribe_email, @default_unsubscribe_email)
+  end
+
+  defp transactional_email(to_email) do
+    new()
+    |> to(to_email)
+    |> from({app_name(), transactional_from_email()})
+    |> reply_to({app_name() <> " Support", support_email()})
+  end
+
+  defp marketing_email(to_email) do
+    new()
+    |> to(to_email)
+    |> from({app_name(), marketing_from_email()})
+    |> reply_to({app_name() <> " Support", support_email()})
+  end
+
+  defp marketing_unsubscribe_headers(email, unsubscribe_url) do
+    email
+    |> header("List-Unsubscribe", "<mailto:#{unsubscribe_email()}>, <#{unsubscribe_url}>")
+    |> header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
   end
 
   defp verification_html(otp_code, magic_link_url, app_name) do
@@ -271,7 +322,7 @@ defmodule ClippsterServer.Emails do
     """
   end
 
-  defp email_change_html(verification_url, app_name) do
+  defp email_change_html(otp_code, verification_url, app_name) do
     """
     <!DOCTYPE html>
     <html lang="en">
@@ -285,7 +336,6 @@ defmodule ClippsterServer.Emails do
         <tr>
           <td align="center" style="padding: 40px 20px;">
             <table role="presentation" width="100%" style="max-width: 480px;">
-              <!-- Logo/Header -->
               <tr>
                 <td align="center" style="padding-bottom: 24px;">
                   <h1 style="margin: 0 0 8px 0; font-size: 36px; font-weight: 700; color: #ffffff; letter-spacing: -0.02em;">#{app_name}</h1>
@@ -293,21 +343,36 @@ defmodule ClippsterServer.Emails do
                 </td>
               </tr>
 
-              <!-- Main Card -->
               <tr>
                 <td style="background: linear-gradient(180deg, #18181b 0%, #09090b 100%); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); padding: 40px;">
-                  <!-- Accent Bar -->
                   <div style="height: 4px; background: linear-gradient(90deg, #06b6d4 0%, #0891b2 100%); border-radius: 2px; margin-bottom: 32px;"></div>
 
-                  <!-- Title -->
                   <h2 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #ffffff; text-align: center;">
                     Verify your new email
                   </h2>
                   <p style="margin: 0 0 32px 0; font-size: 14px; color: #a1a1aa; text-align: center;">
-                    Click the button below to confirm your new email address
+                    Enter this code in the app to confirm your new email address
                   </p>
 
-                  <!-- Button -->
+                  <div style="background: rgba(6, 182, 212, 0.1); border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
+                    <p style="margin: 0 0 8px 0; font-size: 12px; color: #a1a1aa; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">
+                      Your verification code
+                    </p>
+                    <p style="margin: 0; font-size: 36px; font-weight: 700; color: #06b6d4; letter-spacing: 8px; font-family: 'SF Mono', Monaco, 'Courier New', monospace;">
+                      #{otp_code}
+                    </p>
+                  </div>
+
+                  <p style="margin: 0 0 24px 0; font-size: 13px; color: #71717a; text-align: center;">
+                    This code expires in <strong style="color: #a1a1aa;">10 minutes</strong>
+                  </p>
+
+                  <div style="height: 1px; background: rgba(255, 255, 255, 0.1); margin: 24px 0;"></div>
+
+                  <p style="margin: 0 0 16px 0; font-size: 14px; color: #a1a1aa; text-align: center;">
+                    Or click this button to verify:
+                  </p>
+
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                     <tr>
                       <td align="center">
@@ -319,12 +384,11 @@ defmodule ClippsterServer.Emails do
                   </table>
 
                   <p style="margin: 24px 0 0 0; font-size: 13px; color: #71717a; text-align: center;">
-                    This link expires in <strong style="color: #a1a1aa;">1 hour</strong>
+                    The link expires in <strong style="color: #a1a1aa;">1 hour</strong>
                   </p>
                 </td>
               </tr>
 
-              <!-- Footer -->
               <tr>
                 <td style="padding-top: 32px; text-align: center;">
                   <p style="margin: 0; font-size: 12px; color: #52525b;">
@@ -341,15 +405,19 @@ defmodule ClippsterServer.Emails do
     """
   end
 
-  defp email_change_text(verification_url, app_name) do
+  defp email_change_text(otp_code, verification_url, app_name) do
     """
     Verify your new #{app_name} email address
 
     #{app_name} - The AI-Powered Clipping Studio
 
-    Click this link to verify your new email address: #{verification_url}
+    Your verification code: #{otp_code}
 
-    This link expires in 1 hour.
+    This code expires in 10 minutes.
+
+    Or click this link to verify your new email address: #{verification_url}
+
+    The link expires in 1 hour.
 
     If you didn't request this email change, please contact support immediately.
     """
@@ -359,19 +427,14 @@ defmodule ClippsterServer.Emails do
   Creates an organization invitation email.
   """
   def organization_invitation_email(email, org_name, inviter_name, invite_token) do
-    config = Application.get_env(:clippster_server, :email_auth, [])
-    from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
-    app_name = Keyword.get(config, :app_name, "Clippster")
-    base_url = Keyword.get(config, :verification_url_base, "http://localhost:4000")
+    app_name = app_name()
+    base_url = email_url_base()
 
     invite_url = "#{base_url}/invite/#{invite_token}"
 
-    new()
-    |> to(email)
-    |> from({app_name, from_email})
+    email
+    |> transactional_email()
     |> subject("You've been invited to join #{org_name} on #{app_name}")
-    |> header("List-Unsubscribe", "<mailto:unsubscribe@clippster.app>")
-    |> header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
     |> html_body(organization_invitation_html(org_name, inviter_name, invite_url, app_name))
     |> text_body(organization_invitation_text(org_name, inviter_name, invite_url, app_name))
   end
@@ -463,12 +526,6 @@ defmodule ClippsterServer.Emails do
                   <p style="margin: 0; font-size: 12px; color: #52525b;">
                     If you don't recognize this organization, you can safely ignore this email.
                   </p>
-                  <p style="margin: 16px 0 0 0; font-size: 11px; color: #3f3f46;">
-                    <a href="mailto:unsubscribe@clippster.app" style="color: #52525b; text-decoration: underline;">Unsubscribe</a>
-                  </p>
-                  <p style="margin: 4px 0 0 0; font-size: 11px; color: #3f3f46;">
-                    Clippster · 412 W 39th St, Vancouver, WA 98660
-                  </p>
                 </td>
               </tr>
             </table>
@@ -501,9 +558,6 @@ defmodule ClippsterServer.Emails do
     ---
 
     If you don't recognize this organization, you can safely ignore this email.
-
-    To unsubscribe, email: unsubscribe@clippster.app
-    Clippster · 412 W 39th St, Vancouver, WA 98660
     """
   end
 
@@ -511,21 +565,21 @@ defmodule ClippsterServer.Emails do
   Creates a waitlist confirmation email.
   """
   def waitlist_confirmation_email(email) do
-    config = Application.get_env(:clippster_server, :email_auth, [])
-    from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
-    app_name = Keyword.get(config, :app_name, "Clippster")
+    app_name = app_name()
+    unsubscribe_url = marketing_unsubscribe_url(email)
 
-    new()
-    |> to(email)
-    |> from({app_name, from_email})
+    email
+    |> marketing_email()
     |> subject("Welcome to the #{app_name} Waitlist")
-    |> header("List-Unsubscribe", "<mailto:unsubscribe@clippster.app>")
-    |> header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
-    |> html_body(waitlist_confirmation_html(app_name))
-    |> text_body(waitlist_confirmation_text(app_name))
+    |> marketing_unsubscribe_headers(unsubscribe_url)
+    |> html_body(waitlist_confirmation_html(app_name, support_email(), unsubscribe_url))
+    |> text_body(waitlist_confirmation_text(app_name, support_email(), unsubscribe_url))
   end
 
-  defp waitlist_confirmation_html(app_name) do
+  defp waitlist_confirmation_html(app_name, support_email, unsubscribe_url) do
+    escaped_support_email = html_escape(support_email)
+    escaped_unsubscribe_url = html_escape(unsubscribe_url)
+
     """
     <!DOCTYPE html>
     <html lang="en">
@@ -628,10 +682,10 @@ defmodule ClippsterServer.Emails do
                     Questions? Contact us at
                   </p>
                   <p style="margin: 0 0 16px 0;">
-                    <a href="mailto:support@clippster.app" style="color: #06b6d4; text-decoration: none; font-size: 13px;">support@clippster.app</a>
+                    <a href="mailto:#{escaped_support_email}" style="color: #06b6d4; text-decoration: none; font-size: 13px;">#{escaped_support_email}</a>
                   </p>
                   <p style="margin: 16px 0 0 0; font-size: 11px; color: #3f3f46;">
-                    <a href="mailto:unsubscribe@clippster.app" style="color: #52525b; text-decoration: underline;">Unsubscribe</a>
+                    <a href="#{escaped_unsubscribe_url}" style="color: #52525b; text-decoration: underline;">Unsubscribe</a>
                   </p>
                   <p style="margin: 4px 0 0 0; font-size: 11px; color: #3f3f46;">
                     Clippster · 412 W 39th St, Vancouver, WA 98660
@@ -647,7 +701,7 @@ defmodule ClippsterServer.Emails do
     """
   end
 
-  defp waitlist_confirmation_text(app_name) do
+  defp waitlist_confirmation_text(app_name, support_email, unsubscribe_url) do
     """
     Welcome to the #{app_name} Waitlist
 
@@ -676,9 +730,9 @@ defmodule ClippsterServer.Emails do
 
     Visit: https://clippster.app
 
-    Questions? Contact us at support@clippster.app
+    Questions? Contact us at #{support_email}
 
-    To unsubscribe, email: unsubscribe@clippster.app
+    Unsubscribe: #{unsubscribe_url}
     Clippster · 412 W 39th St, Vancouver, WA 98660
     """
   end
@@ -686,22 +740,26 @@ defmodule ClippsterServer.Emails do
   @doc """
   Creates an admin broadcast email with a custom subject and HTML body.
   """
-  def admin_broadcast_email(to_email, subject, body_html) do
-    config = Application.get_env(:clippster_server, :email_auth, [])
-    from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
-    app_name = Keyword.get(config, :app_name, "Clippster")
+  def admin_broadcast_email(to_email, subject, body_html, opts \\ []) do
+    app_name = app_name()
+    preheader = Keyword.get(opts, :preheader, "")
+    audience = Keyword.get(opts, :audience, "all_users")
+    unsubscribe_url = marketing_unsubscribe_url(to_email)
 
-    new()
-    |> to(to_email)
-    |> from({app_name, from_email})
+    to_email
+    |> marketing_email()
     |> subject(subject)
-    |> header("List-Unsubscribe", "<mailto:unsubscribe@clippster.app>")
-    |> header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
-    |> html_body(admin_broadcast_html(body_html, app_name))
-    |> text_body(admin_broadcast_text(subject, body_html, app_name))
+    |> marketing_unsubscribe_headers(unsubscribe_url)
+    |> html_body(admin_broadcast_html(body_html, app_name, preheader, unsubscribe_url, audience))
+    |> text_body(admin_broadcast_text(subject, body_html, app_name, unsubscribe_url, audience))
   end
 
-  defp admin_broadcast_html(body_html, app_name) do
+  defp admin_broadcast_html(body_html, app_name, preheader, unsubscribe_url, audience) do
+    escaped_app_name = html_escape(app_name)
+    escaped_preheader = html_escape(preheader)
+    escaped_reason = html_escape(marketing_reason(audience, app_name))
+    escaped_unsubscribe_url = html_escape(unsubscribe_url)
+
     """
     <!DOCTYPE html>
     <html lang="en">
@@ -709,56 +767,55 @@ defmodule ClippsterServer.Emails do
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
     </head>
-    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #0a0a0a;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="min-height: 100vh;">
+    <body style="margin: 0; padding: 0; background-color: #0b0c0f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+      <div style="display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent;">
+        #{escaped_preheader}
+      </div>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #0b0c0f; min-height: 100vh;">
         <tr>
-          <td align="center" style="padding: 40px 20px;">
+          <td align="center" style="padding: 36px 18px;">
             <table role="presentation" width="100%" style="max-width: 600px;">
-              <!-- Logo/Header -->
               <tr>
-                <td align="center" style="padding-bottom: 24px;">
-                  <h1 style="margin: 0 0 8px 0; font-size: 36px; font-weight: 700; color: #ffffff; letter-spacing: -0.02em;">#{app_name}</h1>
-                  <p style="margin: 0; font-size: 14px; color: #06b6d4; font-weight: 500;">The AI-Powered Clipping Studio</p>
+                <td align="left" style="padding: 0 0 18px 0;">
+                  <p style="margin: 0 0 6px 0; color: #ffffff; font-size: 28px; font-weight: 750; line-height: 1.1;">#{escaped_app_name}</p>
+                  <p style="margin: 0; color: #67e8f9; font-size: 13px; font-weight: 600; letter-spacing: 0.02em;">The AI-Powered Clipping Studio</p>
                 </td>
               </tr>
 
-              <!-- Main Card -->
               <tr>
-                <td style="background: linear-gradient(180deg, #18181b 0%, #09090b 100%); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); padding: 40px;">
-                  <!-- Accent Bar -->
-                  <div style="height: 4px; background: linear-gradient(90deg, #06b6d4 0%, #0891b2 100%); border-radius: 2px; margin-bottom: 32px;"></div>
+                <td style="background-color: #14161b; border: 1px solid #2b3038; border-radius: 14px; overflow: hidden;">
+                  <div style="height: 4px; background: linear-gradient(90deg, #22d3ee 0%, #3b82f6 55%, #22c55e 100%);"></div>
 
-                  <!-- Body content (admin-provided HTML) -->
-                  <div style="color: #d4d4d8; font-size: 15px; line-height: 1.7;">
+                  <div style="padding: 34px 34px 30px 34px; color: #d7dde8; font-size: 15px; line-height: 1.7;">
                     #{body_html}
                   </div>
                 </td>
               </tr>
 
-              <!-- Discord Footer -->
               <tr>
-                <td style="padding-top: 32px;">
-                  <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 20px; text-align: center;">
-                    <p style="margin: 0 0 12px 0; font-size: 14px; color: #d4d4d8;">
-                      🎮 <strong style="color: #ffffff;">Join our Discord community</strong> for support and updates
-                    </p>
-                    <a href="https://discord.gg/4kTCvKEVuV" style="display: inline-block; background: #5865F2; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 13px;">
-                      Join Discord →
-                    </a>
-                  </div>
+                <td style="padding-top: 18px;">
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #101217; border: 1px solid #252a33; border-radius: 12px;">
+                    <tr>
+                      <td style="padding: 18px 20px;">
+                        <p style="margin: 0 0 6px 0; color: #ffffff; font-size: 14px; font-weight: 700;">Need help or want to share feedback?</p>
+                        <p style="margin: 0 0 14px 0; color: #aeb7c6; font-size: 13px; line-height: 1.55;">Join the Discord community for support, updates, and early product notes.</p>
+                        <a href="https://discord.gg/4kTCvKEVuV" style="display: inline-block; background-color: #5865f2; color: #ffffff; text-decoration: none; padding: 10px 18px; border-radius: 8px; font-weight: 700; font-size: 13px;">
+                          Join Discord
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
                 </td>
               </tr>
 
-              <!-- Footer -->
               <tr>
-                <td style="padding-top: 24px; text-align: center;">
-                  <p style="margin: 0; font-size: 12px; color: #52525b;">
-                    You're receiving this email because you have an account with #{app_name}.
+                <td style="padding: 22px 8px 0 8px; text-align: center;">
+                  <p style="margin: 0; color: #737c8c; font-size: 12px; line-height: 1.6;">
+                    #{escaped_reason}
                   </p>
-                  <p style="margin: 16px 0 0 0; font-size: 11px; color: #3f3f46;">
-                    <a href="mailto:unsubscribe@clippster.app" style="color: #52525b; text-decoration: underline;">Unsubscribe</a>
-                  </p>
-                  <p style="margin: 4px 0 0 0; font-size: 11px; color: #3f3f46;">
+                  <p style="margin: 12px 0 0 0; color: #596172; font-size: 11px; line-height: 1.6;">
+                    <a href="#{escaped_unsubscribe_url}" style="color: #8b95a7; text-decoration: underline;">Unsubscribe</a>
+                    <span style="color: #3b4250;">&nbsp;|&nbsp;</span>
                     Clippster · 412 W 39th St, Vancouver, WA 98660
                   </p>
                 </td>
@@ -772,11 +829,19 @@ defmodule ClippsterServer.Emails do
     """
   end
 
-  defp admin_broadcast_text(subject, body_html, app_name) do
+  defp admin_broadcast_text(subject, body_html, app_name, unsubscribe_url, audience) do
     plain =
       body_html
+      |> String.replace(~r/<br\s*\/?>/i, "\n")
+      |> String.replace(~r/<\/p>/i, "\n\n")
+      |> String.replace(~r/<\/h\d>/i, "\n\n")
+      |> String.replace(~r/<\/li>/i, "\n")
       |> String.replace(~r/<[^>]+>/, " ")
-      |> String.replace(~r/\s+/, " ")
+      |> String.replace("&nbsp;", " ")
+      |> String.replace("&amp;", "&")
+      |> String.replace(~r/[ \t]+/, " ")
+      |> String.replace(~r/\n\s+/, "\n")
+      |> String.replace(~r/\n{3,}/, "\n\n")
       |> String.trim()
 
     """
@@ -788,38 +853,95 @@ defmodule ClippsterServer.Emails do
 
     ---
 
-    JOIN OUR DISCORD COMMUNITY:
-    🎮 Get support, connect with other users, and stay updated!
-    Discord: https://discord.gg/4kTCvKEVuV
+    Join our Discord community for support and updates:
+    https://discord.gg/4kTCvKEVuV
 
     ---
 
-    You're receiving this email because you have an account with #{app_name}.
+    #{marketing_reason(audience, app_name)}
 
-    To unsubscribe, email: unsubscribe@clippster.app
+    Unsubscribe: #{unsubscribe_url}
     Clippster · 412 W 39th St, Vancouver, WA 98660
     """
+  end
+
+  defp marketing_reason("waitlist", app_name) do
+    "You're receiving this email because you signed up for #{app_name} updates."
+  end
+
+  defp marketing_reason("individual", app_name) do
+    "You're receiving this email because the #{app_name} team sent it to you directly."
+  end
+
+  defp marketing_reason(_, app_name) do
+    "You're receiving this email because you have an account with #{app_name}."
+  end
+
+  defp marketing_unsubscribe_url(email) do
+    token =
+      Phoenix.Token.sign(
+        ClippsterServerWeb.Endpoint,
+        "email-unsubscribe",
+        email
+      )
+
+    "#{email_url_base()}/email/unsubscribe/#{token}"
+  end
+
+  defp html_escape(value) do
+    value
+    |> to_string()
+    |> String.replace("&", "&amp;")
+    |> String.replace("<", "&lt;")
+    |> String.replace(">", "&gt;")
+    |> String.replace("\"", "&quot;")
+    |> String.replace("'", "&#39;")
   end
 
   @doc """
   Creates a waitlist invite email with beta code and discount code.
   """
   def waitlist_invite_email(email, beta_code, discount_code, discount_percent) do
-    config = Application.get_env(:clippster_server, :email_auth, [])
-    from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
-    app_name = Keyword.get(config, :app_name, "Clippster")
+    app_name = app_name()
+    unsubscribe_url = marketing_unsubscribe_url(email)
 
-    new()
-    |> to(email)
-    |> from({app_name, from_email})
+    email
+    |> marketing_email()
     |> subject("Welcome to #{app_name} Beta - Access Code Inside")
-    |> header("List-Unsubscribe", "<mailto:unsubscribe@clippster.app>")
-    |> header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
-    |> html_body(waitlist_invite_html(beta_code, discount_code, discount_percent, app_name))
-    |> text_body(waitlist_invite_text(beta_code, discount_code, discount_percent, app_name))
+    |> marketing_unsubscribe_headers(unsubscribe_url)
+    |> html_body(
+      waitlist_invite_html(
+        beta_code,
+        discount_code,
+        discount_percent,
+        app_name,
+        support_email(),
+        unsubscribe_url
+      )
+    )
+    |> text_body(
+      waitlist_invite_text(
+        beta_code,
+        discount_code,
+        discount_percent,
+        app_name,
+        support_email(),
+        unsubscribe_url
+      )
+    )
   end
 
-  defp waitlist_invite_html(beta_code, discount_code, discount_percent, app_name) do
+  defp waitlist_invite_html(
+         beta_code,
+         discount_code,
+         discount_percent,
+         app_name,
+         support_email,
+         unsubscribe_url
+       ) do
+    escaped_support_email = html_escape(support_email)
+    escaped_unsubscribe_url = html_escape(unsubscribe_url)
+
     """
     <!DOCTYPE html>
     <html lang="en">
@@ -1064,13 +1186,13 @@ defmodule ClippsterServer.Emails do
                     Need help? Reply to this email or contact us at
                   </p>
                   <p style="margin: 0 0 16px 0;">
-                    <a href="mailto:support@clippster.app" style="color: #06b6d4; text-decoration: none; font-size: 13px;">support@clippster.app</a>
+                    <a href="mailto:#{escaped_support_email}" style="color: #06b6d4; text-decoration: none; font-size: 13px;">#{escaped_support_email}</a>
                   </p>
                   <p style="margin: 0; font-size: 12px; color: #52525b;">
                     You're receiving this because you joined the #{app_name} waitlist.
                   </p>
                   <p style="margin: 16px 0 0 0; font-size: 11px; color: #3f3f46;">
-                    <a href="mailto:unsubscribe@clippster.app" style="color: #52525b; text-decoration: underline;">Unsubscribe</a>
+                    <a href="#{escaped_unsubscribe_url}" style="color: #52525b; text-decoration: underline;">Unsubscribe</a>
                   </p>
                   <p style="margin: 4px 0 0 0; font-size: 11px; color: #3f3f46;">
                     Clippster · 412 W 39th St, Vancouver, WA 98660
@@ -1086,7 +1208,14 @@ defmodule ClippsterServer.Emails do
     """
   end
 
-  defp waitlist_invite_text(beta_code, discount_code, discount_percent, app_name) do
+  defp waitlist_invite_text(
+         beta_code,
+         discount_code,
+         discount_percent,
+         app_name,
+         support_email,
+         unsubscribe_url
+       ) do
     """
     Welcome to #{app_name} Beta - Your Access Code Inside
 
@@ -1149,9 +1278,12 @@ defmodule ClippsterServer.Emails do
 
     Get Started: https://clippster.app
 
-    Need help? Reply to this email or contact support@clippster.app
+    Need help? Reply to this email or contact #{support_email}
 
     You're receiving this because you joined the #{app_name} waitlist.
+
+    Unsubscribe: #{unsubscribe_url}
+    Clippster · 412 W 39th St, Vancouver, WA 98660
     """
   end
 
@@ -1160,19 +1292,46 @@ defmodule ClippsterServer.Emails do
   Includes notice that previous codes are invalidated.
   """
   def waitlist_reinvite_email(email, beta_code, discount_code, discount_percent) do
-    config = Application.get_env(:clippster_server, :email_auth, [])
-    from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
-    app_name = Keyword.get(config, :app_name, "Clippster")
+    app_name = app_name()
+    unsubscribe_url = marketing_unsubscribe_url(email)
 
-    new()
-    |> to(email)
-    |> from({app_name, from_email})
+    email
+    |> marketing_email()
     |> subject("Updated #{app_name} Beta Access - New Codes Inside")
-    |> html_body(waitlist_reinvite_html(beta_code, discount_code, discount_percent, app_name))
-    |> text_body(waitlist_reinvite_text(beta_code, discount_code, discount_percent, app_name))
+    |> marketing_unsubscribe_headers(unsubscribe_url)
+    |> html_body(
+      waitlist_reinvite_html(
+        beta_code,
+        discount_code,
+        discount_percent,
+        app_name,
+        support_email(),
+        unsubscribe_url
+      )
+    )
+    |> text_body(
+      waitlist_reinvite_text(
+        beta_code,
+        discount_code,
+        discount_percent,
+        app_name,
+        support_email(),
+        unsubscribe_url
+      )
+    )
   end
 
-  defp waitlist_reinvite_html(beta_code, discount_code, discount_percent, app_name) do
+  defp waitlist_reinvite_html(
+         beta_code,
+         discount_code,
+         discount_percent,
+         app_name,
+         support_email,
+         unsubscribe_url
+       ) do
+    escaped_support_email = html_escape(support_email)
+    escaped_unsubscribe_url = html_escape(unsubscribe_url)
+
     """
     <!DOCTYPE html>
     <html lang="en">
@@ -1427,10 +1586,16 @@ defmodule ClippsterServer.Emails do
                     Need help? Reply to this email or contact us at
                   </p>
                   <p style="margin: 0 0 16px 0;">
-                    <a href="mailto:support@clippster.app" style="color: #06b6d4; text-decoration: none; font-size: 13px;">support@clippster.app</a>
+                    <a href="mailto:#{escaped_support_email}" style="color: #06b6d4; text-decoration: none; font-size: 13px;">#{escaped_support_email}</a>
                   </p>
                   <p style="margin: 0; font-size: 12px; color: #52525b;">
                     You're receiving this because you joined the #{app_name} waitlist.
+                  </p>
+                  <p style="margin: 16px 0 0 0; font-size: 11px; color: #3f3f46;">
+                    <a href="#{escaped_unsubscribe_url}" style="color: #52525b; text-decoration: underline;">Unsubscribe</a>
+                  </p>
+                  <p style="margin: 4px 0 0 0; font-size: 11px; color: #3f3f46;">
+                    Clippster · 412 W 39th St, Vancouver, WA 98660
                   </p>
                 </td>
               </tr>
@@ -1443,7 +1608,14 @@ defmodule ClippsterServer.Emails do
     """
   end
 
-  defp waitlist_reinvite_text(beta_code, discount_code, discount_percent, app_name) do
+  defp waitlist_reinvite_text(
+         beta_code,
+         discount_code,
+         discount_percent,
+         app_name,
+         support_email,
+         unsubscribe_url
+       ) do
     """
     Updated #{app_name} Beta Access - Your New Codes Inside
 
@@ -1508,11 +1680,11 @@ defmodule ClippsterServer.Emails do
 
     Get Started: https://clippster.app
 
-    Need help? Reply to this email or contact support@clippster.app
+    Need help? Reply to this email or contact #{support_email}
 
     You're receiving this because you joined the #{app_name} waitlist.
 
-    To unsubscribe, email: unsubscribe@clippster.app
+    Unsubscribe: #{unsubscribe_url}
     Clippster · 412 W 39th St, Vancouver, WA 98660
     """
   end

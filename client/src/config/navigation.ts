@@ -21,9 +21,10 @@ import {
   Image,
   Headphones,
   Music,
+  Disc,
 } from 'lucide-vue-next';
 
-export type NavigationGroup = 'browse' | 'create' | 'manage' | 'system';
+export type NavigationGroup = 'browse' | 'create' | 'studio' | 'manage' | 'system';
 
 export interface NavigationItem {
   name: string;
@@ -40,13 +41,15 @@ export interface NavigationItem {
   action?: 'dialog'; // New property to handle dialog actions instead of routing
   restrictedHidden?: boolean; // Hide for restricted accounts
   affiliateOnly?: boolean; // Only show for affiliate users
+  navHidden?: boolean; // Temporarily hidden from navigation (code retained for later use)
 }
 
 export const navigationGroups: Record<NavigationGroup, { label: string; order: number }> = {
   browse: { label: 'Browse', order: 1 },
   create: { label: 'Create', order: 2 },
-  manage: { label: 'Manage', order: 3 },
-  system: { label: '', order: 4 }, // No label for system group
+  studio: { label: 'Studio', order: 3 },
+  manage: { label: 'Manage', order: 4 },
+  system: { label: '', order: 5 }, // No label for system group
 };
 
 export const navigationItems: NavigationItem[] = [
@@ -65,7 +68,7 @@ export const navigationItems: NavigationItem[] = [
     group: 'browse',
   },
   {
-    name: 'Download VODs',
+    name: 'Download Video',
     path: '/vods',
     icon: Video,
     group: 'browse',
@@ -87,12 +90,12 @@ export const navigationItems: NavigationItem[] = [
     path: '/campaigns',
     icon: Megaphone,
     group: 'browse',
-    restrictedHidden: true,
+    adminOnly: true,
   },
 
   // Create group - content creation tools
   {
-    name: 'VOD Library',
+    name: 'Video Library',
     path: '/projects',
     icon: Folder,
     group: 'create',
@@ -104,16 +107,29 @@ export const navigationItems: NavigationItem[] = [
     group: 'create',
   },
   {
+    name: 'Image Library',
+    path: '/my-images',
+    icon: Image,
+    group: 'create',
+  },
+  {
     name: 'Built Clips',
     path: '/clips',
     icon: LayoutGrid,
     group: 'create',
   },
   {
-    name: 'My Images',
-    path: '/my-images',
-    icon: Image,
+    name: 'Video Editor',
+    path: '/video-editor',
+    icon: Clapperboard,
     group: 'create',
+  },
+  {
+    name: 'Image Editor',
+    path: '/design-studio',
+    icon: Paintbrush,
+    group: 'create',
+    badge: 'Beta',
   },
   {
     name: 'AI Video Creator',
@@ -122,17 +138,10 @@ export const navigationItems: NavigationItem[] = [
     group: 'create',
   },
   {
-    name: 'Design Studio',
-    path: '/design-studio',
-    icon: Paintbrush,
-    group: 'create',
-    badge: 'Beta',
-  },
-  {
-    name: 'Video Editor',
-    path: '/video-editor',
-    icon: Clapperboard,
-    group: 'create',
+    name: 'Recording',
+    path: '/studio/record',
+    icon: Disc,
+    group: 'studio',
   },
 
   // Manage group - organization/settings

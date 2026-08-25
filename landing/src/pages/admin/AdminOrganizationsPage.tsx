@@ -19,11 +19,13 @@ import {
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import {
   cancelOrganizationSubscription,
+  checkOrgNameAvailable,
   createOrganizationAccount,
   deleteOrganization,
   grantOrganizationSubscription,
   listAdminOrganizations,
   resetUserPassword,
+  searchUsersByEmail,
   setOrganizationCredits,
   updateOrganizationSubscription,
   type AdminOrganization,
@@ -90,6 +92,7 @@ const createTierOptions = [
   { value: 'enterprise_base', label: 'Enterprise Base ($349.99)' },
   { value: 'enterprise_ai', label: 'Enterprise AI ($549.99)' },
   { value: 'enterprise_unlimited', label: 'Enterprise Unlimited ($2199.99)' },
+  { value: 'custom', label: 'Custom (Admin-Defined)' },
 ]
 
 export function AdminOrganizationsPage() {
@@ -116,6 +119,14 @@ export function AdminOrganizationsPage() {
     monthly_credits: 0,
     price_dollars: 0,
   })
+
+  // Existing user assignment state
+  const [createOrgMode, setCreateOrgMode] = useState<'new' | 'existing'>('new')
+  const [existingUserSearch, setExistingUserSearch] = useState('')
+  const [existingUserResults, setExistingUserResults] = useState<Array<{ id: number; email: string; name: string | null; avatar_url: string | null; owned_organization_id: number | null }>>([])
+  const [selectedExistingUser, setSelectedExistingUser] = useState<{ id: number; email: string; name: string | null } | null>(null)
+  const [searchingUsers, setSearchingUsers] = useState(false)
+  let userSearchTimeout: ReturnType<typeof setTimeout> | null = null
 
   const [showGrantSubDialog, setShowGrantSubDialog] = useState(false)
   const [grantSubOrg, setGrantSubOrg] = useState<AdminOrganization | null>(null)
@@ -199,6 +210,44 @@ export function AdminOrganizationsPage() {
     navigate(`/admin/organizations/${orgId}`)
   }
 
+  // Existing user search helpers
+  const searchExistingUsers = useCallback(async (query: string) => {
+    if (query.length < 3) {
+      setExistingUserResults([])
+      return
+    }
+    setSearchingUsers(true)
+    try {
+      const response = await searchUsersByEmail(query)
+      setExistingUserResults(response.users)
+    } catch {
+      setExistingUserResults([])
+    } finally {
+      setSearchingUsers(false)
+    }
+  }, [])
+
+  const onExistingUserInput = useCallback(() => {
+    setSelectedExistingUser(null)
+    if (userSearchTimeout) clearTimeout(userSearchTimeout)
+    userSearchTimeout = setTimeout(() => searchExistingUsers(existingUserSearch), 300)
+  }, [existingUserSearch, searchExistingUsers])
+
+  const selectExistingUser = (user: { id: number; email: string; name: string | null; avatar_url: string | null; owned_organization_id: number | null }) => {
+    setSelectedExistingUser({ id: user.id, email: user.email, name: user.name })
+    setExistingUserSearch(user.email)
+    setExistingUserResults([])
+  }
+
+  const resetCreateOrgDialog = () => {
+    setCreateOrgForm({ org_name: '', email: '', password: '', tier: 'enterprise_base', max_seats: 5, monthly_credits: 0, price_dollars: 0 })
+    setCreateOrgMode('new')
+    setExistingUserSearch('')
+    setExistingUserResults([])
+    setSelectedExistingUser(null)
+    setCreateOrgError(null)
+  }
+
   const openOrgCreditDialog = (org: AdminOrganization) => {
     setOrgToEditCredits(org)
     setOrgCreditForm({
@@ -236,32 +285,50 @@ export function AdminOrganizationsPage() {
 
   const createOrgAccount = async (event?: React.FormEvent<HTMLFormElement>) => {
     event?.preventDefault()
-
-    setCreatingOrg(true)
     setCreateOrgError(null)
 
+    if (!createOrgForm.org_name.trim()) {
+      setCreateOrgError('Organization name is required.')
+      return
+    }
+    if (createOrgMode === 'existing' && !selectedExistingUser) {
+      setCreateOrgError('Please select an existing user from the search results.')
+      return
+    }
+    if (createOrgMode === 'new' && (!createOrgForm.email || !createOrgForm.password)) {
+      setCreateOrgError('Email and password are required for new user accounts.')
+      return
+    }
+
+    setCreatingOrg(true)
     try {
-      await createOrganizationAccount({
+      // Check if org name is available
+      const nameCheck = await checkOrgNameAvailable(createOrgForm.org_name.trim())
+      if (!nameCheck.available) {
+        setCreateOrgError('An organization with this name already exists. Please choose a different name.')
+        setCreatingOrg(false)
+        return
+      }
+
+      const payload: Parameters<typeof createOrganizationAccount>[0] = {
         org_name: createOrgForm.org_name,
-        email: createOrgForm.email,
-        password: createOrgForm.password,
         tier: createOrgForm.tier,
         max_seats: createOrgForm.max_seats,
         monthly_credits: createOrgForm.monthly_credits,
         price_cents: Math.round(createOrgForm.price_dollars * 100),
         days: 30,
-      })
+      }
 
+      if (createOrgMode === 'existing') {
+        payload.existing_user_id = selectedExistingUser!.id
+      } else {
+        payload.email = createOrgForm.email
+        payload.password = createOrgForm.password
+      }
+
+      await createOrganizationAccount(payload)
       setShowCreateOrgDialog(false)
-      setCreateOrgForm({
-        org_name: '',
-        email: '',
-        password: '',
-        tier: 'enterprise_base',
-        max_seats: 5,
-        monthly_credits: 0,
-        price_dollars: 0,
-      })
+      resetCreateOrgDialog()
       await fetchOrganizations()
     } catch (error) {
       setCreateOrgError(getErrorMessage(error, 'Failed to create organization account'))
@@ -648,29 +715,114 @@ export function AdminOrganizationsPage() {
                       />
                     </div>
 
+                    {/* Owner Mode Toggle */}
                     <div className="admin-orgs__modal-field">
-                      <label className="admin-orgs__modal-label">Owner Email *</label>
-                      <input
-                        value={createOrgForm.email}
-                        onChange={(event) => setCreateOrgForm((current) => ({ ...current, email: event.target.value }))}
-                        type="email"
-                        required
-                        className="admin-orgs__modal-input"
-                        placeholder="owner@example.com"
-                      />
+                      <label className="admin-orgs__modal-label">Owner Account</label>
+                      <div className="admin-orgs__mode-toggle">
+                        <button
+                          type="button"
+                          className={`admin-orgs__mode-btn ${createOrgMode === 'new' ? 'admin-orgs__mode-btn--active' : ''}`}
+                          onClick={() => {
+                            setCreateOrgMode('new')
+                            setSelectedExistingUser(null)
+                            setExistingUserSearch('')
+                          }}
+                        >
+                          Create New User
+                        </button>
+                        <button
+                          type="button"
+                          className={`admin-orgs__mode-btn ${createOrgMode === 'existing' ? 'admin-orgs__mode-btn--active' : ''}`}
+                          onClick={() => {
+                            setCreateOrgMode('existing')
+                            setCreateOrgForm((current) => ({ ...current, email: '', password: '' }))
+                          }}
+                        >
+                          Assign Existing User
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="admin-orgs__modal-field">
-                      <label className="admin-orgs__modal-label">Owner Password *</label>
-                      <input
-                        value={createOrgForm.password}
-                        onChange={(event) => setCreateOrgForm((current) => ({ ...current, password: event.target.value }))}
-                        type="text"
-                        required
-                        className="admin-orgs__modal-input"
-                        placeholder="Temporary password"
-                      />
-                    </div>
+                    {/* New User Fields */}
+                    {createOrgMode === 'new' ? (
+                      <>
+                        <div className="admin-orgs__modal-field">
+                          <label className="admin-orgs__modal-label">Owner Email *</label>
+                          <input
+                            value={createOrgForm.email}
+                            onChange={(event) => setCreateOrgForm((current) => ({ ...current, email: event.target.value }))}
+                            type="email"
+                            className="admin-orgs__modal-input"
+                            placeholder="owner@example.com"
+                          />
+                        </div>
+                        <div className="admin-orgs__modal-field">
+                          <label className="admin-orgs__modal-label">Owner Password *</label>
+                          <input
+                            value={createOrgForm.password}
+                            onChange={(event) => setCreateOrgForm((current) => ({ ...current, password: event.target.value }))}
+                            type="text"
+                            className="admin-orgs__modal-input"
+                            placeholder="Temporary password"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      /* Existing User Search */
+                      <div className="admin-orgs__modal-field" style={{ position: 'relative' }}>
+                        <label className="admin-orgs__modal-label">Search by Email *</label>
+                        <input
+                          value={existingUserSearch}
+                          onChange={(event) => {
+                            setExistingUserSearch(event.target.value)
+                            onExistingUserInput()
+                          }}
+                          type="email"
+                          className="admin-orgs__modal-input"
+                          placeholder="Type at least 3 characters..."
+                          autoComplete="off"
+                        />
+                        {/* Selected user chip */}
+                        {selectedExistingUser ? (
+                          <div className="admin-orgs__user-chip">
+                            <span className="admin-orgs__user-chip-name">{selectedExistingUser.name || selectedExistingUser.email}</span>
+                            <span className="admin-orgs__user-chip-email">{selectedExistingUser.email}</span>
+                            <button
+                              type="button"
+                              className="admin-orgs__user-chip-clear"
+                              onClick={() => {
+                                setSelectedExistingUser(null)
+                                setExistingUserSearch('')
+                              }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ) : null}
+                        {/* Dropdown results */}
+                        {!selectedExistingUser && existingUserResults.length > 0 ? (
+                          <div className="admin-orgs__user-dropdown">
+                            {existingUserResults.map((u) => (
+                              <button
+                                key={u.id}
+                                type="button"
+                                className="admin-orgs__user-option"
+                                disabled={u.owned_organization_id != null}
+                                onClick={() => selectExistingUser(u)}
+                              >
+                                <span className="admin-orgs__user-option-email">{u.email}</span>
+                                <span className="admin-orgs__user-option-name">{u.name || '(no name)'}</span>
+                                {u.owned_organization_id ? <span className="admin-orgs__user-option-tag">Has org</span> : null}
+                              </button>
+                            ))}
+                            {searchingUsers ? <p className="admin-orgs__user-searching">Searching...</p> : null}
+                          </div>
+                        ) : null}
+                        {!selectedExistingUser && existingUserSearch.length >= 3 && !searchingUsers && existingUserResults.length === 0 ? (
+                          <p className="admin-orgs__modal-hint">No users found</p>
+                        ) : null}
+                      </div>
+                    )}
 
                     <div className="admin-orgs__modal-field">
                       <label className="admin-orgs__modal-label">Tier</label>
@@ -689,7 +841,9 @@ export function AdminOrganizationsPage() {
 
                     <div className="admin-orgs__modal-grid">
                       <div className="admin-orgs__modal-field">
-                        <label className="admin-orgs__modal-label">Max Seats</label>
+                        <label className="admin-orgs__modal-label">
+                          Max Seats <span style={{ opacity: 0.6, fontSize: '0.7rem' }}>(0 = unlimited)</span>
+                        </label>
                         <input
                           value={createOrgForm.max_seats}
                           onChange={(event) =>
@@ -1189,7 +1343,7 @@ export function AdminOrganizationsPage() {
 
                     <div className="admin-orgs__modal-field">
                       <label htmlFor="hours_used" className="admin-orgs__modal-label">
-                        Hours Used
+                        Credits Used
                       </label>
                       <input
                         id="hours_used"
@@ -1202,7 +1356,7 @@ export function AdminOrganizationsPage() {
                         min="0"
                         required
                         className="admin-orgs__modal-input"
-                        placeholder="Enter hours used"
+                        placeholder="Enter credits used"
                       />
                     </div>
 

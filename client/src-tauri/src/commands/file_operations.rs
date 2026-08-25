@@ -1,6 +1,5 @@
 use std::path::Path;
 use tauri::AppHandle;
-use tauri_plugin_shell::ShellExt;
 
 use crate::ffmpeg_utils::{
     extract_duration_from_ffmpeg_output, parse_video_info_from_ffmpeg_output, VideoValidationResult,
@@ -63,13 +62,11 @@ pub async fn generate_proxy_file(
     if proxy_path.exists() {
         let proxy_path_str = proxy_path.to_string_lossy().to_string();
         // Validate by checking if FFmpeg can read it (has valid moov atom)
-        let validate_output = app
-            .shell()
-            .sidecar("ffmpeg")
-            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-            .args(["-i", &proxy_path_str, "-f", "null", "-t", "0.1", "-"])
-            .output()
-            .await;
+        let validate_output = crate::ffmpeg_sidecar::run_ffmpeg(
+            &app,
+            &["-i", &proxy_path_str, "-f", "null", "-t", "0.1", "-"],
+        )
+        .await;
 
         if let Ok(output) = validate_output {
             if output.status.success() {
@@ -224,14 +221,9 @@ pub async fn generate_proxy_file(
         args
     );
 
-    let output = app
-        .shell()
-        .sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+    // Convert Vec<String> to Vec<&str> for the function call
+    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let output = crate::ffmpeg_sidecar::run_ffmpeg(&app, &args_refs).await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -257,6 +249,7 @@ pub async fn generate_proxy_file(
 /// True if the file exists, false otherwise
 #[tauri::command]
 pub async fn check_file_exists(path: String) -> Result<bool, String> {
+    let path = crate::path_utils::normalize_local_fs_path(path);
     Ok(Path::new(&path).exists())
 }
 
@@ -328,37 +321,25 @@ pub async fn validate_video_file(
     }
 
     // Use FFmpeg to validate video file integrity
-    let shell = app.shell();
-
-    let output = match shell.sidecar("ffmpeg") {
-        Ok(ffmpeg) => {
-            match ffmpeg
-                .args([
-                    "-i", &file_path, "-f", "null", "-t",
-                    "1", // Only validate first second to be fast
-                    "-",
-                ])
-                .output()
-                .await
-            {
-                Ok(output) => output,
-                Err(e) => {
-                    return Ok(VideoValidationResult {
-                        is_valid: false,
-                        error: Some(format!("Failed to run FFmpeg validation: {}", e)),
-                        duration: None,
-                        width: None,
-                        height: None,
-                        codec: None,
-                        file_size: Some(file_size),
-                    });
-                }
-            }
-        }
+    let output = match crate::ffmpeg_sidecar::run_ffmpeg(
+        &app,
+        &[
+            "-i",
+            &file_path,
+            "-f",
+            "null",
+            "-t",
+            "1", // Only validate first second to be fast
+            "-",
+        ],
+    )
+    .await
+    {
+        Ok(output) => output,
         Err(e) => {
             return Ok(VideoValidationResult {
                 is_valid: false,
-                error: Some(format!("Failed to access FFmpeg: {}", e)),
+                error: Some(format!("Failed to run FFmpeg validation: {}", e)),
                 duration: None,
                 width: None,
                 height: None,

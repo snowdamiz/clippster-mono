@@ -20,7 +20,7 @@ defmodule ClippsterServerWeb.ClipperProfileController do
   """
   def list_social_accounts(conn, _params) do
     user = conn.assigns.current_user
-    accounts = Campaigns.list_user_social_accounts(user.id)
+    accounts = PostForMeConnectionSync.sync_user_accounts_from_provider(user)
 
     json(conn, %{
       success: true,
@@ -33,20 +33,9 @@ defmodule ClippsterServerWeb.ClipperProfileController do
   """
   def connect_url(conn, params) do
     user = conn.assigns.current_user
+    platform = ProviderMode.normalize_platform(params["platform"] || "")
 
-    cond do
-      not ProviderMode.post_for_me_enabled?() ->
-        conn
-        |> put_status(400)
-        |> json(%{
-          success: false,
-          error: "SOCIAL_PROVIDER_MODE must be post_for_me or dual to use this endpoint"
-        })
-
-      true ->
-        platform = ProviderMode.normalize_platform(params["platform"] || "")
-
-        if platform == "" do
+    if platform == "" do
           conn
           |> put_status(422)
           |> json(%{success: false, error: "platform is required"})
@@ -55,14 +44,15 @@ defmodule ClippsterServerWeb.ClipperProfileController do
           return_mode = normalize_return_mode(params["return_mode"], "tauri")
 
           with {:ok, return_url} <- normalize_return_url(return_mode, params["return_url"]),
-               {:ok, session} <-
-                 PostForMeConnectionSessions.create_session(%{
-                   scope: "user",
-                   user_id: user.id,
-                   platform: platform,
-                   return_mode: return_mode,
-                   return_url: return_url
-                 }) do
+               {:ok, session_attrs} <-
+                 PostForMeConnectionSync.build_user_connect_session_attrs(
+                   user,
+                   platform,
+                   params,
+                   return_mode,
+                   return_url
+                 ),
+               {:ok, session} <- PostForMeConnectionSessions.create_session(session_attrs) do
             payload =
               %{
                 platform: platform,
@@ -106,13 +96,46 @@ defmodule ClippsterServerWeb.ClipperProfileController do
               |> put_status(422)
               |> json(%{success: false, error: "return_url is invalid or not allowed"})
 
+            {:error, :account_not_found} ->
+              conn
+              |> put_status(404)
+              |> json(%{success: false, error: "Social account not found"})
+
+            {:error, :missing_provider_account_id} ->
+              conn
+              |> put_status(422)
+              |> json(%{
+                success: false,
+                error: "This account cannot be refreshed. Disconnect and connect it again."
+              })
+
+            {:error, :missing_external_id} ->
+              conn
+              |> put_status(422)
+              |> json(%{
+                success: false,
+                error: "Could not resolve Post For Me external id for this account"
+              })
+
+            {:error, :provider_account_not_found} ->
+              conn
+              |> put_status(404)
+              |> json(%{success: false, error: "Post For Me account not found"})
+
+            {:error, :missing_reconnect_account} ->
+              conn
+              |> put_status(422)
+              |> json(%{
+                success: false,
+                error: "provider_account_id or social_account_id is required to refresh"
+              })
+
             {:error, changeset} ->
               conn
               |> put_status(422)
               |> json(%{success: false, error: format_errors(changeset)})
           end
         end
-    end
   end
 
   @doc """
@@ -162,17 +185,7 @@ defmodule ClippsterServerWeb.ClipperProfileController do
   def complete_connect(conn, params) do
     user = conn.assigns.current_user
 
-    cond do
-      not ProviderMode.post_for_me_enabled?() ->
-        conn
-        |> put_status(400)
-        |> json(%{
-          success: false,
-          error: "SOCIAL_PROVIDER_MODE must be post_for_me or dual to use this endpoint"
-        })
-
-      true ->
-        with {:ok, session} <- load_user_session(params["connection_id"], user),
+    with {:ok, session} <- load_user_session(params["connection_id"], user),
              :ok <- ensure_session_not_expired(session),
              platform <- resolved_platform(params, session),
              external_id <- resolved_external_id(params, session),
@@ -231,7 +244,6 @@ defmodule ClippsterServerWeb.ClipperProfileController do
             conn
             |> put_status(400)
             |> json(%{success: false, error: format_provider_error(reason)})
-        end
     end
   end
 
@@ -456,6 +468,7 @@ defmodule ClippsterServerWeb.ClipperProfileController do
       follower_count: account.follower_count,
       is_verified: account.is_verified,
       is_active: account.is_active,
+      provider_status: provider_status(account),
       token_expires_at: account.token_expires_at,
       connected_at: account.connected_at,
       inserted_at: account.inserted_at,
@@ -488,6 +501,10 @@ defmodule ClippsterServerWeb.ClipperProfileController do
 
   defp format_errors(error) when is_binary(error), do: error
   defp format_errors(error), do: inspect(error)
+
+  defp provider_status(%{is_active: true}), do: "connected"
+  defp provider_status(%{is_active: false}), do: "disconnected"
+  defp provider_status(_), do: nil
 
   defp format_provider_error(%PostForMe.ApiError{message: message}), do: message
   defp format_provider_error(other) when is_binary(other), do: other

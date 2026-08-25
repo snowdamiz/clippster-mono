@@ -72,6 +72,25 @@ defmodule ClippsterServer.Subscriptions do
       Repo.transaction(fn ->
         user = Repo.get!(User, user_id)
 
+        # Cancel any pre-existing Stripe subscription to prevent duplicate recurring charges.
+        # This handles the case where a user subscribed multiple times during testing or
+        # re-subscribed after a failed attempt — the old subscription must be killed in Stripe
+        # or it will keep billing silently (the DB no longer tracks it after this update).
+        if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" &&
+             user.stripe_subscription_id != stripe_subscription_id do
+          case Stripe.Subscription.cancel(user.stripe_subscription_id) do
+            {:ok, _} ->
+              IO.puts(
+                "[Subscriptions] Cancelled previous Stripe subscription #{user.stripe_subscription_id} for user #{user_id} before creating new one"
+              )
+
+            {:error, reason} ->
+              IO.puts(
+                "[Subscriptions] Warning: Could not cancel previous Stripe subscription #{user.stripe_subscription_id} for user #{user_id}: #{inspect(reason)}"
+              )
+          end
+        end
+
         start_date = DateTime.utc_now() |> DateTime.truncate(:second)
         subscription_days = if billing_interval == "yearly", do: 365, else: @subscription_days
         end_date = DateTime.add(start_date, subscription_days, :day)
@@ -200,8 +219,28 @@ defmodule ClippsterServer.Subscriptions do
   @doc """
   Renews a subscription (called from Stripe webhook on invoice.payment_succeeded).
   Extends end_date and grants monthly credits.
+
+  Options:
+    * `:period_start_unix` - Unix seconds for the new period start (from invoice
+      line item). Used as an idempotency anchor: if a history row already exists
+      with `start_date` within ±1h of this timestamp, returns `{:ok, :already_renewed}`
+      so resent/retried webhooks don't double-grant credits.
   """
-  def renew_subscription(user_id) do
+  def renew_subscription(user_id, opts \\ []) do
+    period_start_unix = Keyword.get(opts, :period_start_unix)
+
+    if period_start_unix && already_renewed_for_period?(user_id, period_start_unix) do
+      IO.puts(
+        "[Subscriptions] User #{user_id} already renewed for period_start_unix=#{period_start_unix}, skipping"
+      )
+
+      {:ok, :already_renewed}
+    else
+      do_renew_subscription(user_id, period_start_unix)
+    end
+  end
+
+  defp do_renew_subscription(user_id, period_start_unix) do
     Repo.transaction(fn ->
       user = Repo.get!(User, user_id)
       tier = user.subscription_tier
@@ -211,16 +250,22 @@ defmodule ClippsterServer.Subscriptions do
         Repo.rollback(:invalid_tier)
       end
 
-      # Calculate new end date
+      # Prefer Stripe's actual period_start over our local +30d math so DB stays
+      # aligned with Stripe's billing cycle even if a webhook is delayed.
       current_end = user.subscription_end_date || DateTime.utc_now()
 
       new_start =
-        if DateTime.compare(DateTime.utc_now(), current_end) == :gt do
-          # Subscription was expired, start fresh
-          DateTime.utc_now() |> DateTime.truncate(:second)
-        else
-          # Still active, use current end as new start
-          current_end
+        cond do
+          is_integer(period_start_unix) ->
+            DateTime.from_unix!(period_start_unix)
+
+          DateTime.compare(DateTime.utc_now(), current_end) == :gt ->
+            # Subscription was expired, start fresh
+            DateTime.utc_now() |> DateTime.truncate(:second)
+
+          true ->
+            # Still active, use current end as new start
+            current_end
         end
 
       new_end = DateTime.add(new_start, @subscription_days, :day)
@@ -290,12 +335,31 @@ defmodule ClippsterServer.Subscriptions do
     end)
   end
 
+  # Returns true if a subscription history row already exists with start_date
+  # close to the given period_start (within ±1h). Used to make renewal idempotent
+  # against webhook retries / dashboard "Resend" actions.
+  defp already_renewed_for_period?(user_id, period_start_unix)
+       when is_integer(period_start_unix) do
+    target = DateTime.from_unix!(period_start_unix)
+    lower = DateTime.add(target, -3600, :second)
+    upper = DateTime.add(target, 3600, :second)
+
+    Subscription
+    |> where([s], s.user_id == ^user_id)
+    |> where([s], s.start_date >= ^lower and s.start_date <= ^upper)
+    |> Repo.exists?()
+  end
+
+  defp already_renewed_for_period?(_user_id, _period_start_unix), do: false
+
   # ============================================================================
   # Subscription Cancellation & Expiration
   # ============================================================================
 
   @doc """
-  Cancels a subscription. Access continues until end_date.
+  Cancels a subscription (user-initiated).
+  IMMEDIATELY cancels billing in Stripe to prevent future charges.
+  User retains access until end_date.
   """
   def cancel_subscription(user_id) do
     Repo.transaction(fn ->
@@ -305,24 +369,26 @@ defmodule ClippsterServer.Subscriptions do
         Repo.rollback(:not_active)
       end
 
-      # Cancel in Stripe if it's a Stripe subscription
+      # IMMEDIATELY cancel in Stripe to stop all future charges
       if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
-        case Stripe.Subscription.update(user.stripe_subscription_id, %{cancel_at_period_end: true}) do
+        case Stripe.Subscription.cancel(user.stripe_subscription_id) do
           {:ok, _} ->
             IO.puts(
-              "[Subscriptions] Cancelled Stripe subscription #{user.stripe_subscription_id} for user #{user_id}"
+              "[Subscriptions] IMMEDIATELY cancelled Stripe subscription #{user.stripe_subscription_id} for user #{user_id} - no future charges"
             )
 
           {:error, %Stripe.Error{message: message}} ->
             IO.puts(
               "[Subscriptions] Failed to cancel Stripe subscription for user #{user_id}: #{message}"
             )
-            # Continue anyway to mark as cancelled in DB
+
+          # Continue anyway to mark as cancelled in DB
 
           {:error, reason} ->
             IO.puts(
               "[Subscriptions] Failed to cancel Stripe subscription for user #{user_id}: #{inspect(reason)}"
             )
+
             # Continue anyway to mark as cancelled in DB
         end
       end
@@ -343,6 +409,121 @@ defmodule ClippsterServer.Subscriptions do
 
       IO.puts(
         "[Subscriptions] Cancelled subscription for user #{user_id}, access until #{user.subscription_end_date}"
+      )
+
+      updated_user
+    end)
+  end
+
+  @doc """
+  Admin-initiated immediate cancellation.
+  IMMEDIATELY cancels the subscription in Stripe (stops all future charges).
+  User optionally retains access until period end based on database end_date.
+  """
+  def admin_cancel_subscription(user_id) do
+    Repo.transaction(fn ->
+      user = Repo.get!(User, user_id)
+
+      unless user.subscription_status in ["active", "cancelled"] do
+        Repo.rollback(:not_active)
+      end
+
+      # IMMEDIATELY cancel in Stripe - no more charges
+      if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
+        case Stripe.Subscription.cancel(user.stripe_subscription_id) do
+          {:ok, _} ->
+            IO.puts(
+              "[Subscriptions] ADMIN: IMMEDIATELY cancelled Stripe subscription #{user.stripe_subscription_id} for user #{user_id} - no future charges"
+            )
+
+          {:error, %Stripe.Error{message: message}} ->
+            IO.puts(
+              "[Subscriptions] ADMIN: Failed to cancel Stripe subscription for user #{user_id}: #{message}"
+            )
+
+            # For admin cancellations, we should rollback if Stripe fails
+            # to ensure database doesn't get out of sync
+            Repo.rollback({:stripe_error, message})
+
+          {:error, reason} ->
+            IO.puts(
+              "[Subscriptions] ADMIN: Failed to cancel Stripe subscription for user #{user_id}: #{inspect(reason)}"
+            )
+
+            Repo.rollback({:stripe_error, reason})
+        end
+      end
+
+      # Update user status to cancelled
+      {:ok, updated_user} =
+        user
+        |> User.subscription_changeset(%{
+          subscription_status: "cancelled"
+        })
+        |> Repo.update()
+
+      # Update active subscription record
+      Subscription
+      |> where([s], s.user_id == ^user_id)
+      |> where([s], s.status == "active")
+      |> Repo.update_all(set: [status: "cancelled"])
+
+      IO.puts("[Subscriptions] ADMIN: Cancelled subscription for user #{user_id}")
+
+      updated_user
+    end)
+  end
+
+  @doc """
+  Reactivates an expired or cancelled subscription.
+  Called when payment succeeds but subscription was marked expired/cancelled.
+  Extends end_date from now and sets status to active.
+  """
+  def reactivate_subscription(user_id) do
+    Repo.transaction(fn ->
+      user = Repo.get!(User, user_id)
+      tier = user.subscription_tier
+      tier_info = get_tier_info(tier)
+
+      unless tier_info do
+        Repo.rollback(:invalid_tier)
+      end
+
+      start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+      end_date = DateTime.add(start_date, @subscription_days, :day)
+
+      # Update user subscription to active
+      {:ok, updated_user} =
+        user
+        |> User.subscription_changeset(%{
+          subscription_status: "active",
+          subscription_start_date: start_date,
+          subscription_end_date: end_date
+        })
+        |> Repo.update()
+
+      # Create subscription history record
+      {:ok, _subscription} =
+        %Subscription{}
+        |> Subscription.create_changeset(%{
+          user_id: user_id,
+          status: "active",
+          subscription_tier: tier,
+          start_date: start_date,
+          end_date: end_date,
+          hours_included: Decimal.new("0"),
+          credits_granted: Decimal.new(to_string(tier_info.monthly_credits)),
+          payment_method: user.subscription_renewal_method || "stripe",
+          stripe_subscription_id: user.stripe_subscription_id,
+          amount_usd: Decimal.new(to_string(tier_info.usd))
+        })
+        |> Repo.insert()
+
+      # Grant monthly credits
+      {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
+
+      IO.puts(
+        "[Subscriptions] Reactivated #{tier} subscription for user #{user_id}, granted #{tier_info.monthly_credits} credits"
       )
 
       updated_user
@@ -466,6 +647,10 @@ defmodule ClippsterServer.Subscriptions do
       not is_nil(user.created_by_organization_id) ->
         true
 
+      # Org owners access via organization subscription / billing
+      not is_nil(user.owned_organization_id) ->
+        true
+
       # Check subscription status and expiry
       user.subscription_status in ["active", "cancelled"] ->
         if user.subscription_end_date do
@@ -482,12 +667,13 @@ defmodule ClippsterServer.Subscriptions do
 
   @doc """
   Checks if a user needs a personal subscription.
-  Returns false for admins, org-created users, and users with active subscriptions.
+  Returns false for admins, org-created users, org owners, and users with active subscriptions.
   """
   def needs_subscription?(user) when is_map(user) do
     cond do
       user.is_admin -> false
       not is_nil(user.created_by_organization_id) -> false
+      not is_nil(user.owned_organization_id) -> false
       user.subscription_status in ["active", "cancelled"] -> false
       true -> true
     end
@@ -788,6 +974,75 @@ defmodule ClippsterServer.Subscriptions do
     end
   end
 
+  @doc """
+  Redeems a bundle promo code after one-time payment.
+  Grants platform access for the configured months and total credits immediately.
+  """
+  def redeem_promo_bundle(user_id, tier, access_months, total_credits, amount_usd, opts \\ []) do
+    tier_info = get_tier_info(tier)
+
+    unless tier_info do
+      {:error, :invalid_tier}
+    else
+      stripe_customer_id = Keyword.get(opts, :stripe_customer_id)
+      payment_intent = Keyword.get(opts, :payment_intent)
+      payment_method = Keyword.get(opts, :payment_method, "stripe")
+
+      Repo.transaction(fn ->
+        user = Repo.get!(User, user_id)
+
+        start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+        access_days = trunc(access_months * 365 / 12)
+        end_date = DateTime.add(start_date, access_days, :day)
+
+        {:ok, updated_user} =
+          user
+          |> User.subscription_changeset(%{
+            subscription_status: "active",
+            subscription_tier: tier,
+            subscription_start_date: start_date,
+            subscription_end_date: end_date,
+            subscription_renewal_method: "promo_bundle",
+            stripe_customer_id: stripe_customer_id || user.stripe_customer_id
+          })
+          |> Repo.update()
+
+        stripe_ref =
+          case payment_intent do
+            nil -> nil
+            ref when is_binary(ref) -> "promo_#{ref}"
+            _ -> nil
+          end
+
+        {:ok, subscription} =
+          %Subscription{}
+          |> Subscription.create_changeset(%{
+            user_id: user_id,
+            status: "active",
+            subscription_tier: tier,
+            start_date: start_date,
+            end_date: end_date,
+            hours_included: Decimal.new("0"),
+            credits_granted: Decimal.new(to_string(total_credits)),
+            payment_method: payment_method,
+            stripe_subscription_id: stripe_ref,
+            amount_usd: Decimal.new(to_string(amount_usd))
+          })
+          |> Repo.insert()
+
+        if total_credits > 0 do
+          {:ok, _} = Credits.add_credits(user_id, total_credits)
+        end
+
+        IO.puts(
+          "[Subscriptions] Redeemed bundle promo for user #{user_id}: #{tier} for #{access_months} months, granted #{total_credits} credits"
+        )
+
+        %{user: updated_user, subscription: subscription}
+      end)
+    end
+  end
+
   # ============================================================================
   # Admin Subscription Management
   # ============================================================================
@@ -858,6 +1113,7 @@ defmodule ClippsterServer.Subscriptions do
   @doc """
   Admin-initiated subscription extension.
   Extends the subscription end date by the specified number of days.
+  If the subscription is already expired, days are added from now (not the past end date).
   Optionally grants monthly credits.
   """
   def admin_extend_subscription(user_id, days, grant_credits \\ false) do
@@ -875,17 +1131,39 @@ defmodule ClippsterServer.Subscriptions do
         Repo.rollback(:invalid_tier)
       end
 
-      # Calculate new end date
-      current_end = user.subscription_end_date || DateTime.utc_now()
-      new_end = DateTime.add(current_end, days, :day)
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      current_end = user.subscription_end_date
+      expired? = subscription_period_expired?(user, now)
 
-      # Update user subscription end date
-      {:ok, updated_user} =
-        user
-        |> User.subscription_changeset(%{
+      # Active subs extend from current end; expired/missing ends start from now
+      period_start =
+        cond do
+          is_nil(current_end) -> now
+          expired? -> now
+          true -> current_end
+        end
+
+      new_end = DateTime.add(period_start, days, :day)
+
+      changeset_attrs =
+        %{
           subscription_status: "active",
           subscription_end_date: new_end
-        })
+        }
+        |> then(fn attrs ->
+          if expired? do
+            Map.merge(attrs, %{
+              subscription_start_date: period_start,
+              subscription_renewal_method: user.subscription_renewal_method || "admin"
+            })
+          else
+            attrs
+          end
+        end)
+
+      {:ok, updated_user} =
+        user
+        |> User.subscription_changeset(changeset_attrs)
         |> Repo.update()
 
       # Create subscription history record for extension
@@ -895,7 +1173,7 @@ defmodule ClippsterServer.Subscriptions do
           user_id: user_id,
           status: "active",
           subscription_tier: tier,
-          start_date: current_end,
+          start_date: period_start,
           end_date: new_end,
           hours_included: Decimal.new("0"),
           credits_granted:
@@ -922,6 +1200,7 @@ defmodule ClippsterServer.Subscriptions do
   @doc """
   Admin-initiated tier change.
   Changes the subscription tier for a user.
+  If the subscription is expired, starts a fresh period from now.
   Optionally grants monthly credits for the new tier.
   """
   def admin_change_tier(user_id, new_tier, grant_credits \\ false) do
@@ -932,13 +1211,19 @@ defmodule ClippsterServer.Subscriptions do
     else
       Repo.transaction(fn ->
         user = Repo.get!(User, user_id)
+        now = DateTime.utc_now() |> DateTime.truncate(:second)
+        expired? = subscription_period_expired?(user, now)
 
-        # Determine start and end dates
-        start_date =
-          user.subscription_start_date || DateTime.utc_now() |> DateTime.truncate(:second)
-
-        end_date =
-          user.subscription_end_date || DateTime.add(start_date, @subscription_days, :day)
+        # Keep remaining time for active subs; expired/missing ends start a new period
+        {start_date, end_date} =
+          if expired? or is_nil(user.subscription_end_date) do
+            {now, DateTime.add(now, @subscription_days, :day)}
+          else
+            {
+              user.subscription_start_date || now,
+              user.subscription_end_date
+            }
+          end
 
         # Update user's tier and ensure subscription is active
         {:ok, updated_user} =
@@ -952,47 +1237,45 @@ defmodule ClippsterServer.Subscriptions do
           })
           |> Repo.update()
 
-        # Optionally grant credits for new tier
+        credits_granted =
+          if grant_credits,
+            do: Decimal.new(to_string(tier_info.monthly_credits)),
+            else: Decimal.new("0")
+
         if grant_credits do
           {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
-
-          # Create subscription history record for tier change
-          {:ok, subscription} =
-            %Subscription{}
-            |> Subscription.create_changeset(%{
-              user_id: user_id,
-              status: "active",
-              subscription_tier: new_tier,
-              start_date: start_date,
-              end_date: end_date,
-              hours_included: Decimal.new("0"),
-              credits_granted: Decimal.new(to_string(tier_info.monthly_credits)),
-              payment_method: "admin",
-              amount_usd: Decimal.new("0")
-            })
-            |> Repo.insert()
-
-          %{user: updated_user, subscription: subscription}
-        else
-          # Create subscription history record even without credits
-          {:ok, subscription} =
-            %Subscription{}
-            |> Subscription.create_changeset(%{
-              user_id: user_id,
-              status: "active",
-              subscription_tier: new_tier,
-              start_date: start_date,
-              end_date: end_date,
-              hours_included: Decimal.new("0"),
-              credits_granted: Decimal.new("0"),
-              payment_method: "admin",
-              amount_usd: Decimal.new("0")
-            })
-            |> Repo.insert()
-
-          %{user: updated_user, subscription: subscription}
         end
+
+        {:ok, subscription} =
+          %Subscription{}
+          |> Subscription.create_changeset(%{
+            user_id: user_id,
+            status: "active",
+            subscription_tier: new_tier,
+            start_date: start_date,
+            end_date: end_date,
+            hours_included: Decimal.new("0"),
+            credits_granted: credits_granted,
+            payment_method: "admin",
+            amount_usd: Decimal.new("0")
+          })
+          |> Repo.insert()
+
+        %{user: updated_user, subscription: subscription}
       end)
+    end
+  end
+
+  defp subscription_period_expired?(user, now) do
+    cond do
+      user.subscription_status == "expired" ->
+        true
+
+      is_nil(user.subscription_end_date) ->
+        false
+
+      true ->
+        DateTime.compare(now, user.subscription_end_date) == :gt
     end
   end
 

@@ -52,16 +52,29 @@ export function useTranscriptData(projectId: Ref<string | null>) {
 
             // Extract words for this segment if available
             if (segment.words && Array.isArray(segment.words)) {
-              segment.words.forEach((word: any) => {
-                if (word.word && word.start !== undefined && word.end !== undefined) {
+              const rawWords = segment.words.filter(
+                (w: any) => w.word && w.start !== undefined && w.end !== undefined
+              );
+
+              if (rawWords.length > 0) {
+                // Detect if word timestamps are offset from the segment timestamps.
+                // This happens when transcript chunks were saved without applying the
+                // chunk start_time offset to the embedded word timestamps.
+                const firstWordStart = rawWords[0].start;
+                const offset = segment.start - firstWordStart;
+                // If the first word is more than 1 second away from the segment start,
+                // the words are chunk-relative and need to be shifted to VOD-absolute.
+                const needsOffset = Math.abs(offset) > 1;
+
+                rawWords.forEach((word: any) => {
                   segmentWords.push({
                     word: word.word.trim(),
-                    start: word.start,
-                    end: word.end,
+                    start: needsOffset ? word.start + offset : word.start,
+                    end: needsOffset ? word.end + offset : word.end,
                     confidence: word.confidence,
                   });
-                }
-              });
+                });
+              }
             }
 
             segments.push({
@@ -73,6 +86,20 @@ export function useTranscriptData(projectId: Ref<string | null>) {
             });
           }
         });
+      }
+
+      // Word-only JSON (top-level `words` or flat array) has no `segments`; subtitles/gating use whisperSegments.
+      if (segments.length === 0) {
+        const words = parseTranscriptToWords(rawJson);
+        if (words.length > 0) {
+          segments.push({
+            id: 0,
+            start: words[0].start,
+            end: words[words.length - 1].end,
+            text: words.map((w) => w.word).join(' ').trim(),
+            words,
+          });
+        }
       }
 
       return segments;

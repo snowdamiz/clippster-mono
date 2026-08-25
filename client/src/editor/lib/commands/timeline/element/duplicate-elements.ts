@@ -2,6 +2,7 @@ import { Command } from "../../../../lib/commands/base-command";
 import type { TimelineElement, TimelineTrack } from "../../../../types/timeline";
 import { generateUUID } from "../../../../utils/id";
 import { EditorCore } from "../../../../core";
+import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
 
 interface DuplicateElementsParams {
 	elements: { trackId: string; elementId: string }[];
@@ -71,7 +72,8 @@ export class DuplicateElementsCommand extends Command {
 			}
 		}
 
-		editor.timeline.updateTracks(updatedTracks);
+		const fps = editor.project.getActive()?.settings?.fps ?? 30;
+		editor.timeline.updateTracks(collapseMainVideoTracksIfPresent(updatedTracks, fps));
 
 		if (this.duplicatedElements.length > 0) {
 			editor.selection.setSelectedElements({ elements: this.duplicatedElements });

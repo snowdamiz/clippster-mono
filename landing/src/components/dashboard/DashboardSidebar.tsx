@@ -18,6 +18,7 @@ import {
   KeyRound,
   ListChecks,
   LogOut,
+  Mail,
   MessageSquare,
   Percent,
   Shield
@@ -34,6 +35,7 @@ interface NavItem {
   path: string
   adminOnly?: boolean
   comingSoon?: boolean
+  navHidden?: boolean
 }
 
 interface NavGroup {
@@ -54,7 +56,7 @@ const orgNavGroups: NavGroup[] = [
   {
     header: 'Content',
     items: [
-      { label: 'Campaigns', icon: Megaphone, path: 'campaigns' },
+      { label: 'Campaigns', icon: Megaphone, path: 'campaigns', navHidden: true },
       { label: 'Clippers', icon: Scissors, path: 'clippers' },
       { label: 'Shared Clips', icon: Share2, path: 'shared' },
       { label: 'Social Accounts', icon: Globe, path: 'social' },
@@ -90,6 +92,7 @@ const adminNavGroups: NavGroup[] = [
       { label: 'Beta Codes', icon: KeyRound, path: 'beta-codes', adminOnly: true },
       { label: 'Discount Codes', icon: Percent, path: 'discount-codes', adminOnly: true },
       { label: 'Waitlist', icon: Users, path: 'waitlist', adminOnly: true },
+      { label: 'Email Blasts', icon: Mail, path: 'messaging', adminOnly: true },
       { label: 'Affiliates', icon: Handshake, path: 'affiliates', adminOnly: true },
     ]
   },
@@ -122,9 +125,10 @@ function getAdminBasePath(pathname: string): '/admin' | '/dashboard/admin' {
 
 interface DashboardSidebarProps {
   variant?: DashboardSidebarVariant
+  onNavigate?: () => void
 }
 
-export function DashboardSidebar({ variant = 'organization' }: DashboardSidebarProps) {
+export function DashboardSidebar({ variant = 'organization', onNavigate }: DashboardSidebarProps) {
   const { id } = useParams<{ id: string }>()
   const location = useLocation()
   const navigate = useNavigate()
@@ -137,6 +141,11 @@ export function DashboardSidebar({ variant = 'organization' }: DashboardSidebarP
   const navGroups = useMemo(() => {
     if (isOrganizationSidebar) {
       return orgNavGroups
+        .map((group) => ({
+          ...group,
+          items: group.items.filter((item) => !item.navHidden)
+        }))
+        .filter((group) => group.items.length > 0)
     }
 
     return adminNavGroups
@@ -246,6 +255,7 @@ export function DashboardSidebar({ variant = 'organization' }: DashboardSidebarP
                     <li key={item.path}>
                       <Link
                         to={linkPath}
+                        onClick={onNavigate}
                         className={`flex items-center gap-3 w-full py-2 px-3 rounded-md text-sm no-underline transition-all duration-150 cursor-pointer ${
                           active
                             ? 'bg-cyan-500/[0.08] text-cyan-400'

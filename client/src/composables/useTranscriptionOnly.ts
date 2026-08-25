@@ -1,6 +1,9 @@
 import { ref } from 'vue';
 import {
   getRawVideosByProjectId,
+  getRawVideosByOriginalProjectId,
+  getRawVideo,
+  createRawVideo,
   getTranscriptByRawVideoId,
   getTranscriptChunks,
   createTranscript,
@@ -9,6 +12,8 @@ import {
   getChunkedTranscriptByRawVideoId,
   type RawVideo,
 } from '@/services/database';
+import { deleteTranscriptsByRawVideoId } from '@/services/database/transcripts';
+import { deleteChunkedTranscriptsByRawVideoId } from '@/services/database/chunked-transcripts';
 import { useChunkedTranscriptCache } from './useChunkedTranscriptCache';
 import { useToast } from '@/composables/useToast';
 import api from '@/services/api';
@@ -18,6 +23,21 @@ export interface TranscriptionOptions {
   chunkDurationMinutes?: number;
   overlapSeconds?: number;
   organizationId?: number | null;
+  parentProjectId?: string | null;
+  sourceVideoPath?: string | null;
+  forceRetranscribe?: boolean;
+  /** Skip credit charges for a single short clip (POI generate-subtitles). */
+  freeSingleClip?: boolean;
+  /** Full clip duration in seconds; required with freeSingleClip so chunked uploads can't bypass the free cap. */
+  freeSingleClipTotalDurationSeconds?: number;
+}
+
+interface UseTranscriptionOnlyOptions {
+  showSuccessToast?: boolean;
+  showErrorToast?: boolean;
+  showChunkCompletionToast?: boolean;
+  showCacheReuseToast?: boolean;
+  showAudioChunkingToast?: boolean;
 }
 
 export interface TranscriptionProgress {
@@ -36,7 +56,7 @@ export interface TranscriptionProgress {
   error?: string;
 }
 
-export function useTranscriptionOnly() {
+export function useTranscriptionOnly(options: UseTranscriptionOnlyOptions = {}) {
   const isProcessing = ref(false);
   const isCancelled = ref(false);
   const progress = ref<TranscriptionProgress>({
@@ -45,10 +65,86 @@ export function useTranscriptionOnly() {
     message: '',
   });
   const { success: showSuccess, error: showError } = useToast();
+  const shouldShowSuccessToast = options.showSuccessToast ?? true;
+  const shouldShowErrorToast = options.showErrorToast ?? true;
 
-  const transcriptCache = useChunkedTranscriptCache();
+  const transcriptCache = useChunkedTranscriptCache({
+    showCompletionToast: options.showChunkCompletionToast ?? true,
+    showCacheReuseToast: options.showCacheReuseToast ?? true,
+    showErrorToast: options.showErrorToast ?? true,
+    showAudioChunkingToast: options.showAudioChunkingToast ?? options.showChunkCompletionToast ?? true,
+  });
   let abortController: AbortController | null = null;
   let currentOrganizationId: number | null = null;
+  let currentFreeSingleClip = false;
+  let currentFreeSingleClipTotalDurationSeconds: number | null = null;
+
+  function normalizePathForCompare(path: string): string {
+    return path.replace(/\\/g, '/').replace(/^file:\/\//, '').toLowerCase();
+  }
+
+  function findRawVideoByPath(rows: RawVideo[], sourceVideoPath: string): RawVideo | null {
+    const normalizedSource = normalizePathForCompare(sourceVideoPath);
+    return rows.find((row) => normalizePathForCompare(row.file_path) === normalizedSource) ?? null;
+  }
+
+  async function ensureRawVideoForSourcePath(
+    projectId: string,
+    sourceVideoPath: string
+  ): Promise<RawVideo> {
+    const existingForProject = findRawVideoByPath(
+      await getRawVideosByProjectId(projectId),
+      sourceVideoPath
+    );
+    if (existingForProject) {
+      return existingForProject;
+    }
+
+    const rawVideoId = await createRawVideo(sourceVideoPath, {
+      projectId,
+      originalFilename: sourceVideoPath.split(/[\\/]/).pop() || undefined,
+    });
+    const rawVideo = await getRawVideo(rawVideoId);
+    if (!rawVideo) {
+      throw new Error('Failed to create video record for clip transcription');
+    }
+    return rawVideo;
+  }
+
+  async function getRawVideosForTranscription(
+    projectId: string,
+    parentProjectId?: string | null,
+    sourceVideoPath?: string | null
+  ): Promise<RawVideo[]> {
+    if (sourceVideoPath?.trim()) {
+      return [await ensureRawVideoForSourcePath(projectId, sourceVideoPath.trim())];
+    }
+
+    const directRawVideos = await getRawVideosByProjectId(projectId);
+    if (directRawVideos.length > 0) {
+      return directRawVideos;
+    }
+
+    if (parentProjectId && parentProjectId !== projectId) {
+      const parentRawVideos = await getRawVideosByProjectId(parentProjectId);
+      if (parentRawVideos.length > 0) {
+        return parentRawVideos;
+      }
+    }
+
+    // Livestream auto-detect projects can store playable recordings as child
+    // segment raw_videos with original_project_id pointing back to a parent project.
+    const childSegmentVideos = await getRawVideosByOriginalProjectId(projectId);
+    if (childSegmentVideos.length > 0) {
+      return childSegmentVideos;
+    }
+
+    if (parentProjectId && parentProjectId !== projectId) {
+      return await getRawVideosByOriginalProjectId(parentProjectId);
+    }
+
+    return [];
+  }
 
   function checkCancelled() {
     if (isCancelled.value) {
@@ -85,6 +181,12 @@ export function useTranscriptionOnly() {
       isCancelled.value = false;
       abortController = new AbortController();
       currentOrganizationId = options.organizationId ?? null;
+      currentFreeSingleClip = Boolean(options.freeSingleClip);
+      currentFreeSingleClipTotalDurationSeconds =
+        typeof options.freeSingleClipTotalDurationSeconds === 'number' &&
+        options.freeSingleClipTotalDurationSeconds > 0
+          ? options.freeSingleClipTotalDurationSeconds
+          : null;
 
       isProcessing.value = true;
       progress.value = {
@@ -96,12 +198,26 @@ export function useTranscriptionOnly() {
       const { chunkDurationMinutes = 25, overlapSeconds = 30 } = options;
 
       // Get project video
-      const rawVideos = await getRawVideosByProjectId(projectId);
+      const rawVideos = await getRawVideosForTranscription(
+        projectId,
+        options.parentProjectId,
+        options.sourceVideoPath
+      );
       if (rawVideos.length === 0) {
         throw new Error('No video found for project');
       }
 
       const projectVideo = rawVideos[0];
+
+      if (options.forceRetranscribe) {
+        progress.value = {
+          stage: 'checking_cache',
+          progress: 8,
+          message: 'Clearing stale clip transcript...',
+        };
+        await deleteTranscriptsByRawVideoId(projectVideo.id);
+        await deleteChunkedTranscriptsByRawVideoId(projectVideo.id);
+      }
 
       // Check for existing transcript
       const existingTranscript = await getTranscriptByRawVideoId(projectVideo.id);
@@ -190,7 +306,9 @@ export function useTranscriptionOnly() {
         error: errorMessage,
       };
 
-      showError('Transcription failed', errorMessage, undefined, 'clips');
+      if (shouldShowErrorToast) {
+        showError('Transcription failed', errorMessage, undefined, 'clips');
+      }
       return { success: false, error: errorMessage };
     } finally {
       isProcessing.value = false;
@@ -236,6 +354,15 @@ export function useTranscriptionOnly() {
       formData.append('duration', chunk.duration.toString());
       if (currentOrganizationId) {
         formData.append('organization_id', currentOrganizationId.toString());
+      }
+      if (currentFreeSingleClip) {
+        formData.append('free_single_clip', 'true');
+        if (currentFreeSingleClipTotalDurationSeconds != null) {
+          formData.append(
+            'free_single_clip_total_duration',
+            currentFreeSingleClipTotalDurationSeconds.toString()
+          );
+        }
       }
 
       const maxRetries = 3;
@@ -326,7 +453,7 @@ export function useTranscriptionOnly() {
     };
 
     // Check if transcript was already created (race condition guard)
-    const existingTranscript = await getTranscriptByProjectId(projectId);
+    const existingTranscript = await getTranscriptByRawVideoId(projectVideo.id);
     if (existingTranscript) {
       progress.value = {
         stage: 'completed',
@@ -334,7 +461,9 @@ export function useTranscriptionOnly() {
         message: 'Transcript ready!',
       };
       dispatchTranscriptUpdated(projectId);
-      showSuccess('Transcription complete', 'Transcript is ready for viewing', undefined, 'clips');
+      if (shouldShowSuccessToast) {
+        showSuccess('Transcription complete', 'Transcript is ready for viewing', undefined, 'clips');
+      }
       return { success: true, alreadyTranscribed: true };
     }
 
@@ -407,7 +536,9 @@ export function useTranscriptionOnly() {
     };
 
     dispatchTranscriptUpdated(projectId);
-    showSuccess('Transcription complete', 'Transcript is ready for viewing');
+    if (shouldShowSuccessToast) {
+      showSuccess('Transcription complete', 'Transcript is ready for viewing');
+    }
 
     return { success: true };
   }

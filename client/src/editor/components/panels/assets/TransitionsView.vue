@@ -10,6 +10,12 @@ import TransitionPreviewCanvas from "./TransitionPreviewCanvas.vue";
 import { generateUUID } from "../../../utils/id";
 import { usePointerDrag } from "../../../composables/usePointerDrag";
 import type { TransitionDragData } from "../../../types/drag";
+import {
+	findTransitionForTrackElement,
+	removeTransitionTargetsInvolvingElement,
+	resolveTransitionIncomingElementId,
+} from "../../../lib/timeline/transition-pairing";
+import { useToast } from "@/composables/useToast";
 
 const { startDrag, wasDragCompleted } = usePointerDrag();
 
@@ -24,15 +30,22 @@ function handlePointerDown(e: PointerEvent, preset: TransitionPreset) {
 	startDrag(e, data);
 }
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 const { selectedElements } = useElementSelection();
+const { toast } = useToast();
 
 const searchQuery = ref("");
+const visibleTransitionPresets = computed(() =>
+	TRANSITION_PRESETS
+		.filter((p) => p.exportSupported)
+		.slice()
+		.sort((a, b) => a.modernRank - b.modernRank),
+);
 
 const filteredPresets = computed(() => {
 	const q = searchQuery.value.trim().toLowerCase();
-	if (!q) return TRANSITION_PRESETS;
-	return TRANSITION_PRESETS.filter(
+	if (!q) return visibleTransitionPresets.value;
+	return visibleTransitionPresets.value.filter(
 		(p) => p.label.toLowerCase().includes(q) || p.description.toLowerCase().includes(q),
 	);
 });
@@ -61,7 +74,11 @@ const existingTransitions = computed(() => {
 const activeTransition = computed(() => {
 	const sel = selectedElement.value;
 	if (!sel) return null;
-	return existingTransitions.value.find((t) => t.targetElementId === sel.element.id) ?? null;
+	return findTransitionForTrackElement({
+		transitions: existingTransitions.value,
+		track: sel.track,
+		elementId: sel.element.id,
+	});
 });
 
 function applyTransition(preset: TransitionPreset) {
@@ -72,13 +89,27 @@ function applyTransition(preset: TransitionPreset) {
 	try { scene = editor.scenes.getActiveScene(); } catch { return; }
 	if (!scene) return;
 
+	const incomingId = resolveTransitionIncomingElementId({
+		track: sel.track,
+		selectedElementId: sel.element.id,
+	});
+	if (!incomingId) {
+		toast({
+			title: "No adjacent video cut",
+			description:
+				"Transitions sit between two video (or image) clips on the same track. Select a clip that touches the next or previous one within about a second, or split/move clips until they meet.",
+			type: "warning",
+		});
+		return;
+	}
+
 	const currentTransitions = [...(scene.transitions ?? [])];
-	const filtered = currentTransitions.filter((t) => t.targetElementId !== sel.element.id);
+	const filtered = currentTransitions.filter((t) => t.targetElementId !== incomingId);
 	filtered.push({
 		id: generateUUID(),
 		type: preset.type,
 		duration: preset.defaultDuration,
-		targetElementId: sel.element.id,
+		targetElementId: incomingId,
 		trackId: sel.trackId,
 	});
 
@@ -95,7 +126,11 @@ function removeTransition() {
 	try { scene = editor.scenes.getActiveScene(); } catch { return; }
 	if (!scene) return;
 
-	const filtered = (scene.transitions ?? []).filter((t) => t.targetElementId !== sel.element.id);
+	const filtered = removeTransitionTargetsInvolvingElement({
+		transitions: scene.transitions,
+		track: sel.track,
+		elementId: sel.element.id,
+	});
 	const updatedScene = { ...scene, transitions: filtered };
 	const scenes = editor.scenes.getScenes().map((s) => s.id === scene.id ? updatedScene : s);
 	editor.scenes.setScenes({ scenes, activeSceneId: scene.id });

@@ -10,12 +10,20 @@ import { ColorNode } from "./nodes/color-node";
 import { EffectNode } from "./nodes/effect-node";
 import { CaptionNode } from "./nodes/caption-node";
 import { BlurBackgroundNode } from "./nodes/blur-background-node";
-import { TransitionNode } from "./nodes/transition-node";
+import { TransitionNode, getTransitionOutgoingExtraTail } from "./nodes/transition-node";
 import type { TBackground, TCanvasSize } from "../types/project";
+import type { ManualSourceFramingPayload } from "@/types";
 import { DEFAULT_BLUR_INTENSITY } from "../constants/project-constants";
 import { isMainTrack } from "../lib/timeline";
+import { resolveTransitionMediaPair } from "../lib/timeline/transition-pairing";
+import { clampSpeed, getElementSourceOutPoint } from "../lib/timeline/trim-source-utils";
 import type { BaseNode } from "./nodes/base-node";
 
+/**
+ * Preview scene cache invalidation: keep in sync with
+ * [`fingerprintTimelineElement`](../lib/scene-input-fingerprint.ts) — any new `VideoNode` /
+ * `ImageNode` / … params must affect that fingerprint.
+ */
 export type BuildSceneParams = {
 	canvasSize: TCanvasSize;
 	tracks: TimelineTrack[];
@@ -23,10 +31,82 @@ export type BuildSceneParams = {
 	duration: number;
 	background: TBackground;
 	transitions?: Transition[];
+	/** Main-track full-frame video/image clips use this framing when set. */
+	canvasSourceFraming?: ManualSourceFramingPayload | null;
 };
 
+type TransitionExtendableNode = BaseNode & {
+	setTransitionExtension: (extension: { before?: number; after?: number }) => void;
+};
+
+function isTransitionExtendableNode(node: BaseNode): node is TransitionExtendableNode {
+	return typeof (node as { setTransitionExtension?: unknown }).setTransitionExtension === "function";
+}
+
+const TIMELINE_CONTIGUITY_EPSILON = 1 / 1000;
+const SOURCE_CONTINUITY_EPSILON = 1 / 30;
+
+function hasSpeedKeyframes(element: VideoElement): boolean {
+	return (element.keyframes?.tracks?.speed?.keyframes.length ?? 0) > 0;
+}
+
+function canShareContinuousVideoDecodeKey(previous: VideoElement, current: VideoElement): boolean {
+	if (previous.mediaId !== current.mediaId) return false;
+	if (previous.reversed || current.reversed) return false;
+	if (hasSpeedKeyframes(previous) || hasSpeedKeyframes(current)) return false;
+	if (Math.abs(clampSpeed(previous.speed) - clampSpeed(current.speed)) > TIMELINE_CONTIGUITY_EPSILON) return false;
+
+	const previousEndTime = previous.startTime + previous.duration;
+	if (Math.abs(previousEndTime - current.startTime) > TIMELINE_CONTIGUITY_EPSILON) return false;
+
+	const previousSourceOut = getElementSourceOutPoint({
+		trimStart: previous.trimStart,
+		duration: previous.duration,
+		speed: previous.speed,
+	});
+	return Math.abs(previousSourceOut - current.trimStart) <= SOURCE_CONTINUITY_EPSILON;
+}
+
+function buildContinuousVideoDecodeKeys(
+	track: TimelineTrack,
+	transitionIncomingIds: ReadonlySet<string>,
+): {
+	decodeKeys: Map<string, string>;
+	coldStartElementIds: Set<string>;
+} {
+	const decodeKeys = new Map<string, string>();
+	const coldStartElementIds = new Set<string>();
+	if (track.type !== "video") return { decodeKeys, coldStartElementIds };
+
+	const videoElements = track.elements
+		.filter((element): element is VideoElement => element.type === "video")
+		.filter((element) => !("hidden" in element && element.hidden))
+		.slice()
+		.sort((a, b) => (a.startTime !== b.startTime ? a.startTime - b.startTime : a.id.localeCompare(b.id)));
+
+	let previous: VideoElement | null = null;
+	let groupKey = "";
+	for (const element of videoElements) {
+		// A transition samples both sides of the cut at different timestamps.
+		// Sharing one sequential CanvasSink would make outgoing and incoming
+		// repeatedly seek over each other, stalling the incoming clip.
+		if (
+			!previous ||
+			transitionIncomingIds.has(element.id) ||
+			!canShareContinuousVideoDecodeKey(previous, element)
+		) {
+			groupKey = `continuous-video:${track.id}:${element.mediaId}:${element.id}`;
+			coldStartElementIds.add(element.id);
+		}
+		decodeKeys.set(element.id, groupKey);
+		previous = element;
+	}
+
+	return { decodeKeys, coldStartElementIds };
+}
+
 export function buildScene(params: BuildSceneParams) {
-	const { tracks, mediaAssets, duration, canvasSize, background, transitions } = params;
+	const { tracks, mediaAssets, duration, canvasSize, background, transitions, canvasSourceFraming } = params;
 
 	const rootNode = new RootNode({ duration });
 	const mediaMap = new Map(mediaAssets.map((m) => [m.id, m]));
@@ -60,6 +140,15 @@ export function buildScene(params: BuildSceneParams) {
 	const contentNodes: BaseNode[] = [];
 
 	for (const track of orderedTracksBottomToTop) {
+		const transitionIncomingIds = new Set<string>();
+		for (const transition of transitions ?? []) {
+			const pair = resolveTransitionMediaPair({ transition, track });
+			if (pair?.incoming.type === "video") transitionIncomingIds.add(pair.incoming.id);
+		}
+		const {
+			decodeKeys: continuousVideoDecodeKeys,
+			coldStartElementIds,
+		} = buildContinuousVideoDecodeKeys(track, transitionIncomingIds);
 		const elements = track.elements
 			.filter((element) => !("hidden" in element && element.hidden))
 			.slice()
@@ -81,92 +170,251 @@ export function buildScene(params: BuildSceneParams) {
 		for (const element of elements) {
 			if (element.type === "video" || element.type === "image") {
 				const mediaAsset = mediaMap.get(element.mediaId);
-				if (!mediaAsset?.file || !mediaAsset?.url) {
+				// Decode uses the File handle; url/filePath are optional (some assets only persist path + File).
+				if (!mediaAsset?.file) {
+					continue;
+				}
+				if (mediaAsset.type === "video" && mediaAsset.file.size === 0) {
 					continue;
 				}
 
 				let node: BaseNode | null = null;
-				if (mediaAsset.type === "video") {
-					const videoEl = element as VideoElement;
-					node = new VideoNode({
-						mediaId: mediaAsset.id,
-						elementId: videoEl.id,
-						url: mediaAsset.url,
-						file: mediaAsset.file,
-						duration: videoEl.duration,
-						timeOffset: videoEl.startTime,
-						trimStart: videoEl.trimStart,
-						trimEnd: videoEl.trimEnd,
-						opacity: videoEl.opacity,
-						transform: videoEl.transform,
-						flip: videoEl.flip,
-						crop: videoEl.crop,
-						colorAdjustments: videoEl.colorAdjustments,
-						speed: videoEl.speed,
-						reversed: videoEl.reversed,
-						fadeIn: videoEl.fadeIn,
-						fadeOut: videoEl.fadeOut,
-						keyframes: videoEl.keyframes,
-						effects: videoEl.effects,
-						chromakey: videoEl.chromakey,
-						animationIn: videoEl.animationIn,
-						animationOut: videoEl.animationOut,
-						animationLoop: videoEl.animationLoop,
-					});
-				}
-				if (mediaAsset.type === "image") {
-					const imageEl = element as ImageElement;
-					node = new ImageNode({
-						url: mediaAsset.url,
-						duration: imageEl.duration,
-						timeOffset: imageEl.startTime,
-						trimStart: imageEl.trimStart,
-						trimEnd: imageEl.trimEnd,
-						opacity: imageEl.opacity,
-						transform: imageEl.transform,
-						flip: imageEl.flip,
-						crop: imageEl.crop,
-						colorAdjustments: imageEl.colorAdjustments,
-						fadeIn: imageEl.fadeIn,
-						fadeOut: imageEl.fadeOut,
-						keyframes: imageEl.keyframes,
-						effects: imageEl.effects,
-						chromakey: imageEl.chromakey,
-						animationIn: imageEl.animationIn,
-						animationOut: imageEl.animationOut,
-						animationLoop: imageEl.animationLoop,
-					});
-				}
+			if (mediaAsset.type === "video") {
+				const videoEl = element as VideoElement;
+				const crop = videoEl.crop;
+				const hasCrop = !!(crop && (crop.top > 0 || crop.right > 0 || crop.bottom > 0 || crop.left > 0));
+				const assignCanvas169 =
+					isMainTrack(track) &&
+					canvasSourceFraming &&
+					canvasSourceFraming.mode === "use16x9" &&
+					!hasCrop;
+				node = new VideoNode({
+					mediaId: mediaAsset.id,
+					elementId: videoEl.id,
+					decodeKey: continuousVideoDecodeKeys.get(videoEl.id),
+					prewarmBeforeStart: coldStartElementIds.has(videoEl.id),
+					url: mediaAsset.url ?? "",
+					file: mediaAsset.file,
+					duration: videoEl.duration,
+					timeOffset: videoEl.startTime,
+					trimStart: videoEl.trimStart,
+					trimEnd: videoEl.trimEnd,
+					opacity: videoEl.opacity,
+					mediaFit: videoEl.mediaFit,
+					transform: videoEl.transform,
+					flip: videoEl.flip,
+					crop: videoEl.crop,
+					colorAdjustments: videoEl.colorAdjustments,
+					colorCurves: videoEl.colorCurves,
+					colorWheels: videoEl.colorWheels,
+					blendMode: videoEl.blendMode,
+					speed: videoEl.speed,
+					reversed: videoEl.reversed,
+					fadeIn: videoEl.fadeIn,
+					fadeOut: videoEl.fadeOut,
+					keyframes: videoEl.keyframes,
+					effects: videoEl.effects,
+					chromakey: videoEl.chromakey,
+					animationIn: videoEl.animationIn,
+					animationOut: videoEl.animationOut,
+					animationLoop: videoEl.animationLoop,
+					masks: videoEl.masks,
+					canvasSourceFraming: assignCanvas169 ? canvasSourceFraming : null,
+				});
+			}
+			if (mediaAsset.type === "image") {
+				const imageEl = element as ImageElement;
+				const crop = imageEl.crop;
+				const hasCrop = !!(crop && (crop.top > 0 || crop.right > 0 || crop.bottom > 0 || crop.left > 0));
+				const assignCanvas169 =
+					isMainTrack(track) &&
+					canvasSourceFraming &&
+					canvasSourceFraming.mode === "use16x9" &&
+					!hasCrop;
+				node = new ImageNode({
+					url: mediaAsset.url ?? "",
+					duration: imageEl.duration,
+					timeOffset: imageEl.startTime,
+					trimStart: imageEl.trimStart,
+					trimEnd: imageEl.trimEnd,
+					opacity: imageEl.opacity,
+					mediaFit: imageEl.mediaFit,
+					transform: imageEl.transform,
+					flip: imageEl.flip,
+					crop: imageEl.crop,
+					colorAdjustments: imageEl.colorAdjustments,
+					colorCurves: imageEl.colorCurves,
+					colorWheels: imageEl.colorWheels,
+					blendMode: imageEl.blendMode,
+					fadeIn: imageEl.fadeIn,
+					fadeOut: imageEl.fadeOut,
+					keyframes: imageEl.keyframes,
+					effects: imageEl.effects,
+					chromakey: imageEl.chromakey,
+					animationIn: imageEl.animationIn,
+					animationOut: imageEl.animationOut,
+					animationLoop: imageEl.animationLoop,
+					masks: imageEl.masks,
+					canvasSourceFraming: assignCanvas169 ? canvasSourceFraming : null,
+				});
+		}
 				if (node) {
 					elementNodeMap.set(element.id, node);
 				}
 			}
 		}
 
-		// Second pass: create TransitionNodes for adjacent pairs, then add remaining nodes
-		for (let i = 0; i < elements.length; i++) {
-			const element = elements[i];
+		// Second pass: create TransitionNodes for adjacent pairs, then add remaining nodes.
+		// Pair by timeline order (startTime), not layer order (orderIndex), so the left clip
+		// is always the true outgoing segment. Extend the outgoing tail by any gap before the
+		// incoming clip so it still renders through the full overlap window (junction is the
+		// incoming startTime; a micro-gap used to make clips "adjacent" would otherwise drop
+		// the outgoing layer mid-transition and make wipes/fades look one-sided).
+		const TRANSITION_TIME_SLACK = 1 / 30;
+		/** Same rule as first pass — must stay in sync so transitions pair clips that actually have nodes. */
+		const hasRenderableMedia = (el: (typeof track.elements)[number]) => {
+			if (el.type !== "video" && el.type !== "image") return false;
+			const m = mediaMap.get((el as VideoElement | ImageElement).mediaId);
+			if (!m?.file) return false;
+			if (el.type === "video") return m.type === "video" && m.file.size > 0;
+			return m.type === "image";
+		};
+
+		const sortedMediaElements = track.elements
+			.filter((element) => !("hidden" in element && element.hidden))
+			.filter((element) => element.type === "video" || element.type === "image")
+			.slice()
+			.sort((a, b) => (a.startTime !== b.startTime ? a.startTime - b.startTime : a.id.localeCompare(b.id)));
+
+		type TrackTransitionPlan = {
+			transition: Transition;
+			pair: { outgoing: VideoElement | ImageElement; incoming: VideoElement | ImageElement };
+			outgoingNode: BaseNode;
+			incomingNode: BaseNode;
+			duration: number;
+			junctionTime: number;
+			gapAfterOutgoing: number;
+			sameVideo: boolean;
+		};
+
+		const transitionPlans: TrackTransitionPlan[] = [];
+
+		for (const element of sortedMediaElements) {
+			if (!hasRenderableMedia(element)) continue;
+
 			const transition = transitionByTarget.get(element.id);
+			// Do not require transition.trackId === track.id: targetElementId is unique and
+			// already ties the transition to this element; trackId can drift after edits/imports
+			// and would otherwise skip building TransitionNode (preview/export would show no effect).
+			if (!transition) continue;
 
-			if (transition && transition.trackId === track.id && i > 0) {
-				// Find the outgoing element (the one before this in the sorted list)
-				const prevElement = elements[i - 1];
-				const outgoingNode = elementNodeMap.get(prevElement.id);
-				const incomingNode = elementNodeMap.get(element.id);
+			const pair = resolveTransitionMediaPair({ transition, track });
+			if (!pair) continue;
 
-				if (outgoingNode && incomingNode) {
-					const transitionNode = new TransitionNode({
-						type: transition.type,
-						duration: transition.duration,
-						transitionStart: element.startTime,
-					});
-					transitionNode.outgoingNode = outgoingNode;
-					transitionNode.incomingNode = incomingNode;
-					contentNodes.push(transitionNode);
-					consumedByTransition.add(prevElement.id);
-					consumedByTransition.add(element.id);
-				}
+			const { outgoing: outgoingMedia, incoming: incomingMedia } = pair;
+			if (!hasRenderableMedia(outgoingMedia) || !hasRenderableMedia(incomingMedia)) {
+				continue;
 			}
+
+			const outgoingEnd = outgoingMedia.startTime + outgoingMedia.duration;
+			const gapAfterOutgoing = Math.max(0, incomingMedia.startTime - outgoingEnd);
+
+			const outgoingNode = elementNodeMap.get(outgoingMedia.id);
+			const incomingNode = elementNodeMap.get(incomingMedia.id);
+
+			if (outgoingNode && incomingNode) {
+				const d = Math.max(1e-6, transition.duration);
+				const sameVideo =
+					outgoingMedia.type === "video" &&
+					incomingMedia.type === "video" &&
+					(outgoingMedia as VideoElement).mediaId === (incomingMedia as VideoElement).mediaId;
+
+				transitionPlans.push({
+					transition,
+					pair: { outgoing: outgoingMedia, incoming: incomingMedia },
+					outgoingNode,
+					incomingNode,
+					duration: d,
+					junctionTime: incomingMedia.startTime,
+					gapAfterOutgoing,
+					sameVideo,
+				});
+			}
+		}
+
+		for (const plan of transitionPlans) {
+			// Peer suppression: while `time` is inside another transition's composite window, this node
+			// must not run simple outgoing/incoming draws (avoids stomping shared VideoNode state).
+			//
+			// - For *earlier* peers (p.junction < this.junction): use their **full** window so this
+			//   later cut stays idle during the earlier composite (regression if we only intersected:
+			//   adjacent windows rarely overlap, so the 2nd TransitionNode drew B on top and hid T1).
+			// - For *later* peers (p.junction > this.junction): clip **start** to this junction so a
+			//   long later transition does not suppress this cut's outgoing clip while still on the
+			//   left-hand segment (upstream black / false "early" transition).
+			const peerWindows = transitionPlans
+				.filter((p) => p !== plan)
+				.map((p) => {
+					const ph = p.duration / 2;
+					let start = p.junctionTime - ph;
+					const end = p.junctionTime + ph;
+					if (p.junctionTime > plan.junctionTime + 1e-9) {
+						start = Math.max(start, plan.junctionTime);
+					}
+					return { start, end };
+				});
+
+			// Middle segment (incoming of this cut) must not use "incoming-only" fallback when it
+			// is the outgoing side of a later cut — otherwise both TransitionNodes paint that clip
+			// and the later pass wipes out the earlier transition (and doubles decode work).
+			const suppressIncoming = transitionPlans.some(
+				(p) =>
+					p !== plan &&
+					p.pair.outgoing.id === plan.pair.incoming.id &&
+					p.junctionTime > plan.junctionTime,
+			);
+
+			const d = plan.duration;
+			const halfDuration = d / 2;
+
+			const sampleSpread = plan.sameVideo
+				? Math.min(3, Math.max(d * 2, d + 1.25))
+				: undefined;
+			// sampleSpread advances the outgoing decode clock past the junction.
+			// The outgoing extension must cover that tail or getSourceTime clamps
+			// mid-transition and the outgoing layer freezes for the rest of the blend.
+			const outgoingSampleTail = getTransitionOutgoingExtraTail({
+				duration: d,
+				sampleSpread,
+			});
+
+			const transitionNode = new TransitionNode({
+				type: plan.transition.type,
+				duration: d,
+				junctionTime: plan.junctionTime,
+				peerTransitionWindows: peerWindows,
+				suppressIncomingOutsideWindow: suppressIncoming,
+				...(sampleSpread !== undefined ? { sampleSpread } : {}),
+			});
+
+			if (isTransitionExtendableNode(plan.outgoingNode)) {
+				plan.outgoingNode.setTransitionExtension({
+					after:
+						halfDuration +
+						plan.gapAfterOutgoing +
+						TRANSITION_TIME_SLACK +
+						outgoingSampleTail,
+				});
+			}
+			if (isTransitionExtendableNode(plan.incomingNode)) {
+				plan.incomingNode.setTransitionExtension({ before: halfDuration + TRANSITION_TIME_SLACK });
+			}
+
+			transitionNode.outgoingNode = plan.outgoingNode;
+			transitionNode.incomingNode = plan.incomingNode;
+			contentNodes.push(transitionNode);
+			consumedByTransition.add(plan.pair.outgoing.id);
+			consumedByTransition.add(plan.pair.incoming.id);
 		}
 
 		// Add non-transition video/image nodes
@@ -191,22 +439,23 @@ export function buildScene(params: BuildSceneParams) {
 
 			if (element.type === "sticker") {
 				contentNodes.push(
-					new StickerNode({
-						iconName: element.iconName,
-						duration: element.duration,
-						timeOffset: element.startTime,
-						trimStart: element.trimStart,
-						trimEnd: element.trimEnd,
-						transform: element.transform,
-						opacity: element.opacity,
-						color: element.color,
-						fadeIn: element.fadeIn,
-						fadeOut: element.fadeOut,
-						keyframes: element.keyframes,
-						animationIn: element.animationIn,
-						animationOut: element.animationOut,
-						animationLoop: element.animationLoop,
-					}),
+			new StickerNode({
+					iconName: element.iconName,
+					duration: element.duration,
+					timeOffset: element.startTime,
+					trimStart: element.trimStart,
+					trimEnd: element.trimEnd,
+					transform: element.transform,
+					opacity: element.opacity,
+					color: element.color,
+					fadeIn: element.fadeIn,
+					fadeOut: element.fadeOut,
+					keyframes: element.keyframes,
+					animationIn: element.animationIn,
+					animationOut: element.animationOut,
+					animationLoop: element.animationLoop,
+					blendMode: element.blendMode,
+				}),
 				);
 			}
 

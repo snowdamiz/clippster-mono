@@ -1,40 +1,36 @@
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
+import { ref, watch, computed, toRef, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
 import { useEditorUIState } from "../../../composables/useEditorUIState";
-import type { VideoElement, ColorAdjustments, CropRect } from "../../../types/timeline";
+import type { VideoElement, ColorAdjustments, CropRect, ColorCurves, ColorWheels } from "../../../types/timeline";
 import { DEFAULT_COLOR_ADJUSTMENTS } from "../../../types/timeline";
 import type { VideoEffect } from "../../../types/effects";
 import { getEffectPreset } from "../../../constants/effect-constants";
+import { COLOR_OVERLAY_BLEND_OPTIONS } from "../../../constants/color-overlay-constants";
 import type { ChromakeySettings } from "../../../types/chromakey";
 import { DEFAULT_CHROMAKEY } from "../../../types/chromakey";
-import { Film, Trash2, RotateCcw, VolumeX, Volume2, FlipHorizontal, FlipVertical, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, Crop, RectangleHorizontal, Square, RectangleVertical, Pipette, SlidersHorizontal, Sparkles } from "lucide-vue-next";
+import { Film, Trash2, RotateCcw, VolumeX, Volume2, FlipHorizontal, FlipVertical, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, ChevronUp, Crop, RectangleHorizontal, Square, RectangleVertical, Pipette, SlidersHorizontal, Sparkles, Scissors, Diamond } from "lucide-vue-next";
+import KeyframeEditorPanel from "../KeyframeEditorPanel.vue";
+import MasksPanel from "./MasksPanel.vue";
 import { useKeyframes } from "../../../composables/useKeyframes";
-import { toRef } from "vue";
+import { useKeyframedInspectorProperty } from "../../../composables/useKeyframedInspectorProperty";
 import KeyframeToggle from "./KeyframeToggle.vue";
 import AnimationProperties from "./AnimationProperties.vue";
-import TransitionProperties from "./TransitionProperties.vue";
-import type { Transition } from "../../../types/transitions";
+import ColorCurvesPanel from "./ColorCurvesPanel.vue";
+import ColorWheelsPanel from "./ColorWheelsPanel.vue";
+import LutPanel from "./LutPanel.vue";
+import ElementTimingFields from "./ElementTimingFields.vue";
 import { Switch } from '@/components/ui/switch';
+import { useClipVolumeInspector } from "../../../composables/panels/useClipVolumeInspector";
+import { useRafBatchedUpdate } from "../../../composables/useRafBatchedUpdate";
 
 const props = defineProps<{
 	element: VideoElement;
 	trackId: string;
 }>();
 
-const activeTransition = computed<Transition | null>(() => {
-	void version.value;
-	try {
-		const scene = editor.scenes.getActiveScene();
-		if (!scene?.transitions) return null;
-		return scene.transitions.find((t) => t.targetElementId === props.element.id) ?? null;
-	} catch {
-		return null;
-	}
-});
-
-type TopTab = 'video' | 'audio' | 'speed' | 'adjust' | 'animate';
+type TopTab = 'video' | 'audio' | 'speed' | 'adjust' | 'grading' | 'animate' | 'masks' | 'keyframes';
 const activeTab = ref<TopTab>('video');
 
 const topTabs: { id: TopTab; label: string; icon: any }[] = [
@@ -42,7 +38,10 @@ const topTabs: { id: TopTab; label: string; icon: any }[] = [
 	{ id: 'audio', label: 'Audio', icon: Volume2 },
 	{ id: 'speed', label: 'Speed', icon: Gauge },
 	{ id: 'adjust', label: 'Adjust', icon: SlidersHorizontal },
+	{ id: 'grading', label: 'Grade', icon: Wand2 },
 	{ id: 'animate', label: 'Animate', icon: Sparkles },
+	{ id: 'masks', label: 'Masks', icon: Scissors },
+	{ id: 'keyframes', label: 'Keyframes', icon: Diamond },
 ];
 
 const openVideoSections = ref<Set<string>>(new Set(['basic']));
@@ -50,41 +49,88 @@ function toggleVideoSection(section: string) {
 	openVideoSections.value = openVideoSections.value.has(section) ? new Set() : new Set([section]);
 }
 
-const { editor, version } = useEditor();
+const { editor } = useEditor({
+	subscribe: {
+		playback: false,
+		timeline: false,
+		scenes: false,
+		project: false,
+		media: false,
+		selection: false,
+	},
+});
 const { selectedElements } = useElementSelection();
 const { cropPanelRequested, clearCropPanelRequest } = useEditorUIState();
 
-const trackRef = computed(() => editor.timeline.getTrackById({ trackId: props.trackId })!);
-const { hasKeyframes: hasKf, addKeyframe, clearPropertyKeyframes } = useKeyframes({
-	trackRef,
-	elementRef: toRef(props, 'element'),
+function isRangeInputTarget(target: EventTarget | null): boolean {
+	return target instanceof HTMLInputElement && target.type === "range";
+}
+
+function handleRangePointerDown(event: PointerEvent) {
+	if (isRangeInputTarget(event.target)) {
+		editor.setInteractiveDrag(true);
+	}
+}
+
+function stopRangeInteraction() {
+	flushUpdate();
+	editor.setInteractiveDrag(false);
+}
+
+onMounted(() => {
+	window.addEventListener("pointerup", stopRangeInteraction);
+	window.addEventListener("pointercancel", stopRangeInteraction);
 });
 
-// --- Local input refs synced with element props ---
+onUnmounted(() => {
+	window.removeEventListener("pointerup", stopRangeInteraction);
+	window.removeEventListener("pointercancel", stopRangeInteraction);
+	stopRangeInteraction();
+});
+
+const trackRef = computed(() => editor.timeline.getTrackById({ trackId: props.trackId })!);
+const elementRef = toRef(props, "element");
+const { hasKeyframes: hasKf, addKeyframe, clearPropertyKeyframes } = useKeyframes({
+	trackRef,
+	elementRef,
+});
+
+const scaleKf = useKeyframedInspectorProperty({ trackRef, elementRef, property: "scale" });
+const posXKf = useKeyframedInspectorProperty({ trackRef, elementRef, property: "positionX" });
+const posYKf = useKeyframedInspectorProperty({ trackRef, elementRef, property: "positionY" });
+const rotationKf = useKeyframedInspectorProperty({ trackRef, elementRef, property: "rotation" });
+
+// --- Local input refs synced with element props (or keyframed resolved values) ---
 const opacityInput = ref(Math.round(props.element.opacity * 100).toString());
-const volumeInput = ref(Math.round((props.element.volume ?? 1) * 100).toString());
 const scaleInput = ref(Math.round(props.element.transform.scale * 100).toString());
 const posXInput = ref(props.element.transform.position.x.toString());
 const posYInput = ref(props.element.transform.position.y.toString());
 const rotateInput = ref(props.element.transform.rotate.toString());
 
-watch(() => props.element.opacity, (v) => { opacityInput.value = Math.round(v * 100).toString(); });
-watch(() => props.element.volume, (v) => { volumeInput.value = Math.round((v ?? 1) * 100).toString(); });
-watch(() => props.element.transform.scale, (v) => { scaleInput.value = Math.round(v * 100).toString(); });
-watch(() => props.element.transform.position.x, (v) => { posXInput.value = v.toString(); });
-watch(() => props.element.transform.position.y, (v) => { posYInput.value = v.toString(); });
-watch(() => props.element.transform.rotate, (v) => { rotateInput.value = v.toString(); });
-
-const volumePercent = computed(() => `${Math.round((props.element.volume ?? 1) * 100)}%`);
+watch(() => props.element.opacity, (v) => {
+	if (!hasKf("opacity")) opacityInput.value = Math.round(v * 100).toString();
+});
+watch(scaleKf.displayValue, (v) => {
+	scaleInput.value = Math.round(v * 100).toString();
+}, { immediate: true });
+watch(posXKf.displayValue, (v) => { posXInput.value = v.toString(); }, { immediate: true });
+watch(posYKf.displayValue, (v) => { posYInput.value = v.toString(); }, { immediate: true });
+watch(rotationKf.displayValue, (v) => { rotateInput.value = v.toString(); }, { immediate: true });
 
 const speedTicks = [0.5, 1, 2, 3, 4, 5, 8, 10];
 const currentSpeed = computed(() => props.element.speed ?? 1);
 const speedInput = ref(currentSpeed.value.toFixed(2));
+const isDraggingSpeed = ref(false);
+const speedDragSnapshot = ref<ReturnType<typeof editor.timeline.getTracks> | null>(null);
 
 watch(() => props.element.speed, (v) => { speedInput.value = (v ?? 1).toFixed(2); });
 
-function changeSpeed(speed: number) {
-	const clamped = Math.round(Math.max(0.1, Math.min(10, speed)) * 10) / 10;
+function clampSpeed(speed: number) {
+	return Math.round(Math.max(0.1, Math.min(10, speed)) * 10) / 10;
+}
+
+function commitSpeed(speed: number) {
+	const clamped = clampSpeed(speed);
 	speedInput.value = clamped.toFixed(2);
 	editor.timeline.changeElementSpeed({
 		trackId: props.trackId,
@@ -93,28 +139,70 @@ function changeSpeed(speed: number) {
 	});
 }
 
+function applySpeedPreview(speed: number) {
+	const clamped = clampSpeed(speed);
+	const tracks = editor.timeline.getTracks();
+	const updatedTracks = tracks.map((track) => {
+		if (track.id !== props.trackId) return track;
+		const target = track.elements.find((el) => el.id === props.element.id);
+		if (!target) return track;
+		const oldSpeed = ("speed" in target && typeof target.speed === "number") ? target.speed : 1;
+		const oldDuration = target.duration;
+		const newDuration = oldDuration * oldSpeed / clamped;
+		const durationDelta = newDuration - oldDuration;
+		const oldEndTime = target.startTime + oldDuration;
+		return {
+			...track,
+			elements: track.elements.map((el) => {
+				if (el.id === props.element.id) {
+					return { ...el, speed: clamped, duration: newDuration } as typeof el;
+				}
+				if (durationDelta !== 0 && el.startTime >= oldEndTime - 0.001) {
+					return { ...el, startTime: el.startTime + durationDelta } as typeof el;
+				}
+				return el;
+			}),
+		} as typeof track;
+	});
+	editor.timeline.updateTracks(updatedTracks);
+}
+
+function changeSpeed(speed: number) {
+	const clamped = clampSpeed(speed);
+	speedInput.value = clamped.toFixed(2);
+	if (isDraggingSpeed.value) {
+		applySpeedPreview(clamped);
+	} else {
+		commitSpeed(clamped);
+	}
+}
+
+function onSpeedPointerDown() {
+	if (!isDraggingSpeed.value) {
+		speedDragSnapshot.value = editor.timeline.getTracks();
+	}
+	editor.setInteractiveDrag(true);
+	isDraggingSpeed.value = true;
+}
+function onSpeedPointerUp(e: PointerEvent) {
+	if (!isDraggingSpeed.value) return;
+	isDraggingSpeed.value = false;
+	editor.setInteractiveDrag(false);
+	if (speedDragSnapshot.value) {
+		editor.timeline.updateTracks(speedDragSnapshot.value);
+		speedDragSnapshot.value = null;
+	}
+	commitSpeed(Number((e.target as HTMLInputElement).value) / 10);
+}
+
 function handleSpeedInput(value: string) {
 	speedInput.value = value;
-	const parsed = parseFloat(value);
-	if (!Number.isNaN(parsed) && parsed >= 0.1 && parsed <= 10) {
-		editor.timeline.changeElementSpeed({
-			trackId: props.trackId,
-			elementId: props.element.id,
-			speed: Math.round(parsed * 10) / 10,
-		});
-	}
 }
 
 function handleSpeedBlur() {
 	const parsed = parseFloat(speedInput.value);
 	const val = Number.isNaN(parsed) ? (props.element.speed ?? 1) : Math.max(0.1, Math.min(10, parsed));
-	const clamped = Math.round(val * 10) / 10;
-	speedInput.value = clamped.toFixed(2);
-	editor.timeline.changeElementSpeed({
-		trackId: props.trackId,
-		elementId: props.element.id,
-		speed: clamped,
-	});
+	commitSpeed(val);
 }
 
 const ca = computed(() => ({ ...DEFAULT_COLOR_ADJUSTMENTS, ...props.element.colorAdjustments }));
@@ -233,7 +321,7 @@ const activeCropPresetLabel = computed(() => {
 
 const nativePresetLabel = computed(() => {
 	const asset = editor.media.getAssets().find((a) => a.id === props.element.mediaId);
-	if (!asset) return null;
+	if (!asset || !asset.width || !asset.height) return null;
 	const srcAR = asset.width / asset.height;
 	for (const p of cropPresets) {
 		if (p.ratio[0] === 0) continue;
@@ -243,13 +331,21 @@ const nativePresetLabel = computed(() => {
 	return null;
 });
 
-function update(updates: Record<string, unknown>) {
+function commitUpdate(updates: Record<string, unknown>) {
 	editor.timeline.updateElement({
 		trackId: props.trackId,
 		elementId: props.element.id,
 		updates,
 	});
 }
+
+const { update, flush: flushUpdate } = useRafBatchedUpdate(commitUpdate);
+
+const clipVolume = useClipVolumeInspector({
+	elementId: props.element.id,
+	getLinearGain: () => props.element.volume ?? 1,
+	setLinearGain: (gain: number) => update({ volume: gain }),
+});
 
 function updateTransform(partial: Record<string, unknown>) {
 	update({
@@ -264,6 +360,18 @@ function updateTransform(partial: Record<string, unknown>) {
 	});
 }
 
+function updateColorCurves(curves: ColorCurves) {
+	update({ colorCurves: Object.keys(curves).length > 0 ? curves : undefined });
+}
+
+function updateColorWheels(wheels: ColorWheels) {
+	update({ colorWheels: Object.keys(wheels).length > 0 ? wheels : undefined });
+}
+
+function updateLutPath(lutPath: string | undefined) {
+	update({ lutPath: lutPath || undefined });
+}
+
 function updateColor(partial: Partial<ColorAdjustments>) {
 	update({
 		colorAdjustments: { ...ca.value, ...partial },
@@ -276,6 +384,10 @@ const showChromakey = ref(chromakey.value.enabled);
 
 function updateChromakey(partial: Partial<ChromakeySettings>) {
 	update({ chromakey: { ...chromakey.value, ...partial } });
+}
+
+function resetChromakey() {
+	update({ chromakey: { ...DEFAULT_CHROMAKEY } });
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -335,6 +447,17 @@ function toggleOpacityKeyframe() {
 	}
 }
 
+function toggleSpeedKeyframe() {
+	if (hasKf('speed')) {
+		clearPropertyKeyframes('speed');
+	} else {
+		const currentTime = editor.playback.getCurrentTime();
+		const elapsed = currentTime - props.element.startTime;
+		const offset = props.element.duration > 0 ? elapsed / props.element.duration : 0;
+		addKeyframe('speed', clamp(offset, 0, 1), props.element.speed ?? 1);
+	}
+}
+
 // --- Opacity ---
 function handleOpacitySlider(e: Event) {
 	const val = Number((e.target as HTMLInputElement).value);
@@ -353,64 +476,88 @@ function handleOpacityBlur() {
 	update({ opacity: pct / 100 });
 }
 
-// --- Volume ---
-function handleVolumeSlider(e: Event) {
-	const val = Number((e.target as HTMLInputElement).value);
-	volumeInput.value = val.toString();
-	update({ volume: val / 100 });
-}
-function handleVolumeInput(value: string) {
-	volumeInput.value = value;
-	const parsed = parseInt(value, 10);
-	if (!Number.isNaN(parsed)) update({ volume: clamp(parsed, 0, 200) / 100 });
-}
-function handleVolumeBlur() {
-	const parsed = parseInt(volumeInput.value, 10);
-	const pct = Number.isNaN(parsed) ? Math.round((props.element.volume ?? 1) * 100) : clamp(parsed, 0, 200);
-	volumeInput.value = pct.toString();
-	update({ volume: pct / 100 });
-}
-
 // --- Scale ---
 function handleScaleSlider(e: Event) {
 	const val = Number((e.target as HTMLInputElement).value);
 	scaleInput.value = val.toString();
-	updateTransform({ scale: val / 100 });
+	const scale = val / 100;
+	if (scaleKf.isKeyframed.value) {
+		scaleKf.setKeyframedValue(scale);
+	} else {
+		updateTransform({ scale });
+	}
 }
 function handleScaleInput(value: string) {
 	scaleInput.value = value;
 	const parsed = parseInt(value, 10);
-	if (!Number.isNaN(parsed)) updateTransform({ scale: clamp(parsed, 10, 500) / 100 });
+	if (!Number.isNaN(parsed)) {
+		const scale = clamp(parsed, 10, 500) / 100;
+		if (scaleKf.isKeyframed.value) {
+			scaleKf.setKeyframedValue(scale);
+		} else {
+			updateTransform({ scale });
+		}
+	}
 }
 function handleScaleBlur() {
 	const parsed = parseInt(scaleInput.value, 10);
-	const pct = Number.isNaN(parsed) ? Math.round(props.element.transform.scale * 100) : clamp(parsed, 10, 500);
+	const pct = Number.isNaN(parsed)
+		? Math.round(scaleKf.displayValue.value * 100)
+		: clamp(parsed, 10, 500);
 	scaleInput.value = pct.toString();
-	updateTransform({ scale: pct / 100 });
+	const scale = pct / 100;
+	if (scaleKf.isKeyframed.value) {
+		scaleKf.setKeyframedValue(scale);
+	} else {
+		updateTransform({ scale });
+	}
 }
 
 // --- Position ---
 function handlePosX(value: string) {
 	posXInput.value = value;
 	const parsed = parseFloat(value);
-	if (!Number.isNaN(parsed)) updateTransform({ position: { x: parsed, y: props.element.transform.position.y } });
+	if (!Number.isNaN(parsed)) {
+		if (posXKf.isKeyframed.value) {
+			posXKf.setKeyframedValue(parsed);
+		} else {
+			updateTransform({ position: { x: parsed, y: props.element.transform.position.y } });
+		}
+	}
 }
 function handlePosY(value: string) {
 	posYInput.value = value;
 	const parsed = parseFloat(value);
-	if (!Number.isNaN(parsed)) updateTransform({ position: { x: props.element.transform.position.x, y: parsed } });
+	if (!Number.isNaN(parsed)) {
+		if (posYKf.isKeyframed.value) {
+			posYKf.setKeyframedValue(parsed);
+		} else {
+			updateTransform({ position: { x: props.element.transform.position.x, y: parsed } });
+		}
+	}
 }
 
 // --- Rotation ---
 function handleRotateSlider(e: Event) {
 	const val = Number((e.target as HTMLInputElement).value);
 	rotateInput.value = val.toString();
-	updateTransform({ rotate: val });
+	if (rotationKf.isKeyframed.value) {
+		rotationKf.setKeyframedValue(val);
+	} else {
+		updateTransform({ rotate: val });
+	}
 }
 function handleRotateInput(value: string) {
 	rotateInput.value = value;
 	const parsed = parseFloat(value);
-	if (!Number.isNaN(parsed)) updateTransform({ rotate: clamp(parsed, -360, 360) });
+	if (!Number.isNaN(parsed)) {
+		const rot = clamp(parsed, -360, 360);
+		if (rotationKf.isKeyframed.value) {
+			rotationKf.setKeyframedValue(rot);
+		} else {
+			updateTransform({ rotate: rot });
+		}
+	}
 }
 
 // --- Resets ---
@@ -460,21 +607,17 @@ function handleDelete() {
 	});
 }
 
-function formatTime(seconds: number): string {
-	const min = Math.floor(seconds / 60);
-	const sec = (seconds % 60).toFixed(2);
-	return `${min}:${sec.padStart(5, "0")}`;
-}
 </script>
 
 <template>
-	<div class="flex h-full flex-row">
+	<div class="flex h-full min-h-0 flex-row" @pointerdown.capture="handleRangePointerDown">
 		<!-- ══════ Content Area ══════ -->
-		<div class="flex flex-1 min-w-0 flex-col overflow-hidden">
-
+		<div class="flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden">
+		<!-- One scroll region for the active tab + transition block -->
+		<div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
 		<!-- ══════ Video Tab ══════ -->
 		<template v-if="activeTab === 'video'">
-			<div class="flex-1 overflow-y-auto">
+			<div>
 				<!-- ── Basic ── -->
 				<button
 					class="flex w-full items-center justify-between border-b border-white/10 px-3 py-2 text-xs font-medium transition-colors"
@@ -485,6 +628,8 @@ function formatTime(seconds: number): string {
 					<ChevronDown class="size-3.5 transition-transform duration-150" :class="{ 'rotate-180': openVideoSections.has('basic') }" />
 				</button>
 				<div v-if="openVideoSections.has('basic')" class="space-y-4 p-3">
+					<ElementTimingFields :element="element" :track-id="trackId" />
+
 					<!-- Transform -->
 					<div class="space-y-2">
 						<div class="flex items-center justify-between">
@@ -497,12 +642,14 @@ function formatTime(seconds: number): string {
 
 						<!-- Scale + Rotate grid -->
 						<div class="grid grid-cols-2 gap-2">
-							<div class="flex h-7 items-center rounded-sm border border-white/10 bg-white/5 px-2">
+							<div class="flex h-7 items-center rounded-sm border border-white/10 bg-white/5 px-2" :class="scaleKf.isKeyframed.value ? 'border-amber-500/30' : ''">
+								<KeyframeToggle :active="scaleKf.isKeyframed.value" label="scale" class="mr-0.5 shrink-0" @toggle="scaleKf.toggleKeyframe" />
 								<span class="mr-1 shrink-0 select-none text-[10px] text-zinc-500">Scale</span>
 								<input type="number" :value="scaleInput" min="10" max="500" step="1" class="w-full bg-transparent text-right text-xs text-zinc-200 outline-none" @input="(e) => handleScaleInput((e.target as HTMLInputElement).value)" @blur="handleScaleBlur" />
 								<span class="ml-0.5 shrink-0 text-[10px] text-zinc-500">%</span>
 							</div>
-							<div class="flex h-7 items-center rounded-sm border border-white/10 bg-white/5 px-2">
+							<div class="flex h-7 items-center rounded-sm border border-white/10 bg-white/5 px-2" :class="rotationKf.isKeyframed.value ? 'border-amber-500/30' : ''">
+								<KeyframeToggle :active="rotationKf.isKeyframed.value" label="rotation" class="mr-0.5 shrink-0" @toggle="rotationKf.toggleKeyframe" />
 								<span class="mr-1 shrink-0 select-none text-[10px] text-zinc-500">Rotate</span>
 								<input type="number" :value="rotateInput" min="-360" max="360" step="0.1" class="w-full bg-transparent text-right text-xs text-zinc-200 outline-none" @input="(e) => handleRotateInput((e.target as HTMLInputElement).value)" />
 								<span class="ml-0.5 shrink-0 text-[10px] text-zinc-500">°</span>
@@ -511,11 +658,13 @@ function formatTime(seconds: number): string {
 
 						<!-- X + Y grid -->
 						<div class="grid grid-cols-2 gap-2">
-							<div class="flex h-7 items-center rounded-sm border border-white/10 bg-white/5 px-2">
+							<div class="flex h-7 items-center rounded-sm border border-white/10 bg-white/5 px-2" :class="posXKf.isKeyframed.value ? 'border-amber-500/30' : ''">
+								<KeyframeToggle :active="posXKf.isKeyframed.value" label="position X" class="mr-0.5 shrink-0" @toggle="posXKf.toggleKeyframe" />
 								<span class="mr-1 shrink-0 select-none text-[10px] text-zinc-500">X</span>
 								<input type="number" :value="posXInput" step="1" class="w-full bg-transparent text-right text-xs text-zinc-200 outline-none" @input="(e) => handlePosX((e.target as HTMLInputElement).value)" />
 							</div>
-							<div class="flex h-7 items-center rounded-sm border border-white/10 bg-white/5 px-2">
+							<div class="flex h-7 items-center rounded-sm border border-white/10 bg-white/5 px-2" :class="posYKf.isKeyframed.value ? 'border-amber-500/30' : ''">
+								<KeyframeToggle :active="posYKf.isKeyframed.value" label="position Y" class="mr-0.5 shrink-0" @toggle="posYKf.toggleKeyframe" />
 								<span class="mr-1 shrink-0 select-none text-[10px] text-zinc-500">Y</span>
 								<input type="number" :value="posYInput" step="1" class="w-full bg-transparent text-right text-xs text-zinc-200 outline-none" @input="(e) => handlePosY((e.target as HTMLInputElement).value)" />
 							</div>
@@ -559,22 +708,45 @@ function formatTime(seconds: number): string {
 						<input type="range" :value="element.opacity * 100" min="0" max="100" step="1" class="w-full" @input="handleOpacitySlider" />
 					</div>
 
-					<!-- Fade In / Out -->
-					<div class="space-y-2 border-t border-white/[0.05] pt-4">
-						<label class="text-[11px] text-zinc-500">Fade</label>
-						<div class="flex items-center gap-3">
-							<div class="flex flex-1 flex-col gap-1">
-								<span class="text-[10px] text-zinc-500">In</span>
-								<input type="range" :value="(element.fadeIn ?? 0) * 10" min="0" max="30" step="1" class="w-full" @input="handleFadeInSlider" />
-							</div>
-							<div class="flex flex-1 flex-col gap-1">
-								<span class="text-[10px] text-zinc-500">Out</span>
-								<input type="range" :value="(element.fadeOut ?? 0) * 10" min="0" max="30" step="1" class="w-full" @input="handleFadeOutSlider" />
-							</div>
+				<!-- Blend Mode -->
+				<div class="space-y-1.5 border-t border-white/[0.05] pt-4">
+					<label class="text-[11px] text-zinc-500">Blend Mode</label>
+					<select
+						:value="element.blendMode ?? 'normal'"
+						class="w-full rounded-sm border border-white/10 bg-[#1a1a1e] px-2 py-1.5 text-xs text-zinc-200 outline-none"
+						@change="(e) => update({ blendMode: (e.target as HTMLSelectElement).value === 'normal' ? undefined : (e.target as HTMLSelectElement).value })"
+					>
+						<option value="normal">Normal</option>
+						<option value="multiply">Multiply</option>
+						<option value="screen">Screen</option>
+						<option value="overlay">Overlay</option>
+						<option value="soft-light">Soft Light</option>
+						<option value="hard-light">Hard Light</option>
+						<option value="darken">Darken</option>
+						<option value="lighten">Lighten</option>
+						<option value="color-dodge">Color Dodge</option>
+						<option value="color-burn">Color Burn</option>
+						<option value="difference">Difference</option>
+						<option value="exclusion">Exclusion</option>
+					</select>
+				</div>
+
+				<!-- Fade In / Out -->
+				<div class="space-y-2 border-t border-white/[0.05] pt-4">
+					<label class="text-[11px] text-zinc-500">Fade</label>
+					<div class="flex items-center gap-3">
+						<div class="flex flex-1 flex-col gap-1">
+							<span class="text-[10px] text-zinc-500">In</span>
+							<input type="range" :value="(element.fadeIn ?? 0) * 10" min="0" max="30" step="1" class="w-full" @input="handleFadeInSlider" />
+						</div>
+						<div class="flex flex-1 flex-col gap-1">
+							<span class="text-[10px] text-zinc-500">Out</span>
+							<input type="range" :value="(element.fadeOut ?? 0) * 10" min="0" max="30" step="1" class="w-full" @input="handleFadeOutSlider" />
 						</div>
 					</div>
-
 				</div>
+
+			</div>
 
 				<!-- ── Crop ── -->
 				<button
@@ -946,6 +1118,30 @@ function formatTime(seconds: number): string {
 										@input="(e) => updateEffectParam(effect.id, 'levels', Number((e.target as HTMLInputElement).value))" />
 								</div>
 							</template>
+
+							<!-- Solid Color / colorOverlay -->
+							<template v-if="effect.type === 'colorOverlay'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Color</span>
+									<div class="relative">
+										<input type="color" :value="(effect as any).color ?? '#ff4500'" class="absolute inset-0 h-5 w-5 cursor-pointer opacity-0"
+											@input="(e) => updateEffectParam(effect.id, 'color', (e.target as HTMLInputElement).value)" />
+										<div class="size-5 rounded border border-white/10" :style="{ backgroundColor: (effect as any).color ?? '#ff4500' }" />
+									</div>
+								</div>
+								<div class="space-y-1">
+									<span class="text-[10px] text-zinc-500">Blend</span>
+									<select
+										:value="(effect as any).blendMode ?? 'color-burn'"
+										class="w-full rounded-sm border border-white/10 bg-[#1a1a1e] px-2 py-1 text-[10px] text-zinc-200 outline-none"
+										@change="(e) => updateEffectParam(effect.id, 'blendMode', (e.target as HTMLSelectElement).value)"
+									>
+										<option v-for="opt in COLOR_OVERLAY_BLEND_OPTIONS" :key="opt.value" :value="opt.value">
+											{{ opt.label }}
+										</option>
+									</select>
+								</div>
+							</template>
 						</div>
 					</div>
 				</div>
@@ -963,10 +1159,19 @@ function formatTime(seconds: number): string {
 					<!-- Enabled -->
 					<div class="flex items-center justify-between">
 						<span class="text-[11px] text-zinc-500">Enabled</span>
-						<Switch :checked="chromakey.enabled" @update:checked="(val) => updateChromakey({ enabled: val })" />
+						<Switch :model-value="chromakey.enabled" @update:model-value="(val: boolean) => updateChromakey({ enabled: val })" />
 					</div>
 
 					<template v-if="chromakey.enabled">
+						<div class="flex items-center justify-end">
+							<button
+								class="rounded px-1.5 py-0.5 text-[10px] text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
+								@click="resetChromakey"
+							>
+								Reset
+							</button>
+						</div>
+
 						<!-- Color picker -->
 						<div class="flex h-7 items-center gap-2 rounded-sm border border-white/10 bg-white/5 px-2">
 							<span class="shrink-0 select-none text-[10px] text-zinc-500">Color</span>
@@ -996,38 +1201,118 @@ function formatTime(seconds: number): string {
 		</template>
 
 		<!-- ══════ Audio Tab ══════ -->
-		<div v-else-if="activeTab === 'audio'" class="flex-1 overflow-y-auto p-3">
+		<div v-else-if="activeTab === 'audio'" class="p-3">
 			<div class="flex items-center border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
 				<span class="text-sm text-zinc-400">Audio</span>
 			</div>
 			<div class="space-y-4">
-				<!-- Volume -->
+				<!-- Volume (linear gain persisted; dB UI) -->
 				<div class="space-y-2">
-					<span class="text-xs font-medium text-zinc-300">Volume</span>
+					<div class="flex items-center justify-between">
+						<span class="text-xs font-medium text-zinc-300">Volume</span>
+						<span class="text-[10px] text-zinc-500" title="Linear gain 1 = 0 dB (export / playback)">1 = 0 dB</span>
+					</div>
 					<div class="flex items-center gap-2">
-						<input type="range" :value="(element.volume ?? 1) * 100" min="0" max="200" step="1" class="flex-1" @input="handleVolumeSlider" />
-						<div class="flex h-7 w-16 items-center rounded-sm border border-white/10 bg-white/5 px-2">
-							<input type="number" :value="volumeInput" min="0" max="200" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => handleVolumeInput((e.target as HTMLInputElement).value)" @blur="handleVolumeBlur" />
-							<span class="ml-0.5 shrink-0 text-[10px] text-zinc-500">%</span>
+						<input
+							type="range"
+							:value="clipVolume.sliderStep"
+							min="0"
+							:max="clipVolume.sliderMax"
+							step="1"
+							class="flex-1"
+							@pointerdown="clipVolume.onSliderPointerDown"
+							@input="clipVolume.onSliderInput"
+						/>
+						<div class="flex h-7 min-w-[5.25rem] overflow-hidden rounded-sm border border-white/10 bg-white/5">
+							<input
+								type="text"
+								:value="clipVolume.dbField"
+								class="min-w-0 flex-1 bg-transparent px-2 text-center text-xs text-zinc-200 outline-none"
+								@input="(e) => clipVolume.onDbFieldInput((e.target as HTMLInputElement).value)"
+								@blur="clipVolume.onDbFieldBlur"
+								@keydown.enter="($event.target as HTMLInputElement).blur()"
+							/>
+							<div class="flex w-4 shrink-0 flex-col border-l border-white/10">
+								<button
+									type="button"
+									class="flex h-1/2 items-center justify-center text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-200"
+									title="Increase volume by 0.1 dB"
+									@mousedown.prevent
+									@click="clipVolume.nudgeDb(1)"
+								>
+									<ChevronUp class="size-2.5" />
+								</button>
+								<button
+									type="button"
+									class="flex h-1/2 items-center justify-center border-t border-white/10 text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-200"
+									title="Decrease volume by 0.1 dB"
+									@mousedown.prevent
+									@click="clipVolume.nudgeDb(-1)"
+								>
+									<ChevronDown class="size-2.5" />
+								</button>
+							</div>
 						</div>
+					</div>
+				</div>
+
+				<!-- Pan -->
+				<div class="space-y-2 border-t border-white/[0.05] pt-4">
+					<div class="flex items-center justify-between">
+						<span class="text-xs font-medium text-zinc-300">Pan</span>
+						<div class="flex items-center gap-1.5">
+							<span class="text-[10px] text-zinc-600">L</span>
+							<span class="min-w-[28px] text-center text-[10px] text-zinc-400">
+								{{ (element.pan ?? 0) === 0 ? 'C' : (element.pan ?? 0) > 0 ? `R${Math.round(Math.abs(element.pan ?? 0) * 100)}` : `L${Math.round(Math.abs(element.pan ?? 0) * 100)}` }}
+							</span>
+							<span class="text-[10px] text-zinc-600">R</span>
+						</div>
+					</div>
+					<div class="flex items-center gap-2">
+						<input
+							type="range"
+							:value="(element.pan ?? 0) * 100"
+							min="-100"
+							max="100"
+							step="1"
+							class="flex-1"
+							@input="(e) => update({ pan: Number((e.target as HTMLInputElement).value) / 100 })"
+						/>
+						<button
+							class="rounded border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-zinc-400 transition-colors hover:text-zinc-200"
+							@click="update({ pan: 0 })"
+						>
+							C
+						</button>
 					</div>
 				</div>
 
 				<!-- Mute -->
 				<div class="flex items-center justify-between border-t border-white/[0.05] pt-4">
 					<span class="text-[11px] text-zinc-500">Mute</span>
-					<Switch :checked="element.muted" @update:checked="(val) => update({ muted: val })" />
+					<Switch :model-value="!!element.muted" @update:model-value="(val: boolean) => update({ muted: val })" />
 				</div>
 			</div>
 		</div>
 
 		<!-- ══════ Speed Tab ══════ -->
-		<div v-else-if="activeTab === 'speed'" class="flex-1 overflow-y-auto p-3">
-			<div class="flex items-center border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
+		<div v-else-if="activeTab === 'speed'" class="p-3">
+			<div class="flex items-center justify-between border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
 				<span class="text-sm text-zinc-400">Speed</span>
+				<KeyframeToggle :active="hasKf('speed')" label="speed" @toggle="toggleSpeedKeyframe" />
 			</div>
 			<div class="flex items-center gap-2">
-				<input type="range" :value="currentSpeed * 10" min="1" max="100" step="1" class="flex-1" @input="(e) => changeSpeed(Number((e.target as HTMLInputElement).value) / 10)" />
+				<input
+					type="range"
+					:value="currentSpeed * 10"
+					min="1"
+					max="100"
+					step="1"
+					class="flex-1"
+					@pointerdown="onSpeedPointerDown"
+					@pointerup="onSpeedPointerUp"
+					@input="(e) => changeSpeed(Number((e.target as HTMLInputElement).value) / 10)"
+				/>
 				<div class="flex h-7 w-[72px] items-center rounded-sm border border-white/10 bg-white/5 px-2">
 					<input
 						type="text"
@@ -1043,11 +1328,11 @@ function formatTime(seconds: number): string {
 		</div>
 
 		<!-- ══════ Animate Tab ══════ -->
-		<div v-else-if="activeTab === 'animate'" class="flex flex-col flex-1 overflow-hidden">
+		<div v-else-if="activeTab === 'animate'" class="flex flex-col">
 			<div class="flex shrink-0 items-center border-b border-white/10 px-3 py-1.5">
 				<span class="text-sm text-zinc-400">Animate</span>
 			</div>
-			<div class="flex-1 overflow-y-auto">
+			<div class="p-3">
 				<AnimationProperties
 					:element-id="element.id"
 					:track-id="trackId"
@@ -1059,8 +1344,16 @@ function formatTime(seconds: number): string {
 			</div>
 		</div>
 
+		<!-- ══════ Masks Tab ══════ -->
+		<div v-else-if="activeTab === 'masks'">
+			<div class="flex shrink-0 items-center border-b border-white/10 px-3 py-1.5">
+				<span class="text-sm text-zinc-400">Masks</span>
+			</div>
+			<MasksPanel :element="element" :track-id="trackId" />
+		</div>
+
 		<!-- ══════ Adjust Tab ══════ -->
-		<div v-else-if="activeTab === 'adjust'" class="flex-1 overflow-y-auto p-3">
+		<div v-else-if="activeTab === 'adjust'" class="p-3">
 			<div class="flex items-center border-b border-white/10 -mx-3 -mt-3 mb-4 px-3 py-1.5">
 				<span class="text-sm text-zinc-400">Adjust</span>
 			</div>
@@ -1122,9 +1415,42 @@ function formatTime(seconds: number): string {
 			</div>
 		</div>
 
-		<!-- ══════ Transition (shown at bottom if element has one) ══════ -->
-		<div v-if="activeTransition" class="shrink-0 border-t border-white/10 p-3">
-			<TransitionProperties :transition="activeTransition" />
+		<!-- ══════ Color Grading Tab ══════ -->
+		<div v-else-if="activeTab === 'grading'" class="space-y-5 p-3">
+			<!-- RGB Curves -->
+			<div class="space-y-2">
+				<div class="flex items-center justify-between">
+					<span class="text-xs font-medium text-zinc-300">RGB Curves</span>
+				</div>
+				<ColorCurvesPanel
+					:curves="element.colorCurves ?? {}"
+					@update="updateColorCurves"
+				/>
+			</div>
+
+			<!-- Color Wheels -->
+			<div class="space-y-2 border-t border-white/[0.05] pt-4">
+				<span class="text-xs font-medium text-zinc-300">Color Wheels</span>
+				<ColorWheelsPanel
+					:wheels="element.colorWheels ?? {}"
+					@update="updateColorWheels"
+				/>
+			</div>
+
+			<!-- LUT -->
+			<div class="border-t border-white/[0.05] pt-4">
+				<LutPanel
+					:lut-path="element.lutPath"
+					@update="updateLutPath"
+				/>
+			</div>
+		</div>
+
+		<!-- ══════ Keyframes Tab ══════ -->
+		<div v-else-if="activeTab === 'keyframes'">
+			<KeyframeEditorPanel :track-id="trackId" :element="element" />
+		</div>
+
 		</div>
 		</div>
 

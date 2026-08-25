@@ -18,7 +18,13 @@ export function getTimelineZoomMin({
 	const zoomToFit =
 		availableWidth / (safeDuration * TIMELINE_CONSTANTS.PIXELS_PER_SECOND);
 
-	return Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, zoomToFit);
+	// Min zoom is "fit entire timeline" — do not clamp to ZOOM_MIN (0.1) or long clips stay
+	// wider than the viewport even with the slider fully left. ZOOM_MAX only caps short timelines.
+	return Math.min(
+		Math.max(TIMELINE_CONSTANTS.ZOOM_ABSOLUTE_MIN, zoomToFit),
+		TIMELINE_CONSTANTS.ZOOM_FIT_COMPUTE_CAP,
+		TIMELINE_CONSTANTS.ZOOM_MAX,
+	);
 }
 
 export function getTimelinePaddingPx({
@@ -49,7 +55,9 @@ export function getZoomPercent({
 	zoomLevel: number;
 	minZoom: number;
 }): number {
-	return (zoomLevel - minZoom) / (TIMELINE_CONSTANTS.ZOOM_MAX - minZoom);
+	const span = TIMELINE_CONSTANTS.ZOOM_MAX - minZoom;
+	if (span <= 1e-6) return 1;
+	return (zoomLevel - minZoom) / span;
 }
 
 /**
@@ -66,7 +74,9 @@ export function sliderToZoom({
 	maxZoom?: number;
 }): number {
 	const clampedPosition = Math.max(0, Math.min(1, sliderPosition));
-	return minZoom * (maxZoom / minZoom) ** clampedPosition;
+	const ratio = maxZoom / minZoom;
+	if (ratio <= 1 + 1e-6) return maxZoom;
+	return minZoom * ratio ** clampedPosition;
 }
 
 /**
@@ -82,5 +92,7 @@ export function zoomToSlider({
 	maxZoom?: number;
 }): number {
 	const clampedZoom = Math.max(minZoom, Math.min(maxZoom, zoomLevel));
-	return Math.log(clampedZoom / minZoom) / Math.log(maxZoom / minZoom);
+	const ratio = maxZoom / minZoom;
+	if (ratio <= 1 + 1e-6) return 1;
+	return Math.log(clampedZoom / minZoom) / Math.log(ratio);
 }

@@ -127,7 +127,7 @@
                   </div>
                 </td>
                 <td class="admin-promo__td">
-                  <span class="admin-promo__discount-badge">{{ promo.percent_off }}%</span>
+                  <span class="admin-promo__discount-badge">{{ formatDiscount(promo) }}</span>
                 </td>
                 <td class="admin-promo__td">
                   <span class="admin-promo__duration">{{ formatDuration(promo) }}</span>
@@ -274,8 +274,34 @@
                     <span v-if="errors.name" class="promo-dialog__error">{{ errors.name }}</span>
                   </div>
 
+                  <!-- Promo Type -->
+                  <div v-if="!editingPromo" class="promo-dialog__field">
+                    <label class="promo-dialog__label">Code Type *</label>
+                    <div class="promo-dialog__segmented">
+                      <button
+                        type="button"
+                        class="promo-dialog__segment"
+                        :class="{ 'promo-dialog__segment--active': formData.promo_type === 'percent' }"
+                        @click="formData.promo_type = 'percent'"
+                      >
+                        Percentage Discount
+                      </button>
+                      <button
+                        type="button"
+                        class="promo-dialog__segment"
+                        :class="{ 'promo-dialog__segment--active': formData.promo_type === 'bundle' }"
+                        @click="setPromoType('bundle')"
+                      >
+                        Bundle Deal
+                      </button>
+                    </div>
+                    <p v-if="formData.promo_type === 'bundle'" class="promo-dialog__label-hint">
+                      Fixed price for platform access + total credits (one-time payment, no recurring subscription).
+                    </p>
+                  </div>
+
                   <!-- Percent Off -->
-                  <div class="promo-dialog__field">
+                  <div v-if="formData.promo_type === 'percent'" class="promo-dialog__field">
                     <label class="promo-dialog__label">Discount Percentage *</label>
                     <div class="promo-dialog__range-row">
                       <input
@@ -290,7 +316,7 @@
                   </div>
 
                   <!-- Duration Kind -->
-                  <div class="promo-dialog__field">
+                  <div v-if="formData.promo_type === 'percent'" class="promo-dialog__field">
                     <label class="promo-dialog__label">Duration Type *</label>
                     <div class="promo-dialog__segmented">
                       <button
@@ -306,9 +332,9 @@
                     </div>
                   </div>
 
-                  <!-- Duration Months -->
-                  <div v-if="formData.duration_kind === 'repeating'" class="promo-dialog__field">
-                    <label class="promo-dialog__label">Duration (Months) *</label>
+                  <!-- Duration Months (percent discounts only — how long the Stripe discount lasts) -->
+                  <div v-if="formData.promo_type === 'percent' && formData.duration_kind === 'repeating'" class="promo-dialog__field">
+                    <label class="promo-dialog__label">Discount Duration (Months) *</label>
                     <input
                       v-model.number="formData.duration_months"
                       type="number"
@@ -323,6 +349,54 @@
                       {{ errors.duration_months }}
                     </span>
                   </div>
+
+                  <!-- Bundle Fields -->
+                  <template v-if="formData.promo_type === 'bundle'">
+                    <div class="promo-dialog__row">
+                      <div class="promo-dialog__field">
+                        <label class="promo-dialog__label">Fixed Price (USD) *</label>
+                        <input
+                          v-model.number="formData.fixed_price_usd"
+                          type="number"
+                          min="1"
+                          step="0.01"
+                          placeholder="175.00"
+                          class="promo-dialog__input"
+                          :class="{ 'promo-dialog__input--error': errors.fixed_price_usd }"
+                          @input="errors.fixed_price_usd = ''"
+                        />
+                        <span v-if="errors.fixed_price_usd" class="promo-dialog__error">{{ errors.fixed_price_usd }}</span>
+                      </div>
+                      <div class="promo-dialog__field">
+                        <label class="promo-dialog__label">Months of Access *</label>
+                        <input
+                          v-model.number="formData.access_months"
+                          type="number"
+                          min="1"
+                          max="120"
+                          placeholder="12"
+                          class="promo-dialog__input"
+                          :class="{ 'promo-dialog__input--error': errors.access_months }"
+                          @input="errors.access_months = ''"
+                        />
+                        <span v-if="errors.access_months" class="promo-dialog__error">{{ errors.access_months }}</span>
+                      </div>
+                    </div>
+                    <div class="promo-dialog__field">
+                      <label class="promo-dialog__label">Total Credits *</label>
+                      <input
+                        v-model.number="formData.total_credits"
+                        type="number"
+                        min="0"
+                        step="1"
+                        placeholder="18000"
+                        class="promo-dialog__input"
+                        :class="{ 'promo-dialog__input--error': errors.total_credits }"
+                        @input="errors.total_credits = ''"
+                      />
+                      <span v-if="errors.total_credits" class="promo-dialog__error">{{ errors.total_credits }}</span>
+                    </div>
+                  </template>
 
                   <!-- User Subscription Tiers -->
                   <div class="promo-dialog__field">
@@ -346,7 +420,7 @@
                   </div>
 
                   <!-- Organization Subscription Tiers -->
-                  <div class="promo-dialog__field">
+                  <div v-if="formData.promo_type === 'percent'" class="promo-dialog__field">
                     <label class="promo-dialog__label">
                       Organization Subscription Tiers
                       <span class="promo-dialog__label-hint">(organization plans)</span>
@@ -367,7 +441,7 @@
                   </div>
 
                   <!-- Credit Packs -->
-                  <div class="promo-dialog__field">
+                  <div v-if="formData.promo_type === 'percent'" class="promo-dialog__field">
                     <label class="promo-dialog__label">
                       Credit Packs
                       <span class="promo-dialog__label-hint">(one-time purchases)</span>
@@ -507,7 +581,7 @@
                   <div class="promo-dialog__stat">
                     <span class="promo-dialog__stat-label">Discount</span>
                     <span class="promo-dialog__stat-value promo-dialog__stat-value--highlight">
-                      {{ viewingPromo.percent_off }}%
+                      {{ formatDiscount(viewingPromo) }}
                     </span>
                   </div>
                   <div class="promo-dialog__stat">
@@ -691,7 +765,11 @@
   const formData = ref({
     code: '',
     name: '',
+    promo_type: 'percent' as 'percent' | 'bundle',
     percent_off: 10,
+    fixed_price_usd: null as number | null,
+    access_months: 12,
+    total_credits: 0,
     duration_kind: 'repeating' as 'once' | 'repeating' | 'forever',
     duration_months: 3,
     allowed_tiers: [] as string[],
@@ -773,10 +851,31 @@
     };
   }
 
+  function formatDiscount(promo: PromoCode): string {
+    if (promo.promo_type === 'bundle') {
+      const dollars = promo.fixed_price_cents ? (promo.fixed_price_cents / 100).toFixed(2) : '0.00';
+      return `$${dollars} bundle`;
+    }
+    return `${promo.percent_off ?? 0}%`;
+  }
+
   function formatDuration(promo: PromoCode): string {
+    if (promo.promo_type === 'bundle') {
+      const months = promo.access_months ?? 0;
+      const credits = promo.total_credits ?? 0;
+      return `${months} mo access · ${credits.toLocaleString()} credits`;
+    }
     if (promo.duration_kind === 'forever') return 'Forever';
     if (promo.duration_kind === 'once') return 'One-time';
     return `${promo.duration_months} month${promo.duration_months! > 1 ? 's' : ''}`;
+  }
+
+  function setPromoType(type: 'percent' | 'bundle') {
+    formData.value.promo_type = type;
+    if (type === 'bundle') {
+      formData.value.allowed_org_tiers = [];
+      formData.value.allowed_credit_packs = [];
+    }
   }
 
   function getStatusClass(promo: PromoCode): string {
@@ -859,7 +958,11 @@
     formData.value = {
       code: promo.code,
       name: promo.name || '',
-      percent_off: promo.percent_off,
+      promo_type: promo.promo_type || 'percent',
+      percent_off: promo.percent_off ?? 10,
+      fixed_price_usd: promo.fixed_price_cents ? promo.fixed_price_cents / 100 : null,
+      access_months: promo.access_months ?? 12,
+      total_credits: promo.total_credits ?? 0,
       duration_kind: promo.duration_kind,
       duration_months: promo.duration_months || 3,
       allowed_tiers: [...promo.allowed_tiers],
@@ -899,7 +1002,28 @@
       return;
     }
 
-    if (!formData.value.allowed_tiers.length && !formData.value.allowed_org_tiers.length && !formData.value.allowed_credit_packs.length) {
+    if (formData.value.promo_type === 'bundle') {
+      if (!formData.value.allowed_tiers.length) {
+        errors.value.allowed_tiers = 'Bundle deals require at least one user subscription tier';
+        saving.value = false;
+        return;
+      }
+      if (!formData.value.fixed_price_usd || formData.value.fixed_price_usd <= 0) {
+        errors.value.fixed_price_usd = 'Fixed price is required';
+        saving.value = false;
+        return;
+      }
+      if (!formData.value.access_months || formData.value.access_months <= 0) {
+        errors.value.access_months = 'Access duration is required';
+        saving.value = false;
+        return;
+      }
+      if (formData.value.total_credits === null || formData.value.total_credits < 0) {
+        errors.value.total_credits = 'Total credits is required';
+        saving.value = false;
+        return;
+      }
+    } else if (!formData.value.allowed_tiers.length && !formData.value.allowed_org_tiers.length && !formData.value.allowed_credit_packs.length) {
       errors.value.allowed_tiers = 'At least one tier, organization tier, or credit pack must be selected';
       saving.value = false;
       return;
@@ -922,21 +1046,29 @@
           return isNaN(num) ? undefined : num;
         };
 
-        const payload = {
+        const payload: any = {
           code: formData.value.code.toUpperCase().trim(),
           name: formData.value.name || undefined,
-          percent_off: formData.value.percent_off,
-          duration_kind: formData.value.duration_kind,
-          duration_months: formData.value.duration_kind === 'repeating' 
-            ? toNumberOrUndefined(formData.value.duration_months) 
-            : undefined,
+          promo_type: formData.value.promo_type,
           allowed_tiers: formData.value.allowed_tiers,
-          allowed_org_tiers: formData.value.allowed_org_tiers,
-          allowed_credit_packs: formData.value.allowed_credit_packs,
           max_redemptions: toNumberOrUndefined(formData.value.max_redemptions),
           redeem_by: formData.value.redeem_by || undefined,
           notes: formData.value.notes || undefined,
         };
+
+        if (formData.value.promo_type === 'bundle') {
+          payload.fixed_price_cents = Math.round((formData.value.fixed_price_usd || 0) * 100);
+          payload.access_months = toNumberOrUndefined(formData.value.access_months);
+          payload.total_credits = toNumberOrUndefined(formData.value.total_credits);
+        } else {
+          payload.percent_off = formData.value.percent_off;
+          payload.duration_kind = formData.value.duration_kind;
+          payload.duration_months = formData.value.duration_kind === 'repeating'
+            ? toNumberOrUndefined(formData.value.duration_months)
+            : undefined;
+          payload.allowed_org_tiers = formData.value.allowed_org_tiers;
+          payload.allowed_credit_packs = formData.value.allowed_credit_packs;
+        }
 
         response = await promoCodesApi.createPromoCode(payload);
       }
@@ -980,7 +1112,11 @@
     formData.value = {
       code: '',
       name: '',
+      promo_type: 'percent',
       percent_off: 10,
+      fixed_price_usd: null,
+      access_months: 12,
+      total_credits: 0,
       duration_kind: 'repeating',
       duration_months: 3,
       allowed_tiers: [],

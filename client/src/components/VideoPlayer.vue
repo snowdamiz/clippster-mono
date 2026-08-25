@@ -77,35 +77,94 @@
         :src="videoSrc && !videoSrc.includes('.m3u8') ? videoSrc : undefined"
         crossorigin="anonymous"
         class="w-full h-full video-with-focal-point"
-        :class="hasFramingRegions ? 'opacity-0' : 'object-cover'"
-        :style="hasFramingRegions ? {} : {
+        :class="hideVideoForComposition ? 'opacity-0' : 'object-cover'"
+        :style="hideVideoForComposition ? {} : {
           objectPosition: `${focalPoint.x * 100}% ${focalPoint.y * 100}%`,
         }"
         @timeupdate="$emit('timeUpdate')"
         @loadedmetadata="$emit('loadedMetadata')"
         @ended="$emit('videoEnded')"
-        @click="$emit('togglePlayPause')"
         @error="$emit('videoError', $event)"
         @loadstart="$emit('loadStart')"
         @canplay="$emit('canPlay')"
         data-testid="project-video"
       />
 
+      <!-- Use 16:9: CSS blur + sharp layer (GPU-friendly). Canvas blur was unusably slow on long VODs. -->
+      <div
+        v-if="showUse169GpuStack"
+        class="absolute inset-0 z-10 overflow-hidden pointer-events-none"
+      >
+        <video
+          ref="use169BgVideoRef"
+          :src="videoSrc && !videoSrc.includes('.m3u8') ? videoSrc : undefined"
+          class="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover scale-[1.08]"
+          :style="use169BgVideoStyle"
+          muted
+          playsinline
+          preload="metadata"
+        />
+        <div class="pointer-events-none absolute z-[1]" :style="use169SharpFrameStyle">
+          <video
+            ref="use169FgVideoRef"
+            :src="videoSrc && !videoSrc.includes('.m3u8') ? videoSrc : undefined"
+            class="absolute inset-0 h-full w-full object-contain pointer-events-none"
+            muted
+            playsinline
+            preload="metadata"
+          />
+        </div>
+      </div>
+
       <!-- Canvas-based multi-region framing preview -->
       <canvas
-        v-if="hasFramingRegions && videoSrc && !videoLoading && !videoError"
+        v-if="showFramingCanvas && videoSrc && !videoLoading && !videoError"
         ref="framingCanvasRef"
-        class="absolute inset-0 w-full h-full z-10 cursor-pointer"
-        @click="$emit('togglePlayPause')"
+        class="absolute inset-0 w-full h-full z-10 pointer-events-none"
       />
 
       <!-- Subtitle Overlay -->
       <div
         v-if="subtitleSettings?.enabled && visibleWords.length > 0 && videoSrc && !videoLoading"
-        class="absolute subtitle-overlay pointer-events-none z-20"
-        :style="getSubtitleContainerStyle"
+        class="absolute inset-0 subtitle-overlay pointer-events-none z-20"
       >
-        <div class="subtitle-text-container" :style="{ ...getSubtitleContainerStyle, gap: wordGapStyle }">
+        <!-- Selection box wrapper: dashed border + resize handles + drag -->
+        <div
+          class="subtitle-selection-box pointer-events-auto"
+          :class="{
+            'is-active': isDraggingSubtitles || isResizingSubtitles,
+            'is-hidden': !subtitleBoxVisible,
+          }"
+          :style="getSubtitleContainerStyle"
+          @mousedown.self="onSubtitleBoxMouseDown"
+          @click.stop="onSubtitleBoxClick"
+        >
+          <!-- Drag handle bar at top — click to open properties, drag to move -->
+          <div
+            v-if="subtitleBoxVisible"
+            class="subtitle-drag-bar"
+            @mousedown.stop="startDragSubtitles"
+            @click.stop="emit('subtitleSelected')"
+          >
+            <span class="subtitle-drag-label">⠿ SUBTITLES</span>
+          </div>
+
+          <!-- Corner resize handles for font size adjustment -->
+          <template v-if="subtitleBoxVisible">
+            <div class="resize-handle resize-handle-tl" @mousedown.stop="(e) => startFontResize(e, 'tl')" @click.stop></div>
+            <div class="resize-handle resize-handle-tr" @mousedown.stop="(e) => startFontResize(e, 'tr')" @click.stop></div>
+            <div class="resize-handle resize-handle-bl" @mousedown.stop="(e) => startFontResize(e, 'bl')" @click.stop></div>
+            <div class="resize-handle resize-handle-br" @mousedown.stop="(e) => startFontResize(e, 'br')" @click.stop></div>
+          </template>
+
+        <div 
+          ref="subtitleContainerRef"
+          class="subtitle-text-container pointer-events-auto"
+          :class="subtitleBoxVisible ? 'cursor-move' : 'cursor-pointer'"
+          :style="{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', width: 'fit-content', gap: wordGapStyle }"
+          @mousedown="onSubtitleTextMouseDown"
+          @click.stop="onSubtitleTextClick"
+        >
           <span
             v-for="(wordInfo, index) in visibleWords"
             :key="`subtitle-word-${wordInfo.start}-${index}`"
@@ -113,6 +172,7 @@
             :class="getAnimationClass"
             :style="{
               transitionDuration: `${getWordAnimationDuration(wordInfo)}s`,
+              ...subtitleWordSafetyPaddingStyle,
               ...getTypewriterStyle(wordInfo, index),
             }"
           >
@@ -122,19 +182,18 @@
               :class="{ 'current-word': isCurrentWord(wordInfo) }"
               :style="getTextStyle"
             >
-              {{ wordInfo.word }}
+              {{ subtitleSettings?.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
             </span>
 
             <svg class="absolute inset-0 w-full h-full overflow-visible" style="pointer-events: none">
               <defs>
-                <!-- Filter for drop shadow that can apply to the stroke -->
+                <!-- Drop shadow for subtitle stack (applied to bottom visible layer) -->
                 <filter :id="`shadow-${index}`" x="-50%" y="-50%" width="200%" height="200%">
                   <feDropShadow
-                    v-if="subtitleSettings?.shadowBlur > 0"
-                    :dx="subtitleSettings.shadowOffsetX * finalFontSizeScale"
-                    :dy="subtitleSettings.shadowOffsetY * finalFontSizeScale"
-                    :stdDeviation="subtitleSettings.shadowBlur * finalFontSizeScale"
-                    :flood-color="subtitleSettings.shadowColor"
+                    :dx="(subtitleSettings?.shadowOffsetX ?? 0) * finalFontSizeScale"
+                    :dy="(subtitleSettings?.shadowOffsetY ?? 0) * finalFontSizeScale"
+                    :stdDeviation="Math.max((subtitleSettings?.shadowBlur ?? 0) * finalFontSizeScale, 0)"
+                    :flood-color="subtitleSettings?.shadowColor || '#000000'"
                   />
                 </filter>
               </defs>
@@ -142,26 +201,27 @@
               <g :style="{ transformOrigin: 'center', transformBox: 'fill-box' }">
                 <!-- Layer 1 (bottom): Border 2 (Outer) with Shadow -->
                 <text
-                  v-if="subtitleSettings && (subtitleSettings.border2Width > 0 || subtitleSettings.border1Width > 0)"
+                  v-if="subtitleSettings && subtitleSettings.border2Width > 0"
                   x="50%"
                   y="55%"
                   dominant-baseline="middle"
                   text-anchor="middle"
+                  :filter="subtitleShadowFilterUrl(index)"
                   :style="{
                     fontFamily: subtitleSettings.fontFamily,
                     fontWeight: subtitleSettings.fontWeight,
                     fontSize: getTextStyle.fontSize,
                     letterSpacing: svgLetterSpacing,
-                    stroke: subtitleSettings.border2Color,
-                    strokeWidth:
-                      (subtitleSettings.border1Width + subtitleSettings.border2Width) * 2 * finalFontSizeScale + 'px',
+                    stroke: subtitleSettings.border2Color || '#FF0000',
+                    strokeWidth: Math.max((subtitleSettings.border1Width + subtitleSettings.border2Width) * 2 * finalFontSizeScale, 10) + 'px',
                     strokeLinejoin: 'round',
                     strokeLinecap: 'round',
-                    fill: 'none', // No fill for border layer
-                    filter: `url(#shadow-${index})`,
+                    fill: 'none',
+                    opacity: '1',
                   }"
+                  :data-debug-outer="`RENDERING: border2=${subtitleSettings.border2Width}, color=${subtitleSettings.border2Color}, width=${Math.max((subtitleSettings.border1Width + subtitleSettings.border2Width) * 2 * finalFontSizeScale, 10)}`"
                 >
-                  {{ wordInfo.word }}
+                  {{ subtitleSettings?.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
                 </text>
 
                 <!-- Layer 2 (middle): Border 1 (Inner) -->
@@ -171,6 +231,7 @@
                   y="55%"
                   dominant-baseline="middle"
                   text-anchor="middle"
+                  :filter="subtitleSettings.border2Width <= 0 ? subtitleShadowFilterUrl(index) : undefined"
                   :style="{
                     fontFamily: subtitleSettings.fontFamily,
                     fontWeight: subtitleSettings.fontWeight,
@@ -182,8 +243,12 @@
                     strokeLinecap: 'round',
                     fill: 'none',
                   }"
+                  :data-debug-inner="`border1: ${subtitleSettings.border1Width}, color: ${subtitleSettings.border1Color}, width: ${subtitleSettings.border1Width * 2 * finalFontSizeScale}`"
+                  :data-word="wordInfo.word"
+                  :data-is-current="isCurrentWord(wordInfo)"
+                  :data-animation-style="subtitleSettings?.animationStyle"
                 >
-                  {{ wordInfo.word }}
+                  {{ subtitleSettings?.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
                 </text>
 
                 <!-- Layer 3 (top): Fill Text -->
@@ -192,16 +257,24 @@
                   y="55%"
                   dominant-baseline="middle"
                   text-anchor="middle"
+                  :filter="subtitleSettings && subtitleSettings.border1Width <= 0 && subtitleSettings.border2Width <= 0 ? subtitleShadowFilterUrl(index) : undefined"
                   :class="{ 'current-word-text': isCurrentWord(wordInfo) }"
                   :style="{
                     fontFamily: subtitleSettings.fontFamily,
                     fontWeight: subtitleSettings.fontWeight,
                     fontSize: getTextStyle.fontSize,
                     letterSpacing: svgLetterSpacing,
-                    fill: subtitleSettings?.textColor || '#FFFFFF',
+                    fill: (subtitleSettings?.animationStyle === 'karaoke' && isCurrentWord(wordInfo)) 
+                      ? (subtitleSettings?.highlightColor || DEFAULT_SUBTITLE_HIGHLIGHT)
+                      : (subtitleSettings?.animationStyle === 'single-word' 
+                          ? getWordColor(getWordIndexInTranscript(wordInfo))
+                          : (subtitleSettings?.textColor || '#FFFFFF')),
                   }"
+                  :data-word="wordInfo.word"
+                  :data-is-current="isCurrentWord(wordInfo)"
+                  :data-animation-style="subtitleSettings?.animationStyle"
                 >
-                  {{ wordInfo.word }}
+                  {{ subtitleSettings?.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
                 </text>
 
                 <!-- Box highlight background (rendered behind text) -->
@@ -212,12 +285,55 @@
                   width="100%"
                   height="80%"
                   rx="4"
-                  :fill="subtitleSettings?.highlightColor || '#FFFF00'"
+                  :fill="subtitleSettings?.highlightColor || DEFAULT_SUBTITLE_HIGHLIGHT"
                   :style="{ opacity: 0.3 }"
                 />
               </g>
             </svg>
           </span>
+        </div>
+        </div><!-- end subtitle-selection-box -->
+      </div>
+
+      <!-- Clip pill text box (project workspace) -->
+      <div
+        v-if="showClipTextBoxOverlay"
+        class="absolute inset-0 pointer-events-none z-[25]"
+      >
+        <div
+          class="clip-text-selection-box pointer-events-auto"
+          :class="{
+            'is-active': isDraggingClipText || isResizingClipText,
+            'clip-text--passive': !clipTextBoxInteractive,
+          }"
+          :style="clipTextBoxContainerStyle"
+          @mousedown.self="onClipTextBoxOuterMouseDown"
+        >
+          <div
+            v-if="clipTextBoxInteractive"
+            class="clip-text-drag-bar"
+            @mousedown.stop="startDragClipText($event)"
+            @click.stop="emit('clipTextBoxSelected')"
+          >
+            <span class="clip-text-drag-label">⠿ TEXT</span>
+          </div>
+          <template v-if="clipTextBoxInteractive">
+            <div class="resize-handle resize-handle-tl" @mousedown.stop="(e) => startClipTextWidthResize(e, 'tl')" />
+            <div class="resize-handle resize-handle-tr" @mousedown.stop="(e) => startClipTextWidthResize(e, 'tr')" />
+            <div class="resize-handle resize-handle-bl" @mousedown.stop="(e) => startClipTextWidthResize(e, 'bl')" />
+            <div class="resize-handle resize-handle-br" @mousedown.stop="(e) => startClipTextWidthResize(e, 'br')" />
+          </template>
+          <div
+            class="clip-text-pill cursor-move"
+            :class="{ 'cursor-default': !clipTextBoxInteractive }"
+            :style="clipTextPillStyle"
+            @mousedown="clipTextBoxInteractive ? startDragClipText($event) : undefined"
+            @click.stop="emit('clipTextBoxSelected')"
+          >
+            <span class="clip-text-pill-inner whitespace-pre-wrap break-words text-center inline-block max-w-full" :style="clipTextPillTextStyle">
+              {{ displayClipTextBoxText }}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -236,49 +352,52 @@
         />
       </div>
 
-      <!-- Center Play/Pause Overlay -->
-      <button
+      <!-- Canvas click capture — clicking the previewer hides the subtitle selection box (no play/pause) -->
+      <div
         v-if="videoSrc && !videoLoading"
-        @click="$emit('togglePlayPause')"
-        class="absolute inset-0 flex items-center justify-center play-overlay"
-        :class="{ 'is-paused': !isPlaying }"
-        title="Play/Pause (Space)"
-      >
-        <!-- Gradient vignette for better visibility -->
-        <div
-          class="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/20 opacity-0 group-hover/player:opacity-100 transition-opacity duration-300"
-        />
+        class="absolute inset-0 z-[15] cursor-default"
+        @click="onCanvasClick"
+      />
 
-        <!-- Play/Pause Button -->
-        <div class="play-button-container" :class="{ 'show-button': !isPlaying }">
-          <div class="play-button">
-            <Play v-if="!isPlaying" class="h-10 w-10 text-white ml-1" fill="white" />
-            <Pause v-else class="h-10 w-10 text-white" fill="white" />
-          </div>
-        </div>
-
-        <!-- Keyboard hint -->
-        <div
-          class="absolute bottom-4 left-1/2 -translate-x-1/2 opacity-0 group-hover/player:opacity-100 transition-all duration-300 translate-y-2 group-hover/player:translate-y-0"
-        >
-          <div
-            class="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 backdrop-blur-sm rounded-md border border-white/10"
-          >
-            <kbd class="text-[10px] text-white/50 font-mono bg-white/10 px-1.5 py-0.5 rounded">Space</kbd>
-            <span class="text-[10px] text-white/40">to {{ isPlaying ? 'pause' : 'play' }}</span>
-          </div>
-        </div>
-      </button>
+      <!-- Center alignment guides — visible while dragging subtitles, highlighted when snapped to center -->
+      <div
+        v-if="showSubtitleCenterGuides"
+        class="subtitle-guide-line subtitle-guide-line--vertical"
+        :class="{ 'is-snapped': isSubtitleSnappedX }"
+      />
+      <div
+        v-if="showSubtitleCenterGuides"
+        class="subtitle-guide-line subtitle-guide-line--horizontal"
+        :class="{ 'is-snapped': isSubtitleSnappedY }"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
-  import { Video, AlertTriangle, Play, Pause, Film, RotateCcw } from 'lucide-vue-next';
+  import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
+  import { convertFileSrc } from '@tauri-apps/api/core';
+  import { Video, AlertTriangle, Film, RotateCcw } from 'lucide-vue-next';
   import Hls from 'hls.js';
 
-  import type { WhisperSegment, WatermarkSettings, PerRatioWatermarkSettings, ManualRegion } from '@/types';
+  import type {
+    WhisperSegment,
+    WatermarkSettings,
+    PerRatioWatermarkSettings,
+    ManualRegion,
+    ManualFramingConfig,
+  } from '@/types';
+  import type { ClipTextBoxState } from '@/utils/clipTextBox';
+  import { use169BlurSliderToCssPx } from '@/utils/use169Blur';
+  import {
+    maxWordsChunkForAspectRatioString,
+    pickActiveSingleWordAtTime,
+  } from '@/utils/subtitleVisibleWords';
+  import {
+    getSubtitleLineHeightMultiplier,
+    getSubtitleWordSafetyPaddingPx,
+    getSubtitleWordSpacingPx,
+  } from '@/services/subtitle-renderer';
 
   interface WatermarkData {
     dataUrl: string; // Data URL for display
@@ -301,6 +420,16 @@
     watermarkData?: WatermarkData | null;
     audioGainDb?: number; // dB gain (-20 to +20) for audio playback preview
     framingRegions?: ManualRegion[]; // Multi-region framing for VOD preset preview
+    /** Full manual framing from VOD preset — drives "Use 16:9" blur + sharp letterbox (creator profile layout). */
+    manualFramingConfig?: ManualFramingConfig | null;
+    subtitleInitialPosition?: { x: number; y: number; width?: number | null } | null;
+    clipTextBoxState?: ClipTextBoxState | null;
+    /** When true, show handles and allow drag/resize */
+    clipTextBoxInteractive?: boolean;
+    /** When true (e.g. workspace Text tab), show enabled box whenever visible flags pass — ignore start/end window so editing works at any playhead. */
+    clipTextBoxIgnoreTiming?: boolean;
+    /** Absolute video time (seconds) where the active clip starts — for clip-local timing */
+    clipAbsoluteStart?: number | null;
   }
 
   interface WordInfo {
@@ -329,8 +458,11 @@
     position: 'top' | 'middle' | 'bottom';
     positionPercentage: number;
     maxWidth: number;
-    animationStyle: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave';
+    animationStyle: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave' | 'single-word';
     highlightColor: string;
+    multiColorEnabled: boolean;
+    multiColorMode: 'default' | 'custom';
+    colorPalette: string[];
     lineHeight: number;
     letterSpacing: number;
     textAlign: 'left' | 'center' | 'right';
@@ -363,7 +495,10 @@
       positionPercentage: 97,
       maxWidth: 90,
       animationStyle: 'none',
-      highlightColor: '#FFFF00',
+      highlightColor: '#0ea5e9',
+      multiColorEnabled: false,
+      multiColorMode: 'default' as const,
+      colorPalette: [] as string[],
       lineHeight: 1.2,
       letterSpacing: 0,
       textAlign: 'center',
@@ -387,6 +522,12 @@
     watermarkData: null,
     audioGainDb: 0,
     framingRegions: () => [],
+    manualFramingConfig: null,
+    subtitleInitialPosition: null,
+    clipTextBoxState: null,
+    clipTextBoxInteractive: false,
+    clipTextBoxIgnoreTiming: false,
+    clipAbsoluteStart: null,
   });
 
   interface Emits {
@@ -400,18 +541,322 @@
     (e: 'retryLoad'): void;
     (e: 'videoElementReady', element: HTMLVideoElement): void;
     (e: 'watermarkIdChange', watermarkId: string | null): void;
+    (e: 'subtitlePositionChange', position: { x: number; y: number }, width: number): void;
+    (e: 'subtitleFontSizeChange', fontSize: number): void;
+    (e: 'subtitleSelected'): void;
+    (e: 'clipTextBoxPositionChange', payload: { x: number; y: number; widthPct: number; fontSize?: number }): void;
+    (e: 'clipTextBoxSelected'): void;
   }
 
   const emit = defineEmits<Emits>();
 
   const videoElementRef = ref<HTMLVideoElement | null>(null);
+  const use169BgVideoRef = ref<HTMLVideoElement | null>(null);
+  const use169FgVideoRef = ref<HTMLVideoElement | null>(null);
   const videoContainerRef = ref<HTMLElement | null>(null);
   const framingCanvasRef = ref<HTMLCanvasElement | null>(null);
+  const subtitleContainerRef = ref<HTMLElement | null>(null);
   const containerHeight = ref<number>(1080); // Default to 1080p height
+  const containerWidth = ref<number>(1920);
 
-  // Multi-region framing
-  const hasFramingRegions = computed(() => (props.framingRegions?.length ?? 0) > 0);
+  // Subtitle box state
+  const isDraggingSubtitles = ref(false);
+  const isResizingSubtitles = ref(false);
+  const subtitleDragOffset = ref({ x: 0, y: 0 });
+  const customSubtitlePosition = ref<{ x: number; y: number }>(
+    props.subtitleInitialPosition
+      ? { x: props.subtitleInitialPosition.x, y: props.subtitleInitialPosition.y }
+      : { x: 50, y: 85 }
+  );
+  const customSubtitleWidth = ref<number>(
+    props.subtitleInitialPosition?.width ?? props.subtitleSettings?.maxWidth ?? 80
+  );
+  // Font resize state
+  const fontResizeStartX = ref(0);
+  const fontResizeStartY = ref(0);
+  const fontResizeStartSize = ref(0);
+  // Which corner: tl | tr | bl | br
+  const fontResizeCorner = ref<'tl' | 'tr' | 'bl' | 'br'>('br');
+
+  // Visibility of the subtitle selection chrome (border, drag bar, resize handles).
+  // Click on canvas hides it (subtitles only). Click on subtitle text brings it back.
+  const subtitleBoxVisible = ref(true);
+
+  /** Snap tolerance (percent) — within this distance from center, snap & highlight guide. */
+  const SUBTITLE_SNAP_TOLERANCE_PCT = 1.5;
+
+  const showSubtitleCenterGuides = computed(
+    () => isDraggingSubtitles.value && subtitleBoxVisible.value
+  );
+  const isSubtitleSnappedX = computed(
+    () => Math.abs(customSubtitlePosition.value.x - 50) < SUBTITLE_SNAP_TOLERANCE_PCT
+  );
+  const isSubtitleSnappedY = computed(
+    () => Math.abs(customSubtitlePosition.value.y - 50) < SUBTITLE_SNAP_TOLERANCE_PCT
+  );
+
+  watch(() => props.subtitleInitialPosition, (pos) => {
+    customSubtitlePosition.value = pos ? { x: pos.x, y: pos.y } : { x: 50, y: 85 };
+    if (pos?.width != null) customSubtitleWidth.value = pos.width;
+    // New clip / new position context — restore the selection chrome by default.
+    subtitleBoxVisible.value = true;
+  });
+
+  watch(() => props.subtitleSettings?.maxWidth, (w) => {
+    if (w !== undefined) customSubtitleWidth.value = w;
+  });
+
+  // Re-show the chrome whenever subtitles are re-enabled (so the user always sees handles first).
+  watch(
+    () => props.subtitleSettings?.enabled,
+    (enabled) => {
+      if (enabled) subtitleBoxVisible.value = true;
+    }
+  );
+
+  // --- Clip text box (pill) ---
+  const customClipTextPosition = ref({ x: 50, y: 50 });
+  const customClipTextWidthPct = ref(72);
+  const customClipTextFontSize = ref(28);
+  const isDraggingClipText = ref(false);
+  const isResizingClipText = ref(false);
+  const clipTextDragOffset = ref({ x: 0, y: 0 });
+  const clipTextResizeStartX = ref(0);
+  const clipTextResizeStartY = ref(0);
+  const clipTextResizeStartFontSize = ref(28);
+  const clipTextResizeCorner = ref<'tl' | 'tr' | 'bl' | 'br'>('br');
+
+  watch(
+    () => props.clipTextBoxState,
+    (s) => {
+      if (!s) return;
+      customClipTextPosition.value = { x: s.positionX, y: s.positionY };
+      customClipTextWidthPct.value = s.widthPct;
+      customClipTextFontSize.value = s.style?.fontSize ?? 28;
+    },
+    { immediate: true, deep: true }
+  );
+
+  const clipTextRelativeTime = computed(() => {
+    const ct = props.currentTime ?? 0;
+    if (props.clipAbsoluteStart != null && props.clipAbsoluteStart !== undefined) {
+      return ct - props.clipAbsoluteStart;
+    }
+    return ct;
+  });
+
+  const showClipTextBoxOverlay = computed(() => {
+    const s = props.clipTextBoxState;
+    if (!s?.enabled || !props.videoSrc || props.videoLoading || props.videoError) return false;
+    if (props.clipTextBoxIgnoreTiming) return true;
+    const t = clipTextRelativeTime.value;
+    const eps = 1e-3;
+    return t + eps >= s.startTime && t <= s.endTime + eps;
+  });
+
+  const clipBoxScale = computed(() => {
+    const videoScaleFactor = containerHeight.value / 1080;
+    const aspectRatioValue = props.aspectRatio.width / props.aspectRatio.height;
+    let fontSizeScale = 1;
+    if (aspectRatioValue <= 0.9) fontSizeScale = 0.65;
+    else if (aspectRatioValue > 0.9 && aspectRatioValue <= 1.1) fontSizeScale = 0.78;
+    return fontSizeScale * videoScaleFactor;
+  });
+
+  const displayClipTextBoxText = computed(() => props.clipTextBoxState?.text ?? '');
+
+  const clipTextBoxContainerStyle = computed(() => {
+    const x = customClipTextPosition.value.x;
+    const y = customClipTextPosition.value.y;
+    const w = Math.min(100, Math.max(12, customClipTextWidthPct.value));
+    return {
+      position: 'absolute' as const,
+      top: `${y}%`,
+      left: `${x}%`,
+      transform: 'translate(-50%, -50%)',
+      width: 'max-content',
+      maxWidth: `${w}%`,
+      boxSizing: 'border-box' as const,
+    };
+  });
+
+  const clipTextPillStyle = computed(() => {
+    const s = props.clipTextBoxState?.style;
+    if (!s) return {};
+    const pad = Math.round((s.padding || 16) * clipBoxScale.value);
+    const rad = Math.round((s.borderRadius || 24) * clipBoxScale.value);
+    const st: Record<string, string> = {
+      borderRadius: `${rad}px`,
+      padding: `${pad}px`,
+      boxSizing: 'border-box',
+      width: 'auto',
+      maxWidth: '100%',
+    };
+    if (s.backgroundEnabled) {
+      st.backgroundColor = s.backgroundColor || '#FFFFFF';
+    }
+    return st;
+  });
+
+  const clipTextPillTextStyle = computed(() => {
+    const s = props.clipTextBoxState?.style;
+    if (!s) return {};
+    const baseFs = customClipTextFontSize.value ?? s.fontSize ?? 28;
+    const fs = Math.round(baseFs * clipBoxScale.value);
+    const tt = s.textTransform || 'none';
+    return {
+      fontFamily: `"${s.fontFamily}", Arial, sans-serif`,
+      fontWeight: String(s.fontWeight ?? 700),
+      fontSize: `${fs}px`,
+      color: s.color || '#000000',
+      textTransform: tt as string,
+      lineHeight: String(s.lineHeight ?? 1.2),
+      letterSpacing: `${(s.letterSpacing || 0) * clipBoxScale.value}px`,
+    };
+  });
+
+  function onClipTextBoxOuterMouseDown(e: MouseEvent) {
+    if (props.clipTextBoxInteractive) startDragClipText(e);
+  }
+
+  function startDragClipText(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!videoContainerRef.value || !props.clipTextBoxInteractive) return;
+    isDraggingClipText.value = true;
+    const containerRect = videoContainerRef.value.getBoundingClientRect();
+    const curX = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+    const curY = ((e.clientY - containerRect.top) / containerRect.height) * 100;
+    const pos = customClipTextPosition.value;
+    clipTextDragOffset.value = { x: curX - pos.x, y: curY - pos.y };
+    document.addEventListener('mousemove', onDragClipText);
+    document.addEventListener('mouseup', stopClipTextInteraction);
+  }
+
+  function onDragClipText(e: MouseEvent) {
+    if (!isDraggingClipText.value || !videoContainerRef.value) return;
+    const containerRect = videoContainerRef.value.getBoundingClientRect();
+    const curX = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+    const curY = ((e.clientY - containerRect.top) / containerRect.height) * 100;
+    customClipTextPosition.value = {
+      x: Math.max(0, Math.min(100, curX - clipTextDragOffset.value.x)),
+      y: Math.max(0, Math.min(100, curY - clipTextDragOffset.value.y)),
+    };
+  }
+
+  /** Corner drag scales font size (same model as subtitle resize), not horizontal stretch. */
+  function startClipTextWidthResize(e: MouseEvent, corner: 'tl' | 'tr' | 'bl' | 'br') {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!props.clipTextBoxInteractive) return;
+    isResizingClipText.value = true;
+    clipTextResizeStartX.value = e.clientX;
+    clipTextResizeStartY.value = e.clientY;
+    clipTextResizeStartFontSize.value = customClipTextFontSize.value;
+    clipTextResizeCorner.value = corner;
+    document.addEventListener('mousemove', onClipTextFontResize);
+    document.addEventListener('mouseup', stopClipTextInteraction);
+  }
+
+  function onClipTextFontResize(e: MouseEvent) {
+    if (!isResizingClipText.value || !videoContainerRef.value) return;
+    const containerRect = videoContainerRef.value.getBoundingClientRect();
+    const dx = e.clientX - clipTextResizeStartX.value;
+    const dy = e.clientY - clipTextResizeStartY.value;
+    const signX = clipTextResizeCorner.value === 'tr' || clipTextResizeCorner.value === 'br' ? 1 : -1;
+    const signY = clipTextResizeCorner.value === 'bl' || clipTextResizeCorner.value === 'br' ? 1 : -1;
+    const delta = (dx * signX + dy * signY) / 2;
+    const scaledDelta = (delta / containerRect.height) * 200;
+    const newSize = Math.max(10, Math.min(120, clipTextResizeStartFontSize.value + scaledDelta));
+    customClipTextFontSize.value = Math.round(newSize);
+  }
+
+  function stopClipTextInteraction() {
+    const was = isDraggingClipText.value || isResizingClipText.value;
+    isDraggingClipText.value = false;
+    isResizingClipText.value = false;
+    document.removeEventListener('mousemove', onDragClipText);
+    document.removeEventListener('mousemove', onClipTextFontResize);
+    document.removeEventListener('mouseup', stopClipTextInteraction);
+    if (was) {
+      emit('clipTextBoxPositionChange', {
+        x: customClipTextPosition.value.x,
+        y: customClipTextPosition.value.y,
+        widthPct: customClipTextWidthPct.value,
+        fontSize: customClipTextFontSize.value,
+      });
+    }
+  }
+
+  // Multi-region framing + creator "Use 16:9" (blur bg + sharp 16:9) from manualFramingConfig
+  const usesUse169WorkspaceFraming = computed(() => {
+    if ((props.framingRegions?.length ?? 0) > 0) return false;
+    const fc = props.manualFramingConfig;
+    if (!fc || fc.sourceFrameMode !== 'use16x9') return false;
+    const rw = props.aspectRatio.width;
+    const rh = props.aspectRatio.height;
+    if (!rw || !rh) return false;
+    return rw / rh < 0.95; // portrait / tall preview canvas
+  });
+
+  /** Progressive file / blob playback: GPU layers instead of canvas blur (fixes severe jank on long VODs). */
+  const showUse169GpuStack = computed(() => {
+    if (!usesUse169WorkspaceFraming.value || !props.videoSrc || props.videoLoading || props.videoError)
+      return false;
+    if (props.videoSrc.includes('.m3u8')) return false;
+    return true;
+  });
+
+  /** HLS or POI regions only: canvas compositing (use 16:9 on HLS stays canvas + throttled). */
+  const showFramingCanvas = computed(() => {
+    const regions = props.framingRegions?.length ?? 0;
+    const use169 = usesUse169WorkspaceFraming.value;
+    const src = props.videoSrc;
+    const isHls = !!src?.includes('.m3u8');
+    if (use169 && src && !isHls) return false;
+    return regions > 0 || (use169 && isHls && !!src);
+  });
+
+  const hideVideoForComposition = computed(() => showFramingCanvas.value || showUse169GpuStack.value);
+
+  const use169BgVideoStyle = computed(() => {
+    const fc = props.manualFramingConfig;
+    const amt = fc?.blurAmount ?? 0;
+    const blurPx =
+      fc?.blurEnabled !== false && amt > 0 ? use169BlurSliderToCssPx(amt) : 0;
+    return blurPx > 0 ? { filter: `blur(${blurPx}px)` } : {};
+  });
+
+  const use169SharpFrameStyle = computed((): Record<string, string> => {
+    const fc = props.manualFramingConfig;
+    const cw = containerWidth.value;
+    const ch = containerHeight.value;
+    if (!fc || cw <= 0 || ch <= 0) {
+      return { display: 'none' };
+    }
+    const st = fc.sourceTransform ?? { scale: 1, x: 0, y: 0 };
+    const sourceAspect = 16 / 9;
+    const baseWidth = cw;
+    const baseHeight = baseWidth / sourceAspect;
+    const width = baseWidth * st.scale;
+    const height = baseHeight * st.scale;
+    const left = (cw - width) / 2 + st.x * cw;
+    const top = (ch - height) / 2 + st.y * ch;
+    return {
+      position: 'absolute',
+      left: `${left}px`,
+      top: `${top}px`,
+      width: `${width}px`,
+      height: `${height}px`,
+    };
+  });
+
   let framingAnimationId: number | null = null;
+  let use169SyncRaf: number | null = null;
+  /** HLS use-16:9 canvas path: throttle + limit backing store size */
+  let lastUse169CanvasDraw = 0;
+  const regionImageCache = new Map<string, HTMLImageElement>();
+  const regionVideoCache = new Map<string, HTMLVideoElement>();
 
   function startFramingLoop() {
     if (framingAnimationId !== null) return;
@@ -425,18 +870,169 @@
     }
   }
 
+  /** Cover the canvas with video (letterbox/crop center) — same visual as CSS object-cover */
+  function drawVideoCover(ctx: CanvasRenderingContext2D, video: HTMLVideoElement, cw: number, ch: number) {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return;
+    const scale = Math.max(cw / vw, ch / vh);
+    const dw = vw * scale;
+    const dh = vh * scale;
+    const dx = (cw - dw) / 2;
+    const dy = (ch - dh) / 2;
+    ctx.drawImage(video, 0, 0, vw, vh, dx, dy, dw, dh);
+  }
+
+  function regionMediaSrc(assetId?: string | null): string {
+    if (!assetId) return '';
+    if (
+      assetId.startsWith('blob:') ||
+      assetId.startsWith('http://') ||
+      assetId.startsWith('https://') ||
+      assetId.startsWith('asset:')
+    ) {
+      return assetId;
+    }
+    try {
+      return convertFileSrc(assetId);
+    } catch {
+      return assetId;
+    }
+  }
+
+  function getRegionImage(assetId: string): HTMLImageElement | null {
+    const src = regionMediaSrc(assetId);
+    if (!src) return null;
+    const cached = regionImageCache.get(src);
+    if (cached) return cached;
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = src;
+    regionImageCache.set(src, img);
+    return img;
+  }
+
+  function getRegionVideo(assetId: string): HTMLVideoElement | null {
+    const src = regionMediaSrc(assetId);
+    if (!src) return null;
+    const cached = regionVideoCache.get(src);
+    if (cached) return cached;
+
+    const media = document.createElement('video');
+    media.crossOrigin = 'anonymous';
+    media.src = src;
+    media.muted = true;
+    media.loop = true;
+    media.playsInline = true;
+    media.preload = 'metadata';
+    regionVideoCache.set(src, media);
+    return media;
+  }
+
+  function drawObjectCover(
+    ctx: CanvasRenderingContext2D,
+    source: CanvasImageSource,
+    sourceWidth: number,
+    sourceHeight: number,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number
+  ) {
+    if (!sourceWidth || !sourceHeight || !dw || !dh) return;
+    const scale = Math.max(dw / sourceWidth, dh / sourceHeight);
+    const sw = dw / scale;
+    const sh = dh / scale;
+    const sx = (sourceWidth - sw) / 2;
+    const sy = (sourceHeight - sh) / 2;
+    ctx.drawImage(source, sx, sy, sw, sh, dx, dy, dw, dh);
+  }
+
+  function getRegionCornerRadius(region: ManualRegion, regionWidthPx: number, regionHeightPx: number): number {
+    if (!region.cornerRadiusEnabled || !region.cornerRadiusPx) return 0;
+    const radius = region.cornerRadiusPx * (regionWidthPx / 1080);
+    return Math.max(0, Math.min(radius, regionWidthPx / 2, regionHeightPx / 2));
+  }
+
+  function applyRoundedRegionClip(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    radius: number
+  ) {
+    if (radius <= 0) return;
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    ctx.clip();
+  }
+
+  function drawTransformedSourceFrame(
+    ctx: CanvasRenderingContext2D,
+    video: HTMLVideoElement,
+    cw: number,
+    ch: number,
+    vw: number,
+    vh: number,
+    config: ManualFramingConfig
+  ) {
+    const st = config.sourceTransform ?? { scale: 1, x: 0, y: 0 };
+    const sourceAspect = vw / vh || 16 / 9;
+    const baseWidth = cw;
+    const baseHeight = baseWidth / sourceAspect;
+    const width = baseWidth * st.scale;
+    const height = baseHeight * st.scale;
+    const left = (cw - width) / 2 + st.x * cw;
+    const top = (ch - height) / 2 + st.y * ch;
+    const amt = config.blurAmount ?? 0;
+    const blurPx =
+      config.blurEnabled !== false && amt > 0 ? use169BlurSliderToCssPx(amt) : 0;
+
+    ctx.save();
+    if (blurPx > 0) ctx.filter = `blur(${blurPx}px)`;
+    ctx.drawImage(video, 0, 0, vw, vh, left, top, width, height);
+    ctx.restore();
+  }
+
   function renderFramingFrame() {
     const canvas = framingCanvasRef.value;
     const video = videoElementRef.value;
     const regions = props.framingRegions;
-    if (!canvas || !video || !regions || regions.length === 0) {
+    if (!canvas || !video) {
       framingAnimationId = null;
       return;
     }
 
     // Size canvas to match container
     const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    const fcEarly = props.manualFramingConfig;
+    const use169Early =
+      fcEarly?.sourceFrameMode === 'use16x9' &&
+      props.aspectRatio.width / props.aspectRatio.height < 0.95;
+    const amtEarly = fcEarly?.blurAmount ?? 0;
+    const blurPxEarly =
+      use169Early &&
+      fcEarly &&
+      fcEarly.blurEnabled !== false &&
+      amtEarly > 0
+        ? use169BlurSliderToCssPx(amtEarly)
+        : 0;
+    // Heavy canvas blur + DPR → massive lag; keep compositor light for HLS fallback.
+    const dpr =
+      use169Early && blurPxEarly > 0
+        ? 1
+        : Math.min(window.devicePixelRatio || 1, 2);
     const cw = Math.round(rect.width * dpr);
     const ch = Math.round(rect.height * dpr);
 
@@ -453,9 +1049,6 @@
     const ctx = canvas.getContext('2d');
     if (!ctx) { framingAnimationId = null; return; }
 
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, cw, ch);
-
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     if (vw === 0 || vh === 0) {
@@ -463,32 +1056,177 @@
       return;
     }
 
+    const fc = props.manualFramingConfig;
+    const hasRegions = !!regions && regions.length > 0;
+    const use169 =
+      !hasRegions &&
+      fc?.sourceFrameMode === 'use16x9' &&
+      props.aspectRatio.width / props.aspectRatio.height < 0.95;
+
+    if (use169) {
+      const now = performance.now();
+      if (!video.paused && now - lastUse169CanvasDraw < 42) {
+        framingAnimationId = requestAnimationFrame(renderFramingFrame);
+        return;
+      }
+      lastUse169CanvasDraw = now;
+
+      const amtU9 = fc!.blurAmount ?? 0;
+      const blurPx =
+        fc!.blurEnabled !== false && amtU9 > 0 ? use169BlurSliderToCssPx(amtU9) : 0;
+
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, cw, ch);
+
+      if (blurPx > 0) {
+        ctx.save();
+        ctx.filter = `blur(${blurPx}px)`;
+        drawVideoCover(ctx, video, cw, ch);
+        ctx.restore();
+      }
+
+      const st = fc!.sourceTransform ?? { scale: 1, x: 0, y: 0 };
+      const baseWidth = cw;
+      const baseHeight = baseWidth / (16 / 9);
+      const boxW = baseWidth * st.scale;
+      const boxH = baseHeight * st.scale;
+      const left = (cw - boxW) / 2 + st.x * cw;
+      const top = (ch - boxH) / 2 + st.y * ch;
+
+      ctx.drawImage(video, 0, 0, vw, vh, left, top, boxW, boxH);
+
+      framingAnimationId = video.paused ? null : requestAnimationFrame(renderFramingFrame);
+      return;
+    }
+
+    if (!regions || regions.length === 0) {
+      framingAnimationId = null;
+      return;
+    }
+
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, cw, ch);
+
+    if (fc?.sourceFrameMode === 'scale') {
+      drawTransformedSourceFrame(ctx, video, cw, ch, vw, vh, fc);
+    }
+
     // Draw each region: source rect from video → output rect on canvas
     for (const region of regions) {
+      const dx = region.output.x * cw;
+      const dy = region.output.y * ch;
+      const dw = region.output.width * cw;
+      const dh = region.output.height * ch;
+      const cornerRadius = getRegionCornerRadius(region, dw, dh);
+
+      if (region.mediaAssetId && region.mediaType === 'image') {
+        const img = getRegionImage(region.mediaAssetId);
+        if (img?.complete && img.naturalWidth && img.naturalHeight) {
+          ctx.save();
+          applyRoundedRegionClip(ctx, dx, dy, dw, dh, cornerRadius);
+          drawObjectCover(ctx, img, img.naturalWidth, img.naturalHeight, dx, dy, dw, dh);
+          ctx.restore();
+        }
+        continue;
+      }
+
+      if (region.mediaAssetId && region.mediaType === 'video') {
+        const media = getRegionVideo(region.mediaAssetId);
+        if (media) {
+          if (Number.isFinite(video.currentTime) && media.duration) {
+            const targetTime = video.currentTime % media.duration;
+            if (Math.abs(media.currentTime - targetTime) > 0.12) {
+              media.currentTime = targetTime;
+            }
+          }
+          if (!video.paused && media.paused) void media.play().catch(() => {});
+          if (video.paused && !media.paused) media.pause();
+          if (media.readyState >= 2 && media.videoWidth && media.videoHeight) {
+            ctx.save();
+            applyRoundedRegionClip(ctx, dx, dy, dw, dh, cornerRadius);
+            drawObjectCover(ctx, media, media.videoWidth, media.videoHeight, dx, dy, dw, dh);
+            ctx.restore();
+          }
+        }
+        continue;
+      }
+
       const sx = region.source.x * vw;
       const sy = region.source.y * vh;
       const sw = region.source.width * vw;
       const sh = region.source.height * vh;
 
-      const dx = region.output.x * cw;
-      const dy = region.output.y * ch;
-      const dw = region.output.width * cw;
-      const dh = region.output.height * ch;
-
+      ctx.save();
+      applyRoundedRegionClip(ctx, dx, dy, dw, dh, cornerRadius);
       ctx.drawImage(video, sx, sy, sw, sh, dx, dy, dw, dh);
+      ctx.restore();
     }
 
     framingAnimationId = requestAnimationFrame(renderFramingFrame);
   }
 
   // Start/stop framing loop based on regions, video, and canvas readiness
-  watch([hasFramingRegions, videoElementRef, framingCanvasRef], ([hasRegions, videoEl, canvasEl]) => {
-    if (hasRegions && videoEl && canvasEl) {
+  watch([showFramingCanvas, videoElementRef, framingCanvasRef], ([show, videoEl, canvasEl]) => {
+    if (show && videoEl && canvasEl) {
       startFramingLoop();
     } else {
       stopFramingLoop();
     }
   }, { immediate: true });
+
+  watch(
+    () => props.isPlaying,
+    (playing) => {
+      if (playing && showFramingCanvas.value && videoElementRef.value && framingCanvasRef.value) {
+        startFramingLoop();
+      }
+    }
+  );
+
+  function syncUse169CloneVideos() {
+    const master = videoElementRef.value;
+    const bg = use169BgVideoRef.value;
+    const fg = use169FgVideoRef.value;
+    if (!master || !bg || !fg) return;
+    const t = master.currentTime;
+    if (!Number.isFinite(t)) return;
+    if (Math.abs(bg.currentTime - t) > 0.12 || Math.abs(fg.currentTime - t) > 0.12) {
+      bg.currentTime = t;
+      fg.currentTime = t;
+    }
+    bg.playbackRate = master.playbackRate;
+    fg.playbackRate = master.playbackRate;
+    const shouldPlay = props.isPlaying && !master.paused && !master.ended;
+    if (shouldPlay) {
+      if (bg.paused) void bg.play().catch(() => {});
+      if (fg.paused) void fg.play().catch(() => {});
+    } else {
+      bg.pause();
+      fg.pause();
+    }
+  }
+
+  function use169SyncTick() {
+    syncUse169CloneVideos();
+    use169SyncRaf = requestAnimationFrame(use169SyncTick);
+  }
+
+  watch(
+    showUse169GpuStack,
+    (on) => {
+      if (use169SyncRaf !== null) {
+        cancelAnimationFrame(use169SyncRaf);
+        use169SyncRaf = null;
+      }
+      if (on) {
+        nextTick(() => {
+          syncUse169CloneVideos();
+          use169SyncRaf = requestAnimationFrame(use169SyncTick);
+        });
+      }
+    },
+    { immediate: true }
+  );
 
   // HLS.js instance for HLS playback
   let hlsInstance: Hls | null = null;
@@ -595,22 +1333,25 @@
     isAudioSetup.value = false;
   }
 
-  // Calculate max words based on aspect ratio
+  // Calculate max words based on aspect ratio + effect density.
   const maxWordsForAspectRatio = computed(() => {
-    const aspectRatioValue = props.aspectRatio.width / props.aspectRatio.height;
-
-    if (aspectRatioValue > 1.5) {
-      return 6; // wide formats (16:9, 21:9)
-    } else if (aspectRatioValue > 0.9) {
-      return 4; // squarish (1:1, 4:3)
-    } else {
-      return 3; // vertical (9:16, 4:5)
-    }
+    return maxWordsChunkForAspectRatioString(
+      `${props.aspectRatio.width}:${props.aspectRatio.height}`,
+      props.subtitleSettings?.animationStyle
+    );
   });
 
   // Find the current whisper segment
   const currentSegment = computed((): WhisperSegment | null => {
+    console.log('[VideoPlayer] currentSegment check:', {
+      subtitleEnabled: props.subtitleSettings?.enabled,
+      hasTranscriptSegments: !!props.transcriptSegments,
+      segmentsLength: props.transcriptSegments?.length || 0,
+      currentTime: props.currentTime,
+    });
+    
     if (!props.subtitleSettings?.enabled || !props.transcriptSegments || props.transcriptSegments.length === 0) {
+      console.log('[VideoPlayer] No current segment - missing data');
       return null;
     }
 
@@ -619,11 +1360,13 @@
     // Find segment that contains the current time
     for (const segment of props.transcriptSegments) {
       if (time >= segment.start && time <= segment.end) {
+        console.log('[VideoPlayer] Found current segment:', segment);
         return segment;
       }
     }
 
     // Return null if in dead space between segments
+    console.log('[VideoPlayer] No segment at current time:', time);
     return null;
   });
 
@@ -631,33 +1374,74 @@
   const segmentWords = computed((): WordInfo[] => {
     if (!currentSegment.value) return [];
 
-    // If segment has words attached, use those
-    if (currentSegment.value.words && currentSegment.value.words.length > 0) {
-      return currentSegment.value.words;
+    const segment = currentSegment.value;
+
+    // First try: filter from global transcript words by segment time range
+    if (props.transcriptWords && props.transcriptWords.length > 0) {
+      const filtered = props.transcriptWords.filter((word) => {
+        return (
+          (word.start >= segment.start && word.start < segment.end) ||
+          (word.end > segment.start && word.end <= segment.end) ||
+          (word.start <= segment.start && word.end >= segment.end)
+        );
+      });
+
+      if (filtered.length > 0) {
+        return filtered;
+      }
     }
 
-    // Otherwise, filter from all transcript words
-    // Use a more inclusive filter - word overlaps with segment in any way
-    if (!props.transcriptWords || props.transcriptWords.length === 0) return [];
+    // Fallback: use segment.words directly, remapping their timestamps to the segment's absolute time range.
+    // This handles transcripts where word timestamps are chunk-relative rather than VOD-absolute.
+    const segWords = (segment as any).words;
+    if (segWords && Array.isArray(segWords) && segWords.length > 0) {
+      const wordStart = segWords[0].start;
+      const wordEnd = segWords[segWords.length - 1].end;
+      const wordSpan = wordEnd - wordStart;
+      const segSpan = segment.end - segment.start;
+      const offset = segment.start - wordStart;
+      const scale = wordSpan > 0 ? segSpan / wordSpan : 1;
 
-    const segment = currentSegment.value;
-    return props.transcriptWords.filter((word) => {
-      // Include word if it starts within segment OR ends within segment OR spans the entire segment
-      return (
-        (word.start >= segment.start && word.start < segment.end) ||
-        (word.end > segment.start && word.end <= segment.end) ||
-        (word.start <= segment.start && word.end >= segment.end)
-      );
-    });
+      return segWords.map((w: any): WordInfo => ({
+        word: w.word,
+        start: wordSpan > 0
+          ? segment.start + (w.start - wordStart) * scale
+          : segment.start + (w.start - wordStart) + offset,
+        end: wordSpan > 0
+          ? segment.start + (w.end - wordStart) * scale
+          : segment.start + (w.end - wordStart) + offset,
+        confidence: w.confidence,
+      }));
+    }
+
+    return [];
   });
 
   // Get visible words (chunked display - shows X words at a time, then jumps to next X)
   const visibleWords = computed((): WordInfo[] => {
     const allSegmentWords = segmentWords.value;
-    if (allSegmentWords.length === 0) return [];
+    
+    if (allSegmentWords.length === 0) {
+      return [];
+    }
 
-    const maxWords = maxWordsForAspectRatio.value;
     const time = props.currentTime || 0;
+    const animationStyle = props.subtitleSettings?.animationStyle;
+
+    console.log('[VideoPlayer] Animation style check:', {
+      animationStyle,
+      subtitleSettings: props.subtitleSettings,
+      isSingleWord: animationStyle === 'single-word'
+    });
+
+    // Single word mode - only show the current word (shared hit-test: min window + no short-word drop)
+    if (animationStyle === 'single-word') {
+      const currentWord = pickActiveSingleWordAtTime(allSegmentWords, time);
+      return currentWord ? [currentWord] : [];
+    }
+
+    // Normal chunked display for other animation styles
+    const maxWords = maxWordsForAspectRatio.value;
 
     // If segment has fewer words than the limit, show all
     if (allSegmentWords.length <= maxWords) {
@@ -697,10 +1481,67 @@
     return allSegmentWords.slice(startIndex, endIndex);
   });
 
-  // Check if a word is currently being spoken
+  // Check if a word is currently being spoken (must match single-word hit-test / extended windows)
   function isCurrentWord(word: WordInfo): boolean {
+    const style = props.subtitleSettings?.animationStyle;
+    if (style === 'single-word') {
+      return visibleWords.value.some(
+        (w) => w.start === word.start && w.end === word.end && w.word === word.word
+      );
+    }
+
     const time = props.currentTime || 0;
-    return time >= word.start && time <= word.end;
+
+    if (time >= word.start && time < word.end) {
+      return true;
+    }
+
+    const LOOK_BACK_TOLERANCE = 0.05;
+    const timeSinceWordStart = time - word.start;
+
+    if (timeSinceWordStart > 0 && timeSinceWordStart <= LOOK_BACK_TOLERANCE) {
+      if (time < word.end) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Default color palette for multi-color single-word mode
+  const DEFAULT_COLOR_PALETTE = ['#04F827', '#0ea5e9', '#FFFD03', '#FFFFFF']; // Green, Cyan, Yellow, White
+
+  // Get the color for a word based on multi-color settings (for single-word mode)
+  function getWordColor(wordIndex: number): string {
+    const settings = props.subtitleSettings;
+    
+    // Only apply multi-color in single-word mode
+    if (!settings || settings.animationStyle !== 'single-word' || !settings.multiColorEnabled) {
+      // Multi-color is OFF or not in single-word mode, use the regular text color
+      return settings?.textColor || '#FFFFFF';
+    }
+    
+    // Multi-color is ON in single-word mode
+    if (settings.multiColorMode === 'custom' && settings.colorPalette && settings.colorPalette.length > 0) {
+      // Use custom palette
+      const paletteIndex = wordIndex % settings.colorPalette.length;
+      return settings.colorPalette[paletteIndex];
+    } else {
+      // Use default palette (Neon Green, Cyan, Yellow, White)
+      const paletteIndex = wordIndex % DEFAULT_COLOR_PALETTE.length;
+      return DEFAULT_COLOR_PALETTE[paletteIndex];
+    }
+  }
+
+  // Get the index of the current word in the full transcript
+  function getWordIndexInTranscript(word: WordInfo): number {
+    if (!props.transcriptWords || props.transcriptWords.length === 0) {
+      return 0;
+    }
+    
+    // Find the index of this word in the transcript
+    const index = props.transcriptWords.findIndex(w => w.start === word.start && w.word === word.word);
+    return index >= 0 ? index : 0;
   }
 
   // Get the animation class based on animation style
@@ -716,6 +1557,7 @@
       'animation-box-highlight': style === 'box-highlight',
       'animation-typewriter': style === 'typewriter',
       'animation-wave': style === 'wave',
+      'animation-single-word': style === 'single-word',
     };
   });
 
@@ -767,33 +1609,57 @@
     if (!props.subtitleSettings) return {};
 
     const settings = props.subtitleSettings;
-    let topPosition = '50%';
-
-    if (settings.position === 'top') {
-      topPosition = settings.positionPercentage + '%';
-    } else if (settings.position === 'middle') {
-      topPosition = settings.positionPercentage + '%';
-    } else {
-      topPosition = settings.positionPercentage + '%';
-    }
-
+    console.log('[VideoPlayer] Subtitle textAlign:', settings.textAlign);
+    
     // Apply text offsets (X and Y adjustments in percentage)
     const leftOffset = settings.textOffsetX || 0;
     const topOffset = settings.textOffsetY || 0;
+    
+    // Determine position: always use customSubtitlePosition (defaults to bottom-center 50,85)
+    const topPct = customSubtitlePosition.value.y;
+    
+    // Calculate horizontal position based on alignment
+    let leftPct: number;
+    let transformX: string;
+    
+    switch (settings.textAlign) {
+      case 'left':
+        // Position at 10% from left edge, apply offset from left edge
+        leftPct = 10;
+        transformX = `${leftOffset}%`;
+        break;
+      case 'right':
+        // Position at 90% from left edge, apply offset from right edge
+        leftPct = 90;
+        transformX = `calc(-100% + ${leftOffset}%)`;
+        break;
+      default:
+        // Center alignment: use custom position and center the container
+        leftPct = customSubtitlePosition.value.x;
+        transformX = `calc(-50% + ${leftOffset}%)`;
+        break;
+    }
 
     // Calculate scaled values for advanced settings
     const scaledPadding = Math.round((settings.padding || 0) * finalFontSizeScale.value);
     const scaledBorderRadius = Math.round((settings.borderRadius || 0) * finalFontSizeScale.value);
-    const scaledLineHeight = settings.lineHeight || 1.2;
+    const scaledLineHeight = getSubtitleLineHeightMultiplier(
+      settings,
+      `${props.aspectRatio.width}:${props.aspectRatio.height}`
+    );
 
-    // Base styles
+    // Base styles — always use absolute positioning anchored to the overlay container.
+    // Width is fit-content so the box shrinks/grows with the text.
     const baseStyles: Record<string, string> = {
-      top: topPosition,
-      left: '50%',
-      transform: `translate(calc(-50% + ${leftOffset}%), calc(-50% + ${topOffset}%))`,
-      width: settings.maxWidth + '%',
+      position: 'absolute',
+      top: topPct + '%',
+      left: leftPct + '%',
+      transform: `translate(${transformX}, calc(-50% + ${topOffset}%))`,
+      width: 'max-content',
+      maxWidth: customSubtitleWidth.value + '%',
       display: 'flex',
-      justifyContent: 'center',
+      flexWrap: 'wrap',
+      justifyContent: settings.textAlign || 'center',
       alignItems: 'center',
       lineHeight: String(scaledLineHeight),
     };
@@ -805,6 +1671,7 @@
       baseStyles.borderRadius = `${scaledBorderRadius}px`;
     }
 
+    console.log('[VideoPlayer] Computed subtitle styles:', baseStyles);
     return baseStyles;
   });
 
@@ -825,40 +1692,97 @@
     return fontSizeScale * videoScaleFactor;
   });
 
+  /** App cyan — default karaoke / highlight fallback (matches SubtitlePropertiesPanel presets) */
+  const DEFAULT_SUBTITLE_HIGHLIGHT = '#0ea5e9';
+
+  /** SVG filter url for subtitle drop shadow; undefined when shadow is fully off */
+  function subtitleShadowFilterUrl(wordIndex: number): string | undefined {
+    const s = props.subtitleSettings;
+    if (!s) return undefined;
+    const blur = s.shadowBlur ?? 0;
+    const dx = s.shadowOffsetX ?? 0;
+    const dy = s.shadowOffsetY ?? 0;
+    if (blur <= 0 && dx === 0 && dy === 0) return undefined;
+    return `url(#shadow-${wordIndex})`;
+  }
+
+  /** Effective subtitle font size in CSS px (panel fontSize × video layout scale). */
+  const subtitleRenderedFontSizePx = computed(() => {
+    if (!props.subtitleSettings) return 0;
+    return Math.max(1, Math.round(props.subtitleSettings.fontSize * finalFontSizeScale.value));
+  });
+
+  /**
+   * Letter spacing from the panel is in px, calibrated around a typical on-screen size.
+   * Scale with rendered font so gaps don’t look “stuck” when the user enlarges subtitles.
+   */
+  const REFERENCE_SUBTITLE_FONT_PX = 48;
+
+  const scaledSubtitleLetterSpacingPx = computed(() => {
+    if (!props.subtitleSettings) return 0;
+    const raw = props.subtitleSettings.letterSpacing || 0;
+    const fs = subtitleRenderedFontSizePx.value;
+    return raw * (fs / REFERENCE_SUBTITLE_FONT_PX);
+  });
+
   // Style for text layer (top layer)
   const getTextStyle = computed(() => {
     if (!props.subtitleSettings) return {};
 
     const settings = props.subtitleSettings;
-    const adjustedFontSize = Math.round(settings.fontSize * finalFontSizeScale.value);
-    const adjustedLetterSpacing = (settings.letterSpacing || 0) * finalFontSizeScale.value;
+    const adjustedFontSize = subtitleRenderedFontSizePx.value;
+    const adjustedLetterSpacing = scaledSubtitleLetterSpacingPx.value;
 
-    return {
+    const styles: any = {
       color: settings.textColor,
       fontFamily: `"${settings.fontFamily}", Arial, sans-serif`,
       fontWeight: settings.fontWeight,
       fontSize: `${adjustedFontSize}px`,
       letterSpacing: `${adjustedLetterSpacing}px`,
+      lineHeight: String(
+        getSubtitleLineHeightMultiplier(
+          settings,
+          `${props.aspectRatio.width}:${props.aspectRatio.height}`
+        )
+      ),
     };
+    
+    // Add uppercase for single-word style (CapCut-style)
+    if (settings.animationStyle === 'single-word') {
+      styles.textTransform = 'uppercase';
+    }
+    
+    return styles;
   });
 
-  // Calculate word gap (spacing between words)
+  // Space between word spans: scale with rendered font (see getSubtitleWordSpacingPx — not full 0.35em or gaps look huge).
   const wordGapStyle = computed(() => {
-    if (!props.subtitleSettings) return '0.35em';
+    if (!props.subtitleSettings) return '0px';
+    const gapPx = getSubtitleWordSpacingPx(
+      props.subtitleSettings.wordSpacing,
+      subtitleRenderedFontSizePx.value
+    );
+    return `${gapPx}px`;
+  });
 
-    const settings = props.subtitleSettings;
-    // wordSpacing is a multiplier (0.1 to 1), convert to em units
-    const wordSpacing = settings.wordSpacing || 0.35;
-    return `${wordSpacing}em`;
+  const subtitleWordSafetyPaddingStyle = computed(() => {
+    if (!props.subtitleSettings) return {};
+    const aspectRatio = `${props.aspectRatio.width}:${props.aspectRatio.height}`;
+    const padPx = getSubtitleWordSafetyPaddingPx(
+      props.subtitleSettings,
+      subtitleRenderedFontSizePx.value,
+      aspectRatio
+    );
+    const verticalPadPx = Math.max(0, padPx * 0.35);
+    return {
+      padding: `${verticalPadPx}px ${padPx}px`,
+    };
   });
 
   // Get letter spacing for SVG elements
   const svgLetterSpacing = computed(() => {
     if (!props.subtitleSettings) return '0px';
-
-    const settings = props.subtitleSettings;
-    const adjustedLetterSpacing = (settings.letterSpacing || 0) * finalFontSizeScale.value;
-    return `${adjustedLetterSpacing}px`;
+    return `${scaledSubtitleLetterSpacingPx.value}px`;
   });
 
   // Watermark overlay computed properties
@@ -1201,16 +2125,172 @@
   // Setup ResizeObserver to track container size changes
   let resizeObserver: ResizeObserver | null = null;
 
+  // Subtitle drag handlers — drags by center point
+  function startDragSubtitles(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!videoContainerRef.value) return;
+    // Drag is only meaningful when the box is visible (handles + chrome shown)
+    if (!subtitleBoxVisible.value) return;
+
+    isDraggingSubtitles.value = true;
+
+    const containerRect = videoContainerRef.value.getBoundingClientRect();
+    const curX = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+    const curY = ((e.clientY - containerRect.top) / containerRect.height) * 100;
+    const pos = customSubtitlePosition.value ?? { x: 50, y: 85 };
+
+    subtitleDragOffset.value = {
+      x: curX - pos.x,
+      y: curY - pos.y,
+    };
+
+    document.addEventListener('mousemove', onDragSubtitles);
+    document.addEventListener('mouseup', stopSubtitleInteraction);
+  }
+
+  function onDragSubtitles(e: MouseEvent) {
+    if (!isDraggingSubtitles.value || !videoContainerRef.value) return;
+    const containerRect = videoContainerRef.value.getBoundingClientRect();
+    const curX = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+    const curY = ((e.clientY - containerRect.top) / containerRect.height) * 100;
+    let nextX = Math.max(0, Math.min(100, curX - subtitleDragOffset.value.x));
+    let nextY = Math.max(0, Math.min(100, curY - subtitleDragOffset.value.y));
+    // Snap to center when within tolerance so users can land on truly-centered.
+    if (Math.abs(nextX - 50) < SUBTITLE_SNAP_TOLERANCE_PCT) nextX = 50;
+    if (Math.abs(nextY - 50) < SUBTITLE_SNAP_TOLERANCE_PCT) nextY = 50;
+    customSubtitlePosition.value = { x: nextX, y: nextY };
+  }
+
+  /**
+   * Mousedown on the dashed selection-box wrapper.
+   * Only initiates a drag if the box chrome is visible (so clicks while hidden don't fight the
+   * canvas-click handler that brings the box back).
+   */
+  function onSubtitleBoxMouseDown(e: MouseEvent) {
+    if (!subtitleBoxVisible.value) return;
+    startDragSubtitles(e);
+  }
+
+  /**
+   * Click on the box wrapper (not bubbled to canvas).
+   * If the box is currently hidden, surface it again so the user can drag/resize.
+   */
+  function onSubtitleBoxClick() {
+    if (!subtitleBoxVisible.value) {
+      subtitleBoxVisible.value = true;
+    }
+  }
+
+  /**
+   * Mousedown on the inner subtitle text container.
+   * When hidden, do not start a drag — let the click handler bring the box back.
+   */
+  function onSubtitleTextMouseDown(e: MouseEvent) {
+    if (!subtitleBoxVisible.value) return;
+    startDragSubtitles(e);
+  }
+
+  /**
+   * Click on the subtitle text — bring the selection chrome back when hidden.
+   * When already visible, do nothing here; the drag bar handles "select" semantics.
+   */
+  function onSubtitleTextClick() {
+    if (!subtitleBoxVisible.value) {
+      subtitleBoxVisible.value = true;
+    }
+  }
+
+  /**
+   * Click on the previewer canvas (anywhere outside the subtitle box / text).
+   * Hides the subtitle selection chrome so the user sees a clean preview of the subtitles only.
+   * Clicks on the subtitle box/text are stopped before reaching here.
+   */
+  function onCanvasClick() {
+    if (!props.subtitleSettings?.enabled) return;
+    if (visibleWords.value.length === 0) return;
+    if (subtitleBoxVisible.value) {
+      subtitleBoxVisible.value = false;
+    }
+  }
+
+  // Font resize via corner handles — dragging away from center = bigger
+  function startFontResize(e: MouseEvent, corner: 'tl' | 'tr' | 'bl' | 'br') {
+    e.preventDefault();
+    e.stopPropagation();
+
+    isResizingSubtitles.value = true;
+    fontResizeStartX.value = e.clientX;
+    fontResizeStartY.value = e.clientY;
+    fontResizeStartSize.value = props.subtitleSettings?.fontSize ?? 48;
+    fontResizeCorner.value = corner;
+
+    document.addEventListener('mousemove', onFontResize);
+    document.addEventListener('mouseup', stopSubtitleInteraction);
+  }
+
+  function onFontResize(e: MouseEvent) {
+    if (!isResizingSubtitles.value || !videoContainerRef.value) return;
+    const containerRect = videoContainerRef.value.getBoundingClientRect();
+    const dx = e.clientX - fontResizeStartX.value;
+    const dy = e.clientY - fontResizeStartY.value;
+    // Away from corner = bigger. Each corner's outward direction:
+    // tl: left(-x) and up(-y)   = bigger → signX=-1, signY=-1
+    // tr: right(+x) and up(-y)  = bigger → signX=+1, signY=-1
+    // bl: left(-x) and down(+y) = bigger → signX=-1, signY=+1
+    // br: right(+x) and down(+y)= bigger → signX=+1, signY=+1
+    const signX = (fontResizeCorner.value === 'tr' || fontResizeCorner.value === 'br') ? 1 : -1;
+    const signY = (fontResizeCorner.value === 'bl' || fontResizeCorner.value === 'br') ? 1 : -1;
+    const delta = (dx * signX + dy * signY) / 2;
+    const scaledDelta = (delta / containerRect.height) * 200;
+    const newSize = Math.max(8, Math.min(200, fontResizeStartSize.value + scaledDelta));
+    emit('subtitleFontSizeChange', Math.round(newSize));
+  }
+
+  function stopSubtitleInteraction() {
+    const wasInteracting = isDraggingSubtitles.value || isResizingSubtitles.value;
+    isDraggingSubtitles.value = false;
+    isResizingSubtitles.value = false;
+    document.removeEventListener('mousemove', onDragSubtitles);
+    document.removeEventListener('mousemove', onFontResize);
+    document.removeEventListener('mouseup', stopSubtitleInteraction);
+
+    if (wasInteracting && customSubtitlePosition.value) {
+      emit('subtitlePositionChange', customSubtitlePosition.value, customSubtitleWidth.value);
+    }
+  }
+
+  // Debug subtitle overlay rendering
+  watch([() => props.subtitleSettings, visibleWords, () => props.videoSrc, () => props.videoLoading], ([settings, words, src, loading]) => {
+    console.log('[VideoPlayer] Subtitle overlay conditions:', {
+      subtitleEnabled: settings?.enabled,
+      visibleWordsCount: words.length,
+      hasVideoSrc: !!src,
+      videoLoading: loading,
+      shouldShow: settings?.enabled && words.length > 0 && !!src && !loading,
+    });
+    
+    // Debug karaoke settings
+    if (settings?.animationStyle === 'karaoke') {
+      console.log('[VideoPlayer] Karaoke subtitle settings:', {
+        animationStyle: settings.animationStyle,
+        textColor: settings.textColor,
+        highlightColor: settings.highlightColor,
+        currentTime: props.currentTime,
+      });
+    }
+  });
+
   onMounted(() => {
     if (videoContainerRef.value) {
-      // Initialize with current height
       containerHeight.value = videoContainerRef.value.clientHeight;
+      containerWidth.value = videoContainerRef.value.clientWidth;
 
       // Create ResizeObserver to watch for size changes
       resizeObserver = new ResizeObserver((entries) => {
         for (const entry of entries) {
-          // Update the reactive containerHeight when size changes
           containerHeight.value = entry.contentRect.height;
+          containerWidth.value = entry.contentRect.width;
         }
       });
 
@@ -1236,6 +2316,10 @@
   });
 
   onUnmounted(() => {
+    if (use169SyncRaf !== null) {
+      cancelAnimationFrame(use169SyncRaf);
+      use169SyncRaf = null;
+    }
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
@@ -1325,55 +2409,6 @@
     animation: pulse-slow 3s ease-in-out infinite;
   }
 
-  /* Play/Pause Overlay */
-  .play-overlay {
-    cursor: pointer;
-  }
-
-  .play-button-container {
-    opacity: 0;
-    transform: scale(0.8);
-    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-
-  .play-overlay:hover .play-button-container,
-  .play-button-container.show-button {
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  .play-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    box-shadow:
-      0 8px 32px rgba(0, 0, 0, 0.4),
-      inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    transition: all 0.2s ease;
-  }
-
-  .play-button:hover {
-    background: rgba(0, 0, 0, 0.7);
-    border-color: rgba(255, 255, 255, 0.25);
-    transform: scale(1.05);
-  }
-
-  .play-button:active {
-    transform: scale(0.95);
-  }
-
-  /* Paused state shows play button more prominently */
-  .is-paused .play-button-container {
-    opacity: 0.9;
-    transform: scale(1);
-  }
-
   /* Focal Point Indicator */
   .focal-point-indicator {
     animation: focal-pulse 2s ease-in-out infinite;
@@ -1399,6 +2434,225 @@
   /* Backdrop blur effects */
   .backdrop-blur-sm {
     backdrop-filter: blur(4px);
+  }
+
+  /* Subtitle selection box — dashed border + drag bar; chrome can be toggled off via .is-hidden */
+  .subtitle-selection-box {
+    position: absolute;
+    border: 1px dashed rgba(255, 255, 255, 0.45);
+    border-radius: 4px;
+    box-sizing: border-box;
+    padding: 22px 0 0 0; /* top only — for drag bar; no side/bottom padding so box fits text */
+    cursor: move;
+    user-select: none;
+    transition: border-color 0.15s;
+  }
+
+  .subtitle-selection-box:hover,
+  .subtitle-selection-box.is-active {
+    border-color: rgba(59, 130, 246, 0.85);
+    border-width: 2px;
+  }
+
+  /*
+   * Hidden state: clicking the previewer canvas hides the chrome so the user sees a clean
+   * preview of just the subtitles. Clicking the subtitle text brings the chrome back.
+   * Padding is preserved so the subtitle text doesn't visually shift between states.
+   * Pointer-events are disabled on the wrapper so clicks in the invisible padding area pass
+   * through to the canvas — only the inner text container remains interactive.
+   */
+  .subtitle-selection-box.is-hidden,
+  .subtitle-selection-box.is-hidden:hover {
+    border-color: transparent;
+    border-width: 1px;
+    cursor: default;
+    pointer-events: none;
+  }
+
+  .subtitle-selection-box.is-hidden .subtitle-text-container {
+    pointer-events: auto;
+  }
+
+  /* Drag bar at the top of the selection box */
+  .subtitle-drag-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: move;
+    border-radius: 4px 4px 0 0;
+    background: rgba(59, 130, 246, 0.85);
+    backdrop-filter: blur(4px);
+    transition: background 0.15s;
+  }
+
+  .subtitle-drag-bar:hover {
+    background: rgba(59, 130, 246, 0.95);
+  }
+
+  .subtitle-drag-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    letter-spacing: 0.1em;
+    pointer-events: none;
+    user-select: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Corner resize handles for font size adjustment */
+  .resize-handle {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: rgba(59, 130, 246, 0.9);
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    z-index: 10;
+    opacity: 0;
+    transition: opacity 0.15s, transform 0.15s;
+  }
+
+  .subtitle-selection-box:hover .resize-handle,
+  .subtitle-selection-box.is-active .resize-handle {
+    opacity: 1;
+  }
+
+  .resize-handle:hover {
+    transform: scale(1.3);
+    background: rgba(59, 130, 246, 1);
+  }
+
+  .resize-handle-tl {
+    top: -5px;
+    left: -5px;
+    cursor: nwse-resize;
+  }
+
+  .resize-handle-tr {
+    top: -5px;
+    right: -5px;
+    cursor: nesw-resize;
+  }
+
+  .resize-handle-bl {
+    bottom: -5px;
+    left: -5px;
+    cursor: nesw-resize;
+  }
+
+  .resize-handle-br {
+    bottom: -5px;
+    right: -5px;
+    cursor: nwse-resize;
+  }
+
+  /*
+   * Center alignment guide lines — visible while the user is dragging the subtitle box.
+   * Highlight (cyan + glow) when the subtitle box is snapped to the canvas center.
+   */
+  .subtitle-guide-line {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.45);
+    pointer-events: none;
+    z-index: 30;
+    transition: background-color 0.12s ease, box-shadow 0.12s ease;
+  }
+
+  .subtitle-guide-line--vertical {
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    transform: translateX(-50%);
+  }
+
+  .subtitle-guide-line--horizontal {
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    transform: translateY(-50%);
+  }
+
+  .subtitle-guide-line.is-snapped {
+    background: rgba(34, 211, 238, 0.95);
+    box-shadow: 0 0 6px rgba(34, 211, 238, 0.7);
+  }
+
+  /* Clip text box selection — same chrome as subtitles (blue), shrink-wrap inner pill */
+  .clip-text-selection-box {
+    position: absolute;
+    border: 1px dashed rgba(59, 130, 246, 0.55);
+    border-radius: 6px;
+    box-sizing: border-box;
+    padding: 22px 0 0 0;
+    cursor: move;
+    user-select: none;
+    transition: border-color 0.15s;
+  }
+
+  .clip-text-selection-box:hover,
+  .clip-text-selection-box.is-active {
+    border-color: rgba(59, 130, 246, 0.85);
+    border-width: 2px;
+  }
+
+  /* Passive mode: no chrome, still visible; clicks pass to pill only */
+  .clip-text-selection-box.clip-text--passive {
+    border: none;
+    padding: 0;
+    cursor: default;
+  }
+
+  .clip-text-drag-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: move;
+    border-radius: 4px 4px 0 0;
+    background: rgba(59, 130, 246, 0.85);
+    backdrop-filter: blur(4px);
+    transition: background 0.15s;
+  }
+
+  .clip-text-drag-bar:hover {
+    background: rgba(59, 130, 246, 0.95);
+  }
+
+  .clip-text-drag-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    letter-spacing: 0.1em;
+    pointer-events: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  .clip-text-selection-box:hover .resize-handle,
+  .clip-text-selection-box.is-active .resize-handle {
+    opacity: 1;
+  }
+
+  .clip-text-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2rem;
+    max-width: 100%;
+  }
+
+  .clip-text-pill-inner {
+    max-width: 100%;
   }
 
   /* Subtitle word animation styles */
@@ -1486,6 +2740,26 @@
     }
     100% {
       transform: translateY(0) scale(1.03);
+    }
+  }
+
+  /* Single word animation - punchy entrance and exit */
+  .subtitle-word-stack.animation-single-word {
+    animation: single-word-punch 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  }
+
+  @keyframes single-word-punch {
+    0% {
+      opacity: 0;
+      transform: scale(0.8) translateY(10px);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.1) translateY(-2px);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) translateY(0);
     }
   }
 

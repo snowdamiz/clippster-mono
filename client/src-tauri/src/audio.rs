@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 /// Global flag to signal cancellation of audio extraction
 static AUDIO_EXTRACTION_CANCELLED: AtomicBool = AtomicBool::new(false);
 
@@ -29,9 +32,10 @@ fn kill_all_active_ffmpeg() {
             #[cfg(target_os = "windows")]
             {
                 // On Windows, use taskkill to force-kill the process tree
-                let _ = std::process::Command::new("taskkill")
-                    .args(["/F", "/T", "/PID", &pid.to_string()])
-                    .output();
+                let mut cmd = std::process::Command::new("taskkill");
+                cmd.args(["/F", "/T", "/PID", &pid.to_string()]);
+                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                let _ = cmd.output();
             }
             #[cfg(not(target_os = "windows"))]
             {
@@ -285,6 +289,129 @@ pub async fn extract_audio_from_video(
     Ok((filename.to_string(), base64_data))
 }
 
+/// Concatenate audio across multiple HLS-style segments (e.g. several `.ts` files
+/// produced by a livestream recorder) into a single MP3 and return base64.
+///
+/// Used by realtime auto-clip detection to batch ~30s of stream audio into one
+/// Whisper request, regardless of the underlying HLS segment duration. The list
+/// of segment paths must be in chronological order. Uses ffmpeg's concat
+/// demuxer via a temporary list file so it works for any container the recorder
+/// produced (mpegts, fmp4, etc.).
+#[tauri::command]
+pub async fn extract_audio_from_segments(
+    app: tauri::AppHandle,
+    segment_paths: Vec<String>,
+) -> Result<(String, String), String> {
+    use std::io::Write;
+    use tauri_plugin_shell::ShellExt;
+
+    if segment_paths.is_empty() {
+        return Err("extract_audio_from_segments: empty segment list".to_string());
+    }
+
+    println!(
+        "[Rust] extract_audio_from_segments called with {} segments",
+        segment_paths.len()
+    );
+
+    let paths = storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_nanos();
+
+    let listfile_path = paths
+        .temp
+        .join(format!("realtime_concat_{}.txt", timestamp));
+    let output_path = paths
+        .temp
+        .join(format!("realtime_batch_{}.mp3", timestamp));
+
+    // Build the concat list: one `file '<path>'` per segment, with single-quotes
+    // inside paths escaped per ffmpeg concat demuxer rules.
+    {
+        let mut listfile = std::fs::File::create(&listfile_path)
+            .map_err(|e| format!("Failed to create concat list file: {}", e))?;
+        for path in &segment_paths {
+            let escaped = path.replace('\'', "'\\''");
+            writeln!(listfile, "file '{}'", escaped)
+                .map_err(|e| format!("Failed to write concat list: {}", e))?;
+        }
+    }
+
+    let shell = app.shell();
+    let listfile_str = listfile_path
+        .to_str()
+        .ok_or("Invalid concat list path")?
+        .to_string();
+    let output_str = output_path
+        .to_str()
+        .ok_or("Invalid output mp3 path")?
+        .to_string();
+
+    println!(
+        "[Rust] Running ffmpeg concat -> mp3, list: {}, out: {}",
+        listfile_str, output_str
+    );
+
+    let output = shell
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args([
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            &listfile_str,
+            "-vn",
+            "-c:a",
+            "libmp3lame",
+            "-q:a",
+            "8",
+            "-y",
+            &output_str,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg concat: {}", e))?;
+
+    let _ = std::fs::remove_file(&listfile_path);
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let _ = std::fs::remove_file(&output_path);
+        return Err(format!(
+            "ffmpeg concat failed. stdout: {}; stderr: {}",
+            stdout.trim(),
+            stderr.trim()
+        ));
+    }
+
+    let audio_bytes = std::fs::read(&output_path)
+        .map_err(|e| format!("Failed to read concat output: {}", e))?;
+
+    let _ = std::fs::remove_file(&output_path);
+
+    if audio_bytes.is_empty() {
+        return Err("Concat produced empty audio".to_string());
+    }
+
+    use base64::{engine::general_purpose, Engine as _};
+    let base64_data = general_purpose::STANDARD.encode(&audio_bytes);
+
+    println!(
+        "[Rust] extract_audio_from_segments OK: {} segments -> {} bytes mp3",
+        segment_paths.len(),
+        audio_bytes.len()
+    );
+
+    Ok(("realtime_batch.mp3".to_string(), base64_data))
+}
+
 #[tauri::command]
 pub async fn extract_and_chunk_audio(
     app: tauri::AppHandle,
@@ -322,18 +449,13 @@ pub async fn extract_and_chunk_audio(
     let video_path_hash = crate::waveform::generate_video_path_hash(&video_path);
     let cached_audio_path_result = crate::waveform::get_audio_cache_file_path(&video_path_hash);
 
-    // Get video duration using FFmpeg header probe (just -i, no decoding)
-    println!("[Rust] Getting video duration (header probe)...");
-    let duration_output = shell
-        .sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(["-i", &video_path])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg for duration: {}", e))?;
+    let local_video_path = crate::ffmpeg_utils::resolve_local_media_path(&video_path)
+        .map_err(|e| format!("Invalid video path: {}", e))?;
 
-    let stderr = String::from_utf8_lossy(&duration_output.stderr);
-    let video_duration = parse_duration_from_ffmpeg_output(&stderr)
+    // Get video duration (ffmpeg stderr, ffprobe fallback)
+    println!("[Rust] Getting video duration for: {}", local_video_path);
+    let video_duration = crate::ffmpeg_utils::probe_media_duration(&app, &local_video_path)
+        .await
         .map_err(|e| format!("Failed to parse video duration: {}", e))?;
 
     println!("[Rust] Video duration: {:.2} seconds", video_duration);
@@ -361,6 +483,13 @@ pub async fn extract_and_chunk_audio(
         "[Rust] Chunking range: {:.2}s - {:.2}s (duration: {:.2}s)",
         chunk_start, chunk_end, effective_duration
     );
+
+    if effective_duration < 1.0 {
+        return Err(format!(
+            "Video/audio range is too short to transcribe ({:.2}s)",
+            effective_duration
+        ));
+    }
 
     // Determine if we should use the cached audio file or the original video
     let use_cached_audio = if let Ok(ref cached_path) = cached_audio_path_result {
@@ -419,7 +548,7 @@ pub async fn extract_and_chunk_audio(
             .ok_or("Invalid cached path")?
             .to_string()
     } else {
-        video_path.clone()
+        local_video_path.clone()
     };
 
     println!("[Rust] Using source for chunking: {}", source_path_str);
@@ -434,7 +563,7 @@ pub async fn extract_and_chunk_audio(
         let current_end = (current_start + chunk_duration_secs).min(chunk_end);
         let actual_duration = current_end - current_start;
 
-        if actual_duration < 30.0 {
+        if actual_duration < 1.0 {
             println!(
                 "[Rust] Skipping small final chunk of {:.2} seconds",
                 actual_duration
@@ -454,6 +583,13 @@ pub async fn extract_and_chunk_audio(
         if chunk_index > 100 {
             return Err("Too many chunks - possible infinite loop".to_string());
         }
+    }
+
+    if chunk_specs.is_empty() {
+        return Err(format!(
+            "No audio chunk specs were generated for {:.2}s of media",
+            effective_duration
+        ));
     }
 
     // Reset cancellation flag at the start of a new extraction

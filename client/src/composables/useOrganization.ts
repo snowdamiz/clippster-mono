@@ -90,12 +90,25 @@ export interface OrganizationRestrictionDefaults {
 export interface Organization {
   id: number;
   name: string;
+  slug?: string;
   description?: string;
+  bio?: string;
   logo_url?: string;
+  website_url?: string;
+  public_contact_email?: string;
+  public_discord?: string | null;
+  public_telegram?: string | null;
+  content_type_tags?: string[];
   settings?: {
     allow_ai?: boolean;
   };
   restriction_defaults?: OrganizationRestrictionDefaults;
+  setup_completed?: boolean;
+  admin_price_cents?: number;
+  subscription_tier?: string;
+  subscription_status?: string;
+  monthly_credits?: number;
+  max_seats?: number;
 }
 
 // Cache duration: 2 minutes before background refresh
@@ -129,6 +142,9 @@ const stateCache = new Map<
     transactionsTotal: Ref<number>;
     transactionsPage: Ref<number>;
     transactionsLoaded: Ref<boolean>;
+    invoices: Ref<any[]>;
+    invoicesLoading: Ref<boolean>;
+    invoicesLoaded: Ref<boolean>;
   }
 >();
 
@@ -158,6 +174,9 @@ function getOrCreateState(orgId: string) {
       transactionsTotal: ref(0),
       transactionsPage: ref(1),
       transactionsLoaded: ref(false),
+      invoices: ref<any[]>([]),
+      invoicesLoading: ref(false),
+      invoicesLoaded: ref(false),
     });
   }
   return stateCache.get(orgId)!;
@@ -209,6 +228,9 @@ export function useOrganization(orgIdOverride?: string) {
     transactionsTotal,
     transactionsPage,
     transactionsLoaded,
+    invoices,
+    invoicesLoading,
+    invoicesLoaded,
   } = state;
 
   const isAdmin = computed(() => role.value === 'owner' || role.value === 'admin');
@@ -418,12 +440,31 @@ export function useOrganization(orgIdOverride?: string) {
     }
   }
 
+  // Load Stripe subscription invoices
+  // Note: getOrganizationInvoices not yet implemented in auth store
+  async function loadInvoices() {
+    const orgId = organizationId.value;
+    if (!orgId || !isAdmin.value) return;
+
+    invoicesLoading.value = true;
+    try {
+      // TODO: Implement getOrganizationInvoices in auth store
+      // const result = await authStore.getOrganizationInvoices(orgId);
+      // if (result.success) {
+      //   invoices.value = result.invoices ?? [];
+      //   invoicesLoaded.value = true;
+      // }
+      console.warn('[useOrganization] getOrganizationInvoices not implemented');
+      invoicesLoaded.value = true;
+    } catch (err: any) {
+      console.error('[useOrganization] Failed to load invoices:', err);
+    } finally {
+      invoicesLoading.value = false;
+    }
+  }
+
   // Update organization settings
-  async function updateOrganization(data: {
-    name: string;
-    description: string;
-    settings: { allow_ai: boolean };
-  }) {
+  async function updateOrganization(data: Record<string, any>) {
     if (!organizationId.value) return { success: false, error: 'No organization ID' };
 
     try {
@@ -754,6 +795,9 @@ export function useOrganization(orgIdOverride?: string) {
     transactionsPerPage,
     transactionsLoaded,
     totalTransactionPages,
+    invoices,
+    invoicesLoading,
+    invoicesLoaded,
 
     // Computed
     isAdmin,
@@ -771,6 +815,7 @@ export function useOrganization(orgIdOverride?: string) {
     loadCreatorProfiles,
     loadOrgAssets,
     loadTransactions,
+    loadInvoices,
     updateOrganization,
     cancelInvitation,
     resendInvitation,

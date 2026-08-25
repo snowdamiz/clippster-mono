@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useOrganization } from '@/hooks/useOrganization'
 import { useToast } from '@/hooks/useToast'
-import { listSocialAccounts, deleteSocialAccount, updateSocialAccount, refreshAccountToken, assignSocialAccount, unassignSocialAccount } from '@/services/socialAccountsApi'
+import { listSocialAccounts, deleteSocialAccount, updateSocialAccount, assignSocialAccount, unassignSocialAccount } from '@/services/socialAccountsApi'
+import { isTokenExpiringSoonForAccount } from '@/utils/socialTokenExpiry'
+import { useOAuthPopup } from '@/hooks/useOAuthPopup'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -45,15 +47,21 @@ function formatRelativeDate(dateStr: string | undefined): string {
 }
 
 function isTokenExpiringSoon(account: SocialAccount): boolean {
-  if (!account.token_expires_at) return false
-  const expiresAt = new Date(account.token_expires_at)
-  const daysUntilExpiry = (expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-  return daysUntilExpiry < 7
+  return isTokenExpiringSoonForAccount(account)
 }
 
-function AccountActionsMenu({ account, onRefreshToken, onToggleActive, onDisconnect, onManageAssignments }: {
+type ConnectPlatform = 'instagram' | 'tiktok' | 'youtube' | 'x'
+
+function reconnectPlatform(account: SocialAccount): ConnectPlatform {
+  if (account.platform === 'instagram') return 'instagram'
+  if (account.platform === 'tiktok') return 'tiktok'
+  if (account.platform === 'youtube') return 'youtube'
+  return 'x'
+}
+
+function AccountActionsMenu({ account, onReconnect, onToggleActive, onDisconnect, onManageAssignments }: {
   account: SocialAccount
-  onRefreshToken: (a: SocialAccount) => void
+  onReconnect: (a: SocialAccount) => void
   onToggleActive: (a: SocialAccount, active: boolean) => void
   onDisconnect: (a: SocialAccount) => void
   onManageAssignments: (a: SocialAccount) => void
@@ -88,11 +96,11 @@ function AccountActionsMenu({ account, onRefreshToken, onToggleActive, onDisconn
             Manage Access
           </button>
           <button
-            onClick={() => { onRefreshToken(account); setOpen(false) }}
+            onClick={() => { onReconnect(account); setOpen(false) }}
             className="flex items-center gap-2 w-full px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
-            Refresh Token
+            Reconnect
           </button>
           {account.is_active ? (
             <button
@@ -254,6 +262,7 @@ export function SocialAccountsManager() {
   const [deleting, setDeleting] = useState(false)
   const [assignTarget, setAssignTarget] = useState<SocialAccount | null>(null)
   const { organizationId, isAdmin, members } = useOrganization()
+  const { openOAuth } = useOAuthPopup()
   const toast = useToast()
 
   const load = async () => {
@@ -290,13 +299,17 @@ export function SocialAccountsManager() {
     } catch { toast.error('Failed to update account') }
   }
 
-  const handleRefreshToken = async (account: SocialAccount) => {
+  const handleReconnect = (account: SocialAccount) => {
     if (!organizationId) return
-    try {
-      const result = await refreshAccountToken(organizationId, account.id)
-      if (result.success) { toast.success('Token refresh initiated') }
-      else { toast.error(result.error || 'Failed to refresh token') }
-    } catch { toast.error('Failed to refresh token') }
+    const platform = reconnectPlatform(account)
+    openOAuth(platform, organizationId, (result) => {
+      if (result.success) {
+        toast.success(`${account.platform} reconnected`)
+        load()
+      } else if (result.error) {
+        toast.error(result.error)
+      }
+    })
   }
 
   if (loading) return (
@@ -352,10 +365,10 @@ export function SocialAccountsManager() {
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-white">@{account.username}</span>
                     {!account.is_active && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-500/20 text-red-400">Inactive</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-500/20 text-red-400">Disconnected</span>
                     )}
                     {account.is_active && isTokenExpiringSoon(account) && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-400">Token expiring</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-400">Reconnect soon</span>
                     )}
                   </div>
                   <div className="text-sm text-zinc-500">{account.display_name || account.username}</div>
@@ -379,7 +392,7 @@ export function SocialAccountsManager() {
                     </button>
                     <AccountActionsMenu
                       account={account}
-                      onRefreshToken={handleRefreshToken}
+                      onReconnect={handleReconnect}
                       onToggleActive={handleToggleActive}
                       onDisconnect={setDeleteTarget}
                       onManageAssignments={setAssignTarget}

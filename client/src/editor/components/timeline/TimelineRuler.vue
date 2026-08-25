@@ -5,10 +5,12 @@ import { DEFAULT_FPS } from "../../constants/project-constants";
 import { useEditor } from "../../composables/useEditor";
 import { getRulerConfig, shouldShowLabel } from "../../lib/timeline/ruler-utils";
 import TimelineTick from "./TimelineTick.vue";
+import type { TimelineVisibleRange } from "../../composables/timeline/useTimelineViewport";
 
 const props = defineProps<{
 	zoomLevel: number;
 	dynamicTimelineWidth: number;
+	visibleRange: TimelineVisibleRange;
 }>();
 
 const emit = defineEmits<{
@@ -23,6 +25,11 @@ const rulerRef = defineModel<HTMLDivElement | null>("rulerRef", { default: null 
 const { editor, version } = useEditor({
 	subscribe: {
 		playback: false,
+		timeline: true,
+		scenes: true,
+		project: true,
+		media: false,
+		selection: false,
 	},
 });
 
@@ -52,11 +59,14 @@ const rulerConfig = computed(() => getRulerConfig({ zoomLevel: props.zoomLevel, 
 
 const ticks = computed(() => {
 	const { labelIntervalSeconds, tickIntervalSeconds } = rulerConfig.value;
-	const tickCount = Math.ceil(effectiveDuration.value / tickIntervalSeconds) + 1;
 	const result: Array<{ time: number; showLabel: boolean }> = [];
-	for (let i = 0; i < tickCount; i++) {
+	const firstTick = Math.max(0, Math.floor(props.visibleRange.startTime / tickIntervalSeconds));
+	const lastTick = Math.min(
+		Math.ceil(effectiveDuration.value / tickIntervalSeconds),
+		Math.ceil(props.visibleRange.endTime / tickIntervalSeconds),
+	);
+	for (let i = firstTick; i <= lastTick; i++) {
 		const time = i * tickIntervalSeconds;
-		if (time > effectiveDuration.value) break;
 		result.push({
 			time,
 			showLabel: shouldShowLabel({ time, labelIntervalSeconds }),
@@ -87,8 +97,8 @@ const ticks = computed(() => {
 			@mousedown="emit('rulerMouseDown', $event)"
 		>
 			<TimelineTick
-				v-for="(tick, index) in ticks"
-				:key="index"
+				v-for="tick in ticks"
+				:key="tick.time"
 				:time="tick.time"
 				:zoom-level="zoomLevel"
 				:fps="fps"

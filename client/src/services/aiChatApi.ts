@@ -6,7 +6,8 @@ import type {
   AIVideoComposition,
   ChatResponse,
   RefinementResponse,
-  ReferenceStyleProfile,
+  ReferenceEditRecipe,
+  StylePackRecipe,
   MediaAnalysis,
 } from '@/types/ai-video';
 import type { StreamCallbacks } from './aiVideoApi';
@@ -66,7 +67,8 @@ export async function sendChatMessage(
 export async function triggerGeneration(
   sessionId: number,
   callbacks: StreamCallbacks,
-  overrides?: { style?: string; duration?: number; aspectRatio?: string }
+  overrides?: { style?: string; duration?: number; aspectRatio?: string },
+  signal?: AbortSignal
 ): Promise<AIVideoComposition> {
   const authStore = useAuthStore();
   const token = authStore.token || localStorage.getItem('auth_token');
@@ -81,6 +83,7 @@ export async function triggerGeneration(
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(overrides || {}),
+    signal,
   });
 
   if (!response.ok) {
@@ -211,13 +214,21 @@ export async function sendRefinement(
 
 export async function uploadReference(
   sessionId: number,
-  referenceAnalysis: ReferenceStyleProfile,
-  referenceUrl?: string
+  referenceAnalysis: ReferenceEditRecipe | null,
+  referenceUrl: string | null = null
 ): Promise<AIChatSession> {
   const response = await api.post(`/ai/chat/sessions/${sessionId}/reference`, {
     reference_analysis: referenceAnalysis,
     reference_url: referenceUrl,
   });
+  return response.data;
+}
+
+export async function updateStylePack(
+  sessionId: number,
+  stylePack: StylePackRecipe
+): Promise<AIChatSession> {
+  const response = await api.put(`/ai/chat/sessions/${sessionId}/style`, { style_pack: stylePack });
   return response.data;
 }
 

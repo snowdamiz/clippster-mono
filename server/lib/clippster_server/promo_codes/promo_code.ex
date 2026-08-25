@@ -12,7 +12,11 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
   schema "promo_codes" do
     field(:code, :string)
     field(:name, :string)
+    field(:promo_type, :string, default: "percent")
     field(:percent_off, :integer)
+    field(:fixed_price_cents, :integer)
+    field(:access_months, :integer)
+    field(:total_credits, :integer)
     field(:duration_kind, :string, default: "repeating")
     field(:duration_months, :integer)
     field(:allowed_tiers, {:array, :string})
@@ -37,13 +41,24 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
   """
   def create_changeset(promo_code, attrs) do
     # Sanitize integer fields - convert empty strings to nil
-    attrs = sanitize_integer_fields(attrs, [:duration_months, :max_redemptions])
+    attrs =
+      sanitize_integer_fields(attrs, [
+        :duration_months,
+        :max_redemptions,
+        :fixed_price_cents,
+        :access_months,
+        :total_credits
+      ])
 
     promo_code
     |> cast(attrs, [
       :code,
       :name,
+      :promo_type,
       :percent_off,
+      :fixed_price_cents,
+      :access_months,
+      :total_credits,
       :duration_kind,
       :duration_months,
       :allowed_tiers,
@@ -58,15 +73,10 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
       :created_by_admin_id
     ])
     |> parse_redeem_by(attrs)
-    |> validate_required([
-      :code,
-      :percent_off,
-      :duration_kind,
-      :created_by_admin_id
-    ])
-    |> validate_inclusion(:percent_off, 1..100)
-    |> validate_inclusion(:duration_kind, ["once", "repeating", "forever"])
-    |> validate_duration_months()
+    |> put_default_promo_type()
+    |> validate_required([:code, :promo_type, :created_by_admin_id])
+    |> validate_inclusion(:promo_type, ["percent", "bundle"])
+    |> validate_promo_type_fields()
     |> validate_allowed_tiers()
     |> validate_allowed_org_tiers()
     |> validate_allowed_credit_packs()
@@ -97,6 +107,57 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
     case get_change(changeset, :code) do
       nil -> changeset
       code -> put_change(changeset, :code, String.upcase(String.trim(code)))
+    end
+  end
+
+  defp put_default_promo_type(changeset) do
+    case get_field(changeset, :promo_type) do
+      nil -> put_change(changeset, :promo_type, "percent")
+      _ -> changeset
+    end
+  end
+
+  defp validate_promo_type_fields(changeset) do
+    case get_field(changeset, :promo_type) do
+      "bundle" ->
+        changeset
+        |> validate_required([:fixed_price_cents, :access_months, :total_credits])
+        |> validate_number(:fixed_price_cents, greater_than: 0)
+        |> validate_number(:access_months, greater_than: 0)
+        |> validate_number(:total_credits, greater_than_or_equal_to: 0)
+        |> validate_bundle_user_tiers_only()
+
+      _ ->
+        changeset
+        |> validate_required([:percent_off, :duration_kind])
+        |> validate_inclusion(:percent_off, 1..100)
+        |> validate_inclusion(:duration_kind, ["once", "repeating", "forever"])
+        |> validate_duration_months()
+    end
+  end
+
+  defp validate_bundle_user_tiers_only(changeset) do
+    allowed_tiers = get_field(changeset, :allowed_tiers) || []
+    allowed_org_tiers = get_field(changeset, :allowed_org_tiers) || []
+    allowed_credit_packs = get_field(changeset, :allowed_credit_packs) || []
+
+    cond do
+      Enum.empty?(allowed_tiers) ->
+        add_error(
+          changeset,
+          :allowed_tiers,
+          "bundle promos require at least one user subscription tier"
+        )
+
+      !Enum.empty?(allowed_org_tiers) || !Enum.empty?(allowed_credit_packs) ->
+        add_error(
+          changeset,
+          :allowed_tiers,
+          "bundle promos only support user subscription tiers"
+        )
+
+      true ->
+        changeset
     end
   end
 

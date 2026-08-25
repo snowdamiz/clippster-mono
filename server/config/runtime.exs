@@ -98,7 +98,7 @@ config :clippster_server, :allow_unverified_stripe_webhooks, config_env() != :pr
 # Resend email configuration (all environments)
 resend_api_key = System.get_env("RESEND_API_KEY")
 
-if resend_api_key do
+if resend_api_key && config_env() != :test do
   config :clippster_server, ClippsterServer.Mailer,
     adapter: Resend.Swoosh.Adapter,
     api_key: resend_api_key
@@ -117,11 +117,18 @@ end
 config :clippster_server,
   jwt_secret: jwt_secret || "dev_secret_key_change_in_production"
 
-# Email auth configuration
+# Email configuration
+email_url_base =
+  System.get_env("EMAIL_URL_BASE") || System.get_env("APP_URL") || "http://localhost:4000"
+
 config :clippster_server, :email_auth,
   from_email: System.get_env("EMAIL_FROM") || "noreply@clippster.app",
+  transactional_from_email: System.get_env("TRANSACTIONAL_EMAIL_FROM") || "noreply@clippster.app",
+  marketing_from_email: System.get_env("MARKETING_EMAIL_FROM") || "updates@clippster.app",
+  support_email: System.get_env("SUPPORT_EMAIL") || "support@clippster.app",
+  unsubscribe_email: System.get_env("UNSUBSCRIBE_EMAIL") || "unsubscribe@clippster.app",
   app_name: "Clippster",
-  verification_url_base: System.get_env("APP_URL") || "http://localhost:4000"
+  verification_url_base: email_url_base
 
 # Instagram API configuration (Instagram Business Login)
 # redirect_uri should point to the server's callback endpoint
@@ -151,19 +158,16 @@ config :clippster_server, :twitter_oauth,
   client_secret: System.get_env("TWITTER_CLIENT_SECRET"),
   redirect_uri: System.get_env("TWITTER_REDIRECT_URI")
 
-# Social provider mode switch:
-# - legacy: current direct platform integrations only
-# - post_for_me: Post For Me only
-# - dual: write to both, legacy remains read source during rollout
+# Social connections and publishing use Post For Me exclusively.
 social_provider_mode =
-  (System.get_env("SOCIAL_PROVIDER_MODE") || "legacy")
+  (System.get_env("SOCIAL_PROVIDER_MODE") || "post_for_me")
   |> String.trim()
   |> String.downcase()
 
 social_provider_mode =
   if social_provider_mode in ["legacy", "post_for_me", "dual"],
     do: social_provider_mode,
-    else: "legacy"
+    else: "post_for_me"
 
 post_for_me_timeout_ms =
   case Integer.parse(System.get_env("POST_FOR_ME_TIMEOUT_MS") || "") do
@@ -212,6 +216,10 @@ config :appsignal, :config,
 
 # Freesound API (sound effects search proxy)
 config :clippster_server, :freesound, api_key: System.get_env("FREESOUND_API_KEY")
+
+# Stock B-roll providers
+config :clippster_server, :pexels, api_key: System.get_env("PEXELS_API_KEY")
+config :clippster_server, :pixabay, api_key: System.get_env("PIXABAY_API_KEY")
 
 # TheNewsAPI (breaking news feed for AI context)
 config :clippster_server, :thenewsapi, api_key: System.get_env("THENEWSAPI_KEY")

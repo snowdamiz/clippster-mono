@@ -110,7 +110,24 @@
                     <Sparkles class="campaign-card__org-icon" />
                     <span class="campaign-card__org-name">Clippster Campaign</span>
                   </div>
-                  <div v-else-if="campaign.organization" class="campaign-card__org-badge">
+                  <router-link
+                    v-else-if="campaign.organization?.slug"
+                    :to="{ path: `/orgs/${campaign.organization.slug}`, query: { from: $route.fullPath } }"
+                    class="campaign-card__org-badge"
+                    @click.stop
+                  >
+                    <img
+                      v-if="campaign.organization.logo_url"
+                      :src="campaign.organization.logo_url"
+                      class="campaign-card__org-logo"
+                    />
+                    <Building2 v-else class="campaign-card__org-icon" />
+                    <span class="campaign-card__org-name">{{ campaign.organization.name }}</span>
+                  </router-link>
+                  <div
+                    v-else-if="campaign.organization"
+                    class="campaign-card__org-badge campaign-card__org-badge--static"
+                  >
                     <img
                       v-if="campaign.organization.logo_url"
                       :src="campaign.organization.logo_url"
@@ -649,6 +666,13 @@
     background-color: rgba(0, 0, 0, 0.65);
     backdrop-filter: blur(8px);
     border-radius: 6px;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .campaign-card__org-badge--static {
+    cursor: default;
   }
 
   .campaign-card__org-badge--platform {

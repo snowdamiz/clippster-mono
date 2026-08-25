@@ -188,7 +188,7 @@
                         (build, filePath) => playBuild(build, filePath || item.filePath, item.clipName, item.projectId)
                       "
                       @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
-                      @delete="confirmDeleteBuild"
+                      @delete="() => confirmDeleteBuild(item.build)"
                       @openProject="(build) => openProjectForClip(build, item.clip)"
                       @publish="
                         (build, filePath) => initiatePublish(build, filePath || item.filePath, item.thumbnailUrl, item.clip)
@@ -652,7 +652,7 @@
       :show="showDeleteBuildDialog"
       title="Delete Build"
       :message="'Are you sure you want to delete build'"
-      :item-name="buildToDelete ? `#${buildToDelete.build_number}` : 'this build'"
+      :item-name="buildToDelete ? buildToDelete.clipName : 'this build'"
       suffix="? The video file will be permanently removed."
       confirm-text="Delete Build"
       variant="destructive"
@@ -922,6 +922,7 @@
   import {
     getAllClipsWithBuilds,
     deleteClipBuild,
+    deleteClip,
     getThumbnailByClipId,
     getProject,
     getRawVideosByProjectId,
@@ -939,6 +940,8 @@
   import { getStoragePath } from '@/services/storage';
   import { useFormatters } from '@/composables/useFormatters';
   import { useAuthStore } from '@/stores/auth';
+  import { useClipThumbnailStore } from '@/stores/clipThumbnails';
+  import { persistentCache } from '@/utils/persistentCache';
   import PageLayout from '@/components/PageLayout.vue';
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
@@ -1014,8 +1017,7 @@
   const showVideoPlayer = ref(false);
   const clipToPlay = ref<RawVideo | null>(null);
   const playerWatermarkSettings = ref<WatermarkSettings | null>(null);
-  const thumbnailCache = ref<Map<string, string>>(new Map());
-  const buildThumbnailCache = ref<Map<string, string>>(new Map());
+  const thumbnailStore = useClipThumbnailStore();
   const rawVideoCache = ref<Map<string, (RawVideo & { thumbnail_path: string | null })[]>>(new Map());
   const projectCache = ref<Map<string, Project>>(new Map());
   const { getRelativeTime, formatDuration } = useFormatters();
@@ -1023,7 +1025,7 @@
 
   // Build deletion state
   const showDeleteBuildDialog = ref(false);
-  const buildToDelete = ref<ClipBuild | null>(null);
+  const buildToDelete = ref<DisplayableBuild | null>(null);
 
   // View state
   const viewMode = ref<'folders' | 'list'>('list');
@@ -1236,7 +1238,7 @@
       if ((clip as any).source === 'video_editor' && clip.build_status === 'completed' && clip.built_file_path) {
         const filePath = clip.built_file_path;
         const aspectRatio = extractAspectRatioFromPath(filePath);
-        const thumbnailUrl = buildThumbnailCache.value.get(filePath) || clipThumbnailUrl;
+        const thumbnailUrl = thumbnailStore.getBuildThumbnail(filePath) || clipThumbnailUrl;
 
         // Create a fake build object for video editor exports
         const fakeBuild: ClipBuild = {
@@ -1301,10 +1303,6 @@
 
               // Look up thumbnail by file path first (each aspect ratio has its own thumbnail)
               // Then fall back to build's thumbnail_path, then to clip thumbnail
-              const fileSpecificThumbnail = buildThumbnailCache.value.get(filePath);
-              const buildThumbnail = buildThumbnailCache.value.get(build.id);
-              const thumbnailUrl = fileSpecificThumbnail || buildThumbnail || clipThumbnailUrl;
-
               console.log(`[Clips] Creating displayable build: ${filePath} | AR: ${aspectRatio} | Build#${build.build_number} | Type: ${build.branding_type} | Campaign: ${build.campaign_name || 'null'} | Org: ${build.organization_name || 'null'}`);
 
               builds.push({
@@ -1315,7 +1313,7 @@
                 clipName,
                 projectName,
                 projectId: clip.project_id,
-                thumbnailUrl,
+                thumbnailUrl: thumbnailStore.getBuildThumbnail(filePath) || thumbnailStore.getBuildThumbnail(build.id) || clipThumbnailUrl,
                 createdAt: build.completed_at || build.created_at,
                 filePath,
                 aspectRatio,
@@ -1648,12 +1646,6 @@
               const filePath = outputPaths[i];
               const aspectRatio = extractAspectRatioFromPath(filePath);
 
-              // Look up thumbnail by file path first (each aspect ratio has its own thumbnail)
-              // Then fall back to build's thumbnail_path, then to clip thumbnail
-              const fileSpecificThumbnail = buildThumbnailCache.value.get(filePath);
-              const buildThumbnail = buildThumbnailCache.value.get(build.id);
-              const thumbnailUrl = fileSpecificThumbnail || buildThumbnail || clipThumbnailUrl;
-
               builds.push({
                 id: outputPaths.length > 1 ? `${build.id}-${i}` : build.id,
                 build,
@@ -1661,7 +1653,7 @@
                 clipName,
                 projectName: folderProject.value!.name,
                 projectId: clip.project_id,
-                thumbnailUrl,
+                thumbnailUrl: thumbnailStore.getBuildThumbnail(filePath) || thumbnailStore.getBuildThumbnail(build.id) || clipThumbnailUrl,
                 createdAt: build.completed_at || build.created_at,
                 filePath,
                 aspectRatio,
@@ -1859,6 +1851,10 @@
   function getFolderBuildsCount(clips: ClipWithBuilds[]): number {
     let count = 0;
     for (const clip of clips) {
+      if ((clip as any).source === 'video_editor' && clip.build_status === 'completed' && clip.built_file_path) {
+        count += 1;
+        continue;
+      }
       if (clip.builds) {
         for (const build of clip.builds) {
           if (build.status === 'completed') {
@@ -1973,6 +1969,27 @@
     selectedFolderDialogBuilds.value = new Set(selectedFolderDialogBuilds.value);
   }
 
+  function isVideoEditorDisplayBuild(item: DisplayableBuild): boolean {
+    return (item.clip as any).source === 'video_editor';
+  }
+
+  async function deleteDisplayableBuild(item: DisplayableBuild): Promise<void> {
+    if (isVideoEditorDisplayBuild(item)) {
+      await deleteClip(item.clip.id);
+    } else {
+      await deleteClipBuild(item.build.id);
+    }
+
+    const pathToDelete = item.filePath || item.build.file_path;
+    if (!pathToDelete) return;
+
+    try {
+      await invoke('delete_file', { path: pathToDelete });
+    } catch (fileError) {
+      console.warn('Could not delete build file:', fileError);
+    }
+  }
+
   function confirmBulkDeleteFolderDialogBuilds() {
     if (selectedFolderDialogBuilds.value.size > 0) {
       showBulkDeleteFolderDialogBuildsDialog.value = true;
@@ -1993,12 +2010,7 @@
         const buildItem = folderBuilds.value.find((b) => b.id === buildId);
         if (!buildItem) continue;
 
-        await deleteClipBuild(buildItem.build.id);
-        try {
-          await invoke('delete_file', { path: buildItem.build.file_path });
-        } catch (fileError) {
-          console.warn('Could not delete build file:', fileError);
-        }
+        await deleteDisplayableBuild(buildItem);
         deletedCount++;
       }
 
@@ -2034,42 +2046,82 @@
       // Load all clips with their builds
       clips.value = await getAllClipsWithBuilds();
 
-      // Load which clips have transcripts (for untranscribed detection)
-      await loadTranscribedClipIds();
-
-      // Load thumbnails, project info, and raw videos for all clips
-      for (const clip of clips.value) {
-        await loadClipThumbnail(clip);
-
-        // Load project info if clip has a project
+      // Collect unique project IDs for batch loading
+      const uniqueProjectIds = new Set<string>();
+      clips.value.forEach(clip => {
         if (clip.project_id) {
-          await getProjectInfo(clip.project_id);
-          // Load raw videos for this project to use as fallback thumbnails
-          await loadRawVideosForProject(clip.project_id);
+          uniqueProjectIds.add(clip.project_id);
         }
+      });
 
-        // Load build thumbnails for this clip - load for each output file
+      // Start all critical operations in parallel
+      await Promise.all([
+        // Load which clips have transcripts (for untranscribed detection)
+        loadTranscribedClipIds(),
+        
+        // Lazy load only first batch of clip thumbnails (visible ones)
+        // The rest will load on demand via Intersection Observer
+        thumbnailStore.loadThumbnailsLazy(clips.value.slice(0, 20), 'high'),
+        
+        // Batch load all project info in parallel
+        Promise.all(Array.from(uniqueProjectIds).map(projectId => getProjectInfo(projectId))),
+      ]);
+
+      // Defer non-critical operations (raw videos and build thumbnails) to after initial render
+      // This allows the page to show the basic clip list immediately
+      setTimeout(() => {
+        loadDeferredData(uniqueProjectIds);
+      }, 100);
+
+      // Continue loading remaining thumbnails in background
+      if (clips.value.length > 20) {
+        setTimeout(() => {
+          thumbnailStore.loadThumbnailsLazy(clips.value.slice(20), 'low');
+        }, 500);
+      }
+    } catch (error) {
+      console.error('Failed to load clips:', error);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function loadDeferredData(projectIds: Set<string>) {
+    try {
+      // Load raw videos for all projects in parallel (batched)
+      await Promise.all(
+        Array.from(projectIds).map(projectId => loadRawVideosForProject(projectId))
+      );
+
+      // Collect all build thumbnail tasks
+      const buildThumbnailTasks: Promise<void>[] = [];
+      for (const clip of clips.value) {
         if (clip.builds && clip.builds.length > 0) {
           for (const build of clip.builds) {
             if (build.status === 'completed') {
               // Load thumbnails for each output file (each aspect ratio has its own thumbnail)
               const outputPaths = getOutputPathsFromBuild(build);
               for (const outputPath of outputPaths) {
-                await loadThumbnailForOutputFile(outputPath);
+                buildThumbnailTasks.push(loadThumbnailForOutputFile(outputPath));
               }
 
               // Also load legacy thumbnail_path if available
               if (build.thumbnail_path) {
-                await loadBuildThumbnail(build);
+                buildThumbnailTasks.push(loadBuildThumbnail(build));
               }
             }
           }
         }
       }
+
+      // Load all build thumbnails in parallel batches
+      const batchSize = 10;
+      for (let i = 0; i < buildThumbnailTasks.length; i += batchSize) {
+        const batch = buildThumbnailTasks.slice(i, i + batchSize);
+        await Promise.all(batch);
+      }
     } catch (error) {
-      console.error('Failed to load clips:', error);
-    } finally {
-      loading.value = false;
+      console.error('Failed to load deferred data:', error);
     }
   }
 
@@ -2089,15 +2141,29 @@
   }
 
   async function loadRawVideosForProject(projectId: string): Promise<void> {
-    // Check cache first
+    // Check memory cache first
     if (rawVideoCache.value.has(projectId)) {
       return;
+    }
+
+    // Check persistent cache (30 minutes TTL)
+    try {
+      const cached = await persistentCache.get<(RawVideo & { thumbnail_path: string | null })[]>(
+        'rawVideos',
+        projectId
+      );
+      if (cached && cached.length > 0) {
+        rawVideoCache.value.set(projectId, cached);
+        return;
+      }
+    } catch (error) {
+      console.warn('Failed to read raw videos from persistent cache:', error);
     }
 
     try {
       const rawVideos = await getRawVideosByProjectId(projectId);
 
-      // Convert raw video thumbnails to data URLs for caching
+      // Convert raw video thumbnails to data URLs for caching (batched)
       const processedRawVideos = await Promise.all(
         rawVideos.map(async (video) => {
           let thumbnailDataUrl = null;
@@ -2133,12 +2199,22 @@
       );
 
       rawVideoCache.value.set(projectId, processedRawVideos);
+      
+      // Save to persistent cache (30 minutes TTL)
+      persistentCache.set('rawVideos', projectId, processedRawVideos, 1800000).catch(err => {
+        console.warn('Failed to save raw videos to persistent cache:', err);
+      });
     } catch (error) {
       console.error('Failed to load raw videos for project:', error);
     }
   }
 
   async function loadClipThumbnail(clip: Clip) {
+    // Skip if already in cache
+    if (thumbnailStore.hasThumbnail(clip.id)) {
+      return;
+    }
+
     try {
       // Try multiple sources for thumbnail in order of preference:
       // 1. Clip's built_thumbnail_path (set by Rust backend during build)
@@ -2163,7 +2239,7 @@
           const fileExists = await invoke<boolean>('check_file_exists', { path: thumbnailPath });
           if (fileExists) {
             const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbnailPath });
-            thumbnailCache.value.set(clip.id, dataUrl);
+            thumbnailStore.setThumbnail(clip.id, dataUrl);
             return;
           }
         } catch {
@@ -2196,7 +2272,7 @@
   // Load thumbnail for a specific output file path and cache it
   async function loadThumbnailForOutputFile(filePath: string): Promise<void> {
     // Skip if already cached
-    if (buildThumbnailCache.value.has(filePath)) {
+    if (thumbnailStore.hasBuildThumbnail(filePath)) {
       return;
     }
 
@@ -2223,7 +2299,7 @@
         const dataUrl = await invoke<string>('read_file_as_data_url', {
           filePath: thumbnailPath,
         });
-        buildThumbnailCache.value.set(filePath, dataUrl);
+        thumbnailStore.setBuildThumbnail(filePath, dataUrl);
         console.log(`[Clips] Loaded existing thumbnail for ${filePath}`);
       } else {
         // Thumbnail doesn't exist - regenerate it from the video file
@@ -2252,7 +2328,7 @@
             const dataUrl = await invoke<string>('read_file_as_data_url', {
               filePath: newThumbnailPath,
             });
-            buildThumbnailCache.value.set(filePath, dataUrl);
+            thumbnailStore.setBuildThumbnail(filePath, dataUrl);
             console.log(`[Clips] ✅ Successfully regenerated and loaded thumbnail for ${filePath}`);
           } catch (genError) {
             console.error(`[Clips] ❌ Failed to regenerate thumbnail for ${filePath}:`, genError);
@@ -2269,7 +2345,7 @@
   // Legacy function - load a build's thumbnail from its thumbnail_path field
   async function loadBuildThumbnail(build: ClipBuild): Promise<void> {
     // Skip if no thumbnail path or already cached
-    if (!build.thumbnail_path || buildThumbnailCache.value.has(build.id)) {
+    if (!build.thumbnail_path || thumbnailStore.hasBuildThumbnail(build.id)) {
       return;
     }
 
@@ -2283,7 +2359,7 @@
         const dataUrl = await invoke<string>('read_file_as_data_url', {
           filePath: build.thumbnail_path,
         });
-        buildThumbnailCache.value.set(build.id, dataUrl);
+        thumbnailStore.setBuildThumbnail(build.id, dataUrl);
       }
     } catch (error) {
       console.warn(`Failed to load thumbnail for build ${build.id}:`, error);
@@ -2291,15 +2367,31 @@
   }
 
   async function getProjectInfo(projectId: string): Promise<Project | null> {
-    // Check cache first
+    // Check memory cache first
     if (projectCache.value.has(projectId)) {
       return projectCache.value.get(projectId) || null;
+    }
+
+    // Check persistent cache (1 hour TTL)
+    try {
+      const cached = await persistentCache.get<Project>('projects', projectId);
+      if (cached) {
+        projectCache.value.set(projectId, cached);
+        return cached;
+      }
+    } catch (error) {
+      console.warn('Failed to read from persistent cache:', error);
     }
 
     try {
       const project = await getProject(projectId);
       if (project) {
         projectCache.value.set(projectId, project);
+        
+        // Save to persistent cache (1 hour TTL)
+        persistentCache.set('projects', projectId, project, 3600000).catch(err => {
+          console.warn('Failed to save to persistent cache:', err);
+        });
 
         // Recursively load parent if exists
         if (project.parent_id) {
@@ -2313,8 +2405,8 @@
   }
 
   function getThumbnailUrl(clip: Clip): string | null {
-    // First try to get clip-specific thumbnail
-    const clipThumbnail = thumbnailCache.value.get(clip.id);
+    // First try to get clip-specific thumbnail from persistent store
+    const clipThumbnail = thumbnailStore.getThumbnail(clip.id);
     if (clipThumbnail) {
       return clipThumbnail;
     }
@@ -2448,7 +2540,12 @@
   }
 
   function confirmDeleteBuild(build: ClipBuild) {
-    buildToDelete.value = build;
+    const buildItem = displayableBuilds.value.find((item) => item.id === build.id)
+      ?? folderBuilds.value.find((item) => item.id === build.id)
+      ?? displayableBuilds.value.find((item) => item.build.id === build.id)
+      ?? folderBuilds.value.find((item) => item.build.id === build.id)
+      ?? null;
+    buildToDelete.value = buildItem;
     showDeleteBuildDialog.value = true;
   }
 
@@ -2461,16 +2558,7 @@
     if (!buildToDelete.value) return;
 
     try {
-      // Delete the build record from database
-      await deleteClipBuild(buildToDelete.value.id);
-
-      // Try to delete the actual file
-      try {
-        await invoke('delete_file', { path: buildToDelete.value.file_path });
-      } catch (fileError) {
-        console.warn('Could not delete build file:', fileError);
-        // Don't fail the whole operation if file deletion fails
-      }
+      await deleteDisplayableBuild(buildToDelete.value);
 
       await loadClips();
 
@@ -2621,6 +2709,17 @@
 
           // Delete all builds in this folder
           for (const clip of folder.clips) {
+            if ((clip as any).source === 'video_editor' && clip.build_status === 'completed' && clip.built_file_path) {
+              await deleteClip(clip.id);
+              try {
+                await invoke('delete_file', { path: clip.built_file_path });
+              } catch (fileError) {
+                console.warn('Could not delete build file:', fileError);
+              }
+              deletedCount++;
+              continue;
+            }
+
             if (clip.builds) {
               for (const build of clip.builds) {
                 if (build.status === 'completed' && build.file_path) {
@@ -2644,12 +2743,7 @@
           const buildItem = displayableBuilds.value.find((b) => b.id === buildId);
           if (!buildItem) continue;
 
-          await deleteClipBuild(buildItem.build.id);
-          try {
-            await invoke('delete_file', { path: buildItem.build.file_path });
-          } catch (fileError) {
-            console.warn('Could not delete build file:', fileError);
-          }
+          await deleteDisplayableBuild(buildItem);
           deletedCount++;
         }
         selectedBuilds.value.clear();

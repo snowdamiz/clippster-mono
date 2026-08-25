@@ -8,6 +8,7 @@ import {
   updateMonitoredStreamer,
   getMonitoredStreamer,
   getAutoDvrStreamers,
+  getPersistentLiveMonitoringStreamers,
   deleteProject,
   deleteMonitoredStreamer,
   hasRawVideosForProject,
@@ -18,6 +19,7 @@ import {
 import type {
   LiveSession,
   LiveStatus,
+  LivestreamMonitoringMode,
   MonitoredStreamer,
   ActivityLog,
   SegmentEventPayload,
@@ -61,10 +63,10 @@ import {
   stopTwitterRecordingSession,
   getTwitterSessionOutputDir,
   checkTwitterLivestream,
+  isDirectTwitterLiveUrl,
   type TwitterLiveStatus,
 } from '@/services/twitter';
 import { useLivestreamSegmentProcessing } from './useLivestreamSegmentProcessing';
-import { useCreditBalance } from './useCreditBalance';
 import { useDvrRecording } from './useDvrRecording';
 import { useToast } from './useToast';
 
@@ -72,7 +74,7 @@ const POLL_INTERVAL_MS = 30_000;
 const AUTO_DVR_POLL_INTERVAL_MS = 60_000; // Poll Auto DVR streamers every 60 seconds
 
 // Global State
-type MonitoredStreamerEntry = { streamer: MonitoredStreamer; options: { detectClips: boolean } };
+type MonitoredStreamerEntry = { streamer: MonitoredStreamer; options: StartOptions };
 type ActiveSessionsMap = Map<string, LiveSession>;
 type FailedSessionsMap = Map<string, number>;
 type MonitoredStreamersMap = Map<string, MonitoredStreamerEntry>;
@@ -93,6 +95,19 @@ const dvrSessions = ref<DvrSessionsMap>(new Map());
 // Auto DVR polling state
 let autoDvrPollingHandle: number | null = null;
 let autoDvrInitialized = false;
+
+// Persistent live monitoring (My Creators auto-detect / record when live)
+let persistentLivePollingHandle: number | null = null;
+let persistentLiveInitialized = false;
+const PERSISTENT_AUTO_DETECT_MAX_MINUTES = 60;
+const persistentDetectionTimers = new Map<string, number>();
+/** Streamers that hit the 60-min creator-page cap for the current live session (cleared when offline). */
+const persistentAutoDetectCappedForLive = new Set<string>();
+
+let monitoringApi: {
+  startMonitoring: (streamers: MonitoredStreamer[], options?: StartOptions) => Promise<void>;
+  stopMonitoring: (streamerIds?: string[]) => Promise<void>;
+} | null = null;
 
 // Track chunk aggregation state for DVR-based auto-detect sessions
 // Key: streamerId, Value: aggregation state
@@ -118,6 +133,27 @@ const unlistenFunctions: UnlistenFn[] = [];
 // Instantiate segment processing once to maintain queue state if needed
 const { handleSegmentReady } = useLivestreamSegmentProcessing();
 const { success: showSuccess } = useToast();
+
+type StartOptions = {
+  mode: LivestreamMonitoringMode;
+  segmentDurationMinutes?: number;
+  promptId?: string;
+  promptContent?: string;
+  /** Local creator profile to seed the auto-detect project's clip layout from. */
+  creatorProfileId?: string;
+  /** When true, persist matched creator's clip_build_defaults into active_vod_preset_config. */
+  applyCreatorClipLayout?: boolean;
+  /** Auto-stop realtime detection after N minutes (My Creators persistent auto-detect). */
+  maxDetectionMinutes?: number;
+  /** When true, this session was started from the My Creators page preference. */
+  fromCreatorPage?: boolean;
+};
+
+const DEFAULT_START_OPTIONS: StartOptions = { mode: 'record' };
+
+function isRealtimeDetectMode(mode?: LivestreamMonitoringMode): boolean {
+  return mode === 'realtime-detect';
+}
 
 /** Returns true if the user is currently on the Live Streams page */
 function isOnLivePage(): boolean {
@@ -290,6 +326,115 @@ async function fetchLiveStatus(
   }
 }
 
+function clearPersistentDetectionTimer(streamerId: string) {
+  const handle = persistentDetectionTimers.get(streamerId);
+  if (handle !== undefined) {
+    clearTimeout(handle);
+    persistentDetectionTimers.delete(streamerId);
+  }
+}
+
+function schedulePersistentDetectionAutoStop(streamerId: string, maxMinutes: number) {
+  clearPersistentDetectionTimer(streamerId);
+  const handle = window.setTimeout(async () => {
+    persistentDetectionTimers.delete(streamerId);
+    persistentAutoDetectCappedForLive.add(streamerId);
+    if (!monitoredStreamers.value.has(streamerId)) return;
+    console.log(
+      `[LiveMonitor] Persistent auto-detect reached ${maxMinutes} minute cap for streamer ${streamerId}`
+    );
+    try {
+      const { useRealtimeClipDetection } = await import('./useRealtimeClipDetection');
+      const realtimeDetection = useRealtimeClipDetection();
+      if (realtimeDetection.isActive.value) {
+        realtimeDetection.stopDetection();
+      }
+      await monitoringApi?.stopMonitoring([streamerId]);
+      const streamer = await getMonitoredStreamer(streamerId);
+      if (streamer) {
+        addActivityLog({
+          streamerId,
+          streamerName: streamer.display_name,
+          platform: (streamer.platform as SupportedLivestreamPlatform) || 'PumpFun',
+          mintId: streamer.mint_id,
+          profileImageUrl: streamer.profile_image_url || undefined,
+          message: `Auto-detect stopped after ${maxMinutes} minutes — use Live Clip Auto to continue this stream`,
+          status: 'info',
+        });
+        if (!isOnLivePage()) {
+          showSuccess(
+            `${streamer.display_name}: auto-detect paused`,
+            `Ran for ${maxMinutes} minutes. Go to Live Clip and click Auto on this stream to detect another 60 minutes.`,
+            8000,
+            'livestream'
+          );
+        }
+      }
+    } catch (error) {
+      console.error('[LiveMonitor] Failed to auto-stop persistent detection:', error);
+    }
+  }, maxMinutes * 60 * 1000);
+  persistentDetectionTimers.set(streamerId, handle);
+}
+
+function recordToMonitoredStreamer(
+  record: import('@/services/database').MonitoredStreamerRecord
+): MonitoredStreamer {
+  const platformMap: Record<string, SupportedLivestreamPlatform> = {
+    pumpfun: 'PumpFun',
+    kick: 'Kick',
+    twitch: 'Twitch',
+    youtube: 'YouTube',
+    rumble: 'Rumble',
+    twitter: 'Twitter',
+  };
+  const platform =
+    platformMap[record.platform?.toLowerCase() || 'pumpfun'] || 'PumpFun';
+
+  return {
+    id: record.id,
+    mintId: record.mint_id,
+    displayName: record.display_name,
+    platform,
+    lastCheckTimestamp: record.last_check_timestamp,
+    isCurrentlyLive: Boolean(record.is_currently_live),
+    currentSessionId: record.current_session_id,
+    selected: false,
+    isDetecting: false,
+    profileImageUrl: record.profile_image_url || undefined,
+    streamThumbnailUrl: record.stream_thumbnail_url || undefined,
+    segmentDurationMinutes: record.segment_duration_minutes ?? 5,
+    autoDvr: Boolean(record.auto_dvr),
+  };
+}
+
+function buildStartOptionsFromRecord(
+  record: import('@/services/database').MonitoredStreamerRecord
+): StartOptions | null {
+  if (Boolean(record.persistent_auto_detect)) {
+    return {
+      mode: 'realtime-detect',
+      segmentDurationMinutes: 1,
+      promptId: record.auto_detect_prompt_id || undefined,
+      promptContent: record.auto_detect_prompt_content || undefined,
+      creatorProfileId: record.auto_detect_creator_profile_id || undefined,
+      applyCreatorClipLayout: Boolean(record.auto_detect_use_creator_layout),
+      maxDetectionMinutes: PERSISTENT_AUTO_DETECT_MAX_MINUTES,
+      fromCreatorPage: true,
+    };
+  }
+  if (Boolean(record.persistent_record)) {
+    return {
+      mode: 'record',
+      segmentDurationMinutes: record.segment_duration_minutes ?? 5,
+      creatorProfileId: record.record_creator_profile_id || undefined,
+      applyCreatorClipLayout: Boolean(record.record_use_creator_layout),
+      fromCreatorPage: true,
+    };
+  }
+  return null;
+}
+
 async function setAutoDvr(streamerId: string, enabled: boolean) {
   await updateMonitoredStreamer(streamerId, { auto_dvr: enabled ? 1 : 0 });
   updateMonitoredStreamersMap((map) => {
@@ -409,6 +554,9 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
   const session = activeSessions.value.get(streamer.id);
   if (!session) return;
 
+  clearPersistentDetectionTimer(streamer.id);
+  persistentAutoDetectCappedForLive.delete(streamer.id);
+
   try {
     // Stop platform-specific recording using session-specific stop
     // This ensures we only kill the auto-detect session, not any concurrent DVR viewer session
@@ -458,7 +606,7 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
             };
 
             console.log(`[LiveMonitor] Final segment ${state.segmentNumber} built: ${segmentPath}`);
-            handleDvrSegmentReady(payload);
+            await handleDvrSegmentReady(payload);
           } catch (error) {
             console.error('[LiveMonitor] Failed to build final segment:', error);
           }
@@ -479,6 +627,20 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
     console.warn('[LiveMonitor] Failed to stop recorder on end', error);
   }
 
+  // Stop realtime detection after recorder teardown/final DVR chunk processing so
+  // the final partial transcript batch can be flushed and judged before save.
+  if (isRealtimeDetectMode(session.mode)) {
+    try {
+      const { useRealtimeClipDetection } = await import('./useRealtimeClipDetection');
+      const detection = useRealtimeClipDetection();
+      if (detection.isActive.value) {
+        await detection.stopDetection();
+      }
+    } catch (error) {
+      console.warn('[LiveMonitor] Failed to stop realtime detection on stream end', error);
+    }
+  }
+
   try {
     await endLivestreamSession(session.sessionId, Math.floor(Date.now() / 1000));
 
@@ -496,6 +658,10 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
   const newMap = new Map(activeSessions.value);
   newMap.delete(streamer.id);
   activeSessions.value = newMap;
+
+  if (streamer.platform === 'Twitter') {
+    await removeEndedTwitterBroadcast(streamer, 'recording-ended');
+  }
 }
 
 // Handle DVR cleanup when stream ends (for watch-only DVR sessions)
@@ -544,6 +710,11 @@ async function handleDvrStreamEnd(streamerId: string, mintId: string) {
     updateDvrSessionsMap((map) => {
       map.delete(streamerId);
     });
+
+    const entry = monitoredStreamers.value.get(streamerId);
+    if (entry) {
+      await removeEndedTwitterBroadcast(entry.streamer, 'dvr-ended');
+    }
     return;
   }
 
@@ -636,6 +807,57 @@ const youtubeDvrSessions = ref<Map<string, { mintId: string; channelId: string; 
 // Key: streamerId, Value: { mintId (channel ID), sessionId, outputDir }
 type RumbleDvrSession = { mintId: string; sessionId: string; outputDir: string };
 const rumbleDvrSessions = ref<Map<string, { mintId: string; channelId: string; sessionId: string; outputDir: string }>>(new Map());
+
+function hasAnyDvrSession(streamerId: string): boolean {
+  return (
+    dvrSessions.value.has(streamerId) ||
+    kickDvrSessions.value.has(streamerId) ||
+    twitchDvrSessions.value.has(streamerId) ||
+    twitterDvrSessions.value.has(streamerId) ||
+    youtubeDvrSessions.value.has(streamerId) ||
+    rumbleDvrSessions.value.has(streamerId)
+  );
+}
+
+async function removeEndedTwitterBroadcast(
+  streamer: MonitoredStreamer,
+  reason: string
+): Promise<void> {
+  if (streamer.platform !== 'Twitter' || !isDirectTwitterLiveUrl(streamer.mintId)) {
+    return;
+  }
+
+  const viewerSession = activeViewerSessions.value.get(streamer.id);
+  if (viewerSession?.isWatching) {
+    return;
+  }
+
+  if (activeSessions.value.has(streamer.id) || hasAnyDvrSession(streamer.id)) {
+    return;
+  }
+
+  console.log('[LiveMonitor] Removing ended Twitter broadcast:', streamer.mintId, reason);
+  try {
+    await deleteMonitoredStreamer(streamer.id);
+    monitoredStreamers.value.delete(streamer.id);
+
+    const twMap = new Map(twitterDvrSessions.value);
+    twMap.delete(streamer.id);
+    twitterDvrSessions.value = twMap;
+
+    addActivityLog({
+      streamerId: streamer.id,
+      streamerName: streamer.displayName,
+      platform: streamer.platform,
+      mintId: streamer.mintId,
+      profileImageUrl: streamer.profileImageUrl,
+      message: 'X broadcast ended — removed from Live Clip (paste a new broadcast URL next time)',
+      status: 'info',
+    });
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to remove ended Twitter broadcast:', error);
+  }
+}
 
 // Track active viewer sessions to prevent cleanup when user is watching
 const activeViewerSessions = ref<Map<string, ActiveViewerSession>>(new Map());
@@ -1000,6 +1222,46 @@ function removeTwitterDvrSession(streamerId: string): void {
   });
 }
 
+async function tryRemoveEndedTwitterBroadcastById(streamerId: string, reason: string): Promise<void> {
+  const entry = monitoredStreamers.value.get(streamerId);
+  if (entry) {
+    await removeEndedTwitterBroadcast(entry.streamer, reason);
+    return;
+  }
+
+  try {
+    const fromDb = await getMonitoredStreamer(streamerId);
+    if (fromDb) {
+      const platformMap: Record<string, MonitoredStreamer['platform']> = {
+        pumpfun: 'PumpFun',
+        kick: 'Kick',
+        twitch: 'Twitch',
+        youtube: 'YouTube',
+        rumble: 'Rumble',
+        twitter: 'Twitter',
+      };
+      const streamer: MonitoredStreamer = {
+        id: fromDb.id,
+        mintId: fromDb.mint_id,
+        displayName: fromDb.display_name,
+        platform: platformMap[fromDb.platform.toLowerCase()] || 'Twitter',
+        lastCheckTimestamp: fromDb.last_check_timestamp,
+        isCurrentlyLive: Boolean(fromDb.is_currently_live),
+        currentSessionId: fromDb.current_session_id,
+        selected: false,
+        isDetecting: false,
+        profileImageUrl: fromDb.profile_image_url || undefined,
+        streamThumbnailUrl: fromDb.stream_thumbnail_url || undefined,
+        segmentDurationMinutes: fromDb.segment_duration_minutes,
+        autoDvr: Boolean(fromDb.auto_dvr),
+      };
+      await removeEndedTwitterBroadcast(streamer, reason);
+    }
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to load streamer for Twitter cleanup:', error);
+  }
+}
+
 // Start YouTube DVR recording using yt-dlp
 async function startYouTubeDvrRecording(streamer: MonitoredStreamer): Promise<boolean> {
   // Check if already has YouTube DVR recording
@@ -1214,38 +1476,62 @@ async function finalizeRecordingSession(session: { sessionId: string; projectId?
   }, 5000);
 }
 
+async function trackRealtimeSegment(
+  activeSession: LiveSession,
+  payload: SegmentEventPayload,
+  queueTranscript = false
+) {
+  if (!activeSession.segments) {
+    activeSession.segments = [];
+  }
+
+  const duration = payload.duration || 4;
+  const previousSegment = activeSession.segments[activeSession.segments.length - 1];
+  const startTime = previousSegment?.endTime ?? 0;
+  const newSegment = {
+    segmentNumber: payload.segment,
+    filePath: payload.path,
+    startTime,
+    duration,
+    endTime: startTime + duration,
+  };
+
+  activeSession.segments.push(newSegment);
+
+  const { useRealtimeClipDetection } = await import('./useRealtimeClipDetection');
+  const detection = useRealtimeClipDetection();
+  if (detection.isActive.value) {
+    detection.updateSegments(activeSession.segments || []);
+  }
+
+  if (queueTranscript) {
+    const { useRealtimeTranscription } = await import('./useRealtimeTranscription');
+    await useRealtimeTranscription().queueSegment({
+      ...payload,
+      duration,
+      streamTime: newSegment.startTime,
+    });
+  }
+}
+
 // Handle DVR segment ready - called directly from DVR callback (not via Tauri event)
-// This processes segments silently (no activity logs) since it's internal chunk aggregation for PumpFun
+// This processes segments silently since it's internal chunk aggregation for PumpFun.
 async function handleDvrSegmentReady(payload: SegmentEventPayload) {
   if (!isMonitoring.value && activeSessions.value.size === 0) return;
 
   const session = activeSessions.value.get(payload.streamerId);
+  if (!session) return;
 
-  // Skip segment processing entirely if detectClips is false (real-time detection mode)
-  if (session?.detectClips === false) {
-    console.log('[LiveMonitor] Skipping segment processing - real-time detection mode active');
+  if (isRealtimeDetectMode(session.mode)) {
+    await trackRealtimeSegment(session, payload, true);
     return;
   }
 
-  const { fetchBalance, hoursRemaining } = useCreditBalance();
-  await fetchBalance();
-
-  // Check if we have credits for detection
-  const balance = hoursRemaining.value;
-  const hasCredits = balance === 'unlimited' || (typeof balance === 'number' && balance > 0);
-
-  const promptContent = session?.promptContent;
-
-  // Process segment without status callback (silent processing) only if we have credits
-  if (hasCredits) {
-    await handleSegmentReady(payload.sessionId, payload, true, promptContent);
-  }
+  await handleSegmentReady(payload.sessionId, payload);
 }
 
 async function initializeListeners() {
   if (listenersInitialized) return;
-
-  const { fetchBalance, hoursRemaining } = useCreditBalance();
 
   const segmentUnlisten = await listen<SegmentEventPayload>('segment-ready', async (event) => {
     if (!isMonitoring.value && activeSessions.value.size === 0) return;
@@ -1262,35 +1548,11 @@ async function initializeListeners() {
       return;
     }
 
-    // In real-time detection mode, track segments but skip AI detection
-    console.log('[LiveMonitor] segment-ready - detectClips:', activeSession.detectClips);
-    if (activeSession.detectClips === false) {
+    console.log('[LiveMonitor] segment-ready - mode:', activeSession.mode);
+    if (isRealtimeDetectMode(activeSession.mode)) {
       console.log('[LiveMonitor] Real-time detection mode - tracking segment for clip extraction');
-      
-      // Track segment for real-time clip extraction
-      // Real-time detection needs the segments array to call extract_livestream_clip
-      if (!activeSession.segments) {
-        activeSession.segments = [];
-      }
-      
-      const newSegment = {
-        segmentNumber: payload.segment,
-        filePath: payload.path,
-        startTime: payload.segment * (payload.duration || 4),
-        duration: payload.duration || 4,
-        endTime: (payload.segment + 1) * (payload.duration || 4),
-      };
-      
-      activeSession.segments.push(newSegment);
-      
-      // Update real-time detection with new segments
-      const { useRealtimeClipDetection } = await import('./useRealtimeClipDetection');
-      const detection = useRealtimeClipDetection();
-      if (detection.isActive.value) {
-        detection.updateSegments(activeSession.segments);
-      }
-      
-      return; // Skip traditional AI detection processing
+      await trackRealtimeSegment(activeSession, payload);
+      return;
     }
 
     const info = await getStreamerInfo(payload.streamerId);
@@ -1341,42 +1603,17 @@ async function initializeListeners() {
       streamerName: info.displayName,
       platform: info.platform,
       mintId: payload.mintId,
-      message: `Detecting clips...`,
+      message: `Processing segment...`,
       status: 'loading',
       profileImageUrl: info.profileImageUrl,
     });
 
-    // Process the segment
-    // Use session config for detection
-    let detectClips = session?.detectClips ?? true;
-
-    if (detectClips) {
-      await fetchBalance();
-      const balance = hoursRemaining.value;
-      if (balance !== 'unlimited' && typeof balance === 'number' && balance <= 0) {
-        detectClips = false;
-        addActivityLog({
-          streamerId: payload.streamerId,
-          streamerName: info.displayName,
-          platform: info.platform,
-          mintId: payload.mintId,
-          message: 'Detection skipped: Insufficient credits. Recording only.',
-          status: 'info',
-          profileImageUrl: info.profileImageUrl,
-        });
-      }
-    }
-
-    const promptContent = session?.promptContent;
-
     await handleSegmentReady(
       payload.sessionId,
       payload,
-      detectClips,
-      promptContent,
       (status: string) => {
         const normalized = status.toLowerCase();
-        const isSuccess = status.includes('Found') || status.includes('Detection skipped');
+        const isSuccess = normalized.includes('recorded') || normalized.includes('completed');
         const isError = normalized.includes('error') || normalized.includes('failed');
 
         updateActivityLog(processingLogId, {
@@ -1404,19 +1641,23 @@ async function initializeListeners() {
       // If we delete from activeSessions here, pollStreamers needs to know not to try to end it again immediately.
       const session = activeSessions.value.get(streamerId);
       if (session) {
-        // We let handleStreamEnd do the heavy lifting to ensure DB updates etc.
-        // But if this event comes from backend, it means the recording stopped.
-        // We can trigger handleStreamEnd manually.
         const streamerEntry = monitoredStreamers.value.get(streamerId);
         if (streamerEntry) {
           await handleStreamEnd(streamerEntry.streamer);
         } else {
-          // If not in monitored list but has active session (e.g. zombie), clean it up
-          // BUT if it is marked as stopping, we wait for recorder-exit to clean it up
           if (!session.isStopping) {
-            activeSessions.value.delete(streamerId);
+            const newMap = new Map(activeSessions.value);
+            newMap.delete(streamerId);
+            activeSessions.value = newMap;
           }
+          if (twitterDvrSessions.value.has(streamerId)) {
+            await stopTwitterDvrRecording(streamerId);
+          }
+          await tryRemoveEndedTwitterBroadcastById(streamerId, 'stream-ended');
         }
+      } else if (twitterDvrSessions.value.has(streamerId)) {
+        await stopTwitterDvrRecording(streamerId);
+        await tryRemoveEndedTwitterBroadcastById(streamerId, 'stream-ended');
       }
 
       addActivityLog({
@@ -1441,7 +1682,7 @@ async function initializeListeners() {
 
     // Skip ALL recorder logs when in real-time detection mode
     const session = activeSessions.value.get(streamerId);
-    if (session?.detectClips === false) {
+    if (session && isRealtimeDetectMode(session.mode)) {
       return;
     }
 
@@ -1466,38 +1707,6 @@ async function initializeListeners() {
       status: 'info',
       profileImageUrl: info.profileImageUrl,
     });
-  });
-
-  // Handle credit exhaustion event from segment processor
-  window.addEventListener('livestream-credit-exhausted', async (e: Event) => {
-    const detail = (e as CustomEvent).detail;
-    const { streamerId } = detail;
-
-    const session = activeSessions.value.get(streamerId);
-    const monitored = monitoredStreamers.value.get(streamerId);
-
-    if (session) {
-      // Update session state to stop trying to detect clips
-      session.detectClips = false;
-      activeSessions.value.set(streamerId, { ...session });
-
-      const info = await getStreamerInfo(streamerId);
-
-      addActivityLog({
-        streamerId,
-        streamerName: info.displayName,
-        platform: info.platform,
-        message: 'Credits exhausted. Switching to recording only.',
-        status: 'info',
-        profileImageUrl: info.profileImageUrl,
-      });
-    }
-
-    if (monitored) {
-      // Update monitored options too so it persists if stream restarts
-      monitored.options.detectClips = false;
-      monitoredStreamers.value.set(streamerId, monitored);
-    }
   });
 
   // 4. Process terminated log
@@ -1545,16 +1754,9 @@ async function initializeListeners() {
 export { fetchLiveStatus };
 
 export function useLivestreamMonitoring() {
-  type StartOptions = {
-    detectClips: boolean;
-    segmentDurationMinutes?: number;
-    promptId?: string;
-    promptContent?: string;
-  };
-
   async function startMonitoring(
     streamers: MonitoredStreamer[],
-    options: StartOptions = { detectClips: true }
+    options: StartOptions = DEFAULT_START_OPTIONS
   ) {
     if (streamers.length === 0) {
       return;
@@ -1565,7 +1767,7 @@ export function useLivestreamMonitoring() {
 
     // Add or update streamers in the monitored set
     for (const streamer of streamers) {
-      monitoredStreamers.value.set(streamer.id, { streamer, options });
+      monitoredStreamers.value.set(streamer.id, { streamer, options: { ...DEFAULT_START_OPTIONS, ...options } });
     }
 
     // Handle Kick streamers immediately - they are skipped by regular polling
@@ -1623,6 +1825,7 @@ export function useLivestreamMonitoring() {
     // Remove from monitoring list
     for (const id of idsToStop) {
       monitoredStreamers.value.delete(id);
+      clearPersistentDetectionTimer(id);
     }
 
     // If no more streamers monitored, stop polling
@@ -1698,7 +1901,7 @@ export function useLivestreamMonitoring() {
                   console.log(
                     `[LiveMonitor] Final segment ${state.segmentNumber} built: ${segmentPath}`
                   );
-                  handleDvrSegmentReady(payload);
+                  await handleDvrSegmentReady(payload);
                 } catch (error) {
                   console.error('[LiveMonitor] Failed to build final segment:', error);
                 }
@@ -1717,6 +1920,18 @@ export function useLivestreamMonitoring() {
           }
         } catch (error) {
           console.warn('[LiveMonitor] Failed to stop recorder', error);
+        }
+
+        if (isRealtimeDetectMode(session.mode)) {
+          try {
+            const { useRealtimeClipDetection } = await import('./useRealtimeClipDetection');
+            const detection = useRealtimeClipDetection();
+            if (detection.isActive.value) {
+              await detection.stopDetection();
+            }
+          } catch (error) {
+            console.warn('[LiveMonitor] Failed to stop realtime detection', error);
+          }
         }
 
         try {
@@ -1757,7 +1972,7 @@ export function useLivestreamMonitoring() {
       await updateMonitoredStreamer(streamer.id, streamerUpdates);
 
       const sessionActive = activeSessions.value.has(streamer.id);
-      const hasDvrRecording = dvrSessions.value.has(streamer.id);
+      const hasDvrRecording = hasAnyDvrSession(streamer.id);
 
       // Check if failed recently
       const failedAt = failedSessions.value.get(streamer.id);
@@ -1781,36 +1996,8 @@ export function useLivestreamMonitoring() {
       // Cleanup DVR recording when stream ends (and no persistent session)
       if (!status.isLive && !sessionActive && hasDvrRecording) {
         await handleDvrStreamEnd(streamer.id, streamer.mintId);
-        
-        // For Twitter: Auto-remove from database when stream ends AND user is not watching
-        // Each Twitter broadcast has a unique URL that becomes worthless after the stream ends
-        // Only delete if handleDvrStreamEnd actually cleaned up (meaning user is not watching)
-        const viewerSession = activeViewerSessions.value.get(streamer.id);
-        const stillHasDvr = twitterDvrSessions.value.has(streamer.id);
-        
-        if (streamer.platform === 'Twitter' && 
-            streamer.mintId.includes('/i/broadcasts/') && 
-            !viewerSession?.isWatching && 
-            !stillHasDvr) {
-          console.log('[LiveMonitor] Twitter broadcast ended and not in use - auto-removing from database:', streamer.mintId);
-          try {
-            await deleteMonitoredStreamer(streamer.id);
-            // Remove from local state
-            monitoredStreamers.value.delete(streamer.id);
-            
-            addActivityLog({
-              streamerId: streamer.id,
-              streamerName: streamer.displayName,
-              platform: streamer.platform,
-              mintId: streamer.mintId,
-              profileImageUrl: streamer.profileImageUrl,
-              message: 'Twitter broadcast ended - auto-removed (no longer accessible)',
-              status: 'info',
-            });
-          } catch (error) {
-            console.warn('[LiveMonitor] Failed to auto-remove Twitter broadcast:', error);
-          }
-        }
+      } else if (!status.isLive && !sessionActive && streamer.platform === 'Twitter') {
+        await removeEndedTwitterBroadcast(streamer, 'stream-offline');
       }
     }
   }
@@ -1833,15 +2020,49 @@ export function useLivestreamMonitoring() {
         streamer.platform
       );
 
-      // Use the streamer's configured segment duration, defaulting to 5 minutes
-      const requestedDuration = options.segmentDurationMinutes ?? streamer.segmentDurationMinutes ?? 5;
+      const realtimeMode = isRealtimeDetectMode(options.mode);
+
+      // Record-mode parity with the VOD download flow's "Use creator layout":
+      // when the user opted in via the record dialog, seed the recording
+      // project's `active_vod_preset_config` from the matched creator profile's
+      // `clip_build_defaults` so manual clips built from this session inherit
+      // the framing/subtitle defaults. Realtime mode has its own dedicated
+      // auto-clip project that's seeded inside useRealtimeClipDetection, so we
+      // skip the recording project there to avoid clobbering an existing
+      // parent project that's reused across multiple sessions per day.
+      if (
+        !realtimeMode &&
+        options.applyCreatorClipLayout &&
+        options.creatorProfileId
+      ) {
+        try {
+          const { seedCreatorClipLayoutOnProject } = await import(
+            './useCreatorClipDefaults'
+          );
+          await seedCreatorClipLayoutOnProject(
+            sessionInfo.projectId,
+            options.creatorProfileId,
+            true
+          );
+        } catch (err) {
+          console.warn(
+            '[LiveMonitor] Failed to seed creator clip layout on recording project:',
+            err
+          );
+        }
+      }
+      // Realtime detection consumes short recording chunks and makes one AI decision
+      // per Whisper batch. Record-only can keep the user's configured segment size.
+      const requestedDuration = realtimeMode
+        ? 1
+        : (options.segmentDurationMinutes ?? streamer.segmentDurationMinutes ?? 5);
       const segmentDuration = requestedDuration > 0 ? requestedDuration : 5;
       const isInfiniteSegment = options.segmentDurationMinutes === 0;
 
       // CRITICAL: Add to activeSessions IMMEDIATELY after getting sessionInfo
       // This prevents race conditions where viewer checks for existing sessions
       // before they're tracked, which would cause both to use the same session ID
-      console.log('[LiveMonitor] Creating session with detectClips:', options.detectClips);
+      console.log('[LiveMonitor] Creating session with mode:', options.mode);
       activeSessions.value.set(streamer.id, {
         sessionId: sessionInfo.sessionId,
         streamerId: streamer.id,
@@ -1855,7 +2076,7 @@ export function useLivestreamMonitoring() {
         displayName: streamer.displayName,
         platform: streamer.platform,
         profileImageUrl: streamer.profileImageUrl,
-        detectClips: options.detectClips,
+        mode: options.mode,
         segmentDurationMinutes: segmentDuration,
         promptId: options.promptId,
         promptContent: options.promptContent,
@@ -1913,7 +2134,9 @@ export function useLivestreamMonitoring() {
         // for clip detection. Calculate how many chunks make up one segment.
         const DVR_CHUNK_DURATION = 4; // seconds
         const segmentDurationSeconds = isInfiniteSegment ? Number.MAX_SAFE_INTEGER : segmentDuration * 60;
-        const chunksPerSegment = isInfiniteSegment
+        const chunksPerSegment = realtimeMode
+          ? 1
+          : isInfiniteSegment
           ? Number.MAX_SAFE_INTEGER
           : Math.ceil(segmentDurationSeconds / DVR_CHUNK_DURATION);
 
@@ -2009,8 +2232,48 @@ export function useLivestreamMonitoring() {
         });
       }
 
-      // Add log (skip for real-time detection mode - it has its own logs)
-      if (options.detectClips !== false) {
+      if (realtimeMode) {
+        try {
+          const { useRealtimeClipDetection } = await import('./useRealtimeClipDetection');
+          const detection = useRealtimeClipDetection();
+          await detection.startDetection({
+            sessionId: sessionInfo.sessionId,
+            streamerName: streamer.displayName,
+            platform: streamer.platform,
+            mintId: streamer.mintId,
+            prompt: options.promptContent || 'Detect viral moments',
+            segments: activeSessions.value.get(streamer.id)?.segments || [],
+            creatorProfileId: options.creatorProfileId,
+            applyCreatorClipLayout: options.applyCreatorClipLayout,
+          });
+
+          addActivityLog({
+            streamerId: streamer.id,
+            streamerName: streamer.displayName,
+            platform: streamer.platform,
+            mintId: streamer.mintId,
+            message: 'Real-time clip detection started',
+            status: 'success',
+            profileImageUrl: streamer.profileImageUrl,
+          });
+
+          if (options.maxDetectionMinutes && options.maxDetectionMinutes > 0) {
+            schedulePersistentDetectionAutoStop(streamer.id, options.maxDetectionMinutes);
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error('[LiveMonitor] Failed to start real-time detection', error);
+          addActivityLog({
+            streamerId: streamer.id,
+            streamerName: streamer.displayName,
+            platform: streamer.platform,
+            mintId: streamer.mintId,
+            message: `Real-time detection failed to start: ${message}`,
+            status: 'info',
+            profileImageUrl: streamer.profileImageUrl,
+          });
+        }
+      } else {
         addActivityLog({
           streamerId: streamer.id,
           streamerName: streamer.displayName,
@@ -2025,7 +2288,7 @@ export function useLivestreamMonitoring() {
       if (!isOnLivePage()) {
         showSuccess(
           `${streamer.displayName} is live`,
-          options.detectClips ? 'Auto-detect recording started.' : 'Recording started.',
+          realtimeMode ? 'Auto-detect recording started.' : 'Recording started.',
           undefined,
           'livestream'
         );
@@ -2124,7 +2387,7 @@ export function useLivestreamMonitoring() {
           is_currently_live: status.isLive ? 1 : 0,
         });
 
-        const hasDvrRecording = dvrSessions.value.has(streamer.id);
+        const hasDvrRecording = hasAnyDvrSession(streamer.id);
 
         if (status.isLive && !hasDvrRecording) {
           // Stream is live and no DVR recording - start one
@@ -2160,12 +2423,103 @@ export function useLivestreamMonitoring() {
             message: 'Auto DVR stopped - stream ended',
             status: 'info',
           });
+        } else if (!status.isLive && streamer.platform === 'Twitter') {
+          await removeEndedTwitterBroadcast(streamer, 'auto-dvr-offline');
         }
       }
     } catch (error) {
       console.error('[LiveMonitor] Auto DVR polling error:', error);
     }
   }
+
+  // ============================================
+  // Persistent live monitoring (My Creators)
+  // Auto-starts record / auto-detect when streamers go live
+  // ============================================
+
+  async function pollPersistentLiveMonitoring() {
+    try {
+      const records = await getPersistentLiveMonitoringStreamers();
+      if (records.length === 0) return;
+
+      for (const record of records) {
+        if (activeSessions.value.has(record.id)) continue;
+        if (monitoredStreamers.value.has(record.id)) continue;
+
+        const options = buildStartOptionsFromRecord(record);
+        if (!options) continue;
+
+        const streamer = recordToMonitoredStreamer(record);
+        const status = await fetchLiveStatus(streamer.mintId, streamer.platform);
+
+        await updateMonitoredStreamer(streamer.id, {
+          last_check_timestamp: Math.floor(Date.now() / 1000),
+          is_currently_live: status.isLive ? 1 : 0,
+        });
+
+        if (!status.isLive) {
+          persistentAutoDetectCappedForLive.delete(record.id);
+          continue;
+        }
+
+        if (
+          options.mode === 'realtime-detect' &&
+          persistentAutoDetectCappedForLive.has(record.id)
+        ) {
+          continue;
+        }
+
+        const { useRealtimeClipDetection } = await import('./useRealtimeClipDetection');
+        const realtimeDetection = useRealtimeClipDetection();
+        if (
+          options.mode === 'realtime-detect' &&
+          realtimeDetection.isActive.value
+        ) {
+          continue;
+        }
+
+        console.log(
+          `[LiveMonitor] Persistent ${options.mode}: starting for live streamer ${streamer.displayName}`
+        );
+
+        if (!isOnLivePage()) {
+          const label = options.mode === 'realtime-detect' ? 'Auto-detect' : 'Recording';
+          showSuccess(
+            `${streamer.displayName} is live`,
+            `${label} started from your My Creators settings.`,
+            7000,
+            'livestream'
+          );
+        }
+
+        await startMonitoring([streamer], options);
+      }
+    } catch (error) {
+      console.error('[LiveMonitor] Persistent live monitoring polling error:', error);
+    }
+  }
+
+  async function initPersistentLiveMonitoringPolling() {
+    if (persistentLiveInitialized) return;
+    persistentLiveInitialized = true;
+
+    console.log('[LiveMonitor] Initializing persistent live monitoring polling');
+    await pollPersistentLiveMonitoring();
+    persistentLivePollingHandle = window.setInterval(
+      pollPersistentLiveMonitoring,
+      AUTO_DVR_POLL_INTERVAL_MS
+    );
+  }
+
+  function stopPersistentLiveMonitoringPolling() {
+    if (persistentLivePollingHandle !== null) {
+      clearInterval(persistentLivePollingHandle);
+      persistentLivePollingHandle = null;
+    }
+    persistentLiveInitialized = false;
+  }
+
+  monitoringApi = { startMonitoring, stopMonitoring };
 
   return {
     startMonitoring,
@@ -2185,7 +2539,7 @@ export function useLivestreamMonitoring() {
       if (!dvrInfo) return null;
       return dvrRecording.getDvrSession(dvrInfo.mintId);
     },
-    hasDvrRecording: (streamerId: string) => dvrSessions.value.has(streamerId),
+    hasDvrRecording: (streamerId: string) => hasAnyDvrSession(streamerId),
     // Direct access to DVR composable
     dvrRecording,
     // Kick DVR exports
@@ -2209,6 +2563,7 @@ export function useLivestreamMonitoring() {
     stopTwitterDvrRecording,
     addTwitterDvrSession,
     removeTwitterDvrSession,
+    tryRemoveEndedTwitterBroadcastById,
     // YouTube DVR exports
     youtubeDvrSessions,
     getYouTubeDvrSession,
@@ -2226,6 +2581,9 @@ export function useLivestreamMonitoring() {
     // Auto DVR exports
     initAutoDvrPolling,
     stopAutoDvrPolling,
+    // Persistent My Creators live monitoring
+    initPersistentLiveMonitoringPolling,
+    stopPersistentLiveMonitoringPolling,
     // Viewer session tracking exports
     registerViewerSession,
     updateViewerSession,
@@ -2248,6 +2606,16 @@ let isInitialPoll = true; // Track if this is the first poll after app startup
  * This is separate from the monitoring system (Auto-Detect/Record) and
  * ensures users get notifications for ALL streamers in their list.
  */
+/** Start background polling for My Creators persistent auto-detect / record. */
+export async function initPersistentLiveMonitoringPolling(): Promise<void> {
+  const monitoring = useLivestreamMonitoring();
+  await monitoring.initPersistentLiveMonitoringPolling();
+}
+
+export function stopPersistentLiveMonitoringPolling(): void {
+  useLivestreamMonitoring().stopPersistentLiveMonitoringPolling();
+}
+
 export async function initGlobalLiveStatusPolling(): Promise<void> {
   if (globalLiveStatusInitialized) {
     console.log('[GlobalLiveStatus] Already initialized, skipping');
@@ -2290,6 +2658,15 @@ export async function initGlobalLiveStatusPolling(): Promise<void> {
             is_currently_live: status.isLive ? 1 : 0,
             last_check_timestamp: Math.floor(Date.now() / 1000),
           });
+
+          if (
+            record.platform.toLowerCase() === 'twitter' &&
+            isDirectTwitterLiveUrl(record.mint_id) &&
+            !status.isLive
+          ) {
+            const monitoring = useLivestreamMonitoring();
+            await monitoring.tryRemoveEndedTwitterBroadcastById(record.id, 'global-poll-offline');
+          }
 
           // Show toast if went live (offline → online transition)
           // BUT skip toasts on initial poll to avoid spam when app first opens

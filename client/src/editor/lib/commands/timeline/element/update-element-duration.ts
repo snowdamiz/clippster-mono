@@ -2,6 +2,8 @@ import { Command } from "../../../../lib/commands/base-command";
 import type { TimelineTrack } from "../../../../types/timeline";
 import { EditorCore } from "../../../../core";
 import { shiftCaptionTimesAfter } from "../../../timeline/caption-sync";
+import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
+import { recomputeTrimEndAfterTimingChange } from "../../../../lib/timeline/trim-source-utils";
 
 export class UpdateElementDurationCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;
@@ -28,13 +30,22 @@ export class UpdateElementDurationCommand extends Command {
 
 		const durationDelta = this.duration - targetEl.duration;
 		const oldEndTime = targetEl.startTime + targetEl.duration;
+		const oldSpeed = ("speed" in targetEl && typeof targetEl.speed === "number") ? targetEl.speed : 1;
+		const newTrimEnd = recomputeTrimEndAfterTimingChange({
+			trimStart: targetEl.trimStart,
+			oldDuration: targetEl.duration,
+			newDuration: this.duration,
+			oldSpeed,
+			newSpeed: oldSpeed,
+			trimEnd: targetEl.trimEnd,
+		});
 
 		const updatedTracks = this.savedState.map((t) => {
 			if (t.id !== this.trackId) return t;
 
 			const newElements = t.elements.map((el) => {
 				if (el.id === this.elementId) {
-					return { ...el, duration: this.duration };
+					return { ...el, duration: this.duration, trimEnd: newTrimEnd };
 				}
 				// Ripple-push: shift elements that start at or after the old end
 				if (durationDelta > 0 && el.startTime >= oldEndTime - 0.001) {
@@ -45,6 +56,7 @@ export class UpdateElementDurationCommand extends Command {
 			return { ...t, elements: newElements } as typeof t;
 		});
 
+		const fps = editor.project.getActive()?.settings?.fps ?? 30;
 		// Shift caption times when ripple-pushing
 		if (durationDelta !== 0) {
 			const finalTracks = shiftCaptionTimesAfter({
@@ -52,9 +64,9 @@ export class UpdateElementDurationCommand extends Command {
 				afterTime: oldEndTime,
 				delta: durationDelta,
 			});
-			editor.timeline.updateTracks(finalTracks);
+			editor.timeline.updateTracks(collapseMainVideoTracksIfPresent(finalTracks, fps));
 		} else {
-			editor.timeline.updateTracks(updatedTracks);
+			editor.timeline.updateTracks(collapseMainVideoTracksIfPresent(updatedTracks, fps));
 		}
 	}
 

@@ -86,6 +86,7 @@ export {
   getClipSegmentsByClipId,
   getClipSegmentsByVersionId,
   updateClipSegment,
+  updateClipSegmentTranscript,
   splitClipSegment,
   insertClipSegment,
   deleteClipSegment,
@@ -137,6 +138,8 @@ export {
   seedGamingPrompt,
   seedGamblingPrompt,
   seedBreakingNewsPrompt,
+  seedIrlPrompt,
+  seedMusicPrompt,
 } from './database/prompts';
 
 // Re-export transcript functions
@@ -144,6 +147,7 @@ export {
   createTranscript,
   getTranscriptByRawVideoId,
   getTranscriptByProjectId,
+  getTranscriptsWithRawVideosByProjectId,
   createTranscriptSegment,
   getTranscriptSegments,
   getTranscriptWithSegmentsByProjectId,
@@ -162,6 +166,7 @@ export {
   getTranscriptChunks,
   updateChunkedTranscriptCompleteness,
   getChunkMetadataForProcessing,
+  deleteChunkedTranscript,
 } from './database/chunked-transcripts';
 
 // Re-export raw video functions
@@ -230,6 +235,7 @@ export {
 export {
   getAllMonitoredStreamers,
   getAutoDvrStreamers,
+  getPersistentLiveMonitoringStreamers,
   getMonitoredStreamer,
   getMonitoredStreamerByMint,
   createMonitoredStreamer,
@@ -247,6 +253,9 @@ export {
   updateLivestreamSegment,
   updateSegmentStatus,
   createLivestreamClipProject,
+  AUTO_CLIP_PROJECT_NAME_PREFIX,
+  MANUAL_CLIP_PROJECT_NAME_PREFIX,
+  isLiveClipsContainerProject,
 } from './database/livestream-monitoring';
 
 // Watermark exports
@@ -297,6 +306,7 @@ export {
   getCreatorProfileByPlatformId,
   getAllGlobalProfiles,
   getAllStreamerProfiles,
+  getAllPersonalStudioProfiles,
   setProjectBrandingProfile,
   getProjectBrandingProfileId,
 } from './database/creator-profiles';
@@ -415,6 +425,7 @@ export {
   getVideoEditorSourceCount,
   getNextSourceStartTime,
   getVideoEditorProjectsForClip,
+  getVideoEditorProjectsForRawVideo,
   type VideoEditorProject,
   type VideoEditorSource,
   type VideoEditorProjectWithSources,

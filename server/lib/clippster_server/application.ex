@@ -5,6 +5,9 @@ defmodule ClippsterServer.Application do
 
   use Application
 
+  @lemonfox_transport_opts [versions: [:"tlsv1.2"], timeout: 30_000]
+  @default_transport_opts [timeout: 30_000]
+
   @impl true
   def start(_type, _args) do
     # Load environment variables from .env file in development only
@@ -28,10 +31,8 @@ defmodule ClippsterServer.Application do
       {Finch,
        name: ClippsterFinch,
        pools: %{
-         # Use HTTP/1.1 for Whisper API - more reliable for large file uploads
-         # and avoids HTTP/2 connection reuse issues (Mint.TransportError :closed)
          "https://api.lemonfox.ai" => [
-           protocols: [:http1],
+           protocols: [:http2],
            # Multiple pools for better isolation (if one pool has issues, others still work)
            count: 4,
            # Connections per pool
@@ -40,8 +41,7 @@ defmodule ClippsterServer.Application do
            # Most servers close idle connections after 60-120s, so 30s is safe
            conn_max_idle_time: 30_000,
            conn_opts: [
-             # Connection establishment timeout
-             transport_opts: [timeout: 30_000]
+             transport_opts: @lemonfox_transport_opts
            ]
          ],
          # Default pool for other requests (OpenRouter, etc.)
@@ -50,7 +50,7 @@ defmodule ClippsterServer.Application do
            count: 2,
            conn_max_idle_time: 60_000,
            conn_opts: [
-             transport_opts: [timeout: 30_000]
+             transport_opts: @default_transport_opts
            ]
          ]
        }},
@@ -62,8 +62,6 @@ defmodule ClippsterServer.Application do
       ClippsterServer.PriceService,
       # Social media analytics sync worker
       ClippsterServer.Social.AnalyticsSyncWorker,
-      # Social media token refresh worker
-      ClippsterServer.Social.TokenRefreshWorker,
       # Post For Me connection session cleanup worker
       ClippsterServer.Social.PostForMeConnectionSessionCleanupWorker,
       # Scheduled post publishing worker
@@ -80,6 +78,8 @@ defmodule ClippsterServer.Application do
       ClippsterServer.ClipperProfiles.ResponseTimeWorker,
       # Campaign submission view sync worker
       ClippsterServer.Campaigns.SubmissionViewSyncWorker,
+      # Campaign completion worker (marks expired campaigns as completed)
+      ClippsterServer.Campaigns.CampaignCompletionWorker,
       # News poller for breaking news feed
       ClippsterServer.News.NewsPoller,
       # Start to serve requests, typically the last entry

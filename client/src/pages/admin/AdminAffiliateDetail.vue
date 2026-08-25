@@ -44,10 +44,10 @@
               </div>
               <p class="user-bio">{{ affiliate.user?.name || affiliate.user?.email || 'No user info' }}</p>
               <div class="ref-link">
-                <Link2 :size="14" class="ref-link__icon" />
-                <span class="ref-link__url">{{ referralUrl }}</span>
-                <button class="ref-link__copy" @click="copyRefLink" :title="refLinkCopied ? 'Copied!' : 'Copy link'">
-                  <Check v-if="refLinkCopied" :size="14" />
+                <Hash :size="14" class="ref-link__icon" />
+                <span class="ref-link__url">{{ affiliate.referral_code }}</span>
+                <button class="ref-link__copy" @click="copyRefCode" :title="refCodeCopied ? 'Copied!' : 'Copy code'">
+                  <Check v-if="refCodeCopied" :size="14" />
                   <Copy v-else :size="14" />
                 </button>
               </div>
@@ -458,7 +458,7 @@
     Info,
     Settings,
     ChevronDown,
-    Link2,
+    Hash,
     Copy,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
@@ -484,12 +484,7 @@
   const referrals = ref<AffiliateReferral[]>([]);
   const payouts = ref<AffiliatePayout[]>([]);
   const showDiscountTypeDropdown = ref(false);
-  const refLinkCopied = ref(false);
-
-  const referralUrl = computed(() => {
-    if (!affiliate.value) return '';
-    return `https://clippster.app/?ref=${affiliate.value.referral_code}`;
-  });
+  const refCodeCopied = ref(false);
 
   const totalEarned = computed(() => {
     return referrals.value
@@ -505,11 +500,12 @@
       .toFixed(2);
   });
 
-  async function copyRefLink() {
+  async function copyRefCode() {
+    if (!affiliate.value) return;
     try {
-      await navigator.clipboard.writeText(referralUrl.value);
-      refLinkCopied.value = true;
-      setTimeout(() => { refLinkCopied.value = false; }, 2000);
+      await navigator.clipboard.writeText(affiliate.value.referral_code);
+      refCodeCopied.value = true;
+      setTimeout(() => { refCodeCopied.value = false; }, 2000);
     } catch {
       // Fallback
     }

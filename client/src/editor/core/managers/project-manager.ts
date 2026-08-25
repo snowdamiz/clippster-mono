@@ -23,6 +23,7 @@ import {
 	DEFAULT_COLOR,
 } from "../../constants/project-constants";
 import { buildDefaultScene, getProjectDurationFromScenes } from "../../lib/scenes";
+import { healOrphanVideoMediaReferences } from "../../lib/timeline/heal-orphan-video-media";
 import { buildScene } from "../../renderer/scene-builder";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
 import {
@@ -152,6 +153,10 @@ export class ProjectManager {
 			}
 
 			await this.editor.media.loadProjectMedia({ projectId: id });
+
+			if (healOrphanVideoMediaReferences({ editor: this.editor, projectId: id })) {
+				await this.saveCurrentProject();
+			}
 
 			if (!project.metadata.thumbnail) {
 				const didUpdateThumbnail = await this.updateThumbnailFromTimeline();
@@ -578,6 +583,7 @@ export class ProjectManager {
 
 	setActiveProject({ project }: { project: TProject }): void {
 		this.active = project;
+		this.editor.renderer.invalidatePreviewSceneCache();
 		this.notify();
 	}
 
@@ -603,6 +609,8 @@ export class ProjectManager {
 			duration,
 			canvasSize,
 			background,
+			transitions: [],
+			canvasSourceFraming: this.active.settings.canvasSourceFraming ?? null,
 		});
 
 		const renderer = new CanvasRenderer({

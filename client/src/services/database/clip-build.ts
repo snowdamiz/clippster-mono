@@ -88,12 +88,6 @@ export async function updateClipBuildStatus(
     if (additionalFields?.builtFilePath !== undefined) {
       query += ', built_file_path = ?';
       params.push(additionalFields.builtFilePath);
-
-      // Also update the main file_path field when build is completed
-      if (buildStatus === 'completed') {
-        query += ', file_path = ?';
-        params.push(additionalFields.builtFilePath);
-      }
     }
 
     if (additionalFields?.builtThumbnailPath !== undefined) {
@@ -239,6 +233,13 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
           current_version_change_type: row.current_version_change_type,
           current_version_created_at: row.current_version_created_at,
           current_version_segments: [], // Will be loaded separately
+          subtitle_enabled: row.subtitle_enabled,
+          subtitle_preset_id: row.subtitle_preset_id,
+          subtitle_position_x: row.subtitle_position_x ?? null,
+          subtitle_position_y: row.subtitle_position_y ?? null,
+          subtitle_position_width: row.subtitle_position_width ?? null,
+          subtitle_settings: row.subtitle_settings ?? null,
+          clip_text_overlay: row.clip_text_overlay ?? null,
         };
       });
 
@@ -587,6 +588,77 @@ export async function updateClipBuild(
     console.log(`[Database] Updated clip build ${buildId}:`, updates);
   } catch (error) {
     console.error('[Database] Failed to update clip build:', error);
+    throw error;
+  }
+}
+
+export interface CompletedBuildEntry {
+  clip: Clip;
+  build: ClipBuild;
+}
+
+/** All completed builds with clip metadata — two queries instead of N+1 per clip. */
+export async function getCompletedBuildEntries(): Promise<CompletedBuildEntry[]> {
+  try {
+    const db = await getDatabase();
+    await ensureClipBuildsBrandingSchema(db);
+    const userId = getCurrentUserId();
+
+    const builds = await db.select<ClipBuild[]>(
+      `SELECT * FROM clip_builds
+       WHERE status = 'completed'
+         AND file_path IS NOT NULL
+         AND TRIM(file_path) != ''
+       ORDER BY created_at DESC`,
+    );
+
+    if (builds.length === 0) {
+      return [];
+    }
+
+    const clipIds = [...new Set(builds.map((b) => b.clip_id))];
+    const placeholders = clipIds.map(() => '?').join(',');
+    let clips: Clip[];
+
+    if (userId === null) {
+      clips = await db.select<Clip[]>(
+        `SELECT * FROM clips WHERE id IN (${placeholders})`,
+        clipIds,
+      );
+    } else {
+      clips = await db.select<Clip[]>(
+        `SELECT * FROM clips
+         WHERE id IN (${placeholders})
+           AND (CAST(user_id AS INTEGER) = ? OR user_id IS NULL)`,
+        [...clipIds, userId],
+      );
+      if (clips.length === 0) {
+        clips = await db.select<Clip[]>(
+          `SELECT * FROM clips WHERE id IN (${placeholders})`,
+          clipIds,
+        );
+      }
+    }
+
+    const clipById = new Map(clips.map((c) => [c.id, c]));
+    const entries: CompletedBuildEntry[] = [];
+
+    for (const build of builds) {
+      const clip = clipById.get(build.clip_id);
+      if (!clip) continue;
+      entries.push({
+        clip,
+        build: {
+          ...build,
+          include_subtitles: Boolean(build.include_subtitles),
+          is_published: Boolean(build.is_published),
+        },
+      });
+    }
+
+    return entries;
+  } catch (error) {
+    console.error('[Database] Failed to get completed build entries:', error);
     throw error;
   }
 }

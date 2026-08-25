@@ -1,4 +1,9 @@
 // Timeline and Media Types
+import type { AiBrollRegionMetadata } from './ai-broll';
+
+export type { AiBrollRegionMetadata } from './ai-broll';
+export * from './ai-broll';
+
 export interface WordInfo {
   word: string;
   start: number;
@@ -94,6 +99,8 @@ export interface TimelineEmits {
   (e: 'timelineSegmentClick', clipId: string, segmentIndex: number, event?: MouseEvent): void;
   (e: 'scrollToMediaPanel', clipId: string): void;
   (e: 'zoomChanged', zoomLevel: number): void;
+  (e: 'toggleSubtitles'): void;
+  (e: 'toggleText'): void;
   (
     e: 'segmentUpdated',
     clipId: string,
@@ -195,8 +202,12 @@ export interface SubtitleSettings {
     | 'glow'
     | 'box-highlight'
     | 'typewriter'
-    | 'wave';
+    | 'wave'
+    | 'single-word';
   highlightColor: string;
+  multiColorEnabled: boolean;
+  multiColorMode: 'default' | 'custom';
+  colorPalette: string[];
   lineHeight: number;
   letterSpacing: number;
   textAlign: 'left' | 'center' | 'right';
@@ -224,6 +235,26 @@ export interface SubtitleOverride {
   positionPercentage: number; // Override vertical position (0-100)
   position?: { x: number; y: number }; // Override position as x,y coordinates (0-100)
   maxWidth?: number; // Override max width for this aspect ratio
+  presetId?: string; // Override subtitle style preset for this aspect ratio
+  // Extended visual styling fields (read by Rust generate_ass_file)
+  animationStyle?: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave' | 'single-word';
+  textColor?: string;
+  fontFamily?: string;
+  fontWeight?: number;
+  border1Width?: number;
+  border1Color?: string;
+  border2Width?: number;
+  border2Color?: string;
+  highlightColor?: string;
+  multiColorEnabled?: boolean;
+  colorPalette?: string[];
+  multiColorMode?: 'default' | 'custom';
+  shadowOffsetX?: number;
+  shadowOffsetY?: number;
+  shadowBlur?: number;
+  shadowColor?: string;
+  backgroundColor?: string;
+  backgroundEnabled?: boolean;
 }
 
 // Map of aspect ratio to subtitle overrides
@@ -232,6 +263,7 @@ export interface SubtitleOverrides {
   '9:16'?: SubtitleOverride;
   '1:1'?: SubtitleOverride;
   '4:5'?: SubtitleOverride;
+  [key: string]: SubtitleOverride | undefined;
 }
 
 // Watermark position for a specific aspect ratio
@@ -288,8 +320,10 @@ export interface MediaPanelProps {
   videoDuration?: number | null; // Duration in seconds
   currentTime?: number | null; // Current video playback time in seconds
   aspectRatio: { width: number; height: number };
+  maxWordsForAspectRatio?: number;
   // Subtitle settings for clip building
   subtitleSettings?: SubtitleSettings | null;
+  subtitleSettingsClipId?: string | null;
   // Creator profile default assets (auto-applied when building clips)
   creatorDefaultIntro?: IntroOutroRef | null;
   creatorDefaultOutro?: IntroOutroRef | null;
@@ -302,6 +336,8 @@ export interface MediaPanelProps {
   transcribeMessage?: string;
   // VOD preset config for pre-edit settings
   vodPresetConfig?: ActiveVodPresetConfig | null;
+  /** When true, hide AI clip detection (e.g. short videos auto-imported as one clip). */
+  clipDetectionDisabled?: boolean;
 }
 
 // Reference type for intro/outro (matches database IntroOutro type)
@@ -334,7 +370,7 @@ export interface MusicTrackSettings {
 }
 
 export interface MediaPanelEmits {
-  (e: 'clipHover', clipId: string): void;
+  (e: 'clipHover', clipId: string | null): void;
   (e: 'clipLeave'): void;
   (e: 'detectClips'): void;
   (e: 'cancelDetection'): void;
@@ -350,6 +386,7 @@ export interface MediaPanelEmits {
   (e: 'cancelTranscription'): void;
   (e: 'viewTranscript'): void;
   (e: 'publishNow', clip: any): void;
+  (e: 'buildDialogOpen', open: boolean): void;
 }
 
 export interface TimelinePlayheadProps {
@@ -636,20 +673,81 @@ export interface ManualRegion {
   id: string;
   color: string; // e.g., "#4F9DFF" for visual distinction
   label?: string; // Optional label like "Speaker", "Gameplay"
+  /** Clip-wide sequential number for default labels (Region 1, Region 2, …). */
+  displayNumber?: number;
   // Source crop (normalized 0-1 coordinates on source video)
   source: ManualRegionRect;
   // Output position (normalized 0-1 coordinates on target canvas)
   output: ManualRegionRect;
+  // Rounded corners
+  cornerRadiusEnabled?: boolean;
+  cornerRadiusPx?: number; // 0-80px at output resolution
+  // Media asset reference (use editor asset system)
+  mediaAssetId?: string; // Reference to MediaAsset in editor.media
+  mediaType?: 'video-crop' | 'image' | 'video'; // Type of content in this region
+  // Aspect ratio locking (prevents distortion when resizing output)
+  aspectRatioLocked?: boolean; // Default true - maintains source aspect ratio in output
+  /** Optional AI B-roll provenance (ignored by FFmpeg export) */
+  aiBroll?: AiBrollRegionMetadata;
+  /** Seconds into external video media to start (B-roll trim offset) */
+  mediaSourceOffset?: number;
+}
+
+// Time-based segment configuration for POI regions
+export interface SegmentRegionConfig {
+  segmentId: string;
+  startTime: number; // Relative to clip start (seconds)
+  endTime: number; // Relative to clip start (seconds)
+  regions: ManualRegion[]; // Region configuration for this time segment
+}
+
+// Time-based B-roll overlays. These are separate from segmentConfigs so POI
+// framing segments can still control camera regions independently.
+export interface BrollRegionConfig {
+  brollId: string;
+  startTime: number; // Relative to clip start (seconds)
+  endTime: number; // Relative to clip start (seconds)
+  region: ManualRegion;
+  suggestionId?: string;
+}
+
+/** How the 16:9 source is framed in the target preview (e.g. 9:16) */
+export type ManualSourceFrameMode = 'none' | 'scale' | 'use16x9';
+
+/** Normalized x/y like sourceTransform; emitted from POITargetPanel */
+export interface ManualSourceFramingPayload {
+  mode: ManualSourceFrameMode;
+  blurEnabled: boolean;
+  blurAmount: number;
+  scale: number;
+  x: number;
+  y: number;
 }
 
 export interface ManualFramingConfig {
   mode: 'manual';
-  regions: ManualRegion[];
+  regions: ManualRegion[]; // Default/fallback regions
   targetAspectRatio: string; // "9:16", "4:5", etc.
   sourceAspectRatio?: string; // "16:9" typically
+  // Segment-based configurations (for dynamic camera position changes)
+  segmentConfigs?: SegmentRegionConfig[];
+  // Timed B-roll overlays, independent from segment-based camera regions
+  brollConfigs?: BrollRegionConfig[];
+  /** Mutually exclusive with "scale" in UI: blur letterbox vs scaled source frame */
+  sourceFrameMode?: ManualSourceFrameMode;
+  /** Blur on scaled 16:9 frame, or on Use 16:9 background */
+  blurEnabled?: boolean;
+  /** Approximate CSS px; mapped to FFmpeg blur in export */
+  blurAmount?: number;
+  // Global source frame transform (for scaling/positioning entire source)
+  sourceTransform?: {
+    scale: number; // Scale factor (1.0 = no scale)
+    x: number; // X offset (normalized relative to container width, can be negative)
+    y: number; // Y offset (normalized relative to container height, can be negative)
+  };
 }
 
-// Segment-specific framing configuration
+// Segment-specific framing configuration (legacy)
 export interface SegmentFramingConfig {
   segmentIds: string[]; // Which segment IDs this framing applies to
   config: ManualFramingConfig;
@@ -960,7 +1058,8 @@ export type TextAnimation =
   | 'karaoke'
   | 'glow'
   | 'box-highlight'
-  | 'wave';
+  | 'wave'
+  | 'single-word';
 
 export type TextStylePreset = 'title' | 'lower-third' | 'caption' | 'quote' | 'custom';
 
@@ -1169,8 +1268,12 @@ export interface ClipSubtitleSettings {
     | 'glow'
     | 'box-highlight'
     | 'typewriter'
-    | 'wave';
+    | 'wave'
+    | 'single-word';
   highlightColor: string;
+  multiColorEnabled: boolean;
+  multiColorMode: 'default' | 'custom';
+  colorPalette: string[];
   lineHeight: number;
   letterSpacing: number;
   textAlign: 'left' | 'center' | 'right';
@@ -1888,4 +1991,38 @@ export interface ActiveVodPresetConfig {
   layoutOverlays: LayoutOverlay[];
   watermarkMode: 'creator' | 'custom' | 'none';
   customWatermarkSettings: WatermarkSettings | null;
+  /** Present when seeded from creator profile clip defaults (detection dialog / clips can read this) */
+  subtitleDefaults?: SubtitleSettings | null;
+}
+
+// ==========================================
+// Creator profile clip-build defaults
+// ==========================================
+
+// Source of the still image used to draw regions on the creator profile
+// when no live VOD is available.
+export type CreatorReferenceImageSource = 'twitch_preview' | 'upload' | 'vod_thumbnail' | 'none';
+
+// Defaults a user saves on a creator profile so each new VOD download for that
+// creator can opt-in (via "Use creator layout") to start with the same crop
+// regions, layout overlays, watermark choice, and subtitle styling.
+export interface CreatorClipBuildDefaults {
+  // Single output aspect ratio for this creator (one of "16:9" | "9:16" | "1:1" | "4:5")
+  targetAspectRatio: string;
+  // Framing/regions for that single ratio (target/source aspect aligned with targetAspectRatio)
+  framingConfig: ManualFramingConfig | null;
+  // Layout overlays (e.g. borders/dividers) to apply to the target frame
+  layoutOverlays: LayoutOverlay[];
+  // Watermark mode: 'creator' uses the creator profile watermark (recommended),
+  // 'custom' uses customWatermarkSettings, 'none' disables watermark.
+  watermarkMode: 'creator' | 'custom' | 'none';
+  customWatermarkSettings: WatermarkSettings | null;
+  // Subtitle defaults that get applied to new clips when seeded.
+  // Stored using the same SubtitleSettings shape SubtitlePropertiesPanel edits.
+  subtitleDefaults: SubtitleSettings | null;
+  // Reference image used in the editor when calibrating regions at profile time
+  referenceImageSource: CreatorReferenceImageSource;
+  referenceImageUrl: string | null; // Remote URL or app-local file path
+  sourceAspectRatio: string;        // typically "16:9"
+  capturedAt?: number;              // timestamp the reference image was captured
 }

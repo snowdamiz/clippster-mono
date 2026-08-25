@@ -71,13 +71,13 @@
             <div class="flex items-center gap-2">
               <span class="font-medium text-foreground">@{{ account.username }}</span>
               <span v-if="!account.is_active" class="px-1.5 py-0.5 rounded text-xs bg-destructive/20 text-destructive">
-                Inactive
+                Disconnected
               </span>
               <span
-                v-else-if="isTokenExpiringSoon(account)"
+                v-else-if="isTokenExpiringSoonForAccount(account)"
                 class="px-1.5 py-0.5 rounded text-xs bg-amber-500/20 text-amber-500"
               >
-                Token expiring
+                Reconnect soon
               </span>
             </div>
             <div class="text-sm text-muted-foreground">
@@ -103,9 +103,9 @@
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem @click="refreshToken(account)">
+                <DropdownMenuItem @click="reconnectAccount(account)">
                   <RefreshCw class="h-4 w-4 mr-2" />
-                  Refresh Token
+                  Reconnect
                 </DropdownMenuItem>
                 <DropdownMenuItem v-if="account.is_active" @click="toggleActive(account, false)">
                   <XCircle class="h-4 w-4 mr-2" />
@@ -219,11 +219,14 @@
     listSocialAccounts,
     startInstagramOAuthPopup,
     startTwitterOAuthPopup,
+    startTiktokOAuthPopup,
+    startYoutubeOAuthPopup,
     updateSocialAccount,
     deleteSocialAccount,
-    refreshAccountToken,
     type SocialAccount,
   } from '@/services/socialAccountsApi';
+  import { reconnectOrgSocialPlatform } from '@/utils/socialOAuthReconnect';
+  import { isTokenExpiringSoonForAccount } from '@/utils/socialTokenExpiry';
 
   interface Member {
     id: number;
@@ -347,17 +350,34 @@
     }
   }
 
-  async function refreshToken(account: SocialAccount) {
+  async function reconnectAccount(account: SocialAccount) {
     try {
-      const response = await refreshAccountToken(props.organizationId, account.id);
-      if (response.success) {
-        showToast('Token refresh initiated', 'success', 'organization');
-      } else {
-        showToast(response.error || 'Failed to refresh token', 'error', 'organization');
+      if (cleanupAuthListener) {
+        cleanupAuthListener();
+        cleanupAuthListener = null;
       }
+      connecting.value = true;
+      cleanupAuthListener = await reconnectOrgSocialPlatform(
+        props.organizationId,
+        account.platform,
+        (result) => {
+          if (result.success) {
+            showToast(`${account.platform} reconnected`, 'success', 'organization');
+            void loadAccounts();
+          } else if (result.error) {
+            showToast(result.error, 'error', 'organization');
+          }
+          connecting.value = false;
+        },
+        {
+          socialAccountId: account.id,
+          providerAccountId: account.provider_account_id ?? undefined,
+        }
+      );
     } catch (error) {
-      console.error('Failed to refresh token:', error);
-      showToast('Failed to refresh token', 'error', 'organization');
+      console.error('Failed to reconnect account:', error);
+      showToast(error instanceof Error ? error.message : 'Failed to reconnect account', 'error', 'organization');
+      connecting.value = false;
     }
   }
 
@@ -385,13 +405,6 @@
       showDeleteDialog.value = false;
       accountToDelete.value = null;
     }
-  }
-
-  function isTokenExpiringSoon(account: SocialAccount): boolean {
-    if (!account.token_expires_at) return false;
-    const expiresAt = new Date(account.token_expires_at);
-    const daysUntilExpiry = (expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-    return daysUntilExpiry < 7;
   }
 
   function formatDate(dateString: string): string {

@@ -27,8 +27,8 @@ export function useTimelinePlayhead({
   const { editor, version } = useEditor({
     subscribe: {
       playback: true,
-      timeline: true,
-      scenes: false,
+      timeline: false,
+      scenes: true,
       project: true,
       media: false,
       selection: false,
@@ -55,16 +55,23 @@ export function useTimelinePlayhead({
   let lastMouseX = 0;
   let scrubTime: number | null = null;
   let scrubPreviewTime: number | null = null;
-  let seekDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let playheadAnimationFrame: number | null = null;
   let queuedPlayheadTime: number | null = null;
+  // Coalesce seek() calls during high-frequency scrubbing into one per frame.
+  // The previous implementation used a 10ms `setTimeout` which dropped audio /
+  // video preview behind the cursor; rAF keeps them glued together.
+  let scrubSeekRaf: number | null = null;
+  let pendingScrubSeek: number | null = null;
 
-  function debouncedSeek(time: number) {
-    if (seekDebounceTimer !== null) clearTimeout(seekDebounceTimer);
-    seekDebounceTimer = setTimeout(() => {
-      editor.playback.seek({ time });
-      seekDebounceTimer = null;
-    }, 10);
+  function scheduleScrubSeek(time: number) {
+    pendingScrubSeek = time;
+    if (scrubSeekRaf !== null) return;
+    scrubSeekRaf = requestAnimationFrame(() => {
+      scrubSeekRaf = null;
+      const t = pendingScrubSeek;
+      pendingScrubSeek = null;
+      if (t !== null) editor.playback.seek({ time: t });
+    });
   }
 
   const playheadPosition = computed(() =>
@@ -131,7 +138,7 @@ export function useTimelinePlayhead({
     scrubPreviewTime = rawTime;
     scrubTime = time;
     schedulePlayheadPosition(rawTime);
-    debouncedSeek(time);
+    scheduleScrubSeek(time);
     lastMouseX = event.clientX;
   }
 
@@ -166,9 +173,11 @@ export function useTimelinePlayhead({
       };
 
       const onMouseUp = (event: MouseEvent) => {
-        if (seekDebounceTimer !== null) {
-          clearTimeout(seekDebounceTimer);
-          seekDebounceTimer = null;
+        // Cancel any in-flight scrub seek — we'll commit the final time below.
+        if (scrubSeekRaf !== null) {
+          cancelAnimationFrame(scrubSeekRaf);
+          scrubSeekRaf = null;
+          pendingScrubSeek = null;
         }
         if (scrubTime !== null) {
           stablePlayheadTime.value = scrubTime;
@@ -262,7 +271,7 @@ export function useTimelinePlayhead({
 
   onUnmounted(() => {
     cleanupGlobalListeners?.();
-    if (seekDebounceTimer !== null) clearTimeout(seekDebounceTimer);
+    if (scrubSeekRaf !== null) cancelAnimationFrame(scrubSeekRaf);
     if (playheadAnimationFrame !== null) cancelAnimationFrame(playheadAnimationFrame);
   });
 

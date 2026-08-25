@@ -8,8 +8,6 @@
       'sidebar--disabled': disabled,
     }"
   >
-    <!-- Disabled Overlay -->
-    <div v-if="disabled" class="sidebar-disabled-overlay"></div>
     <!-- Bug Report Dialog -->
     <BugReportDialog
       :show="showBugReportDialog"
@@ -207,6 +205,15 @@
                 <Settings class="w-4 h-4 mr-2" />
                 Admin
               </DropdownMenuItem>
+              <!-- Moderator Link (conditional) -->
+              <DropdownMenuItem
+                v-if="authStore.user?.is_moderator && !authStore.user?.is_admin"
+                class="sidebar-dropdown__item"
+                @click="router.push('/admin')"
+              >
+                <Settings class="w-4 h-4 mr-2" />
+                Moderator
+              </DropdownMenuItem>
               <!-- Bug Report -->
               <DropdownMenuItem class="sidebar-dropdown__item" @click="showBugReportDialog = true">
                 <Bug class="w-4 h-4 mr-2" />
@@ -265,6 +272,7 @@
     DropdownMenuTrigger,
   } from '@/components/ui/dropdown-menu';
   import api from '@/services/api';
+  import { canAccessAIVideo } from '@/utils/aiVideoAccess';
   import {
     Zap,
     UserCircle,
@@ -340,7 +348,12 @@
   });
 
   const useOrganizationSidebar = computed(() => {
-    return !authStore.user?.is_admin && isOrgAccountOwner.value && !!orgSidebarOrganizationId.value;
+    if (authStore.user?.is_admin) return false;
+    if (!isOrgAccountOwner.value || !orgSidebarOrganizationId.value) return false;
+    // If admin granted a personal subscription, prefer personal nav
+    const personalSubStatus = (authStore.user as any)?.subscription?.status;
+    if (personalSubStatus === 'active') return false;
+    return true;
   });
 
   const orgNavigationGroups = computed<SidebarNavigationGroup[]>(() => {
@@ -368,8 +381,7 @@
             path: `${basePath}/campaigns`,
             icon: Megaphone,
             group: 'create',
-            disabled: true,
-            badge: 'Coming Soon',
+            navHidden: true,
           },
           { name: 'Clippers', path: `${basePath}/clippers`, icon: Scissors, group: 'create' },
           { name: 'Shared Clips', path: `${basePath}/shared`, icon: Share2, group: 'create' },
@@ -462,10 +474,15 @@
   // ===== Navigation Filtering =====
   function getVisibleGroupItems(items: NavigationItem[]): NavigationItem[] {
     if (useOrganizationSidebar.value) {
-      return items.filter((item) => item.name !== 'Admin' && item.name !== 'Bug Report');
+      return items.filter(
+        (item) => item.name !== 'Admin' && item.name !== 'Bug Report' && !item.navHidden
+      );
     }
 
     return items.filter((item) => {
+      if (item.navHidden) {
+        return false;
+      }
       // Hide Admin and Bug Report from navigation - they're now in the profile dropdown
       if (item.name === 'Admin' || item.name === 'Bug Report') {
         return false;
@@ -511,18 +528,7 @@
     }).map((item) => {
       // Dynamically disable AI Video Creator for non-authorized users
       if (item.path === '/ai-video') {
-        const user = authStore.user as any;
-        const hasAccess = user?.is_admin || user?.ai_editor_enabled;
-        return {
-          ...item,
-          disabled: !hasAccess,
-          badge: hasAccess ? item.badge : 'Coming Soon',
-        };
-      }
-      // Dynamically disable Campaigns for non-authorized users
-      if (item.path === '/campaigns') {
-        const user = authStore.user as any;
-        const hasAccess = user?.is_admin || user?.campaigns_enabled;
+        const hasAccess = canAccessAIVideo(authStore.user);
         return {
           ...item,
           disabled: !hasAccess,
@@ -878,18 +884,6 @@
     animation: spin 0.8s linear infinite;
   }
 
-  /* Disabled state */
-  .sidebar--disabled {
-    opacity: 0.5;
-    pointer-events: none;
-  }
-
-  .sidebar-disabled-overlay {
-    position: absolute;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.3);
-    z-index: 50;
-    pointer-events: all;
-    cursor: not-allowed;
-  }
+  /* Disabled state removed - free tier users have full sidebar access */
+  /* Individual features are gated via feature flags, not the entire sidebar */
 </style>

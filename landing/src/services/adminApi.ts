@@ -197,12 +197,51 @@ export interface AiUsageResponse {
   }>
 }
 
+export interface AnalyticsRange {
+  total: number
+  today: number
+  this_week: number
+}
+
 export interface AnalyticsStats {
-  [eventType: string]: {
-    total: number
-    today: number
-    this_week: number
-  }
+  [eventType: string]: AnalyticsRange
+}
+
+export interface AnalyticsBreakdownItem extends AnalyticsRange {
+  label: string
+}
+
+export interface LandingAnalyticsOverview {
+  page_views: AnalyticsRange
+  unique_visitors: AnalyticsRange
+  sessions: AnalyticsRange
+  download_clicks: AnalyticsRange
+  disabled_download_clicks: AnalyticsRange
+  conversion_rate: number
+}
+
+export interface LandingAnalyticsRecentEvent {
+  id: number
+  event_type: string
+  metadata: Record<string, string | number | boolean | null>
+  inserted_at: string
+}
+
+export interface LandingAnalyticsStats {
+  overview: LandingAnalyticsOverview
+  visits_by_page: AnalyticsBreakdownItem[]
+  referrers: AnalyticsBreakdownItem[]
+  campaigns: AnalyticsBreakdownItem[]
+  devices: AnalyticsBreakdownItem[]
+  browsers: AnalyticsBreakdownItem[]
+  downloads_by_platform: AnalyticsBreakdownItem[]
+  downloads_by_source: AnalyticsBreakdownItem[]
+  recent_events: LandingAnalyticsRecentEvent[]
+}
+
+export interface AnalyticsDashboard {
+  stats: AnalyticsStats
+  landing: LandingAnalyticsStats | null
 }
 
 export interface BetaCode {
@@ -231,7 +270,11 @@ export interface PromoCode {
   id: string
   code: string
   name: string | null
-  percent_off: number
+  promo_type: 'percent' | 'bundle'
+  percent_off: number | null
+  fixed_price_cents: number | null
+  access_months: number | null
+  total_credits: number | null
   duration_kind: 'once' | 'repeating' | 'forever'
   duration_months: number | null
   allowed_tiers: string[]
@@ -673,10 +716,29 @@ export async function setOrganizationCredits(orgId: number, hoursRemaining: numb
   )
 }
 
+export async function searchUsersByEmail(email: string) {
+  return assertSuccess(
+    await api.get<{ success: boolean; users: Array<{ id: number; email: string; name: string | null; avatar_url: string | null; owned_organization_id: number | null }> }>('/admin/users/search', { params: { email } }),
+    'Failed to search users',
+  )
+}
+
+export async function checkOrgNameAvailable(name: string, excludeOrgId?: number) {
+  const params: Record<string, string> = { name }
+  if (excludeOrgId) {
+    params.exclude_org_id = String(excludeOrgId)
+  }
+  return assertSuccess(
+    await api.get<{ success: boolean; available?: boolean; error?: string }>('/organizations/check-name', { params }),
+    'Failed to check org name availability',
+  )
+}
+
 export async function createOrganizationAccount(payload: {
   org_name: string
-  email: string
-  password: string
+  email?: string
+  password?: string
+  existing_user_id?: number
   owner_name?: string
   description?: string
   max_seats: number
@@ -769,12 +831,15 @@ export async function getAiUsageStats(): Promise<AiUsageResponse> {
   }
 }
 
-export async function getAnalyticsStats(): Promise<AnalyticsStats> {
+export async function getAnalyticsStats(): Promise<AnalyticsDashboard> {
   const res = assertSuccess(
-    await api.get<{ success: boolean; stats?: AnalyticsStats; error?: string }>('/admin/analytics'),
+    await api.get<{ success: boolean; stats?: AnalyticsStats; landing?: LandingAnalyticsStats; error?: string }>('/admin/analytics'),
     'Failed to load analytics',
   )
-  return res.stats || {}
+  return {
+    stats: res.stats || {},
+    landing: res.landing || null,
+  }
 }
 
 export async function listBetaCodes(): Promise<{ codes: BetaCode[]; stats: BetaCodeStats }> {
@@ -823,8 +888,12 @@ export async function getPromoCode(id: string): Promise<{ promo: PromoCode | nul
 export async function createPromoCode(payload: {
   code: string
   name?: string
-  percent_off: number
-  duration_kind: 'once' | 'repeating' | 'forever'
+  promo_type?: 'percent' | 'bundle'
+  percent_off?: number
+  fixed_price_cents?: number
+  access_months?: number
+  total_credits?: number
+  duration_kind?: 'once' | 'repeating' | 'forever'
   duration_months?: number
   allowed_tiers: string[]
   allowed_org_tiers?: string[]

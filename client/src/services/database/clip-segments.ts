@@ -89,10 +89,53 @@ export async function updateClipSegment(
 
   const versionId = clipVersions[0].id;
 
-  // Update the clip segment
+  // Auto-detected livestream clips don't get a clip_segments row created at detection
+  // time — they only exist as a clip_version with start_time/end_time. The first time
+  // the user resizes the segment in the timeline, we need to INSERT the row instead of
+  // silently no-op'ing the UPDATE. Try UPDATE first; if no rows matched, INSERT.
+  const existing = await db.select<{ id: string }[]>(
+    'SELECT id FROM clip_segments WHERE clip_version_id = ? AND segment_index = ? LIMIT 1',
+    [versionId, segmentIndex]
+  );
+
+  if (existing.length > 0) {
+    await db.execute(
+      'UPDATE clip_segments SET start_time = ?, end_time = ?, duration = ? WHERE clip_version_id = ? AND segment_index = ?',
+      [startTime, endTime, duration, versionId, segmentIndex]
+    );
+    return;
+  }
+
+  const segmentId = generateId();
+  const now = timestamp();
   await db.execute(
-    'UPDATE clip_segments SET start_time = ?, end_time = ?, duration = ? WHERE clip_version_id = ? AND segment_index = ?',
-    [startTime, endTime, duration, versionId, segmentIndex]
+    `INSERT INTO clip_segments (
+      id, clip_version_id, segment_index, start_time, end_time, duration, transcript, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [segmentId, versionId, segmentIndex, startTime, endTime, duration, null, now]
+  );
+}
+
+// Update a single clip segment's transcript text
+export async function updateClipSegmentTranscript(
+  clipId: string,
+  segmentIndex: number,
+  transcript: string
+): Promise<void> {
+  const db = await getDatabase();
+
+  const clipVersions = await db.select<ClipVersion[]>(
+    'SELECT id FROM clip_versions WHERE clip_id = ? ORDER BY version_number DESC LIMIT 1',
+    [clipId]
+  );
+
+  if (clipVersions.length === 0) {
+    throw new Error('No clip version found for clip');
+  }
+
+  await db.execute(
+    'UPDATE clip_segments SET transcript = ? WHERE clip_version_id = ? AND segment_index = ?',
+    [transcript, clipVersions[0].id, segmentIndex]
   );
 }
 
@@ -142,14 +185,26 @@ export async function splitClipSegment(
 
   const segmentToSplit = segments[segmentIndex];
 
-  // For manual/auto clips, the timeline shows 0-based timestamps (clip file starts at 0)
-  // but the database stores original livestream timestamps (e.g., 8-10 seconds)
-  // We need to adjust the cutTime from timeline space to database space
+  // For manual/auto clips, the timeline shows 0-based timestamps (clip file starts at 0).
+  // Historically, segment rows in the database held livestream-absolute timestamps, so we
+  // had to add `versionStartTime` to translate the user-clicked cut from timeline space
+  // into database space. New clips (and clips written by the build-complete handler) now
+  // persist segments in 0-based local time, so the adjustment must be skipped for those.
+  // Detect by inspecting the row we're splitting: if it already lies inside [0, version
+  // duration] (with a small tolerance), the storage is already 0-based.
   let adjustedCutTime = cutTime;
   if (isManualOrAutoClip) {
-    // Add the original start time offset to convert from 0-based to original timestamps
-    adjustedCutTime = cutTime + versionStartTime;
-    console.log(`[splitClipSegment] Manual/auto clip detected, adjusting cutTime from ${cutTime} to ${adjustedCutTime} (offset: ${versionStartTime})`);
+    const versionDuration = clipVersions[0].end_time - versionStartTime;
+    const segmentLooksZeroBased =
+      versionDuration > 0 &&
+      segmentToSplit.start_time >= 0 &&
+      segmentToSplit.end_time <= versionDuration + 0.5;
+    if (!segmentLooksZeroBased) {
+      adjustedCutTime = cutTime + versionStartTime;
+      console.log(`[splitClipSegment] Manual/auto clip detected (legacy livestream-absolute storage), adjusting cutTime from ${cutTime} to ${adjustedCutTime} (offset: ${versionStartTime})`);
+    } else {
+      console.log(`[splitClipSegment] Manual/auto clip detected (0-based storage), using cutTime as-is: ${cutTime}`);
+    }
   }
 
   // Validate cut time is within segment bounds

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../../composables/useEditor";
+import { usePlaybackClock } from "../../../composables/usePlaybackClock";
 import type { VideoElement } from "../../../types/timeline";
 import { DeleteTranscriptWordsCommand, UpdateTranscriptWordCommand, ReorderTranscriptWordsCommand, SyncTimelineToTranscriptCommand } from "../../../lib/commands/transcript";
 import ConfirmDialog from "../../dialogs/ConfirmDialog.vue";
@@ -20,6 +21,7 @@ import {
 	RefreshCw,
 } from "lucide-vue-next";
 import PanelSearchBar from "./PanelSearchBar.vue";
+import { utf8ToBase64Url } from "@/utils/encoding";
 
 // ── Types ──
 interface TranscriptWord {
@@ -37,7 +39,16 @@ interface Paragraph {
 }
 
 // ── Editor integration ──
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		timeline: true,
+		media: true,
+		scenes: false,
+		playback: false,
+		selection: false,
+	},
+});
 
 // ── State ──
 const words = ref<TranscriptWord[]>([]);
@@ -52,10 +63,7 @@ let loadTranscriptRequestId = 0;
 let lastTimingGapLogKey: string | null = null;
 
 // Current playback time from editor
-const currentTime = computed(() => {
-	void version.value;
-	return editor.playback.getCurrentTime();
-});
+const currentTime = usePlaybackClock();
 
 // Word tracking
 const currentWordIndex = ref(-1);
@@ -707,7 +715,7 @@ async function handleGenerateTranscript() {
 					const { invoke } = await import("@tauri-apps/api/core");
 					let port: number;
 					try { port = await invoke<number>("get_video_server_port"); } catch { port = 8642; }
-					const serverUrl = `http://localhost:${port}/video/${btoa(elem.filePath)}`;
+					const serverUrl = `http://localhost:${port}/video/${utf8ToBase64Url(elem.filePath)}`;
 					const resp = await fetch(serverUrl);
 					if (!resp.ok) throw new Error(`Video server returned ${resp.status}`);
 					const blob = await resp.blob();

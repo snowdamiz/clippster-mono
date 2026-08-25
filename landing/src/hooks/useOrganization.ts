@@ -267,7 +267,7 @@ export function useOrganization() {
   }, [orgId, auth])
 
   // Mutation methods
-  const updateOrg = useCallback(async (data: { name: string; description: string; settings: { allow_ai: boolean }; restriction_defaults?: Record<string, boolean> }) => {
+  const updateOrg = useCallback(async (data: Record<string, any>) => {
     if (!orgId) return { success: false, error: 'No organization ID' }
     try {
       const result = await auth.updateOrganization(Number(orgId), data)

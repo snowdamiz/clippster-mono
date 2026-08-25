@@ -10,6 +10,7 @@ export interface HubTool {
   stat?: number | string
   statLabel?: string
   comingSoon?: boolean
+  navHidden?: boolean
 }
 
 function HubToolCard({ tool }: { tool: HubTool }) {
@@ -74,7 +75,8 @@ interface HubToolSectionProps {
 }
 
 export function HubToolSection({ title, tools }: HubToolSectionProps) {
-  if (!tools.length) return null
+  const visibleTools = tools.filter((tool) => !tool.navHidden)
+  if (!visibleTools.length) return null
 
   return (
     <section className="flex flex-col gap-3">
@@ -82,7 +84,7 @@ export function HubToolSection({ title, tools }: HubToolSectionProps) {
         {title}
       </h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 min-[1400px]:grid-cols-4 min-[1800px]:grid-cols-5 gap-3.5">
-        {tools.map((tool) => (
+        {visibleTools.map((tool) => (
           <HubToolCard key={tool.id} tool={tool} />
         ))}
       </div>

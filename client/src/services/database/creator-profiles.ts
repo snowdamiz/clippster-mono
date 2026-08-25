@@ -49,6 +49,7 @@ async function ensureCreatorProfilesSchema(db: any): Promise<void> {
     );
     await addColumnIfMissing(db, 'creator_profiles', 'layout_overlays', 'TEXT DEFAULT NULL');
     await addColumnIfMissing(db, 'creator_profiles', 'disabled', 'INTEGER NOT NULL DEFAULT 0');
+    await addColumnIfMissing(db, 'creator_profiles', 'clip_build_defaults', 'TEXT DEFAULT NULL');
   })();
 
   try {
@@ -188,8 +189,9 @@ export async function createCreatorProfile(
   autoDvrEnabled: boolean = false,
   introRatioSettings?: string | null,
   outroRatioSettings?: string | null,
-  scope: 'streamer' | 'global' = 'streamer',
-  layoutOverlays?: string | null
+  scope: 'streamer' | 'global' | 'personal_studio' = 'streamer',
+  layoutOverlays?: string | null,
+  clipBuildDefaults?: string | null
 ): Promise<string> {
   const db = await getDatabase();
   await ensureCreatorProfilesSchema(db);
@@ -198,8 +200,8 @@ export async function createCreatorProfile(
   const userId = getCurrentUserId();
 
   await db.execute(
-    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, intro_outro_settings, auto_dvr_enabled, intro_ratio_settings, outro_ratio_settings, scope, layout_overlays, user_id, created_at, updated_at) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, intro_outro_settings, auto_dvr_enabled, intro_ratio_settings, outro_ratio_settings, scope, layout_overlays, clip_build_defaults, user_id, created_at, updated_at) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       name,
@@ -215,6 +217,7 @@ export async function createCreatorProfile(
       outroRatioSettings || null,
       scope,
       layoutOverlays || null,
+      clipBuildDefaults || null,
       userId,
       now,
       now,
@@ -238,8 +241,9 @@ export async function updateCreatorProfile(
     intro_ratio_settings: string | null;
     outro_ratio_settings: string | null;
     auto_dvr_enabled: number | boolean;
-    scope: 'streamer' | 'global';
+    scope: 'streamer' | 'global' | 'personal_studio';
     layout_overlays: string | null;
+    clip_build_defaults: string | null;
   }>
 ): Promise<void> {
   const db = await getDatabase();
@@ -312,6 +316,11 @@ export async function updateCreatorProfile(
     values.push(updates.layout_overlays);
   }
 
+  if (updates.clip_build_defaults !== undefined) {
+    fields.push('clip_build_defaults = ?');
+    values.push(updates.clip_build_defaults);
+  }
+
   if (fields.length === 0) {
     return;
   }
@@ -365,6 +374,30 @@ export async function getAllGlobalProfiles(): Promise<CreatorProfileWithLinks[]>
   }
 
   // Global profiles don't need platform links, but return them for interface consistency
+  return profiles.map((profile) => ({
+    ...profile,
+    auto_dvr_enabled: profile.auto_dvr_enabled ?? 0,
+    platform_links: [],
+  }));
+}
+
+export async function getAllPersonalStudioProfiles(): Promise<CreatorProfileWithLinks[]> {
+  const db = await getDatabase();
+  await ensureCreatorProfilesSchema(db);
+  const userId = getCurrentUserId();
+
+  let profiles: CreatorProfile[];
+  if (userId === null) {
+    profiles = await db.select<CreatorProfile[]>(
+      "SELECT * FROM creator_profiles WHERE scope = 'personal_studio' AND user_id IS NULL ORDER BY created_at DESC"
+    );
+  } else {
+    profiles = await db.select<CreatorProfile[]>(
+      "SELECT * FROM creator_profiles WHERE scope = 'personal_studio' AND (user_id = ? OR user_id IS NULL) ORDER BY created_at DESC",
+      [userId]
+    );
+  }
+
   return profiles.map((profile) => ({
     ...profile,
     auto_dvr_enabled: profile.auto_dvr_enabled ?? 0,
@@ -620,7 +653,6 @@ export async function getCreatorProfileByPlatformId(
   platformId: string
 ): Promise<CreatorProfileWithLinks | null> {
   const db = await getDatabase();
-  const userId = getCurrentUserId();
 
   const normalize = (val: string | null | undefined) => val?.trim().toLowerCase() || '';
   const stripPump = (val: string) => (val.toLowerCase().endsWith('pump') ? val.slice(0, -4) : val);
@@ -637,28 +669,6 @@ export async function getCreatorProfileByPlatformId(
     );
     if (links.length > 0) {
       const profile = await getCreatorProfile(links[0].creator_profile_id);
-      if (profile) return profile;
-    }
-  }
-
-  // Fallback: fetch all links for this platform and match by prefix/strip rules
-  const allLinks = await db.select<CreatorPlatformLink[]>(
-    'SELECT * FROM creator_platform_links WHERE platform = ?',
-    [platform]
-  );
-
-  for (const link of allLinks) {
-    const linkNorm = normalize(link.platform_id);
-    const linkNormStripped = normalize(stripPump(link.platform_id));
-
-    const hasMatch =
-      candidates.includes(linkNorm) ||
-      candidates.includes(linkNormStripped) ||
-      linkNorm.startsWith(candidates[0]) ||
-      candidates[0].startsWith(linkNorm);
-
-    if (hasMatch) {
-      const profile = await getCreatorProfile(link.creator_profile_id);
       if (profile) return profile;
     }
   }

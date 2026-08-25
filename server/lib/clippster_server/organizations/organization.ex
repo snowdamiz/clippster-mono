@@ -6,13 +6,19 @@ defmodule ClippsterServer.Organizations.Organization do
     field :name, :string
     field :slug, :string
     field :description, :string
+    field :bio, :string
     field :logo_url, :string
+    field :website_url, :string
+    field :public_contact_email, :string
+    field :public_discord, :string
+    field :public_telegram, :string
+    field :content_type_tags, {:array, :string}, default: []
     field :settings, :map, default: %{}
 
     # Instagram scheduling settings
     field :allow_personal_instagram, :boolean, default: true
     field :scheduling_enabled, :boolean, default: true
-    
+
     # Feature flags
     field :campaigns_enabled, :boolean, default: false
 
@@ -75,7 +81,13 @@ defmodule ClippsterServer.Organizations.Organization do
     |> cast(attrs, [
       :name,
       :description,
+      :bio,
       :logo_url,
+      :website_url,
+      :public_contact_email,
+      :public_discord,
+      :public_telegram,
+      :content_type_tags,
       :owner_id,
       :settings,
       :allow_personal_instagram,
@@ -84,8 +96,13 @@ defmodule ClippsterServer.Organizations.Organization do
     |> validate_required([:name, :owner_id])
     |> validate_length(:name, min: 2, max: 100)
     |> validate_length(:description, max: 500)
+    |> validate_length(:bio, max: 2000)
+    |> validate_length(:public_discord, max: 500)
+    |> validate_length(:public_telegram, max: 500)
+    |> trim_optional_contact_fields()
     |> generate_slug()
-    |> unique_constraint(:slug)
+    |> unique_constraint(:slug, message: "An organization with this name already exists")
+    |> unique_constraint(:name, message: "An organization with this name already exists")
     |> foreign_key_constraint(:owner_id)
   end
 
@@ -97,7 +114,13 @@ defmodule ClippsterServer.Organizations.Organization do
     |> cast(attrs, [
       :name,
       :description,
+      :bio,
       :logo_url,
+      :website_url,
+      :public_contact_email,
+      :public_discord,
+      :public_telegram,
+      :content_type_tags,
       :settings,
       :allow_personal_instagram,
       :scheduling_enabled,
@@ -105,7 +128,13 @@ defmodule ClippsterServer.Organizations.Organization do
     ])
     |> validate_length(:name, min: 2, max: 100)
     |> validate_length(:description, max: 500)
+    |> validate_length(:bio, max: 2000)
+    |> validate_length(:public_discord, max: 500)
+    |> validate_length(:public_telegram, max: 500)
+    |> trim_optional_contact_fields()
     |> maybe_regenerate_slug()
+    |> unique_constraint(:slug, message: "An organization with this name already exists")
+    |> unique_constraint(:name, message: "An organization with this name already exists")
   end
 
   @doc """
@@ -135,6 +164,7 @@ defmodule ClippsterServer.Organizations.Organization do
       "enterprise_base",
       "enterprise_ai",
       "enterprise_unlimited",
+      "custom",
       nil
     ])
   end
@@ -161,16 +191,8 @@ defmodule ClippsterServer.Organizations.Organization do
         changeset
 
       name ->
-        # Only regenerate slug if name changed and current slug matches old name pattern
-        current_slug = get_field(changeset, :slug)
-        new_slug = slugify(name)
-
-        # Don't change slug if it was customized
-        if String.starts_with?(current_slug || "", slugify(get_field(changeset, :name) || "")) do
-          put_change(changeset, :slug, new_slug)
-        else
-          changeset
-        end
+        # Always regenerate slug when name changes (slug = slugified name)
+        put_change(changeset, :slug, slugify(name))
     end
   end
 
@@ -180,10 +202,22 @@ defmodule ClippsterServer.Organizations.Organization do
     |> String.replace(~r/[^a-z0-9\s-]/, "")
     |> String.replace(~r/[\s-]+/, "-")
     |> String.trim("-")
-    |> then(fn slug ->
-      # Add random suffix for uniqueness
-      suffix = :crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower)
-      "#{slug}-#{suffix}"
+  end
+
+  defp trim_optional_contact_fields(changeset) do
+    [:website_url, :public_contact_email, :public_discord, :public_telegram]
+    |> Enum.reduce(changeset, fn field, acc ->
+      case get_change(acc, field) do
+        nil ->
+          acc
+
+        v when is_binary(v) ->
+          t = String.trim(v)
+          put_change(acc, field, if(t == "", do: nil, else: t))
+
+        _ ->
+          acc
+      end
     end)
   end
 end

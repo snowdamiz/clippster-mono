@@ -16,12 +16,13 @@ import {
   completeCampaign,
   uploadCampaignCoverImage,
   setCampaignCreatorProfiles,
+  CAMPAIGN_CONTENT_VERTICALS,
   approveParticipant,
   rejectParticipant,
   verifySubmission,
   rejectSubmission
 } from '@/services/campaignApi'
-import type { Campaign } from '@/types/organization'
+import type { Campaign, CampaignResource } from '@/types/organization'
 import {
   Megaphone,
   Plus,
@@ -68,7 +69,8 @@ function formatBudget(budget: string | number) {
 function getDaysRemaining(campaign: Campaign): number | null {
   if (!campaign.ends_at) return null
   const diff = Math.ceil((new Date(campaign.ends_at).getTime() - Date.now()) / 86400000)
-  return diff >= 0 ? diff : 0
+  // Return null for campaigns that have already ended
+  return diff >= 0 ? diff : null
 }
 function getBudgetPercentage(campaign: Campaign): number {
   const budget = parseFloat(campaign.budget || '0')
@@ -123,6 +125,8 @@ interface CampaignForm {
   cover_image_url: string
   starts_at: string
   ends_at: string
+  content_vertical: string
+  campaign_goal: string
 }
 
 const emptyForm = (): CampaignForm => ({
@@ -137,7 +141,9 @@ const emptyForm = (): CampaignForm => ({
   payment_methods: [],
   cover_image_url: '',
   starts_at: '',
-  ends_at: ''
+  ends_at: '',
+  content_vertical: '',
+  campaign_goal: ''
 })
 
 export function OrgCampaigns() {
@@ -159,6 +165,7 @@ export function OrgCampaigns() {
   const [uploadingCoverImage, setUploadingCoverImage] = useState(false)
   const coverImageInputRef = useRef<HTMLInputElement>(null)
   const [wizardError, setWizardError] = useState<string | null>(null)
+  const [campaignResources, setCampaignResources] = useState<CampaignResource[]>([])
 
   // Detail dialog
   const [showDetailDialog, setShowDetailDialog] = useState(false)
@@ -178,7 +185,7 @@ export function OrgCampaigns() {
   const [openMenuId, setOpenMenuId] = useState<number | null>(null)
   const menuBtnRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
 
-  const totalSteps = 7
+  const totalSteps = 8
 
   const loadCampaigns = useCallback(async () => {
     if (!organizationId) return
@@ -234,6 +241,7 @@ export function OrgCampaigns() {
     setCurrentStep(1)
     setSelectedCreatorProfileIds([])
     setCoverImagePreview('')
+    setCampaignResources([])
     setWizardError(null)
     setShowWizard(true)
     loadCreatorProfiles()
@@ -252,8 +260,11 @@ export function OrgCampaigns() {
       payment_methods: campaign.payment_methods || [],
       cover_image_url: campaign.cover_image_url || '',
       starts_at: campaign.starts_at || '',
-      ends_at: campaign.ends_at || ''
+      ends_at: campaign.ends_at || '',
+      content_vertical: campaign.content_vertical || '',
+      campaign_goal: campaign.campaign_goal || ''
     })
+    setCampaignResources(campaign.resources || [])
     setSelectedCreatorProfileIds(campaign.creator_profiles?.map((p) => p.id) || [])
     setCoverImagePreview('')
     setWizardError(null)
@@ -281,6 +292,9 @@ export function OrgCampaigns() {
         cover_image_url: form.cover_image_url || undefined,
         starts_at: form.starts_at || undefined,
         ends_at: form.ends_at || undefined,
+        content_vertical: form.content_vertical || undefined,
+        campaign_goal: form.campaign_goal || undefined,
+        resources: campaignResources,
         status: editingCampaign ? undefined : 'draft'
       }
       const result = editingCampaign
@@ -440,7 +454,7 @@ export function OrgCampaigns() {
       <div className="cp">
         <div className="cp-heading">
           <h1 className="cp-heading__title">Clipping Campaigns</h1>
-          <p className="cp-heading__subtitle">Create and manage campaigns for clippers to promote your content</p>
+          <p className="cp-heading__subtitle">Launch campaigns for streamers, musicians, podcasts, brands, and creators</p>
         </div>
 
         {/* Stats */}
@@ -802,6 +816,32 @@ export function OrgCampaigns() {
                           />
                           <p className="cp-wizard__hint">{form.description.length}/500 characters</p>
                         </div>
+                        <div className="cp-wizard__field">
+                          <label className="cp-wizard__label">Campaign Type</label>
+                          <select
+                            value={form.content_vertical}
+                            onChange={(e) => setForm((f) => ({ ...f, content_vertical: e.target.value }))}
+                            className="cp-wizard__input"
+                          >
+                            <option value="">Select campaign type</option>
+                            {CAMPAIGN_CONTENT_VERTICALS.map((item) => (
+                              <option key={item.value} value={item.value}>
+                                {item.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="cp-wizard__field">
+                          <label className="cp-wizard__label">
+                            Campaign Goal <span className="cp-wizard__optional">(optional)</span>
+                          </label>
+                          <input
+                            value={form.campaign_goal}
+                            onChange={(e) => setForm((f) => ({ ...f, campaign_goal: e.target.value }))}
+                            className="cp-wizard__input"
+                            placeholder="Promote new song, grow podcast audience, launch product..."
+                          />
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1085,6 +1125,95 @@ export function OrgCampaigns() {
                     </div>
                   )}
                   {currentStep === 7 && (
+                    <div className="cp-wizard__step">
+                      <div className="cp-wizard__header">
+                        <div className="cp-wizard__icon">
+                          <Globe size={28} />
+                        </div>
+                        <h2 className="cp-wizard__title">Add source content</h2>
+                        <p className="cp-wizard__subtitle">
+                          Share video, audio, or reference links clippers can open in Clippster
+                        </p>
+                      </div>
+                      <div className="cp-wizard__fields">
+                        {campaignResources.map((resource, index) => (
+                          <div key={index} className="cp-wizard__field" style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: 12 }}>
+                            <div className="cp-wizard__row">
+                              <select
+                                value={resource.resource_type}
+                                onChange={(e) =>
+                                  setCampaignResources((items) =>
+                                    items.map((item, i) =>
+                                      i === index ? { ...item, resource_type: e.target.value as CampaignResource['resource_type'] } : item
+                                    )
+                                  )
+                                }
+                                className="cp-wizard__input"
+                              >
+                                <option value="video">Video link</option>
+                                <option value="audio">Audio link (YouTube)</option>
+                                <option value="reference_link">Reference link</option>
+                                <option value="brief">Brief / instructions</option>
+                              </select>
+                              <button
+                                type="button"
+                                className="cp-wizard__upload-btn"
+                                onClick={() => setCampaignResources((items) => items.filter((_, i) => i !== index))}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            <input
+                              value={resource.title || ''}
+                              onChange={(e) =>
+                                setCampaignResources((items) =>
+                                  items.map((item, i) => (i === index ? { ...item, title: e.target.value } : item))
+                                )
+                              }
+                              className="cp-wizard__input"
+                              placeholder="Title (optional)"
+                            />
+                            {resource.resource_type !== 'brief' && (
+                              <input
+                                value={resource.url || ''}
+                                onChange={(e) =>
+                                  setCampaignResources((items) =>
+                                    items.map((item, i) => (i === index ? { ...item, url: e.target.value } : item))
+                                  )
+                                }
+                                className="cp-wizard__input"
+                                placeholder="https://..."
+                              />
+                            )}
+                            <textarea
+                              value={resource.description || ''}
+                              onChange={(e) =>
+                                setCampaignResources((items) =>
+                                  items.map((item, i) => (i === index ? { ...item, description: e.target.value } : item))
+                                )
+                              }
+                              rows={2}
+                              className="cp-wizard__textarea"
+                              placeholder="Optional notes for clippers"
+                            />
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          className="cp-wizard__upload-btn"
+                          onClick={() =>
+                            setCampaignResources((items) => [
+                              ...items,
+                              { resource_type: 'video', url: '', title: '', description: '' }
+                            ])
+                          }
+                        >
+                          + Add source material
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {currentStep === 8 && (
                     <div className="cp-wizard__step">
                       <div className="cp-wizard__header">
                         <div className="cp-wizard__icon cp-wizard__icon--success">

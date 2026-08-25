@@ -47,6 +47,27 @@ export async function validateTwitterUrl(url: string): Promise<string> {
 }
 
 /**
+ * Extract tweet/status ID from an X/Twitter timeline post URL.
+ * Matches `/status/{id}` and `/statuses/{id}` on x.com or twitter.com.
+ */
+export function extractTwitterStatusId(url: string): string | null {
+  if (!url || typeof url !== 'string') {
+    return null;
+  }
+
+  const trimmed = url.trim();
+  const match = trimmed.match(/\/(?:status|statuses)\/(\d+)/i);
+  return match?.[1] ?? null;
+}
+
+/**
+ * Stable source id for VOD download/search: broadcast, space, or tweet status id.
+ */
+export function extractTwitterSourceId(url: string): string | null {
+  return extractTwitterBroadcastId(url) || extractTwitterStatusId(url);
+}
+
+/**
  * Extract broadcast or space ID from Twitter URL
  */
 export function extractTwitterBroadcastId(url: string): string | null {
@@ -73,6 +94,51 @@ export function extractTwitterBroadcastId(url: string): string | null {
   }
 
   return null;
+}
+
+/**
+ * True when the URL is a direct live-session link (broadcast, Space, or event).
+ * Profile/handle URLs are not supported for live monitoring.
+ */
+export function isDirectTwitterLiveUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') {
+    return false;
+  }
+  const trimmed = url.trim().toLowerCase();
+  return (
+    trimmed.includes('/i/broadcasts/') ||
+    trimmed.includes('/i/spaces/') ||
+    trimmed.includes('/i/events/')
+  );
+}
+
+/**
+ * True when input looks like a creator profile URL or @handle (not a live session URL).
+ */
+export function isTwitterProfileOrHandleInput(input: string): boolean {
+  if (!input || typeof input !== 'string') {
+    return false;
+  }
+  const trimmed = input.trim();
+  if (trimmed.startsWith('@')) {
+    return true;
+  }
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+    return !trimmed.includes('/i/');
+  }
+  try {
+    const url = new URL(trimmed);
+    if (!url.hostname.includes('twitter.com') && !url.hostname.includes('x.com')) {
+      return false;
+    }
+    if (isDirectTwitterLiveUrl(trimmed)) {
+      return false;
+    }
+    const pathParts = url.pathname.split('/').filter(Boolean);
+    return pathParts.length > 0 && pathParts[0] !== 'i';
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -155,20 +221,75 @@ export async function getActiveTwitterRecordings(): Promise<string[]> {
   return invoke<string[]>('get_active_twitter_recordings');
 }
 
+const TWIMG_HOST = 'twimg.com';
+
 /**
- * Get Twitter user avatar as data URL (bypasses CORS by using Tauri backend)
+ * Pull X/Twitter CDN profile images through the Rust downloader (WebView often blocks hot-linked twimg).
  */
-async function getTwitterUserAvatar(username: string): Promise<string | undefined> {
+export async function hydrateTwitterProfileImageUrl(
+  httpsUrl: string | undefined | null
+): Promise<string | undefined> {
+  if (!httpsUrl || !httpsUrl.startsWith('http')) return undefined;
+  if (!httpsUrl.includes(TWIMG_HOST)) return httpsUrl;
   try {
-    // Use unavatar.io via Tauri to bypass CORS
-    const avatarUrl = `https://unavatar.io/twitter/${username}`;
-    const dataUrl = await invoke<string>('download_twitter_thumbnail', { 
-      thumbnailUrl: avatarUrl 
+    return await invoke<string>('download_twitter_thumbnail', {
+      thumbnailUrl: httpsUrl,
     });
-    return dataUrl;
   } catch (error) {
-    console.warn('[Twitter] Failed to fetch user avatar:', error);
+    console.warn('[Twitter] Failed to hydrate twimg avatar:', error);
     return undefined;
+  }
+}
+
+/**
+ * Resolve @handle to a data URL via unavatar (multiple endpoints; prefer no generic fallback image).
+ */
+export async function getTwitterUserAvatar(username: string): Promise<string | undefined> {
+  const clean = username.replace(/^@/, '').trim();
+  if (!clean) return undefined;
+
+  const candidates = [
+    `https://unavatar.io/twitter/${encodeURIComponent(clean)}?fallback=false`,
+    `https://unavatar.io/x/${encodeURIComponent(clean)}?fallback=false`,
+    `https://unavatar.io/twitter/${encodeURIComponent(clean)}`,
+  ];
+
+  for (const avatarUrl of candidates) {
+    try {
+      const dataUrl = await invoke<string>('download_twitter_thumbnail', {
+        thumbnailUrl: avatarUrl,
+      });
+      if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image')) {
+        return dataUrl;
+      }
+    } catch {
+      /* try next */
+    }
+  }
+  console.warn('[Twitter] No avatar resolved for handle:', clean);
+  return undefined;
+}
+
+/** Numeric Twitter user id → profile (guest `users/show`). */
+export async function resolveTwitterUserByRestId(restId: string): Promise<{
+  screen_name?: string;
+  name?: string;
+  profile_image_url_https?: string;
+} | null> {
+  const id = restId.trim();
+  if (!id || !/^\d+$/.test(id)) return null;
+  try {
+    const raw = await invoke<string>('resolve_twitter_user_by_rest_id', { restId: id });
+    const j = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      screen_name: typeof j.screen_name === 'string' ? j.screen_name : undefined,
+      name: typeof j.name === 'string' ? j.name : undefined,
+      profile_image_url_https:
+        typeof j.profile_image_url_https === 'string' ? j.profile_image_url_https : undefined,
+    };
+  } catch (e) {
+    console.warn('[Twitter] resolveTwitterUserByRestId failed:', e);
+    return null;
   }
 }
 
@@ -185,28 +306,51 @@ export interface TwitterLiveStatus {
 }
 
 /**
+ * Parse yt-dlp live flags for X broadcasts/spaces (same fields as YouTube/Rumble).
+ * Ended broadcasts keep title/duration but set is_live=false / live_status=was_live.
+ */
+export function parseTwitterYtdlpIsLive(metadata: Record<string, unknown>): boolean {
+  if (metadata.is_live === true) return true;
+  if (metadata.is_live === false) return false;
+
+  const liveStatus =
+    typeof metadata.live_status === 'string' ? metadata.live_status.toLowerCase() : '';
+  if (liveStatus === 'is_live') return true;
+  if (liveStatus === 'was_live' || liveStatus === 'not_live' || liveStatus === 'post_live') {
+    return false;
+  }
+
+  // Ended replay: was_live without active is_live
+  if (metadata.was_live === true) return false;
+
+  return false;
+}
+
+/**
  * Check if a Twitter broadcast/space is currently live
  */
 export async function checkTwitterLivestream(urlOrUsername: string): Promise<TwitterLiveStatus> {
   try {
-    // If it's a broadcast/space URL, check if we can fetch metadata
-    if (urlOrUsername.includes('/i/broadcasts/') || urlOrUsername.includes('/i/spaces/')) {
-      const metadata = await getTwitterBroadcastInfo(urlOrUsername);
-      
-      // If we got metadata, the broadcast is accessible (likely live or recently ended)
-      // Twitter broadcasts that have ended are typically removed quickly
-      const isLive = !!(metadata.title || metadata.duration);
-      
+    if (isDirectTwitterLiveUrl(urlOrUsername)) {
+      const metadata = await getTwitterBroadcastInfo(urlOrUsername, { skipCache: true });
+
+      if (metadata.error) {
+        return {
+          isLive: false,
+          displayName: metadata.username || metadata.uploader,
+          title: metadata.title,
+        };
+      }
+
       return {
-        isLive,
+        isLive: metadata.isLive ?? false,
         displayName: metadata.username || metadata.uploader,
         profileImageUrl: metadata.avatarUrl || metadata.thumbnail,
         title: metadata.title,
       };
     }
-    
-    // For username-only tracking, we can't determine live status without a broadcast URL
-    // Return offline status
+
+    // Username-only tracking cannot determine live status without a broadcast URL
     return {
       isLive: false,
       displayName: urlOrUsername.replace('@', ''),
@@ -222,18 +366,109 @@ export async function checkTwitterLivestream(urlOrUsername: string): Promise<Twi
 /**
  * Get metadata for a Twitter broadcast/space
  */
-export async function getTwitterBroadcastInfo(url: string): Promise<{
+/** CamelCase from Rust `serde(rename_all = "camelCase")` */
+export interface SpaceHlsSpeakerSegmentInvoke {
+  id: string;
+  speakerId: string;
+  start: number;
+  end: number;
+}
+
+export interface SpaceHlsStageSnapshotInvoke {
+  id: string;
+  t: number;
+  onStageUserIds: string[];
+}
+
+export interface SpaceHlsMetadataInvokeResult {
+  speakerSegments: SpaceHlsSpeakerSegmentInvoke[];
+  stageSnapshots: SpaceHlsStageSnapshotInvoke[];
+}
+
+/** HLS replay manifest (m3u8) — used to extract ID3 speaker timeline; not the Space page URL. */
+export async function extractSpaceSpeakerTimelineFromHls(
+  manifestUrl: string,
+  durationSecs?: number
+): Promise<SpaceHlsMetadataInvokeResult> {
+  return invoke('extract_space_speaker_timeline_from_hls_manifest', {
+    manifestUrl,
+    durationSecs: durationSecs ?? null,
+  });
+}
+
+/** A speaker segment derived from the X API (Periscope or stage-join data). */
+export interface SpaceSpeakerTimelineSegment {
+  id: string;
+  speakerId: string;
+  start: number;
+  end: number;
+  source?: 'chatman_replay' | 'periscope' | 'hls_id3' | 'manual' | 'stage_join' | 'synthetic_equal' | 'synthetic_seed' | 'unknown';
+  periscopeUserId?: string;
+  xRestId?: string;
+  username?: string;
+  displayName?: string;
+  avatarUrl?: string | null;
+  role?: 'host' | 'cohost' | 'speaker' | 'admin' | 'listener' | 'guest' | 'unknown';
+}
+
+/** Injected by Tauri `get_twitter_broadcast_info` for Space replay UI (join schedule + timeline provenance). */
+export interface SpaceReplayHints {
+  speakerTimelinePrimarySource?: string;
+  startedAtSecs?: number;
+  stageJoinTimes?: Array<{
+    userId: string;
+    joinSecsAbsolute?: number;
+    offsetSecs: number;
+  }>;
+}
+
+// Cache broadcast info by normalized URL so the post-download metadata enrichment
+// call reuses the result fetched during the pre-download search, avoiding a second
+// yt-dlp + GraphQL round-trip that often fails once the guest token has gone stale.
+const _broadcastInfoCache = new Map<string, Awaited<ReturnType<typeof getTwitterBroadcastInfo>>>();
+
+export async function getTwitterBroadcastInfo(
+  url: string,
+  options?: { skipCache?: boolean }
+): Promise<{
   title?: string;
   duration?: number;
+  /** From yt-dlp is_live / live_status — false when the session has ended. */
+  isLive?: boolean;
   thumbnail?: string;
   uploader?: string;
   username?: string;
+  /** Direct HLS playlist URL from yt-dlp (replay speaker timeline). */
+  manifestUrl?: string;
+  participants?: Array<{
+    id: string;
+    name: string;
+    avatarUrl?: string;
+    role?: 'host' | 'cohost' | 'speaker' | 'admin' | 'listener' | 'guest' | 'unknown';
+    /** X handle (without @) when known — used for secondary avatar fetching. */
+    twitterUsername?: string;
+    periscopeUserId?: string;
+    xRestId?: string;
+    displayName?: string;
+  }>;
+  /**
+   * Speaker timeline built from X API data (Periscope typing_active events or
+   * stage-join timestamps from AudioSpaceById).  More accurate than HLS ID3 parsing.
+   */
+  speakerTimeline?: SpaceSpeakerTimelineSegment[];
+  mediaKey?: string;
   description?: string;
   avatarUrl?: string;
   timestamp?: string;
   uploadDate?: string;
   error?: string;
+  spaceReplayHints?: SpaceReplayHints;
 }> {
+  const cacheKey = url;
+  if (!options?.skipCache) {
+    const cached = _broadcastInfoCache.get(cacheKey);
+    if (cached) return cached;
+  }
   try {
     const result = await invoke<string>('get_twitter_broadcast_info', { url });
     const metadata = JSON.parse(result);
@@ -378,17 +613,78 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
       uploadDate,
     });
     
-    return {
+    const rawParticipants = extractParticipantsFromTwitterMetadata(metadata, avatarUrl);
+    
+    const enrichedParticipants = await Promise.all(
+      rawParticipants.map(async (p) => {
+        if (p.avatarUrl) return p;
+        const uname = p.twitterUsername || (p.name.startsWith('@') ? p.name.slice(1) : undefined);
+        if (uname) {
+          try {
+            const fetched = await getTwitterUserAvatar(uname);
+            if (fetched) return { ...p, avatarUrl: fetched };
+          } catch {
+            // ignore, keep undefined
+          }
+        }
+        return p;
+      })
+    );
+    const participants = enrichedParticipants.map((p) => ({
+      id: p.id,
+      name: p.name,
+      avatarUrl: p.avatarUrl,
+      role: p.role,
+      twitterUsername: p.twitterUsername,
+      periscopeUserId: p.periscopeUserId,
+      xRestId: p.xRestId,
+      displayName: p.displayName,
+    }));
+
+    const manifestUrl: string | undefined =
+      typeof metadata.manifest_url === 'string' && metadata.manifest_url.length > 0
+        ? metadata.manifest_url
+        : typeof metadata.url === 'string' && metadata.url.includes('.m3u8')
+          ? metadata.url
+          : undefined;
+
+    let speakerTimeline: SpaceSpeakerTimelineSegment[] | undefined =
+      Array.isArray(metadata.speakerTimeline) && metadata.speakerTimeline.length > 0
+        ? (metadata.speakerTimeline as SpaceSpeakerTimelineSegment[])
+        : undefined;
+
+    if (speakerTimeline) {
+      console.log(`[Twitter] speakerTimeline from X API: ${speakerTimeline.length} segments`);
+    }
+
+    const spaceReplayHints: SpaceReplayHints | undefined =
+      metadata.spaceReplayHints && typeof metadata.spaceReplayHints === 'object'
+        ? (metadata.spaceReplayHints as SpaceReplayHints)
+        : undefined;
+
+    const isLive = parseTwitterYtdlpIsLive(metadata);
+
+    const broadcastResult = {
       title: metadata.title || metadata.fulltitle,
       duration,
+      isLive,
       thumbnail,
       uploader,
       username,
+      manifestUrl,
+      participants,
+      speakerTimeline,
+      mediaKey: typeof metadata.mediaKey === 'string' ? metadata.mediaKey : undefined,
       description: metadata.description,
       avatarUrl,
       timestamp,
       uploadDate,
+      spaceReplayHints,
     };
+    if (!options?.skipCache) {
+      _broadcastInfoCache.set(cacheKey, broadcastResult);
+    }
+    return broadcastResult;
   } catch (error) {
     console.error('[Twitter] Failed to get broadcast info:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -398,7 +694,172 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
     const broadcastId = extractTwitterBroadcastId(url);
     return {
       title: broadcastId ? `X Broadcast ${broadcastId.substring(0, 8)}...` : 'X Broadcast',
+      isLive: false,
       error: errorMessage,
     };
   }
+}
+
+interface ParticipantWithUsername {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  role?: 'host' | 'cohost' | 'speaker' | 'admin' | 'listener' | 'guest' | 'unknown';
+  twitterUsername?: string;
+  periscopeUserId?: string;
+  xRestId?: string;
+  displayName?: string;
+}
+
+function extractParticipantsFromTwitterMetadata(
+  metadata: any,
+  hostAvatarUrl?: string
+): ParticipantWithUsername[] {
+  const participants: ParticipantWithUsername[] = [];
+  const seen = new Set<string>();
+
+  const pushParticipant = (
+    rawId: string | undefined,
+    rawName: string | undefined,
+    role: ParticipantWithUsername['role'],
+    avatarUrl?: string,
+    twitterUsername?: string,
+    periscopeUserId?: string,
+    xRestId?: string,
+    displayName?: string
+  ) => {
+    const name = (rawName || rawId || '').trim();
+    if (!name) return;
+    const id = (rawId || name).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    participants.push({ id, name, avatarUrl, role, twitterUsername, periscopeUserId, xRestId, displayName });
+  };
+
+  const hostName =
+    metadata?.uploader ||
+    metadata?.channel ||
+    metadata?.uploader_id ||
+    metadata?.creator;
+  const hostId = metadata?.uploader_id || hostName;
+  const hostUsername = metadata?.uploader_id?.replace?.(/^@/, '') || undefined;
+
+  const hasStructuredRoster =
+    Array.isArray(metadata?.participants) && metadata.participants.length > 0;
+  if (!hasStructuredRoster) {
+    pushParticipant(hostId, hostName, 'host', hostAvatarUrl, hostUsername);
+  }
+
+  const candidateArrays = [
+    metadata?.participants,
+    metadata?.speakers,
+    metadata?.speaker_ids,
+    metadata?.speaker_names,
+    metadata?.hosts,
+    metadata?.host_ids,
+    metadata?.guest_list,
+    metadata?.guests,
+  ].filter(Boolean);
+
+  for (const candidate of candidateArrays) {
+    if (!Array.isArray(candidate)) continue;
+    for (const item of candidate) {
+      if (typeof item === 'string') {
+        pushParticipant(item, item, 'speaker');
+        continue;
+      }
+      if (item && typeof item === 'object') {
+        const rawId =
+          item.periscope_user_id ??
+          item.periscopeUserId ??
+          item.id ??
+          item.user_id ??
+          item.rest_id ??
+          item.userId ??
+          item.twitter_user_id;
+        const periscopeUserIdRaw = item.periscope_user_id ?? item.periscopeUserId;
+        const xRestIdRaw = item.x_rest_id ?? item.rest_id ?? item.user_results?.result?.rest_id;
+        const twitterUsernameRaw =
+          item.twitter_username ||
+          item.username ||
+          item.screen_name ||
+          (typeof item.name === 'string' && item.name.startsWith('@')
+            ? item.name.replace(/^@/, '').split(/\s+/)[0]
+            : undefined);
+        const twitterUsername =
+          typeof twitterUsernameRaw === 'string'
+            ? twitterUsernameRaw.trim().replace(/^@/, '')
+            : undefined;
+
+        const displayFromGraphql =
+          typeof item.display_name === 'string'
+            ? item.display_name.trim()
+            : typeof item.displayName === 'string'
+              ? item.displayName.trim()
+              : '';
+
+        const nameField = typeof item.name === 'string' ? item.name.trim() : '';
+        const displayLabel =
+          displayFromGraphql ||
+          (nameField && !nameField.startsWith('@') ? nameField : '') ||
+          (twitterUsername ? `@${twitterUsername}` : '') ||
+          (rawId !== undefined && rawId !== null ? String(rawId) : '') ||
+          'Unknown';
+
+        pushParticipant(
+          rawId !== undefined && rawId !== null ? String(rawId) : undefined,
+          displayLabel,
+          (item.role as ParticipantWithUsername['role']) || 'speaker',
+          item.avatar_url || item.profile_image_url_https || item.profile_image_url || item.profile_image || item.avatar,
+          twitterUsername,
+          periscopeUserIdRaw !== undefined && periscopeUserIdRaw !== null ? String(periscopeUserIdRaw) : undefined,
+          xRestIdRaw !== undefined && xRestIdRaw !== null ? String(xRestIdRaw) : undefined,
+          displayFromGraphql || undefined
+        );
+      }
+    }
+  }
+
+  const descriptionNames = parseTwitterSpaceParticipatedByNames(metadata?.description);
+  for (const name of descriptionNames) {
+    const isHandle = name.startsWith('@');
+    pushParticipant(undefined, name, 'speaker', undefined, isHandle ? name.slice(1) : undefined);
+  }
+
+  const isSpace =
+    metadata?.extractor === 'twitter:spaces' ||
+    metadata?.extractor_key === 'TwitterSpaces';
+  if (isSpace && hostName) {
+    const uname = String(metadata?.uploader_id ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/^@/, '');
+    const hostLabel = String(hostName).trim().replace(/^@/, '').toLowerCase();
+    const hasHost = participants.some((p) => {
+      const pname = p.name.replace(/^@/, '').trim().toLowerCase();
+      const pid = p.id.toLowerCase();
+      return (
+        (uname.length > 0 && (pid === uname || pname === uname)) ||
+        (hostLabel.length > 0 && pname === hostLabel)
+      );
+    });
+    if (!hasHost) {
+      pushParticipant(hostId, hostName, 'host', hostAvatarUrl, hostUsername);
+    }
+  }
+
+  return participants;
+}
+
+/** Names after "Twitter Space participated by …" from yt-dlp / X replay metadata. */
+function parseTwitterSpaceParticipatedByNames(description: unknown): string[] {
+  if (typeof description !== 'string' || description.length === 0) return [];
+  const m = description.match(/Twitter Space participated by\s+(.+)/i);
+  if (!m?.[1]) return [];
+  const body = m[1].trim();
+  if (!body || /^nobody yet$/i.test(body)) return [];
+  return body
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 }

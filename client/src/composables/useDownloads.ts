@@ -7,6 +7,8 @@ import {
   createProject,
   getDatabase,
 } from '@/services/database';
+import { seedCreatorClipLayoutOnProject } from '@/composables/useCreatorClipDefaults';
+import { ensureShortVideoAutoClip } from '@/services/database/auto-clips';
 import { generateId } from '@/services/database';
 import { trackEvent } from '@/services/analytics';
 import { useToast } from '@/composables/useToast';
@@ -59,6 +61,10 @@ export interface ActiveDownload {
   groupId?: string;
   totalSegments?: number;
   currentSegmentIndex?: number;
+  /** Local creator profile matched for this download (Stream VODs). */
+  creatorProfileId?: string;
+  /** When true, seed `active_vod_preset_config` from profile `clip_build_defaults`. */
+  applyCreatorClipLayout?: boolean;
 }
 
 const activeDownloads = reactive<Map<string, ActiveDownload>>(new Map());
@@ -132,6 +138,12 @@ function loadState() {
 }
 
 export function useDownloads() {
+  const isAudioOnlyDownloadEvent = (downloadId: string): boolean => {
+    // Audio downloads use a separate composable/store (`useAudioDownloads`).
+    // Ignore their events here to avoid noisy "unknown download" warnings.
+    return downloadId.startsWith('audio-') || downloadId.startsWith('upload_');
+  };
+
   // Helper function to refund free tier usage when download is cancelled or fails
   async function refundFreeTierUsage() {
     try {
@@ -165,6 +177,9 @@ export function useDownloads() {
 
     // Listen for download progress updates
     await listen<DownloadProgress>('download-progress', (event) => {
+      if (isAudioOnlyDownloadEvent(event.payload.download_id)) {
+        return;
+      }
       const download = activeDownloads.get(event.payload.download_id);
       if (download) {
         download.progress = event.payload;
@@ -238,6 +253,9 @@ export function useDownloads() {
 
     // Listen for download completion
     await listen<DownloadResult>('download-complete', async (event) => {
+      if (isAudioOnlyDownloadEvent(event.payload.download_id)) {
+        return;
+      }
       console.log('[Downloads] Download complete event received:', event.payload.download_id);
       const download = activeDownloads.get(event.payload.download_id);
       if (download) {
@@ -277,6 +295,14 @@ export function useDownloads() {
                   // Fallback to parent project
                   finalProjectId = download.parentProjectId;
                 }
+              }
+
+              if (finalProjectId) {
+                await seedCreatorClipLayoutOnProject(
+                  finalProjectId,
+                  download.creatorProfileId,
+                  download.applyCreatorClipLayout
+                );
               }
 
               // Video is valid, create database record
@@ -331,6 +357,16 @@ export function useDownloads() {
               }
 
               download.rawVideoId = rawVideoId;
+
+              if (finalProjectId) {
+                try {
+                  await ensureShortVideoAutoClip(finalProjectId, event.payload.duration, {
+                    clipName: download.title,
+                  });
+                } catch (autoClipError) {
+                  console.warn('[Downloads] Short-video auto-clip failed (non-fatal):', autoClipError);
+                }
+              }
 
               // Pre-generate waveform in background for instant loading when user opens editor
               // This runs async and doesn't block the download completion
@@ -487,6 +523,9 @@ export function useDownloads() {
         watermarkId: string;
         watermarkSettings: string; // JSON string of per-ratio watermark settings
       };
+      creatorProfileId?: string;
+      /** When true, persist matched creator's clip_build_defaults into active_vod_preset_config. */
+      applyCreatorClipLayout?: boolean;
     } = {}
   ): Promise<string> {
     // Free tier: 2 VOD downloads/day limit
@@ -531,7 +570,9 @@ export function useDownloads() {
         totalDuration,
         segmentDuration,
         provider,
-        options.creatorWatermarkSettings
+        options.creatorWatermarkSettings,
+        options.creatorProfileId,
+        options.applyCreatorClipLayout === true
       );
     }
 
@@ -659,6 +700,8 @@ export function useDownloads() {
       projectId,
       parentProjectId,
       provider,
+      creatorProfileId: options.creatorProfileId,
+      applyCreatorClipLayout: options.applyCreatorClipLayout === true,
     };
 
     activeDownloads.set(downloadId, download);
@@ -821,7 +864,9 @@ export function useDownloads() {
     totalDuration: number,
     maxSegmentDuration: number = 3600,
     provider: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter' = 'pumpfun',
-    creatorWatermarkSettings?: { watermarkId: string; watermarkSettings: string }
+    creatorWatermarkSettings?: { watermarkId: string; watermarkSettings: string },
+    creatorProfileId?: string,
+    applyCreatorClipLayout?: boolean
   ): Promise<string> {
     await initialize();
 
@@ -901,6 +946,8 @@ export function useDownloads() {
         currentSegmentIndex: i,
         isAutoSegmented: true,
         isQueued: i >= MAX_CONCURRENT_DOWNLOADS,
+        creatorProfileId,
+        applyCreatorClipLayout: applyCreatorClipLayout === true,
       };
 
       console.log(`[Downloads] Created segment download ${i + 1}/${numberOfSegments}:`, {

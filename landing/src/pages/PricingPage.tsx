@@ -1,10 +1,9 @@
 import { Check, X, ArrowLeft, Apple, Monitor, Minus, Loader2, Sparkles, Zap, Crown, Building2, Plus, ChevronDown, Package, TrendingUp, Trophy, Clock } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
-import { useDownloadContext } from '../context/DownloadContext'
 import { CTA } from '../components/CTA'
-import { BetaCodeModal } from '../components/BetaCodeModal'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
+import { trackDownloadClick, trackLandingEvent } from '@/services/landingAnalytics'
 
 // Subscription plans (actual pricing from server)
 // 1 credit = 1 minute of video processing
@@ -420,8 +419,16 @@ function FAQItem({ question, answer, isOpen, onClick, index }: {
 
 export function PricingPage() {
   const { primaryDownload, isLoading } = useDownloads()
-  const { downloadsEnabled, showBetaCodeModal, setShowBetaCodeModal, openBetaCodeModal, enableDownloads } = useDownloadContext()
   const [openFAQ, setOpenFAQ] = useState<number | null>(0)
+
+  const trackPricingDownload = (source: string, label: string) => {
+    if (primaryDownload) {
+      trackDownloadClick(primaryDownload, source, label)
+      return
+    }
+
+    trackLandingEvent('landing_cta_click', { source, button_label: label })
+  }
 
   return (
     <div className="min-h-screen bg-background overflow-x-hidden">
@@ -429,13 +436,18 @@ export function PricingPage() {
       <header className="border-b border-zinc-800/50 backdrop-blur-md sticky top-0 z-50 bg-[#0a0a0b]/90">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3 sm:gap-6">
-            <Link to="/" className="flex items-center gap-2 sm:gap-3">
+            <Link
+              to="/"
+              className="flex items-center gap-2 sm:gap-3"
+              onClick={() => trackLandingEvent('landing_nav_click', { source: 'pricing_header_logo', button_label: 'Home', path: '/' })}
+            >
               <img src="/logo-icon.svg" alt="Clippster" className="w-7 h-7 sm:w-8 sm:h-8" />
               <img src="/logo.svg" alt="Clippster" className="h-4 sm:h-5" />
             </Link>
             <Link 
               to="/" 
               className="hidden sm:flex items-center gap-2 text-zinc-500 hover:text-white transition-colors text-sm group"
+              onClick={() => trackLandingEvent('landing_nav_click', { source: 'pricing_header_back', button_label: 'Back to home', path: '/' })}
             >
               <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
               Back to home
@@ -445,20 +457,11 @@ export function PricingPage() {
             <div className="px-5 py-2.5 rounded-full bg-zinc-800 text-zinc-400 font-medium text-sm flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
             </div>
-          ) : !downloadsEnabled ? (
-            <button
-              onClick={openBetaCodeModal}
-              className="px-5 py-2.5 rounded-full bg-white/10 text-white/70 font-medium text-sm border border-white/20 flex items-center gap-2 cursor-pointer hover:bg-cyan-500/15 hover:border-cyan-500/30 transition-colors group"
-            >
-              <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-              </svg>
-              <span className="hidden sm:inline group-hover:text-cyan-400 transition-colors">Enter Beta Code</span>
-            </button>
           ) : primaryDownload ? (
             <a
               href={primaryDownload.downloadUrl}
               className="group px-5 py-2.5 rounded-full bg-cyan-500 text-white font-medium text-sm hover:bg-cyan-600 transition-all duration-300 flex items-center gap-2 shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30"
+              onClick={() => trackDownloadClick(primaryDownload, 'pricing_header_download', 'Download')}
             >
               {primaryDownload.platform.os === 'mac' ? <Apple className="w-4 h-4" /> : <Monitor className="w-4 h-4" />}
               <span className="hidden sm:inline">Download</span>
@@ -594,40 +597,23 @@ export function PricingPage() {
                       </div>
                       
                       {/* CTA Button */}
-                      {!downloadsEnabled ? (
-                        <button
-                          onClick={openBetaCodeModal}
-                          className={`relative block w-full py-3.5 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden cursor-pointer ${
-                            plan.highlight
-                              ? 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white'
-                              : 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white'
-                          }`}
-                        >
-                          <span className="relative flex items-center justify-center gap-2">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                            </svg>
-                            Enter Beta Code
-                          </span>
-                        </button>
-                      ) : (
-                        <a
-                          href={primaryDownload?.downloadUrl || '#'}
-                          className={`relative block w-full py-3.5 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden group/btn ${
-                            plan.highlight 
-                              ? 'text-white shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30 hover:scale-[1.02]' 
-                              : 'bg-zinc-800 text-white hover:bg-zinc-700'
-                          }`}
-                        >
-                          {plan.highlight && (
-                            <>
-                              <div className="absolute inset-0 bg-gradient-to-r from-cyan-600 via-blue-500 to-violet-500" />
-                              <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 via-blue-400 to-violet-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300" />
-                            </>
-                          )}
-                          <span className="relative">{plan.cta}</span>
-                        </a>
-                      )}
+                      <a
+                        href={primaryDownload?.downloadUrl || '#'}
+                        className={`relative block w-full py-3.5 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden group/btn ${
+                          plan.highlight 
+                            ? 'text-white shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30 hover:scale-[1.02]' 
+                            : 'bg-zinc-800 text-white hover:bg-zinc-700'
+                        }`}
+                        onClick={() => trackPricingDownload(`pricing_user_plan_${plan.name.toLowerCase().replaceAll(' ', '_')}`, plan.cta)}
+                      >
+                        {plan.highlight && (
+                          <>
+                            <div className="absolute inset-0 bg-gradient-to-r from-cyan-600 via-blue-500 to-violet-500" />
+                            <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 via-blue-400 to-violet-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300" />
+                          </>
+                        )}
+                        <span className="relative">{plan.cta}</span>
+                      </a>
                       
                       {/* Divider */}
                       <div className={`h-px mb-5 ${plan.highlight ? 'bg-gradient-to-r from-transparent via-zinc-700 to-transparent' : 'bg-zinc-800'}`} />
@@ -796,40 +782,23 @@ export function PricingPage() {
                         </div>
                         
                         {/* CTA Button */}
-                        {!downloadsEnabled ? (
-                          <button
-                            onClick={openBetaCodeModal}
-                            className={`relative block w-full py-3.5 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden cursor-pointer ${
-                              plan.highlight
-                                ? 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white'
-                                : 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white'
-                            }`}
-                          >
-                            <span className="relative flex items-center justify-center gap-2">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                              </svg>
-                              Enter Beta Code
-                            </span>
-                          </button>
-                        ) : (
-                          <a
-                            href={primaryDownload?.downloadUrl || '#'}
-                            className={`relative block w-full py-3.5 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden group/btn ${
-                              plan.highlight 
-                                ? 'text-white shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30 hover:scale-[1.02]' 
-                                : 'bg-zinc-800 text-white hover:bg-zinc-700'
-                            }`}
-                          >
-                            {plan.highlight && (
-                              <>
-                                <div className="absolute inset-0 bg-gradient-to-r from-cyan-600 via-blue-500 to-violet-500" />
-                                <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 via-blue-400 to-violet-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300" />
-                              </>
-                            )}
-                            <span className="relative">{plan.cta}</span>
-                          </a>
-                        )}
+                        <a
+                          href={primaryDownload?.downloadUrl || '#'}
+                          className={`relative block w-full py-3.5 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden group/btn ${
+                            plan.highlight 
+                              ? 'text-white shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30 hover:scale-[1.02]' 
+                              : 'bg-zinc-800 text-white hover:bg-zinc-700'
+                          }`}
+                          onClick={() => trackPricingDownload(`pricing_org_plan_${plan.name.toLowerCase().replaceAll(' ', '_')}`, plan.cta)}
+                        >
+                          {plan.highlight && (
+                            <>
+                              <div className="absolute inset-0 bg-gradient-to-r from-cyan-600 via-blue-500 to-violet-500" />
+                              <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 via-blue-400 to-violet-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300" />
+                            </>
+                          )}
+                          <span className="relative">{plan.cta}</span>
+                        </a>
                         
                         {/* Divider */}
                         <div className={`h-px mb-5 ${plan.highlight ? 'bg-gradient-to-r from-transparent via-zinc-700 to-transparent' : 'bg-zinc-800'}`} />
@@ -937,7 +906,7 @@ export function PricingPage() {
                 </thead>
                 <tbody>
                   {comparisonFeatures.map((category, catIndex) => (
-                    <>
+                    <Fragment key={category.category}>
                       {/* Category Header */}
                       <tr key={`cat-${category.category}`} className="bg-zinc-900/60 border-y border-zinc-800">
                         <td colSpan={3} className="px-6 py-3.5">
@@ -960,7 +929,7 @@ export function PricingPage() {
                           </td>
                         </tr>
                       ))}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -1226,18 +1195,31 @@ export function PricingPage() {
             </p>
           </div>
           <div className="flex items-center gap-6 text-xs text-zinc-600">
-            <Link to="/" className="hover:text-zinc-400 transition-colors">Home</Link>
-            <Link to="/privacy" className="hover:text-zinc-400 transition-colors">Privacy</Link>
-            <Link to="/terms" className="hover:text-zinc-400 transition-colors">Terms</Link>
+            <Link
+              to="/"
+              className="hover:text-zinc-400 transition-colors"
+              onClick={() => trackLandingEvent('landing_nav_click', { source: 'pricing_footer', button_label: 'Home', path: '/' })}
+            >
+              Home
+            </Link>
+            <Link
+              to="/privacy"
+              className="hover:text-zinc-400 transition-colors"
+              onClick={() => trackLandingEvent('landing_nav_click', { source: 'pricing_footer', button_label: 'Privacy', path: '/privacy' })}
+            >
+              Privacy
+            </Link>
+            <Link
+              to="/terms"
+              className="hover:text-zinc-400 transition-colors"
+              onClick={() => trackLandingEvent('landing_nav_click', { source: 'pricing_footer', button_label: 'Terms', path: '/terms' })}
+            >
+              Terms
+            </Link>
           </div>
         </div>
       </footer>
 
-      <BetaCodeModal
-        isOpen={showBetaCodeModal}
-        onClose={() => setShowBetaCodeModal(false)}
-        onSuccess={() => enableDownloads()}
-      />
     </div>
   )
 }

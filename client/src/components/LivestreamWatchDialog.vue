@@ -363,7 +363,7 @@
               :clip-path="publishClipData.clipPath"
               :project-id="publishClipData.projectId"
               :watermark-settings="(viewer.state.value.watermarkSettings as any) || null"
-              :thumbnail-url="currentClipForPublish.thumbnail_path || null"
+              :thumbnail-url="publishClipThumbnailPath || currentClipForPublish.thumbnail_path || null"
               :platform="props.platform"
               :creator-profile-server-id="null"
               @published="handlePublishComplete"
@@ -477,6 +477,7 @@
   const showQuickPublishWizard = ref(false);
   const publishClipData = ref<{ clipId: string; clipPath: string; projectId: string } | null>(null);
   const currentClipForPublish = ref<any>(null);
+  const publishClipThumbnailPath = ref<string | null>(null);
 
   // PiP state tracking
   const isInPipMode = ref(false);
@@ -945,7 +946,8 @@
     emit('clip-created', clipPath, projectId);
   }
 
-  async function handlePublishClip(clipId: string, clipPath: string, projectId: string) {
+  async function handlePublishClip(clipId: string, clipPath: string, projectId: string, thumbnailPath: string | null = null) {
+    publishClipThumbnailPath.value = thumbnailPath;
     console.log('[WatchDialog] handlePublishClip called:', { clipId, clipPath, projectId });
     
     // Close the clip selector modal
@@ -993,6 +995,7 @@
     showQuickPublishWizard.value = false;
     publishClipData.value = null;
     currentClipForPublish.value = null;
+    publishClipThumbnailPath.value = null;
   }
 
   async function handleClose() {
@@ -1068,7 +1071,19 @@
       })
     );
 
-    // Listen for play/pause toggle
+    // Listen for play/pause from PIP (PIP applies playback locally; main syncs state)
+    pipEventListeners.push(
+      await listen<{ playing: boolean }>('pip-set-play-state', async (event) => {
+        if (event.payload.playing) {
+          await viewer.play();
+        } else {
+          viewer.pause();
+        }
+        sendPipStateUpdate();
+      })
+    );
+
+    // Legacy event — keep for older PIP builds
     pipEventListeners.push(
       await listen('pip-toggle-play-pause', () => {
         viewer.togglePlayPause();

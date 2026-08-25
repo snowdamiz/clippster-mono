@@ -7,12 +7,33 @@ import {
   type ClipSegment,
 } from '@/services/database';
 import { invoke } from '@tauri-apps/api/core';
-import { utf8ToBase64 } from '@/utils/encoding';
+import { utf8ToBase64Url } from '@/utils/encoding';
+import { isPlausibleVodSourcePath } from '@/services/clip-vod-extract';
+
+/**
+ * When a project has multiple raw_videos rows (e.g. full VOD + editor/built extract),
+ * `getAllRawVideos` is ordered globally by created_at DESC, so `.find(project_id)` often
+ * picked the newest file — frequently a short built_clips path. Clip segment times stay
+ * on the full-VOD timeline, so playback validation failed. Prefer a plausible VOD path
+ * and the longest known duration among those.
+ */
+function pickBestRawVideoForWorkspacePlayback(rows: RawVideo[]): RawVideo | null {
+  if (!rows.length) return null;
+  const plausible = rows.filter((v) => v.file_path && isPlausibleVodSourcePath(v.file_path));
+  const pool = plausible.length > 0 ? plausible : rows;
+  return pool.reduce((best, v) => {
+    const bestDur = best.duration ?? 0;
+    const vDur = v.duration ?? 0;
+    if (vDur > bestDur) return v;
+    return best;
+  });
+}
 
 export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   // Video player state
   const videoElement = ref<HTMLVideoElement | null>(null);
   const videoSrc = ref<string | null>(null);
+  const currentFilePath = ref<string | null>(null); // Track the original file path
   const videoLoading = ref(false);
   const videoError = ref<string | null>(null);
   const isPlaying = ref(false);
@@ -337,6 +358,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     videoError.value =
       'Failed to load video. The file may be corrupted or in an unsupported format.';
     videoSrc.value = null;
+    currentFilePath.value = null;
   }
 
   async function loadVideos() {
@@ -350,6 +372,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   async function loadVideoForProject() {
     if (!project.value) {
       videoSrc.value = null;
+      currentFilePath.value = null;
       currentVideo.value = null;
       videoError.value = null;
       videoLoading.value = false;
@@ -368,7 +391,8 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
 
       // Look for video using project_id relationship
       if (projectData?.id) {
-        const projectVideo = availableVideos.value.find((v) => v.project_id === projectData.id);
+        const forProject = availableVideos.value.filter((v) => v.project_id === projectData.id);
+        const projectVideo = pickBestRawVideoForWorkspacePlayback(forProject);
         if (projectVideo) {
           videoPath = projectVideo.file_path;
           currentVideo.value = projectVideo;
@@ -389,12 +413,13 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
 
       if (!videoPath) {
         videoSrc.value = null;
+        currentFilePath.value = null;
         videoLoading.value = false;
         return;
       }
 
       const port = await invoke<number>('get_video_server_port');
-      const encodedPath = utf8ToBase64(videoPath);
+      const encodedPath = utf8ToBase64Url(videoPath);
 
       // Check if this is a .ts file - browsers can't play MPEG-TS natively
       // Use the HLS wrapper endpoint which generates an on-the-fly playlist
@@ -407,10 +432,14 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
         videoSrc.value = `http://localhost:${port}/video/${encodedPath}`;
       }
 
+      // Track the original file path for comparison
+      currentFilePath.value = videoPath;
+
       videoLoading.value = false;
     } catch (error) {
       videoError.value = 'Failed to connect to video server. Please try again.';
       videoSrc.value = null;
+      currentFilePath.value = null;
       videoLoading.value = false;
     }
   }
@@ -421,6 +450,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
       videoElement.value.currentTime = 0;
     }
     videoSrc.value = null;
+    currentFilePath.value = null;
     currentVideo.value = null;
     videoError.value = null;
     isPlaying.value = false;
@@ -444,10 +474,13 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
 
     videoError.value = null;
     videoLoading.value = true;
+    currentTime.value = 0;
+    duration.value = 0;
+    stopSegmentedPlayback();
 
     try {
       const port = await invoke<number>('get_video_server_port');
-      const encodedPath = utf8ToBase64(filePath);
+      const encodedPath = utf8ToBase64Url(filePath);
 
       // Check if this is a .ts file - browsers can't play MPEG-TS natively
       // Use the HLS wrapper endpoint which generates an on-the-fly playlist
@@ -461,11 +494,15 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
         videoSrc.value = `http://localhost:${port}/video/${encodedPath}`;
       }
 
+      // Track the original file path for comparison
+      currentFilePath.value = filePath;
+
       videoLoading.value = false;
       return true;
     } catch (error) {
       videoError.value = 'Failed to load video. Please try again.';
       videoSrc.value = null;
+      currentFilePath.value = null;
       videoLoading.value = false;
       return false;
     }
@@ -647,6 +684,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     // State
     videoElement,
     videoSrc,
+    currentFilePath,
     videoLoading,
     videoError,
     isPlaying,

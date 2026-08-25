@@ -225,7 +225,7 @@
           <!-- Results Count -->
           <div class="streamvods__results-count">
             {{ paginatedClips.length }} {{ paginatedClips.length === 1 ? 'item' : 'items' }}
-            <span v-if="totalPages > 1">(Page {{ currentPage }} of {{ totalPages }})</span>
+            <span v-if="displayTotalPages > 1">(Page {{ currentPage }} of {{ displayTotalPages }})</span>
           </div>
 
           <!-- Bulk Actions Bar -->
@@ -334,7 +334,7 @@
       <PaginationFooter
         v-if="platformStore.clips.length > 0"
         :current-page="currentPage"
-        :total-pages="totalPages"
+        :total-pages="displayTotalPages"
         :total-items="platformStore.clips.length"
         item-label="VOD"
         @go-to-page="goToPage"
@@ -459,6 +459,24 @@
                     </div>
                   </div>
                 </div>
+
+                <!-- Creator clip defaults (local user profiles only; eligibility set when dialog opens) -->
+                <div v-if="clipDefaultsEligible" class="download-section download-section--creator-layout">
+                  <div class="download-section__header">
+                    <span class="download-section__label">Creator layout</span>
+                  </div>
+                  <label class="download-creator-layout">
+                    <input
+                      v-model="useCreatorLayout"
+                      type="checkbox"
+                      class="download-creator-layout__checkbox"
+                    />
+                    <span class="download-creator-layout__text">Use creator layout</span>
+                  </label>
+                  <p class="download-creator-layout__hint">
+                    Apply framing, overlays, and subtitle defaults from this creator's profile for this VOD.
+                  </p>
+                </div>
               </div>
 
               <!-- Footer -->
@@ -509,8 +527,11 @@
   import { useDownloads } from '@/composables/useDownloads';
   import { getNextSegmentNumber, getDownloadedVodIds } from '@/services/database';
   import { Clock, ChevronDown, X, AlertTriangle, Download, Video, Search, Loader2, RotateCcw, Check } from 'lucide-vue-next';
-  import { getCreatorProfileByPlatformId } from '@/services/database';
-  import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
+  import {
+    getCreatorProfileByPlatformId,
+    type CreatorProfileWithLinks,
+  } from '@/services/database';
+  import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
   import { useAuthStore } from '@/stores/auth';
 
@@ -522,8 +543,39 @@
   const platformStore = usePlatformStore();
   const authStore = useAuthStore();
 
-  // Component state
-  const searchInput = ref('');
+  /** Map `?platform=` query values to PlatformId (handles org/API `youtube` vs app `YouTube`). */
+  function normalizeVodRoutePlatform(raw: string): PlatformId | null {
+    const key = raw.trim().toLowerCase();
+    const map: Record<string, PlatformId> = {
+      pumpfun: 'pumpfun',
+      kick: 'kick',
+      twitch: 'twitch',
+      youtube: 'YouTube',
+      rumble: 'rumble',
+      twitter: 'twitter',
+    };
+    return map[key] ?? null;
+  }
+
+  /** Read deep-link search from route so first paint already shows creator + loading. */
+  function readPendingRouteSearch(): { platform: PlatformId; search: string } | null {
+    const rawPlatform = route.query.platform;
+    const queryPlatform = (
+      Array.isArray(rawPlatform) ? rawPlatform[0] : rawPlatform
+    ) as string | undefined;
+    const rawSearch = route.query.search ?? route.query.id;
+    const querySearch = (Array.isArray(rawSearch) ? rawSearch[0] : rawSearch) as string | undefined;
+
+    if (!queryPlatform || !querySearch) return null;
+    const platform = normalizeVodRoutePlatform(queryPlatform);
+    if (!platform) return null;
+    return { platform, search: querySearch };
+  }
+
+  const pendingRouteSearch = readPendingRouteSearch();
+
+  // Component state — seed from route query so View VODs isn't a blank page
+  const searchInput = ref(pendingRouteSearch?.search ?? '');
   const showDownloadDialog = ref(false);
   const clipToDownload = ref<PlatformClip | null>(null);
   const downloadStarting = ref(false);
@@ -534,7 +586,13 @@
   const autoSegmentDuration = ref(30);
   const currentPage = ref(1);
   const clipsPerPage = 20;
+  const loadingNextYouTubePage = ref(false);
   const showAuthModal = ref(false);
+
+  /** Local creator profile has saved clip_build_defaults (user-side SQLite only). */
+  const clipDefaultsEligible = ref(false);
+  /** User opted in to seed active_vod_preset_config from that profile on this download. */
+  const useCreatorLayout = ref(false);
 
   // Multi-selection state
   const selectedVodIds = ref<Set<string>>(new Set());
@@ -546,8 +604,13 @@
   const downloadedVodIds = ref<Set<string>>(new Set());
 
   // Auto-detected platform from input
-  const detectedPlatform = ref<PlatformId | null>(null);
+  const detectedPlatform = ref<PlatformId | null>(pendingRouteSearch?.platform ?? null);
   const currentPlatformConfig = computed(() => platformConfigs[detectedPlatform.value || platformStore.activePlatform]);
+
+  // Show searching UI immediately when arriving via creator "View VODs"
+  if (pendingRouteSearch) {
+    platformStore.setLoading(true);
+  }
   
   // YouTube tab state (Live Streams vs Videos)
   const youtubeTab = ref<'streams' | 'videos'>('streams');
@@ -595,9 +658,13 @@
       return;
     }
 
-    // Check for X/Twitter (requires exact broadcast/space URL)
-    if ((lowerVal.includes('twitter.com') || lowerVal.includes('x.com')) && 
-        (lowerVal.includes('/i/broadcasts/') || lowerVal.includes('/i/spaces/'))) {
+    // Check for X/Twitter (timeline post, broadcast, or space URL)
+    if (
+      (lowerVal.includes('twitter.com') || lowerVal.includes('x.com')) &&
+      (lowerVal.includes('/i/broadcasts/') ||
+        lowerVal.includes('/i/spaces/') ||
+        /\/status(?:es)?\/\d+/i.test(lowerVal))
+    ) {
       detectedPlatform.value = 'twitter';
       return;
     }
@@ -635,29 +702,25 @@
   onMounted(async () => {
     document.addEventListener('click', handleClickOutside);
     window.addEventListener('focus', handleWindowFocus);
+    
+    // Clean up any audio platform searches (YouTube/Twitter) from VOD recent searches
+    // These were incorrectly added before the fix
+    platformStore.cleanupAudioSearchesFromVodList();
+
+    // Deep-linked search (View VODs): start immediately — don't wait on metadata refresh
+    if (pendingRouteSearch) {
+      // Clear query params from URL to prevent re-search on navigation
+      router.replace({ path: route.path, query: {} });
+
+      void platformStore.refreshRecentSearchMetadata();
+      void loadDownloadedVodIds();
+      await handleSearch();
+      return;
+    }
+
     await platformStore.refreshRecentSearchMetadata();
     await loadDownloadedVodIds();
     detectPlatform();
-
-    // Check for query params (from Creator Profiles navigation)
-    const queryPlatform = route.query.platform as string | undefined;
-    const querySearch = route.query.search as string | undefined;
-
-    if (queryPlatform && querySearch) {
-      // Set the platform and search from query params
-      const validPlatforms = ['pumpfun', 'kick', 'twitch', 'YouTube', 'rumble', 'twitter'] as const;
-      if (validPlatforms.includes(queryPlatform as any)) {
-        detectedPlatform.value = queryPlatform as PlatformId;
-        searchInput.value = querySearch;
-
-        // Clear query params from URL to prevent re-search on navigation
-        router.replace({ path: route.path, query: {} });
-
-        // Trigger search
-        await handleSearch();
-        return;
-      }
-    }
 
     // Restore platform state if clips are already loaded (e.g., returning from another page)
     if (platformStore.clips.length > 0) {
@@ -799,24 +862,86 @@
 
   // Pagination
   const totalPages = computed(() => Math.ceil(platformStore.clips.length / clipsPerPage));
+  const canLoadMoreYouTubePages = computed(() => {
+    return detectedPlatform.value === 'YouTube' && platformStore.hasMore;
+  });
+  const displayTotalPages = computed(() => {
+    return totalPages.value + (canLoadMoreYouTubePages.value ? 1 : 0);
+  });
   const paginatedClips = computed(() => {
     const start = (currentPage.value - 1) * clipsPerPage;
     return platformStore.clips.slice(start, start + clipsPerPage);
   });
 
   function goToPage(page: number) {
-    if (page >= 1 && page <= totalPages.value) currentPage.value = page;
+    if (page < 1 || page > displayTotalPages.value) return;
+
+    if (page <= totalPages.value) {
+      currentPage.value = page;
+      return;
+    }
+
+    void loadNextYouTubePage();
   }
-  function nextPage() {
-    if (currentPage.value < totalPages.value) currentPage.value++;
+  async function nextPage() {
+    if (currentPage.value < totalPages.value) {
+      currentPage.value++;
+      return;
+    }
+
+    if (canLoadMoreYouTubePages.value) {
+      await loadNextYouTubePage();
+    }
   }
   function previousPage() {
     if (currentPage.value > 1) currentPage.value--;
   }
 
+  async function loadNextYouTubePage() {
+    if (
+      loadingNextYouTubePage.value ||
+      platformStore.loading ||
+      detectedPlatform.value !== 'YouTube' ||
+      !platformStore.hasMore ||
+      !platformStore.currentSearchId
+    ) {
+      return;
+    }
+
+    loadingNextYouTubePage.value = true;
+
+    try {
+      const result = await platformStore.loadMoreYouTubeClips(platformStore.currentSearchId, clipsPerPage, youtubeTab.value);
+
+      if (result.success) {
+        if (result.added > 0) {
+          currentPage.value = totalPages.value;
+          await loadDownloadedVodIds();
+          success('More VODs Loaded', `Loaded ${result.added} more VOD${result.added !== 1 ? 's' : ''}`);
+        } else {
+          platformStore.hasMore = false;
+          success('End of Videos', 'No more YouTube videos found for this channel');
+        }
+      } else {
+        showError('Search Failed', result.error || 'Failed to fetch more YouTube videos');
+      }
+    } catch (err) {
+      showError('Error', err instanceof Error ? err.message : 'An unexpected error occurred');
+    } finally {
+      loadingNextYouTubePage.value = false;
+    }
+  }
+
   watch(
     () => platformStore.clips,
-    () => {
+    (newClips, oldClips) => {
+      const isAppendingClips =
+        oldClips.length > 0 &&
+        newClips.length > oldClips.length &&
+        oldClips.every((clip, index) => clip.clipId === newClips[index]?.clipId);
+
+      if (isAppendingClips) return;
+
       currentPage.value = 1;
     }
   );
@@ -896,12 +1021,14 @@
   async function handleSearch() {
     const input = searchInput.value.trim();
     if (!input) {
+      platformStore.setLoading(false);
       showError('Invalid Input', 'Please enter a stream link, mint ID, or username');
       return;
     }
 
     // Check if user is authenticated
     if (!authStore.isAuthenticated) {
+      platformStore.setLoading(false);
       showAuthModal.value = true;
       return;
     }
@@ -912,9 +1039,10 @@
     }
 
     if (!detectedPlatform.value) {
+      platformStore.setLoading(false);
       showError(
         'Unknown Platform',
-        'Could not detect the platform. Please enter a valid link or username from PumpFun, Kick, Twitch, YouTube, Rumble, or X/Twitter (broadcast/space URLs only).'
+        'Could not detect the platform. Please enter a valid link or username from PumpFun, Kick, Twitch, YouTube, Rumble, or X/Twitter (post, broadcast, or space URL).'
       );
       return;
     }
@@ -922,16 +1050,12 @@
     // Check if platform is coming soon
     const config = platformConfigs[detectedPlatform.value];
     if (config.isComingSoon) {
+      platformStore.setLoading(false);
       showError(
         `${config.name} Coming Soon`,
         config.comingSoonMessage || `${config.name} integration is not yet available.`
       );
       return;
-    }
-
-    // Reset YouTube tab to streams (default) when doing a new search
-    if (detectedPlatform.value === 'YouTube') {
-      youtubeTab.value = 'streams';
     }
 
     // Reset Rumble tab to streams (default) when doing a new search
@@ -980,6 +1104,19 @@
     selectedTimeRange.value = { startTime: 0, endTime: clip.duration || 0 };
     // Default auto-segment off, user can enable if they want to split
     autoSegment.value = false;
+    useCreatorLayout.value = false;
+    clipDefaultsEligible.value = false;
+    if (detectedPlatform.value && platformStore.currentSearchId) {
+      try {
+        const lp = await getCreatorProfileByPlatformId(
+          detectedPlatform.value as any,
+          platformStore.currentSearchId
+        );
+        clipDefaultsEligible.value = !!parseCreatorClipBuildDefaults(lp?.clip_build_defaults ?? null);
+      } catch {
+        clipDefaultsEligible.value = false;
+      }
+    }
     calculateNextSegmentNumber(clip.clipId);
     showDownloadDialog.value = true;
   }
@@ -1049,6 +1186,7 @@
       // First try local profiles, then check organization profiles
       // This works for both PumpFun (mint ID) and Kick (channel slug)
       let creatorWatermarkSettings: { watermarkId: string; watermarkSettings: string } | undefined;
+      let localCreatorProfile: CreatorProfileWithLinks | null = null;
       if (detectedPlatform.value && platformStore.currentSearchId) {
         console.log('[StreamVods] Looking up creator watermark for:', {
           platform: detectedPlatform.value,
@@ -1056,108 +1194,60 @@
         });
 
         try {
-          // Try local profiles first
-          const localProfile = await getCreatorProfileByPlatformId(
-            detectedPlatform.value as any,
-            platformStore.currentSearchId
-          );
-          if (localProfile?.watermark_id && localProfile?.watermark_settings) {
-            console.log('[StreamVods] Found local creator profile with watermark:', localProfile.name);
-            creatorWatermarkSettings = {
-              watermarkId: localProfile.watermark_id,
-              watermarkSettings: localProfile.watermark_settings,
-            };
-          }
+          const {
+            isOrgSuppliedAccount,
+            resolveOrgBuildBranding,
+            profileToDownloadWatermarkSettings,
+          } = await import('@/composables/useBrandingProfileSelection');
 
-          // If not found locally, try organization profiles
-          if (!creatorWatermarkSettings && authStore.isAuthenticated) {
-            console.log('[StreamVods] No local profile found, checking organization profiles...');
-            const orgResponse = await getUserAssignedCreatorProfiles();
-            if (orgResponse.success && orgResponse.profiles.length > 0) {
-              console.log('[StreamVods] Searching', orgResponse.profiles.length, 'organization profiles');
-              // Find a profile with a matching platform link
-              for (const orgProfile of orgResponse.profiles) {
-                // Log all platform links for debugging
-                console.log(
-                  '[StreamVods] Checking org profile:',
-                  orgProfile.name,
-                  'platform_links:',
-                  orgProfile.platform_links.map((l) => ({ platform: l.platform, platform_id: l.platform_id }))
-                );
+          const platformLabel =
+            detectedPlatform.value === 'kick'
+              ? 'Kick'
+              : detectedPlatform.value === 'twitch'
+                ? 'Twitch'
+                : detectedPlatform.value === 'YouTube'
+                  ? 'YouTube'
+                  : detectedPlatform.value === 'pumpfun'
+                    ? 'PumpFun'
+                    : detectedPlatform.value === 'rumble'
+                      ? 'Rumble'
+                      : detectedPlatform.value === 'twitter'
+                        ? 'Twitter'
+                        : detectedPlatform.value;
 
-                const matchingLink = orgProfile.platform_links.find((link) => {
-                  if (link.platform !== detectedPlatform.value) return false;
-
-                  // Extract the normalized ID from the stored platform_id
-                  // This handles cases where the server stores full URLs instead of just IDs
-                  let storedId = link.platform_id;
-                  const platform = link.platform as string; // Type assertion to avoid narrowing issues
-                  if (platform === 'kick') {
-                    // Try to extract channel slug from URL if it's a full URL
-                    const extractedSlug = extractChannelSlug(storedId);
-                    if (extractedSlug) storedId = extractedSlug;
-                  } else if (platform === 'pumpfun') {
-                    // Try to extract mint ID from URL if it's a full URL
-                    const extractedMint = extractMintId(storedId);
-                    if (extractedMint) storedId = extractedMint;
-                  } else if (platform === 'rumble') {
-                    // Try to extract channel name from URL if it's a full URL
-                    const extractedChannel = extractRumbleChannel(storedId);
-                    if (extractedChannel) storedId = extractedChannel;
-                  } else if (platform === 'youtube' || platform === 'YouTube') {
-                    // Try to extract channel ID from URL if it's a full URL
-                    const extractedChannel = extractYouTubeChannel(storedId);
-                    if (extractedChannel) storedId = extractedChannel;
-                  }
-
-                  return storedId.toLowerCase() === platformStore.currentSearchId.toLowerCase();
-                });
-                if (matchingLink) {
-                  console.log('[StreamVods] Found matching org profile:', orgProfile.name, 'link:', matchingLink);
-                  if (orgProfile.watermark_id && orgProfile.watermark_settings) {
-                    // Transform watermark_settings to prefix per-ratio watermarkIds with org-asset-
-                    // The server returns raw server IDs (integers) for per-ratio watermarkIds
-                    const transformedSettings: Record<string, any> = {};
-                    for (const [ratio, config] of Object.entries(orgProfile.watermark_settings)) {
-                      if (config && typeof config === 'object') {
-                        const ratioConfig = config as { watermarkId?: number; position?: any };
-                        transformedSettings[ratio] = {
-                          ...ratioConfig,
-                          // Prefix the per-ratio watermarkId if present
-                          watermarkId: ratioConfig.watermarkId ? `org-asset-${ratioConfig.watermarkId}` : null,
-                        };
-                      } else {
-                        // null means disabled for this ratio
-                        transformedSettings[ratio] = config;
-                      }
-                    }
-
-                    creatorWatermarkSettings = {
-                      watermarkId: `org-asset-${orgProfile.watermark_id}`,
-                      watermarkSettings: JSON.stringify(transformedSettings),
-                    };
-                    console.log('[StreamVods] Using org watermark:', creatorWatermarkSettings.watermarkId);
-                    break;
-                  } else {
-                    console.log('[StreamVods] Org profile has no watermark configured');
-                  }
-                }
+          if (isOrgSuppliedAccount()) {
+            const orgId = authStore.user?.created_by_organization_id;
+            if (orgId != null) {
+              const orgProfile = await resolveOrgBuildBranding(Number(orgId), '', {
+                platform: platformLabel,
+                platformId: platformStore.currentSearchId,
+              });
+              if (orgProfile) {
+                creatorWatermarkSettings = profileToDownloadWatermarkSettings(orgProfile);
+                console.log('[StreamVods] Org-supplied account watermark:', orgProfile.name);
               }
-              if (!creatorWatermarkSettings) {
-                console.log(
-                  '[StreamVods] No matching org profile found. Looking for platform:',
-                  detectedPlatform.value,
-                  'platformId:',
-                  platformStore.currentSearchId
-                );
-              }
+            }
+          } else {
+            localCreatorProfile = await getCreatorProfileByPlatformId(
+              detectedPlatform.value as any,
+              platformStore.currentSearchId
+            );
+            if (localCreatorProfile?.watermark_id && localCreatorProfile?.watermark_settings) {
+              console.log('[StreamVods] Found local creator profile with watermark:', localCreatorProfile.name);
+              creatorWatermarkSettings = {
+                watermarkId: localCreatorProfile.watermark_id,
+                watermarkSettings: localCreatorProfile.watermark_settings,
+              };
             }
           }
         } catch (err) {
-          // Silently ignore - watermark just won't be applied
           console.log('[StreamVods] Could not fetch creator profile for watermark:', err);
         }
       }
+
+      const clipDefaultsParsed = parseCreatorClipBuildDefaults(localCreatorProfile?.clip_build_defaults ?? null);
+      const applyLayout =
+        useCreatorLayout.value && !!clipDefaultsParsed && !!localCreatorProfile?.id;
 
       await startDownload(
         clip.title,
@@ -1176,6 +1266,8 @@
           segmentDuration: autoSegmentDuration.value * 60,
           provider: detectedPlatform.value === 'kick' ? 'kick' : detectedPlatform.value === 'twitch' ? 'twitch' : detectedPlatform.value === 'YouTube' ? 'YouTube' : detectedPlatform.value === 'rumble' ? 'rumble' : detectedPlatform.value === 'twitter' ? 'twitter' : 'pumpfun',
           creatorWatermarkSettings,
+          creatorProfileId: applyLayout ? localCreatorProfile!.id : undefined,
+          applyCreatorClipLayout: applyLayout,
         }
       );
 
@@ -2467,6 +2559,36 @@
   }
 
   /* ===== Modal Footer ===== */
+  .download-section--creator-layout {
+    margin-top: 0.25rem;
+  }
+
+  .download-creator-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+  }
+
+  .download-creator-layout__checkbox {
+    margin-top: 0.15rem;
+    flex-shrink: 0;
+  }
+
+  .download-creator-layout__text {
+    font-weight: 600;
+  }
+
+  .download-creator-layout__hint {
+    margin: 0.35rem 0 0 1.5rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--sidebar-text);
+    opacity: 0.75;
+  }
+
   .download-modal__footer {
     display: flex;
     align-items: center;

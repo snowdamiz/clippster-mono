@@ -57,6 +57,22 @@ defmodule ClippsterServerWeb.OrganizationController do
   end
 
   @doc """
+  Check if an organization name is available.
+  Optionally pass exclude_org_id to exclude a specific org (for updates).
+  """
+  def check_name(conn, %{"name" => name} = params) do
+    exclude_org_id =
+      case Map.get(params, "exclude_org_id") do
+        nil -> nil
+        id when is_binary(id) -> String.to_integer(id)
+        id when is_integer(id) -> id
+      end
+
+    {:ok, available} = Organizations.is_org_name_available?(name, exclude_org_id)
+    json(conn, %{success: true, available: available})
+  end
+
+  @doc """
   Get a specific organization with members.
   """
   def show(conn, %{"id" => id}) do
@@ -97,7 +113,19 @@ defmodule ClippsterServerWeb.OrganizationController do
 
       organization ->
         attrs =
-          Map.take(params, ["name", "description", "logo_url", "settings", "restriction_defaults"])
+          Map.take(params, [
+            "name",
+            "description",
+            "bio",
+            "logo_url",
+            "website_url",
+            "public_contact_email",
+            "public_discord",
+            "public_telegram",
+            "content_type_tags",
+            "settings",
+            "restriction_defaults"
+          ])
 
         case Organizations.update_organization(organization, attrs, user) do
           {:ok, updated_org} ->
@@ -576,6 +604,80 @@ defmodule ClippsterServerWeb.OrganizationController do
   end
 
   @doc """
+  Accept an invitation by ID (for in-app acceptance).
+  """
+  def accept_invitation_by_id(conn, %{"id" => invitation_id}) do
+    user = conn.assigns.current_user
+
+    case Organizations.accept_invitation_by_id(invitation_id, user) do
+      {:ok, invitation} ->
+        json(conn, %{
+          success: true,
+          message: "Welcome to #{invitation.organization.name}!",
+          organization_id: invitation.organization_id
+        })
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Invitation not found or already processed"})
+
+      {:error, :invitation_expired} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "This invitation has expired"})
+
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "This invitation was sent to a different account"})
+
+      {:error, :basic_tier_cannot_join} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Upgrade to Starter or higher to join organizations"})
+    end
+  end
+
+  @doc """
+  Decline an invitation (requires authentication).
+  Returns organization info so the client can create an in-app notification.
+  """
+  def decline_invitation(conn, %{"id" => invitation_id}) do
+    user = conn.assigns.current_user
+
+    case Organizations.decline_invitation(invitation_id, user) do
+      {:ok, invitation} ->
+        # Return info for in-app notification to org owner
+        json(conn, %{
+          success: true,
+          message: "Invitation declined",
+          notification: %{
+            organization_id: invitation.organization_id,
+            organization_name: invitation.organization.name,
+            inviter_user_id: invitation.invited_by,
+            declined_by_name: user.name || user.email
+          }
+        })
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Invitation not found"})
+
+      {:error, :already_processed} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invitation already processed"})
+
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Not authorized to decline this invitation"})
+    end
+  end
+
+  @doc """
   Invite a user to join the organization by user_id (for Clipper Directory).
   """
   def invite_user(conn, %{"organization_id" => org_id, "user_id" => user_id} = params) do
@@ -820,6 +922,7 @@ defmodule ClippsterServerWeb.OrganizationController do
   @doc """
   Toggle allow_pool_fallback for a member.
   Only admins can toggle this setting.
+  Creates a member allocation if one doesn't exist yet.
   """
   def toggle_pool_fallback(conn, %{
         "organization_id" => org_id,
@@ -829,9 +932,10 @@ defmodule ClippsterServerWeb.OrganizationController do
     user = conn.assigns.current_user
 
     if Organizations.is_admin?(org_id, user.id) do
-      with true <- Organizations.is_member?(org_id, member_id),
-           allocation when not is_nil(allocation) <-
-             Organizations.get_member_allocation(org_id, member_id) do
+      with true <- Organizations.is_member?(org_id, member_id) do
+        # Get or create allocation - this ensures the member has an allocation record
+        allocation = Organizations.get_or_create_member_allocation(org_id, member_id)
+
         case allocation
              |> ClippsterServer.Organizations.MemberCreditAllocation.changeset(%{
                allow_pool_fallback: allow_fallback
@@ -857,16 +961,6 @@ defmodule ClippsterServerWeb.OrganizationController do
           conn
           |> put_status(400)
           |> json(%{success: false, error: "User is not a member of this organization"})
-
-        nil ->
-          conn
-          |> put_status(400)
-          |> json(%{success: false, error: "Member allocation not found"})
-
-        {:error, reason} ->
-          conn
-          |> put_status(400)
-          |> json(%{success: false, error: "Failed to update setting: #{inspect(reason)}"})
       end
     else
       conn
@@ -902,6 +996,81 @@ defmodule ClippsterServerWeb.OrganizationController do
       |> json(%{success: false, error: "Only admins can view transaction history"})
     end
   end
+
+  @doc """
+  Returns Stripe invoices for the organization's subscription.
+  Fetches directly from Stripe so the initial setup payment and all recurring
+  charges are always visible, regardless of whether they were recorded locally.
+  """
+  def get_subscription_invoices(conn, %{"organization_id" => org_id_raw}) do
+    user = conn.assigns.current_user
+
+    if Organizations.is_admin?(org_id_raw, user.id) do
+      org_id = if is_binary(org_id_raw), do: String.to_integer(org_id_raw), else: org_id_raw
+
+      case Repo.get(ClippsterServer.Organizations.Organization, org_id) do
+        nil ->
+          conn
+          |> put_status(404)
+          |> json(%{success: false, error: "Organization not found"})
+
+        %{stripe_customer_id: nil, stripe_subscription_id: nil} ->
+          json(conn, %{success: true, invoices: []})
+
+        org ->
+          customer_id = org.stripe_customer_id
+          subscription_id = org.stripe_subscription_id
+
+          stripe_params =
+            %{limit: 50}
+            |> then(fn p -> if customer_id, do: Map.put(p, :customer, customer_id), else: p end)
+            |> then(fn p ->
+              if subscription_id, do: Map.put(p, :subscription, subscription_id), else: p
+            end)
+
+          case Stripe.Invoice.list(stripe_params) do
+            {:ok, %{data: invoices}} ->
+              formatted =
+                Enum.map(invoices, fn inv ->
+                  %{
+                    id: safe_get(inv, :id),
+                    number: safe_get(inv, :number),
+                    status: safe_get(inv, :status),
+                    amount_paid: safe_get(inv, :amount_paid),
+                    amount_due: safe_get(inv, :amount_due),
+                    currency: safe_get(inv, :currency),
+                    created: safe_get(inv, :created),
+                    period_start: safe_get(inv, :period_start),
+                    period_end: safe_get(inv, :period_end),
+                    hosted_invoice_url: safe_get(inv, :hosted_invoice_url),
+                    invoice_pdf: safe_get(inv, :invoice_pdf),
+                    description: safe_get(inv, :description)
+                  }
+                end)
+
+              json(conn, %{success: true, invoices: formatted})
+
+            {:error, %Stripe.Error{message: msg}} ->
+              conn
+              |> put_status(500)
+              |> json(%{success: false, error: msg})
+          end
+      end
+    else
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Only admins can view invoices"})
+    end
+  end
+
+  defp safe_get(obj, key) when is_struct(obj) do
+    Map.get(obj, key)
+  rescue
+    _ -> nil
+  end
+
+  defp safe_get(obj, key) when is_map(obj), do: Map.get(obj, key)
+  defp safe_get(_, _), do: nil
 
   defp format_transaction(transaction) do
     %{
@@ -947,11 +1116,23 @@ defmodule ClippsterServerWeb.OrganizationController do
       name: org.name,
       slug: org.slug,
       description: org.description,
+      bio: org.bio,
       logo_url: maybe_presign_url(org.logo_url),
+      website_url: org.website_url,
+      public_contact_email: org.public_contact_email,
+      public_discord: org.public_discord,
+      public_telegram: org.public_telegram,
+      content_type_tags: org.content_type_tags || [],
       owner_id: org.owner_id,
       created_at: org.inserted_at,
       settings: org.settings || %{},
-      restriction_defaults: org.restriction_defaults || %{}
+      restriction_defaults: org.restriction_defaults || %{},
+      setup_completed: org.setup_completed,
+      admin_price_cents: org.admin_price_cents,
+      subscription_tier: org.subscription_tier,
+      subscription_status: org.subscription_status,
+      monthly_credits: org.monthly_credits,
+      max_seats: org.max_seats
     }
   end
 

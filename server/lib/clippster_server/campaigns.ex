@@ -16,11 +16,15 @@ defmodule ClippsterServer.Campaigns do
     CampaignParticipant,
     CampaignSubmission,
     CampaignPayment,
+    CampaignResource,
+    CampaignSubmissionMetricSnapshot,
     ClipperSocialAccount,
     ClipperPaymentMethod
   }
 
-  alias ClippsterServer.Social.Platforms.Twitter
+  alias ClippsterServer.Campaigns.CampaignSubmissionAnalytics
+
+  alias ClippsterServer.Social.Providers.PostForMe
 
   # ============================================================================
   # Campaign CRUD
@@ -57,6 +61,7 @@ defmodule ClippsterServer.Campaigns do
       :creator_profile,
       :global_intro,
       :global_outro,
+      :resources,
       branding_profile: [:intro, :outro, :watermark, :platform_links],
       participants: :user,
       creator_profiles: :platform_links
@@ -106,6 +111,7 @@ defmodule ClippsterServer.Campaigns do
       :creator_profile,
       :global_intro,
       :global_outro,
+      :resources,
       creator_profiles: :platform_links
     ])
     |> Repo.all()
@@ -180,7 +186,7 @@ defmodule ClippsterServer.Campaigns do
   """
   def auto_complete_expired_campaigns do
     now = DateTime.utc_now()
-    
+
     expired_campaigns =
       from(c in Campaign,
         where: c.status == "active",
@@ -188,16 +194,18 @@ defmodule ClippsterServer.Campaigns do
         where: c.ends_at <= ^now
       )
       |> Repo.all()
-    
+
     Enum.each(expired_campaigns, fn campaign ->
       case do_complete_campaign(campaign) do
-        {:ok, _} -> :ok
-        {:error, reason} -> 
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
           require Logger
           Logger.error("Failed to auto-complete campaign #{campaign.id}: #{inspect(reason)}")
       end
     end)
-    
+
     {:ok, length(expired_campaigns)}
   end
 
@@ -310,6 +318,63 @@ defmodule ClippsterServer.Campaigns do
     |> Repo.all()
   end
 
+  @doc """
+  Lists source materials/resources for a campaign.
+  """
+  def list_campaign_resources(campaign_id) do
+    CampaignResource
+    |> where([r], r.campaign_id == ^campaign_id)
+    |> order_by([r], asc: r.sort_order, asc: r.id)
+    |> Repo.all()
+  end
+
+  @doc """
+  Sets campaign resources (replaces all existing).
+  """
+  def set_campaign_resources(%Campaign{} = campaign, resources_attrs, %User{} = user)
+      when is_list(resources_attrs) do
+    if Organizations.is_admin?(campaign.organization_id, user.id) do
+      Repo.transaction(fn ->
+        from(r in CampaignResource, where: r.campaign_id == ^campaign.id)
+        |> Repo.delete_all()
+
+        resources_attrs
+        |> Enum.with_index()
+        |> Enum.each(fn {attrs, index} ->
+          attrs =
+            attrs
+            |> normalize_resource_attrs()
+            |> Map.put(:campaign_id, campaign.id)
+            |> Map.put_new(:sort_order, index)
+
+          %CampaignResource{}
+          |> CampaignResource.create_changeset(attrs)
+          |> Repo.insert!()
+        end)
+
+        list_campaign_resources(campaign.id)
+      end)
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  defp normalize_resource_attrs(attrs) when is_map(attrs) do
+    Enum.reduce(attrs, %{}, fn
+      {key, value}, acc when is_binary(key) ->
+        Map.put(acc, String.to_existing_atom(key), value)
+
+      {key, value}, acc ->
+        Map.put(acc, key, value)
+    end)
+  rescue
+    ArgumentError ->
+      Enum.reduce(attrs, %{}, fn {key, value}, acc ->
+        atom_key = if is_binary(key), do: String.to_atom(key), else: key
+        Map.put(acc, atom_key, value)
+      end)
+  end
+
   # ============================================================================
   # Participant Management
   # ============================================================================
@@ -320,14 +385,14 @@ defmodule ClippsterServer.Campaigns do
   """
   def apply_to_campaign(%Campaign{} = campaign, %User{} = user, application_note \\ nil) do
     now = DateTime.utc_now()
-    
+
     cond do
       campaign.status != "active" ->
         {:error, :campaign_not_active}
-      
+
       not is_nil(campaign.starts_at) and DateTime.compare(now, campaign.starts_at) == :lt ->
         {:error, :campaign_not_started}
-      
+
       not is_nil(campaign.ends_at) and DateTime.compare(now, campaign.ends_at) == :gt ->
         {:error, :campaign_ended}
 
@@ -520,46 +585,48 @@ defmodule ClippsterServer.Campaigns do
   """
   def list_user_campaigns_by_creator_profile(user_id, creator_profile_id) do
     # Query 1: Campaigns with specific creator profile
-    specific_campaigns = from(p in CampaignParticipant,
-      where: p.user_id == ^user_id and p.status == "approved",
-      join: c in Campaign,
-      on: c.id == p.campaign_id,
-      join: ccp in CampaignCreatorProfile,
-      on: ccp.campaign_id == c.id,
-      where: ccp.creator_profile_id == ^creator_profile_id,
-      where: c.status == "active",
-      preload: [
-        campaign: [
-          :organization,
-          :creator_profile,
-          :global_intro,
-          :global_outro,
-          branding_profile: [:intro, :outro, :watermark, :platform_links],
-          creator_profiles: :platform_links
-        ]
-      ],
-      distinct: true
-    )
+    specific_campaigns =
+      from(p in CampaignParticipant,
+        where: p.user_id == ^user_id and p.status == "approved",
+        join: c in Campaign,
+        on: c.id == p.campaign_id,
+        join: ccp in CampaignCreatorProfile,
+        on: ccp.campaign_id == c.id,
+        where: ccp.creator_profile_id == ^creator_profile_id,
+        where: c.status == "active",
+        preload: [
+          campaign: [
+            :organization,
+            :creator_profile,
+            :global_intro,
+            :global_outro,
+            branding_profile: [:intro, :outro, :watermark, :platform_links],
+            creator_profiles: :platform_links
+          ]
+        ],
+        distinct: true
+      )
 
     # Query 2: Global branding campaigns (creator_profile_id = null, no assigned streamers)
-    global_campaigns = from(p in CampaignParticipant,
-      where: p.user_id == ^user_id and p.status == "approved",
-      join: c in Campaign,
-      on: c.id == p.campaign_id,
-      where: is_nil(c.creator_profile_id),
-      where: c.status == "active",
-      preload: [
-        campaign: [
-          :organization,
-          :creator_profile,
-          :global_intro,
-          :global_outro,
-          branding_profile: [:intro, :outro, :watermark, :platform_links],
-          creator_profiles: :platform_links
-        ]
-      ],
-      distinct: true
-    )
+    global_campaigns =
+      from(p in CampaignParticipant,
+        where: p.user_id == ^user_id and p.status == "approved",
+        join: c in Campaign,
+        on: c.id == p.campaign_id,
+        where: is_nil(c.creator_profile_id),
+        where: c.status == "active",
+        preload: [
+          campaign: [
+            :organization,
+            :creator_profile,
+            :global_intro,
+            :global_outro,
+            branding_profile: [:intro, :outro, :watermark, :platform_links],
+            creator_profiles: :platform_links
+          ]
+        ],
+        distinct: true
+      )
 
     # Combine both queries and remove duplicates, order by joined date
     (Repo.all(specific_campaigns) ++ Repo.all(global_campaigns))
@@ -648,10 +715,10 @@ defmodule ClippsterServer.Campaigns do
 
       campaign.status != "active" ->
         {:error, :campaign_not_active}
-      
+
       not is_nil(campaign.starts_at) and DateTime.compare(now, campaign.starts_at) == :lt ->
         {:error, :campaign_not_started}
-      
+
       not is_nil(campaign.ends_at) and DateTime.compare(now, campaign.ends_at) == :gt ->
         {:error, :campaign_ended}
 
@@ -693,41 +760,239 @@ defmodule ClippsterServer.Campaigns do
   def fetch_and_update_submission_metadata(%CampaignSubmission{} = submission) do
     case submission.platform do
       platform when platform in ["x", "twitter"] ->
-        fetch_twitter_metadata(submission)
+        fetch_metadata_via_postforme(submission, "x")
 
-      # Add other platforms as needed
-      _ ->
-        Logger.debug("[Campaigns] No metadata fetcher for platform: #{submission.platform}")
+      "instagram" ->
+        fetch_metadata_via_postforme(submission, "instagram")
+
+      "tiktok" ->
+        fetch_metadata_via_postforme(submission, "tiktok")
+
+      "youtube" ->
+        fetch_metadata_via_postforme(submission, "youtube")
+
+      platform ->
+        Logger.debug("[Campaigns] No metadata fetcher for platform: #{platform}")
         {:ok, submission}
     end
   end
 
-  defp fetch_twitter_metadata(%CampaignSubmission{} = submission) do
-    case Twitter.extract_tweet_id(submission.clip_url) do
-      {:ok, tweet_id} ->
-        case Twitter.get_tweet_analytics(tweet_id) do
-          {:ok, analytics} ->
-            update_submission_metadata(submission, %{
-              view_count: analytics[:view_count] || 0,
-              like_count: analytics[:like_count] || 0,
-              comment_count: analytics[:comment_count] || 0,
-              author_username: analytics[:author_username],
-              author_name: analytics[:author_name],
-              author_profile_image: analytics[:author_profile_image],
-              caption: analytics[:text],
-              platform_post_id: tweet_id
-            })
+  defp fetch_metadata_via_postforme(%CampaignSubmission{} = submission, platform) do
+    submission =
+      case submission.social_account do
+        %Ecto.Association.NotLoaded{} -> Repo.preload(submission, :social_account)
+        _ -> submission
+      end
+
+    case submission.social_account do
+      nil ->
+        record_submission_snapshot(submission, %{
+          source: "postforme_feed",
+          feed_match_status: "no_account",
+          warnings: ["no_connected_account"]
+        })
+
+      %ClipperSocialAccount{provider_account_id: nil} ->
+        record_submission_snapshot(submission, %{
+          source: "postforme_feed",
+          feed_match_status: "no_provider_account",
+          warnings: ["no_connected_account"]
+        })
+
+      %ClipperSocialAccount{provider_account_id: provider_account_id} ->
+        case extract_post_identifier(platform, submission.clip_url) do
+          {:ok, post_id} ->
+            case PostForMe.get_social_account_feed(provider_account_id, %{
+                   limit: 50,
+                   expand: ["metrics"]
+                 }) do
+              {:ok, %{data: feed_items}} when is_list(feed_items) ->
+                case find_post_in_feed(feed_items, post_id) do
+                  {:ok, post_data} ->
+                    analytics = extract_feed_analytics(platform, post_data)
+                    raw_metrics = post_data["metrics"] || %{}
+
+                    snapshot_attrs = %{
+                      source: "postforme_feed",
+                      provider_account_id: provider_account_id,
+                      feed_match_status: "matched",
+                      view_count: analytics[:view_count],
+                      like_count: analytics[:like_count],
+                      comment_count: analytics[:comment_count],
+                      share_count: analytics[:share_count],
+                      save_count: analytics[:save_count],
+                      reach_count: analytics[:reach_count],
+                      impressions_count: analytics[:impressions_count],
+                      raw_metrics: raw_metrics,
+                      feed_item: post_data
+                    }
+
+                    with {:ok, updated_submission} <-
+                           update_submission_metadata(submission, %{
+                             view_count: analytics[:view_count] || submission.view_count || 0,
+                             like_count: analytics[:like_count] || 0,
+                             comment_count: analytics[:comment_count] || 0,
+                             share_count: analytics[:share_count] || 0,
+                             save_count: analytics[:save_count] || 0,
+                             reach_count: analytics[:reach_count] || 0,
+                             impressions_count: analytics[:impressions_count] || 0,
+                             author_username: get_in(post_data, ["author", "username"]),
+                             author_name: get_in(post_data, ["author", "name"]),
+                             author_profile_image:
+                               get_in(post_data, ["author", "profile_picture"]),
+                             caption: post_data["text"] || post_data["caption"],
+                             platform_post_id: post_id,
+                             feed_match_status: "matched",
+                             metrics_last_synced_at:
+                               DateTime.utc_now() |> DateTime.truncate(:second)
+                           }),
+                         {:ok, _snapshot} <-
+                           record_submission_snapshot(updated_submission, snapshot_attrs) do
+                      {:ok, updated_submission}
+                    end
+
+                  {:error, :not_found} ->
+                    Logger.warning(
+                      "[Campaigns] Post #{post_id} not found in PostForMe feed for platform #{platform}"
+                    )
+
+                    record_submission_snapshot(submission, %{
+                      source: "postforme_feed",
+                      provider_account_id: provider_account_id,
+                      feed_match_status: "not_found",
+                      warnings: ["post_not_in_feed"]
+                    })
+
+                  {:error, reason} ->
+                    {:error, reason}
+                end
+
+              {:error, reason} ->
+                Logger.warning("[Campaigns] Failed to fetch PostForMe feed: #{inspect(reason)}")
+                {:error, reason}
+
+              other ->
+                Logger.warning(
+                  "[Campaigns] Unexpected PostForMe feed response: #{inspect(other)}"
+                )
+
+                {:error, :unexpected_response}
+            end
 
           {:error, reason} ->
-            Logger.warning("[Campaigns] Failed to fetch Twitter metadata: #{inspect(reason)}")
+            record_submission_snapshot(submission, %{
+              source: "postforme_feed",
+              provider_account_id: provider_account_id,
+              feed_match_status: "invalid_url",
+              warnings: ["invalid_url"]
+            })
+
             {:error, reason}
         end
-
-      {:error, reason} ->
-        Logger.warning("[Campaigns] Failed to extract tweet ID: #{inspect(reason)}")
-        {:error, reason}
     end
   end
+
+  @doc """
+  Records a metric snapshot and refreshes submission verification warnings.
+  """
+  def record_submission_snapshot(%CampaignSubmission{} = submission, attrs) do
+    snapshots =
+      CampaignSubmissionMetricSnapshot
+      |> where([s], s.submission_id == ^submission.id)
+      |> order_by([s], desc: s.inserted_at)
+      |> limit(10)
+      |> Repo.all()
+
+    duplicate_url? = duplicate_submission_url?(submission)
+
+    snapshot_attrs =
+      attrs
+      |> Map.put(:submission_id, submission.id)
+      |> Map.put_new(:source, "postforme_feed")
+
+    provisional_snapshot =
+      struct(CampaignSubmissionMetricSnapshot, snapshot_attrs)
+
+    warnings =
+      CampaignSubmissionAnalytics.compute_warnings(submission, [provisional_snapshot | snapshots],
+        duplicate_url?: duplicate_url?,
+        manual_override?: snapshot_attrs[:source] == "manual_override"
+      )
+
+    snapshot_attrs = Map.put(snapshot_attrs, :warnings, warnings)
+
+    Repo.transaction(fn ->
+      {:ok, snapshot} =
+        %CampaignSubmissionMetricSnapshot{}
+        |> CampaignSubmissionMetricSnapshot.create_changeset(snapshot_attrs)
+        |> Repo.insert()
+
+      submission
+      |> Ecto.Changeset.change(%{
+        verification_warnings: warnings,
+        feed_match_status: snapshot.feed_match_status,
+        metrics_last_synced_at:
+          if(snapshot.feed_match_status == "matched",
+            do: DateTime.utc_now() |> DateTime.truncate(:second),
+            else: submission.metrics_last_synced_at
+          )
+      })
+      |> Repo.update!()
+
+      snapshot
+    end)
+  end
+
+  @doc """
+  Lists metric snapshots for a submission (newest first).
+  """
+  def list_submission_metric_snapshots(submission_id, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 30)
+
+    CampaignSubmissionMetricSnapshot
+    |> where([s], s.submission_id == ^submission_id)
+    |> order_by([s], desc: s.inserted_at)
+    |> limit(^limit)
+    |> Repo.all()
+  end
+
+  @doc """
+  Builds analytics summary for a submission from snapshot history.
+  """
+  def get_submission_analytics_summary(%CampaignSubmission{} = submission) do
+    snapshots = list_submission_metric_snapshots(submission.id)
+
+    %{
+      trends: CampaignSubmissionAnalytics.build_trends(snapshots),
+      warnings: submission.verification_warnings || [],
+      feed_match_status: submission.feed_match_status,
+      metrics_last_synced_at: submission.metrics_last_synced_at,
+      snapshots: snapshots
+    }
+  end
+
+  @doc """
+  Re-syncs submission metrics from PostForMe and records a new snapshot.
+  """
+  def sync_submission_metrics(%CampaignSubmission{} = submission) do
+    fetch_and_update_submission_metadata(submission)
+  end
+
+  defp duplicate_submission_url?(%CampaignSubmission{
+         id: id,
+         clip_url: clip_url,
+         campaign_id: campaign_id
+       })
+       when is_binary(clip_url) do
+    from(s in CampaignSubmission,
+      where:
+        s.campaign_id == ^campaign_id and s.clip_url == ^clip_url and s.id != ^id and
+          s.status != "rejected"
+    )
+    |> Repo.exists?()
+  end
+
+  defp duplicate_submission_url?(_), do: false
 
   @doc """
   Updates a submission with metadata from the platform.
@@ -737,6 +1002,130 @@ defmodule ClippsterServer.Campaigns do
     |> Ecto.Changeset.change(attrs)
     |> Repo.update()
   end
+
+  # ============================================================================
+  # PostForMe Analytics Helpers
+  # ============================================================================
+
+  # Extract platform-specific identifier from post URL
+  defp extract_post_identifier(platform, url)
+       when platform in ["x", "twitter"] and is_binary(url) do
+    case Regex.run(~r{(?:twitter\.com|x\.com)/.+/status/(\d+)}, url) do
+      [_, tweet_id] -> {:ok, tweet_id}
+      _ -> {:error, :invalid_url}
+    end
+  end
+
+  defp extract_post_identifier("instagram", url) when is_binary(url) do
+    case Regex.run(~r{instagram\.com/(?:p|reel|tv)/([A-Za-z0-9_-]+)}, url) do
+      [_, shortcode] -> {:ok, shortcode}
+      _ -> {:error, :invalid_url}
+    end
+  end
+
+  defp extract_post_identifier("tiktok", url) when is_binary(url) do
+    case Regex.run(~r{tiktok\.com/.+/video/(\d+)}, url) do
+      [_, video_id] -> {:ok, video_id}
+      _ -> {:error, :invalid_url}
+    end
+  end
+
+  defp extract_post_identifier("youtube", url) when is_binary(url) do
+    cond do
+      String.contains?(url, "/shorts/") ->
+        case Regex.run(~r{youtube\.com/shorts/([A-Za-z0-9_-]+)}, url) do
+          [_, video_id] -> {:ok, video_id}
+          _ -> {:error, :invalid_url}
+        end
+
+      String.contains?(url, "youtu.be/") ->
+        case Regex.run(~r{youtu\.be/([A-Za-z0-9_-]+)}, url) do
+          [_, video_id] -> {:ok, video_id}
+          _ -> {:error, :invalid_url}
+        end
+
+      true ->
+        {:error, :invalid_url}
+    end
+  end
+
+  defp extract_post_identifier(_platform, _url), do: {:error, :unsupported_platform}
+
+  # Find a post in the PostForMe feed by matching the platform post ID
+  defp find_post_in_feed(feed_items, post_id) when is_list(feed_items) do
+    result =
+      Enum.find(feed_items, fn item ->
+        # Check various possible ID fields in the feed item
+        item_id = item["id"] || item["platform_post_id"] || get_in(item, ["platform_data", "id"])
+
+        # Convert to string for comparison
+        item_id_str = to_string(item_id)
+        post_id_str = to_string(post_id)
+
+        item_id_str == post_id_str
+      end)
+
+    case result do
+      nil -> {:error, :not_found}
+      item -> {:ok, item}
+    end
+  end
+
+  # Extract analytics from PostForMe feed item based on platform
+  defp extract_feed_analytics(platform, item) when platform in ["x", "twitter"] do
+    m = item["metrics"] || %{}
+    pm = m["public_metrics"] || %{}
+
+    %{
+      view_count: pm["impression_count"] || 0,
+      like_count: pm["like_count"] || 0,
+      comment_count: pm["reply_count"] || 0,
+      share_count: pm["retweet_count"] || 0,
+      impressions_count: pm["impression_count"] || 0
+    }
+  end
+
+  defp extract_feed_analytics("instagram", item) do
+    m = item["metrics"] || %{}
+    i = m["insights"] || m
+
+    %{
+      view_count: i["plays"] || i["video_views"] || i["views"] || i["impressions"] || 0,
+      like_count: i["likes"] || 0,
+      comment_count: i["comments"] || 0,
+      share_count: i["shares"] || 0,
+      save_count: i["saves"] || i["saved"] || 0,
+      reach_count: i["reach"] || 0,
+      impressions_count: i["impressions"] || 0
+    }
+  end
+
+  defp extract_feed_analytics("tiktok", item) do
+    m = item["metrics"] || %{}
+
+    %{
+      view_count: m["view_count"] || m["video_views"] || 0,
+      like_count: m["like_count"] || m["likes"] || 0,
+      comment_count: m["comment_count"] || m["comments"] || 0,
+      share_count: m["share_count"] || m["shares"] || 0,
+      save_count: m["favorites"] || m["save_count"] || 0,
+      reach_count: m["reach"] || 0,
+      impressions_count: m["impressions"] || m["video_views"] || 0
+    }
+  end
+
+  defp extract_feed_analytics("youtube", item) do
+    m = item["metrics"] || %{}
+
+    %{
+      view_count: m["views"] || 0,
+      like_count: m["likes"] || 0,
+      comment_count: m["comments"] || 0,
+      impressions_count: m["views"] || 0
+    }
+  end
+
+  defp extract_feed_analytics(_platform, _item), do: %{}
 
   @doc """
   Creates a campaign submission directly (used for published posts).
@@ -765,8 +1154,8 @@ defmodule ClippsterServer.Campaigns do
 
     if Organizations.is_admin?(campaign.organization_id, verifier.id) do
       # For CPM campaigns, enforce minimum views requirement
-      if campaign.payment_model != "per_clip" and 
-         submission.view_count < campaign.min_views_for_payment do
+      if campaign.payment_model != "per_clip" and
+           submission.view_count < campaign.min_views_for_payment do
         {:error, :insufficient_views}
       else
         case submission
@@ -798,7 +1187,7 @@ defmodule ClippsterServer.Campaigns do
       Repo.transaction(fn ->
         # Check if submission has a payment that needs to be returned to budget
         payment = Repo.get_by(CampaignPayment, submission_id: submission.id)
-        
+
         # Update submission status to rejected
         case submission
              |> CampaignSubmission.reject_changeset(%{rejection_reason: reason})
@@ -807,15 +1196,15 @@ defmodule ClippsterServer.Campaigns do
             # If there was a payment, return the amount to the budget
             if payment do
               new_spent_budget = Decimal.sub(campaign.spent_budget, payment.amount)
-              
+
               campaign
               |> Ecto.Changeset.change(%{spent_budget: new_spent_budget})
               |> Repo.update!()
-              
+
               # Delete the payment record since submission is rejected
               Repo.delete!(payment)
             end
-            
+
             # Send notification
             updated_submission = Repo.preload(updated_submission, [:campaign, :user])
             ClippsterServer.Notifications.notify_submission_rejected(updated_submission, reason)
@@ -834,9 +1223,25 @@ defmodule ClippsterServer.Campaigns do
   Updates view count for a submission.
   """
   def update_submission_views(%CampaignSubmission{} = submission, view_count) do
-    submission
-    |> CampaignSubmission.update_views_changeset(%{view_count: view_count})
-    |> Repo.update()
+    with {:ok, updated} <-
+           submission
+           |> CampaignSubmission.update_views_changeset(%{view_count: view_count})
+           |> Repo.update(),
+         {:ok, _snapshot} <-
+           record_submission_snapshot(updated, %{
+             source: "manual_override",
+             feed_match_status: updated.feed_match_status || "matched",
+             view_count: view_count,
+             like_count: updated.like_count,
+             comment_count: updated.comment_count,
+             share_count: updated.share_count,
+             save_count: updated.save_count,
+             reach_count: updated.reach_count,
+             impressions_count: updated.impressions_count,
+             raw_metrics: %{"manual_view_count" => view_count}
+           }) do
+      {:ok, Repo.get!(CampaignSubmission, updated.id)}
+    end
   end
 
   @doc """
@@ -932,20 +1337,21 @@ defmodule ClippsterServer.Campaigns do
         # Enforce min/max views range for payment calculation
         # Views must be >= min_views_for_payment (already filtered in query)
         # Views are capped at max_views if set
-        views = cond do
-          # If max_views is set and submission exceeds it, cap at max_views
-          campaign.max_views && submission.view_count > campaign.max_views ->
-            campaign.max_views
-          
-          # Otherwise use actual view count
-          true ->
-            submission.view_count
-        end
-        
+        views =
+          cond do
+            # If max_views is set and submission exceeds it, cap at max_views
+            campaign.max_views && submission.view_count > campaign.max_views ->
+              campaign.max_views
+
+            # Otherwise use actual view count
+            true ->
+              submission.view_count
+          end
+
         cpm = Decimal.to_float(campaign.cpm)
         cpm_views = campaign.cpm_views || 1000
 
-        amount = (views / cpm_views) * cpm
+        amount = views / cpm_views * cpm
         Decimal.from_float(amount) |> Decimal.round(2)
     end
   end
@@ -988,10 +1394,12 @@ defmodule ClippsterServer.Campaigns do
 
         # Calculate and create payments within budget
         {payments, final_spent} =
-          Enum.reduce_while(submissions, {[], campaign.spent_budget}, fn submission, {acc_payments, current_spent} ->
+          Enum.reduce_while(submissions, {[], campaign.spent_budget}, fn submission,
+                                                                         {acc_payments,
+                                                                          current_spent} ->
             amount = calculate_payment_amount(submission, campaign)
             new_spent = Decimal.add(current_spent, amount)
-            
+
             # Check if this payment would exceed budget
             if Decimal.compare(new_spent, campaign.budget) == :gt do
               # Budget exhausted, stop processing
@@ -1260,11 +1668,25 @@ defmodule ClippsterServer.Campaigns do
   """
   def delete_social_account(%ClipperSocialAccount{} = account, %User{} = user) do
     if account.user_id == user.id do
+      disconnect_provider_account(account)
       Repo.delete(account)
     else
       {:error, :unauthorized}
     end
   end
+
+  defp disconnect_provider_account(%ClipperSocialAccount{
+         provider: "post_for_me",
+         provider_account_id: provider_account_id
+       })
+       when is_binary(provider_account_id) and provider_account_id != "" do
+    case PostForMe.disconnect_social_account(provider_account_id) do
+      {:ok, _} -> :ok
+      {:error, _} -> :ok
+    end
+  end
+
+  defp disconnect_provider_account(_), do: :ok
 
   @doc """
   Updates social account tokens (for token refresh).
@@ -1387,9 +1809,12 @@ defmodule ClippsterServer.Campaigns do
 
     # Combine and sort by published_at/inserted_at descending
     (personal_posts ++ org_posts)
-    |> Enum.sort_by(fn post -> 
-      post.published_at || post.inserted_at || ~U[1970-01-01 00:00:00Z]
-    end, {:desc, DateTime})
+    |> Enum.sort_by(
+      fn post ->
+        post.published_at || post.inserted_at || ~U[1970-01-01 00:00:00Z]
+      end,
+      {:desc, DateTime}
+    )
   end
 
   @doc """
@@ -1464,7 +1889,8 @@ defmodule ClippsterServer.Campaigns do
       total_comments: (personal_stats.total_comments || 0) + (org_stats.total_comments || 0),
       total_saves: (personal_stats.total_saves || 0) + (org_stats.total_saves || 0),
       total_reach: (personal_stats.total_reach || 0) + (org_stats.total_reach || 0),
-      total_impressions: (personal_stats.total_impressions || 0) + (org_stats.total_impressions || 0)
+      total_impressions:
+        (personal_stats.total_impressions || 0) + (org_stats.total_impressions || 0)
     }
   end
 
@@ -1483,6 +1909,13 @@ defmodule ClippsterServer.Campaigns do
   def update_user_post(%UserPost{} = post, attrs) do
     post
     |> UserPost.update_changeset(attrs)
+    |> Repo.update()
+  end
+
+  def mark_user_post_failed(%UserPost{} = post, error_message) when is_binary(error_message) do
+    post
+    |> UserPost.status_changeset(%{status: "failed"})
+    |> Ecto.Changeset.put_change(:provider_payload, %{"publish_error" => error_message})
     |> Repo.update()
   end
 

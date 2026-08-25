@@ -213,7 +213,7 @@ defmodule ClippsterServer.Messaging do
         |> where([c], c.id == ^conversation_id)
         |> Repo.update_all(set: [last_message_at: now, last_message_preview: preview])
 
-        Repo.preload(message, [sender: :clipper_profile])
+        Repo.preload(message, sender: :clipper_profile)
       end)
     end
   end

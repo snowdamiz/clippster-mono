@@ -1,6 +1,6 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode, type BaseNodeParams } from "./base-node";
-import type { Transform } from "../../types/timeline";
+import type { Transform, BlendMode } from "../../types/timeline";
 import type { ElementKeyframes } from "../../types/keyframes";
 import { getKeyframedValue } from "../../types/keyframes";
 import type { ElementAnimation } from "../../types/animations";
@@ -23,6 +23,7 @@ export type StickerNodeParams = BaseNodeParams & {
 	animationIn?: ElementAnimation;
 	animationOut?: ElementAnimation;
 	animationLoop?: ElementAnimation;
+	blendMode?: BlendMode;
 };
 
 export class StickerNode extends BaseNode<StickerNodeParams> {
@@ -78,14 +79,20 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 		}
 
 		const { transform, opacity } = this.params;
-		const size = 200 * transform.scale;
-		const x = renderer.width / 2 + transform.position.x - size / 2;
-		const y = renderer.height / 2 + transform.position.y - size / 2;
 
 		// Resolve keyframed values
 		const elapsed = time - this.params.timeOffset;
 		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
-		let resolvedOpacity = getKeyframedValue({ elementKeyframes: this.params.keyframes, property: "opacity", normalizedTime, defaultValue: opacity });
+		const kf = this.params.keyframes;
+		let resolvedOpacity = getKeyframedValue({ elementKeyframes: kf, property: "opacity", normalizedTime, defaultValue: opacity });
+		const resolvedScale = getKeyframedValue({ elementKeyframes: kf, property: "scale", normalizedTime, defaultValue: transform.scale ?? 1 });
+		const resolvedPosX = getKeyframedValue({ elementKeyframes: kf, property: "positionX", normalizedTime, defaultValue: transform.position.x });
+		const resolvedPosY = getKeyframedValue({ elementKeyframes: kf, property: "positionY", normalizedTime, defaultValue: transform.position.y });
+		const resolvedRotation = getKeyframedValue({ elementKeyframes: kf, property: "rotation", normalizedTime, defaultValue: transform.rotate });
+		const safeScale = Number.isFinite(resolvedScale) ? resolvedScale : 1;
+		const size = 200 * safeScale;
+		const x = renderer.width / 2 + resolvedPosX - size / 2;
+		const y = renderer.height / 2 + resolvedPosY - size / 2;
 
 		// Apply fade in/out opacity ramp
 		const fadeIn = this.params.fadeIn ?? 0;
@@ -100,6 +107,10 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 		renderer.context.save();
 		renderer.context.globalAlpha = resolvedOpacity;
 
+		if (this.params.blendMode && this.params.blendMode !== "normal") {
+			renderer.context.globalCompositeOperation = this.params.blendMode as GlobalCompositeOperation;
+		}
+
 		// Apply element animations (in/out/loop)
 		const animResult = computeAnimationTransforms(
 			this.params.animationIn,
@@ -109,11 +120,11 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 		);
 		applyAnimationToContext(renderer.context, animResult, x + size / 2, y + size / 2);
 
-		if (transform.rotate !== 0) {
+		if (resolvedRotation !== 0) {
 			const centerX = x + size / 2;
 			const centerY = y + size / 2;
 			renderer.context.translate(centerX, centerY);
-			renderer.context.rotate((transform.rotate * Math.PI) / 180);
+			renderer.context.rotate((resolvedRotation * Math.PI) / 180);
 			renderer.context.translate(-centerX, -centerY);
 		}
 
@@ -129,9 +140,12 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 	async renderToImage({
 		canvasWidth,
 		canvasHeight,
+		sampleTime,
 	}: {
 		canvasWidth: number;
 		canvasHeight: number;
+		/** Timeline seconds used to sample keyframes / fades (default: element midpoint). */
+		sampleTime?: number;
 	}): Promise<{ blob: Blob } | null> {
 		// Fetch the SVG as a blob URL to guarantee no CORS canvas taint.
 		// The normal Image load (used for preview) can taint the canvas,
@@ -146,19 +160,65 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 		const ctx = offscreen.getContext("2d");
 		if (!ctx) return null;
 
+		const timelineT = sampleTime ?? this.params.timeOffset + this.params.duration / 2;
+		const elapsed = timelineT - this.params.timeOffset;
+		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
+		const kf = this.params.keyframes;
 		const { transform, opacity } = this.params;
-		const size = 200 * transform.scale;
-		const x = canvasWidth / 2 + transform.position.x - size / 2;
-		const y = canvasHeight / 2 + transform.position.y - size / 2;
+
+		let resolvedOpacity = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "opacity",
+			normalizedTime,
+			defaultValue: opacity,
+		});
+		const resolvedScale = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "scale",
+			normalizedTime,
+			defaultValue: transform.scale ?? 1,
+		});
+		const resolvedPosX = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "positionX",
+			normalizedTime,
+			defaultValue: transform.position.x,
+		});
+		const resolvedPosY = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "positionY",
+			normalizedTime,
+			defaultValue: transform.position.y,
+		});
+		const resolvedRotation = getKeyframedValue({
+			elementKeyframes: kf,
+			property: "rotation",
+			normalizedTime,
+			defaultValue: transform.rotate,
+		});
+
+		const safeScale = Number.isFinite(resolvedScale) ? resolvedScale : 1;
+		const size = 200 * safeScale;
+		const x = canvasWidth / 2 + resolvedPosX - size / 2;
+		const y = canvasHeight / 2 + resolvedPosY - size / 2;
 
 		ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-		ctx.globalAlpha = opacity;
 
-		if (transform.rotate !== 0) {
+		const fadeIn = this.params.fadeIn ?? 0;
+		const fadeOut = this.params.fadeOut ?? 0;
+		if (fadeIn > 0 && elapsed < fadeIn) {
+			resolvedOpacity *= elapsed / fadeIn;
+		}
+		if (fadeOut > 0 && elapsed > this.params.duration - fadeOut) {
+			resolvedOpacity *= (this.params.duration - elapsed) / fadeOut;
+		}
+		ctx.globalAlpha = resolvedOpacity;
+
+		if (resolvedRotation !== 0) {
 			const centerX = x + size / 2;
 			const centerY = y + size / 2;
 			ctx.translate(centerX, centerY);
-			ctx.rotate((transform.rotate * Math.PI) / 180);
+			ctx.rotate((resolvedRotation * Math.PI) / 180);
 			ctx.translate(-centerX, -centerY);
 		}
 

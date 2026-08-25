@@ -16,7 +16,7 @@ jobs:
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Get version from tauri.conf.json
         id: get_version
@@ -43,7 +43,7 @@ jobs:
 
       # Build frontend once and share across all platform builds
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: yarn
@@ -58,7 +58,7 @@ jobs:
           yarn build:ci
 
       - name: Upload frontend dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: client/dist
@@ -69,7 +69,7 @@ jobs:
     needs: create-release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Fly CLI
         uses: superfly/flyctl-actions/setup-flyctl@master
@@ -85,7 +85,7 @@ jobs:
     needs: create-release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Fly CLI
         uses: superfly/flyctl-actions/setup-flyctl@master
@@ -112,22 +112,24 @@ jobs:
           - platform: macos-latest
             args: --target x86_64-apple-darwin
             artifact_suffix: x64
-          - platform: windows-latest
+          # Pin Windows until ffmpeg-sys-the-third/libclang is stable on the
+          # Windows 2025 image currently backing windows-latest.
+          - platform: windows-2022
             args: --bundles nsis
             artifact_suffix: windows
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download frontend dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: client/dist
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: yarn
@@ -248,7 +250,7 @@ jobs:
           ls -la "$BINARIES_DIR/"
 
       - name: Download sidecar binaries (Windows)
-        if: matrix.platform == 'windows-latest'
+        if: contains(matrix.platform, 'windows')
         shell: pwsh
         run: |
           $binDir = "client/src-tauri/binaries"
@@ -455,26 +457,33 @@ jobs:
 
       # Install FFmpeg development libraries for Rust compilation (Windows)
       - name: Install FFmpeg dev libraries (Windows)
-        if: matrix.platform == 'windows-latest'
+        if: contains(matrix.platform, 'windows')
         shell: pwsh
         run: |
           $ffmpegDevDir = "client/src-tauri/ffmpeg-dev"
           New-Item -ItemType Directory -Force -Path $ffmpegDevDir | Out-Null
-          Write-Host "Downloading FFmpeg shared build for dev libraries..."
+          Write-Host "Downloading FFmpeg 8.0 shared build for dev libraries..."
           $zipPath = "$env:RUNNER_TEMP/ffmpeg-shared.zip"
-          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.0-latest-win64-gpl-shared-8.0.zip" -OutFile $zipPath
+          # Pinned to a specific immutable autobuild tag (autobuild-2025-09-30-13-19).
+          # Do NOT change to "latest" — the rolling latest tag now ships FFmpeg 8.1+ headers
+          # which break the ffmpeg-the-third 4.x crate (FFmpeg 8.0 only).
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2025-09-30-13-19/ffmpeg-n8.0-16-gd8605a6b55-win64-gpl-shared-8.0.zip" -OutFile $zipPath
           Expand-Archive -Path $zipPath -DestinationPath $ffmpegDevDir -Force
           Remove-Item $zipPath
-          $extractedDir = Get-ChildItem $ffmpegDevDir -Directory | Select-Object -First 1
-          Write-Host "FFmpeg dev libs installed at: $($extractedDir.FullName)"
+          $extractedDir = (Get-ChildItem $ffmpegDevDir -Directory | Select-Object -First 1).FullName
+          Write-Host "FFmpeg dev libs installed at: $extractedDir"
+
+          # Export paths dynamically so the build step doesn't need a hardcoded folder name
+          "FFMPEG_DIR=$extractedDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "FFMPEG_INCLUDE_DIR=$extractedDir/include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "FFMPEG_LIB_DIR=$extractedDir/lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           # Bundle FFmpeg shared libraries (DLLs) for runtime
           Write-Host "=== Bundling FFmpeg DLLs for runtime ==="
           $ffmpegLibsDir = "client/src-tauri/ffmpeg-libs"
           New-Item -ItemType Directory -Force -Path $ffmpegLibsDir | Out-Null
 
-          # Copy all FFmpeg DLLs from bin directory
-          $binDir = Get-ChildItem "$ffmpegDevDir" -Directory | Select-Object -First 1 | ForEach-Object { "$($_.FullName)/bin" }
+          $binDir = "$extractedDir/bin"
           if (Test-Path $binDir) {
             Copy-Item "$binDir/*.dll" $ffmpegLibsDir -Force
             Write-Host "Bundled FFmpeg DLLs:"
@@ -484,7 +493,7 @@ jobs:
           }
 
       - name: Skip frontend rebuild (Windows)
-        if: matrix.platform == 'windows-latest'
+        if: contains(matrix.platform, 'windows')
         shell: pwsh
         run: |
           $config = Get-Content client/src-tauri/tauri.conf.json | ConvertFrom-Json
@@ -526,22 +535,22 @@ jobs:
           args: ${{ matrix.args }} --features ffmpeg-static-prebuilt
 
       - name: Build Tauri App (Windows)
-        if: matrix.platform == 'windows-latest'
+        if: contains(matrix.platform, 'windows')
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          FFMPEG_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-dev/ffmpeg-n8.0-latest-win64-gpl-shared-8.0
-          FFMPEG_INCLUDE_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-dev/ffmpeg-n8.0-latest-win64-gpl-shared-8.0/include
-          FFMPEG_LIB_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-dev/ffmpeg-n8.0-latest-win64-gpl-shared-8.0/lib
+          FFMPEG_DIR: ${{ env.FFMPEG_DIR }}
+          FFMPEG_INCLUDE_DIR: ${{ env.FFMPEG_INCLUDE_DIR }}
+          FFMPEG_LIB_DIR: ${{ env.FFMPEG_LIB_DIR }}
         with:
           projectPath: client
           args: ${{ matrix.args }}
 
       - name: Detect Azure Windows signing configuration
         id: azure_windows_signing
-        if: matrix.platform == 'windows-latest'
+        if: contains(matrix.platform, 'windows')
         shell: pwsh
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -579,7 +588,7 @@ jobs:
           Write-Host "Azure Windows code signing configuration detected."
 
       - name: Azure Login (OIDC)
-        if: matrix.platform == 'windows-latest' && steps.azure_windows_signing.outputs.enabled == 'true'
+        if: contains(matrix.platform, 'windows') && steps.azure_windows_signing.outputs.enabled == 'true'
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -587,7 +596,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign Windows installers with Azure Artifact Signing
-        if: matrix.platform == 'windows-latest' && steps.azure_windows_signing.outputs.enabled == 'true'
+        if: contains(matrix.platform, 'windows') && steps.azure_windows_signing.outputs.enabled == 'true'
         uses: azure/artifact-signing-action@v1
         with:
           endpoint: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
@@ -602,7 +611,7 @@ jobs:
           description: Clippster
 
       - name: Verify Windows Authenticode signatures
-        if: matrix.platform == 'windows-latest' && steps.azure_windows_signing.outputs.enabled == 'true'
+        if: contains(matrix.platform, 'windows') && steps.azure_windows_signing.outputs.enabled == 'true'
         shell: pwsh
         run: |
           $files = Get-ChildItem -Path "client/src-tauri/target/release/bundle" -Recurse -File |
@@ -626,7 +635,7 @@ jobs:
           }
 
       - name: Windows code signing reminder
-        if: matrix.platform == 'windows-latest' && steps.azure_windows_signing.outputs.enabled != 'true'
+        if: contains(matrix.platform, 'windows') && steps.azure_windows_signing.outputs.enabled != 'true'
         shell: pwsh
         run: |
           Write-Warning "Windows artifacts were built without Azure code signing."
@@ -885,7 +894,7 @@ jobs:
             > /tmp/latest-json/latest.json
 
       - name: Upload artifacts to public releases repo (Windows)
-        if: matrix.platform == 'windows-latest'
+        if: contains(matrix.platform, 'windows')
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
@@ -900,7 +909,7 @@ jobs:
           if ($exeSig) { gh release upload "v$env:VERSION" "$($exeSig.FullName)" --repo $env:RELEASES_REPO --clobber }
 
       - name: Generate latest.json for Windows
-        if: matrix.platform == 'windows-latest'
+        if: contains(matrix.platform, 'windows')
         shell: pwsh
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
@@ -929,15 +938,15 @@ jobs:
 
       - name: Upload latest.json artifact (macOS)
         if: contains(matrix.platform, 'macos')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: latest-json-${{ matrix.artifact_suffix }}
           path: /tmp/latest-json/latest.json
           if-no-files-found: warn
 
       - name: Upload latest.json artifact (Windows)
-        if: matrix.platform == 'windows-latest'
-        uses: actions/upload-artifact@v4
+        if: contains(matrix.platform, 'windows')
+        uses: actions/upload-artifact@v7
         with:
           name: latest-json-${{ matrix.artifact_suffix }}
           path: ${{ runner.temp }}\latest-json\latest.json
@@ -949,7 +958,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all latest.json artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: latest-json-*
           merge-multiple: false

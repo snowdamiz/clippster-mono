@@ -13,6 +13,7 @@ export interface CampaignOrganization {
   id: number;
   name: string;
   logo_url: string | null;
+  slug?: string | null;
 }
 
 export interface CampaignAsset {
@@ -49,6 +50,55 @@ export interface CampaignCreatorProfile {
   platform_links?: CampaignCreatorPlatformLink[];
 }
 
+export interface CampaignResource {
+  id?: number;
+  campaign_id?: number;
+  resource_type: 'video' | 'audio' | 'reference_link' | 'brief' | 'file';
+  source_platform?: 'x' | 'youtube' | 'rumble' | 'kick' | 'twitch' | 'other' | null;
+  url?: string | null;
+  title?: string | null;
+  description?: string | null;
+  sort_order?: number;
+  metadata?: Record<string, unknown>;
+  download_target?: string | null;
+  inserted_at?: string;
+  updated_at?: string;
+}
+
+export interface CampaignMetricSnapshot {
+  id: number;
+  source: string;
+  provider_account_id?: string | null;
+  feed_match_status?: string | null;
+  view_count?: number | null;
+  like_count?: number | null;
+  comment_count?: number | null;
+  share_count?: number | null;
+  save_count?: number | null;
+  reach_count?: number | null;
+  impressions_count?: number | null;
+  warnings?: string[];
+  inserted_at: string;
+}
+
+export interface CampaignSubmissionAnalytics {
+  trends: Record<string, unknown>;
+  warnings: string[];
+  feed_match_status?: string | null;
+  metrics_last_synced_at?: string | null;
+  snapshots: CampaignMetricSnapshot[];
+}
+
+export type CampaignContentVertical =
+  | 'gaming'
+  | 'music'
+  | 'podcast'
+  | 'brand'
+  | 'course'
+  | 'event'
+  | 'news'
+  | 'other';
+
 export interface Campaign {
   id: number;
   organization_id: number;
@@ -76,12 +126,20 @@ export interface Campaign {
   assigned_streamer_ids: number[];
   is_platform_campaign: boolean;
   platform_payment_model?: string | null;
+  content_vertical?: CampaignContentVertical | null;
+  campaign_goal?: string | null;
+  content_style_tags?: string[];
+  resources?: CampaignResource[];
   inserted_at: string;
   updated_at: string;
   organization?: CampaignOrganization;
   creator_profile?: CampaignCreatorProfile | null;
   global_intro?: CampaignAsset | null;
   global_outro?: CampaignAsset | null;
+  global_watermarks?: Record<string, number | null> | null;
+  require_watermark?: boolean;
+  require_intro?: boolean;
+  require_outro?: boolean;
   creator_profiles?: CampaignCreatorProfile[];
   branding_profile?: CampaignCreatorProfile | null;
   participants_count?: number;
@@ -145,6 +203,11 @@ export interface CampaignSubmission {
   comment_count?: number;
   share_count?: number;
   save_count?: number;
+  reach_count?: number;
+  impressions_count?: number;
+  feed_match_status?: string | null;
+  verification_warnings?: string[];
+  metrics_last_synced_at?: string | null;
   // Author metadata from platform
   author_username?: string | null;
   author_name?: string | null;
@@ -155,6 +218,8 @@ export interface CampaignSubmission {
     id: number;
     email: string;
     display_name: string | null;
+    avatar_url?: string | null;
+    username?: string | null;
   };
   campaign?: {
     id: number;
@@ -395,6 +460,10 @@ export async function createCampaign(
     per_clip_amount?: number;
     clips_per_profile?: number;
     branding_profile_id?: number | null;
+    content_vertical?: CampaignContentVertical | null;
+    campaign_goal?: string | null;
+    content_style_tags?: string[];
+    resources?: CampaignResource[];
   }
 ): Promise<CampaignResponse> {
   const response = await api.post(`/organizations/${organizationId}/campaigns`, data);
@@ -426,6 +495,10 @@ export async function updateCampaign(
     per_clip_amount: number;
     clips_per_profile: number;
     branding_profile_id: number | null;
+    content_vertical?: CampaignContentVertical | null;
+    campaign_goal?: string | null;
+    content_style_tags?: string[];
+    resources?: CampaignResource[];
   }>
 ): Promise<CampaignResponse> {
   const response = await api.put(`/organizations/${organizationId}/campaigns/${campaignId}`, data);
@@ -615,10 +688,41 @@ export async function updateSubmissionViews(
   organizationId: number,
   submissionId: number,
   viewCount: number
-): Promise<SubmissionResponse> {
+): Promise<SubmissionResponse & { analytics?: CampaignSubmissionAnalytics }> {
   const response = await api.put(
     `/organizations/${organizationId}/submissions/${submissionId}/views`,
     { view_count: viewCount }
+  );
+  return response.data;
+}
+
+/**
+ * Sync submission metrics from PostForMe and record a snapshot.
+ */
+export async function syncSubmissionMetrics(
+  organizationId: number,
+  submissionId: number
+): Promise<{
+  success: boolean;
+  submission?: CampaignSubmission;
+  analytics?: CampaignSubmissionAnalytics;
+  error?: string;
+}> {
+  const response = await api.post(
+    `/organizations/${organizationId}/submissions/${submissionId}/sync-metrics`
+  );
+  return response.data;
+}
+
+/**
+ * Get submission analytics summary and snapshot history.
+ */
+export async function getSubmissionAnalytics(
+  organizationId: number,
+  submissionId: number
+): Promise<{ success: boolean; analytics?: CampaignSubmissionAnalytics; error?: string }> {
+  const response = await api.get(
+    `/organizations/${organizationId}/submissions/${submissionId}/analytics`
   );
   return response.data;
 }
@@ -934,3 +1038,55 @@ export async function setCampaignCreatorProfiles(
   );
   return response.data;
 }
+
+/**
+ * List source materials/resources for a campaign.
+ */
+export async function listCampaignResources(
+  organizationId: number,
+  campaignId: number
+): Promise<{ success: boolean; resources: CampaignResource[]; error?: string }> {
+  const response = await api.get(
+    `/organizations/${organizationId}/campaigns/${campaignId}/resources`
+  );
+  return response.data;
+}
+
+/**
+ * Set all source materials/resources for a campaign (replaces existing).
+ */
+export async function setCampaignResources(
+  organizationId: number,
+  campaignId: number,
+  resources: CampaignResource[]
+): Promise<{ success: boolean; resources: CampaignResource[]; error?: string }> {
+  const response = await api.put(
+    `/organizations/${organizationId}/campaigns/${campaignId}/resources`,
+    { resources }
+  );
+  return response.data;
+}
+
+export const CAMPAIGN_CONTENT_VERTICALS: { value: CampaignContentVertical; label: string }[] = [
+  { value: 'gaming', label: 'Gaming / Livestreams' },
+  { value: 'music', label: 'Music' },
+  { value: 'podcast', label: 'Podcast' },
+  { value: 'brand', label: 'Brand / Product' },
+  { value: 'course', label: 'Course / Community' },
+  { value: 'event', label: 'Event' },
+  { value: 'news', label: 'News / Commentary' },
+  { value: 'other', label: 'Other' },
+];
+
+export const VERIFICATION_WARNING_LABELS: Record<string, string> = {
+  post_not_in_feed: 'Post not found in connected account feed',
+  no_connected_account: 'No connected social account for verification',
+  stale_metrics: 'Metrics are stale',
+  never_synced: 'Metrics have never synced',
+  duplicate_url: 'Duplicate submission URL in this campaign',
+  view_spike: 'Large view increase between snapshots',
+  low_engagement: 'Very low engagement relative to views',
+  insufficient_metrics: 'Not enough metrics returned to assess confidence',
+  manual_override: 'Views were manually overridden',
+  invalid_url: 'Could not parse submission URL for feed lookup',
+};

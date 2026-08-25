@@ -1,6 +1,24 @@
 import type { AnimationPreset, AnimationCategory } from "../types/animations";
 
-export const ANIMATION_PRESETS: AnimationPreset[] = [
+type AnimationPresetInput = Omit<AnimationPreset, "supports"> & {
+	supports?: AnimationPreset["supports"];
+};
+
+function defineAnimationPresets(presets: AnimationPresetInput[]): AnimationPreset[] {
+	return presets.map((preset) => ({
+		...preset,
+		supports: preset.supports ?? {
+			preview: true,
+			export: true,
+			exportStrategy:
+				preset.type === "fadeIn" || preset.type === "fadeOut"
+					? "ffmpeg-alpha-fade"
+					: "overlay-raster-sequence",
+		},
+	}));
+}
+
+export const ANIMATION_PRESETS: AnimationPreset[] = defineAnimationPresets([
 	// ── Fade ──
 	{ type: "fadeIn", label: "Fade In", category: "fade", direction: "in", defaultDuration: 0.5, defaultEasing: "ease-out" },
 	{ type: "fadeOut", label: "Fade Out", category: "fade", direction: "out", defaultDuration: 0.5, defaultEasing: "ease-in" },
@@ -54,7 +72,7 @@ export const ANIMATION_PRESETS: AnimationPreset[] = [
 	{ type: "heartbeat", label: "Heartbeat", category: "loop", direction: "loop", defaultDuration: 1.0, defaultEasing: "ease-in-out" },
 	{ type: "flash", label: "Flash", category: "loop", direction: "loop", defaultDuration: 0.8, defaultEasing: "linear" },
 	{ type: "rubberBand", label: "Rubber Band", category: "loop", direction: "loop", defaultDuration: 1.0, defaultEasing: "ease-out" },
-];
+]);
 
 export const ANIMATION_CATEGORIES: { id: AnimationCategory; label: string }[] = [
 	{ id: "fade", label: "Fade" },
@@ -76,4 +94,11 @@ export function getPresetsForDirection(direction: "in" | "out" | "loop"): Animat
 
 export function getPresetsForCategory(category: AnimationCategory): AnimationPreset[] {
 	return ANIMATION_PRESETS.filter((p) => p.category === category);
+}
+
+/** Presets with export parity (raster sequence / fade overlay). */
+export function getExportableAnimationPresetsForDirection(
+	direction: "in" | "out" | "loop",
+): AnimationPreset[] {
+	return ANIMATION_PRESETS.filter((p) => p.direction === direction && p.supports.export);
 }

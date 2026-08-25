@@ -3,11 +3,12 @@ import { computed, ref, shallowRef, toRef, watch, onMounted, onUnmounted } from 
 import { useEditor } from "../../composables/useEditor";
 import { useTimelineElementResize } from "../../composables/timeline/element/useElementResize";
 import { useElementFade } from "../../composables/timeline/element/useElementFade";
-import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
+import { useVolumeEnvelope } from "../../composables/timeline/element/useVolumeEnvelope";
+import { useElementGeometry } from "../../composables/timeline/element/useElementGeometry";
 import { useFilmstrip } from "../../composables/timeline/useFilmstrip";
 import { useAudioWaveform } from "../../composables/timeline/useAudioWaveform";
 import type { SnapPoint } from "../../composables/timeline/useTimelineSnapping";
-import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
+import { TIMELINE_CONSTANTS, VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT } from "../../constants/timeline-constants";
 import {
 	getTrackClasses,
 	getTrackBorderColor,
@@ -20,8 +21,15 @@ import { invokeAction } from "../../lib/actions";
 import type {
 	TimelineElement as TimelineElementType,
 	TimelineTrack,
-	ElementDragState,
+	VideoElement,
 } from "../../types/timeline";
+import { useEditorUIState, isVisualPlacementProperty } from "../../composables/useEditorUIState";
+import { useKeyframes } from "../../composables/useKeyframes";
+import {
+	getKeyframePropertyStaticDefault,
+	getValueForNewKeyframeAtOffset,
+} from "../../lib/keyframe-property-defaults";
+import type { KeyframableProperty } from "../../types/keyframes";
 import type { MediaAsset } from "../../types/assets";
 import { mediaSupportsAudio } from "../../lib/media/media-utils";
 
@@ -30,11 +38,12 @@ const props = defineProps<{
 	track: TimelineTrack;
 	zoomLevel: number;
 	isSelected: boolean;
-	dragState: ElementDragState;
 	snappingEnabled: boolean;
 	rippleShifts?: Map<string, number>;
 	isEffectDropTarget?: boolean;
+	isTransitionDropTarget?: boolean;
 	isPlayheadScrubbing?: boolean;
+	isTimelineInteractive?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -50,14 +59,47 @@ const emit = defineEmits<{
 const { editor, version } = useEditor({
 	subscribe: {
 		playback: false,
-		timeline: false,
-		scenes: false,
+		timeline: true,
+		scenes: true,
 		project: false,
 		media: true,
 		selection: false,
 	},
 });
-const { selectedElements } = useElementSelection();
+// Selection state is provided to TimelineElement via the `:is-selected` prop
+// from the parent track. The drag DOM controller owns the visual sibling-follow
+// during multi-select drags, so this component does not subscribe to the
+// selection store at all (selection clicks no longer re-render every clip).
+const { timelineKeyframePlacementActive, timelineKeyframePlacementProperty } = useEditorUIState();
+
+const trackRefForKeyframes = toRef(() => props.track);
+const elementRefForKeyframes = toRef(() => props.element);
+const { addKeyframe } = useKeyframes({
+	trackRef: trackRefForKeyframes,
+	elementRef: elementRefForKeyframes,
+});
+
+function onVisualKeyframePaintPointerDown(ev: PointerEvent) {
+	if (!timelineKeyframePlacementActive.value) return;
+	if (!props.isSelected) return;
+	const el = props.element;
+	if (el.type !== "video" && el.type !== "image") return;
+	const property = timelineKeyframePlacementProperty.value;
+	if (!isVisualPlacementProperty(property)) return;
+	ev.stopPropagation();
+	const target = ev.currentTarget as HTMLElement;
+	const rect = target.getBoundingClientRect();
+	const localX = ev.clientX - rect.left;
+	const offset = Math.max(0, Math.min(1, localX / Math.max(1, rect.width)));
+	const staticDefault = getKeyframePropertyStaticDefault(el, property);
+	const value = getValueForNewKeyframeAtOffset({
+		elementKeyframes: el.keyframes,
+		property,
+		offset,
+		staticDefault,
+	});
+	addKeyframe(property, offset, value);
+}
 
 const mediaAssets = computed(() => {
 	void version.value;
@@ -86,9 +128,12 @@ const { handleResizeStart, resizing, currentTrimStart, currentStartTime, current
 		onResizeStateChange: (p) => emit("resizeStateChange", p),
 	});
 
+// `localRippleShifts` is a `shallowRef` of `Map<string, number>` produced by
+// the resize composable; it only emits a fresh Map when the shift set actually
+// changes. A non-deep watch is sufficient and avoids per-key tracking cost.
 watch(localRippleShifts, (shifts) => {
 	emit("rippleShiftsChange", shifts);
-}, { deep: true });
+});
 
 const isResizing = computed(() => resizing.value !== null);
 
@@ -107,56 +152,21 @@ const contentWidthPx = computed(() => {
 	return rs.initialDuration * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel;
 });
 
-const isBeingDragged = computed(() => props.dragState.elementId === props.element.id);
-
-// Check if this element is a selected sibling during a multi-element drag
-// (not the dragged element itself, but selected on the same track)
-const isSelectedSiblingDrag = computed(() => {
-	if (!props.dragState.isDragging || isBeingDragged.value) return false;
-	if (props.dragState.trackId !== props.track.id) return false;
-	if (!props.isSelected) return false;
-	// Confirm multiple elements on this track are selected
-	const sameTrackCount = selectedElements.value.filter(
-		(sel) => sel.trackId === props.track.id,
-	).length;
-	return sameTrackCount > 1;
+// Geometry: position derives only from committed `element.startTime` and
+// (during resize) the resize composable's preview values. While dragging,
+// the GPU drag visual layer translates the element via `--drag-x` / `--drag-y`
+// CSS custom properties — Vue does not re-render this element each frame.
+const resizeOverride = computed(() => {
+	if (!isResizing.value) return null;
+	return { startTime: currentStartTime.value, duration: currentDuration.value };
 });
-
-const dragOffsetY = computed(() =>
-	isBeingDragged.value && props.dragState.isDragging
-		? props.dragState.currentMouseY - props.dragState.startMouseY
-		: 0,
-);
-
-const elementStartTime = computed(() => {
-	if (isBeingDragged.value && props.dragState.isDragging) {
-		return props.dragState.currentTime;
-	}
-	// Multi-element drag: shift selected siblings by the same time delta
-	if (isSelectedSiblingDrag.value) {
-		const timeDelta = props.dragState.currentTime - props.dragState.startElementTime;
-		return Math.max(0, props.element.startTime + timeDelta);
-	}
-	const shifted = props.rippleShifts?.get(props.element.id);
-	if (shifted !== undefined) {
-		return shifted;
-	}
-	return props.element.startTime;
+const rippleShiftsRef = computed(() => props.rippleShifts);
+const { left: elementLeft, width: elementWidth } = useElementGeometry({
+	element: toRef(props, "element"),
+	zoomLevel: toRef(props, "zoomLevel"),
+	rippleShifts: rippleShiftsRef,
+	resizeOverride,
 });
-
-const displayedStartTime = computed(() =>
-	isResizing.value ? currentStartTime.value : elementStartTime.value,
-);
-const displayedDuration = computed(() =>
-	isResizing.value ? currentDuration.value : props.element.duration,
-);
-
-const elementWidth = computed(
-	() => displayedDuration.value * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel,
-);
-const elementLeft = computed(
-	() => displayedStartTime.value * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel,
-);
 
 const isMuted = computed(
 	() => canElementHaveAudio(props.element) && props.element.muted === true,
@@ -175,6 +185,28 @@ const tileWidth = computed(() => {
 	return trackHeight.value * (16 / 9);
 });
 
+/** When the clip is narrower than one tile (zoomed out), use cover instead of repeat-x. */
+const imageBackgroundStyle = computed(() => {
+	const tw = tileWidth.value;
+	const ew = elementWidth.value;
+	if (ew < tw - 0.5) {
+		return {
+			backgroundImage: imageUrl.value ? `url(${imageUrl.value})` : undefined,
+			backgroundRepeat: "no-repeat",
+			backgroundSize: "cover",
+			backgroundPosition: "center center",
+			pointerEvents: "none" as const,
+		};
+	}
+	return {
+		backgroundImage: imageUrl.value ? `url(${imageUrl.value})` : undefined,
+		backgroundRepeat: "repeat-x",
+		backgroundSize: `${tw}px 100%`,
+		backgroundPosition: "left center",
+		pointerEvents: "none" as const,
+	};
+});
+
 const trackClasses = computed(() => getTrackClasses({ type: props.track.type }));
 const borderColor = computed(() => getTrackBorderColor({ type: props.track.type }));
 
@@ -186,12 +218,15 @@ const imageUrl = computed(() => {
 });
 
 const isVideoElement = computed(() => props.element.type === "video");
+const filmstripCanvas = ref<HTMLCanvasElement | null>(null);
 
-const { frames: filmstripFrames, thumbnailWidth: filmstripThumbWidth } = useFilmstrip({
+const { frames: filmstripFrames } = useFilmstrip({
 	element: toRef(props, "element"),
 	mediaAsset,
 	zoomLevel: toRef(props, "zoomLevel"),
 	elementWidth,
+	canvasRef: filmstripCanvas,
+	suspended: computed(() => props.isTimelineInteractive === true),
 });
 
 const hasFilmstrip = computed(() => isVideoElement.value && filmstripFrames.value.length > 0);
@@ -235,7 +270,7 @@ onUnmounted(() => {
 	window.removeEventListener("playback-seek", handlePlaybackEvent as EventListener);
 });
 
-const { isLoading: waveformLoading, isLoaded: waveformLoaded } = useAudioWaveform({
+const { isLoading: waveformLoading, isLoaded: waveformLoaded, playedRatio: waveformPlayedRatio } = useAudioWaveform({
 	element: toRef(props, "element"),
 	mediaAsset,
 	zoomLevel: toRef(props, "zoomLevel"),
@@ -255,6 +290,30 @@ const { fadeState, currentFadeIn, currentFadeOut, handleFadeStart } = useElement
 	zoomLevel: toRef(props, "zoomLevel"),
 });
 
+const audioSvgRef = ref<SVGSVGElement | null>(null);
+const videoWaveformSvgRef = ref<SVGSVGElement | null>(null);
+
+const {
+	isVisible: volumeEnvelopeVisible,
+	handles: volumeHandles,
+	isDragging: volumeIsDragging,
+	showEnvelopeGraphics: volumeShowEnvelopeGraphics,
+	onStripPointerEnter: onVolumeStripPointerEnter,
+	onStripPointerLeave: onVolumeStripPointerLeave,
+	onStripPointerDown: onVolumeStripPointerDownRaw,
+	onHandleDblClick: onVolumeHandleDblClick,
+} = useVolumeEnvelope({
+	elementRef: toRef(props, "element"),
+	trackRef: toRef(props, "track"),
+	elementWidthPx: elementWidth,
+	placementProperty: timelineKeyframePlacementProperty,
+});
+
+function onVolumeStripPointerDown(ev: PointerEvent, svg: SVGSVGElement, h: number) {
+	if (timelineKeyframePlacementActive.value && !props.isSelected) return;
+	onVolumeStripPointerDownRaw(ev, svg, h);
+}
+
 const isFading = computed(() => fadeState.value !== null);
 
 const fadeInPx = computed(() => {
@@ -269,6 +328,7 @@ const fadeOutPx = computed(() => {
 
 // Keyframe diamond markers: collect all keyframe offsets from all property tracks
 const keyframeDiamonds = computed(() => {
+	void version.value;
 	const kf = props.element.keyframes;
 	if (!kf) return [];
 	const offsets = new Set<number>();
@@ -309,24 +369,31 @@ const elementTooltip = computed(() => {
 
 <template>
 	<div
-		:class="['absolute top-0 h-full select-none', isBeingDragged ? 'z-30' : 'z-10']"
+		:data-element-id="element.id"
+		data-timeline-element-root="1"
+		class="timeline-element absolute top-0 h-full select-none z-10"
+		:class="[
+			(isVideoElement || isAudioElement || isImageElement) && timelineKeyframePlacementActive && 'cursor-crosshair',
+		]"
 		:style="{
 			left: `${elementLeft}px`,
 			width: `${elementWidth}px`,
-			transform: isBeingDragged && dragState.isDragging ? `translate3d(0, ${dragOffsetY}px, 0)` : undefined,
 		}"
 		:title="elementTooltip"
 	>
 		<!-- Element inner -->
 		<div
 			:class="[
-				'group relative h-full cursor-pointer overflow-hidden border-2',
+				'group relative h-full overflow-hidden border-2 z-10',
+				(isVideoElement || isAudioElement || isImageElement) && timelineKeyframePlacementActive ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing',
 				(track.type === 'text' || track.type === 'audio' || track.type === 'sticker' || track.type === 'caption' || track.type === 'effect') ? 'rounded-[3px]' : 'rounded-[0.5rem]',
 				trackClasses,
-				isBeingDragged ? 'z-30' : 'z-10',
 				isHidden ? 'opacity-50' : '',
 			]"
-			:style="{ borderColor: borderColor, outline: isSelected ? '1.5px solid rgba(14, 165, 233, 0.6)' : 'none', outlineOffset: '0px' }"
+			:style="{
+				borderColor: borderColor,
+				boxShadow: isSelected ? 'inset 0 0 0 1.5px rgba(14, 165, 233, 0.6)' : 'none',
+			}"
 		>
 			<!-- Track name label (sits in the top blue bar, not over content) -->
 			<div
@@ -346,7 +413,8 @@ const elementTooltip = computed(() => {
 
 			<button
 				type="button"
-				class="absolute inset-0 size-full cursor-pointer"
+				class="absolute inset-0 size-full"
+				:class="(isVideoElement || isAudioElement) && timelineKeyframePlacementActive ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'"
 				@click="emit('elementClick', $event, element)"
 				@mousedown="emit('elementMouseDown', $event, element)"
 				@contextmenu.prevent="emit('elementContextMenu', $event, element)"
@@ -364,77 +432,219 @@ const elementTooltip = computed(() => {
 					<!-- Sticker element -->
 					<div v-else-if="element.type === 'sticker'" class="size-full" />
 
-					<!-- Audio element with waveform -->
-					<div v-else-if="element.type === 'audio'" class="relative w-full h-full">
-						<canvas
-							ref="audioWaveformCanvas"
-							class="absolute inset-0 w-full h-full pointer-events-none"
-							style="mix-blend-mode: normal; z-index: 5"
-						/>
-						<div
-							v-if="waveformLoading"
-							class="absolute inset-0 flex items-center justify-center"
-						>
-							<div class="text-[9px] text-white/40">Loading...</div>
-						</div>
+				<!-- Audio element with waveform -->
+				<div v-else-if="element.type === 'audio'" class="relative w-full h-full">
+					<canvas
+						ref="audioWaveformCanvas"
+						class="absolute inset-0 w-full h-full pointer-events-none"
+						style="mix-blend-mode: normal; z-index: 5; image-rendering: crisp-edges"
+					/>
+					<div
+						class="absolute inset-y-0 left-0 pointer-events-none bg-white/25"
+						:style="{ width: `${waveformPlayedRatio * 100}%`, zIndex: 6, mixBlendMode: 'screen' }"
+					/>
+					<!-- Volume keyframe strip (handles only — no curve on waveform) -->
+					<svg
+						v-if="volumeEnvelopeVisible"
+						ref="audioSvgRef"
+						class="absolute inset-0 w-full h-full overflow-visible"
+						style="z-index: 10; top: 16px; height: calc(100% - 16px);"
+						viewBox="0 0 100 100"
+						preserveAspectRatio="none"
+						:class="[
+							!timelineKeyframePlacementActive && 'pointer-events-none',
+							volumeIsDragging ? 'cursor-ns-resize' : timelineKeyframePlacementActive && timelineKeyframePlacementProperty === 'volume' ? 'cursor-crosshair' : '',
+						]"
+						@pointerenter="onVolumeStripPointerEnter"
+						@pointerleave="onVolumeStripPointerLeave"
+						@pointerdown.stop="(e) => audioSvgRef && onVolumeStripPointerDown(e, audioSvgRef, 0)"
+					>
+						<g v-if="volumeShowEnvelopeGraphics">
+							<circle
+								v-for="h in volumeHandles"
+								:key="h.id"
+								:cx="h.x"
+								:cy="h.y"
+								r="4"
+								fill="#facc15"
+								stroke="#a16207"
+								stroke-width="1"
+								vector-effect="non-scaling-stroke"
+								style="cursor: ns-resize; pointer-events: all"
+								@dblclick.stop="(e) => onVolumeHandleDblClick(e as any, h.id)"
+							/>
+						</g>
+					</svg>
+					<div
+						v-if="waveformLoading"
+						class="absolute inset-0 flex items-center justify-center"
+					>
+						<div class="text-[9px] text-white/40">Loading...</div>
 					</div>
+				</div>
 
 					<!-- Video filmstrip (actual frames at correct timestamps) -->
 					<div v-else-if="hasFilmstrip" class="absolute inset-0">
 						<!-- Filmstrip area: below the 16px title bar, above the waveform -->
-						<div :class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']" style="top: 16px; bottom: 35%;">
-							<div class="absolute inset-0 flex pointer-events-none">
-								<div
-									v-for="frame in filmstripFrames"
-									:key="frame.timestamp"
-									class="h-full flex-shrink-0"
-									:style="{
-										width: `${filmstripThumbWidth}px`,
-										backgroundImage: `url(${frame.objectUrl})`,
-										backgroundSize: 'cover',
-										backgroundPosition: 'center',
-									}"
-								/>
+						<div
+							:class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']"
+							:style="{ top: '16px', bottom: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%` }"
+						>
+							<div
+								class="absolute inset-0 pointer-events-none h-full"
+							>
+								<canvas ref="filmstripCanvas" class="size-full" />
 							</div>
 						</div>
-						<!-- Audio waveform: fills the entire bottom section (hidden when muted/audio extracted) -->
-						<canvas
-							v-if="!isMuted"
-							ref="videoWaveformCanvas"
-							class="absolute right-0 left-0 w-full pointer-events-none"
-							style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal;"
-						/>
 						<div
-							v-if="!isMuted && waveformLoading && !waveformLoaded"
-							class="absolute right-0 left-0 flex items-center justify-center pointer-events-none"
-							style="bottom: 0; height: 35%; z-index: 26;"
-						>
-							<div class="text-[8px] text-white/30">Loading waveform...</div>
-						</div>
-					</div>
-
-					<!-- Video/Image fallback thumbnail (before filmstrip loads) -->
-					<div v-else-if="imageUrl" class="absolute inset-0">
-						<div :class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']" style="top: 16px; bottom: 35%;">
-							<div
-								class="absolute inset-0"
-								:style="{
-									backgroundImage: `url(${imageUrl})`,
-									backgroundRepeat: 'repeat-x',
-									backgroundSize: `${tileWidth}px 100%`,
-									backgroundPosition: 'left center',
-									pointerEvents: 'none',
-								}"
+							v-if="(isVideoElement || isImageElement) && timelineKeyframePlacementActive && isVisualPlacementProperty(timelineKeyframePlacementProperty)"
+							class="absolute right-0 left-0 z-[27] cursor-crosshair"
+							:style="{
+								top: '16px',
+								bottom: isVideoElement && !isMuted ? `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%` : '0',
+							}"
+							@pointerdown.stop="onVisualKeyframePaintPointerDown"
+						/>
+					<!-- Audio waveform: fills the entire bottom section (hidden when muted/audio extracted) -->
+					<canvas
+						v-if="!isMuted"
+						ref="videoWaveformCanvas"
+						class="absolute right-0 left-0 w-full pointer-events-none"
+						:style="{
+							bottom: 0,
+							height: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%`,
+							zIndex: 25,
+							mixBlendMode: 'normal',
+							imageRendering: 'crisp-edges',
+						}"
+					/>
+					<div
+						v-if="!isMuted"
+						class="absolute left-0 bottom-0 pointer-events-none bg-white/25"
+						:style="{
+							width: `${waveformPlayedRatio * 100}%`,
+							height: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%`,
+							zIndex: 26,
+							mixBlendMode: 'screen',
+						}"
+					/>
+					<!-- Volume keyframe strip (video waveform — handles only) -->
+					<svg
+						v-if="!isMuted && volumeEnvelopeVisible"
+						ref="videoWaveformSvgRef"
+						class="absolute right-0 left-0 w-full overflow-visible"
+						viewBox="0 0 100 100"
+						preserveAspectRatio="none"
+						:style="{
+							bottom: 0,
+							height: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%`,
+							zIndex: 30,
+						}"
+						:class="[
+							!timelineKeyframePlacementActive && 'pointer-events-none',
+							volumeIsDragging ? 'cursor-ns-resize' : timelineKeyframePlacementActive && timelineKeyframePlacementProperty === 'volume' ? 'cursor-crosshair' : '',
+						]"
+						@pointerenter="onVolumeStripPointerEnter"
+						@pointerleave="onVolumeStripPointerLeave"
+						@pointerdown.stop="(e) => videoWaveformSvgRef && onVolumeStripPointerDown(e, videoWaveformSvgRef, 0)"
+					>
+						<g v-if="volumeShowEnvelopeGraphics">
+							<circle
+								v-for="h in volumeHandles"
+								:key="h.id"
+								:cx="h.x" :cy="h.y" r="4"
+								fill="#facc15" stroke="#a16207" stroke-width="1"
+								vector-effect="non-scaling-stroke"
+								style="cursor: ns-resize; pointer-events: all"
+								@dblclick.stop="(e) => onVolumeHandleDblClick(e as any, h.id)"
 							/>
-						</div>
-						<!-- Audio waveform: fills the entire bottom section (hidden when muted/audio extracted) -->
-						<canvas
-							v-if="isVideoElement && !isMuted"
-							ref="videoWaveformCanvas"
-							class="absolute right-0 left-0 w-full pointer-events-none"
-							style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal;"
+						</g>
+					</svg>
+					<div
+						v-if="!isMuted && waveformLoading && !waveformLoaded"
+						class="absolute right-0 left-0 flex items-center justify-center pointer-events-none"
+						:style="{ bottom: 0, height: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%`, zIndex: 26 }"
+					>
+						<div class="text-[8px] text-white/30">Loading waveform...</div>
+					</div>
+				</div>
+
+				<!-- Video/Image fallback thumbnail (before filmstrip loads) -->
+				<div v-else-if="imageUrl" class="absolute inset-0">
+					<div
+						:class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']"
+						:style="{ top: '16px', bottom: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%` }"
+					>
+						<div
+							class="absolute inset-0"
+							:style="imageBackgroundStyle"
 						/>
 					</div>
+						<div
+							v-if="(isVideoElement || isImageElement) && timelineKeyframePlacementActive && isVisualPlacementProperty(timelineKeyframePlacementProperty)"
+							class="absolute right-0 left-0 z-[27] cursor-crosshair"
+							:style="{
+								top: '16px',
+								bottom: isVideoElement && !isMuted ? `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%` : '0',
+							}"
+							@pointerdown.stop="onVisualKeyframePaintPointerDown"
+						/>
+					<!-- Audio waveform: fills the entire bottom section (hidden when muted/audio extracted) -->
+					<canvas
+						v-if="isVideoElement && !isMuted"
+						ref="videoWaveformCanvas"
+						class="absolute right-0 left-0 w-full pointer-events-none"
+						:style="{
+							bottom: 0,
+							height: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%`,
+							zIndex: 25,
+							mixBlendMode: 'normal',
+							imageRendering: 'crisp-edges',
+						}"
+					/>
+					<div
+						v-if="isVideoElement && !isMuted"
+						class="absolute left-0 bottom-0 pointer-events-none bg-white/25"
+						:style="{
+							width: `${waveformPlayedRatio * 100}%`,
+							height: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%`,
+							zIndex: 26,
+							mixBlendMode: 'screen',
+						}"
+					/>
+					<!-- Volume keyframe strip (video fallback — handles only) -->
+					<svg
+						v-if="isVideoElement && !isMuted && volumeEnvelopeVisible"
+						ref="videoWaveformSvgRef"
+						class="absolute right-0 left-0 w-full overflow-visible"
+						viewBox="0 0 100 100"
+						preserveAspectRatio="none"
+						:style="{
+							bottom: 0,
+							height: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%`,
+							zIndex: 30,
+						}"
+						:class="[
+							!timelineKeyframePlacementActive && 'pointer-events-none',
+							volumeIsDragging ? 'cursor-ns-resize' : timelineKeyframePlacementActive && timelineKeyframePlacementProperty === 'volume' ? 'cursor-crosshair' : '',
+						]"
+						@pointerenter="onVolumeStripPointerEnter"
+						@pointerleave="onVolumeStripPointerLeave"
+						@pointerdown.stop="(e) => videoWaveformSvgRef && onVolumeStripPointerDown(e, videoWaveformSvgRef, 0)"
+					>
+						<g v-if="volumeShowEnvelopeGraphics">
+							<circle
+								v-for="h in volumeHandles"
+								:key="h.id"
+								:cx="h.x" :cy="h.y" r="4"
+								fill="#facc15" stroke="#a16207" stroke-width="1"
+								vector-effect="non-scaling-stroke"
+								style="cursor: ns-resize; pointer-events: all"
+								@dblclick.stop="(e) => onVolumeHandleDblClick(e as any, h.id)"
+							/>
+						</g>
+					</svg>
+				</div>
 
 					<!-- Fallback -->
 					<div v-else class="size-full" />
@@ -452,6 +662,11 @@ const elementTooltip = computed(() => {
 				<div
 					v-if="isEffectDropTarget"
 					class="pointer-events-none absolute inset-0 z-40 rounded-[0.4rem] border-2 border-[#E040FB] bg-[#E040FB]/15"
+				/>
+				<!-- Both clips participating in a transition preview are highlighted. -->
+				<div
+					v-if="isTransitionDropTarget"
+					class="pointer-events-none absolute inset-0 z-40 rounded-[0.4rem] border-2 border-[#E040FB] bg-[#E040FB]/10 shadow-[inset_0_0_0_1px_rgba(224,64,251,0.35)]"
 				/>
 			</button>
 
@@ -538,7 +753,7 @@ const elementTooltip = computed(() => {
 				</button>
 				<button
 					type="button"
-					class="absolute top-0 bottom-0 right-0 z-50 flex w-[6px] cursor-w-resize items-center justify-center"
+					class="absolute top-0 bottom-0 right-0 z-50 flex w-[6px] cursor-e-resize items-center justify-center"
 					@mousedown="handleResizeStart({ e: $event, elementId: element.id, side: 'right' })"
 					aria-label="Right resize handle"
 				>

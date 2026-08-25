@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **clippster-mono** (13200 symbols, 32811 relationships, 300 execution flows).
+This project is indexed by GitNexus as **clippster-mono** (14677 symbols, 36868 relationships, 300 execution flows).
 
 ## Always Start Here
 

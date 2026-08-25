@@ -1,37 +1,86 @@
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
+import { ref, watch, computed, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
 import type { AudioElement } from "../../../types/timeline";
 import type { AudioEffect } from "../../../types/audio-effects";
 import { AUDIO_EFFECT_PRESETS, AUDIO_EFFECT_CATEGORIES, getAudioEffectPreset } from "../../../constants/audio-effect-constants";
 import { generateUUID } from "../../../utils/id";
-import { Headphones, Trash2, VolumeX, Volume2, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, Plus } from "lucide-vue-next";
+import { useClipVolumeInspector } from "../../../composables/panels/useClipVolumeInspector";
+import { Headphones, Trash2, VolumeX, Volume2, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, ChevronUp, Plus, Diamond } from "lucide-vue-next";
+import KeyframeEditorPanel from "../KeyframeEditorPanel.vue";
+import ElementTimingFields from "./ElementTimingFields.vue";
+import { useRafBatchedUpdate } from "../../../composables/useRafBatchedUpdate";
 
 const props = defineProps<{
 	element: AudioElement;
 	trackId: string;
 }>();
 
-const { editor } = useEditor();
+type TopTab = "audio" | "keyframes";
+const activeTab = ref<TopTab>("audio");
+const topTabs: { id: TopTab; label: string; icon: typeof Headphones }[] = [
+	{ id: "audio", label: "Audio", icon: Headphones },
+	{ id: "keyframes", label: "Keyframes", icon: Diamond },
+];
+
+const { editor } = useEditor({
+	subscribe: {
+		playback: false,
+		timeline: false,
+		scenes: false,
+		project: false,
+		media: false,
+		selection: false,
+	},
+});
 const { selectedElements } = useElementSelection();
 
-const volumeInput = ref(Math.round(props.element.volume * 100).toString());
+function isRangeInputTarget(target: EventTarget | null): boolean {
+	return target instanceof HTMLInputElement && target.type === "range";
+}
+
+function handleRangePointerDown(event: PointerEvent) {
+	if (isRangeInputTarget(event.target)) {
+		editor.setInteractiveDrag(true);
+	}
+}
+
+function stopRangeInteraction() {
+	flushUpdate();
+	editor.setInteractiveDrag(false);
+}
+
+onMounted(() => {
+	window.addEventListener("pointerup", stopRangeInteraction);
+	window.addEventListener("pointercancel", stopRangeInteraction);
+});
+
+onUnmounted(() => {
+	window.removeEventListener("pointerup", stopRangeInteraction);
+	window.removeEventListener("pointercancel", stopRangeInteraction);
+	stopRangeInteraction();
+});
+
 const fadeInInput = ref((props.element.fadeIn ?? 0).toFixed(1));
 const fadeOutInput = ref((props.element.fadeOut ?? 0).toFixed(1));
 
-watch(() => props.element.volume, (v) => { volumeInput.value = Math.round(v * 100).toString(); });
 watch(() => props.element.fadeIn, (v) => { fadeInInput.value = (v ?? 0).toFixed(1); });
 watch(() => props.element.fadeOut, (v) => { fadeOutInput.value = (v ?? 0).toFixed(1); });
 
 const speedTicks = [0.5, 1, 2, 3, 4, 5, 8, 10];
 const currentSpeed = computed(() => props.element.speed ?? 1);
 const speedInput = ref(currentSpeed.value.toFixed(2));
+const isDraggingSpeed = ref(false);
 
 watch(() => props.element.speed, (v) => { speedInput.value = (v ?? 1).toFixed(2); });
 
-function changeSpeed(speed: number) {
-	const clamped = Math.round(Math.max(0.1, Math.min(10, speed)) * 10) / 10;
+function clampSpeed(speed: number) {
+	return Math.round(Math.max(0.1, Math.min(10, speed)) * 10) / 10;
+}
+
+function commitSpeed(speed: number) {
+	const clamped = clampSpeed(speed);
 	speedInput.value = clamped.toFixed(2);
 	editor.timeline.changeElementSpeed({
 		trackId: props.trackId,
@@ -40,31 +89,29 @@ function changeSpeed(speed: number) {
 	});
 }
 
+function changeSpeed(speed: number) {
+	const clamped = clampSpeed(speed);
+	speedInput.value = clamped.toFixed(2);
+	if (!isDraggingSpeed.value) commitSpeed(clamped);
+}
+
+function onSpeedPointerDown() { isDraggingSpeed.value = true; }
+function onSpeedPointerUp(e: PointerEvent) {
+	isDraggingSpeed.value = false;
+	commitSpeed(Number((e.target as HTMLInputElement).value) / 10);
+}
+
 function handleSpeedInput(value: string) {
 	speedInput.value = value;
-	const parsed = parseFloat(value);
-	if (!Number.isNaN(parsed) && parsed >= 0.1 && parsed <= 10) {
-		editor.timeline.changeElementSpeed({
-			trackId: props.trackId,
-			elementId: props.element.id,
-			speed: Math.round(parsed * 10) / 10,
-		});
-	}
 }
 
 function handleSpeedBlur() {
 	const parsed = parseFloat(speedInput.value);
 	const val = Number.isNaN(parsed) ? (props.element.speed ?? 1) : Math.max(0.1, Math.min(10, parsed));
-	const clamped = Math.round(val * 10) / 10;
-	speedInput.value = clamped.toFixed(2);
-	editor.timeline.changeElementSpeed({
-		trackId: props.trackId,
-		elementId: props.element.id,
-		speed: clamped,
-	});
+	commitSpeed(val);
 }
 
-function update(updates: Record<string, unknown>) {
+function commitUpdate(updates: Record<string, unknown>) {
 	editor.timeline.updateElement({
 		trackId: props.trackId,
 		elementId: props.element.id,
@@ -72,25 +119,20 @@ function update(updates: Record<string, unknown>) {
 	});
 }
 
+const { update, flush: flushUpdate } = useRafBatchedUpdate(commitUpdate);
+
+const clipVolume = useClipVolumeInspector({
+	elementId: props.element.id,
+	getLinearGain: () => props.element.volume ?? 1,
+	setLinearGain: (gain: number) => update({ volume: gain }),
+});
+
 function clamp(value: number, min: number, max: number) {
 	return Math.min(max, Math.max(min, value));
 }
 
-function handleVolumeSlider(e: Event) {
-	const val = Number((e.target as HTMLInputElement).value);
-	volumeInput.value = val.toString();
-	update({ volume: val / 100 });
-}
-function handleVolumeInput(value: string) {
-	volumeInput.value = value;
-	const parsed = parseInt(value, 10);
-	if (!Number.isNaN(parsed)) update({ volume: clamp(parsed, 0, 200) / 100 });
-}
-function handleVolumeBlur() {
-	const parsed = parseInt(volumeInput.value, 10);
-	const pct = Number.isNaN(parsed) ? Math.round(props.element.volume * 100) : clamp(parsed, 0, 200);
-	volumeInput.value = pct.toString();
-	update({ volume: pct / 100 });
+function updatePan(value: number) {
+	update({ pan: Math.round(value * 100) / 100 });
 }
 
 function handleFadeIn(value: string) {
@@ -155,15 +197,12 @@ function handleDelete() {
 	});
 }
 
-function formatTime(seconds: number): string {
-	const min = Math.floor(seconds / 60);
-	const sec = (seconds % 60).toFixed(2);
-	return `${min}:${sec.padStart(5, "0")}`;
-}
 </script>
 
 <template>
-	<div class="space-y-5 p-4">
+	<div class="flex h-full min-h-0 flex-row" @pointerdown.capture="handleRangePointerDown">
+		<div class="min-h-0 flex-1 overflow-y-auto">
+			<div v-if="activeTab === 'audio'" class="space-y-5 p-4">
 		<!-- Header -->
 		<div class="flex items-center gap-2">
 			<Headphones class="size-4 text-zinc-500" />
@@ -176,24 +215,87 @@ function formatTime(seconds: number): string {
 				<label class="text-xs text-zinc-500">Name</label>
 				<p class="text-sm">{{ element.name }}</p>
 			</div>
-			<div class="flex gap-4">
-				<div class="space-y-1">
-					<label class="text-xs text-zinc-500">Start</label>
-					<p class="text-sm">{{ formatTime(element.startTime) }}</p>
-				</div>
-				<div class="space-y-1">
-					<label class="text-xs text-zinc-500">Duration</label>
-					<p class="text-sm">{{ formatTime(element.duration) }}</p>
+			<ElementTimingFields :element="element" :track-id="trackId" />
+		</div>
+
+		<!-- Volume (linear gain persisted; dB UI) -->
+		<div class="space-y-1.5">
+			<div class="flex items-center justify-between">
+				<label class="text-xs text-zinc-500">Volume</label>
+				<span class="text-[10px] text-zinc-600" title="Linear gain 1 = 0 dB">1 = 0 dB</span>
+			</div>
+			<div class="flex items-center gap-2">
+				<input
+					type="range"
+					:value="clipVolume.sliderStep"
+					min="0"
+					:max="clipVolume.sliderMax"
+					step="1"
+					class="flex-1"
+					@pointerdown="clipVolume.onSliderPointerDown"
+					@input="clipVolume.onSliderInput"
+				/>
+				<div class="flex h-7 min-w-[5.25rem] overflow-hidden rounded-sm border border-white/10 bg-white/5">
+					<input
+						type="text"
+						:value="clipVolume.dbField"
+						class="min-w-0 flex-1 bg-transparent px-2 text-center text-xs text-zinc-200 outline-none"
+						@input="(e) => clipVolume.onDbFieldInput((e.target as HTMLInputElement).value)"
+						@blur="clipVolume.onDbFieldBlur"
+						@keydown.enter="($event.target as HTMLInputElement).blur()"
+					/>
+					<div class="flex w-4 shrink-0 flex-col border-l border-white/10">
+						<button
+							type="button"
+							class="flex h-1/2 items-center justify-center text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-200"
+							title="Increase volume by 0.1 dB"
+							@mousedown.prevent
+							@click="clipVolume.nudgeDb(1)"
+						>
+							<ChevronUp class="size-2.5" />
+						</button>
+						<button
+							type="button"
+							class="flex h-1/2 items-center justify-center border-t border-white/10 text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-200"
+							title="Decrease volume by 0.1 dB"
+							@mousedown.prevent
+							@click="clipVolume.nudgeDb(-1)"
+						>
+							<ChevronDown class="size-2.5" />
+						</button>
+					</div>
 				</div>
 			</div>
 		</div>
 
-		<!-- Volume -->
+		<!-- Pan -->
 		<div class="space-y-1.5">
-			<label class="text-xs text-zinc-500">Volume</label>
+			<div class="flex items-center justify-between">
+				<label class="text-xs text-zinc-500">Pan</label>
+				<div class="flex items-center gap-1.5">
+					<span class="text-[10px] text-zinc-600">L</span>
+					<span class="min-w-[28px] text-center text-[10px] text-zinc-400">
+						{{ (element.pan ?? 0) === 0 ? 'C' : (element.pan ?? 0) > 0 ? `R${Math.round(Math.abs(element.pan ?? 0) * 100)}` : `L${Math.round(Math.abs(element.pan ?? 0) * 100)}` }}
+					</span>
+					<span class="text-[10px] text-zinc-600">R</span>
+				</div>
+			</div>
 			<div class="flex items-center gap-2">
-				<input type="range" :value="element.volume * 100" min="0" max="200" step="1" class="flex-1" @input="handleVolumeSlider" />
-				<input type="number" :value="volumeInput" min="0" max="200" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handleVolumeInput((e.target as HTMLInputElement).value)" @blur="handleVolumeBlur" />
+				<input
+					type="range"
+					:value="(element.pan ?? 0) * 100"
+					min="-100"
+					max="100"
+					step="1"
+					class="flex-1"
+					@input="(e) => updatePan(Number((e.target as HTMLInputElement).value) / 100)"
+				/>
+				<button
+					class="rounded border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-zinc-400 transition-colors hover:text-zinc-200"
+					@click="updatePan(0)"
+				>
+					C
+				</button>
 			</div>
 		</div>
 
@@ -219,7 +321,7 @@ function formatTime(seconds: number): string {
 			</div>
 			<div class="flex items-center gap-2">
 				<div class="relative flex-1">
-					<input type="range" :value="currentSpeed * 10" min="1" max="100" step="1" class="w-full" @input="(e) => changeSpeed(Number((e.target as HTMLInputElement).value) / 10)" />
+					<input type="range" :value="currentSpeed * 10" min="1" max="100" step="1" class="w-full" @pointerdown="onSpeedPointerDown" @pointerup="onSpeedPointerUp" @input="(e) => changeSpeed(Number((e.target as HTMLInputElement).value) / 10)" />
 					<!-- Tick marks -->
 					<div class="pointer-events-none absolute inset-x-0 top-1/2 flex h-0 items-center">
 						<div
@@ -530,6 +632,28 @@ function formatTime(seconds: number): string {
 			>
 				<Trash2 class="size-3.5" />
 				Delete Audio
+			</button>
+		</div>
+			</div>
+
+			<div v-else-if="activeTab === 'keyframes'">
+				<KeyframeEditorPanel :track-id="trackId" :element="element" />
+			</div>
+		</div>
+
+		<div class="scrollbar-hidden flex w-10 shrink-0 flex-col items-center gap-2 overflow-y-auto border-l border-white/10 bg-[#0e0e10] py-3">
+			<button
+				v-for="tab in topTabs"
+				:key="tab.id"
+				type="button"
+				:title="tab.label"
+				:class="[
+					'flex flex-col items-center justify-center rounded-md p-1.5 transition-colors',
+					activeTab === tab.id ? 'text-blue-400' : 'text-zinc-500 hover:text-zinc-300',
+				]"
+				@click="activeTab = tab.id"
+			>
+				<component :is="tab.icon" class="size-[15px]" />
 			</button>
 		</div>
 	</div>

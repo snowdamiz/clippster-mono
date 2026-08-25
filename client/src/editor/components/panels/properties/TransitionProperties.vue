@@ -2,16 +2,18 @@
 import { ref, computed, watch } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import type { Transition, TransitionType } from "../../../types/transitions";
-import { TRANSITION_PRESETS, TRANSITION_CATEGORIES } from "../../../constants/transition-constants";
+import { TRANSITION_PRESETS } from "../../../constants/transition-constants";
 import TransitionPreviewCanvas from "../assets/TransitionPreviewCanvas.vue";
 import { ArrowRightLeft, Trash2 } from "lucide-vue-next";
 import { SetTransitionCommand } from "../../../lib/commands/scene";
+import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
 
 const props = defineProps<{
 	transition: Transition;
 }>();
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
+const { clearElementSelection } = useElementSelection();
 
 const localDuration = ref(props.transition.duration);
 
@@ -37,6 +39,7 @@ function updateDuration() {
 function removeTransition() {
 	const command = new SetTransitionCommand(null, props.transition.targetElementId);
 	editor.command.execute({ command });
+	clearElementSelection();
 }
 
 function updateTransition(updates: Partial<Transition>) {
@@ -76,28 +79,28 @@ function updateTransition(updates: Partial<Transition>) {
 		<!-- Duration -->
 		<div class="space-y-1">
 			<label class="text-[11px] font-medium text-zinc-400">Duration</label>
-			<div class="flex items-center gap-2">
+			<div class="flex min-w-0 items-center gap-2">
 				<input
 					v-model.number="localDuration"
 					type="range"
 					min="0.1"
 					max="2.0"
 					step="0.05"
-					class="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-white/10 accent-[#E040FB]"
+					class="h-1 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-white/10 accent-[#E040FB]"
 					@change="updateDuration"
 				/>
-				<div class="flex w-14 items-center rounded border border-white/10 bg-white/5 px-1.5">
+				<div class="flex shrink-0 items-center rounded border border-white/10 bg-white/5 px-2 py-0.5 tabular-nums">
 					<input
 						v-model.number="localDuration"
 						type="number"
 						min="0.1"
 						max="2.0"
 						step="0.05"
-						class="w-full bg-transparent text-right text-[11px] text-zinc-300 focus:outline-none"
+						class="w-[4.25rem] min-w-0 bg-transparent text-right text-[11px] text-zinc-300 focus:outline-none"
 						@blur="updateDuration"
 						@keydown.enter="updateDuration"
 					/>
-					<span class="ml-0.5 text-[10px] text-zinc-600">s</span>
+					<span class="ml-1 shrink-0 text-[10px] text-zinc-600">s</span>
 				</div>
 			</div>
 		</div>
@@ -105,7 +108,7 @@ function updateTransition(updates: Partial<Transition>) {
 		<!-- Type picker (compact grid) -->
 		<div class="space-y-1">
 			<label class="text-[11px] font-medium text-zinc-400">Type</label>
-			<div class="grid grid-cols-4 gap-1">
+			<div class="grid max-h-52 grid-cols-4 gap-1 overflow-y-auto overscroll-y-contain pr-0.5">
 				<button
 					v-for="p in TRANSITION_PRESETS"
 					:key="p.type"
