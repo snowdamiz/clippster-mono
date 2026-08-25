@@ -1,181 +1,186 @@
 <template>
-  <div class="ref-card">
-    <div class="ref-card__header">
+  <section class="ref-card" aria-label="Reference video analysis">
+    <header class="ref-card__header">
       <Palette :size="14" />
-      <span>Reference Style</span>
-      <button v-if="!isAnalyzing" class="ref-card__remove" @click="$emit('remove')" title="Remove">
-        <X :size="12" />
-      </button>
-    </div>
+      <span>Reference edit recipe</span>
+      <span v-if="analysis" class="ref-card__version">v{{ analysis.schemaVersion }}</span>
+    </header>
 
-    <div v-if="isAnalyzing" class="ref-card__loading">
-      <Loader2 :size="16" class="animate-spin" />
-      <span>Analyzing reference...</span>
+    <div v-if="isAnalyzing" class="ref-card__progress" role="status">
+      <div class="ref-card__progress-label">
+        <span>{{ progress?.message || 'Analyzing the full timeline…' }}</span>
+        <span>{{ progress?.progress || 0 }}%</span>
+      </div>
+      <div class="ref-card__track"><div :style="{ width: `${progress?.progress || 0}%` }" /></div>
+      <button type="button" @click="$emit('cancel')">Cancel</button>
     </div>
 
     <div v-else-if="analysis" class="ref-card__body">
-      <div class="ref-row">
-        <span class="ref-label">Mood</span>
-        <span class="ref-value ref-badge">{{ analysis.mood }}</span>
-      </div>
-      <div class="ref-row">
-        <span class="ref-label">Genre</span>
-        <span class="ref-value ref-badge">{{ analysis.genre }}</span>
-      </div>
-      <div v-if="analysis.colorPalette" class="ref-row">
-        <span class="ref-label">Colors</span>
-        <div class="ref-swatches">
-          <div
-            v-for="(color, key) in paletteColors"
-            :key="key"
-            class="ref-swatch"
-            :style="{ background: color }"
-            :title="`${key}: ${color}`"
-          />
+      <p>{{ analysis.summary }}</p>
+      <dl>
+        <div>
+          <dt>Pacing</dt>
+          <dd>{{ analysis.pacing.description }}</dd>
         </div>
+        <div>
+          <dt>Captions</dt>
+          <dd>{{ analysis.captions.detected ? analysis.captions.treatment : 'None detected' }}</dd>
+        </div>
+        <div>
+          <dt>Motion</dt>
+          <dd>{{ analysis.motion.intensity }} · {{ analysis.motion.cameraBehaviors.join(', ') }}</dd>
+        </div>
+        <div>
+          <dt>Transitions</dt>
+          <dd>{{ analysis.transitions.families.join(', ') || 'Cuts only' }}</dd>
+        </div>
+        <div>
+          <dt>Layout</dt>
+          <dd>{{ analysis.layout.patterns.join(', ') }}</dd>
+        </div>
+      </dl>
+      <div class="ref-card__swatches" aria-label="Detected color palette">
+        <span v-for="color in analysis.colorGrade.palette" :key="color" :style="{ background: color }" :title="color" />
       </div>
-      <div v-if="analysis.motionStyle" class="ref-row">
-        <span class="ref-label">Pacing</span>
-        <span class="ref-value">{{ analysis.motionStyle.pacing }} · Energy {{ analysis.motionStyle.energyLevel }}/10</span>
+      <p v-if="analysis.unsupported.length" class="ref-card__fallback">
+        {{ analysis.unsupported.length }} unsupported technique{{ analysis.unsupported.length === 1 ? '' : 's' }} will
+        use declared fallbacks.
+      </p>
+      <div class="ref-card__actions">
+        <button type="button" @click="$emit('replace')">Replace</button>
+        <button type="button" @click="$emit('remove')">
+          <X :size="11" />
+          Remove
+        </button>
       </div>
-      <div v-if="analysis.summary" class="ref-summary">{{ analysis.summary }}</div>
     </div>
 
-    <div v-else-if="error" class="ref-card__error">
-      <AlertCircle :size="12" />
+    <div v-else-if="error" class="ref-card__error" role="alert">
+      <AlertCircle :size="13" />
       <span>{{ error }}</span>
+      <button type="button" @click="$emit('retry')">Retry</button>
     </div>
-  </div>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import { Palette, X, Loader2, AlertCircle } from 'lucide-vue-next';
-import type { ReferenceStyleProfile } from '@/types/ai-video';
+  import { Palette, X, AlertCircle } from 'lucide-vue-next';
+  import type { ReferenceAnalysisProgress, ReferenceEditRecipe } from '@/types/ai-video';
 
-const props = defineProps<{
-  analysis: ReferenceStyleProfile | null;
-  isAnalyzing: boolean;
-  error?: string | null;
-}>();
+  defineProps<{
+    analysis: ReferenceEditRecipe | null;
+    isAnalyzing: boolean;
+    progress?: ReferenceAnalysisProgress | null;
+    error?: string | null;
+  }>();
 
-defineEmits<{
-  remove: [];
-}>();
-
-const paletteColors = computed(() => {
-  if (!props.analysis?.colorPalette) return {};
-  const p = props.analysis.colorPalette;
-  return {
-    primary: p.primary,
-    secondary: p.secondary,
-    accent: p.accent,
-    background: p.background,
-    text: p.text,
-  };
-});
+  defineEmits<{ remove: []; cancel: []; replace: []; retry: [] }>();
 </script>
 
 <style scoped>
-.ref-card {
-  background: rgba(59, 130, 246, 0.06);
-  border: 1px solid rgba(59, 130, 246, 0.15);
-  border-radius: 10px;
-  overflow: hidden;
-  margin: 6px 0;
-}
-
-.ref-card__header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #60a5fa;
-  border-bottom: 1px solid rgba(59, 130, 246, 0.1);
-}
-
-.ref-card__remove {
-  margin-left: auto;
-  background: none;
-  border: none;
-  color: rgba(255, 255, 255, 0.3);
-  cursor: pointer;
-  padding: 2px;
-}
-
-.ref-card__remove:hover {
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.ref-card__loading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.ref-card__body {
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.ref-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-}
-
-.ref-label {
-  color: rgba(255, 255, 255, 0.4);
-  min-width: 50px;
-  flex-shrink: 0;
-}
-
-.ref-value {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.ref-badge {
-  background: rgba(59, 130, 246, 0.12);
-  padding: 1px 8px;
-  border-radius: 4px;
-  text-transform: capitalize;
-}
-
-.ref-swatches {
-  display: flex;
-  gap: 3px;
-}
-
-.ref-swatch {
-  width: 16px;
-  height: 16px;
-  border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.ref-summary {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
-  line-height: 1.4;
-  margin-top: 2px;
-  padding-top: 4px;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
-}
-
-.ref-card__error {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px;
-  font-size: 11px;
-  color: #f87171;
-}
+  .ref-card {
+    margin: 6px 0;
+    overflow: hidden;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 10px;
+    background: rgba(59, 130, 246, 0.06);
+    color: rgba(255, 255, 255, 0.78);
+  }
+  .ref-card__header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(59, 130, 246, 0.12);
+    color: #60a5fa;
+    font-size: 12px;
+    font-weight: 650;
+  }
+  .ref-card__version {
+    margin-left: auto;
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 10px;
+  }
+  .ref-card__progress,
+  .ref-card__body,
+  .ref-card__error {
+    padding: 10px;
+    font-size: 11px;
+  }
+  .ref-card__progress-label {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .ref-card__track {
+    height: 4px;
+    margin: 8px 0;
+    overflow: hidden;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.1);
+  }
+  .ref-card__track div {
+    height: 100%;
+    background: #3b82f6;
+    transition: width 0.2s ease;
+  }
+  .ref-card button {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    border: 0;
+    background: transparent;
+    color: #93c5fd;
+    cursor: pointer;
+    font-size: 10px;
+  }
+  .ref-card__body > p {
+    margin: 0 0 7px;
+    line-height: 1.4;
+  }
+  .ref-card dl {
+    display: grid;
+    gap: 5px;
+    margin: 0;
+  }
+  .ref-card dl div {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 6px;
+  }
+  .ref-card dt {
+    color: rgba(255, 255, 255, 0.4);
+  }
+  .ref-card dd {
+    margin: 0;
+  }
+  .ref-card__swatches {
+    display: flex;
+    gap: 4px;
+    margin-top: 8px;
+  }
+  .ref-card__swatches span {
+    width: 17px;
+    height: 17px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+  }
+  .ref-card__fallback {
+    color: #fbbf24;
+  }
+  .ref-card__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .ref-card__error {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #f87171;
+  }
+  .ref-card__error button {
+    margin-left: auto;
+  }
 </style>

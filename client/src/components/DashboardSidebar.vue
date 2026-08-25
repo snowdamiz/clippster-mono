@@ -272,6 +272,7 @@
     DropdownMenuTrigger,
   } from '@/components/ui/dropdown-menu';
   import api from '@/services/api';
+  import { canAccessAIVideo } from '@/utils/aiVideoAccess';
   import {
     Zap,
     UserCircle,
@@ -527,8 +528,7 @@
     }).map((item) => {
       // Dynamically disable AI Video Creator for non-authorized users
       if (item.path === '/ai-video') {
-        const user = authStore.user as any;
-        const hasAccess = user?.is_admin || user?.ai_editor_enabled;
+        const hasAccess = canAccessAIVideo(authStore.user);
         return {
           ...item,
           disabled: !hasAccess,

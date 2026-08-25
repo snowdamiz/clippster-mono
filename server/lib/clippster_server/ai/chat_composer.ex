@@ -9,7 +9,7 @@ defmodule ClippsterServer.AI.ChatComposer do
   alias ClippsterServer.AI.ChatSessions
 
   @openrouter_url "https://openrouter.ai/api/v1/chat/completions"
-  @chat_model "anthropic/claude-sonnet-4"
+  @default_chat_model "anthropic/claude-sonnet-5"
   @max_retries 2
   @valid_aspect_ratios ~w(16:9 9:16 1:1 4:5)
 
@@ -253,7 +253,19 @@ defmodule ClippsterServer.AI.ChatComposer do
 
             # Update style context if summary is present
             if summary = Map.get(parsed, "summary") do
-              ChatSessions.update_session(session, %{style_context: summary})
+              existing = session.style_context || %{}
+              style_context = Map.merge(existing, summary)
+
+              style_context =
+                if pack = existing["stylePack"] do
+                  style_context
+                  |> Map.put("stylePack", pack)
+                  |> Map.put("style", pack["id"])
+                else
+                  style_context
+                end
+
+              ChatSessions.update_session(session, %{style_context: style_context})
             end
 
             {:ok, %{response: parsed, message: ai_message}}
@@ -720,7 +732,7 @@ defmodule ClippsterServer.AI.ChatComposer do
 
   defp call_openrouter_with_retry(messages, api_key, attempt) do
     payload = %{
-      "model" => @chat_model,
+      "model" => System.get_env("OPENROUTER_CHAT_MODEL") || @default_chat_model,
       "messages" => messages,
       "max_tokens" => 4096,
       "temperature" => 0.6

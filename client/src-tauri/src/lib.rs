@@ -1092,6 +1092,8 @@ generate_proxy_file,
 commands::file_utils::get_file_info,
 commands::file_utils::get_media_metadata,
 commands::file_utils::generate_video_thumbnail,
+commands::reference_video::prepare_reference_video,
+commands::reference_video::cancel_reference_analysis,
 
 // Auth commands
             auth::open_wallet_auth_window,
@@ -1397,6 +1399,7 @@ studio::studio_save_recording,
 
 ])
 .manage(commands::remotion_export::SidecarState::new())
+.manage(commands::reference_video::ReferenceAnalysisState::default())
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
 }

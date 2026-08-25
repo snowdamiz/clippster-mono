@@ -96,12 +96,24 @@
     </div>
 
     <ReferenceAnalysisCard
-      v-if="referenceAnalysis || isAnalyzingReference"
+      v-if="referenceAnalysis || isAnalyzingReference || referenceError"
       :analysis="referenceAnalysis"
       :is-analyzing="isAnalyzingReference"
+      :progress="referenceProgress"
       :error="referenceError"
       @remove="$emit('remove-reference')"
+      @cancel="$emit('cancel-reference')"
+      @replace="openReferenceDialog"
+      @retry="$emit('retry-reference')"
     />
+
+    <div v-if="showStylePacks" class="chat-style-packs">
+      <div class="chat-style-packs__header">
+        <span>Generation style pack</span>
+        <button type="button" aria-label="Close style packs" @click="showStylePacks = false"><X :size="12" /></button>
+      </div>
+      <StylePresetSelector :model-value="stylePackId" @update:model-value="$emit('select-style-pack', $event)" />
+    </div>
 
     <RefinementBadge
       v-if="isRefinementMode"
@@ -120,8 +132,8 @@
       <div ref="mediaMenuEl" class="chat-media-menu-wrap">
         <button
           class="chat-media-btn"
-          title="Add media"
-          aria-label="Add media"
+          title="Add source media"
+          aria-label="Add source media"
           :disabled="isGenerating"
           @click="toggleMediaMenu"
         >
@@ -134,27 +146,35 @@
         <div v-if="showMediaMenu" class="chat-media-menu">
           <button class="chat-media-menu__item" @click="handleMediaMenuAction('upload')">
             <Upload :size="13" />
-            <span>Upload Files</span>
+            <span>Upload Source Media</span>
           </button>
           <button class="chat-media-menu__item" @click="handleMediaMenuAction('clips')">
             <Video :size="13" />
-            <span>Select Clips</span>
+            <span>Select Source Clips</span>
           </button>
           <button class="chat-media-menu__item" @click="handleMediaMenuAction('assets')">
             <ImageIcon :size="13" />
-            <span>Select Assets</span>
+            <span>Select Source Assets</span>
           </button>
         </div>
       </div>
       <button
-        v-if="!isRefinementMode"
         class="chat-media-btn"
-        title="Add reference"
-        aria-label="Add reference"
+        title="Add reference video"
+        aria-label="Add reference video"
         :disabled="isGenerating || isAnalyzingReference"
         @click="openReferenceDialog"
       >
         <LinkIcon :size="16" />
+      </button>
+      <button
+        class="chat-media-btn"
+        title="Choose style pack"
+        aria-label="Choose style pack"
+        :disabled="isGenerating"
+        @click="showStylePacks = !showStylePacks"
+      >
+        <Palette :size="16" />
       </button>
 
       <textarea
@@ -175,7 +195,7 @@
     <Teleport to="body">
       <Transition name="chat-ref-fade">
         <div v-if="showReferenceDialog" class="chat-ref-overlay" @click.self="showReferenceDialog = false">
-          <div class="chat-ref-dialog" role="dialog" aria-modal="true" aria-label="Add reference">
+          <div class="chat-ref-dialog" role="dialog" aria-modal="true" aria-label="Add reference video">
             <div class="chat-ref-dialog__accent"></div>
             <button
               class="chat-ref-dialog__close"
@@ -188,9 +208,10 @@
               <div class="chat-ref-dialog__icon">
                 <LinkIcon :size="20" />
               </div>
-              <h3 class="chat-ref-dialog__title">Add Reference</h3>
+              <h3 class="chat-ref-dialog__title">Reference video</h3>
               <p class="chat-ref-dialog__description">
-                Paste a public image URL to guide style, framing, or look for this project.
+                Learn pacing, captions, motion, transitions, grade, and layout from one video for 2 credits. Your source
+                media stays separate.
               </p>
             </div>
 
@@ -200,7 +221,7 @@
                   ref="referenceInputEl"
                   v-model="refUrl"
                   type="url"
-                  placeholder="https://example.com/reference-image.jpg"
+                  placeholder="YouTube, TikTok, Vimeo, Rumble, or direct video URL"
                   class="chat-ref-dialog__input"
                   @keydown.enter.prevent="handleAnalyzeReference"
                 />
@@ -208,6 +229,10 @@
             </div>
 
             <div class="chat-ref-dialog__footer">
+              <button class="chat-ref-dialog__btn chat-ref-dialog__btn--secondary" @click="handleUploadReference">
+                <Upload :size="14" />
+                Choose video
+              </button>
               <button class="chat-ref-dialog__btn chat-ref-dialog__btn--secondary" @click="showReferenceDialog = false">
                 Cancel
               </button>
@@ -244,12 +269,20 @@
     Video,
     Music,
     Image as ImageIcon,
+    Palette,
   } from 'lucide-vue-next';
   import ChatMessage from './ChatMessage.vue';
   import ChatSummaryCard from './ChatSummaryCard.vue';
   import RefinementBadge from './RefinementBadge.vue';
   import ReferenceAnalysisCard from './ReferenceAnalysisCard.vue';
-  import type { AIChatMessage, AIVideoMediaItem, ReferenceStyleProfile } from '@/types/ai-video';
+  import StylePresetSelector from './StylePresetSelector.vue';
+  import type {
+    AIChatMessage,
+    AIVideoMediaItem,
+    ReferenceAnalysisProgress,
+    ReferenceEditRecipe,
+    StylePackId,
+  } from '@/types/ai-video';
 
   type MediaType = 'video' | 'audio' | 'image';
 
@@ -272,9 +305,11 @@
     generationPhase: string;
     scenes: Array<{ index: number; description: string; status: string }>;
     completedScenes: number;
-    referenceAnalysis: ReferenceStyleProfile | null;
+    referenceAnalysis: ReferenceEditRecipe | null;
     isAnalyzingReference: boolean;
+    referenceProgress: ReferenceAnalysisProgress | null;
     referenceError: string | null;
+    stylePackId: StylePackId | null;
     draftMessage: string;
     mediaItems: AIVideoMediaItem[];
     transcriptGenerationStatus: Map<string, { status: 'generating' | 'complete' | 'error'; progress?: string }>;
@@ -285,7 +320,11 @@
     'update:draft-message': [message: string];
     'clear-error': [];
     'analyze-reference': [url: string];
+    'upload-reference': [];
     'remove-reference': [];
+    'cancel-reference': [];
+    'retry-reference': [];
+    'select-style-pack': [id: StylePackId];
     'upload-media': [];
     'open-clip-picker': [];
     'open-asset-picker': [];
@@ -298,6 +337,7 @@
   const mediaMenuEl = ref<HTMLDivElement | null>(null);
   const showReferenceDialog = ref(false);
   const showMediaMenu = ref(false);
+  const showStylePacks = ref(false);
   const refUrl = ref('');
 
   const inputText = computed({
@@ -399,6 +439,11 @@
     refUrl.value = '';
   }
 
+  function handleUploadReference() {
+    showReferenceDialog.value = false;
+    emit('upload-reference');
+  }
+
   function openReferenceDialog() {
     if (props.isGenerating || props.isAnalyzingReference) return;
     showMediaMenu.value = false;
@@ -471,6 +516,29 @@
     height: 100%;
     min-height: 0;
     gap: 0.5rem;
+  }
+
+  .chat-style-packs {
+    padding: 8px;
+    border: 1px solid rgba(99, 102, 241, 0.22);
+    border-radius: 10px;
+    background: rgba(99, 102, 241, 0.06);
+  }
+
+  .chat-style-packs__header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 7px;
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 11px;
+    font-weight: 650;
+  }
+
+  .chat-style-packs__header button {
+    border: 0;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.45);
+    cursor: pointer;
   }
 
   .chat-panel__media-strip {
