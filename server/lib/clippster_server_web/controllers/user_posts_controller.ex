@@ -54,6 +54,85 @@ defmodule ClippsterServerWeb.UserPostsController do
     publish_to_platform(conn, params, "youtube", "YouTube")
   end
 
+  @doc """
+  Publish a post to user's Tokend account (native provider; mock until partner APIs).
+
+  POST /api/user/tokend/publish
+  """
+  def publish_tokend(conn, params) do
+    publish_to_tokend(conn, params)
+  end
+
+  defp publish_to_tokend(conn, params) do
+    user = conn.assigns.current_user
+
+    with {:ok, account_id} <- get_required_param(params, "account_id"),
+         {:ok, media_url} <- get_required_param(params, "media_url"),
+         {:ok, account} <- get_user_account(user.id, account_id),
+         :ok <- validate_platform(account, "tokend") do
+      access_token =
+        ClippsterServer.Campaigns.ClipperSocialAccount.get_access_token(account) || ""
+
+      case ClippsterServer.Tokend.Client.publish_media(access_token, media_url, %{
+             media_type: params["media_type"] || "video",
+             caption: params["caption"]
+           }) do
+        {:ok, post_data} ->
+          post_attrs = %{
+            user_id: user.id,
+            clipper_social_account_id: account.id,
+            platform: "tokend",
+            post_id: post_data.post_id,
+            post_url: post_data.post_url,
+            caption: params["caption"],
+            media_url: media_url,
+            thumbnail_url: params["thumbnail_url"],
+            media_type: params["media_type"] || "video",
+            status: "published"
+          }
+
+          case Campaigns.create_user_post(user, post_attrs) do
+            {:ok, post} ->
+              conn
+              |> put_status(201)
+              |> json(%{
+                success: true,
+                post: serialize_post(post),
+                message: "Published to Tokend successfully (#{post_data[:mode] || "mock"})"
+              })
+
+            {:error, changeset} ->
+              conn
+              |> put_status(422)
+              |> json(%{success: false, error: extract_changeset_error(changeset)})
+          end
+      end
+    else
+      {:error, :not_found} ->
+        conn |> put_status(404) |> json(%{success: false, error: "Account not found"})
+
+      {:error, :account_inactive} ->
+        conn
+        |> put_status(422)
+        |> json(%{success: false, error: "Tokend account is inactive"})
+
+      {:error, :wrong_platform} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Account is not a Tokend account"})
+
+      {:error, :missing_param, field} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Missing required field: #{field}"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: inspect(reason)})
+    end
+  end
+
   defp publish_to_platform(conn, params, platform, platform_label) do
     user = conn.assigns.current_user
 

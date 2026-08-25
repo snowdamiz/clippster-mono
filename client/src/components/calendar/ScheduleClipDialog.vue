@@ -496,7 +496,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue';
-import { X, Calendar, CalendarDays, FileVideo, Loader2, AlertCircle, CheckCircle2, Instagram, Youtube, ChevronDown, Share2, Building2, Trophy, User } from 'lucide-vue-next';
+import { X, Calendar, CalendarDays, FileVideo, Loader2, AlertCircle, CheckCircle2, Instagram, Youtube, ChevronDown, Share2, Building2, Trophy, User, Radio } from 'lucide-vue-next';
 import XLogo from '@/components/icons/XLogo.vue';
 import TiktokLogo from '@/components/icons/TiktokLogo.vue';
 import CustomTimePicker from '@/components/CustomTimePicker.vue';
@@ -540,6 +540,7 @@ const availablePlatforms = [
   { id: 'twitter', label: 'X (Twitter)', icon: XLogo },
   { id: 'tiktok', label: 'TikTok', icon: TiktokLogo },
   { id: 'youtube', label: 'YouTube', icon: Youtube },
+  { id: 'tokend', label: 'Tokend', icon: Radio },
 ];
 
 // State
@@ -848,7 +849,7 @@ async function handleSchedule() {
       
       // Create schedule data with local path (will be updated with R2 URL after upload)
       const scheduleData: any = {
-        platform: platformId as 'instagram' | 'tiktok' | 'twitter' | 'youtube',
+        platform: platformId as 'instagram' | 'tiktok' | 'twitter' | 'youtube' | 'tokend',
         media_url: props.mediaUrl,
         thumbnail_url: props.thumbnailUrl,
         caption: caption.value || undefined,

@@ -1163,6 +1163,7 @@ import {
   AlertCircle,
   Instagram,
   Youtube,
+  Radio,
   FileVideo,
   Building2,
   Globe,
@@ -1198,6 +1199,7 @@ import { listUserTwitterAccounts, type UserTwitterAccount } from '@/services/use
 import { listUserTiktokAccounts, type UserTiktokAccount } from '@/services/userTiktokApi';
 import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services/userInstagramApi';
 import { listUserYoutubeAccounts, type UserYoutubeAccount } from '@/services/userYoutubeApi';
+import { listUserTokendAccounts, type UserTokendAccount } from '@/services/userTokendApi';
 import { createProject } from '@/services/database/projects';
 import { updateClip } from '@/services/database/clips';
 import type {
@@ -1279,6 +1281,7 @@ const availablePlatforms = [
   { id: 'twitter', label: 'X (Twitter)', icon: XLogo },
   { id: 'tiktok', label: 'TikTok', icon: TiktokLogo },
   { id: 'youtube', label: 'YouTube', icon: Youtube },
+  { id: 'tokend', label: 'Tokend', icon: Radio },
 ];
 
 const props = defineProps<{
@@ -1289,7 +1292,7 @@ const props = defineProps<{
   watermarkSettings?: WatermarkSettings | null;
   thumbnailUrl?: string | null;
   creatorProfileServerId?: number | null;
-  platform?: 'PumpFun' | 'Kick' | 'Twitch' | 'YouTube' | 'Rumble' | 'Twitter';
+  platform?: 'PumpFun' | 'Kick' | 'Twitch' | 'YouTube' | 'Rumble' | 'Twitter' | 'Tokend';
 }>();
 
 const emit = defineEmits<{
@@ -1405,6 +1408,7 @@ const personalTwitterAccounts = ref<UserTwitterAccount[]>([]);
 const personalTiktokAccounts = ref<UserTiktokAccount[]>([]);
 const personalInstagramAccounts = ref<UserInstagramAccount[]>([]);
 const personalYoutubeAccounts = ref<UserYoutubeAccount[]>([]);
+const personalTokendAccounts = ref<UserTokendAccount[]>([]);
 const activeAspectRatioDropdown = ref<string | null>(null);
 const hasQueuedBackgroundPublish = ref(false);
 
@@ -2245,6 +2249,7 @@ function getDefaultAspectRatioForPlatform(platformId: string): string {
     tiktok: '9:16',
     twitter: '16:9',
     youtube: '16:9',
+    tokend: '9:16',
   };
   const defaultRatio = defaults[platformId] || '16:9';
   // Return default if it's in selected ratios, otherwise return first selected ratio
@@ -2294,11 +2299,18 @@ function getOrgAccountsForPlatform(platformId: string): SocialAccount[] {
     twitter: 'twitter',
     tiktok: 'tiktok',
     youtube: 'youtube',
+    tokend: 'tokend',
   };
-  return orgAccounts.value.filter((a) => a.platform === platformMap[platformId]);
+  return orgAccounts.value.filter((a) => {
+    const mapped = platformMap[platformId];
+    if (platformId === 'twitter') {
+      return a.platform === 'twitter' || a.platform === 'x';
+    }
+    return a.platform === mapped || a.provider === mapped;
+  });
 }
 
-function getPersonalAccountsForPlatform(platformId: string): (UserTwitterAccount | UserTiktokAccount | UserInstagramAccount | UserYoutubeAccount)[] {
+function getPersonalAccountsForPlatform(platformId: string): (UserTwitterAccount | UserTiktokAccount | UserInstagramAccount | UserYoutubeAccount | UserTokendAccount)[] {
   switch (platformId) {
     case 'twitter':
       return personalTwitterAccounts.value;
@@ -2308,6 +2320,8 @@ function getPersonalAccountsForPlatform(platformId: string): (UserTwitterAccount
       return personalInstagramAccounts.value;
     case 'youtube':
       return personalYoutubeAccounts.value;
+    case 'tokend':
+      return personalTokendAccounts.value;
     default:
       return [];
   }
@@ -3291,29 +3305,33 @@ async function loadAccounts() {
       }
     }
     
-    const [twitterRes, tiktokRes, instagramRes, youtubeRes] = await Promise.all([
+    const [twitterRes, tiktokRes, instagramRes, youtubeRes, tokendRes] = await Promise.all([
       listUserTwitterAccounts(),
       listUserTiktokAccounts(),
       listUserInstagramAccounts(),
       listUserYoutubeAccounts(),
+      listUserTokendAccounts(),
     ]);
     
     console.log('[QuickPublishWizard] Personal account responses:', {
       twitter: twitterRes,
       tiktok: tiktokRes,
       instagram: instagramRes,
-      youtube: youtubeRes
+      youtube: youtubeRes,
+      tokend: tokendRes,
     });
     
     if (twitterRes.success) personalTwitterAccounts.value = twitterRes.accounts || [];
     if (tiktokRes.success) personalTiktokAccounts.value = tiktokRes.accounts || [];
     if (instagramRes.success) personalInstagramAccounts.value = instagramRes.accounts || [];
     if (youtubeRes.success) personalYoutubeAccounts.value = youtubeRes.accounts || [];
+    if (tokendRes.success) personalTokendAccounts.value = tokendRes.accounts || [];
     
     console.log('[QuickPublishWizard] Loaded personal accounts - Twitter:', personalTwitterAccounts.value.length, 
       'TikTok:', personalTiktokAccounts.value.length,
       'Instagram:', personalInstagramAccounts.value.length,
-      'YouTube:', personalYoutubeAccounts.value.length);
+      'YouTube:', personalYoutubeAccounts.value.length,
+      'Tokend:', personalTokendAccounts.value.length);
   } catch (error) {
     console.error('[QuickPublishWizard] Failed to load accounts:', error);
   } finally {

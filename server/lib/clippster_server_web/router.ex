@@ -210,6 +210,14 @@ defmodule ClippsterServerWeb.Router do
     # Rumble routes
     get("/rumble/channels/:channel_name", RumbleController, :get_channel)
 
+    # Tokend routes (mock catalog / live status until partner APIs ship)
+    get("/tokend/mode", TokendController, :mode)
+    get("/tokend/channels/:slug", TokendController, :get_channel)
+    get("/tokend/channels/:slug/live", TokendController, :get_live_status)
+
+    # Tokend OAuth callback placeholder (public)
+    get("/auth/tokend/callback", TokendController, :oauth_callback)
+
     # Organization invitation (public - for viewing invitation details)
     get("/invitations/:token", OrganizationController, :get_invitation)
 
@@ -706,6 +714,8 @@ defmodule ClippsterServerWeb.Router do
     get("/organizations/:organization_id/social-accounts/:id", SocialAccountController, :show)
     post("/organizations/:organization_id/social-accounts", SocialAccountController, :create)
     put("/organizations/:organization_id/social-accounts/:id", SocialAccountController, :update)
+    post("/organizations/:org_id/tokend/connect", TokendController, :connect_org)
+    post("/organizations/:org_id/tokend/connect-url", TokendController, :connect_url_org)
 
     delete(
       "/organizations/:organization_id/social-accounts/:id",
@@ -888,6 +898,9 @@ defmodule ClippsterServerWeb.Router do
     post("/user/twitter/publish", UserPostsController, :publish_twitter)
     post("/user/tiktok/publish", UserPostsController, :publish_tiktok)
     post("/user/youtube/publish", UserPostsController, :publish_youtube)
+    post("/user/tokend/publish", UserPostsController, :publish_tokend)
+    post("/user/tokend/connect", TokendController, :connect_user)
+    post("/user/tokend/connect-url", TokendController, :connect_url_user)
     get("/user/posts", UserPostsController, :index)
     get("/user/posts/analytics", UserPostsController, :analytics_summary)
     post("/user/posts/sync-analytics", UserPostsController, :sync_user_analytics)

@@ -806,7 +806,7 @@ defmodule ClippsterServerWeb.SchedulingController do
               is_binary(post.provider_post_id) ||
                 (is_binary(post.post_url) && post.post_url != "")
 
-            is_supported = post.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
+            is_supported = post.platform in ["instagram", "x", "twitter", "tiktok", "youtube", "tokend"]
 
             if not has_account do
               Logger.warning(
@@ -989,7 +989,7 @@ defmodule ClippsterServerWeb.SchedulingController do
           Enum.filter(posts, fn sub ->
             has_user = sub.submitted_by_user_id != nil
             has_post_url = is_binary(sub.post_url) && sub.post_url != ""
-            is_supported = sub.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
+            is_supported = sub.platform in ["instagram", "x", "twitter", "tiktok", "youtube", "tokend"]
 
             if not has_user do
               Logger.warning(
@@ -1179,7 +1179,7 @@ defmodule ClippsterServerWeb.SchedulingController do
        when is_binary(platform) and is_binary(post_url) do
     alias ClippsterServer.Campaigns
 
-    unless platform in ["instagram", "x", "twitter", "tiktok", "youtube"] do
+    unless platform in ["instagram", "x", "twitter", "tiktok", "youtube", "tokend"] do
       %{}
     else
       case extract_post_identifier(platform, post_url) do

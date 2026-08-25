@@ -24,7 +24,6 @@ mod kick;
 mod pumpfun;
 mod rumble;
 mod sidecar;
-mod space_hls_speaker_timeline;
 mod storage;
 mod stripe_callback;
 mod studio;
@@ -1218,11 +1217,9 @@ commands::file_utils::generate_video_thumbnail,
             
             // Audio download commands
             audio_download::download_youtube_audio,
-            audio_download::download_twitter_space_audio,
             audio_download::upload_audio_file,
             audio_download::generate_audio_thumbnail,
             audio_download::cancel_audio_download,
-            space_hls_speaker_timeline::extract_space_speaker_timeline_from_hls_manifest,
 
             // Waveform commands
             waveform::extract_audio_waveform,

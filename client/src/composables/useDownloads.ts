@@ -57,7 +57,7 @@ export interface ActiveDownload {
   // Project grouping
   projectId?: string;
   parentProjectId?: string;
-  provider?: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter';
+  provider?: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter' | 'tokend';
   groupId?: string;
   totalSegments?: number;
   currentSegmentIndex?: number;
@@ -507,6 +507,69 @@ export function useDownloads() {
     isInitialized.value = true;
   }
 
+  async function startTokendDownloadStub(
+    title: string,
+    mintId: string,
+    sourceClipId?: string
+  ): Promise<string> {
+    const downloadId = generateId();
+    const stubError =
+      'Tokend media grants are not available yet. Catalog browsing works; downloads unlock when partner APIs ship.';
+
+    const download: ActiveDownload = {
+      id: downloadId,
+      title,
+      mintId,
+      progress: {
+        download_id: downloadId,
+        progress: 0,
+        status: 'Queued (Tokend stub)...',
+      },
+      sourceClipId: sourceClipId || mintId,
+      provider: 'tokend',
+      videoUrl: undefined,
+    };
+
+    activeDownloads.set(downloadId, download);
+    activeDownloadIds.add(downloadId);
+    saveState();
+
+    // Brief queue UX so the job appears in the downloads panel like other platforms
+    window.setTimeout(() => {
+      const current = activeDownloads.get(downloadId);
+      if (!current || current.result) return;
+      current.progress = {
+        download_id: downloadId,
+        progress: 12,
+        status: 'Requesting Tokend media grant...',
+      };
+      saveState();
+    }, 250);
+
+    window.setTimeout(() => {
+      const current = activeDownloads.get(downloadId);
+      if (!current || current.result) return;
+      current.progress = {
+        download_id: downloadId,
+        progress: 0,
+        status: 'Unavailable',
+      };
+      current.result = {
+        download_id: downloadId,
+        success: false,
+        error: stubError,
+      };
+      activeDownloadIds.delete(downloadId);
+      saveState();
+
+      const { error: showError } = useToast();
+      showError('Tokend Download Stub', stubError, undefined, 'downloads');
+      processQueue();
+    }, 900);
+
+    return downloadId;
+  }
+
   async function startDownload(
     title: string,
     videoUrl: string,
@@ -517,7 +580,7 @@ export function useDownloads() {
     options: {
       autoSegment?: boolean;
       segmentDuration?: number;
-      provider?: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter';
+      provider?: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter' | 'tokend';
       // Watermark settings from creator profile (stored with project for automatic application)
       creatorWatermarkSettings?: {
         watermarkId: string;
@@ -528,6 +591,15 @@ export function useDownloads() {
       applyCreatorClipLayout?: boolean;
     } = {}
   ): Promise<string> {
+    await initialize();
+
+    const provider = options.provider || 'pumpfun';
+
+    // Tokend: enqueue a stub job so UX matches other platforms; real grants land later.
+    if (provider === 'tokend') {
+      return startTokendDownloadStub(title, mintId, sourceClipId);
+    }
+
     // Free tier: 2 VOD downloads/day limit
     const { useAuthStore } = await import('@/stores/auth');
     const _authStore = useAuthStore();
@@ -546,10 +618,6 @@ export function useDownloads() {
       }
       await recordUsage(String(_user.id), 'vod_download');
     }
-
-    await initialize();
-
-    const provider = options.provider || 'pumpfun';
 
     // If this is a full stream download and we have duration info, check if we need auto-segmentation
     const shouldAutoSegment = options.autoSegment === true; // Default to false, only segment if explicitly requested

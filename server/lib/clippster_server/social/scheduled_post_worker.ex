@@ -253,8 +253,36 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
 
   defp get_user_account(_), do: {:error, :no_account_specified}
 
-  # All platforms publish via PostForMe API
-  defp do_publish(%PostSubmission{} = post, account, _access_token) do
+  # Publish via PostForMe or native Tokend
+  defp do_publish(%PostSubmission{} = post, account, access_token) do
+    case Map.get(account, :provider) do
+      "tokend" ->
+        do_publish_tokend(post, account, access_token)
+
+      _ ->
+        do_publish_post_for_me(post, account)
+    end
+  end
+
+  defp do_publish_tokend(post, _account, access_token) do
+    Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to Tokend (native)")
+
+    token = access_token || ""
+
+    case ClippsterServer.Tokend.Client.publish_media(token, post.media_url, %{
+           media_type: post.media_type || "video",
+           caption: post.caption
+         }) do
+      {:ok, result} ->
+        handle_publish_success(post, %{
+          post_id: result.post_id,
+          post_url: result.post_url,
+          provider_post_id: result.post_id
+        })
+    end
+  end
+
+  defp do_publish_post_for_me(%PostSubmission{} = post, account) do
     Logger.info(
       "[ScheduledPostWorker] Publishing post #{post.id} to #{post.platform} via PostForMe"
     )

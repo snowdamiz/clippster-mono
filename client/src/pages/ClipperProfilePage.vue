@@ -1315,6 +1315,7 @@
     Check,
     Briefcase,
     Building2,
+    Radio,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import EditProfileDialog from '@/components/EditProfileDialog.vue';
@@ -1388,6 +1389,13 @@
     disconnectUserYoutubeAccount,
     type UserYoutubeAccount,
   } from '@/services/userYoutubeApi';
+  import {
+    connectUserTokend,
+    startUserTokendOAuth,
+    listUserTokendAccounts,
+    disconnectUserTokendAccount,
+    type UserTokendAccount,
+  } from '@/services/userTokendApi';
   import { getMyClipperProfile, getExperienceLevelLabel, getSpecialtyTagLabel, type ClipperProfile } from '@/services/clipperProfilesApi';
   import {
     listPublicHiringPosts, applyToHiringPost, listMyHiringApplications,
@@ -1865,7 +1873,15 @@
   const connectingTwitter = ref(false);
   const connectingTiktok = ref(false);
   const connectingYoutube = ref(false);
-  const connectingPlatform = computed(() => connectingInstagram.value || connectingTwitter.value || connectingTiktok.value || connectingYoutube.value);
+  const connectingTokend = ref(false);
+  const connectingPlatform = computed(
+    () =>
+      connectingInstagram.value ||
+      connectingTwitter.value ||
+      connectingTiktok.value ||
+      connectingYoutube.value ||
+      connectingTokend.value
+  );
   const selectedPlatform = ref<string | null>(null);
   const selectedAccountForPosts = ref<UserInstagramAccount | null>(null);
   const editingPaymentMethod = ref<ClipperPaymentMethod | null>(null);
@@ -1911,12 +1927,26 @@
       iconClass: 'platform-card__icon--youtube',
       available: true,
     },
+    {
+      id: 'tokend',
+      name: 'Tokend',
+      icon: markRaw(Radio),
+      iconClass: 'platform-card__icon--tokend',
+      available: true,
+    },
   ];
 
   const paymentMethodForm = reactive({ method_type: '', is_default: false, details: {} as Record<string, string> });
 
   const getPlatformIcon = (platform: string) => {
-    const icons: Record<string, any> = { tiktok: Music2, instagram: Instagram, x: XLogo, twitter: XLogo, youtube: Youtube };
+    const icons: Record<string, any> = {
+      tiktok: Music2,
+      instagram: Instagram,
+      x: XLogo,
+      twitter: XLogo,
+      youtube: Youtube,
+      tokend: Radio,
+    };
     return icons[platform] || Globe;
   };
 
@@ -1927,6 +1957,7 @@
       x: 'list-item__icon--x',
       twitter: 'list-item__icon--x',
       youtube: 'list-item__icon--youtube',
+      tokend: 'list-item__icon--tokend',
     };
     return classes[platform] || '';
   };
@@ -1949,6 +1980,7 @@
       x: 'X (Twitter)',
       twitter: 'X (Twitter)',
       youtube: 'YouTube Shorts',
+      tokend: 'Tokend',
     };
     return names[platform] || platform;
   };
@@ -1993,17 +2025,19 @@
   const loadSocialAccounts = async () => {
     loadingSocialAccounts.value = true;
     try {
-      const [igResponse, twResponse, tkResponse, ytResponse] = await Promise.all([
+      const [igResponse, twResponse, tkResponse, ytResponse, tokendResponse] = await Promise.all([
         listUserInstagramAccounts(),
         listUserTwitterAccounts(),
         listUserTiktokAccounts(),
         listUserYoutubeAccounts(),
+        listUserTokendAccounts(),
       ]);
       const accounts: any[] = [];
       if (igResponse.success) accounts.push(...igResponse.accounts);
       if (twResponse.success) accounts.push(...twResponse.accounts);
       if (tkResponse.success) accounts.push(...tkResponse.accounts);
       if (ytResponse.success) accounts.push(...ytResponse.accounts);
+      if (tokendResponse.success) accounts.push(...tokendResponse.accounts);
       socialAccounts.value = accounts;
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to load social accounts' });
@@ -2097,6 +2131,69 @@
         console.error('Failed to connect YouTube:', error);
         toast({ title: 'Error', description: 'Failed to connect YouTube' });
         connectingYoutube.value = false;
+        selectedPlatform.value = null;
+      }
+    } else if (platformId === 'tokend') {
+      connectingTokend.value = true;
+      try {
+        cleanupReconnectAuth = await startUserTokendOAuth(async (result) => {
+          if (result.success) {
+            toast({
+              title: 'Tokend connected',
+              description: result.account
+                ? `@${result.account.username} linked`
+                : 'Tokend account linked',
+            });
+            await loadSocialAccounts();
+            showPlatformSelectionDialog.value = false;
+          } else if (result.error === 'configure_tokend' || result.error === 'oauth_required') {
+            // Fall back to mock connect when OAuth is not configured
+            const mock = await connectUserTokend();
+            if (mock.success && mock.account) {
+              toast({
+                title: 'Tokend connected (mock)',
+                description: `@${mock.account.username} linked — OAuth not configured on Phoenix`,
+              });
+              await loadSocialAccounts();
+              showPlatformSelectionDialog.value = false;
+            } else {
+              toast({
+                title: 'Tokend connect failed',
+                description: mock.message || result.error || 'Failed to connect Tokend',
+              });
+            }
+          } else {
+            toast({
+              title: 'Tokend connect failed',
+              description: result.error || 'Failed to connect Tokend',
+            });
+          }
+          connectingTokend.value = false;
+          selectedPlatform.value = null;
+        });
+      } catch (error) {
+        console.error('Failed to connect Tokend:', error);
+        // If connect-url fails because OAuth unset, try mock
+        try {
+          const mock = await connectUserTokend();
+          if (mock.success && mock.account) {
+            toast({
+              title: 'Tokend connected (mock)',
+              description: `@${mock.account.username} linked — OAuth not configured on Phoenix`,
+            });
+            await loadSocialAccounts();
+            showPlatformSelectionDialog.value = false;
+          } else {
+            toast({
+              title: 'Error',
+              description:
+                error instanceof Error ? error.message : 'Failed to connect Tokend',
+            });
+          }
+        } catch {
+          toast({ title: 'Error', description: 'Failed to connect Tokend' });
+        }
+        connectingTokend.value = false;
         selectedPlatform.value = null;
       }
     } else {
@@ -2271,6 +2368,8 @@
           response = await disconnectUserTiktokAccount(account.id);
         } else if (account.platform === 'youtube') {
           response = await disconnectUserYoutubeAccount(account.id);
+        } else if (account.platform === 'tokend') {
+          response = await disconnectUserTokendAccount(account.id);
         } else {
           response = await disconnectUserInstagramAccount(account.id);
         }
@@ -3984,6 +4083,14 @@
     color: white;
   }
 
+  .list-item__icon--tokend {
+    background: #0ea5e9;
+  }
+
+  .list-item__icon--tokend svg {
+    color: white;
+  }
+
   .platform--tiktok {
     background: rgba(255, 0, 80, 0.1);
   }
@@ -4196,6 +4303,14 @@
   }
 
   .platform-card__icon--youtube svg {
+    color: white;
+  }
+
+  .platform-card__icon--tokend {
+    background: #0ea5e9;
+  }
+
+  .platform-card__icon--tokend svg {
     color: white;
   }
 

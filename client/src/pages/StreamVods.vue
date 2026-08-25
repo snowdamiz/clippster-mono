@@ -180,6 +180,29 @@
           </button>
         </div>
 
+        <!-- Tokend Tabs -->
+        <div
+          v-if="detectedPlatform === 'tokend' && (platformStore.clips.length > 0 || platformStore.loading)"
+          class="streamvods__youtube-tabs"
+        >
+          <button
+            type="button"
+            :class="['streamvods__youtube-tab', { 'streamvods__youtube-tab--active': tokendTab === 'streams' }]"
+            :disabled="platformStore.loading"
+            @click="switchTokendTab('streams')"
+          >
+            Streams
+          </button>
+          <button
+            type="button"
+            :class="['streamvods__youtube-tab', { 'streamvods__youtube-tab--active': tokendTab === 'videos' }]"
+            :disabled="platformStore.loading"
+            @click="switchTokendTab('videos')"
+          >
+            Videos
+          </button>
+        </div>
+
         <!-- Page Heading -->
         <div v-if="platformStore.clips.length > 0 || platformStore.loading" class="streamvods__heading">
           <h1 class="streamvods__title">Stream VOD Library</h1>
@@ -553,6 +576,7 @@
       youtube: 'YouTube',
       rumble: 'rumble',
       twitter: 'twitter',
+      tokend: 'tokend',
     };
     return map[key] ?? null;
   }
@@ -618,6 +642,9 @@
   // Rumble tab state (Live Streams vs Videos)
   const rumbleTab = ref<'streams' | 'videos'>('streams');
 
+  // Tokend tab state (Streams vs Videos)
+  const tokendTab = ref<'streams' | 'videos'>('streams');
+
   function detectPlatform() {
     const val = searchInput.value?.trim();
 
@@ -655,6 +682,16 @@
     // Check for Rumble
     if (lowerVal.includes('rumble.com')) {
       detectedPlatform.value = 'rumble';
+      return;
+    }
+
+    // Check for Tokend creator URLs (tokend.tv or local web :4100)
+    if (
+      lowerVal.includes('tokend.tv') ||
+      lowerVal.includes('localhost:4100') ||
+      lowerVal.includes('127.0.0.1:4100')
+    ) {
+      detectedPlatform.value = 'tokend';
       return;
     }
 
@@ -790,6 +827,7 @@
       YouTube: '/youtube.svg',
       rumble: '/rumble.svg',
       twitter: '/x.svg',
+      tokend: '/tokend.svg',
     };
     return icons[platform] || '/capsule.svg';
   }
@@ -802,6 +840,7 @@
       YouTube: 'YouTube',
       rumble: 'Rumble',
       twitter: 'X (Twitter)',
+      tokend: 'Tokend',
     };
     return names[platform] || platform;
   }
@@ -1018,6 +1057,29 @@
     }
   }
 
+  async function switchTokendTab(tab: 'streams' | 'videos') {
+    if (tokendTab.value === tab || platformStore.loading) return;
+    tokendTab.value = tab;
+    const input = searchInput.value.trim();
+    if (!input || detectedPlatform.value !== 'tokend') return;
+    platformStore.setActivePlatform('tokend');
+    try {
+      const result = await platformStore.searchClips(input, 20, tokendTab.value);
+      if (result.success) {
+        await loadDownloadedVodIds();
+        if (result.total === 0) {
+          showError('No Content Found', `No ${tab} found for this Tokend creator`);
+        } else if ('fallbackUsed' in result && result.fallbackUsed && result.actualTab) {
+          success('Content Found', `No ${tab} found, showing ${result.actualTab} instead (${result.total} found)`);
+        }
+      } else {
+        showError('Search Failed', result.error || 'Failed to fetch Tokend catalog');
+      }
+    } catch (err) {
+      showError('Error', err instanceof Error ? err.message : 'An unexpected error occurred');
+    }
+  }
+
   async function handleSearch() {
     const input = searchInput.value.trim();
     if (!input) {
@@ -1058,18 +1120,22 @@
       return;
     }
 
-    // Reset Rumble tab to streams (default) when doing a new search
+    // Reset Rumble / Tokend tabs to streams (default) when doing a new search
     if (detectedPlatform.value === 'rumble') {
       rumbleTab.value = 'streams';
+    }
+    if (detectedPlatform.value === 'tokend') {
+      tokendTab.value = 'streams';
     }
 
     // Set the active platform in the store
     platformStore.setActivePlatform(detectedPlatform.value);
 
     try {
-      // Pass tab parameter for YouTube and Rumble
+      // Pass tab parameter for YouTube, Rumble, and Tokend
       const tabParam = detectedPlatform.value === 'YouTube' ? youtubeTab.value 
-                     : detectedPlatform.value === 'rumble' ? rumbleTab.value 
+                     : detectedPlatform.value === 'rumble' ? rumbleTab.value
+                     : detectedPlatform.value === 'tokend' ? tokendTab.value
                      : undefined;
       const result = await platformStore.searchClips(input, 20, tabParam);
       if (result.success) {
@@ -1171,7 +1237,10 @@
     downloadStarting.value = true;
 
     try {
-      const videoUrl = clip.mp4Url || clip.playlistUrl;
+      const videoUrl =
+        clip.mp4Url ||
+        clip.playlistUrl ||
+        (detectedPlatform.value === 'tokend' ? `tokend://stub/${clip.clipId}` : undefined);
       if (!videoUrl) throw new Error('No video URL available for this VOD');
 
       // Only pass segment range if user has trimmed the selection (not full stream)
@@ -1264,7 +1333,7 @@
         {
           autoSegment: autoSegment.value,
           segmentDuration: autoSegmentDuration.value * 60,
-          provider: detectedPlatform.value === 'kick' ? 'kick' : detectedPlatform.value === 'twitch' ? 'twitch' : detectedPlatform.value === 'YouTube' ? 'YouTube' : detectedPlatform.value === 'rumble' ? 'rumble' : detectedPlatform.value === 'twitter' ? 'twitter' : 'pumpfun',
+          provider: detectedPlatform.value === 'kick' ? 'kick' : detectedPlatform.value === 'twitch' ? 'twitch' : detectedPlatform.value === 'YouTube' ? 'YouTube' : detectedPlatform.value === 'rumble' ? 'rumble' : detectedPlatform.value === 'twitter' ? 'twitter' : detectedPlatform.value === 'tokend' ? 'tokend' : 'pumpfun',
           creatorWatermarkSettings,
           creatorProfileId: applyLayout ? localCreatorProfile!.id : undefined,
           applyCreatorClipLayout: applyLayout,
@@ -1273,7 +1342,10 @@
 
       let downloadMessage: string;
 
-      if (shouldAutoSegment) {
+      if (detectedPlatform.value === 'tokend') {
+        downloadMessage =
+          'Queued in downloads. Tokend media grants are stubbed until partner APIs ship.';
+      } else if (shouldAutoSegment) {
         const parts = estimatedParts.value;
         const rangeLabel = isFullStreamSelected.value ? 'stream' : 'selection';
         downloadMessage = `Splitting ${rangeLabel} into ~${parts} parts (~${autoSegmentDuration.value} min each).`;
@@ -1283,7 +1355,10 @@
         downloadMessage = `Downloading full stream "${clip.title}".`;
       }
 
-      success('Download Started', downloadMessage);
+      success(
+        detectedPlatform.value === 'tokend' ? 'Tokend Download Queued' : 'Download Started',
+        downloadMessage
+      );
       closeDownloadDialog();
 
       // Check if we're processing a queue
@@ -1297,22 +1372,26 @@
             handleDownloadClip(downloadQueue.value[currentQueueIndex.value]);
           }, 500);
         } else {
-          // Queue complete - navigate to projects and cleanup
+          // Queue complete - navigate to projects and cleanup (skip for Tokend stubs)
           setTimeout(() => {
             downloadStarting.value = false;
             isProcessingQueue.value = false;
             downloadQueue.value = [];
             currentQueueIndex.value = 0;
             clearSelection();
-            router.push('/projects');
+            if (detectedPlatform.value !== 'tokend') {
+              router.push('/projects');
+            }
           }, 500);
         }
-      } else {
+      } else if (detectedPlatform.value !== 'tokend') {
         // Single download - navigate immediately
         setTimeout(() => {
           downloadStarting.value = false;
           router.push('/projects');
         }, 500);
+      } else {
+        downloadStarting.value = false;
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);

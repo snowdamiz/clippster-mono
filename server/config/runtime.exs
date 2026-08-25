@@ -158,6 +158,18 @@ config :clippster_server, :twitter_oauth,
   client_secret: System.get_env("TWITTER_CLIENT_SECRET"),
   redirect_uri: System.get_env("TWITTER_REDIRECT_URI")
 
+# Tokend partner API (native provider).
+# mock: no TOKEND_API_BASE_URL
+# local: TOKEND_API_BASE_URL only (e.g. http://localhost:4101) — proxy public creator APIs
+# live: base URL + OAuth client id/secret
+config :clippster_server, :tokend,
+  api_base_url: System.get_env("TOKEND_API_BASE_URL"),
+  web_base_url: System.get_env("TOKEND_WEB_BASE_URL") || "http://localhost:4100",
+  oauth_client_id: System.get_env("TOKEND_OAUTH_CLIENT_ID"),
+  oauth_client_secret: System.get_env("TOKEND_OAUTH_CLIENT_SECRET"),
+  oauth_redirect_uri: System.get_env("TOKEND_OAUTH_REDIRECT_URI"),
+  webhook_signing_secret: System.get_env("TOKEND_WEBHOOK_SIGNING_SECRET")
+
 # Social connections and publishing use Post For Me exclusively.
 social_provider_mode =
   (System.get_env("SOCIAL_PROVIDER_MODE") || "post_for_me")

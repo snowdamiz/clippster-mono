@@ -2014,6 +2014,7 @@
       YouTube: '/youtube.svg',
       rumble: '/rumble.svg',
       twitter: '/x.svg',
+      tokend: '/tokend.svg',
     };
     return icons[platform] || '/capsule.svg';
   }
@@ -2026,6 +2027,7 @@
       YouTube: 'brightness(0) saturate(100%) invert(22%) sepia(99%) saturate(3013%) hue-rotate(352deg) brightness(95%) contrast(91%)',
       rumble: 'brightness(0) saturate(100%) invert(83%) sepia(47%) saturate(1113%) hue-rotate(57deg) brightness(106%) contrast(98%)',
       twitter: 'brightness(0) invert(100%)',
+      tokend: 'none',
     };
     return filters[platform] || 'none';
   }

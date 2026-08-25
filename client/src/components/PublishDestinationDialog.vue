@@ -148,13 +148,14 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { Instagram, Youtube, Building, ChevronRight, X, User } from 'lucide-vue-next';
+  import { Instagram, Youtube, Building, ChevronRight, X, User, Radio } from 'lucide-vue-next';
   import XLogo from '@/components/icons/XLogo.vue';
   import { useAuthStore } from '@/stores/auth';
   import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services/userInstagramApi';
   import { listUserTwitterAccounts, type UserTwitterAccount } from '@/services/userTwitterApi';
   import { listUserTiktokAccounts, type UserTiktokAccount } from '@/services/userTiktokApi';
   import { listUserYoutubeAccounts, type UserYoutubeAccount } from '@/services/userYoutubeApi';
+  import { listUserTokendAccounts, type UserTokendAccount } from '@/services/userTokendApi';
   import { listSocialAccounts } from '@/services/socialAccountsApi';
 
   const TiktokIcon = {
@@ -170,7 +171,7 @@
 
   const props = defineProps<{
     open: boolean;
-    platform?: 'instagram' | 'twitter' | 'tiktok' | 'youtube';
+    platform?: 'instagram' | 'twitter' | 'tiktok' | 'youtube' | 'tokend';
   }>();
 
   const emit = defineEmits<{
@@ -182,7 +183,9 @@
   const authStore = useAuthStore();
   const loading = ref(false);
   const organizations = ref<Organization[]>([]);
-  const personalAccounts = ref<(UserInstagramAccount | UserTwitterAccount | UserTiktokAccount | UserYoutubeAccount)[]>([]);
+  const personalAccounts = ref<
+    (UserInstagramAccount | UserTwitterAccount | UserTiktokAccount | UserYoutubeAccount | UserTokendAccount)[]
+  >([]);
 
   const activePlatform = computed(() => props.platform || 'instagram');
   const platformIcon = computed(() => {
@@ -190,6 +193,7 @@
       case 'twitter': return XLogo;
       case 'tiktok': return TiktokIcon;
       case 'youtube': return Youtube;
+      case 'tokend': return Radio;
       default: return Instagram;
     }
   });
@@ -198,6 +202,7 @@
       case 'twitter': return 'X (Twitter)';
       case 'tiktok': return 'TikTok';
       case 'youtube': return 'YouTube';
+      case 'tokend': return 'Tokend';
       default: return 'Instagram';
     }
   });
@@ -244,6 +249,7 @@
         twitter: () => listUserTwitterAccounts(),
         tiktok: () => listUserTiktokAccounts(),
         youtube: () => listUserYoutubeAccounts(),
+        tokend: () => listUserTokendAccounts(),
       };
       const loader = loaders[platform] || loaders.instagram;
       const accountsResult = await loader();
@@ -497,6 +503,14 @@
   }
 
   .dest-dialog__avatar--twitter svg {
+    color: white;
+  }
+
+  .dest-dialog__avatar--tokend {
+    background-color: #0ea5e9;
+  }
+
+  .dest-dialog__avatar--tokend svg {
     color: white;
   }
 

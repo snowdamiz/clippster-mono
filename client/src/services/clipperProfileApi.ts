@@ -11,13 +11,17 @@ import api from './api';
 
 export interface ClipperSocialAccount {
   id: number;
-  platform: 'tiktok' | 'instagram' | 'x' | 'youtube';
+  platform: 'tiktok' | 'instagram' | 'x' | 'twitter' | 'youtube' | 'tokend' | string;
   platform_user_id: string | null;
+  provider?: string | null;
+  provider_platform?: string | null;
+  provider_account_id?: string | null;
   username: string | null;
   display_name: string | null;
   profile_url: string | null;
   follower_count: number | null;
   is_verified: boolean;
+  is_active?: boolean;
   inserted_at: string;
   updated_at: string;
 }

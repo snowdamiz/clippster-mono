@@ -2,6 +2,7 @@ import { startUserInstagramOAuth } from '@/services/userInstagramApi';
 import { startUserTwitterOAuth } from '@/services/userTwitterApi';
 import { startUserTiktokOAuth } from '@/services/userTiktokApi';
 import { startUserYoutubeOAuth } from '@/services/userYoutubeApi';
+import { startUserTokendOAuth, startOrgTokendOAuth } from '@/services/userTokendApi';
 import {
   startInstagramOAuthPopup,
   startTwitterOAuthPopup,
@@ -25,8 +26,8 @@ function normalizeOrgPlatform(platform: string): string {
 }
 
 /**
- * Re-authorize a personal social account via Post For Me OAuth.
- * No disconnect is required — the server upserts the existing connection.
+ * Re-authorize a personal social account.
+ * Tokend uses native OAuth (not Post For Me).
  */
 export async function reconnectPersonalSocialPlatform(
   platform: string,
@@ -48,13 +49,15 @@ export async function reconnectPersonalSocialPlatform(
       return startUserTiktokOAuth(handler, options);
     case 'youtube':
       return startUserYoutubeOAuth(handler, options);
+    case 'tokend':
+      return startUserTokendOAuth(handler);
     default:
       throw new Error(`Reconnect is not supported for ${getSocialPlatformLabel(platform)}`);
   }
 }
 
 /**
- * Re-authorize an organization social account via Post For Me OAuth.
+ * Re-authorize an organization social account.
  */
 export async function reconnectOrgSocialPlatform(
   organizationId: string | number,
@@ -77,6 +80,8 @@ export async function reconnectOrgSocialPlatform(
       return startTiktokOAuthPopup(organizationId, handler, options);
     case 'youtube':
       return startYoutubeOAuthPopup(organizationId, handler, options);
+    case 'tokend':
+      return startOrgTokendOAuth(organizationId, handler);
     default:
       throw new Error(`Reconnect is not supported for ${getSocialPlatformLabel(platform)}`);
   }

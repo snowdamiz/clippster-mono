@@ -1,4 +1,4 @@
-export type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter';
+export type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter' | 'tokend';
 
 export interface PlatformConfig {
   id: PlatformId;
@@ -19,6 +19,20 @@ export interface PlatformConfig {
 }
 
 export const platformConfigs: Record<PlatformId, PlatformConfig> = {
+  tokend: {
+    id: 'tokend',
+    name: 'Tokend',
+    description: 'Browse Tokend creator streams and videos (mock catalog until partner APIs)',
+    icon: '/tokend.svg',
+    searchPlaceholder: 'Tokend URL or @handle',
+    searchLabel: 'Creator',
+    emptyStateTitle: 'Search Tokend',
+    emptyStateDescription:
+      'Paste a Tokend creator URL (tokend.tv/seed-nova or localhost:4100/seed-nova). Seed data is local-only.',
+    isComingSoon: false,
+    provider: 'tokend',
+    localStorageKey: 'tokend_recent_searches',
+  },
   twitter: {
     id: 'twitter',
     name: 'X (Twitter)',

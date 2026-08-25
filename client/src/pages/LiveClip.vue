@@ -34,6 +34,13 @@
                 <img src="/rumble.svg" class="liveclip-search__platform-icon" />
               </div>
               <div
+                v-else-if="detectedPlatform === 'Tokend'"
+                class="liveclip-search__platform liveclip-search__platform--tokend"
+                key="tokend"
+              >
+                <img src="/tokend.svg" class="liveclip-search__platform-icon" />
+              </div>
+              <div
                 v-else-if="detectedPlatform === 'PumpFun'"
                 class="liveclip-search__platform liveclip-search__platform--pumpfun"
                 key="pf"
@@ -546,12 +553,13 @@
     normalizeTwitterUrl,
     validateTwitterUrl,
   } from '@/services/twitter';
+  import { extractTokendChannel, checkTokendLivestream } from '@/services/tokend';
   import XBroadcastExplainerDialog from '@/components/XBroadcastExplainerDialog.vue';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
 
-  type Platform = 'YouTube' | 'Twitch' | 'Kick' | 'Rumble' | 'Twitter' | 'PumpFun';
+  type Platform = 'YouTube' | 'Twitch' | 'Kick' | 'Rumble' | 'Twitter' | 'PumpFun' | 'Tokend';
 
   interface PendingMetadataFetch {
     streamerId: string;
@@ -672,6 +680,7 @@
       YouTube: [],
       Rumble: [],
       Twitter: [],
+      Tokend: [],
     };
 
     sortedStreamers.value.forEach(streamer => {
@@ -1167,6 +1176,7 @@
           youtube: 'YouTube',
           rumble: 'Rumble',
           twitter: 'Twitter',
+          tokend: 'Tokend',
         };
         const platform = platformMap[record.platform?.toLowerCase() || 'pumpfun'] || 'PumpFun';
 
@@ -1223,6 +1233,12 @@
       detectedPlatform.value = 'Rumble';
     } else if (lowerVal.includes('twitter.com') || lowerVal.includes('x.com')) {
       detectedPlatform.value = 'Twitter';
+    } else if (
+      lowerVal.includes('tokend.tv') ||
+      lowerVal.includes('localhost:4100') ||
+      lowerVal.includes('127.0.0.1:4100')
+    ) {
+      detectedPlatform.value = 'Tokend';
     } else {
       detectedPlatform.value = null;
     }
@@ -1240,6 +1256,8 @@
         return '/rumble.svg';
       case 'Twitter':
         return '/x.svg';
+      case 'Tokend':
+        return '/tokend.svg';
       case 'PumpFun':
         return '/capsule.svg';
       default:
@@ -1259,6 +1277,8 @@
         return 'monitor-card__avatar-fallback--rumble';
       case 'Twitter':
         return 'monitor-card__avatar-fallback--twitter';
+      case 'Tokend':
+        return 'monitor-card__avatar-fallback--tokend';
       case 'PumpFun':
         return 'monitor-card__avatar-fallback--pumpfun';
       default:
@@ -1272,6 +1292,7 @@
       case 'Twitch':
       case 'Rumble':
       case 'PumpFun':
+      case 'Tokend':
         return 'brightness-200';
       case 'Kick':
       case 'Twitter':
@@ -1293,6 +1314,8 @@
         return 'monitor-card__platform--rumble';
       case 'Twitter':
         return 'monitor-card__platform--twitter';
+      case 'Tokend':
+        return 'monitor-card__platform--tokend';
       case 'PumpFun':
         return 'monitor-card__platform--pumpfun';
       default:
@@ -1312,6 +1335,8 @@
         return 'activity-log__dot--rumble';
       case 'Twitter':
         return 'activity-log__dot--twitter';
+      case 'Tokend':
+        return 'activity-log__dot--tokend';
       case 'PumpFun':
         return 'activity-log__dot--pumpfun';
       default:
@@ -1496,6 +1521,42 @@
       return;
     }
 
+    // Handle Tokend creator URL
+    if (detectedPlatform.value === 'Tokend') {
+      const slug = extractTokendChannel(inputValue.value) || inputValue.value.trim().replace(/^@/, '');
+      if (!slug) {
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'Tokend',
+          message: 'Invalid Tokend creator URL.',
+          status: 'info',
+        });
+        return;
+      }
+
+      addActivityLog({
+        streamerId: 'system',
+        streamerName: 'System',
+        platform: 'Tokend',
+        message: `Adding Tokend creator "${slug}"...`,
+        status: 'loading',
+      });
+
+      let displayName = slug;
+      let profileImageUrl: string | undefined;
+      try {
+        const status = await checkTokendLivestream(slug);
+        if (status.displayName) displayName = status.displayName;
+        if (status.profileImageUrl) profileImageUrl = status.profileImageUrl;
+      } catch {
+        // mock status optional at add time
+      }
+
+      await confirmAddStreamer(slug, displayName, profileImageUrl, 'tokend');
+      return;
+    }
+
     if (detectedPlatform.value === 'PumpFun' || !detectedPlatform.value) {
       isSearching.value = true;
       addActivityLog({
@@ -1588,6 +1649,7 @@
       platform === 'youtube' ? 'YouTube' : 
       platform === 'rumble' ? 'Rumble' :
       platform === 'twitter' ? 'Twitter' :
+      platform === 'tokend' ? 'Tokend' :
       platform === 'kick' ? 'Kick' : 
       platform === 'twitch' ? 'Twitch' : 
       'PumpFun';
@@ -2193,6 +2255,9 @@
   .liveclip-search__platform--rumble {
     background-color: #85c742;
   }
+  .liveclip-search__platform--tokend {
+    background-color: #0ea5e9;
+  }
   .liveclip-search__platform--pumpfun {
     background-color: #10b981;
   }
@@ -2527,6 +2592,9 @@
   .monitor-card__avatar-fallback--kick {
     background-color: #53fc18;
   }
+  .monitor-card__avatar-fallback--tokend {
+    background-color: #0ea5e9;
+  }
   .monitor-card__avatar-fallback--pumpfun {
     background-color: #10b981;
   }
@@ -2579,6 +2647,9 @@
   }
   .monitor-card__platform--kick {
     color: #53fc18;
+  }
+  .monitor-card__platform--tokend {
+    color: #38bdf8;
   }
   .monitor-card__platform--pumpfun {
     color: #34d399;
@@ -2987,6 +3058,9 @@
   }
   .activity-log__dot--kick {
     background-color: #53fc18;
+  }
+  .activity-log__dot--tokend {
+    background-color: #0ea5e9;
   }
   .activity-log__dot--pumpfun {
     background-color: #10b981;

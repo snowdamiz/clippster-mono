@@ -133,6 +133,30 @@
               {{ connectingPlatform === 'x' ? 'Connecting...' : 'Connect Account' }}
             </button>
           </div>
+
+          <div class="social-accounts__platform-connect">
+            <div class="social-accounts__platform-info">
+              <div class="social-accounts__platform-badge social-accounts__platform-badge--tokend">
+                <img src="/tokend.svg" alt="" class="social-accounts__platform-svg" />
+              </div>
+              <div class="social-accounts__platform-details">
+                <h3 class="social-accounts__platform-name">Tokend</h3>
+                <p class="social-accounts__platform-desc">
+                  Post to your Tokend creator profile (mock connect until partner OAuth)
+                </p>
+              </div>
+            </div>
+            <button
+              v-if="isAdmin"
+              class="social-accounts__connect-btn"
+              @click="connectTokend"
+              :disabled="connectingPlatform !== null"
+            >
+              <Loader2 v-if="connectingPlatform === 'tokend'" class="social-accounts__connect-spinner" />
+              <Plus v-else class="social-accounts__connect-icon" />
+              {{ connectingPlatform === 'tokend' ? 'Connecting...' : 'Connect Account' }}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -463,16 +487,18 @@
     deleteSocialAccount,
     type SocialAccount,
   } from '@/services/socialAccountsApi';
+  import { connectOrgTokend, startOrgTokendOAuth } from '@/services/userTokendApi';
   import { reconnectOrgSocialPlatform } from '@/utils/socialOAuthReconnect';
   import { isTokenExpiringSoonForAccount } from '@/utils/socialTokenExpiry';
 
-  type ConnectPlatform = 'instagram' | 'tiktok' | 'YouTube' | 'x';
+  type ConnectPlatform = 'instagram' | 'tiktok' | 'YouTube' | 'x' | 'tokend';
 
   const CONNECT_PLATFORM_LABELS: Record<ConnectPlatform, string> = {
     instagram: 'Instagram',
     tiktok: 'TikTok',
     YouTube: 'YouTube',
     x: 'X',
+    tokend: 'Tokend',
   };
 
   const { organizationId, isAdmin, members, loadOrganization } = useOrganization();
@@ -610,6 +636,34 @@
         return;
       }
 
+      if (platform === 'tokend') {
+        try {
+          cleanupAuthListener = await startOrgTokendOAuth(organizationId.value, async (result) => {
+            if (result.success) {
+              showToast('Tokend account connected', 'success');
+              await loadAccounts();
+            } else {
+              showToast(result.error || 'Failed to connect Tokend', 'error');
+            }
+            connectingPlatform.value = null;
+          });
+        } catch (tokendError) {
+          const mock = await connectOrgTokend(organizationId.value);
+          if (mock.success && mock.account) {
+            showToast(`Tokend @${mock.account.username} connected (mock)`, 'success');
+            await loadAccounts();
+          } else {
+            showToast(
+              mock.message ||
+                (tokendError instanceof Error ? tokendError.message : 'Failed to connect Tokend'),
+              'error'
+            );
+          }
+          connectingPlatform.value = null;
+        }
+        return;
+      }
+
       cleanupAuthListener = await startTwitterOAuthPopup(organizationId.value, handleAuthResult);
     } catch (error) {
       const platformLabel = CONNECT_PLATFORM_LABELS[platform];
@@ -633,6 +687,10 @@
 
   async function connectTwitter() {
     await connectPlatform('x');
+  }
+
+  async function connectTokend() {
+    await connectPlatform('tokend');
   }
 
   function openAssignments(account: SocialAccount) {
@@ -953,6 +1011,10 @@
 
   .social-accounts__platform-badge--youtube {
     background: linear-gradient(135deg, #ff0000, #cc0000);
+  }
+
+  .social-accounts__platform-badge--tokend {
+    background: #0ea5e9;
   }
 
   .social-accounts__platform-details {

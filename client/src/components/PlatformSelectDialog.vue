@@ -90,7 +90,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { Instagram, Youtube, Share2, ChevronRight, X } from 'lucide-vue-next';
+  import { Instagram, Youtube, Share2, ChevronRight, X, Radio } from 'lucide-vue-next';
   import XLogo from '@/components/icons/XLogo.vue';
   import TiktokLogo from '@/components/icons/TiktokLogo.vue';
   import { useAuthStore } from '@/stores/auth';
@@ -98,9 +98,10 @@
   import { listUserTwitterAccounts } from '@/services/userTwitterApi';
   import { listUserTiktokAccounts } from '@/services/userTiktokApi';
   import { listUserYoutubeAccounts } from '@/services/userYoutubeApi';
+  import { listUserTokendAccounts } from '@/services/userTokendApi';
   import { listSocialAccounts } from '@/services/socialAccountsApi';
 
-  type PlatformId = 'instagram' | 'twitter' | 'tiktok' | 'youtube';
+  type PlatformId = 'instagram' | 'twitter' | 'tiktok' | 'youtube' | 'tokend';
 
   interface PlatformOption {
     id: PlatformId;
@@ -125,6 +126,7 @@
   const twitterCount = ref(0);
   const tiktokCount = ref(0);
   const youtubeCount = ref(0);
+  const tokendCount = ref(0);
 
   
   const availablePlatforms = computed((): PlatformOption[] => {
@@ -170,6 +172,16 @@
       });
     }
 
+    if (tokendCount.value > 0) {
+      platforms.push({
+        id: 'tokend',
+        name: 'Tokend',
+        description: 'Publish to creator profile',
+        icon: Radio,
+        accountCount: tokendCount.value,
+      });
+    }
+
     return platforms;
   });
 
@@ -189,14 +201,16 @@
     twitterCount.value = 0;
     tiktokCount.value = 0;
     youtubeCount.value = 0;
+    tokendCount.value = 0;
 
     try {
       // Load personal accounts
-      const [igResult, twResult, tkResult, ytResult, orgResult] = await Promise.all([
+      const [igResult, twResult, tkResult, ytResult, tokendResult, orgResult] = await Promise.all([
         listUserInstagramAccounts(),
         listUserTwitterAccounts(),
         listUserTiktokAccounts(),
         listUserYoutubeAccounts(),
+        listUserTokendAccounts(),
         authStore.getOrganizations(),
       ]);
 
@@ -204,6 +218,7 @@
       let personalTw = 0;
       let personalTk = 0;
       let personalYt = 0;
+      let personalTokend = 0;
 
       if (igResult.success) {
         personalIg = igResult.accounts.filter((a) => a.is_active).length;
@@ -217,12 +232,16 @@
       if (ytResult.success) {
         personalYt = ytResult.accounts.filter((a) => a.is_active).length;
       }
+      if (tokendResult.success) {
+        personalTokend = tokendResult.accounts.filter((a) => a.is_active).length;
+      }
 
       // Load org social accounts to count platform availability
       let orgIg = 0;
       let orgTw = 0;
       let orgTk = 0;
       let orgYt = 0;
+      let orgTokend = 0;
 
       if (orgResult.success && orgResult.organizations) {
         const orgAccountPromises = orgResult.organizations.map((org: any) =>
@@ -237,6 +256,7 @@
               if (account.platform === 'twitter' || account.platform === 'x') orgTw++;
               if (account.platform === 'tiktok') orgTk++;
               if (account.platform === 'youtube' || account.platform === 'YouTube') orgYt++;
+              if (account.platform === 'tokend') orgTokend++;
             }
           }
         }
@@ -246,6 +266,7 @@
       twitterCount.value = personalTw + orgTw;
       tiktokCount.value = personalTk + orgTk;
       youtubeCount.value = personalYt + orgYt;
+      tokendCount.value = personalTokend + orgTokend;
     } catch (error) {
       console.error('Failed to load platform availability:', error);
     } finally {
@@ -429,6 +450,12 @@
   .plat-dialog__platform-icon--youtube {
     background: linear-gradient(135deg, #ff0000 0%, #cc0000 100%);
     border-color: rgba(255, 0, 0, 0.3);
+    color: white;
+  }
+
+  .plat-dialog__platform-icon--tokend {
+    background: #0ea5e9;
+    border-color: rgba(14, 165, 233, 0.35);
     color: white;
   }
 

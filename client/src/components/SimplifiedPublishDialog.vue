@@ -213,18 +213,27 @@
                           <button type="button" @click="selectAccount(platformId, '')" class="publish-dialog__dropdown-item" :class="{ 'publish-dialog__dropdown-item--selected': !platformConfigs[platformId]?.accountId }">
                             Select account...
                           </button>
-                          <template v-if="getPersonalAccountsForPlatform(platformId).length > 0">
+                          <div v-if="loadingAccounts" class="publish-dialog__dropdown-item publish-dialog__dropdown-item--muted">
+                            Loading accounts...
+                          </div>
+                          <template v-else-if="getPersonalAccountsForPlatform(platformId).length > 0">
                             <div class="publish-dialog__dropdown-group">Personal</div>
                             <button v-for="account in getPersonalAccountsForPlatform(platformId)" :key="`user-${account.id}`" type="button" @click="selectAccount(platformId, `user:${account.id}`)" class="publish-dialog__dropdown-item" :class="{ 'publish-dialog__dropdown-item--selected': platformConfigs[platformId]?.accountId === `user:${account.id}` }">
                               @{{ account.username }}
                             </button>
                           </template>
-                          <template v-if="getOrgAccountsForPlatform(platformId).length > 0">
+                          <template v-if="!loadingAccounts && getOrgAccountsForPlatform(platformId).length > 0">
                             <div class="publish-dialog__dropdown-group">Organization</div>
                             <button v-for="account in getOrgAccountsForPlatform(platformId)" :key="`org-${account.id}`" type="button" @click="selectAccount(platformId, `org:${account.id}`)" class="publish-dialog__dropdown-item" :class="{ 'publish-dialog__dropdown-item--selected': platformConfigs[platformId]?.accountId === `org:${account.id}` }">
                               @{{ account.username }}
                             </button>
                           </template>
+                          <div
+                            v-if="!loadingAccounts && getPersonalAccountsForPlatform(platformId).length === 0 && getOrgAccountsForPlatform(platformId).length === 0"
+                            class="publish-dialog__dropdown-item publish-dialog__dropdown-item--muted"
+                          >
+                            No {{ getPlatformLabel(platformId) }} accounts connected. Connect one in Social / Profile settings.
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -265,17 +274,14 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
-import { X, Instagram, Youtube, ChevronDown, Rocket, Loader2, Share2, Building2, Trophy, User } from 'lucide-vue-next';
+import { X, Instagram, Youtube, ChevronDown, Rocket, Loader2, Share2, Building2, Trophy, User, Radio } from 'lucide-vue-next';
 import XLogo from '@/components/icons/XLogo.vue';
 import TiktokLogo from '@/components/icons/TiktokLogo.vue';
 import type { ClipBuild, Clip } from '@/services/database';
 import { useBackgroundPublish } from '@/composables/useBackgroundPublish';
 import { markBuildAsPublished } from '@/services/database/clip-build';
 import { getMyAssignedAccounts, listSocialAccounts, type SocialAccount } from '@/services/socialAccountsApi';
-import { listUserTwitterAccounts, type UserTwitterAccount } from '@/services/userTwitterApi';
-import { listUserTiktokAccounts, type UserTiktokAccount } from '@/services/userTiktokApi';
-import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services/userInstagramApi';
-import { listUserYoutubeAccounts, type UserYoutubeAccount } from '@/services/userYoutubeApi';
+import { listSocialAccounts as listUserSocialAccounts } from '@/services/clipperProfileApi';
 import { listMyCampaigns, type Campaign } from '@/services/campaignApi';
 import {
   getMyAssignedCreatorProfiles,
@@ -283,6 +289,15 @@ import {
   type ServerOrganizationCreatorProfile,
 } from '@/services/organizationProfilesApi';
 import { useAuthStore } from '@/stores/auth';
+
+type PersonalSocialAccount = {
+  id: number;
+  platform: string;
+  provider?: string | null;
+  username: string;
+  is_active?: boolean;
+};
+
 type ClipWithBuilds = Clip & { builds: ClipBuild[] };
 
 const props = defineProps<{
@@ -330,6 +345,7 @@ const availablePlatforms = [
   { id: 'twitter', label: 'X (Twitter)', icon: XLogo },
   { id: 'tiktok', label: 'TikTok', icon: TiktokLogo },
   { id: 'youtube', label: 'YouTube', icon: Youtube },
+  { id: 'tokend', label: 'Tokend', icon: Radio },
 ];
 
 const selectedPublishPlatforms = ref<string[]>([]);
@@ -417,11 +433,9 @@ const effectiveOrgId = computed((): number | null => {
 const isOrgAdmin = ref(false);
 
 // Load available social accounts
+const loadingAccounts = ref(false);
 const orgAccounts = ref<SocialAccount[]>([]);
-const personalTwitterAccounts = ref<UserTwitterAccount[]>([]);
-const personalTiktokAccounts = ref<UserTiktokAccount[]>([]);
-const personalInstagramAccounts = ref<UserInstagramAccount[]>([]);
-const personalYoutubeAccounts = ref<UserYoutubeAccount[]>([]);
+const personalAccounts = ref<PersonalSocialAccount[]>([]);
 
 function isPlatformSelected(platformId: string): boolean {
   return selectedPublishPlatforms.value.includes(platformId);
@@ -435,6 +449,7 @@ function togglePlatform(platformId: string) {
   } else {
     selectedPublishPlatforms.value.push(platformId);
     platformConfigs.value[platformId] = {};
+    autoSelectAccountIfOnlyOne(platformId);
   }
 }
 
@@ -446,18 +461,22 @@ function getPlatformIcon(platformId: string) {
   return availablePlatforms.find(p => p.id === platformId)?.icon || Instagram;
 }
 
-function getPersonalAccountsForPlatform(platformId: string): (UserTwitterAccount | UserTiktokAccount | UserInstagramAccount | UserYoutubeAccount)[] {
-  switch (platformId) {
-    case 'twitter':
-      return personalTwitterAccounts.value;
-    case 'tiktok':
-      return personalTiktokAccounts.value;
-    case 'instagram':
-      return personalInstagramAccounts.value;
-    case 'youtube':
-      return personalYoutubeAccounts.value;
-    default:
-      return [];
+function getPersonalAccountsForPlatform(platformId: string): PersonalSocialAccount[] {
+  return personalAccounts.value.filter((account) => {
+    if (account.is_active === false) return false;
+    return matchesPlatformAccount(account.platform, platformId) ||
+      (platformId === 'tokend' && account.provider === 'tokend');
+  });
+}
+
+function autoSelectAccountIfOnlyOne(platformId: string) {
+  if (platformConfigs.value[platformId]?.accountId) return;
+  const personal = getPersonalAccountsForPlatform(platformId);
+  const org = getOrgAccountsForPlatform(platformId);
+  if (personal.length === 1 && org.length === 0) {
+    platformConfigs.value[platformId] = { accountId: `user:${personal[0].id}` };
+  } else if (org.length === 1 && personal.length === 0) {
+    platformConfigs.value[platformId] = { accountId: `org:${org[0].id}` };
   }
 }
 
@@ -537,15 +556,20 @@ async function loadOrgAccounts() {
     return;
   }
 
-  await resolveOrgAdmin(orgId);
+  try {
+    await resolveOrgAdmin(orgId);
 
-  const orgResult = isOrgAdmin.value
-    ? await listSocialAccounts(orgId)
-    : await getMyAssignedAccounts(orgId);
+    const orgResult = isOrgAdmin.value
+      ? await listSocialAccounts(orgId)
+      : await getMyAssignedAccounts(orgId);
 
-  if (orgResult.success) {
-    orgAccounts.value = (orgResult.accounts || []).filter((a) => a.is_active);
-  } else {
+    if (orgResult.success) {
+      orgAccounts.value = (orgResult.accounts || []).filter((a) => a.is_active);
+    } else {
+      orgAccounts.value = [];
+    }
+  } catch (err) {
+    console.error('[SimplifiedPublishDialog] Failed to load org accounts:', err);
     orgAccounts.value = [];
   }
 }
@@ -603,22 +627,43 @@ function formatDuration(seconds: number | null | undefined): string {
 }
 
 async function loadPersonalAccounts() {
-  const [twitterRes, tiktokRes, instagramRes, youtubeRes] = await Promise.all([
-    listUserTwitterAccounts(),
-    listUserTiktokAccounts(),
-    listUserInstagramAccounts(),
-    listUserYoutubeAccounts(),
-  ]);
-
-  if (twitterRes.success) personalTwitterAccounts.value = twitterRes.accounts || [];
-  if (tiktokRes.success) personalTiktokAccounts.value = tiktokRes.accounts || [];
-  if (instagramRes.success) personalInstagramAccounts.value = instagramRes.accounts || [];
-  if (youtubeRes.success) personalYoutubeAccounts.value = youtubeRes.accounts || [];
+  loadingAccounts.value = true;
+  try {
+    const res = await listUserSocialAccounts();
+    if (res.success) {
+      personalAccounts.value = (res.social_accounts || []).map((account) => ({
+        id: account.id,
+        platform: account.platform,
+        provider: account.provider,
+        username: account.username || account.display_name || `account-${account.id}`,
+        is_active: account.is_active,
+      }));
+      for (const platformId of selectedPublishPlatforms.value) {
+        autoSelectAccountIfOnlyOne(platformId);
+      }
+    } else {
+      personalAccounts.value = [];
+    }
+  } catch (err) {
+    console.error('[SimplifiedPublishDialog] Failed to load personal accounts:', err);
+    personalAccounts.value = [];
+  } finally {
+    loadingAccounts.value = false;
+  }
 }
 
 async function loadDialogData() {
-  await loadOrgAccounts();
-  await Promise.all([loadOrgCreatorProfiles(), loadCampaigns(), loadPersonalAccounts()]);
+  // Load accounts in parallel with profiles so Tokend (and other native providers)
+  // appear even when org profile listing is slow.
+  await Promise.all([
+    loadOrgAccounts().then(() =>
+      Promise.all([loadOrgCreatorProfiles(), loadCampaigns()])
+    ),
+    loadPersonalAccounts(),
+  ]);
+  for (const platformId of selectedPublishPlatforms.value) {
+    autoSelectAccountIfOnlyOne(platformId);
+  }
 }
 
 onMounted(loadDialogData);
@@ -1118,6 +1163,13 @@ async function handlePublish() {
   background-color: rgba(6, 182, 212, 0.15);
   color: var(--sidebar-accent);
   font-weight: 500;
+}
+.publish-dialog__dropdown-item--muted {
+  opacity: 0.65;
+  cursor: default;
+  white-space: normal;
+  line-height: 1.35;
+  pointer-events: none;
 }
 
 /* ===== Textarea ===== */

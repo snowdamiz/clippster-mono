@@ -6,6 +6,7 @@ import { publishToUserInstagram, uploadUserMediaForPost } from '@/services/userI
 import { publishToUserTwitter } from '@/services/userTwitterApi';
 import { publishToUserTiktok } from '@/services/userTiktokApi';
 import { publishToUserYoutube } from '@/services/userYoutubeApi';
+import { publishToUserTokend } from '@/services/userTokendApi';
 import { useSocialTokenMonitor } from '@/composables/useSocialTokenMonitor';
 import { getSocialPlatformLabel } from '@/utils/socialTokenExpiry';
 import { isSocialTokenExpiredApiError } from '@/utils/socialAuthErrors';
@@ -273,6 +274,9 @@ export function useBackgroundPublish() {
                 break;
               case 'youtube':
                 response = await publishToUserYoutube({ ...publishData, title: caption || 'Video' });
+                break;
+              case 'tokend':
+                response = await publishToUserTokend(publishData);
                 break;
               default:
                 console.error('[BackgroundPublish] Unknown platform:', target.platformId);
