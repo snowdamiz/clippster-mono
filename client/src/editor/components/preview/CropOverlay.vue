@@ -12,7 +12,16 @@ const props = defineProps<{
 	canvasHeight: number;
 }>();
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		timeline: true,
+		media: true,
+		selection: true,
+		playback: false,
+		scenes: false,
+		project: false,
+	},
+});
 const { selectedElements } = useElementSelection();
 const { isCropMode, confirmCrop, cancelCrop, pendingCrop, originalCrop } = useEditorUIState();
 

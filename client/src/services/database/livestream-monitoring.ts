@@ -4,7 +4,25 @@ import type {
   LivestreamSegmentRecord,
   LivestreamSessionRecord,
   MonitoredStreamerRecord,
+  Project,
 } from './types';
+
+export const AUTO_CLIP_PROJECT_NAME_PREFIX = 'Auto Clip - ';
+export const MANUAL_CLIP_PROJECT_NAME_PREFIX = 'Manual Clips - ';
+
+const AUTO_CLIP_PROJECT_DESCRIPTION_PREFIX = 'Auto-detected clips from ';
+const MANUAL_CLIP_PROJECT_DESCRIPTION_PREFIX = 'Manual clips from ';
+
+export function isLiveClipsContainerProject(
+  project: Pick<Project, 'name' | 'description'>
+): boolean {
+  return (
+    project.name.startsWith(AUTO_CLIP_PROJECT_NAME_PREFIX) ||
+    project.name.startsWith(MANUAL_CLIP_PROJECT_NAME_PREFIX) ||
+    project.description?.startsWith(AUTO_CLIP_PROJECT_DESCRIPTION_PREFIX) === true ||
+    project.description?.startsWith(MANUAL_CLIP_PROJECT_DESCRIPTION_PREFIX) === true
+  );
+}
 
 function toSqlBool(value: number | boolean): number {
   if (typeof value === 'boolean') {
@@ -570,7 +588,7 @@ export async function createLivestreamClipProject(
 
   // Step 1: Check for existing manual clip project from today with matching name pattern
   // Manual clip project names start with "Manual Clips - {displayName} Live "
-  const namePrefix = `Manual Clips - ${displayName} Live `;
+  const namePrefix = `${MANUAL_CLIP_PROJECT_NAME_PREFIX}${displayName} Live `;
   const existingManualProject = await db.select<{ id: string, name: string, created_at: number }[]>(
     userId === null
       ? `SELECT id, name, created_at FROM projects 
@@ -590,7 +608,7 @@ export async function createLivestreamClipProject(
   }
 
   // Step 2: Create a new manual clip project with "Manual Clips" prefix
-  const projectName = `Manual Clips - ${displayName} Live ${new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: true })}`;
+  const projectName = `${namePrefix}${new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: true })}`;
   const projectDescription = `Manual clips from ${platformName} livestream ${displayName} (${mintId})`;
   const projectId = await createProject(projectName, projectDescription, undefined, platformName);
   

@@ -11,7 +11,7 @@ import { Plus } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import PanelSearchBar from "./PanelSearchBar.vue";
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 const { uploadCustomFont } = useFontManager();
 const { startDrag, wasDragCompleted } = usePointerDrag();
 

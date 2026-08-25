@@ -577,9 +577,9 @@ pub async fn download_youtube_vod(
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| ffmpeg_path.clone());
         
-        cmd.arg(&vod_url)
+        let media_url = normalize_youtube_media_url(&vod_url);
+        cmd.arg(&media_url)
             .arg("-o").arg(&output_file_str)
-            .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
             .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
@@ -588,6 +588,7 @@ pub async fn download_youtube_vod(
             .arg("--progress")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
+        apply_youtube_media_download_args(&mut cmd);
         
         let mut child = match cmd.spawn() {
             Ok(c) => c,
@@ -1446,7 +1447,7 @@ fn build_youtube_channel_tab_url(channel_id: &str, tab: &str) -> String {
 /// Resolve a sidecar binary path using Tauri's naming convention.
 /// Tauri places sidecars next to the executable with -{target_triple} suffix.
 /// In dev mode, they're in src-tauri/binaries/ with the same naming.
-fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
+pub(crate) fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
     let exe_path =
         std::env::current_exe().map_err(|e| format!("Failed to get executable path: {}", e))?;
 
@@ -1545,6 +1546,27 @@ pub fn resolve_ytdlp_binary() -> Result<String, String> {
 
 pub fn resolve_ffmpeg_binary() -> Result<String, String> {
     resolve_sidecar_binary("ffmpeg")
+}
+
+/// Shared YouTube yt-dlp args for media downloads.
+/// Avoids Mix/playlist expansion and skips android_vr formats that currently 403.
+pub fn apply_youtube_media_download_args(cmd: &mut tokio::process::Command) {
+    cmd.arg("--no-playlist")
+        .arg("--impersonate")
+        .arg("chrome")
+        .arg("--extractor-args")
+        .arg("youtube:player_client=mweb,android");
+
+    if let Ok(node_path) = crate::sidecar::resolve_node_binary() {
+        cmd.arg("--js-runtimes").arg(format!("node:{}", node_path));
+    }
+}
+
+/// Prefer a clean watch URL so Mix/radio `list=` params cannot expand into playlists.
+pub fn normalize_youtube_media_url(url: &str) -> String {
+    extract_video_id(url)
+        .map(|id| format!("https://www.youtube.com/watch?v={}", id))
+        .unwrap_or_else(|| url.to_string())
 }
 
 #[cfg(test)]
@@ -1731,9 +1753,9 @@ pub async fn download_youtube_vod_segment(
             .parent()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| ffmpeg_path.clone());
-        cmd.arg(&vod_url)
+        let media_url = normalize_youtube_media_url(&vod_url);
+        cmd.arg(&media_url)
             .arg("-o").arg(&video_path_str)
-            .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
             .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
@@ -1745,6 +1767,7 @@ pub async fn download_youtube_vod_segment(
             .arg("--progress")  // Show progress
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
+        apply_youtube_media_download_args(&mut cmd);
 
         println!("[YouTube] Running yt-dlp command with section: {}", section_arg);
 

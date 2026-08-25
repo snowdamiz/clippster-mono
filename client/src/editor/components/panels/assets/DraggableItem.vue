@@ -31,7 +31,7 @@ const emit = defineEmits<{
 	(e: "dragStart", payload: { event: DragEvent }): void;
 }>();
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 const isDragging = ref(false);
 const dragPosition = ref({ x: 0, y: 0 });
 

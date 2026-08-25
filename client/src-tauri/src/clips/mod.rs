@@ -33,6 +33,64 @@ pub type CancellationToken = watch::Receiver<bool>;
 static ACTIVE_CLIP_BUILDS: Lazy<Arc<Mutex<HashMap<String, watch::Sender<bool>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
+/// Derive manually framed aspect-ratio variants from an already composited editor export.
+/// The source export contains the complete timeline mix, so POI never falls back to raw assets.
+#[tauri::command]
+pub async fn build_editor_export_variants(
+    app: tauri::AppHandle,
+    video_path: String,
+    duration: f64,
+    aspect_ratios: Vec<String>,
+    manual_framing_configs: HashMap<String, ManualFramingConfig>,
+    quality: String,
+    frame_rate: u32,
+) -> Result<Vec<String>, String> {
+    if duration <= 0.001 {
+        return Err("Editor export duration must be greater than zero".to_string());
+    }
+
+    let source_path = std::path::Path::new(&video_path);
+    let parent = source_path
+        .parent()
+        .ok_or_else(|| "Editor export has no parent directory".to_string())?;
+    let stem = source_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Editor export has an invalid file name".to_string())?;
+    let segment = serde_json::json!({
+        "start_time": 0.0,
+        "end_time": duration,
+    });
+    let mut output_paths = Vec::with_capacity(aspect_ratios.len());
+
+    for ratio in aspect_ratios {
+        let config = manual_framing_configs
+            .get(&ratio)
+            .ok_or_else(|| format!("Missing manual framing configuration for {}", ratio))?;
+        let ratio_suffix = ratio.replace(':', "x");
+        let output_path = parent.join(format!("{}_{}.mp4", stem, ratio_suffix));
+
+        video_processor::build_multi_region_clip(
+            &app,
+            &video_path,
+            &output_path,
+            &segment,
+            config,
+            &ratio,
+            &quality,
+            frame_rate,
+            None,
+            None,
+            None,
+        )
+        .await?;
+
+        output_paths.push(output_path.to_string_lossy().to_string());
+    }
+
+    Ok(output_paths)
+}
+
 // Build clip from segments using FFmpeg
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]

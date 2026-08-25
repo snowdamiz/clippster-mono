@@ -7,6 +7,8 @@ export interface MediaAsset
 	file: File;
 	url?: string;
 	filePath?: string;
+	/** False when only metadata/path is loaded; hydrate before decode. */
+	isHydrated?: boolean;
 	/** Tauri: absolute path to copy into editor-media. Prefer this over mutating `File.path` (Vue/reactivity can drop the latter). */
 	diskImportPath?: string;
 	/**

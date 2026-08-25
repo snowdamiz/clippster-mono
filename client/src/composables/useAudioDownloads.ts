@@ -19,6 +19,7 @@ import {
   sourceAllowsActiveHighlight,
   type StageJoinHintRow,
 } from '@/services/spaces/space-replay-helpers';
+import { useToast } from '@/composables/useToast';
 
 function normalizeRole(role: string | undefined): SpaceParticipant['role'] {
   return role === 'host' ||
@@ -190,8 +191,14 @@ export function useAudioDownloads() {
     
     // Remove from active downloads first
     activeDownloads.value.delete(event.download_id);
+
+    if (!event.success) {
+      const { error: showError } = useToast();
+      showError('Download Failed', event.error || 'Audio download failed');
+      return;
+    }
     
-    if (event.success && event.file_path && event.title && event.platform) {
+    if (event.file_path && event.title && event.platform) {
       // Save to database
       try {
         const createdAudioId = await createDownloadedAudio(

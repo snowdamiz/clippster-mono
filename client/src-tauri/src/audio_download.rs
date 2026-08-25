@@ -101,13 +101,17 @@ pub async fn download_youtube_audio(
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
         .collect::<String>();
+    let safe_channel = channel_name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect::<String>();
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| format!("Failed to get timestamp: {}", e))?
         .as_secs();
 
-    let filename = format!("youtube_{}_{}_{}.mp3", channel_name, safe_title, timestamp);
+    let filename = format!("youtube_{}_{}_{}.mp3", safe_channel, safe_title, timestamp);
     let output_file = audio_dir.join(&filename);
     
     // Clean up when done
@@ -153,10 +157,15 @@ pub async fn download_youtube_audio(
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| ffmpeg_path.clone());
 
-        cmd.arg(&vod_url)
+        let media_url = if channel_name_clone == "twitter_space" {
+            vod_url.clone()
+        } else {
+            crate::youtube::normalize_youtube_media_url(&vod_url)
+        };
+        let media_url_for_thumb = media_url.clone();
+        cmd.arg(&media_url)
             .arg("-o").arg(&output_file_str)
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
-            .arg("--impersonate").arg("chrome")
             .arg("-x") // Extract audio
             .arg("--audio-format").arg("mp3")
             .arg("--audio-quality").arg("0") // Best quality
@@ -166,6 +175,11 @@ pub async fn download_youtube_audio(
             .arg("--progress")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        if channel_name_clone != "twitter_space" {
+            crate::youtube::apply_youtube_media_download_args(&mut cmd);
+        } else {
+            cmd.arg("--impersonate").arg("chrome");
+        }
         
         let mut child = match cmd.spawn() {
             Ok(c) => c,
@@ -317,7 +331,7 @@ pub async fn download_youtube_audio(
                         let thumbnail_url = match generate_thumbnail_hybrid(
                             &ytdlp_path_clone,
                             &ffmpeg_path_clone,
-                            &vod_url_clone,
+                            &media_url_for_thumb,
                             &thumbnail_path,
                             "00:00:05",
                         ).await {

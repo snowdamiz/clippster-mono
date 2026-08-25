@@ -346,6 +346,7 @@ class TauriStorageService {
 				file,
 				url,
 				filePath: row.file_path,
+				isHydrated: true,
 				width: row.width ?? undefined,
 				height: row.height ?? undefined,
 				duration: row.duration ?? undefined,
@@ -361,8 +362,11 @@ class TauriStorageService {
 
 	async loadAllMediaAssets({
 		projectId,
+		hydrateIds,
 	}: {
 		projectId: string;
+		/** When provided, other assets are loaded metadata/path-first without file bytes. */
+		hydrateIds?: ReadonlySet<string>;
 	}): Promise<MediaAsset[]> {
 		const db = await getDatabase();
 		const rows = await db.select<MediaAssetRow[]>(
@@ -374,12 +378,15 @@ class TauriStorageService {
 		for (const row of rows) {
 			const displayName = fileNameFromPathOrName(row.name);
 			try {
-				const file = await this.fileFromPath(
-					row.file_path,
-					displayName,
-					row.type as "video" | "audio" | "image",
-				);
-				const url = URL.createObjectURL(file);
+				const kind = row.type as "video" | "audio" | "image";
+				const shouldHydrate = !hydrateIds || hydrateIds.has(row.id);
+				const file = shouldHydrate
+					? await this.fileFromPath(row.file_path, displayName, kind)
+					: new File([], playbackFileLabel(row.file_path, displayName, kind), {
+						type: this.mimeFromPath(row.file_path, kind),
+						lastModified: row.last_modified,
+					});
+				const url = shouldHydrate ? URL.createObjectURL(file) : undefined;
 
 				// Resolve thumbnail: stored value may be a filesystem path, dead blob URL, or data URL
 				let thumbnailUrl = await this.resolveThumbnailUrl(row.thumbnail_url);
@@ -396,6 +403,7 @@ class TauriStorageService {
 					file,
 					url,
 					filePath: row.file_path,
+					isHydrated: shouldHydrate,
 					width: row.width ?? undefined,
 					height: row.height ?? undefined,
 					duration: row.duration ?? undefined,
@@ -409,6 +417,18 @@ class TauriStorageService {
 		}
 
 		return assets;
+	}
+
+	async hydrateMediaAsset({ asset }: { asset: MediaAsset }): Promise<MediaAsset> {
+		if (asset.isHydrated !== false && asset.file.size > 0) return asset;
+		if (!asset.filePath) throw new Error(`Media asset ${asset.id} has no file path`);
+		const file = await this.fileFromPath(asset.filePath, asset.name, asset.type);
+		return {
+			...asset,
+			file,
+			url: URL.createObjectURL(file),
+			isHydrated: true,
+		};
 	}
 
 	async deleteMediaAsset({

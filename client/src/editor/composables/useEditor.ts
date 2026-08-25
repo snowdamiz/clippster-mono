@@ -19,7 +19,9 @@ type EditorSubscriptionKey =
 type EditorSubscriptionOptions = Partial<Record<EditorSubscriptionKey, boolean>>;
 
 const DEFAULT_SUBSCRIPTIONS: Record<EditorSubscriptionKey, boolean> = {
-	playback: true,
+	// Playback emits on every animation frame. Most editor components only need
+	// structural state and should opt in explicitly when they display the clock.
+	playback: false,
 	timeline: true,
 	scenes: true,
 	project: true,
@@ -27,10 +29,19 @@ const DEFAULT_SUBSCRIPTIONS: Record<EditorSubscriptionKey, boolean> = {
 	selection: true,
 };
 
-export function useEditor(options?: { subscribe?: EditorSubscriptionOptions }) {
+export function useEditor(options?: { subscribe?: EditorSubscriptionOptions | false }) {
 	const editor = EditorCore.getInstance();
 	const version = shallowRef(0);
-	const subscriptions = { ...DEFAULT_SUBSCRIPTIONS, ...options?.subscribe };
+	const subscriptions = options?.subscribe === false
+		? {
+			playback: false,
+			timeline: false,
+			scenes: false,
+			project: false,
+			media: false,
+			selection: false,
+		}
+		: { ...DEFAULT_SUBSCRIPTIONS, ...options?.subscribe };
 
 	let unsubscribers: Array<() => void> = [];
 

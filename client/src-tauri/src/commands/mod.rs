@@ -18,6 +18,7 @@ pub mod download_management;
 pub mod file_operations;
 pub mod file_utils;
 pub mod focal_detection_commands;
+pub mod reference_video;
 pub mod remotion_export;
 pub mod system;
 

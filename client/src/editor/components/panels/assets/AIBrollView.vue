@@ -5,6 +5,7 @@ import { computed, onMounted, ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 
 import { useEditor } from '../../../composables/useEditor';
+import { usePlaybackClock } from '../../../composables/usePlaybackClock';
 
 import { useAiBroll } from '@/composables/useAiBroll';
 import type { ManualBrollMediaType } from '@/composables/useAiBroll';
@@ -40,7 +41,16 @@ import { videoCache } from '../../../video-cache/service';
 
 
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+  subscribe: {
+    project: true,
+    scenes: true,
+    timeline: true,
+    media: true,
+    playback: false,
+    selection: false,
+  },
+});
 
 const aiBroll = useAiBroll();
 const isManualBrollAdding = ref(false);
@@ -141,13 +151,7 @@ const canGenerate = computed(
 
 
 
-const playheadTime = computed(() => {
-
-  void version.value;
-
-  return editor.playback.getCurrentTime();
-
-});
+const playheadTime = usePlaybackClock();
 
 
 

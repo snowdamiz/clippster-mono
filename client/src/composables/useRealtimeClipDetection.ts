@@ -11,6 +11,7 @@ import { createProject } from '@/services/database/projects';
 import { createRawVideo } from '@/services/database/raw-videos';
 import { createTranscript, createTranscriptSegment } from '@/services/database/transcripts';
 import { seedCreatorClipLayoutOnProject } from '@/composables/useCreatorClipDefaults';
+import { AUTO_CLIP_PROJECT_NAME_PREFIX } from '@/services/database/livestream-monitoring';
 import type { SupportedLivestreamPlatform } from '@/types/livestream';
 import { API_BASE } from '@/lib/apiBase';
 
@@ -779,7 +780,7 @@ export function useRealtimeClipDetection() {
     console.log('[RealtimeClipDetection] Starting detection with prompt:', options.prompt);
 
     // Create project folder for auto clips
-    const projectName = `Auto Clip - ${options.streamerName} Live ${new Date().toLocaleString(
+    const projectName = `${AUTO_CLIP_PROJECT_NAME_PREFIX}${options.streamerName} Live ${new Date().toLocaleString(
       'en-US',
       {
         month: 'numeric',

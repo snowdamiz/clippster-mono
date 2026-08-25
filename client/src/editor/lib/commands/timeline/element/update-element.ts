@@ -49,6 +49,7 @@ export type UpdatableElementProps =
 export class UpdateElementCommand extends Command {
 	/** Deep snapshot of the target element only (avoids cloning full timeline for undo). */
 	private savedElement: TimelineElement | null = null;
+	private updatedAt = performance.now();
 
 	constructor(
 		private trackId: string,
@@ -76,6 +77,21 @@ export class UpdateElementCommand extends Command {
 		});
 
 		editor.timeline.updateTracks(updatedTracks);
+	}
+
+	canMergeWith(next: Command): boolean {
+		if (!(next instanceof UpdateElementCommand)) return false;
+		if (next.trackId !== this.trackId || next.elementId !== this.elementId) return false;
+		if (next.updatedAt - this.updatedAt > 500) return false;
+		const currentKeys = Object.keys(this.updates).sort().join("|");
+		const nextKeys = Object.keys(next.updates).sort().join("|");
+		return currentKeys === nextKeys;
+	}
+
+	mergeWith(next: Command): void {
+		if (!(next instanceof UpdateElementCommand)) return;
+		this.updates = { ...this.updates, ...next.updates };
+		this.updatedAt = next.updatedAt;
 	}
 
 	undo(): void {

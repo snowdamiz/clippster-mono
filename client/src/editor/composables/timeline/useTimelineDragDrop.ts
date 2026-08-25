@@ -46,6 +46,14 @@ export function useTimelineDragDrop({
 	const isDragOver = ref(false);
 	const dropTarget = ref<DropTarget | null>(null);
 	const dragElementType = ref<ElementType | null>(null);
+	const transitionDropPreview = ref<{
+		trackId: string;
+		leftElementId: string;
+		rightElementId: string;
+		junctionTime: number;
+		duration: number;
+		label: string;
+	} | null>(null);
 
 	// Pointer drag system
 	const { registerDropZone, unregisterDropZone } = usePointerDrag();
@@ -98,12 +106,21 @@ export function useTimelineDragDrop({
 
 		// Transitions don't use normal drop targets — just track cursor position
 		if (elType === "transition") {
+			if (data.type !== "transition") return;
 			dragElementType.value = null;
 			const sl = scrollRef?.value?.scrollLeft ?? 0;
 			const mouseX = cursor.x - rect.left + sl;
 			const timeAtCursor = Math.max(0, mouseX / (TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value));
 			const junction = findNearestJunction(timeAtCursor);
 			if (junction) {
+				transitionDropPreview.value = {
+					trackId: junction.trackId,
+					leftElementId: junction.leftElementId,
+					rightElementId: junction.rightElementId,
+					junctionTime: junction.junctionTime,
+					duration: data.duration,
+					label: data.name,
+				};
 				dropTarget.value = {
 					trackIndex: tracks.value.indexOf(tracks.value.find((t) => t.id === junction.trackId)!),
 					isNewTrack: false,
@@ -114,10 +131,12 @@ export function useTimelineDragDrop({
 				};
 			} else {
 				dropTarget.value = null;
+				transitionDropPreview.value = null;
 			}
 			return;
 		}
 
+		transitionDropPreview.value = null;
 		dragElementType.value = elType as ElementType;
 
 		const duration = getElementDuration(
@@ -149,6 +168,7 @@ export function useTimelineDragDrop({
 		isDragOver.value = false;
 		dropTarget.value = null;
 		dragElementType.value = null;
+		transitionDropPreview.value = null;
 	}
 
 	function onDrop(cursor: { x: number; y: number }, data: TimelineDragData) {
@@ -156,6 +176,7 @@ export function useTimelineDragDrop({
 		isDragOver.value = false;
 		dropTarget.value = null;
 		dragElementType.value = null;
+		transitionDropPreview.value = null;
 
 		try {
 			if (data.type === "transition") {
@@ -343,10 +364,14 @@ export function useTimelineDragDrop({
 			for (let i = 0; i < sorted.length - 1; i++) {
 				const left = sorted[i];
 				const right = sorted[i + 1];
-				const junctionTime = left.startTime + left.duration;
+				const outgoingEnd = left.startTime + left.duration;
+				// Transition semantics are anchored to the incoming clip start.
+				// Keeping the preview and persisted badge on the same coordinate
+				// prevents a small imported gap from making the drop jump sideways.
+				const junctionTime = right.startTime;
 				if (
 					!isAdjacentMediaCuts({
-						outgoingEnd: junctionTime,
+						outgoingEnd,
 						incomingStart: right.startTime,
 					})
 				) {
@@ -549,6 +574,7 @@ export function useTimelineDragDrop({
 		isDragOver,
 		dropTarget,
 		dragElementType,
+		transitionDropPreview,
 		handleFileDrop,
 	};
 }

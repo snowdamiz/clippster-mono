@@ -30,7 +30,7 @@ function handlePointerDown(e: PointerEvent, preset: TransitionPreset) {
 	startDrag(e, data);
 }
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 const { selectedElements } = useElementSelection();
 const { toast } = useToast();
 

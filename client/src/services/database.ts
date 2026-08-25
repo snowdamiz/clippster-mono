@@ -253,6 +253,9 @@ export {
   updateLivestreamSegment,
   updateSegmentStatus,
   createLivestreamClipProject,
+  AUTO_CLIP_PROJECT_NAME_PREFIX,
+  MANUAL_CLIP_PROJECT_NAME_PREFIX,
+  isLiveClipsContainerProject,
 } from './database/livestream-monitoring';
 
 // Watermark exports

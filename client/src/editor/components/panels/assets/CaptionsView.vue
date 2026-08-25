@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Captions } from "lucide-vue-next";
 import PanelSearchBar from "./PanelSearchBar.vue";
 
-const { editor } = useEditor();
+const { editor } = useEditor({ subscribe: false });
 
 const selectedPresetId = ref<CaptionPresetId>("karaoke");
 const isProcessing = ref(false);
