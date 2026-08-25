@@ -303,14 +303,6 @@ defmodule ClippsterServerWeb.Router do
     # Real-time detection credit deduction
     post("/credits/deduct", ClipsController, :deduct_realtime_credits)
 
-    # AI video generation routes
-    post("/ai/generate-video", AIController, :generate_video)
-    post("/ai/generate-video-streamed", AIController, :generate_video_streamed)
-    post("/ai/compositions", AIController, :save_composition)
-    get("/ai/compositions", AIController, :list_compositions)
-    get("/ai/compositions/:id", AIController, :get_composition)
-    delete("/ai/compositions/:id", AIController, :delete_composition)
-
     # AI reference analysis
     post("/ai/reference/analyze", AIChatController, :analyze_reference)
 
@@ -335,6 +327,7 @@ defmodule ClippsterServerWeb.Router do
     post("/ai/chat/sessions/:id/generate", AIChatController, :trigger_generation)
     post("/ai/chat/sessions/:id/refine", AIChatController, :send_refinement)
     post("/ai/chat/sessions/:id/reference", AIChatController, :upload_reference)
+    put("/ai/chat/sessions/:id/style", AIChatController, :update_style_pack)
     post("/ai/chat/sessions/:id/media-analysis", AIChatController, :upload_media_analysis)
     put("/ai/chat/sessions/:id/media", AIChatController, :update_media)
 

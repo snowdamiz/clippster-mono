@@ -99,11 +99,8 @@ defmodule ClippsterServer.AI.ChatSessions do
   defp extract_thumbnail_url(_), do: nil
 
   def save_reference_analysis(session, analysis, url \\ nil) do
-    attrs = %{reference_analysis: analysis}
-    attrs = if url, do: Map.put(attrs, :reference_url, url), else: attrs
-
     session
-    |> ChatSession.changeset(attrs)
+    |> ChatSession.changeset(%{reference_analysis: analysis, reference_url: url})
     |> Repo.update()
   end
 
