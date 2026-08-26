@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, shallowRef, onUnmounted, onMounted } from "vue";
-import { ChevronDown } from "lucide-vue-next";
+import { ChevronDown, Link2, Maximize, Minimize, Smartphone } from "lucide-vue-next";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../composables/useEditor";
 import { useRafLoop } from "../../composables/useRafLoop";
@@ -8,6 +8,7 @@ import { useEditorUIState } from "../../composables/useEditorUIState";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { useBrandingConfig } from "../../composables/useBrandingConfig";
 import { useImageMode } from "../../composables/useImageMode";
+import { useImageEditorTools } from "../../composables/useImageEditorTools";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
 import type { RootNode } from "../../renderer/nodes/root-node";
 import { getRenderFrame } from "../../renderer/frame-policy";
@@ -43,6 +44,30 @@ const { editor, version } = useEditor({
 const { isCropMode, activeSocialOverlay, viewportZoom, previewQuality, fitMode } = useEditorUIState();
 const { selectedElements, clearElementSelection } = useElementSelection();
 const { isImageMode } = useImageMode();
+const { activeTool, setSelection, marqueeDraft, fillColor, setTool } = useImageEditorTools();
+const showSafeZones = ref(true);
+const marqueeDrag = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+
+const containerRef = ref<HTMLDivElement | null>(null);
+
+const aspectPresets = [
+	{ width: 1920, height: 1080, label: "16:9" },
+	{ width: 1080, height: 1920, label: "9:16" },
+	{ width: 1080, height: 1080, label: "1:1" },
+	{ width: 1080, height: 1350, label: "4:5" },
+	{ width: 1280, height: 720, label: "YouTube HD" },
+	{ width: 3840, height: 2160, label: "YouTube 4K" },
+];
+
+const showAspectMenu = ref(false);
+const showSocialMenu = ref(false);
+const showSpeedMenu = ref(false);
+const showCustomSize = ref(false);
+const customWidth = ref(1920);
+const customHeight = ref(1080);
+const linkDimensions = ref(true);
+const isFullscreen = ref(false);
+const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4];
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 let lastFrame = -1;
@@ -99,6 +124,85 @@ const canvasSourceFraming = computed(() => activeProject.value?.settings.canvasS
 
 const projectWidth = computed(() => activeProject.value?.settings?.canvasSize?.width ?? 1920);
 const projectHeight = computed(() => activeProject.value?.settings?.canvasSize?.height ?? 1080);
+const canvasWidth = projectWidth;
+const canvasHeight = projectHeight;
+
+const currentSpeed = computed(() => {
+	void version.value;
+	return editor.playback.getPlaybackRate();
+});
+
+function setSpeed(rate: number) {
+	editor.playback.setPlaybackRate({ rate });
+	showSpeedMenu.value = false;
+}
+
+const currentAspectLabel = computed(() => {
+	const w = canvasWidth.value;
+	const h = canvasHeight.value;
+	const match = aspectPresets.find((p) => p.width === w && p.height === h);
+	if (match) return match.label;
+	return `${w}×${h}`;
+});
+
+function setAspectRatio(preset: { width: number; height: number }) {
+	editor.project.updateSettings({ settings: { canvasSize: preset } });
+	showAspectMenu.value = false;
+	showCustomSize.value = false;
+}
+
+function onCustomWidthChange(value: number) {
+	if (linkDimensions.value && customWidth.value > 0) {
+		const aspect = customHeight.value / customWidth.value;
+		customWidth.value = value;
+		customHeight.value = Math.max(1, Math.round(value * aspect));
+	} else {
+		customWidth.value = value;
+	}
+}
+
+function onCustomHeightChange(value: number) {
+	if (linkDimensions.value && customHeight.value > 0) {
+		const aspect = customWidth.value / customHeight.value;
+		customHeight.value = value;
+		customWidth.value = Math.max(1, Math.round(value * aspect));
+	} else {
+		customHeight.value = value;
+	}
+}
+
+function applyCustomSize() {
+	editor.project.updateSettings({
+		settings: { canvasSize: { width: customWidth.value, height: customHeight.value } },
+	});
+	showAspectMenu.value = false;
+	showCustomSize.value = false;
+}
+
+function toggleSocialOverlay(preset: SocialOverlayPreset) {
+	if (activeSocialOverlay.value?.platform === preset.platform) {
+		activeSocialOverlay.value = null;
+	} else {
+		activeSocialOverlay.value = preset;
+	}
+	showSocialMenu.value = false;
+}
+
+async function toggleFullscreen() {
+	const el = containerRef.value;
+	if (!el) return;
+	try {
+		if (!document.fullscreenElement) {
+			await el.requestFullscreen();
+			isFullscreen.value = true;
+		} else {
+			await document.exitFullscreen();
+			isFullscreen.value = false;
+		}
+	} catch (err) {
+		console.warn("[PreviewPanel] Fullscreen failed:", err);
+	}
+}
 
 /**
  * Layout: buildScene + CanvasRenderer always use full project canvas size so text/overlays stay aligned.
@@ -526,6 +630,124 @@ function onPreviewAreaMouseDown(event: MouseEvent) {
 	clearElementSelection();
 }
 
+function canvasNormFromEvent(event: MouseEvent): { x: number; y: number } | null {
+	const wrapper = (event.currentTarget as HTMLElement | null)?.closest?.(".preview-canvas-wrapper") as
+		| HTMLElement
+		| null;
+	const el = wrapper || (document.querySelector(".preview-canvas-wrapper") as HTMLElement | null);
+	if (!el) return null;
+	const rect = el.getBoundingClientRect();
+	if (rect.width <= 0 || rect.height <= 0) return null;
+	return {
+		x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+		y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+	};
+}
+
+function onCanvasPointerDown(event: PointerEvent) {
+	if (!isImageMode.value || event.button !== 0) return;
+
+	if (activeTool.value === "zoom") {
+		event.preventDefault();
+		stepZoom(event.altKey ? -ZOOM_STEP : ZOOM_STEP);
+		return;
+	}
+
+	if (activeTool.value === "eyedropper") {
+		event.preventDefault();
+		event.stopPropagation();
+		try {
+			const canvas = canvasRef.value;
+			if (!canvas) return;
+			const rect = canvas.getBoundingClientRect();
+			const x = Math.floor(((event.clientX - rect.left) / rect.width) * canvas.width);
+			const y = Math.floor(((event.clientY - rect.top) / rect.height) * canvas.height);
+			const ctx = canvas.getContext("2d", { willReadFrequently: true });
+			if (!ctx) return;
+			const pixel = ctx.getImageData(Math.max(0, x), Math.max(0, y), 1, 1).data;
+			fillColor.value = `#${[pixel[0], pixel[1], pixel[2]]
+				.map((c) => c.toString(16).padStart(2, "0"))
+				.join("")}`;
+			setTool("move");
+		} catch (e) {
+			console.warn("[PreviewPanel] Eyedropper sample failed:", e);
+		}
+		return;
+	}
+
+	if (activeTool.value === "hand") {
+		// Hand: clear selection so drag doesn't move layers; pan is via scroll container
+		clearElementSelection();
+		return;
+	}
+
+	if (activeTool.value !== "marquee-rect") return;
+	event.preventDefault();
+	event.stopPropagation();
+	const pt = canvasNormFromEvent(event);
+	if (!pt) return;
+	marqueeDrag.value = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
+
+	const onMove = (e: PointerEvent) => {
+		const next = canvasNormFromEvent(e);
+		if (!next || !marqueeDrag.value) return;
+		marqueeDrag.value = { ...marqueeDrag.value, x1: next.x, y1: next.y };
+	};
+	const onUp = (e: PointerEvent) => {
+		window.removeEventListener("pointermove", onMove);
+		window.removeEventListener("pointerup", onUp);
+		const end = canvasNormFromEvent(e);
+		const drag = marqueeDrag.value;
+		marqueeDrag.value = null;
+		if (!drag) return;
+		const endX = end?.x ?? drag.x1;
+		const endY = end?.y ?? drag.y1;
+		const x = Math.min(drag.x0, endX);
+		const y = Math.min(drag.y0, endY);
+		const width = Math.abs(endX - drag.x0);
+		const height = Math.abs(endY - drag.y0);
+		if (width < 0.005 || height < 0.005) {
+			setSelection(null);
+			return;
+		}
+		setSelection({ type: "rect", x, y, width, height });
+	};
+	window.addEventListener("pointermove", onMove);
+	window.addEventListener("pointerup", onUp);
+}
+
+const liveMarqueeStyle = computed(() => {
+	const drag = marqueeDraft.value;
+	const live = marqueeDrag.value;
+	if (live) {
+		const x = Math.min(live.x0, live.x1);
+		const y = Math.min(live.y0, live.y1);
+		const w = Math.abs(live.x1 - live.x0);
+		const h = Math.abs(live.y1 - live.y0);
+		return {
+			left: `${x * 100}%`,
+			top: `${y * 100}%`,
+			width: `${w * 100}%`,
+			height: `${h * 100}%`,
+		};
+	}
+	if (drag && drag.type === "rect") {
+		return {
+			left: `${drag.x * 100}%`,
+			top: `${drag.y * 100}%`,
+			width: `${drag.width * 100}%`,
+			height: `${drag.height * 100}%`,
+		};
+	}
+	return null;
+});
+
+/** Practical YouTube safe area ≈ 1100×620 centered on 1280×720 (~7% / 7% insets). */
+const safeAreaInset = computed(() => ({
+	horizontal: "7%",
+	vertical: "7%",
+}));
+
 function onKeyZoom(e: KeyboardEvent) {
 	if (!e.ctrlKey && !e.metaKey) return;
 	if (e.key === "0") {
@@ -901,7 +1123,16 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					aspectRatio: `${projectWidth} / ${projectHeight}`,
 					transform: viewportZoom !== 1 ? `scale(${viewportZoom})` : undefined,
 					transformOrigin: 'center center',
+					cursor:
+						isImageMode && activeTool === 'marquee-rect'
+							? 'crosshair'
+							: isImageMode && activeTool === 'hand'
+								? 'grab'
+								: isImageMode && activeTool === 'zoom'
+									? 'zoom-in'
+									: undefined,
 				}"
+				@pointerdown="onCanvasPointerDown"
 			>
 				<canvas
 					ref="canvasRef"
@@ -929,6 +1160,35 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					:canvas-width="projectWidth"
 					:canvas-height="projectHeight"
 				/>
+				<!-- YouTube/social safe-zone guides in image mode -->
+				<div
+					v-if="isImageMode && showSafeZones && !activeSocialOverlay"
+					class="pointer-events-none absolute inset-0 z-10"
+					aria-hidden="true"
+				>
+					<!-- Spec-aligned center safe rect (~1100×620 @ 720p) -->
+					<div
+						class="absolute rounded border border-dashed border-cyan-400/35"
+						:style="{
+							left: safeAreaInset.horizontal,
+							right: safeAreaInset.horizontal,
+							top: safeAreaInset.vertical,
+							bottom: safeAreaInset.vertical,
+						}"
+					/>
+					<!-- Duration badge (bottom-right) -->
+					<div
+						class="absolute bottom-[3%] right-[2%] h-[8%] min-h-[18px] w-[14%] min-w-[48px] rounded-sm border border-amber-400/50 bg-amber-400/10"
+						title="YouTube duration badge safe zone"
+					/>
+					<span class="absolute bottom-[3.5%] right-[2.5%] text-[9px] font-medium text-amber-300/70">TIME</span>
+				</div>
+				<!-- Marquee selection overlay -->
+				<div
+					v-if="isImageMode && liveMarqueeStyle"
+					class="pointer-events-none absolute z-20 border border-white bg-blue-400/15"
+					:style="liveMarqueeStyle"
+				/>
 				<!-- Branding watermark overlay -->
 				<img
 					v-if="brandingWatermarkDataUrl && brandingWatermarkStyle"
@@ -952,6 +1212,17 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 
 		<!-- Preview controls bar: zoom + quality -->
 		<div class="flex h-8 shrink-0 items-center justify-end gap-1 border-t border-white/10 bg-[#18181b] px-2">
+			<button
+				v-if="isImageMode"
+				type="button"
+				class="h-6 rounded px-2 text-[11px] transition-colors"
+				:class="showSafeZones ? 'bg-cyan-500/15 text-cyan-300' : 'bg-white/5 text-zinc-400 hover:bg-white/10'"
+				title="Toggle YouTube safe zones"
+				@click="showSafeZones = !showSafeZones"
+			>
+				Safe zones
+			</button>
+			<div v-if="isImageMode" class="h-4 w-px bg-white/10" />
 			<!-- Quality: lower = softer video/image decode (faster); layout stays full canvas size -->
 			<div class="relative">
 				<button

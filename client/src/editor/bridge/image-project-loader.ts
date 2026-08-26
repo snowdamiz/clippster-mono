@@ -3,11 +3,15 @@
  *
  * Sets up a minimal project with no video tracks — just a single scene
  * with an empty main track, canvas sized to the chosen preset, and
- * playback frozen at time=0.
+ * playback frozen at time=0. Seeds ImageDocument for pixel-engine architecture.
  */
 
 import { EditorCore } from "../core";
 import type { TCanvasSize } from "../types/project";
+import {
+	attachImageDocumentToSettings,
+	createEmptyImageDocument,
+} from "../types/image-document";
 
 export interface ImageProjectOptions {
 	name?: string;
@@ -30,24 +34,22 @@ export async function createImageProject(
 		background = { type: "color" as const, color: "#000000" },
 	} = options;
 
-	// Reset any existing editor instance
 	EditorCore.reset();
-
-	// Flag the next instance as image mode
 	EditorCore.setNextImageMode(true);
 
 	const editor = EditorCore.getInstance();
-
-	// Create a new project via the project manager
 	await editor.project.createNewProject({ name });
 
-	// Update settings to match the requested canvas size and background
+	const imageDocument = createEmptyImageDocument(canvasSize.width, canvasSize.height);
 	editor.project.updateSettings({
-		settings: {
-			canvasSize,
-			background,
-			fps: 1, // Static image — fps is irrelevant but must be > 0
-		},
+		settings: attachImageDocumentToSettings(
+			{
+				canvasSize,
+				background,
+				fps: 1,
+			},
+			imageDocument,
+		) as any,
 	});
 
 	return editor;
@@ -58,15 +60,25 @@ export async function createImageProject(
  * The project must have been previously saved by the editor.
  */
 export async function loadImageProject(projectId: string): Promise<EditorCore> {
-	// Reset any existing editor instance
 	EditorCore.reset();
-
-	// Flag the next instance as image mode
 	EditorCore.setNextImageMode(true);
 
 	const editor = EditorCore.getInstance();
-
 	await editor.project.loadProject({ id: projectId });
+
+	const active = editor.project.getActiveOrNull();
+	if (active) {
+		const settings = active.settings as unknown as Record<string, unknown>;
+		if (!settings.imageDocument) {
+			const size = active.settings.canvasSize || DEFAULT_IMAGE_CANVAS;
+			editor.project.updateSettings({
+				settings: attachImageDocumentToSettings(
+					{ ...active.settings },
+					createEmptyImageDocument(size.width, size.height),
+				) as any,
+			});
+		}
+	}
 
 	return editor;
 }

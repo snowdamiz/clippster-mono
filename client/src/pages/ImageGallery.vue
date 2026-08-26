@@ -16,6 +16,7 @@ import {
 	Pencil,
 	Download,
 	Filter,
+	Upload,
 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 
@@ -38,11 +39,17 @@ const filterOptions = [
 	{ value: "overlay", label: "Overlays" },
 	{ value: "social", label: "Social" },
 	{ value: "custom", label: "Custom" },
+	{ value: "source:ai_generated", label: "AI Generated" },
+	{ value: "source:upload", label: "Uploads" },
+	{ value: "source:editor", label: "Editor Exports" },
 ];
 
 const filteredImages = computed(() => {
 	let result = images.value;
-	if (filterType.value !== "all") {
+	if (filterType.value.startsWith("source:")) {
+		const source = filterType.value.slice("source:".length);
+		result = result.filter((img) => img.source_type === source);
+	} else if (filterType.value !== "all") {
 		result = result.filter((img) => img.image_type === filterType.value);
 	}
 	if (searchQuery.value.trim()) {
@@ -81,17 +88,83 @@ async function loadImages() {
 }
 
 function openInEditor(image: ImageAsset) {
-	if (image.editor_project_json) {
-		// Has an associated editor project — open it
-		router.push({ path: "/design-studio", query: { projectId: image.source_project_id || undefined } });
-	} else {
-		// Open a new editor with this image
-		router.push({ path: "/design-studio" });
+	try {
+		const meta = image.editor_project_json ? JSON.parse(image.editor_project_json) : null;
+		const backendId = meta?.backendProjectId ?? (image.source_project_id ? Number(image.source_project_id) : NaN);
+		if (Number.isFinite(backendId)) {
+			router.push({ path: "/design-studio", query: { projectId: String(backendId) } });
+			return;
+		}
+	} catch {
+		/* fall through */
 	}
+	router.push({ path: "/design-studio" });
 }
 
 function createNew() {
 	router.push({ path: "/design-studio" });
+}
+
+const isUploading = ref(false);
+
+async function uploadImages() {
+	if (isUploading.value) return;
+	isUploading.value = true;
+	try {
+		const { open } = await import("@tauri-apps/plugin-dialog");
+		const { copyFile, mkdir, exists, stat } = await import("@tauri-apps/plugin-fs");
+		const { appDataDir } = await import("@tauri-apps/api/path");
+		const { createImageAsset } = await import("@/services/database/image-assets");
+
+		const selected = await open({
+			multiple: true,
+			filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
+		});
+		if (!selected) return;
+
+		const paths = Array.isArray(selected) ? selected : [selected];
+		const appData = await appDataDir();
+		const destDir = `${appData}/image-library`;
+		if (!(await exists(destDir))) {
+			await mkdir(destDir, { recursive: true });
+		}
+
+		for (const src of paths) {
+			const base = src.split(/[/\\]/).pop() || `upload-${Date.now()}.png`;
+			const dest = `${destDir}/${Date.now()}_${base}`;
+			await copyFile(src, dest);
+			let fileSize: number | undefined;
+			try {
+				const s = await stat(dest);
+				fileSize = Number(s.size);
+			} catch {
+				/* optional */
+			}
+			const ext = base.split(".").pop()?.toLowerCase();
+			const mime =
+				ext === "jpg" || ext === "jpeg"
+					? "image/jpeg"
+					: ext === "webp"
+						? "image/webp"
+						: ext === "gif"
+							? "image/gif"
+							: "image/png";
+			await createImageAsset({
+				name: base.replace(/\.[^.]+$/, ""),
+				filePath: dest,
+				fileSize,
+				mimeType: mime,
+				imageType: "custom",
+				sourceType: "upload",
+				exportFormat: ext === "jpg" || ext === "jpeg" ? "jpg" : (ext as any) || "png",
+			});
+		}
+		await loadImages();
+	} catch (err) {
+		console.error("[ImageGallery] Upload failed:", err);
+	} finally {
+		isUploading.value = false;
+	}
 }
 
 function toggleSelect(id: string) {
@@ -191,7 +264,7 @@ function formatDimensions(w: number | null, h: number | null): string {
 		<!-- Header -->
 		<div class="flex items-center justify-between border-b border-white/10 px-6 py-4">
 			<div>
-				<h1 class="text-lg font-semibold">My Images</h1>
+				<h1 class="text-lg font-semibold">Image Library</h1>
 				<p class="text-xs text-zinc-500">{{ filteredImages.length }} image{{ filteredImages.length !== 1 ? "s" : "" }}</p>
 			</div>
 			<div class="flex items-center gap-2">
@@ -220,6 +293,10 @@ function formatDimensions(w: number | null, h: number | null): string {
 				>
 					Select All
 				</button>
+				<Button variant="outline" size="sm" :disabled="isUploading" @click="uploadImages">
+					<Upload class="mr-1 size-3.5" />
+					{{ isUploading ? 'Uploading...' : 'Upload' }}
+				</Button>
 				<Button size="sm" @click="createNew">
 					<Plus class="mr-1 size-3.5" />
 					New Design
@@ -285,7 +362,7 @@ function formatDimensions(w: number | null, h: number | null): string {
 					<ImageIcon class="size-8 text-zinc-600" />
 				</div>
 				<p class="text-sm text-zinc-500">No images yet</p>
-				<p class="text-xs text-zinc-600">Create your first design in the Design Studio</p>
+				<p class="text-xs text-zinc-600">Upload images or export from the Image Editor</p>
 				<Button size="sm" class="mt-2" @click="createNew">
 					<Plus class="mr-1 size-3.5" />
 					Create Design

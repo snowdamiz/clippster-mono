@@ -11,7 +11,7 @@ defmodule ClippsterServerWeb.ImageEditorController do
 
   def list_projects(conn, _params) do
     user = conn.assigns.current_user
-    projects = ImageEditorProjects.list_user_projects(user.id, limit: 20)
+    projects = ImageEditorProjects.list_user_projects(user.id, limit: 100)
 
     json(conn, %{
       projects:

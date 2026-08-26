@@ -12,6 +12,7 @@ import PreviewPanel from "./preview/PreviewPanel.vue";
 import AssetsPanel from "./panels/AssetsPanel.vue";
 import PropertiesPanel from "./panels/PropertiesPanel.vue";
 import LayersPanel from "./panels/LayersPanel.vue";
+import ImageToolRail from "./ImageToolRail.vue";
 import {
 	FolderOpen,
 	Headphones,
@@ -152,7 +153,10 @@ onUnmounted(() => {
 
 		<!-- ============ IMAGE MODE LAYOUT (Photoshop-like) ============ -->
 		<div v-if="isImageMode" class="flex flex-1 min-h-0 overflow-hidden">
-			<!-- Tool sidebar: icons + labels -->
+			<!-- Photoshop tool rail -->
+			<ImageToolRail />
+
+			<!-- Asset sidebar: icons + labels -->
 			<div class="flex w-[52px] shrink-0 flex-col items-center gap-0.5 border-r border-white/[0.06] bg-[#111113] pt-2 pb-3 overflow-y-auto scrollbar-hidden">
 				<button
 					v-for="tabKey in visibleTabs"

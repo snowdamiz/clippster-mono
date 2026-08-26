@@ -35,9 +35,10 @@ import BrandKitView from "./assets/BrandKitView.vue";
 import AIToolsView from "./assets/AIToolsView.vue";
 import AIBrollView from "./assets/AIBrollView.vue";
 import AudioLibraryView from "./assets/AudioLibraryView.vue";
+import ImageLibraryView from "./assets/ImageLibraryView.vue";
 
 const props = defineProps<{
-	activeTab: string;
+	activeTab: string | null;
 }>();
 
 const { editor, version } = useEditor({
@@ -53,7 +54,7 @@ const { editor, version } = useEditor({
 const { isImageMode } = useImageMode();
 const { startDrag } = usePointerDrag();
 const showMediaDialog = ref(false);
-const dialogTab = ref<"upload" | "built" | "projects" | "audio">("upload");
+const dialogTab = ref<"upload" | "built" | "projects" | "audio" | "images">("upload");
 const viewMode = ref<"grid" | "list">("grid");
 const isProcessing = ref(false);
 const progress = ref(0);
@@ -415,6 +416,7 @@ const sortOrder = ref<"asc" | "desc">("asc");
                 { key: 'built', label: 'Built Clips', icon: Clapperboard },
                 { key: 'projects', label: 'Projects', icon: FolderOpen },
                 { key: 'audio', label: 'Audio', icon: Music },
+                { key: 'images', label: 'Images', icon: Image },
               ] as const"
               :key="tab.key"
               type="button"
@@ -436,6 +438,7 @@ const sortOrder = ref<"asc" | "desc">("asc");
             <BuiltClipsView v-else-if="dialogTab === 'built'" />
             <ProjectClipsView v-else-if="dialogTab === 'projects'" />
             <AudioLibraryView v-else-if="dialogTab === 'audio'" />
+            <ImageLibraryView v-else-if="dialogTab === 'images'" />
           </div>
         </DialogContent>
       </Dialog>

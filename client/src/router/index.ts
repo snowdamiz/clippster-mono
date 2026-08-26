@@ -103,14 +103,32 @@ const router = createRouter({
       meta: { noLayout: true },
     },
     {
-      path: '/my-images',
-      name: 'my-images',
+      path: '/image-library',
+      name: 'image-library',
       component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
       children: [
         {
           path: '',
-          name: 'my-images-home',
+          name: 'image-library-home',
           component: () => import('@/pages/ImageGallery.vue'),
+        },
+      ],
+    },
+    {
+      path: '/my-images',
+      redirect: '/image-library',
+    },
+    {
+      path: '/ai-thumbnail',
+      name: 'ai-thumbnail',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'ai-thumbnail-home',
+          component: () => import('@/pages/AIThumbnailGenerator.vue'),
         },
       ],
     },

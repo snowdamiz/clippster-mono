@@ -468,7 +468,7 @@ export interface AudioAsset {
 
 export type ImageAssetType = 'thumbnail' | 'cover' | 'watermark' | 'overlay' | 'banner' | 'poster' | 'logo' | 'social' | 'custom';
 export type ImageSourceType = 'upload' | 'clip_thumbnail' | 'frame_extract' | 'ai_generated' | 'template' | 'editor';
-export type ImageExportFormat = 'png' | 'svg' | 'webp';
+export type ImageExportFormat = 'png' | 'jpg' | 'jpeg' | 'webp';
 
 export interface ImageAsset {
   id: string;

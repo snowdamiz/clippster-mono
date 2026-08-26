@@ -19,17 +19,22 @@ import {
 	Loader2,
 	Plus,
 	Clock,
+	Link2,
+	ClipboardPaste,
 } from "lucide-vue-next";
 
 const { editor, version } = useEditor();
 const { isExtracting, extractFrame, extractFrameAsDataUrl } = useFrameExtractor();
 
-const activeSubTab = ref<"upload" | "clips" | "gallery">("upload");
+const activeSubTab = ref<"upload" | "clips" | "gallery" | "url" | "paste">("upload");
 const clips = ref<Clip[]>([]);
 const galleryImages = ref<ImageAsset[]>([]);
 const searchQuery = ref("");
 const isProcessing = ref(false);
 const thumbnailCache = ref<Map<string, string>>(new Map());
+const urlInput = ref("");
+const urlError = ref<string | null>(null);
+const pasteHint = ref("Click here, then Ctrl+V / Cmd+V to paste an image");
 
 // Frame extraction state
 const selectedClipForFrame = ref<Clip | null>(null);
@@ -90,8 +95,98 @@ async function loadClips() {
 async function loadGallery() {
 	try {
 		galleryImages.value = await getAllImageAssets();
+		for (const img of galleryImages.value) {
+			if (img.file_path && !thumbnailCache.value.has(img.id)) {
+				try {
+					const dataUrl = await invoke<string>("read_file_as_data_url", {
+						filePath: img.file_path,
+					});
+					thumbnailCache.value.set(img.id, dataUrl);
+				} catch {
+					/* skip */
+				}
+			}
+		}
 	} catch (err) {
 		console.error("[ImageSourcesView] Failed to load gallery:", err);
+	}
+}
+
+async function addBlobToCanvas(blob: Blob, name: string) {
+	if (!activeProject.value) return;
+	isProcessing.value = true;
+	try {
+		const file = new File([blob], name, { type: blob.type || "image/png" });
+		const dt = new DataTransfer();
+		dt.items.add(file);
+		const processedAssets = await processMediaAssets({
+			files: dt.files,
+			onProgress: () => {},
+		});
+		for (const asset of processedAssets) {
+			const mediaId = await editor.media.addMediaAsset({
+				projectId: activeProject.value!.metadata.id,
+				asset,
+			});
+			const element = buildImageElement({
+				mediaId,
+				name: asset.name,
+				duration: TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,
+				startTime: editor.playback.getCurrentTime(),
+			});
+			editor.timeline.insertElement({ element, placement: { mode: "auto" } });
+		}
+	} finally {
+		isProcessing.value = false;
+	}
+}
+
+async function handleUrlImport() {
+	urlError.value = null;
+	const raw = urlInput.value.trim();
+	if (!raw) {
+		urlError.value = "Enter an image URL";
+		return;
+	}
+	try {
+		isProcessing.value = true;
+		const response = await fetch(raw);
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		const blob = await response.blob();
+		if (!blob.type.startsWith("image/")) {
+			urlError.value = "URL did not return an image";
+			return;
+		}
+		const ext = blob.type.split("/")[1] || "png";
+		await addBlobToCanvas(blob, `url-import.${ext}`);
+		urlInput.value = "";
+	} catch (err: any) {
+		urlError.value = err?.message || "Failed to fetch image";
+	} finally {
+		isProcessing.value = false;
+	}
+}
+
+async function handlePaste(e: ClipboardEvent) {
+	const items = e.clipboardData?.items;
+	if (!items) return;
+	for (const item of Array.from(items)) {
+		if (item.type.startsWith("image/")) {
+			e.preventDefault();
+			const blob = item.getAsFile();
+			if (blob) {
+				await addBlobToCanvas(blob, `paste-${Date.now()}.png`);
+				pasteHint.value = "Image pasted onto canvas";
+			}
+			return;
+		}
+	}
+	// Also accept image URL text
+	const text = e.clipboardData?.getData("text");
+	if (text && /^https?:\/\//i.test(text.trim())) {
+		urlInput.value = text.trim();
+		activeSubTab.value = "url";
+		await handleUrlImport();
 	}
 }
 
@@ -297,6 +392,8 @@ function formatDuration(seconds: number | null): string {
 			<button
 				v-for="tab in ([
 					{ key: 'upload', label: 'Upload', icon: Upload },
+					{ key: 'url', label: 'URL', icon: Link2 },
+					{ key: 'paste', label: 'Paste', icon: ClipboardPaste },
 					{ key: 'clips', label: 'From Clips', icon: Film },
 					{ key: 'gallery', label: 'Gallery', icon: Image },
 				] as const)"
@@ -325,8 +422,42 @@ function formatDuration(seconds: number | null): string {
 				<p class="text-zinc-500 text-sm">
 					{{ isProcessing ? 'Processing...' : 'Click to upload images' }}
 				</p>
-				<p class="text-zinc-600 text-xs">PNG, JPG, WebP, SVG, GIF</p>
+				<p class="text-zinc-600 text-xs">PNG, JPG, WebP, GIF</p>
 			</div>
+		</div>
+
+		<!-- URL tab -->
+		<div v-else-if="activeSubTab === 'url'" class="flex flex-1 flex-col gap-3 p-3">
+			<p class="text-[11px] text-zinc-500">Fetch an image from a public URL</p>
+			<input
+				v-model="urlInput"
+				type="url"
+				placeholder="https://example.com/image.jpg"
+				class="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-purple-500/50"
+				@keydown.enter="handleUrlImport"
+			/>
+			<p v-if="urlError" class="text-[10px] text-red-400">{{ urlError }}</p>
+			<button
+				type="button"
+				class="rounded-md bg-purple-600 px-3 py-2 text-xs font-medium text-white hover:bg-purple-500 disabled:opacity-50"
+				:disabled="isProcessing || !urlInput.trim()"
+				@click="handleUrlImport"
+			>
+				{{ isProcessing ? 'Importing…' : 'Add to canvas' }}
+			</button>
+		</div>
+
+		<!-- Paste tab -->
+		<div
+			v-else-if="activeSubTab === 'paste'"
+			class="flex flex-1 flex-col items-center justify-center gap-2 p-6 outline-none"
+			tabindex="0"
+			@paste="handlePaste"
+			@click="($event.currentTarget as HTMLElement).focus()"
+		>
+			<ClipboardPaste class="size-8 text-zinc-500" />
+			<p class="text-sm text-zinc-400 text-center">{{ pasteHint }}</p>
+			<p class="text-[10px] text-zinc-600">Supports clipboard images and image URLs</p>
 		</div>
 
 		<!-- Clips tab -->
@@ -456,7 +587,13 @@ function formatDuration(seconds: number | null): string {
 						@dblclick="addGalleryImage(img)"
 					>
 						<div class="aspect-square bg-zinc-800">
-							<Image class="size-full p-4 text-zinc-700" />
+							<img
+								v-if="thumbnailCache.get(img.id)"
+								:src="thumbnailCache.get(img.id)"
+								:alt="img.name"
+								class="size-full object-cover"
+							/>
+							<Image v-else class="size-full p-4 text-zinc-700" />
 						</div>
 						<div class="truncate px-1.5 py-1 text-[10px] text-zinc-400">{{ img.name }}</div>
 						<button

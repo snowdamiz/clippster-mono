@@ -1,12 +1,13 @@
 /**
  * Composable for image-mode editor functionality.
  * Provides reactive access to the imageMode flag and image-specific
- * export capabilities (PNG/SVG/WebP via canvas.toBlob).
+ * export capabilities (PNG/JPG/WebP via canvas.toBlob) with Image Library ingest.
  */
 import { computed, inject, type Ref } from "vue";
 import { useEditor } from "./useEditor";
+import { flushAndSerializeActiveImageProject } from "../bridge/image-project-document";
 
-export type ImageExportFormat = "png" | "svg" | "webp";
+export type ImageExportFormat = "png" | "jpg" | "webp";
 
 export function useImageMode() {
 	const { editor, version } = useEditor();
@@ -18,6 +19,16 @@ export function useImageMode() {
 
 	// Injected from ImageEditor.vue when opened via "Design Cover" action
 	const coverForClipId = inject<Ref<string | null>>("coverForClipId", undefined as any);
+	const backendProjectId = inject<Ref<number | null> | { value: number | null }>(
+		"imageEditorBackendProjectId",
+		computed(() => null) as any,
+	);
+
+	function mimeForFormat(format: ImageExportFormat): string {
+		if (format === "jpg") return "image/jpeg";
+		if (format === "webp") return "image/webp";
+		return "image/png";
+	}
 
 	/**
 	 * Export the current canvas as an image file.
@@ -27,66 +38,102 @@ export function useImageMode() {
 		const canvas = editor.getPreviewCanvas();
 		if (!canvas) return null;
 
-		const mimeType = format === "svg" ? "image/svg+xml"
-			: format === "webp" ? "image/webp"
-			: "image/png";
-
-		// For SVG we'd need a different approach (serialize DOM), but for now
-		// canvas export covers PNG and WebP
-		if (format === "svg") {
-			// SVG export: serialize the canvas content as an SVG wrapper
-			const dataUrl = canvas.toDataURL("image/png");
-			const width = canvas.width;
-			const height = canvas.height;
-			const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-	<image href="${dataUrl}" width="${width}" height="${height}" />
-</svg>`;
-			return new Blob([svgString], { type: "image/svg+xml" });
-		}
+		const mimeType = mimeForFormat(format);
+		const quality = format === "png" ? undefined : 0.92;
 
 		return new Promise<Blob | null>((resolve) => {
-			canvas.toBlob(
-				(blob) => resolve(blob),
-				mimeType,
-				format === "webp" ? 0.95 : undefined,
-			);
+			canvas.toBlob((blob) => resolve(blob), mimeType, quality);
 		});
 	}
 
+	async function writeBlobToAppImages(
+		blob: Blob,
+		filename: string,
+	): Promise<{ filePath: string; fileSize: number }> {
+		const { appDataDir } = await import("@tauri-apps/api/path");
+		const { writeFile, mkdir, exists } = await import("@tauri-apps/plugin-fs");
+
+		const appData = await appDataDir();
+		const imagesDir = `${appData}/image-library`;
+		if (!(await exists(imagesDir))) {
+			await mkdir(imagesDir, { recursive: true });
+		}
+
+		const filePath = `${imagesDir}/${filename}`;
+		const arrayBuffer = await blob.arrayBuffer();
+		const bytes = new Uint8Array(arrayBuffer);
+		await writeFile(filePath, bytes);
+		return { filePath, fileSize: bytes.byteLength };
+	}
+
 	/**
-	 * Export and save the image to disk via Tauri.
+	 * Export to Image Library (primary path) and optionally also Save As to disk.
 	 */
 	async function exportAndSave(
 		format: ImageExportFormat = "png",
 		filename?: string,
+		opts: { alsoSaveToDisk?: boolean; imageType?: string } = {},
 	): Promise<string | null> {
 		const blob = await exportAsImage(format);
 		if (!blob) return null;
 
-		const ext = format === "svg" ? "svg" : format === "webp" ? "webp" : "png";
-		const defaultName = filename || `design-${Date.now()}.${ext}`;
+		const ext = format === "jpg" ? "jpg" : format;
+		const project = editor.project.getActiveOrNull();
+		const baseName = (filename || project?.metadata.name || `design-${Date.now()}`).replace(
+			/\.(png|jpg|jpeg|webp)$/i,
+			"",
+		);
+		const libraryFilename = `${baseName.replace(/[^\w\-]+/g, "_")}_${Date.now()}.${ext}`;
 
 		try {
-			const { save } = await import("@tauri-apps/plugin-dialog");
-			const { writeFile } = await import("@tauri-apps/plugin-fs");
+			const { filePath, fileSize } = await writeBlobToAppImages(blob, libraryFilename);
+			const canvas = editor.getPreviewCanvas();
+			const serialized = await flushAndSerializeActiveImageProject();
+			const { createImageAsset } = await import("@/services/database/image-assets");
+			const backendId =
+				backendProjectId && "value" in backendProjectId ? backendProjectId.value : null;
 
-			const filePath = await save({
-				defaultPath: defaultName,
-				filters: [
-					{
-						name: `${ext.toUpperCase()} Image`,
-						extensions: [ext],
-					},
-				],
+			await createImageAsset({
+				name: baseName,
+				filePath,
+				width: canvas?.width || undefined,
+				height: canvas?.height || undefined,
+				fileSize,
+				mimeType: mimeForFormat(format),
+				imageType: (opts.imageType as any) || "custom",
+				sourceType: "editor",
+				sourceProjectId: backendId != null ? String(backendId) : project?.metadata.id,
+				canvasWidth: project?.settings.canvasSize.width,
+				canvasHeight: project?.settings.canvasSize.height,
+				exportFormat: format as any,
+				editorProjectJson: serialized
+					? JSON.stringify({
+							...serialized,
+							backendProjectId: backendId,
+						})
+					: undefined,
 			});
 
-			if (!filePath) return null;
+			if (opts.alsoSaveToDisk !== false) {
+				try {
+					const { save } = await import("@tauri-apps/plugin-dialog");
+					const { writeFile } = await import("@tauri-apps/plugin-fs");
+					const diskPath = await save({
+						defaultPath: `${baseName}.${ext}`,
+						filters: [{ name: `${ext.toUpperCase()} Image`, extensions: [ext] }],
+					});
+					if (diskPath) {
+						const arrayBuffer = await blob.arrayBuffer();
+						await writeFile(diskPath, new Uint8Array(arrayBuffer));
+					}
+				} catch (diskErr) {
+					console.warn("[useImageMode] Disk save skipped/failed:", diskErr);
+				}
+			}
 
-			const arrayBuffer = await blob.arrayBuffer();
-			await writeFile(filePath, new Uint8Array(arrayBuffer));
 			return filePath;
 		} catch (error) {
-			console.error("[useImageMode] Failed to save image:", error);
+			console.error("[useImageMode] Failed to save image to library:", error);
 			return null;
 		}
 	}
@@ -114,31 +161,55 @@ export function useImageMode() {
 				await mkdir(coverDir, { recursive: true });
 			}
 
-			const ext = format === "svg" ? "svg" : format === "webp" ? "webp" : "png";
+			const ext = format === "jpg" ? "jpg" : format;
 			const filePath = `${coverDir}/cover_${clipId}_${Date.now()}.${ext}`;
 
 			const arrayBuffer = await blob.arrayBuffer();
 			await writeFile(filePath, new Uint8Array(arrayBuffer));
 
-			// Update the clip's cover image
 			const { updateClip } = await import("@/services/database/clips");
 			const { createImageAsset } = await import("@/services/database/image-assets");
+			const serialized = await flushAndSerializeActiveImageProject();
 
 			const canvas = editor.getPreviewCanvas();
+			const project = editor.project.getActiveOrNull();
+			const backendId =
+				backendProjectId && "value" in backendProjectId ? backendProjectId.value : null;
 			const assetId = await createImageAsset({
 				name: `Cover for clip ${clipId}`,
 				filePath,
 				width: canvas?.width || undefined,
 				height: canvas?.height || undefined,
+				mimeType: mimeForFormat(format),
 				imageType: "cover",
 				sourceType: "editor",
 				sourceClipId: clipId,
+				sourceProjectId: backendId != null ? String(backendId) : project?.metadata.id,
+				canvasWidth: project?.settings.canvasSize.width,
+				canvasHeight: project?.settings.canvasSize.height,
+				exportFormat: format === "jpg" ? ("jpg" as any) : (format as any),
+				editorProjectJson: serialized
+					? JSON.stringify({
+							...serialized,
+							backendProjectId: backendId,
+							coverForClipId: clipId,
+						})
+					: undefined,
 			});
 
 			await updateClip(clipId, {
 				cover_image_id: assetId,
 				cover_image_path: filePath,
 			});
+
+			if (backendId != null && project) {
+				await editor.project.updateSettings({
+					settings: {
+						sourceClipId: clipId,
+						coverForClipId: clipId,
+					},
+				});
+			}
 
 			return filePath;
 		} catch (error) {

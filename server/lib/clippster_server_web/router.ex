@@ -393,6 +393,20 @@ defmodule ClippsterServerWeb.Router do
     post("/ai/chat/sessions/:id/media-analysis", AIChatController, :upload_media_analysis)
     put("/ai/chat/sessions/:id/media", AIChatController, :update_media)
 
+    # AI thumbnail sessions
+    get("/ai/thumbnail/sessions", AIThumbnailController, :list_sessions)
+    post("/ai/thumbnail/sessions", AIThumbnailController, :create_session)
+    get("/ai/thumbnail/sessions/:id", AIThumbnailController, :get_session)
+    delete("/ai/thumbnail/sessions/:id", AIThumbnailController, :delete_session)
+    put("/ai/thumbnail/sessions/:id/name", AIThumbnailController, :rename_session)
+    put("/ai/thumbnail/sessions/:id/mode", AIThumbnailController, :update_mode)
+    put("/ai/thumbnail/sessions/:id/media", AIThumbnailController, :update_media)
+    post("/ai/thumbnail/sessions/:id/reference", AIThumbnailController, :set_reference)
+    post("/ai/thumbnail/sessions/:id/message", AIThumbnailController, :send_message)
+    post("/ai/thumbnail/sessions/:id/generate", AIThumbnailController, :trigger_generation)
+    post("/ai/thumbnail/sessions/:id/refine", AIThumbnailController, :send_refinement)
+    post("/ai/thumbnail/sessions/:id/accept", AIThumbnailController, :accept)
+
     # Image editor projects
     get("/image-editor/projects", ImageEditorController, :list_projects)
     post("/image-editor/projects", ImageEditorController, :create_project)

@@ -55,8 +55,8 @@ const showCampaignPicker = ref(false);
 
 const imageFormatOptions: { value: ImageExportFormat; label: string }[] = [
 	{ value: "png", label: "PNG" },
+	{ value: "jpg", label: "JPG" },
 	{ value: "webp", label: "WebP" },
-	{ value: "svg", label: "SVG" },
 ];
 
 async function handleImageExport() {
@@ -187,6 +187,8 @@ const aspectPresets = [
 	{ width: 1080, height: 1920, label: "9:16" },
 	{ width: 1080, height: 1080, label: "1:1" },
 	{ width: 1080, height: 1350, label: "4:5" },
+	{ width: 1280, height: 720, label: "YouTube HD" },
+	{ width: 3840, height: 2160, label: "YouTube 4K" },
 ];
 
 const activeProject = computed(() => {
@@ -391,7 +393,7 @@ async function handleExit() {
 		console.error("Failed to close project:", error);
 	}
 
-	router.push(isImageMode.value ? "/" : "/video-editor");
+	router.push(isImageMode.value ? "/design-studio" : "/video-editor");
 }
 
 async function handleRename() {
@@ -420,7 +422,7 @@ async function handleDelete() {
 	if (!confirm(`Delete "${project.metadata.name}"? This cannot be undone.`)) return;
 	try {
 		await editor.project.deleteProjects({ ids: [project.metadata.id] });
-		router.push(isImageMode.value ? "/" : "/video-editor");
+		router.push(isImageMode.value ? "/design-studio" : "/video-editor");
 	} catch (error) {
 		console.error("Failed to delete project:", error);
 	}

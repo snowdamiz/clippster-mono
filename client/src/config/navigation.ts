@@ -22,6 +22,7 @@ import {
   Headphones,
   Music,
   Disc,
+  Sparkles,
 } from 'lucide-vue-next';
 
 export type NavigationGroup = 'browse' | 'create' | 'studio' | 'manage' | 'system';
@@ -108,7 +109,7 @@ export const navigationItems: NavigationItem[] = [
   },
   {
     name: 'Image Library',
-    path: '/my-images',
+    path: '/image-library',
     icon: Image,
     group: 'create',
   },
@@ -129,7 +130,12 @@ export const navigationItems: NavigationItem[] = [
     path: '/design-studio',
     icon: Paintbrush,
     group: 'create',
-    badge: 'Beta',
+  },
+  {
+    name: 'AI Thumbnail',
+    path: '/ai-thumbnail',
+    icon: Sparkles,
+    group: 'create',
   },
   {
     name: 'AI Video Creator',

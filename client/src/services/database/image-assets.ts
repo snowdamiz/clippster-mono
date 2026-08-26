@@ -132,6 +132,29 @@ export async function getImageAsset(id: string): Promise<ImageAsset | null> {
   return results.length > 0 ? results[0] : null;
 }
 
+/** Latest cover/editor asset linked to a built clip (for Design Cover resume). */
+export async function getLatestImageAssetForClip(sourceClipId: string): Promise<ImageAsset | null> {
+  const db = await getDatabase();
+  const userId = getCurrentUserId();
+  const rows =
+    userId === null
+      ? await db.select<ImageAsset[]>(
+          `SELECT * FROM image_assets
+           WHERE source_clip_id = ?
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [sourceClipId],
+        )
+      : await db.select<ImageAsset[]>(
+          `SELECT * FROM image_assets
+           WHERE source_clip_id = ? AND (user_id = ? OR user_id IS NULL)
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [sourceClipId, userId],
+        );
+  return rows.length > 0 ? rows[0] : null;
+}
+
 export interface UpdateImageAssetOptions {
   name?: string;
   width?: number;

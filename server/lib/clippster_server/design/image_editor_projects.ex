@@ -24,7 +24,7 @@ defmodule ClippsterServer.Design.ImageEditorProjects do
   end
 
   def list_user_projects(user_id, opts \\ []) do
-    limit = Keyword.get(opts, :limit, 20)
+    limit = Keyword.get(opts, :limit, 100)
 
     ImageEditorProject
     |> where([p], p.user_id == ^user_id)

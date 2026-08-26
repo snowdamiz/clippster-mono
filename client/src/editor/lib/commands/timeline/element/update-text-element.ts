@@ -5,6 +5,7 @@ import { EditorCore } from "../../../../core";
 export type TextElementUpdatable = Partial<
 	Pick<
 		TextElement,
+		| "name"
 		| "content"
 		| "fontSize"
 		| "fontFamily"
@@ -32,6 +33,8 @@ export type TextElementUpdatable = Partial<
 		| "blendMode"
 		| "fadeIn"
 		| "fadeOut"
+		| "locked"
+		| "groupId"
 	>
 >;
 
