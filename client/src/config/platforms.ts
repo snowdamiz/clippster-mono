@@ -22,8 +22,8 @@ export const platformConfigs: Record<PlatformId, PlatformConfig> = {
   tokend: {
     id: 'tokend',
     name: 'Tokend',
-    description: 'Browse Tokend creator streams and videos (mock catalog until partner APIs)',
-    icon: '/tokend.svg',
+    description: 'Browse Tokend creator streams and videos through Clippster',
+    icon: '/tokend.png',
     searchPlaceholder: 'Tokend URL or @handle',
     searchLabel: 'Creator',
     emptyStateTitle: 'Search Tokend',

@@ -40,6 +40,10 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
     GenServer.call({:global, __MODULE__}, :status)
   end
 
+  @doc false
+  def post_for_me_account?(%{provider: "post_for_me"}), do: true
+  def post_for_me_account?(_), do: false
+
   @impl true
   def init(opts) do
     interval = Keyword.get(opts, :interval, @default_interval)
@@ -144,11 +148,15 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
         end
       end)
 
-    %{synced: org_results.synced + user_results.synced, errors: org_results.errors + user_results.errors}
+    %{
+      synced: org_results.synced + user_results.synced,
+      errors: org_results.errors + user_results.errors
+    }
   end
 
   defp sync_single_post(%PostSubmission{} = post) do
     with {:ok, account} <- get_org_account(post),
+         :ok <- ensure_post_for_me_account(account),
          {:ok, provider_account_id} <- provider_account_id(account),
          {:ok, post_id} <- provider_post_id(post),
          {:ok, insights} <-
@@ -195,6 +203,7 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
 
   defp sync_user_post(%UserPost{} = post) do
     with {:ok, account} <- get_user_account(post),
+         :ok <- ensure_post_for_me_account(account),
          {:ok, provider_account_id} <- provider_account_id(account),
          {:ok, post_id} <- provider_post_id(post),
          {:ok, insights} <-
@@ -229,7 +238,10 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
         {:error, :missing_post_id}
 
       {:error, :not_found} ->
-        Logger.debug("[AnalyticsSyncWorker] Post not found in Post For Me feed for user post #{post.id}")
+        Logger.debug(
+          "[AnalyticsSyncWorker] Post not found in Post For Me feed for user post #{post.id}"
+        )
+
         {:error, :not_found}
 
       {:error, reason} ->
@@ -242,7 +254,8 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
     end
   end
 
-  defp get_org_account(%PostSubmission{organization_social_account: nil}), do: {:error, :no_account}
+  defp get_org_account(%PostSubmission{organization_social_account: nil}),
+    do: {:error, :no_account}
 
   defp get_org_account(
          %PostSubmission{organization_social_account: %Ecto.Association.NotLoaded{}} = post
@@ -266,6 +279,10 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
   end
 
   defp get_user_account(%UserPost{clipper_social_account: account}), do: {:ok, account}
+
+  defp ensure_post_for_me_account(account) do
+    if post_for_me_account?(account), do: :ok, else: {:error, :unsupported_provider}
+  end
 
   defp provider_account_id(%{provider_account_id: id}) when is_binary(id) and id != "",
     do: {:ok, id}

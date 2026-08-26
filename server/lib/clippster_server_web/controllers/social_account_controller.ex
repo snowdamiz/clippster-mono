@@ -7,6 +7,7 @@ defmodule ClippsterServerWeb.SocialAccountController do
 
   alias ClippsterServer.Social
   alias ClippsterServer.Social.ProviderMode
+  alias ClippsterServer.Social.PublishingProvider
   alias ClippsterServer.Social.PostForMeConnectionSession
   alias ClippsterServer.Social.PostForMeConnectionSessions
   alias ClippsterServer.Social.PostForMeConnectionSync
@@ -148,11 +149,16 @@ defmodule ClippsterServerWeb.SocialAccountController do
     else
       platform = ProviderMode.normalize_platform(params["platform"] || "")
 
-      if platform == "" do
+      cond do
+        platform == "" ->
           conn
           |> put_status(422)
           |> json(%{success: false, error: "platform is required"})
-        else
+
+        PublishingProvider.ensure_post_for_me_platform(platform) != :ok ->
+          native_provider_required(conn)
+
+        true ->
           permissions = parse_permissions(params["permissions"])
           return_mode = normalize_return_mode(params["return_mode"], "tauri")
 
@@ -252,7 +258,7 @@ defmodule ClippsterServerWeb.SocialAccountController do
               |> put_status(422)
               |> json(%{success: false, error: format_errors(changeset)})
           end
-        end
+      end
     end
   end
 
@@ -339,6 +345,7 @@ defmodule ClippsterServerWeb.SocialAccountController do
         with {:ok, session} <- load_org_session(params["connection_id"], org_id, user),
              :ok <- ensure_session_not_expired(session),
              platform <- resolved_platform(params, session),
+             :ok <- PublishingProvider.ensure_post_for_me_platform(platform),
              external_id <- resolved_external_id(params, session),
              account_ids <- resolved_account_ids(params, session),
              {:ok, result} <-
@@ -363,6 +370,9 @@ defmodule ClippsterServerWeb.SocialAccountController do
             accounts: Enum.map(result.accounts, &serialize_account/1)
           })
         else
+          {:error, :native_provider_required} ->
+            native_provider_required(conn)
+
           {:error, :connection_not_found} ->
             conn
             |> put_status(404)
@@ -403,6 +413,16 @@ defmodule ClippsterServerWeb.SocialAccountController do
     conn
     |> put_status(422)
     |> json(%{success: false, error: "organization_id is required"})
+  end
+
+  defp native_provider_required(conn) do
+    conn
+    |> put_status(422)
+    |> json(%{
+      success: false,
+      error: "native_provider_required",
+      message: "Tokend is a native provider. Use the dedicated Tokend connection routes."
+    })
   end
 
   @doc """

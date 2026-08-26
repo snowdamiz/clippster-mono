@@ -17,7 +17,7 @@ import {
   validateTwitterUrl,
   getTwitterBroadcastInfo,
 } from '@/services/twitter';
-import { extractTokendChannel, getTokendVods, type TokendVod } from '@/services/tokend';
+import { extractTokendChannel, fetchTokendCatalog, type TokendCatalog } from '@/services/tokend';
 import { cache } from '@/utils/persistentCache';
 import { isTauri } from '@/lib/instagram-auth';
 
@@ -61,6 +61,7 @@ interface PlatformState {
   recentSearches: RecentSearch[];
   audioRecentSearches: RecentSearch[];
   activePlatform: PlatformId;
+  tokendCatalogMetadata: Pick<TokendCatalog, 'mode' | 'slug' | 'displayName' | 'note'> | null;
 }
 
 const MAX_RECENT_SEARCHES = 20; // Increased since we're combining all platforms
@@ -193,6 +194,7 @@ export const usePlatformStore = defineStore('platform', {
       recentSearches,
       audioRecentSearches,
       activePlatform: 'pumpfun',
+      tokendCatalogMetadata: null,
     };
   },
 
@@ -581,6 +583,9 @@ export const usePlatformStore = defineStore('platform', {
 
       this.loading = true;
       this.error = '';
+      if (this.activePlatform !== 'tokend') {
+        this.tokendCatalogMetadata = null;
+      }
 
       try {
         let result: {
@@ -847,30 +852,37 @@ export const usePlatformStore = defineStore('platform', {
       actualTab?: 'streams' | 'videos';
     }> {
       try {
-        let vods = await getTokendVods(slug, limit, tab);
+        const catalog = await fetchTokendCatalog(slug);
+        this.tokendCatalogMetadata = {
+          mode: catalog.mode,
+          slug: catalog.slug,
+          displayName: catalog.displayName,
+          note: catalog.note,
+        };
+
+        let items = tab === 'videos' ? catalog.videos : catalog.streams;
         let fallbackUsed = false;
         let actualTab: 'streams' | 'videos' = tab;
 
-        if (vods.length === 0) {
+        if (items.length === 0) {
           const other: 'streams' | 'videos' = tab === 'streams' ? 'videos' : 'streams';
-          const otherVods = await getTokendVods(slug, limit, other);
-          if (otherVods.length > 0) {
-            vods = otherVods;
+          const otherItems = other === 'videos' ? catalog.videos : catalog.streams;
+          if (otherItems.length > 0) {
+            items = otherItems;
             fallbackUsed = true;
             actualTab = other;
           }
         }
 
-        const clips: PlatformClip[] = vods.map((vod: TokendVod) => ({
-          clipId: vod.videoId,
-          title: vod.title || `Tokend ${vod.videoId}`,
-          duration: vod.duration || 0,
-          thumbnailUrl: vod.thumbnailUrl,
-          playlistUrl: vod.url,
-          mp4Url: vod.url,
+        const clips: PlatformClip[] = items.slice(0, limit).map((item) => ({
+          clipId: item.id,
+          title: item.title || `Tokend ${item.id}`,
+          duration: item.duration || 0,
+          thumbnailUrl: item.thumbnailUrl || undefined,
+          playlistUrl: item.url,
+          mp4Url: item.url,
           clipType: 'COMPLETE' as const,
-          createdAt: vod.uploadDate,
-          views: vod.viewCount,
+          createdAt: item.publishedAt || undefined,
         }));
 
         return {
@@ -1349,6 +1361,7 @@ export const usePlatformStore = defineStore('platform', {
       this.hasMore = false;
       this.total = 0;
       this.lastSearchTime = null;
+      this.tokendCatalogMetadata = null;
     },
 
     setLoading(loading: boolean) {

@@ -90,9 +90,10 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { Instagram, Youtube, Share2, ChevronRight, X, Radio } from 'lucide-vue-next';
+  import { Instagram, Youtube, Share2, ChevronRight, X } from 'lucide-vue-next';
   import XLogo from '@/components/icons/XLogo.vue';
   import TiktokLogo from '@/components/icons/TiktokLogo.vue';
+  import TokendLogo from '@/components/icons/TokendLogo.vue';
   import { useAuthStore } from '@/stores/auth';
   import { listUserInstagramAccounts } from '@/services/userInstagramApi';
   import { listUserTwitterAccounts } from '@/services/userTwitterApi';
@@ -100,6 +101,7 @@
   import { listUserYoutubeAccounts } from '@/services/userYoutubeApi';
   import { listUserTokendAccounts } from '@/services/userTokendApi';
   import { listSocialAccounts } from '@/services/socialAccountsApi';
+  import { fetchTokendCapabilities } from '@/services/tokend';
 
   type PlatformId = 'instagram' | 'twitter' | 'tiktok' | 'youtube' | 'tokend';
 
@@ -127,6 +129,7 @@
   const tiktokCount = ref(0);
   const youtubeCount = ref(0);
   const tokendCount = ref(0);
+  const tokendPublishEnabled = ref(false);
 
   
   const availablePlatforms = computed((): PlatformOption[] => {
@@ -172,12 +175,12 @@
       });
     }
 
-    if (tokendCount.value > 0) {
+    if (tokendPublishEnabled.value && tokendCount.value > 0) {
       platforms.push({
         id: 'tokend',
         name: 'Tokend',
         description: 'Publish to creator profile',
-        icon: Radio,
+        icon: TokendLogo,
         accountCount: tokendCount.value,
       });
     }
@@ -202,17 +205,22 @@
     tiktokCount.value = 0;
     youtubeCount.value = 0;
     tokendCount.value = 0;
+    tokendPublishEnabled.value = false;
 
     try {
       // Load personal accounts
-      const [igResult, twResult, tkResult, ytResult, tokendResult, orgResult] = await Promise.all([
-        listUserInstagramAccounts(),
-        listUserTwitterAccounts(),
-        listUserTiktokAccounts(),
-        listUserYoutubeAccounts(),
-        listUserTokendAccounts(),
-        authStore.getOrganizations(),
-      ]);
+      const [igResult, twResult, tkResult, ytResult, tokendResult, orgResult, tokendCaps] =
+        await Promise.all([
+          listUserInstagramAccounts(),
+          listUserTwitterAccounts(),
+          listUserTiktokAccounts(),
+          listUserYoutubeAccounts(),
+          listUserTokendAccounts(),
+          authStore.getOrganizations(),
+          fetchTokendCapabilities().catch(() => null),
+        ]);
+
+      tokendPublishEnabled.value = tokendCaps?.publish === true;
 
       let personalIg = 0;
       let personalTw = 0;
@@ -235,7 +243,6 @@
       if (tokendResult.success) {
         personalTokend = tokendResult.accounts.filter((a) => a.is_active).length;
       }
-
       // Load org social accounts to count platform availability
       let orgIg = 0;
       let orgTw = 0;
@@ -454,9 +461,18 @@
   }
 
   .plat-dialog__platform-icon--tokend {
-    background: #0ea5e9;
-    border-color: rgba(14, 165, 233, 0.35);
+    background: #000000;
+    border-color: rgba(0, 0, 0, 0.35);
     color: white;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .plat-dialog__platform-icon--tokend :deep(img) {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 0;
   }
 
   .plat-dialog__platform-icon--loading {

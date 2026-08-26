@@ -148,8 +148,9 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { Instagram, Youtube, Building, ChevronRight, X, User, Radio } from 'lucide-vue-next';
+  import { Instagram, Youtube, Building, ChevronRight, X, User } from 'lucide-vue-next';
   import XLogo from '@/components/icons/XLogo.vue';
+  import TokendLogo from '@/components/icons/TokendLogo.vue';
   import { useAuthStore } from '@/stores/auth';
   import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services/userInstagramApi';
   import { listUserTwitterAccounts, type UserTwitterAccount } from '@/services/userTwitterApi';
@@ -193,7 +194,7 @@
       case 'twitter': return XLogo;
       case 'tiktok': return TiktokIcon;
       case 'youtube': return Youtube;
-      case 'tokend': return Radio;
+      case 'tokend': return TokendLogo;
       default: return Instagram;
     }
   });
@@ -507,11 +508,16 @@
   }
 
   .dest-dialog__avatar--tokend {
-    background-color: #0ea5e9;
+    background-color: #000000;
+    padding: 0;
+    overflow: hidden;
   }
 
-  .dest-dialog__avatar--tokend svg {
-    color: white;
+  .dest-dialog__avatar--tokend :deep(img) {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 0;
   }
 
   .dest-dialog__icon--twitter {

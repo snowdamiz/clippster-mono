@@ -1315,7 +1315,6 @@
     Check,
     Briefcase,
     Building2,
-    Radio,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import EditProfileDialog from '@/components/EditProfileDialog.vue';
@@ -1327,6 +1326,7 @@
   import ClipperProfileOnboardingWizard from '@/components/ClipperProfileOnboardingWizard.vue';
   import AddPostDialog from '@/components/AddPostDialog.vue';
   import XLogo from '@/components/icons/XLogo.vue';
+  import TokendLogo from '@/components/icons/TokendLogo.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
@@ -1390,8 +1390,7 @@
     type UserYoutubeAccount,
   } from '@/services/userYoutubeApi';
   import {
-    connectUserTokend,
-    startUserTokendOAuth,
+    startUserTokendConnection,
     listUserTokendAccounts,
     disconnectUserTokendAccount,
     type UserTokendAccount,
@@ -1930,7 +1929,7 @@
     {
       id: 'tokend',
       name: 'Tokend',
-      icon: markRaw(Radio),
+      icon: markRaw(TokendLogo),
       iconClass: 'platform-card__icon--tokend',
       available: true,
     },
@@ -1945,7 +1944,7 @@
       x: XLogo,
       twitter: XLogo,
       youtube: Youtube,
-      tokend: Radio,
+      tokend: TokendLogo,
     };
     return icons[platform] || Globe;
   };
@@ -2136,7 +2135,7 @@
     } else if (platformId === 'tokend') {
       connectingTokend.value = true;
       try {
-        cleanupReconnectAuth = await startUserTokendOAuth(async (result) => {
+        cleanupReconnectAuth = await startUserTokendConnection(async (result) => {
           if (result.success) {
             toast({
               title: 'Tokend connected',
@@ -2146,26 +2145,10 @@
             });
             await loadSocialAccounts();
             showPlatformSelectionDialog.value = false;
-          } else if (result.error === 'configure_tokend' || result.error === 'oauth_required') {
-            // Fall back to mock connect when OAuth is not configured
-            const mock = await connectUserTokend();
-            if (mock.success && mock.account) {
-              toast({
-                title: 'Tokend connected (mock)',
-                description: `@${mock.account.username} linked — OAuth not configured on Phoenix`,
-              });
-              await loadSocialAccounts();
-              showPlatformSelectionDialog.value = false;
-            } else {
-              toast({
-                title: 'Tokend connect failed',
-                description: mock.message || result.error || 'Failed to connect Tokend',
-              });
-            }
           } else {
             toast({
               title: 'Tokend connect failed',
-              description: result.error || 'Failed to connect Tokend',
+              description: result.message || result.error || 'Failed to connect Tokend',
             });
           }
           connectingTokend.value = false;
@@ -2173,26 +2156,10 @@
         });
       } catch (error) {
         console.error('Failed to connect Tokend:', error);
-        // If connect-url fails because OAuth unset, try mock
-        try {
-          const mock = await connectUserTokend();
-          if (mock.success && mock.account) {
-            toast({
-              title: 'Tokend connected (mock)',
-              description: `@${mock.account.username} linked — OAuth not configured on Phoenix`,
-            });
-            await loadSocialAccounts();
-            showPlatformSelectionDialog.value = false;
-          } else {
-            toast({
-              title: 'Error',
-              description:
-                error instanceof Error ? error.message : 'Failed to connect Tokend',
-            });
-          }
-        } catch {
-          toast({ title: 'Error', description: 'Failed to connect Tokend' });
-        }
+        toast({
+          title: 'Tokend connect failed',
+          description: error instanceof Error ? error.message : 'Failed to connect Tokend',
+        });
         connectingTokend.value = false;
         selectedPlatform.value = null;
       }
@@ -4084,11 +4051,15 @@
   }
 
   .list-item__icon--tokend {
-    background: #0ea5e9;
+    background: #000000;
+    padding: 0;
+    overflow: hidden;
   }
 
-  .list-item__icon--tokend svg {
-    color: white;
+  .list-item__icon--tokend img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
   .platform--tiktok {
@@ -4307,11 +4278,15 @@
   }
 
   .platform-card__icon--tokend {
-    background: #0ea5e9;
+    background: #000000;
+    padding: 0;
+    overflow: hidden;
   }
 
-  .platform-card__icon--tokend svg {
-    color: white;
+  .platform-card__icon--tokend img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
   .platform-option__content {

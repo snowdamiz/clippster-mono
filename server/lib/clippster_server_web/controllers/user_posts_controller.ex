@@ -17,6 +17,7 @@ defmodule ClippsterServerWeb.UserPostsController do
   alias ClippsterServer.Social.UserPostsAnalyticsSync
   alias ClippsterServer.Social.PostForMeFeedAnalytics
   alias ClippsterServer.Social.Providers.PostForMe
+  alias ClippsterServer.Tokend.Publisher
 
   @doc """
   Publish a post to user's Instagram account.
@@ -55,7 +56,7 @@ defmodule ClippsterServerWeb.UserPostsController do
   end
 
   @doc """
-  Publish a post to user's Tokend account (native provider; mock until partner APIs).
+  Publish a post to user's Tokend account through the native provider.
 
   POST /api/user/tokend/publish
   """
@@ -69,45 +70,50 @@ defmodule ClippsterServerWeb.UserPostsController do
     with {:ok, account_id} <- get_required_param(params, "account_id"),
          {:ok, media_url} <- get_required_param(params, "media_url"),
          {:ok, account} <- get_user_account(user.id, account_id),
-         :ok <- validate_platform(account, "tokend") do
-      access_token =
-        ClippsterServer.Campaigns.ClipperSocialAccount.get_access_token(account) || ""
-
-      case ClippsterServer.Tokend.Client.publish_media(access_token, media_url, %{
+         :ok <- Publisher.validate_account(account),
+         {:ok, post_data} <-
+           Publisher.publish(account, media_url, %{
              media_type: params["media_type"] || "video",
              caption: params["caption"]
            }) do
-        {:ok, post_data} ->
-          post_attrs = %{
-            user_id: user.id,
-            clipper_social_account_id: account.id,
-            platform: "tokend",
-            post_id: post_data.post_id,
-            post_url: post_data.post_url,
-            caption: params["caption"],
-            media_url: media_url,
-            thumbnail_url: params["thumbnail_url"],
-            media_type: params["media_type"] || "video",
-            status: "published"
-          }
+      post_attrs = %{
+        user_id: user.id,
+        clipper_social_account_id: account.id,
+        platform: "tokend",
+        post_id: post_data.post_id,
+        post_url: post_data.post_url,
+        caption: params["caption"],
+        media_url: media_url,
+        thumbnail_url: params["thumbnail_url"],
+        media_type: params["media_type"] || "video",
+        status: "published"
+      }
 
-          case Campaigns.create_user_post(user, post_attrs) do
-            {:ok, post} ->
-              conn
-              |> put_status(201)
-              |> json(%{
-                success: true,
-                post: serialize_post(post),
-                message: "Published to Tokend successfully (#{post_data[:mode] || "mock"})"
-              })
+      case Campaigns.create_user_post(user, post_attrs) do
+        {:ok, post} ->
+          conn
+          |> put_status(201)
+          |> json(%{
+            success: true,
+            post: serialize_post(post),
+            message: "Published to Tokend successfully"
+          })
 
-            {:error, changeset} ->
-              conn
-              |> put_status(422)
-              |> json(%{success: false, error: extract_changeset_error(changeset)})
-          end
+        {:error, changeset} ->
+          conn
+          |> put_status(422)
+          |> json(%{success: false, error: extract_changeset_error(changeset)})
       end
     else
+      {:error, :tokend_publish_unavailable} ->
+        conn
+        |> put_status(:service_unavailable)
+        |> json(%{
+          success: false,
+          error: "tokend_publish_unavailable",
+          message: Publisher.unavailable_message()
+        })
+
       {:error, :not_found} ->
         conn |> put_status(404) |> json(%{success: false, error: "Account not found"})
 
@@ -116,7 +122,7 @@ defmodule ClippsterServerWeb.UserPostsController do
         |> put_status(422)
         |> json(%{success: false, error: "Tokend account is inactive"})
 
-      {:error, :wrong_platform} ->
+      {:error, :not_tokend_account} ->
         conn
         |> put_status(400)
         |> json(%{success: false, error: "Account is not a Tokend account"})
@@ -140,7 +146,8 @@ defmodule ClippsterServerWeb.UserPostsController do
          {:ok, media_url} <- get_required_param(params, "media_url"),
          {:ok, account} <- get_user_account(user.id, account_id),
          :ok <- validate_platform(account, platform),
-         {:ok, account} <- PostForMeConnectionSync.ensure_user_publish_ready(account, platform_label),
+         {:ok, account} <-
+           PostForMeConnectionSync.ensure_user_publish_ready(account, platform_label),
          {:ok, post_data} <- publish_via_post_for_me(account, media_url, params) do
       post_attrs = %{
         user_id: user.id,

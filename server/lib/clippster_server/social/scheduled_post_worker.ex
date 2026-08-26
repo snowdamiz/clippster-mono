@@ -14,10 +14,11 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   require Logger
 
   alias ClippsterServer.Social
-  alias ClippsterServer.Social.{PostSubmission, SocialAccount}
+  alias ClippsterServer.Social.{PostSubmission, PublishingProvider, SocialAccount}
   alias ClippsterServer.Social.Providers.PostForMe
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Campaigns.ClipperSocialAccount
+  alias ClippsterServer.Tokend.Publisher
 
   @poll_interval :timer.minutes(1)
   @batch_size 20
@@ -211,65 +212,74 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
       end
 
     case account_result do
-      {:ok, account, access_token} ->
-        do_publish(post, account, access_token)
+      {:ok, account} ->
+        do_publish(post, account)
 
       {:error, reason} ->
         handle_publish_failure(post, "Account error: #{inspect(reason)}", :permanent)
     end
   end
 
-  defp get_org_account(%PostSubmission{organization_social_account_id: account_id})
+  defp get_org_account(%PostSubmission{organization_social_account_id: account_id} = post)
        when not is_nil(account_id) do
     case Social.get_social_account(account_id) do
       nil ->
         {:error, :account_not_found}
 
       account ->
-        if account.is_active do
-          {:ok, account, nil}
-        else
-          {:error, :account_inactive}
-        end
+        validate_loaded_account(post, account, :org)
     end
   end
 
   defp get_org_account(_), do: {:error, :no_account_specified}
 
-  defp get_user_account(%PostSubmission{user_social_account_id: account_id})
+  defp get_user_account(%PostSubmission{user_social_account_id: account_id} = post)
        when not is_nil(account_id) do
     case Campaigns.get_social_account(account_id) do
       nil ->
         {:error, :account_not_found}
 
       account ->
-        if account.is_active do
-          {:ok, account, nil}
-        else
-          {:error, :account_inactive}
-        end
+        validate_loaded_account(post, account, :user)
     end
   end
 
   defp get_user_account(_), do: {:error, :no_account_specified}
 
-  # Publish via PostForMe or native Tokend
-  defp do_publish(%PostSubmission{} = post, account, access_token) do
-    case Map.get(account, :provider) do
-      "tokend" ->
-        do_publish_tokend(post, account, access_token)
+  defp validate_loaded_account(post, account, scope) do
+    owner_matches =
+      case scope do
+        :org -> account.organization_id == post.organization_id
+        :user -> account.user_id == post.submitted_by_user_id
+      end
 
-      _ ->
-        do_publish_post_for_me(post, account)
+    cond do
+      not owner_matches -> {:error, :account_owner_mismatch}
+      not account.is_active -> {:error, :account_inactive}
+      account.platform != post.platform -> {:error, :platform_mismatch}
+      true -> {:ok, account}
     end
   end
 
-  defp do_publish_tokend(post, _account, access_token) do
+  defp do_publish(%PostSubmission{} = post, account) do
+    PublishingProvider.dispatch(
+      account,
+      fn -> do_publish_post_for_me(post, account) end,
+      fn -> do_publish_tokend(post, account) end
+    )
+    |> case do
+      {:error, reason} ->
+        handle_publish_failure(post, "Provider error: #{inspect(reason)}", :permanent)
+
+      result ->
+        result
+    end
+  end
+
+  defp do_publish_tokend(post, account) do
     Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to Tokend (native)")
 
-    token = access_token || ""
-
-    case ClippsterServer.Tokend.Client.publish_media(token, post.media_url, %{
+    case Publisher.publish(account, post.media_url, %{
            media_type: post.media_type || "video",
            caption: post.caption
          }) do
@@ -277,8 +287,20 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
         handle_publish_success(post, %{
           post_id: result.post_id,
           post_url: result.post_url,
-          provider_post_id: result.post_id
+          provider: "tokend",
+          provider_post_id: result.post_id,
+          provider_payload: Map.get(result, :provider_payload)
         })
+
+      {:error, :tokend_publish_unavailable} ->
+        handle_publish_failure(
+          post,
+          "tokend_publish_unavailable: #{Publisher.unavailable_message()}",
+          :permanent
+        )
+
+      {:error, reason} ->
+        handle_publish_failure(post, inspect(reason), classify_error(reason))
     end
   end
 
@@ -305,6 +327,7 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
           result = %{
             post_id: pfm_post.id || "pfm_#{post.id}",
             post_url: post_url,
+            provider: "post_for_me",
             provider_post_id: provider_post_id
           }
 
@@ -353,6 +376,7 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     attrs = %{
       post_id: result.post_id,
       post_url: result.post_url,
+      provider: result.provider,
       posted_at: DateTime.utc_now()
     }
 
@@ -365,6 +389,11 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
       end
 
     attrs = if content_hash, do: Map.put(attrs, :content_hash, content_hash), else: attrs
+
+    attrs =
+      if Map.has_key?(result, :provider_payload),
+        do: Map.put(attrs, :provider_payload, result.provider_payload),
+        else: attrs
 
     Social.mark_post_published(post, attrs)
 

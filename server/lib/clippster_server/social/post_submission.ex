@@ -14,7 +14,7 @@ defmodule ClippsterServer.Social.PostSubmission do
   alias ClippsterServer.Accounts.User
 
   @known_platforms ~w(
-    instagram facebook x twitter tiktok tiktok_business youtube linkedin threads pinterest bluesky
+    instagram facebook x twitter tiktok tiktok_business youtube linkedin threads pinterest bluesky tokend
   )
   @media_types ~w(image video carousel reel story)
   @statuses ~w(pending scheduled publishing published failed canceled)

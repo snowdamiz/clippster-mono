@@ -10,6 +10,11 @@ import { publishToUserTokend } from '@/services/userTokendApi';
 import { useSocialTokenMonitor } from '@/composables/useSocialTokenMonitor';
 import { getSocialPlatformLabel } from '@/utils/socialTokenExpiry';
 import { isSocialTokenExpiredApiError } from '@/utils/socialAuthErrors';
+import {
+  fetchTokendCapabilities,
+  isTokendPublishPlatform,
+  TOKEND_UNAVAILABLE_MESSAGES,
+} from '@/services/tokend';
 
 export interface PublishTarget {
   platformId: string;
@@ -211,9 +216,22 @@ export function useBackgroundPublish() {
 
       let successfulCount = 0;
       let failedCount = 0;
+      const tokendCapabilities = targets.some((t) => isTokendPublishPlatform(t.platformId))
+        ? await fetchTokendCapabilities().catch(() => null)
+        : null;
 
       for (const target of targets) {
         try {
+          if (isTokendPublishPlatform(target.platformId) && !tokendCapabilities?.publish) {
+            state.value.publishResults.push({
+              platformId: target.platformId,
+              success: false,
+              error: TOKEND_UNAVAILABLE_MESSAGES.publish,
+            });
+            failedCount++;
+            continue;
+          }
+
           // Determine which aspect ratio this platform needs
           const platformAspectRatio = metadata?.platformToRatioMap?.[target.platformId];
           if (!platformAspectRatio) {

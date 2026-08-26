@@ -66,7 +66,12 @@ import {
   isDirectTwitterLiveUrl,
   type TwitterLiveStatus,
 } from '@/services/twitter';
-import { checkTokendLivestream, type TokendLiveStatus } from '@/services/tokend';
+import {
+  checkTokendLivestream,
+  fetchTokendCapabilities,
+  TOKEND_UNAVAILABLE_MESSAGES,
+  type TokendLiveStatus,
+} from '@/services/tokend';
 import { useLivestreamSegmentProcessing } from './useLivestreamSegmentProcessing';
 import { useDvrRecording } from './useDvrRecording';
 import { useToast } from './useToast';
@@ -773,7 +778,7 @@ async function startDvrRecordingForStreamer(streamer: MonitoredStreamer): Promis
   }
 
   if (streamer.platform === 'Tokend') {
-    console.log('[LiveMonitor] Tokend DVR stub — no live media until partner APIs:', streamer.id);
+    console.log('[LiveMonitor] Tokend DVR unavailable; status monitoring only:', streamer.id);
     return false;
   }
 
@@ -2032,27 +2037,40 @@ export function useLivestreamMonitoring() {
   async function handleStreamStart(streamer: MonitoredStreamer, status: LiveStatus, options: StartOptions) {
     try {
       if (streamer.platform === 'Tokend') {
-        console.log(
-          '[LiveMonitor] Tokend live media stub — status monitoring only until partner APIs'
-        );
+        const capabilities = await fetchTokendCapabilities().catch(() => null);
+        if (!capabilities?.watch) {
+          console.log(
+            '[LiveMonitor] Tokend playback/DVR unavailable — status monitoring only'
+          );
+          addActivityLog({
+            streamerId: streamer.id,
+            streamerName: streamer.displayName,
+            platform: streamer.platform,
+            mintId: streamer.mintId,
+            message: TOKEND_UNAVAILABLE_MESSAGES.playback,
+            status: 'info',
+            profileImageUrl: streamer.profileImageUrl,
+          });
+          if (!isOnLivePage()) {
+            showSuccess(
+              `${streamer.displayName} is live on Tokend`,
+              TOKEND_UNAVAILABLE_MESSAGES.playback,
+              undefined,
+              'livestream'
+            );
+          }
+          return;
+        }
+
         addActivityLog({
           streamerId: streamer.id,
           streamerName: streamer.displayName,
           platform: streamer.platform,
           mintId: streamer.mintId,
-          message:
-            'Tokend Watch/DVR is not available yet. Channel stays monitored for live status only.',
+          message: 'Live on Tokend — Watch via partner viewer token when opened from Live Clip.',
           status: 'info',
           profileImageUrl: streamer.profileImageUrl,
         });
-        if (!isOnLivePage()) {
-          showSuccess(
-            `${streamer.displayName} is live on Tokend`,
-            'Recording/DVR unlocks when Tokend partner live media APIs ship.',
-            undefined,
-            'livestream'
-          );
-        }
         return;
       }
 

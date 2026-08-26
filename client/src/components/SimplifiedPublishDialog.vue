@@ -274,9 +274,10 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
-import { X, Instagram, Youtube, ChevronDown, Rocket, Loader2, Share2, Building2, Trophy, User, Radio } from 'lucide-vue-next';
+import { X, Instagram, Youtube, ChevronDown, Rocket, Loader2, Share2, Building2, Trophy, User } from 'lucide-vue-next';
 import XLogo from '@/components/icons/XLogo.vue';
 import TiktokLogo from '@/components/icons/TiktokLogo.vue';
+import TokendLogo from '@/components/icons/TokendLogo.vue';
 import type { ClipBuild, Clip } from '@/services/database';
 import { useBackgroundPublish } from '@/composables/useBackgroundPublish';
 import { markBuildAsPublished } from '@/services/database/clip-build';
@@ -289,6 +290,7 @@ import {
   type ServerOrganizationCreatorProfile,
 } from '@/services/organizationProfilesApi';
 import { useAuthStore } from '@/stores/auth';
+import { fetchTokendCapabilities } from '@/services/tokend';
 
 type PersonalSocialAccount = {
   id: number;
@@ -340,13 +342,18 @@ const brandingLabel = computed(() => {
 });
 
 // Platform selection
-const availablePlatforms = [
+const allPlatforms = [
   { id: 'instagram', label: 'Instagram', icon: Instagram },
   { id: 'twitter', label: 'X (Twitter)', icon: XLogo },
   { id: 'tiktok', label: 'TikTok', icon: TiktokLogo },
   { id: 'youtube', label: 'YouTube', icon: Youtube },
-  { id: 'tokend', label: 'Tokend', icon: Radio },
+  { id: 'tokend', label: 'Tokend', icon: TokendLogo },
 ];
+
+const tokendPublishEnabled = ref(false);
+const availablePlatforms = computed(() =>
+  allPlatforms.filter((p) => p.id !== 'tokend' || tokendPublishEnabled.value)
+);
 
 const selectedPublishPlatforms = ref<string[]>([]);
 const platformConfigs = ref<Record<string, { accountId?: string }>>({});
@@ -454,11 +461,11 @@ function togglePlatform(platformId: string) {
 }
 
 function getPlatformLabel(platformId: string): string {
-  return availablePlatforms.find(p => p.id === platformId)?.label || platformId;
+  return allPlatforms.find(p => p.id === platformId)?.label || platformId;
 }
 
 function getPlatformIcon(platformId: string) {
-  return availablePlatforms.find(p => p.id === platformId)?.icon || Instagram;
+  return allPlatforms.find(p => p.id === platformId)?.icon || Instagram;
 }
 
 function getPersonalAccountsForPlatform(platformId: string): PersonalSocialAccount[] {
@@ -655,12 +662,16 @@ async function loadPersonalAccounts() {
 async function loadDialogData() {
   // Load accounts in parallel with profiles so Tokend (and other native providers)
   // appear even when org profile listing is slow.
-  await Promise.all([
-    loadOrgAccounts().then(() =>
-      Promise.all([loadOrgCreatorProfiles(), loadCampaigns()])
-    ),
-    loadPersonalAccounts(),
+  const [, tokendCaps] = await Promise.all([
+    Promise.all([
+      loadOrgAccounts().then(() =>
+        Promise.all([loadOrgCreatorProfiles(), loadCampaigns()])
+      ),
+      loadPersonalAccounts(),
+    ]),
+    fetchTokendCapabilities().catch(() => null),
   ]);
+  tokendPublishEnabled.value = tokendCaps?.publish === true;
   for (const platformId of selectedPublishPlatforms.value) {
     autoSelectAccountIfOnlyOne(platformId);
   }

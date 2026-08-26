@@ -9,14 +9,18 @@ defmodule ClippsterServerWeb.TokendController do
   alias ClippsterServer.Social
   alias ClippsterServer.Social.PostForMeConnectionSession
   alias ClippsterServer.Social.PostForMeConnectionSessions
-  alias ClippsterServer.Tokend.Client
+  alias ClippsterServer.Tokend.{AccountTokens, Client, Webhooks}
 
   plug ClippsterServerWeb.AuthPlug
        when action in [
               :connect_user,
               :connect_org,
               :connect_url_user,
-              :connect_url_org
+              :connect_url_org,
+              :partner_catalog,
+              :create_media_grant,
+              :redeem_media_grant,
+              :create_viewer_token
             ]
 
   @session_ttl_seconds 900
@@ -29,6 +33,11 @@ defmodule ClippsterServerWeb.TokendController do
       {:ok, catalog} ->
         json(conn, catalog)
 
+      {:error, :invalid_slug} ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{error: "invalid_slug"})
+
       {:error, reason} ->
         conn
         |> put_status(:bad_gateway)
@@ -40,8 +49,20 @@ defmodule ClippsterServerWeb.TokendController do
   GET /api/tokend/channels/:slug/live
   """
   def get_live_status(conn, %{"slug" => slug}) do
-    {:ok, status} = Client.live_status(slug)
-    json(conn, status)
+    case Client.live_status(slug) do
+      {:ok, status} ->
+        json(conn, status)
+
+      {:error, :invalid_slug} ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{error: "invalid_slug"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(:bad_gateway)
+        |> json(%{error: inspect(reason)})
+    end
   end
 
   @doc """
@@ -49,13 +70,183 @@ defmodule ClippsterServerWeb.TokendController do
   """
   def mode(conn, _params) do
     mode = Client.mode()
+    oauth = Client.oauth_configuration()
+    capabilities = Client.capabilities()
 
     json(conn, %{
       mode: mode,
       configured: mode in [:local, :live],
-      oauth_ready: Client.oauth_ready?(),
-      message: mode_message(mode)
+      oauth_enabled: oauth.enabled,
+      oauth_ready: oauth.ready,
+      oauth_configured: oauth.configured,
+      oauth_incomplete: oauth.incomplete,
+      missing_oauth_configuration: oauth.missing,
+      capabilities: %{
+        public_catalog: capabilities.public_catalog,
+        live_status: capabilities.live_status,
+        oauth_connect: capabilities.oauth_connect,
+        mock_connect: capabilities.mock_connect,
+        publish: capabilities.publish,
+        schedule: capabilities.schedule,
+        download: capabilities.download,
+        watch: capabilities.watch,
+        dvr: capabilities.dvr,
+        analytics: capabilities.analytics,
+        webhooks: capabilities.webhooks
+      },
+      message: mode_message(mode, oauth)
     })
+  end
+
+  @doc """
+  POST /api/tokend/webhook — Tokend partner webhook receiver.
+  """
+  def webhook(conn, _params) do
+    case Webhooks.verify_and_parse(conn) do
+      {:ok, event} ->
+        case Webhooks.ingest(event) do
+          {:ok, :processed} ->
+            json(conn, %{success: true, status: "processed"})
+
+          {:ok, :duplicate} ->
+            json(conn, %{success: true, status: "duplicate"})
+
+          {:error, reason} ->
+            Logger.warning("[Tokend] webhook ingest failed: #{inspect(reason)}")
+
+            conn
+            |> put_status(422)
+            |> json(%{success: false, error: "ingest_failed"})
+        end
+
+      {:error, :missing_raw_body} ->
+        conn |> put_status(400) |> json(%{success: false, error: "missing_raw_body"})
+
+      {:error, :webhook_secret_not_configured} ->
+        conn |> put_status(503) |> json(%{success: false, error: "webhook_not_configured"})
+
+      {:error, :missing_signature_headers} ->
+        conn |> put_status(401) |> json(%{success: false, error: "missing_signature"})
+
+      {:error, :timestamp_skew} ->
+        conn |> put_status(401) |> json(%{success: false, error: "timestamp_skew"})
+
+      {:error, :invalid_signature} ->
+        conn |> put_status(401) |> json(%{success: false, error: "invalid_signature"})
+
+      {:error, :invalid_json} ->
+        conn |> put_status(400) |> json(%{success: false, error: "invalid_json"})
+
+      {:error, reason} ->
+        conn |> put_status(400) |> json(%{success: false, error: inspect(reason)})
+    end
+  end
+
+  @doc """
+  GET /api/user/tokend/catalog/:slug — partner catalog with public fallback.
+  """
+  def partner_catalog(conn, %{"slug" => slug}) do
+    user = conn.assigns.current_user
+
+    with {:ok, account} <- get_user_tokend_account(user.id),
+         {:ok, %{access_token: access_token}} <- AccountTokens.ensure_fresh_access_token(account),
+         {:ok, catalog} <- Client.partner_creator_catalog(access_token, slug) do
+      json(conn, catalog)
+    else
+      {:error, :not_found} ->
+        conn |> put_status(404) |> json(%{error: "Tokend account not connected"})
+
+      {:error, :oauth_not_ready} ->
+        oauth_not_configured(conn)
+
+      {:error, reason} ->
+        conn |> put_status(502) |> json(%{error: inspect(reason)})
+    end
+  end
+
+  @doc """
+  POST /api/user/tokend/media/:type/:id/grants
+  """
+  def create_media_grant(conn, %{"type" => type, "id" => id} = params) do
+    user = conn.assigns.current_user
+    purpose = params["purpose"] || "download"
+
+    with {:ok, account} <- get_user_tokend_account(user.id),
+         {:ok, %{access_token: access_token}} <- AccountTokens.ensure_fresh_access_token(account),
+         {:ok, grant} <- Client.create_media_grant(access_token, type, id, purpose) do
+      json(conn, %{
+        success: true,
+        token: grant.token,
+        expires_at: grant.expires_at,
+        download_url: "/api/user/tokend/media/grants/#{grant.token}"
+      })
+    else
+      {:error, :not_found} ->
+        conn |> put_status(404) |> json(%{success: false, error: "Tokend account not connected"})
+
+      {:error, :oauth_not_ready} ->
+        oauth_not_configured(conn)
+
+      {:error, reason} ->
+        conn |> put_status(502) |> json(%{success: false, error: inspect(reason)})
+    end
+  end
+
+  @doc """
+  GET /api/user/tokend/media/grants/:token — proxy grant redeem (Bearer stays on Phoenix).
+  """
+  def redeem_media_grant(conn, %{"token" => token}) do
+    user = conn.assigns.current_user
+
+    with {:ok, account} <- get_user_tokend_account(user.id),
+         {:ok, %{access_token: access_token}} <- AccountTokens.ensure_fresh_access_token(account),
+         {:ok, result} <- Client.redeem_media_grant(access_token, token) do
+      case result do
+        {:redirect, url} ->
+          redirect(conn, external: url)
+
+        {:body, body, content_type} ->
+          conn
+          |> put_resp_content_type(content_type)
+          |> send_resp(200, body)
+      end
+    else
+      {:error, :not_found} ->
+        conn |> put_status(404) |> json(%{success: false, error: "Tokend account not connected"})
+
+      {:error, :oauth_not_ready} ->
+        oauth_not_configured(conn)
+
+      {:error, reason} ->
+        conn |> put_status(502) |> json(%{success: false, error: inspect(reason)})
+    end
+  end
+
+  @doc """
+  POST /api/user/tokend/streams/:id/viewer-token
+  """
+  def create_viewer_token(conn, %{"id" => stream_id}) do
+    user = conn.assigns.current_user
+
+    with {:ok, account} <- get_user_tokend_account(user.id),
+         {:ok, %{access_token: access_token}} <- AccountTokens.ensure_fresh_access_token(account),
+         {:ok, viewer} <- Client.create_viewer_token(access_token, stream_id) do
+      json(conn, %{
+        success: true,
+        token: viewer.token,
+        url: viewer.url,
+        expires_at: viewer.expires_at
+      })
+    else
+      {:error, :not_found} ->
+        conn |> put_status(404) |> json(%{success: false, error: "Tokend account not connected"})
+
+      {:error, :oauth_not_ready} ->
+        oauth_not_configured(conn)
+
+      {:error, reason} ->
+        conn |> put_status(502) |> json(%{success: false, error: inspect(reason)})
+    end
   end
 
   @doc """
@@ -112,7 +303,7 @@ defmodule ClippsterServerWeb.TokendController do
   @doc """
   POST /api/user/tokend/connect
 
-  Mock connect when OAuth is not configured (mock/local).
+  Mock connect only in explicit mock mode with no partial OAuth configuration.
   When OAuth is ready, returns oauth_required so the client opens the browser flow.
   """
   def connect_user(conn, _params) do
@@ -128,7 +319,7 @@ defmodule ClippsterServerWeb.TokendController do
           message: "Use Tokend OAuth connect-url to link your real Tokend account."
         })
 
-      true ->
+      mock_connect_allowed?() ->
         case connect_mock_account(:user, user, nil) do
           {:ok, account} ->
             json(conn, %{success: true, social_account: serialize_user_account(account)})
@@ -138,6 +329,9 @@ defmodule ClippsterServerWeb.TokendController do
             |> put_status(422)
             |> json(%{success: false, error: format_errors(changeset)})
         end
+
+      true ->
+        oauth_not_configured(conn)
     end
   end
 
@@ -159,7 +353,7 @@ defmodule ClippsterServerWeb.TokendController do
             message: "Use Tokend OAuth connect-url to link your real Tokend account."
           })
 
-        true ->
+        mock_connect_allowed?() ->
           case connect_mock_account(:org, user, id) do
             {:ok, account} ->
               json(conn, %{success: true, social_account: serialize_org_account(account)})
@@ -172,6 +366,9 @@ defmodule ClippsterServerWeb.TokendController do
               |> put_status(422)
               |> json(%{success: false, error: format_errors(changeset)})
           end
+
+        true ->
+          oauth_not_configured(conn)
       end
     else
       :error ->
@@ -217,7 +414,10 @@ defmodule ClippsterServerWeb.TokendController do
         status: "pending",
         return_mode: return_mode,
         return_url: params["return_url"],
-        expires_at: DateTime.utc_now() |> DateTime.add(@session_ttl_seconds, :second) |> DateTime.truncate(:second),
+        expires_at:
+          DateTime.utc_now()
+          |> DateTime.add(@session_ttl_seconds, :second)
+          |> DateTime.truncate(:second),
         callback_payload: %{
           "code_verifier" => pkce.code_verifier,
           "code_challenge" => pkce.code_challenge,
@@ -277,23 +477,37 @@ defmodule ClippsterServerWeb.TokendController do
              account_ids: [to_string(account.id)],
              callback_payload:
                Map.merge(session.callback_payload || %{}, %{
-                 "tokend_user_id" => me["id"],
-                 "scopes" => tokens.scope
+                 "tokend_user_id" => me["id"] || me[:id],
+                 "scopes" => tokens.scope,
+                 "token_type" => tokens.token_type
                })
            }) do
       Logger.info("[Tokend] OAuth linked account=#{account.id} session=#{synced.id}")
       render_html_result(conn, true, nil)
     else
       nil ->
-        render_html_result(conn, false, "No pending Tokend connection session matched this callback.")
+        render_html_result(
+          conn,
+          false,
+          "No pending Tokend connection session matched this callback."
+        )
 
       {:error, :expired} ->
-        render_html_result(conn, false, "This Tokend connection session expired. Try connecting again.")
+        render_html_result(
+          conn,
+          false,
+          "This Tokend connection session expired. Try connecting again."
+        )
 
       {:error, reason} ->
         mark_session_failed_by_state(state, reason)
         Logger.warning("[Tokend] OAuth callback failed: #{inspect(reason)}")
-        render_html_result(conn, false, "Failed to complete Tokend connection: #{format_errors(reason)}")
+
+        render_html_result(
+          conn,
+          false,
+          "Failed to complete Tokend connection: #{format_errors(reason)}"
+        )
 
       other ->
         mark_session_failed_by_state(state, other)
@@ -316,11 +530,21 @@ defmodule ClippsterServerWeb.TokendController do
   end
 
   defp upsert_oauth_account(%PostForMeConnectionSession{} = session, tokens, me) do
-    provider_account_id = to_string(me["id"] || me[:id])
+    provider_account_id = me["id"] || me[:id]
     display_name = me["display_name"] || me[:display_name]
     email = me["email"] || me[:email]
-    username = derive_username(display_name, email, provider_account_id)
-    web = Application.get_env(:clippster_server, :tokend, [])[:web_base_url] || "http://localhost:4100"
+    creator_slug =
+      me["creator_slug"] || me[:creator_slug] || me["slug"] || me[:slug] || me["username"] ||
+        me[:username]
+
+    username =
+      if is_binary(creator_slug) and String.trim(creator_slug) != "" do
+        String.trim(creator_slug) |> String.downcase()
+      else
+        derive_username(display_name, email, to_string(provider_account_id))
+      end
+
+    provider_account_id = to_string(provider_account_id)
 
     expires_at =
       case tokens.expires_in do
@@ -345,10 +569,12 @@ defmodule ClippsterServerWeb.TokendController do
       token_expires_at: expires_at,
       provider_payload: %{
         "mode" => "live",
-        "tokend_user_id" => me["id"],
+        "tokend_user_id" => me["id"] || me[:id],
+        "creator_slug" => username,
         "email" => email,
-        "wallet" => me["wallet"],
-        "scopes" => tokens.scope
+        "wallet" => me["wallet"] || me[:wallet],
+        "scopes" => tokens.scope,
+        "token_type" => tokens.token_type
       },
       is_active: true
     }
@@ -356,17 +582,22 @@ defmodule ClippsterServerWeb.TokendController do
     case session.scope do
       "user" ->
         user = Accounts.get_user(session.user_id)
-        attrs = Map.put(base_attrs, :profile_url, "#{String.trim_trailing(to_string(web), "/")}/#{username}")
+        user_attrs = Map.put(base_attrs, :profile_url, nil)
 
-        case {user, Campaigns.get_social_account_by_provider(session.user_id, "tokend", provider_account_id)} do
+        case {user,
+              Campaigns.get_social_account_by_provider(
+                session.user_id,
+                "tokend",
+                provider_account_id
+              )} do
           {nil, _} ->
             {:error, :user_not_found}
 
           {user, nil} ->
-            Campaigns.create_social_account(user, attrs)
+            Campaigns.create_social_account(user, user_attrs)
 
           {user, existing} ->
-            Campaigns.update_social_account(existing, attrs, user)
+            Campaigns.update_social_account(existing, user_attrs, user)
         end
 
       "org" ->
@@ -436,7 +667,8 @@ defmodule ClippsterServerWeb.TokendController do
   defp connect_mock_account(scope, user, org_id) do
     mode = Client.mode()
     profile = Client.mock_connect_profile()
-    web = Application.get_env(:clippster_server, :tokend, [])[:web_base_url] || "http://localhost:4100"
+
+    web = Client.config()[:web_base_url] || "http://localhost:4100"
 
     attrs = %{
       platform: "tokend",
@@ -480,6 +712,21 @@ defmodule ClippsterServerWeb.TokendController do
     end
   end
 
+  defp mock_connect_allowed? do
+    Client.mode() == :mock and not Client.oauth_configuration().incomplete
+  end
+
+  defp get_user_tokend_account(user_id) do
+    account =
+      user_id
+      |> Campaigns.list_user_social_accounts()
+      |> Enum.find(fn acc ->
+        acc.platform == "tokend" and acc.provider == "tokend" and acc.is_active == true
+      end)
+
+    if account, do: {:ok, account}, else: {:error, :not_found}
+  end
+
   defp oauth_not_configured(conn) do
     conn
     |> put_status(:service_unavailable)
@@ -487,7 +734,7 @@ defmodule ClippsterServerWeb.TokendController do
       success: false,
       error: "configure_tokend",
       message:
-        "Set TOKEND_API_BASE_URL, TOKEND_OAUTH_CLIENT_ID, TOKEND_OAUTH_CLIENT_SECRET, and TOKEND_OAUTH_REDIRECT_URI on Phoenix."
+        "Enable TOKEND_PARTNER_API_ENABLED and set TOKEND_API_BASE_URL, TOKEND_OAUTH_CLIENT_ID, TOKEND_OAUTH_CLIENT_SECRET, and TOKEND_OAUTH_REDIRECT_URI on Phoenix."
     })
   end
 
@@ -525,16 +772,25 @@ defmodule ClippsterServerWeb.TokendController do
     |> send_resp(400, html)
   end
 
-  defp mode_message(:mock),
+  defp mode_message(:mock, _oauth),
     do:
       "Mock mode — seed-shaped fixtures only (not production tokend.tv). Optional: TOKEND_API_BASE_URL=http://localhost:4101 after local seed-data."
 
-  defp mode_message(:local),
-    do: "Local mode — proxying TOKEND_API_BASE_URL (typically http://localhost:4101)."
-
-  defp mode_message(:live),
+  defp mode_message(:local, _oauth),
     do:
-      "Live mode — OAuth credentials present. Connect uses Tokend authorize/consent; catalog/status proxy API base."
+      "Local mode — proxying shipped public creator APIs. OAuth remains unavailable until the partner flag is enabled and all required settings are present."
+
+  defp mode_message(:live, %{ready: true}),
+    do:
+      "Live mode — partner OAuth is enabled. Publish/download/watch unlock when Tokend partner APIs respond; catalog/status still use public creator routes."
+
+  defp mode_message(:live, %{enabled: false}),
+    do:
+      "Live mode — remote configuration is complete, but partner OAuth is disabled. Public catalog/status remain available."
+
+  defp mode_message(:live, _oauth),
+    do:
+      "Live mode — partner OAuth is enabled but incomplete. Public catalog/status remain available."
 
   defp serialize_user_account(account) do
     %{
@@ -571,7 +827,7 @@ defmodule ClippsterServerWeb.TokendController do
     }
   end
 
-  defp format_errors({:token_exchange_failed, 401, %{"error" => "invalid_client"}}) do
+  defp format_errors({:token_request_failed, 401, %{error: "invalid_client"}}) do
     "Tokend rejected the OAuth client secret (invalid_client). " <>
       "Update TOKEND_OAUTH_CLIENT_SECRET in server/.env to match the one-time secret from Tokend Admin for this client_id, then restart Phoenix."
   end

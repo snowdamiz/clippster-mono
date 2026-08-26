@@ -2,7 +2,7 @@ import { startUserInstagramOAuth } from '@/services/userInstagramApi';
 import { startUserTwitterOAuth } from '@/services/userTwitterApi';
 import { startUserTiktokOAuth } from '@/services/userTiktokApi';
 import { startUserYoutubeOAuth } from '@/services/userYoutubeApi';
-import { startUserTokendOAuth, startOrgTokendOAuth } from '@/services/userTokendApi';
+import { startUserTokendConnection, startOrgTokendConnection } from '@/services/userTokendApi';
 import {
   startInstagramOAuthPopup,
   startTwitterOAuthPopup,
@@ -50,7 +50,7 @@ export async function reconnectPersonalSocialPlatform(
     case 'youtube':
       return startUserYoutubeOAuth(handler, options);
     case 'tokend':
-      return startUserTokendOAuth(handler);
+      return startUserTokendConnection(handler);
     default:
       throw new Error(`Reconnect is not supported for ${getSocialPlatformLabel(platform)}`);
   }
@@ -81,7 +81,7 @@ export async function reconnectOrgSocialPlatform(
     case 'youtube':
       return startYoutubeOAuthPopup(organizationId, handler, options);
     case 'tokend':
-      return startOrgTokendOAuth(organizationId, handler);
+      return startOrgTokendConnection(organizationId, handler);
     default:
       throw new Error(`Reconnect is not supported for ${getSocialPlatformLabel(platform)}`);
   }

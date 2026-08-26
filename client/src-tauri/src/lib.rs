@@ -1111,7 +1111,7 @@ commands::reference_video::cancel_reference_analysis,
             stripe_callback::open_stripe_payment_window,
             stripe_callback::poll_stripe_payment_result,
             stripe_callback::clear_stripe_payment_result,
-            auth::start_post_for_me_oauth,
+            auth::start_social_oauth,
 
             // PumpFun commands
             pumpfun::get_pumpfun_clips,

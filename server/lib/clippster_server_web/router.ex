@@ -191,6 +191,9 @@ defmodule ClippsterServerWeb.Router do
     # Stripe payment routes (webhook is public, no auth needed)
     post("/stripe/webhook", StripeController, :webhook)
 
+    # Tokend partner webhooks (signature-verified; no user auth)
+    post("/tokend/webhook", TokendController, :webhook)
+
     # Subscription tiers (public - for pricing display)
     get("/subscription/tiers", SubscriptionController, :get_tiers)
 
@@ -210,12 +213,12 @@ defmodule ClippsterServerWeb.Router do
     # Rumble routes
     get("/rumble/channels/:channel_name", RumbleController, :get_channel)
 
-    # Tokend routes (mock catalog / live status until partner APIs ship)
+    # Tokend public creator reads. Mock mode is explicit and returns labeled fixtures.
     get("/tokend/mode", TokendController, :mode)
     get("/tokend/channels/:slug", TokendController, :get_channel)
     get("/tokend/channels/:slug/live", TokendController, :get_live_status)
 
-    # Tokend OAuth callback placeholder (public)
+    # Tokend partner OAuth callback (usable only with the opt-in Phoenix flag and complete config)
     get("/auth/tokend/callback", TokendController, :oauth_callback)
 
     # Organization invitation (public - for viewing invitation details)
@@ -894,6 +897,10 @@ defmodule ClippsterServerWeb.Router do
     post("/user/tokend/publish", UserPostsController, :publish_tokend)
     post("/user/tokend/connect", TokendController, :connect_user)
     post("/user/tokend/connect-url", TokendController, :connect_url_user)
+    get("/user/tokend/catalog/:slug", TokendController, :partner_catalog)
+    post("/user/tokend/media/:type/:id/grants", TokendController, :create_media_grant)
+    get("/user/tokend/media/grants/:token", TokendController, :redeem_media_grant)
+    post("/user/tokend/streams/:id/viewer-token", TokendController, :create_viewer_token)
     get("/user/posts", UserPostsController, :index)
     get("/user/posts/analytics", UserPostsController, :analytics_summary)
     post("/user/posts/sync-analytics", UserPostsController, :sync_user_analytics)

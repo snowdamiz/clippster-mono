@@ -38,7 +38,10 @@
                 class="liveclip-search__platform liveclip-search__platform--tokend"
                 key="tokend"
               >
-                <img src="/tokend.svg" class="liveclip-search__platform-icon" />
+                <img
+                  src="/tokend.png"
+                  class="liveclip-search__platform-icon liveclip-search__platform-icon--tokend"
+                />
               </div>
               <div
                 v-else-if="detectedPlatform === 'PumpFun'"
@@ -200,7 +203,14 @@
                   <div class="monitor-card__stats">
 
                     <!-- DVR Toggle -->
+                    <span
+                      v-if="streamer.platform === 'Tokend'"
+                      class="monitor-card__capability-unavailable"
+                    >
+                      Playback, Watch, Rec, and DVR unavailable
+                    </span>
                     <button
+                      v-else
                       @click="updateAutoDvr(streamer, !streamer.autoDvr)"
                       :disabled="streamer.isDetecting && streamer.status === 'STOPPING'"
                       class="monitor-setting__toggle"
@@ -214,7 +224,7 @@
                     <div class="monitor-card__divider"></div>
 
                     <!-- Action Buttons -->
-                    <div class="monitor-card__actions">
+                    <div v-if="streamer.platform !== 'Tokend'" class="monitor-card__actions">
                       <template v-if="!streamer.isDetecting">
                         <div v-if="streamer.status === 'STOPPING'" class="monitor-action monitor-action--stopping">
                           <Loader2 class="monitor-action__spinner" />
@@ -553,7 +563,12 @@
     normalizeTwitterUrl,
     validateTwitterUrl,
   } from '@/services/twitter';
-  import { extractTokendChannel, checkTokendLivestream } from '@/services/tokend';
+  import {
+    extractTokendChannel,
+    checkTokendLivestream,
+    fetchTokendCapabilities,
+    TOKEND_UNAVAILABLE_MESSAGES,
+  } from '@/services/tokend';
   import XBroadcastExplainerDialog from '@/components/XBroadcastExplainerDialog.vue';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
@@ -568,7 +583,7 @@
   }
 
   const { gates, requireSubscription } = useSubscriptionGate();
-  const { success } = useToast();
+  const { success, error: showError } = useToast();
 
   type ExtendedStreamer = Omit<MonitoredStreamer, 'platform'> & {
     platform: Platform;
@@ -1069,6 +1084,13 @@
   }
 
   async function openWatchDialog(streamer: ExtendedStreamer) {
+    if (streamer.platform === 'Tokend') {
+      const capabilities = await fetchTokendCapabilities().catch(() => null);
+      if (!capabilities?.watch) {
+        showError('Tokend Playback Unavailable', TOKEND_UNAVAILABLE_MESSAGES.playback);
+        return;
+      }
+    }
     if (!streamer.isLive) return;
 
     livestreamStore.openWatchDialog(
@@ -1257,7 +1279,7 @@
       case 'Twitter':
         return '/x.svg';
       case 'Tokend':
-        return '/tokend.svg';
+        return '/tokend.png';
       case 'PumpFun':
         return '/capsule.svg';
       default:
@@ -1292,11 +1314,12 @@
       case 'Twitch':
       case 'Rumble':
       case 'PumpFun':
-      case 'Tokend':
         return 'brightness-200';
       case 'Kick':
       case 'Twitter':
         return 'brightness-0';
+      case 'Tokend':
+        return 'monitor-card__avatar-icon--tokend';
       default:
         return '';
     }
@@ -1761,6 +1784,12 @@
   }
 
   async function startStreamer(streamer: ExtendedStreamer, detectClips: boolean) {
+    if (streamer.platform === 'Tokend') {
+      // Partner watch does not unlock Kick-style Rec/DVR sessions yet.
+      showError('Tokend Recording Unavailable', TOKEND_UNAVAILABLE_MESSAGES.playback);
+      return;
+    }
+
     // Open selection dialog instead of immediate start
     pendingMode.value = detectClips ? 'auto' : 'record';
     pendingStreamerSelection.value = streamer;
@@ -2256,7 +2285,9 @@
     background-color: #85c742;
   }
   .liveclip-search__platform--tokend {
-    background-color: #0ea5e9;
+    background-color: #000000;
+    padding: 0;
+    overflow: hidden;
   }
   .liveclip-search__platform--pumpfun {
     background-color: #10b981;
@@ -2270,6 +2301,13 @@
 
   .liveclip-search__platform-icon--dark {
     filter: brightness(0);
+  }
+
+  .liveclip-search__platform-icon--tokend {
+    width: 100%;
+    height: 100%;
+    filter: none;
+    object-fit: cover;
   }
 
   .liveclip-search__input {
@@ -2593,7 +2631,9 @@
     background-color: #53fc18;
   }
   .monitor-card__avatar-fallback--tokend {
-    background-color: #0ea5e9;
+    background-color: #000000;
+    padding: 0;
+    overflow: hidden;
   }
   .monitor-card__avatar-fallback--pumpfun {
     background-color: #10b981;
@@ -2602,6 +2642,13 @@
   .monitor-card__avatar-icon {
     width: 22px;
     height: 22px;
+  }
+
+  .monitor-card__avatar-icon--tokend {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: none;
   }
 
   .monitor-card__info {
@@ -2649,7 +2696,7 @@
     color: #53fc18;
   }
   .monitor-card__platform--tokend {
-    color: #38bdf8;
+    color: #00e5ff;
   }
   .monitor-card__platform--pumpfun {
     color: #34d399;
@@ -3060,7 +3107,7 @@
     background-color: #53fc18;
   }
   .activity-log__dot--tokend {
-    background-color: #0ea5e9;
+    background-color: #00e5ff;
   }
   .activity-log__dot--pumpfun {
     background-color: #10b981;
@@ -3449,6 +3496,13 @@
     gap: 0.625rem;
     padding: 1.25rem 1.5rem;
     border-top: 1px solid var(--sidebar-border);
+  }
+
+  .monitor-card__capability-unavailable {
+    color: #fbbf24;
+    font-size: 0.6875rem;
+    line-height: 1.35;
+    text-align: center;
   }
 
   /* ===== Buttons ===== */

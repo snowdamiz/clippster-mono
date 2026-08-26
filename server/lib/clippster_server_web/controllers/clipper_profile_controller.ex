@@ -3,6 +3,7 @@ defmodule ClippsterServerWeb.ClipperProfileController do
 
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Social.ProviderMode
+  alias ClippsterServer.Social.PublishingProvider
   alias ClippsterServer.Social.PostForMeConnectionSession
   alias ClippsterServer.Social.PostForMeConnectionSessions
   alias ClippsterServer.Social.PostForMeConnectionSync
@@ -35,107 +36,112 @@ defmodule ClippsterServerWeb.ClipperProfileController do
     user = conn.assigns.current_user
     platform = ProviderMode.normalize_platform(params["platform"] || "")
 
-    if platform == "" do
-          conn
-          |> put_status(422)
-          |> json(%{success: false, error: "platform is required"})
-        else
-          permissions = parse_permissions(params["permissions"])
-          return_mode = normalize_return_mode(params["return_mode"], "tauri")
+    cond do
+      platform == "" ->
+        conn
+        |> put_status(422)
+        |> json(%{success: false, error: "platform is required"})
 
-          with {:ok, return_url} <- normalize_return_url(return_mode, params["return_url"]),
-               {:ok, session_attrs} <-
-                 PostForMeConnectionSync.build_user_connect_session_attrs(
-                   user,
-                   platform,
-                   params,
-                   return_mode,
-                   return_url
-                 ),
-               {:ok, session} <- PostForMeConnectionSessions.create_session(session_attrs) do
-            payload =
-              %{
-                platform: platform,
+      PublishingProvider.ensure_post_for_me_platform(platform) != :ok ->
+        native_provider_required(conn)
+
+      true ->
+        permissions = parse_permissions(params["permissions"])
+        return_mode = normalize_return_mode(params["return_mode"], "tauri")
+
+        with {:ok, return_url} <- normalize_return_url(return_mode, params["return_url"]),
+             {:ok, session_attrs} <-
+               PostForMeConnectionSync.build_user_connect_session_attrs(
+                 user,
+                 platform,
+                 params,
+                 return_mode,
+                 return_url
+               ),
+             {:ok, session} <- PostForMeConnectionSessions.create_session(session_attrs) do
+          payload =
+            %{
+              platform: platform,
+              external_id: session.external_id,
+              permissions: permissions,
+              platform_data: params["platform_data"]
+            }
+            |> Enum.reject(fn {_, value} -> is_nil(value) end)
+            |> Enum.into(%{})
+
+          case PostForMe.create_social_account_auth_url(payload) do
+            {:ok, auth_data} ->
+              json(conn, %{
+                success: true,
+                provider: "post_for_me",
+                platform: auth_data.platform,
                 external_id: session.external_id,
-                permissions: permissions,
-                platform_data: params["platform_data"]
-              }
-              |> Enum.reject(fn {_, value} -> is_nil(value) end)
-              |> Enum.into(%{})
-
-            case PostForMe.create_social_account_auth_url(payload) do
-              {:ok, auth_data} ->
-                json(conn, %{
-                  success: true,
-                  provider: "post_for_me",
-                  platform: auth_data.platform,
-                  external_id: session.external_id,
-                  connection_id: session.id,
-                  auth_url: auth_data.url
-                })
-
-              {:error, error} ->
-                _ =
-                  PostForMeConnectionSessions.mark_failed(
-                    session,
-                    format_provider_error(error)
-                  )
-
-                conn
-                |> put_status(400)
-                |> json(%{success: false, error: format_provider_error(error)})
-            end
-          else
-            {:error, :return_url_required} ->
-              conn
-              |> put_status(422)
-              |> json(%{success: false, error: "return_url is required when return_mode=web"})
-
-            {:error, :invalid_return_url} ->
-              conn
-              |> put_status(422)
-              |> json(%{success: false, error: "return_url is invalid or not allowed"})
-
-            {:error, :account_not_found} ->
-              conn
-              |> put_status(404)
-              |> json(%{success: false, error: "Social account not found"})
-
-            {:error, :missing_provider_account_id} ->
-              conn
-              |> put_status(422)
-              |> json(%{
-                success: false,
-                error: "This account cannot be refreshed. Disconnect and connect it again."
+                connection_id: session.id,
+                auth_url: auth_data.url
               })
 
-            {:error, :missing_external_id} ->
-              conn
-              |> put_status(422)
-              |> json(%{
-                success: false,
-                error: "Could not resolve Post For Me external id for this account"
-              })
+            {:error, error} ->
+              _ =
+                PostForMeConnectionSessions.mark_failed(
+                  session,
+                  format_provider_error(error)
+                )
 
-            {:error, :provider_account_not_found} ->
               conn
-              |> put_status(404)
-              |> json(%{success: false, error: "Post For Me account not found"})
-
-            {:error, :missing_reconnect_account} ->
-              conn
-              |> put_status(422)
-              |> json(%{
-                success: false,
-                error: "provider_account_id or social_account_id is required to refresh"
-              })
-
-            {:error, changeset} ->
-              conn
-              |> put_status(422)
-              |> json(%{success: false, error: format_errors(changeset)})
+              |> put_status(400)
+              |> json(%{success: false, error: format_provider_error(error)})
           end
+        else
+          {:error, :return_url_required} ->
+            conn
+            |> put_status(422)
+            |> json(%{success: false, error: "return_url is required when return_mode=web"})
+
+          {:error, :invalid_return_url} ->
+            conn
+            |> put_status(422)
+            |> json(%{success: false, error: "return_url is invalid or not allowed"})
+
+          {:error, :account_not_found} ->
+            conn
+            |> put_status(404)
+            |> json(%{success: false, error: "Social account not found"})
+
+          {:error, :missing_provider_account_id} ->
+            conn
+            |> put_status(422)
+            |> json(%{
+              success: false,
+              error: "This account cannot be refreshed. Disconnect and connect it again."
+            })
+
+          {:error, :missing_external_id} ->
+            conn
+            |> put_status(422)
+            |> json(%{
+              success: false,
+              error: "Could not resolve Post For Me external id for this account"
+            })
+
+          {:error, :provider_account_not_found} ->
+            conn
+            |> put_status(404)
+            |> json(%{success: false, error: "Post For Me account not found"})
+
+          {:error, :missing_reconnect_account} ->
+            conn
+            |> put_status(422)
+            |> json(%{
+              success: false,
+              error: "provider_account_id or social_account_id is required to refresh"
+            })
+
+          {:error, changeset} ->
+            conn
+            |> put_status(422)
+            |> json(%{success: false, error: format_errors(changeset)})
         end
+    end
   end
 
   @doc """
@@ -186,65 +192,79 @@ defmodule ClippsterServerWeb.ClipperProfileController do
     user = conn.assigns.current_user
 
     with {:ok, session} <- load_user_session(params["connection_id"], user),
-             :ok <- ensure_session_not_expired(session),
-             platform <- resolved_platform(params, session),
-             external_id <- resolved_external_id(params, session),
-             account_ids <- resolved_account_ids(params, session),
-             {:ok, result} <-
-               PostForMeConnectionSync.complete_user_connect(
-                 user,
-                 account_ids,
-                 external_id,
-                 platform
-               ) do
-          _ =
-            maybe_mark_user_session_synced(session, %{
-              callback_payload: session && session.callback_payload,
-              account_ids: result.account_ids
-            })
+         :ok <- ensure_session_not_expired(session),
+         platform <- resolved_platform(params, session),
+         :ok <- PublishingProvider.ensure_post_for_me_platform(platform),
+         external_id <- resolved_external_id(params, session),
+         account_ids <- resolved_account_ids(params, session),
+         {:ok, result} <-
+           PostForMeConnectionSync.complete_user_connect(
+             user,
+             account_ids,
+             external_id,
+             platform
+           ) do
+      _ =
+        maybe_mark_user_session_synced(session, %{
+          callback_payload: session && session.callback_payload,
+          account_ids: result.account_ids
+        })
 
-          json(conn, %{
-            success: true,
-            provider: "post_for_me",
-            platform: result.platform,
-            social_account:
-              result.primary_account && serialize_social_account(result.primary_account),
-            social_accounts: Enum.map(result.accounts, &serialize_social_account/1)
-          })
-        else
-          {:error, :connection_not_found} ->
-            conn
-            |> put_status(404)
-            |> json(%{success: false, error: "Connection session not found"})
+      json(conn, %{
+        success: true,
+        provider: "post_for_me",
+        platform: result.platform,
+        social_account:
+          result.primary_account && serialize_social_account(result.primary_account),
+        social_accounts: Enum.map(result.accounts, &serialize_social_account/1)
+      })
+    else
+      {:error, :native_provider_required} ->
+        native_provider_required(conn)
 
-          {:error, :forbidden_connection} ->
-            conn
-            |> put_status(403)
-            |> json(%{success: false, error: "Not authorized to complete this connection"})
+      {:error, :connection_not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Connection session not found"})
 
-          {:error, :expired_connection} ->
-            conn
-            |> put_status(408)
-            |> json(%{success: false, error: "Connection session expired"})
+      {:error, :forbidden_connection} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Not authorized to complete this connection"})
 
-          {:error, :missing_identifiers} ->
-            conn
-            |> put_status(422)
-            |> json(%{
-              success: false,
-              error: "Provide at least one of: account_id/account_ids or external_id"
-            })
+      {:error, :expired_connection} ->
+        conn
+        |> put_status(408)
+        |> json(%{success: false, error: "Connection session expired"})
 
-          {:error, {:provider, reason}} ->
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: format_provider_error(reason)})
+      {:error, :missing_identifiers} ->
+        conn
+        |> put_status(422)
+        |> json(%{
+          success: false,
+          error: "Provide at least one of: account_id/account_ids or external_id"
+        })
 
-          {:error, reason} ->
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: format_provider_error(reason)})
+      {:error, {:provider, reason}} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: format_provider_error(reason)})
+
+      {:error, reason} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: format_provider_error(reason)})
     end
+  end
+
+  defp native_provider_required(conn) do
+    conn
+    |> put_status(422)
+    |> json(%{
+      success: false,
+      error: "native_provider_required",
+      message: "Tokend is a native provider. Use the dedicated Tokend connection routes."
+    })
   end
 
   @doc """

@@ -1,10 +1,15 @@
 /**
  * User Tokend API — native provider (not Post For Me).
- * Live: OAuth 2.1 + PKCE via Tokend authorize page.
- * Mock/local (OAuth unset): instant mock connect.
+ * OAuth 2.1 + PKCE is used only when Phoenix reports `oauth_ready`.
+ * Instant mock connect is allowed only when Phoenix explicitly reports `mock` mode.
  */
 
 import api from './api';
+import {
+  fetchTokendMode,
+  getTokendConnectStrategy,
+  getTokendConnectUnavailableMessage,
+} from './tokend';
 
 export interface UserTokendAccount {
   id: number;
@@ -64,7 +69,7 @@ export async function listUserTokendAccounts(): Promise<{
 }
 
 /**
- * Instant mock connect when Phoenix OAuth is not configured.
+ * Explicit mock connect. Call only after Phoenix reports Tokend mode `mock`.
  */
 export async function connectUserTokend(): Promise<TokendConnectResult> {
   try {
@@ -116,7 +121,7 @@ export async function startUserTokendOAuth(
     throw new Error('Tokend connect-url did not include connection_id');
   }
 
-  await invoke('start_post_for_me_oauth', { authUrl: connectResponse.data.auth_url });
+  await invoke('start_social_oauth', { authUrl: connectResponse.data.auth_url });
 
   let cancelled = false;
 
@@ -173,7 +178,61 @@ export async function publishToUserTokend(data: {
   return response.data;
 }
 
-export async function connectOrgTokend(organizationId: number | string): Promise<TokendConnectResult> {
+export async function createTokendMediaGrant(params: {
+  type: string;
+  id: string;
+  purpose?: string;
+}): Promise<{
+  success: boolean;
+  token?: string;
+  download_url?: string;
+  expires_at?: string;
+  error?: string;
+}> {
+  const response = await api.post(
+    `/user/tokend/media/${encodeURIComponent(params.type)}/${encodeURIComponent(params.id)}/grants`,
+    { purpose: params.purpose || 'download' }
+  );
+  return response.data;
+}
+
+export async function createTokendViewerToken(streamId: string): Promise<{
+  success: boolean;
+  token?: string;
+  url?: string;
+  expires_at?: string;
+  error?: string;
+}> {
+  const response = await api.post(`/user/tokend/streams/${encodeURIComponent(streamId)}/viewer-token`, {});
+  return response.data;
+}
+
+export async function fetchUserTokendCatalog(slug: string): Promise<unknown> {
+  const response = await api.get(`/user/tokend/catalog/${encodeURIComponent(slug)}`);
+  return response.data;
+}
+
+export async function startUserTokendConnection(
+  onResult?: (result: TokendConnectResult) => void
+): Promise<() => void> {
+  const modeInfo = await fetchTokendMode();
+  const strategy = getTokendConnectStrategy(modeInfo);
+
+  if (strategy === 'mock') {
+    const result = await connectUserTokend();
+    onResult?.(result);
+    return () => {};
+  }
+  if (strategy === 'oauth') {
+    return startUserTokendOAuth(onResult);
+  }
+
+  throw new Error(getTokendConnectUnavailableMessage(modeInfo));
+}
+
+export async function connectOrgTokend(
+  organizationId: number | string
+): Promise<TokendConnectResult> {
   try {
     const response = await api.post(`/organizations/${organizationId}/tokend/connect`, {});
     const data = response.data;
@@ -186,7 +245,10 @@ export async function connectOrgTokend(organizationId: number | string): Promise
       message: data.message || data.error,
     };
   } catch (error: unknown) {
-    const err = error as { response?: { data?: { error?: string; message?: string } }; message?: string };
+    const err = error as {
+      response?: { data?: { error?: string; message?: string } };
+      message?: string;
+    };
     return {
       success: false,
       error: err.response?.data?.error || 'connect_failed',
@@ -219,7 +281,7 @@ export async function startOrgTokendOAuth(
     throw new Error('Tokend connect-url did not include connection_id');
   }
 
-  await invoke('start_post_for_me_oauth', { authUrl: connectResponse.data.auth_url });
+  await invoke('start_social_oauth', { authUrl: connectResponse.data.auth_url });
 
   let cancelled = false;
 
@@ -250,6 +312,25 @@ export async function startOrgTokendOAuth(
   return () => {
     cancelled = true;
   };
+}
+
+export async function startOrgTokendConnection(
+  organizationId: number | string,
+  onResult?: (result: TokendConnectResult) => void
+): Promise<() => void> {
+  const modeInfo = await fetchTokendMode();
+  const strategy = getTokendConnectStrategy(modeInfo);
+
+  if (strategy === 'mock') {
+    const result = await connectOrgTokend(organizationId);
+    onResult?.(result);
+    return () => {};
+  }
+  if (strategy === 'oauth') {
+    return startOrgTokendOAuth(organizationId, onResult);
+  }
+
+  throw new Error(getTokendConnectUnavailableMessage(modeInfo));
 }
 
 async function pollConnectStatus(

@@ -2014,7 +2014,7 @@
       YouTube: '/youtube.svg',
       rumble: '/rumble.svg',
       twitter: '/x.svg',
-      tokend: '/tokend.svg',
+      tokend: '/tokend.png',
     };
     return icons[platform] || '/capsule.svg';
   }

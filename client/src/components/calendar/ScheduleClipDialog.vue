@@ -496,9 +496,10 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue';
-import { X, Calendar, CalendarDays, FileVideo, Loader2, AlertCircle, CheckCircle2, Instagram, Youtube, ChevronDown, Share2, Building2, Trophy, User, Radio } from 'lucide-vue-next';
+import { X, Calendar, CalendarDays, FileVideo, Loader2, AlertCircle, CheckCircle2, Instagram, Youtube, ChevronDown, Share2, Building2, Trophy, User } from 'lucide-vue-next';
 import XLogo from '@/components/icons/XLogo.vue';
 import TiktokLogo from '@/components/icons/TiktokLogo.vue';
+import TokendLogo from '@/components/icons/TokendLogo.vue';
 import CustomTimePicker from '@/components/CustomTimePicker.vue';
 import { useToast } from '@/composables/useToast';
 import { useAuthStore } from '@/stores/auth';
@@ -512,6 +513,7 @@ import { schedulePost, updateScheduledPostMedia } from '@/services/schedulingApi
 import { invoke } from '@tauri-apps/api/core';
 import { listOrganizationCreatorProfiles, type ServerOrganizationCreatorProfile } from '@/services/organizationProfilesApi';
 import { listMyCampaigns, type Campaign } from '@/services/campaignApi';
+import { fetchTokendCapabilities } from '@/services/tokend';
 
 interface Props {
   open: boolean;
@@ -535,13 +537,18 @@ const { showToast } = useToast();
 const authStore = useAuthStore();
 
 // Platform definitions
-const availablePlatforms = [
+const allPlatforms = [
   { id: 'instagram', label: 'Instagram', icon: Instagram },
   { id: 'twitter', label: 'X (Twitter)', icon: XLogo },
   { id: 'tiktok', label: 'TikTok', icon: TiktokLogo },
   { id: 'youtube', label: 'YouTube', icon: Youtube },
-  { id: 'tokend', label: 'Tokend', icon: Radio },
+  { id: 'tokend', label: 'Tokend', icon: TokendLogo },
 ];
+
+const tokendScheduleEnabled = ref(false);
+const availablePlatforms = computed(() =>
+  allPlatforms.filter((p) => p.id !== 'tokend' || tokendScheduleEnabled.value)
+);
 
 // State
 const loadingAccounts = ref(true);
@@ -609,11 +616,11 @@ const maxCaptionLength = computed(() => {
 
 // Helper functions
 function getPlatformIcon(platformId: string) {
-  return availablePlatforms.find(p => p.id === platformId)?.icon || Calendar;
+  return allPlatforms.find(p => p.id === platformId)?.icon || Calendar;
 }
 
 function getPlatformLabel(platformId: string) {
-  return availablePlatforms.find(p => p.id === platformId)?.label || platformId;
+  return allPlatforms.find(p => p.id === platformId)?.label || platformId;
 }
 
 function getOrgAccountsForPlatform(platformId: string) {
@@ -794,23 +801,29 @@ async function loadAccounts() {
   loadingAccounts.value = true;
   console.log('[ScheduleClipDialog] Loading accounts, orgId:', orgId.value);
   try {
-    // Load org accounts
-    if (orgId.value) {
-      const response = await listSocialAccounts(Number(orgId.value));
-      console.log('[ScheduleClipDialog] Org accounts response:', response);
-      if (response.success) {
-        orgAccounts.value = response.accounts;
-        console.log('[ScheduleClipDialog] Org accounts loaded:', orgAccounts.value);
-      }
-    }
-    
-    // Load PostForMe personal accounts
-    const postForMeResponse = await listPostForMeAccounts();
-    console.log('[ScheduleClipDialog] PostForMe accounts response:', postForMeResponse);
-    if (postForMeResponse.success) {
-      personalAccounts.value = postForMeResponse.social_accounts;
-      console.log('[ScheduleClipDialog] Personal accounts loaded:', personalAccounts.value);
-    }
+    const [, tokendCaps] = await Promise.all([
+      (async () => {
+        // Load org accounts
+        if (orgId.value) {
+          const response = await listSocialAccounts(Number(orgId.value));
+          console.log('[ScheduleClipDialog] Org accounts response:', response);
+          if (response.success) {
+            orgAccounts.value = response.accounts;
+            console.log('[ScheduleClipDialog] Org accounts loaded:', orgAccounts.value);
+          }
+        }
+        
+        // Load PostForMe personal accounts
+        const postForMeResponse = await listPostForMeAccounts();
+        console.log('[ScheduleClipDialog] PostForMe accounts response:', postForMeResponse);
+        if (postForMeResponse.success) {
+          personalAccounts.value = postForMeResponse.social_accounts;
+          console.log('[ScheduleClipDialog] Personal accounts loaded:', personalAccounts.value);
+        }
+      })(),
+      fetchTokendCapabilities().catch(() => null),
+    ]);
+    tokendScheduleEnabled.value = tokendCaps?.schedule === true;
   } catch (err) {
     console.error('[ScheduleClipDialog] Failed to load accounts:', err);
   } finally {

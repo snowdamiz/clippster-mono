@@ -11,7 +11,9 @@ defmodule ClippsterServerWeb.PostSubmissionController do
   alias ClippsterServer.Social.SocialAccount
   alias ClippsterServer.Social.PostForMeConnectionSync
   alias ClippsterServer.Social.PostForMeAccountHealth
+  alias ClippsterServer.Social.PublishingProvider
   alias ClippsterServer.Social.Providers.PostForMe
+  alias ClippsterServer.Tokend.Publisher
   alias ClippsterServer.Organizations
 
   plug ClippsterServerWeb.AuthPlug
@@ -115,9 +117,7 @@ defmodule ClippsterServerWeb.PostSubmissionController do
           |> json(%{success: false, error: "Social account not found"})
 
         account ->
-          platform_label = platform_display_name(account.platform)
-
-          case PostForMeConnectionSync.ensure_org_publish_ready(account, platform_label) do
+          case prepare_account_for_publish(account) do
             {:error, :token_expired, message} ->
               conn
               |> put_status(422)
@@ -128,18 +128,35 @@ defmodule ClippsterServerWeb.PostSubmissionController do
                 platform: account.platform
               })
 
+            {:error, :tokend_publish_unavailable} ->
+              tokend_publish_unavailable(conn)
+
+            {:error, :missing_provider_account_id} ->
+              conn
+              |> put_status(422)
+              |> json(%{
+                success: false,
+                error:
+                  "This social account is missing a Post For Me provider_account_id. Reconnect it via Account Connections first."
+              })
+
+            {:error, reason}
+            when reason in [
+                   :missing_provider,
+                   :unsupported_provider,
+                   :not_tokend_account,
+                   :native_provider_required
+                 ] ->
+              conn
+              |> put_status(422)
+              |> json(%{
+                success: false,
+                error: "unsupported_social_provider",
+                message: "This social account does not have a supported publishing provider."
+              })
+
             {:ok, account} ->
-              if is_nil(account.provider_account_id) or account.provider_account_id == "" do
-                conn
-                |> put_status(422)
-                |> json(%{
-                  success: false,
-                  error:
-                    "This social account is missing a Post For Me provider_account_id. Reconnect it via Account Connections first."
-                })
-              else
-                publish_org_submission(conn, org_id, account, params, user)
-              end
+              publish_org_submission(conn, org_id, account, params, user)
           end
       end
     end
@@ -481,7 +498,51 @@ defmodule ClippsterServerWeb.PostSubmissionController do
   # ============================================================================
 
   defp dispatch_publish(submission, account, params) do
-    publish_to_post_for_me(submission, account, params)
+    PublishingProvider.dispatch(
+      account,
+      fn -> publish_to_post_for_me(submission, account, params) end,
+      fn -> publish_to_tokend(submission, account, params) end
+    )
+  end
+
+  defp prepare_account_for_publish(account) do
+    case PublishingProvider.route(account) do
+      {:ok, :post_for_me} ->
+        platform_label = platform_display_name(account.platform)
+
+        with {:ok, ready_account} <-
+               PostForMeConnectionSync.ensure_org_publish_ready(account, platform_label),
+             true <-
+               ready_account.provider_account_id not in [nil, ""] ||
+                 {:error, :missing_provider_account_id} do
+          {:ok, ready_account}
+        end
+
+      {:ok, :tokend} ->
+        with :ok <- Publisher.readiness(account), do: {:ok, account}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp publish_to_tokend(submission, account, params) do
+    case Publisher.publish(account, params["media_url"], %{
+           media_type: params["media_type"] || "video",
+           caption: params["caption"]
+         }) do
+      {:ok, result} ->
+        Social.mark_post_published(submission, %{
+          post_id: result.post_id,
+          post_url: result.post_url,
+          provider: "tokend",
+          provider_post_id: result.post_id,
+          provider_payload: Map.get(result, :provider_payload)
+        })
+
+      {:error, reason} ->
+        Social.mark_post_failed(submission, inspect(reason))
+    end
   end
 
   defp publish_to_post_for_me(submission, account, params) do
@@ -677,6 +738,16 @@ defmodule ClippsterServerWeb.PostSubmissionController do
 
   defp format_provider_error(error) when is_binary(error), do: error
   defp format_provider_error(error), do: inspect(error)
+
+  defp tokend_publish_unavailable(conn) do
+    conn
+    |> put_status(:service_unavailable)
+    |> json(%{
+      success: false,
+      error: "tokend_publish_unavailable",
+      message: Publisher.unavailable_message()
+    })
+  end
 
   defp platform_display_name("instagram"), do: "Instagram"
   defp platform_display_name("tiktok"), do: "TikTok"

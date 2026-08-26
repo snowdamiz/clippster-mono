@@ -5,7 +5,9 @@
  * Local Tokend web: http://localhost:4100 — API: http://localhost:4101.
  * Seed creators (seed-nova, …) exist only after local Tokend seed-data; not on production.
  *
- * Catalog/status/connect go through Clippster Phoenix. Never put OAuth secrets in the desktop client.
+ * Public catalog/status use Tokend's shipped creator-read routes through Clippster Phoenix.
+ * Partner publish/download/watch/OAuth unlock only when Phoenix reports capabilities.
+ * Never put OAuth secrets in the desktop client, and never substitute fixtures when Phoenix is unavailable.
  */
 
 export interface TokendCatalogItem {
@@ -26,6 +28,7 @@ export interface TokendCatalog {
   streams: TokendCatalogItem[];
   videos: TokendCatalogItem[];
   note?: string;
+  source?: string;
 }
 
 export interface TokendLiveStatus {
@@ -42,22 +45,129 @@ export interface TokendLiveStatus {
   note?: string;
 }
 
-export interface TokendVod {
-  videoId: string;
-  title?: string;
-  duration?: number;
-  viewCount?: number;
-  thumbnailUrl?: string;
-  uploadDate?: string;
-  url: string;
-  isLive: boolean;
-  kind: 'stream' | 'video';
+export interface TokendServerCapabilities {
+  public_catalog?: boolean;
+  live_status?: boolean;
+  oauth_connect?: boolean;
+  mock_connect?: boolean;
+  publish?: boolean;
+  schedule?: boolean;
+  download?: boolean;
+  watch?: boolean;
+  dvr?: boolean;
+  analytics?: boolean;
+  webhooks?: boolean;
 }
 
 export interface TokendModeInfo {
   mode: 'mock' | 'local' | 'live';
   configured: boolean;
+  oauth_ready?: boolean;
+  oauth_incomplete?: boolean;
+  missing_oauth_configuration?: string[];
+  capabilities?: TokendServerCapabilities;
   message?: string;
+}
+
+/** Defaults when Phoenix has not yet reported a capability matrix. */
+export const TOKEND_SHIPPED_CAPABILITIES = {
+  publicCatalog: true,
+  liveStatus: true,
+  publish: false,
+  schedule: false,
+  download: false,
+  playback: false,
+  watch: false,
+  dvr: false,
+  analytics: false,
+} as const;
+
+export const TOKEND_UNAVAILABLE_MESSAGES = {
+  publish:
+    'Tokend publishing and scheduling are unavailable until Phoenix reports partner publish capability (TOKEND_PARTNER_API_ENABLED).',
+  download:
+    'Tokend media download grants are unavailable until Phoenix reports partner download capability.',
+  playback:
+    'Tokend playback, Watch, Rec, and DVR are unavailable until Phoenix reports partner watch capability. Live status monitoring remains available.',
+  analytics: 'Tokend native analytics are unavailable.',
+} as const;
+
+export interface TokendCapabilities {
+  mode: TokendModeInfo['mode'];
+  modeLabel: string;
+  fixtureMode: boolean;
+  publicCatalog: boolean;
+  liveStatus: boolean;
+  oauthConnect: boolean;
+  mockConnect: boolean;
+  publish: boolean;
+  schedule: boolean;
+  download: boolean;
+  playback: boolean;
+  watch: boolean;
+  dvr: boolean;
+  analytics: boolean;
+  webhooks: boolean;
+}
+
+export type TokendConnectStrategy = 'mock' | 'oauth' | 'unavailable';
+
+export function getTokendCapabilities(modeInfo: TokendModeInfo): TokendCapabilities {
+  const server = modeInfo.capabilities;
+  const oauthReady = modeInfo.oauth_ready === true;
+  const publish = server?.publish === true || (server?.publish == null && oauthReady);
+  const schedule = server?.schedule === true || (server?.schedule == null && oauthReady);
+  const download = server?.download === true || (server?.download == null && oauthReady);
+  const watch = server?.watch === true || (server?.watch == null && oauthReady);
+
+  return {
+    mode: modeInfo.mode,
+    modeLabel:
+      modeInfo.mode === 'mock'
+        ? 'Mock fixtures'
+        : modeInfo.mode === 'local'
+          ? 'Local Tokend'
+          : 'Tokend live',
+    fixtureMode: modeInfo.mode === 'mock',
+    publicCatalog: server?.public_catalog !== false,
+    liveStatus: server?.live_status !== false,
+    oauthConnect: server?.oauth_connect === true || (server?.oauth_connect == null && oauthReady),
+    mockConnect:
+      server?.mock_connect === true ||
+      (server?.mock_connect == null && modeInfo.mode === 'mock' && modeInfo.oauth_incomplete !== true),
+    publish,
+    schedule,
+    download,
+    playback: watch,
+    watch,
+    dvr: server?.dvr === true,
+    analytics: server?.analytics === true,
+    webhooks: server?.webhooks === true,
+  };
+}
+
+export function getTokendConnectStrategy(modeInfo: TokendModeInfo): TokendConnectStrategy {
+  const capabilities = getTokendCapabilities(modeInfo);
+  if (capabilities.mockConnect) return 'mock';
+  if (capabilities.oauthConnect) return 'oauth';
+  return 'unavailable';
+}
+
+export function getTokendConnectUnavailableMessage(modeInfo: TokendModeInfo): string {
+  if (modeInfo.oauth_incomplete) {
+    const missing = modeInfo.missing_oauth_configuration?.join(', ');
+    return missing
+      ? `Tokend partner OAuth is incomplete. Missing Phoenix configuration: ${missing}.`
+      : 'Tokend partner OAuth is incomplete on Phoenix.';
+  }
+  return (
+    modeInfo.message ||
+    'Tokend partner OAuth is disabled. Public creator browsing remains available, but account connection requires the opt-in Phoenix partner flag.'
+  );
+}
+
+export function isTokendPublishPlatform(platformId: string): boolean {
+  return platformId.toLowerCase() === 'tokend';
 }
 
 /** Reserved path segments on Tokend web (not creator slugs). */
@@ -146,10 +256,7 @@ export function extractTokendChannel(input: string): string | null {
     const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
     const url = new URL(withProto);
     if (!isTokendHostname(url.hostname)) return null;
-    if (
-      (url.hostname === 'localhost' || url.hostname === '127.0.0.1') &&
-      !isLocalTokendWeb(url)
-    ) {
+    if ((url.hostname === 'localhost' || url.hostname === '127.0.0.1') && !isLocalTokendWeb(url)) {
       return null;
     }
 
@@ -173,129 +280,53 @@ export function extractTokendChannel(input: string): string | null {
 }
 
 export async function fetchTokendMode(): Promise<TokendModeInfo> {
-  try {
-    const response = await fetch('/api/tokend/mode');
-    if (response.ok) {
-      const body = await response.json();
-      return {
-        mode: body.mode,
-        configured: body.mode === 'live' || body.mode === 'local',
-        message: body.message,
-      };
-    }
-  } catch {
-    // fall through
+  const response = await fetch('/api/tokend/mode');
+  if (!response.ok) {
+    throw new Error(await tokendResponseError(response, 'Failed to fetch Tokend mode'));
   }
-  return { mode: 'mock', configured: false };
-}
 
-export async function fetchTokendCatalog(slug: string): Promise<TokendCatalog> {
-  try {
-    const response = await fetch(`/api/tokend/channels/${encodeURIComponent(slug)}`);
-    if (response.ok) {
-      return response.json();
-    }
-  } catch {
-    // fall through
-  }
-  return localFallbackCatalog(slug);
-}
-
-function localFallbackCatalog(slug: string): TokendCatalog {
-  const normalized = slug.trim().replace(/^@/, '').toLowerCase() || 'seed-nova';
-  const seedNames: Record<string, string> = {
-    'seed-nova': 'Seed Nova',
-    'seed-orbit': 'Seed Orbit',
-    'seed-halo': 'Seed Halo',
-  };
-  const display =
-    seedNames[normalized] ||
-    normalized
-      .split(/[-_]/)
-      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-      .join(' ');
-
-  if (!seedNames[normalized]) {
-    return {
-      mode: 'mock-local',
-      slug: normalized,
-      displayName: display,
-      note:
-        'Unknown slug. Use http://localhost:4100/seed-nova after Tokend local seed-data (not on production tokend.tv).',
-      streams: [],
-      videos: [],
-    };
+  const body = await response.json();
+  if (!isTokendMode(body.mode)) {
+    throw new Error(`Invalid Tokend mode response: ${String(body.mode)}`);
   }
 
   return {
-    mode: 'mock-local',
-    slug: normalized,
-    displayName: display,
-    note:
-      'Clippster fixture (Tokend local seeds). Set TOKEND_API_BASE_URL=http://localhost:4101 for real local catalog.',
-    streams:
-      normalized === 'seed-nova'
-        ? [
-            {
-              id: 'tokend-vod-dev-seed-nova-vod-launch-retro',
-              title: 'Launch dashboard retro and next bets',
-              duration: 3600,
-              url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
-              kind: 'stream',
-            },
-          ]
-        : [
-            {
-              id: `tokend-vod-dev-seed-${normalized}-1`,
-              title: `${display} session 1`,
-              duration: 2400,
-              url: `http://localhost:4100/${normalized}/vods`,
-              kind: 'stream',
-            },
-          ],
-    videos: [
-      {
-        id: `tokend-clip-${normalized}-1`,
-        title: `${display} clip`,
-        duration: 45,
-        url: `http://localhost:4100/${normalized}/clips`,
-        kind: 'video',
-      },
-    ],
+    mode: body.mode,
+    configured: body.configured === true,
+    oauth_ready: body.oauth_ready === true,
+    oauth_incomplete: body.oauth_incomplete === true,
+    missing_oauth_configuration: Array.isArray(body.missing_oauth_configuration)
+      ? body.missing_oauth_configuration.filter(
+          (value: unknown): value is string => typeof value === 'string'
+        )
+      : undefined,
+    capabilities: isRecord(body.capabilities) ? (body.capabilities as TokendServerCapabilities) : undefined,
+    message: typeof body.message === 'string' ? body.message : undefined,
   };
 }
 
-export async function checkTokendLivestream(channelOrUrl: string): Promise<TokendLiveStatus> {
-  const slug = extractTokendChannel(channelOrUrl) || channelOrUrl.trim().replace(/^@/, '');
-  if (!slug) {
-    return { isLive: false, error: 'Invalid Tokend channel' };
+export async function fetchTokendCapabilities(): Promise<TokendCapabilities> {
+  return getTokendCapabilities(await fetchTokendMode());
+}
+
+export async function fetchTokendCatalog(slug: string): Promise<TokendCatalog> {
+  const response = await fetch(`/api/tokend/channels/${encodeURIComponent(slug)}`);
+  if (!response.ok) {
+    throw new Error(await tokendResponseError(response, 'Failed to fetch Tokend catalog'));
   }
 
-  try {
-    const response = await fetch(`/api/tokend/channels/${encodeURIComponent(slug)}/live`);
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      return { isLive: false, channelId: slug, error: body.error || `Status ${response.status}` };
-    }
-    return response.json();
-  } catch (error) {
-    if (slug === 'seed-nova') {
-      return {
-        mode: 'mock-local',
-        isLive: true,
-        channelId: slug,
-        displayName: 'Seed Nova',
-        streamTitle: 'Shipping the creator launch dashboard',
-        viewerCount: 2314,
-        note: 'Fixture — seed-nova live only exists on local Tokend after seed-data.',
-      };
-    }
-    return {
-      isLive: false,
-      channelId: slug,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  return response.json();
+}
+
+export interface TokendVod {
+  videoId: string;
+  title: string;
+  duration?: number;
+  thumbnailUrl?: string;
+  uploadDate?: string;
+  url: string;
+  isLive: boolean;
+  kind: 'stream' | 'video';
 }
 
 export async function getTokendVods(
@@ -318,4 +349,42 @@ export async function getTokendVods(
     isLive: false,
     kind: item.kind,
   }));
+}
+
+export async function checkTokendLivestream(channelOrUrl: string): Promise<TokendLiveStatus> {
+  const slug = extractTokendChannel(channelOrUrl) || channelOrUrl.trim().replace(/^@/, '');
+  if (!slug) {
+    return { isLive: false, error: 'Invalid Tokend channel' };
+  }
+
+  try {
+    const response = await fetch(`/api/tokend/channels/${encodeURIComponent(slug)}/live`);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      return { isLive: false, channelId: slug, error: body.error || `Status ${response.status}` };
+    }
+    return response.json();
+  } catch (error) {
+    return {
+      isLive: false,
+      channelId: slug,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function isTokendMode(value: unknown): value is TokendModeInfo['mode'] {
+  return value === 'mock' || value === 'local' || value === 'live';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function tokendResponseError(response: Response, fallback: string): Promise<string> {
+  const body = await response.json().catch(() => null);
+  if (body && typeof body.error === 'string' && body.error.trim()) {
+    return body.error;
+  }
+  return `${fallback} (status ${response.status})`;
 }

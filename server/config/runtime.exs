@@ -158,17 +158,24 @@ config :clippster_server, :twitter_oauth,
   client_secret: System.get_env("TWITTER_CLIENT_SECRET"),
   redirect_uri: System.get_env("TWITTER_REDIRECT_URI")
 
-# Tokend partner API (native provider).
+# Tokend integration (native provider).
+# Catalog/status use the public creator channel/vods/clips/stream routes shipped on Tokend main.
+# Partner OAuth/publish/download/watch/webhooks require TOKEND_PARTNER_API_ENABLED=true and a
+# Tokend deployment that exposes /api/v1/oauth/* and /api/v1/partner/*.
 # mock: no TOKEND_API_BASE_URL
 # local: TOKEND_API_BASE_URL only (e.g. http://localhost:4101) — proxy public creator APIs
-# live: base URL + OAuth client id/secret
+# live: base URL + OAuth client id/secret/redirect URI (regardless of partner flag)
+# OAuth connect/refresh/revoke/publish additionally require TOKEND_PARTNER_API_ENABLED=true.
+# Local/live public reads fail closed on upstream errors; only creator 404s become empty/offline.
 config :clippster_server, :tokend,
   api_base_url: System.get_env("TOKEND_API_BASE_URL"),
   web_base_url: System.get_env("TOKEND_WEB_BASE_URL") || "http://localhost:4100",
   oauth_client_id: System.get_env("TOKEND_OAUTH_CLIENT_ID"),
   oauth_client_secret: System.get_env("TOKEND_OAUTH_CLIENT_SECRET"),
   oauth_redirect_uri: System.get_env("TOKEND_OAUTH_REDIRECT_URI"),
-  webhook_signing_secret: System.get_env("TOKEND_WEBHOOK_SIGNING_SECRET")
+  webhook_signing_secret: System.get_env("TOKEND_WEBHOOK_SIGNING_SECRET"),
+  partner_api_enabled:
+    String.downcase(String.trim(System.get_env("TOKEND_PARTNER_API_ENABLED") || "false")) in ~w(true 1 yes on)
 
 # Social connections and publishing use Post For Me exclusively.
 social_provider_mode =

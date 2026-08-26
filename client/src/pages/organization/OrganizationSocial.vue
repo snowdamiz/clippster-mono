@@ -137,12 +137,12 @@
           <div class="social-accounts__platform-connect">
             <div class="social-accounts__platform-info">
               <div class="social-accounts__platform-badge social-accounts__platform-badge--tokend">
-                <img src="/tokend.svg" alt="" class="social-accounts__platform-svg" />
+                <img src="/tokend.png" alt="" class="social-accounts__platform-svg" />
               </div>
               <div class="social-accounts__platform-details">
                 <h3 class="social-accounts__platform-name">Tokend</h3>
                 <p class="social-accounts__platform-desc">
-                  Post to your Tokend creator profile (mock connect until partner OAuth)
+                  Connect a native Tokend account for browsing, connect, and partner publish when enabled.
                 </p>
               </div>
             </div>
@@ -487,7 +487,7 @@
     deleteSocialAccount,
     type SocialAccount,
   } from '@/services/socialAccountsApi';
-  import { connectOrgTokend, startOrgTokendOAuth } from '@/services/userTokendApi';
+  import { startOrgTokendConnection } from '@/services/userTokendApi';
   import { reconnectOrgSocialPlatform } from '@/utils/socialOAuthReconnect';
   import { isTokenExpiringSoonForAccount } from '@/utils/socialTokenExpiry';
 
@@ -637,30 +637,20 @@
       }
 
       if (platform === 'tokend') {
-        try {
-          cleanupAuthListener = await startOrgTokendOAuth(organizationId.value, async (result) => {
-            if (result.success) {
-              showToast('Tokend account connected', 'success');
-              await loadAccounts();
-            } else {
-              showToast(result.error || 'Failed to connect Tokend', 'error');
-            }
-            connectingPlatform.value = null;
-          });
-        } catch (tokendError) {
-          const mock = await connectOrgTokend(organizationId.value);
-          if (mock.success && mock.account) {
-            showToast(`Tokend @${mock.account.username} connected (mock)`, 'success');
+        cleanupAuthListener = await startOrgTokendConnection(organizationId.value, async (result) => {
+          if (result.success) {
+            showToast(
+              result.account
+                ? `Tokend @${result.account.username} connected`
+                : 'Tokend account connected',
+              'success'
+            );
             await loadAccounts();
           } else {
-            showToast(
-              mock.message ||
-                (tokendError instanceof Error ? tokendError.message : 'Failed to connect Tokend'),
-              'error'
-            );
+            showToast(result.message || result.error || 'Failed to connect Tokend', 'error');
           }
           connectingPlatform.value = null;
-        }
+        });
         return;
       }
 
@@ -1014,7 +1004,15 @@
   }
 
   .social-accounts__platform-badge--tokend {
-    background: #0ea5e9;
+    background: #000000;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .social-accounts__platform-badge--tokend .social-accounts__platform-svg {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
   .social-accounts__platform-details {

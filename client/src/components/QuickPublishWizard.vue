@@ -1163,7 +1163,6 @@ import {
   AlertCircle,
   Instagram,
   Youtube,
-  Radio,
   FileVideo,
   Building2,
   Globe,
@@ -1171,6 +1170,7 @@ import {
 } from 'lucide-vue-next';
 import XLogo from '@/components/icons/XLogo.vue';
 import TiktokLogo from '@/components/icons/TiktokLogo.vue';
+import TokendLogo from '@/components/icons/TokendLogo.vue';
 import ManualPOIEditor from './poi/ManualPOIEditor.vue';
 import SubtitlePropertiesPanel from './SubtitlePropertiesPanel.vue';
 import SubtitlePreviewCanvas from './SubtitlePreviewCanvas.vue';
@@ -1200,6 +1200,7 @@ import { listUserTiktokAccounts, type UserTiktokAccount } from '@/services/userT
 import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services/userInstagramApi';
 import { listUserYoutubeAccounts, type UserYoutubeAccount } from '@/services/userYoutubeApi';
 import { listUserTokendAccounts, type UserTokendAccount } from '@/services/userTokendApi';
+import { fetchTokendCapabilities } from '@/services/tokend';
 import { createProject } from '@/services/database/projects';
 import { updateClip } from '@/services/database/clips';
 import type {
@@ -1276,13 +1277,18 @@ const aspectRatioOptions = [
   { value: '4:5', platforms: 'Instagram Post' },
 ];
 
-const availablePlatforms = [
+const allPlatforms = [
   { id: 'instagram', label: 'Instagram', icon: Instagram },
   { id: 'twitter', label: 'X (Twitter)', icon: XLogo },
   { id: 'tiktok', label: 'TikTok', icon: TiktokLogo },
   { id: 'youtube', label: 'YouTube', icon: Youtube },
-  { id: 'tokend', label: 'Tokend', icon: Radio },
+  { id: 'tokend', label: 'Tokend', icon: TokendLogo },
 ];
+
+const tokendPublishEnabled = ref(false);
+const availablePlatforms = computed(() =>
+  allPlatforms.filter((p) => p.id !== 'tokend' || tokendPublishEnabled.value)
+);
 
 const props = defineProps<{
   show: boolean;
@@ -2235,11 +2241,11 @@ watch(
 
 // Platform helpers
 function getPlatformIcon(platformId: string) {
-  return availablePlatforms.find((p) => p.id === platformId)?.icon || Instagram;
+  return allPlatforms.find((p) => p.id === platformId)?.icon || Instagram;
 }
 
 function getPlatformLabel(platformId: string) {
-  return availablePlatforms.find((p) => p.id === platformId)?.label || platformId;
+  return allPlatforms.find((p) => p.id === platformId)?.label || platformId;
 }
 
 function getDefaultAspectRatioForPlatform(platformId: string): string {
@@ -3305,13 +3311,16 @@ async function loadAccounts() {
       }
     }
     
-    const [twitterRes, tiktokRes, instagramRes, youtubeRes, tokendRes] = await Promise.all([
+    const [twitterRes, tiktokRes, instagramRes, youtubeRes, tokendRes, tokendCaps] = await Promise.all([
       listUserTwitterAccounts(),
       listUserTiktokAccounts(),
       listUserInstagramAccounts(),
       listUserYoutubeAccounts(),
       listUserTokendAccounts(),
+      fetchTokendCapabilities().catch(() => null),
     ]);
+
+    tokendPublishEnabled.value = tokendCaps?.publish === true;
     
     console.log('[QuickPublishWizard] Personal account responses:', {
       twitter: twitterRes,
