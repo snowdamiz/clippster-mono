@@ -79,8 +79,11 @@ RUN apt-get update -y && apt-get install -y \
     locales \
     curl \
     ca-certificates \
+    python3 \
+    python3-pip \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
+    && pip3 install --break-system-packages yt-dlp \
     && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 # Set the locale

@@ -70,7 +70,7 @@ defmodule ClippsterServerWeb.Endpoint do
     json_decoder: Phoenix.json_library(),
     # 1GB max request size (enhanced VOD sends multiple ~50MB video chunks per request)
     length: 1_000_000_000,
-    # Capture raw body for Stripe webhooks
+    # Capture raw body for Stripe + Tokend webhook signature verification
     body_reader: {ClippsterServerWeb.StripeWebhookPlug, :read_body, []}
 
   # Debug: Print configuration info

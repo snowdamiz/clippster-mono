@@ -736,21 +736,27 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
           provider_by_id = Map.new(listing.data, &{&1.id, &1})
 
           Enum.map(accounts, fn account ->
-            case Map.get(provider_by_id, account.provider_account_id) do
-              nil ->
-                account
-
-              provider_account ->
-                attrs = provider_status_attrs(provider_account)
-
-                if provider_state_changed?(account, attrs) do
-                  case update_fn.(account, attrs) do
-                    {:ok, updated} -> updated
-                    _ -> account
-                  end
-                else
+            # Only refresh Post For Me rows — native providers (e.g. Tokend) must not
+            # match by coincidental provider_account_id against the PFM catalog.
+            if account.provider == "post_for_me" and is_binary(account.provider_account_id) do
+              case Map.get(provider_by_id, account.provider_account_id) do
+                nil ->
                   account
-                end
+
+                provider_account ->
+                  attrs = provider_status_attrs(provider_account)
+
+                  if provider_state_changed?(account, attrs) do
+                    case update_fn.(account, attrs) do
+                      {:ok, updated} -> updated
+                      _ -> account
+                    end
+                  else
+                    account
+                  end
+              end
+            else
+              account
             end
           end)
 

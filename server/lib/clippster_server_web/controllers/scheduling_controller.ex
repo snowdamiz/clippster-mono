@@ -9,7 +9,9 @@ defmodule ClippsterServerWeb.SchedulingController do
 
   alias ClippsterServer.Social
   alias ClippsterServer.Social.PostSubmission
+  alias ClippsterServer.Social.SchedulingAccountValidator
   alias ClippsterServer.Organizations
+  alias ClippsterServer.Tokend.Publisher
 
   plug ClippsterServerWeb.AuthPlug
 
@@ -56,7 +58,11 @@ defmodule ClippsterServerWeb.SchedulingController do
       immediate = params["immediate"] == true
 
       with :ok <- validate_scheduling_request(params, user, owner_type),
-           attrs <- build_scheduling_attrs(params, owner_type),
+           {:ok, account} <- SchedulingAccountValidator.validate(params, user, owner_type),
+           attrs <-
+             params
+             |> build_scheduling_attrs(owner_type)
+             |> Map.put(:provider, account.provider),
            # For immediate publish: override scheduled_at to now and use create_immediate_post
            # (bypasses the 5-min minimum validation in schedule_changeset)
            attrs <-
@@ -95,6 +101,37 @@ defmodule ClippsterServerWeb.SchedulingController do
             success: false,
             error: "Personal Instagram accounts are not allowed for this organization"
           })
+
+        {:error, :tokend_publish_unavailable} ->
+          conn
+          |> put_status(:service_unavailable)
+          |> json(%{
+            success: false,
+            error: "tokend_publish_unavailable",
+            message: Publisher.unavailable_message()
+          })
+
+        {:error, :account_not_found} ->
+          conn |> put_status(404) |> json(%{success: false, error: "Social account not found"})
+
+        {:error, :account_inactive} ->
+          conn |> put_status(422) |> json(%{success: false, error: "Social account is inactive"})
+
+        {:error, :platform_mismatch} ->
+          conn
+          |> put_status(422)
+          |> json(%{success: false, error: "Platform does not match the selected social account"})
+
+        {:error, reason}
+        when reason in [
+               :missing_provider,
+               :unsupported_provider,
+               :not_tokend_account,
+               :native_provider_required
+             ] ->
+          conn
+          |> put_status(422)
+          |> json(%{success: false, error: "Unsupported social account provider"})
 
         {:error, %Ecto.Changeset{} = changeset} ->
           conn
@@ -779,7 +816,7 @@ defmodule ClippsterServerWeb.SchedulingController do
   end
 
   defp sync_org_posts_analytics(org_id) do
-    # All platforms use PostForMe feed API for analytics
+    # Only supported Post For Me accounts use feed analytics.
     Logger.info("[sync_org_posts_analytics] Starting sync for org #{org_id}")
 
     case Social.list_post_submissions(org_id, status: "published", limit: 500) do
@@ -802,11 +839,15 @@ defmodule ClippsterServerWeb.SchedulingController do
             has_provider_id =
               has_account && is_binary(post.organization_social_account.provider_account_id)
 
+            is_post_for_me =
+              has_account && post.organization_social_account.provider == "post_for_me"
+
             has_post_identifier =
               is_binary(post.provider_post_id) ||
                 (is_binary(post.post_url) && post.post_url != "")
 
-            is_supported = post.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
+            is_supported =
+              post.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
 
             if not has_account do
               Logger.warning(
@@ -832,7 +873,8 @@ defmodule ClippsterServerWeb.SchedulingController do
               )
             end
 
-            has_account && has_provider_id && has_post_identifier && is_supported
+            has_account && is_post_for_me && has_provider_id && has_post_identifier &&
+              is_supported
           end)
 
         Logger.info(
@@ -970,7 +1012,7 @@ defmodule ClippsterServerWeb.SchedulingController do
   end
 
   defp sync_org_external_posts_analytics(org_id) do
-    # All platforms use PostForMe feed API for analytics
+    # Only supported Post For Me platforms use feed analytics.
     Logger.info("[sync_org_external_posts_analytics] Starting sync for org #{org_id}")
 
     case Social.list_external_post_submissions(org_id, limit: 500) do
@@ -989,7 +1031,9 @@ defmodule ClippsterServerWeb.SchedulingController do
           Enum.filter(posts, fn sub ->
             has_user = sub.submitted_by_user_id != nil
             has_post_url = is_binary(sub.post_url) && sub.post_url != ""
-            is_supported = sub.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
+
+            is_supported =
+              sub.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
 
             if not has_user do
               Logger.warning(
@@ -1045,8 +1089,8 @@ defmodule ClippsterServerWeb.SchedulingController do
                   Enum.find(accounts, fn acc ->
                     normalized = if acc.platform == "twitter", do: "x", else: acc.platform
 
-                    normalized == lookup_platform and acc.is_active and
-                      is_binary(acc.provider_account_id)
+                    (normalized == lookup_platform and acc.is_active and
+                       acc.provider == "post_for_me") && is_binary(acc.provider_account_id)
                   end)
 
                 if account do
@@ -1192,8 +1236,8 @@ defmodule ClippsterServerWeb.SchedulingController do
                 Enum.find(accounts, fn acc ->
                   normalized = if acc.platform == "twitter", do: "x", else: acc.platform
 
-                  normalized == lookup_platform and acc.is_active and
-                    is_binary(acc.provider_account_id)
+                  (normalized == lookup_platform and acc.is_active and
+                     acc.provider == "post_for_me") && is_binary(acc.provider_account_id)
                 end)
 
               if account do

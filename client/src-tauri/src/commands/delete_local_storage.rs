@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
+use crate::audio_download::get_downloaded_audio_dir;
 use crate::storage::{
     get_raw_videos_dir, get_projects_dir, 
     get_temp_dvr_dir, get_auto_detect_tmp_dir, get_proxy_dir,
@@ -91,6 +92,7 @@ pub async fn calculate_local_storage_size(_app: AppHandle) -> Result<StorageSize
         ("Auto-Detect Temp", get_auto_detect_tmp_dir()?),
         ("Proxy Files", get_proxy_dir()?),
         ("Library Audio", get_library_audio_dir()?),
+        ("Downloaded Audio", get_downloaded_audio_dir()?),
     ];
     
     let mut breakdown = Vec::new();
@@ -119,13 +121,14 @@ pub async fn calculate_local_storage_size(_app: AppHandle) -> Result<StorageSize
 #[tauri::command]
 pub async fn delete_local_storage(app: AppHandle) -> Result<DeletionResult, String> {
     let directories = vec![
-        ("Deleting raw videos", get_raw_videos_dir()?, 16),
+        ("Deleting raw videos", get_raw_videos_dir()?, 14),
         // Note: Thumbnails excluded - preserved for built clips
-        ("Deleting projects", get_projects_dir()?, 33),
-        ("Deleting temp DVR files", get_temp_dvr_dir()?, 50),
-        ("Deleting auto-detect temp files", get_auto_detect_tmp_dir()?, 66),
-        ("Deleting proxy files", get_proxy_dir()?, 83),
-        ("Deleting library audio", get_library_audio_dir()?, 100),
+        ("Deleting projects", get_projects_dir()?, 28),
+        ("Deleting temp DVR files", get_temp_dvr_dir()?, 42),
+        ("Deleting auto-detect temp files", get_auto_detect_tmp_dir()?, 57),
+        ("Deleting proxy files", get_proxy_dir()?, 71),
+        ("Deleting library audio", get_library_audio_dir()?, 85),
+        ("Deleting downloaded audio", get_downloaded_audio_dir()?, 100),
     ];
     
     let mut total_freed = 0u64;

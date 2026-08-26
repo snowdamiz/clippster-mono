@@ -290,7 +290,7 @@ export async function createLivestreamSession(
   mintId: string,
   displayName: string,
   streamStartTime?: number,
-  platform?: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual'
+  platform?: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Tokend' | 'Manual'
 ): Promise<{ sessionId: string; projectId: string }> {
   const db = await getDatabase();
   const id = generateId();
@@ -579,7 +579,7 @@ export async function updateSegmentStatus(
 export async function createLivestreamClipProject(
   displayName: string,
   mintId: string,
-  platform?: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual'
+  platform?: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Tokend' | 'Manual'
 ): Promise<string> {
   const db = await getDatabase();
   const userId = getCurrentUserId();

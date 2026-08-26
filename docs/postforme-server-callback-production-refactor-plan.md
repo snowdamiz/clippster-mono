@@ -30,7 +30,7 @@ This removes dependence on `localhost` callback URLs and makes the flow producti
 ### 3.1 Tauri flow depends on local callback server
 
 1. Starts local callback listener before opening PostForMe URL:
-  `client/src-tauri/src/auth.rs` (`start_post_for_me_oauth`)
+  `client/src-tauri/src/auth.rs` (`start_social_oauth`)
 2. Expects callback on local route:
   `client/src-tauri/src/auth.rs` (`warp::path("postforme-callback")`)
 
@@ -216,7 +216,7 @@ Files:
 ## Phase 5 - Tauri app migration to server-first callback
 
 1. Remove dependence on local PostForMe callback listener (`54325`) for connection completion.
-2. `start_post_for_me_oauth` should only open URL.
+2. `start_social_oauth` should only open the provider URL.
 3. Frontend services in `client/src/services/`*:
   1. read `connection_id` from connect-url response
   2. poll connect-status endpoint

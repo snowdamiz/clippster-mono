@@ -15,6 +15,7 @@ defmodule ClippsterServer.Social do
   }
 
   alias ClippsterServer.Social.Providers.PostForMe
+  alias ClippsterServer.Tokend.AccountTokens
 
   # ============================================================================
   # Social Account CRUD
@@ -174,6 +175,10 @@ defmodule ClippsterServer.Social do
       {:ok, _} -> :ok
       {:error, _} -> :ok
     end
+  end
+
+  defp disconnect_provider_account(%SocialAccount{provider: "tokend"} = account) do
+    AccountTokens.best_effort_revoke(account)
   end
 
   defp disconnect_provider_account(_), do: :ok
@@ -496,13 +501,15 @@ defmodule ClippsterServer.Social do
     sync_threshold = DateTime.utc_now() |> DateTime.add(-min_age_hours, :hour)
 
     PostSubmission
+    |> join(:inner, [p], a in assoc(p, :organization_social_account))
     |> where([p], p.status == "published")
+    |> where([_p, a], a.provider == "post_for_me")
     |> where([p], p.manual_override == false)
     |> where([p], is_nil(p.last_synced_at) or p.last_synced_at < ^sync_threshold)
     |> where([p], not is_nil(p.post_id))
     |> order_by([p], asc: p.last_synced_at)
     |> limit(^limit)
-    |> preload(:organization_social_account)
+    |> preload([_p, a], organization_social_account: a)
     |> Repo.all()
   end
 
