@@ -33,6 +33,8 @@ async function setUserContext(userId) {
   } catch (error) {
     console.error('[Auth] Failed to set Rust user context:', error);
   }
+
+  void import('../services/cloudSync').then(({ syncAllProjects }) => syncAllProjects());
 }
 
 /**

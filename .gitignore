@@ -13,6 +13,21 @@ Thumbs.db
 .husky/
 
 # ===========================
+# Mobile (Expo/React Native)
+# ===========================
+apps/mobile/.expo/
+apps/mobile/dist/
+apps/mobile/ios/
+apps/mobile/android/
+apps/mobile/.env
+apps/mobile/.env.local
+apps/mobile/.env.*.local
+!apps/mobile/.env.example
+!apps/mobile/.env.development
+!apps/mobile/.env.staging
+!apps/mobile/.env.production
+
+# ===========================
 # Client (Node.js/Vue/Tauri)
 # ===========================
 

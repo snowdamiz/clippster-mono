@@ -10,6 +10,7 @@ defmodule ClippsterServerWeb.TokendController do
   alias ClippsterServer.Social.PostForMeConnectionSession
   alias ClippsterServer.Social.PostForMeConnectionSessions
   alias ClippsterServer.Tokend.{AccountTokens, Client, Webhooks}
+  alias ClippsterServerWeb.OAuthCallbackTarget
 
   plug ClippsterServerWeb.AuthPlug
        when action in [
@@ -449,17 +450,21 @@ defmodule ClippsterServerWeb.TokendController do
     state = params["state"]
     message = params["error_description"] || params["error"] || "access_denied"
 
-    if is_binary(state) and state != "" do
-      case PostForMeConnectionSessions.get_session_by_external_id(state) do
-        %PostForMeConnectionSession{} = session ->
-          _ = PostForMeConnectionSessions.mark_failed(session, message, %{})
+    session =
+      if is_binary(state) and state != "" do
+        case PostForMeConnectionSessions.get_session_by_external_id(state) do
+          %PostForMeConnectionSession{} = found ->
+            _ = PostForMeConnectionSessions.mark_failed(found, message, %{})
+            found
 
-        _ ->
-          :ok
+          _ ->
+            nil
+        end
+      else
+        nil
       end
-    end
 
-    render_html_result(conn, false, "Tokend authorization was denied: #{message}")
+    respond_tokend_oauth(conn, session, false, "Tokend authorization was denied: #{message}")
   end
 
   defp handle_oauth_success(conn, %{"code" => code, "state" => state}) do
@@ -483,18 +488,22 @@ defmodule ClippsterServerWeb.TokendController do
                })
            }) do
       Logger.info("[Tokend] OAuth linked account=#{account.id} session=#{synced.id}")
-      render_html_result(conn, true, nil)
+      respond_tokend_oauth(conn, synced, true, nil)
     else
       nil ->
-        render_html_result(
+        respond_tokend_oauth(
           conn,
+          nil,
           false,
           "No pending Tokend connection session matched this callback."
         )
 
       {:error, :expired} ->
-        render_html_result(
+        session = PostForMeConnectionSessions.get_session_by_external_id(state)
+
+        respond_tokend_oauth(
           conn,
+          session,
           false,
           "This Tokend connection session expired. Try connecting again."
         )
@@ -502,16 +511,56 @@ defmodule ClippsterServerWeb.TokendController do
       {:error, reason} ->
         mark_session_failed_by_state(state, reason)
         Logger.warning("[Tokend] OAuth callback failed: #{inspect(reason)}")
+        session = PostForMeConnectionSessions.get_session_by_external_id(state)
 
-        render_html_result(
+        respond_tokend_oauth(
           conn,
+          session,
           false,
           "Failed to complete Tokend connection: #{format_errors(reason)}"
         )
 
       other ->
         mark_session_failed_by_state(state, other)
-        render_html_result(conn, false, "Failed to complete Tokend connection.")
+        session = PostForMeConnectionSessions.get_session_by_external_id(state)
+        respond_tokend_oauth(conn, session, false, "Failed to complete Tokend connection.")
+    end
+  end
+
+  defp respond_tokend_oauth(conn, session, success, error_message) do
+    query =
+      %{
+        success: to_string(success),
+        connection_id: session && session.id,
+        status: session && session.status,
+        error: error_message
+      }
+      |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
+      |> Map.new()
+
+    cond do
+      match?(%PostForMeConnectionSession{}, session) and session.return_mode == "web" and
+          is_binary(session.return_url) and session.return_url != "" ->
+        case OAuthCallbackTarget.normalize_web_redirect_uri(session.return_url) do
+          {:ok, safe_return_url} ->
+            redirect(conn, external: OAuthCallbackTarget.append_query(safe_return_url, query))
+
+          {:error, _reason} ->
+            render_html_result(conn, success, error_message)
+        end
+
+      match?(%PostForMeConnectionSession{}, session) and session.return_mode == "mobile" and
+          is_binary(session.return_url) and session.return_url != "" ->
+        case OAuthCallbackTarget.normalize_mobile_redirect_uri(session.return_url) do
+          {:ok, safe_return_url} ->
+            redirect(conn, external: OAuthCallbackTarget.append_query(safe_return_url, query))
+
+          {:error, _reason} ->
+            render_html_result(conn, success, error_message)
+        end
+
+      true ->
+        render_html_result(conn, success, error_message)
     end
   end
 
@@ -738,7 +787,7 @@ defmodule ClippsterServerWeb.TokendController do
     })
   end
 
-  defp normalize_return_mode(mode) when mode in ["dashboard", "tauri", "web"], do: mode
+  defp normalize_return_mode(mode) when mode in ["dashboard", "tauri", "web", "mobile"], do: mode
   defp normalize_return_mode(_), do: "tauri"
 
   defp render_html_result(conn, true, _error) do

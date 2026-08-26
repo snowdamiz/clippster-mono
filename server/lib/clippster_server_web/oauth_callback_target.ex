@@ -46,6 +46,42 @@ defmodule ClippsterServerWeb.OAuthCallbackTarget do
     end
   end
 
+  @mobile_scheme "clippster"
+
+  @mobile_allowed_path_fragments ~w(google oauth-callback)
+
+  def normalize_mobile_redirect_uri(uri) when is_binary(uri) do
+    parsed = uri |> String.trim() |> URI.parse()
+    path = parsed.path || ""
+    host = parsed.host || ""
+
+    cond do
+      parsed.scheme != @mobile_scheme ->
+        {:error, :invalid_scheme}
+
+      # Expo Linking.createURL("oauth-callback") may be clippster://oauth-callback
+      # (path-style host) or clippster://exp.host/.../oauth-callback.
+      host == "" and path == "" ->
+        {:error, :missing_host}
+
+      not mobile_path_allowed?(path, host) ->
+        {:error, :invalid_path}
+
+      true ->
+        {:ok, %URI{parsed | fragment: nil} |> URI.to_string()}
+    end
+  end
+
+  def normalize_mobile_redirect_uri(_), do: {:error, :invalid_redirect_uri}
+
+  defp mobile_path_allowed?(path, host) do
+    haystack = String.downcase(path <> "/" <> host)
+
+    Enum.any?(@mobile_allowed_path_fragments, fn fragment ->
+      String.contains?(haystack, fragment)
+    end)
+  end
+
   def append_query(url, params) when is_binary(url) and is_map(params) do
     uri = URI.parse(url)
     existing = URI.decode_query(uri.query || "")
