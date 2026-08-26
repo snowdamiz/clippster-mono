@@ -132,6 +132,7 @@ export { DB_NAME };
 export {
   createRawVideo,
   getRawVideoByProjectId,
+  updateRawVideoFilePath,
   updateProjectThumbnail,
   createTranscriptRecord,
   getTranscriptByProjectId,

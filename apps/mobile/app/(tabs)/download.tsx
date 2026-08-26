@@ -1,4 +1,5 @@
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -16,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import type { MediaPlatform, VodListItem } from '@clippster/shared-types';
 import { MOBILE_PLATFORMS, detectPlatformFromUrl, getPlatformConfig } from '@/config/platforms';
 import { mediaApi } from '@/services/api';
+import { getTokendVods } from '@/services/tokend';
 import { tokens } from '@/theme/tokens';
 import {
   cancelDownload,
@@ -72,11 +74,25 @@ export default function DownloadScreen() {
 
     setLoadingVods(true);
     try {
-      const response = await mediaApi.listVods(selectedPlatform, channel, { limit: 20 });
-      if (!response.success) {
-        throw new Error(response.error ?? 'Failed to load VODs');
+      if (selectedPlatform === 'tokend') {
+        const items = await getTokendVods(channel, 20, 'streams');
+        setVods(
+          items.map((item) => ({
+            id: item.id,
+            title: item.title,
+            duration_seconds: item.duration_seconds,
+            thumbnail_url: item.thumbnail_url,
+            url: item.url || item.id,
+            upload_date: item.upload_date,
+          })),
+        );
+      } else {
+        const response = await mediaApi.listVods(selectedPlatform, channel, { limit: 20 });
+        if (!response.success) {
+          throw new Error(response.error ?? 'Failed to load VODs');
+        }
+        setVods(response.vods);
       }
-      setVods(response.vods);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setVods([]);
@@ -89,6 +105,25 @@ export default function DownloadScreen() {
     setError(null);
     setImporting(true);
     try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permission.granted) {
+        const picked = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['videos'],
+          quality: 1,
+        });
+        if (!picked.canceled && picked.assets[0]) {
+          const asset = picked.assets[0];
+          const filename = asset.fileName ?? `camera-roll-${Date.now()}.mp4`;
+          const projectId = await importLocalVideo({
+            sourceUri: asset.uri,
+            filename,
+            title: filename.replace(/\.[^.]+$/, ''),
+          });
+          router.push(`/project/${projectId}`);
+          return;
+        }
+      }
+
       const result = await DocumentPicker.getDocumentAsync({
         type: 'video/*',
         copyToCacheDirectory: true,

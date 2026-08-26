@@ -1,13 +1,13 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ScrollView, Switch, Text, View } from 'react-native';
+import { Alert, Linking, ScrollView, Switch, Text, View } from 'react-native';
 import { AppHeader } from '@/components/AppHeader';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/context/AuthContext';
 import { getAppVersion } from '@/lib/config';
-import { cloudProjectsApi } from '@/services/api';
+import { authApi, cloudProjectsApi, creditsApi } from '@/services/api';
 import {
   getStorageQuota,
   isWifiOnlySync,
@@ -15,6 +15,11 @@ import {
   syncAllProjects,
 } from '@/services/cloudSync';
 import { getFfmpegVersion } from '@/services/ffmpeg';
+
+const PRIVACY_URL = 'https://clippster.app/privacy';
+const TERMS_URL = 'https://clippster.app/terms';
+const CREDITS_URL = 'https://clippster.app/credits';
+const BILLING_URL = 'https://clippster.app/settings/billing';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -28,6 +33,8 @@ export default function SettingsScreen() {
   const [quota, setQuota] = useState<{ bytes_used: number; bytes_limit: number; tier: string } | null>(null);
   const [wifiOnly, setWifiOnly] = useState(true);
   const [upgrading, setUpgrading] = useState(false);
+  const [credits, setCredits] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     void getFfmpegVersion().then(setFfmpegVersion);
@@ -35,6 +42,9 @@ export default function SettingsScreen() {
       if (q.success) setQuota({ bytes_used: q.bytes_used, bytes_limit: q.bytes_limit, tier: q.tier });
     });
     void isWifiOnlySync().then(setWifiOnly);
+    void creditsApi.getBalance().then((b) => {
+      if (b.success) setCredits(b.balance ?? b.credits ?? 0);
+    });
   }, []);
 
   async function handleLogout() {
@@ -46,14 +56,41 @@ export default function SettingsScreen() {
     setUpgrading(true);
     try {
       const result = await cloudProjectsApi.checkoutStorageTier('cloud_50');
-      if (result.success) {
-        setQuota((prev) =>
-          prev ? { ...prev, tier: result.tier, bytes_limit: result.bytes_limit } : prev,
-        );
-      }
+      const url = result.checkout_url ?? BILLING_URL;
+      await Linking.openURL(url);
     } finally {
       setUpgrading(false);
     }
+  }
+
+  function handleDeleteAccount() {
+    Alert.alert(
+      'Delete account',
+      'This deactivates your Clippster account and cancels active subscriptions. This cannot be undone from the app.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete account',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              setDeleting(true);
+              try {
+                const result = await authApi.deleteAccount();
+                if (!result.success) {
+                  Alert.alert('Error', result.error ?? result.message ?? 'Could not delete account');
+                  return;
+                }
+                await logout();
+                router.replace('/(auth)/login');
+              } finally {
+                setDeleting(false);
+              }
+            })();
+          },
+        },
+      ],
+    );
   }
 
   return (
@@ -64,6 +101,14 @@ export default function SettingsScreen() {
           <Text className="text-sm text-muted">Signed in as</Text>
           <Text className="text-lg font-semibold text-foreground">{user?.email ?? user?.name ?? 'User'}</Text>
           <Text className="text-sm text-muted">Provider: {authProvider ?? 'unknown'}</Text>
+        </Card>
+
+        <Card className="gap-3">
+          <Text className="text-sm font-semibold text-foreground">AI Credits</Text>
+          <Text className="text-sm text-muted">
+            {credits == null ? 'Loading…' : `${credits} credits available`}
+          </Text>
+          <Button title="Buy credits" variant="outline" onPress={() => void Linking.openURL(CREDITS_URL)} />
         </Card>
 
         <Card className="gap-3">
@@ -86,7 +131,7 @@ export default function SettingsScreen() {
             <Text className="text-sm text-muted">Loading quota…</Text>
           )}
           <Button
-            title={upgrading ? 'Upgrading…' : 'Upgrade to 50 GB'}
+            title={upgrading ? 'Opening billing…' : 'Upgrade cloud storage'}
             variant="outline"
             onPress={handleUpgrade}
             disabled={upgrading}
@@ -108,8 +153,18 @@ export default function SettingsScreen() {
           <Text className="text-sm text-muted">App version</Text>
           <Text className="text-base text-foreground">{getAppVersion()}</Text>
           <Separator className="my-2" />
-          <Text className="text-sm text-muted">FFmpeg (dev build)</Text>
+          <Text className="text-sm text-muted">FFmpeg (LGPL)</Text>
           <Text className="text-base text-foreground">{ffmpegVersion}</Text>
+          <Text className="text-xs text-muted">
+            This app uses FFmpeg licensed under LGPL. Source and license notices are available at
+            https://ffmpeg.org/legal.html
+          </Text>
+        </Card>
+
+        <Card className="gap-2">
+          <Text className="text-sm font-semibold text-foreground">Legal</Text>
+          <Button title="Privacy Policy" variant="outline" onPress={() => void Linking.openURL(PRIVACY_URL)} />
+          <Button title="Terms of Service" variant="outline" onPress={() => void Linking.openURL(TERMS_URL)} />
         </Card>
 
         <Card className="gap-2">
@@ -124,6 +179,12 @@ export default function SettingsScreen() {
         </Card>
 
         <Button title="Sign out" variant="outline" onPress={handleLogout} />
+        <Button
+          title={deleting ? 'Deleting…' : 'Delete account'}
+          variant="outline"
+          onPress={handleDeleteAccount}
+          disabled={deleting}
+        />
       </ScrollView>
     </View>
   );

@@ -15,6 +15,7 @@ import {
   createOrganizationProfilesApi,
   createOrganizationsApi,
   createCloudProjectsApi,
+  createTokendApi,
 } from '@clippster/api-client';
 import { getApiBaseUrl } from '@/lib/config';
 import { clearAuthSession, getStoredToken } from './authStorage';
@@ -49,4 +50,5 @@ export const organizationAssetsApi = createOrganizationAssetsApi(apiClient);
 export const organizationProfilesApi = createOrganizationProfilesApi(apiClient);
 export const organizationsApi = createOrganizationsApi(apiClient);
 export const cloudProjectsApi = createCloudProjectsApi(apiClient);
+export const tokendApi = createTokendApi(apiClient);
 export { apiClient };

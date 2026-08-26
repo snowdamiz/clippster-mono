@@ -1,7 +1,9 @@
 import type { TargetAspectRatio } from '@clippster/shared-types';
 import { router } from 'expo-router';
+import * as MediaLibrary from 'expo-media-library';
+import * as Sharing from 'expo-sharing';
 import { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Alert, Pressable, Text, View } from 'react-native';
 
 import type { ClipBuildProgress } from '@/services/clipBuildPipeline';
 import { cancelClipBuild } from '@/services/clipBuildPipeline';
@@ -17,10 +19,45 @@ export function ExportSheet({ visible, progress, onClose, onExport }: ExportShee
   const [ratio916, setRatio916] = useState(true);
   const [ratio169, setRatio169] = useState(false);
   const [remuxOnly, setRemuxOnly] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   if (!visible) return null;
 
   const building = progress?.state === 'building';
+  const completedPaths = progress?.state === 'complete' ? progress.outputPaths ?? [] : [];
+
+  async function saveToCameraRoll() {
+    if (!completedPaths.length) return;
+    setSaving(true);
+    try {
+      const permission = await MediaLibrary.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission needed', 'Allow photo library access to save exports.');
+        return;
+      }
+      for (const path of completedPaths) {
+        await MediaLibrary.saveToLibraryAsync(path);
+      }
+      Alert.alert('Saved', 'Exported clip saved to your camera roll.');
+    } catch (error) {
+      Alert.alert('Save failed', error instanceof Error ? error.message : String(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function shareExport() {
+    if (!completedPaths[0]) return;
+    try {
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert('Unavailable', 'Sharing is not available on this device.');
+        return;
+      }
+      await Sharing.shareAsync(completedPaths[0], { mimeType: 'video/mp4' });
+    } catch (error) {
+      Alert.alert('Share failed', error instanceof Error ? error.message : String(error));
+    }
+  }
 
   return (
     <View className="absolute inset-0 z-50 justify-end bg-black/70">
@@ -98,16 +135,35 @@ export function ExportSheet({ visible, progress, onClose, onExport }: ExportShee
               >
                 <Text className="font-semibold text-primary-foreground">Start export</Text>
               </Pressable>
-              {progress?.state === 'complete' && progress.buildIds?.length ? (
-                <Pressable
-                  onPress={() => {
-                    onClose();
-                    router.push(`/schedule/${progress.buildIds![0]}`);
-                  }}
-                  className="mt-3 items-center rounded-lg border border-primary py-3"
-                >
-                  <Text className="font-semibold text-primary">Schedule post</Text>
-                </Pressable>
+              {completedPaths.length ? (
+                <>
+                  <Pressable
+                    onPress={() => void saveToCameraRoll()}
+                    disabled={saving}
+                    className="mt-3 items-center rounded-lg border border-border py-3"
+                  >
+                    <Text className="font-semibold text-foreground">
+                      {saving ? 'Saving…' : 'Save to camera roll'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => void shareExport()}
+                    className="mt-3 items-center rounded-lg border border-border py-3"
+                  >
+                    <Text className="font-semibold text-foreground">Share</Text>
+                  </Pressable>
+                  {progress?.buildIds?.length ? (
+                    <Pressable
+                      onPress={() => {
+                        onClose();
+                        router.push(`/schedule/${progress.buildIds![0]}`);
+                      }}
+                      className="mt-3 items-center rounded-lg border border-primary py-3"
+                    >
+                      <Text className="font-semibold text-primary">Schedule post</Text>
+                    </Pressable>
+                  ) : null}
+                </>
               ) : null}
             </>
           )}

@@ -77,6 +77,29 @@ export async function getRawVideoByProjectId(projectId: string): Promise<RawVide
   );
 }
 
+export async function updateRawVideoFilePath(
+  projectId: string,
+  filePath: string,
+  extras?: { fileSize?: number | null; thumbnailPath?: string | null },
+): Promise<void> {
+  const db = getDatabase();
+  await db.runAsync(
+    `UPDATE raw_videos SET
+      file_path = ?,
+      file_size = COALESCE(?, file_size),
+      thumbnail_path = COALESCE(?, thumbnail_path),
+      updated_at = ?
+     WHERE project_id = ?`,
+    [
+      filePath,
+      extras?.fileSize ?? null,
+      extras?.thumbnailPath ?? null,
+      timestamp(),
+      projectId,
+    ],
+  );
+}
+
 export async function updateProjectThumbnail(projectId: string, thumbnailPath: string): Promise<void> {
   const db = getDatabase();
   await db.runAsync('UPDATE projects SET thumbnail_path = ?, updated_at = ? WHERE id = ?', [

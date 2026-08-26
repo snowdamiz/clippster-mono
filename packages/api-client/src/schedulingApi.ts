@@ -1,6 +1,6 @@
 import type { ApiClient } from './createApiClient';
 
-export type SocialPlatform = 'instagram' | 'tiktok' | 'twitter' | 'youtube';
+export type SocialPlatform = 'instagram' | 'tiktok' | 'twitter' | 'youtube' | 'tokend';
 export type ScheduledPostStatus =
   | 'pending'
   | 'scheduled'

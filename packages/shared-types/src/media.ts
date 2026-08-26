@@ -1,4 +1,11 @@
-export type MediaPlatform = 'youtube' | 'kick' | 'twitch' | 'rumble' | 'twitter' | 'manual';
+export type MediaPlatform =
+  | 'youtube'
+  | 'kick'
+  | 'twitch'
+  | 'rumble'
+  | 'twitter'
+  | 'tokend'
+  | 'manual';
 
 export interface MediaStream {
   url: string;

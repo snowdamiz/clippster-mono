@@ -1,13 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Network from 'expo-network';
 import * as SecureStore from 'expo-secure-store';
 import type { CloudProjectSnapshot } from '@clippster/cloud-sync-schema';
 import { Platform } from 'react-native';
 import { createCloudProjectsApi } from '@clippster/api-client';
 import { apiClient } from './api';
-import { getAllProjects, deleteProject } from './database';
+import { getAllProjects, deleteProject, getRawVideoByProjectId, updateRawVideoFilePath } from './database';
 import {
   getAllCloudSyncMeta,
+  getCloudSyncMeta,
   markProjectConflict,
   markProjectPending,
   markProjectSynced,
@@ -23,6 +26,7 @@ const DEVICE_ID_KEY = 'cloud_sync_device_id';
 const SYNC_TOKEN_KEY = 'cloud_sync_token';
 const PENDING_PUSH_KEY = 'cloud_sync_pending_push';
 const WIFI_ONLY_KEY = 'cloud_sync_wifi_only';
+const VIDEO_DIR = `${FileSystem.documentDirectory}videos/`;
 
 const cloudApi = createCloudProjectsApi(apiClient);
 
@@ -54,6 +58,20 @@ export async function isWifiOnlySync(): Promise<boolean> {
 
 export async function setWifiOnlySync(enabled: boolean): Promise<void> {
   await AsyncStorage.setItem(WIFI_ONLY_KEY, enabled ? 'true' : 'false');
+}
+
+async function canSyncOverCurrentNetwork(): Promise<boolean> {
+  if (!(await isWifiOnlySync())) return true;
+  try {
+    const state = await Network.getNetworkStateAsync();
+    if (state.type == null) return true;
+    return (
+      state.type === Network.NetworkStateType.WIFI ||
+      state.type === Network.NetworkStateType.ETHERNET
+    );
+  } catch {
+    return true;
+  }
 }
 
 async function getPendingPushIds(): Promise<string[]> {
@@ -119,6 +137,7 @@ export async function pushProject(projectId: string, force = false): Promise<boo
     }
     if (choice === 'use_cloud') {
       await mergeSnapshotIntoDatabase(data.snapshot as CloudProjectSnapshot);
+      await ensurePendingCloudVodDownloaded(projectId);
       await markProjectSynced(projectId, data.server_updated_at ?? clientUpdatedAt);
       return true;
     }
@@ -126,6 +145,7 @@ export async function pushProject(projectId: string, force = false): Promise<boo
       const newId = await duplicateProjectFromSnapshot(snapshot);
       await pushProject(newId, true);
       await mergeSnapshotIntoDatabase(data.snapshot as CloudProjectSnapshot);
+      await ensurePendingCloudVodDownloaded(projectId);
       await markProjectSynced(projectId, data.server_updated_at ?? clientUpdatedAt);
       return true;
     }
@@ -143,16 +163,38 @@ export async function pushProject(projectId: string, force = false): Promise<boo
   return true;
 }
 
+export async function ensurePendingCloudVodDownloaded(projectId: string): Promise<void> {
+  const raw = await getRawVideoByProjectId(projectId);
+  if (!raw?.file_path?.startsWith('pending://')) return;
+
+  const meta = await getCloudSyncMeta(projectId);
+  const assetId = meta?.cloud_media_asset_id;
+  if (!assetId) return;
+
+  // Dynamic import avoids a circular dependency with cloudVodUpload.
+  const { downloadCloudVod } = await import('./cloudVodUpload');
+  await FileSystem.makeDirectoryAsync(VIDEO_DIR, { intermediates: true });
+  const destPath = `${VIDEO_DIR}cloud_${projectId}_${assetId}.mp4`;
+  const uri = await downloadCloudVod(projectId, assetId, destPath);
+  const info = await FileSystem.getInfoAsync(uri);
+  await updateRawVideoFilePath(projectId, uri, {
+    fileSize: info.exists && 'size' in info ? info.size : null,
+  });
+}
+
 export async function pullProject(projectId: string): Promise<boolean> {
   const response = await cloudApi.getProject(projectId);
   if (!response.success || !response.snapshot) return false;
   await mergeSnapshotIntoDatabase(response.snapshot);
+  await ensurePendingCloudVodDownloaded(projectId);
   await markProjectSynced(projectId, response.project.server_updated_at);
   return true;
 }
 
 export async function syncAllProjects(): Promise<void> {
   if (syncInProgress) return;
+  if (!(await canSyncOverCurrentNetwork())) return;
+
   syncInProgress = true;
 
   try {

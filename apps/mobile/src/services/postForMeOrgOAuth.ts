@@ -16,7 +16,11 @@ export async function startPostForMeOrgOAuth(
   organizationId: number,
   platform: SocialPlatform,
 ): Promise<OAuthResult> {
-  const connectResponse = await userSocialApi.getOrgConnectUrl(organizationId, platform);
+  const redirectUrl = Linking.createURL('oauth-callback');
+  const connectResponse = await userSocialApi.getOrgConnectUrl(organizationId, platform, {
+    return_mode: 'mobile',
+    return_url: redirectUrl,
+  });
 
   if (!connectResponse.success || !connectResponse.auth_url || !connectResponse.connection_id) {
     return {
@@ -25,15 +29,7 @@ export async function startPostForMeOrgOAuth(
     };
   }
 
-  const redirectUrl = Linking.createURL('oauth-callback');
-  const browserResult = await WebBrowser.openAuthSessionAsync(
-    connectResponse.auth_url,
-    redirectUrl,
-  );
-
-  if (browserResult.type === 'cancel' || browserResult.type === 'dismiss') {
-    return { success: false, error: 'OAuth cancelled' };
-  }
+  await WebBrowser.openAuthSessionAsync(connectResponse.auth_url, redirectUrl);
 
   const status = await pollOrgConnectStatus(organizationId, connectResponse.connection_id);
 

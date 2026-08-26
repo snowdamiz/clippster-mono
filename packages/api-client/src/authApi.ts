@@ -34,6 +34,29 @@ export function createAuthApi(client: ApiClient) {
       return client.post<AuthTokenResponse>('/auth/email/resend-verification', { email }, { skipAuth: true });
     },
 
+    forgotPassword(email: string) {
+      return client.post<{ success: boolean; message?: string; error?: string }>(
+        '/auth/email/forgot-password',
+        { email },
+        { skipAuth: true },
+      );
+    },
+
+    resetPassword(token: string, password: string) {
+      return client.post<{ success: boolean; message?: string; error?: string }>(
+        '/auth/email/reset-password',
+        { token, password },
+        { skipAuth: true },
+      );
+    },
+
+    deleteAccount() {
+      return client.post<{ success: boolean; message?: string; error?: string }>(
+        '/subscription/deactivate',
+        {},
+      );
+    },
+
     me() {
       return client.get<MeResponse>('/auth/me');
     },

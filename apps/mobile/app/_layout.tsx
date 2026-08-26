@@ -12,11 +12,13 @@ import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { AuthProvider } from '@/context/AuthContext';
 import { CloudSyncProvider } from '@/context/CloudSyncContext';
 import { DB_NAME, initDatabase } from '@/services/database';
+import { initCrashReporting } from '@/services/crashReporting';
 import { tokens } from '@/theme/tokens';
 
 export { ErrorBoundary } from 'expo-router';
 
 SplashScreen.preventAutoHideAsync();
+initCrashReporting();
 
 const navigationTheme = {
   ...DarkTheme,

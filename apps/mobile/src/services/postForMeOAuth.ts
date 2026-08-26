@@ -13,7 +13,11 @@ export interface OAuthResult {
 }
 
 export async function startPostForMeOAuth(platform: SocialPlatform): Promise<OAuthResult> {
-  const connectResponse = await userSocialApi.getConnectUrl(platform);
+  const redirectUrl = Linking.createURL('oauth-callback');
+  const connectResponse = await userSocialApi.getConnectUrl(platform, {
+    return_mode: 'mobile',
+    return_url: redirectUrl,
+  });
 
   if (!connectResponse.success || !connectResponse.auth_url || !connectResponse.connection_id) {
     return {
@@ -22,15 +26,9 @@ export async function startPostForMeOAuth(platform: SocialPlatform): Promise<OAu
     };
   }
 
-  const redirectUrl = Linking.createURL('oauth-callback');
-  const browserResult = await WebBrowser.openAuthSessionAsync(
-    connectResponse.auth_url,
-    redirectUrl,
-  );
-
-  if (browserResult.type === 'cancel' || browserResult.type === 'dismiss') {
-    return { success: false, error: 'OAuth cancelled' };
-  }
+  // Always poll after the browser closes — native dismiss often fires before the
+  // deep-link callback is delivered, and desktop succeeds by polling alone.
+  await WebBrowser.openAuthSessionAsync(connectResponse.auth_url, redirectUrl);
 
   const status = await pollConnectStatus(connectResponse.connection_id);
 

@@ -83,15 +83,26 @@ export function getSocialPlatformLabel(platform: string): string {
       return 'TikTok';
     case 'youtube':
       return 'YouTube';
+    case 'tokend':
+      return 'Tokend';
     default:
       return platform.charAt(0).toUpperCase() + platform.slice(1);
   }
 }
 
+export type SocialConnectOptions = {
+  return_mode?: 'dashboard' | 'tauri' | 'web' | 'mobile';
+  return_url?: string;
+};
+
 export function createUserSocialApi(client: ApiClient) {
   return {
-    getConnectUrl(platform: SocialPlatform) {
-      return client.post<ConnectUrlResponse>('/user/social/connect-url', { platform });
+    getConnectUrl(platform: SocialPlatform, options?: SocialConnectOptions) {
+      return client.post<ConnectUrlResponse>('/user/social/connect-url', {
+        platform,
+        return_mode: options?.return_mode,
+        return_url: options?.return_url,
+      });
     },
 
     getConnectStatus(connectionId: string) {
@@ -116,10 +127,12 @@ export function createUserSocialApi(client: ApiClient) {
       return client.delete<AccountResponse>(`/user/social-accounts/${accountId}`);
     },
 
-    getOrgConnectUrl(organizationId: number, platform: SocialPlatform) {
+    getOrgConnectUrl(organizationId: number, platform: SocialPlatform, options?: SocialConnectOptions) {
       return client.post<ConnectUrlResponse>('/social/connect-url', {
         organization_id: organizationId,
         platform,
+        return_mode: options?.return_mode,
+        return_url: options?.return_url,
       });
     },
 

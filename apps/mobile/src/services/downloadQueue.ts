@@ -158,17 +158,54 @@ async function processQueue(): Promise<void> {
 async function runDownload(job: DownloadJob): Promise<void> {
   updateJob(job.id, { status: 'resolving', progress: 2, message: 'Resolving stream…' });
 
-  const resolved = await mediaApi.resolveUrl(job.sourceUrl, { platform: job.platform });
-  if (!resolved.success || !resolved.streams?.length) {
-    throw new Error(resolved.error ?? 'Could not resolve download URL');
+  let streamUrl: string;
+  let title = job.title;
+  let durationSeconds: number | null = null;
+  let authHeaders: Record<string, string> | undefined;
+
+  if (job.platform === 'tokend') {
+    const { parseTokendMediaRef, TOKEND_UNAVAILABLE_MESSAGES, fetchTokendMode, getTokendCapabilities } =
+      await import('./tokend');
+    const modeInfo = await fetchTokendMode();
+    const capabilities = getTokendCapabilities(modeInfo);
+    if (!capabilities.download && !capabilities.mockConnect) {
+      throw new Error(TOKEND_UNAVAILABLE_MESSAGES.download);
+    }
+
+    const ref = parseTokendMediaRef(job.sourceUrl);
+    if (!ref) throw new Error('Invalid Tokend media reference');
+
+    const { tokendApi } = await import('./api');
+    const { getStoredToken } = await import('./authStorage');
+    const { getApiBaseUrl } = await import('@/lib/config');
+
+    const grant = await tokendApi.createMediaGrant(ref.type, ref.id, 'download');
+    if (!grant.success || !grant.download_url) {
+      throw new Error(grant.error ?? 'Failed to create Tokend download grant');
+    }
+
+    const base = getApiBaseUrl().replace(/\/$/, '');
+    streamUrl = grant.download_url.startsWith('http')
+      ? grant.download_url
+      : `${base}${grant.download_url.startsWith('/') ? '' : '/'}${grant.download_url}`;
+    const token = await getStoredToken();
+    authHeaders = token ? { Authorization: `Bearer ${token}` } : undefined;
+    title = job.title !== 'Downloading…' ? job.title : `Tokend ${ref.id}`;
+  } else {
+    const resolved = await mediaApi.resolveUrl(job.sourceUrl, { platform: job.platform });
+    if (!resolved.success || !resolved.streams?.length) {
+      throw new Error(resolved.error ?? 'Could not resolve download URL');
+    }
+
+    const url = resolved.streams[0]?.url;
+    if (!url) {
+      throw new Error('No stream URL returned');
+    }
+    streamUrl = url;
+    title = resolved.title ?? job.title;
+    durationSeconds = resolved.duration_seconds ?? null;
   }
 
-  const streamUrl = resolved.streams[0]?.url;
-  if (!streamUrl) {
-    throw new Error('No stream URL returned');
-  }
-
-  const title = resolved.title ?? job.title;
   updateJob(job.id, { title, status: 'downloading', progress: 5, message: 'Downloading…' });
 
   const downloadId = generateId();
@@ -179,7 +216,7 @@ async function runDownload(job: DownloadJob): Promise<void> {
   const download = FileSystem.createDownloadResumable(
     streamUrl,
     rawPath,
-    {},
+    authHeaders ? { headers: authHeaders } : {},
     (progressEvent) => {
       if (!progressEvent.totalBytesExpectedToWrite) return;
       const ratio = progressEvent.totalBytesWritten / progressEvent.totalBytesExpectedToWrite;
@@ -209,7 +246,7 @@ async function runDownload(job: DownloadJob): Promise<void> {
     // ignore cleanup errors
   }
 
-  let duration = resolved.duration_seconds ?? null;
+  let duration = durationSeconds;
   if (duration == null) {
     duration = await probeDuration(outputPath);
   }
@@ -237,6 +274,9 @@ async function runDownload(job: DownloadJob): Promise<void> {
   if (thumbExists) {
     await updateProjectThumbnail(project.id, thumbPath);
   }
+
+  const { queueProjectSync } = await import('./cloudSync');
+  void queueProjectSync(project.id);
 
   updateJob(job.id, {
     status: 'complete',
@@ -282,6 +322,9 @@ export async function importLocalVideo(input: {
   if ((await FileSystem.getInfoAsync(thumbPath)).exists) {
     await updateProjectThumbnail(project.id, thumbPath);
   }
+
+  const { queueProjectSync } = await import('./cloudSync');
+  void queueProjectSync(project.id);
 
   return project.id;
 }

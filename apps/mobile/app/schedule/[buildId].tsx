@@ -204,6 +204,28 @@ export default function ScheduleScreen() {
       const mediaType =
         platform === 'instagram' || platform === 'tiktok' ? 'reel' : 'video';
 
+      if (platform === 'tokend' && postingContext === 'personal' && postNow) {
+        const { tokendApi } = await import('@/services/api');
+        const publish = await tokendApi.publish({
+          account_id: accountId,
+          media_url: uploadResult.media_url,
+          thumbnail_url: uploadResult.thumbnail_url,
+          caption: caption.trim() || undefined,
+          media_type: mediaType,
+        });
+        if (!publish.success) {
+          Alert.alert('Publish failed', publish.message ?? publish.error ?? 'Failed to publish to Tokend');
+          return;
+        }
+        void analyticsApi.trackEvent({
+          event_type: 'post_scheduled',
+          metadata: { platform, provider: 'tokend', immediate: true },
+        });
+        Alert.alert('Published', 'Clip published to Tokend.');
+        router.replace('/(tabs)/posts');
+        return;
+      }
+
       const response = await schedulingApi.schedulePost({
         platform,
         media_url: uploadResult.media_url,

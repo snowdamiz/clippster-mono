@@ -63,3 +63,14 @@ export type {
   PushSnapshotResponse,
   PresignedUploadResponse,
 } from './cloudProjectsApi';
+export { createTokendApi } from './tokendApi';
+export type {
+  TokendApi,
+  TokendModeInfo,
+  TokendCatalog,
+  TokendCatalogItem,
+  TokendLiveStatus,
+  TokendConnectOptions,
+  TokendMediaGrantResponse,
+  TokendServerCapabilities,
+} from './tokendApi';

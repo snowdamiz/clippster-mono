@@ -88,26 +88,38 @@ defmodule ClippsterServerWeb.PostForMeAuthController do
   end
 
   defp respond_for_session(conn, %PostForMeConnectionSession{} = session, success, error_message) do
-    if session.return_mode == "web" and is_binary(session.return_url) and session.return_url != "" do
-      case OAuthCallbackTarget.normalize_web_redirect_uri(session.return_url) do
-        {:ok, safe_return_url} ->
-          query =
-            %{
-              success: to_string(success),
-              connection_id: session.id,
-              status: session.status,
-              error: error_message
-            }
-            |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
-            |> Map.new()
+    query =
+      %{
+        success: to_string(success),
+        connection_id: session.id,
+        status: session.status,
+        error: error_message
+      }
+      |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
+      |> Map.new()
 
-          redirect(conn, external: OAuthCallbackTarget.append_query(safe_return_url, query))
+    cond do
+      session.return_mode == "web" and is_binary(session.return_url) and session.return_url != "" ->
+        case OAuthCallbackTarget.normalize_web_redirect_uri(session.return_url) do
+          {:ok, safe_return_url} ->
+            redirect(conn, external: OAuthCallbackTarget.append_query(safe_return_url, query))
 
-        {:error, _reason} ->
-          render_html_result(conn, success, error_message)
-      end
-    else
-      render_html_result(conn, success, error_message)
+          {:error, _reason} ->
+            render_html_result(conn, success, error_message)
+        end
+
+      session.return_mode == "mobile" and is_binary(session.return_url) and
+          session.return_url != "" ->
+        case OAuthCallbackTarget.normalize_mobile_redirect_uri(session.return_url) do
+          {:ok, safe_return_url} ->
+            redirect(conn, external: OAuthCallbackTarget.append_query(safe_return_url, query))
+
+          {:error, _reason} ->
+            render_html_result(conn, success, error_message)
+        end
+
+      true ->
+        render_html_result(conn, success, error_message)
     end
   end
 

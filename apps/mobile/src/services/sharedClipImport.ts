@@ -66,6 +66,9 @@ export async function downloadAndImportSharedClip(
       metadata: { clip_id: clip.id, organization_id: clip.organization_id },
     });
 
+    const { queueProjectSync } = await import('./cloudSync');
+    void queueProjectSync(project.id);
+
     return { success: true, projectId: project.id };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

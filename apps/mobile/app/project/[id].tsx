@@ -348,6 +348,8 @@ function ProjectWorkspace({
           void (async () => {
             await updateClipSubtitleSettings(activeClipId, enabled, presetId, settings);
             setSubtitleSettings(settings);
+            const { queueProjectSync } = await import('@/services/cloudSync');
+            void queueProjectSync(projectId);
           })();
         }}
       />
@@ -362,6 +364,8 @@ function ProjectWorkspace({
           void (async () => {
             await updateClipTextOverlay(activeClipId, state);
             setTextBox(state);
+            const { queueProjectSync } = await import('@/services/cloudSync');
+            void queueProjectSync(projectId);
           })();
         }}
       />

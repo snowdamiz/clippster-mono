@@ -232,5 +232,8 @@ export async function buildClipExport(
     buildIds,
   });
 
+  const { queueProjectSync } = await import('./cloudSync');
+  void queueProjectSync(projectId);
+
   return outputPaths;
 }

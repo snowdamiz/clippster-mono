@@ -23,6 +23,7 @@ import { DISTRIBUTION_PLATFORMS } from '@/config/distributionPlatforms';
 import { organizationsApi, userSocialApi } from '@/services/api';
 import { startPostForMeOAuth } from '@/services/postForMeOAuth';
 import { startPostForMeOrgOAuth } from '@/services/postForMeOrgOAuth';
+import { startTokendConnect, startTokendOrgConnect } from '@/services/tokendOAuth';
 import { tokens } from '@/theme/tokens';
 
 function AccountCard({
@@ -126,7 +127,11 @@ export default function AccountsScreen() {
   async function handleConnect(platform: SocialPlatform) {
     setConnectingPlatform(platform);
     try {
-      const result = await startPostForMeOAuth(platform);
+      const platformConfig = DISTRIBUTION_PLATFORMS.find((p) => p.id === platform);
+      const result =
+        platformConfig?.provider === 'tokend'
+          ? await startTokendConnect()
+          : await startPostForMeOAuth(platform);
       if (result.success) {
         await loadAccounts();
         Alert.alert('Connected', `${getSocialPlatformLabel(platform)} account linked successfully.`);
@@ -167,7 +172,11 @@ export default function AccountsScreen() {
     if (!selectedOrgId) return;
     setConnectingOrgPlatform(platform);
     try {
-      const result = await startPostForMeOrgOAuth(selectedOrgId, platform);
+      const platformConfig = DISTRIBUTION_PLATFORMS.find((p) => p.id === platform);
+      const result =
+        platformConfig?.provider === 'tokend'
+          ? await startTokendOrgConnect(selectedOrgId)
+          : await startPostForMeOrgOAuth(selectedOrgId, platform);
       if (result.success) {
         await loadOrgAccounts(selectedOrgId);
         Alert.alert('Connected', `Organization ${getSocialPlatformLabel(platform)} account linked.`);

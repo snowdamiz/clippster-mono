@@ -10,6 +10,13 @@ export interface MobilePlatformConfig {
 
 export const MOBILE_PLATFORMS: MobilePlatformConfig[] = [
   {
+    id: 'tokend',
+    name: 'Tokend',
+    provider: 'tokend',
+    searchPlaceholder: 'Tokend URL or @handle',
+    supportsChannelBrowse: true,
+  },
+  {
     id: 'youtube',
     name: 'YouTube',
     provider: 'youtube',
@@ -51,6 +58,7 @@ export function getPlatformConfig(id: string): MobilePlatformConfig | undefined 
 }
 
 export function detectPlatformFromUrl(url: string): MediaPlatform | null {
+  if (/tokend\.tv/i.test(url) || /localhost:4100/i.test(url)) return 'tokend';
   if (/youtube\.com|youtu\.be/i.test(url)) return 'youtube';
   if (/kick\.com/i.test(url)) return 'kick';
   if (/twitch\.tv/i.test(url)) return 'twitch';

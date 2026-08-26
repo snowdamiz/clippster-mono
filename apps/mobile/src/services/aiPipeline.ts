@@ -121,6 +121,11 @@ export class AiPipeline {
       throw new Error(balance.error ?? 'Could not check credits');
     }
 
+    const available = balance.balance ?? balance.credits ?? 0;
+    if (available < 1) {
+      throw new Error('Insufficient credits. Buy credits in Settings or at clippster.app/credits.');
+    }
+
     const existing = await getTranscriptByProjectId(projectId);
     if (existing) {
       this.setProgress({ stage: 'complete', progress: 100, message: 'Transcript already exists' });

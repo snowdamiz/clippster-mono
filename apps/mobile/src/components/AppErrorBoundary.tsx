@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { Text, View } from 'react-native';
 import { Button } from '@/components/ui/button';
+import { captureException } from '@/services/crashReporting';
 
 interface Props {
   children: ReactNode;
@@ -20,6 +21,7 @@ export class AppErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('AppErrorBoundary', error, info.componentStack);
+    captureException(error, { componentStack: info.componentStack });
   }
 
   render() {

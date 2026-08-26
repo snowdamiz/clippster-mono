@@ -212,7 +212,7 @@ defmodule ClippsterServerWeb.SocialAccountController do
             {:error, :return_url_required} ->
               conn
               |> put_status(422)
-              |> json(%{success: false, error: "return_url is required when return_mode=web"})
+              |> json(%{success: false, error: "return_url is required when return_mode is web or mobile"})
 
             {:error, :invalid_return_url} ->
               conn
@@ -725,6 +725,15 @@ defmodule ClippsterServerWeb.SocialAccountController do
 
   defp normalize_return_url("web", return_url) when is_binary(return_url) do
     case OAuthCallbackTarget.normalize_web_redirect_uri(return_url) do
+      {:ok, safe_url} -> {:ok, safe_url}
+      {:error, _reason} -> {:error, :invalid_return_url}
+    end
+  end
+
+  defp normalize_return_url("mobile", nil), do: {:error, :return_url_required}
+
+  defp normalize_return_url("mobile", return_url) when is_binary(return_url) do
+    case OAuthCallbackTarget.normalize_mobile_redirect_uri(return_url) do
       {:ok, safe_url} -> {:ok, safe_url}
       {:error, _reason} -> {:error, :invalid_return_url}
     end

@@ -214,22 +214,16 @@ defmodule ClippsterServerWeb.CloudProjectController do
   end
 
   def subscription_checkout(conn, %{"tier" => tier}) when tier in ["cloud_50", "cloud_200"] do
-    user_id = conn.assigns.current_user_id
+    frontend =
+      Application.get_env(:clippster_server, :frontend_base_url, "https://clippster.app")
+      |> String.trim_trailing("/")
 
-    case StorageQuotas.set_tier(user_id, tier) do
-      {:ok, quota} ->
-        json(conn, %{
-          success: true,
-          tier: quota.tier,
-          bytes_limit: quota.bytes_limit,
-          message: "Cloud storage tier updated. Stripe checkout integration pending."
-        })
-
-      {:error, _} ->
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{success: false, error: "checkout_failed"})
-    end
+    json(conn, %{
+      success: true,
+      tier: tier,
+      checkout_url: "#{frontend}/settings/billing?tier=#{tier}",
+      message: "Complete cloud storage billing in the Clippster web billing portal."
+    })
   end
 
   def subscription_checkout(conn, _params) do

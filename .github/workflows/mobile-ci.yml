@@ -26,4 +26,17 @@ jobs:
       - run: yarn install --frozen-lockfile
       - run: yarn workspace @clippster/shared-types test
       - run: yarn workspace @clippster/api-client test
+      - run: yarn workspace @clippster/clip-export test
       - run: yarn mobile:typecheck
+      - run: yarn mobile:lint
+
+  mobile-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+      - run: yarn install --frozen-lockfile
+      - run: yarn workspace mobile test

@@ -162,10 +162,14 @@ export function createCloudProjectsApi(client: ApiClient) {
     },
 
     checkoutStorageTier(tier: 'cloud_50' | 'cloud_200') {
-      return client.post<{ success: boolean; tier: string; bytes_limit: number }>(
-        '/cloud/subscription/checkout',
-        { tier },
-      );
+      return client.post<{
+        success: boolean;
+        tier: string;
+        bytes_limit?: number;
+        checkout_url?: string;
+        message?: string;
+        error?: string;
+      }>('/cloud/subscription/checkout', { tier });
     },
   };
 }

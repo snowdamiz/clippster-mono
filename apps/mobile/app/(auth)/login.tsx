@@ -60,6 +60,9 @@ export default function LoginScreen() {
                   onChangeText={setPassword}
                   placeholder="••••••••"
                 />
+                <Link href={"/(auth)/forgot-password" as any} className="text-sm text-primary">
+                  Forgot password?
+                </Link>
               </View>
 
               {error ? <Text className="text-sm text-red-400">{error}</Text> : null}
