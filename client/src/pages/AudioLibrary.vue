@@ -7,7 +7,7 @@
       :icon="Music"
     >
       <template #actions>
-        <div class="projects-header-actions">
+        <div v-if="activeTab === 'audio'" class="projects-header-actions">
           <!-- Bulk Actions (shown when items selected) -->
           <div v-if="selectedAudioIds.size > 0" class="projects-bulk-actions">
             <span class="projects-bulk-actions__count">{{ selectedAudioIds.size }} selected</span>
@@ -39,11 +39,7 @@
             </div>
 
             <!-- Select All Button -->
-            <button 
-              v-if="filteredAudio.length > 0"
-              @click="selectAll" 
-              class="projects-bulk-actions__btn"
-            >
+            <button v-if="filteredAudio.length > 0" @click="selectAll" class="projects-bulk-actions__btn">
               <Check :size="16" />
               Select All
             </button>
@@ -60,275 +56,247 @@
       <div class="projects__content">
         <!-- Page Heading -->
         <div
-          v-if="filteredAudio.length > 0 || playlists.length > 0 || getActiveDownloads().length > 0"
+          v-if="
+            activeTab === 'audio' &&
+            (filteredAudio.length > 0 || playlists.length > 0 || getActiveDownloads().length > 0)
+          "
           class="projects__heading"
         >
           <h1 class="projects__title">Audio Library</h1>
           <p class="projects__subtitle">Manage your downloaded audio and playlists</p>
         </div>
 
-        <!-- X Spaces tab temporarily disabled (Space Studio / Twitter audio needs more work) -->
-        <!--
         <div class="audio-tabs">
           <button
-            :class="['audio-tab', { 'audio-tab--active': activeTab === 'all' }]"
-            @click="activeTab = 'all'"
+            type="button"
+            :class="['audio-tab', { 'audio-tab--active': activeTab === 'audio' }]"
+            @click="activeTab = 'audio'"
           >
             Audio
           </button>
           <button
-            :class="['audio-tab', { 'audio-tab--active': activeTab === 'spaces' }]"
-            @click="activeTab = 'spaces'"
+            type="button"
+            :class="['audio-tab', { 'audio-tab--active': activeTab === 'circles' }]"
+            @click="activeTab = 'circles'"
           >
-            X Spaces
+            Circles
           </button>
         </div>
-        -->
 
-        <!-- Active Downloads Section -->
-        <div v-if="getActiveDownloads().length > 0" class="projects__section">
-          <div class="projects__section-header-row">
-            <h3 class="projects__section-header">Active Downloads</h3>
-          </div>
-          <div class="projects__grid projects__grid--downloads">
-            <DownloadCard
-              v-for="download in getActiveDownloads()"
-              :key="download.id"
-              :download="{
-                id: download.id,
-                title: download.title,
-                mintId: download.id,
-                progress: {
-                  download_id: download.id,
-                  progress: download.progress,
-                  status: download.status,
-                  current_time: undefined,
-                  total_time: undefined
-                },
-                result: undefined
-              }"
-            />
-          </div>
-        </div>
+        <CirclesLibraryView v-if="activeTab === 'circles'" />
 
-        <!-- Downloaded Audio Section -->
-        <div v-if="filteredAudio.length > 0" class="projects__section">
-          <div class="projects__section-header-row">
-            <h3 class="projects__section-header">Downloaded Audio</h3>
-            <div class="projects__section-actions">
-              <button
-                @click="playAllAudio"
-                class="projects-section-btn"
-                title="Play all"
-              >
-                <Play :size="14" />
-                Play All
-              </button>
-              <button
-                @click="shuffleAllAudio"
-                class="projects-section-btn"
-                title="Shuffle all"
-              >
-                <Shuffle :size="14" />
-                Shuffle All
-              </button>
+        <template v-if="activeTab === 'audio'">
+          <!-- Active Downloads Section -->
+          <div v-if="getActiveDownloads().length > 0" class="projects__section">
+            <div class="projects__section-header-row">
+              <h3 class="projects__section-header">Active Downloads</h3>
             </div>
-          </div>
-          <div class="projects__grid">
-            <div
-              v-for="audio in filteredAudio"
-              :key="audio.id"
-              class="project-card project-card--audio"
-              @click="handleAudioCardClick(audio)"
-            >
-              <!-- Selection Checkbox -->
-              <div
-                class="project-card__checkbox"
-                :class="{ 'project-card__checkbox--visible': isAudioSelected(audio.id) }"
-                @click.stop="toggleAudioSelection(audio.id)"
-              >
-                <div
-                  class="project-card__checkbox-inner"
-                  :class="{ 'project-card__checkbox-inner--checked': isAudioSelected(audio.id) }"
-                >
-                  <Check v-if="isAudioSelected(audio.id)" class="project-card__checkbox-icon" />
-                </div>
-              </div>
-
-              <!-- Thumbnail or Fallback -->
-              <div
-                v-if="audio.thumbnail_url"
-                class="project-card__thumbnail"
-                :style="{
-                  backgroundImage: `url(${convertFileSrc(audio.thumbnail_url)})`,
+            <div class="projects__grid projects__grid--downloads">
+              <DownloadCard
+                v-for="download in getActiveDownloads()"
+                :key="download.id"
+                :download="{
+                  id: download.id,
+                  title: download.title,
+                  mintId: download.id,
+                  progress: {
+                    download_id: download.id,
+                    progress: download.progress,
+                    status: download.status,
+                    current_time: undefined,
+                    total_time: undefined,
+                  },
+                  result: undefined,
                 }"
-              >
-                <div class="project-card__vignette"></div>
-              </div>
-              <div v-else class="project-card__thumbnail project-card__thumbnail--empty">
-                <div class="project-card__thumbnail-gradient"></div>
-                
-                <!-- Standard Empty State -->
-                <div class="project-card__empty-icon">
-                  <Music class="project-card__folder-icon" />
-                </div>
-              </div>
-
-            <!-- Bottom Overlay with Info -->
-            <div class="project-card__bottom">
-              <!-- Title -->
-              <h3 class="project-card__title" :title="audio.title">
-                {{ audio.title }}
-              </h3>
-
-              <!-- Metadata Row -->
-              <div class="project-card__meta">
-                <!-- Platform Icon -->
-                <div
-                  v-if="audio.platform === 'YouTube'"
-                  class="project-card__platform project-card__platform--youtube"
-                  title="YouTube"
-                >
-                  <img src="/youtube.svg" class="project-card__platform-icon" />
-                </div>
-                <div
-                  v-else-if="audio.platform === 'Twitter'"
-                  class="project-card__platform project-card__platform--twitter"
-                  title="Twitter"
-                >
-                  <img src="/x.svg" class="project-card__platform-icon" />
-                </div>
-                <div
-                  v-else-if="audio.platform === 'Upload'"
-                  class="project-card__platform project-card__platform--manual"
-                  title="Uploaded"
-                >
-                  <Upload class="project-card__platform-svg" />
-                </div>
-
-                <span v-if="audio.platform" class="project-card__dot"></span>
-
-                <!-- Duration -->
-                <span v-if="audio.duration" class="project-card__info">
-                  {{ formatDuration(audio.duration) }}
-                </span>
-
-                <span v-if="audio.duration && audio.file_size" class="project-card__dot"></span>
-
-                <!-- File Size -->
-                <span v-if="audio.file_size" class="project-card__info">
-                  {{ formatFileSize(audio.file_size) }}
-                </span>
-              </div>
-            </div>
-
-            <!-- Hover Actions -->
-            <div class="project-card__hover-actions">
-              <button
-                @click.stop="playAudio(audio)"
-                class="project-card__hover-btn"
-                title="Play"
-              >
-                <Play :size="16" />
-              </button>
-              <button
-                @click.stop="openAddToPlaylistDialog(audio)"
-                class="project-card__hover-btn"
-                title="Add to playlist"
-              >
-                <ListPlus :size="16" />
-              </button>
-              <button
-                @click.stop="deleteAudio(audio)"
-                class="project-card__hover-btn project-card__hover-btn--danger"
-                title="Delete"
-              >
-                <Trash2 :size="16" />
-              </button>
+              />
             </div>
           </div>
-        </div>
-      </div>
 
-        <!-- Playlists Section -->
-        <div v-if="playlists.length > 0" class="projects__section">
-          <div class="projects__section-header-row">
-            <h3 class="projects__section-header">Playlists</h3>
-          </div>
-          <div class="projects__grid">
-            <div
-              v-for="playlist in playlists"
-              :key="playlist.id"
-              class="project-card project-card--playlist"
-              @click="viewPlaylist(playlist)"
-            >
-              <div class="project-card__thumbnail">
-                <div class="project-card__thumbnail-placeholder">
-                  <ListMusic :size="32" />
-                </div>
-                <div class="project-card__playlist-count">
-                  {{ getPlaylistTrackCount(playlist.id) }} tracks
-                </div>
-              </div>
-              <div class="project-card__content">
-                <h3 class="project-card__title">{{ playlist.name }}</h3>
-                <p v-if="playlist.description" class="project-card__description">
-                  {{ playlist.description }}
-                </p>
-              </div>
-              <div class="project-card__actions">
-                <button
-                  @click.stop="playPlaylist(playlist)"
-                  class="project-card__action"
-                  title="Play all"
-                >
-                  <Play :size="16" />
+          <!-- Downloaded Audio Section -->
+          <div v-if="filteredAudio.length > 0" class="projects__section">
+            <div class="projects__section-header-row">
+              <h3 class="projects__section-header">Downloaded Audio</h3>
+              <div class="projects__section-actions">
+                <button @click="playAllAudio" class="projects-section-btn" title="Play all">
+                  <Play :size="14" />
+                  Play All
                 </button>
-                <button
-                  @click.stop="editPlaylist(playlist)"
-                  class="project-card__action"
-                  title="Edit"
-                >
-                  <Pencil :size="16" />
-                </button>
-                <button
-                  @click.stop="deletePlaylist(playlist)"
-                  class="project-card__action project-card__action--danger"
-                  title="Delete"
-                >
-                  <Trash2 :size="16" />
+                <button @click="shuffleAllAudio" class="projects-section-btn" title="Shuffle all">
+                  <Shuffle :size="14" />
+                  Shuffle All
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+            <div class="projects__grid">
+              <div
+                v-for="audio in filteredAudio"
+                :key="audio.id"
+                class="project-card project-card--audio"
+                @click="handleAudioCardClick(audio)"
+              >
+                <!-- Selection Checkbox -->
+                <div
+                  class="project-card__checkbox"
+                  :class="{ 'project-card__checkbox--visible': isAudioSelected(audio.id) }"
+                  @click.stop="toggleAudioSelection(audio.id)"
+                >
+                  <div
+                    class="project-card__checkbox-inner"
+                    :class="{ 'project-card__checkbox-inner--checked': isAudioSelected(audio.id) }"
+                  >
+                    <Check v-if="isAudioSelected(audio.id)" class="project-card__checkbox-icon" />
+                  </div>
+                </div>
 
-        <!-- Empty State -->
-        <div v-if="filteredAudio.length === 0 && playlists.length === 0 && getActiveDownloads().length === 0" class="projects-empty">
-          <Music class="projects-empty__icon" />
-          <h3 class="projects-empty__title">No Audio Files</h3>
-          <p class="projects-empty__text">
-            Download audio from YouTube, or upload your own audio files
-          </p>
-          <div class="projects-empty__actions">
-            <button @click="$router.push('/download-audio')" class="projects-empty__button">
-              <Download :size="18" />
-              Download Audio
-            </button>
-            <button @click="handleUploadAudio" class="projects-empty__button projects-empty__button--secondary">
-              <Upload :size="18" />
-              Upload Audio
-            </button>
+                <!-- Thumbnail or Fallback -->
+                <div
+                  v-if="audio.thumbnail_url"
+                  class="project-card__thumbnail"
+                  :style="{
+                    backgroundImage: `url(${convertFileSrc(audio.thumbnail_url)})`,
+                  }"
+                >
+                  <div class="project-card__vignette"></div>
+                </div>
+                <div v-else class="project-card__thumbnail project-card__thumbnail--empty">
+                  <div class="project-card__thumbnail-gradient"></div>
+
+                  <!-- Standard Empty State -->
+                  <div class="project-card__empty-icon">
+                    <Music class="project-card__folder-icon" />
+                  </div>
+                </div>
+
+                <!-- Bottom Overlay with Info -->
+                <div class="project-card__bottom">
+                  <!-- Title -->
+                  <h3 class="project-card__title" :title="audio.title">
+                    {{ audio.title }}
+                  </h3>
+
+                  <!-- Metadata Row -->
+                  <div class="project-card__meta">
+                    <!-- Platform Icon -->
+                    <div
+                      v-if="audio.platform === 'YouTube'"
+                      class="project-card__platform project-card__platform--youtube"
+                      title="YouTube"
+                    >
+                      <img src="/youtube.svg" class="project-card__platform-icon" />
+                    </div>
+                    <div
+                      v-else-if="audio.platform === 'Upload'"
+                      class="project-card__platform project-card__platform--manual"
+                      title="Uploaded"
+                    >
+                      <Upload class="project-card__platform-svg" />
+                    </div>
+
+                    <span v-if="audio.platform" class="project-card__dot"></span>
+
+                    <!-- Duration -->
+                    <span v-if="audio.duration" class="project-card__info">
+                      {{ formatDuration(audio.duration) }}
+                    </span>
+
+                    <span v-if="audio.duration && audio.file_size" class="project-card__dot"></span>
+
+                    <!-- File Size -->
+                    <span v-if="audio.file_size" class="project-card__info">
+                      {{ formatFileSize(audio.file_size) }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Hover Actions -->
+                <div class="project-card__hover-actions">
+                  <button @click.stop="playAudio(audio)" class="project-card__hover-btn" title="Play">
+                    <Play :size="16" />
+                  </button>
+                  <button
+                    @click.stop="openAddToPlaylistDialog(audio)"
+                    class="project-card__hover-btn"
+                    title="Add to playlist"
+                  >
+                    <ListPlus :size="16" />
+                  </button>
+                  <button
+                    @click.stop="deleteAudio(audio)"
+                    class="project-card__hover-btn project-card__hover-btn--danger"
+                    title="Delete"
+                  >
+                    <Trash2 :size="16" />
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+
+          <!-- Playlists Section -->
+          <div v-if="playlists.length > 0" class="projects__section">
+            <div class="projects__section-header-row">
+              <h3 class="projects__section-header">Playlists</h3>
+            </div>
+            <div class="projects__grid">
+              <div
+                v-for="playlist in playlists"
+                :key="playlist.id"
+                class="project-card project-card--playlist"
+                @click="viewPlaylist(playlist)"
+              >
+                <div class="project-card__thumbnail">
+                  <div class="project-card__thumbnail-placeholder">
+                    <ListMusic :size="32" />
+                  </div>
+                  <div class="project-card__playlist-count">{{ getPlaylistTrackCount(playlist.id) }} tracks</div>
+                </div>
+                <div class="project-card__content">
+                  <h3 class="project-card__title">{{ playlist.name }}</h3>
+                  <p v-if="playlist.description" class="project-card__description">
+                    {{ playlist.description }}
+                  </p>
+                </div>
+                <div class="project-card__actions">
+                  <button @click.stop="playPlaylist(playlist)" class="project-card__action" title="Play all">
+                    <Play :size="16" />
+                  </button>
+                  <button @click.stop="editPlaylist(playlist)" class="project-card__action" title="Edit">
+                    <Pencil :size="16" />
+                  </button>
+                  <button
+                    @click.stop="deletePlaylist(playlist)"
+                    class="project-card__action project-card__action--danger"
+                    title="Delete"
+                  >
+                    <Trash2 :size="16" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div
+            v-if="filteredAudio.length === 0 && playlists.length === 0 && getActiveDownloads().length === 0"
+            class="projects-empty"
+          >
+            <Music class="projects-empty__icon" />
+            <h3 class="projects-empty__title">No Audio Files</h3>
+            <p class="projects-empty__text">Download audio from YouTube, or upload your own audio files</p>
+            <div class="projects-empty__actions">
+              <button @click="$router.push('/download-audio')" class="projects-empty__button">
+                <Download :size="18" />
+                Download Audio
+              </button>
+              <button @click="handleUploadAudio" class="projects-empty__button projects-empty__button--secondary">
+                <Upload :size="18" />
+                Upload Audio
+              </button>
+            </div>
+          </div>
+        </template>
       </div>
     </PageLayout>
-
-    <SpaceStudioDialog
-      :open="showSpaceStudioDialog"
-      :audio="selectedSpaceAudio"
-      @close="closeSpaceStudio"
-    />
 
     <!-- Create Playlist Dialog -->
     <Teleport to="body">
@@ -348,12 +316,7 @@
             <div class="bug-dialog__content">
               <div class="bug-dialog__field">
                 <label class="bug-dialog__label">Playlist Name *</label>
-                <input
-                  v-model="newPlaylistName"
-                  type="text"
-                  placeholder="My Playlist"
-                  class="bug-dialog__input"
-                />
+                <input v-model="newPlaylistName" type="text" placeholder="My Playlist" class="bug-dialog__input" />
               </div>
               <div class="bug-dialog__field">
                 <label class="bug-dialog__label">Description</label>
@@ -400,12 +363,7 @@
             <div class="bug-dialog__content">
               <div class="bug-dialog__field">
                 <label class="bug-dialog__label">Playlist Name *</label>
-                <input
-                  v-model="editPlaylistName"
-                  type="text"
-                  placeholder="My Playlist"
-                  class="bug-dialog__input"
-                />
+                <input v-model="editPlaylistName" type="text" placeholder="My Playlist" class="bug-dialog__input" />
               </div>
               <div class="bug-dialog__field">
                 <label class="bug-dialog__label">Description</label>
@@ -453,7 +411,10 @@
               <div class="playlist-select">
                 <!-- Create New Playlist Button -->
                 <button
-                  @click="showAddToPlaylistDialog = false; showCreatePlaylistDialog = true"
+                  @click="
+                    showAddToPlaylistDialog = false;
+                    showCreatePlaylistDialog = true;
+                  "
                   class="playlist-select__item playlist-select__item--create"
                 >
                   <Plus :size="18" class="playlist-select__icon" />
@@ -490,7 +451,11 @@
     <!-- Playlist Detail Dialog -->
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="showPlaylistDetailDialog && selectedPlaylist" class="bug-dialog__overlay" @click.self="showPlaylistDetailDialog = false">
+        <div
+          v-if="showPlaylistDetailDialog && selectedPlaylist"
+          class="bug-dialog__overlay"
+          @click.self="showPlaylistDetailDialog = false"
+        >
           <div class="bug-dialog bug-dialog--large">
             <div class="bug-dialog__accent"></div>
             <div class="bug-dialog__header">
@@ -506,9 +471,7 @@
               </p>
             </div>
             <div class="bug-dialog__content">
-              <p v-if="playlistTracks.length === 0" class="bug-dialog__text">
-                No tracks in this playlist yet.
-              </p>
+              <p v-if="playlistTracks.length === 0" class="bug-dialog__text">No tracks in this playlist yet.</p>
               <div v-else class="playlist-tracks">
                 <div
                   v-for="(track, index) in playlistTracks"
@@ -516,13 +479,13 @@
                   :class="[
                     'playlist-track',
                     { 'playlist-track--dragging': draggedTrackIndex === index },
-                    { 'playlist-track--drag-over': dragOverTrackIndex === index }
+                    { 'playlist-track--drag-over': dragOverTrackIndex === index },
                   ]"
                   @mouseenter="handleMouseEnter(index)"
                   @mouseleave="handleMouseLeave"
                   @mouseup="handleMouseUp(index)"
                 >
-                  <div 
+                  <div
                     class="playlist-track__drag-handle"
                     @mousedown.prevent="handleMouseDown(index)"
                     title="Drag to reorder"
@@ -539,11 +502,7 @@
                     </div>
                   </div>
                   <div class="playlist-track__actions">
-                    <button
-                      @click="playAudio(track)"
-                      class="playlist-track__btn"
-                      title="Play"
-                    >
+                    <button @click="playAudio(track)" class="playlist-track__btn" title="Play">
                       <Play :size="16" />
                     </button>
                     <button
@@ -600,7 +559,7 @@
   import { convertFileSrc } from '@tauri-apps/api/core';
   import PageLayout from '@/components/PageLayout.vue';
   import DownloadCard from '@/components/DownloadCard.vue';
-  import SpaceStudioDialog from '@/components/SpaceStudioDialog.vue';
+  import CirclesLibraryView from '@/components/circles/CirclesLibraryView.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import { useAudioDownloads } from '@/composables/useAudioDownloads';
   import { useAudioPlayer } from '@/composables/useAudioPlayer';
@@ -650,18 +609,17 @@
   const audioFiles = ref<DownloadedAudio[]>([]);
   const playlists = ref<AudioPlaylist[]>([]);
   const searchQuery = ref('');
+  const activeTab = ref<'audio' | 'circles'>('audio');
   const showCreatePlaylistDialog = ref(false);
   const showAddToPlaylistDialog = ref(false);
   const showPlaylistDetailDialog = ref(false);
   const showEditPlaylistDialog = ref(false);
-  const showSpaceStudioDialog = ref(false);
   const showDeleteAudioDialog = ref(false);
   const showDeletePlaylistDialog = ref(false);
   const bulkDeleteAudioMode = ref(false);
   const audioToDelete = ref<DownloadedAudio | null>(null);
   const playlistToDelete = ref<AudioPlaylist | null>(null);
   const selectedAudioForPlaylist = ref<DownloadedAudio | null>(null);
-  const selectedSpaceAudio = ref<DownloadedAudio | null>(null);
   const selectedPlaylist = ref<AudioPlaylist | null>(null);
   const playlistTracks = ref<Array<DownloadedAudio & { playlist_item_id: string }>>([]);
   const newPlaylistName = ref('');
@@ -673,28 +631,22 @@
   const draggedTrackIndex = ref<number | null>(null);
   const dragOverTrackIndex = ref<number | null>(null);
   const isDragging = ref(false);
-  
-  const filteredAudio = computed(() => {
-    // X Spaces (Twitter) hidden while that flow is disabled — same as former "Audio" tab
-    let filtered = audioFiles.value.filter(audio => audio.platform !== 'Twitter');
 
-    // Filter by search query
+  const filteredAudio = computed(() => {
+    // Circles are separate; exclude any legacy Twitter/X Spaces audio rows
+    let filtered = audioFiles.value.filter((audio) => audio.platform !== 'Twitter');
+
     if (searchQuery.value) {
       const query = searchQuery.value.toLowerCase();
-      filtered = filtered.filter(audio =>
-        audio.title.toLowerCase().includes(query)
-      );
+      filtered = filtered.filter((audio) => audio.title.toLowerCase().includes(query));
     }
-    
+
     return filtered;
   });
 
   async function loadAudioFiles() {
     try {
       audioFiles.value = await getAllDownloadedAudio();
-      console.log('[AudioLibrary] All audio files loaded:', audioFiles.value.length);
-      console.log('[AudioLibrary] Audio files with platforms:', audioFiles.value.map(a => ({ title: a.title, platform: a.platform })));
-      console.log('[AudioLibrary] Files with platform=Twitter:', audioFiles.value.filter(a => a.platform === 'Twitter').length);
       void repairMissingThumbnails();
     } catch (error) {
       console.error('Failed to load audio files:', error);
@@ -742,7 +694,7 @@
 
   function selectAll() {
     // Select all filtered audio files (not playlists)
-    filteredAudio.value.forEach(audio => {
+    filteredAudio.value.forEach((audio) => {
       selectedAudioIds.value.add(audio.id);
     });
   }
@@ -802,7 +754,7 @@
     try {
       if (bulkDeleteAudioMode.value && selectedAudioIds.value.size > 0) {
         const count = selectedAudioIds.value.size;
-        const toDelete = audioFiles.value.filter(a => selectedAudioIds.value.has(a.id));
+        const toDelete = audioFiles.value.filter((a) => selectedAudioIds.value.has(a.id));
 
         for (const audio of toDelete) {
           await deleteAudioEntry(audio);
@@ -829,8 +781,8 @@
 
   async function addSelectedToPlaylist() {
     if (selectedAudioIds.value.size === 0) return;
-    
-    const selectedAudio = audioFiles.value.filter(a => selectedAudioIds.value.has(a.id));
+
+    const selectedAudio = audioFiles.value.filter((a) => selectedAudioIds.value.has(a.id));
     if (selectedAudio.length === 0) return;
 
     // For bulk add, we'll show the playlist dialog
@@ -841,7 +793,7 @@
   async function loadPlaylists() {
     try {
       playlists.value = await getAllAudioPlaylists();
-      
+
       // Load track counts for each playlist
       for (const playlist of playlists.value) {
         const count = await getPlaylistTrackCountFromDb(playlist.id);
@@ -857,10 +809,12 @@
     try {
       const selected = await open({
         multiple: true,
-        filters: [{
-          name: 'Audio',
-          extensions: ['mp3', 'm4a', 'wav', 'flac', 'ogg']
-        }]
+        filters: [
+          {
+            name: 'Audio',
+            extensions: ['mp3', 'm4a', 'wav', 'flac', 'ogg'],
+          },
+        ],
       });
 
       if (!selected) return;
@@ -904,10 +858,7 @@
           `${ok} succeeded, ${failures.length} failed.\n${failures.slice(0, 5).join('\n')}${failures.length > 5 ? `\n… and ${failures.length - 5} more` : ''}`
         );
       } else {
-        showError(
-          'Upload Failed',
-          failures.slice(0, 5).join('\n') || 'All uploads failed'
-        );
+        showError('Upload Failed', failures.slice(0, 5).join('\n') || 'All uploads failed');
       }
     } catch (error) {
       console.error('Upload error:', error);
@@ -919,20 +870,23 @@
     if (!newPlaylistName.value.trim()) return;
 
     try {
-      const newPlaylistId = await createAudioPlaylist(newPlaylistName.value.trim(), newPlaylistDescription.value.trim() || undefined);
+      const newPlaylistId = await createAudioPlaylist(
+        newPlaylistName.value.trim(),
+        newPlaylistDescription.value.trim() || undefined
+      );
       const playlistName = newPlaylistName.value;
-      
+
       newPlaylistName.value = '';
       newPlaylistDescription.value = '';
       showCreatePlaylistDialog.value = false;
-      
+
       await loadPlaylists();
 
       // If there's a pending audio selection or bulk selection, automatically add to the new playlist
       if (selectedAudioForPlaylist.value || selectedAudioIds.value.size > 0) {
         try {
           await addToPlaylist(newPlaylistId, true); // skipDialog = true to avoid duplicate success message
-          
+
           // Show combined success message
           if (selectedAudioIds.value.size > 0) {
             success('Created & Added', `Created "${playlistName}" and added ${selectedAudioIds.value.size} tracks`);
@@ -994,13 +948,13 @@
   function playAudio(audio: DownloadedAudio) {
     if (showPlaylistDetailDialog.value && playlistTracks.value.length > 0) {
       const tracks = playlistTracks.value.map(toAudioTrack);
-      const startIndex = tracks.findIndex(t => t.id === audio.id.toString());
+      const startIndex = tracks.findIndex((t) => t.id === audio.id.toString());
       playPlaylistTracks(tracks, startIndex >= 0 ? startIndex : 0);
       return;
     }
 
     const tracks = filteredAudio.value.map(toAudioTrack);
-    const startIndex = tracks.findIndex(t => t.id === audio.id.toString());
+    const startIndex = tracks.findIndex((t) => t.id === audio.id.toString());
     playPlaylistTracks(tracks, startIndex >= 0 ? startIndex : 0);
   }
 
@@ -1017,13 +971,7 @@
   }
 
   function handleAudioCardClick(audio: DownloadedAudio) {
-    // Space Studio (X Spaces) entry disabled with tab — was: open dialog on spaces tab
     playAudio(audio);
-  }
-
-  function closeSpaceStudio() {
-    showSpaceStudioDialog.value = false;
-    selectedSpaceAudio.value = null;
   }
 
   async function playPlaylist(playlist: AudioPlaylist) {
@@ -1036,7 +984,7 @@
         duration: item.audio_duration,
         platform: item.audio_platform,
       }));
-      
+
       if (tracks.length > 0) {
         await playPlaylistTracks(tracks);
         success('Playing', `Playing ${playlist.name}`);
@@ -1083,7 +1031,7 @@
 
   async function removeTrackFromPlaylist(playlistItemId: string) {
     if (!selectedPlaylist.value) return;
-    
+
     try {
       await removeAudioFromPlaylist(playlistItemId);
       success('Removed', 'Track removed from playlist');
@@ -1109,15 +1057,15 @@
       // Update playlist in database
       await updateAudioPlaylist(selectedPlaylist.value.id, {
         name: editPlaylistName.value.trim(),
-        description: editPlaylistDescription.value.trim() || undefined
+        description: editPlaylistDescription.value.trim() || undefined,
       });
 
       success('Updated', `Updated playlist: ${editPlaylistName.value}`);
-      
+
       editPlaylistName.value = '';
       editPlaylistDescription.value = '';
       showEditPlaylistDialog.value = false;
-      
+
       await loadPlaylists();
     } catch (error) {
       console.error('Update playlist error:', error);
@@ -1150,7 +1098,7 @@
         }
         selectedAudioForPlaylist.value = null;
       }
-      
+
       showAddToPlaylistDialog.value = false;
       await loadPlaylists();
     } catch (error) {
@@ -1173,14 +1121,14 @@
     if (isDragging.value && draggedTrackIndex.value !== null && draggedTrackIndex.value !== index) {
       console.log('[Playlist] Mouse enter:', index);
       dragOverTrackIndex.value = index;
-      
+
       // Visually reorder the array in real-time to show where it will drop
       const tracks = [...playlistTracks.value];
       const draggedTrack = tracks[draggedTrackIndex.value];
       tracks.splice(draggedTrackIndex.value, 1);
       tracks.splice(index, 0, draggedTrack);
       playlistTracks.value = tracks;
-      
+
       // Update the dragged index to the new position
       draggedTrackIndex.value = index;
     }
@@ -1194,7 +1142,7 @@
 
   async function handleMouseUp(dropIndex: number) {
     console.log('[Playlist] Mouse up at:', dropIndex);
-    
+
     if (!isDragging.value || !selectedPlaylist.value) {
       isDragging.value = false;
       draggedTrackIndex.value = null;
@@ -1205,12 +1153,12 @@
     // Array is already visually reordered from handleMouseEnter
     // Just need to save to database
     const draggedTrack = playlistTracks.value[dropIndex];
-    
+
     // Clear drag state
     isDragging.value = false;
     draggedTrackIndex.value = null;
     dragOverTrackIndex.value = null;
-    
+
     try {
       // Update database with new position
       await reorderPlaylistItem(draggedTrack.playlist_item_id, dropIndex);
@@ -1247,10 +1195,7 @@
   }
 
   onMounted(async () => {
-    await Promise.all([
-      loadAudioFiles(),
-      loadPlaylists(),
-    ]);
+    await Promise.all([loadAudioFiles(), loadPlaylists()]);
 
     // Listen for audio library updates (after database save is complete)
     window.addEventListener('audio-library-updated', handleAudioLibraryUpdate);
@@ -1617,10 +1562,6 @@
 
   .project-card__platform--youtube {
     background-color: #dc2626;
-  }
-
-  .project-card__platform--twitter {
-    background-color: #000000;
   }
 
   .project-card__platform--manual {

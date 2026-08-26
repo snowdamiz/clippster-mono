@@ -235,7 +235,7 @@
     mintId?: string; // Also used as session identifier for DVR mode
     isTempRecording?: boolean;
     streamerId?: string; // For campaign context lookup
-    platform?: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual';
+    platform?: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Tokend' | 'Manual';
   }
 
   interface Emits {

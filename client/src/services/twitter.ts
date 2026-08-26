@@ -366,36 +366,6 @@ export async function checkTwitterLivestream(urlOrUsername: string): Promise<Twi
 /**
  * Get metadata for a Twitter broadcast/space
  */
-/** CamelCase from Rust `serde(rename_all = "camelCase")` */
-export interface SpaceHlsSpeakerSegmentInvoke {
-  id: string;
-  speakerId: string;
-  start: number;
-  end: number;
-}
-
-export interface SpaceHlsStageSnapshotInvoke {
-  id: string;
-  t: number;
-  onStageUserIds: string[];
-}
-
-export interface SpaceHlsMetadataInvokeResult {
-  speakerSegments: SpaceHlsSpeakerSegmentInvoke[];
-  stageSnapshots: SpaceHlsStageSnapshotInvoke[];
-}
-
-/** HLS replay manifest (m3u8) — used to extract ID3 speaker timeline; not the Space page URL. */
-export async function extractSpaceSpeakerTimelineFromHls(
-  manifestUrl: string,
-  durationSecs?: number
-): Promise<SpaceHlsMetadataInvokeResult> {
-  return invoke('extract_space_speaker_timeline_from_hls_manifest', {
-    manifestUrl,
-    durationSecs: durationSecs ?? null,
-  });
-}
-
 /** A speaker segment derived from the X API (Periscope or stage-join data). */
 export interface SpaceSpeakerTimelineSegment {
   id: string;
@@ -411,7 +381,7 @@ export interface SpaceSpeakerTimelineSegment {
   role?: 'host' | 'cohost' | 'speaker' | 'admin' | 'listener' | 'guest' | 'unknown';
 }
 
-/** Injected by Tauri `get_twitter_broadcast_info` for Space replay UI (join schedule + timeline provenance). */
+/** Injected by Tauri `get_twitter_broadcast_info` for broadcast metadata. */
 export interface SpaceReplayHints {
   speakerTimelinePrimarySource?: string;
   startedAtSecs?: number;
@@ -422,9 +392,7 @@ export interface SpaceReplayHints {
   }>;
 }
 
-// Cache broadcast info by normalized URL so the post-download metadata enrichment
-// call reuses the result fetched during the pre-download search, avoiding a second
-// yt-dlp + GraphQL round-trip that often fails once the guest token has gone stale.
+// Cache broadcast info by normalized URL to avoid repeat yt-dlp / GraphQL round-trips.
 const _broadcastInfoCache = new Map<string, Awaited<ReturnType<typeof getTwitterBroadcastInfo>>>();
 
 export async function getTwitterBroadcastInfo(

@@ -1990,7 +1990,7 @@
 
   function getProjectPlatform(
     project: Project
-  ): 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual' | null {
+  ): 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Tokend' | 'Manual' | null {
     // 0. Check explicit platform field
     if (project.platform) {
       return project.platform;

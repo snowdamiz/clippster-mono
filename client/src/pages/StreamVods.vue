@@ -118,6 +118,16 @@
               >
                 <img src="/x.svg" class="streamvods-search__platform-icon" />
               </div>
+              <div
+                v-else-if="detectedPlatform === 'tokend'"
+                class="streamvods-search__platform streamvods-search__platform--tokend"
+                key="tokend"
+              >
+                <img
+                  src="/tokend.png"
+                  class="streamvods-search__platform-icon streamvods-search__platform-icon--tokend"
+                />
+              </div>
               <Search v-else class="streamvods-search__icon" key="search" />
             </transition>
             <input
@@ -180,6 +190,38 @@
           </button>
         </div>
 
+        <!-- Tokend Tabs -->
+        <div
+          v-if="detectedPlatform === 'tokend' && (platformStore.clips.length > 0 || platformStore.loading)"
+          class="streamvods__youtube-tabs"
+        >
+          <button
+            type="button"
+            :class="['streamvods__youtube-tab', { 'streamvods__youtube-tab--active': tokendTab === 'streams' }]"
+            :disabled="platformStore.loading"
+            @click="switchTokendTab('streams')"
+          >
+            Streams
+          </button>
+          <button
+            type="button"
+            :class="['streamvods__youtube-tab', { 'streamvods__youtube-tab--active': tokendTab === 'videos' }]"
+            :disabled="platformStore.loading"
+            @click="switchTokendTab('videos')"
+          >
+            Videos
+          </button>
+        </div>
+
+        <div
+          v-if="detectedPlatform === 'tokend' && platformStore.tokendCatalogMetadata"
+          class="streamvods__capability-notice"
+        >
+          <strong>{{ tokendModeLabel }}</strong>
+          <span>{{ platformStore.tokendCatalogMetadata.note || 'Public creator catalog read.' }}</span>
+          <span>Tokend media download grants are not available.</span>
+        </div>
+
         <!-- Page Heading -->
         <div v-if="platformStore.clips.length > 0 || platformStore.loading" class="streamvods__heading">
           <h1 class="streamvods__title">Stream VOD Library</h1>
@@ -229,7 +271,7 @@
           </div>
 
           <!-- Bulk Actions Bar -->
-          <div v-if="selectedVodIds.size > 0" class="streamvods__bulk-actions">
+          <div v-if="selectedVodIds.size > 0 && detectedPlatform !== 'tokend'" class="streamvods__bulk-actions">
             <span class="streamvods__bulk-count">{{ selectedVodIds.size }} selected</span>
             <div class="streamvods__bulk-buttons">
               <button @click="clearSelection" class="streamvods__bulk-btn streamvods__bulk-btn--secondary">
@@ -256,6 +298,7 @@
             >
               <!-- Selection Checkbox -->
               <div
+                v-if="detectedPlatform !== 'tokend'"
                 class="vod-card__checkbox"
                 :class="{ 'vod-card__checkbox--visible': selectedVodIds.has(clip.clipId) }"
                 @click.stop="toggleVodSelection(clip)"
@@ -296,7 +339,12 @@
 
               <!-- Hover Actions -->
               <div class="vod-card__actions">
-                <button class="vod-card__action-btn" title="Download" @click.stop="handleDownloadClip(clip)">
+                <button
+                  class="vod-card__action-btn"
+                  :disabled="detectedPlatform === 'tokend'"
+                  :title="detectedPlatform === 'tokend' ? 'Tokend downloads are unavailable' : 'Download'"
+                  @click.stop="handleDownloadClip(clip)"
+                >
                   <Download class="vod-card__action-icon" />
                 </button>
               </div>
@@ -534,6 +582,7 @@
   import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
   import { useAuthStore } from '@/stores/auth';
+  import { fetchTokendCapabilities, TOKEND_UNAVAILABLE_MESSAGES } from '@/services/tokend';
 
   const router = useRouter();
   const { gates } = useSubscriptionGate();
@@ -553,6 +602,7 @@
       youtube: 'YouTube',
       rumble: 'rumble',
       twitter: 'twitter',
+      tokend: 'tokend',
     };
     return map[key] ?? null;
   }
@@ -606,6 +656,12 @@
   // Auto-detected platform from input
   const detectedPlatform = ref<PlatformId | null>(pendingRouteSearch?.platform ?? null);
   const currentPlatformConfig = computed(() => platformConfigs[detectedPlatform.value || platformStore.activePlatform]);
+  const tokendModeLabel = computed(() => {
+    const mode = platformStore.tokendCatalogMetadata?.mode;
+    if (mode === 'mock') return 'Mock fixture catalog';
+    if (mode === 'local') return 'Local Tokend catalog';
+    return 'Tokend live public catalog';
+  });
 
   // Show searching UI immediately when arriving via creator "View VODs"
   if (pendingRouteSearch) {
@@ -617,6 +673,9 @@
   
   // Rumble tab state (Live Streams vs Videos)
   const rumbleTab = ref<'streams' | 'videos'>('streams');
+
+  // Tokend tab state (Streams vs Videos)
+  const tokendTab = ref<'streams' | 'videos'>('streams');
 
   function detectPlatform() {
     const val = searchInput.value?.trim();
@@ -655,6 +714,16 @@
     // Check for Rumble
     if (lowerVal.includes('rumble.com')) {
       detectedPlatform.value = 'rumble';
+      return;
+    }
+
+    // Check for Tokend creator URLs (tokend.tv or local web :4100)
+    if (
+      lowerVal.includes('tokend.tv') ||
+      lowerVal.includes('localhost:4100') ||
+      lowerVal.includes('127.0.0.1:4100')
+    ) {
+      detectedPlatform.value = 'tokend';
       return;
     }
 
@@ -790,6 +859,7 @@
       YouTube: '/youtube.svg',
       rumble: '/rumble.svg',
       twitter: '/x.svg',
+      tokend: '/tokend.png',
     };
     return icons[platform] || '/capsule.svg';
   }
@@ -802,6 +872,7 @@
       YouTube: 'YouTube',
       rumble: 'Rumble',
       twitter: 'X (Twitter)',
+      tokend: 'Tokend',
     };
     return names[platform] || platform;
   }
@@ -1018,6 +1089,29 @@
     }
   }
 
+  async function switchTokendTab(tab: 'streams' | 'videos') {
+    if (tokendTab.value === tab || platformStore.loading) return;
+    tokendTab.value = tab;
+    const input = searchInput.value.trim();
+    if (!input || detectedPlatform.value !== 'tokend') return;
+    platformStore.setActivePlatform('tokend');
+    try {
+      const result = await platformStore.searchClips(input, 20, tokendTab.value);
+      if (result.success) {
+        await loadDownloadedVodIds();
+        if (result.total === 0) {
+          showError('No Content Found', `No ${tab} found for this Tokend creator`);
+        } else if ('fallbackUsed' in result && result.fallbackUsed && result.actualTab) {
+          success('Content Found', `No ${tab} found, showing ${result.actualTab} instead (${result.total} found)`);
+        }
+      } else {
+        showError('Search Failed', result.error || 'Failed to fetch Tokend catalog');
+      }
+    } catch (err) {
+      showError('Error', err instanceof Error ? err.message : 'An unexpected error occurred');
+    }
+  }
+
   async function handleSearch() {
     const input = searchInput.value.trim();
     if (!input) {
@@ -1058,18 +1152,22 @@
       return;
     }
 
-    // Reset Rumble tab to streams (default) when doing a new search
+    // Reset Rumble / Tokend tabs to streams (default) when doing a new search
     if (detectedPlatform.value === 'rumble') {
       rumbleTab.value = 'streams';
+    }
+    if (detectedPlatform.value === 'tokend') {
+      tokendTab.value = 'streams';
     }
 
     // Set the active platform in the store
     platformStore.setActivePlatform(detectedPlatform.value);
 
     try {
-      // Pass tab parameter for YouTube and Rumble
+      // Pass tab parameter for YouTube, Rumble, and Tokend
       const tabParam = detectedPlatform.value === 'YouTube' ? youtubeTab.value 
-                     : detectedPlatform.value === 'rumble' ? rumbleTab.value 
+                     : detectedPlatform.value === 'rumble' ? rumbleTab.value
+                     : detectedPlatform.value === 'tokend' ? tokendTab.value
                      : undefined;
       const result = await platformStore.searchClips(input, 20, tabParam);
       if (result.success) {
@@ -1100,6 +1198,14 @@
   }
 
   async function handleDownloadClip(clip: PlatformClip) {
+    if (detectedPlatform.value === 'tokend') {
+      const capabilities = await fetchTokendCapabilities().catch(() => null);
+      if (!capabilities?.download) {
+        showError('Tokend Download Unavailable', TOKEND_UNAVAILABLE_MESSAGES.download);
+        return;
+      }
+    }
+
     clipToDownload.value = clip;
     selectedTimeRange.value = { startTime: 0, endTime: clip.duration || 0 };
     // Default auto-segment off, user can enable if they want to split
@@ -1153,6 +1259,14 @@
   }
 
   async function downloadSelectedVods() {
+    if (detectedPlatform.value === 'tokend') {
+      const capabilities = await fetchTokendCapabilities().catch(() => null);
+      if (!capabilities?.download) {
+        showError('Tokend Download Unavailable', TOKEND_UNAVAILABLE_MESSAGES.download);
+        return;
+      }
+    }
+
     const selectedClips = platformStore.clips.filter(clip => selectedVodIds.value.has(clip.clipId));
     if (selectedClips.length === 0) return;
     
@@ -1166,6 +1280,14 @@
 
   async function downloadClipConfirmed() {
     if (!clipToDownload.value || !currentPlatformConfig.value) return;
+    if (detectedPlatform.value === 'tokend') {
+      const capabilities = await fetchTokendCapabilities().catch(() => null);
+      if (!capabilities?.download) {
+        showError('Tokend Download Unavailable', TOKEND_UNAVAILABLE_MESSAGES.download);
+        closeDownloadDialog();
+        return;
+      }
+    }
 
     const clip = clipToDownload.value;
     downloadStarting.value = true;
@@ -1581,6 +1703,19 @@
     background-color: #dc2626;
   }
 
+  .streamvods-recent__avatar-badge--tokend {
+    background-color: #000000;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .streamvods-recent__avatar-badge--tokend img {
+    width: 100%;
+    height: 100%;
+    filter: none;
+    object-fit: cover;
+  }
+
   .streamvods-recent__info {
     flex: 1;
     min-width: 0;
@@ -1671,6 +1806,12 @@
     background-color: #dc2626;
   }
 
+  .streamvods-search__platform--tokend {
+    background-color: #000000;
+    padding: 0;
+    overflow: hidden;
+  }
+
   .streamvods-search__platform-icon {
     width: 12px;
     height: 12px;
@@ -1679,6 +1820,13 @@
 
   .streamvods-search__platform-icon--dark {
     filter: brightness(0);
+  }
+
+  .streamvods-search__platform-icon--tokend {
+    width: 100%;
+    height: 100%;
+    filter: none;
+    object-fit: cover;
   }
 
   .streamvods-search__input {
@@ -1899,6 +2047,16 @@
   .vod-card__badge--youtube {
     background-color: rgba(220, 38, 38, 0.3);
     color: #fca5a5;
+  }
+
+  .vod-card__badge--tokend {
+    background-color: rgba(0, 229, 255, 0.18);
+    color: #00e5ff;
+  }
+
+  .vod-card__badge--tokend .vod-card__badge-icon {
+    filter: none;
+    border-radius: 20%;
   }
 
   .vod-card__badge--duration {
