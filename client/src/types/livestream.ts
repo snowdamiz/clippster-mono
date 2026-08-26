@@ -1,4 +1,11 @@
-export type SupportedLivestreamPlatform = 'PumpFun' | 'YouTube' | 'Twitch' | 'Kick' | 'Rumble' | 'Twitter';
+export type SupportedLivestreamPlatform =
+  | 'PumpFun'
+  | 'YouTube'
+  | 'Twitch'
+  | 'Kick'
+  | 'Rumble'
+  | 'Twitter'
+  | 'Tokend';
 export type LivestreamMonitoringMode = 'record' | 'realtime-detect';
 
 export interface MonitoredStreamer {

@@ -135,9 +135,9 @@ pub async fn download_youtube_audio(
     let output_file_str = output_file.to_string_lossy().to_string();
     let title_clone = title.clone();
     let vod_url_clone = vod_url.clone();
-    let channel_name_clone = channel_name.clone();
     let ytdlp_path_clone = ytdlp_path.clone();
     let ffmpeg_path_clone = ffmpeg_path.clone();
+    let _ = channel_name; // retained for Tauri command signature / caller channel label
 
     // Send initial progress
     let _ = app.emit("download-progress", DownloadProgress {
@@ -157,11 +157,7 @@ pub async fn download_youtube_audio(
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| ffmpeg_path.clone());
 
-        let media_url = if channel_name_clone == "twitter_space" {
-            vod_url.clone()
-        } else {
-            crate::youtube::normalize_youtube_media_url(&vod_url)
-        };
+        let media_url = crate::youtube::normalize_youtube_media_url(&vod_url);
         let media_url_for_thumb = media_url.clone();
         cmd.arg(&media_url)
             .arg("-o").arg(&output_file_str)
@@ -175,11 +171,7 @@ pub async fn download_youtube_audio(
             .arg("--progress")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        if channel_name_clone != "twitter_space" {
-            crate::youtube::apply_youtube_media_download_args(&mut cmd);
-        } else {
-            cmd.arg("--impersonate").arg("chrome");
-        }
+        crate::youtube::apply_youtube_media_download_args(&mut cmd);
         
         let mut child = match cmd.spawn() {
             Ok(c) => c,
@@ -348,19 +340,12 @@ pub async fn download_youtube_audio(
                             }
                         };
                         
-                        // Determine platform based on channel_name
-                        let platform = if channel_name_clone == "twitter_space" {
-                            "Twitter".to_string()
-                        } else {
-                            "YouTube".to_string()
-                        };
-                        
                         let _ = app_clone.emit("download-complete", DownloadResult {
                             download_id: download_id_clone,
                             success: true,
                             file_path: Some(output_file_str),
                             title: Some(title_clone.clone()),
-                            platform: Some(platform),
+                            platform: Some("YouTube".to_string()),
                             source_url: Some(vod_url_clone.clone()),
                             duration: metadata.as_ref().and_then(|m| m.duration),
                             file_size,
@@ -384,11 +369,7 @@ pub async fn download_youtube_audio(
                         } else {
                             error_msg
                         };
-                        let failure_platform = if channel_name_clone == "twitter_space" {
-                            "Twitter".to_string()
-                        } else {
-                            "YouTube".to_string()
-                        };
+                        let failure_platform = "YouTube".to_string();
                         let _ = app_clone.emit("download-complete", DownloadResult {
                             download_id: download_id_clone,
                             success: false,
@@ -411,11 +392,7 @@ pub async fn download_youtube_audio(
                 let _ = stdout_task.abort();
                 let _ = stderr_task.abort();
                 cleanup_download();
-                let cancel_platform = if channel_name_clone == "twitter_space" {
-                    "Twitter".to_string()
-                } else {
-                    "YouTube".to_string()
-                };
+                let cancel_platform = "YouTube".to_string();
                 let _ = app_clone.emit("download-complete", DownloadResult {
                     download_id: download_id_clone,
                     success: false,
@@ -435,18 +412,6 @@ pub async fn download_youtube_audio(
     });
 
     Ok(())
-}
-
-/// Download audio from Twitter/X Space
-#[tauri::command]
-pub async fn download_twitter_space_audio(
-    app: tauri::AppHandle,
-    download_id: String,
-    title: String,
-    space_url: String,
-) -> Result<(), String> {
-    // Twitter Spaces use the same yt-dlp approach
-    download_youtube_audio(app, download_id, title, space_url, "twitter_space".to_string()).await
 }
 
 struct AudioMetadata {

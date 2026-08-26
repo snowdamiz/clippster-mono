@@ -38,4 +38,3 @@ export * from './vod-presets';
 export * from './user-preferences';
 export * from './downloaded-audio';
 export * from './audio-playlists';
-export * from './downloaded-space-metadata';

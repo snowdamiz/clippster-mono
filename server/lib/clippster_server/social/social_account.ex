@@ -11,7 +11,7 @@ defmodule ClippsterServer.Social.SocialAccount do
   alias ClippsterServer.Social.{SocialAccountAssignment, PostSubmission, TokenEncryption}
 
   @known_platforms ~w(
-    instagram facebook x twitter tiktok tiktok_business youtube linkedin threads pinterest bluesky
+    instagram facebook x twitter tiktok tiktok_business youtube linkedin threads pinterest bluesky tokend
   )
 
   schema "organization_social_accounts" do

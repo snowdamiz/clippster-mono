@@ -25,6 +25,7 @@ defmodule ClippsterServer.Campaigns do
   alias ClippsterServer.Campaigns.CampaignSubmissionAnalytics
 
   alias ClippsterServer.Social.Providers.PostForMe
+  alias ClippsterServer.Tokend.AccountTokens
 
   # ============================================================================
   # Campaign CRUD
@@ -1686,6 +1687,10 @@ defmodule ClippsterServer.Campaigns do
     end
   end
 
+  defp disconnect_provider_account(%ClipperSocialAccount{provider: "tokend"} = account) do
+    AccountTokens.best_effort_revoke(account)
+  end
+
   defp disconnect_provider_account(_), do: :ok
 
   @doc """
@@ -1929,11 +1934,13 @@ defmodule ClippsterServer.Campaigns do
     one_hour_ago = DateTime.utc_now() |> DateTime.add(-3600, :second)
 
     from(p in UserPost,
+      join: a in assoc(p, :clipper_social_account),
       where: p.status == "published",
+      where: a.provider == "post_for_me",
       where: is_nil(p.synced_at) or p.synced_at < ^one_hour_ago,
       order_by: [asc: p.synced_at],
       limit: ^limit,
-      preload: [:clipper_social_account]
+      preload: [clipper_social_account: a]
     )
     |> Repo.all()
   end

@@ -29,8 +29,9 @@ export interface SocialAccountAssignment {
 
 export interface SocialAccount {
   id: number;
-  platform: 'instagram' | 'tiktok' | 'twitter' | 'x' | 'youtube' | 'YouTube';
+  platform: 'instagram' | 'tiktok' | 'twitter' | 'x' | 'youtube' | 'YouTube' | 'tokend';
   platform_user_id: string;
+  provider?: string | null;
   provider_account_id?: string | null;
   username: string;
   display_name: string | null;

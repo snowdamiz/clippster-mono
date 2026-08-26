@@ -12,6 +12,7 @@ import { ensureShortVideoAutoClip } from '@/services/database/auto-clips';
 import { generateId } from '@/services/database';
 import { trackEvent } from '@/services/analytics';
 import { useToast } from '@/composables/useToast';
+import { fetchTokendCapabilities, TOKEND_UNAVAILABLE_MESSAGES } from '@/services/tokend';
 
 // Event emitter for download completion notifications
 const completionCallbacks = new Set<(download: ActiveDownload) => void>();
@@ -57,7 +58,7 @@ export interface ActiveDownload {
   // Project grouping
   projectId?: string;
   parentProjectId?: string;
-  provider?: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter';
+  provider?: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter' | 'tokend';
   groupId?: string;
   totalSegments?: number;
   currentSegmentIndex?: number;
@@ -517,7 +518,7 @@ export function useDownloads() {
     options: {
       autoSegment?: boolean;
       segmentDuration?: number;
-      provider?: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter';
+      provider?: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter' | 'tokend';
       // Watermark settings from creator profile (stored with project for automatic application)
       creatorWatermarkSettings?: {
         watermarkId: string;
@@ -528,6 +529,16 @@ export function useDownloads() {
       applyCreatorClipLayout?: boolean;
     } = {}
   ): Promise<string> {
+    const provider = options.provider || 'pumpfun';
+    if (provider === 'tokend') {
+      const capabilities = await fetchTokendCapabilities().catch(() => null);
+      if (!capabilities?.download) {
+        throw new Error(TOKEND_UNAVAILABLE_MESSAGES.download);
+      }
+    }
+
+    await initialize();
+
     // Free tier: 2 VOD downloads/day limit
     const { useAuthStore } = await import('@/stores/auth');
     const _authStore = useAuthStore();
@@ -546,10 +557,6 @@ export function useDownloads() {
       }
       await recordUsage(String(_user.id), 'vod_download');
     }
-
-    await initialize();
-
-    const provider = options.provider || 'pumpfun';
 
     // If this is a full stream download and we have duration info, check if we need auto-segmentation
     const shouldAutoSegment = options.autoSegment === true; // Default to false, only segment if explicitly requested
@@ -863,7 +870,7 @@ export function useDownloads() {
     sourceClipId: string,
     totalDuration: number,
     maxSegmentDuration: number = 3600,
-    provider: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter' = 'pumpfun',
+    provider: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter' | 'tokend' = 'pumpfun',
     creatorWatermarkSettings?: { watermarkId: string; watermarkSettings: string },
     creatorProfileId?: string,
     applyCreatorClipLayout?: boolean

@@ -10,7 +10,7 @@ defmodule ClippsterServer.Campaigns.ClipperSocialAccount do
   alias ClippsterServer.Social.TokenEncryption
 
   @known_platforms ~w(
-    instagram facebook x twitter tiktok tiktok_business youtube linkedin threads pinterest bluesky
+    instagram facebook x twitter tiktok tiktok_business youtube linkedin threads pinterest bluesky tokend
   )
 
   schema "clipper_social_accounts" do

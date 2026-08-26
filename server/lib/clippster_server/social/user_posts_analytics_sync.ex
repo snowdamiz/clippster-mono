@@ -348,8 +348,12 @@ defmodule ClippsterServer.Social.UserPostsAnalyticsSync do
   defp account_for_posts(account_id, posts, accounts_by_id, accounts)
        when is_integer(account_id) do
     case Map.get(accounts_by_id, account_id) do
-      %{provider_account_id: id, is_active: true} = account when is_binary(id) -> account
-      _ -> fallback_account_by_platform(posts, accounts)
+      %{provider: "post_for_me", provider_account_id: id, is_active: true} = account
+      when is_binary(id) ->
+        account
+
+      _ ->
+        fallback_account_by_platform(posts, accounts)
     end
   end
 
@@ -362,7 +366,7 @@ defmodule ClippsterServer.Social.UserPostsAnalyticsSync do
 
     Enum.find(accounts, fn acc ->
       normalize_platform(acc.platform) == platform && acc.is_active &&
-        is_binary(acc.provider_account_id)
+        acc.provider == "post_for_me" && is_binary(acc.provider_account_id)
     end)
   end
 
@@ -378,6 +382,10 @@ defmodule ClippsterServer.Social.UserPostsAnalyticsSync do
   end
 
   defp sync_post_submission(%PostSubmission{organization_social_account: nil}), do: :ok
+
+  defp sync_post_submission(%PostSubmission{organization_social_account: %{provider: provider}})
+       when provider != "post_for_me",
+       do: :ok
 
   defp sync_post_submission(%PostSubmission{organization_social_account: account} = submission) do
     provider_account_id = account.provider_account_id
