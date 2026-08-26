@@ -9,6 +9,7 @@ import { useElementSelection } from "../../composables/timeline/element/useEleme
 import { useBrandingConfig } from "../../composables/useBrandingConfig";
 import { useImageMode } from "../../composables/useImageMode";
 import { useImageEditorTools } from "../../composables/useImageEditorTools";
+import { blitScratchToOverlay, useImageRasterPaint } from "../../composables/useImageRasterPaint";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
 import type { RootNode } from "../../renderer/nodes/root-node";
 import { getRenderFrame } from "../../renderer/frame-policy";
@@ -45,8 +46,16 @@ const { isCropMode, activeSocialOverlay, viewportZoom, previewQuality, fitMode }
 const { selectedElements, clearElementSelection } = useElementSelection();
 const { isImageMode } = useImageMode();
 const { activeTool, setSelection, marqueeDraft, fillColor, setTool } = useImageEditorTools();
+const {
+	scratchCanvas,
+	paintPreviewActive,
+	startStroke,
+	continueStroke,
+	endStroke,
+} = useImageRasterPaint();
 const showSafeZones = ref(true);
 const marqueeDrag = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+const paintOverlayRef = ref<HTMLCanvasElement | null>(null);
 
 const containerRef = ref<HTMLDivElement | null>(null);
 
@@ -676,8 +685,34 @@ function onCanvasPointerDown(event: PointerEvent) {
 	}
 
 	if (activeTool.value === "hand") {
-		// Hand: clear selection so drag doesn't move layers; pan is via scroll container
 		clearElementSelection();
+		return;
+	}
+
+	if (activeTool.value === "brush" || activeTool.value === "eraser") {
+		event.preventDefault();
+		event.stopPropagation();
+		const canvas = canvasRef.value;
+		if (!canvas) return;
+		if (!startStroke(event, canvas)) return;
+
+		const onMove = (e: PointerEvent) => {
+			continueStroke(e, canvas);
+			if (scratchCanvas.value && paintOverlayRef.value) {
+				blitScratchToOverlay(scratchCanvas.value, paintOverlayRef.value);
+			}
+		};
+		const onUp = async () => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			await endStroke(selectedElements.value);
+			if (paintOverlayRef.value) {
+				const ctx = paintOverlayRef.value.getContext("2d");
+				if (ctx) ctx.clearRect(0, 0, paintOverlayRef.value.width, paintOverlayRef.value.height);
+			}
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
 		return;
 	}
 
@@ -1124,7 +1159,9 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					transform: viewportZoom !== 1 ? `scale(${viewportZoom})` : undefined,
 					transformOrigin: 'center center',
 					cursor:
-						isImageMode && activeTool === 'marquee-rect'
+						isImageMode && (activeTool === 'brush' || activeTool === 'eraser')
+							? 'crosshair'
+							: isImageMode && activeTool === 'marquee-rect'
 							? 'crosshair'
 							: isImageMode && activeTool === 'hand'
 								? 'grab'
@@ -1183,6 +1220,14 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					/>
 					<span class="absolute bottom-[3.5%] right-[2.5%] text-[9px] font-medium text-amber-300/70">TIME</span>
 				</div>
+				<!-- Live brush/eraser stroke preview -->
+				<canvas
+					v-if="isImageMode && paintPreviewActive"
+					ref="paintOverlayRef"
+					:width="projectWidth"
+					:height="projectHeight"
+					class="pointer-events-none absolute inset-0 z-[15] h-full w-full"
+				/>
 				<!-- Marquee selection overlay -->
 				<div
 					v-if="isImageMode && liveMarqueeStyle"

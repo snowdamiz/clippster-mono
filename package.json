@@ -16,6 +16,7 @@
     "setup:binaries": "node scripts/setup-binaries.mjs",
     "dev": "node scripts/dev-setup.mjs && concurrently \"yarn server\" \"yarn tauri\" \"yarn landing\" --names \"server,client,landing\" --prefix-colors \"blue,magenta,cyan\"",
     "prepare": "husky",
+    "postinstall": "patch-package && node scripts/setup-ffmpeg-headers.mjs && node node_modules/ffmpeg-expo/scripts/postinstall.js",
     "format": "cd client && prettier --write \"src/**/*.{vue,js,ts,json,css,scss,md}\"",
     "format:check": "cd client && prettier --check \"src/**/*.{vue,js,ts,json,css,scss,md}\"",
     "format:all": "prettier --write \"client/**/*.{vue,js,ts,json,css,scss,md}\"",
@@ -39,7 +40,9 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.2.6",
     "magic-string": "^0.30.17",
+    "patch-package": "^8.0.1",
     "postcss": "^8.5.6",
+    "postinstall-postinstall": "^2.1.0",
     "prettier": "^3.6.2",
     "prettier-plugin-vue": "^1.1.6"
   },

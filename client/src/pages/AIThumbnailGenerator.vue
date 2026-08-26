@@ -95,12 +95,6 @@
               <span class="badge bg-purple-500/20 text-purple-300">{{ formatStatus(status) }}</span>
             </div>
             <div class="flex items-center gap-3">
-              <RefinementBadge
-                v-if="isGenerated"
-                :round="refinementRound"
-                :max-rounds="maxRefinementRounds"
-                :messages-remaining="refinementMessagesRemaining"
-              />
               <div class="flex rounded-lg border border-white/10 p-0.5">
                 <button
                   v-for="m in modeOptions"
@@ -118,7 +112,7 @@
           </header>
 
           <div class="flex min-h-0 flex-1">
-            <aside class="flex w-[420px] shrink-0 flex-col border-r border-white/10 bg-zinc-950/80">
+            <aside class="flex w-[420px] shrink-0 flex-col min-h-0 border-r border-white/10 bg-zinc-950/80">
               <div class="space-y-3 border-b border-white/10 p-3">
                 <div class="flex items-center justify-between gap-2">
                   <p class="section-label">Video context</p>
@@ -235,54 +229,29 @@
                 </div>
               </div>
 
-              <div ref="messagesEl" class="custom-scrollbar flex-1 space-y-3 overflow-y-auto p-3">
-                <div v-if="!messages.length" class="rounded-lg border border-dashed border-white/10 p-4 text-center text-sm text-zinc-500">
-                  Describe the thumbnail you want — hook, emotion, text, layout.
-                </div>
-                <div
-                  v-for="msg in messages"
-                  :key="msg.id"
-                  class="rounded-lg px-3 py-2 text-sm leading-relaxed"
-                  :class="msgBubbleClass(msg.role)"
-                >
-                  <p class="whitespace-pre-wrap">{{ msg.content }}</p>
-                </div>
-                <div v-if="isSending || isRefining || isGenerating" class="flex items-center gap-2 text-xs text-zinc-500">
-                  <Loader2 :size="14" class="animate-spin" />
-                  {{ isGenerating ? 'Generating…' : isRefining ? 'Refining…' : 'Thinking…' }}
-                </div>
-                <p v-if="error" class="rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-400">{{ error }}</p>
-              </div>
-
-              <div class="space-y-2 border-t border-white/10 p-3">
-                <button
-                  v-if="readyToGenerate && isDiscovery"
-                  type="button"
-                  class="btn-purple w-full py-2.5"
-                  :disabled="isGenerating"
-                  @click="runGenerate"
-                >
-                  <Sparkles :size="16" />
-                  Generate {{ generationMode === 'quick' ? 'Quick' : 'Editable' }} Thumbnail
-                </button>
-                <div class="flex gap-2">
-                  <textarea
-                    v-model="draft"
-                    rows="2"
-                    class="field-input flex-1 resize-none"
-                    :placeholder="isGenerated ? 'Describe a refinement…' : 'Message the assistant…'"
-                    :disabled="isSending || isRefining || isCompleted"
-                    @keydown.enter.exact.prevent="submitChat"
-                  />
-                  <button
-                    type="button"
-                    class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-zinc-200 hover:bg-purple-600 disabled:opacity-40"
-                    :disabled="!draft.trim() || isSending || isRefining || isCompleted"
-                    @click="submitChat"
-                  >
-                    <Send :size="16" />
-                  </button>
-                </div>
+              <div class="flex min-h-0 flex-1 flex-col">
+                <ThumbnailChatPanel
+                  :messages="messages"
+                  :is-sending="isSending"
+                  :is-generating="isGenerating"
+                  :is-refining="isRefining"
+                  :is-refinement-mode="isGenerated"
+                  :is-discovery="isDiscovery"
+                  :ready-to-generate="readyToGenerate"
+                  :generation-mode="generationMode"
+                  :is-completed="isCompleted"
+                  :refinement-round="refinementRound"
+                  :max-refinement-rounds="maxRefinementRounds"
+                  :refinement-messages-remaining="refinementMessagesRemaining"
+                  :error="error"
+                  :draft-message="draft"
+                  :attached-video-name="attachedVideo?.name"
+                  :key-frame-count="attachedKeyFrames.length"
+                  @send="handleChatSend"
+                  @update:draft-message="draft = $event"
+                  @clear-error="clearError"
+                  @generate="runGenerate"
+                />
               </div>
             </aside>
 
@@ -491,15 +460,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import {
-  ImagePlus, Plus, Play, Trash2, ArrowLeft, Loader2, Send, Sparkles,
+  ImagePlus, Plus, Play, Trash2, ArrowLeft, Loader2, Sparkles,
   Check, Upload, ClipboardPaste, ExternalLink, Film,
 } from 'lucide-vue-next';
 import PageLayout from '@/components/PageLayout.vue';
-import RefinementBadge from '@/components/ai-video/RefinementBadge.vue';
 import ThumbnailVideoPicker from '@/components/ai-thumbnail/ThumbnailVideoPicker.vue';
+import ThumbnailChatPanel from '@/components/ai-thumbnail/ThumbnailChatPanel.vue';
 import { useAIThumbnailSession } from '@/composables/useAIThumbnailSession';
 import { acceptQuickThumbnail, acceptEditableThumbnail, composeEditableFeedPreview } from '@/services/thumbnailRecipeAssemble';
 import type { ThumbnailGenerationMode, ThumbnailSessionSummary } from '@/services/aiThumbnailApi';
@@ -517,6 +486,7 @@ const {
   refinementRound, maxRefinementRounds, refinementMessagesRemaining, readyToGenerate,
   listSessions, createSession, loadSession, deleteSession, renameSession,
   setMode, updateMedia, setReference, sendMessage, generate, refine, accept, closeSession,
+  clearError,
 } = useAIThumbnailSession();
 
 const sessions = ref<ThumbnailSessionSummary[]>([]);
@@ -537,7 +507,6 @@ const keyFramesInput = ref('');
 const referenceUrl = ref('');
 const selectedCandidateIndex = ref(0);
 const editorProjectId = ref<number | null>(null);
-const messagesEl = ref<HTMLElement | null>(null);
 const editableFeedPreviewUrl = ref<string | null>(null);
 const isBuildingFeedPreview = ref(false);
 
@@ -563,11 +532,6 @@ const recipeShapeLayers = computed(() => {
 });
 
 onMounted(() => void loadHome());
-
-watch(messages, async () => {
-  await nextTick();
-  if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
-}, { deep: true });
 
 watch(
   () => [session.value?.plate_url, session.value?.recipe, session.value?.generation_mode] as const,
@@ -799,10 +763,7 @@ function readAsDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-async function submitChat() {
-  const text = draft.value.trim();
-  if (!text) return;
-  draft.value = '';
+async function handleChatSend(text: string) {
   if (isGenerated.value) await refine(text);
   else await sendMessage(text);
 }
@@ -865,11 +826,6 @@ function shapeMeta(shape: Record<string, unknown>) {
   const fill = shape.fill || shape.color || '#FF6B00';
   const opacity = shape.opacity ?? 1;
   return `${type} · ${fill} · ${Math.round(Number(opacity) * 100)}% opacity`;
-}
-function msgBubbleClass(role: string) {
-  if (role === 'user') return 'ml-6 bg-purple-600/20 text-zinc-100';
-  if (role === 'assistant') return 'mr-4 bg-zinc-800/80 text-zinc-200';
-  return 'bg-amber-500/10 text-amber-200/80';
 }
 function formatStatus(s: string) {
   return ({ discovery: 'Planning', generating: 'Generating', generated: 'Ready', refining: 'Refining', completed: 'Completed' } as Record<string, string>)[s] || s;

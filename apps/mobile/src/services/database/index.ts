@@ -1,6 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { LATEST_SCHEMA_VERSION, MIGRATIONS } from '@clippster/sqlite-schema';
+import { APP_METADATA_TABLE_SQL, LATEST_SCHEMA_VERSION, MIGRATIONS } from '@clippster/sqlite-schema';
 import type { Project } from '@clippster/shared-types';
 
 const DB_NAME = 'clippster_mobile.db';
@@ -49,6 +49,8 @@ export async function initDatabase(openDatabase: () => SQLiteDatabase): Promise<
 
   const db = openDatabase();
   dbInstance = db;
+
+  await db.execAsync(APP_METADATA_TABLE_SQL);
 
   const currentVersion = await getSchemaVersion(db);
   const pending = MIGRATIONS.filter((migration) => migration.version > currentVersion);

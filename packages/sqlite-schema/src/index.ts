@@ -4,6 +4,12 @@ export interface SqlMigration {
   sql: string;
 }
 
+/** Required before reading/writing schema_version during incremental migrations. */
+export const APP_METADATA_TABLE_SQL = `CREATE TABLE IF NOT EXISTS app_metadata (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);`;
+
 export const MIGRATIONS: SqlMigration[] = [
   {
     version: 1,

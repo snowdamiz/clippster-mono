@@ -202,6 +202,10 @@ export function useAIThumbnailSession() {
     error.value = null;
   }
 
+  function clearError() {
+    error.value = null;
+  }
+
   return {
     session,
     messages,
@@ -237,5 +241,6 @@ export function useAIThumbnailSession() {
     refine,
     accept,
     closeSession,
+    clearError,
   };
 }

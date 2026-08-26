@@ -199,3 +199,13 @@ export function attachImageDocumentToSettings<T extends Record<string, unknown>>
 ): T & { [IMAGE_DOCUMENT_KEY]: ImageDocument } {
 	return { ...settings, [IMAGE_DOCUMENT_KEY]: doc };
 }
+
+/** Append a named history entry (metadata for crash-safe audit trail; full undo stays in CommandManager). */
+export function pushImageHistoryEntry(doc: ImageDocument, entry: PixelHistoryEntry): ImageDocument {
+	const history = [...doc.history, entry].slice(-64);
+	return {
+		...doc,
+		history,
+		historyIndex: history.length - 1,
+	};
+}

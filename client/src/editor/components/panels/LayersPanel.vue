@@ -16,6 +16,7 @@ import {
 	Wand2,
 	ChevronUp,
 	ChevronDown,
+	ChevronRight,
 	Layers,
 	Copy,
 } from "lucide-vue-next";
@@ -40,6 +41,7 @@ const BLEND_MODES: BlendMode[] = [
 
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
+const collapsedLayerGroups = ref<Set<string>>(new Set());
 
 interface LayerRow {
 	elementId: string;
@@ -152,6 +154,46 @@ const groupedLayers = computed(() => {
 	}
 	return groups;
 });
+
+function splitTrackLayers(layers: LayerRow[]) {
+	const ungrouped = layers.filter((l) => !l.groupId);
+	const groupIds = [...new Set(layers.filter((l) => l.groupId).map((l) => l.groupId!))];
+	const clusters = groupIds.map((groupId) => ({
+		groupId,
+		layers: layers.filter((l) => l.groupId === groupId),
+	}));
+	return { ungrouped, clusters };
+}
+
+function isGroupCollapsed(groupId: string) {
+	return collapsedLayerGroups.value.has(groupId);
+}
+
+function toggleLayerGroupCollapse(groupId: string) {
+	const next = new Set(collapsedLayerGroups.value);
+	if (next.has(groupId)) next.delete(groupId);
+	else next.add(groupId);
+	collapsedLayerGroups.value = next;
+}
+
+function displayTrackLayers(layers: LayerRow[]) {
+	const { ungrouped, clusters } = splitTrackLayers(layers);
+	const out: Array<
+		{ kind: "group-header"; groupId: string; count: number } | { kind: "layer"; layer: LayerRow }
+	> = [];
+	for (const layer of ungrouped) {
+		out.push({ kind: "layer", layer });
+	}
+	for (const cluster of clusters) {
+		out.push({ kind: "group-header", groupId: cluster.groupId, count: cluster.layers.length });
+		if (!isGroupCollapsed(cluster.groupId)) {
+			for (const layer of cluster.layers) {
+				out.push({ kind: "layer", layer });
+			}
+		}
+	}
+	return out;
+}
 
 const selectedLayer = computed(() => allElements.value.find((el) => el.selected) ?? null);
 
@@ -357,63 +399,73 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 							<Unlock v-else class="size-2.5" />
 						</button>
 					</div>
-					<div
-						v-for="el in group.layers"
-						:key="el.elementId"
-						:class="[
-							'group flex w-full items-center gap-1.5 px-2 py-[5px] text-left transition-colors',
-							el.selected
-								? 'bg-blue-500/10 border-l-2 border-blue-500'
-								: 'border-l-2 border-transparent hover:bg-white/[0.03]',
-							el.hidden ? 'opacity-50' : '',
-						]"
-					>
+					<template v-for="item in displayTrackLayers(group.layers)" :key="item.kind === 'layer' ? item.layer.elementId : `hdr-${item.groupId}`">
+						<button
+							v-if="item.kind === 'group-header'"
+							type="button"
+							class="flex w-full items-center gap-1 px-2 py-1 text-left text-[10px] text-blue-300/90 hover:bg-white/[0.03]"
+							@click="toggleLayerGroupCollapse(item.groupId)"
+						>
+							<ChevronRight v-if="isGroupCollapsed(item.groupId)" class="size-3 shrink-0" />
+							<ChevronDown v-else class="size-3 shrink-0" />
+							<span class="truncate">Group · {{ item.count }} layers</span>
+						</button>
+						<div
+							v-else
+							:class="[
+								'group flex w-full items-center gap-1.5 px-2 py-[5px] text-left transition-colors',
+								item.layer.selected
+									? 'bg-blue-500/10 border-l-2 border-blue-500'
+									: 'border-l-2 border-transparent hover:bg-white/[0.03]',
+								item.layer.hidden ? 'opacity-50' : '',
+							]"
+						>
 					<button
 						type="button"
 						class="shrink-0 rounded p-0.5 text-zinc-600 hover:text-zinc-300"
-						:title="el.hidden ? 'Show' : 'Hide'"
-						@click.stop="handleToggleVisibility(el.trackId, el.elementId)"
+						:title="item.layer.hidden ? 'Show' : 'Hide'"
+						@click.stop="handleToggleVisibility(item.layer.trackId, item.layer.elementId)"
 					>
-						<EyeOff v-if="el.hidden" class="size-3" />
+						<EyeOff v-if="item.layer.hidden" class="size-3" />
 						<Eye v-else class="size-3" />
 					</button>
 					<button
 						type="button"
 						class="shrink-0 rounded p-0.5 text-zinc-600 hover:text-zinc-300"
-						:title="el.locked ? 'Unlock' : 'Lock'"
-						@click.stop="handleToggleElementLock(el.trackId, el.elementId, el.type, el.locked)"
+						:title="item.layer.locked ? 'Unlock' : 'Lock'"
+						@click.stop="handleToggleElementLock(item.layer.trackId, item.layer.elementId, item.layer.type, item.layer.locked)"
 					>
-						<Lock v-if="el.locked" class="size-3" />
+						<Lock v-if="item.layer.locked" class="size-3" />
 						<Unlock v-else class="size-3" />
 					</button>
 
 					<button
 						type="button"
 						class="flex min-w-0 flex-1 items-center gap-1.5"
-						@click="handleSelect(el.trackId, el.elementId)"
-						@dblclick="startRename(el)"
+						@click="handleSelect(item.layer.trackId, item.layer.elementId)"
+						@dblclick="startRename(item.layer)"
 					>
 						<component
-							:is="getTypeIcon(el.type)"
-							:class="['size-3.5 shrink-0', el.selected ? 'text-blue-400' : getTypeColor(el.type)]"
+							:is="getTypeIcon(item.layer.type)"
+							:class="['size-3.5 shrink-0', item.layer.selected ? 'text-blue-400' : getTypeColor(item.layer.type)]"
 						/>
 						<input
-							v-if="renamingId === el.elementId"
+							v-if="renamingId === item.layer.elementId"
 							v-model="renameValue"
 							class="min-w-0 flex-1 rounded bg-zinc-800 px-1 text-[11px] text-zinc-100 outline-none"
 							@click.stop
-							@keydown.enter="commitRename(el.trackId, el.elementId, el.type)"
+							@keydown.enter="commitRename(item.layer.trackId, item.layer.elementId, item.layer.type)"
 							@keydown.escape="renamingId = null"
-							@blur="commitRename(el.trackId, el.elementId, el.type)"
+							@blur="commitRename(item.layer.trackId, item.layer.elementId, item.layer.type)"
 						/>
 						<span
 							v-else
 							:class="[
 								'min-w-0 flex-1 truncate text-[11px]',
-								el.selected ? 'text-zinc-200' : 'text-zinc-400',
+								item.layer.selected ? 'text-zinc-200' : 'text-zinc-400',
 							]"
 						>
-							{{ el.name }}
+							{{ item.layer.name }}
 						</span>
 					</button>
 
@@ -422,7 +474,7 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 							type="button"
 							class="rounded p-0.5 text-zinc-600 hover:text-zinc-300"
 							title="Move up"
-							@click.stop="handleMove(el.trackId, 'up', el.elementId)"
+							@click.stop="handleMove(item.layer.trackId, 'up', item.layer.elementId)"
 						>
 							<ChevronUp class="size-3" />
 						</button>
@@ -430,7 +482,7 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 							type="button"
 							class="rounded p-0.5 text-zinc-600 hover:text-zinc-300"
 							title="Move down"
-							@click.stop="handleMove(el.trackId, 'down', el.elementId)"
+							@click.stop="handleMove(item.layer.trackId, 'down', item.layer.elementId)"
 						>
 							<ChevronDown class="size-3" />
 						</button>
@@ -438,7 +490,7 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 							type="button"
 							class="rounded p-0.5 text-zinc-600 hover:text-zinc-300"
 							title="Duplicate"
-							@click.stop="handleDuplicate(el.trackId, el.elementId)"
+							@click.stop="handleDuplicate(item.layer.trackId, item.layer.elementId)"
 						>
 							<Copy class="size-3" />
 						</button>
@@ -446,12 +498,13 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 							type="button"
 							class="rounded p-0.5 text-zinc-600 hover:text-red-400"
 							title="Delete"
-							@click.stop="handleDelete(el.trackId, el.elementId)"
+							@click.stop="handleDelete(item.layer.trackId, item.layer.elementId)"
 						>
 							<Trash2 class="size-3" />
 						</button>
 						</div>
 					</div>
+					</template>
 				</div>
 			</div>
 		</div>

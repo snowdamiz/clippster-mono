@@ -2,6 +2,7 @@ import { Link, router } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ClippsterLogo } from '@/components/ClippsterLogo';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -34,7 +35,7 @@ export default function LoginScreen() {
       >
         <ScrollView contentContainerClassName="flex-grow justify-center px-6 py-8">
           <View className="mb-8 items-center">
-            <Text className="text-3xl font-bold text-foreground">Clippster</Text>
+            <ClippsterLogo />
             <Text className="mt-2 text-muted">Sign in to your account</Text>
           </View>
 
