@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { subscriptionStillCoversAccess } from '@/composables/useSubscription';
 import { featureFlags } from '@/composables/useFeatureFlags';
 import { canAccessAIVideo } from '@/utils/aiVideoAccess';
 
@@ -30,8 +31,7 @@ const router = createRouter({
           !user.created_by_organization_id &&
           !localStorage.getItem('has_selected_plan')
         ) {
-          const subStatus = (user as any).subscription?.status;
-          if (subStatus !== 'active' && subStatus !== 'cancelled') {
+          if (!subscriptionStillCoversAccess((user as any).subscription)) {
             console.log('[Router] Redirecting to billing (new user)');
             return '/billing?new_user=true';
           }
@@ -657,7 +657,7 @@ export function isOrgAccountOwner(
 
 // Helper to check if a user needs to select a plan (new user flow)
 function needsPlanSelection(
-  user?: { account_type?: string; owned_organization_id?: string | number | null; is_admin?: boolean; created_by_organization_id?: string | number | null; subscription?: { status?: string } } | null
+  user?: { account_type?: string; owned_organization_id?: string | number | null; is_admin?: boolean; created_by_organization_id?: string | number | null; subscription?: { status?: string; end_date?: string | null; days_remaining?: number } } | null
 ): boolean {
   if (!user) return false;
   if (user.is_admin) return false;
@@ -665,8 +665,7 @@ function needsPlanSelection(
   if (user.created_by_organization_id) return false;
   const hasSelectedPlan = localStorage.getItem('has_selected_plan');
   if (hasSelectedPlan) return false;
-  const subStatus = user.subscription?.status;
-  if (subStatus === 'active' || subStatus === 'cancelled') return false;
+  if (subscriptionStillCoversAccess(user.subscription)) return false;
   return true;
 }
 

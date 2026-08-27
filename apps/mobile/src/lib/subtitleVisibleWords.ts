@@ -47,6 +47,20 @@ export function getVisibleWordsAtTime(
   return words.slice(chunkStart, chunkStart + maxWords);
 }
 
+export function transcriptWordsFromRaw(rawJson: string | null | undefined): WordInfo[] {
+  if (!rawJson) return [];
+  try {
+    const parsed = JSON.parse(rawJson);
+    const words: WordInfo[] =
+      parsed.words ??
+      parsed.segments?.flatMap((s: { words?: WordInfo[] }) => s.words ?? []) ??
+      [];
+    return words.filter((w) => typeof w.word === 'string' && w.word.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
 export function transcriptWordsForClip(
   rawJson: string,
   clipStart: number,

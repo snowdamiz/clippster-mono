@@ -212,3 +212,37 @@ export async function getCompletedClipBuilds(limit = 50): Promise<ClipBuildRow[]
     [limit],
   );
 }
+
+export interface BuiltClipItem {
+  build: ClipBuildRow;
+  clipName: string;
+  projectId: string | null;
+  projectName: string | null;
+}
+
+export async function getCompletedClipBuildsWithDetails(limit = 50): Promise<BuiltClipItem[]> {
+  const db = getDatabase();
+  const builds = await getCompletedClipBuilds(limit);
+  const items: BuiltClipItem[] = [];
+
+  for (const build of builds) {
+    const clip = await getClipById(build.clip_id);
+    const projectId = clip?.project_id ?? null;
+    let projectName: string | null = null;
+    if (projectId) {
+      const project = await db.getFirstAsync<{ name: string }>(
+        'SELECT name FROM projects WHERE id = ?',
+        [projectId],
+      );
+      projectName = project?.name ?? null;
+    }
+    items.push({
+      build,
+      clipName: clip?.name ?? 'Untitled clip',
+      projectId,
+      projectName,
+    });
+  }
+
+  return items;
+}

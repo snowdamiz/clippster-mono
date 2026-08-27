@@ -9,6 +9,7 @@ import App from './App'
 import { PricingPage } from './pages/PricingPage'
 import { PrivacyPage } from './pages/PrivacyPage'
 import { TermsPage } from './pages/TermsPage'
+import { StripeReturnPage } from './pages/StripeReturnPage'
 import { ScrollToTop } from './components/ScrollToTop'
 import { LandingAnalyticsTracker } from './components/LandingAnalyticsTracker'
 import { AuthProvider } from './context/AuthContext'
@@ -118,6 +119,8 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="/pricing" element={<PricingPage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />
+                <Route path="/stripe-success" element={<StripeReturnPage kind="success" />} />
+                <Route path="/stripe-cancel" element={<StripeReturnPage kind="cancel" />} />
                 <Route path="/clippers/:slug" element={<ClipperPublicProfilePage />} />
                 <Route path="/orgs/:slug" element={<OrgPublicProfilePage />} />
 

@@ -30,6 +30,7 @@
   import { initClipBuildEventHandler, cleanupClipBuildEventHandler } from '@/services/clipBuildEventHandler';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
+  import { subscriptionStillCoversAccess } from '@/composables/useSubscription';
   import { useLivestreamStore } from '@/stores/livestream';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useAppUpdater } from '@/composables/useAppUpdater';
@@ -192,18 +193,18 @@
     if (authStore.user?.created_by_organization_id) return false;
     if (currentRoute.path === '/billing') return false;
 
-    const subscriptionStatus = (authStore.user as any)?.subscription?.status;
+    const userSubscription = (authStore.user as any)?.subscription;
+    const subscriptionStatus = userSubscription?.status;
     const hasSelectedPlan = localStorage.getItem('has_selected_plan');
 
     console.log('[App] Subscription gate check:', {
       subscriptionStatus,
       hasSelectedPlan,
-      userSubscription: (authStore.user as any)?.subscription,
+      userSubscription,
     });
 
-    // Users with active or cancelled subscriptions always bypass the gate
-    if (subscriptionStatus === 'active' || subscriptionStatus === 'cancelled') {
-      // Also set the flag so future checks are faster
+    // Active, or cancelled with time left in the paid period, bypass the gate
+    if (subscriptionStillCoversAccess(userSubscription)) {
       if (!hasSelectedPlan) {
         localStorage.setItem('has_selected_plan', 'true');
       }

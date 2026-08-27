@@ -180,6 +180,73 @@ export async function mergeAdjacentClipSegments(
   }
 }
 
+export async function updateClipTimeRange(
+  clipId: string,
+  startTime: number,
+  endTime: number,
+): Promise<void> {
+  const start = Math.min(startTime, endTime);
+  const end = Math.max(startTime, endTime);
+  const segments = await getClipSegmentsByClipId(clipId);
+
+  if (segments.length <= 1) {
+    await updateClipSegment(clipId, segments[0]?.segment_index ?? 0, start, end);
+  } else {
+    const first = segments[0];
+    const last = segments[segments.length - 1];
+    await updateClipSegment(
+      clipId,
+      first.segment_index ?? 0,
+      start,
+      Math.max(start + 0.5, first.end_time),
+    );
+    await updateClipSegment(
+      clipId,
+      last.segment_index ?? segments.length - 1,
+      Math.min(end - 0.5, last.start_time),
+      end,
+    );
+  }
+
+  await syncClipBoundsFromSegments(clipId);
+}
+
+export async function replaceClipSegments(
+  clipId: string,
+  ranges: Array<{ start_time: number; end_time: number; transcript?: string | null }>,
+): Promise<void> {
+  if (ranges.length === 0) {
+    throw new Error('At least one segment is required');
+  }
+
+  const versionId = await getCurrentVersionId(clipId);
+  const db = getDatabase();
+  const now = timestamp();
+
+  await db.runAsync('DELETE FROM clip_segments WHERE clip_version_id = ?', [versionId]);
+
+  for (const [index, range] of ranges.entries()) {
+    const duration = range.end_time - range.start_time;
+    await db.runAsync(
+      `INSERT INTO clip_segments (
+        id, clip_version_id, segment_index, start_time, end_time, duration, transcript, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        generateId(),
+        versionId,
+        index,
+        range.start_time,
+        range.end_time,
+        duration,
+        range.transcript ?? null,
+        now,
+      ],
+    );
+  }
+
+  await syncClipBoundsFromSegments(clipId);
+}
+
 export async function syncClipBoundsFromSegments(clipId: string): Promise<void> {
   const segments = await getClipSegmentsByClipId(clipId);
   if (segments.length === 0) return;

@@ -139,17 +139,21 @@ export {
   createTranscriptRecord,
   getTranscriptByProjectId,
   getClipsByProjectId,
+  getAllClips,
   persistDetectedClips,
+  addManualClip,
   deleteClipsByProjectId,
 } from './workspace';
 export {
   getClipSegmentsByClipId,
   getAdjacentClipSegments,
   updateClipSegment,
+  updateClipTimeRange,
   splitClipSegment,
   deleteClipSegment,
   mergeAdjacentClipSegments,
   syncClipBoundsFromSegments,
+  replaceClipSegments,
   segmentsToClipRelative,
   segmentsFromClipRelative,
 } from './clip-segments';
@@ -167,6 +171,8 @@ export {
   getClipBuildsByClipId,
   getClipBuildById,
   getCompletedClipBuilds,
+  getCompletedClipBuildsWithDetails,
+  type BuiltClipItem,
 } from './clips';
 export {
   getProjectVodPresetConfig,

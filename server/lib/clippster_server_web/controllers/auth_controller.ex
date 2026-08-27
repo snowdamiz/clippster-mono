@@ -450,8 +450,10 @@ defmodule ClippsterServerWeb.AuthController do
           IO.puts("Google OAuth Error: #{params["error"]}")
           send_auth_error_html(conn, params["error_description"] || params["error"], web_opts)
         else
+          callback_url = google_oauth_callback_url(web_opts)
+
           # Exchange code for tokens
-          case exchange_google_code(code) do
+          case exchange_google_code(code, callback_url) do
             {:ok, tokens} ->
               IO.puts("Token exchange successful")
 
@@ -571,12 +573,12 @@ defmodule ClippsterServerWeb.AuthController do
     send_auth_error_html(conn, error_msg, web_opts)
   end
 
-  defp exchange_google_code(code) do
+  defp exchange_google_code(code, callback_url) do
     # Get Google OAuth configuration - try config first, then env vars directly
     config = Application.get_env(:ueberauth, Ueberauth.Strategy.Google.OAuth, [])
     client_id = Keyword.get(config, :client_id) || System.get_env("GOOGLE_CLIENT_ID")
     client_secret = Keyword.get(config, :client_secret) || System.get_env("GOOGLE_CLIENT_SECRET")
-    callback_url = "#{ClippsterServerWeb.Endpoint.url()}/api/auth/google/callback"
+    callback_url = callback_url || default_google_oauth_callback_url()
 
     body =
       URI.encode_query(%{
@@ -660,6 +662,7 @@ defmodule ClippsterServerWeb.AuthController do
            invite: invite_mode,
            origin: origin,
            redirect_uri: Map.get(payload, "redirect_uri"),
+           oauth_callback_base: Map.get(payload, "oauth_callback_base"),
            referral_code: sanitize_referral_code(Map.get(payload, "referral_code")),
            invite_token: Map.get(payload, "invite_token"),
            switch_user_id: switch_user_id
@@ -690,12 +693,11 @@ defmodule ClippsterServerWeb.AuthController do
             created_by_organization_id: user.created_by_organization_id
           })
 
-        params =
-          URI.encode_query(%{
-            "token" => token,
-            "user" => user_json,
-            "is_new_user" => to_string(is_new_user)
-          })
+        params = %{
+          "token" => token,
+          "user" => user_json,
+          "is_new_user" => to_string(is_new_user)
+        }
 
         redirect(conn, external: OAuthCallbackTarget.append_query(safe_uri, params))
 
@@ -798,8 +800,7 @@ defmodule ClippsterServerWeb.AuthController do
        when is_binary(redirect_uri) do
     case OAuthCallbackTarget.normalize_mobile_redirect_uri(redirect_uri) do
       {:ok, safe_uri} ->
-        params = URI.encode_query(%{"error" => error_message})
-        redirect(conn, external: OAuthCallbackTarget.append_query(safe_uri, params))
+        redirect(conn, external: OAuthCallbackTarget.append_query(safe_uri, %{"error" => error_message}))
 
       {:error, _reason} ->
         conn
@@ -1024,14 +1025,24 @@ defmodule ClippsterServerWeb.AuthController do
     if is_nil(client_id) or client_id == "" do
       {:error, :not_configured}
     else
-      callback_url = "#{ClippsterServerWeb.Endpoint.url()}/api/auth/google/callback"
       web_mode = params["web"] == "true"
       mobile_mode = params["mobile"] == "true"
       invite_mode = params["redirect_mode"] == "invite"
       web_origin = params["origin"]
       mobile_redirect_uri = params["redirect_uri"]
+      mobile_oauth_callback_base = params["oauth_callback_base"]
       referral_code = sanitize_referral_code(params["referral_code"])
       invite_token = params["invite_token"]
+
+      google_callback_url =
+        if mobile_mode do
+          case resolve_mobile_google_callback_url(mobile_oauth_callback_base) do
+            {:ok, url} -> url
+            {:error, _reason} -> default_google_oauth_callback_url()
+          end
+        else
+          default_google_oauth_callback_url()
+        end
 
       target_origin =
         if web_mode and not mobile_mode do
@@ -1050,6 +1061,10 @@ defmodule ClippsterServerWeb.AuthController do
           "redirect_uri",
           if(mobile_mode, do: mobile_redirect_uri, else: nil)
         )
+        |> maybe_put_state_value(
+          "oauth_callback_base",
+          if(mobile_mode, do: mobile_oauth_callback_base, else: nil)
+        )
         |> maybe_put_state_value("origin", target_origin)
         |> maybe_put_state_value("referral_code", referral_code)
         |> maybe_put_state_value("invite", if(invite_mode, do: true, else: nil))
@@ -1065,7 +1080,7 @@ defmodule ClippsterServerWeb.AuthController do
         "https://accounts.google.com/o/oauth2/v2/auth?" <>
           URI.encode_query(%{
             "client_id" => client_id,
-            "redirect_uri" => callback_url,
+            "redirect_uri" => google_callback_url,
             "response_type" => "code",
             "scope" => "email profile",
             "state" => state_data,
@@ -1076,4 +1091,26 @@ defmodule ClippsterServerWeb.AuthController do
       {:ok, google_auth_url}
     end
   end
+
+  defp default_google_oauth_callback_url do
+    "#{ClippsterServerWeb.Endpoint.url()}/api/auth/google/callback"
+  end
+
+  defp resolve_mobile_google_callback_url(base) when is_binary(base) do
+    case OAuthCallbackTarget.normalize_mobile_oauth_callback_base(base) do
+      {:ok, origin} -> {:ok, origin <> "/api/auth/google/callback"}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp resolve_mobile_google_callback_url(_), do: {:error, :missing_callback_base}
+
+  defp google_oauth_callback_url(%{mobile: true, oauth_callback_base: base}) when is_binary(base) do
+    case resolve_mobile_google_callback_url(base) do
+      {:ok, url} -> url
+      {:error, _reason} -> default_google_oauth_callback_url()
+    end
+  end
+
+  defp google_oauth_callback_url(_web_opts), do: default_google_oauth_callback_url()
 end

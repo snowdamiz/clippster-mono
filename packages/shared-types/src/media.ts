@@ -41,6 +41,11 @@ export interface VodListItem {
   thumbnail_url: string | null;
   url: string | null;
   upload_date?: string | number | null;
+  /** Channel / uploader label shown in VOD card meta (desktop parity). */
+  uploader?: string | null;
+  views?: number | null;
+  /** Direct stream URL (HLS/mp4) for download — desktop uses playlistUrl, not the page URL. */
+  download_url?: string | null;
 }
 
 export interface ListVodsResponse {

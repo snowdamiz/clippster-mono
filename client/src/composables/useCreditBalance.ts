@@ -67,7 +67,12 @@ export function useCreditBalance() {
   // Computed: does user have a valid subscription?
   const hasValidSubscription = computed(() => {
     if (!subscriptionStatus.value) return false;
-    return ['active', 'cancelled'].includes(subscriptionStatus.value.status);
+    const current = subscriptionStatus.value;
+    if (current.status === 'cancelled') {
+      if (current.end_date) return new Date(current.end_date).getTime() > Date.now();
+      return (current.days_remaining ?? 0) > 0;
+    }
+    return current.status === 'active';
   });
 
   // Computed: does user need a subscription?

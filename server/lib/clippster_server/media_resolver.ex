@@ -18,6 +18,24 @@ defmodule ClippsterServer.MediaResolver do
   }
 
   @doc """
+  List Kick channel VODs via yt-dlp (fallback when RapidAPI is unavailable).
+  """
+  def list_kick_vods_ytdlp(channel, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 20)
+    offset = Keyword.get(opts, :offset, 0)
+
+    with {:ok, channel_url} <- build_channel_url("kick", channel),
+         {:ok, entries} <- run_playlist_json("kick", channel_url, limit, offset) do
+      {:ok,
+       %{
+         entries: entries,
+         has_more: length(entries) >= limit,
+         total: length(entries) + offset
+       }}
+    end
+  end
+
+  @doc """
   Detect platform from URL. Optional `platform` param overrides auto-detection.
   """
   def detect_platform(url, platform \\ nil) do
@@ -71,8 +89,17 @@ defmodule ClippsterServer.MediaResolver do
     limit = Keyword.get(opts, :limit, 20)
     offset = Keyword.get(opts, :offset, 0)
 
-    with {:ok, normalized_platform} <- normalize_platform(platform),
-         {:ok, channel_url} <- build_channel_url(normalized_platform, channel),
+    with {:ok, normalized_platform} <- normalize_platform(platform) do
+      if normalized_platform == "kick" do
+        list_kick_vods(channel, limit, offset)
+      else
+        list_vods_via_ytdlp(normalized_platform, channel, limit, offset)
+      end
+    end
+  end
+
+  defp list_vods_via_ytdlp(normalized_platform, channel, limit, offset) do
+    with {:ok, channel_url} <- build_channel_url(normalized_platform, channel),
          {:ok, entries} <- run_playlist_json(normalized_platform, channel_url, limit, offset) do
       {:ok,
        %{
@@ -81,6 +108,34 @@ defmodule ClippsterServer.MediaResolver do
          vods: Enum.map(entries, &map_vod_entry(normalized_platform, &1))
        }}
     end
+  end
+
+  defp list_kick_vods(channel, limit, offset) do
+    alias ClippsterServer.Kick.Client
+
+    with {:ok, slug} <- Client.extract_channel_slug(channel),
+         {:ok, %{clips: clips}} <- Client.list_videos(slug, limit: limit, offset: offset) do
+      {:ok,
+       %{
+         platform: "kick",
+         channel: channel,
+         vods: Enum.map(clips, &kick_clip_to_vod_entry/1)
+       }}
+    else
+      {:error, {:kick_api_failed, message}} -> {:error, {:ytdlp_failed, message}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp kick_clip_to_vod_entry(clip) do
+    %{
+      id: clip.clipId,
+      title: clip.title,
+      duration_seconds: clip.duration * 1.0,
+      thumbnail_url: clip.thumbnailUrl,
+      url: clip.pageUrl || clip.playlistUrl,
+      upload_date: clip.createdAt
+    }
   end
 
   defp normalize_platform(platform) when is_binary(platform) do
@@ -219,6 +274,9 @@ defmodule ClippsterServer.MediaResolver do
     ]
   end
 
+  defp base_args("kick"), do: ["--impersonate", "chrome"]
+  defp base_args("twitch"), do: ["--impersonate", "chrome"]
+  defp base_args("rumble"), do: ["--impersonate", "chrome"]
   defp base_args("twitter"), do: ["--impersonate", "chrome"]
   defp base_args(_platform), do: []
 
@@ -234,16 +292,8 @@ defmodule ClippsterServer.MediaResolver do
       end)
 
     case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
-      {:ok, {stdout, 0, _}} ->
-        if String.trim(stdout) == "" do
-          {:error, :empty_response}
-        else
-          {:ok, stdout}
-        end
-
-      {:ok, {_stdout, code, output}} ->
-        Logger.warning("[MediaResolver] yt-dlp exit #{code}: #{String.slice(output, 0, 500)}")
-        {:error, {:ytdlp_failed, sanitize_ytdlp_error(output)}}
+      {:ok, result} ->
+        parse_ytdlp_cmd_result(result)
 
       nil ->
         {:error, :timeout}
@@ -253,7 +303,21 @@ defmodule ClippsterServer.MediaResolver do
     end
   rescue
     e ->
-      {:error, {:ytdlp_unavailable, Exception.message(e)}}
+      Logger.error("[MediaResolver] yt-dlp exception: #{Exception.message(e)}")
+      {:error, {:ytdlp_unavailable, "Media resolver failed. Try again or use a direct video link."}}
+  end
+
+  defp parse_ytdlp_cmd_result({stdout, 0}) do
+    if String.trim(stdout) == "" do
+      {:error, :empty_response}
+    else
+      {:ok, stdout}
+    end
+  end
+
+  defp parse_ytdlp_cmd_result({stdout, code}) do
+    Logger.warning("[MediaResolver] yt-dlp exit #{code}: #{String.slice(stdout, 0, 500)}")
+    {:error, {:ytdlp_failed, sanitize_ytdlp_error(stdout)}}
   end
 
   defp ytdlp_binary do
@@ -369,11 +433,37 @@ defmodule ClippsterServer.MediaResolver do
     case entry["extractor_key"] || entry["ie_key"] do
       "Youtube" -> "https://www.youtube.com/watch?v=#{id}"
       "Twitch" -> "https://www.twitch.tv/videos/#{id}"
+      "Kick" -> kick_vod_url_from_entry(id, entry)
+      "Rumble" -> rumble_vod_url_from_entry(id, entry)
       _ -> id
     end
   end
 
   defp vod_url_from_id(_, _), do: nil
+
+  defp rumble_vod_url_from_entry(id, entry) do
+    case entry["webpage_url"] do
+      url when is_binary(url) and url != "" -> url
+      _ -> "https://rumble.com/v#{id}"
+    end
+  end
+
+  defp kick_vod_url_from_entry(id, entry) do
+    case entry["webpage_url"] do
+      url when is_binary(url) and url != "" -> url
+      _ ->
+        channel =
+          get_in(entry, ["channel"]) ||
+            get_in(entry, ["uploader"]) ||
+            entry["uploader_id"]
+
+        if is_binary(channel) and channel != "" do
+          "https://kick.com/#{channel}/videos/#{id}"
+        else
+          id
+        end
+    end
+  end
 
   defp to_float(nil), do: nil
   defp to_float(value) when is_integer(value), do: value * 1.0

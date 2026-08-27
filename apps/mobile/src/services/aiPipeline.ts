@@ -6,7 +6,7 @@ import {
   getTranscriptByProjectId,
   persistDetectedClips,
 } from '@/services/database';
-import { extractAudioMp3 } from '@/services/ffmpeg';
+import { isFfmpegAvailable, remuxToMp4 } from '@/services/ffmpeg';
 import { ProgressSocket, type ProgressUpdate } from '@/services/progressSocket';
 
 export interface AiPipelineProgress {
@@ -111,6 +111,21 @@ export class AiPipeline {
     }
   }
 
+  private async resolveTranscodeInput(videoPath: string, projectId: string): Promise<string> {
+    const lower = videoPath.toLowerCase();
+    if (!lower.endsWith('.ts') && !lower.endsWith('.m2ts')) {
+      return videoPath;
+    }
+    if (!(await isFfmpegAvailable())) {
+      throw new Error(
+        'This download is in TS format. Rebuild the dev client with FFmpeg to transcribe: npx expo run:android.',
+      );
+    }
+    const mp4Path = `${FileSystem.cacheDirectory ?? ''}transcribe_src_${projectId}.mp4`;
+    await remuxToMp4(videoPath, mp4Path);
+    return mp4Path;
+  }
+
   async transcribeProject(projectId: string): Promise<void> {
     this.cancelled = false;
     this.setProgress({ stage: 'checking_credits', progress: 2, message: 'Checking credits…' });
@@ -121,9 +136,11 @@ export class AiPipeline {
       throw new Error(balance.error ?? 'Could not check credits');
     }
 
-    const available = balance.balance ?? balance.credits ?? 0;
-    if (available < 1) {
-      throw new Error('Insufficient credits. Buy credits in Settings or at clippster.app/credits.');
+    const available = balance.total_available;
+    const hasCredits =
+      available === 'unlimited' || (typeof available === 'number' && available > 0);
+    if (!hasCredits) {
+      throw new Error('Insufficient credits. Subscribe or buy credits at clippster.app/credits.');
     }
 
     const existing = await getTranscriptByProjectId(projectId);
@@ -146,18 +163,24 @@ export class AiPipeline {
       });
     });
 
-    this.setProgress({ stage: 'extracting_audio', progress: 10, message: 'Extracting audio…' });
-    const audioPath = `${FileSystem.cacheDirectory ?? ''}transcribe_${projectId}.mp3`;
-    await extractAudioMp3(rawVideo.file_path, audioPath);
+    this.setProgress({
+      stage: 'extracting_audio',
+      progress: 10,
+      message: 'Preparing video for transcription…',
+    });
+    // ffmpeg-expo is a remux stub — it cannot encode MP3/AAC. Whisper accepts MP4, so upload
+    // the local video (remux TS → MP4 first when needed) instead of extracting audio.
+    const sourcePath = await this.resolveTranscodeInput(rawVideo.file_path, projectId);
     this.ensureNotCancelled();
 
+    const uploadUri = sourcePath.startsWith('file://') ? sourcePath : `file://${sourcePath}`;
     const formData = new FormData();
     formData.append('project_id', projectId);
     formData.append('duration', String(rawVideo.duration ?? 0));
     formData.append('audio', {
-      uri: audioPath,
-      name: 'audio.mp3',
-      type: 'audio/mpeg',
+      uri: uploadUri,
+      name: 'video.mp4',
+      type: 'video/mp4',
     } as unknown as Blob);
 
     this.setProgress({ stage: 'transcribing', progress: 25, message: 'Uploading for transcription…' });
@@ -178,8 +201,16 @@ export class AiPipeline {
     this.setProgress({ stage: 'complete', progress: 100, message: 'Transcription complete' });
   }
 
-  async detectClips(projectId: string, prompt = DEFAULT_PROMPT): Promise<number> {
+  async detectClips(
+    projectId: string,
+    options?: {
+      prompt?: string;
+      startTime?: number;
+      endTime?: number;
+    },
+  ): Promise<number> {
     this.cancelled = false;
+    const prompt = options?.prompt ?? DEFAULT_PROMPT;
     const transcriptRow = await getTranscriptByProjectId(projectId);
     if (!transcriptRow) {
       throw new Error('Transcribe this project before running clip detection');
@@ -191,7 +222,12 @@ export class AiPipeline {
     }
 
     const transcript = JSON.parse(transcriptRow.raw_json ?? '{}');
-    const chunks = splitTranscriptIntoChunks(transcript);
+    let chunks = splitTranscriptIntoChunks(transcript);
+    if (options?.startTime != null || options?.endTime != null) {
+      const startTime = options.startTime ?? 0;
+      const endTime = options.endTime ?? Number.POSITIVE_INFINITY;
+      chunks = chunks.filter((chunk) => chunk.end_time > startTime && chunk.start_time < endTime);
+    }
 
     this.progressSocket.connect(projectId, (update: ProgressUpdate) => {
       this.setProgress({
@@ -209,6 +245,13 @@ export class AiPipeline {
     formData.append('chunks', JSON.stringify(chunks));
     formData.append('total_duration', String(transcript.duration ?? rawVideo.duration ?? 0));
     formData.append('language', transcript.language ?? 'english');
+    formData.append('enhanced', 'false');
+    if (options?.startTime != null) {
+      formData.append('start_time', String(options.startTime));
+    }
+    if (options?.endTime != null) {
+      formData.append('end_time', String(options.endTime));
+    }
 
     this.setProgress({ stage: 'detecting', progress: 20, message: 'Detecting clips…' });
     const response = await clipsApi.detectChunked(formData);

@@ -9,6 +9,7 @@ import {
 } from 'react';
 import type { AuthResult, AuthUser } from '@clippster/shared-types';
 import { authApi, setUnauthorizedHandler } from '@/services/api';
+import { clearPlanSelectionState } from '@/services/planSelection';
 import {
   clearAuthSession,
   getStoredProvider,
@@ -70,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     await clearAuthSession();
+    await clearPlanSelectionState();
     setUser(null);
     setToken(null);
     setAuthProvider(null);

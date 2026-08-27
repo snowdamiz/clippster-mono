@@ -1,4 +1,5 @@
 export * from './auth';
+export * from './billing';
 export * from './api';
 export * from './project';
 export * from './clip';

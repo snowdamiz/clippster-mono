@@ -7,11 +7,6 @@ const monorepoRoot = path.resolve(projectRoot, '../..');
 
 const config = getDefaultConfig(projectRoot);
 
-// Skia's useSVG loads SVG files as static assets.
-if (!config.resolver.assetExts.includes('svg')) {
-  config.resolver.assetExts.push('svg');
-}
-
 // Yarn workspaces hoist packages to the monorepo root — Metro must search both trees.
 config.watchFolders = [monorepoRoot];
 config.resolver.nodeModulesPaths = [

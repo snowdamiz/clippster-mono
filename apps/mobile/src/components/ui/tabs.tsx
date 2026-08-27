@@ -23,9 +23,9 @@ export function Tabs({ items, value, onChange, className }: TabsProps) {
           <Pressable
             key={item.key}
             onPress={() => onChange(item.key)}
-            className={cn('flex-1 rounded-sm px-3 py-2', active && 'bg-primary/10')}
+            className={cn('flex-1 rounded-sm px-3 py-2', active && 'bg-accent/10')}
           >
-            <Text className={cn('text-center text-sm font-medium', active ? 'text-primary' : 'text-muted')}>
+            <Text className={cn('text-center text-sm font-medium', active ? 'text-accent' : 'text-muted')}>
               {item.label}
             </Text>
           </Pressable>

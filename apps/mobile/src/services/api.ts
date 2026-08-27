@@ -16,6 +16,8 @@ import {
   createOrganizationsApi,
   createCloudProjectsApi,
   createTokendApi,
+  createKickApi,
+  createSubscriptionApi,
 } from '@clippster/api-client';
 import { getApiBaseUrl } from '@/lib/config';
 import { clearAuthSession, getStoredToken } from './authStorage';
@@ -39,6 +41,7 @@ export const authApi = createAuthApi(apiClient);
 export const mediaApi = createMediaApi(apiClient);
 export const clipsApi = createClipsApi(apiClient);
 export const creditsApi = createCreditsApi(apiClient);
+export const subscriptionApi = createSubscriptionApi(apiClient);
 export const schedulingApi = createSchedulingApi(apiClient);
 export const userSocialApi = createUserSocialApi(apiClient);
 export const userPostsApi = createUserPostsApi(apiClient);
@@ -51,4 +54,5 @@ export const organizationProfilesApi = createOrganizationProfilesApi(apiClient);
 export const organizationsApi = createOrganizationsApi(apiClient);
 export const cloudProjectsApi = createCloudProjectsApi(apiClient);
 export const tokendApi = createTokendApi(apiClient);
+export const kickApi = createKickApi(apiClient);
 export { apiClient };

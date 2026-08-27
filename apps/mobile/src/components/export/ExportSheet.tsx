@@ -13,9 +13,18 @@ interface ExportSheetProps {
   progress: ClipBuildProgress | null;
   onClose: () => void;
   onExport: (options: { ratios: TargetAspectRatio[]; remuxOnly: boolean }) => void;
+  title?: string;
+  showRemux?: boolean;
 }
 
-export function ExportSheet({ visible, progress, onClose, onExport }: ExportSheetProps) {
+export function ExportSheet({
+  visible,
+  progress,
+  onClose,
+  onExport,
+  title = 'Export clip',
+  showRemux = true,
+}: ExportSheetProps) {
   const [ratio916, setRatio916] = useState(true);
   const [ratio169, setRatio169] = useState(false);
   const [remuxOnly, setRemuxOnly] = useState(false);
@@ -63,7 +72,7 @@ export function ExportSheet({ visible, progress, onClose, onExport }: ExportShee
     <View className="absolute inset-0 z-50 justify-end bg-black/70">
       <View className="rounded-t-2xl bg-background">
         <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
-          <Text className="text-lg font-semibold text-foreground">Export clip</Text>
+          <Text className="text-lg font-semibold text-foreground">{title}</Text>
           <Pressable onPress={onClose} disabled={building}>
             <Text className="text-primary">Close</Text>
           </Pressable>
@@ -84,6 +93,7 @@ export function ExportSheet({ visible, progress, onClose, onExport }: ExportShee
             <Text className="text-foreground">16:9 (landscape)</Text>
             <Text className="text-primary">{ratio169 ? '✓' : ''}</Text>
           </Pressable>
+          {showRemux ? (
           <Pressable
             onPress={() => setRemuxOnly((v) => !v)}
             className="mb-4 flex-row items-center justify-between rounded-lg bg-surface px-4 py-3"
@@ -91,6 +101,11 @@ export function ExportSheet({ visible, progress, onClose, onExport }: ExportShee
             <Text className="text-foreground">Remux only (no overlays)</Text>
             <Text className="text-primary">{remuxOnly ? '✓' : ''}</Text>
           </Pressable>
+          ) : (
+            <Text className="mb-4 text-sm text-muted">
+              Export matches the editor: clips, mute, images, music, and captions.
+            </Text>
+          )}
 
           {progress ? (
             <View className="mb-4 rounded-lg bg-surface px-4 py-3">

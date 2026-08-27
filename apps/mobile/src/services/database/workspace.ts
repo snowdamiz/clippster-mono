@@ -283,6 +283,89 @@ export async function persistDetectedClips(
   return sessionId;
 }
 
+async function getOrCreateManualSessionId(projectId: string): Promise<string> {
+  const db = getDatabase();
+  const existing = await db.getFirstAsync<{ id: string }>(
+    `SELECT id FROM clip_detection_sessions
+     WHERE project_id = ? AND prompt = 'Manual clip creation'
+     ORDER BY created_at DESC LIMIT 1`,
+    [projectId],
+  );
+  if (existing?.id) {
+    await db.runAsync(
+      `UPDATE clip_detection_sessions
+       SET total_clips_detected = COALESCE(total_clips_detected, 0) + 1
+       WHERE id = ?`,
+      [existing.id],
+    );
+    return existing.id;
+  }
+
+  const sessionId = generateId();
+  await db.runAsync(
+    `INSERT INTO clip_detection_sessions (
+      id, project_id, prompt, detection_model, total_clips_detected, run_color, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [sessionId, projectId, 'Manual clip creation', 'manual', 1, '#22C55E', timestamp()],
+  );
+  return sessionId;
+}
+
+export async function addManualClip(
+  projectId: string,
+  videoFilePath: string,
+  startTime: number,
+  endTime: number,
+  name?: string,
+): Promise<string> {
+  const db = getDatabase();
+  const clipId = generateId();
+  const versionId = generateId();
+  const sessionId = await getOrCreateManualSessionId(projectId);
+  const now = timestamp();
+  const duration = endTime - startTime;
+  const existing = await getClipsByProjectId(projectId);
+  const orderIndex = existing.length;
+  const clipName = name?.trim() || `Clip ${orderIndex + 1}`;
+
+  await db.runAsync(
+    `INSERT INTO clips (
+      id, project_id, name, file_path, duration, start_time, end_time,
+      order_index, current_version_id, detection_session_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      clipId,
+      projectId,
+      clipName,
+      videoFilePath,
+      duration,
+      startTime,
+      endTime,
+      orderIndex,
+      versionId,
+      sessionId,
+      now,
+      now,
+    ],
+  );
+
+  await db.runAsync(
+    `INSERT INTO clip_versions (
+      id, clip_id, session_id, version_number, name, start_time, end_time, change_type, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [versionId, clipId, sessionId, 1, clipName, startTime, endTime, 'detected', now],
+  );
+
+  await db.runAsync(
+    `INSERT INTO clip_segments (
+      id, clip_version_id, segment_index, start_time, end_time, duration, transcript, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [generateId(), versionId, 0, startTime, endTime, duration, null, now],
+  );
+
+  return clipId;
+}
+
 export async function getClipsByProjectId(projectId: string): Promise<Clip[]> {
   const db = getDatabase();
   return db.getAllAsync<Clip>(
@@ -293,6 +376,18 @@ export async function getClipsByProjectId(projectId: string): Promise<Clip[]> {
      FROM clips WHERE project_id = ?
      ORDER BY COALESCE(order_index, 999999), start_time ASC`,
     [projectId],
+  );
+}
+
+export async function getAllClips(): Promise<Clip[]> {
+  const db = getDatabase();
+  return db.getAllAsync<Clip>(
+    `SELECT id, project_id, name, file_path, duration, start_time, end_time,
+            current_version_id, detection_session_id,
+            subtitle_enabled, subtitle_preset_id, subtitle_settings, clip_text_overlay,
+            created_at, updated_at
+     FROM clips
+     ORDER BY updated_at DESC`,
   );
 }
 

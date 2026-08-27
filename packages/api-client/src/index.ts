@@ -7,7 +7,9 @@ export type { MediaApi } from './mediaApi';
 export { createClipsApi } from './clipsApi';
 export type { ClipsApi, DetectChunkedResponse, TranscribeResponse } from './clipsApi';
 export { createCreditsApi } from './creditsApi';
-export type { CreditsApi } from './creditsApi';
+export type { CreditsApi, CreditBalanceResponse } from './creditsApi';
+export { createSubscriptionApi } from './subscriptionApi';
+export type { SubscriptionApi } from './subscriptionApi';
 export { createSchedulingApi, formatScheduleDate, getMinScheduleTime, isValidScheduleTime, formatRelativeTime } from './schedulingApi';
 export type {
   SchedulingApi,
@@ -74,3 +76,5 @@ export type {
   TokendMediaGrantResponse,
   TokendServerCapabilities,
 } from './tokendApi';
+export { createKickApi } from './kickApi';
+export type { KickApi, KickClip, KickClipsResponse } from './kickApi';

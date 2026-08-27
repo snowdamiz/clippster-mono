@@ -2,16 +2,36 @@
 
 ## FFmpeg (`ffmpeg-expo`)
 
-Phase 0 only verifies native FFmpeg is linked. Settings → **FFmpeg (dev build)** calls `getVersion()`.
+Desktop Clippster runs FFmpeg as a **Tauri sidecar** (a separate `ffmpeg` binary next to the app). Mobile cannot use that pattern — iOS/Android do not allow shipping and spawning arbitrary binaries the way desktop does.
 
-- **Expo Go:** not supported — shows `Unavailable (requires dev build)`
-- **Dev client:** rebuild after changing `ffmpeg-expo` or `app.config.ts` plugins
+Mobile uses **`ffmpeg-expo`**: FFmpeg is compiled into the app as a native Expo module (same role as the desktop sidecar, different packaging).
+
+Settings → **FFmpeg (dev build)** calls `getVersion()`. If it says `Unavailable (requires dev build)`, the installed APK was built before `ffmpeg-expo` was linked.
+
+### Rebuild after adding or changing native modules
+
+Metro/`expo start --android` only reloads JavaScript. It does **not** rebuild native code. After adding `ffmpeg-expo` or editing `app.config.ts` plugins:
+
+```bash
+# From repo root (recommended)
+yarn mobile:android
+
+# Or force rebuild when starting dev
+MOBILE_REBUILD_ANDROID=1 yarn mobile
+
+# Or from apps/mobile
+yarn dev --rebuild-android
+```
+
+EAS development builds also work:
 
 ```bash
 cd apps/mobile
-eas build --profile development --platform ios
 eas build --profile development --platform android
 ```
+
+- **Expo Go:** not supported — no native FFmpeg
+- **Dev client:** must be rebuilt when native dependencies change
 
 ### LGPL note
 
