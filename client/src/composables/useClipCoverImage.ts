@@ -71,7 +71,7 @@ export function useClipCoverImage() {
    * Open the design studio to create a cover image for a specific clip.
    */
   function getDesignStudioUrlForClip(clipId: string): string {
-    return `/design-studio?coverForClip=${clipId}`;
+    return `/design-studio/edit?coverForClip=${clipId}`;
   }
 
   return {

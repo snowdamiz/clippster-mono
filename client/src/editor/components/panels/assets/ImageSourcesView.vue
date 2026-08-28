@@ -6,11 +6,12 @@ import { getAllClips } from "@/services/database/clips";
 import { getAllImageAssets } from "@/services/database/image-assets";
 import type { Clip } from "@/services/database/types";
 import type { ImageAsset } from "@/services/database/types";
-import type { MediaAsset } from "../../../types/assets";
 import { processMediaAssets } from "../../../lib/media/processing";
 import { buildImageElement } from "../../../lib/timeline/element-utils";
 import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
 import { invoke } from "@tauri-apps/api/core";
+import { readFile } from "@tauri-apps/plugin-fs";
+import { fileNameFromPathOrName } from "@/utils/fsNames";
 import {
 	Upload,
 	Image,
@@ -23,7 +24,16 @@ import {
 	ClipboardPaste,
 } from "lucide-vue-next";
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		media: true,
+		playback: false,
+		timeline: false,
+		scenes: false,
+		selection: false,
+	},
+});
 const { isExtracting, extractFrame, extractFrameAsDataUrl } = useFrameExtractor();
 
 const activeSubTab = ref<"upload" | "clips" | "gallery" | "url" | "paste">("upload");
@@ -35,6 +45,8 @@ const thumbnailCache = ref<Map<string, string>>(new Map());
 const urlInput = ref("");
 const urlError = ref<string | null>(null);
 const pasteHint = ref("Click here, then Ctrl+V / Cmd+V to paste an image");
+const isDragOver = ref(false);
+const fileInputRef = ref<HTMLInputElement | null>(null);
 
 // Frame extraction state
 const selectedClipForFrame = ref<Clip | null>(null);
@@ -45,6 +57,41 @@ const activeProject = computed(() => {
 	void version.value;
 	return editor.project.getActiveOrNull();
 });
+
+const uploadedImages = computed(() => {
+	void version.value;
+	return editor.media.getAssets().filter((a) => a.type === "image" && !a.ephemeral);
+});
+
+function getMimeType(ext: string): string {
+	const map: Record<string, string> = {
+		jpg: "image/jpeg",
+		jpeg: "image/jpeg",
+		png: "image/png",
+		gif: "image/gif",
+		webp: "image/webp",
+		bmp: "image/bmp",
+		svg: "image/svg+xml",
+	};
+	return map[ext] || "image/png";
+}
+
+async function addAssetToCanvas(mediaId: string) {
+	const hydrated = await editor.media.ensureAssetHydrated(mediaId);
+	if (!hydrated) return;
+	const element = buildImageElement({
+		mediaId,
+		name: hydrated.name,
+		duration: TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,
+		startTime: editor.playback.getCurrentTime(),
+	});
+	editor.timeline.insertElement({ element, placement: { mode: "auto" } });
+}
+
+async function removeUploadedAsset(id: string) {
+	if (!activeProject.value) return;
+	await editor.media.removeMediaAsset({ projectId: activeProject.value.metadata.id, id });
+}
 
 const builtClips = computed(() => {
 	return clips.value.filter(
@@ -194,13 +241,28 @@ function getClipName(clip: Clip): string {
 	return clip.name || clip.project_name || "Untitled Clip";
 }
 
-// Upload image files
+function openLocalFilePicker() {
+	fileInputRef.value?.click();
+}
+
+async function onLocalFileInputChange(e: Event) {
+	const input = e.target as HTMLInputElement;
+	if (input.files?.length) {
+		await addFilesToCanvas(input.files);
+	}
+	input.value = "";
+}
+
+/** Open OS file explorer and add selected images to the canvas. */
 async function handleUpload() {
 	if (!activeProject.value) return;
+
+	// Prefer Tauri native dialog when available; otherwise fall back to <input type="file">.
 	try {
 		const { open } = await import("@tauri-apps/plugin-dialog");
 		const selected = await open({
 			multiple: true,
+			title: "Upload images from your computer",
 			filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "svg", "gif", "bmp"] }],
 		});
 		if (!selected) return;
@@ -209,32 +271,84 @@ async function handleUpload() {
 		isProcessing.value = true;
 
 		for (const filePath of paths) {
-			const name = filePath.split(/[\\/]/).pop() || "image";
-			// Create a File-like object for processMediaAssets
-			const dataUrl = await invoke<string>("read_file_as_data_url", { filePath });
-			const response = await fetch(dataUrl);
-			const blob = await response.blob();
-			const file = new File([blob], name, { type: blob.type });
-
-			const dt = new DataTransfer();
-			dt.items.add(file);
+			const name = fileNameFromPathOrName(filePath);
+			const ext = name.split(".").pop()?.toLowerCase() || "";
+			const bytes = await readFile(filePath);
+			const file = new File([bytes], name, { type: getMimeType(ext) });
 
 			const processedAssets = await processMediaAssets({
-				files: dt.files,
+				files: [file],
 				onProgress: () => {},
 			});
 
-			for (const asset of processedAssets) {
-				await editor.media.addMediaAsset({
+			for (const processed of processedAssets) {
+				const mediaId = await editor.media.addMediaAsset({
 					projectId: activeProject.value!.metadata.id,
-					asset,
+					asset: {
+						...processed,
+						diskImportPath: filePath,
+					},
 				});
+				await addAssetToCanvas(mediaId);
 			}
 		}
 	} catch (err) {
-		console.error("[ImageSourcesView] Upload failed:", err);
+		console.warn("[ImageSourcesView] Native dialog failed, using file input:", err);
+		openLocalFilePicker();
 	} finally {
 		isProcessing.value = false;
+	}
+}
+
+async function addFilesToCanvas(files: FileList | File[]) {
+	if (!activeProject.value) return;
+	const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
+	if (list.length === 0) return;
+	isProcessing.value = true;
+	try {
+		const dt = new DataTransfer();
+		for (const file of list) dt.items.add(file);
+		const processedAssets = await processMediaAssets({
+			files: dt.files,
+			onProgress: () => {},
+		});
+		for (const asset of processedAssets) {
+			const mediaId = await editor.media.addMediaAsset({
+				projectId: activeProject.value.metadata.id,
+				asset,
+			});
+			await addAssetToCanvas(mediaId);
+		}
+	} catch (err) {
+		console.error("[ImageSourcesView] Dropped files failed:", err);
+	} finally {
+		isProcessing.value = false;
+	}
+}
+
+function onPanelDragEnter(e: DragEvent) {
+	if (![...e.dataTransfer?.types ?? []].includes("Files")) return;
+	e.preventDefault();
+	isDragOver.value = true;
+}
+
+function onPanelDragOver(e: DragEvent) {
+	if (![...e.dataTransfer?.types ?? []].includes("Files")) return;
+	e.preventDefault();
+	isDragOver.value = true;
+}
+
+function onPanelDragLeave(e: DragEvent) {
+	const next = e.relatedTarget as Node | null;
+	if (next && (e.currentTarget as HTMLElement).contains(next)) return;
+	isDragOver.value = false;
+}
+
+async function onPanelDrop(e: DragEvent) {
+	e.preventDefault();
+	isDragOver.value = false;
+	if (e.dataTransfer?.files?.length) {
+		await addFilesToCanvas(e.dataTransfer.files);
 	}
 }
 
@@ -386,43 +500,106 @@ function formatDuration(seconds: number | null): string {
 </script>
 
 <template>
-	<div class="flex h-full flex-col">
-		<!-- Sub-tabs -->
-		<div class="flex items-center border-b border-white/10">
+	<div class="flex h-full flex-col bg-[#1e1e1e]">
+		<input
+			ref="fileInputRef"
+			type="file"
+			class="hidden"
+			accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg"
+			multiple
+			@change="onLocalFileInputChange"
+		/>
+
+		<div class="grid shrink-0 grid-cols-5 border-b border-black/40 bg-[#2a2a2a]">
 			<button
 				v-for="tab in ([
 					{ key: 'upload', label: 'Upload', icon: Upload },
 					{ key: 'url', label: 'URL', icon: Link2 },
 					{ key: 'paste', label: 'Paste', icon: ClipboardPaste },
-					{ key: 'clips', label: 'From Clips', icon: Film },
+					{ key: 'clips', label: 'Clips', icon: Film },
 					{ key: 'gallery', label: 'Gallery', icon: Image },
 				] as const)"
 				:key="tab.key"
 				type="button"
+				:title="tab.label"
 				:class="[
-					'flex items-center gap-1 px-2 py-2 text-[11px] font-medium whitespace-nowrap transition-colors border-b-2',
+					'flex min-w-0 flex-col items-center justify-center gap-0.5 px-0.5 py-1.5 text-[9px] leading-none transition-colors',
 					activeSubTab === tab.key
-						? 'border-purple-500 text-purple-400'
-						: 'border-transparent text-zinc-500 hover:text-zinc-300',
+						? 'bg-[#1e1e1e] text-zinc-100'
+						: 'text-zinc-500 hover:text-zinc-300',
 				]"
 				@click="activeSubTab = tab.key"
 			>
-				<component :is="tab.icon" class="size-3.5" />
-				{{ tab.label }}
+				<component :is="tab.icon" class="size-3.5 shrink-0" />
+				<span class="w-full truncate text-center">{{ tab.label }}</span>
 			</button>
 		</div>
 
-		<!-- Upload tab -->
-		<div v-if="activeSubTab === 'upload'" class="flex-1 overflow-y-auto p-3">
-			<div
-				class="flex h-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-white/20 p-8 text-center cursor-pointer hover:border-purple-500/40 transition-colors"
+		<div
+			v-if="activeSubTab === 'upload'"
+			class="flex flex-1 flex-col overflow-hidden"
+			@dragenter="onPanelDragEnter"
+			@dragover="onPanelDragOver"
+			@dragleave="onPanelDragLeave"
+			@drop="onPanelDrop"
+		>
+			<button
+				type="button"
+				:disabled="isProcessing"
+				:class="[
+					'm-2 flex shrink-0 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed px-3 py-6 text-center transition-colors',
+					isDragOver
+						? 'border-[#4693e0] bg-[#4693e0]/15'
+						: 'border-white/20 bg-white/[0.03] hover:border-[#4693e0]/60 hover:bg-[#4693e0]/10',
+					isProcessing ? 'opacity-50' : 'cursor-pointer',
+				]"
 				@click="handleUpload"
 			>
-				<Upload class="text-zinc-500 size-8" />
-				<p class="text-zinc-500 text-sm">
-					{{ isProcessing ? 'Processing...' : 'Click to upload images' }}
+				<Loader2 v-if="isProcessing" class="size-7 animate-spin text-[#4693e0]" />
+				<Upload v-else class="size-7 text-[#4693e0]" />
+				<span class="break-words text-[12px] font-medium text-zinc-100">
+					{{ isProcessing ? "Uploading…" : isDragOver ? "Drop images here" : "Click to upload from your computer" }}
+				</span>
+				<span class="break-words text-[10px] text-zinc-500">PNG, JPG, WebP, GIF · or drag files here</span>
+			</button>
+
+			<div class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+				<p v-if="uploadedImages.length > 0" class="mb-1.5 text-[10px] text-zinc-500">
+					Project images · click to add again
 				</p>
-				<p class="text-zinc-600 text-xs">PNG, JPG, WebP, GIF</p>
+				<div
+					v-if="uploadedImages.length > 0"
+					class="grid gap-1.5"
+					style="grid-template-columns: repeat(auto-fill, minmax(72px, 1fr))"
+				>
+					<div
+						v-for="item in uploadedImages"
+						:key="item.id"
+						class="group relative cursor-pointer overflow-hidden rounded-sm border border-black/40 bg-[#141414] text-left hover:border-[#4693e0]"
+						:title="`${item.name} — click to add to canvas`"
+						@click="addAssetToCanvas(item.id)"
+					>
+						<div class="aspect-square">
+							<img
+								v-if="item.url || item.thumbnailUrl"
+								:src="item.url || item.thumbnailUrl"
+								:alt="item.name"
+								class="size-full object-cover"
+								draggable="false"
+							/>
+							<Image v-else class="size-full p-4 text-zinc-700" />
+						</div>
+						<div class="truncate px-1 py-0.5 text-[9px] text-zinc-400">{{ item.name }}</div>
+						<button
+							type="button"
+							class="absolute top-0.5 right-0.5 hidden rounded bg-black/60 px-1 text-[10px] text-white group-hover:block"
+							:aria-label="`Remove ${item.name}`"
+							@click.stop="removeUploadedAsset(item.id)"
+						>
+							✕
+						</button>
+					</div>
+				</div>
 			</div>
 		</div>
 
@@ -433,13 +610,13 @@ function formatDuration(seconds: number | null): string {
 				v-model="urlInput"
 				type="url"
 				placeholder="https://example.com/image.jpg"
-				class="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-purple-500/50"
+				class="w-full rounded-sm border border-white/10 bg-white/5 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-[#4693e0]/50"
 				@keydown.enter="handleUrlImport"
 			/>
 			<p v-if="urlError" class="text-[10px] text-red-400">{{ urlError }}</p>
 			<button
 				type="button"
-				class="rounded-md bg-purple-600 px-3 py-2 text-xs font-medium text-white hover:bg-purple-500 disabled:opacity-50"
+				class="rounded-sm bg-[#4693e0] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#5aa0e6] disabled:opacity-50"
 				:disabled="isProcessing || !urlInput.trim()"
 				@click="handleUrlImport"
 			>
@@ -501,7 +678,7 @@ function formatDuration(seconds: number | null): string {
 				</div>
 				<button
 					type="button"
-					class="flex items-center justify-center gap-1 rounded bg-purple-600 px-3 py-1.5 text-xs text-white hover:bg-purple-500 transition-colors"
+					class="flex items-center justify-center gap-1 rounded-sm bg-[#4693e0] px-3 py-1.5 text-xs text-white hover:bg-[#5aa0e6] transition-colors"
 					:disabled="isExtracting"
 					@click="addExtractedFrame"
 				>
@@ -548,7 +725,7 @@ function formatDuration(seconds: number | null): string {
 						</button>
 						<button
 							type="button"
-							class="rounded bg-purple-600/80 px-1.5 py-0.5 text-[10px] text-white hover:bg-purple-500"
+							class="rounded-sm bg-[#4693e0]/90 px-1.5 py-0.5 text-[10px] text-white hover:bg-[#4693e0]"
 							title="Extract frame"
 							@click.stop="openFrameExtractor(clip)"
 						>
@@ -583,7 +760,7 @@ function formatDuration(seconds: number | null): string {
 					<div
 						v-for="img in filteredGallery"
 						:key="img.id"
-						class="group relative cursor-pointer overflow-hidden rounded-lg border border-white/10 hover:border-purple-500/50 transition-colors"
+						class="group relative cursor-pointer overflow-hidden rounded-sm border border-black/40 hover:border-[#4693e0] transition-colors"
 						@dblclick="addGalleryImage(img)"
 					>
 						<div class="aspect-square bg-zinc-800">

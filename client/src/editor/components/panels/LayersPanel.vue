@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
+import { useImageMode } from "../../composables/useImageMode";
 import type { BlendMode } from "../../types/timeline";
 import {
 	Eye,
@@ -23,6 +24,7 @@ import {
 
 const { editor, version } = useEditor();
 const { selectedElements, selectElement } = useElementSelection();
+const { isImageMode } = useImageMode();
 
 const BLEND_MODES: BlendMode[] = [
 	"normal",
@@ -153,6 +155,18 @@ const groupedLayers = computed(() => {
 		}
 	}
 	return groups;
+});
+
+const displayLayerGroups = computed(() => {
+	if (!isImageMode.value) return groupedLayers.value;
+	return [
+		{
+			trackId: "_stack",
+			trackName: "",
+			locked: false,
+			layers: allElements.value,
+		},
+	];
 });
 
 function splitTrackLayers(layers: LayerRow[]) {
@@ -345,17 +359,13 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 </script>
 
 <template>
-	<div class="flex h-full flex-col">
-		<!-- Header -->
-		<div class="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
-			<div class="flex items-center gap-1.5">
-				<Layers class="size-3.5 text-zinc-500" />
-				<span class="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">Layers</span>
-			</div>
-			<div class="flex items-center gap-1">
+	<div class="flex h-full flex-col bg-[#1e1e1e]">
+		<div class="flex h-7 shrink-0 items-center justify-between border-b border-black/40 bg-[#2a2a2a] px-2">
+			<span class="text-[11px] text-zinc-300">Layers</span>
+			<div class="flex items-center gap-0.5">
 				<button
 					type="button"
-					class="rounded px-1.5 py-0.5 text-[9px] text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+					class="rounded px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-white/5 hover:text-zinc-200"
 					title="Group selected layers"
 					@click="createGroupFromSelection"
 				>
@@ -363,27 +373,55 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 				</button>
 				<button
 					type="button"
-					class="rounded px-1.5 py-0.5 text-[9px] text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+					class="rounded px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-white/5 hover:text-zinc-200"
 					title="Ungroup selected layers"
 					@click="ungroupSelection"
 				>
 					Ungroup
 				</button>
-				<span class="text-[10px] text-zinc-600">{{ allElements.length }}</span>
 			</div>
 		</div>
 
-		<!-- Layer list -->
+		<div
+			v-if="selectedLayer"
+			class="flex shrink-0 items-center gap-2 border-b border-black/40 bg-[#252525] px-2 py-1.5"
+		>
+			<select
+				class="min-w-0 flex-1 rounded-sm border border-white/10 bg-[#1a1a1a] px-1.5 py-0.5 text-[10px] text-zinc-300 outline-none"
+				:value="selectedLayer.blendMode"
+				title="Blend mode"
+				@change="setBlendMode(selectedLayer.trackId, selectedLayer.elementId, selectedLayer.type, ($event.target as HTMLSelectElement).value as BlendMode)"
+			>
+				<option v-for="mode in BLEND_MODES" :key="mode" :value="mode">
+					{{ mode }}
+				</option>
+			</select>
+			<label class="flex shrink-0 items-center gap-1 text-[10px] text-zinc-500">
+				Opacity
+				<input
+					type="number"
+					min="0"
+					max="100"
+					class="box-border h-5 w-11 rounded-sm border border-white/10 bg-[#1a1a1a] px-1 text-center text-[10px] tabular-nums text-zinc-200 outline-none"
+					:value="Math.round(selectedLayer.opacity * 100)"
+					@change="setOpacity(selectedLayer.trackId, selectedLayer.elementId, selectedLayer.type, Math.min(1, Math.max(0, Number(($event.target as HTMLInputElement).value) / 100)))"
+				/>
+			</label>
+		</div>
+
 		<div class="flex-1 overflow-y-auto">
-			<div v-if="allElements.length === 0" class="flex flex-col items-center justify-center py-10 px-4">
-				<Layers class="size-8 text-zinc-700 mb-2" :stroke-width="1" />
-				<p class="text-[11px] text-zinc-600 text-center">No layers yet</p>
-				<p class="text-[10px] text-zinc-700 text-center mt-0.5">Add text, images, or stickers from the left panel</p>
+			<div v-if="allElements.length === 0" class="flex flex-col items-center justify-center px-4 py-10">
+				<Layers class="mb-2 size-7 text-zinc-700" :stroke-width="1" />
+				<p class="text-center text-[11px] text-zinc-500">No layers</p>
+				<p class="mt-0.5 text-center text-[10px] text-zinc-600">Use the Type, Shape, or Place tools</p>
 			</div>
 
-			<div v-else class="py-1">
-				<div v-for="group in groupedLayers" :key="group.trackId" class="mb-1">
-					<div class="flex items-center gap-1 px-2 py-1 text-[9px] uppercase tracking-wider text-zinc-600">
+			<div v-else class="py-0.5">
+				<div v-for="group in displayLayerGroups" :key="group.trackId">
+					<div
+						v-if="group.trackName"
+						class="flex items-center gap-1 px-2 py-1 text-[9px] uppercase tracking-wider text-zinc-600"
+					>
 						<span class="truncate">{{ group.trackName }}</span>
 						<span
 							v-if="group.layers.some((l) => l.groupId)"
@@ -413,16 +451,19 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 						<div
 							v-else
 							:class="[
-								'group flex w-full items-center gap-1.5 px-2 py-[5px] text-left transition-colors',
+								'group flex w-full items-center gap-1 px-1.5 py-[3px] text-left',
 								item.layer.selected
-									? 'bg-blue-500/10 border-l-2 border-blue-500'
-									: 'border-l-2 border-transparent hover:bg-white/[0.03]',
-								item.layer.hidden ? 'opacity-50' : '',
+									? 'bg-[#4693e0] text-white'
+									: 'hover:bg-white/[0.04]',
+								item.layer.hidden ? 'opacity-45' : '',
 							]"
 						>
 					<button
 						type="button"
-						class="shrink-0 rounded p-0.5 text-zinc-600 hover:text-zinc-300"
+						:class="[
+							'shrink-0 rounded p-0.5',
+							item.layer.selected ? 'text-white/80 hover:text-white' : 'text-zinc-500 hover:text-zinc-200',
+						]"
 						:title="item.layer.hidden ? 'Show' : 'Hide'"
 						@click.stop="handleToggleVisibility(item.layer.trackId, item.layer.elementId)"
 					>
@@ -431,7 +472,10 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 					</button>
 					<button
 						type="button"
-						class="shrink-0 rounded p-0.5 text-zinc-600 hover:text-zinc-300"
+						:class="[
+							'shrink-0 rounded p-0.5',
+							item.layer.selected ? 'text-white/80 hover:text-white' : 'text-zinc-500 hover:text-zinc-200',
+						]"
 						:title="item.layer.locked ? 'Unlock' : 'Lock'"
 						@click.stop="handleToggleElementLock(item.layer.trackId, item.layer.elementId, item.layer.type, item.layer.locked)"
 					>
@@ -447,7 +491,7 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 					>
 						<component
 							:is="getTypeIcon(item.layer.type)"
-							:class="['size-3.5 shrink-0', item.layer.selected ? 'text-blue-400' : getTypeColor(item.layer.type)]"
+							:class="['size-3.5 shrink-0', item.layer.selected ? 'text-white' : getTypeColor(item.layer.type)]"
 						/>
 						<input
 							v-if="renamingId === item.layer.elementId"
@@ -462,17 +506,22 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 							v-else
 							:class="[
 								'min-w-0 flex-1 truncate text-[11px]',
-								item.layer.selected ? 'text-zinc-200' : 'text-zinc-400',
+								item.layer.selected ? 'text-white' : 'text-zinc-300',
 							]"
 						>
 							{{ item.layer.name }}
 						</span>
 					</button>
 
-					<div class="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+					<div
+						:class="[
+							'hidden shrink-0 items-center gap-0.5 group-hover:flex',
+							item.layer.selected ? 'text-white/80' : 'text-zinc-500',
+						]"
+					>
 						<button
 							type="button"
-							class="rounded p-0.5 text-zinc-600 hover:text-zinc-300"
+							class="rounded p-0.5 hover:text-white"
 							title="Move up"
 							@click.stop="handleMove(item.layer.trackId, 'up', item.layer.elementId)"
 						>
@@ -480,7 +529,7 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 						</button>
 						<button
 							type="button"
-							class="rounded p-0.5 text-zinc-600 hover:text-zinc-300"
+							class="rounded p-0.5 hover:text-white"
 							title="Move down"
 							@click.stop="handleMove(item.layer.trackId, 'down', item.layer.elementId)"
 						>
@@ -488,7 +537,7 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 						</button>
 						<button
 							type="button"
-							class="rounded p-0.5 text-zinc-600 hover:text-zinc-300"
+							class="rounded p-0.5 hover:text-white"
 							title="Duplicate"
 							@click.stop="handleDuplicate(item.layer.trackId, item.layer.elementId)"
 						>
@@ -496,7 +545,7 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 						</button>
 						<button
 							type="button"
-							class="rounded p-0.5 text-zinc-600 hover:text-red-400"
+							class="rounded p-0.5 hover:text-red-300"
 							title="Delete"
 							@click.stop="handleDelete(item.layer.trackId, item.layer.elementId)"
 						>
@@ -509,36 +558,5 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 			</div>
 		</div>
 
-		<!-- Selected layer properties -->
-		<div
-			v-if="selectedLayer"
-			class="space-y-2 border-t border-white/[0.06] px-3 py-2"
-		>
-			<div class="flex items-center justify-between gap-2">
-				<span class="text-[10px] text-zinc-500 uppercase tracking-wider">Opacity</span>
-				<span class="text-[10px] tabular-nums text-zinc-400">{{ Math.round(selectedLayer.opacity * 100) }}%</span>
-			</div>
-			<input
-				type="range"
-				min="0"
-				max="1"
-				step="0.01"
-				:value="selectedLayer.opacity"
-				class="w-full accent-blue-500"
-				@input="setOpacity(selectedLayer.trackId, selectedLayer.elementId, selectedLayer.type, Number(($event.target as HTMLInputElement).value))"
-			/>
-			<div class="flex items-center justify-between gap-2">
-				<span class="text-[10px] text-zinc-500 uppercase tracking-wider">Blend</span>
-				<select
-					class="max-w-[140px] rounded border border-white/10 bg-zinc-900 px-1.5 py-1 text-[10px] text-zinc-300 outline-none"
-					:value="selectedLayer.blendMode"
-					@change="setBlendMode(selectedLayer.trackId, selectedLayer.elementId, selectedLayer.type, ($event.target as HTMLSelectElement).value as BlendMode)"
-				>
-					<option v-for="mode in BLEND_MODES" :key="mode" :value="mode">
-						{{ mode }}
-					</option>
-				</select>
-			</div>
-		</div>
 	</div>
 </template>

@@ -26,6 +26,7 @@ export type PixelToolId =
 	| "marquee-rect"
 	| "marquee-ellipse"
 	| "lasso"
+	| "magic-wand"
 	| "crop"
 	| "brush"
 	| "eraser"
@@ -41,13 +42,17 @@ export type PixelToolId =
 
 export interface PixelSelection {
 	type: "rect" | "ellipse" | "path" | "mask";
-	/** Normalized 0–1 rect when type is rect/ellipse */
+	/** Normalized 0–1 rect when type is rect/ellipse; bounding box for path */
 	x: number;
 	y: number;
 	width: number;
 	height: number;
 	feather?: number;
 	inverted?: boolean;
+	/** Normalized 0–1 polyline for lasso / path selections */
+	points?: Array<{ x: number; y: number }>;
+	/** Extra closed rings for wand holes (even-odd with `points`) */
+	rings?: Array<Array<{ x: number; y: number }>>;
 	/** Optional mask bitmap id for path/magic selections */
 	maskAssetId?: string;
 }

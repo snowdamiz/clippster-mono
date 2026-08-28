@@ -964,13 +964,9 @@ async function handleCleanupProject() {
 		await deleteVideoEditorProject(project.metadata.id);
 
 		// Delete local files (editor-media/{project_id}/ directory)
-		const { appLocalDataDir } = await import("@tauri-apps/api/path");
-		const localDataDir = await appLocalDataDir();
-		const projectMediaDir = `${localDataDir}editor-media/${project.metadata.id}`;
-
 		try {
-			await invoke("delete_directory", { path: projectMediaDir });
-			console.log("[ExportButton] Deleted project media directory:", projectMediaDir);
+			await invoke("delete_editor_project_media", { projectId: project.metadata.id });
+			console.log("[ExportButton] Deleted project media directory for:", project.metadata.id);
 		} catch (err) {
 			console.warn("[ExportButton] Failed to delete project media directory:", err);
 		}

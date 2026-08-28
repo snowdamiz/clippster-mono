@@ -228,7 +228,7 @@ async function addProjectToTimeline(project: ProjectSummary) {
 }
 
 function openProjectInEditor(project: ProjectSummary) {
-	router.push({ path: "/design-studio", query: { projectId: String(project.id) } });
+	router.push({ path: "/design-studio/edit", query: { projectId: String(project.id) } });
 }
 
 function formatDimensions(width: number | null, height: number | null): string {

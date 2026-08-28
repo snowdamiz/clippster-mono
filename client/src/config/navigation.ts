@@ -25,7 +25,7 @@ import {
   Sparkles,
 } from 'lucide-vue-next';
 
-export type NavigationGroup = 'browse' | 'create' | 'studio' | 'manage' | 'system';
+export type NavigationGroup = 'browse' | 'library' | 'create' | 'studio' | 'manage' | 'system';
 
 export interface NavigationItem {
   name: string;
@@ -47,10 +47,11 @@ export interface NavigationItem {
 
 export const navigationGroups: Record<NavigationGroup, { label: string; order: number }> = {
   browse: { label: 'Browse', order: 1 },
-  create: { label: 'Create', order: 2 },
-  studio: { label: 'Studio', order: 3 },
-  manage: { label: 'Manage', order: 4 },
-  system: { label: '', order: 5 }, // No label for system group
+  library: { label: 'Library', order: 2 },
+  create: { label: 'Design Studio', order: 3 },
+  studio: { label: 'Studio', order: 4 },
+  manage: { label: 'Manage', order: 5 },
+  system: { label: '', order: 6 }, // No label for system group
 };
 
 export const navigationItems: NavigationItem[] = [
@@ -94,31 +95,33 @@ export const navigationItems: NavigationItem[] = [
     adminOnly: true,
   },
 
-  // Create group - content creation tools
+  // Library group - media libraries
   {
-    name: 'Video Library',
+    name: 'Video',
     path: '/projects',
     icon: Folder,
-    group: 'create',
+    group: 'library',
   },
   {
-    name: 'Audio Library',
+    name: 'Audio',
     path: '/audio-library',
     icon: Music,
-    group: 'create',
+    group: 'library',
   },
   {
-    name: 'Image Library',
+    name: 'Image',
     path: '/image-library',
     icon: Image,
-    group: 'create',
+    group: 'library',
   },
   {
     name: 'Built Clips',
     path: '/clips',
     icon: LayoutGrid,
-    group: 'create',
+    group: 'library',
   },
+
+  // Create group - editors and AI tools
   {
     name: 'Video Editor',
     path: '/video-editor',
@@ -132,15 +135,15 @@ export const navigationItems: NavigationItem[] = [
     group: 'create',
   },
   {
-    name: 'AI Thumbnail',
-    path: '/ai-thumbnail',
-    icon: Sparkles,
-    group: 'create',
-  },
-  {
     name: 'AI Video Creator',
     path: '/ai-video',
     icon: Wand2,
+    group: 'create',
+  },
+  {
+    name: 'AI Thumbnail',
+    path: '/ai-thumbnail',
+    icon: Sparkles,
     group: 'create',
   },
   {

@@ -10,6 +10,9 @@ import { useBrandingConfig } from "../../composables/useBrandingConfig";
 import { useImageMode } from "../../composables/useImageMode";
 import { useImageEditorTools } from "../../composables/useImageEditorTools";
 import { blitScratchToOverlay, useImageRasterPaint } from "../../composables/useImageRasterPaint";
+import { useImageCloneStamp } from "../../composables/useImageCloneStamp";
+import { selectionBoundingBox } from "../../lib/image-layer-mapping";
+import { applyLinearGradient } from "../../lib/image-pixel-edits";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
 import type { RootNode } from "../../renderer/nodes/root-node";
 import { getRenderFrame } from "../../renderer/frame-policy";
@@ -42,10 +45,32 @@ const { editor, version } = useEditor({
 		project: true,
 	},
 });
-const { isCropMode, activeSocialOverlay, viewportZoom, previewQuality, fitMode } = useEditorUIState();
+const { isCropMode, activeSocialOverlay, viewportZoom, viewportPanX, viewportPanY, previewQuality, fitMode } = useEditorUIState();
 const { selectedElements, clearElementSelection } = useElementSelection();
 const { isImageMode } = useImageMode();
-const { activeTool, setSelection, marqueeDraft, fillColor, setTool } = useImageEditorTools();
+const {
+	activeTool,
+	setSelection,
+	marqueeDraft,
+	fillColor,
+	setTool,
+	shapeKind,
+	insertTextLayer,
+	insertShapeLayer,
+	applyFillAtCanvasPoint,
+	applyMagicWandAtCanvasPoint,
+	marqueeKind,
+	getLiveSelection,
+	strokeColor,
+} = useImageEditorTools();
+const {
+	cloneSource,
+	isStamping,
+	setSourceFromEvent,
+	startStamp,
+	continueStamp,
+	endStamp,
+} = useImageCloneStamp();
 const {
 	scratchCanvas,
 	paintPreviewActive,
@@ -55,6 +80,8 @@ const {
 } = useImageRasterPaint();
 const showSafeZones = ref(true);
 const marqueeDrag = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+const lassoPoints = ref<Array<{ x: number; y: number }>>([]);
+const gradientDrag = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 const paintOverlayRef = ref<HTMLCanvasElement | null>(null);
 
 const containerRef = ref<HTMLDivElement | null>(null);
@@ -630,7 +657,20 @@ function stepZoom(delta: number) {
 function fitZoom() {
 	fitMode.value = "fit";
 	viewportZoom.value = 1;
+	viewportPanX.value = 0;
+	viewportPanY.value = 0;
 }
+
+function canvasPositionFromNorm(pt: { x: number; y: number }) {
+	return {
+		x: (pt.x - 0.5) * projectWidth.value,
+		y: (pt.y - 0.5) * projectHeight.value,
+	};
+}
+
+const overlayInteractive = computed(
+	() => !isImageMode.value || activeTool.value === "move" || activeTool.value === "crop",
+);
 
 function onPreviewAreaMouseDown(event: MouseEvent) {
 	if (event.button !== 0) return;
@@ -655,6 +695,50 @@ function canvasNormFromEvent(event: MouseEvent): { x: number; y: number } | null
 
 function onCanvasPointerDown(event: PointerEvent) {
 	if (!isImageMode.value || event.button !== 0) return;
+
+	if (activeTool.value === "text") {
+		event.preventDefault();
+		event.stopPropagation();
+		const pt = canvasNormFromEvent(event);
+		insertTextLayer(pt ? canvasPositionFromNorm(pt) : undefined);
+		setTool("move");
+		return;
+	}
+
+	if (activeTool.value === "shape") {
+		event.preventDefault();
+		event.stopPropagation();
+		const pt = canvasNormFromEvent(event);
+		void insertShapeLayer(shapeKind.value, pt ? canvasPositionFromNorm(pt) : undefined);
+		setTool("move");
+		return;
+	}
+
+	if (activeTool.value === "fill") {
+		event.preventDefault();
+		event.stopPropagation();
+		const canvas = canvasRef.value;
+		if (!canvas) return;
+		const rect = canvas.getBoundingClientRect();
+		if (rect.width <= 0 || rect.height <= 0) return;
+		const canvasX = ((event.clientX - rect.left) / rect.width) * projectWidth.value;
+		const canvasY = ((event.clientY - rect.top) / rect.height) * projectHeight.value;
+		void applyFillAtCanvasPoint(canvasX, canvasY);
+		return;
+	}
+
+	if (activeTool.value === "magic-wand") {
+		event.preventDefault();
+		event.stopPropagation();
+		const canvas = canvasRef.value;
+		if (!canvas) return;
+		const rect = canvas.getBoundingClientRect();
+		if (rect.width <= 0 || rect.height <= 0) return;
+		const canvasX = ((event.clientX - rect.left) / rect.width) * projectWidth.value;
+		const canvasY = ((event.clientY - rect.top) / rect.height) * projectHeight.value;
+		void applyMagicWandAtCanvasPoint(canvasX, canvasY);
+		return;
+	}
 
 	if (activeTool.value === "zoom") {
 		event.preventDefault();
@@ -685,7 +769,27 @@ function onCanvasPointerDown(event: PointerEvent) {
 	}
 
 	if (activeTool.value === "hand") {
+		event.preventDefault();
+		event.stopPropagation();
 		clearElementSelection();
+		fitMode.value = "manual";
+		const startX = event.clientX;
+		const startY = event.clientY;
+		const originX = viewportPanX.value;
+		const originY = viewportPanY.value;
+		const wrapper = (event.currentTarget as HTMLElement) ?? null;
+		if (wrapper) wrapper.style.cursor = "grabbing";
+		const onMove = (e: PointerEvent) => {
+			viewportPanX.value = originX + (e.clientX - startX);
+			viewportPanY.value = originY + (e.clientY - startY);
+		};
+		const onUp = () => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			if (wrapper) wrapper.style.cursor = "grab";
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
 		return;
 	}
 
@@ -716,6 +820,102 @@ function onCanvasPointerDown(event: PointerEvent) {
 		return;
 	}
 
+	if (activeTool.value === "clone" || activeTool.value === "heal") {
+		event.preventDefault();
+		event.stopPropagation();
+		const canvas = canvasRef.value;
+		if (!canvas) return;
+		if (event.altKey || !cloneSource.value) {
+			setSourceFromEvent(event, canvas);
+			return;
+		}
+		const onMove = (e: PointerEvent) => {
+			if (isStamping.value) continueStamp(e, canvas);
+		};
+		const onUp = async () => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			await endStamp();
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+		void startStamp(event, canvas).then((started) => {
+			if (!started) {
+				window.removeEventListener("pointermove", onMove);
+				window.removeEventListener("pointerup", onUp);
+			}
+		});
+		return;
+	}
+
+	if (activeTool.value === "gradient") {
+		event.preventDefault();
+		event.stopPropagation();
+		const pt = canvasNormFromEvent(event);
+		if (!pt) return;
+		gradientDrag.value = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
+		const onMove = (e: PointerEvent) => {
+			const next = canvasNormFromEvent(e);
+			if (!next || !gradientDrag.value) return;
+			gradientDrag.value = { ...gradientDrag.value, x1: next.x, y1: next.y };
+		};
+		const onUp = (e: PointerEvent) => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			const end = canvasNormFromEvent(e);
+			const drag = gradientDrag.value;
+			gradientDrag.value = null;
+			if (!drag) return;
+			const x0 = drag.x0 * projectWidth.value;
+			const y0 = drag.y0 * projectHeight.value;
+			const x1 = (end?.x ?? drag.x1) * projectWidth.value;
+			const y1 = (end?.y ?? drag.y1) * projectHeight.value;
+			if (Math.hypot(x1 - x0, y1 - y0) < 4) return;
+			void applyLinearGradient({
+				x0,
+				y0,
+				x1,
+				y1,
+				from: fillColor.value,
+				to: strokeColor.value,
+				selection: getLiveSelection(),
+			});
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+		return;
+	}
+
+	if (activeTool.value === "lasso") {
+		event.preventDefault();
+		event.stopPropagation();
+		const pt = canvasNormFromEvent(event);
+		if (!pt) return;
+		lassoPoints.value = [pt];
+		const onMove = (e: PointerEvent) => {
+			const next = canvasNormFromEvent(e);
+			if (!next) return;
+			const last = lassoPoints.value[lassoPoints.value.length - 1];
+			if (last && Math.hypot(next.x - last.x, next.y - last.y) < 0.004) return;
+			lassoPoints.value = [...lassoPoints.value, next];
+		};
+		const onUp = () => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			const points = lassoPoints.value;
+			lassoPoints.value = [];
+			const box = selectionBoundingBox(points);
+			if (!box) {
+				setSelection(null);
+				return;
+			}
+			setSelection({ type: "path", points, ...box });
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+		return;
+	}
+
 	if (activeTool.value !== "marquee-rect") return;
 	event.preventDefault();
 	event.stopPropagation();
@@ -726,7 +926,8 @@ function onCanvasPointerDown(event: PointerEvent) {
 	const onMove = (e: PointerEvent) => {
 		const next = canvasNormFromEvent(e);
 		if (!next || !marqueeDrag.value) return;
-		marqueeDrag.value = { ...marqueeDrag.value, x1: next.x, y1: next.y };
+		const constrained = constrainMarquee(marqueeDrag.value.x0, marqueeDrag.value.y0, next.x, next.y, e.shiftKey);
+		marqueeDrag.value = { ...marqueeDrag.value, ...constrained };
 	};
 	const onUp = (e: PointerEvent) => {
 		window.removeEventListener("pointermove", onMove);
@@ -735,23 +936,46 @@ function onCanvasPointerDown(event: PointerEvent) {
 		const drag = marqueeDrag.value;
 		marqueeDrag.value = null;
 		if (!drag) return;
-		const endX = end?.x ?? drag.x1;
-		const endY = end?.y ?? drag.y1;
-		const x = Math.min(drag.x0, endX);
-		const y = Math.min(drag.y0, endY);
-		const width = Math.abs(endX - drag.x0);
-		const height = Math.abs(endY - drag.y0);
+		const constrained = constrainMarquee(drag.x0, drag.y0, end?.x ?? drag.x1, end?.y ?? drag.y1, e.shiftKey);
+		const x = Math.min(drag.x0, constrained.x1);
+		const y = Math.min(drag.y0, constrained.y1);
+		const width = Math.abs(constrained.x1 - drag.x0);
+		const height = Math.abs(constrained.y1 - drag.y0);
 		if (width < 0.005 || height < 0.005) {
 			setSelection(null);
 			return;
 		}
-		setSelection({ type: "rect", x, y, width, height });
+		setSelection({
+			type: marqueeKind.value === "ellipse" ? "ellipse" : "rect",
+			x,
+			y,
+			width,
+			height,
+		});
 	};
 	window.addEventListener("pointermove", onMove);
 	window.addEventListener("pointerup", onUp);
 }
 
+function constrainMarquee(
+	x0: number,
+	y0: number,
+	x1: number,
+	y1: number,
+	shift: boolean,
+): { x1: number; y1: number } {
+	if (!shift) return { x1, y1 };
+	const dx = x1 - x0;
+	const dy = y1 - y0;
+	const side = Math.max(Math.abs(dx), Math.abs(dy));
+	return {
+		x1: Math.min(1, Math.max(0, x0 + (dx < 0 ? -side : side))),
+		y1: Math.min(1, Math.max(0, y0 + (dy < 0 ? -side : side))),
+	};
+}
+
 const liveMarqueeStyle = computed(() => {
+	if (lassoPoints.value.length > 0) return null;
 	const drag = marqueeDraft.value;
 	const live = marqueeDrag.value;
 	if (live) {
@@ -764,17 +988,88 @@ const liveMarqueeStyle = computed(() => {
 			top: `${y * 100}%`,
 			width: `${w * 100}%`,
 			height: `${h * 100}%`,
+			borderRadius: marqueeKind.value === "ellipse" ? "50%" : undefined,
 		};
 	}
-	if (drag && drag.type === "rect") {
+	if (drag && (drag.type === "rect" || drag.type === "ellipse")) {
 		return {
 			left: `${drag.x * 100}%`,
 			top: `${drag.y * 100}%`,
 			width: `${drag.width * 100}%`,
 			height: `${drag.height * 100}%`,
+			borderRadius: drag.type === "ellipse" ? "50%" : undefined,
 		};
 	}
 	return null;
+});
+
+const liveLassoRings = computed(() => {
+	if (lassoPoints.value.length > 0) return [lassoPoints.value];
+	const sel = marqueeDraft.value;
+	if (sel?.type !== "path") return null;
+	if (sel.rings && sel.rings.length > 0) return sel.rings;
+	if (sel.points && sel.points.length >= 2) return [sel.points];
+	return null;
+});
+
+const liveLassoPath = computed(() => {
+	const rings = liveLassoRings.value;
+	if (!rings) return "";
+	return rings
+		.map((ring) => {
+			if (ring.length === 0) return "";
+			const head = `M${ring[0].x * 100} ${ring[0].y * 100}`;
+			const tail = ring
+				.slice(1)
+				.map((p) => `L${p.x * 100} ${p.y * 100}`)
+				.join("");
+			return `${head}${tail}Z`;
+		})
+		.join("");
+});
+
+const gradientPreview = computed(() => {
+	const drag = gradientDrag.value;
+	if (!drag) return null;
+	return {
+		x1: `${drag.x0 * 100}%`,
+		y1: `${drag.y0 * 100}%`,
+		x2: `${drag.x1 * 100}%`,
+		y2: `${drag.y1 * 100}%`,
+	};
+});
+
+const cloneSourceMarker = computed(() => {
+	const src = cloneSource.value;
+	if (!src || !isImageMode.value) return null;
+	if (activeTool.value !== "clone" && activeTool.value !== "heal") return null;
+	return {
+		left: `${(src.canvasX / projectWidth.value) * 100}%`,
+		top: `${(src.canvasY / projectHeight.value) * 100}%`,
+	};
+});
+
+const canvasCursor = computed(() => {
+	if (!isImageMode.value) return undefined;
+	const tool = activeTool.value;
+	if (
+		tool === "brush" ||
+		tool === "eraser" ||
+		tool === "marquee-rect" ||
+		tool === "lasso" ||
+		tool === "gradient" ||
+		tool === "clone" ||
+		tool === "heal" ||
+		tool === "fill" ||
+		tool === "magic-wand" ||
+		tool === "eyedropper"
+	) {
+		return "crosshair";
+	}
+	if (tool === "hand") return "grab";
+	if (tool === "zoom") return "zoom-in";
+	if (tool === "text" || tool === "shape") return "cell";
+	return undefined;
 });
 
 /** Practical YouTube safe area ≈ 1100×620 centered on 1280×720 (~7% / 7% insets). */
@@ -958,11 +1253,20 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 </script>
 
 <template>
-	<div ref="containerRef" class="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-[#0e0e10]">
-		<!-- Aspect ratio + speed selector bar -->
-		<div class="relative flex items-center justify-center border-b border-white/10 px-3 py-1.5">
-			<!-- Playback speed selector (left) -->
-			<div class="absolute left-2 top-1/2 -translate-y-1/2">
+	<div
+		ref="containerRef"
+		:class="[
+			'relative flex h-full min-h-0 w-full min-w-0 flex-col',
+			isImageMode ? 'bg-[#2b2b2b]' : 'bg-[#0e0e10]',
+		]"
+	>
+		<div
+			:class="[
+				'relative flex items-center justify-center px-3 py-1',
+				isImageMode ? 'border-b border-black/30 bg-[#1e1e1e]' : 'border-b border-white/10',
+			]"
+		>
+			<div v-if="!isImageMode" class="absolute left-2 top-1/2 -translate-y-1/2">
 				<button
 					type="button"
 					:class="[
@@ -1101,9 +1405,8 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					<Maximize v-else class="size-4" />
 				</button>
 
-				<!-- Social overlay toggle (9:16 only) -->
 				<button
-					v-if="is916"
+					v-if="is916 && !isImageMode"
 					type="button"
 					:class="[
 						'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
@@ -1151,23 +1454,25 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 		</div>
 
 		<!-- Canvas + Interactive Overlay -->
-		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto p-4" @mousedown="onPreviewAreaMouseDown">
+		<div
+			:class="[
+				'flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto',
+				isImageMode ? 'p-8' : 'p-4',
+			]"
+			@mousedown="onPreviewAreaMouseDown"
+		>
 			<div
-				class="preview-canvas-wrapper relative rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
+				:class="[
+					'preview-canvas-wrapper relative',
+					isImageMode
+						? 'shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
+						: 'rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]',
+				]"
 				:style="{
 					aspectRatio: `${projectWidth} / ${projectHeight}`,
-					transform: viewportZoom !== 1 ? `scale(${viewportZoom})` : undefined,
+					transform: `translate(${viewportPanX}px, ${viewportPanY}px)${viewportZoom !== 1 ? ` scale(${viewportZoom})` : ''}`,
 					transformOrigin: 'center center',
-					cursor:
-						isImageMode && (activeTool === 'brush' || activeTool === 'eraser')
-							? 'crosshair'
-							: isImageMode && activeTool === 'marquee-rect'
-							? 'crosshair'
-							: isImageMode && activeTool === 'hand'
-								? 'grab'
-								: isImageMode && activeTool === 'zoom'
-									? 'zoom-in'
-									: undefined,
+					cursor: canvasCursor,
 				}"
 				@pointerdown="onCanvasPointerDown"
 			>
@@ -1182,6 +1487,7 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					}"
 				/>
 				<PreviewOverlay
+					:class="{ 'pointer-events-none': !overlayInteractive }"
 					:canvas-ref="canvasRef"
 					:canvas-width="projectWidth"
 					:canvas-height="projectHeight"
@@ -1234,6 +1540,46 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					class="pointer-events-none absolute z-20 border border-white bg-blue-400/15"
 					:style="liveMarqueeStyle"
 				/>
+				<!-- Lasso path overlay -->
+				<svg
+					v-if="isImageMode && liveLassoPath"
+					class="pointer-events-none absolute inset-0 z-20 h-full w-full"
+					viewBox="0 0 100 100"
+					preserveAspectRatio="none"
+				>
+					<path
+						:d="liveLassoPath"
+						fill="rgba(96, 165, 250, 0.15)"
+						fill-rule="evenodd"
+						stroke="white"
+						stroke-width="0.4"
+						stroke-dasharray="1.2 0.8"
+						vector-effect="non-scaling-stroke"
+					/>
+				</svg>
+				<!-- Gradient drag preview -->
+				<svg
+					v-if="isImageMode && gradientPreview"
+					class="pointer-events-none absolute inset-0 z-20 h-full w-full"
+				>
+					<line
+						:x1="gradientPreview.x1"
+						:y1="gradientPreview.y1"
+						:x2="gradientPreview.x2"
+						:y2="gradientPreview.y2"
+						stroke="white"
+						stroke-width="2"
+					/>
+					<circle :cx="gradientPreview.x1" :cy="gradientPreview.y1" r="4" :fill="fillColor" />
+					<circle :cx="gradientPreview.x2" :cy="gradientPreview.y2" r="4" :fill="strokeColor" />
+				</svg>
+				<!-- Clone / heal source marker -->
+				<div
+					v-if="cloneSourceMarker"
+					class="pointer-events-none absolute z-20 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-cyan-400/80"
+					:style="cloneSourceMarker"
+					title="Clone source"
+				/>
 				<!-- Branding watermark overlay -->
 				<img
 					v-if="brandingWatermarkDataUrl && brandingWatermarkStyle"
@@ -1256,20 +1602,26 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 		</div>
 
 		<!-- Preview controls bar: zoom + quality -->
-		<div class="flex h-8 shrink-0 items-center justify-end gap-1 border-t border-white/10 bg-[#18181b] px-2">
+		<div
+			:class="[
+				'flex h-7 shrink-0 items-center justify-end gap-1 px-2',
+				isImageMode ? 'border-t border-black/30 bg-[#1e1e1e]' : 'h-8 border-t border-white/10 bg-[#18181b]',
+			]"
+		>
+			<span v-if="isImageMode" class="mr-auto pl-1 text-[10px] tabular-nums text-zinc-500">
+				{{ projectWidth }} × {{ projectHeight }}
+			</span>
 			<button
 				v-if="isImageMode"
 				type="button"
 				class="h-6 rounded px-2 text-[11px] transition-colors"
-				:class="showSafeZones ? 'bg-cyan-500/15 text-cyan-300' : 'bg-white/5 text-zinc-400 hover:bg-white/10'"
-				title="Toggle YouTube safe zones"
+				:class="showSafeZones ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'"
+				title="Toggle safe zones"
 				@click="showSafeZones = !showSafeZones"
 			>
-				Safe zones
+				Guides
 			</button>
-			<div v-if="isImageMode" class="h-4 w-px bg-white/10" />
-			<!-- Quality: lower = softer video/image decode (faster); layout stays full canvas size -->
-			<div class="relative">
+			<div v-if="!isImageMode" class="relative">
 				<button
 					class="preview-quality__input preview-quality__select h-6 px-2 text-[11px]"
 					title="Lowers decoded video and image resolution in the preview (blockier, faster). Timeline layout and overlay positions stay fixed."
@@ -1290,7 +1642,7 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					</button>
 				</div>
 			</div>
-			<div class="h-4 w-px bg-white/10" />
+			<div v-if="!isImageMode" class="h-4 w-px bg-white/10" />
 			<!-- Zoom controls -->
 			<button class="flex h-6 w-6 items-center justify-center rounded text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200" title="Zoom out (Ctrl+-)" @click="stepZoom(-ZOOM_STEP)">−</button>
 			<button class="h-6 min-w-[42px] rounded bg-white/5 px-1 text-[11px] text-zinc-300 hover:bg-white/10" title="Current zoom">{{ zoomPercent }}</button>

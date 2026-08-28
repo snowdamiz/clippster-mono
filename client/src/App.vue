@@ -175,7 +175,12 @@
 
   // Check if this is the full-screen editor page (no scroll, minimal chrome)
   const currentRoute = useRoute();
-  const isEditorPage = computed(() => currentRoute.path === '/editor');
+  const isEditorPage = computed(
+    () =>
+      currentRoute.path === '/editor' ||
+      currentRoute.path === '/design-studio/edit' ||
+      currentRoute.path.startsWith('/design-studio/edit'),
+  );
   const isStudioSessionPage = computed(() => currentRoute.path === '/studio/record/session');
 
   // Authentication Gate: Block all app interaction until user authenticates
@@ -677,6 +682,7 @@
 
   .main-content {
     width: 100%;
+    max-width: 100%;
     height: calc(100vh - 32px);
     margin-top: 32px; /* Account for fixed titlebar height */
     overflow-y: auto;

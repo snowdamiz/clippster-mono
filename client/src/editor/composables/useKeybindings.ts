@@ -5,6 +5,9 @@
 import { onMounted, onUnmounted } from "vue";
 import { bindAction, invokeAction, unbindAction } from "../lib/actions";
 import { useTimelineTools } from "./timeline/useTimelineTools";
+import { EditorCore } from "../core";
+import { IMAGE_TOOL_RAIL, useImageEditorTools } from "./useImageEditorTools";
+import type { PixelToolId } from "../types/image-document";
 
 function isEditableTarget(target: EventTarget | null): boolean {
 	if (typeof HTMLElement === "undefined" || !(target instanceof HTMLElement)) return false;
@@ -24,6 +27,32 @@ export function handleEditorKeyDown(ev: KeyboardEvent) {
 	const ctrl = ev.ctrlKey || ev.metaKey;
 	const shift = ev.shiftKey;
 	const alt = ev.altKey;
+
+	if (EditorCore.getInstance().imageMode && !ctrl && !alt) {
+		if (key === "escape") {
+			useImageEditorTools().setSelection(null);
+			ev.preventDefault();
+			return;
+		}
+		if (key === "x" && !shift) {
+			useImageEditorTools().swapFillStroke();
+			ev.preventDefault();
+			return;
+		}
+		if (key === "m" && shift) {
+			const tools = useImageEditorTools();
+			tools.marqueeKind.value = tools.marqueeKind.value === "rect" ? "ellipse" : "rect";
+			tools.activateTool("marquee-rect");
+			ev.preventDefault();
+			return;
+		}
+		const tool = IMAGE_TOOL_RAIL.find((item) => item.shortcut.toLowerCase() === key);
+		if (tool) {
+			useImageEditorTools().activateTool(tool.id as PixelToolId);
+			ev.preventDefault();
+			return;
+		}
+	}
 
 	let handled = false;
 

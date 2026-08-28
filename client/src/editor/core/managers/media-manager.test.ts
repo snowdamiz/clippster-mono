@@ -61,4 +61,34 @@ describe("MediaManager lazy hydration", () => {
 		expect(second).toBe(first);
 		expect(manager.getAssets()[0]?.isHydrated).toBe(true);
 	});
+
+	it("replaceAssetRaster swaps the file and notifies listeners", () => {
+		const original = new File(["old"], "layer.png", { type: "image/png" });
+		const next = new File(["new"], "layer.png", { type: "image/png" });
+		const asset: MediaAsset = {
+			id: "img-1",
+			name: "layer.png",
+			type: "image",
+			file: original,
+			url: undefined,
+			isHydrated: true,
+		};
+		const editor = {
+			timeline: { getTracks: () => [] },
+		} as never;
+		const manager = new MediaManager(editor);
+		manager.setAssets({ assets: [asset] });
+		const listener = vi.fn();
+		manager.subscribe(listener);
+
+		manager.replaceAssetRaster({
+			id: "img-1",
+			file: next,
+			url: "blob:new",
+		});
+
+		expect(manager.getAssets()[0]?.file).toBe(next);
+		expect(manager.getAssets()[0]?.url).toBe("blob:new");
+		expect(listener).toHaveBeenCalled();
+	});
 });

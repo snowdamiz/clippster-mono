@@ -4,14 +4,21 @@
  */
 import { ref } from "vue";
 import { EditorCore } from "../core";
-import { processMediaAssets } from "../lib/media/processing";
-import { buildImageElement } from "../lib/timeline/element-utils";
-import { TIMELINE_CONSTANTS } from "../constants/timeline-constants";
-import { storageService } from "../storage/tauri-storage-adapter";
 import type { ImageElement } from "../types/timeline";
 import { useImageEditorTools } from "./useImageEditorTools";
-import type { PixelHistoryEntry } from "../types/image-document";
-import { pushImageHistoryEntry } from "../types/image-document";
+import {
+	applyCanvasToImageTransform,
+	clipSelectionToContext,
+	getImageDrawLayout,
+	parseHexRgb,
+} from "../lib/image-layer-mapping";
+import {
+	commitCanvasAsNewLayer,
+	findSelectedImageLayer,
+	loadBitmapFromAsset,
+	recordImageEditHistory,
+	writeNativeCanvasToMedia,
+} from "../lib/image-raster-commit";
 
 const scratchCanvas = ref<HTMLCanvasElement | null>(null);
 const isPainting = ref(false);
@@ -43,6 +50,12 @@ function scratchHasInk(canvas: HTMLCanvasElement): boolean {
 	return false;
 }
 
+function applySelectionClip(ctx: CanvasRenderingContext2D, width: number, height: number) {
+	const selection = useImageEditorTools().getLiveSelection();
+	if (!selection) return;
+	clipSelectionToContext(ctx, selection, width, height, selection.type);
+}
+
 function drawDab(
 	ctx: CanvasRenderingContext2D,
 	x: number,
@@ -51,94 +64,51 @@ function drawDab(
 	color: string,
 	opacity: number,
 	eraser: boolean,
+	hardness: number,
 ) {
 	ctx.save();
-	if (eraser) {
-		ctx.globalCompositeOperation = "destination-out";
-		ctx.fillStyle = `rgba(0,0,0,${opacity})`;
-	} else {
-		ctx.globalCompositeOperation = "source-over";
-		const hex = color.replace("#", "");
-		const r = parseInt(hex.slice(0, 2), 16);
-		const g = parseInt(hex.slice(2, 4), 16);
-		const b = parseInt(hex.slice(4, 6), 16);
-		ctx.fillStyle = `rgba(${r},${g},${b},${opacity})`;
+	const { r, g, b } = parseHexRgb(color);
+	const hard = Math.min(1, Math.max(0, hardness));
+	if (hard >= 0.99) {
+		ctx.globalCompositeOperation = eraser ? "destination-out" : "source-over";
+		ctx.fillStyle = eraser ? `rgba(0,0,0,${opacity})` : `rgba(${r},${g},${b},${opacity})`;
+		ctx.beginPath();
+		ctx.arc(x, y, radius, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.restore();
+		return;
 	}
+
+	const inner = radius * hard;
+	const gradient = ctx.createRadialGradient(x, y, inner, x, y, Math.max(radius, 0.5));
+	if (eraser) {
+		gradient.addColorStop(0, `rgba(0,0,0,${opacity})`);
+		gradient.addColorStop(1, "rgba(0,0,0,0)");
+		ctx.globalCompositeOperation = "destination-out";
+	} else {
+		gradient.addColorStop(0, `rgba(${r},${g},${b},${opacity})`);
+		gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
+		ctx.globalCompositeOperation = "source-over";
+	}
+	ctx.fillStyle = gradient;
 	ctx.beginPath();
 	ctx.arc(x, y, radius, 0, Math.PI * 2);
 	ctx.fill();
 	ctx.restore();
 }
 
-async function loadBitmapFromAsset(asset: { filePath?: string; file: File }): Promise<ImageBitmap> {
-	if (asset.filePath) {
-		const { invoke } = await import("@tauri-apps/api/core");
-		const dataUrl = await invoke<string>("read_file_as_data_url", { filePath: asset.filePath });
-		const res = await fetch(dataUrl);
-		const blob = await res.blob();
-		return createImageBitmap(blob);
-	}
-	if (asset.file.size > 0) {
-		return createImageBitmap(asset.file);
-	}
-	throw new Error("Media asset has no readable file");
-}
-
-async function writeCanvasToAssetFile(
-	canvas: HTMLCanvasElement,
-	filePath: string,
-): Promise<void> {
-	const blob = await new Promise<Blob>((resolve, reject) => {
-		canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("encode failed"))), "image/png");
-	});
-	const { writeFile } = await import("@tauri-apps/plugin-fs");
-	await writeFile(filePath, new Uint8Array(await blob.arrayBuffer()));
-}
-
 function findTargetImageLayer(
 	editor: EditorCore,
 	selected: Array<{ trackId: string; elementId: string }>,
-): { trackId: string; elementId: string; mediaId: string } | null {
-	if (selected.length !== 1) return null;
-	const { trackId, elementId } = selected[0];
-	const track = editor.timeline.getTracks().find((t) => t.id === trackId);
-	const el = track?.elements.find((e) => e.id === elementId);
-	if (!el || el.type !== "image") return null;
-	const mediaId = (el as ImageElement).mediaId;
-	return mediaId ? { trackId, elementId, mediaId } : null;
-}
-
-async function commitScratchAsNewLayer(canvas: HTMLCanvasElement, name: string) {
-	const editor = EditorCore.getInstance();
-	const project = editor.project.getActiveOrNull();
-	if (!project) return;
-
-	const blob = await new Promise<Blob>((resolve, reject) => {
-		canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("encode failed"))), "image/png");
-	});
-	const file = new File([blob], `paint_${Date.now()}.png`, { type: "image/png" });
-	const dt = new DataTransfer();
-	dt.items.add(file);
-	const processed = await processMediaAssets({ files: dt.files, onProgress: () => {} });
-	for (const asset of processed) {
-		const mediaId = await editor.media.addMediaAsset({
-			projectId: project.metadata.id,
-			asset,
-		});
-		const element = buildImageElement({
-			mediaId,
-			name,
-			duration: TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,
-			startTime: 0,
-		});
-		editor.timeline.insertElement({ element, placement: { mode: "auto" } });
-	}
+) {
+	return findSelectedImageLayer(editor, selected);
 }
 
 async function mergeScratchOntoMedia(
 	mediaId: string,
 	scratch: HTMLCanvasElement,
 	mode: "paint" | "erase",
+	element: ImageElement,
 ) {
 	const editor = EditorCore.getInstance();
 	const project = editor.project.getActiveOrNull();
@@ -147,66 +117,53 @@ async function mergeScratchOntoMedia(
 	const asset = await editor.media.ensureAssetHydrated(mediaId);
 	if (!asset || asset.type !== "image") return;
 
-	const { width, height } = project.settings.canvasSize;
-	const work = document.createElement("canvas");
-	work.width = width;
-	work.height = height;
-	const ctx = work.getContext("2d");
-	if (!ctx) return;
-
+	const { width: canvasW, height: canvasH } = project.settings.canvasSize;
 	const bitmap = await loadBitmapFromAsset(asset);
+	const nativeW = bitmap.width;
+	const nativeH = bitmap.height;
+	const work = document.createElement("canvas");
+	work.width = nativeW;
+	work.height = nativeH;
+	const ctx = work.getContext("2d");
+	if (!ctx) {
+		bitmap.close();
+		return;
+	}
+
 	try {
-		ctx.drawImage(bitmap, 0, 0, width, height);
+		ctx.drawImage(bitmap, 0, 0);
 	} finally {
 		bitmap.close();
 	}
 
+	const layout = getImageDrawLayout({
+		canvasW,
+		canvasH,
+		nativeW,
+		nativeH,
+		crop: element.crop,
+		mediaFit: element.mediaFit,
+		transform: element.transform,
+		flip: element.flip,
+	});
+
 	ctx.save();
+	applyCanvasToImageTransform(ctx, layout);
 	ctx.globalCompositeOperation = mode === "erase" ? "destination-out" : "source-over";
 	ctx.drawImage(scratch, 0, 0);
 	ctx.restore();
 
 	const filePath = asset.filePath;
 	if (!filePath) {
-		await commitScratchAsNewLayer(scratch, mode === "erase" ? "Eraser" : "Brush");
+		await commitCanvasAsNewLayer(scratch, mode === "erase" ? "Eraser" : "Brush");
 		return;
 	}
 
-	await writeCanvasToAssetFile(work, filePath);
-
-	// Refresh in-memory file so renderer picks up changes
 	try {
-		const { readFile } = await import("@tauri-apps/plugin-fs");
-		const bytes = await readFile(filePath);
-		asset.file = new File([bytes], asset.name, { type: "image/png" });
-		if (asset.url?.startsWith("blob:")) {
-			URL.revokeObjectURL(asset.url);
-		}
-		asset.url = URL.createObjectURL(asset.file);
-		asset.isHydrated = true;
-		await storageService.saveMediaAsset({ projectId: project.metadata.id, mediaAsset: asset });
-		editor.save.markDirty();
+		await writeNativeCanvasToMedia(mediaId, work);
 	} catch (e) {
 		console.warn("[useImageRasterPaint] Failed to refresh media after paint:", e);
 	}
-}
-
-function recordPaintHistory(label: string) {
-	const editor = EditorCore.getInstance();
-	const project = editor.project.getActiveOrNull();
-	const doc = project?.settings.imageDocument;
-	if (!doc) return;
-	const entry: PixelHistoryEntry = {
-		id: `hist_${Date.now()}`,
-		name: label,
-		timestamp: Date.now(),
-		snapshotRef: "compositor-raster",
-	};
-	void editor.project.updateSettings({
-		settings: {
-			imageDocument: pushImageHistoryEntry(doc, entry),
-		} as any,
-	});
 }
 
 export function blitScratchToOverlay(scratch: HTMLCanvasElement, overlay: HTMLCanvasElement) {
@@ -217,7 +174,7 @@ export function blitScratchToOverlay(scratch: HTMLCanvasElement, overlay: HTMLCa
 }
 
 export function useImageRasterPaint() {
-	const { brushSize, brushOpacity, fillColor, activeTool } = useImageEditorTools();
+	const { brushSize, brushOpacity, brushHardness, fillColor, activeTool } = useImageEditorTools();
 
 	let lastX = 0;
 	let lastY = 0;
@@ -250,6 +207,8 @@ export function useImageRasterPaint() {
 		const scratch = ensureScratch(width, height);
 		const ctx = scratch.getContext("2d");
 		if (!ctx) return false;
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.clearRect(0, 0, width, height);
 
 		isPainting.value = true;
 		paintPreviewActive.value = true;
@@ -259,7 +218,10 @@ export function useImageRasterPaint() {
 		const eraser = activeTool.value === "eraser";
 		const radius = brushSize.value / 2;
 		const opacity = brushOpacity.value;
-		drawDab(ctx, pt.x, pt.y, radius, fillColor.value, opacity, eraser);
+		ctx.save();
+		applySelectionClip(ctx, width, height);
+		drawDab(ctx, pt.x, pt.y, radius, fillColor.value, opacity, eraser, brushHardness.value);
+		ctx.restore();
 		return true;
 	}
 
@@ -278,27 +240,47 @@ export function useImageRasterPaint() {
 		const eraser = activeTool.value === "eraser";
 		const radius = brushSize.value / 2;
 		const opacity = brushOpacity.value;
+		const { r, g, b } = parseHexRgb(fillColor.value);
+		const hardness = brushHardness.value;
 
-		ctx.lineCap = "round";
-		ctx.lineJoin = "round";
-		ctx.lineWidth = brushSize.value;
-		if (eraser) {
-			ctx.globalCompositeOperation = "destination-out";
-			ctx.strokeStyle = `rgba(0,0,0,${opacity})`;
+		ctx.save();
+		applySelectionClip(ctx, width, height);
+		if (hardness >= 0.99) {
+			ctx.lineCap = "round";
+			ctx.lineJoin = "round";
+			ctx.lineWidth = brushSize.value;
+			if (eraser) {
+				ctx.globalCompositeOperation = "destination-out";
+				ctx.strokeStyle = `rgba(0,0,0,${opacity})`;
+			} else {
+				ctx.globalCompositeOperation = "source-over";
+				ctx.strokeStyle = `rgba(${r},${g},${b},${opacity})`;
+			}
+			ctx.beginPath();
+			ctx.moveTo(lastX, lastY);
+			ctx.lineTo(pt.x, pt.y);
+			ctx.stroke();
 		} else {
-			ctx.globalCompositeOperation = "source-over";
-			const hex = fillColor.value.replace("#", "");
-			const r = parseInt(hex.slice(0, 2), 16);
-			const g = parseInt(hex.slice(2, 4), 16);
-			const b = parseInt(hex.slice(4, 6), 16);
-			ctx.strokeStyle = `rgba(${r},${g},${b},${opacity})`;
+			const dx = pt.x - lastX;
+			const dy = pt.y - lastY;
+			const dist = Math.hypot(dx, dy);
+			const step = Math.max(1, radius * 0.35);
+			const n = Math.max(1, Math.floor(dist / step));
+			for (let i = 1; i <= n; i++) {
+				drawDab(
+					ctx,
+					lastX + (dx * i) / n,
+					lastY + (dy * i) / n,
+					radius,
+					fillColor.value,
+					opacity,
+					eraser,
+					hardness,
+				);
+			}
 		}
-		ctx.beginPath();
-		ctx.moveTo(lastX, lastY);
-		ctx.lineTo(pt.x, pt.y);
-		ctx.stroke();
-
-		drawDab(ctx, pt.x, pt.y, radius, fillColor.value, opacity, eraser);
+		drawDab(ctx, pt.x, pt.y, radius, fillColor.value, opacity, eraser, hardness);
+		ctx.restore();
 		lastX = pt.x;
 		lastY = pt.y;
 	}
@@ -322,11 +304,12 @@ export function useImageRasterPaint() {
 					target.mediaId,
 					scratch,
 					eraser ? "erase" : "paint",
+					target.element,
 				);
-				recordPaintHistory(eraser ? "Eraser stroke" : "Brush stroke");
+				recordImageEditHistory(eraser ? "Eraser stroke" : "Brush stroke");
 			} else if (!eraser) {
-				await commitScratchAsNewLayer(scratch, "Brush");
-				recordPaintHistory("Brush layer");
+				await commitCanvasAsNewLayer(scratch, "Brush");
+				recordImageEditHistory("Brush layer");
 			}
 		} catch (e) {
 			console.error("[useImageRasterPaint] Commit failed:", e);

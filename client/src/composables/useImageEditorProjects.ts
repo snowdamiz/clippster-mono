@@ -1,6 +1,8 @@
 import { ref, computed } from 'vue';
 import type { ImageEditorProject, ProjectSummary } from '@/services/imageEditorApi';
 import * as projectApi from '@/services/imageEditorApi';
+import { resolveLocalProjectId } from '@/editor/bridge/image-project-document';
+import { cleanupLocalDesignStudioProject } from '@/services/designStudioCleanup';
 
 export function useImageEditorProjects() {
   const project = ref<ImageEditorProject | null>(null);
@@ -83,7 +85,21 @@ export function useImageEditorProjects() {
 
   async function deleteProject(id: number) {
     try {
+      // Fetch full project so we can clean local UUID + editor-media before/after API delete
+      let localId: string | null = null;
+      try {
+        const full = await projectApi.getProject(id);
+        localId = resolveLocalProjectId(full.project_data);
+      } catch (e) {
+        console.warn('[useImageEditorProjects] Could not load project before delete:', e);
+      }
+
       await projectApi.deleteProject(id);
+
+      if (localId) {
+        await cleanupLocalDesignStudioProject(localId);
+      }
+
       if (project.value?.id === id) {
         project.value = null;
       }

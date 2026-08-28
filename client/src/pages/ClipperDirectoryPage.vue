@@ -308,6 +308,8 @@
 </script>
 
 <style scoped>
+@reference "../style.css";
+
   .clipper-directory-page {
     @apply h-full;
   }

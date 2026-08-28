@@ -99,6 +99,18 @@ const router = createRouter({
     {
       path: '/design-studio',
       name: 'design-studio',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'design-studio-home',
+          component: () => import('@/pages/ImageEditor.vue'),
+        },
+      ],
+    },
+    {
+      path: '/design-studio/edit',
+      name: 'design-studio-edit',
       component: () => import('@/pages/ImageEditor.vue'),
       meta: { noLayout: true },
     },

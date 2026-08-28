@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, provide } from "vue";
 import { useEditorActions } from "../composables/actions/useEditorActions";
 import { useKeybindingsListener } from "../composables/useKeybindings";
 import { useImageMode } from "../composables/useImageMode";
@@ -13,6 +13,7 @@ import AssetsPanel from "./panels/AssetsPanel.vue";
 import PropertiesPanel from "./panels/PropertiesPanel.vue";
 import LayersPanel from "./panels/LayersPanel.vue";
 import ImageToolRail from "./ImageToolRail.vue";
+import ImageOptionsBar from "./ImageOptionsBar.vue";
 import {
 	FolderOpen,
 	Headphones,
@@ -29,7 +30,7 @@ import {
 	LayoutTemplate,
 	PanelRightClose,
 	PanelRightOpen,
-
+	ChevronDown,
 } from "lucide-vue-next";
 
 // Register global editor actions and keybindings
@@ -62,17 +63,9 @@ const TAB_KEYS = [
 
 type Tab = (typeof TAB_KEYS)[number];
 
-// Tabs hidden in image mode (video/audio-specific)
-const IMAGE_MODE_HIDDEN_TABS: Tab[] = ["sounds", "captions", "transcript", "transitions", "branding"];
-// Tabs only visible in image mode
 const IMAGE_MODE_ONLY_TABS: Tab[] = ["templates", "brandkit", "aitools"];
 
-const visibleTabs = computed(() => {
-	if (isImageMode.value) {
-		return TAB_KEYS.filter((t) => !IMAGE_MODE_HIDDEN_TABS.includes(t));
-	}
-	return TAB_KEYS.filter((t) => !IMAGE_MODE_ONLY_TABS.includes(t));
-});
+const visibleTabs = computed(() => TAB_KEYS.filter((t) => !IMAGE_MODE_ONLY_TABS.includes(t)));
 
 const tabConfig: Record<Tab, { icon: any; label: string }> = {
 	media: { icon: FolderOpen, label: "Media" },
@@ -92,9 +85,34 @@ const tabConfig: Record<Tab, { icon: any; label: string }> = {
 	settings: { icon: Settings, label: "Settings" },
 };
 
+type ImageDockTab = "properties" | Tab;
+
+const IMAGE_DOCK_PRIMARY: ImageDockTab[] = ["properties", "media"];
+const IMAGE_DOCK_MORE: Tab[] = ["templates", "filters", "brandkit", "aitools", "stickers", "text", "settings"];
+
 const activeTab = ref<Tab | null>("media");
+const imageDockTab = ref<ImageDockTab>("properties");
+const imageMoreOpen = ref(false);
 const propertiesCollapsed = ref(false);
 const shortcutsOpen = ref(false);
+
+const imageDockMoreLabel = computed(() => {
+	if (IMAGE_DOCK_MORE.includes(imageDockTab.value as Tab)) {
+		return tabConfig[imageDockTab.value as Tab].label;
+	}
+	return "More";
+});
+
+function setImageDockTab(tab: ImageDockTab) {
+	imageDockTab.value = tab;
+	imageMoreOpen.value = false;
+	if (tab !== "properties") {
+		activeTab.value = tab;
+	}
+}
+
+provide("setImageDockTab", setImageDockTab);
+provide("imageDockTab", imageDockTab);
 
 function toggleShortcutsModal() {
 	shortcutsOpen.value = !shortcutsOpen.value;
@@ -143,7 +161,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-	<div class="flex h-full w-full flex-col overflow-hidden bg-[#0e0e10] text-white">
+	<div class="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden bg-[#0e0e10] text-white">
 		<!-- Header -->
 		<EditorHeader
 			:preview-container="previewPanelRef?.containerRef ?? null"
@@ -151,60 +169,77 @@ onUnmounted(() => {
 			:last-saved-at="lastSavedAt"
 		/>
 
-		<!-- ============ IMAGE MODE LAYOUT (Photoshop-like) ============ -->
-		<div v-if="isImageMode" class="flex flex-1 min-h-0 overflow-hidden">
-			<!-- Photoshop tool rail -->
-			<ImageToolRail />
+		<!-- Image mode: tools · options · canvas · one docked panel column -->
+		<div v-if="isImageMode" class="flex flex-1 min-h-0 flex-col overflow-hidden">
+			<ImageOptionsBar />
 
-			<!-- Asset sidebar: icons + labels -->
-			<div class="flex w-[52px] shrink-0 flex-col items-center gap-0.5 border-r border-white/[0.06] bg-[#111113] pt-2 pb-3 overflow-y-auto scrollbar-hidden">
-				<button
-					v-for="tabKey in visibleTabs"
-					:key="tabKey"
-					type="button"
-					:title="tabConfig[tabKey].label"
-					:aria-label="`${tabConfig[tabKey].label} panel`"
-					:aria-pressed="activeTab === tabKey"
-					:class="[
-						'group relative flex flex-col items-center justify-center w-[44px] rounded-md py-1.5 transition-all',
-						activeTab === tabKey
-							? 'bg-white/[0.08] text-blue-400'
-							: 'text-zinc-600 hover:text-zinc-300 hover:bg-white/[0.04]',
-					]"
-					@click="activeTab = activeTab === tabKey ? null : tabKey"
-				>
-					<component :is="tabConfig[tabKey].icon" class="size-[16px]" />
-					<span
-						:class="[
-							'mt-[3px] text-[8px] leading-none font-medium tracking-wide',
-							activeTab === tabKey ? 'text-blue-400' : 'text-zinc-600 group-hover:text-zinc-400',
-						]"
-					>{{ tabConfig[tabKey].label }}</span>
-					<div
-						v-if="activeTab === tabKey"
-						class="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-4 rounded-r bg-blue-500"
-					/>
-				</button>
-			</div>
+			<div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+				<ImageToolRail />
 
-			<!-- Left panel: Assets content (wider for image mode) -->
-			<div class="w-[320px] shrink-0 border-r border-white/[0.06] bg-[#141416] overflow-hidden flex flex-col">
-				<AssetsPanel :active-tab="activeTab" />
-			</div>
-
-			<!-- Center: Canvas workspace -->
-			<div class="flex-1 min-w-0 overflow-hidden bg-[#0a0a0c]">
-				<PreviewPanel ref="previewPanelRef" />
-			</div>
-
-			<!-- Right panel: Layers + Properties stacked -->
-			<div class="w-[280px] shrink-0 border-l border-white/[0.06] bg-[#141416] overflow-hidden flex flex-col">
-				<div class="h-[45%] shrink-0 border-b border-white/[0.06] overflow-hidden">
-					<LayersPanel />
+				<div class="min-w-0 flex-1 overflow-hidden bg-[#2b2b2b]">
+					<PreviewPanel ref="previewPanelRef" />
 				</div>
-				<div class="flex-1 min-h-0 overflow-hidden">
-					<PropertiesPanel />
-				</div>
+
+				<aside class="box-border flex w-[280px] shrink-0 flex-col overflow-hidden border-l border-black/40 bg-[#1e1e1e]">
+					<div class="relative flex h-7 shrink-0 items-stretch border-b border-black/40 bg-[#2a2a2a] pr-1">
+						<button
+							v-for="tabKey in IMAGE_DOCK_PRIMARY"
+							:key="tabKey"
+							type="button"
+							:class="[
+								'px-2.5 text-[11px] leading-none transition-colors',
+								imageDockTab === tabKey
+									? 'bg-[#1e1e1e] text-zinc-100'
+									: 'text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300',
+							]"
+							@click="setImageDockTab(tabKey)"
+						>
+							{{ tabKey === "properties" ? "Properties" : "Media" }}
+						</button>
+						<button
+							type="button"
+							:class="[
+								'ml-auto flex shrink-0 items-center gap-0.5 px-2 text-[11px]',
+								IMAGE_DOCK_MORE.includes(imageDockTab as Tab)
+									? 'bg-[#1e1e1e] text-zinc-100'
+									: 'text-zinc-500 hover:text-zinc-300',
+							]"
+							@click="imageMoreOpen = !imageMoreOpen"
+						>
+							<span class="max-w-[72px] truncate">{{ imageDockMoreLabel }}</span>
+							<ChevronDown class="size-3 shrink-0" />
+						</button>
+						<div
+							v-if="imageMoreOpen"
+							class="fixed inset-0 z-20"
+							@click="imageMoreOpen = false"
+						/>
+						<div
+							v-if="imageMoreOpen"
+							class="absolute right-0 top-full z-30 min-w-[140px] border border-black/50 bg-[#2a2a2a] py-1 shadow-lg"
+						>
+							<button
+								v-for="tabKey in IMAGE_DOCK_MORE"
+								:key="tabKey"
+								type="button"
+								class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-zinc-300 hover:bg-white/5"
+								@click="setImageDockTab(tabKey)"
+							>
+								<component :is="tabConfig[tabKey].icon" class="size-3.5 text-zinc-500" />
+								{{ tabConfig[tabKey].label }}
+							</button>
+						</div>
+					</div>
+
+					<div class="min-h-0 flex-[0.9] overflow-hidden border-b border-black/40">
+						<PropertiesPanel v-if="imageDockTab === 'properties'" />
+						<AssetsPanel v-else :active-tab="imageDockTab" />
+					</div>
+
+					<div class="flex min-h-[220px] min-w-0 flex-[1.15] flex-col overflow-hidden">
+						<LayersPanel />
+					</div>
+				</aside>
 			</div>
 		</div>
 

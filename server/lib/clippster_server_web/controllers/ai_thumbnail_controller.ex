@@ -89,7 +89,7 @@ defmodule ClippsterServerWeb.AIThumbnailController do
         conn |> put_status(:not_found) |> json(%{error: "Session not found"})
 
       session ->
-        case ThumbnailSessions.delete_session(session) do
+        case ThumbnailSessions.delete_session_with_assets(session) do
           {:ok, _} -> json(conn, %{ok: true})
           {:error, _} -> conn |> put_status(:internal_server_error) |> json(%{error: "Failed to delete"})
         end

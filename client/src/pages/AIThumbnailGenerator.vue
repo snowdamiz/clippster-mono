@@ -6,8 +6,9 @@
     :icon="ImagePlus"
   >
     <template #actions>
-      <button type="button" class="btn-accent h-8 px-3.5 text-xs" @click="openCreateDialog">
-        <Plus :size="16" /> New Project
+      <button type="button" class="aithumb-create-btn" @click="openCreateDialog">
+        <Plus class="aithumb-create-btn__icon" />
+        New Project
       </button>
     </template>
 
@@ -23,61 +24,125 @@
     <!-- Home -->
     <div
       v-else-if="!session"
-      class="flex flex-1 flex-col gap-6 p-6"
-      :class="{ 'items-center justify-center': !isLoadingSessions && sessions.length === 0 }"
+      class="aithumb__content"
+      :class="{ 'aithumb__content--empty': !isLoadingSessions && sessions.length === 0 }"
     >
-      <div v-if="sessions.length || isLoadingSessions">
-        <h1 class="text-2xl font-bold tracking-tight text-[var(--sidebar-text)]">Thumbnail Projects</h1>
-        <p class="mt-1 text-sm text-[var(--sidebar-text-muted)]">
+      <div v-if="sessions.length || isLoadingSessions" class="aithumb__heading">
+        <h1 class="aithumb__title">Thumbnail Projects</h1>
+        <p class="aithumb__subtitle">
           Chat a brief, attach video context, then generate Quick or Editable thumbnails
         </p>
       </div>
 
-      <div v-if="isLoadingSessions" class="home-grid">
-        <div v-for="i in 6" :key="i" class="aspect-video animate-pulse rounded-[10px] border border-[var(--sidebar-border)] bg-[var(--sidebar-surface)]" />
-      </div>
-
-      <div v-else-if="sessions.length" class="home-grid">
-        <div
-          v-for="s in sessions"
-          :key="s.id"
-          class="group relative aspect-video cursor-pointer overflow-hidden rounded-[10px] border border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] transition-all hover:scale-[1.02] hover:border-white/15"
-          @click="openSession(s.id)"
-        >
-          <div class="absolute left-2 top-2 z-10 flex gap-1.5">
-            <span class="badge" :class="statusBadgeClass(s.status)">{{ formatStatus(s.status) }}</span>
-            <span class="badge" :class="s.generation_mode === 'quick' ? 'bg-sky-500/20 text-sky-300' : 'bg-purple-500/20 text-purple-300'">
-              {{ s.generation_mode === 'quick' ? 'Quick' : 'Editable' }}
-            </span>
-          </div>
-          <img v-if="s.thumbnail_url" :src="s.thumbnail_url" :alt="s.name || 'Thumbnail'" class="h-full w-full object-cover" />
-          <div v-else class="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-600/20 to-zinc-900">
-            <ImagePlus class="text-purple-400/40" :size="48" />
-          </div>
-          <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10">
-            <h3 class="truncate text-sm font-semibold text-zinc-100">{{ s.name || 'Untitled Project' }}</h3>
-            <p class="mt-0.5 text-xs text-zinc-400">{{ formatDate(s.updated_at) }}</p>
-          </div>
-          <div class="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-            <button type="button" class="hover-action hover:bg-purple-600" title="Open" @click.stop="openSession(s.id)">
-              <Play :size="16" />
-            </button>
-            <button type="button" class="hover-action hover:bg-red-600" title="Delete" @click.stop="removeSession(s.id)">
-              <Trash2 :size="16" />
-            </button>
+      <div v-if="isLoadingSessions" class="aithumb__grid">
+        <div v-for="i in 6" :key="i" class="aithumb-card aithumb-card--skeleton">
+          <div class="aithumb-card__skeleton-bg"></div>
+          <div class="aithumb-card__bottom">
+            <div class="aithumb-skeleton__title"></div>
+            <div class="aithumb-skeleton__meta"></div>
           </div>
         </div>
       </div>
 
-      <div v-else class="flex flex-col items-center text-center">
-        <div class="flex size-20 items-center justify-center rounded-full bg-white/5">
-          <ImagePlus class="text-zinc-600" :size="40" />
+      <div v-else-if="sessions.length" class="aithumb__main">
+        <Transition name="selection-bar">
+          <div v-if="selectedProjects.size > 0" class="aithumb__selection-bar">
+            <div class="aithumb__selection-info">
+              <Check class="aithumb__selection-icon" />
+              <span>{{ selectedProjects.size }} selected</span>
+              <button
+                v-if="selectedProjects.size < sessions.length"
+                type="button"
+                class="aithumb__selection-select-all"
+                @click="selectAllProjects"
+              >
+                Select all
+              </button>
+            </div>
+            <div class="aithumb__selection-actions">
+              <button type="button" class="aithumb__selection-clear" @click="clearSelection">Clear</button>
+              <button type="button" class="aithumb__selection-delete" @click="confirmBulkDelete">
+                <Trash2 class="aithumb__selection-delete-icon" />
+                Delete Selected
+              </button>
+            </div>
+          </div>
+        </Transition>
+
+        <div class="aithumb__grid">
+          <div
+            v-for="s in sessions"
+            :key="s.id"
+            class="aithumb-card"
+            :class="{ 'aithumb-card--selected': isProjectSelected(s.id) }"
+            @click="openSession(s.id)"
+          >
+            <div
+              class="aithumb-card__checkbox"
+              :class="{ 'aithumb-card__checkbox--visible': isProjectSelected(s.id) }"
+              @click.stop="toggleProjectSelection(s.id)"
+            >
+              <div
+                class="aithumb-card__checkbox-inner"
+                :class="{ 'aithumb-card__checkbox-inner--checked': isProjectSelected(s.id) }"
+              >
+                <Check v-if="isProjectSelected(s.id)" class="aithumb-card__checkbox-icon" />
+              </div>
+            </div>
+
+            <div class="aithumb-card__badges">
+              <div class="aithumb-card__badge" :class="`aithumb-card__badge--${s.status}`">
+                {{ formatStatus(s.status) }}
+              </div>
+              <div
+                class="aithumb-card__mode-badge"
+                :class="s.generation_mode === 'quick' ? 'aithumb-card__mode-badge--quick' : 'aithumb-card__mode-badge--editable'"
+              >
+                {{ s.generation_mode === 'quick' ? 'Quick' : 'Editable' }}
+              </div>
+            </div>
+
+            <div
+              v-if="s.thumbnail_url"
+              class="aithumb-card__thumbnail"
+              :style="{ backgroundImage: `url(${s.thumbnail_url})` }"
+            >
+              <div class="aithumb-card__vignette"></div>
+            </div>
+            <div v-else class="aithumb-card__thumbnail aithumb-card__thumbnail--empty">
+              <div class="aithumb-card__thumbnail-gradient"></div>
+              <div class="aithumb-card__empty-icon">
+                <ImagePlus class="aithumb-card__folder-icon" />
+              </div>
+            </div>
+
+            <div class="aithumb-card__bottom">
+              <h3 class="aithumb-card__title" :title="s.name || 'Untitled Project'">
+                {{ s.name || 'Untitled Project' }}
+              </h3>
+              <div class="aithumb-card__meta">
+                <span class="aithumb-card__meta-text">{{ formatDate(s.updated_at) }}</span>
+              </div>
+            </div>
+
+            <div class="aithumb-card__hover-actions">
+              <button type="button" class="aithumb-card__action-btn" title="Open" @click.stop="openSession(s.id)">
+                <Play class="aithumb-card__action-icon" />
+              </button>
+              <button type="button" class="aithumb-card__action-btn" title="Delete" @click.stop="removeSession(s.id)">
+                <Trash2 class="aithumb-card__action-icon" />
+              </button>
+            </div>
+          </div>
         </div>
-        <h3 class="mt-4 text-lg font-medium text-zinc-200">No thumbnail projects yet</h3>
-        <p class="mt-1 text-sm text-zinc-500">Create your first AI thumbnail project to get started</p>
-        <button type="button" class="btn-purple mt-6" @click="openCreateDialog">
-          <Plus :size="16" /> Create Your First Project
-        </button>
+      </div>
+
+      <div v-else class="aithumb__empty">
+        <div class="aithumb__empty-icon-wrapper">
+          <ImagePlus class="aithumb__empty-icon" />
+        </div>
+        <h3 class="aithumb__empty-title">No projects found</h3>
+        <p class="aithumb__empty-description">Create a new project to get started</p>
       </div>
     </div>
 
@@ -90,9 +155,9 @@
               <button type="button" class="icon-ghost" title="Back to projects" @click="backToHome">
                 <ArrowLeft :size="16" />
               </button>
-              <ImagePlus :size="18" class="shrink-0 text-purple-400" />
+              <ImagePlus :size="18" class="shrink-0 text-sky-400" />
               <span class="truncate text-sm font-semibold text-zinc-100">{{ session.name || 'Untitled Project' }}</span>
-              <span class="badge bg-purple-500/20 text-purple-300">{{ formatStatus(status) }}</span>
+              <span class="badge bg-sky-500/20 text-sky-300">{{ formatStatus(status) }}</span>
             </div>
             <div class="flex items-center gap-3">
               <div class="flex rounded-lg border border-white/10 p-0.5">
@@ -101,7 +166,7 @@
                   :key="m"
                   type="button"
                   class="rounded-md px-3 py-1.5 text-xs font-semibold transition-colors"
-                  :class="generationMode === m ? 'bg-purple-600 text-white' : 'text-zinc-400 hover:text-zinc-200'"
+                  :class="generationMode === m ? 'bg-sky-600 text-white' : 'text-zinc-400 hover:text-zinc-200'"
                   :disabled="isLoading || isGenerating"
                   @click="changeMode(m)"
                 >
@@ -169,7 +234,7 @@
                   <p class="mt-2 text-xs text-zinc-500">Attach a library project or built clip</p>
                   <button
                     type="button"
-                    class="btn-purple mt-3 px-3 py-1.5 text-xs"
+                    class="btn-primary mt-3 px-3 py-1.5 text-xs"
                     :disabled="isAttachingVideo"
                     @click="showVideoPicker = true"
                   >
@@ -186,21 +251,20 @@
                 >
                   {{ showAdvancedMedia ? 'Hide manual override' : 'Manual override' }}
                 </button>
-                <div v-if="showAdvancedMedia" class="rounded-lg border border-white/10 bg-zinc-900/40 p-2">
-                    <div class="flex gap-2">
-                      <input v-model="mediaName" type="text" placeholder="Video name" class="field-input flex-1" />
-                      <input v-model="mediaId" type="text" placeholder="Video id" class="field-input w-28" />
-                    </div>
-                    <textarea
-                      v-model="keyFramesInput"
-                      rows="2"
-                      placeholder="Key frames: JSON array or one URL per line"
-                      class="field-input w-full resize-none"
-                    />
-                    <button type="button" class="link-action" :disabled="!mediaId.trim() || isLoading" @click="saveMedia">
-                      Save media manually
-                    </button>
+                <div v-if="showAdvancedMedia" class="space-y-2 rounded-lg border border-white/10 bg-zinc-900/40 p-2">
+                  <div class="flex gap-2">
+                    <input v-model="mediaName" type="text" placeholder="Video name" class="field-input flex-1" />
+                    <input v-model="mediaId" type="text" placeholder="Video id" class="field-input w-28" />
                   </div>
+                  <textarea
+                    v-model="keyFramesInput"
+                    rows="2"
+                    placeholder="Key frames: JSON array or one URL per line"
+                    class="field-input w-full resize-none"
+                  />
+                  <button type="button" class="link-action" :disabled="!mediaId.trim() || isLoading" @click="saveMedia">
+                    Save media manually
+                  </button>
                 </div>
               </div>
 
@@ -260,7 +324,7 @@
                 <Loader2 :size="32" class="animate-spin text-zinc-500" />
               </div>
               <div v-else-if="isGenerating" class="flex flex-1 flex-col items-center justify-center gap-3">
-                <Loader2 :size="48" class="animate-spin text-purple-400" />
+                <Loader2 :size="48" class="animate-spin text-sky-400" />
                 <h3 class="text-lg font-medium text-zinc-100">Generating thumbnail…</h3>
                 <p class="text-sm text-zinc-500">
                   {{ generationMode === 'quick' ? 'Creating candidates' : 'Building plate + recipe' }}
@@ -278,7 +342,7 @@
                   <button
                     v-if="selectedCandidate"
                     type="button"
-                    class="btn-purple px-3 py-1.5 text-xs"
+                    class="btn-primary px-3 py-1.5 text-xs"
                     :disabled="isAccepting || isCompleted"
                     @click="handleAccept(selectedCandidateIndex)"
                   >
@@ -291,7 +355,7 @@
                     :key="i"
                     type="button"
                     class="overflow-hidden rounded-lg border transition-all"
-                    :class="selectedCandidateIndex === i ? 'border-purple-500 ring-2 ring-purple-500/40' : 'border-white/10 hover:border-white/25'"
+                    :class="selectedCandidateIndex === i ? 'border-sky-500 ring-2 ring-sky-500/40' : 'border-white/10 hover:border-white/25'"
                     @click="selectedCandidateIndex = i"
                   >
                     <img :src="c.url" :alt="`Candidate ${i + 1}`" class="h-auto w-[200px] object-cover" />
@@ -315,14 +379,14 @@
                     <button
                       v-if="editorProjectId"
                       type="button"
-                      class="flex items-center gap-2 rounded-lg border border-purple-500/40 px-3 py-1.5 text-xs font-semibold text-purple-300 hover:bg-purple-600/20"
+                      class="flex items-center gap-2 rounded-lg border border-sky-500/40 px-3 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-600/20"
                       @click="openInEditor"
                     >
                       <ExternalLink :size="14" /> Open in Image Editor
                     </button>
                     <button
                       type="button"
-                      class="btn-purple px-3 py-1.5 text-xs"
+                      class="btn-primary px-3 py-1.5 text-xs"
                       :disabled="isAccepting || isCompleted || !session.plate_url"
                       @click="handleAccept(0)"
                     >
@@ -334,7 +398,7 @@
                 <div v-if="editableFeedPreviewUrl || isBuildingFeedPreview" class="mb-2">
                   <p class="mb-2 text-xs text-zinc-500">Feed preview (~200px) — postage-stamp test</p>
                   <div
-                    class="inline-flex overflow-hidden rounded-lg border border-purple-500/40 bg-black ring-2 ring-purple-500/20"
+                    class="inline-flex overflow-hidden rounded-lg border border-sky-500/40 bg-black ring-2 ring-sky-500/20"
                   >
                     <img
                       v-if="editableFeedPreviewUrl"
@@ -405,8 +469,8 @@
           @click.self="showCreateDialog = false"
         >
           <div class="w-full max-w-md rounded-lg border border-white/10 bg-zinc-900 p-6 shadow-xl">
-            <div class="mb-4 flex size-12 items-center justify-center rounded-full bg-purple-600/20">
-              <ImagePlus :size="24" class="text-purple-400" />
+            <div class="mb-4 flex size-12 items-center justify-center rounded-full bg-sky-600/20">
+              <ImagePlus :size="24" class="text-sky-400" />
             </div>
             <h3 class="text-lg font-semibold text-zinc-100">New Thumbnail Project</h3>
             <p class="mt-1 text-sm text-zinc-500">Choose a workflow, then name your project</p>
@@ -415,7 +479,7 @@
               <button
                 type="button"
                 class="rounded-lg border px-3 py-3 text-left transition-all"
-                :class="createMode === 'editable' ? 'border-purple-500 bg-purple-600/15 ring-1 ring-purple-500/40' : 'border-white/10 hover:border-white/20'"
+                :class="createMode === 'editable' ? 'border-sky-500 bg-sky-600/15 ring-1 ring-sky-500/40' : 'border-white/10 hover:border-white/20'"
                 @click="createMode = 'editable'"
               >
                 <p class="text-sm font-semibold text-zinc-100">Editable</p>
@@ -446,7 +510,7 @@
               <button type="button" class="flex-1 rounded-lg border border-white/10 px-4 py-2 text-sm text-zinc-300 hover:bg-white/5" @click="showCreateDialog = false">
                 Cancel
               </button>
-              <button type="button" class="btn-purple flex-1" @click="confirmCreate">
+              <button type="button" class="btn-primary flex-1" @click="confirmCreate">
                 <Plus :size="14" /> Create
               </button>
             </div>
@@ -491,6 +555,7 @@ const {
 
 const sessions = ref<ThumbnailSessionSummary[]>([]);
 const isLoadingSessions = ref(false);
+const selectedProjects = ref<Set<number>>(new Set());
 const showCreateDialog = ref(false);
 const createMode = ref<ThumbnailGenerationMode>('editable');
 const showVideoPicker = ref(false);
@@ -675,9 +740,50 @@ async function removeSession(id: number) {
   try {
     await deleteSession(id);
     sessions.value = sessions.value.filter((x) => x.id !== id);
+    selectedProjects.value.delete(id);
+    selectedProjects.value = new Set(selectedProjects.value);
   } catch {
     alert('Failed to delete project.');
   }
+}
+
+function isProjectSelected(id: number): boolean {
+  return selectedProjects.value.has(id);
+}
+
+function toggleProjectSelection(id: number) {
+  if (selectedProjects.value.has(id)) {
+    selectedProjects.value.delete(id);
+  } else {
+    selectedProjects.value.add(id);
+  }
+  selectedProjects.value = new Set(selectedProjects.value);
+}
+
+function clearSelection() {
+  selectedProjects.value = new Set();
+}
+
+function selectAllProjects() {
+  selectedProjects.value = new Set(sessions.value.map((s) => s.id));
+}
+
+async function confirmBulkDelete() {
+  const count = selectedProjects.value.size;
+  if (count === 0) return;
+  if (!confirm(`Are you sure you want to delete ${count} project${count > 1 ? 's' : ''}? This action cannot be undone.`)) {
+    return;
+  }
+  const ids = Array.from(selectedProjects.value);
+  for (const id of ids) {
+    try {
+      await deleteSession(id);
+      sessions.value = sessions.value.filter((x) => x.id !== id);
+    } catch (e) {
+      console.error('[AIThumbnail] Failed to delete session:', id, e);
+    }
+  }
+  clearSelection();
 }
 
 function backToHome() {
@@ -802,7 +908,7 @@ async function handleAccept(candidateIndex = 0) {
 
 function openInEditor() {
   if (editorProjectId.value) {
-    router.push({ path: '/design-studio', query: { projectId: String(editorProjectId.value) } });
+    router.push({ path: '/design-studio/edit', query: { projectId: String(editorProjectId.value) } });
   }
 }
 
@@ -853,25 +959,13 @@ function formatDate(dateStr: string) {
 </script>
 
 <style scoped>
-.home-grid {
-  display: grid;
-  grid-template-columns: repeat(1, minmax(0, 1fr));
-  gap: 1.25rem;
-}
-@media (min-width: 1024px) {
-  .home-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (min-width: 1400px) {
-  .home-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-@media (min-width: 1800px) {
-  .home-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
+@reference "../style.css";
+
 .badge {
   @apply rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide;
 }
 .field-input {
-  @apply rounded-lg border border-white/10 bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-purple-500;
+  @apply rounded-lg border border-white/10 bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-sky-500;
 }
 .icon-btn {
   @apply flex size-9 shrink-0 items-center justify-center rounded-lg border border-white/10 text-zinc-400 hover:bg-white/5 hover:text-zinc-200;
@@ -879,23 +973,461 @@ function formatDate(dateStr: string) {
 .icon-ghost {
   @apply flex size-8 items-center justify-center rounded-lg text-zinc-400 hover:bg-white/5 hover:text-zinc-100;
 }
-.btn-purple {
-  @apply flex items-center justify-center gap-2 rounded-lg bg-purple-600 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50;
+.btn-primary {
+  @apply flex items-center justify-center gap-2 rounded-lg bg-[var(--sidebar-accent)] text-sm font-medium text-[var(--sidebar-bg)] hover:opacity-90 disabled:opacity-50;
 }
 .btn-accent {
   @apply flex items-center gap-2 rounded-md bg-[var(--sidebar-accent)] font-semibold text-[var(--sidebar-bg)] transition-opacity hover:opacity-90;
 }
 .link-action {
-  @apply text-xs font-medium text-purple-400 hover:text-purple-300 disabled:opacity-40;
+  @apply text-xs font-medium text-[var(--sidebar-accent)] hover:opacity-80 disabled:opacity-40;
 }
 .section-label {
   @apply text-[11px] font-semibold uppercase tracking-wide text-zinc-500;
 }
-.hover-action {
-  @apply flex size-9 items-center justify-center rounded-lg bg-white/10 text-white backdrop-blur;
+
+.aithumb-create-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 32px;
+  padding: 0 0.875rem;
+  background-color: var(--sidebar-accent);
+  color: var(--sidebar-bg);
+  border: none;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms ease;
 }
+.aithumb-create-btn:hover {
+  opacity: 0.9;
+}
+.aithumb-create-btn__icon {
+  width: 14px;
+  height: 14px;
+}
+
+.aithumb__content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  width: 100%;
+  flex: 1;
+}
+.aithumb__content--empty {
+  justify-content: center;
+  align-items: center;
+}
+.aithumb__heading {
+  margin-bottom: 0.5rem;
+}
+.aithumb__title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--sidebar-text);
+  margin: 0 0 0.2rem;
+  letter-spacing: -0.02em;
+}
+.aithumb__subtitle {
+  font-size: 0.875rem;
+  color: var(--sidebar-text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+.aithumb__main {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+}
+
+.aithumb__selection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background-color: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+}
+.aithumb__selection-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--sidebar-text);
+  font-weight: 500;
+}
+.aithumb__selection-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--sidebar-accent);
+}
+.aithumb__selection-select-all {
+  margin-left: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--sidebar-accent);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.aithumb__selection-select-all:hover {
+  background-color: var(--sidebar-hover);
+}
+.aithumb__selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.aithumb__selection-clear {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--sidebar-text-muted);
+  background: transparent;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+.aithumb__selection-clear:hover {
+  background-color: var(--sidebar-hover);
+  color: var(--sidebar-text);
+}
+.aithumb__selection-delete {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+.aithumb__selection-delete:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
+.aithumb__selection-delete-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.aithumb__grid {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: 1.25rem;
+}
+@media (min-width: 1024px) {
+  .aithumb__grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1400px) {
+  .aithumb__grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (min-width: 1800px) {
+  .aithumb__grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+.aithumb-card {
+  position: relative;
+  background-color: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 200ms ease;
+  aspect-ratio: 16 / 9;
+}
+.aithumb-card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  transform: scale(1.02);
+}
+.aithumb-card--selected {
+  border-color: var(--sidebar-accent);
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+}
+.aithumb-card--selected:hover {
+  border-color: var(--sidebar-accent);
+}
+.aithumb-card--skeleton {
+  pointer-events: none;
+}
+.aithumb-card__skeleton-bg {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, var(--sidebar-hover) 0%, var(--sidebar-surface) 100%);
+}
+.aithumb-skeleton__title {
+  height: 14px;
+  width: 65%;
+  background: var(--sidebar-hover);
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+.aithumb-skeleton__meta {
+  height: 10px;
+  width: 40%;
+  background: var(--sidebar-hover);
+  border-radius: 4px;
+}
+
+.aithumb-card__checkbox {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 30;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.aithumb-card:hover .aithumb-card__checkbox,
+.aithumb-card__checkbox--visible {
+  opacity: 1;
+}
+.aithumb-card__checkbox-inner {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  color: white;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: all 150ms ease;
+}
+.aithumb-card__checkbox-inner--checked {
+  background-color: var(--sidebar-accent);
+  border-color: var(--sidebar-accent);
+  color: var(--sidebar-bg);
+}
+.aithumb-card__checkbox-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.aithumb-card__badges {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.aithumb-card__badge {
+  display: flex;
+  align-items: center;
+  padding: 0.3125rem 0.5rem;
+  border-radius: 5px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  background-color: rgba(113, 113, 122, 0.35);
+  color: #d4d4d8;
+}
+.aithumb-card__badge--completed,
+.aithumb-card__badge--generated {
+  background-color: rgba(34, 197, 94, 0.25);
+  color: #86efac;
+}
+.aithumb-card__badge--generating,
+.aithumb-card__badge--refining {
+  background-color: rgba(245, 158, 11, 0.25);
+  color: #fcd34d;
+}
+.aithumb-card__badge--discovery {
+  background-color: rgba(14, 165, 233, 0.25);
+  color: #7dd3fc;
+}
+
+.aithumb-card__mode-badge {
+  display: flex;
+  align-items: center;
+  padding: 0.3125rem 0.5rem;
+  border-radius: 5px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.aithumb-card__mode-badge--quick {
+  background-color: rgba(14, 165, 233, 0.25);
+  color: #7dd3fc;
+}
+.aithumb-card__mode-badge--editable {
+  background-color: rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+}
+
+.aithumb-card__thumbnail {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.aithumb-card__vignette {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 40%, transparent 70%);
+}
+.aithumb-card__thumbnail--empty {
+  background-color: var(--sidebar-hover);
+}
+.aithumb-card__thumbnail-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.4) 50%, rgba(0, 0, 0, 0.5) 100%);
+}
+.aithumb-card__empty-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.2;
+}
+.aithumb-card__folder-icon {
+  width: 64px;
+  height: 64px;
+  color: var(--sidebar-text);
+}
+
+.aithumb-card__bottom {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  padding: 1rem;
+  padding-top: 7rem;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 50%, transparent 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.aithumb-card__title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: white;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  line-height: 1.3;
+}
+.aithumb-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+}
+.aithumb-card__meta-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aithumb-card__hover-actions {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  background-color: rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.aithumb-card:hover .aithumb-card__hover-actions {
+  opacity: 1;
+}
+.aithumb-card__action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  background-color: rgba(255, 255, 255, 0.9);
+  border: none;
+  border-radius: 9999px;
+  color: #1f2937;
+  cursor: pointer;
+  transition: all 150ms ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+.aithumb-card__action-btn:hover {
+  background-color: white;
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+.aithumb-card__action-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.aithumb__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.aithumb__empty-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  background-color: var(--sidebar-hover);
+  border-radius: 16px;
+  margin-bottom: 1.5rem;
+}
+.aithumb__empty-icon {
+  width: 36px;
+  height: 36px;
+  color: var(--sidebar-text-muted);
+}
+.aithumb__empty-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--sidebar-text);
+  margin: 0 0 0.5rem;
+}
+.aithumb__empty-description {
+  font-size: 0.875rem;
+  color: var(--sidebar-text-muted);
+  margin: 0;
+  max-width: 300px;
+}
+
 .modal-enter-active,
 .modal-leave-active { transition: opacity 0.15s ease; }
 .modal-enter-from,
 .modal-leave-to { opacity: 0; }
+.selection-bar-enter-active { transition: all 150ms ease; }
+.selection-bar-leave-active { transition: all 100ms ease; }
+.selection-bar-enter-from,
+.selection-bar-leave-to { opacity: 0; transform: translateY(-4px); }
 </style>

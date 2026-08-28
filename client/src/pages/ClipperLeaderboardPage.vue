@@ -170,6 +170,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
+@reference "../style.css";
+
 .clipper-leaderboard-page {
   @apply h-full;
 }

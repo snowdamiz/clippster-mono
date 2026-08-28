@@ -6,6 +6,8 @@
 import { computed, inject, type Ref } from "vue";
 import { useEditor } from "./useEditor";
 import { flushAndSerializeActiveImageProject } from "../bridge/image-project-document";
+import { mimeForImageStill } from "../lib/image-export-format";
+import { renderActiveProjectToImageBlob } from "../lib/image-export";
 
 export type ImageExportFormat = "png" | "jpg" | "webp";
 
@@ -25,25 +27,15 @@ export function useImageMode() {
 	);
 
 	function mimeForFormat(format: ImageExportFormat): string {
-		if (format === "jpg") return "image/jpeg";
-		if (format === "webp") return "image/webp";
-		return "image/png";
+		return mimeForImageStill(format);
 	}
 
 	/**
-	 * Export the current canvas as an image file.
-	 * Returns the blob data for saving.
+	 * Export the current composition at full canvas resolution.
+	 * Uses the same scene renderer as preview/video WYSIWYG — not the display snapshot.
 	 */
 	async function exportAsImage(format: ImageExportFormat = "png"): Promise<Blob | null> {
-		const canvas = editor.getPreviewCanvas();
-		if (!canvas) return null;
-
-		const mimeType = mimeForFormat(format);
-		const quality = format === "png" ? undefined : 0.92;
-
-		return new Promise<Blob | null>((resolve) => {
-			canvas.toBlob((blob) => resolve(blob), mimeType, quality);
-		});
+		return renderActiveProjectToImageBlob(format);
 	}
 
 	async function writeBlobToAppImages(
@@ -87,7 +79,6 @@ export function useImageMode() {
 
 		try {
 			const { filePath, fileSize } = await writeBlobToAppImages(blob, libraryFilename);
-			const canvas = editor.getPreviewCanvas();
 			const serialized = await flushAndSerializeActiveImageProject();
 			const { createImageAsset } = await import("@/services/database/image-assets");
 			const backendId =
@@ -96,8 +87,8 @@ export function useImageMode() {
 			await createImageAsset({
 				name: baseName,
 				filePath,
-				width: canvas?.width || undefined,
-				height: canvas?.height || undefined,
+				width: project?.settings.canvasSize.width,
+				height: project?.settings.canvasSize.height,
 				fileSize,
 				mimeType: mimeForFormat(format),
 				imageType: (opts.imageType as any) || "custom",
@@ -171,15 +162,14 @@ export function useImageMode() {
 			const { createImageAsset } = await import("@/services/database/image-assets");
 			const serialized = await flushAndSerializeActiveImageProject();
 
-			const canvas = editor.getPreviewCanvas();
 			const project = editor.project.getActiveOrNull();
 			const backendId =
 				backendProjectId && "value" in backendProjectId ? backendProjectId.value : null;
 			const assetId = await createImageAsset({
 				name: `Cover for clip ${clipId}`,
 				filePath,
-				width: canvas?.width || undefined,
-				height: canvas?.height || undefined,
+				width: project?.settings.canvasSize.width,
+				height: project?.settings.canvasSize.height,
 				mimeType: mimeForFormat(format),
 				imageType: "cover",
 				sourceType: "editor",

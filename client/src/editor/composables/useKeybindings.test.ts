@@ -10,6 +10,20 @@ vi.mock("../lib/actions", () => ({
 	unbindAction: vi.fn(),
 }));
 
+vi.mock("../core", () => ({
+	EditorCore: {
+		getInstance: () => ({ imageMode: false }),
+	},
+}));
+
+vi.mock("./useImageEditorTools", () => ({
+	IMAGE_TOOL_RAIL: [],
+	useImageEditorTools: () => ({
+		activateTool: vi.fn(),
+		swapFillStroke: vi.fn(),
+	}),
+}));
+
 import { handleEditorKeyDown } from "./useKeybindings";
 
 function press(key: string, modifiers: Partial<KeyboardEvent> = {}) {

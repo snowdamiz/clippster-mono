@@ -55,6 +55,26 @@ defmodule ClippsterServer.AI.ThumbnailSessions do
 
   def delete_session(session), do: Repo.delete(session)
 
+  @doc """
+  Deletes a thumbnail session and best-effort cleans R2 objects under
+  ai-thumbnails/{user_id}/{session_id}/.
+  """
+  def delete_session_with_assets(session) do
+    prefix = "ai-thumbnails/#{session.user_id}/#{session.id}/"
+
+    case Repo.delete(session) do
+      {:ok, deleted} ->
+        Task.start(fn ->
+          ClippsterServer.Storage.delete_prefix(prefix)
+        end)
+
+        {:ok, deleted}
+
+      error ->
+        error
+    end
+  end
+
   def update_session(session, attrs) do
     session
     |> ThumbnailSession.changeset(attrs)

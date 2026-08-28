@@ -80,9 +80,12 @@ provide("coverForClipId", coverForClipId);
 const backendProjectId = computed(() => projectManager.projectId.value);
 provide("imageEditorBackendProjectId", backendProjectId);
 
+const isEditRoute = computed(() => route.name === "design-studio-edit");
 const hasProjectId = computed(() => !!route.query.projectId);
 const isEditorView = computed(
-	() => hasProjectId.value || !!projectManager.project.value || isCoverBootstrapping.value,
+	() =>
+		isEditRoute.value &&
+		(hasProjectId.value || !!projectManager.project.value || isCoverBootstrapping.value || !!route.query.coverForClip),
 );
 
 const filteredProjects = computed(() => {
@@ -158,6 +161,8 @@ watch(
 watch(
 	() => route.query.projectId,
 	async (projectId, previousId) => {
+		if (!isEditRoute.value) return;
+
 		if (!projectId) {
 			stopCloudAutosave();
 			if (previousId) {
@@ -168,7 +173,7 @@ watch(
 			isEditorLoading.value = false;
 			editorError.value = null;
 			if (!route.query.coverForClip) {
-				await loadProjects();
+				await router.replace({ path: "/design-studio" });
 			}
 			return;
 		}
@@ -189,13 +194,27 @@ onMounted(async () => {
 	const projectId = route.query.projectId as string | undefined;
 	const coverForClip = route.query.coverForClip as string | undefined;
 
-	if (projectId) {
-		await loadEditorProject(parseInt(projectId, 10));
+	// Legacy links used /design-studio?projectId=… — send them to the full-page editor route
+	if (!isEditRoute.value && (projectId || coverForClip)) {
+		await router.replace({
+			path: "/design-studio/edit",
+			query: route.query,
+		});
 		return;
 	}
 
-	if (coverForClip) {
-		await openOrCreateCoverProject(coverForClip);
+	if (isEditRoute.value) {
+		if (projectId) {
+			await loadEditorProject(parseInt(projectId, 10));
+			return;
+		}
+
+		if (coverForClip) {
+			await openOrCreateCoverProject(coverForClip);
+			return;
+		}
+
+		await router.replace({ path: "/design-studio" });
 		return;
 	}
 
@@ -318,6 +337,7 @@ async function openOrCreateCoverProject(clipId: string) {
 		if (existingId != null) {
 			isCoverBootstrapping.value = false;
 			await router.replace({
+				path: "/design-studio/edit",
 				query: {
 					...route.query,
 					projectId: existingId.toString(),
@@ -380,6 +400,7 @@ async function autoCreateCoverProject(clipId?: string) {
 
 		startCloudAutosave();
 		await router.replace({
+			path: "/design-studio/edit",
 			query: {
 				...route.query,
 				projectId: backendProject.id.toString(),
@@ -540,9 +561,8 @@ async function confirmCreateProject() {
 
 		startCloudAutosave();
 		await router.push({
-			path: "/design-studio",
+			path: "/design-studio/edit",
 			query: {
-				...route.query,
 				projectId: backendProject.id.toString(),
 			},
 		});
@@ -557,9 +577,8 @@ async function confirmCreateProject() {
 
 function openProject(id: number) {
 	router.push({
-		path: "/design-studio",
+		path: "/design-studio/edit",
 		query: {
-			...route.query,
 			projectId: id.toString(),
 		},
 	});
@@ -611,16 +630,17 @@ function clearSelection() {
 	selectedProjects.value = new Set();
 }
 
+function selectAllProjects() {
+	selectedProjects.value = new Set(filteredProjects.value.map((p) => p.id));
+}
+
 function backToProjects() {
 	stopCloudAutosave();
 	void syncToCloud({ flush: true }).finally(() => {
 		projectManager.closeProject();
 		EditorCore.reset();
 		coverForClipId.value = null;
-		const query = { ...route.query };
-		delete query.projectId;
-		delete query.coverForClip;
-		router.push({ path: "/design-studio", query });
+		router.push({ path: "/design-studio" });
 	});
 }
 
@@ -636,15 +656,11 @@ function getRelativeTime(dateStr: string): string {
 	return formatRelativeTimeFromUnix(timestamp) || "Recently";
 }
 
-function cardAspectRatio(project: ProjectSummary): string {
-	if (!project.canvas_width || !project.canvas_height) return "16 / 9";
-	return `${project.canvas_width} / ${project.canvas_height}`;
-}
 </script>
 
 <template>
 	<!-- Editor view -->
-	<div v-if="isEditorView" class="h-screen w-screen overflow-hidden bg-[#0e0e10]">
+	<div v-if="isEditorView" class="h-full w-full overflow-hidden bg-[#0e0e10]">
 		<div v-if="isEditorLoading" class="flex h-full w-full items-center justify-center">
 			<div class="flex flex-col items-center gap-3">
 				<Loader2 class="text-primary size-8 animate-spin" />
@@ -726,6 +742,14 @@ function cardAspectRatio(project: ProjectSummary): string {
 						<div class="imageeditor__selection-info">
 							<Check class="imageeditor__selection-icon" />
 							<span>{{ selectedProjects.size }} selected</span>
+							<button
+								v-if="selectedProjects.size < filteredProjects.length"
+								type="button"
+								class="imageeditor__selection-select-all"
+								@click="selectAllProjects"
+							>
+								Select all
+							</button>
 						</div>
 						<div class="imageeditor__selection-actions">
 							<button type="button" class="imageeditor__selection-clear" @click="clearSelection">Clear</button>
@@ -747,7 +771,6 @@ function cardAspectRatio(project: ProjectSummary): string {
 								:key="project.id"
 								class="imageeditor-card"
 								:class="{ 'imageeditor-card--selected': isProjectSelected(project.id) }"
-								:style="{ aspectRatio: cardAspectRatio(project) }"
 								@click="openProject(project.id)"
 							>
 								<div
@@ -830,12 +853,8 @@ function cardAspectRatio(project: ProjectSummary): string {
 				<div class="imageeditor__empty-icon-wrapper">
 					<ImageIcon class="imageeditor__empty-icon" />
 				</div>
-				<h3 class="imageeditor__empty-title">No design projects yet</h3>
-				<p class="imageeditor__empty-description">Create your first image project to get started</p>
-				<button type="button" class="imageeditor-create-btn imageeditor__empty-cta" @click="createNewProject">
-					<Plus class="imageeditor-create-btn__icon" />
-					Create Your First Project
-				</button>
+				<h3 class="imageeditor__empty-title">No projects found</h3>
+				<p class="imageeditor__empty-description">Create a new project to get started</p>
 			</div>
 		</div>
 
@@ -860,8 +879,8 @@ function cardAspectRatio(project: ProjectSummary): string {
 					@click.self="showProjectNameDialog = false"
 				>
 					<div class="w-full max-w-md rounded-lg border border-white/10 bg-zinc-900 p-6 shadow-xl">
-						<div class="mb-4 flex size-12 items-center justify-center rounded-full bg-purple-600/20">
-							<ImageIcon :size="24" class="text-purple-400" />
+						<div class="mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--sidebar-accent)]/20">
+							<ImageIcon :size="24" class="text-[var(--sidebar-accent)]" />
 						</div>
 						<h3 class="text-lg font-semibold text-zinc-100">Name Your Project</h3>
 						<p class="mt-1 text-sm text-zinc-500">Give your image project a memorable name</p>
@@ -871,13 +890,13 @@ function cardAspectRatio(project: ProjectSummary): string {
 								type="text"
 								placeholder="e.g., Social Media Banner"
 								maxlength="100"
-								class="w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-purple-500"
+								class="w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--sidebar-accent)]"
 								autofocus
 								@keyup.enter="confirmCreateProject"
 							/>
 							<select
 								v-model="selectedCanvasPreset"
-								class="w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-purple-500"
+								class="w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-[var(--sidebar-accent)]"
 							>
 								<option v-for="preset in CANVAS_PRESETS" :key="preset.id" :value="preset.id">
 									{{ preset.label }}
@@ -895,7 +914,7 @@ function cardAspectRatio(project: ProjectSummary): string {
 							</button>
 							<button
 								type="button"
-								class="flex flex-1 items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
+								class="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[var(--sidebar-accent)] px-4 py-2 text-sm font-medium text-[var(--sidebar-bg)] transition-opacity hover:opacity-90 disabled:opacity-50"
 								:disabled="isCreatingProject"
 								@click="confirmCreateProject"
 							>
@@ -1054,12 +1073,6 @@ function cardAspectRatio(project: ProjectSummary): string {
 	height: 14px;
 }
 
-.imageeditor__empty-cta {
-	height: 36px;
-	margin-top: 1.5rem;
-	padding: 0 1rem;
-}
-
 .imageeditor-skeleton__card-title {
 	height: 16px;
 	width: 70%;
@@ -1116,6 +1129,22 @@ function cardAspectRatio(project: ProjectSummary): string {
 	font-size: 0.875rem;
 	color: var(--sidebar-text);
 	font-weight: 500;
+}
+
+.imageeditor__selection-select-all {
+	margin-left: 0.25rem;
+	padding: 0.25rem 0.5rem;
+	font-size: 0.75rem;
+	font-weight: 500;
+	color: var(--sidebar-accent);
+	background: transparent;
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+.imageeditor__selection-select-all:hover {
+	background-color: var(--sidebar-hover);
 }
 
 .imageeditor__selection-icon {
@@ -1253,7 +1282,7 @@ function cardAspectRatio(project: ProjectSummary): string {
 	overflow: hidden;
 	cursor: pointer;
 	transition: all 200ms ease;
-	max-height: 280px;
+	aspect-ratio: 16 / 9;
 }
 
 .imageeditor-card:hover {
@@ -1265,6 +1294,10 @@ function cardAspectRatio(project: ProjectSummary): string {
 .imageeditor-card--selected {
 	border-color: var(--sidebar-accent);
 	box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+}
+
+.imageeditor-card--selected:hover {
+	border-color: var(--sidebar-accent);
 }
 
 .imageeditor-card--skeleton {
@@ -1337,8 +1370,8 @@ function cardAspectRatio(project: ProjectSummary): string {
 }
 
 .imageeditor-card__badge--canvas {
-	background-color: rgba(139, 92, 246, 0.3);
-	color: #c4b5fd;
+	background-color: rgba(59, 130, 246, 0.3);
+	color: #93c5fd;
 }
 
 .imageeditor-card__badge-icon {
@@ -1368,7 +1401,7 @@ function cardAspectRatio(project: ProjectSummary): string {
 .imageeditor-card__thumbnail-gradient {
 	position: absolute;
 	inset: 0;
-	background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(0, 0, 0, 0.4) 50%, rgba(236, 72, 153, 0.1) 100%);
+	background: linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.4) 50%, rgba(0, 0, 0, 0.5) 100%);
 }
 
 .imageeditor-card__empty-icon {
@@ -1377,7 +1410,7 @@ function cardAspectRatio(project: ProjectSummary): string {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	opacity: 0.25;
+	opacity: 0.2;
 }
 
 .imageeditor-card__folder-icon {
@@ -1393,7 +1426,7 @@ function cardAspectRatio(project: ProjectSummary): string {
 	right: 0;
 	z-index: 5;
 	padding: 1rem;
-	padding-top: 4rem;
+	padding-top: 7rem;
 	background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 50%, transparent 100%);
 	display: flex;
 	flex-direction: column;
@@ -1461,6 +1494,7 @@ function cardAspectRatio(project: ProjectSummary): string {
 .imageeditor-card__action-btn:hover {
 	background-color: white;
 	transform: scale(1.1);
+	box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
 }
 
 .imageeditor-card__action-icon {
@@ -1558,7 +1592,6 @@ function cardAspectRatio(project: ProjectSummary): string {
 	font-size: 0.875rem;
 	color: var(--sidebar-text-muted);
 	margin: 0;
-	max-width: 320px;
-	line-height: 1.5;
+	max-width: 300px;
 }
 </style>

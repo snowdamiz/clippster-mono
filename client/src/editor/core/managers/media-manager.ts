@@ -225,6 +225,31 @@ export class MediaManager {
 		this.notify();
 	}
 
+	/** Replace an asset's raster after in-place paint/erase and notify subscribers. */
+	replaceAssetRaster({
+		id,
+		file,
+		url,
+	}: {
+		id: string;
+		file: File;
+		url: string;
+	}): void {
+		this.assets = this.assets.map((asset) => {
+			if (asset.id !== id) return asset;
+			if (asset.url?.startsWith("blob:")) {
+				URL.revokeObjectURL(asset.url);
+			}
+			return {
+				...asset,
+				file,
+				url,
+				isHydrated: true,
+			};
+		});
+		this.notify();
+	}
+
 	isLoadingMedia(): boolean {
 		return this.isLoading;
 	}

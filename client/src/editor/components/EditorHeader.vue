@@ -125,15 +125,14 @@ async function handleSaveAsWatermark() {
 		const blob = await exportAsImage("png");
 		if (!blob) return;
 
-		const canvas = editor.getPreviewCanvas();
 		const project = activeProject.value;
 		const name = project?.metadata.name || "Watermark";
 
 		const wmId = await saveAsWatermark({
 			blob,
 			name,
-			width: canvas?.width,
-			height: canvas?.height,
+			width: project?.settings.canvasSize.width,
+			height: project?.settings.canvasSize.height,
 		});
 
 		if (wmId) {
@@ -444,8 +443,8 @@ function cancelRename() {
 </script>
 
 <template>
-	<header class="relative z-10 flex h-[3.2rem] items-center justify-between border-b border-white/10 bg-[#0e0e10] px-3 pt-0.5">
-		<div class="flex items-center gap-2">
+	<header class="relative z-10 flex h-[3.2rem] shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-[#0e0e10] px-3 pr-4">
+		<div class="flex min-w-0 items-center gap-2">
 			<!-- Back arrow -->
 			<button
 				type="button"
@@ -659,7 +658,7 @@ function cancelRename() {
 		</button>
 	</div>
 
-		<nav class="flex items-center gap-2">
+		<nav class="flex shrink-0 items-center gap-1.5 sm:gap-2">
 			<span
 				class="hidden items-center gap-1 text-[10px] text-zinc-500 xl:flex"
 				:title="lastSavedAt ? `Last saved at ${lastSavedAt.toLocaleTimeString()}` : 'Autosave is enabled'"
@@ -720,9 +719,9 @@ function cancelRename() {
 					:disabled="isImageExporting"
 					@click="handleImageExport"
 				>
-					<div class="relative flex items-center gap-1.5 rounded-[0.6rem] bg-gradient-to-l from-[#7c3aed] to-[#a855f7] px-4 py-1 shadow-[0_1px_3px_0px_rgba(0,0,0,0.65)]">
+					<div class="relative flex items-center gap-1.5 rounded-md bg-[var(--sidebar-accent,#0ea5e9)] px-3 py-1.5 shadow-[0_1px_3px_0px_rgba(0,0,0,0.45)] hover:bg-[#0284c7] transition-colors">
 						<component :is="imageExportSuccess ? Check : (isImageExporting ? Image : Download)" class="z-50 size-4" :class="{ 'animate-pulse': isImageExporting }" />
-						<span class="z-50 text-[0.875rem]">{{ imageExportSuccess ? 'Saved!' : (isImageExporting ? 'Exporting...' : (isCoverMode ? 'Save Cover' : 'Export Image')) }}</span>
+						<span class="z-50 text-[0.875rem] font-medium">{{ imageExportSuccess ? 'Saved!' : (isImageExporting ? 'Exporting...' : (isCoverMode ? 'Save Cover' : 'Export Image')) }}</span>
 					</div>
 				</button>
 				<div v-if="!isCoverMode" class="relative">

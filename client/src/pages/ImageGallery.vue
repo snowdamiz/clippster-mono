@@ -92,7 +92,7 @@ function openInEditor(image: ImageAsset) {
 		const meta = image.editor_project_json ? JSON.parse(image.editor_project_json) : null;
 		const backendId = meta?.backendProjectId ?? (image.source_project_id ? Number(image.source_project_id) : NaN);
 		if (Number.isFinite(backendId)) {
-			router.push({ path: "/design-studio", query: { projectId: String(backendId) } });
+			router.push({ path: "/design-studio/edit", query: { projectId: String(backendId) } });
 			return;
 		}
 	} catch {

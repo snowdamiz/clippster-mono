@@ -236,6 +236,8 @@ async function selectItem(item: PickerItem) {
 </script>
 
 <style scoped>
+@reference "../../style.css";
+
 .field-input {
   @apply rounded-lg border border-white/10 bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-purple-500;
 }

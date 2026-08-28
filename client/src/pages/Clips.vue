@@ -581,7 +581,7 @@
                               <button
                                 class="folder-dialog-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
                                 @click.stop="
-                                  router.push(`/design-studio?coverForClip=${item.clip.id}`);
+                                  router.push(`/design-studio/edit?coverForClip=${item.clip.id}`);
                                   closeFolderDialogActionMenu();
                                 "
                               >

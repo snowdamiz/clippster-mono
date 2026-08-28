@@ -12,7 +12,7 @@ import EffectProperties from "./properties/EffectProperties.vue";
 import CaptionProperties from "./properties/CaptionProperties.vue";
 import CaptionMultiProperties from "./properties/CaptionMultiProperties.vue";
 import TransitionProperties from "./properties/TransitionProperties.vue";
-import { Settings, SlidersHorizontal } from "lucide-vue-next";
+import { Settings } from "lucide-vue-next";
 import { useImageMode } from "../../composables/useImageMode";
 import type { Transition } from "../../types/transitions";
 
@@ -66,7 +66,12 @@ const selectedTransition = computed((): Transition | null => {
 </script>
 
 <template>
-	<div class="flex h-full flex-col overflow-hidden rounded-sm bg-[#18181b] text-zinc-200">
+	<div
+		:class="[
+			'flex h-full flex-col overflow-hidden text-zinc-200',
+			isImageMode ? 'bg-[#1e1e1e]' : 'rounded-sm bg-[#18181b]',
+		]"
+	>
 		<template v-if="selectedElements.length > 0">
 			<!-- Multi-caption selection: render a single representative panel to avoid N-mount flicker -->
 			<div v-if="captionRepresentative" class="min-h-0 flex-1 overflow-hidden">
@@ -145,14 +150,11 @@ const selectedTransition = computed((): Transition | null => {
 
 		<!-- Empty state -->
 		<div v-else class="flex h-full flex-col">
-			<!-- Header -->
-			<div v-if="isImageMode" class="flex items-center gap-1.5 border-b border-white/[0.06] px-3 py-2">
-				<SlidersHorizontal class="size-3.5 text-zinc-500" />
-				<span class="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">Properties</span>
-			</div>
 			<div class="flex flex-1 flex-col items-center justify-center gap-2 p-4">
-				<Settings class="text-zinc-700 size-7" :stroke-width="1" />
-				<p class="text-[11px] text-zinc-600 text-center">Select a layer to edit</p>
+				<Settings class="size-6 text-zinc-700" :stroke-width="1" />
+				<p class="text-center text-[11px] text-zinc-500">
+					{{ isImageMode ? "Select a layer" : "Select a layer to edit" }}
+				</p>
 			</div>
 		</div>
 	</div>
